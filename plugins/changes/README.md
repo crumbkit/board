@@ -179,10 +179,11 @@ skill in `claude-code/skills/` runs the check.
   `controls.for-paths`: its `control`, its `summary` and at most three of
   the planned paths it `matched`, with `matched_left_out` counting the
   rest. Both are left out when every planned path reached the rule.
-  Each rule's path and summary are fitted first, in order, skipping any
-  that do not fit, and matched paths are added after while room remains.
-  `rules_left_out` names up to 20 rules the word limit dropped, and
-  `rules_unnamed` counts the rest. `rules_command` lists every rule: run
+  Rules that matched only some planned paths come first, then the others,
+  each group by control path. Each rule's path and summary are fitted
+  first, skipping any that do not fit, and matched paths are added after
+  while room remains. `rules_left_out` names up to 20 rules the word limit
+  dropped, as many as fit, and `rules_unnamed` counts the rest. `rules_command` lists every rule: run
   its `argv` without a shell and give it its `stdin`. It is null when the
   plan has no paths.
   The brief also holds one line per record the plan uses (a control's `summary`, else its
@@ -191,8 +192,9 @@ skill in `claude-code/skills/` runs the check.
   gives, and the `controls.check` command for the change's mount. It holds at
   most 600 words, counting each rule with its path and matched paths,
   each named dropped rule, and each line with its reference. Rules are
-  counted before lines, but lines keep up to a quarter of the limit, and
-  `left_out` counts the lines it dropped. The
+  counted before lines, but lines keep up to a quarter of the limit. A
+  line that does not fit is skipped, and `left_out` counts the lines it
+  dropped. The
   full requirement of a rule is `controls.for-path` away. It fails with
   `changes::brief::controls_missing` when the Board that runs it does not
   offer `controls.for-paths`, such as when the controls plugin is not
@@ -242,14 +244,16 @@ The plan gate's last three checks:
   does not count.
 
 The review gate's `paths` check reads the whole change's diff, whatever
-range a review report covers: `git diff --name-only --no-renames <base>
-<head>` in the repository the mount names, where `<base>` is `git
-merge-base` of `head` and the ref the mount's `follow` names. It runs
-without the user's or system's git config. A rebased change leaves out
-what the followed branch gained, and a review of only the fix commits
-still checks every commit of the change. A mount without `follow` gives
-no base, and the check fails saying so. A rename counts as deleting one path and adding
-another. Each file it lists, by its path under the mount, must match one of
+range a review report covers: `git diff --name-only --no-renames
+--merge-base <follow> <head>` in the repository the mount names, which
+diffs from the merge base of `head` and `<follow>`, the ref the mount
+follows as `board refs` reports it. It runs without the user's or
+system's git config. A rebased change leaves out what the followed branch
+gained, and a review of only the fix commits still checks every commit of
+the change. The check fails, saying why, when the change has no head,
+when nothing is at its mount, when its mount is a plain directory ("<mount>
+is not a mount"), and when git cannot give the diff. A rename counts as
+deleting one path and adding another. Each file it lists, by its path under the mount, must match one of
 the newest plan's `paths` with SQLite's `GLOB`. Otherwise `advance` refuses
 with `changes::paths::outside_plan` and names the files, because their
 rules were not in the brief. Update the plan's paths with `plan`, or revert

@@ -195,19 +195,35 @@ def rule_line(rule: dict[str, Any], paths: list[str]) -> dict[str, Any]:
     return line
 
 
-def fit_rules(found: list[dict[str, Any]], room: int) -> tuple[list[dict[str, Any]], list[str], int]:
-    """The rules that fit in `room` words, the paths of those left out, and the words both take.
+def fit_rules(found: list[dict[str, Any]], room: int) -> tuple[list[dict[str, Any]], list[str], int, int]:
+    """The rules that fit in `room` words, the names of up to 20 left out, how many more were, and the words used.
+
+    Rules that matched only some of the planned paths come first, then the
+    others, each group by control path. When every rule fits, they take
+    the whole room. Otherwise the words for the left-out names that fit
+    are kept back first, so the rules and names never pass `room`.
+    """
+    ordered = sorted(found, key=lambda rule: ("matched" not in rule, str(rule["control"])))
+    rules, left_out, spent = fill(ordered, room)
+    if not left_out:
+        return rules, [], 0, spent
+    kept = min(LEFT_OUT_NAMED, max(room, 0))
+    rules, left_out, spent = fill(ordered, room - kept)
+    named = left_out[: min(LEFT_OUT_NAMED, max(room - spent, 0))]
+    return rules, named, len(left_out) - len(named), spent + len(named)
+
+
+def fill(ordered: list[dict[str, Any]], room: int) -> tuple[list[dict[str, Any]], list[str], int]:
+    """The rules of `ordered` that fit in `room` words, the paths of those left out, and the words they take.
 
     Each rule's path and summary come first, in order, skipping any that do
     not fit, so one long rule leaves room for the shorter ones after it.
-    Matched paths are added after, in order, while room remains. The words
-    of the left-out names that `rules_left_out` shows are kept back first.
+    Matched paths are added after, in order, while room remains.
     """
-    room -= min(len(found), LEFT_OUT_NAMED)
     spent = 0
     fitted: list[tuple[dict[str, Any], dict[str, Any]]] = []
     left_out: list[str] = []
-    for rule in found:
+    for rule in ordered:
         cost = words(f"{rule['control']} {rule['summary']}")
         if spent + cost > room:
             left_out.append(str(rule["control"]))
@@ -219,7 +235,7 @@ def fit_rules(found: list[dict[str, Any]], room: int) -> tuple[list[dict[str, An
         if cost and spent + cost <= room:
             line.update({key: rule[key] for key in ("matched", "matched_left_out") if key in rule})
             spent += cost
-    return [line for line, _ in fitted], left_out, spent + min(len(left_out), LEFT_OUT_NAMED)
+    return [line for line, _ in fitted], left_out, spent
 
 
 def brief(request: CallRequest) -> dict[str, object]:
@@ -244,13 +260,13 @@ def brief_of(request: CallRequest, path: str) -> dict[str, object]:
     # The uses keep up to a quarter of the limit from the rules, so many rules cannot drop every line.
     kept = min(sum(words(f"{ref} {line}") for ref, line in lines), BRIEF_WORDS // USES_SHARE)
     found = [rule_line(rule, paths) for rule in rules_for(board, paths)]
-    rules, left_out, cost = fit_rules(found, BRIEF_WORDS - spent - kept)
+    rules, named, unnamed, cost = fit_rules(found, BRIEF_WORDS - spent - kept)
     spent += cost
     shown: list[dict[str, str]] = []
     for ref, line in lines:
         cost = words(f"{ref} {line}")
         if spent + cost > BRIEF_WORDS:
-            break
+            continue
         shown.append({"ref": ref, "line": line})
         spent += cost
     return {
@@ -258,8 +274,8 @@ def brief_of(request: CallRequest, path: str) -> dict[str, object]:
         "path": path,
         "plan": text,
         "rules": rules,
-        "rules_left_out": left_out[:LEFT_OUT_NAMED],
-        "rules_unnamed": len(left_out[LEFT_OUT_NAMED:]),
+        "rules_left_out": named,
+        "rules_unnamed": unnamed,
         "rules_command": rules_command,
         "uses": shown,
         "left_out": len(uses) - len(shown),

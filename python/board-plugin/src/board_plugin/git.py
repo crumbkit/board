@@ -16,20 +16,24 @@ GIT_SECONDS = 60
 
 @dataclass(frozen=True)
 class Failed:
-    """Why a git command gave no output: `started` is false when git could not be run at all."""
+    """Why a git command gave no output.
+
+    `started` is false when git could not be run at all, and `timed_out` is
+    true when it ran past its timeout.
+    """
 
     why: str
     stderr: str
     started: bool
+    timed_out: bool = False
 
 
-def git(
-    repository: str, *arguments: str, stdin: bytes = b"", timeout: float = GIT_SECONDS, program: str = "git"
-) -> str | Failed:
+def git(repository: str, *arguments: str, stdin: bytes = b"", timeout: float = GIT_SECONDS) -> str | Failed:
     """What `git <arguments>` prints, run in `repository` with ISOLATED, or why it failed."""
+    command = subcommand(arguments)
     try:
         ran = subprocess.run(  # noqa: S603 - each caller passes its own arguments
-            [program, *arguments],
+            ["git", *arguments],  # noqa: S607 - git is found on PATH
             cwd=repository,
             input=stdin,
             env=os.environ | ISOLATED,
@@ -38,14 +42,23 @@ def git(
             timeout=timeout,
         )
     except subprocess.TimeoutExpired:
-        return Failed(f"`git {arguments[0]}` ran past {timeout:g} s in {repository}", "", started=True)
+        why = f"`git {command}` timed out after {timeout:g} s in {repository}"
+        return Failed(why, "", started=True, timed_out=True)
     except FileNotFoundError as error:
         if not Path(repository).is_dir():
-            return Failed(f"`git {arguments[0]}` cannot run in {repository}: {error}", str(error), started=True)
+            return Failed(f"`git {command}` cannot run in {repository}: {error}", str(error), started=True)
         return Failed(f"git cannot be run: {error}; put git on PATH", str(error), started=False)
     except OSError as error:
         return Failed(f"git cannot be run: {error}; put git on PATH", str(error), started=False)
     if ran.returncode != 0:
         stderr = ran.stderr.decode(errors="replace").strip()[-4096:]
-        return Failed(f"`git {arguments[0]}` failed in {repository}: {stderr}", stderr, started=True)
+        return Failed(f"`git {command}` failed in {repository}: {stderr}", stderr, started=True)
     return ran.stdout.decode(errors="replace")
+
+
+def subcommand(arguments: tuple[str, ...]) -> str:
+    """The git command `arguments` run, after any `-c <name>=<value>` options before it."""
+    at = 0
+    while at < len(arguments) and arguments[at] == "-c":
+        at += 2
+    return arguments[at] if at < len(arguments) else "git"

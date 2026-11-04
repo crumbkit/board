@@ -35,6 +35,8 @@ def edited(board: Board, mount: str, head: str) -> tuple[list[str], str | None]:
         repository, "diff", "--name-only", "-z", "--no-renames", "--merge-base", "--end-of-options", follow, head
     )
     if isinstance(names, Failed):
+        if not names.started or names.timed_out:
+            return [], names.why
         return [], f"{names.why}; fetch {head} and {follow} into the mounted repository"
     prefix = f"{inside}/" if inside else ""
     files = [name for name in names.split("\0") if name]

@@ -90,7 +90,7 @@ def control(requirement: str, paths: list[str], **fields: str) -> str:
     return record(CONTROL, requirement=requirement, purpose="p", paths=paths, **fields)
 
 
-def test_brief_lists_each_control_on_the_planned_paths_once_and_what_it_matched_unless_it_matched_them_all(
+def test_brief_lists_each_control_on_the_planned_paths_once_matched_ones_first_and_what_they_matched(
     board: Board,
 ) -> None:
     board.write("changes/t.json", change())
@@ -103,9 +103,9 @@ def test_brief_lists_each_control_on_the_planned_paths_once_and_what_it_matched_
     board.call("plan", {"path": PATH, "text": PLAN, "uses": [], "paths": paths}, stdin=True)
     brief = board.call("brief", {"path": PATH})
     assert brief["rules"] == [
-        {"control": "/controls/all", "summary": "Write the test first."},
         {"control": "/controls/docs", "summary": "Say what exists.", "matched": ["/repos/x/docs/new.md"]},
         {"control": "/controls/rust", "summary": "Errors are typed.", "matched": ["/repos/x/src/**"]},
+        {"control": "/controls/all", "summary": "Write the test first."},
     ]
     assert (brief["rules_left_out"], brief["rules_unnamed"]) == ([], 0)
 
@@ -220,3 +220,66 @@ def test_brief_of_a_plan_without_paths_lists_no_rules(board: Board) -> None:
     board.write("changes/t.json", change())
     brief = board.call("brief", {"path": PATH})
     assert (brief["rules"], brief["rules_left_out"], brief["rules_command"]) == ([], [], None)
+
+
+def test_rules_that_matched_some_planned_paths_come_before_rules_that_matched_them_all(board: Board) -> None:
+    board.write("changes/t.json", change())
+    mount_repo(board, {"src/a.rs": "a\n"})
+    count = 300
+    for number in range(count):
+        board.write(f"controls/a-extra/e{number:03}.json", control("word " * 10 + "end.", ["repos/x/*"]))
+    real = [f"/controls/z-real/r{number}" for number in range(5)]
+    for path in real:
+        board.write(f"{path.removeprefix('/')}.json", control("Errors are typed.", ["repos/x/src/*"]))
+    paths = ["/repos/x/src/a.rs", "/repos/x/docs/b.md"]
+    board.call("plan", {"path": PATH, "text": PLAN, "uses": [], "paths": paths}, stdin=True)
+    brief = board.call("brief", {"path": PATH})
+    shown = [rule["control"] for rule in brief["rules"]]
+    assert shown[: len(real)] == real
+    assert shown[len(real) :] == sorted(shown[len(real) :])
+    assert spent(brief) <= BRIEF_WORDS
+
+
+def test_the_words_kept_for_left_out_names_go_to_rules_when_every_rule_fits(board: Board) -> None:
+    board.write("changes/t.json", change())
+    mount_repo(board, {"src/a.rs": "a\n"})
+    board.call("plan", {"path": PATH, "text": PLAN, "uses": [], "paths": PATHS}, stdin=True)
+    room = BRIEF_WORDS - spent(board.call("brief", {"path": PATH}))
+    # Rules of two words each that fill the room, with no word kept for a name.
+    count = room // 2
+    for number in range(count):
+        board.write(f"controls/c{number:03}.json", control("Do.", ["repos/x/*"]))
+    brief = board.call("brief", {"path": PATH})
+    assert len(brief["rules"]) == count
+    assert (brief["rules_left_out"], brief["rules_unnamed"]) == ([], 0)
+    assert spent(brief) <= BRIEF_WORDS
+
+
+def test_a_plan_that_leaves_five_words_stays_within_the_limit_and_counts_the_rules_it_cannot_name(board: Board) -> None:
+    board.write("changes/t.json", change())
+    mount_repo(board, {"src/a.rs": "a\n"})
+    count = 30
+    for number in range(count):
+        board.write(f"controls/c{number:03}.json", control("Do.", ["repos/x/*"]))
+    board.call("plan", {"path": PATH, "text": PLAN, "uses": [], "paths": PATHS}, stdin=True)
+    # More planned paths lengthen `rules_command`'s stdin until the fixed parts leave five words.
+    room = BRIEF_WORDS - spent(board.call("brief", {"path": PATH})) + 2 * count
+    paths = PATHS + [f"/repos/x/f{number}.rs" for number in range(room - 5)]
+    board.call("plan", {"path": PATH, "text": PLAN, "uses": [], "paths": paths}, stdin=True)
+    brief = board.call("brief", {"path": PATH})
+    assert len(brief["rules"]) + len(brief["rules_left_out"]) + brief["rules_unnamed"] == count
+    assert brief["rules_unnamed"] > 0
+    assert spent(brief) <= BRIEF_WORDS
+
+
+def test_a_use_too_long_to_fit_leaves_room_for_the_shorter_uses_after_it(board: Board) -> None:
+    board.write("changes/t.json", change())
+    uses = ["/standards/a.md", "/standards/long.md", "/standards/b.md"]
+    board.write("standards/a.md", "# Short.\n")
+    board.write("standards/long.md", "# " + "word " * BRIEF_WORDS + "\n")
+    board.write("standards/b.md", "# Short.\n")
+    board.call("plan", {"path": PATH, "text": PLAN, "uses": uses, "paths": PATHS}, stdin=True)
+    brief = board.call("brief", {"path": PATH})
+    assert [use["ref"] for use in brief["uses"]] == ["/standards/a.md", "/standards/b.md"]
+    assert brief["left_out"] == 1
+    assert spent(brief) <= BRIEF_WORDS

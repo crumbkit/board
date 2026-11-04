@@ -89,8 +89,10 @@ pub struct Location {
     pub object: Object,
     /// Each pointer followed to get here, in order.
     pub pointers: Vec<Location>,
-    /// The ref a mount pointer follows, as its record names it; `None` for
-    /// any other Location.
+    /// The ref a mount pointer follows, as its record names it. Only a mount
+    /// in another Location's `pointers` has one. It sits on every Location
+    /// because `pointers` holds Locations, and a separate pointer type
+    /// would change every reader of `pointers`.
     pub follow: Option<String>,
 }
 
