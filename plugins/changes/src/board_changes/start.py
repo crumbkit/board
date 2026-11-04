@@ -6,7 +6,7 @@ from collections.abc import Mapping
 from board_plugin.board import Board
 from board_plugin.protocol import CallRequest, PluginError
 
-from board_changes.change import CHANGE_TYPE, PLUGIN, TASK_TYPE, Change, write
+from board_changes.change import CHANGE_TYPE, PLUGIN, TASK_TYPE, Change, touch, write
 from board_changes.gates import SECTIONS
 from board_changes.phases import check_target
 from board_changes.repo import CODEOWNERS, DOCS, ask_first, exists, files, owners, route, suite_in
@@ -61,7 +61,7 @@ def start(request: CallRequest) -> dict[str, object]:
     change: Change = {"$type": CHANGE_TYPE, "title": title, "mount": mount, "phase": "plan", "plan": plan}
     change["route"] = route(rules, asking)
     change["task"] = task_for(board, asked, title)
-    lines: list[dict[str, object]] = [{"path": path, "expect": "none", "record": change}]
+    lines: list[dict[str, object]] = [{"path": path, "expect": "none", "record": touch(change)}]
     if isinstance(held, PluginError):
         skeleton = f"# {title}\n" + "".join(f"\n## {section}\n" for section in SECTIONS)
         lines.append({"path": plan, "expect": "none", "text": skeleton})

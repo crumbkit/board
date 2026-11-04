@@ -7,6 +7,7 @@ from board_plugin.board import Board, literal
 from board_plugin.protocol import CallRequest
 
 from board_changes.change import CHANGE_TYPE, FINAL, PLUGIN, TREE_CODES, Change, branch_of, kind_of
+from board_changes.sync import last_sync
 
 # The default `limit` (STANDARDS 23).
 OPEN_LIMIT = 100
@@ -40,7 +41,8 @@ def open_changes(request: CallRequest) -> dict[str, object]:
     kind = request.input.get("kind")
     finals = ", ".join(literal(phase) for phase in FINAL)
     unfinished = "" if kind == "prototype" else f" AND json_extract(body, '$.phase') NOT IN ({finals})"
-    rows = Board(request.board.root, PLUGIN).rows(
+    board = Board(request.board.root, PLUGIN)
+    rows = board.rows(
         "SELECT logical, code, body FROM records"  # noqa: S608 - values are quoted by literal()
         f" WHERE type = {literal(CHANGE_TYPE)}{unfinished} ORDER BY logical"
     )
@@ -53,4 +55,10 @@ def open_changes(request: CallRequest) -> dict[str, object]:
         change = cast("Change", json.loads(body))
         if kind is None or kind_of(change) == kind:
             found.append(listed(path, change))
-    return {"changes": found[:limit], "total": len(found), "truncated": len(found) > limit, "unreadable": unreadable}
+    return {
+        "changes": found[:limit],
+        "total": len(found),
+        "truncated": len(found) > limit,
+        "unreadable": unreadable,
+        "sync": last_sync(board),
+    }

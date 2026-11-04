@@ -20,12 +20,14 @@ from board_changes.change import (
     kind_of,
     newest,
     read,
+    touch,
     write,
 )
 from board_changes.diff import edited, outside
 from board_changes.gates import CODES, Check, Observed, gate
 from board_changes.repo import check_suite
-from board_changes.wip import refuse_full
+from board_changes.sync import last_sync
+from board_changes.wip import Limit, admit
 
 # Each input that adds a reference, the list it adds to, and the record types it accepts; none means any entry.
 ATTACHED: tuple[tuple[str, Literal["records", "tickets", "pulls"], tuple[str, ...]], ...] = (
@@ -151,6 +153,7 @@ def next_step(request: CallRequest) -> dict[str, object]:
         "route": change.get("route"),
         "gate": checks,
         "instruction": instruction_for(path, change, checks),
+        "sync": last_sync(board),
     }
 
 
@@ -174,7 +177,7 @@ def attach(request: CallRequest) -> dict[str, object]:
         value = asked.get(field)
         if isinstance(value, str):
             change[field] = value
-    write(board, [{"path": path, "expect": blob, "record": change}])
+    write(board, [{"path": path, "expect": blob, "record": touch(change)}])
     return {"path": path, "records": len(change.get("records", []))}
 
 
@@ -232,10 +235,11 @@ def advance(request: CallRequest) -> dict[str, object]:
             {"path": path, "phase": phase, "missing": [found["check"] for found in missing]},
         )
     change["phase"] = PHASES[PHASES.index(phase) + 1]
+    limit = None
     if change["phase"] == "build":
-        refuse_full(board, kind_of(change), path)
-    write(board, [{"path": path, "expect": blob, "record": change}])
-    return {"path": path, "from": phase, "to": change["phase"]}
+        limit = admit(board, path, change, over_limit("advance", path), request.input.get("over_limit"))
+    write(board, [{"path": path, "expect": blob, "record": touch(change)}])
+    return moved(path, phase, change, limit)
 
 
 def pause(request: CallRequest) -> dict[str, object]:
@@ -267,7 +271,20 @@ def resume(request: CallRequest) -> dict[str, object]:
             f"run `board call changes.next --path {path}` for its next step",
             {"path": path, "phase": change["phase"]},
         )
-    refuse_full(board, kind_of(change), path)
     change["phase"] = "build"
-    write(board, [{"path": path, "expect": blob, "record": change}])
-    return {"path": path, "from": "paused", "to": "build"}
+    limit = admit(board, path, change, over_limit("resume", path), request.input.get("over_limit"))
+    write(board, [{"path": path, "expect": blob, "record": touch(change)}])
+    return moved(path, "paused", change, limit)
+
+
+def over_limit(capability: str, path: str) -> str:
+    """The command that moves the change at `path` into build past the WIP limit, recording why."""
+    return f"board call changes.{capability} --path {path} --over_limit '<why>'"
+
+
+def moved(path: str, phase: str, change: Change, limit: Limit | None) -> dict[str, object]:
+    """The phase the change left and entered, and, when it went past the WIP limit, the warning."""
+    output: dict[str, object] = {"path": path, "from": phase, "to": change["phase"]}
+    if limit is not None:
+        output["warning"] = limit
+    return output

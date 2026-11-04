@@ -10,6 +10,7 @@ from board_changes.plan import brief, plan
 from board_changes.pr import pr
 from board_changes.prototype import prototype, verdict
 from board_changes.start import start
+from board_changes.sync import drop, sync
 
 CAPABILITIES = {
     "start": start,
@@ -24,6 +25,8 @@ CAPABILITIES = {
     "verdict": verdict,
     "pause": pause,
     "resume": resume,
+    "sync": sync,
+    "drop": drop,
 }
 
 

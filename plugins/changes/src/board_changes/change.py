@@ -1,6 +1,7 @@
 """The change record: its type, its phases, and reading and writing it through Board."""
 
 import json
+from datetime import UTC, datetime
 from typing import Any, Required, TypedDict, cast
 
 from board_plugin.board import Board, literal
@@ -10,6 +11,11 @@ PLUGIN = "changes"
 CHANGE_TYPE = "changes/change/v1"
 PLAN_TYPE = "changes/plan/v1"
 UNDERSTANDING_TYPE = "changes/understanding/v1"
+SYNC_TYPE = "changes/sync/v1"
+# Where `sync` records the day it last ran.
+SYNC_PATH = "/changes/sync"
+# The board's own changes; a mounted board's changes sit under the mount and are that board's to keep.
+OWN = "/changes/"
 # The record types a change's `tickets` and `pulls` may reference; the jira and github plugins own them.
 TICKET_TYPES = ("jira/issue/v1", "github/issue/v1")
 PULL_TYPES = ("github/pull/v1",)
@@ -46,6 +52,10 @@ Change = TypedDict(
         "state": str,
         "verdict": str,
         "verdict_artifact": str,
+        "merge_commit": str,
+        "dropped_reason": str,
+        "over_limit": str,
+        "touched": str,
     },
     total=False,
 )
@@ -76,6 +86,17 @@ def read(board: Board, path: str) -> tuple[Change, str]:
             {"path": path, "code": code},
         )
     return cast("Change", json.loads(body)), str(blob)
+
+
+def today() -> str:
+    """Today's UTC day, as `YYYY-MM-DD`."""
+    return datetime.now(UTC).date().isoformat()
+
+
+def touch(change: Change) -> Change:
+    """`change` with `touched` set to today, which keeps it active under the WIP limit."""
+    change["touched"] = today()
+    return change
 
 
 def kind_of(change: Change) -> str:

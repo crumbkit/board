@@ -222,10 +222,55 @@
             ],
             "title": "Check",
             "type": "object"
+          },
+          "LastSync": {
+            "additionalProperties": false,
+            "description": "The UTC day the last writing sync ran, and, when that is before today or never, the warning and its command.",
+            "properties": {
+              "code": {
+                "anyOf": [
+                  {
+                    "const": "changes::sync::stale",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Code"
+              },
+              "command": {
+                "title": "Command",
+                "type": "string"
+              },
+              "stale": {
+                "title": "Stale",
+                "type": "boolean"
+              },
+              "synced": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Synced"
+              }
+            },
+            "required": [
+              "synced",
+              "stale",
+              "code",
+              "command"
+            ],
+            "title": "LastSync",
+            "type": "object"
           }
         },
         "additionalProperties": false,
-        "description": "Where the change stands: its phase, route, the gate's checks and what to do now.",
+        "description": "Where the change stands: its phase, route, the gate's checks, what to do now and the last sync.",
         "properties": {
           "gate": {
             "items": {
@@ -270,6 +315,9 @@
               }
             ],
             "title": "Route"
+          },
+          "sync": {
+            "$ref": "#/$defs/LastSync"
           }
         },
         "required": [
@@ -277,7 +325,8 @@
           "phase",
           "route",
           "gate",
-          "instruction"
+          "instruction",
+          "sync"
         ],
         "title": "NextOutput",
         "type": "object"
@@ -432,11 +481,21 @@
       "annotations": {
         "readOnlyHint": false
       },
-      "description": "Move the change to its next phase when its gate passes and, into build, while fewer than three changes are in build; otherwise refuse and say what is missing.",
+      "description": "Move the change to its next phase when its gate passes; otherwise refuse and say what is missing. Into build, refuse while three active changes of its kind are in build for its mount, unless over_limit gives a reason, which the change records and the output warns about.",
+      "env": [
+        "BOARD_CHANGES_ACTIVE_DAYS"
+      ],
       "inputSchema": {
         "additionalProperties": false,
-        "description": "One change, by path.",
+        "description": "A change to move on, and why it may go past the WIP limit when that is reached.",
         "properties": {
+          "over_limit": {
+            "description": "Why the change moves into build although the WIP limit is reached; recorded on the change.",
+            "minLength": 1,
+            "title": "Over Limit",
+            "type": "string",
+            "x-board-prose": true
+          },
           "path": {
             "description": "The change's logical path, such as /changes/suite-timeout.",
             "format": "board-path",
@@ -448,13 +507,106 @@
         "required": [
           "path"
         ],
-        "title": "PathInput",
+        "title": "AdvanceInput",
         "type": "object"
       },
       "name": "advance",
       "outputSchema": {
+        "$defs": {
+          "Idle": {
+            "additionalProperties": false,
+            "description": "An idle change in build and what to do with it: sync, drop or resume, and the command.",
+            "properties": {
+              "action": {
+                "enum": [
+                  "sync",
+                  "drop",
+                  "resume"
+                ],
+                "title": "Action",
+                "type": "string"
+              },
+              "command": {
+                "title": "Command",
+                "type": "string"
+              },
+              "path": {
+                "title": "Path",
+                "type": "string"
+              }
+            },
+            "required": [
+              "path",
+              "action",
+              "command"
+            ],
+            "title": "Idle",
+            "type": "object"
+          },
+          "Limit": {
+            "additionalProperties": false,
+            "description": "The WIP limit a move into build went past: the active changes holding places, the idle ones, the override.",
+            "properties": {
+              "active": {
+                "items": {
+                  "type": "string"
+                },
+                "title": "Active",
+                "type": "array"
+              },
+              "active_days": {
+                "title": "Active Days",
+                "type": "integer"
+              },
+              "code": {
+                "const": "changes::wip::over_limit",
+                "title": "Code",
+                "type": "string"
+              },
+              "idle": {
+                "items": {
+                  "$ref": "#/$defs/Idle"
+                },
+                "title": "Idle",
+                "type": "array"
+              },
+              "kind": {
+                "enum": [
+                  "build",
+                  "prototype"
+                ],
+                "title": "Kind",
+                "type": "string"
+              },
+              "limit": {
+                "title": "Limit",
+                "type": "integer"
+              },
+              "mount": {
+                "title": "Mount",
+                "type": "string"
+              },
+              "override": {
+                "title": "Override",
+                "type": "string"
+              }
+            },
+            "required": [
+              "code",
+              "mount",
+              "kind",
+              "limit",
+              "active_days",
+              "active",
+              "idle",
+              "override"
+            ],
+            "title": "Limit",
+            "type": "object"
+          }
+        },
         "additionalProperties": false,
-        "description": "The phase the change left and the phase it entered.",
+        "description": "The phase the change left and the phase it entered, and the warning when it went past the WIP limit.",
         "properties": {
           "from": {
             "enum": [
@@ -485,6 +637,11 @@
             ],
             "title": "To",
             "type": "string"
+          },
+          "warning": {
+            "$ref": "#/$defs/Limit",
+            "default": null,
+            "title": "Warning"
           }
         },
         "required": [
@@ -501,7 +658,7 @@
       "annotations": {
         "readOnlyHint": true
       },
-      "description": "The changes that are not done or dropped, with their phase, route, task and kind; by kind, every prototype with its question, state, verdict and branch.",
+      "description": "The changes that are not done or dropped, with their phase, route, task and kind; by kind, every prototype with its question, state, verdict and branch; and the day of the last sync.",
       "inputSchema": {
         "additionalProperties": false,
         "description": "The changes that are not done or dropped, by path.",
@@ -529,6 +686,51 @@
       "name": "open",
       "outputSchema": {
         "$defs": {
+          "LastSync": {
+            "additionalProperties": false,
+            "description": "The UTC day the last writing sync ran, and, when that is before today or never, the warning and its command.",
+            "properties": {
+              "code": {
+                "anyOf": [
+                  {
+                    "const": "changes::sync::stale",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Code"
+              },
+              "command": {
+                "title": "Command",
+                "type": "string"
+              },
+              "stale": {
+                "title": "Stale",
+                "type": "boolean"
+              },
+              "synced": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Synced"
+              }
+            },
+            "required": [
+              "synced",
+              "stale",
+              "code",
+              "command"
+            ],
+            "title": "LastSync",
+            "type": "object"
+          },
           "OpenChange": {
             "additionalProperties": false,
             "description": "A change that is not done or dropped, its task and kind, and, for a prototype, what it asks and found.",
@@ -687,7 +889,7 @@
           }
         },
         "additionalProperties": false,
-        "description": "Open changes by path.\n\n`total` counts every open change and `truncated` says whether the limit\nleft some out. `unreadable` is how many were left out because Board marks\nthem degraded.",
+        "description": "Open changes by path.\n\n`total` counts every open change and `truncated` says whether the limit\nleft some out. `unreadable` is how many were left out because Board marks\nthem degraded. `sync` is the day of the last sync.",
         "properties": {
           "changes": {
             "items": {
@@ -695,6 +897,9 @@
             },
             "title": "Changes",
             "type": "array"
+          },
+          "sync": {
+            "$ref": "#/$defs/LastSync"
           },
           "total": {
             "title": "Total",
@@ -713,7 +918,8 @@
           "changes",
           "total",
           "truncated",
-          "unreadable"
+          "unreadable",
+          "sync"
         ],
         "title": "OpenOutput",
         "type": "object"
@@ -1082,7 +1288,10 @@
       "annotations": {
         "readOnlyHint": false
       },
-      "description": "Start a prototype that answers one question: add its task under a parent, write its change in build on branch proto/<name>, and return its brief. It never lands.",
+      "description": "Start a prototype that answers one question: add its task under a parent, write its change in build on branch proto/<name>, and return its brief. It never lands. Refused while three active prototypes explore for its mount, unless over_limit gives a reason.",
+      "env": [
+        "BOARD_CHANGES_ACTIVE_DAYS"
+      ],
       "inputSchema": {
         "additionalProperties": false,
         "description": "A prototype that answers one question: its task under `parent`, its change in build and its brief.",
@@ -1098,6 +1307,13 @@
             "description": "The change's name, so it lives at /changes/<name>; made from the title when left out.",
             "title": "Name",
             "type": "string"
+          },
+          "over_limit": {
+            "description": "Why the prototype starts although the WIP limit is reached; recorded on it.",
+            "minLength": 1,
+            "title": "Over Limit",
+            "type": "string",
+            "x-board-prose": true
           },
           "parent": {
             "description": "The task or project the prototype's task goes under, such as /repos/notes-personal/tasks/<slug>.md.",
@@ -1283,6 +1499,97 @@
             "title": "BriefUse",
             "type": "object"
           },
+          "Idle": {
+            "additionalProperties": false,
+            "description": "An idle change in build and what to do with it: sync, drop or resume, and the command.",
+            "properties": {
+              "action": {
+                "enum": [
+                  "sync",
+                  "drop",
+                  "resume"
+                ],
+                "title": "Action",
+                "type": "string"
+              },
+              "command": {
+                "title": "Command",
+                "type": "string"
+              },
+              "path": {
+                "title": "Path",
+                "type": "string"
+              }
+            },
+            "required": [
+              "path",
+              "action",
+              "command"
+            ],
+            "title": "Idle",
+            "type": "object"
+          },
+          "Limit": {
+            "additionalProperties": false,
+            "description": "The WIP limit a move into build went past: the active changes holding places, the idle ones, the override.",
+            "properties": {
+              "active": {
+                "items": {
+                  "type": "string"
+                },
+                "title": "Active",
+                "type": "array"
+              },
+              "active_days": {
+                "title": "Active Days",
+                "type": "integer"
+              },
+              "code": {
+                "const": "changes::wip::over_limit",
+                "title": "Code",
+                "type": "string"
+              },
+              "idle": {
+                "items": {
+                  "$ref": "#/$defs/Idle"
+                },
+                "title": "Idle",
+                "type": "array"
+              },
+              "kind": {
+                "enum": [
+                  "build",
+                  "prototype"
+                ],
+                "title": "Kind",
+                "type": "string"
+              },
+              "limit": {
+                "title": "Limit",
+                "type": "integer"
+              },
+              "mount": {
+                "title": "Mount",
+                "type": "string"
+              },
+              "override": {
+                "title": "Override",
+                "type": "string"
+              }
+            },
+            "required": [
+              "code",
+              "mount",
+              "kind",
+              "limit",
+              "active_days",
+              "active",
+              "idle",
+              "override"
+            ],
+            "title": "Limit",
+            "type": "object"
+          },
           "RulesCommand": {
             "additionalProperties": false,
             "description": "A command to run without a shell: `argv` is the program and its arguments, and `stdin` is its input.",
@@ -1324,6 +1631,11 @@
           "task": {
             "title": "Task",
             "type": "string"
+          },
+          "warning": {
+            "$ref": "#/$defs/Limit",
+            "default": null,
+            "title": "Warning"
           }
         },
         "required": [
@@ -1431,7 +1743,7 @@
       "annotations": {
         "readOnlyHint": false
       },
-      "description": "Move a change in build to paused, which frees its place under the cap of three changes in build.",
+      "description": "Move a change in build to paused, which frees its place under the WIP limit.",
       "inputSchema": {
         "additionalProperties": false,
         "description": "One change, by path.",
@@ -1452,8 +1764,101 @@
       },
       "name": "pause",
       "outputSchema": {
+        "$defs": {
+          "Idle": {
+            "additionalProperties": false,
+            "description": "An idle change in build and what to do with it: sync, drop or resume, and the command.",
+            "properties": {
+              "action": {
+                "enum": [
+                  "sync",
+                  "drop",
+                  "resume"
+                ],
+                "title": "Action",
+                "type": "string"
+              },
+              "command": {
+                "title": "Command",
+                "type": "string"
+              },
+              "path": {
+                "title": "Path",
+                "type": "string"
+              }
+            },
+            "required": [
+              "path",
+              "action",
+              "command"
+            ],
+            "title": "Idle",
+            "type": "object"
+          },
+          "Limit": {
+            "additionalProperties": false,
+            "description": "The WIP limit a move into build went past: the active changes holding places, the idle ones, the override.",
+            "properties": {
+              "active": {
+                "items": {
+                  "type": "string"
+                },
+                "title": "Active",
+                "type": "array"
+              },
+              "active_days": {
+                "title": "Active Days",
+                "type": "integer"
+              },
+              "code": {
+                "const": "changes::wip::over_limit",
+                "title": "Code",
+                "type": "string"
+              },
+              "idle": {
+                "items": {
+                  "$ref": "#/$defs/Idle"
+                },
+                "title": "Idle",
+                "type": "array"
+              },
+              "kind": {
+                "enum": [
+                  "build",
+                  "prototype"
+                ],
+                "title": "Kind",
+                "type": "string"
+              },
+              "limit": {
+                "title": "Limit",
+                "type": "integer"
+              },
+              "mount": {
+                "title": "Mount",
+                "type": "string"
+              },
+              "override": {
+                "title": "Override",
+                "type": "string"
+              }
+            },
+            "required": [
+              "code",
+              "mount",
+              "kind",
+              "limit",
+              "active_days",
+              "active",
+              "idle",
+              "override"
+            ],
+            "title": "Limit",
+            "type": "object"
+          }
+        },
         "additionalProperties": false,
-        "description": "The phase the change left and the phase it entered.",
+        "description": "The phase the change left and the phase it entered, and the warning when it went past the WIP limit.",
         "properties": {
           "from": {
             "enum": [
@@ -1484,6 +1889,11 @@
             ],
             "title": "To",
             "type": "string"
+          },
+          "warning": {
+            "$ref": "#/$defs/Limit",
+            "default": null,
+            "title": "Warning"
           }
         },
         "required": [
@@ -1500,11 +1910,21 @@
       "annotations": {
         "readOnlyHint": false
       },
-      "description": "Move a paused change back to build, refused while three changes of its kind hold places.",
+      "description": "Move a paused change back to build, refused while three active changes of its kind are in build for its mount, unless over_limit gives a reason.",
+      "env": [
+        "BOARD_CHANGES_ACTIVE_DAYS"
+      ],
       "inputSchema": {
         "additionalProperties": false,
-        "description": "One change, by path.",
+        "description": "A change to move on, and why it may go past the WIP limit when that is reached.",
         "properties": {
+          "over_limit": {
+            "description": "Why the change moves into build although the WIP limit is reached; recorded on the change.",
+            "minLength": 1,
+            "title": "Over Limit",
+            "type": "string",
+            "x-board-prose": true
+          },
           "path": {
             "description": "The change's logical path, such as /changes/suite-timeout.",
             "format": "board-path",
@@ -1516,13 +1936,106 @@
         "required": [
           "path"
         ],
-        "title": "PathInput",
+        "title": "AdvanceInput",
         "type": "object"
       },
       "name": "resume",
       "outputSchema": {
+        "$defs": {
+          "Idle": {
+            "additionalProperties": false,
+            "description": "An idle change in build and what to do with it: sync, drop or resume, and the command.",
+            "properties": {
+              "action": {
+                "enum": [
+                  "sync",
+                  "drop",
+                  "resume"
+                ],
+                "title": "Action",
+                "type": "string"
+              },
+              "command": {
+                "title": "Command",
+                "type": "string"
+              },
+              "path": {
+                "title": "Path",
+                "type": "string"
+              }
+            },
+            "required": [
+              "path",
+              "action",
+              "command"
+            ],
+            "title": "Idle",
+            "type": "object"
+          },
+          "Limit": {
+            "additionalProperties": false,
+            "description": "The WIP limit a move into build went past: the active changes holding places, the idle ones, the override.",
+            "properties": {
+              "active": {
+                "items": {
+                  "type": "string"
+                },
+                "title": "Active",
+                "type": "array"
+              },
+              "active_days": {
+                "title": "Active Days",
+                "type": "integer"
+              },
+              "code": {
+                "const": "changes::wip::over_limit",
+                "title": "Code",
+                "type": "string"
+              },
+              "idle": {
+                "items": {
+                  "$ref": "#/$defs/Idle"
+                },
+                "title": "Idle",
+                "type": "array"
+              },
+              "kind": {
+                "enum": [
+                  "build",
+                  "prototype"
+                ],
+                "title": "Kind",
+                "type": "string"
+              },
+              "limit": {
+                "title": "Limit",
+                "type": "integer"
+              },
+              "mount": {
+                "title": "Mount",
+                "type": "string"
+              },
+              "override": {
+                "title": "Override",
+                "type": "string"
+              }
+            },
+            "required": [
+              "code",
+              "mount",
+              "kind",
+              "limit",
+              "active_days",
+              "active",
+              "idle",
+              "override"
+            ],
+            "title": "Limit",
+            "type": "object"
+          }
+        },
         "additionalProperties": false,
-        "description": "The phase the change left and the phase it entered.",
+        "description": "The phase the change left and the phase it entered, and the warning when it went past the WIP limit.",
         "properties": {
           "from": {
             "enum": [
@@ -1553,6 +2066,11 @@
             ],
             "title": "To",
             "type": "string"
+          },
+          "warning": {
+            "$ref": "#/$defs/Limit",
+            "default": null,
+            "title": "Warning"
           }
         },
         "required": [
@@ -1561,6 +2079,267 @@
           "to"
         ],
         "title": "AdvanceOutput",
+        "type": "object"
+      }
+    },
+    {
+      "_meta": {},
+      "annotations": {
+        "readOnlyHint": false
+      },
+      "description": "Read each open change's GitHub pull request with gh and end the change when it closed: done, with its merge commit, when it merged and no attached task is open, else dropped with the reason. List the changes with no pull request and what to do with each. dry_run writes nothing; otherwise every move and the day of the sync are written in one commit, or nothing when gh fails.",
+      "env": [
+        "GH_TOKEN",
+        "GITHUB_TOKEN",
+        "GH_CONFIG_DIR"
+      ],
+      "inputSchema": {
+        "additionalProperties": false,
+        "description": "Whether sync only reports, and how many entries it lists.",
+        "properties": {
+          "dry_run": {
+            "description": "Report what sync would do, and write nothing.",
+            "title": "Dry Run",
+            "type": "boolean"
+          },
+          "limit": {
+            "description": "The most entries to list, 1 to 10,000; 100 when left out.",
+            "maximum": 10000,
+            "minimum": 1,
+            "title": "Limit",
+            "type": "integer"
+          }
+        },
+        "title": "SyncInput",
+        "type": "object"
+      },
+      "name": "sync",
+      "outputSchema": {
+        "$defs": {
+          "SyncEntry": {
+            "additionalProperties": false,
+            "description": "What sync found for one change, and the phase it moved it `to`, or why it left it in `code`.",
+            "properties": {
+              "code": {
+                "anyOf": [
+                  {
+                    "enum": [
+                      "changes::sync::owed",
+                      "changes::sync::pull_not_found",
+                      "changes::sync::not_github",
+                      "changes::sync::no_pull_request"
+                    ],
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Code"
+              },
+              "command": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Command"
+              },
+              "detail": {
+                "title": "Detail",
+                "type": "string"
+              },
+              "path": {
+                "title": "Path",
+                "type": "string"
+              },
+              "phase": {
+                "enum": [
+                  "plan",
+                  "build",
+                  "review",
+                  "land",
+                  "done",
+                  "dropped",
+                  "paused"
+                ],
+                "title": "Phase",
+                "type": "string"
+              },
+              "pull_request": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Pull Request"
+              },
+              "status": {
+                "enum": [
+                  "merged",
+                  "closed",
+                  "open",
+                  "owed",
+                  "not_found",
+                  "not_github",
+                  "no_pull_request"
+                ],
+                "title": "Status",
+                "type": "string"
+              },
+              "to": {
+                "anyOf": [
+                  {
+                    "enum": [
+                      "done",
+                      "dropped"
+                    ],
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "To"
+              }
+            },
+            "required": [
+              "path",
+              "phase",
+              "to",
+              "status",
+              "code",
+              "pull_request",
+              "detail",
+              "command"
+            ],
+            "title": "SyncEntry",
+            "type": "object"
+          }
+        },
+        "additionalProperties": false,
+        "description": "Each open change of the board's own and what sync did with it; `moved` counts those it ended.",
+        "properties": {
+          "changes": {
+            "items": {
+              "$ref": "#/$defs/SyncEntry"
+            },
+            "title": "Changes",
+            "type": "array"
+          },
+          "dry_run": {
+            "title": "Dry Run",
+            "type": "boolean"
+          },
+          "moved": {
+            "title": "Moved",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          },
+          "truncated": {
+            "title": "Truncated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "dry_run",
+          "changes",
+          "total",
+          "moved",
+          "truncated"
+        ],
+        "title": "SyncOutput",
+        "type": "object"
+      },
+      "timeout": 600
+    },
+    {
+      "_meta": {},
+      "annotations": {
+        "readOnlyHint": false
+      },
+      "description": "End a change that is not done or dropped in dropped, recording the reason, and name its task.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "description": "A change to end in dropped, and why.",
+        "properties": {
+          "path": {
+            "description": "The change's logical path, such as /changes/suite-timeout.",
+            "format": "board-path",
+            "pattern": "^/",
+            "title": "Path",
+            "type": "string"
+          },
+          "reason": {
+            "description": "Why the change is dropped, recorded on it.",
+            "minLength": 1,
+            "title": "Reason",
+            "type": "string",
+            "x-board-prose": true
+          }
+        },
+        "required": [
+          "path",
+          "reason"
+        ],
+        "title": "DropInput",
+        "type": "object"
+      },
+      "name": "drop",
+      "outputSchema": {
+        "additionalProperties": false,
+        "description": "The phase the change left for dropped, and its task, which stays open until it is closed.",
+        "properties": {
+          "from": {
+            "enum": [
+              "plan",
+              "build",
+              "review",
+              "land",
+              "done",
+              "dropped",
+              "paused"
+            ],
+            "title": "From",
+            "type": "string"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "task": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task"
+          },
+          "to": {
+            "const": "dropped",
+            "title": "To",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "from",
+          "to",
+          "task"
+        ],
+        "title": "DropOutput",
         "type": "object"
       }
     }
@@ -1582,7 +2361,8 @@
   "types": [
     "changes/change/v1",
     "changes/plan/v1",
-    "changes/understanding/v1"
+    "changes/understanding/v1",
+    "changes/sync/v1"
   ],
   "version": "0.1.0"
 }

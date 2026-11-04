@@ -31,7 +31,13 @@ sit in `/changes/<name>/`. Git history holds earlier phases.
 - `title`, `mount` and `phase` are required.
 - `phase`: `plan`, `build`, `review`, `land`, `done`, or `dropped` to end a
   change early. `paused` holds a change the keeper took out of `build`.
-- To drop a change, `board put` it with `phase` set to `dropped`.
+- `sync` sets `merge_commit`, the merge commit's GitHub URL, when it ends a
+  change whose pull request merged. `sync` and `drop` set `dropped_reason`.
+- `over_limit` is the reason given for the latest move into `build` past
+  the WIP limit.
+- `touched` is the UTC day, `YYYY-MM-DD`, on which `start`, `attach`,
+  `advance`, `plan`, `resume` or `prototype` last wrote the change. `sync`,
+  `drop`, `pause` and `verdict` leave it as it is.
 - `route`: `owner` (nobody else owns a CODEOWNERS pattern), `ask-first`
   (someone else does) or `unowned` (no CODEOWNERS pattern names anyone).
 - `mount`, `plan` and each of `records` are references, so `board check`
@@ -71,6 +77,13 @@ at `<stamp>.md`. The newest stamp is the change's current plan.
   the change will edit, in which `*` also matches `/`. A build change's plan
   always has them; a prototype's plan has none.
 
+`changes/sync/v1` at `/changes/sync.json` holds `synced`, the UTC day the
+last sync that wrote ran.
+
+```json
+{"$type": "changes/sync/v1", "synced": "2026-11-04"}
+```
+
 `changes/understanding/v1`, by convention at
 `/changes/<name>/understanding/<subject>`, records how the owner showed he
 understands a change's `data` or `ux`: the play-back and his corrections,
@@ -98,7 +111,12 @@ skill in `claude-code/skills/` runs the check.
   existing name (`changes::change::exists`) and a repository path holding
   nothing (`changes::mount::not_found`).
 - `next --path /changes/<name>`: read-only. The phase, each gate check as
-  `pass` or `missing` with a detail, and the instruction.
+  `pass` or `missing` with a detail, the instruction, and `sync`.
+- `sync` in the output of `open` and `next` is `{synced, stale, code,
+  command}`: the day in `/changes/sync.json`, or null; `stale` when that is
+  before today in UTC or null, with `code` `changes::sync::stale`; and
+  `command`, `board call changes.sync`. Neither runs gh, so both stay
+  read-only and work offline.
 - `attach --path /changes/<name> [--ref <path>] [--ticket <path>] [--pull <path>] [--task <path>] [--route <route>] [--head <sha>] [--issue <url>] [--pull-request <url>]`
   adds a reference once or sets the fields. `--task` sets `task`, and must
   be a `tasks/task/v2`. `--ref` adds to `records`,
@@ -111,9 +129,9 @@ skill in `claude-code/skills/` runs the check.
   `changes::ux::no_neighbours`, `changes::data::not_signed`,
   `changes::paths::outside_plan` for the review gate's `paths` check,
   `changes::prototype::never_lands` for a prototype's `verdict` check, else
-  `changes::gate::unmet`. Moving into `build` is also refused with
-  `changes::wip::full`, whose `building` lists them, while three other
-  build changes are in `build`. A paused change is refused with
+  `changes::gate::unmet`. Moving into `build` is also subject to the WIP
+  limit, below; `--over_limit '<why>'` goes past it. A paused change is
+  refused with
   `changes::phase::paused`. Leaving `done` or `dropped` is
   `changes::phase::final`, which points to `open` and `start`.
 - `pause --path /changes/<name>` moves a change in `build` to `paused`,
@@ -122,11 +140,41 @@ skill in `claude-code/skills/` runs the check.
   (`changes::pause::not_building`).
 - `resume --path /changes/<name>` moves a paused change back to `build`.
   It refuses a change that is not paused (`changes::resume::not_paused`),
-  and refuses with `changes::wip::full` while three changes of its kind
-  hold places.
+  and is subject to the WIP limit, which `--over_limit '<why>'` goes past.
+- `drop --path /changes/<name> --reason '<why>'` ends a change that is not
+  `done` or `dropped` in `dropped` and records the reason in
+  `dropped_reason`. It returns `path`, `from`, `to` and `task`, which stays
+  open; close it with `tasks.drop` or `tasks.done`. A change already ended
+  is refused with `changes::phase::final`.
+- `sync [--dry_run true] [--limit <n>]` reads the pull request of each
+  change of the board's own, under `/changes/`, in `build`, `review`,
+  `land` or `paused`, with `gh api repos/<owner>/<repo>/pulls/<number>`,
+  once each, for up to 20 seconds each. It returns `changes`, one entry for
+  each such change by path, at most 100 by default, with `total`, `moved`
+  and `truncated`. Each entry has `path`, `phase`, `to`, `status`, `code`,
+  `pull_request`, `detail` and `command`:
+
+  | `status` | When | What sync does | `code` |
+  | --- | --- | --- | --- |
+  | `merged` | GitHub says it merged | `to` is `done`, and `merge_commit` is set | none |
+  | `owed` | It merged, but a `tasks/task/v2` in `records` is not done or dropped | Leaves it; `detail` names the tasks | `changes::sync::owed` |
+  | `closed` | It closed without merging | `to` is `dropped`, and `dropped_reason` says so with the day it closed | none |
+  | `open` | It is open | Leaves it | none |
+  | `not_found` | GitHub answers 404 | Leaves it; `command` drops it | `changes::sync::pull_not_found` |
+  | `not_github` | `pull_request` is not a github.com pull request URL | Leaves it | `changes::sync::not_github` |
+  | `no_pull_request` | The change records no pull request | Leaves it; `command` resumes it when it has a `head`, else drops it | `changes::sync::no_pull_request` |
+
+  Every move, and `/changes/sync.json` with today's day, is written in one
+  commit. With `--dry_run true` nothing is written. When gh fails in any
+  other way, cannot run or runs past 20 seconds, sync refuses with
+  `changes::gh::failed` and writes nothing. A merged change moves to `done`
+  from any of those phases; `from` is in git history, so a change that
+  skipped review shows it. Sync never closes a change's own `task`. The
+  call receives `GH_TOKEN`, `GITHUB_TOKEN` and `GH_CONFIG_DIR` for gh, and
+  may run for 600 seconds.
 - `open [--kind build|prototype] [--limit <n>]`: read-only. Changes not
   `done` or `dropped`, by path, at most 100 by default, with `total`,
-  `truncated` and `unreadable`. Each names its `task` and `kind`, and a
+  `truncated`, `unreadable` and `sync`. Each names its `task` and `kind`, and a
   prototype also its `question`, `state`, `verdict`, `verdict_artifact` and
   `branch`. `--kind` keeps one kind; `--kind prototype` also lists the
   settled and abandoned prototypes, since their verdicts are what is looked
@@ -141,8 +189,8 @@ skill in `claude-code/skills/` runs the check.
   it behind for `tasks.drop`. Refuses an existing name
   (`changes::change::exists`), and a `--parent` that is not under a
   `tasks/` directory (`changes::task::not_a_task_path`), before it adds
-  anything. Refuses with `changes::wip::full` while three prototypes are
-  exploring.
+  anything. It is subject to the WIP limit for prototypes, which
+  `--over_limit '<why>'` goes past.
 - `verdict --path /changes/<name> --state settled|abandoned --verdict '<sentence>' [--artifact <url>]`
   records what a prototype found and ends it: `done` when settled,
   `dropped` when abandoned. It then closes the prototype's task through
@@ -199,11 +247,37 @@ skill in `claude-code/skills/` runs the check.
   it does not offer `controls.for-paths`, such as when the controls
   plugin is not enabled.
 
-The cap on work in progress counts build changes in `build`, at most
-three, and apart from them prototypes in `build`, at most three. A
-prototype in `build` is always `exploring`, because `verdict` moves it out
-of `build` in the same write that sets its state. A paused change holds no place. The cap reads every change in
-the board, so it is checked when a change moves into `build` and never
+The WIP limit counts, for each mount, the active build changes in
+`build`, at most three, and apart from them the active prototypes in
+`build`, at most three. A prototype in `build` is always `exploring`,
+because `verdict` moves it out of `build` in the same write that sets its
+state. A paused change holds no place. Only the board's own changes, under
+`/changes/`, count. A change is active when the newest of these days is
+within the last N days of today, in UTC, that day included:
+
+- `touched`;
+- the day its `head` was committed, by `git log --no-walk --ignore-missing`
+  in the repository its mount names;
+- the day a `runs/run/v1` in its `records` `finished`.
+
+N is 3, or `BOARD_CHANGES_ACTIVE_DAYS` when that is set. A value that is
+not a whole number of at least 1 is refused with
+`changes::wip::active_days`. A change with none of those days is idle.
+
+When three other active changes of the kind hold places for the mount,
+`advance` into `build`, `resume` and `prototype` refuse with
+`changes::wip::full`, unless `--over_limit '<why>'` is given. The refusal's
+fields, and with `--over_limit` the output's `warning`, hold `mount`,
+`kind`, `limit`, `active_days`, `active`, the changes holding places,
+`idle`, each idle change of the kind in `build` for the mount with its
+`action` and `command`, and `override`, the command with `--over_limit`.
+The action is `sync` for a change with a pull request, `resume`
+(`changes.next`) for one with a head, and `drop` otherwise. With
+`--over_limit` the call goes ahead, the change records the reason in
+`over_limit`, and `warning.code` is `changes::wip::over_limit`. A call
+without it is refused, so an agent reads the idle list and records why it
+goes past the limit, which a warning in a successful result would not make
+it do. The limit is checked when a change moves into `build` and never
 appears in a gate.
 
 A path that holds no change is `changes::change::not_found`; a degraded

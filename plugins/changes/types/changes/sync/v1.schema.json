@@ -1,0 +1,22 @@
+{
+  "additionalProperties": false,
+  "description": "`changes/sync/v1`, at `/changes/sync.json`: the UTC day of the last writing `changes.sync`.",
+  "properties": {
+    "$type": {
+      "const": "changes/sync/v1",
+      "description": "The record's type.",
+      "type": "string"
+    },
+    "synced": {
+      "description": "The UTC day the last writing sync ran.",
+      "format": "date",
+      "type": "string"
+    }
+  },
+  "required": [
+    "$type",
+    "synced"
+  ],
+  "title": "SyncRecord",
+  "type": "object"
+}
