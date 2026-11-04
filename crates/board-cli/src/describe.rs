@@ -1,19 +1,29 @@
 //! `board commands list`, `board schemas list` and `board schemas show`,
 //! which describe Board's own commands and the documents they print. They
-//! open no board, so they run in any directory.
+//! run in any directory, and in a board they also describe the capabilities
+//! of the plugins it enables.
 
+use std::ffi::OsString;
+use std::path::PathBuf;
+
+use board_model::Refusal;
 use clap::Subcommand;
+use crumbkit::Sink;
 use crumbkit::commands::{self, COMMANDS_LIST, CommandsList};
+use crumbkit::help::Guide;
 use crumbkit::schemas::{self, SCHEMAS_LIST, SCHEMAS_SHOW, SchemasList, SchemasShow};
 
+use crate::config::Context;
+use crate::graft;
 use crate::render::{GUIDE, Printer};
 use crate::report::Output;
 
 /// The examples of `board commands`.
 pub(crate) const COMMANDS_HELP: &str = "\
-`board commands list` reads no board, so it runs in any directory. It
-describes `call` but not the capabilities of each plugin; `board plugin find`
-lists those.
+`board commands list` runs in any directory. In a board it also lists
+`call <plugin>.<capability>` for each capability of each plugin the board
+enables, and notes on stderr a plugin it cannot read. `board plugin find`
+shows the capabilities' schemas.
 
 Examples:
   board commands list
@@ -53,25 +63,73 @@ Examples:
     Show(SchemasShow),
 }
 
-/// `board commands <command>`.
-pub(crate) fn commands(printer: Printer, command: &CommandsCommand) -> Output {
-    let CommandsCommand::List(args) = command;
-    let mut view = printer.view;
-    let listed = commands::list(&mut view, &GUIDE, args);
-    Printer { view }.kit(COMMANDS_LIST, listed)
+/// The guide and the parsed view of a listing command line `arguments`,
+/// with `call <plugin>.<capability>` for each capability of each plugin that
+/// the board at `start` enables, and a note for each enabled plugin it
+/// cannot read. Only `board commands` and `board schemas` read plugin
+/// manifests for it; outside a board they describe no capability, and
+/// their view stays `view`.
+pub(crate) fn grafted(
+    arguments: &[OsString],
+    context: &Context,
+    start: Result<PathBuf, Box<Refusal>>,
+    view: crumbkit::Output,
+) -> (Guide, Vec<String>, crumbkit::Output) {
+    let opened = start.and_then(|start| crate::run::open(context, &start));
+    let Ok((mut board, _)) = opened else {
+        return (GUIDE, Vec::new(), view);
+    };
+    board.build_in(context.built_in.0);
+    let (grafted, notes) = graft::enabled(&board, context.plugins.as_deref());
+    let guide = graft::guide(&grafted);
+    let (mut stdout, mut stderr) = (Vec::new(), Vec::new());
+    let sink = &mut Sink::new(&mut stdout, &mut stderr);
+    let command = graft::command(&grafted);
+    let parsed =
+        crumbkit::try_parse_to::<graft::Parsed, _, _, _, _>(sink, command, &guide, arguments);
+    // The line parsed against Board's own tree, so it parses with more leaves.
+    let view = parsed.map_or(view, |(_, view)| view);
+    (guide, notes, view)
 }
 
-/// `board schemas <command>`.
-pub(crate) fn schemas(printer: Printer, command: &SchemasCommand) -> Output {
+/// `board commands <command>`, with the commands of `guide` and `notes`
+/// on the plugins whose capabilities it leaves out.
+pub(crate) fn commands(
+    printer: Printer,
+    guide: &Guide,
+    command: &CommandsCommand,
+    notes: Vec<String>,
+) -> Output {
+    let CommandsCommand::List(args) = command;
+    let mut view = printer.view;
+    let listed = commands::list(&mut view, guide, args);
+    noted(Printer { view }.kit(COMMANDS_LIST, listed), notes)
+}
+
+/// `output` with each of `notes` on its own line of stderr.
+fn noted(mut output: Output, notes: Vec<String>) -> Output {
+    for note in notes {
+        output.stderr.extend(format!("note: {note}\n").into_bytes());
+    }
+    output
+}
+
+/// `board schemas <command>`, as [`commands()`] reads `guide` and `notes`.
+pub(crate) fn schemas(
+    printer: Printer,
+    guide: &Guide,
+    command: &SchemasCommand,
+    notes: Vec<String>,
+) -> Output {
     let mut view = printer.view;
     match command {
         SchemasCommand::List(args) => {
-            let listed = schemas::list(&mut view, &GUIDE, args);
-            Printer { view }.kit(SCHEMAS_LIST, listed)
+            let listed = schemas::list(&mut view, guide, args);
+            noted(Printer { view }.kit(SCHEMAS_LIST, listed), notes)
         }
         SchemasCommand::Show(args) => {
-            let shown = schemas::show(&mut view, &GUIDE, args);
-            Printer { view }.kit(SCHEMAS_SHOW, shown)
+            let shown = schemas::show(&mut view, guide, args);
+            noted(Printer { view }.kit(SCHEMAS_SHOW, shown), notes)
         }
     }
 }

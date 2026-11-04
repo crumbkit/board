@@ -118,6 +118,13 @@ has no `patternProperties`. A capability whose schema admits only flag
 properties never reads stdin, so a pipe nobody closes does not hold it up.
 Neither does a target nobody offers, which Board refuses whatever the input.
 `board call --capability <name>` takes no flags and always reads stdin.
+A string property's `enum` lists the flag's values in its help. In a board,
+`board commands list`, `board schemas list` and `board schemas show` also
+describe `call <plugin>.<capability>` for each capability of each plugin the
+board enables, with its flags. Its effects are read-only with `readOnlyHint`,
+additive with `destructiveHint: false`, and otherwise those of `call`. Only
+these commands read the manifests for it, and they skip a plugin they cannot
+read with a note on stderr.
 A flag whose property has `"format": "board-path"` may be given relative to
 the run's prefix, such as `--path docs` from inside a mounted repository;
 Board sends the absolute logical path (architecture.md, Typed references).

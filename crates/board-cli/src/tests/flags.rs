@@ -252,7 +252,7 @@ fn the_reserved_flags_are_the_long_flags_of_a_grafted_call() {
     let plugins = data.workdir().join("plugins");
     let grafted = crate::graft::find(&arguments, board_ops::BuiltIn::default(), Some(&plugins));
     assert!(grafted.is_some());
-    let mut command = crate::graft::command(grafted.as_ref());
+    let mut command = crate::graft::command(grafted.as_slice());
     command.build();
     let call = command.find_subcommand("call").unwrap();
     let leaf = call.find_subcommand("tasks.due").unwrap();
@@ -383,7 +383,7 @@ fn updating_a_parsed_command_line_replaces_its_graft() {
     let matches = |words: &[&str]| {
         let arguments: Vec<OsString> = words.iter().map(OsString::from).collect();
         let grafted = crate::graft::find(&arguments, board_ops::BuiltIn::default(), Some(&plugins));
-        crate::graft::command(grafted.as_ref()).get_matches_from(arguments)
+        crate::graft::command(grafted.as_slice()).get_matches_from(arguments)
     };
     let mut parsed = crate::graft::Parsed::from_arg_matches(&matches(&[
         "board",
