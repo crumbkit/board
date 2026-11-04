@@ -15,8 +15,5 @@ serde.workspace = true
 serde_json.workspace = true
 unicode-general-category.workspace = true
 
-[dev-dependencies]
-board-validate.workspace = true
-
 [lints]
 workspace = true

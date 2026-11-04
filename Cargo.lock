@@ -302,7 +302,6 @@ dependencies = [
  "board-model",
  "board-ops",
  "board-plugin",
- "board-validate",
  "regex",
  "schemars",
  "serde",
