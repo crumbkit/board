@@ -96,7 +96,7 @@ impl Host for Running {
         panic!("this test reads no settings")
     }
 
-    fn run(&self, run: &Run<'_>) -> Result<Exited, ProcessError> {
+    fn run_hiding(&self, run: &Run<'_>, _hidden: &[&str]) -> Result<Exited, ProcessError> {
         let ran = (run.program.to_owned(), run.arguments.to_vec());
         self.ran.borrow_mut().push(ran);
         assert_eq!(run.deadline.as_secs(), 20);
@@ -153,25 +153,82 @@ fn the_manifest_parses_as_a_built_in_one_and_describes_the_plugin_with_the_skill
     let names: Vec<&str> = (manifest.capabilities.iter())
         .map(|capability| capability.name.as_str())
         .collect();
-    assert_eq!(names, ["ref"]);
-    let declared = &super::manifest()["capabilities"][0]["env"];
     assert_eq!(
-        declared,
-        &json!(["GH_TOKEN", "GITHUB_TOKEN", "GH_CONFIG_DIR"])
+        names,
+        [
+            "ref",
+            "push",
+            "pr-create",
+            "pr-edit",
+            "comment",
+            "issue-create",
+            "install-hook",
+            "pre-push",
+            "covers"
+        ]
     );
+    let declared: Vec<(Value, Value)> = (super::manifest()["capabilities"].as_array())
+        .unwrap()
+        .iter()
+        .map(|capability| (capability["name"].clone(), capability["env"].clone()))
+        .collect();
+    let gh = json!(["GH_TOKEN", "GITHUB_TOKEN", "GH_CONFIG_DIR"]);
+    let send = json!([
+        "GH_TOKEN",
+        "GITHUB_TOKEN",
+        "GH_CONFIG_DIR",
+        "BOARD_CONTROLS_AGENT",
+        "ANTHROPIC_API_KEY",
+        "CLAUDE_CODE_OAUTH_TOKEN",
+        "SSH_AUTH_SOCK"
+    ]);
+    let pre_push = json!([
+        "GH_CONFIG_DIR",
+        "BOARD_CONTROLS_AGENT",
+        "ANTHROPIC_API_KEY",
+        "CLAUDE_CODE_OAUTH_TOKEN",
+        "SSH_AUTH_SOCK",
+        "BOARD_GITHUB_PUSH_URL",
+        "BOARD_GITHUB_PASSED",
+        "GIT_SSH_COMMAND",
+        "GIT_SSH"
+    ]);
+    let expected = [
+        ("ref", gh),
+        ("push", send.clone()),
+        ("pr-create", send.clone()),
+        ("pr-edit", send.clone()),
+        ("comment", send.clone()),
+        ("issue-create", send),
+        ("install-hook", Value::Null),
+        ("pre-push", pre_push),
+        ("covers", json!(["GIT_SSH_COMMAND", "GIT_SSH"])),
+    ]
+    .map(|(name, env)| (json!(name), env));
+    assert_eq!(declared, expected);
+    assert_eq!(super::manifest()["capabilities"][1]["timeout"], 2400);
     assert_eq!(super::manifest()["description"], skill_description());
 }
 
 #[test]
 fn every_input_property_carries_a_sentence_that_says_what_it_means() {
     let manifest = super::manifest();
-    let input = &manifest["capabilities"][0]["inputSchema"];
-    assert_eq!(input["additionalProperties"], false);
-    let properties = input["properties"].as_object().unwrap();
-    let names: Vec<&String> = properties.keys().collect();
-    assert_eq!(names, ["ref"]);
-    let sentence = properties["ref"]["description"].as_str().unwrap();
-    assert!(sentence.ends_with('.'), "{sentence}");
+    for capability in manifest["capabilities"].as_array().unwrap() {
+        let input = &capability["inputSchema"];
+        assert_eq!(
+            input["additionalProperties"], false,
+            "{}",
+            capability["name"]
+        );
+        for (name, property) in input["properties"].as_object().into_iter().flatten() {
+            let sentence = property["description"].as_str().unwrap_or_default();
+            assert!(
+                sentence.ends_with('.'),
+                "{}.{name}: {sentence}",
+                capability["name"]
+            );
+        }
+    }
 }
 
 #[test]
@@ -263,12 +320,13 @@ fn gh_api_fails_naming_gh_s_error_when_gh_fails_cannot_start_or_prints_no_object
 #[test]
 fn a_capability_the_plugin_does_not_offer_is_refused_and_ref_is_admitted() {
     let host = running(|| panic!("a held record runs nothing"));
-    let other: CapabilityName = "push".parse().unwrap();
+    let other: CapabilityName = "fetch".parse().unwrap();
     let refused = Github.call(&host, &other, json!({})).unwrap_err();
     assert_eq!(refused.code, "github::call::unknown_capability");
     assert_eq!(
         refused.message,
-        "github offers no capability push; it offers ref"
+        "github offers no capability fetch; it offers ref, push, pr-create, pr-edit, comment, \
+         issue-create, install-hook, pre-push, covers"
     );
     let held =
         json!({"$type": "github/issue/v1", "url": "https://github.com/octo/widgets/issues/7"});

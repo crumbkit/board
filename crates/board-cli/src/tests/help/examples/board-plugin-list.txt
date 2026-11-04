@@ -1,8 +1,8 @@
 ok artifacts 0.1.0 disabled offers list, import, record, set, agree
-ok boundary 0.1.0 disabled offers check, verify, record
+ok boundary 0.1.0 disabled offers check, covers, verify, record
 ok controls 0.1.0 disabled offers for-path, check, evaluate
 ok evals 0.1.0 disabled offers about, open
-ok github 0.1.0 disabled offers ref
+ok github 0.1.0 disabled offers ref, push, pr-create, pr-edit, comment, issue-create, install-hook, pre-push, covers
 ok jira 0.1.0 disabled offers ref
 ok plans 0.1.0 disabled offers open
 ok prompts 0.1.0 disabled offers get, list

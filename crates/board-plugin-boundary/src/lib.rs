@@ -5,6 +5,7 @@
 mod boundaries;
 mod check;
 mod content;
+mod covers;
 mod crossing;
 pub mod records;
 
@@ -61,12 +62,13 @@ impl Plugin for Boundary {
     ) -> Result<Value, PluginError> {
         match capability.as_str() {
             "check" => check::check(host, &input),
+            "covers" => covers::covers(host, &input),
             "verify" => crossing::verify(host, &input),
             "record" => crossing::record(host, &input),
             other => Err(PluginError {
                 code: "boundary::call::unknown_capability".to_owned(),
                 message: format!(
-                    "boundary offers no capability {other}; it offers check, verify and record"
+                    "boundary offers no capability {other}; it offers check, covers, verify and record"
                 ),
                 fields: Map::new(),
                 hint: None,
@@ -116,6 +118,14 @@ fn manifest() -> Value {
             "_meta": {},
             "timeout": CHECK_TIMEOUT,
             "env": AGENT_VARIABLES,
+        }, {
+            "name": "covers",
+            "description": "Name the boundaries that cover an action to a destination from a \
+                checkout, checking nothing and writing nothing.",
+            "inputSchema": schema_of::<covers::Input>(SchemaSettings::draft2020_12()),
+            "outputSchema": schema_of::<covers::Output>(settings()),
+            "annotations": {"readOnlyHint": true},
+            "_meta": {},
         }, {
             "name": "verify",
             "description": "Whether a passing crossing exists for a digest, or for given content.",

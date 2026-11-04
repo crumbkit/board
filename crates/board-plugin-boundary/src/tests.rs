@@ -33,7 +33,7 @@ fn the_manifest_parses_as_a_built_in_one_and_describes_the_plugin_with_the_skill
     let names: Vec<&str> = (manifest.capabilities.iter())
         .map(|capability| capability.name.as_str())
         .collect();
-    assert_eq!(names, ["check", "verify", "record"]);
+    assert_eq!(names, ["check", "covers", "verify", "record"]);
     let check = &manifest.capabilities[0];
     assert_eq!(
         check.timeout,

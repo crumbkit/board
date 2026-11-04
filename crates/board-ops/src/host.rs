@@ -101,8 +101,16 @@ pub trait Host {
     /// Runs `run` through board-plugin's process module with the settings'
     /// `environment` and nothing else, as the leader of its own process
     /// group. Every process still in the group is killed when it exits, past
-    /// its deadline or when Board is stopped.
+    /// its deadline or when Board is stopped. It is [`Host::run_hiding`]
+    /// hiding nothing, so a host that runs processes its own way, such as a
+    /// test's, overrides `run_hiding` alone.
     fn run(&self, run: &Run<'_>) -> Result<Exited, ProcessError> {
+        self.run_hiding(run, &[])
+    }
+    /// [`Host::run`] without the variables `hidden` names, such as model
+    /// credentials that only a nested call needs. The settings' other
+    /// variables are kept.
+    fn run_hiding(&self, run: &Run<'_>, hidden: &[&str]) -> Result<Exited, ProcessError> {
         let empty;
         let directory = if let Some(directory) = run.directory {
             directory
@@ -118,7 +126,23 @@ pub trait Host {
             input: run.input,
             deadline: run.deadline,
         };
-        board_plugin::child::run(&process, &self.settings().environment.0)
+        let added = run.added.iter().map(|(name, _)| *name);
+        let replaced: Vec<&str> = hidden.iter().copied().chain(added).collect();
+        let environment: Vec<_> = (self.settings().environment.0.iter())
+            .filter(|(name, _)| !replaced.contains(&name.as_str()))
+            .cloned()
+            .chain(
+                (run.added.iter()).map(|(name, value)| ((*name).to_owned(), OsString::from(value))),
+            )
+            .collect();
+        board_plugin::child::run(&process, &environment)
+    }
+    /// The logical path of `directory` at each mount of this board whose
+    /// repository holds it, as `board refs <directory>` would name it, or
+    /// `board::path::malformed` when one of them is too long to be a logical
+    /// path. A host with no board of its own, such as a test's, finds none.
+    fn places(&self, _directory: &Path) -> Result<Vec<LogicalPath>, Box<Refusal>> {
+        Ok(Vec::new())
     }
     /// The value cached under `digest` in `place`, a directory under the
     /// cache home such as `board-controls/judged`, or none when there is
@@ -157,6 +181,9 @@ pub struct Run<'a> {
     pub directory: Option<&'a Path>,
     pub input: &'a [u8],
     pub deadline: std::time::Duration,
+    /// Variables set for this process alone, over the settings' variables
+    /// of the same names, such as a result a hook the process runs reads.
+    pub added: &'a [(&'a str, &'a str)],
 }
 
 /// Another board a built-in plugin acts on, as its own `board` opens it.
@@ -332,6 +359,18 @@ impl Hosted<'_> {
     }
 }
 
+/// The logical path of each of `places`, or the refusal of the first whose
+/// path is too long to be one, so a caller never mistakes a dropped place
+/// for no place.
+fn prefixes(places: &[board_tree::Place]) -> Result<Vec<LogicalPath>, Box<Refusal>> {
+    (places.iter())
+        .map(|place| {
+            (place.prefix())
+                .map_err(|error| Box::new(Refusal::new(error.code(), &error, &Fields::default())))
+        })
+        .collect()
+}
+
 fn opened(error: &OpenError) -> Box<Refusal> {
     Box::new(Refusal::new(error.code(), error, &error.fields()))
 }
@@ -357,6 +396,12 @@ impl Host for Hosted<'_> {
         paths: &[LogicalPath],
     ) -> Result<Vec<Result<GetReport, ReadError>>, ReadError> {
         Ok(self.board.get_each(paths)?.collect())
+    }
+
+    fn places(&self, directory: &Path) -> Result<Vec<LogicalPath>, Box<Refusal>> {
+        let places = (self.board.places(directory, self.plugins.cache))
+            .map_err(|error| Box::new(Refusal::new(error.code(), &error, &Fields::default())))?;
+        prefixes(&places)
     }
 
     /// Opens the board again as the plugin, as a put through a mount opens

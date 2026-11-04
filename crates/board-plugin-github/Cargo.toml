@@ -9,12 +9,14 @@ publish.workspace = true
 board-model.workspace = true
 board-ops.workspace = true
 board-plugin.workspace = true
+regex.workspace = true
 schemars.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 
 [dev-dependencies]
 board-validate.workspace = true
+tempfile.workspace = true
 
 [lints]
 workspace = true
