@@ -3,6 +3,8 @@
 
 use std::cell::RefCell;
 use std::collections::VecDeque;
+use std::path::Path;
+use std::time::Duration;
 
 use board_model::{LogicalPath, Refusal};
 use board_ops::{
@@ -28,6 +30,9 @@ pub(crate) fn local(files: &[(&str, &str)]) -> Local {
     let scenario = Scenario::new();
     let config = r#"{"$type": "board/config/v1"}"#;
     scenario.write(".board/board.json", Item::File(config));
+    // A committing put needs an identity, which CI's git does not have.
+    let identity = "[user]\n\tname = Board\n\temail = board@example.com\n";
+    scenario.write(".git/config", Item::Appended(identity));
     for (path, text) in files {
         scenario.write(path, Item::File(text));
     }
@@ -113,16 +118,16 @@ pub(crate) struct Recorded {
 }
 
 impl crate::Clones for Recorded {
-    fn sync(&self, clone: &str, push: bool) -> Result<(), Box<Refusal>> {
-        let clone = clone.to_owned();
+    fn sync(&self, clone: &Path, push: bool, _: Duration) -> Result<(), Box<Refusal>> {
+        let clone = clone.display().to_string();
         self.calls.borrow_mut().push(Cloned::Sync { clone, push });
         self.syncs
             .borrow_mut()
             .pop_front()
             .map_or(Ok(()), |refusal| Err(Box::new(refusal)))
     }
-    fn mount_update(&self, root: &str) -> Result<String, Box<Refusal>> {
-        self.calls.borrow_mut().push(Cloned::Pin(root.to_owned()));
+    fn mount_update(&self, path: &LogicalPath, _: Duration) -> Result<String, Box<Refusal>> {
+        self.calls.borrow_mut().push(Cloned::Pin(path.to_string()));
         Ok(self.head.clone())
     }
 }

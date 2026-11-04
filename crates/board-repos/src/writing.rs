@@ -2,7 +2,10 @@
 //! the sync and pin that land it. plugins/notes/README.md says how a
 //! note's write is retried.
 
-use board_model::{Code, Refusal};
+use std::path::Path;
+use std::time::Duration;
+
+use board_model::{Code, Fields, LogicalPath, PathError, Refusal};
 use board_ops::{Host, PluginError, PutError};
 use serde_json::json;
 
@@ -22,24 +25,27 @@ pub const ATTEMPTS: usize = 3;
 /// there can still be made.
 const UNSYNCED: [Code; 2] = [Code::SyncConflict, Code::SyncEdited];
 
-/// What landing a write needs of Board beyond [`Host`]: `board sync` in a
-/// mount's clone, and `board mount update`. The notes and tasks ports
-/// give `Host::sync` and `Host::mount_update` here once the host has them.
+/// What landing a write needs of Board beyond what [`Host`] has on main:
+/// `board -C <clone> sync` and `board mount update`, each within a
+/// deadline. Each mirrors `Host::sync` on the host `Host::board` gives
+/// for the clone's directory, and `Host::mount_update`, with the error's
+/// refusal in place of the error.
 pub trait Clones {
     /// Syncs the clone at `clone` with its remote, pushing when `push`.
-    fn sync(&self, clone: &str, push: bool) -> Result<(), Box<Refusal>>;
-    /// Moves the pin of the mount at `root` to its clone's HEAD and
-    /// returns that commit.
-    fn mount_update(&self, root: &str) -> Result<String, Box<Refusal>>;
+    fn sync(&self, clone: &Path, push: bool, deadline: Duration) -> Result<(), Box<Refusal>>;
+    /// Moves the mount at `path` to its clone's HEAD and returns that
+    /// commit.
+    fn mount_update(&self, path: &LogicalPath, deadline: Duration) -> Result<String, Box<Refusal>>;
 }
 
-/// What a write reaches: the host, the clones, and the plugin whose codes
-/// it gives.
+/// What a write reaches: the host, the clones, the plugin whose codes it
+/// gives, and the deadline of each sync and pin.
 #[derive(Clone, Copy)]
 pub struct Writer<'a> {
     pub host: &'a dyn Host,
     pub clones: &'a dyn Clones,
     pub plugin: &'a str,
+    pub deadline: Duration,
 }
 
 impl std::fmt::Debug for Writer<'_> {
@@ -47,6 +53,7 @@ impl std::fmt::Debug for Writer<'_> {
         formatter
             .debug_struct("Writer")
             .field("plugin", &self.plugin)
+            .field("deadline", &self.deadline)
             .finish_non_exhaustive()
     }
 }
@@ -65,36 +72,36 @@ impl Repo {
     /// that left HEAD where it was. Any other refusal is
     /// `<plugin>::board::refused`. The board's own tree is never synced,
     /// so a caller does not sync it.
-    pub fn sync(
-        &self,
-        clones: &dyn Clones,
-        plugin: &str,
-        push: bool,
-    ) -> Result<Option<Code>, PluginError> {
+    pub fn sync(&self, writer: Writer<'_>, push: bool) -> Result<Option<Code>, PluginError> {
         let Some(clone) = &self.clone else {
             return Ok(None);
         };
-        match clones.sync(clone, push) {
+        match (writer.clones).sync(Path::new(clone), push, writer.deadline) {
             Ok(()) => Ok(None),
             Err(refused) => match UNSYNCED
                 .iter()
                 .find(|code| code.as_str() == refused.code.as_str())
             {
                 Some(code) => Ok(Some(*code)),
-                None => Err(PluginError::board_refused(plugin, "sync", &refused)),
+                None => Err(PluginError::board_refused(writer.plugin, "sync", &refused)),
             },
         }
     }
 
     /// Moves the mount's pin to the clone's HEAD and returns that commit;
     /// none for the board's own tree.
-    pub fn pin(&self, clones: &dyn Clones, plugin: &str) -> Result<Option<String>, PluginError> {
+    pub fn pin(&self, writer: Writer<'_>) -> Result<Option<String>, PluginError> {
         if self.clone.is_none() {
             return Ok(None);
         }
-        (clones.mount_update(&self.root))
+        let refused =
+            |refused: &Refusal| PluginError::board_refused(writer.plugin, "mount update", refused);
+        let path: LogicalPath = (self.root.parse()).map_err(|error: PathError| {
+            refused(&Refusal::new(error.code(), &error, &Fields::default()))
+        })?;
+        (writer.clones.mount_update(&path, writer.deadline))
             .map(Some)
-            .map_err(|refused| PluginError::board_refused(plugin, "mount update", &refused))
+            .map_err(|error| refused(&error))
     }
 }
 
@@ -109,11 +116,7 @@ pub fn create(
     names: usize,
     busy: &str,
 ) -> Result<(String, Option<String>), PluginError> {
-    let Writer {
-        host,
-        clones,
-        plugin,
-    } = writer;
+    let Writer { host, plugin, .. } = writer;
     let (mut number, mut moved) = (1, 0);
     while number <= names {
         let path = if number == 1 {
@@ -121,7 +124,7 @@ pub fn create(
         } else {
             format!("{stem}-{number}.md")
         };
-        repo.pin(clones, plugin)?;
+        repo.pin(writer)?;
         let error = match repo.write(host, &path, text, None) {
             Ok(commit) => return Ok((path, commit)),
             Err(error) => error,
@@ -154,11 +157,10 @@ pub fn create(
 /// `<plugin>::repo::not_synced` for the board's own tree, never synced. A
 /// failed push after a write is not retried, since the file is committed.
 pub fn push(writer: Writer<'_>, repo: &Repo) -> Option<String> {
-    let Writer { clones, plugin, .. } = writer;
     if repo.clone.is_none() {
-        return Some(format!("{plugin}::repo::not_synced"));
+        return Some(format!("{}::repo::not_synced", writer.plugin));
     }
-    match repo.sync(clones, plugin, true) {
+    match repo.sync(writer, true) {
         Ok(code) => code.map(|code| code.as_str().to_owned()),
         Err(error) => Some(
             (error.fields.get("code").and_then(|code| code.as_str()))
@@ -182,7 +184,7 @@ pub fn landed(
     let Some(commit) = commit else {
         return Ok((None, unpushed));
     };
-    let pinned = repo.pin(writer.clones, writer.plugin)?;
+    let pinned = repo.pin(writer)?;
     Ok((Some(pinned.unwrap_or(commit)), unpushed))
 }
 

@@ -29,6 +29,7 @@ fn writer<'a>(host: &'a Local, clones: &'a Recorded) -> Writer<'a> {
         host,
         clones,
         plugin: "tasks",
+        deadline: std::time::Duration::from_secs(10),
     }
 }
 
@@ -238,14 +239,16 @@ fn a_sync_refused_with_head_left_in_place_gives_its_code_and_any_other_refusal_i
         .syncs
         .borrow_mut()
         .extend([refusal(Code::SyncEdited), refusal(Code::SyncFailed)]);
+    let host = local(&[]);
+    let writer = writer(&host, &clones);
     assert_eq!(
-        mounted().sync(&clones, "notes", false).unwrap(),
+        mounted().sync(writer, false).unwrap(),
         Some(Code::SyncEdited)
     );
-    let refused = mounted().sync(&clones, "notes", false).unwrap_err();
-    assert_eq!(refused.code, "notes::board::refused");
+    let refused = mounted().sync(writer, false).unwrap_err();
+    assert_eq!(refused.code, "tasks::board::refused");
     assert_eq!(refused.fields["code"], json!("board::sync::failed"));
-    assert_eq!(mounted().sync(&clones, "notes", false).unwrap(), None);
+    assert_eq!(mounted().sync(writer, false).unwrap(), None);
 }
 
 #[test]
