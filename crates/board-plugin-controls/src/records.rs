@@ -1,11 +1,11 @@
-//! The record type the plugin ships, and the rule its outputs repeat. The
-//! schema is generated from these structs; the file under `types/` is that
-//! schema, committed. Every property has a title, as the Python plugin's
-//! pydantic shapes generated it.
+//! The record types the plugin ships, and the rule its outputs repeat. The
+//! schemas are generated from these structs; the files under `types/` are
+//! those schemas, committed. Every property of a control has a title, as the
+//! Python plugin's pydantic shapes generated it.
 
 use std::borrow::Cow;
 
-use board_plugin::shape::{Record, Ref, Tag};
+use board_plugin::shape::{Date, Prose, Record, Ref, Tag, Url};
 use schemars::{JsonSchema, Schema, SchemaGenerator};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -22,9 +22,9 @@ pub struct ControlRecord {
     #[serde(rename = "$type")]
     #[schemars(title = "$Type")]
     pub tag: Tag<Self>,
-    #[schemars(title = "Requirement")]
+    #[schemars(title = "Requirement", with = "Prose")]
     pub requirement: String,
-    #[schemars(title = "Purpose")]
+    #[schemars(title = "Purpose", with = "Prose")]
     pub purpose: String,
     // A field left out admits no null: `type` replaces Option's `["array", "null"]`.
     #[schemars(title = "Applies To", extend("type" = "array"))]
@@ -32,10 +32,86 @@ pub struct ControlRecord {
     #[schemars(title = "Paths", extend("type" = "array"))]
     pub paths: Option<Vec<String>>,
     pub rule: Option<Rule>,
+    /// `standing`, the default, for a rule that stays until it is changed,
+    /// or `obligation` for work a landed change left owed, which the work
+    /// that discharges it deletes.
+    #[schemars(title = "Kind")]
+    pub kind: Option<Kind>,
+    /// When to show the control: `start` at session start, `edit` before
+    /// the first edit of a file it covers, or `failing` only when `check`
+    /// reports it failing. Left out, an obligation shows at `start`, a
+    /// control with a budget when `failing`, and any other at `edit`.
+    #[schemars(title = "Show")]
+    pub show: Option<ShowAt>,
+    /// What justifies the control, such as a source note
+    /// (`controls/source/v1`) or an eval.
+    #[schemars(title = "Sources")]
+    pub sources: Option<Vec<Ref>>,
 }
 
 impl Record for ControlRecord {
     const TYPE: &'static str = "controls/control/v1";
+}
+
+/// `controls/source/v1`: an outside source a control cites through its
+/// `sources`, so one note serves every control that cites it.
+#[derive(Debug, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct SourceRecord {
+    /// The record's type.
+    #[serde(rename = "$type")]
+    pub tag: Tag<Self>,
+    /// Where the source is published.
+    #[schemars(with = "Url")]
+    pub url: String,
+    /// The source's title.
+    #[schemars(with = "Prose")]
+    pub title: String,
+    /// The day the source was read.
+    #[schemars(with = "Date")]
+    pub read_on: String,
+    /// Why the source matters to the controls that cite it.
+    #[schemars(with = "Prose")]
+    pub why: String,
+}
+
+impl Record for SourceRecord {
+    const TYPE: &'static str = "controls/source/v1";
+}
+
+// Whether a control stays until changed or records owed work. No doc
+// comment, which would describe the inlined enum in the committed schema.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+#[schemars(inline)]
+pub enum Kind {
+    #[default]
+    Standing,
+    Obligation,
+}
+
+// When the mod shows a control.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+#[schemars(inline)]
+pub enum ShowAt {
+    Start,
+    Edit,
+    Failing,
+}
+
+impl ShowAt {
+    /// `show` as the record sets it, or, left out, `start` for an
+    /// obligation, `failing` for a control with a budget, and `edit` for
+    /// any other.
+    pub fn effective(show: Option<Self>, kind: Kind, budget: bool) -> Self {
+        match (show, kind, budget) {
+            (Some(show), _, _) => show,
+            (None, Kind::Obligation, _) => Self::Start,
+            (None, Kind::Standing, true) => Self::Failing,
+            (None, Kind::Standing, false) => Self::Edit,
+        }
+    }
 }
 
 /// What a program checks, told apart by the fields it holds.

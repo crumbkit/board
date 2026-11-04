@@ -279,9 +279,10 @@ Examples:
     #[command(
         subcommand,
         after_help = "\
-A mount is a record of `$type` board/mount/v1 that holds `repo`, `follow` and
-`commit`. Board reads the mounted repository at `commit`; `mount update`
-advances `commit` to the commit `follow` names.
+A mount holds `repo`, `follow` and `commit`: a record of `$type`
+board/mount/v1, or the `checkout` of a board/repo/v1 record, which also names
+the repository's `remote`. Board reads the mounted repository at `commit`;
+`mount update` advances `commit` to the commit `follow` names.
 
 Examples:
   board mount update /vendor/lib"

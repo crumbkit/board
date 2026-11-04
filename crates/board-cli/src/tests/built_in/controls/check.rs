@@ -97,6 +97,8 @@ fn check_measures_each_budget_control_over_its_files() {
                 "max": 3,
                 "used": 3,
                 "files": ["/AGENTS.md"],
+                "kind": "standing",
+                "show": "failing",
             },
             {
                 "control": "/controls/docs",
@@ -105,6 +107,8 @@ fn check_measures_each_budget_control_over_its_files() {
                 "max": 12,
                 "used": 12,
                 "files": ["/docs/a.md", "/docs/b.md"],
+                "kind": "standing",
+                "show": "failing",
             },
         ])
     );
@@ -366,6 +370,8 @@ fn a_path_reports_the_controls_under_it_and_leaves_out_their_twins_elsewhere() {
             "purpose": "A test.",
             "paths": [],
             "files": 1,
+            "kind": "standing",
+            "show": "edit",
         }])
     );
     assert_eq!(each(&output, "used"), [json!(2)], "the words in docs/a.md");
@@ -590,6 +596,8 @@ fn a_per_file_control_passes_when_each_file_is_within_it_and_a_total_one_sums_th
             "max": WORDS,
             "used": WORDS,
             "files": ["/docs/a.md", "/docs/b.md"],
+            "kind": "standing",
+            "show": "failing",
             "per": "file",
             "largest": "/docs/a.md",
             "over": [],
@@ -672,7 +680,16 @@ fn a_control_naming_per_total_measures_exactly_as_one_naming_no_per() {
     keys.sort_unstable();
     assert_eq!(
         keys,
-        ["budget", "control", "files", "max", "requirement", "used"]
+        [
+            "budget",
+            "control",
+            "files",
+            "kind",
+            "max",
+            "requirement",
+            "show",
+            "used"
+        ]
     );
 }
 

@@ -10,6 +10,7 @@ use std::io::{self, ErrorKind};
 use std::path::{Path, PathBuf};
 
 use board_model::{Code, Fields, LogicalPath, PathError, PluginName, Refusal};
+use board_tree::{Matched, Place};
 use serde::Deserialize;
 
 use crate::{Asker, Board, OpenError, Signing};
@@ -149,8 +150,9 @@ pub fn asker(
 }
 
 /// The board holding `start`, or else the one known board with a mount
-/// whose repository holds `start`, and `start`'s logical path in that
-/// board, if it has one. `known` reads the known boards, only when no board
+/// whose repository holds `start`, or with a repo record whose `remote` is
+/// that repository's origin, and `start`'s logical path in that board, if
+/// it has one. `known` reads the known boards, only when no board
 /// holds `start` and `start` is in a git repository, since outside one no
 /// mount can hold it.
 pub fn open(
@@ -235,8 +237,8 @@ fn shown(file: Option<&Path>) -> String {
     })
 }
 
-/// The one known board with a mount whose repository holds `start`, and
-/// `start`'s logical path in it. Otherwise `lost`, the refusal when no board
+/// The one known board with a mount whose repository holds `start`, or
+/// else a repo record for it, and `start`'s logical path in it. Otherwise `lost`, the refusal when no board
 /// holds `start`, says which known boards were read and which were passed
 /// over because they could not be opened or refreshed. A board listed under
 /// several spellings counts once.
@@ -250,7 +252,7 @@ fn find(
     let file = known.file.as_deref();
     let listed = &known.known.boards;
     let shown = shown(file);
-    let (mut seen, mut skipped, mut named, mut chosen) = (HashSet::new(), vec![], vec![], None);
+    let (mut seen, mut skipped, mut matches) = (HashSet::new(), vec![], vec![]);
     for root in listed.iter().map(|root| against(file, root)) {
         let opened = Board::open(&root, home.map(Path::to_path_buf));
         let found = opened.map(|board| (board.places(start, cache), board));
@@ -261,23 +263,36 @@ fn find(
         if !seen.insert(board.repository().path().to_path_buf()) {
             continue;
         }
-        let at = |place: &board_tree::Place| match place.prefix() {
+        if !places.is_empty() {
+            matches.push((root, board, places));
+        }
+    }
+    // A mount of the clone in any known board outranks a repo record that
+    // another board holds for its remote.
+    let mounted = (matches.iter())
+        .any(|(_, _, places)| places.iter().any(|place| place.matched == Matched::Mount));
+    let mut named = Vec::new();
+    let mut chosen = None;
+    for (root, board, places) in matches {
+        let places: Vec<Place> = (places.into_iter())
+            .filter(|place| !mounted || place.matched == Matched::Mount)
+            .collect();
+        named.extend(places.iter().map(|place| match place.prefix() {
             Ok(prefix) => format!("{} at {prefix}", root.display()),
             Err(error) => format!("{} at a mount where {error}", root.display()),
-        };
-        named.extend(places.iter().map(at));
+        }));
         if let Some(place) = places.first() {
             chosen = Some((board, place.prefix()));
         }
     }
     if named.len() > 1 {
         let message = format!(
-            "{} is in a repository that the known boards mount more than once: {}",
+            "{} is in a repository that the known boards hold more than one mount or repo record for: {}",
             start.display(),
             named.join(", ")
         );
         let hint = format!(
-            "choose a board with `board -C <dir> check`, naming one of the boards listed, or leave one mount of this repository among the boards in `{shown}`"
+            "choose a board with `board -C <dir> check`, naming one of the boards listed, or leave one mount or repo record of this repository among the boards in `{shown}`"
         );
         let refusal = Refusal::new(Code::ConfigAmbiguous, message, &Fields::default());
         return Err(Box::new(refusal.with_hint(hint)));
@@ -302,11 +317,11 @@ fn unmounted(lost: Refusal, shown: &str, none: bool, skipped: &[String]) -> Refu
         ),
     };
     let message = format!(
-        "{}; the known boards in `{shown}` were read and none mounts this repository{passed}",
+        "{}; the known boards in `{shown}` were read and none has a mount or repo record for this repository{passed}",
         lost.message
     );
     Refusal { message, ..lost }.with_hint(format!(
-        "put a `board/mount/v1` record whose `repo` is this repository into one of the known boards with `board -C <board> put <path>`, or list in `{shown}` the board that mounts it"
+        "put a `board/repo/v1` record whose `remote` is this repository's origin, as `owner/name` for GitHub, into one of the known boards with `board -C <board> put /repos/<name>`, or list in `{shown}` the board that has one"
     ))
 }
 

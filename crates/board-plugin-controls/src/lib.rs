@@ -14,7 +14,7 @@ use board_plugin::shape::{Record, schema_of};
 use schemars::generate::SchemaSettings;
 use serde_json::{Map, Value, json};
 
-use records::ControlRecord;
+use records::{ControlRecord, SourceRecord};
 
 #[derive(Clone, Copy, Debug)]
 pub struct Controls;
@@ -27,9 +27,16 @@ impl Plugin for Controls {
     }
 
     fn schemas(&self) -> Vec<(RecordType, Value)> {
-        let name = (ControlRecord::TYPE.parse())
-            .expect("ControlRecord's TYPE is a record type; a test parses it");
-        vec![(name, record_schema())]
+        let schema = |name: &str, schema: Value| {
+            let name =
+                (name.parse()).expect("each record's TYPE is a record type; a test parses it");
+            (name, schema)
+        };
+        let settings = SchemaSettings::draft2020_12;
+        vec![
+            schema(ControlRecord::TYPE, schema_of::<ControlRecord>(settings())),
+            schema(SourceRecord::TYPE, schema_of::<SourceRecord>(settings())),
+        ]
     }
 
     fn call(
@@ -52,11 +59,6 @@ impl Plugin for Controls {
             }),
         }
     }
-}
-
-/// The schema of `controls/control/v1`.
-fn record_schema() -> Value {
-    schema_of::<ControlRecord>(SchemaSettings::draft2020_12())
 }
 
 /// `path` as a logical path, or the refusal `board refs` gives a path it
@@ -82,7 +84,7 @@ fn manifest() -> Value {
             `board -C <board> call controls.evaluate` checks text, such as a draft, against the rules of \
             the controls it names before the text is written. SKILL.md and README.md in the plugin's directory say more.",
         "metadata": {"area": "governance"},
-        "types": [ControlRecord::TYPE],
+        "types": [ControlRecord::TYPE, SourceRecord::TYPE],
         "capabilities": [{
             "name": "for-path",
             "description": "The controls that apply to a path.",

@@ -250,6 +250,10 @@ struct Agent {
 }
 
 impl Agent {
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "a test writes the stub agent's script"
+    )]
     fn new() -> Self {
         use std::os::unix::fs::PermissionsExt as _;
         let agent = Self {
@@ -278,6 +282,10 @@ impl Agent {
     }
 
     /// Makes the agent answer with `answer`.
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "a test writes what the stub agent answers"
+    )]
     fn says(&self, answer: &str) {
         std::fs::write(self.directory.path().join("answer.txt"), answer).unwrap();
     }
@@ -402,6 +410,10 @@ fn an_agent_that_does_not_name_its_model_judges_every_time_and_one_that_does_is_
 }
 
 #[test]
+#[expect(
+    clippy::disallowed_methods,
+    reason = "a test deletes the verdict cache"
+)]
 fn a_deleted_cache_is_rebuilt_by_judging_again() {
     let (board, agent) = (judged(), Agent::new());
     let parts = json!({"pr.body": "We measured it."});

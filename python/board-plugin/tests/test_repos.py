@@ -1,5 +1,6 @@
 """How a remote is shown, which GitHub repositories a `notes/repo/v1` record covers, and the repo listing."""
 
+import json
 import subprocess
 from pathlib import Path
 
@@ -8,18 +9,11 @@ import pytest
 from board_plugin.protocol import PluginError
 from board_plugin.repos import caller_origin, covers, parsed, record, shown_remote
 
+# The origin URLs and their stored forms, which board-model's `shown_remote` also reads, so the two agree.
+REMOTES: list[dict[str, str]] = json.loads((Path(__file__).parent / "remotes.json").read_text())
 
-@pytest.mark.parametrize(
-    ("remote", "shown"),
-    [
-        ("https://x-access-token:SECRET@github.com/crumbkit/board.git", "crumbkit/board"),
-        ("https://user:SECRET@gitlab.com/example-org/home.git", "https://gitlab.com/example-org/home.git"),
-        ("https://user:p@ss@gitlab.com/example-org/home.git", "https://gitlab.com/example-org/home.git"),
-        ("ssh://git@gitlab.com/example-org/home.git", "ssh://gitlab.com/example-org/home.git"),
-        ("git@gitlab.com:example-org/home.git", "gitlab.com:example-org/home.git"),
-        ("/Users/me/Code/home", "/Users/me/Code/home"),
-    ],
-)
+
+@pytest.mark.parametrize(("remote", "shown"), [(row["remote"], row["stored"]) for row in REMOTES])
 def test_a_remote_is_shown_as_owner_and_name_on_github_and_elsewhere_without_its_user(remote: str, shown: str) -> None:
     assert shown_remote(remote) == shown
 
