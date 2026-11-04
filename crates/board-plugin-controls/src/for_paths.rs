@@ -32,8 +32,8 @@ pub(crate) struct Output {
     controls: Vec<Applying>,
 }
 
-/// A control, its requirement's first sentence cut to 25 words, and the
-/// asked paths that reached it, in the order they were
+/// A control, its summary, or else its requirement's first sentence cut
+/// to 25 words, and the asked paths that reached it, in the order they were
 /// asked.
 #[derive(Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -81,7 +81,7 @@ pub(crate) fn for_paths(host: &dyn Host, input: &Value) -> Result<Value, PluginE
             let control = controls.remove(&logical)?;
             Some(Applying {
                 control: logical,
-                summary: summary(&control.requirement),
+                summary: (control.summary).unwrap_or_else(|| summary(&control.requirement)),
                 matched,
             })
         })

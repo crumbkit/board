@@ -196,15 +196,15 @@ fn a_pattern_into_a_mount_reaches_the_controls_of_the_mounted_files() {
 }
 
 #[test]
-fn each_control_carries_its_requirements_first_sentence_as_its_summary() {
+fn each_control_carries_its_summary_or_else_its_requirements_first_sentence() {
     let board = board();
     board
         .write("docs/a.md", "A.\n")
         .write(
             "controls/long.json",
             &control(
-                "Say what exists. Say it once.",
-                &json!({"paths": ["docs/*"]}),
+                "Say what exists, and say it once.",
+                &json!({"paths": ["docs/*"], "summary": "Say what exists."}),
             ),
         )
         .write(

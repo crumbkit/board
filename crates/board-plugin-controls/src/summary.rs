@@ -1,11 +1,10 @@
 //! A control's summary when its record gives none: the first sentence of
-//! its requirement, cut to fit one line.
+//! its requirement, cut to fit the shared `Summary` shape.
 
-/// The most words a summary holds.
-const SUMMARY_WORDS: usize = 25;
+use board_plugin::shape::SUMMARY_WORDS;
 
 /// The first sentence of `text`, outside inline code, on one line and cut to
-/// 25 words, the last of them ending in `…` when it was cut.
+/// [`SUMMARY_WORDS`] words, the last of them ending in `…` when it was cut.
 pub(crate) fn summary(text: &str) -> String {
     let mut code = false;
     let mut end = text.len();

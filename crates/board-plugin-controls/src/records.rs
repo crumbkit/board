@@ -5,7 +5,7 @@
 
 use std::borrow::Cow;
 
-use board_plugin::shape::{Date, Prose, Record, Ref, Tag, Url};
+use board_plugin::shape::{Date, Prose, Record, Ref, Summary, Tag, Url};
 use schemars::{JsonSchema, Schema, SchemaGenerator};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -26,6 +26,10 @@ pub struct ControlRecord {
     pub requirement: String,
     #[schemars(title = "Purpose", with = "Prose")]
     pub purpose: String,
+    /// The requirement in one line of at most 25 words, which a change's
+    /// brief shows in its place.
+    #[schemars(title = "Summary", with = "Option<Summary>")]
+    pub summary: Option<String>,
     // A field left out admits no null: `type` replaces Option's `["array", "null"]`.
     #[schemars(title = "Applies To", extend("type" = "array"))]
     pub applies_to: Option<Vec<Ref>>,
