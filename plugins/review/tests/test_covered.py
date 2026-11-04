@@ -1,5 +1,6 @@
 """`review.covered` passes when committed reports cover each commit of a pull request, by range or by patch id."""
 
+import ast
 import json
 import os
 import subprocess
@@ -7,6 +8,7 @@ from pathlib import Path
 
 from conftest import ISOLATED, PLUGIN, Repo, library
 
+from board_review import covered
 from board_review.git import Repository
 
 
@@ -341,19 +343,28 @@ def change(repo: Repo, head: str | None, records: list[str], mount: str = "/proj
     return "/changes/work"
 
 
-def attached_report(repo: Repo, base: str, head: str, severity: str | None = None) -> str:
-    """Write, without committing, a person's approving report of `base..head` beside the change.
+def attached_report(  # noqa: PLR0913 - each field a test varies
+    repo: Repo,
+    base: str,
+    head: str,
+    severity: str | None = None,
+    *,
+    verdict: str = "approve",
+    patch_ids: list[str] | None = None,
+    name: str = "one",
+) -> str:
+    """Write, without committing, a person's report of `base..head` beside the change, and return its path.
 
-    With `severity`, the report holds one finding of that severity.
+    It approves with no findings and no patch ids unless `verdict`, `severity` or `patch_ids` say otherwise.
     """
     record: dict[str, object] = {
         "$type": "review/report/v1",
         "range": f"{base}..{head}",
-        "patch_ids": [],
+        "patch_ids": patch_ids or [],
         "findings": [] if severity is None else [{"severity": severity, "text": "A finding."}],
     }
-    repo.write("changes/work/reviews/one.json", json.dumps(record | {"verdict": "approve", "by": "a person"}))
-    return "/changes/work/reviews/one"
+    repo.write(f"changes/work/reviews/{name}.json", json.dumps(record | {"verdict": verdict, "by": "a person"}))
+    return f"/changes/work/reviews/{name}"
 
 
 def test_a_report_the_change_does_not_attach_is_refused_and_an_attached_one_covers_the_mounts_commits(
@@ -441,3 +452,91 @@ def test_a_project_commit_adding_only_a_report_is_checked_with_a_change_and_cove
     attached_report(repo, base, added)
     code, output = repo.call("covered", "--base", base, "--change", path)
     assert (code, output["skipped"], output["commits"]) == (0, 0, 2), output
+
+
+def constants(path: Path) -> dict[str, object]:
+    """Every module-level constant `path` assigns a literal, by name."""
+    tree = ast.parse(path.read_text())
+    return {
+        target.id: ast.literal_eval(node.value)
+        for node in tree.body
+        if isinstance(node, ast.Assign) and isinstance(node.value, ast.Constant | ast.Tuple)
+        for target in node.targets
+        if isinstance(target, ast.Name)
+    }
+
+
+def test_the_changes_plugins_constants_that_covered_copies_agree_with_its_own() -> None:
+    changes = PLUGIN.parent / "changes" / "src" / "board_changes"
+    assert constants(changes / "gates.py")["BLOCKING"] == covered.BLOCKING
+    assert constants(changes / "change.py")["CHANGE_TYPE"] == covered.CHANGE_TYPE
+
+
+def test_a_mount_named_by_a_file_below_its_root_is_refused_and_the_root_admitted(repo: Repo, tmp_path: Path) -> None:
+    base, head = mounted(repo, tmp_path)
+    report_path = attached_report(repo, base, head)
+    path = change(repo, head, [report_path], mount="/project/README.md")
+    code, document = repo.call("covered", "--base", base, "--change", path)
+    assert (code, document["code"]) == (1, "review::mount::not_found"), document
+    change(repo, head, [report_path])
+    assert repo.call("covered", "--base", base, "--change", path)[0] == 0
+
+
+def test_a_report_attached_twice_is_counted_once_when_refused_and_listed_once_when_admitted(
+    repo: Repo, tmp_path: Path
+) -> None:
+    base, head = mounted(repo, tmp_path)
+    later = project_commit(tmp_path, "later.txt")
+    report_path = attached_report(repo, base, head)
+    path = change(repo, later, [report_path, report_path])
+    code, document = repo.call("covered", "--base", base, "--change", path)
+    assert (code, document["code"], document["fields"]["reports"]) == (1, "review::head::uncovered", 1), document
+    code, output = repo.call("covered", "--base", base, "--change", path, "--head", head)
+    assert (code, output["reports"]) == (0, [report_path]), output
+
+
+def test_a_report_asking_for_changes_with_a_high_finding_is_counted_once_and_an_approving_low_one_admitted(
+    repo: Repo, tmp_path: Path
+) -> None:
+    base, head = mounted(repo, tmp_path)
+    path = change(repo, head, [attached_report(repo, base, head, "high", verdict="changes")])
+    code, document = repo.call("covered", "--base", base, "--change", path)
+    assert (code, document["code"]) == (1, "review::head::uncovered"), document
+    assert "of 1 reports, 1 ask for changes and 0 have a critical or high finding" in document["message"]
+    attached_report(repo, base, head, "low")
+    assert repo.call("covered", "--base", base, "--change", path)[0] == 0
+
+
+def test_an_attached_report_asking_for_changes_is_refused_and_an_approving_one_admitted(
+    repo: Repo, tmp_path: Path
+) -> None:
+    base, head = mounted(repo, tmp_path)
+    path = change(repo, head, [attached_report(repo, base, head, verdict="changes")])
+    code, document = repo.call("covered", "--base", base, "--change", path)
+    assert (code, document["code"]) == (1, "review::head::uncovered"), document
+    attached_report(repo, base, head, verdict="approve")
+    assert repo.call("covered", "--base", base, "--change", path)[0] == 0
+
+
+def test_an_attached_report_without_the_heads_patch_id_is_refused_and_one_listing_it_admitted(
+    repo: Repo, tmp_path: Path
+) -> None:
+    base, head = mounted(repo, tmp_path)
+    [patch_id] = Repository(str(tmp_path / "project")).patch_ids([head]).values()
+    path = change(repo, head, [attached_report(repo, base, base)])
+    code, document = repo.call("covered", "--base", base, "--change", path)
+    assert (code, document["code"], document["fields"]["uncovered"]) == (1, "review::head::uncovered", [head])
+    attached_report(repo, base, base, patch_ids=[patch_id])
+    code, output = repo.call("covered", "--base", base, "--change", path)
+    assert (code, output["reports"]) == (0, ["/changes/work/reviews/one"]), output
+
+
+def test_an_attached_report_that_is_not_there_is_refused_and_admitted_once_written(repo: Repo, tmp_path: Path) -> None:
+    base, head = mounted(repo, tmp_path)
+    missing = "/changes/work/reviews/later"
+    path = change(repo, head, [missing])
+    code, document = repo.call("covered", "--base", base, "--change", path)
+    assert (code, document["code"], document["fields"]["reports"]) == (1, "review::head::uncovered", 0), document
+    attached_report(repo, base, head, name="later")
+    code, output = repo.call("covered", "--base", base, "--change", path)
+    assert (code, output["reports"]) == (0, [missing]), output

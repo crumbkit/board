@@ -173,12 +173,14 @@ export BOARD_REVIEW_AGENT='["claude", "-p", "--output-format", "json", "--settin
 - With `--change`, such as `--change /changes/fix-sync`, the call checks the
   `changes/change/v1` there, as a personal board checks a mounted repository.
   - Only the reports the change attaches in `records` count, read as Board
-    reads them, committed or not. A report need not be at
-    `/reviews/<id>/report`. The call shares two parts of the changes
+    reads them, committed or not. A report attached twice counts once. A
+    report need not be at `/reviews/<id>/report`. The call shares two parts of the changes
     plugin's review gate: a report asking for changes never covers, and
     neither does one with a critical or high finding. The gate also needs a
     report whose range ends at the change's head; this call instead needs
-    every commit from the merge base to the head covered.
+    every commit from the merge base to the head covered. When a commit is
+    uncovered, the refusal counts the reports that ask for changes, and
+    then the others that hold a critical or high finding.
   - With `--change` the call trusts the board's working tree, as the gate
     does, so CI keeps calling it without `--change`.
   - The commits are read from the clone that the change's `mount`, such as
@@ -188,8 +190,9 @@ export BOARD_REVIEW_AGENT='["claude", "-p", "--output-format", "json", "--settin
   - The head is the change's `head`, unless `--head` names another.
   - Fails with `review::change::not_found` when no readable change is at the
     path, `review::change::no_head` when neither the change nor `--head`
-    names a head, and `review::mount::not_found` when no mount is at the
-    change's `mount`.
+    names a head, and `review::mount::not_found` when the change's `mount`
+    is not a mount's root, such as a path in the board's own tree or a file
+    in a mounted repository.
 - Returns the head, the merge base, the number of commits skipped and checked,
   and the reports that cover them.
 - Fails with `review::head::uncovered`, which lists the first uncovered
