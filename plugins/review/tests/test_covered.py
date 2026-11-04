@@ -321,10 +321,10 @@ def mounted(repo: Repo, tmp_path: Path) -> tuple[str, str]:
     return str(pointer["commit"]), project_commit(tmp_path, "src.txt")
 
 
-def project_commit(tmp_path: Path, name: str) -> str:
-    """Commit a new file `name` to the mounted project's clone, and return the commit."""
+def project_commit(tmp_path: Path, name: str, text: str | None = None) -> str:
+    """Commit a new file `name`, holding `text` or else its name, to the mounted project's clone; return the commit."""
     clone = tmp_path / "project"
-    (clone / name).write_text(f"{name}\n")
+    (clone / name).write_text(f"{name}\n" if text is None else text)
     git = ["git", "-c", "user.name=t", "-c", "user.email=t@t"]
     for arguments in (["add", "."], ["commit", "-qm", f"add {name}"]):
         subprocess.run([*git, *arguments], cwd=clone, env=os.environ | ISOLATED, check=True)
@@ -420,6 +420,24 @@ def test_an_attached_report_with_a_high_finding_is_refused_and_one_with_a_low_fi
     base, head = mounted(repo, tmp_path)
     path = change(repo, head, [attached_report(repo, base, head, severity="high")])
     code, document = repo.call("covered", "--base", base, "--change", path)
-    assert (code, document["code"], document["fields"]["reports"]) == (1, "review::head::uncovered", 0)
+    assert (code, document["code"], document["fields"]["reports"]) == (1, "review::head::uncovered", 1)
+    assert "of 1 reports, 0 ask for changes and 1 have a critical or high finding" in document["message"]
     attached_report(repo, base, head, severity="low")
     assert repo.call("covered", "--base", base, "--change", path)[0] == 0
+
+
+def test_a_project_commit_adding_only_a_report_is_checked_with_a_change_and_covered_once_reviewed(
+    repo: Repo, tmp_path: Path
+) -> None:
+    base, head = mounted(repo, tmp_path)
+    (tmp_path / "project" / "reviews" / "x").mkdir(parents=True)
+    record: dict[str, object] = {"$type": "review/report/v1", "range": f"{base}..{head}", "patch_ids": []}
+    text = json.dumps(record | {"findings": [], "verdict": "approve", "by": "a person"})
+    added = project_commit(tmp_path, "reviews/x/report.json", text)
+    assert Repository(str(tmp_path / "project")).review_only(added)
+    path = change(repo, added, [attached_report(repo, base, head)])
+    code, document = repo.call("covered", "--base", base, "--change", path)
+    assert (code, document["code"], document["fields"]["uncovered"]) == (1, "review::head::uncovered", [added])
+    attached_report(repo, base, added)
+    code, output = repo.call("covered", "--base", base, "--change", path)
+    assert (code, output["skipped"], output["commits"]) == (0, 0, 2), output

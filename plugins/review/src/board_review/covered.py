@@ -28,6 +28,7 @@ class _RangeReport(TypedDict):
     verdict: Verdict
     range: str
     patch_ids: list[str]
+    findings: list[dict[str, object]]
 
 
 class _Change(TypedDict):
@@ -57,13 +58,13 @@ def covered(request: CallRequest) -> CoveredOutput:
     named = request.input.get("change")
     if named is None:
         repository = Repository(request.board.root)
-        default = "HEAD"
+        named_head = request.input.get("head", "HEAD")
         reports = _reports(board, repository)
     else:
         change = _change(board, str(named))
         repository = Repository(_clone(board, change["mount"]))
-        default = request.input.get("head", change.get("head"))
-        if default is None:
+        named_head = request.input.get("head", change.get("head"))
+        if named_head is None:
             raise PluginError(
                 "review::change::no_head",
                 f"the change at {named} records no head commit, so nothing says which commits to check; record"
@@ -71,14 +72,16 @@ def covered(request: CallRequest) -> CoveredOutput:
                 {"change": named},
             )
         reports = _attached(board, change.get("records", []))
-    head = repository.commit(str(request.input.get("head", default)))
+    head = repository.commit(str(named_head))
     base = repository.commit(str(request.input["base"]))
     merge_base = repository.merge_base(base, head)
     added = repository.commits(merge_base, head)
     commits = added if named is not None else [commit for commit in added if not repository.review_only(commit)]
     skipped = len(added) - len(commits)
     patch_ids = repository.patch_ids(commits)
-    counted = [(path, report) for path, report in reports if report["verdict"] != "changes"]
+    blocked = [path for path, report in reports if named is not None and _blocking(report)]
+    counted = [(path, r) for path, r in reports if r["verdict"] != "changes" and path not in blocked]
+    asking = sum(1 for _, report in reports if report["verdict"] == "changes")
     covering: list[str] = []
     uncovered = set(commits)
     present = set(patch_ids.values())
@@ -112,7 +115,9 @@ def covered(request: CallRequest) -> CoveredOutput:
         f"{len(missing)} of the {len(commits)} commits from {merge_base} to {head} are covered by no"
         f" review/report/v1 {where}"
         + (f", not counting {skipped} commits that only add review records" if skipped else "")
-        + f"; of {len(reports)} reports, {len(reports) - len(counted)} ask for changes. The first is {missing[0]}. "
+        + f"; of {len(reports)} reports, {asking} ask for changes"
+        + (f" and {len(blocked)} have a critical or high finding" if named is not None else "")
+        + f". The first is {missing[0]}. "
         + fix,
         {
             "head": head,
@@ -179,8 +184,7 @@ def _attached(board: Board, refs: list[str]) -> list[tuple[str, _RangeReport]]:
     """Every readable report of a range among `refs`, in the order the change attaches them, as the gate reads them.
 
     The changes plugin's review gate counts the reports a change attaches as
-    Board reads them, committed or not, and never one with a critical or high
-    finding, so this does too.
+    Board reads them, committed or not, so this does too.
     """
     if not refs:
         return []
@@ -190,11 +194,10 @@ def _attached(board: Board, refs: list[str]) -> list[tuple[str, _RangeReport]]:
         f"SELECT logical, body FROM records WHERE logical IN ({listed}) AND type = {literal(REPORT_TYPE)}"  # noqa: S608 - literals quoted
         f" AND (status = 'ok' OR code IN ({codes}))"
     )
-    found = {str(logical): json.loads(body) for logical, body in rows}
-    return [
-        (ref, cast("_RangeReport", found[ref]))
-        for ref in refs
-        if ref in found
-        and "range" in found[ref]
-        and not any(finding.get("severity") in BLOCKING for finding in found[ref].get("findings", []))
-    ]
+    found = {str(logical): cast("_RangeReport", json.loads(body)) for logical, body in rows}
+    return [(ref, found[ref]) for ref in refs if ref in found and "range" in found[ref]]
+
+
+def _blocking(report: _RangeReport) -> bool:
+    """Whether `report` holds a finding that shuts the changes plugin's review gate, so it never covers a change."""
+    return any(finding.get("severity") in BLOCKING for finding in report["findings"])
