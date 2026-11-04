@@ -14,6 +14,8 @@ evals.open disabled The evals still planned or running, here and in mounted boar
 github.ref disabled Write the record of a pull request or issue, asking gh which it is and its title, or report the record already there without asking.
 jira.ref disabled Write the issue at /jira/<site>/<key> with its title, read once through acli, unless a record is already there.
 plans.open disabled The questions under a path whose status is open, oldest first.
+prompts.get disabled Read one prompt at its pin and render its body and runs_in with the input values given on stdin.
+prompts.list disabled List the prompts in the board's own tree and the marked repos the caller's remote chooses, at their pins, by repo then title.
 requests.thread disabled Every version of the effect's request, oldest first, with its answer, and the owner's replies to them, oldest first.
 runs.latest disabled The latest full run of a clean revision of a suite, with its outcome, measures, failed cases and age, or null when no run qualifies.
 runs.trend disabled One measure of a suite, or of one of its cases, over its full runs of clean revisions, newest first.

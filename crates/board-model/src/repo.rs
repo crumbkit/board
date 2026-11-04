@@ -72,7 +72,7 @@ impl Repo {
 pub fn shown_remote(remote: &str) -> String {
     let mut shown = remote.to_owned();
     loop {
-        let next = match github(&shown) {
+        let next = match github_remote(&shown) {
             Some((owner, name)) => format!("{owner}/{name}"),
             None => without_userinfo(&shown),
         };
@@ -86,7 +86,7 @@ pub fn shown_remote(remote: &str) -> String {
 /// The owner and name of a GitHub remote: `owner/name` itself, or a URL
 /// over https, ssh or git, or git's scp-like `user@github.com:`. ssh, git
 /// and scp-like remotes may name a host alias such as `github.com-work`.
-fn github(remote: &str) -> Option<(&str, &str)> {
+pub fn github_remote(remote: &str) -> Option<(&str, &str)> {
     let path = github_prefix(remote).unwrap_or(remote);
     let (owner, rest) = path.split_once('/')?;
     let rest = rest.strip_suffix('/').unwrap_or(rest);

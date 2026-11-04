@@ -19,6 +19,8 @@ pub const BUILT_IN: BuiltIn = BuiltIn(&[
     &board_plugin_jira::Jira,
     #[cfg(feature = "plans")]
     &board_plugin_plans::Plans,
+    #[cfg(feature = "prompts")]
+    &board_plugin_prompts::Prompts,
     #[cfg(feature = "requests")]
     &board_plugin_requests::Requests,
     #[cfg(feature = "runs")]
