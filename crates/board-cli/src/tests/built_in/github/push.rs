@@ -206,14 +206,23 @@ fn a_checkout_the_personal_board_does_not_mount_is_checked_without_from_and_a_mo
 }
 
 #[test]
-fn a_detached_head_is_refused_and_the_same_commit_on_a_branch_is_pushed() {
+fn a_detached_head_is_refused_before_the_personal_board_is_read_and_the_same_commit_on_a_branch_is_pushed()
+ {
     let desk = Desk::new();
     let sha = desk.commit("Add a gear");
     desk.git(&desk.checkout(), &["switch", "-q", "--detach", &sha]);
-    assert_eq!(
-        code(&desk, &[]),
-        (1, "github::checkout::detached".to_owned())
-    );
+    desk.known(&json!({"boards": [desk.personal.path()]}));
+    for flags in [&[][..], &["--title", "T", "--body", "B"]] {
+        let capability = if flags.is_empty() { "push" } else { "pr-create" };
+        let (ran, failure) = desk.call(capability, flags);
+        assert_eq!(
+            refused(&ran, &failure),
+            (1, "github::checkout::detached".to_owned()),
+            "{capability}"
+        );
+    }
+    let personal = desk.personal.path();
+    desk.known(&json!({"boards": [personal], "personal": personal}));
     desk.git(&desk.checkout(), &["switch", "-q", "main"]);
     assert_eq!(desk.output("push", &[])["commits"], json!([sha]));
 }

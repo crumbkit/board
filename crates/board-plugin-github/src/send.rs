@@ -66,7 +66,11 @@ impl Origin<'_> {
 /// The checkout Board was started in, its GitHub repository and its mount
 /// in the personal board.
 fn origin(host: &dyn Host) -> Result<Origin<'_>, PluginError> {
-    let top = git::top(host)?;
+    origin_at(host, git::top(host)?)
+}
+
+/// [`origin`] for the checkout whose root is `top`.
+fn origin_at(host: &dyn Host, top: PathBuf) -> Result<Origin<'_>, PluginError> {
     let (owner, repo) = remote::repository(host, &top)?;
     let personal = crossing::personal(host)?;
     let mount = crossing::mount(&*personal, &top)?;
@@ -158,14 +162,28 @@ struct Push {
     line: String,
 }
 
-/// Checks the commits a push would send, with `extra` parts, then pushes
-/// the commit checked. git's line is recorded at once, so the crossing says
-/// the commits left even when a later step fails.
-fn pushed(place: &Origin<'_>, action: &str, extra: Parts) -> Result<Push, PluginError> {
+/// The checkout Board was started in and the branch it is on, read before
+/// the personal board is opened, so a detached HEAD is
+/// `github::checkout::detached` whatever the personal board's state.
+fn branched(host: &dyn Host) -> Result<(Origin<'_>, String, String), PluginError> {
+    let top = git::top(host)?;
+    let (branch, head) = git::branch(host, &top)?;
+    Ok((origin_at(host, top)?, branch, head))
+}
+
+/// Checks the commits a push of `head` to `branch` would send, with `extra`
+/// parts, then pushes the commit checked. git's line is recorded at once,
+/// so the crossing says the commits left even when a later step fails.
+fn pushed(
+    place: &Origin<'_>,
+    branch: String,
+    head: &str,
+    action: &str,
+    extra: Parts,
+) -> Result<Push, PluginError> {
     let (host, top) = (place.host, &place.top);
-    let (branch, head) = git::branch(host, top)?;
     let have = git::advertised(host, top, "origin")?;
-    let (commits, mut parts) = push_parts(host, top, &branch, &head, &have)?;
+    let (commits, mut parts) = push_parts(host, top, &branch, head, &have)?;
     parts.extend(extra.clone());
     let passed = place.check(action, &parts)?;
     let handed = Handed {
@@ -173,7 +191,7 @@ fn pushed(place: &Origin<'_>, action: &str, extra: Parts) -> Result<Push, Plugin
         action: format!("github.{action}"),
         parts: extra,
     };
-    let line = git::push(host, top, &branch, &head, &handed)?;
+    let line = git::push(host, top, &branch, head, &handed)?;
     crossing::record(&*place.personal, &passed.digest, &line)?;
     git::track(host, top, &branch)?;
     Ok(Push {
@@ -195,13 +213,13 @@ pub(crate) struct PushInput {}
 /// each commit it would send.
 pub(crate) fn push(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
     let PushInput {} = PluginError::read_input("github", "push", input)?;
-    let place = origin(host)?;
+    let (place, branch, head) = branched(host)?;
     let Push {
         passed,
         branch,
         commits,
         line,
-    } = pushed(&place, "push", Parts::new())?;
+    } = pushed(&place, branch, &head, "push", Parts::new())?;
     Ok(output(&Pushed {
         digest: passed.digest,
         crossing: passed.crossing,
@@ -239,7 +257,7 @@ pub(crate) fn pr_create(host: &dyn Host, input: &Value) -> Result<Value, PluginE
         base,
         draft,
     } = PluginError::read_input("github", "pr-create", input)?;
-    let place = origin(host)?;
+    let (place, branch, head) = branched(host)?;
     let extra = Parts::from([
         ("pr.title".to_owned(), title.clone()),
         ("pr.body".to_owned(), body.clone()),
@@ -249,7 +267,7 @@ pub(crate) fn pr_create(host: &dyn Host, input: &Value) -> Result<Value, PluginE
         branch,
         commits,
         ..
-    } = pushed(&place, "pr-create", extra)?;
+    } = pushed(&place, branch, &head, "pr-create", extra)?;
     let repository = format!("{}/{}", place.owner, place.repo);
     let mut arguments: Vec<String> = ["pr", "create", "--repo", &repository, "--head", &branch]
         .into_iter()
