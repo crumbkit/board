@@ -12,7 +12,7 @@ use serde_json::{Value, json};
 use crate::crossing;
 use crate::git::{self, error, git, run, variable};
 use crate::parts::{Parts, ref_parts};
-use crate::remote::destinations;
+use crate::remote::{Via, destinations};
 use crate::send::output;
 
 /// The line that marks a hook as this plugin's, so a later install replaces
@@ -204,7 +204,7 @@ pub(crate) fn pre_push(host: &dyn Host, input: &Value) -> Result<Value, PluginEr
     let PrePushInput { remote, refs } = PluginError::read_input("github", "pre-push", input)?;
     let top = git::top(host)?;
     let url = variable(host, PUSH_URL).unwrap_or_default();
-    let destinations = destinations(host, &top, &remote, &url, true)?;
+    let destinations = destinations(host, &top, &remote, &url, Via::Push)?;
     let pushed: Vec<Vec<&str>> = (refs.lines())
         .map(|line| line.split_whitespace().collect::<Vec<_>>())
         .filter(|fields| fields.len() == FIELDS && fields[1].chars().any(|digit| digit != '0'))
@@ -268,9 +268,9 @@ fn reused<'a>(
 #[serde(deny_unknown_fields)]
 #[schemars(rename = "CoversInput")]
 pub(crate) struct CoversInput {
-    /// The github action that sends the write, such as push or pr-create.
-    #[schemars(regex(pattern = "^[a-z-]+$"))]
-    action: String,
+    /// The github action that sends the write, or api for a gh write Board
+    /// has no action for.
+    action: Action,
     /// The remote a push names; the branch's push remote, else origin, when
     /// left out.
     #[schemars(length(min = 1))]
@@ -278,6 +278,44 @@ pub(crate) struct CoversInput {
     /// The owner/repo the write names, in place of the remote.
     #[schemars(length(min = 1))]
     repo: Option<String>,
+}
+
+/// A github action that sends a write, as `covers` names it; `api` is a gh
+/// write Board has no action for. Inlined as a string enum, so Board reads
+/// it as a flag.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+#[schemars(inline)]
+pub(crate) enum Action {
+    Push,
+    PrCreate,
+    PrEdit,
+    Comment,
+    IssueCreate,
+    Api,
+}
+
+impl Action {
+    /// The action as a boundary names it, such as `github.pr-create`.
+    fn boundary_name(self) -> &'static str {
+        match self {
+            Self::Push => "github.push",
+            Self::PrCreate => "github.pr-create",
+            Self::PrEdit => "github.pr-edit",
+            Self::Comment => "github.comment",
+            Self::IssueCreate => "github.issue-create",
+            Self::Api => "github.api",
+        }
+    }
+
+    /// How the write leaves the checkout.
+    fn via(self) -> Via {
+        if self == Self::Push {
+            Via::Push
+        } else {
+            Via::Gh
+        }
+    }
 }
 
 /// One destination a boundary covers, and the boundaries.
@@ -310,12 +348,12 @@ pub(crate) fn covers(host: &dyn Host, input: &Value) -> Result<Value, PluginErro
         repo,
     } = PluginError::read_input("github", "covers", input)?;
     let top = git::top(host)?;
-    let push = action == "push";
+    let via = action.via();
     let destinations = if let Some(repo) = repo {
         vec![format!("github:{}", repo.to_lowercase())]
     } else {
         let mut remote = remote.unwrap_or_default();
-        if remote.is_empty() && push {
+        if remote.is_empty() && via == Via::Push {
             let branch = run(host, &top, &["symbolic-ref", "-q", "HEAD"], "");
             let format = [
                 "for-each-ref",
@@ -328,15 +366,15 @@ pub(crate) fn covers(host: &dyn Host, input: &Value) -> Result<Value, PluginErro
                 .clone_into(&mut remote);
         }
         let remote = if remote.is_empty() { "origin" } else { &remote };
-        destinations(host, &top, remote, "", push)?
+        destinations(host, &top, remote, "", via)?
     };
     let personal = crossing::personal(host)?;
     let personal = &*personal;
     let from = crossing::mount(personal, &top)?;
-    let action = format!("github.{action}");
+    let action = action.boundary_name();
     let mut covered = Vec::new();
     for to in destinations {
-        let boundaries = crossing::covers(personal, &action, &to, from.as_deref())?;
+        let boundaries = crossing::covers(personal, action, &to, from.as_deref())?;
         if !boundaries.is_empty() {
             covered.push(Covered { to, boundaries });
         }

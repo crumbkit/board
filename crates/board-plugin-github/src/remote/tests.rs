@@ -5,18 +5,18 @@
 use std::ffi::OsString;
 use std::time::{Duration, SystemTime};
 
-use board_ops::{Settings, Variables};
+use board_ops::{Run, Settings, Variables};
+use board_plugin::child::{Exited, ProcessError};
 use board_plugin::child::{Process, run as start};
 
 use super::*;
 
-/// A stand-in for `ssh -G`: `work-gh` is an alias of github.com,
-/// `elsewhere` of another host.
-const ALIASES: Resolver<'static> =
-    Resolver::Table(&[("work-gh", "github.com"), ("elsewhere", "git.example.com")]);
+/// The hosts `ssh -G` resolves in [`named`]: `work-gh` is an alias of
+/// github.com, `elsewhere` of another host.
+const ALIASES: &[(&str, &str)] = &[("work-gh", "github.com"), ("elsewhere", "git.example.com")];
 
 fn named(url: &str) -> Option<(String, String)> {
-    github_repository(url, &ALIASES).unwrap()
+    github_repository(url, &Resolver::Ssh(&aliased(ALIASES))).unwrap()
 }
 
 /// What a URL of octo/widgets names.
@@ -72,7 +72,7 @@ fn a_url_that_could_reach_github_but_cannot_be_read_is_refused_and_a_resolved_al
         "ext::ssh github.com",
         "git@-oX:a/b",
     ] {
-        let refused = github_repository(url, &ALIASES).unwrap_err();
+        let refused = github_repository(url, &Resolver::Ssh(&aliased(ALIASES))).unwrap_err();
         assert_eq!(refused.code, "github::remote::unknown", "{url}");
     }
     assert_eq!(named("git@work-gh:octo/widgets.git"), Some(octo()));
@@ -80,16 +80,15 @@ fn a_url_that_could_reach_github_but_cannot_be_read_is_refused_and_a_resolved_al
 
 #[test]
 fn each_github_url_form_names_owner_and_repository_and_its_non_github_twin_names_none() {
-    let itself: Vec<(&str, &str)> = [
-        "gitlab.com",
-        "github.example",
-        "example.com",
-        "github.org",
-        "github.com",
-    ]
-    .map(|host| (host, host))
-    .to_vec();
-    let resolver = Resolver::Table(&itself);
+    let itself = &[
+        ("gitlab.com", "gitlab.com"),
+        ("github.example", "github.example"),
+        ("example.com", "example.com"),
+        ("github.org", "github.org"),
+        ("github.com", "github.com"),
+    ];
+    let host = aliased(itself);
+    let resolver = Resolver::Ssh(&host);
     for (github, other) in [
         (
             "https://github.com/Octo/Widgets.git",
@@ -134,10 +133,17 @@ fn a_custom_ssh_command_resolves_no_alias_and_leaves_github_plain() {
 }
 
 /// A host whose processes run for real, with a home of their own and no
-/// system or global git config.
+/// system or global git config, except `ssh -G` when `aliases` names
+/// hosts: it then prints the `hostname` the table gives, or fails.
 struct Real {
     settings: Settings,
     home: tempfile::TempDir,
+    aliases: &'static [(&'static str, &'static str)],
+}
+
+/// A host whose `ssh -G` resolves each host by `aliases` and no other.
+fn aliased(aliases: &'static [(&'static str, &'static str)]) -> Real {
+    Real { aliases, ..real() }
 }
 
 fn real() -> Real {
@@ -164,6 +170,7 @@ fn real() -> Real {
             ),
         },
         home,
+        aliases: &[],
     }
 }
 
@@ -262,10 +269,36 @@ impl Host for Real {
     fn settings(&self) -> &Settings {
         &self.settings
     }
+
+    fn run_hiding(&self, run: &Run<'_>, hidden: &[&str]) -> Result<Exited, ProcessError> {
+        if run.program == "ssh" && !self.aliases.is_empty() {
+            let asked = run.arguments.last().map(String::as_str);
+            let found = (self.aliases.iter()).find(|(alias, _)| Some(*alias) == asked);
+            return Ok(Exited {
+                code: Some(if found.is_some() { 0 } else { 255 }),
+                stdout: found.map_or_else(Vec::new, |(_, name)| {
+                    format!("hostname {name}\n").into_bytes()
+                }),
+                stderr: Vec::new(),
+            });
+        }
+        let environment: Vec<_> = (self.settings.environment.0.iter())
+            .filter(|(name, _)| !hidden.contains(&name.as_str()))
+            .cloned()
+            .collect();
+        let process = Process {
+            program: run.program,
+            arguments: run.arguments,
+            directory: run.directory.unwrap_or(self.home.path()),
+            input: run.input,
+            deadline: run.deadline,
+        };
+        start(&process, &environment)
+    }
 }
 
-fn found(host: &Real, at: &Path, remote: &str, url: &str, push: bool) -> Vec<String> {
-    destinations(host, at, remote, url, push).unwrap()
+fn found(host: &Real, at: &Path, remote: &str, url: &str, via: Via) -> Vec<String> {
+    destinations(host, at, remote, url, via).unwrap()
 }
 
 #[test]
@@ -274,11 +307,11 @@ fn a_push_to_a_github_url_goes_there_and_to_the_remote_as_configured() {
     let at = host.repository();
     let other = "https://github.com/octo/other.git";
     assert_eq!(
-        found(&host, &at, "origin", other, true),
+        found(&host, &at, "origin", other, Via::Push),
         ["github:octo/other", "github:octo/widgets"]
     );
     assert_eq!(
-        found(&host, &at, "origin", "/srv/widgets.git", true),
+        found(&host, &at, "origin", "/srv/widgets.git", Via::Push),
         ["github:octo/widgets"]
     );
 }
@@ -296,15 +329,15 @@ fn a_push_url_unlike_the_fetch_url_names_the_push_url_for_a_push_and_the_fetch_u
     ];
     host.git(&at, &covered);
     assert_eq!(
-        found(&host, &at, "origin", "/srv/covered.git", true),
+        found(&host, &at, "origin", "/srv/covered.git", Via::Push),
         ["github:octo/covered"]
     );
     assert_eq!(
-        found(&host, &at, "origin", "", false),
+        found(&host, &at, "origin", "", Via::Gh),
         ["github:octo/widgets"]
     );
     assert_eq!(
-        found(&host, &at, "origin", "", true),
+        found(&host, &at, "origin", "", Via::Push),
         ["github:octo/covered"]
     );
 }
@@ -315,9 +348,9 @@ fn a_push_to_another_host_goes_to_no_github_repository_and_one_to_github_does() 
     let at = host.repository();
     let elsewhere = "https://gitlab.example/o/w.git";
     host.git(&at, &["remote", "add", "elsewhere", elsewhere]);
-    assert!(found(&host, &at, "elsewhere", elsewhere, true).is_empty());
+    assert!(found(&host, &at, "elsewhere", elsewhere, Via::Push).is_empty());
     assert_eq!(
-        found(&host, &at, "origin", "", true),
+        found(&host, &at, "origin", "", Via::Push),
         ["github:octo/widgets"]
     );
 }

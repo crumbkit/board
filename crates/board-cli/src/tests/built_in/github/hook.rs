@@ -465,6 +465,19 @@ fn covers_names_the_boundary_on_the_checkouts_repository_and_none_on_another() {
 }
 
 #[test]
+fn covers_refuses_an_action_github_does_not_send_and_names_the_boundary_for_api() {
+    let desk = Desk::new();
+    desk.refuse(&["*"], "github.api");
+    let (ran, document) = desk.call_at(None, true, "covers", &["--action", "merge"], &[]);
+    assert_eq!(ran.code, 1, "{document}");
+    assert_eq!(document["code"], "board::plugin::bad_input");
+    assert_eq!(
+        covered(&desk, &["--action", "api"]),
+        json!([{"to": "github:octo/widgets", "boundaries": ["/boundaries/octo"]}])
+    );
+}
+
+#[test]
 fn covers_applies_from_by_the_checkouts_mount() {
     let desk = Desk::new();
     desk.refuse(&["*"], "github.*");

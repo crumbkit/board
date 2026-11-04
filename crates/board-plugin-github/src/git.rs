@@ -90,16 +90,19 @@ fn run_adding(
             code: 1,
             stdout: String::new(),
             utf8: true,
-            stderr: format!("it {}", unfinished(&error)),
+            stderr: format!("it {}", unfinished(&error, TIMEOUT)),
         },
     }
 }
 
-/// Why a process did not finish, as a phrase after its name.
-pub(crate) fn unfinished(error: &ProcessError) -> String {
+/// Why a process given `deadline` did not finish, as a phrase after its
+/// name.
+pub(crate) fn unfinished(error: &ProcessError, deadline: Duration) -> String {
     match error {
         ProcessError::NotStarted { source } => format!("did not start: {source}"),
-        ProcessError::Timeout { .. } => "did not finish: it ran past its deadline".to_owned(),
+        ProcessError::Timeout { .. } => {
+            format!("did not finish: it ran past {} s", deadline.as_secs())
+        }
         ProcessError::TooLarge { limit, .. } => {
             format!("did not finish: it printed more than {limit} bytes")
         }

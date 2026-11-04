@@ -327,7 +327,10 @@ How it reads a command:
 
 `covers --action <action> [--remote <remote>] [--repo <owner>/<repo>]`
 returns `covered`, each destination a boundary covers, with `to` and
-`boundaries`. It checks nothing and writes nothing.
+`boundaries`. The action is `push`, `pr-create`, `pr-edit`, `comment`,
+`issue-create`, or `api` for a gh write Board has no action for, which a
+boundary matches as `github.api`; any other is refused as bad input. It
+checks nothing and writes nothing.
 
 Install it with `claude plugin install board-github@board`, after
 `claude plugin marketplace add crumbkit/board`. `claude plugin test

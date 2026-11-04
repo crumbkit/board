@@ -54,9 +54,6 @@ pub(crate) enum Resolver<'a> {
     /// Git runs another ssh command, which may resolve hosts differently,
     /// so no host is resolved.
     Custom,
-    /// A table, for a test.
-    #[cfg(test)]
-    Table(&'a [(&'a str, &'a str)]),
 }
 
 impl Resolver<'_> {
@@ -65,10 +62,6 @@ impl Resolver<'_> {
         match self {
             Self::Ssh(runner) => ssh_hostname(*runner, host),
             Self::Custom => None,
-            #[cfg(test)]
-            Self::Table(table) => (table.iter())
-                .find(|(alias, _)| *alias == host)
-                .map(|(_, name)| (*name).to_owned()),
         }
     }
 }
@@ -250,12 +243,21 @@ pub(crate) fn repository(host: &dyn Host, at: &Path) -> Result<(String, String),
     Ok(matched)
 }
 
+/// How a write leaves the checkout, which decides the URLs it goes to.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Via {
+    /// `git push`, which goes to the remote's push URLs, else its URLs.
+    Push,
+    /// gh, which goes where the remote's fetch URL points.
+    Gh,
+}
+
 /// The GitHub destinations, `github:<owner>/<repo>` in lower case and
 /// sorted, of a push git makes to `remote` at `url`. Git names the remote,
 /// or the URL it was given in its place, and the URL it pushes to, after any
 /// rewrite. Each is read, and so are the remote's push URLs as configured,
 /// else its URLs. A gh write goes where the fetch URL points, so with
-/// `push` false only the remote's URLs are read. A URL that could reach
+/// [`Via::Gh`] only the remote's URLs are read. A URL that could reach
 /// GitHub but cannot be read is `github::remote::unknown`, so the hook
 /// fails closed.
 pub(crate) fn destinations(
@@ -263,7 +265,7 @@ pub(crate) fn destinations(
     at: &Path,
     remote: &str,
     url: &str,
-    push: bool,
+    via: Via,
 ) -> Result<Vec<String>, PluginError> {
     let listed = |key: String| {
         let ran = run(host, at, &["config", "--get-all", &key], "");
@@ -271,7 +273,7 @@ pub(crate) fn destinations(
             .map(str::to_owned)
             .collect::<Vec<_>>()
     };
-    let mut configured = if push {
+    let mut configured = if via == Via::Push {
         listed(format!("remote.{remote}.pushurl"))
     } else {
         Vec::new()
