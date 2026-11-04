@@ -92,6 +92,7 @@ fn shell(arguments: &[String]) -> Run<'_> {
         directory: None,
         input: b"",
         deadline: Duration::from_secs(5),
+        added: &[],
     }
 }
 
@@ -113,7 +114,8 @@ fn run_is_run_hiding_with_nothing_hidden_so_an_override_of_run_hiding_serves_bot
 
 #[cfg(unix)]
 #[test]
-fn run_hiding_drops_only_the_variables_it_names_and_run_keeps_them_all() {
+fn run_hiding_drops_only_the_variables_it_names_and_a_runs_added_variables_replace_those_of_the_same_name()
+ {
     let scenario = super::board(&[("fixture", true)], &["fixture"], Holds::Same);
     let mut board = open(&scenario);
     board.build_in(built(vec![hiding()]));
@@ -130,17 +132,24 @@ fn run_hiding_drops_only_the_variables_it_names_and_run_keeps_them_all() {
     };
     let output = call_base(&board, &set).unwrap().output;
     assert_eq!(
-        (&output["all"], &output["none"], &output["hidden"]),
+        (
+            &output["all"],
+            &output["none"],
+            &output["hidden"],
+            &output["added"]
+        ),
         (
             &json!("given-fixture"),
             &json!("given-fixture"),
-            &json!("-fixture")
+            &json!("-fixture"),
+            &json!("over-added")
         )
     );
 }
 
 /// `fixture` answering with what `sh` prints of `FIXTURE_GIVEN` and
-/// `BOARD_PLUGIN` when run, and when run hiding `FIXTURE_GIVEN`.
+/// `BOARD_PLUGIN` when run, when run hiding `FIXTURE_GIVEN`, and when run
+/// adding both.
 fn hiding() -> Fixture {
     answering(
         "fixture",
@@ -157,6 +166,10 @@ fn hiding() -> Fixture {
                 "hidden": printed(
                     host.run_hiding(&shell(&arguments), &["FIXTURE_GIVEN", "NOT_SET"]).unwrap()
                 ),
+                "added": printed(host.run(&Run {
+                    added: &[("FIXTURE_GIVEN", "over"), ("BOARD_PLUGIN", "added")],
+                    ..shell(&arguments)
+                }).unwrap()),
             }))
         }),
     )

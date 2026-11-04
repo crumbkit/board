@@ -611,6 +611,7 @@ fn a_built_in_runs_a_process_with_its_capabilitys_declared_variables_and_its_own
                 directory: None,
                 input: b"",
                 deadline: Duration::from_secs(5),
+                added: &[],
             };
             let exited = host.run(&process).unwrap();
             Ok(json!({"count": exited.code, "seen": String::from_utf8(exited.stdout).unwrap()}))

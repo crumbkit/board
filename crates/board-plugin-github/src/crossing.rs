@@ -95,6 +95,27 @@ fn unreadable(capability: &str, error: &serde_json::Error) -> PluginError {
     }
 }
 
+/// Whether `boundary.verify` finds a passing crossing of `digest` for
+/// exactly `parts` of `action` to `to`, whose boundaries still match.
+pub(crate) fn verified(
+    personal: &dyn Host,
+    action: &str,
+    to: &str,
+    parts: &Parts,
+    digest: &str,
+) -> Result<bool, PluginError> {
+    /// What this plugin reads of `boundary.verify`'s output.
+    #[derive(Deserialize)]
+    struct Verified {
+        digest: String,
+        passed: bool,
+    }
+    let input = json!({"action": action, "to": to, "parts": parts});
+    let output = call(personal, "verify", &input).map_err(|refusal| passed_on(&refusal))?;
+    let found = Verified::deserialize(&output).map_err(|error| unreadable("verify", &error))?;
+    Ok(found.passed && found.digest == digest)
+}
+
 /// Records `result`, what GitHub returned, on the crossing of `digest`.
 pub(crate) fn record(personal: &dyn Host, digest: &str, result: &str) -> Result<(), PluginError> {
     let input = json!({"digest": digest, "result": result});

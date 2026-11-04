@@ -226,12 +226,18 @@ than `object`, `type` and `tagger`, so it holds the tag's own name, which can
 differ from the ref it is pushed to, and the name of a tag nested in another.
 A ref whose object is a tree or a blob is `github::push::not_commit`.
 A ref git deletes sends nothing and is not checked. It runs `boundary.check`
-on the parts as the action `github.push`. It never relies on
-`boundary.verify`, which misses an edit to a boundary's checks. A push made
-by `push` or `pr-create` gives the hook the same content, so when
-`BOARD_CONTROLS_AGENT` names its model with `--model`, judged verdicts come
-from the controls plugin's cache and cost no second model call. It
-returns `checked`, each ref's `ref`, `to`, `digest` and `note`.
+on the parts as the action `github.push`. A push made by `push` or
+`pr-create` has already passed the boundary, so the action hands the hook
+that check in `BOARD_GITHUB_PASSED`: the crossing's digest, its action, and
+the parts it checked beyond the ref's, the pull request's title and body.
+The hook adds those parts to its own and asks `boundary.verify` whether that
+content has a passing crossing of that digest. Only when it does not does
+the hook run `boundary.check`. So the hook asks no agent again, even when
+`BOARD_CONTROLS_AGENT` names no `--model` and the hook, like every git hook,
+runs without the model credentials. A raw `git push` hands nothing and is
+checked. `boundary.verify` misses an edit to a matched boundary's checks or
+a control's rule made between the action's check and its push. It returns
+`checked`, each ref's `ref`, `to`, `digest` and `note`.
 
 The destinations are every GitHub repository among the URL git pushes to
 and the remote's configured push URLs, else its URLs, so a push rewritten to

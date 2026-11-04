@@ -12,6 +12,7 @@ use serde_json::{Value, json};
 use crate::crossing::{self, Passed};
 use crate::gh;
 use crate::git;
+use crate::hook::Handed;
 use crate::objects::{Kind, Object, write};
 use crate::parts::{Parts, push_parts};
 use crate::remote;
@@ -165,9 +166,14 @@ fn pushed(place: &Origin<'_>, action: &str, extra: Parts) -> Result<Push, Plugin
     let (branch, head) = git::branch(host, top)?;
     let have = git::advertised(host, top, "origin")?;
     let (commits, mut parts) = push_parts(host, top, &branch, &head, &have)?;
-    parts.extend(extra);
+    parts.extend(extra.clone());
     let passed = place.check(action, &parts)?;
-    let line = git::push(host, top, &branch, &head, &passed.digest)?;
+    let handed = Handed {
+        digest: passed.digest.clone(),
+        action: format!("github.{action}"),
+        parts: extra,
+    };
+    let line = git::push(host, top, &branch, &head, &handed)?;
     crossing::record(&*place.personal, &passed.digest, &line)?;
     git::track(host, top, &branch)?;
     Ok(Push {

@@ -489,3 +489,59 @@ fn covers_applies_from_by_the_checkouts_mount() {
     desk.write("boundaries/octo.json", &boundary("/repos/gears"));
     assert_eq!(covered(&desk, &["--action", "push"]), json!([]));
 }
+
+#[test]
+fn the_hook_reuses_the_check_an_action_passed_so_an_agent_without_a_model_or_credentials_there_is_not_asked_and_a_raw_push_is_judged()
+ {
+    let desk = Desk::new();
+    install(&desk);
+    let runs = desk.home().join("agent-runs.txt");
+    let script = format!(
+        "[ -n \"$ANTHROPIC_API_KEY\" ] || exit 1\necho ran >> '{}'",
+        runs.display()
+    );
+    // The agent names no model, so the controls plugin keeps no verdict for
+    // the hook to find.
+    let named: Vec<String> = serde_json::from_str(&desk.judged(&["*"], &script)).unwrap();
+    let agent = json!([named[0]]).to_string();
+    let keys = [
+        ("ANTHROPIC_API_KEY", "model-key-1"),
+        ("BOARD_CONTROLS_AGENT", agent.as_str()),
+    ];
+    let runs_now = || std::fs::read_to_string(&runs).map_or(0, |text| text.lines().count());
+    let sha = desk.commit("Add a gear");
+    let (ran, document) = desk.call_at(None, false, "push", &[], &keys);
+    assert_eq!(ran.code, 0, "{document}");
+    assert_eq!(desk.remote_head("main"), Some(sha));
+    let pushed = runs_now();
+    assert!(pushed > 0);
+    desk.git(&desk.checkout(), &["switch", "-q", "-c", "feature"]);
+    let lever = desk.commit("Add a lever");
+    let url = "https://github.com/Octo/Widgets/pull/12";
+    desk.gh_answers(&json!(format!("{url}\n")), 0, "");
+    let flags = ["--title", "Add a lever", "--body", "Levers lift."];
+    let (ran, document) = desk.call_at(None, false, "pr-create", &flags, &keys);
+    assert_eq!(ran.code, 0, "{document}");
+    assert_eq!(desk.remote_head("feature"), Some(lever));
+    let opened = runs_now();
+    // A raw push has no passed check to reuse, so the hook judges, and its
+    // agent, without the credentials, fails. A check handed for other
+    // commits does not match, so it is judged too.
+    desk.commit("Add a spring");
+    let handed = json!({
+        "digest": document["data"]["output"]["digest"],
+        "action": "github.pr-create",
+        "parts": {"pr.title": "Add a lever", "pr.body": "Levers lift."},
+    })
+    .to_string();
+    for extra in [
+        vec![keys[1]],
+        vec![keys[1], ("BOARD_GITHUB_PASSED", &handed)],
+    ] {
+        let (code, stderr) = desk.push(&["origin", "feature"], &extra);
+        assert_ne!(code, 0, "{stderr}");
+        assert!(stderr.contains("controls::agent::failed"), "{stderr}");
+    }
+    assert_eq!(runs_now(), opened);
+    assert!(pushed < opened);
+}

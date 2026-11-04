@@ -7,8 +7,11 @@ use std::time::Duration;
 
 use board_ops::{Host, PluginError, Run};
 use board_plugin::child::ProcessError;
+
 use regex::Regex;
 use serde_json::{Map, Value, json};
+
+use crate::hook::{Handed, PASSED};
 
 /// How long one git command may run. A push or ls-remote reaches the
 /// network.
@@ -45,6 +48,17 @@ pub(crate) struct Ran {
 /// The finished `git -C <at> <arguments>`, reading `stdin`; one that did not
 /// finish exits 1 saying why.
 pub(crate) fn run(host: &dyn Host, at: &Path, arguments: &[&str], stdin: &str) -> Ran {
+    run_adding(host, at, arguments, stdin, &[])
+}
+
+/// [`run`] with the variables `added` set for git and the hooks it runs.
+fn run_adding(
+    host: &dyn Host,
+    at: &Path,
+    arguments: &[&str],
+    stdin: &str,
+    added: &[(&str, &str)],
+) -> Ran {
     let at = at.to_string_lossy();
     let arguments: Vec<String> = ["-C", &at]
         .into_iter()
@@ -58,6 +72,7 @@ pub(crate) fn run(host: &dyn Host, at: &Path, arguments: &[&str], stdin: &str) -
             directory: None,
             input: stdin.as_bytes(),
             deadline: TIMEOUT,
+            added,
         },
         &MODEL_VARIABLES,
     );
@@ -206,14 +221,18 @@ pub(crate) fn outgoing(
 
 /// Pushes `head` to the branch `name` on origin: git's porcelain line for
 /// it, or `github::push::failed`. Only the checked commit goes: no tags, no
-/// submodule commits and no push options, whatever git's config says.
+/// submodule commits and no push options, whatever git's config says. The
+/// pre-push hook is handed the check that passed, in `BOARD_GITHUB_PASSED`,
+/// so it reuses that check in place of judging the same parts again.
 pub(crate) fn push(
     host: &dyn Host,
     at: &Path,
     name: &str,
     head: &str,
-    digest: &str,
+    handed: &Handed,
 ) -> Result<String, PluginError> {
+    let digest = handed.digest.as_str();
+    let handed = serde_json::to_string(handed).expect("a check handed on is strings");
     let refspec = format!("{head}:refs/heads/{name}");
     let arguments = [
         "-c",
@@ -225,7 +244,7 @@ pub(crate) fn push(
         "origin",
         &refspec,
     ];
-    let ran = run(host, at, &arguments, "");
+    let ran = run_adding(host, at, &arguments, "", &[(PASSED, &handed)]);
     let marker = format!("\t{refspec}\t");
     let line = (ran.stdout.lines()).find(|line| line.contains(&marker));
     match line {

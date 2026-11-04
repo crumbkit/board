@@ -87,9 +87,9 @@ const SEND_ENV: [&str; 7] = [
     "SSH_AUTH_SOCK",
 ];
 /// What the pre-push hook passes on: a sending action's variables, the URL
-/// git pushes to, and the variables that make git run another ssh command,
+/// git pushes to, the check a sending action passed, and the variables that make git run another ssh command,
 /// which the URL rule reads to fail closed on an ssh alias.
-const PRE_PUSH_ENV: [&str; 10] = [
+const PRE_PUSH_ENV: [&str; 11] = [
     SEND_ENV[0],
     SEND_ENV[1],
     SEND_ENV[2],
@@ -98,6 +98,7 @@ const PRE_PUSH_ENV: [&str; 10] = [
     SEND_ENV[5],
     SEND_ENV[6],
     hook::PUSH_URL,
+    hook::PASSED,
     remote::SSH_VARIABLES[0],
     remote::SSH_VARIABLES[1],
 ];

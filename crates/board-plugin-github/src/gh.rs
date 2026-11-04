@@ -37,6 +37,7 @@ pub(crate) fn api(
         directory: None,
         input: b"",
         deadline: TIMEOUT,
+        added: &[],
     });
     let exited = ran.map_err(|error| {
         let why = match error {
@@ -106,6 +107,7 @@ pub(crate) fn send(
         directory: at,
         input: stdin.as_bytes(),
         deadline: TIMEOUT,
+        added: &[],
     };
     let exited = (host.run_hiding(&run, &MODEL_VARIABLES))
         .map_err(|error| unsent(named, &unfinished(&error)))?;

@@ -102,6 +102,7 @@ pub(crate) fn ssh_hostname(runner: &dyn Host, host: &str) -> Option<String> {
         directory: None,
         input: b"",
         deadline: SSH_TIMEOUT,
+        added: &[],
     };
     let exited = runner.run_hiding(&run, &MODEL_VARIABLES).ok()?;
     if exited.code != Some(0) {

@@ -108,9 +108,14 @@ pub trait Host {
             input: run.input,
             deadline: run.deadline,
         };
+        let added = run.added.iter().map(|(name, _)| *name);
+        let replaced: Vec<&str> = hidden.iter().copied().chain(added).collect();
         let environment: Vec<_> = (self.settings().environment.0.iter())
-            .filter(|(name, _)| !hidden.contains(&name.as_str()))
+            .filter(|(name, _)| !replaced.contains(&name.as_str()))
             .cloned()
+            .chain(
+                (run.added.iter()).map(|(name, value)| ((*name).to_owned(), OsString::from(value))),
+            )
             .collect();
         board_plugin::child::run(&process, &environment)
     }
@@ -158,6 +163,9 @@ pub struct Run<'a> {
     pub directory: Option<&'a Path>,
     pub input: &'a [u8],
     pub deadline: std::time::Duration,
+    /// Variables set for this process alone, over the settings' variables
+    /// of the same names, such as a result a hook the process runs reads.
+    pub added: &'a [(&'a str, &'a str)],
 }
 
 /// Another board a built-in plugin acts on, as its own `board` opens it.

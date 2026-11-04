@@ -9,7 +9,8 @@ keeps a small value between calls.
   the program is identified as the built-in plugin through `BOARD_PLUGIN`
   and runs one call deeper through `BOARD_CALL_DEPTH`. It runs in the
   directory given, or in a new empty temporary directory, and reads the
-  input given on stdin. It leads its own process group. Every process
+  input given on stdin, with the variables in its `added` set over those
+  of the same names. It leads its own process group. Every process
   still in that group is killed when the program exits, even while one of
   them holds its output open, past its deadline, past 16 MiB of stdout,
   or when Board gets SIGINT, SIGTERM or SIGHUP. On such a signal the group

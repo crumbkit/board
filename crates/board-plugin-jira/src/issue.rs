@@ -212,6 +212,7 @@ fn run_acli(host: &dyn Host, key: &str) -> Result<Exited, ProcessError> {
         directory: None,
         input: b"",
         deadline: Duration::from_secs(ACLI_SECONDS),
+        added: &[],
     })
 }
 

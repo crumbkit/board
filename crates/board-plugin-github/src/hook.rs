@@ -11,7 +11,7 @@ use serde_json::{Value, json};
 
 use crate::crossing;
 use crate::git::{self, error, git, run, variable};
-use crate::parts::ref_parts;
+use crate::parts::{Parts, ref_parts};
 use crate::remote::destinations;
 use crate::send::output;
 
@@ -43,6 +43,9 @@ code=$(board --json --personal refs / 2>/dev/null |
 [ "$code" = board::config::not_found ] && exit 0
 BOARD_GITHUB_PUSH_URL=$2 board --personal call github.pre-push --remote "$1" --refs "$refs" >/dev/null || exit 1
 "#;
+/// The variable that hands the hook the check a sending action passed
+/// before it ran `git push`, as the JSON of [`Handed`].
+pub(crate) const PASSED: &str = "BOARD_GITHUB_PASSED";
 /// The line that ends the hook's text in the install command.
 const END: &str = "BOARD_PRE_PUSH";
 /// The fields of each line git writes on the hook's stdin.
@@ -157,6 +160,21 @@ pub(crate) struct PrePushInput {
     refs: String,
 }
 
+/// The check a sending action passed before it pushed: the crossing's
+/// digest, its action, and the parts it checked beyond those the hook
+/// builds from the ref, such as a pull request's title and body.
+#[derive(Serialize, Deserialize)]
+pub(crate) struct Handed {
+    pub(crate) digest: String,
+    pub(crate) action: String,
+    pub(crate) parts: Parts,
+}
+
+/// What a ref's check is called when the hook reuses the check the action
+/// passed.
+const REUSED: &str = "the boundary passed this content when the github action checked it, so it \
+                      was not checked again";
+
 /// One ref's check against one destination.
 #[derive(Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -200,21 +218,48 @@ pub(crate) fn pre_push(host: &dyn Host, input: &Value) -> Result<Value, PluginEr
     // One ls-remote serves every ref, so `git push --tags` makes one round
     // trip.
     let have = git::advertised(host, &top, if url.is_empty() { &remote } else { &url })?;
+    let handed: Option<Handed> =
+        variable(host, PASSED).and_then(|text| serde_json::from_str(&text).ok());
     let mut checked = Vec::new();
     for fields in pushed {
         let (sha, reference) = (fields[1], fields[2]);
         let parts = ref_parts(host, &top, reference, sha, &have)?;
         for to in &destinations {
-            let passed = crossing::check(personal, "github.push", to, from.as_deref(), &parts)?;
+            let (digest, note) = if let Some(handed) =
+                reused(personal, handed.as_ref(), to, &parts)?
+            {
+                (handed.to_owned(), Some(REUSED.to_owned()))
+            } else {
+                let passed = crossing::check(personal, "github.push", to, from.as_deref(), &parts)?;
+                (passed.digest, passed.note)
+            };
             checked.push(Checked {
                 reference: reference.to_owned(),
                 to: to.clone(),
-                digest: passed.digest,
-                note: passed.note,
+                digest,
+                note,
             });
         }
     }
     Ok(output(&PrePushOutput { checked }))
+}
+
+/// The digest of the check the action handed the hook, when the boundary
+/// verifies that it passed exactly `parts` of the ref, with the action's
+/// own parts, to `to`; none when nothing was handed or it does not match.
+fn reused<'a>(
+    personal: &dyn Host,
+    handed: Option<&'a Handed>,
+    to: &str,
+    parts: &Parts,
+) -> Result<Option<&'a str>, PluginError> {
+    let Some(handed) = handed else {
+        return Ok(None);
+    };
+    let mut content = parts.clone();
+    content.extend(handed.parts.clone());
+    let matched = crossing::verified(personal, &handed.action, to, &content, &handed.digest)?;
+    Ok(matched.then_some(handed.digest.as_str()))
 }
 
 /// Name the boundaries that cover a write from the checkout, checking
