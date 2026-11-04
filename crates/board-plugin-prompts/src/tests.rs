@@ -340,21 +340,3 @@ fn a_refused_runs_in_names_its_rendered_value_as_python_wrote_it_and_the_inputs_
     assert_eq!(repr("a\tb\u{202e}"), "'a\\tb\\u202e'");
     assert_eq!(repr("caf\u{e9}"), "'caf\u{e9}'");
 }
-
-#[test]
-fn a_record_body_with_a_duplicate_key_or_that_does_not_parse_is_refused_and_a_valid_one_is_read() {
-    let valid = json!(r#"{"covers": ["acme/*"]}"#);
-    let parsed = repos::json_body("prompts", "/repos/a/notes-repo", &valid).unwrap();
-    assert_eq!(parsed, json!({"covers": ["acme/*"]}));
-    for text in [r#"{"covers": [], "covers": ["acme/*"]}"#, "{"] {
-        let error = repos::json_body("prompts", "/repos/a/notes-repo", &json!(text)).unwrap_err();
-        assert_eq!(error.code, "prompts::board::refused", "{text}");
-        assert!(
-            error.message.starts_with(
-                "board query gave the body of /repos/a/notes-repo as text that does not parse: "
-            ),
-            "{}",
-            error.message
-        );
-    }
-}

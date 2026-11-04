@@ -304,6 +304,7 @@ dependencies = [
  "board-model",
  "board-ops",
  "board-plugin",
+ "board-repos",
  "regex",
  "schemars",
  "serde",
@@ -367,6 +368,19 @@ dependencies = [
  "board-plugin-requests",
  "board-plugin-runs",
  "board-plugin-share",
+]
+
+[[package]]
+name = "board-repos"
+version = "0.0.0"
+dependencies = [
+ "board-model",
+ "board-ops",
+ "board-plugin",
+ "board-scenario",
+ "serde_json",
+ "unicode-general-category",
+ "unicode-normalization",
 ]
 
 [[package]]

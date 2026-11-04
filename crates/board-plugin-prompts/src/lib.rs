@@ -7,7 +7,6 @@ mod list;
 mod prompts;
 pub mod records;
 mod render;
-mod repos;
 
 use board_model::{CapabilityName, RecordType};
 use board_ops::{Host, Plugin, PluginError};
