@@ -88,6 +88,28 @@ fn a_process_whose_child_holds_its_output_exits_when_it_exits_and_the_child_is_s
 }
 
 #[test]
+fn a_process_whose_child_left_its_group_holding_its_output_gives_its_exit_within_a_grace_period() {
+    let empty = tempfile::tempdir().unwrap();
+    // perl leaves the group with setsid and keeps the inherited stderr.
+    let holder = script(
+        "perl -MPOSIX -e 'POSIX::setsid(); print STDOUT qq($$\\n); close STDOUT; sleep 6' & echo started",
+    );
+    let started = Instant::now();
+    let exited = run(&shell(&holder, empty.path(), 6.0), &path()).unwrap();
+    let took = started.elapsed();
+    let text = String::from_utf8_lossy(&exited.stdout).into_owned();
+    // The process that left the group is not Board's to stop; the test stops it.
+    for line in text.lines().filter_map(|line| line.parse::<i32>().ok()) {
+        if let Some(pid) = Pid::from_raw(line) {
+            let _ = kill_process(pid, Signal::KILL);
+        }
+    }
+    assert!(took < Duration::from_secs(3), "Board drained for {took:?}");
+    assert_eq!(exited.code, Some(0));
+    assert!(text.contains("started"), "{text:?}");
+}
+
+#[test]
 fn a_process_past_the_stdout_bound_is_stopped_and_one_within_it_exits() {
     let empty = tempfile::tempdir().unwrap();
     let writer = script("head -c 4096 /dev/zero; sleep 6");

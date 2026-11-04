@@ -117,3 +117,17 @@ fn numbering_the_lines_of_many_matches_scans_each_byte_once_per_expression_and_k
     let (found, total) = matches(&expressions, false, "x\ny");
     assert_eq!((found.len(), total), (2, 2));
 }
+
+#[test]
+fn a_pattern_match_is_numbered_by_the_same_line_breaks_a_judged_part_is_split_at() {
+    let text = "a\r\nb\rc\u{2028}d\n\nx";
+    let expressions = vec![compiled("x"), compiled("d")];
+    let (found, _) = matches(&expressions, false, text);
+    let numbered: Vec<(&str, Option<usize>)> = (found.iter())
+        .map(|finding| (finding.text.as_str(), finding.line))
+        .collect();
+    assert_eq!(numbered, [("d", Some(4)), ("x", Some(6))]);
+    assert_eq!(lines(text), ["a", "b", "c", "d", "", "x"]);
+    assert_eq!(lines("a\n"), ["a"]);
+    assert_eq!(lines(""), Vec::<&str>::new());
+}

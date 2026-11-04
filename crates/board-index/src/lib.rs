@@ -11,6 +11,7 @@ mod schema;
 mod server;
 mod store;
 mod timing;
+mod values;
 
 pub use crate::decisions::KeptRow;
 pub use crate::open::{Fallback, Index, IndexError, Storage, location};
@@ -24,6 +25,7 @@ pub use crate::store::{
     BlobFact, Decided, RefFact, Resolved, ValidationFact, View, Worktree, Writer, source_name,
 };
 pub use crate::timing::append_timing;
+pub use crate::values::{cache, cached};
 
 #[cfg(test)]
 mod tests;

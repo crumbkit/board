@@ -144,8 +144,9 @@ pub(crate) fn run(
 /// Runs as [`run`] does with `Scope::Group`, and when the child exits,
 /// kills every process still in its group before reaping it, even while
 /// one of them holds the child's pipes. A process that left the group, as
-/// `setsid` does, is not killed; if it holds a pipe, Board drains until the
-/// deadline and then gives the child's exit.
+/// `setsid` does, is not killed; if it holds a pipe, Board drains it for up
+/// to `GRACE` after the child exits, or until the deadline if that comes
+/// sooner, and then gives the child's exit.
 pub(crate) fn run_alone(
     program: &Path,
     arguments: &[String],
@@ -191,7 +192,7 @@ fn supervise(
     // Off Unix there are no groups to sweep, and the child is reaped as
     // `run` reaps it.
     let sweep = sweep && cfg!(unix);
-    let deadline = Instant::now() + limits.time;
+    let mut deadline = Instant::now() + limits.time;
     let mut command = Command::new(program);
     command
         .args(arguments)
@@ -229,13 +230,7 @@ fn supervise(
     let finished = loop {
         let now = Instant::now();
         if now >= deadline {
-            if swept {
-                // The child exited, but a process that left its group still
-                // holds a pipe: Board stops draining and gives the exit.
-                break finish(&mut child, scope, stdout, stderr);
-            }
-            kill(&mut child, scope);
-            break Err(Stopped::Timeout(stderr));
+            break at_deadline(&mut child, scope, sweep, swept, stdout, stderr);
         }
         let wait = (deadline - now).min(POLL);
         match events.recv_timeout(wait) {
@@ -263,13 +258,13 @@ fn supervise(
         // pipes close. Killing the group closes every pipe its members
         // held. Soft limit: what is left gets SIGKILL with no SIGTERM
         // first, since waiting a grace period would delay every run.
-        #[cfg(unix)]
-        if sweep && !swept && exited(&child) {
-            let _ = rustix::process::kill_process_group(Pid::from_child(&child), Signal::KILL);
+        // A process that left the group and holds a pipe would otherwise
+        // keep Board draining until the deadline. Output written before the
+        // child exited is already in the pipe, so `GRACE` drains it.
+        if sweep && !swept && sweep_if_exited(&child) {
             swept = true;
+            deadline = deadline.min(Instant::now() + GRACE);
         }
-        #[cfg(not(unix))]
-        let _ = sweep;
         // Board reaps the child only after both pipes close, so until then
         // its pid, and the group it leads, name no other process.
         if open == 0 && (swept || !sweep) {
@@ -294,6 +289,43 @@ fn supervise(
         replied,
     };
     (Some(spawned), finished)
+}
+
+/// What a run gives at its deadline. In sweep mode a child that exited,
+/// even since the last poll, gives its exit, and its group is killed if it
+/// was not yet; any other child is killed and the run timed out.
+fn at_deadline(
+    child: &mut Child,
+    scope: Scope,
+    sweep: bool,
+    swept: bool,
+    stdout: Vec<u8>,
+    stderr: Vec<u8>,
+) -> Result<Finished, Stopped> {
+    if swept || (sweep && sweep_if_exited(child)) {
+        // A process that left the group may still hold a pipe: Board stops
+        // draining and gives the exit.
+        return finish(child, scope, stdout, stderr);
+    }
+    kill(child, scope);
+    Err(Stopped::Timeout(stderr))
+}
+
+/// When `child` has exited, kills every process still in its group and
+/// says so. The child is unreaped, so its pid still names the group.
+#[cfg(unix)]
+fn sweep_if_exited(child: &Child) -> bool {
+    let gone = exited(child);
+    if gone {
+        let _ = rustix::process::kill_process_group(Pid::from_child(child), Signal::KILL);
+    }
+    gone
+}
+
+/// Off Unix there is no group to sweep, and sweep mode is never on.
+#[cfg(not(unix))]
+fn sweep_if_exited(_: &Child) -> bool {
+    false
 }
 
 /// Reaps a child already seen exited and gives its exit with what was read.
@@ -368,6 +400,9 @@ fn forward() -> Result<(), io::ErrorKind> {
                 }
                 // A swept group gets SIGKILL too, so nothing it started
                 // outlives Board, whatever the signal's disposition in it.
+                // Soft limit: the SIGKILL follows at once, so a handler in
+                // the group, such as git's removal of `index.lock`, rarely
+                // runs. Waiting would hold Board's exit for every signal.
                 for (group, _) in groups.iter().filter(|(_, sweep)| *sweep) {
                     let _ = rustix::process::kill_process_group(*group, Signal::KILL);
                 }
@@ -502,6 +537,51 @@ mod tests {
         loop {
             std::thread::sleep(Duration::from_secs(1));
         }
+    }
+
+    /// Starts `script` under `sh` leading its own group, as sweep mode does.
+    fn grouped(script: &str) -> std::process::Child {
+        let mut command = Command::new("sh");
+        command
+            .args(["-c", script])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        super::spawn(&mut command, super::Scope::Group, true).unwrap()
+    }
+
+    #[test]
+    fn at_the_deadline_a_child_that_exited_unseen_gives_its_exit_and_one_still_running_times_out() {
+        let mut child = grouped("exit 3");
+        let waited = std::time::Instant::now() + Duration::from_secs(5);
+        while !super::exited(&child) {
+            assert!(std::time::Instant::now() < waited, "the child never exited");
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        let given = super::at_deadline(
+            &mut child,
+            super::Scope::Group,
+            true,
+            false,
+            b"out".to_vec(),
+            Vec::new(),
+        );
+        assert!(
+            matches!(&given, Ok(super::Finished { code: Some(3), stdout, .. }) if stdout == b"out"),
+            "{given:?}"
+        );
+        let mut child = grouped("sleep 6");
+        let given = super::at_deadline(
+            &mut child,
+            super::Scope::Group,
+            true,
+            false,
+            Vec::new(),
+            Vec::new(),
+        );
+        assert!(
+            matches!(given, Err(super::Stopped::Timeout(_))),
+            "{given:?}"
+        );
     }
 
     #[test]

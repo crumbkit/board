@@ -326,7 +326,7 @@ fn a_judged_rule_is_skipped_for_a_part_another_boundary_fails_on_a_pattern() {
 }
 
 #[test]
-fn a_judged_rule_with_a_part_to_read_refuses_until_board_can_ask_a_model() {
+fn a_judged_rule_with_a_part_to_read_refuses_while_no_agent_is_set() {
     let personal = Personal::new();
     private_names(&personal);
     names_boundary(&personal, &json!({}));
@@ -334,8 +334,8 @@ fn a_judged_rule_with_a_part_to_read_refuses_until_board_can_ask_a_model() {
     let (ran, document) = personal.call("check", &pr(&json!({"pr.body": "Clever."})));
     assert_eq!(ran.code, 1);
     assert_eq!(document["code"], "boundary::board::refused");
-    assert_eq!(document["fields"]["code"], "controls::judged::unavailable");
-    assert_eq!(document["fields"]["control"], "/controls/plain");
+    assert_eq!(document["fields"]["code"], "controls::agent::not_set");
+    assert_eq!(document["fields"]["variable"], "BOARD_CONTROLS_AGENT");
 }
 
 #[test]
