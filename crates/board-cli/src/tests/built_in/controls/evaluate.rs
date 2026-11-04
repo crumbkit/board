@@ -233,8 +233,91 @@ fn findings_past_twenty_are_counted_and_left_out() {
     }
 }
 
-#[test]
-fn a_judged_rule_skips_a_part_that_failed_a_free_rule_and_is_refused_for_one_it_must_read() {
+/// A stub in place of a model: it keeps the prompt, counts its calls and
+/// prints `answer.txt` beside it.
+const STUB: &str = r#"#!/bin/sh
+here="$(dirname "$0")"
+cat > "$here/prompt.txt"
+echo call >> "$here/calls.txt"
+cat "$here/answer.txt"
+"#;
+
+/// The stub agent in a directory of its own, which `evaluate` starts
+/// through `BOARD_CONTROLS_AGENT`. It answers with no findings until told
+/// otherwise.
+struct Agent {
+    directory: tempfile::TempDir,
+}
+
+impl Agent {
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "a test writes the stub agent's script"
+    )]
+    fn new() -> Self {
+        use std::os::unix::fs::PermissionsExt as _;
+        let agent = Self {
+            directory: tempfile::tempdir().unwrap(),
+        };
+        let script = agent.directory.path().join("agent");
+        std::fs::write(&script, STUB).unwrap();
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+        agent.answers(&json!([]));
+        agent
+    }
+
+    /// The agent's argv, which names its model so verdicts are kept.
+    fn argv(&self) -> Vec<String> {
+        let script = self.directory.path().join("agent");
+        vec![
+            script.to_str().unwrap().to_owned(),
+            "--model".to_owned(),
+            "stub-model-1".to_owned(),
+        ]
+    }
+
+    /// Makes the agent answer with some prose and then `findings`.
+    fn answers(&self, findings: &Value) {
+        self.says(&format!("Read it.\n{}\n", json!({"findings": findings})));
+    }
+
+    /// Makes the agent answer with `answer`.
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "a test writes what the stub agent answers"
+    )]
+    fn says(&self, answer: &str) {
+        std::fs::write(self.directory.path().join("answer.txt"), answer).unwrap();
+    }
+
+    /// How many times the agent ran.
+    fn calls(&self) -> usize {
+        std::fs::read_to_string(self.directory.path().join("calls.txt"))
+            .map_or(0, |calls| calls.lines().count())
+    }
+
+    /// What the agent last read.
+    fn prompt(&self) -> String {
+        std::fs::read_to_string(self.directory.path().join("prompt.txt")).unwrap()
+    }
+}
+
+/// [`evaluate`] with `argv` as `BOARD_CONTROLS_AGENT`.
+fn judging(board: &Fixture, controls: &[&str], parts: &Value, argv: &[String]) -> (Output, Value) {
+    let stdin = json!({"controls": controls, "parts": parts}).to_string();
+    let argv = serde_json::to_string(argv).unwrap();
+    let ran = board.run_inheriting(
+        &["--json", "call", "controls.evaluate"],
+        &stdin,
+        &[("BOARD_CONTROLS_AGENT", &argv)],
+    );
+    let document = json(&ran);
+    (ran, document)
+}
+
+/// A board with a judged control and its rubric at /controls/plain and
+/// /rubrics/plain.md.
+fn judged() -> Fixture {
     let board = board();
     board
         .write("rubrics/plain.md", "Write plain declarative sentences.\n")
@@ -244,31 +327,173 @@ fn a_judged_rule_skips_a_part_that_failed_a_free_rule_and_is_refused_for_one_it_
                 "Plain prose.",
                 &json!({"rule": {"judged": "/rubrics/plain.md"}}),
             ),
-        )
-        .write(
-            "controls/short.json",
-            &control("Short.", &json!({"rule": {"budget": "words", "max": 1}})),
         );
-    let both = ["/controls/plain", "/controls/short"];
-    let (ran, document) = evaluate(&board, &both, &json!({"pr.body": "Too long."}));
+    board
+}
+
+/// Where judged verdicts are kept under `board`'s cache home.
+fn verdicts(board: &Fixture) -> std::path::PathBuf {
+    board.cache.path().join("board-controls")
+}
+
+#[test]
+fn a_judged_part_fails_with_the_models_findings_and_passes_without_them() {
+    let (board, agent) = (judged(), Agent::new());
+    let found =
+        json!({"line": 2, "text": "Measured, not guessed.", "rewrite": "Name who measured it."});
+    agent.answers(&json!([found]));
+    let parts = json!({"pr.body": "We measured it.\nMeasured, not guessed."});
+    let (ran, document) = judging(&board, &["/controls/plain"], &parts, &agent.argv());
+    assert_eq!(ran.code, 0, "{}", text(&ran.stderr));
+    let result = &by_part(&document)["pr.body"];
+    assert_eq!(
+        (&result["rule"], &result["status"]),
+        (&json!("judged"), &json!("failed"))
+    );
+    assert_eq!(
+        result["findings"],
+        json!([{"line": 2, "text": "Measured, not guessed.", "pattern": null, "rewrite": "Name who measured it."}])
+    );
+    let prompt = agent.prompt();
+    assert!(
+        prompt.contains("Write plain declarative sentences."),
+        "{prompt}"
+    );
+    assert!(
+        prompt.contains("    2| Measured, not guessed.\n"),
+        "{prompt}"
+    );
+    agent.answers(&json!([]));
+    let parts = json!({"pr.body": "We measured it."});
+    let (_, document) = judging(&board, &["/controls/plain"], &parts, &agent.argv());
+    assert_eq!(by_part(&document)["pr.body"]["status"], "passed");
+}
+
+#[test]
+fn a_verdict_is_reused_for_the_same_text_rubric_and_agent_and_judged_again_when_one_changes() {
+    let (board, agent) = (judged(), Agent::new());
+    let parts = json!({"pr.body": "We measured it."});
+    judging(&board, &["/controls/plain"], &parts, &agent.argv());
+    let (_, document) = judging(&board, &["/controls/plain"], &parts, &agent.argv());
+    assert_eq!(agent.calls(), 1);
+    assert_eq!(by_part(&document)["pr.body"]["status"], "passed");
+    let changed = json!({"pr.body": "We measured it twice."});
+    judging(&board, &["/controls/plain"], &changed, &agent.argv());
+    assert_eq!(agent.calls(), 2, "the changed text");
+    board.write("rubrics/plain.md", "Write short sentences.\n");
+    judging(&board, &["/controls/plain"], &parts, &agent.argv());
+    assert_eq!(agent.calls(), 3, "the changed rubric");
+    let other = [
+        agent.argv(),
+        vec!["--model".to_owned(), "another".to_owned()],
+    ]
+    .concat();
+    judging(&board, &["/controls/plain"], &parts, &other);
+    assert_eq!(agent.calls(), 4, "the changed agent command");
+}
+
+#[test]
+fn an_agent_that_does_not_name_its_model_judges_every_time_and_one_that_does_is_cached() {
+    let (board, agent) = (judged(), Agent::new());
+    let parts = json!({"pr.body": "We measured it."});
+    let unpinned = agent.argv()[..1].to_vec();
+    for _ in 0..2 {
+        let (ran, _) = judging(&board, &["/controls/plain"], &parts, &unpinned);
+        assert_eq!(ran.code, 0, "{}", text(&ran.stderr));
+    }
+    assert_eq!(agent.calls(), 2, "judged on both calls");
+    assert!(!verdicts(&board).exists());
+    for _ in 0..2 {
+        judging(&board, &["/controls/plain"], &parts, &agent.argv());
+    }
+    assert_eq!(agent.calls(), 3, "judged once more, then kept");
+}
+
+#[test]
+#[expect(
+    clippy::disallowed_methods,
+    reason = "a test deletes the verdict cache"
+)]
+fn a_deleted_cache_is_rebuilt_by_judging_again() {
+    let (board, agent) = (judged(), Agent::new());
+    let parts = json!({"pr.body": "We measured it."});
+    judging(&board, &["/controls/plain"], &parts, &agent.argv());
+    std::fs::remove_dir_all(verdicts(&board)).unwrap();
+    for _ in 0..2 {
+        let (_, document) = judging(&board, &["/controls/plain"], &parts, &agent.argv());
+        assert_eq!(by_part(&document)["pr.body"]["status"], "passed");
+        assert_eq!(agent.calls(), 2);
+    }
+}
+
+#[test]
+fn a_judged_rule_skips_a_part_that_failed_a_free_rule_whatever_order_the_controls_come_in() {
+    let (board, agent) = (judged(), Agent::new());
+    board.write(
+        "controls/short.json",
+        &control("Short.", &json!({"rule": {"budget": "words", "max": 3}})),
+    );
+    let parts = json!({"pr.title": "Short title.", "pr.body": "A body that is far too long."});
+    let (ran, document) = judging(
+        &board,
+        &["/controls/plain", "/controls/short"],
+        &parts,
+        &agent.argv(),
+    );
     assert_eq!(ran.code, 0, "{}", text(&ran.stderr));
     let statuses: Vec<Value> = (output(&document)["results"].as_array().unwrap().iter())
-        .map(|result| json!([result["control"], result["status"]]))
+        .map(|result| json!([result["control"], result["part"], result["status"]]))
         .collect();
     assert_eq!(
         statuses,
         [
-            json!(["/controls/plain", "skipped"]),
-            json!(["/controls/short", "failed"]),
+            json!(["/controls/plain", "pr.body", "skipped"]),
+            json!(["/controls/plain", "pr.title", "passed"]),
+            json!(["/controls/short", "pr.body", "failed"]),
+            json!(["/controls/short", "pr.title", "passed"]),
         ]
     );
-    let (ran, document) = evaluate(&board, &both, &json!({"pr.body": "Short."}));
-    assert_eq!(ran.code, 1, "{document}");
-    assert_eq!(document["code"], "controls::judged::unavailable");
-    assert_eq!(document["fields"]["control"], "/controls/plain");
-    let (ran, document) = evaluate(&board, &["/controls/short"], &json!({"pr.body": "Short."}));
+    assert_eq!(agent.calls(), 1);
+    assert!(agent.prompt().contains("Short title."));
+}
+
+#[test]
+fn free_rules_run_without_an_agent_and_a_judged_rule_with_a_part_to_read_needs_one() {
+    let (board, agent) = (judged(), Agent::new());
+    board.write(
+        "controls/short.json",
+        &control("Short.", &json!({"rule": {"budget": "words", "max": 1}})),
+    );
+    let both = ["/controls/short", "/controls/plain"];
+    let (ran, document) = evaluate(&board, &both, &json!({"pr.body": "Too long."}));
     assert_eq!(ran.code, 0, "{}", text(&ran.stderr));
-    assert_eq!(output(&document)["passed"], true);
+    let statuses: Vec<&Value> = (output(&document)["results"].as_array().unwrap().iter())
+        .map(|result| &result["status"])
+        .collect();
+    assert_eq!(statuses, [&json!("failed"), &json!("skipped")]);
+    let short = json!({"pr.body": "Short."});
+    let (ran, document) = evaluate(&board, &both, &short);
+    assert_eq!(ran.code, 1, "{document}");
+    assert_eq!(document["code"], "controls::agent::not_set");
+    let (ran, _) = judging(&board, &both, &short, &agent.argv());
+    assert_eq!(ran.code, 0, "{}", text(&ran.stderr));
+}
+
+#[test]
+fn an_answer_without_findings_is_refused_and_one_with_them_is_admitted() {
+    let (board, agent) = (judged(), Agent::new());
+    let parts = json!({"pr.body": "Text."});
+    agent.says("Looks fine.\n{\"verdict\": \"approve\"}\n");
+    let (ran, document) = judging(&board, &["/controls/plain"], &parts, &agent.argv());
+    assert_eq!(ran.code, 1, "{document}");
+    assert_eq!(document["code"], "controls::agent::bad_output");
+    agent.answers(&json!([{"text": "Text.", "rewrite": "Say more."}]));
+    let (ran, document) = judging(&board, &["/controls/plain"], &parts, &agent.argv());
+    assert_eq!(ran.code, 0, "{}", text(&ran.stderr));
+    assert_eq!(
+        by_part(&document)["pr.body"]["findings"],
+        json!([{"text": "Text.", "line": null, "pattern": null, "rewrite": "Say more."}])
+    );
 }
 
 #[test]

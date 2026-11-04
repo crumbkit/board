@@ -12,6 +12,7 @@ use serde_json::{Map, Value};
 
 use crate::check::measure;
 use crate::index;
+use crate::judged::Judge;
 use crate::logical;
 use crate::records::{Budget, Measure, Pattern, Rule, Show};
 
@@ -71,9 +72,22 @@ struct Evaluated {
 #[serde(deny_unknown_fields)]
 pub(crate) struct Finding {
     text: String,
-    line: Option<usize>,
+    pub(crate) line: Option<usize>,
     pattern: Option<String>,
     rewrite: Option<String>,
+}
+
+impl Finding {
+    /// A judged finding: the text at fault, how to rewrite it, and its line
+    /// when the model gave one.
+    pub(crate) fn judged(text: &str, rewrite: &str, line: Option<usize>) -> Self {
+        Self {
+            text: text.to_owned(),
+            line,
+            pattern: None,
+            rewrite: Some(rewrite.to_owned()),
+        }
+    }
 }
 
 /// The kind of rule a result comes from.
@@ -101,11 +115,15 @@ type Expressions = Vec<(String, Regex)>;
 /// Each control's verdict on each part: budget and pattern rules first,
 /// then judged rules.
 ///
-/// A judged rule skips a part that failed a budget or pattern rule. A
+/// A judged rule skips a part that failed a budget or pattern rule, and a
+/// verdict kept for the same prompt and agent is reused. The agent is read
+/// from the settings only when a judged rule has a part to read. A
 /// control named twice is checked once. Each pattern file and rubric is
 /// read once, through one `get_each`, and each pattern file is compiled
 /// once per control.
 pub(crate) fn evaluate(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
+    // The judged rules' time starts with the call, as the manifest's timeout does.
+    let mut judge = Judge::new(host);
     let Input { controls, parts } = PluginError::read_input("controls", "evaluate", input)?;
     let mut seen = BTreeSet::new();
     let named: Vec<String> = (controls.into_iter())
@@ -167,7 +185,7 @@ pub(crate) fn evaluate(host: &dyn Host, input: &Value) -> Result<Value, PluginEr
             let result = if failed.contains(part.as_str()) {
                 result(control, part, kind, Status::Skipped, Vec::new(), 0)
             } else {
-                let findings = judge(control, text, &sources[&judged.judged])?;
+                let findings = judge.findings(text, &sources[&judged.judged])?;
                 let total = findings.len();
                 result(control, part, kind, failed_if(total > 0), findings, total)
             };
@@ -378,6 +396,57 @@ struct Hit {
     end: usize,
 }
 
+/// Whether `c` breaks a line, as Python's `str.splitlines` reads it, which
+/// a model may read as a line break too.
+fn is_break(c: char) -> bool {
+    matches!(
+        c,
+        '\n' | '\r'
+            | '\u{b}'
+            | '\u{c}'
+            | '\u{1c}'
+            | '\u{1d}'
+            | '\u{1e}'
+            | '\u{85}'
+            | '\u{2028}'
+            | '\u{2029}'
+    )
+}
+
+/// The lines of `text`, split at each line break, `\r\n` counting as one,
+/// without a last empty line after a final break.
+pub(crate) fn lines(text: &str) -> Vec<&str> {
+    let mut lines = Vec::new();
+    let mut start = 0;
+    let mut chars = text.char_indices().peekable();
+    while let Some((at, c)) = chars.next() {
+        if !is_break(c) {
+            continue;
+        }
+        lines.push(&text[start..at]);
+        start = at + c.len_utf8();
+        if c == '\r' && chars.peek().is_some_and(|(_, next)| *next == '\n') {
+            chars.next();
+            start += 1;
+        }
+    }
+    if start < text.len() {
+        lines.push(&text[start..]);
+    }
+    lines
+}
+
+/// How many line breaks lie between byte `from` and byte `to` of `text`, as
+/// [`lines`] counts them: a `\n` just after a `\r` is part of its break.
+fn breaks(text: &str, from: usize, to: usize) -> usize {
+    (text[from..to].char_indices())
+        .filter(|&(at, c)| {
+            let at = from + at;
+            is_break(c) && !(c == '\n' && at > 0 && text.as_bytes()[at - 1] == b'\r')
+        })
+        .count()
+}
+
 /// Each expression's non-empty matches in `text`, in order, and how many
 /// bytes Board scanned to number their lines: each expression's matches come
 /// in increasing order, so the line count runs on from the last match and
@@ -391,9 +460,8 @@ fn hits(expressions: &Expressions, text: &str) -> (Vec<Hit>, usize) {
             if matched.is_empty() {
                 continue;
             }
-            let gap = &text[at..matched.start()];
-            scanned += gap.len();
-            line += gap.matches('\n').count();
+            scanned += matched.start() - at;
+            line += breaks(text, at, matched.start());
             at = matched.start();
             hits.push(Hit {
                 line,
@@ -404,21 +472,6 @@ fn hits(expressions: &Expressions, text: &str) -> (Vec<Hit>, usize) {
         }
     }
     (hits, scanned)
-}
-
-/// The model's findings on `text` against `rubric`. Board cannot ask a
-/// model yet, so a judged rule with a part to read is
-/// `controls::judged::unavailable`; the runner lands in a follow-up.
-fn judge(control: &str, _text: &str, _rubric: &[u8]) -> Result<Vec<Finding>, PluginError> {
-    Err(PluginError {
-        code: "controls::judged::unavailable".to_owned(),
-        message: format!(
-            "{control} has a judged rule, which this Board cannot apply yet: the agent that \
-             judges text lands in a follow-up change; leave {control} out of `controls` until then"
-        ),
-        fields: Map::from_iter([("control".to_owned(), Value::from(control))]),
-        hint: None,
-    })
 }
 
 fn not_found(missing: &[&String]) -> PluginError {

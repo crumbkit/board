@@ -22,18 +22,20 @@ fn cached(
     cache: Option<&Path>,
     arguments: &[&str],
 ) -> (Output, Ran) {
-    cached_with(directory, data, cache, PATH, arguments, b"")
+    cached_with(directory, data, cache, PATH, &[], arguments, b"")
 }
 
 /// The `PATH` the built-in plugins' processes see.
 const PATH: &str = "/usr/bin:/bin";
 
-/// [`cached`] with `path` as the `PATH` and `stdin` as the standard input.
+/// [`cached`] with `path` as the `PATH`, `inherited` as the variables Board
+/// inherited, and `stdin` as the standard input.
 fn cached_with(
     directory: &Path,
     data: Option<&Scenario>,
     cache: Option<&Path>,
     path: &str,
+    inherited: &[(&str, &str)],
     arguments: &[&str],
     stdin: &[u8],
 ) -> (Output, Ran) {
@@ -47,6 +49,9 @@ fn cached_with(
         allowed_signers: None,
         environment: board_plugin::Environment {
             path: Some(path.into()),
+            inherited: (inherited.iter())
+                .map(|(name, value)| (OsString::from(name), OsString::from(value)))
+                .collect(),
             ..board_plugin::Environment::default()
         },
         complete: None,
@@ -462,11 +467,23 @@ impl Fixture {
     /// Runs `board` in the board's root with its cache and `stdin` as its
     /// standard input.
     fn run_with(&self, arguments: &[&str], stdin: &str) -> Output {
+        self.run_inheriting(arguments, stdin, &[])
+    }
+
+    /// [`Self::run_with`] with `inherited` among the variables Board
+    /// inherited, which a capability's `env` may pass on.
+    fn run_inheriting(
+        &self,
+        arguments: &[&str],
+        stdin: &str,
+        inherited: &[(&str, &str)],
+    ) -> Output {
         cached_with(
             self.board.workdir(),
             None,
             Some(self.cache.path()),
             &self.path,
+            inherited,
             arguments,
             stdin.as_bytes(),
         )
@@ -495,6 +512,7 @@ impl Fixture {
             None,
             cache,
             &self.path,
+            &[],
             &arguments,
             b"",
         );

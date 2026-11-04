@@ -54,8 +54,7 @@ such as a pull request body, instead of files.
     what matched and never the expression, so the file can stay private;
     with `pattern`, it names the expression too.
   - A judged rule, such as `{"judged": "/rubrics/plain.md"}`, names a
-    rubric that a clean-context model reads text against. Board does not
-    apply judged rules yet; see `controls.evaluate` below.
+    rubric that a clean-context model reads text against.
 
   A rule holds the fields of exactly one kind, and is never null. A pattern
   file and a rubric are references, so `board check` marks the control
@@ -158,9 +157,10 @@ The plugin ships both schemas. `board plugin enable controls` writes them to
     `controls`.
   - A finding holds `text`, the words at fault, `line`, `pattern` and
     `rewrite`. A pattern finding quotes the match and gives its line, and
-    names the expression in `pattern` only with `show` `pattern`. A failed
-    budget has one finding with a null `line`. Every key is present, and
-    null means none.
+    names the expression in `pattern` only with `show` `pattern`. A judged
+    finding gives `rewrite`, the model's instruction for fixing the
+    sentence, and its line when the model named one. A failed budget has one
+    finding with a null `line`. Every key is present, and null means none.
   - A result holds `used` and `max`, which are null except in a budget
     result. A result shows at most 20 findings and counts the rest in
     `omitted`, which is null when none is left out.
@@ -173,11 +173,46 @@ The plugin ships both schemas. `board plugin enable controls` writes them to
   the line by its number. With `show` `match-only` it adds only the column
   of a syntax error, because the parser's own message can quote part of the
   expression; with `pattern` it quotes the line and the parser's message.
-  A judged rule that has a part to read fails the call with
-  `controls::judged::unavailable`: the agent that judges text lands in a
-  follow-up change, so leave judged controls out of `controls` until then.
   The call reads every pattern file and rubric once, and compiles each
   pattern file once per control.
+
+  A judged rule starts the agent `BOARD_CONTROLS_AGENT` names, a JSON array
+  of strings, as `review.run` starts `BOARD_REVIEW_AGENT` (the review
+  plugin's README explains the variable and how to run the agent without
+  tools). The agent runs in a new empty directory, leads its own process
+  group, and gets the rubric and the part's numbered lines on stdin. Its
+  answer, or the `result` of `claude -p --output-format json`'s envelope,
+  must end with a JSON object holding `findings`; otherwise the call fails
+  with `controls::agent::bad_output`. The part's text is untrusted, and a
+  verdict is no stronger than the agent's resistance to instructions in it.
+  The variable is read only when a judged rule has a part to read, so free
+  rules need no agent; without it the call fails with
+  `controls::agent::not_set`, and with a malformed one
+  `controls::agent::invalid`. An agent that cannot start, exits non-zero or
+  runs out of time fails the call with `controls::agent::not_started`,
+  `failed` or `timeout`; the refusal names only the program, never its
+  arguments. Put a credential in the variables the capability's `env`
+  declares, never in the argv.
+
+  When the argv names the model with `--model` and a full model id, each
+  verdict is kept in `$XDG_CACHE_HOME/board-controls/judged/` (else
+  `~/.cache/board-controls/judged/`), in a file named by the SHA-256 of the
+  whole prompt, which holds the rubric and the text, and the argv. A retry
+  then judges only text that changed. Pin the model like this:
+
+  ```sh
+  export BOARD_CONTROLS_AGENT='["claude", "-p", "--model", "claude-sonnet-4-5-20250929", "--output-format", "json", "--tools", ""]'
+  ```
+
+  A model alias such as `sonnet`, or a model set in
+  `~/.claude/settings.json`, is not part of the key, so a pinned argv names
+  a full id. Without `--model`, the model can change without the argv
+  showing it, so no verdict is kept and every part is judged on every call.
+  The cache is trusted state with the same standing as the controls: any
+  process running as the same person can write a verdict there. Deleting
+  the directory costs only new judgements. The judged rules share 29
+  minutes from the start of the call, which the plugin enforces itself,
+  since Board puts no deadline on a built-in call.
 
 Board refuses every call with `board::plugin::schema_differs` when the board's
 copy of either schema differs from the one the plugin ships;
@@ -235,4 +270,5 @@ the kind, because Board checks no reference under `anyOf` or `oneOf`.
 This directory keeps `SKILL.md` and the mod. The tests of the plugin through
 the binary are in `crates/board-cli/src/tests/built_in/controls.rs` and the
 two files beside it in `controls/`, which run the same commands in process.
+The judged tests start a stub agent script, never a model.
 `claude plugin test claude-code` runs the mod's tests.

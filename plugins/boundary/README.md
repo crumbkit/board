@@ -60,8 +60,8 @@ controls go to one `controls.evaluate`, so a part's budget and pattern rules
 run before its judged rules, and a judged rule skips a part that failed a
 free one. A refusal from `controls.evaluate`, such as
 `controls::control::not_found`, is `boundary::board::refused` carrying that
-code. Until Board can ask a model, a judged rule with a part to read is
-refused that way with `controls::judged::unavailable`.
+code. A judged rule with a part to read is refused that way with
+`controls::agent::not_set` when `BOARD_CONTROLS_AGENT` names no agent.
 Results that the plugin cannot read, which happens only when the boundary
 and controls plugins come from different Board builds, refuse the check
 with `boundary::evaluate::unreadable`.

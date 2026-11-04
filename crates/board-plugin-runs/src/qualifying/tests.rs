@@ -124,6 +124,7 @@ pub(crate) fn board(files: &[(&str, String)]) -> (Scenario, Real) {
             day_start: None,
             caller: None,
             environment: board_ops::Variables::default(),
+            cache_home: None,
         },
         asked: RefCell::default(),
         failing: false,

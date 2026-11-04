@@ -1,7 +1,7 @@
 //! `call` (docs/plugins.md, Calling a capability).
 
 use std::cell::RefCell;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
 use board_plugin::{
@@ -107,6 +107,7 @@ impl Board {
                     .map(|text| text.to_string_lossy().into_owned()),
                 caller: environment.caller.as_ref().map(PathBuf::from),
                 environment: Variables(board_plugin::passed(chosen, environment)?),
+                cache_home: plugins.cache.map(Path::to_path_buf),
             },
             // As `board call` sets `BOARD_PLUGIN` for a child: the plugin
             // already named, else this one. A put refuses a name that does
