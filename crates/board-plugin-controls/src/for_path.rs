@@ -80,7 +80,9 @@ pub(crate) fn applying(host: &dyn Host, path: &str) -> Result<BTreeSet<String>, 
     let refused = |error: &board_ops::RefsError| {
         PluginError::board_refused("controls", "refs", &error.refusal())
     };
-    let answers = host.refs(&asked, Absent::Locate).map_err(|e| refused(&e))?;
+    let answers = host
+        .refs(&asked, Absent::Locate, &[])
+        .map_err(|e| refused(&e))?;
     let [answer] = <[_; 1]>::try_from(answers).expect("refs answers each path it is asked once");
     let mut applying = BTreeSet::new();
     match answer {

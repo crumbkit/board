@@ -718,14 +718,14 @@ board call broken.due
   fails with board::plugin::bad_manifest
   hint
 
-board call tasks.due
+board call chores.due
   fails with board::plugin::bad_input
-  run board call tasks.due -h
+  run board call chores.due -h
     exits 0
   run board plugin find --capability due --json
     exits 0
 
-board call tasks.due (with BOARD_CALL_DEPTH=8)
+board call chores.due (with BOARD_CALL_DEPTH=8)
   fails with board::plugin::too_deep
   hint
 
@@ -759,7 +759,7 @@ board call plans.open
 
 board tk due
   fails with board::plugin::alias_conflict
-  run board call tasks.due
+  run board call chores.due
     exits 0
 
 board call journal.due

@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 
 use board_model::{Kind, LogicalPath, ObjectId};
 use board_ops::{Board, CheckReport, Expect, Plugins};
-use board_plugin::{Environment, Limits, Target};
+use board_plugin::Target;
 use board_tree::Status;
 
 /// How many times each operation runs; the median is reported.
@@ -30,9 +30,10 @@ const MOUNTS: usize = 20;
 /// `tasks.available` shows.
 const TASKS: usize = 100;
 /// The schema the tasks plugin ships, which `board plugin enable` writes.
-const TASK_SCHEMA: &str = include_str!("../../plugins/tasks/types/tasks/task/v2.schema.json");
+const TASK_SCHEMA: &str =
+    include_str!("../../crates/board-plugin-tasks/types/tasks/task/v2.schema.json");
 
-/// The operation that times a call to a Python plugin.
+/// The operation that times a call to the built-in tasks plugin.
 pub(crate) const CALL: &str = "`board call tasks.available --repo /`, warm";
 /// The operation that times a put, which writes a record into the board.
 pub(crate) const PUT: &str = "`board put` of a small record, warm";
@@ -64,40 +65,12 @@ impl Timed {
     }
 }
 
-/// What the plugin call takes from the machine bench runs on.
+/// What the binaries `--against` compares take from the machine bench runs
+/// on.
 #[derive(Debug)]
 pub(crate) struct Host {
-    /// `PATH`, which must hold `uv`: Board runs the tasks plugin through it.
     pub(crate) path: OsString,
     pub(crate) home: Option<OsString>,
-    /// The directory holding the `board` that the plugin's own `board query`
-    /// runs: the one beside this binary, built with its profile.
-    pub(crate) board: PathBuf,
-    /// `XDG_DATA_HOME`, with the tasks plugin installed in `board/plugins`.
-    pub(crate) data: PathBuf,
-}
-
-/// Why bench skips the plugin call, if it does.
-pub(crate) fn skip(enabled: bool, host: &Host) -> Option<String> {
-    if !enabled {
-        return Some("the board does not enable the tasks plugin".to_owned());
-    }
-    if !std::env::split_paths(&host.path).any(|directory| directory.join("uv").is_file()) {
-        return Some("uv is not on PATH".to_owned());
-    }
-    None
-}
-
-/// The `PATH` the plugin call gets, with `host.board` first. A missing
-/// `board` is an error, so the timing job cannot pass without timing the call.
-pub(crate) fn plugin_path(host: &Host) -> Result<OsString, BenchError> {
-    if !host.board.join("board").is_file() {
-        return Err(BenchError::NoBoard {
-            directory: host.board.clone(),
-        });
-    }
-    let directories = std::iter::once(host.board.clone()).chain(std::env::split_paths(&host.path));
-    std::env::join_paths(directories).map_err(|error| failed(&error))
 }
 
 /// What `bench` was asked to do.
@@ -180,15 +153,13 @@ pub(crate) fn budgets(docs: &str) -> Result<Vec<(String, Duration)>, BenchError>
 }
 
 /// Times every budgeted operation on the board at `root`, a repository root.
-/// `get` reads the first record a check finds, `ls` lists its directory, the
-/// plugin call runs on `host`, and `put` writes a record for each run into a
-/// board bench generated. `mounted` is the mounted board generated beside
+/// `get` reads the first record a check finds, `ls` lists its directory, and
+/// `put` writes a record for each run into a board bench generated. `mounted` is the mounted board generated beside
 /// it, which the mounted query reads; a board given with `--board` has none,
 /// and bench only reads it.
 pub(crate) fn run(
     root: &Path,
     budgets: &[(String, Duration)],
-    host: &Host,
     mounted: Option<&Path>,
 ) -> Result<Vec<Timed>, BenchError> {
     let (board, warm, checked) = warmed(root)?;
@@ -205,9 +176,10 @@ pub(crate) fn run(
                     .plugins
                     .iter()
                     .any(|name| name.as_str() == "tasks");
-                let took = match skip(enabled, host) {
-                    Some(reason) => Took::Skipped(reason),
-                    None => Took::Median(call(&board, warm.path(), plugin_path(host)?, host)?),
+                let took = if enabled {
+                    Took::Median(call(&board, warm.path())?)
+                } else {
+                    Took::Skipped("the board does not enable the tasks plugin".to_owned())
                 };
                 return Ok(Timed {
                     operation: operation.clone(),
@@ -281,6 +253,7 @@ pub(crate) fn warmed(root: &Path) -> Result<(Board, tempfile::TempDir, CheckRepo
     // One name serves every build, as each bench's cache is a new temporary
     // directory.
     board.built_by("xtask-bench");
+    board.build_in(&[&board_plugin_tasks::Tasks]);
     let warm = tempfile::tempdir().map_err(|error| failed(&error))?;
     let checked = board
         .check(None, Some(warm.path()))
@@ -311,20 +284,9 @@ fn count(board: &Board, warm: &Path) -> Result<(), BenchError> {
 
 /// The median of `RUNS` calls of `tasks.available` on the board's own tree,
 /// which syncs no mount and reads no git remote, with the index in `warm`,
-/// after one call whose time is discarded: Python compiles
-/// the plugin's bytecode.
-fn call(board: &Board, warm: &Path, path: OsString, host: &Host) -> Result<Duration, BenchError> {
-    let directory = host.data.join("board/plugins");
+/// after one call whose time is discarded.
+fn call(board: &Board, warm: &Path) -> Result<Duration, BenchError> {
     let plugins = Plugins {
-        directory: Some(&directory),
-        environment: Environment {
-            path: Some(path),
-            home: host.home.clone(),
-            cache: Some(warm.into()),
-            data: Some(host.data.clone().into()),
-            ..Environment::default()
-        },
-        limits: Limits::default(),
         cache: Some(warm),
         ..Plugins::default()
     };

@@ -39,6 +39,7 @@ impl Host for Real {
         &self,
         _paths: &[LogicalPath],
         _absent: Absent,
+        _fields: &[String],
     ) -> Result<Vec<Result<RefsReport, RefsError>>, RefsError> {
         panic!("this plugin resolves no paths")
     }

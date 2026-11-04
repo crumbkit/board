@@ -519,7 +519,7 @@ fn unopened(starts: &mut Starts) {
 }
 
 /// An XDG fixture with plugins installed whose calls fail in each way:
-/// each offers `due`, as tasks does, and strict's needs a `before`.
+/// each offers `due`, as chores does, and strict's needs a `before`.
 fn calling() -> Scenario {
     let manifest = |name: &str| {
         let manifest = TASKS.replace(r#""tasks""#, &format!("{name:?}"));
@@ -529,7 +529,7 @@ fn calling() -> Scenario {
     };
     let huge = "#!/bin/sh\ncat > /dev/null\nhead -c 16777300 /dev/zero\n";
     let runs = [
-        ("tasks", answering(RESULT, 0)),
+        ("chores", answering(RESULT, 0)),
         ("journal", answering(RESULT, 0)),
         ("strict", answering(RESULT, 0)),
         ("bad", answering("not json", 0)),
@@ -561,10 +561,10 @@ fn enabling(plugins: &str) -> Scenario {
     board
 }
 
-/// A board enabling tasks, run with `xdg` as its XDG fixture.
-fn tasks(starts: &mut Starts, xdg: &Scenario) -> RuntimePlace {
+/// A board enabling chores, run with `xdg` as its XDG fixture.
+fn chores(starts: &mut Starts, xdg: &Scenario) -> RuntimePlace {
     starts
-        .share(enabling(r#""tasks""#))
+        .share(enabling(r#""chores""#))
         .stdin("{}")
         .xdg(xdg.workdir().join("xdg"))
 }
@@ -572,30 +572,30 @@ fn tasks(starts: &mut Starts, xdg: &Scenario) -> RuntimePlace {
 /// Plugin calls that fail.
 fn calling_plugins(starts: &mut Starts) {
     let xdg = calling();
-    let tasks = tasks(starts, &xdg);
+    let chores = chores(starts, &xdg);
     let lines: [(Code, &str); 3] = [
         (Code::PluginNotEnabled, "call journal.due"),
         (Code::PluginNotInstalled, "call nowhere.due"),
         (Code::PluginBadManifest, "call broken.due"),
     ];
     for (code, line) in lines {
-        starts.add(&tasks, code, line);
-        starts.pair(&tasks, code, line, "call tasks.due");
+        starts.add(&chores, code, line);
+        starts.pair(&chores, code, line, "call chores.due");
     }
     starts.add(
-        &tasks.clone().stdin("[]"),
+        &chores.clone().stdin("[]"),
         Code::PluginBadInput,
-        "call tasks.due",
+        "call chores.due",
     );
-    let deep = tasks.clone().env("BOARD_CALL_DEPTH", "8");
-    starts.add(&deep, Code::PluginTooDeep, "call tasks.due");
+    let deep = chores.clone().env("BOARD_CALL_DEPTH", "8");
+    starts.add(&deep, Code::PluginTooDeep, "call chores.due");
     starts.variable(
         &deep,
         Code::PluginTooDeep,
-        "call tasks.due",
+        "call chores.due",
         "BOARD_CALL_DEPTH",
     );
-    let names = r#""tasks", "journal", "strict", "bad", "fails", "huge", "missing""#;
+    let names = r#""chores", "journal", "strict", "bad", "fails", "huge", "missing""#;
     let all = starts
         .share(enabling(names))
         .stdin("{}")
@@ -622,37 +622,41 @@ fn calling_plugins(starts: &mut Starts) {
         if !line.is_empty() {
             starts.add(&all, code, line);
         }
-        starts.pair(&all, code, twin, "call tasks.due");
+        starts.pair(&all, code, twin, "call chores.due");
     }
 }
 
 /// A call to plans, which the binary has built in, on a board that enables
-/// it and tasks, with a copy of plans installed too.
+/// it and chores, with a copy of plans installed too.
 fn installed_again(starts: &mut Starts) {
     let xdg = Scenario::new();
     let plugins = "xdg/data/board/plugins";
     let plans = TASKS.replace(r#""tasks""#, r#""plans""#);
+    let chores = TASKS.replace(r#""tasks""#, r#""chores""#);
     xdg.write(&format!("{plugins}/plans/plugin.json"), Item::File(&plans))
-        .write(&format!("{plugins}/tasks/plugin.json"), Item::File(TASKS))
         .write(
-            &format!("{plugins}/tasks/run"),
+            &format!("{plugins}/chores/plugin.json"),
+            Item::File(&chores),
+        )
+        .write(
+            &format!("{plugins}/chores/run"),
             Item::Executable(&answering(RESULT, 0)),
         );
     let place = starts
-        .share(enabling(r#""plans", "tasks""#))
+        .share(enabling(r#""plans", "chores""#))
         .stdin("{}")
         .xdg(xdg.workdir().join("xdg"));
     starts.kept.push(Box::new(xdg));
     let line = "call plans.open";
     starts.add(&place, Code::PluginDuplicate, line);
-    starts.pair(&place, Code::PluginDuplicate, line, "call tasks.due");
+    starts.pair(&place, Code::PluginDuplicate, line, "call chores.due");
 }
 
 /// An alias two enabled plugins share.
 fn aliasing(starts: &mut Starts) {
     let xdg = Scenario::new();
     let plugins = "xdg/data/board/plugins";
-    for name in ["tasks", "todo"] {
+    for name in ["chores", "todo"] {
         let manifest = TASKS
             .replace(r#""tasks""#, &format!("{name:?}"))
             .replace(r#""run":"#, r#""alias": "tk", "run":"#);
@@ -666,7 +670,7 @@ fn aliasing(starts: &mut Starts) {
         );
     }
     let place = starts
-        .share(enabling(r#""tasks", "todo""#))
+        .share(enabling(r#""chores", "todo""#))
         .stdin("{}")
         .xdg(xdg.workdir().join("xdg"));
     starts.kept.push(Box::new(xdg));
@@ -693,17 +697,21 @@ fn enabling_plugins(starts: &mut Starts) {
         &format!("{plugins}/journal/plugin.json"),
         Item::File(&journal),
     );
-    for name in ["journal", "tasks"] {
+    for name in ["journal", "chores"] {
         xdg.write(
             &format!("{plugins}/{name}/run"),
             Item::Executable(&answering(RESULT, 0)),
         );
     }
-    xdg.write(&format!("{plugins}/tasks/plugin.json"), Item::File(TASKS));
+    let chores = TASKS.replace(r#""tasks""#, r#""chores""#);
+    xdg.write(
+        &format!("{plugins}/chores/plugin.json"),
+        Item::File(&chores),
+    );
     board
         .write(
             ".board/board.json",
-            Item::File(r#"{"$type": "board/config/v1", "plugins": ["journal", "tasks"]}"#),
+            Item::File(r#"{"$type": "board/config/v1", "plugins": ["journal", "chores"]}"#),
         )
         .write(
             ".board/types/journal/note/v1.schema.json",
@@ -715,7 +723,7 @@ fn enabling_plugins(starts: &mut Starts) {
         .xdg(xdg.workdir().join("xdg"));
     let line = "call journal.due";
     starts.add(&place, Code::PluginSchemaDiffers, line);
-    starts.pair(&place, Code::PluginSchemaDiffers, line, "call tasks.due");
+    starts.pair(&place, Code::PluginSchemaDiffers, line, "call chores.due");
     let place = starts
         .keep(lacking_a_schema().0)
         .xdg(xdg.workdir().join("xdg"));

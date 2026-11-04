@@ -56,8 +56,8 @@ REVIEW_SCHEMA = {
 BASE = "0123456789abcdef0123456789abcdef01234567"
 # The task every fixture change does, which the fixture board holds.
 TASK = "/tasks/given.md"
-# The tasks plugin a test that adds tasks enables.
-TASKS_PLUGIN = REPOSITORY / "plugins" / "tasks"
+# The fixture plugins a test installs.
+FIXTURES = Path(__file__).resolve().parent / "fixtures"
 
 
 def board_binary() -> Path:
@@ -205,8 +205,7 @@ def board(tmp_path: Path) -> Board:
 
 @pytest.fixture
 def tasks_board(board: Board) -> Board:
-    """The fixture board with the tasks plugin enabled too, so `tasks.add` writes tasks to its own tree."""
-    (board.data / "board" / "plugins" / "tasks").symlink_to(TASKS_PLUGIN)
+    """The fixture board with Board's built-in tasks plugin enabled too, so `tasks.add` writes tasks to its own tree."""
     enabled = board.run("plugin", "enable", "tasks")
     assert enabled.returncode == 0, enabled.stderr
     return board

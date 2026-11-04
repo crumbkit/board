@@ -105,13 +105,7 @@ fn lint(root: &Path) -> Result<Report, LintError> {
 /// Times the budgeted operations on the board `options` names, or on one
 /// generated for the run, or compares them in a release build of this
 /// workspace with an older binary, and prints whether they passed.
-/// The plugin call gets this machine's `PATH` and `HOME`, the `board` beside
-/// this binary, and a data directory that installs the repository's tasks
-/// plugin.
-#[expect(
-    clippy::disallowed_methods,
-    reason = "bench installs the plugin it calls"
-)]
+/// The binaries `--against` compares get this machine's `PATH` and `HOME`.
 fn bench(root: &Path, options: &bench::Options) -> Result<bool, bench::BenchError> {
     let docs = std::fs::read_to_string(root.join("docs/architecture/performance/budgets.md"))
         .map_err(bench::BenchError::Write)?;
@@ -120,17 +114,9 @@ fn bench(root: &Path, options: &bench::Options) -> Result<bool, bench::BenchErro
         Some((base, runs)) => Some(([base.to_owned(), against::build(root)?], runs)),
         None => None,
     };
-    let data = tempfile::tempdir().map_err(bench::BenchError::Write)?;
-    let plugins = data.path().join("board/plugins");
-    std::fs::create_dir_all(&plugins).map_err(bench::BenchError::Write)?;
-    std::os::unix::fs::symlink(root.join("plugins/tasks"), plugins.join("tasks"))
-        .map_err(bench::BenchError::Write)?;
-    let exe = std::env::current_exe().map_err(bench::BenchError::Write)?;
     let host = bench::Host {
         path: process::var("PATH").unwrap_or_default(),
         home: process::var("HOME"),
-        board: exe.parent().map(Path::to_path_buf).unwrap_or_default(),
-        data: data.path().to_owned(),
     };
     let generated = tempfile::tempdir().map_err(bench::BenchError::Write)?;
     let mounts = tempfile::tempdir().map_err(bench::BenchError::Write)?;
@@ -146,7 +132,7 @@ fn bench(root: &Path, options: &bench::Options) -> Result<bool, bench::BenchErro
         (generated.path(), Some(generated_mounted.as_path()))
     };
     let Some((binaries, runs)) = against else {
-        let timed = bench::run(board, &budgets, &host, mounted)?;
+        let timed = bench::run(board, &budgets, mounted)?;
         report::emit(&Output::Bench(&timed));
         return Ok(timed.iter().all(bench::Timed::passed));
     };

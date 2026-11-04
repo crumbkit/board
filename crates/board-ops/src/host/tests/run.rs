@@ -26,6 +26,7 @@ impl Host for Recording {
         &self,
         _: &[LogicalPath],
         _: Absent,
+        _: &[String],
     ) -> Result<Vec<Result<RefsReport, RefsError>>, RefsError> {
         unreachable!("this host runs processes only")
     }

@@ -8,7 +8,8 @@
 use std::path::Path;
 use std::time::{Duration, SystemTime};
 
-use board_model::canonical_json;
+use board_model::{LogicalPath, Refusal, canonical_json};
+use board_ops::Elsewhere;
 use serde_json::json;
 
 use super::*;
@@ -130,6 +131,7 @@ impl Host for Nowhere {
         &self,
         _: &[LogicalPath],
         _: board_ops::Absent,
+        _: &[String],
     ) -> Result<Vec<Result<board_ops::RefsReport, board_ops::RefsError>>, board_ops::RefsError>
     {
         panic!("notes resolves no refs")

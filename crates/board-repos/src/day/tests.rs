@@ -45,3 +45,33 @@ fn a_date_is_shown_as_iso_8601_across_a_leap_day_and_before_1970() {
     assert_eq!(day(19_782), "2024-02-29");
     assert_eq!(day(19_783), "2024-03-01");
 }
+
+#[test]
+fn a_date_reads_only_as_yyyy_mm_dd_naming_a_day_its_month_has() {
+    let read = |text: &str| Date::parse(text).map(|date| date.to_string());
+    assert_eq!(read("2028-02-29").as_deref(), Some("2028-02-29"));
+    for refused in [
+        "2027-02-29",
+        "2026-13-01",
+        "2026-00-10",
+        "2026-1-01",
+        "20261025",
+        "2026-10-25T",
+        "0000-01-01",
+        "2026-10-3a",
+    ] {
+        assert_eq!(read(refused), None, "{refused}");
+    }
+}
+
+#[test]
+fn days_count_from_1970_both_ways_and_weekdays_start_on_monday() {
+    for days in [-800_000, -1, 0, 19_416, 19_782, 20_751, 800_000] {
+        assert_eq!(Date::from_days(days).days(), days);
+    }
+    let monday = Date::parse("2026-10-26").unwrap();
+    assert_eq!((monday.weekday(), monday.plus(6).weekday()), (0, 6));
+    assert_eq!(monday.plus(-26).to_string(), "2026-09-30");
+    assert_eq!(Date::clamped(2027, 2, 31).to_string(), "2027-02-28");
+    assert_eq!(Date::clamped(2028, 2, 31).to_string(), "2028-02-29");
+}

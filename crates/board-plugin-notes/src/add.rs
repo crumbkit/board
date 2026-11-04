@@ -6,14 +6,15 @@ use std::time::{Duration, SystemTime};
 use board_model::{Code, shown_remote};
 use board_ops::{Host, PluginError};
 use board_repos::{
-    ATTEMPTS, Date, EDITED, MOVED, Repo, Writer, create, day_start, landed, refused, slug, today,
+    ATTEMPTS, Date, EDITED, MOVED, Repo, Through, Writer, create, day_start, landed, refused, slug,
+    today, trimmed,
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use crate::route::choose;
-use crate::{PLUGIN, Through, read, refusal, remote, trimmed, writer};
+use crate::{PLUGIN, read, refusal, remote, writer};
 
 /// How many names an inbox note tries, `<time>.md`, then `<time>-2.md` and
 /// on, when notes share a second.

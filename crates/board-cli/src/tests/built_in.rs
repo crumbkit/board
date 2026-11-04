@@ -79,8 +79,10 @@ fn listed(board: &Scenario, data: &Scenario, name: &str) -> Value {
 #[test]
 fn a_built_in_plugin_is_listed_without_a_program_to_run_and_an_installed_one_keeps_its_own() {
     let (board, data) = installed();
+    let chores = TASKS.replace(r#""tasks""#, r#""chores""#);
+    data.write("plugins/chores/plugin.json", Item::File(&chores));
     assert_eq!(listed(&board, &data, "plans").get("run"), None);
-    assert_eq!(listed(&board, &data, "tasks")["run"], json!(["./run"]));
+    assert_eq!(listed(&board, &data, "chores")["run"], json!(["./run"]));
 }
 
 #[test]
@@ -738,3 +740,4 @@ mod plans;
 mod prompts;
 mod runs;
 mod share;
+mod tasks;

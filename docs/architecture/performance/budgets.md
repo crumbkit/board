@@ -19,23 +19,16 @@ the other reference board.
 | `board put` of a small record, warm | 300 ms |
 
 `cargo xtask bench` is the timing job. It runs on a generated board in CI's
-slow lane, on Linux nightly, on macOS on Monday nights, and on both before each release. It reports every run and fails above three times a budget. A pull request that takes an operation past its budget is caught by the next nightly run on Linux, or by the next Monday run when only macOS is slow. In nextest, `xtask/tests/bench.rs` runs the real bench on a 20-record board without `uv` and checks its seven rows against three times each budget; a board that small does not show a regression. The owner times the
+slow lane, on Linux nightly, on macOS on Monday nights, and on both before each release. It reports every run and fails above three times a budget. A pull request that takes an operation past its budget is caught by the next nightly run on Linux, or by the next Monday run when only macOS is slow. In nextest, `xtask/tests/bench.rs` runs the real bench on a 20-record board and checks its eight rows against three times each budget; a board that small does not show a regression. The owner times the
 private export locally with `--board`. The work-count tests are the hard gate.
 
-The plugin call row calls this repository's tasks plugin in process, as the
-other rows run, and Board starts the plugin through `uv`. The generated board
-enables tasks and holds 100 open tasks; one in five waits on another. The row
-calls `tasks.available` with `--repo /`, so it syncs no mount and reads no git
-remote. The call that syncs notes repos waits on git and their remotes, and has
-no budget. The row times the snapshot, the plugin's start, and the `board query` and `board refs`
-runs the plugin makes with the `board` binary beside xtask. The first call is discarded,
-because Python compiles the plugin's bytecode then. Bench skips the
-row, and says why, when the board does not enable tasks or `uv` is not on
-`PATH`. With `uv`, a missing `board` beside xtask fails bench with
-`xtask::bench::no_board`. Bench does not rebuild `board` and cannot tell a
-stale one, so build board-cli in xtask's profile first, as the timing job does:
-`cargo build --release --package board-cli`. `bin/test` gives bench no `uv`,
-so the gates need neither `uv` nor a network.
+The plugin call row calls the built-in tasks plugin in process, as the other
+rows run. The generated board enables tasks and holds 100 open tasks; one in
+five waits on another. The row calls `tasks.available` with `--repo /`, so it
+syncs no mount and reads no git remote. The call that syncs notes repos waits
+on git and their remotes, and has no budget. The row times the snapshot and
+the query and refs the plugin makes. The first call is discarded. Bench skips
+the row, and says why, when the board does not enable tasks.
 
 The generated board commits its records in one commit, so git's index and
 HEAD hold them as a real board's do; a put pays for both, and a put into a

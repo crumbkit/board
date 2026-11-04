@@ -18,6 +18,7 @@ prompts = ["dep:board-plugin-prompts"]
 requests = ["dep:board-plugin-requests"]
 runs = ["dep:board-plugin-runs"]
 share = ["dep:board-plugin-share"]
+tasks = ["dep:board-plugin-tasks"]
 
 [dependencies]
 board-ops.workspace = true
@@ -33,6 +34,7 @@ board-plugin-prompts = { workspace = true, optional = true }
 board-plugin-requests = { workspace = true, optional = true }
 board-plugin-runs = { workspace = true, optional = true }
 board-plugin-share = { workspace = true, optional = true }
+board-plugin-tasks = { workspace = true, optional = true }
 
 [lints]
 workspace = true

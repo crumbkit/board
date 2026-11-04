@@ -211,7 +211,7 @@ fn scope(host: &dyn Host, path: &str) -> Result<LogicalPath, PluginError> {
     let refused =
         |error: &RefsError| PluginError::board_refused("controls", "refs", &error.refusal());
     let answers = host
-        .refs(&[logical(path)?], Absent::Refuse)
+        .refs(&[logical(path)?], Absent::Refuse, &[])
         .map_err(|e| refused(&e))?;
     let [answer] = <[_; 1]>::try_from(answers).expect("refs answers each path it is asked once");
     Ok(answer.map_err(|e| refused(&e))?.display)
@@ -232,7 +232,9 @@ fn referenced(
         .collect::<Result<Vec<LogicalPath>, PluginError>>()?;
     let refused =
         |error: &RefsError| PluginError::board_refused("controls", "refs", &error.refusal());
-    let answers = host.refs(&paths, Absent::Refuse).map_err(|e| refused(&e))?;
+    let answers = host
+        .refs(&paths, Absent::Refuse, &[])
+        .map_err(|e| refused(&e))?;
     let mut found = BTreeMap::new();
     for (control, answer) in controls.iter().zip(answers) {
         let report = answer.map_err(|e| refused(&e))?;

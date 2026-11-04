@@ -804,7 +804,7 @@ fn resolving() -> Fixture {
                 Ok(display) => json!(display),
                 Err(code) => json!(code.as_str()),
             };
-            let refs: Vec<Value> = (host.refs(&paths, Absent::Refuse).unwrap().into_iter())
+            let refs: Vec<Value> = (host.refs(&paths, Absent::Refuse, &[]).unwrap().into_iter())
                 .map(|report| {
                     answered(
                         report
@@ -813,7 +813,7 @@ fn resolving() -> Fixture {
                     )
                 })
                 .collect();
-            let located = host.refs(&paths[1..], Absent::Locate).unwrap();
+            let located = host.refs(&paths[1..], Absent::Locate, &[]).unwrap();
             let missing = located[0].as_ref().unwrap().missing.as_ref().unwrap();
             let read: Vec<Value> = (host.get_each(&paths).unwrap().into_iter())
                 .map(|report| {
@@ -871,6 +871,7 @@ impl Host for Caller {
         &self,
         _: &[LogicalPath],
         _: Absent,
+        _: &[String],
     ) -> Result<Vec<Result<RefsReport, RefsError>>, RefsError> {
         unreachable!("caller_remote reads no refs")
     }

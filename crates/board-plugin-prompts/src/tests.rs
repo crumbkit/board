@@ -116,6 +116,7 @@ impl Host for Nowhere {
         &self,
         _: &[board_model::LogicalPath],
         _: board_ops::Absent,
+        _: &[String],
     ) -> Result<Vec<Result<board_ops::RefsReport, board_ops::RefsError>>, board_ops::RefsError>
     {
         panic!("prompts resolves no refs")

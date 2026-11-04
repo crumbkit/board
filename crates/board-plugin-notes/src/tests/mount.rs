@@ -9,6 +9,8 @@
 
 use std::cell::RefCell;
 
+use board_model::{LogicalPath, Refusal};
+use board_ops::Elsewhere;
 use board_ops::{
     Absent, Board, DecideReport, GetReport, Limit, MountError, MountUpdateReport, PutError,
     PutReport, QueryError, QueryReport, ReadError, RefsError, RefsReport, Settings, Shown,
@@ -113,6 +115,7 @@ impl Host for Mounted {
         &self,
         _: &[LogicalPath],
         _: Absent,
+        _: &[String],
     ) -> Result<Vec<Result<RefsReport, RefsError>>, RefsError> {
         panic!("notes resolves no refs")
     }

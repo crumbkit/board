@@ -542,7 +542,8 @@ fn get(host: &dyn Host, paths: &[String]) -> Result<Vec<Read>, PluginError> {
 /// as the Python plugin's were.
 fn reports(host: &dyn Host, paths: &[LogicalPath]) -> Result<Vec<Option<RefsReport>>, PluginError> {
     let refused = |refusal: &Refusal| PluginError::board_refused("share", "refs", refusal);
-    let answers = (host.refs(paths, Absent::Refuse)).map_err(|error| refused(&error.refusal()))?;
+    let answers =
+        (host.refs(paths, Absent::Refuse, &[])).map_err(|error| refused(&error.refusal()))?;
     (answers.into_iter())
         .map(|answer| match answer {
             Ok(report) => Ok(Some(report)),

@@ -26,6 +26,7 @@ impl Host for Bare {
         &self,
         _: &[LogicalPath],
         _: Absent,
+        _: &[String],
     ) -> Result<Vec<Result<RefsReport, RefsError>>, RefsError> {
         unreachable!("an agent resolves nothing")
     }

@@ -29,9 +29,73 @@ pub struct Date {
 }
 
 impl Date {
+    /// The date ISO 8601's `YYYY-MM-DD` names, as Python's
+    /// `date.fromisoformat` reads it; none for any other text or a day the
+    /// month does not have.
+    pub fn parse(text: &str) -> Option<Self> {
+        let bytes = text.as_bytes();
+        let digits = |range: std::ops::Range<usize>| {
+            (bytes.get(range.clone())?.iter().all(u8::is_ascii_digit))
+                .then(|| text[range].parse::<i64>().ok())?
+        };
+        if bytes.len() != 10 || bytes[4] != b'-' || bytes[7] != b'-' {
+            return None;
+        }
+        let (year, month, day) = (digits(0..4)?, digits(5..7)?, digits(8..10)?);
+        let month = u8::try_from(month)
+            .ok()
+            .filter(|month| (1..=12).contains(month))?;
+        let day = u8::try_from(day).ok()?;
+        (year >= 1 && (1..=month_length(year, month)).contains(&day)).then_some(Self {
+            year,
+            month,
+            day,
+        })
+    }
+
+    /// The date `day` of the month, or the month's last day when it has
+    /// fewer.
+    pub fn clamped(year: i64, month: u8, day: u8) -> Self {
+        Self {
+            year,
+            month,
+            day: day.min(month_length(year, month)),
+        }
+    }
+
+    /// How many days the date is after 1970-01-01, negative before it, by
+    /// Howard Hinnant's `days_from_civil`.
+    pub fn days(self) -> i64 {
+        let year = self.year - i64::from(self.month <= 2);
+        let era = year.div_euclid(400);
+        let yoe = year.rem_euclid(400);
+        let month = i64::from(self.month);
+        let doy =
+            (153 * (month + if month > 2 { -3 } else { 9 }) + 2) / 5 + i64::from(self.day) - 1;
+        let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+        era * 146_097 + doe - 719_468
+    }
+
+    /// The date `days` days later, earlier when negative.
+    #[must_use]
+    pub fn plus(self, days: i64) -> Self {
+        Self::from_days(self.days() + days)
+    }
+
+    /// The day of the week, from 0 for Monday to 6 for Sunday.
+    pub fn weekday(self) -> i64 {
+        // 1970-01-01 was a Thursday.
+        (self.days() + 3).rem_euclid(7)
+    }
+
     /// The date `days` days after 1970-01-01, by Howard Hinnant's
     /// `civil_from_days`.
-    fn from_days(days: i64) -> Self {
+    ///
+    /// # Panics
+    ///
+    /// Never: the algorithm yields a month from 1 to 12 and a day from 1 to
+    /// 31 for every count of days.
+    pub fn from_days(days: i64) -> Self {
         let z = days + 719_468;
         let era = z.div_euclid(146_097);
         let doe = z.rem_euclid(146_097);
@@ -47,6 +111,16 @@ impl Date {
             month: small(month),
             day: small(day),
         }
+    }
+}
+
+/// How many days `month` of `year` has in the Gregorian calendar.
+fn month_length(year: i64, month: u8) -> u8 {
+    match month {
+        2 if year % 4 == 0 && (year % 100 != 0 || year % 400 == 0) => 29,
+        2 => 28,
+        4 | 6 | 9 | 11 => 30,
+        _ => 31,
     }
 }
 
