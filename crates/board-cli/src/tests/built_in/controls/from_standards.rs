@@ -14,6 +14,10 @@ const SERVICE: &str = "# service\n\n## review\n\n\
     | ID | Rule | Where it applies |\n| --- | --- | --- |\n\
     | SVC-9 | Log through tracing. | `crates/*-server/**` |\n";
 
+const SHARED: &str = "# shared\n\n## review\n\n\
+    | ID | Rule | Where it applies |\n| --- | --- | --- |\n\
+    | base-31 | Another rule with the same ID. | `**` |\n";
+
 /// A board that mounts a standards repository at /repos/standards and an
 /// adopter at /repos/app whose map adopts `profiles`. The repositories live
 /// as long as the values returned.
@@ -23,7 +27,11 @@ fn adopting(profiles: &str) -> (Fixture, Scenario, Scenario) {
     let standards = library(
         &board,
         "repos/standards.json",
-        &[("profiles/base.md", BASE), ("profiles/service.md", SERVICE)],
+        &[
+            ("profiles/base.md", BASE),
+            ("profiles/service.md", SERVICE),
+            ("profiles/shared.md", SHARED),
+        ],
     );
     let app = library(
         &board,
@@ -182,5 +190,26 @@ fn a_profile_the_standards_do_not_hold_is_refused_and_one_they_hold_is_read() {
         json!("/repos/standards/profiles/gone.md")
     );
     let (board, _standards, _app) = adopting(r#"["base", "service"]"#);
+    assert_eq!(generate(&board)["profiles"][1]["rules"], json!(1));
+}
+
+#[test]
+fn two_adopted_profiles_that_share_a_rule_id_are_refused_and_profiles_with_distinct_ids_are_read() {
+    let (board, _standards, _app) = adopting(r#"["base", "shared"]"#);
+    let (ran, document) = from_standards(&board);
+    assert_ne!(ran.code, 0);
+    assert_eq!(
+        document["code"],
+        json!("controls::standards::duplicate_rule"),
+        "{document}"
+    );
+    assert_eq!(
+        document["fields"]["files"],
+        json!([
+            "/repos/standards/profiles/base.md",
+            "/repos/standards/profiles/shared.md"
+        ])
+    );
+    let (board, _standards, _app) = adopting(r#"["service", "shared"]"#);
     assert_eq!(generate(&board)["profiles"][1]["rules"], json!(1));
 }

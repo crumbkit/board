@@ -78,3 +78,25 @@ fn a_pattern_is_anchored_at_the_repository_and_each_double_star_slash_may_match_
     );
     assert_eq!(globs("", "Dockerfile"), ["Dockerfile"]);
 }
+
+#[test]
+fn a_rule_id_that_is_not_a_record_name_is_refused_and_one_that_is_is_read() {
+    let table = "| ID | Rule | Where it applies |\n| --- | --- | --- |\n";
+    for id in ["", "BASE/31", "..", "BASE 31"] {
+        let refused = rules("base.md", &format!("{table}| {id} | A rule. | `**` |\n")).unwrap_err();
+        assert_eq!(refused.code, "controls::standards::bad_id", "{id:?}");
+    }
+    let admitted = rules("base.md", &format!("{table}| BASE-31 | A rule. | `**` |\n"));
+    assert_eq!(admitted.unwrap()[0].id, "BASE-31");
+}
+
+#[test]
+fn inline_html_in_a_cell_reads_as_a_space() {
+    let table = "| ID | Rule | Where it applies |\n| --- | --- | --- |\n";
+    let rows = rules(
+        "base.md",
+        &format!("{table}| BASE-31 | One.<br>Two. | `**` |\n"),
+    )
+    .unwrap();
+    assert_eq!(rows[0].rule, "One. Two.");
+}

@@ -5,11 +5,10 @@ use std::collections::BTreeMap;
 
 use board_model::LogicalPath;
 use board_ops::{Host, PluginError, literal};
+use pulldown_cmark::{Event, Options, Parser, Tag, TagEnd};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
-
-use pulldown_cmark::{Event, Options, Parser, Tag, TagEnd};
 
 use crate::index;
 use crate::logical;
@@ -97,7 +96,7 @@ pub(crate) fn from_standards(host: &dyn Host, input: &Value) -> Result<Value, Pl
         .collect();
     let asked: Vec<&str> = files.iter().map(String::as_str).collect();
     let texts = read(host, &asked)?;
-    let mut generated: BTreeMap<String, Value> = BTreeMap::new();
+    let mut generated: BTreeMap<String, (Value, &str)> = BTreeMap::new();
     let mut profiles = Vec::new();
     for ((profile, file), (_, text)) in adopted.profiles.iter().zip(&files).zip(&texts) {
         let rows = rules(file, text)?;
@@ -123,12 +122,27 @@ pub(crate) fn from_standards(host: &dyn Host, input: &Value) -> Result<Value, Pl
                 "sources": [file],
             });
             let path = format!("{}/{}", into.trim_end_matches('/'), row.id.to_lowercase());
-            generated.entry(path).or_insert(record);
+            if let Some((_, first)) = generated.get(&path) {
+                return Err(PluginError {
+                    code: "controls::standards::duplicate_rule".to_owned(),
+                    message: format!(
+                        "{first} and {file} both give the rule {}, so both would write {path}; \
+                         give one of them another ID, or adopt only one of their profiles",
+                        row.id
+                    ),
+                    fields: Map::from_iter([
+                        ("rule".to_owned(), json!(row.id)),
+                        ("files".to_owned(), json!([first, file])),
+                    ]),
+                    hint: None,
+                });
+            }
+            generated.insert(path, (record, file));
         }
     }
     let held = held(host, &into)?;
     let mut lines: Vec<Value> = (generated.iter())
-        .map(|(path, record)| {
+        .map(|(path, (record, _))| {
             let expect = held.get(path).map_or("none", String::as_str);
             json!({"path": path, "expect": expect, "record": record})
         })
@@ -183,20 +197,15 @@ fn held(host: &dyn Host, into: &str) -> Result<BTreeMap<String, String>, PluginE
         prefix.chars().count(),
         literal(&prefix),
     );
-    let report = index::rows(host, &sql)?;
-    Ok((report.rows.into_iter())
-        .filter_map(|row| match <[Value; 2]>::try_from(row) {
-            Ok([Value::String(logical), Value::String(blob)]) => Some((logical, blob)),
-            _ => None,
-        })
-        .collect())
+    index::string_pairs(host, &sql)
 }
 
 /// The rows of every table in `text` whose header has an ID, a Rule and a
 /// "Where it applies" column, read as `CommonMark` with GitHub's tables. A
 /// pattern is a span of inline code in the Where it applies cell. A rule
-/// with none is `controls::standards::no_pattern`, and one whose Rule cell
-/// is empty is `controls::standards::empty_rule`.
+/// with none is `controls::standards::no_pattern`, one whose Rule cell
+/// is empty is `controls::standards::empty_rule`, and one whose ID is not a
+/// record name is `controls::standards::bad_id`.
 pub(crate) fn rules(file: &str, text: &str) -> Result<Vec<Row>, PluginError> {
     let mut rows = Vec::new();
     for table in tables(text) {
@@ -220,6 +229,15 @@ pub(crate) fn rules(file: &str, text: &str) -> Result<Vec<Row>, PluginError> {
                 ]),
                 hint: None,
             };
+            if !record_name(&id) {
+                return Err(refused(
+                    "controls::standards::bad_id",
+                    format!(
+                        "the rule ID {id:?} in {file} cannot name a control's record; give the rule \
+                         an ID of letters, digits, `-` and `_`, such as BASE-31"
+                    ),
+                ));
+            }
             if rule.is_empty() {
                 return Err(refused(
                     "controls::standards::empty_rule",
@@ -243,6 +261,12 @@ pub(crate) fn rules(file: &str, text: &str) -> Result<Vec<Row>, PluginError> {
         }
     }
     Ok(rows)
+}
+
+/// Whether `id` can name a record: one or more ASCII letters, digits, `-`
+/// and `_`.
+fn record_name(id: &str) -> bool {
+    !id.is_empty() && (id.bytes()).all(|byte| byte.is_ascii_alphanumeric() || b"-_".contains(&byte))
 }
 
 /// One table cell: its text, with inline code kept in backticks, and the
@@ -303,7 +327,9 @@ fn take(cell: &mut Cell, event: &Event<'_>) {
                 cell.code.push(code.to_owned());
             }
         }
-        Event::SoftBreak | Event::HardBreak => cell.text.push(' '),
+        Event::SoftBreak | Event::HardBreak | Event::InlineHtml(_) | Event::Html(_) => {
+            cell.text.push(' ');
+        }
         _ => {}
     }
 }

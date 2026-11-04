@@ -258,8 +258,12 @@ The plugin ships both schemas. `board plugin enable controls` writes them to
   It fails with `controls::standards::map_invalid` when the map has no
   `profiles` list of names, `controls::standards::unreadable` when the map
   or a profile cannot be read, `controls::standards::no_pattern` when a
-  rule's Where it applies cell holds no inline code, and
-  `controls::standards::empty_rule` when its Rule cell is empty.
+  rule's Where it applies cell holds no inline code,
+  `controls::standards::empty_rule` when its Rule cell is empty,
+  `controls::standards::bad_id` when its ID holds anything but ASCII
+  letters, digits, `-` and `_`, and `controls::standards::duplicate_rule`
+  when two adopted profiles give the same ID, ignoring case. Inline HTML
+  in a cell, such as `<br>`, reads as a space.
 
 Board refuses every call with `board::plugin::schema_differs` when the board's
 copy of either schema differs from the one the plugin ships;
