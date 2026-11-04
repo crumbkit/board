@@ -38,7 +38,8 @@ The gate is the contract. `next` says what the current phase still lacks;
 7. At most three active build changes per mount are in `build`, and apart
    from them three active prototypes exploring. A change is active when a
    changes capability touched it, its head was committed or a run it
-   references finished in the last three days (`BOARD_CHANGES_ACTIVE_DAYS`).
+   references finished on one of the last three days, today included
+   (`BOARD_CHANGES_ACTIVE_DAYS` sets the number).
    When `advance`, `resume` or `prototype` refuses with `changes::wip::full`,
    first deal with the changes in `idle`: run each one's `command`, which
    syncs, drops or resumes it. If the work must still start now, run the
@@ -129,15 +130,17 @@ lists every prototype with its verdict.
   ones, pause one, wait, or run `override` with a reason.
 - `changes::wip::over_limit`: a warning, not a refusal. The change went past
   the limit with the reason it records in `over_limit`.
-- `changes::wip::active_days`: set `BOARD_CHANGES_ACTIVE_DAYS` to a whole
+- `changes::wip::bad_active_days`: set `BOARD_CHANGES_ACTIVE_DAYS` to a whole
   number of days, or unset it.
 - `changes::sync::stale`: a warning in `open` and `next`. No sync has run
   today; run `changes.sync`.
-- `changes::gh::failed`: gh could not read a pull request, and sync wrote
+- `changes::sync::gh_failed`: gh could not read a pull request, and sync wrote
   nothing. Check `gh auth status` and sync again.
 - `changes::sync::owed`, `changes::sync::pull_not_found`,
   `changes::sync::not_github`, `changes::sync::no_pull_request`: entries
-  that sync left alone. Run each entry's `command`.
+  that sync left alone. Run each entry's `command`. For
+  `pull_not_found`, check `gh auth status` first, since GitHub answers 404
+  for a repository gh cannot see.
 - `changes::phase::paused`: `resume` the change first.
 - `changes::pause::not_building`, `changes::resume::not_paused`: only a
   change in `build` is paused, and only a paused one resumed.

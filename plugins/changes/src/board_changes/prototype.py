@@ -1,5 +1,6 @@
 """The `prototype` and `verdict` capabilities: a change that answers one question, and what it found."""
 
+import shlex
 from dataclasses import replace
 
 from board_plugin.board import Board
@@ -10,10 +11,12 @@ from board_changes.plan import brief_of, plan_lines
 from board_changes.repo import exists
 from board_changes.start import name_of, refuse_existing
 from board_changes.tasks import add_task, close_task
-from board_changes.wip import admit
+from board_changes.wip import Move, active_days, admit
 
 # The phase a verdict ends a prototype in, by its state.
 ENDS = {"settled": "done", "abandoned": "dropped"}
+# The inputs a prototype's override command repeats.
+PROTOTYPE_FLAGS = ("mount", "question", "parent", "title", "name")
 
 
 def question_plan(title: str, question: str) -> str:
@@ -43,8 +46,9 @@ def prototype(request: CallRequest) -> dict[str, object]:
         "question": question,
         "state": "exploring",
     }
-    override = "add --over_limit '<why>' to the same `board call changes.prototype`"
-    limit = admit(board, path, change, override, asked.get("over_limit"))
+    flags = [f"--{name} {shlex.quote(str(asked[name]))}" for name in PROTOTYPE_FLAGS if name in asked]
+    override = f"board call changes.prototype {' '.join(flags)} --over_limit '<why>'"
+    limit = admit(board, path, change, Move(override, asked.get("over_limit"), active_days()))
     change["task"] = add_task(board, title, {}, parent=str(asked["parent"]))
     _, lines = plan_lines(path, question_plan(title, question), [], [])
     change["plan"] = lines[0]["path"]

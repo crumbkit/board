@@ -9,8 +9,8 @@ from typing import Any, cast
 from board_plugin.board import Board
 from board_plugin.protocol import CallRequest, PluginError
 
-from board_changes.change import FINAL, PLAN_TYPE, PLUGIN, kind_of, newest, read, touch, write
-from board_changes.phases import next_step, referenced
+from board_changes.change import FINAL, PLAN_TYPE, PLUGIN, kind_of, newest, read, referenced, touch, write
+from board_changes.phases import next_step
 
 # The most words a plan's text holds, and the most words the documents it uses hold in all.
 PLAN_WORDS = 3_000

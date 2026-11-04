@@ -81,7 +81,10 @@ def test_sync_ends_merged_and_closed_changes_and_reports_the_rest(gh: tuple[Boar
     assert statuses(output) == EXPECTED
     assert (output["moved"], output["total"], output["dry_run"]) == (2, 7, False)
     merged = board.read("changes/merged.json")
-    assert (merged["phase"], merged["merge_commit"]) == ("done", f"https://github.com/octo/widgets/commit/{MERGE}")
+    assert (merged["phase"], merged["merge_commit_url"]) == (
+        "done",
+        f"https://github.com/octo/widgets/commit/{MERGE}",
+    )
     closed = board.read("changes/closed.json")
     assert closed["phase"] == "dropped"
     assert (
@@ -92,6 +95,11 @@ def test_sync_ends_merged_and_closed_changes_and_reports_the_rest(gh: tuple[Boar
     commands = {entry["path"]: entry["command"] for entry in output["changes"]}
     assert commands["/changes/bare"] == "board call changes.drop --path /changes/bare --reason '<why>'"
     assert commands["/changes/started"] == "board call changes.next --path /changes/started"
+    assert commands["/changes/elsewhere"] == "board call changes.attach --path /changes/elsewhere --pull_request <url>"
+    assert {entry["task"] for entry in output["changes"]} == {"/tasks/given.md"}
+    details = {entry["path"]: entry["detail"] for entry in output["changes"]}
+    assert "without passing" not in details["/changes/merged"]
+    assert "gh's account cannot see the repository" in details["/changes/gone"]
     asked = (stub / "gh-calls.txt").read_text().splitlines()
     assert asked == [f"api repos/octo/widgets/pulls/{number}" for number in (2, 4, 1, 3)]
 
@@ -126,7 +134,7 @@ def test_a_gh_failure_refuses_the_whole_sync_and_writes_nothing(gh: tuple[Board,
     pulls(board, stub)
     (stub / "fail").write_text("")
     refused = board.refusal("sync", {})
-    assert refused["code"] == "changes::gh::failed"
+    assert refused["code"] == "changes::sync::gh_failed"
     assert "HTTP 502" in refused["message"]
     assert board.read("changes/merged.json")["phase"] == "land"
     assert not (board.root / "changes/sync.json").exists()
@@ -162,3 +170,12 @@ def test_drop_ends_an_open_change_with_its_reason_and_refuses_one_already_ended(
     assert board.read("changes/t.json")["dropped_reason"] == "Superseded by another change."
     refused = board.refusal("drop", given)
     assert (refused["code"], refused["fields"]["phase"]) == ("changes::phase::final", "dropped")
+
+
+def test_a_change_that_merged_from_build_ends_and_says_which_gates_it_skipped(gh: tuple[Board, Path]) -> None:
+    board, stub = gh
+    board.write("changes/early.json", change("build", pull_request=PULL.format(number=1)))
+    answers(stub, 1, state="closed", merged=True, merge_commit_sha=MERGE)
+    found = board.call("sync", {})["changes"][0]
+    assert found["to"] == "done"
+    assert found["detail"].endswith("it left build without passing the build and review gates")

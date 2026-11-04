@@ -6,9 +6,9 @@ from typing import Any, cast
 from board_plugin.board import Board
 from board_plugin.protocol import CallRequest
 
-from board_changes.change import PLUGIN, read, write
+from board_changes.change import PLUGIN, read, referenced, write
 from board_changes.gates import REPORT_TYPE, RUN_TYPE, Observed, of_type, same_commit, sections
-from board_changes.phases import plan_text, referenced
+from board_changes.phases import plan_text
 
 # Severities in the order a report's findings are counted.
 SEVERITIES = ("critical", "high", "medium", "low")

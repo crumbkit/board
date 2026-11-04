@@ -31,7 +31,7 @@ sit in `/changes/<name>/`. Git history holds earlier phases.
 - `title`, `mount` and `phase` are required.
 - `phase`: `plan`, `build`, `review`, `land`, `done`, or `dropped` to end a
   change early. `paused` holds a change the keeper took out of `build`.
-- `sync` sets `merge_commit`, the merge commit's GitHub URL, when it ends a
+- `sync` sets `merge_commit_url`, the merge commit's GitHub URL, when it ends a
   change whose pull request merged. `sync` and `drop` set `dropped_reason`.
 - `over_limit` is the reason given for the latest move into `build` past
   the WIP limit.
@@ -152,24 +152,26 @@ skill in `claude-code/skills/` runs the check.
   once each, for up to 20 seconds each. It returns `changes`, one entry for
   each such change by path, at most 100 by default, with `total`, `moved`
   and `truncated`. Each entry has `path`, `phase`, `to`, `status`, `code`,
-  `pull_request`, `detail` and `command`:
+  `pull_request`, `task`, `detail` and `command`:
 
   | `status` | When | What sync does | `code` |
   | --- | --- | --- | --- |
-  | `merged` | GitHub says it merged | `to` is `done`, and `merge_commit` is set | none |
-  | `owed` | It merged, but a `tasks/task/v2` in `records` is not done or dropped | Leaves it; `detail` names the tasks | `changes::sync::owed` |
+  | `merged` | GitHub says it merged | `to` is `done`, and `merge_commit_url` is set; `detail` says when the change left `build` or `review`, whose gates it did not pass | none |
+  | `owed` | It merged, but a `tasks/task/v2` that `records` reaches, through any link, is not done or dropped | Leaves it; `detail` names the tasks | `changes::sync::owed` |
   | `closed` | It closed without merging | `to` is `dropped`, and `dropped_reason` says so with the day it closed | none |
   | `open` | It is open | Leaves it | none |
-  | `not_found` | GitHub answers 404 | Leaves it; `command` drops it | `changes::sync::pull_not_found` |
-  | `not_github` | `pull_request` is not a github.com pull request URL | Leaves it | `changes::sync::not_github` |
+  | `not_found` | GitHub answers 404, which it also answers when gh's account cannot see the repository | Leaves it; `detail` says to check `gh auth status`, and `command` drops it | `changes::sync::pull_not_found` |
+  | `not_github` | `pull_request` is not a github.com pull request URL | Leaves it; `command` records another URL | `changes::sync::not_github` |
   | `no_pull_request` | The change records no pull request | Leaves it; `command` resumes it when it has a `head`, else drops it | `changes::sync::no_pull_request` |
 
   Every move, and `/changes/sync.json` with today's day, is written in one
   commit. With `--dry_run true` nothing is written. When gh fails in any
-  other way, cannot run or runs past 20 seconds, sync refuses with
-  `changes::gh::failed` and writes nothing. A merged change moves to `done`
+  other way, cannot run, runs past 20 seconds, or the gh calls together run
+  past 540 seconds, sync refuses with
+  `changes::sync::gh_failed` and writes nothing. A merged change moves to `done`
   from any of those phases; `from` is in git history, so a change that
-  skipped review shows it. Sync never closes a change's own `task`. The
+  skipped review shows it. Sync never closes a change's own `task`; each
+  entry names it. The
   call receives `GH_TOKEN`, `GITHUB_TOKEN` and `GH_CONFIG_DIR` for gh, and
   may run for 600 seconds.
 - `open [--kind build|prototype] [--limit <n>]`: read-only. Changes not
@@ -253,16 +255,21 @@ The WIP limit counts, for each mount, the active build changes in
 because `verdict` moves it out of `build` in the same write that sets its
 state. A paused change holds no place. Only the board's own changes, under
 `/changes/`, count. A change is active when the newest of these days is
-within the last N days of today, in UTC, that day included:
+one of the last N days, in UTC, today included; with N at 3 on
+2026-11-04, that is 2026-11-02 to 2026-11-04:
 
 - `touched`;
-- the day its `head` was committed, by `git log --no-walk --ignore-missing`
-  in the repository its mount names;
-- the day a `runs/run/v1` in its `records` `finished`.
+- the day its `head` was committed, by `git log -1` on that head in the
+  repository its mount names, so git resolves an abbreviated head;
+- the day a `runs/run/v1` that its `records` reach, through any link,
+  `finished`.
+
+A review report has no day of its own, so a review keeps a change active
+through the `attach` that records it.
 
 N is 3, or `BOARD_CHANGES_ACTIVE_DAYS` when that is set. A value that is
 not a whole number of at least 1 is refused with
-`changes::wip::active_days`. A change with none of those days is idle.
+`changes::wip::bad_active_days`. A change with none of those days is idle.
 
 When three other active changes of the kind hold places for the mount,
 `advance` into `build`, `resume` and `prototype` refuse with

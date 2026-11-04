@@ -2193,6 +2193,17 @@
                 "title": "Status",
                 "type": "string"
               },
+              "task": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Task"
+              },
               "to": {
                 "anyOf": [
                   {
@@ -2216,6 +2227,7 @@
               "status",
               "code",
               "pull_request",
+              "task",
               "detail",
               "command"
             ],

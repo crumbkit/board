@@ -107,7 +107,7 @@ class ChangeRecord(BaseModel):
     prototype's `state` is `exploring` until `verdict`, one sentence, settles
     or abandons it; `verdict_artifact` is the URL of the artifact version
     the verdict means.
-    `sync` records `merge_commit`, the merge commit's URL, when it ends a
+    `sync` records `merge_commit_url`, the merge commit's GitHub URL, when it ends a
     change whose pull request merged; `sync` and `drop` record
     `dropped_reason` when they drop one. `over_limit` is the reason given
     for the latest move into build past the WIP limit. `touched` is the UTC
@@ -135,7 +135,7 @@ class ChangeRecord(BaseModel):
     state: State | SkipJsonSchema[None] = None
     verdict: Prose | SkipJsonSchema[None] = None
     verdict_artifact: SharedUrl | SkipJsonSchema[None] = None
-    merge_commit: SharedUrl | SkipJsonSchema[None] = None
+    merge_commit_url: SharedUrl | SkipJsonSchema[None] = None
     dropped_reason: Prose | SkipJsonSchema[None] = None
     over_limit: Prose | SkipJsonSchema[None] = None
     touched: SharedDate | SkipJsonSchema[None] = None
@@ -585,6 +585,7 @@ class SyncEntry(Strict):
         | None
     )
     pull_request: str | None
+    task: str | None
     detail: str
     command: str | None
 

@@ -6,8 +6,7 @@ from typing import cast
 from board_plugin.board import Board, literal
 from board_plugin.protocol import CallRequest
 
-from board_changes.change import CHANGE_TYPE, FINAL, PLUGIN, TREE_CODES, Change, branch_of, kind_of
-from board_changes.sync import last_sync
+from board_changes.change import CHANGE_TYPE, FINAL, PLUGIN, TREE_CODES, Change, branch_of, kind_of, last_sync
 
 # The default `limit` (STANDARDS 23).
 OPEN_LIMIT = 100

@@ -94,8 +94,8 @@ def test_resume_refuses_a_change_that_is_not_paused_and_admits_one_that_is(board
     assert board.call("resume", {"path": PATH})["to"] == "build"
 
 
-def test_split_counts_a_change_active_through_the_last_day_of_its_window_and_none_without_a_day() -> None:
-    newest = {"/a": date(2026, 11, 1), "/b": date(2026, 10, 31), "/c": None, "/d": date(2026, 11, 4)}
+def test_split_counts_a_change_active_on_any_of_the_last_n_days_today_included_and_none_without_a_day() -> None:
+    newest = {"/a": date(2026, 11, 2), "/b": date(2026, 11, 1), "/c": None, "/d": date(2026, 11, 4)}
     assert split(newest, date(2026, 11, 4), 3) == (["/a", "/d"], ["/b", "/c"])
 
 
@@ -187,7 +187,7 @@ def test_board_changes_active_days_widens_the_window_and_refuses_a_value_that_is
     assert wide.refusal("advance", {"path": PATH})["fields"]["active_days"] == WIDE
     bad = dataclasses.replace(board, env=(("BOARD_CHANGES_ACTIVE_DAYS", "soon"),))
     refused = bad.refusal("advance", {"path": PATH})
-    assert (refused["code"], refused["fields"]["value"]) == ("changes::wip::active_days", "soon")
+    assert (refused["code"], refused["fields"]["value"]) == ("changes::wip::bad_active_days", "soon")
     assert board.call("advance", {"path": PATH})["to"] == "build"
 
 

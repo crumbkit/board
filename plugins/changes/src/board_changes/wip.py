@@ -11,6 +11,7 @@ warning.
 
 import json
 import os
+from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from typing import TypedDict, cast
 
@@ -18,7 +19,7 @@ from board_plugin.board import Board, literal
 from board_plugin.git import Failed, git
 from board_plugin.protocol import PluginError
 
-from board_changes.change import CHANGE_TYPE, OWN, TREE_CODES, Change, kind_of
+from board_changes.change import CHANGE_TYPE, OWN, TREE_CODES, Change, kind_of, referenced
 
 # The most active changes of a kind in build per mount before a move into build needs a reason.
 WIP_LIMIT = 3
@@ -75,7 +76,7 @@ def active_days() -> int:
         return ACTIVE_DAYS
     if not given.isdigit() or int(given) < 1:
         raise PluginError(
-            "changes::wip::active_days",
+            "changes::wip::bad_active_days",
             f"{ACTIVE_DAYS_VARIABLE} is {given!r}, which is not a whole number of days of at least 1; "
             f"set it to one, such as 3, or unset it for {ACTIVE_DAYS}",
             {"variable": ACTIVE_DAYS_VARIABLE, "value": given},
@@ -95,42 +96,37 @@ def day_of(stamp: object) -> date | None:
 
 
 def committed(board: Board, changes: dict[str, Change]) -> dict[str, date]:
-    """The UTC day each change's head was committed, read with git from its mount's repository, when git knows it."""
-    heads: dict[str, list[tuple[str, str]]] = {}
-    for path, change in changes.items():
-        if "head" in change:
-            heads.setdefault(change["mount"], []).append((path, change["head"]))
-    mounts = list(heads)
+    """The UTC day each change's head was committed, read with git from its mount's repository, when git knows it.
+
+    git resolves each head on its own, so an abbreviated head names exactly
+    one commit or none.
+    """
+    mounts = sorted({change["mount"] for change in changes.values() if "head" in change})
+    repositories = {
+        mount: (answer or {}).get("location", {}).get("repository")
+        for mount, answer in zip(mounts, board.refs(mounts), strict=True)
+    }
     found: dict[str, date] = {}
-    for mount, answer in zip(mounts, board.refs(mounts), strict=True):
-        repository = (answer or {}).get("location", {}).get("repository")
-        if not isinstance(repository, str):
+    for path, change in changes.items():
+        repository = repositories.get(change["mount"])
+        if "head" not in change or not isinstance(repository, str):
             continue
-        listed = [head for _, head in heads[mount]]
-        out = git(repository, "log", "--no-walk=unsorted", "--ignore-missing", "--format=%H %ct", *listed)
-        if isinstance(out, Failed):
-            continue
-        times = [line.split(" ", 1) for line in out.splitlines() if " " in line]
-        for path, head in heads[mount]:
-            for sha, seconds in times:
-                if sha.startswith(head) and seconds.isdigit():
-                    found[path] = datetime.fromtimestamp(int(seconds), UTC).date()
+        out = git(repository, "log", "-1", "--format=%ct", "--end-of-options", change["head"])
+        if not isinstance(out, Failed) and out.strip().isdigit():
+            found[path] = datetime.fromtimestamp(int(out.strip()), UTC).date()
     return found
 
 
 def finished(board: Board, changes: dict[str, Change]) -> dict[str, date]:
-    """The UTC day the newest run each change references finished."""
-    refs = {ref for change in changes.values() for ref in change.get("records", [])}
-    if not refs:
-        return {}
-    rows = board.rows(
-        "SELECT logical, json_extract(body, '$.finished') FROM records"  # noqa: S608 - values are quoted by literal()
-        f" WHERE type = {literal(RUN_TYPE)} AND logical IN ({', '.join(literal(ref) for ref in sorted(refs))})"
-    )
-    runs = {str(path): day for path, stamp in rows if (day := day_of(stamp)) is not None}
+    """The UTC day the newest run each change references, through any link, finished."""
     found: dict[str, date] = {}
     for path, change in changes.items():
-        days = [runs[ref] for ref in change.get("records", []) if ref in runs]
+        records, _ = referenced(board, change.get("records", []))
+        days = [
+            day
+            for type_name, body in records.values()
+            if type_name == RUN_TYPE and (day := day_of(body.get("finished"))) is not None
+        ]
         if days:
             found[path] = max(days)
     return found
@@ -147,8 +143,8 @@ def last_active(board: Board, changes: dict[str, Change]) -> dict[str, date | No
 
 
 def split(newest: dict[str, date | None], today: date, days: int) -> tuple[list[str], list[str]]:
-    """The paths active within `days` days before `today`, and the idle ones, each in the order given."""
-    since = today - timedelta(days=days)
+    """The paths active on one of the `days` days up to `today`, today included, and the idle ones, in order."""
+    since = today - timedelta(days=days - 1)
     active = [path for path, day in newest.items() if day is not None and day >= since]
     return active, [path for path in newest if path not in active]
 
@@ -162,13 +158,25 @@ def idle_action(path: str, change: Change) -> Idle:
     return Idle(path=path, action="drop", command=f"board call changes.drop --path {path} --reason '<why>'")
 
 
-def admit(board: Board, path: str, change: Change, override: str, reason: object) -> Limit | None:
+@dataclass(frozen=True)
+class Move:
+    """A move into build as the limit reads it: the command that passes the limit, the reason given, and the window.
+
+    `days` is how many days a change stays active, read from the
+    environment by the capability.
+    """
+
+    override: str
+    reason: object
+    days: int
+
+
+def admit(board: Board, path: str, change: Change, move: Move) -> Limit | None:
     """Whether `change` may move into build at `path`: `None` below the limit, else the limit it goes past.
 
-    At the limit, without a `reason` the move is refused with
+    At the limit, without a reason the move is refused with
     `changes::wip::full`; with one, the change records it in `over_limit`
-    and the returned limit is the warning to show. `override` is the command
-    that gives the reason.
+    and the returned limit is the warning to show.
     """
     kind, mount = kind_of(change), change["mount"]
     others = {
@@ -178,7 +186,7 @@ def admit(board: Board, path: str, change: Change, override: str, reason: object
     }
     if len(others) < WIP_LIMIT:
         return None
-    days = active_days()
+    days = move.days
     active, idle = split(last_active(board, others), datetime.now(UTC).date(), days)
     if len(active) < WIP_LIMIT:
         return None
@@ -190,10 +198,10 @@ def admit(board: Board, path: str, change: Change, override: str, reason: object
         active_days=days,
         active=active,
         idle=[idle_action(other, others[other]) for other in idle],
-        override=override,
+        override=move.override,
     )
-    if isinstance(reason, str):
-        change["over_limit"] = reason
+    if isinstance(move.reason, str):
+        change["over_limit"] = move.reason
         return limit
     what = "build changes" if kind == "build" else "prototypes"
     fields = {key: value for key, value in limit.items() if key != "code"}
@@ -201,6 +209,6 @@ def admit(board: Board, path: str, change: Change, override: str, reason: object
         "changes::wip::full",
         f"{len(active)} {what} active in the last {days} days are in build for {mount}, the limit of {WIP_LIMIT} "
         f"({', '.join(active)}), so {path} waits; finish, pause or drop one, deal with the idle ones in `idle`, "
-        f"or go ahead and record why with `{override}`",
+        f"or go ahead and record why with `{move.override}`",
         {"path": path, **fields},
     )

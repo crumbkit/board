@@ -1,8 +1,7 @@
 """The `next`, `attach` and `advance` capabilities: where a change stands, what it cites, and moving it on."""
 
-import json
 from dataclasses import replace
-from typing import Any, Literal, cast
+from typing import Literal
 
 from board_plugin.board import Board, literal
 from board_plugin.protocol import CallRequest, PluginError
@@ -14,20 +13,20 @@ from board_changes.change import (
     PULL_TYPES,
     TASK_TYPE,
     TICKET_TYPES,
-    TREE_CODES,
     Change,
     branch_of,
     kind_of,
+    last_sync,
     newest,
     read,
+    referenced,
     touch,
     write,
 )
 from board_changes.diff import edited, outside
 from board_changes.gates import CODES, Check, Observed, gate
 from board_changes.repo import check_suite
-from board_changes.sync import last_sync
-from board_changes.wip import Limit, admit
+from board_changes.wip import Limit, Move, active_days, admit
 
 # Each input that adds a reference, the list it adds to, and the record types it accepts; none means any entry.
 ATTACHED: tuple[tuple[str, Literal["records", "tickets", "pulls"], tuple[str, ...]], ...] = (
@@ -66,37 +65,6 @@ PROTOTYPE = (
 
 # The phases whose gates read the records a change references.
 READS_RECORDS = ("plan", "build", "review")
-
-
-def referenced(board: Board, refs: list[str]) -> tuple[dict[str, tuple[str, dict[str, Any]]], dict[str, str]]:
-    """Each entry `refs` reaches as (type, body), in their order, and each unreadable one with the code that says why.
-
-    A file that is not a record is of type `file`; a path Board resolves to a
-    directory is of type `directory`.
-    """
-    records: dict[str, tuple[str, dict[str, Any]]] = {}
-    unreadable = dict.fromkeys(refs, "board::path::not_found")
-    if not refs:
-        return records, unreadable
-    listed = ", ".join(literal(ref) for ref in refs)
-    rows = board.rows(
-        "SELECT e.logical, e.type, e.code, r.body FROM entries AS e"  # noqa: S608 - values are quoted by literal()
-        " LEFT JOIN records AS r ON r.logical = e.logical AND r.blob = e.blob"
-        f" WHERE e.logical IN ({listed})"
-    )
-    for logical, type_name, code, text in rows:
-        if code is not None and code not in TREE_CODES:
-            unreadable[logical] = str(code)
-        else:
-            body = cast("dict[str, Any]", json.loads(text)) if text is not None else {}
-            records[logical] = (str(type_name or "file"), body)
-            unreadable.pop(logical, None)
-    unfound = [ref for ref, code in unreadable.items() if code == "board::path::not_found"]
-    for ref, answer in zip(unfound, board.refs(unfound), strict=True):
-        if answer is not None:
-            records[ref] = ("directory", {})
-            del unreadable[ref]
-    return {ref: records[ref] for ref in refs if ref in records}, unreadable
 
 
 def plan_text(board: Board, change: Change) -> str | None:
@@ -237,7 +205,8 @@ def advance(request: CallRequest) -> dict[str, object]:
     change["phase"] = PHASES[PHASES.index(phase) + 1]
     limit = None
     if change["phase"] == "build":
-        limit = admit(board, path, change, over_limit("advance", path), request.input.get("over_limit"))
+        reason = request.input.get("over_limit")
+        limit = admit(board, path, change, Move(over_limit("advance", path), reason, active_days()))
     write(board, [{"path": path, "expect": blob, "record": touch(change)}])
     return moved(path, phase, change, limit)
 
@@ -272,7 +241,8 @@ def resume(request: CallRequest) -> dict[str, object]:
             {"path": path, "phase": change["phase"]},
         )
     change["phase"] = "build"
-    limit = admit(board, path, change, over_limit("resume", path), request.input.get("over_limit"))
+    reason = request.input.get("over_limit")
+    limit = admit(board, path, change, Move(over_limit("resume", path), reason, active_days()))
     write(board, [{"path": path, "expect": blob, "record": touch(change)}])
     return moved(path, "paused", change, limit)
 
