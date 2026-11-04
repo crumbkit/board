@@ -11,6 +11,7 @@ members = [
     "crates/board-plugin-evals",
     "crates/board-plugin-github",
     "crates/board-plugin-jira",
+    "crates/board-plugin-notes",
     "crates/board-plugin-plans",
     "crates/board-plugin-prompts",
     "crates/board-plugin-requests",
@@ -46,6 +47,7 @@ board-plugin-controls = { path = "crates/board-plugin-controls", version = "0.0.
 board-plugin-evals = { path = "crates/board-plugin-evals", version = "0.0.0" }
 board-plugin-github = { path = "crates/board-plugin-github", version = "0.0.0" }
 board-plugin-jira = { path = "crates/board-plugin-jira", version = "0.0.0" }
+board-plugin-notes = { path = "crates/board-plugin-notes", version = "0.0.0" }
 board-plugin-plans = { path = "crates/board-plugin-plans", version = "0.0.0" }
 board-plugin-prompts = { path = "crates/board-plugin-prompts", version = "0.0.0" }
 board-plugin-requests = { path = "crates/board-plugin-requests", version = "0.0.0" }
@@ -74,6 +76,9 @@ gix = { version = "0.88.0", default-features = false, features = ["excludes", "p
 # The UTC time a pending effect records as `asked`. clap already brings this
 # crate in.
 humantime = "2.4.0"
+# The local time zone, which board-cli's config module reads once so
+# built-in plugins get the local UTC offset. gix already brings this version in.
+jiff = "0.2.37"
 jsonschema = { version = "0.58.5", default-features = false }
 jsonschema-regex = "0.58.5"
 # The owner's home from the passwd entry, which no variable a caller sets can

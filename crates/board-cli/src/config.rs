@@ -93,6 +93,7 @@ impl Context {
                 timings: std::env::var_os("BOARD_TIMINGS"),
                 caller: current.map(PathBuf::into_os_string),
                 day_start: None,
+                utc_offset: utc_offset(),
                 plugin: std::env::var_os(board_plugin::PLUGIN_VARIABLE),
                 // A Board a plugin started keeps naming the Board that started the plugin.
                 binary: std::env::var_os("BOARD_BIN")
@@ -122,6 +123,14 @@ impl Context {
     pub(crate) fn personal(&self) -> Result<PathBuf, Box<Refusal>> {
         self.known()?.personal(self.home.as_deref())
     }
+}
+
+/// How many seconds the local clock runs ahead of UTC now, by the time
+/// zone jiff reads from `TZ`, or else the system's; jiff reads an unknown
+/// zone as UTC.
+fn utc_offset() -> i32 {
+    let zone = jiff::tz::TimeZone::system();
+    zone.to_offset(jiff::Timestamp::now()).seconds()
 }
 
 /// The home directory the passwd entry of this process's user names.

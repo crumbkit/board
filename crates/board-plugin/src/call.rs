@@ -87,6 +87,10 @@ pub struct Environment {
     /// `BOARD_DAY_START`: when the person's day starts, such as `07:00`,
     /// from the known boards file.
     pub day_start: Option<OsString>,
+    /// How many seconds the local clock runs ahead of UTC, by the time zone
+    /// board-cli's config module read, which built-in plugins read in
+    /// place of `TZ`; 0 when unread.
+    pub utc_offset: i32,
     /// `BOARD_PLUGIN`, set when Board runs inside a plugin.
     pub plugin: Option<OsString>,
     /// `BOARD_BIN`: the Board executable a plugin runs, so a nested call
@@ -533,6 +537,7 @@ impl Environment {
             timings: get("BOARD_TIMINGS"),
             caller: Some(directory.as_os_str().to_owned()),
             day_start: self.day_start.clone(),
+            utc_offset: self.utc_offset,
             plugin: get(PLUGIN_VARIABLE),
             binary: get("BOARD_BIN"),
             inherited: (given.into_iter())

@@ -2,7 +2,7 @@
 
 This file holds detail for docs/plugins.md. It says how a plugin compiled into
 Board is called. `artifacts`, `boundary`, `controls`, `plans`, `evals`, `runs`,
-`github`, `jira`, `prompts`, [`share`](share.md) and
+`github`, `jira`, `notes`, `prompts`, [`share`](share.md) and
 [`requests`](built-in/requests.md) are built in.
 [built-in/writing.md](built-in/writing.md) says how to write one.
 
@@ -41,8 +41,10 @@ Board is called. `artifacts`, `boundary`, `controls`, `plans`, `evals`, `runs`,
     plugin's own `board call`, `board --personal`, `board -C`, `board
     decide`, `board sync` and `board mount update` do
     ([built-in/elsewhere.md](built-in/elsewhere.md)).
-  - `settings()` gives `now`, the time the call started, and `day_start` and
-    `caller`, from `BOARD_DAY_START` and `BOARD_CALLER_DIR`. It also gives
+  - `settings()` gives `now`, the time the call started, `day_start` and
+    `caller`, from `BOARD_DAY_START` and `BOARD_CALLER_DIR`, and
+    `utc_offset`, the local clock's seconds east of UTC, which board-cli
+    reads from `TZ` or the system with jiff. It also gives
     `environment`, the variables a process plugin offering the capability
     would see, its `env` among them, and `cache_home`, `XDG_CACHE_HOME` when
     it is absolute, else `~/.cache`. A built-in plugin reads no environment

@@ -105,6 +105,7 @@ impl Board {
                 now: SystemTime::now(),
                 day_start: (environment.day_start.as_ref())
                     .map(|text| text.to_string_lossy().into_owned()),
+                utc_offset: environment.utc_offset,
                 caller: environment.caller.as_ref().map(PathBuf::from),
                 environment: Variables(board_plugin::passed(chosen, environment)?),
                 cache_home: plugins.cache.map(Path::to_path_buf),

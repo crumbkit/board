@@ -661,10 +661,10 @@ fn a_query_on_a_board_enabling_a_failing_plugin_answers_as_with_a_working_one() 
     assert_eq!(text(&failing.stderr), text(&working.stderr));
 }
 
-/// A plugins directory holding notes, which ships the schema of
-/// `notes/note/v1`, and a board that does not enable it.
+/// A plugins directory holding journal, which ships the schema of
+/// `journal/note/v1`, and a board that does not enable it.
 /// A board that commits on put, as whom it says, and a plugins directory
-/// holding notes, which ships `notes/note/v1`.
+/// holding journal, which ships `journal/note/v1`.
 pub(super) fn shipping() -> (Scenario, Scenario) {
     let board = Scenario::new();
     board
@@ -678,14 +678,14 @@ pub(super) fn shipping() -> (Scenario, Scenario) {
         );
     let data = Scenario::new();
     data.write(
-        "plugins/notes/plugin.json",
+        "plugins/journal/plugin.json",
         Item::File(
-            r#"{"$type": "board/plugin-manifest/v1", "name": "notes", "version": "1.0.0",
-            "description": "Notes.", "run": ["./run"], "types": ["notes/note/v1"]}"#,
+            r#"{"$type": "board/plugin-manifest/v1", "name": "journal", "version": "1.0.0",
+            "description": "Journal.", "run": ["./run"], "types": ["journal/note/v1"]}"#,
         ),
     )
     .write(
-        "plugins/notes/types/notes/note/v1.schema.json",
+        "plugins/journal/types/journal/note/v1.schema.json",
         Item::File(r#"{"type": "object"}"#),
     );
     (board, data)
@@ -695,28 +695,28 @@ pub(super) fn shipping() -> (Scenario, Scenario) {
 fn plugin_list_prints_why_a_shipped_schema_is_unusable_and_a_usable_one_is_ok() {
     let (board, data) = shipping();
     data.write(
-        "plugins/notes/types/notes/note/v1.schema.json",
+        "plugins/journal/types/journal/note/v1.schema.json",
         Item::File(r#"{"type": 3}"#),
     );
     let output = plugin(&board, &data, &["plugin", "list"]);
     assert_eq!(output.code, 1);
     let shipped = data
         .workdir()
-        .join("plugins/notes/types/notes/note/v1.schema.json");
+        .join("plugins/journal/types/journal/note/v1.schema.json");
     let prefix = format!(
-        "degraded board::plugin::bad_manifest notes disabled: the schema the plugin ships for \
-         notes/note/v1 at {} does not compile: ",
+        "degraded board::plugin::bad_manifest journal disabled: the schema the plugin ships for \
+         journal/note/v1 at {} does not compile: ",
         shipped.display()
     );
     let stdout = text(&output.stdout);
     assert!(stdout.starts_with(&prefix), "{stdout}");
     data.write(
-        "plugins/notes/types/notes/note/v1.schema.json",
+        "plugins/journal/types/journal/note/v1.schema.json",
         Item::File(r#"{"type": "object"}"#),
     );
     let output = plugin(&board, &data, &["plugin", "list"]);
     assert_eq!(output.code, 0);
-    assert_eq!(text(&output.stdout), "ok notes 1.0.0 disabled\n");
+    assert_eq!(text(&output.stdout), "ok journal 1.0.0 disabled\n");
 }
 
 /// A board enabling tasks, which ships `tasks/note/v1` as `{"type":
@@ -784,22 +784,22 @@ fn plugin_enable_reports_a_schema_it_replaced_and_none_when_the_schema_is_the_sa
 fn plugin_enable_keeps_a_schema_the_plugin_dropped_while_a_record_has_its_type_and_removes_it_once_none_does()
  {
     let (board, data) = shipping();
-    let old = ".board/types/notes/old/v1.schema.json";
+    let old = ".board/types/journal/old/v1.schema.json";
     board
         .write(old, Item::File(r#"{"type": "object"}"#))
-        .write("old.json", Item::File(r#"{"$type": "notes/old/v1"}"#));
-    let enabled = plugin(&board, &data, &["--json", "plugin", "enable", "notes"]);
+        .write("old.json", Item::File(r#"{"$type": "journal/old/v1"}"#));
+    let enabled = plugin(&board, &data, &["--json", "plugin", "enable", "journal"]);
     assert_eq!(enabled.code, 0, "{}", text(&enabled.stderr));
     let report = json(&enabled);
     assert_eq!(report["data"]["removed"], serde_json::json!([]));
     assert_eq!(
         report["data"]["kept"],
-        serde_json::json!([{"schema": old, "type": "notes/old/v1", "records": 1}])
+        serde_json::json!([{"schema": old, "type": "journal/old/v1", "records": 1}])
     );
     assert_eq!(
         text(&enabled.stderr),
         format!(
-            "note: kept {old}, which the notes plugin no longer ships, for the 1 record(s) of type notes/old/v1; \
+            "note: kept {old}, which the journal plugin no longer ships, for the 1 record(s) of type journal/old/v1; \
              migrate them with the plugin's migrate capability if it has one, or move them by hand, \
              and the next enable removes it\n"
         )
@@ -807,23 +807,23 @@ fn plugin_enable_keeps_a_schema_the_plugin_dropped_while_a_record_has_its_type_a
     assert!(board.workdir().join(old).exists());
 
     board.write("old.json", Item::Deleted);
-    let enabled = plugin(&board, &data, &["--json", "plugin", "enable", "notes"]);
+    let enabled = plugin(&board, &data, &["--json", "plugin", "enable", "journal"]);
     assert_eq!(enabled.code, 0, "{}", text(&enabled.stderr));
     assert_eq!(json(&enabled)["data"]["removed"], serde_json::json!([old]));
     assert_eq!(json(&enabled)["data"]["kept"], serde_json::json!([]));
     assert_eq!(
         text(&enabled.stderr),
-        format!("note: removed {old}, which the notes plugin no longer ships\n")
+        format!("note: removed {old}, which the journal plugin no longer ships\n")
     );
     assert!(!board.workdir().join(old).exists());
 }
 
-/// A board naming notes in its configuration without its schema.
+/// A board naming journal in its configuration without its schema.
 pub(super) fn lacking_a_schema() -> (Scenario, Scenario) {
     let (board, data) = shipping();
     board.write(
         ".board/board.json",
-        Item::File(r#"{"$type": "board/config/v1", "plugins": ["notes"]}"#),
+        Item::File(r#"{"$type": "board/config/v1", "plugins": ["journal"]}"#),
     );
     (board, data)
 }
@@ -835,16 +835,16 @@ fn plugin_list_names_a_schema_an_enabled_plugin_lacks_and_is_clean_once_enabled(
     assert_eq!(output.code, 1);
     assert_eq!(
         text(&output.stdout),
-        "degraded board::plugin::schema_missing notes 1.0.0 enabled: \
-         board::plugin::schema_missing .board/types/notes/note/v1.schema.json\n"
+        "degraded board::plugin::schema_missing journal 1.0.0 enabled: \
+         board::plugin::schema_missing .board/types/journal/note/v1.schema.json\n"
     );
     let report = json(&plugin(&board, &data, &["--json", "plugin", "list"]));
     assert_eq!(report["data"][0]["code"], "board::plugin::schema_missing");
     assert_eq!(
         report["data"][0]["schemas"],
         serde_json::json!([{
-            "type": "notes/note/v1",
-            "path": ".board/types/notes/note/v1.schema.json",
+            "type": "journal/note/v1",
+            "path": ".board/types/journal/note/v1.schema.json",
             "code": "board::plugin::schema_missing",
         }])
     );
@@ -859,13 +859,13 @@ fn plugin_list_names_a_schema_an_enabled_plugin_lacks_and_is_clean_once_enabled(
     );
     assert!(
         long.lines().nth(1).is_some_and(|row| row.ends_with(
-            "  [{\"code\":\"board::plugin::schema_missing\",\"path\":\".board/types/notes/note/v1.schema.json\",\"type\":\"notes/note/v1\"}]"
+            "  [{\"code\":\"board::plugin::schema_missing\",\"path\":\".board/types/journal/note/v1.schema.json\",\"type\":\"journal/note/v1\"}]"
         )),
         "{long}"
     );
 
     assert_eq!(
-        plugin(&board, &data, &["plugin", "enable", "notes"]).code,
+        plugin(&board, &data, &["plugin", "enable", "journal"]).code,
         0
     );
     let output = plugin(&board, &data, &["--json", "plugin", "list"]);
@@ -879,12 +879,12 @@ fn plugin_enable_json_names_each_write_as_put_does() {
     let report = json(&plugin(
         &board,
         &data,
-        &["--json", "plugin", "enable", "notes"],
+        &["--json", "plugin", "enable", "journal"],
     ));
     let report = &report["data"];
-    assert_eq!(report["plugin"], "notes");
+    assert_eq!(report["plugin"], "journal");
     let schema = &report["writes"][0];
-    assert_eq!(schema["display"], "/.board/types/notes/note/v1.schema");
+    assert_eq!(schema["display"], "/.board/types/journal/note/v1.schema");
     assert_eq!(schema["previous"], serde_json::Value::Null);
     assert!(schema["blob"].is_string());
     assert!(report["writes"][1]["previous"].is_string());
@@ -895,11 +895,11 @@ fn plugin_enable_json_names_each_write_as_put_does() {
 fn a_plugin_the_board_does_not_enable_is_named_in_the_hint_and_an_enabled_one_runs() {
     let (board, data) = installed();
     install(&data, "tasks", &answering(RESULT, 0));
-    install(&data, "notes", &answering(RESULT, 0));
-    let refused = call(&board, &data, &["call", "notes.due"], "{}");
+    install(&data, "journal", &answering(RESULT, 0));
+    let refused = call(&board, &data, &["call", "journal.due"], "{}");
     assert_eq!(
         hint_of(&refused),
-        "add `notes` to `plugins` in `.board/board.json`"
+        "add `journal` to `plugins` in `.board/board.json`"
     );
     assert_eq!(call(&board, &data, &["call", "tasks.due"], "{}").code, 0);
 }
@@ -909,14 +909,14 @@ fn a_capability_two_plugins_offer_hints_a_call_naming_one_and_that_call_runs() {
     let (board, data) = installed();
     board.write(
         ".board/board.json",
-        Item::File(r#"{"$type": "board/config/v1", "plugins": ["tasks", "notes"]}"#),
+        Item::File(r#"{"$type": "board/config/v1", "plugins": ["tasks", "journal"]}"#),
     );
     install(&data, "tasks", &answering(RESULT, 0));
-    install(&data, "notes", &answering(RESULT, 0));
+    install(&data, "journal", &answering(RESULT, 0));
     let refused = call(&board, &data, &["call", "--capability", "due"], "{}");
     assert_eq!(
         hint_of(&refused),
-        "name the plugin as well, as in `board call notes.due`; \
+        "name the plugin as well, as in `board call journal.due`; \
          `board plugin find --capability due` lists the plugins that offer it"
     );
     let report = json(&call(
@@ -927,9 +927,9 @@ fn a_capability_two_plugins_offer_hints_a_call_naming_one_and_that_call_runs() {
     ));
     assert_eq!(
         report["fields"],
-        serde_json::json!({"capability": "due", "plugins": ["notes", "tasks"]})
+        serde_json::json!({"capability": "due", "plugins": ["journal", "tasks"]})
     );
-    assert_eq!(call(&board, &data, &["call", "notes.due"], "{}").code, 0);
+    assert_eq!(call(&board, &data, &["call", "journal.due"], "{}").code, 0);
 }
 
 #[test]

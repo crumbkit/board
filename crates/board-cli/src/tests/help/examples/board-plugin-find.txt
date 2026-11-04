@@ -24,6 +24,8 @@ github.install-hook disabled Print the command that installs a git pre-push hook
 github.pre-push disabled Run by the pre-push hook: check the refs git pushes as github.push checks a push, and refuse when the boundary refuses or the check cannot run.
 github.covers disabled Name the boundaries that cover a git push or gh write from the checkout, and where it goes, checking nothing and writing nothing.
 jira.ref disabled Write the issue at /jira/<site>/<key> with its title, read once through acli, unless a record is already there.
+notes.add disabled Sync the notes repo, append text under a `## HH:MM` heading to today's daily note or a topic's note, commit it and push it.
+notes.daily disabled Sync the notes repo and print a day's daily note, unless the note is private.
 plans.open disabled The questions under a path whose status is open, oldest first.
 prompts.get disabled Read one prompt at its pin and render its body and runs_in with the input values given on stdin.
 prompts.list disabled List the prompts in the board's own tree and the marked repos the caller's remote chooses, at their pins, by repo then title.

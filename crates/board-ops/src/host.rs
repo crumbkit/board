@@ -222,6 +222,10 @@ pub struct Settings {
     pub now: SystemTime,
     /// `BOARD_DAY_START`: when the person's day starts, such as `07:00`.
     pub day_start: Option<String>,
+    /// How many seconds the local clock runs ahead of UTC, negative west of
+    /// it, by the time zone board-cli's config module read. A process
+    /// plugin reads `TZ` instead.
+    pub utc_offset: i32,
     /// `BOARD_CALLER_DIR`: the directory Board was started in.
     pub caller: Option<PathBuf>,
     /// The variables a process plugin offering the capability would see,

@@ -15,7 +15,7 @@ PLUGIN = Path(__file__).resolve().parents[1]
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 REPOSITORY = PLUGIN.parents[1]
 SCHEMA = PLUGIN / "types" / "tasks" / "task" / "v2.schema.json"
-NOTES_SCHEMA = PLUGIN.parent / "notes" / "types" / "notes" / "repo" / "v1.schema.json"
+NOTES_SCHEMA = REPOSITORY / "crates" / "board-plugin-notes" / "types" / "notes" / "repo" / "v1.schema.json"
 
 
 def board_binary() -> Path:

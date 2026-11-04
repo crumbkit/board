@@ -136,6 +136,7 @@ pub(crate) fn board(files: &[(&str, String)]) -> (Scenario, Real) {
         settings: Settings {
             now: std::time::SystemTime::UNIX_EPOCH,
             day_start: None,
+            utc_offset: 0,
             caller: None,
             environment: board_ops::Variables::default(),
             cache_home: None,

@@ -530,7 +530,7 @@ fn calling() -> Scenario {
     let huge = "#!/bin/sh\ncat > /dev/null\nhead -c 16777300 /dev/zero\n";
     let runs = [
         ("tasks", answering(RESULT, 0)),
-        ("notes", answering(RESULT, 0)),
+        ("journal", answering(RESULT, 0)),
         ("strict", answering(RESULT, 0)),
         ("bad", answering("not json", 0)),
         ("fails", answering("", 3)),
@@ -574,7 +574,7 @@ fn calling_plugins(starts: &mut Starts) {
     let xdg = calling();
     let tasks = tasks(starts, &xdg);
     let lines: [(Code, &str); 3] = [
-        (Code::PluginNotEnabled, "call notes.due"),
+        (Code::PluginNotEnabled, "call journal.due"),
         (Code::PluginNotInstalled, "call nowhere.due"),
         (Code::PluginBadManifest, "call broken.due"),
     ];
@@ -595,7 +595,7 @@ fn calling_plugins(starts: &mut Starts) {
         "call tasks.due",
         "BOARD_CALL_DEPTH",
     );
-    let names = r#""tasks", "notes", "strict", "bad", "fails", "huge", "missing""#;
+    let names = r#""tasks", "journal", "strict", "bad", "fails", "huge", "missing""#;
     let all = starts
         .share(enabling(names))
         .stdin("{}")
@@ -680,17 +680,20 @@ fn enabling_plugins(starts: &mut Starts) {
     let (board, data) = shipping();
     let xdg = Scenario::new();
     let plugins = "xdg/data/board/plugins";
-    let schema = "types/notes/note/v1.schema.json";
-    let text = std::fs::read_to_string(data.workdir().join("plugins/notes").join(schema));
+    let schema = "types/journal/note/v1.schema.json";
+    let text = std::fs::read_to_string(data.workdir().join("plugins/journal").join(schema));
     xdg.write(
-        &format!("{plugins}/notes/{schema}"),
+        &format!("{plugins}/journal/types/journal/note/v1.schema.json"),
         Item::File(&text.unwrap()),
     );
-    let notes = TASKS
-        .replace(r#""tasks""#, r#""notes""#)
-        .replace(r#""run""#, r#""types": ["notes/note/v1"], "run""#);
-    xdg.write(&format!("{plugins}/notes/plugin.json"), Item::File(&notes));
-    for name in ["notes", "tasks"] {
+    let journal = TASKS
+        .replace(r#""tasks""#, r#""journal""#)
+        .replace(r#""run""#, r#""types": ["journal/note/v1"], "run""#);
+    xdg.write(
+        &format!("{plugins}/journal/plugin.json"),
+        Item::File(&journal),
+    );
+    for name in ["journal", "tasks"] {
         xdg.write(
             &format!("{plugins}/{name}/run"),
             Item::Executable(&answering(RESULT, 0)),
@@ -700,17 +703,17 @@ fn enabling_plugins(starts: &mut Starts) {
     board
         .write(
             ".board/board.json",
-            Item::File(r#"{"$type": "board/config/v1", "plugins": ["notes", "tasks"]}"#),
+            Item::File(r#"{"$type": "board/config/v1", "plugins": ["journal", "tasks"]}"#),
         )
         .write(
-            ".board/types/notes/note/v1.schema.json",
+            ".board/types/journal/note/v1.schema.json",
             Item::File(r#"{"type": "array"}"#),
         );
     let place = starts
         .keep(board)
         .stdin("{}")
         .xdg(xdg.workdir().join("xdg"));
-    let line = "call notes.due";
+    let line = "call journal.due";
     starts.add(&place, Code::PluginSchemaDiffers, line);
     starts.pair(&place, Code::PluginSchemaDiffers, line, "call tasks.due");
     let place = starts

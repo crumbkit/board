@@ -1,7 +1,7 @@
 # Plugins still in Python
 
 This file holds detail for docs/plugins.md. It describes the plugins here
-that are still Python programs: `tasks`, `notes`, `changes` and `review`.
+that are still Python programs: `tasks`, `changes` and `review`.
 
 Board validates a call's input and output, and `call` checks that the board
 holds the schemas the plugin ships. A plugin reading records with `board query`
@@ -14,13 +14,9 @@ These plugins use Python 3.12 or newer with uv, pydantic v2, ruff, pyright
 in strict mode and pytest (STANDARDS.md P1 to P5). Each talks the
 protocol through the shared library in `python/board-plugin/`, which also
 runs `board`: Board's error becomes `<plugin>::board::refused`, carrying
-Board's code. Its `repos` module finds the board's notes repos and matches a git
-remote to their records, its `day` module dates the person's day by
-`BOARD_DAY_START`, and its `migrate` module builds a migrate capability
-([lifecycle/updating.md](lifecycle/updating.md)). Its `writing` module writes a
-notes repo's file through `board put`, retrying a stale or moved write, then
-pushes and moves the mount's pin; its `slug` module turns a note's title into
-the file name Reflect gives it.
+Board's code. Its `repos`, `day`, `writing` and `slug` modules are what the
+`board-repos` crate ports for built-in plugins, and its `migrate` module
+builds a migrate capability ([lifecycle/updating.md](lifecycle/updating.md)).
 
 Each lives in `plugins/<name>/` with its lockfile and a committed
 `plugin.json` that a test compares with the one it generates.

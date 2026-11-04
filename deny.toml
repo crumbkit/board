@@ -25,6 +25,9 @@ deny = [
     { crate = "signal-hook", wrappers = ["board-plugin"] },
     # board-cli's config module reads the passwd entry's home.
     { crate = "nix", wrappers = ["board-cli"] },
+    # board-cli's config module reads the local time zone, and gix dates
+    # commits; a plugin gets the UTC offset in Settings.
+    { crate = "jiff", wrappers = ["board-cli", "gix-date"] },
     { crate = "tiny_http", wrappers = ["board-serve"] },
     { crate = "jsonschema-regex", wrappers = ["board-validate", "jsonschema"] },
     # Signatures are checked only by /usr/bin/ssh-keygen, through
