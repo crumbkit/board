@@ -96,6 +96,16 @@ impl Host for Local {
     ) -> Result<DecideReport, Box<Refusal>> {
         panic!("board-repos asks the owner nothing")
     }
+    fn sync(&self, _: bool, _: Duration) -> Result<board_ops::Synced, board_ops::SyncError> {
+        unreachable!("this host syncs nothing")
+    }
+    fn mount_update(
+        &self,
+        _: &LogicalPath,
+        _: Duration,
+    ) -> Result<board_ops::MountUpdateReport, board_ops::MountError> {
+        unreachable!("this host updates no mount")
+    }
     fn settings(&self) -> &Settings {
         &self.settings
     }
