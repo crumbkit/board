@@ -109,7 +109,8 @@ ask. A refused path does not stop the others and makes the run exit 1. Text
 prints each path's lines under a `==> <path> <==` header, as `get` does, and
 an error names its path on a `key:` line. JSON is always one `board/refs-report/v2`,
 for one path too. `data` holds each path's references in the order asked, and
-`failures` each refusal with the `index` of its path. One run takes at most 10,000
+`failures` each refusal with the `index` of its path. Each mount pointer in a
+location's `pointers` carries the `follow` ref its record names. One run takes at most 10,000
 paths; more is `board::cli::usage`. A path that does not parse as a logical
 path, such as `tasks/a`, refuses the whole run as `board::cli::usage`. As `get`
 does, `refs` answers each path only while its output, counted in the format

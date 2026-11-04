@@ -19,8 +19,12 @@ USES_WORDS = 3_000
 BRIEF_WORDS = 600
 # The most planned paths a rule lists as matched; it counts the rest, so a rule costs about one line.
 MATCHED_SHOWN = 3
+# The most rules the brief names in `rules_left_out`; `rules_unnamed` counts the rest.
+LEFT_OUT_NAMED = 20
+# The share of the word limit kept for the lines of the records the plan uses, when they need it.
+USES_SHARE = 4
 # The codes Board refuses a call with when the controls plugin or its capability is missing.
-MISSING = ("board::plugin::not_installed", "board::plugin::not_enabled")
+CONTROLS_UNAVAILABLE = ("board::plugin::not_installed", "board::plugin::not_enabled")
 CONTROL_TYPE = "controls/control/v1"
 DECISION_TYPE = "plans/decision/v1"
 EVAL_TYPE = "evals/eval/v1"
@@ -135,7 +139,7 @@ def line_of(found: tuple[str, dict[str, Any]] | None, text: str | None) -> str:
         return "unreadable: reaches nothing or is degraded"
     type_name, body = found
     if type_name == CONTROL_TYPE:
-        return str(body.get("summary") or body.get("requirement", ""))
+        return str(body.get("requirement", ""))
     if type_name == DECISION_TYPE:
         return str(body.get("decision", ""))
     if type_name == EVAL_TYPE:
@@ -159,7 +163,7 @@ def rules_for(board: Board, paths: list[str]) -> list[dict[str, Any]]:
     try:
         report = board.document("call", "controls.for-paths", stdin=for_paths_input(paths).encode())
     except PluginError as error:
-        if error.code == f"{PLUGIN}::board::refused" and (error.fields or {}).get("code") in MISSING:
+        if error.code == f"{PLUGIN}::board::refused" and (error.fields or {}).get("code") in CONTROLS_UNAVAILABLE:
             why = (
                 f"the brief lists the rules on the planned paths with controls.for-paths, which this Board "
                 f"refused: {error.message}; enable it with `board plugin enable controls`, or run a Board that "
@@ -168,6 +172,10 @@ def rules_for(board: Board, paths: list[str]) -> list[dict[str, Any]]:
             raise PluginError(f"{PLUGIN}::brief::controls_missing", why) from error
         raise
     return cast("list[dict[str, Any]]", report["data"]["output"]["controls"])
+
+
+# The command that lists every rule on the planned paths; it reads `for_paths_input` on stdin.
+RULES_ARGV = ["board", "call", "controls.for-paths"]
 
 
 def for_paths_input(paths: list[str]) -> str:
@@ -187,6 +195,33 @@ def rule_line(rule: dict[str, Any], paths: list[str]) -> dict[str, Any]:
     return line
 
 
+def fit_rules(found: list[dict[str, Any]], room: int) -> tuple[list[dict[str, Any]], list[str], int]:
+    """The rules that fit in `room` words, the paths of those left out, and the words both take.
+
+    Each rule's path and summary come first, in order, skipping any that do
+    not fit, so one long rule leaves room for the shorter ones after it.
+    Matched paths are added after, in order, while room remains. The words
+    of the left-out names that `rules_left_out` shows are kept back first.
+    """
+    room -= min(len(found), LEFT_OUT_NAMED)
+    spent = 0
+    fitted: list[tuple[dict[str, Any], dict[str, Any]]] = []
+    left_out: list[str] = []
+    for rule in found:
+        cost = words(f"{rule['control']} {rule['summary']}")
+        if spent + cost > room:
+            left_out.append(str(rule["control"]))
+            continue
+        fitted.append(({"control": rule["control"], "summary": rule["summary"]}, rule))
+        spent += cost
+    for line, rule in fitted:
+        cost = len(rule.get("matched", []))
+        if cost and spent + cost <= room:
+            line.update({key: rule[key] for key in ("matched", "matched_left_out") if key in rule})
+            spent += cost
+    return [line for line, _ in fitted], left_out, spent + min(len(left_out), LEFT_OUT_NAMED)
+
+
 def brief(request: CallRequest) -> dict[str, object]:
     """The newest plan, its paths' rules and one line per record it uses within the word limit, and the next step."""
     return brief_of(request, str(request.input["path"]))
@@ -203,22 +238,16 @@ def brief_of(request: CallRequest, path: str) -> dict[str, object]:
     controls = f"board call controls.check --path {change['mount']}"
     brief_line = f"board-brief: {path}"
     spent = words(" ".join([brief_line, path, text or "", str(step["phase"]), str(step["instruction"]), controls]))
-    rules_command = f"board call controls.for-paths <<< '{for_paths_input(paths)}'" if paths else None
-    spent += words(rules_command or "")
+    rules_command = {"argv": RULES_ARGV, "stdin": for_paths_input(paths)} if paths else None
+    spent += words(" ".join([*RULES_ARGV, for_paths_input(paths)])) if paths else 0
+    lines = [(ref, line_of(records.get(ref), texts.get(ref))) for ref in uses]
+    # The uses keep up to a quarter of the limit from the rules, so many rules cannot drop every line.
+    kept = min(sum(words(f"{ref} {line}") for ref, line in lines), BRIEF_WORDS // USES_SHARE)
     found = [rule_line(rule, paths) for rule in rules_for(board, paths)]
-    rules: list[dict[str, Any]] = []
-    for at, rule in enumerate(found):
-        cost = words(" ".join([rule["control"], rule["summary"], *rule.get("matched", [])]))
-        # Each rule after this one costs one word in `rules_left_out` if it does not fit.
-        if spent + cost + len(found) - at - 1 > BRIEF_WORDS:
-            break
-        rules.append(rule)
-        spent += cost
-    left_out = [str(rule["control"]) for rule in found[len(rules) :]]
-    spent += len(left_out)
+    rules, left_out, cost = fit_rules(found, BRIEF_WORDS - spent - kept)
+    spent += cost
     shown: list[dict[str, str]] = []
-    for ref in uses:
-        line = line_of(records.get(ref), texts.get(ref))
+    for ref, line in lines:
         cost = words(f"{ref} {line}")
         if spent + cost > BRIEF_WORDS:
             break
@@ -229,7 +258,8 @@ def brief_of(request: CallRequest, path: str) -> dict[str, object]:
         "path": path,
         "plan": text,
         "rules": rules,
-        "rules_left_out": left_out,
+        "rules_left_out": left_out[:LEFT_OUT_NAMED],
+        "rules_unnamed": len(left_out[LEFT_OUT_NAMED:]),
         "rules_command": rules_command,
         "uses": shown,
         "left_out": len(uses) - len(shown),

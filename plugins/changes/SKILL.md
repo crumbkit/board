@@ -84,8 +84,8 @@ lists every prototype with its verdict.
   paths; add the file to the paths with `changes.plan`, or revert the
   edit. When the plan says "No UI change" or "None", list the
   repository's UI-path and data-path controls with `controls.check`, and
-  report a diff that touches a path they name as a high finding. Fix every critical or high finding, record the new head, and
-  review again.
+  report a diff that touches a path they name as a high finding. Fix
+  every critical or high finding, record the new head, and review again.
 - **land**: add `## What the tests prove` and `## What the tests do not
   prove` sections to the plan with what the runs cannot show on their own.
   Run `board -C <board> call changes.pr --path /changes/<name>`, read

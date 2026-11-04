@@ -248,16 +248,27 @@ class BriefRule(Strict):
     matched_left_out: int | SkipJsonSchema[None] = None
 
 
+class RulesCommand(Strict):
+    """A command to run without a shell: `argv` is the program and its arguments, and `stdin` is its input."""
+
+    argv: list[str]
+    stdin: str
+
+
 class BriefOutput(Strict):
     """What an agent needs to start a change, in at most 600 words.
 
     `plan` is the newest plan's text, or `null` when the change has no plan
     record. `rules` lists each control on the plan's paths once, as
-    `controls.for-paths` finds them, and `rules_left_out` names those the
-    word limit left out, which `rules_command` lists in full; it is `null`
-    when the plan has no paths. Rules are counted before uses. `uses` gives one
-    line per record it uses, in order, and `left_out` counts those the word
-    limit left out. `controls` is the
+    `controls.for-paths` finds them. Each rule's path and summary are
+    fitted first, in order, and its matched paths after, while room remains.
+    `rules_left_out` names up to 20 rules the word limit left out, and
+    `rules_unnamed` counts the rest. `rules_command` is the command that
+    lists every rule, as an `argv` to run and the `stdin` to give it; it is
+    `null` when the plan has no paths. Rules are counted before uses, but
+    the uses keep up to a quarter of the limit. `uses` gives one line per
+    record it uses, in order, and `left_out` counts those the word limit
+    left out. `controls` is the
     command that lists the controls on the change's repository.
     `brief_line`, `board-brief: <path>`, comes first in the output; a
     builder's first message starts with it, and the write guard reads it.
@@ -268,7 +279,8 @@ class BriefOutput(Strict):
     plan: str | None
     rules: list[BriefRule]
     rules_left_out: list[str]
-    rules_command: str | None
+    rules_unnamed: int
+    rules_command: RulesCommand | None
     uses: list[BriefUse]
     left_out: int
     phase: Phase

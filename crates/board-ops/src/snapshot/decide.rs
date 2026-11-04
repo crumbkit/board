@@ -314,6 +314,7 @@ impl Decide<'_> {
                 path: entry.path.clone(),
                 object: Object::Blob(indexed.blob),
                 pointers: Vec::new(),
+                follow: None,
             };
             let contents = self.read(&location, indexed.blob).ok()??;
             let remote = Repo::from_value(&parse_json(&contents.bytes).ok()?)

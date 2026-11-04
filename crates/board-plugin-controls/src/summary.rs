@@ -1,5 +1,5 @@
-//! A control's summary when its record gives none: the first sentence of
-//! its requirement, cut to fit one line.
+//! A control's summary: the first sentence of its requirement, cut to fit
+//! one line.
 
 /// The most words a summary holds.
 const SUMMARY_WORDS: usize = 25;

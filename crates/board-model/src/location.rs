@@ -89,6 +89,9 @@ pub struct Location {
     pub object: Object,
     /// Each pointer followed to get here, in order.
     pub pointers: Vec<Location>,
+    /// The ref a mount pointer follows, as its record names it; `None` for
+    /// any other Location.
+    pub follow: Option<String>,
 }
 
 impl Location {
@@ -157,6 +160,7 @@ mod tests {
             path: path.to_owned(),
             object,
             pointers: Vec::new(),
+            follow: None,
         }
     }
 
