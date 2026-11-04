@@ -49,6 +49,8 @@ that changed after the read is refused whole. The mod then reads the question
 again, and the toast names an answer written meanwhile, or else gives Board's
 refusal. The put waits at most 2 seconds for board's lock, so a held lock is
 refused as a Board failure before the mod's 5-second process timeout.
+`board call plans.answer` makes the same checks and the same put in Board's
+own process, for clients without the mod.
 
 The answer carries `written_by: "plans/pane-answer"`. In the desktop app it
 also carries `by`, this session's `local_` id from

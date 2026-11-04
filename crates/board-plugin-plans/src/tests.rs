@@ -116,10 +116,13 @@ fn the_manifest_parses_as_board_reads_a_built_in_one_and_names_no_program_to_run
         types,
         ["plans/question/v1", "plans/answer/v1", "plans/decision/v1"]
     );
-    let [open] = &manifest.capabilities[..] else {
+    let [open, answer] = &manifest.capabilities[..] else {
         panic!("{:?}", manifest.capabilities)
     };
-    assert_eq!(open.name.as_str(), "open");
+    assert_eq!(
+        (open.name.as_str(), answer.name.as_str()),
+        ("open", "answer")
+    );
     assert!(
         manifest
             .description
@@ -173,7 +176,11 @@ fn the_output_schema_admits_an_answer_and_refuses_one_without_its_total() {
             "session": "local_0a1b",
             "options": [{"id": "a", "text": "A"}],
             "recommendation": null,
+            "why": null,
             "blocks": "the release",
+            "note": null,
+            "mount": null,
+            "context_path": null,
         }],
         "total": 1,
         "truncated": false,
@@ -182,6 +189,42 @@ fn the_output_schema_admits_an_answer_and_refuses_one_without_its_total() {
     assert!(output.validate(&answer).is_ok());
     let mut partial = answer;
     partial.as_object_mut().unwrap().remove("total");
+    assert!(output.validate(&partial).is_err());
+}
+
+#[test]
+fn answers_input_names_the_question_and_option_and_admits_no_null() {
+    let input = schema_of::<answer::Input>(SchemaSettings::draft2020_12());
+    let properties = input["properties"].as_object().unwrap();
+    let names: Vec<&str> = properties.keys().map(String::as_str).collect();
+    assert_eq!(names, ["by", "option", "path", "words", "written_by"]);
+    for (name, property) in properties {
+        let description = property["description"].as_str().unwrap();
+        assert!(description.ends_with('.'), "{name}: {description}");
+        assert_eq!(property["type"], "string", "{name} is a string, never null");
+    }
+    assert_eq!(input["additionalProperties"], false);
+    assert_eq!(input["required"], json!(["path", "option"]));
+    assert_eq!(
+        input["properties"]["written_by"]["pattern"],
+        "^[a-z0-9-]+/[a-z0-9-]+$"
+    );
+}
+
+#[test]
+fn the_answer_output_schema_admits_an_answer_and_refuses_one_without_its_time() {
+    let manifest = Plans.manifest();
+    let output = &manifest.capabilities[1].output;
+    let answer = json!({
+        "answer": "/projects/a/answers/q",
+        "question": "/projects/a/questions/q",
+        "choice": "a",
+        "words": "A",
+        "answered": "2026-11-04T22:50:00Z",
+    });
+    assert!(output.validate(&answer).is_ok());
+    let mut partial = answer;
+    partial.as_object_mut().unwrap().remove("answered");
     assert!(output.validate(&partial).is_err());
 }
 
@@ -379,6 +422,10 @@ fn open_reads_fields_the_question_struct_declares() {
         "recommendation",
         "blocks",
         "status",
+        "why",
+        "note",
+        "mount",
+        "context_path",
     ] {
         assert!(question["properties"].get(field).is_some(), "{field}");
     }
@@ -393,10 +440,18 @@ fn a_capability_the_plugin_does_not_offer_is_refused_and_open_is_answered() {
     assert_eq!(refused.code, "plans::call::unknown_capability");
     assert_eq!(
         refused.message,
-        "plans offers no capability closed; it offers open"
+        "plans offers no capability closed; it offers open and answer"
     );
     let answered = call("open").unwrap();
     assert_eq!(answered["total"], 0);
+    let input = json!({"path": "/projects/a/questions/q", "option": "a"});
+    let refused = Plans
+        .call(&host, &"answer".parse().unwrap(), input)
+        .unwrap_err();
+    assert_eq!(
+        refused.code, "plans::answer::no_question",
+        "answer is offered, and this host holds no question"
+    );
 }
 
 #[test]

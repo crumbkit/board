@@ -1,0 +1,356 @@
+//! `answer` records what the pane mod records: the answer and the question
+//! marked answered, in one put, or a refusal that says why not.
+
+use std::rc::Rc;
+use std::time::{Duration, SystemTime};
+
+use board_ops::Plugins;
+use board_plugin::Target;
+use board_scenario::Item;
+use serde_json::json;
+
+use super::*;
+use crate::Plans;
+use crate::open::tests::{Answering, body, host, plans_board};
+
+const QUESTION: &str = "/projects/a/questions/q";
+const BLOB: &str = "4b825dc642cb6eb9a060e54bf8d69288fbe4904d";
+
+/// 2026-11-04T22:50:00Z.
+fn now() -> SystemTime {
+    SystemTime::UNIX_EPOCH + Duration::from_mins(29_897_210)
+}
+
+/// A question with options `a` and `b`, recommending `a`, and `fields`
+/// added or replacing its own.
+fn question(fields: &Value) -> Value {
+    let mut fields = fields.clone();
+    let defaults = json!({
+        "options": [{"id": "a", "text": "Go."}, {"id": "b", "text": "Stay."}],
+        "recommendation": "a",
+        "why": "It is simpler.",
+    });
+    for (name, value) in defaults.as_object().unwrap() {
+        if fields.get(name).is_none() {
+            fields[name] = value.clone();
+        }
+    }
+    body("2026-10-01T09:00:00Z", &fields)
+}
+
+/// The rows `QUESTION_SQL` returns for the question at `QUESTION` with
+/// `fields`, of `kind`, and an answer at each of `answers`.
+fn rows(kind: &str, fields: &Value, answers: &[&str]) -> Vec<Vec<Value>> {
+    let asked = vec![
+        json!("question"),
+        json!(QUESTION),
+        json!(kind),
+        json!(BLOB),
+        question(fields),
+    ];
+    let answered = answers.iter().map(|path| {
+        vec![
+            json!("answer"),
+            json!(path),
+            json!("plans/answer/v1"),
+            json!(BLOB),
+            Value::Null,
+        ]
+    });
+    std::iter::once(asked).chain(answered).collect()
+}
+
+/// A host answering with `rows` at `now`.
+fn at_now(rows: Vec<Vec<Value>>) -> Answering {
+    let mut host = host(rows);
+    host.settings.now = now();
+    host
+}
+
+#[test]
+fn an_answer_is_one_put_of_the_new_answer_and_the_question_marked_answered() {
+    let host = at_now(rows("plans/question/v1", &json!({}), &[]));
+    let input =
+        json!({"path": QUESTION, "option": "b", "by": "local_0c", "written_by": "board-app/phone"});
+    let output = answer(&host, &input).unwrap();
+    assert_eq!(
+        output,
+        json!({
+            "answer": "/projects/a/answers/q",
+            "question": QUESTION,
+            "choice": "b",
+            "words": "Stay.",
+            "answered": "2026-11-04T22:50:00Z",
+        })
+    );
+    assert_eq!(host.asked.take(), [(question_sql(QUESTION), Limit::ALL)]);
+    let mut marked: Value = serde_json::from_str(question(&json!({})).as_str().unwrap()).unwrap();
+    marked["status"] = json!("answered");
+    assert_eq!(
+        host.puts.take(),
+        [vec![
+            json!({"path": "/projects/a/answers/q", "expect": "none", "record": {
+                "$type": "plans/answer/v1",
+                "question": QUESTION,
+                "choice": "b",
+                "words": "Stay.",
+                "answered": "2026-11-04T22:50:00Z",
+                "by": "local_0c",
+                "written_by": "board-app/phone",
+            }}),
+            json!({"path": QUESTION, "expect": BLOB, "record": marked}),
+        ]]
+    );
+}
+
+#[test]
+fn the_owners_words_are_kept_verbatim_and_by_and_written_by_are_left_out_when_not_given() {
+    let host = at_now(rows("plans/question/v1", &json!({}), &[]));
+    let words = "  A, but only after the release.  ";
+    let output = answer(
+        &host,
+        &json!({"path": QUESTION, "option": "a", "words": words}),
+    )
+    .unwrap();
+    assert_eq!(
+        (&output["choice"], &output["words"]),
+        (&json!("a"), &json!(words))
+    );
+    let puts = host.puts.take();
+    let record = puts[0][0]["record"].as_object().unwrap();
+    let fields: Vec<&str> = record.keys().map(String::as_str).collect();
+    assert_eq!(fields, ["$type", "answered", "choice", "question", "words"]);
+}
+
+#[test]
+fn a_question_quoted_in_sql_is_read_by_its_own_path() {
+    let path = "/projects/o'brien/questions/q";
+    assert_eq!(
+        question_sql(path),
+        "SELECT 'question' AS kind, logical, type, blob, body FROM records \
+         WHERE logical = '/projects/o''brien/questions/q' \
+         UNION ALL SELECT 'answer', logical, type, blob, NULL FROM records \
+         WHERE type = 'plans/answer/v1' \
+         AND json_extract(body, '$.question') = '/projects/o''brien/questions/q'"
+    );
+}
+
+/// Each refusal beside its twin, which differs in one thing and is admitted:
+/// the input, the question's type, its fields and the answers that name it.
+struct Case {
+    code: &'static str,
+    refused: (Value, &'static str, Value, &'static [&'static str]),
+    admitted: (Value, &'static str, Value, &'static [&'static str]),
+    names: &'static str,
+}
+
+fn cases() -> Vec<Case> {
+    let input = |path: &str, option: &str| json!({"path": path, "option": option});
+    let question = "plans/question/v1";
+    vec![
+        Case {
+            code: "plans::answer::not_a_question_path",
+            refused: (input("/projects/a/notes/q", "a"), question, json!({}), &[]),
+            admitted: (input(QUESTION, "a"), question, json!({}), &[]),
+            names: "/projects/a/notes/q",
+        },
+        Case {
+            code: "plans::answer::not_a_question_path",
+            refused: (
+                input("/projects/a/questions/", "a"),
+                question,
+                json!({}),
+                &[],
+            ),
+            admitted: (input(QUESTION, "a"), question, json!({}), &[]),
+            names: "/projects/a/questions/",
+        },
+        Case {
+            code: "plans::answer::no_question",
+            refused: (input(QUESTION, "a"), "plans/decision/v1", json!({}), &[]),
+            admitted: (input(QUESTION, "a"), question, json!({}), &[]),
+            names: "plans/decision/v1",
+        },
+        Case {
+            code: "plans::answer::already_answered",
+            refused: (
+                input(QUESTION, "a"),
+                question,
+                json!({}),
+                &["/projects/a/answers/elsewhere"],
+            ),
+            admitted: (input(QUESTION, "a"), question, json!({}), &[]),
+            names: "/projects/a/answers/elsewhere",
+        },
+        Case {
+            code: "plans::answer::not_open",
+            refused: (
+                input(QUESTION, "a"),
+                question,
+                json!({"status": "withdrawn"}),
+                &[],
+            ),
+            admitted: (
+                input(QUESTION, "a"),
+                question,
+                json!({"status": "open"}),
+                &[],
+            ),
+            names: "withdrawn",
+        },
+        Case {
+            code: "plans::answer::unknown_option",
+            refused: (input(QUESTION, "c"), question, json!({}), &[]),
+            admitted: (input(QUESTION, "b"), question, json!({}), &[]),
+            names: "a, b",
+        },
+        Case {
+            code: "plans::answer::words_needed",
+            refused: (input(QUESTION, "none"), question, json!({}), &[]),
+            admitted: (
+                json!({"path": QUESTION, "option": "none", "words": "Neither."}),
+                question,
+                json!({}),
+                &[],
+            ),
+            names: "none",
+        },
+    ]
+}
+
+#[test]
+fn each_refusal_has_its_own_code_and_says_what_was_wrong_and_its_twin_is_recorded() {
+    for Case {
+        code,
+        refused,
+        admitted,
+        names,
+    } in cases()
+    {
+        let run = |(input, kind, fields, answers): &(Value, &str, Value, &[&str])| {
+            let host = at_now(rows(kind, fields, answers));
+            (answer(&host, input), host.puts.take().len())
+        };
+        let (result, puts) = run(&refused);
+        let error = result.unwrap_err();
+        assert_eq!(error.code, code, "{}", error.message);
+        assert!(error.message.contains(names), "{code}: {}", error.message);
+        assert!(error.hint.is_some(), "{code} suggests what to try");
+        assert_eq!(puts, 0, "{code} writes nothing");
+        let (result, puts) = run(&admitted);
+        assert!(
+            result.is_ok(),
+            "{code}'s twin: {:?}",
+            result.err().map(|e| e.message)
+        );
+        assert_eq!(puts, 1, "{code}'s twin writes");
+    }
+}
+
+#[test]
+fn no_row_at_the_path_is_no_question_and_a_row_there_is_answered() {
+    let refused = answer(
+        &at_now(Vec::new()),
+        &json!({"path": QUESTION, "option": "a"}),
+    );
+    assert_eq!(refused.unwrap_err().code, "plans::answer::no_question");
+    let admitted = answer(
+        &at_now(rows("plans/question/v1", &json!({}), &[])),
+        &json!({"path": QUESTION, "option": "a"}),
+    );
+    assert!(admitted.is_ok());
+}
+
+/// A board holding the question at `QUESTION`, and a host over it at `now`.
+fn on_board(fields: &Value) -> (board_scenario::Scenario, Answering) {
+    let (scenario, board) = plans_board(&[("projects/a/questions/q", question(fields))]);
+    let mut host = at_now(Vec::new());
+    host.board = Some(board);
+    (scenario, host)
+}
+
+#[test]
+fn the_board_holds_the_answer_and_the_answered_question_after_the_call() {
+    let (scenario, host) = on_board(&json!({"note": "Nobody wrote down the deadline."}));
+    answer(&host, &json!({"path": QUESTION, "option": "a"})).unwrap();
+    let read = |path: &str| -> Value {
+        let text = std::fs::read_to_string(scenario.workdir().join(path)).unwrap();
+        serde_json::from_str(&text).unwrap()
+    };
+    assert_eq!(
+        read("projects/a/answers/q.json"),
+        json!({
+            "$type": "plans/answer/v1",
+            "question": QUESTION,
+            "choice": "a",
+            "words": "Go.",
+            "answered": "2026-11-04T22:50:00Z",
+        })
+    );
+    let mut expected: Value = serde_json::from_str(
+        question(&json!({"note": "Nobody wrote down the deadline."}))
+            .as_str()
+            .unwrap(),
+    )
+    .unwrap();
+    expected["status"] = json!("answered");
+    assert_eq!(read("projects/a/questions/q.json"), expected);
+}
+
+#[test]
+fn a_question_changed_after_the_read_is_refused_by_board_and_nothing_is_written() {
+    for changed in [true, false] {
+        let (scenario, host) = on_board(&json!({}));
+        let scenario = Rc::new(scenario);
+        if changed {
+            let edited = question(&json!({"blocks": "the release"}));
+            let there = Rc::clone(&scenario);
+            *host.between.borrow_mut() = Some(Box::new(move || {
+                there.write(
+                    "projects/a/questions/q.json",
+                    Item::File(edited.as_str().unwrap()),
+                );
+            }));
+        }
+        let result = answer(&host, &json!({"path": QUESTION, "option": "a"}));
+        let answer_file = scenario.workdir().join("projects/a/answers/q.json");
+        if changed {
+            let refused = result.unwrap_err();
+            assert_eq!(refused.code, "plans::board::refused");
+            assert_eq!(refused.fields["code"], json!("board::put::stale"));
+            assert!(!answer_file.exists(), "Board writes both lines or neither");
+        } else {
+            assert!(result.is_ok());
+            assert!(answer_file.exists());
+        }
+    }
+}
+
+#[test]
+fn board_calls_plans_answer_in_its_own_process_and_a_second_answer_is_refused() {
+    let (scenario, board) = plans_board(&[("projects/a/questions/q", question(&json!({})))]);
+    let target: Target = "plans.answer".parse().unwrap();
+    let input = format!(r#"{{"path": "{QUESTION}", "option": "none", "words": "Neither."}}"#);
+    let report = board
+        .call(&target, input.as_bytes(), &Plugins::default())
+        .unwrap();
+    assert_eq!(report.output["answer"], "/projects/a/answers/q");
+    assert_eq!(report.output["choice"], "none");
+    assert_eq!(board.take_trace().work.get("started"), Some(&0));
+    assert!(
+        scenario
+            .workdir()
+            .join("projects/a/answers/q.json")
+            .exists()
+    );
+    let board = board_ops::Board::open(scenario.workdir(), None).map(|mut board| {
+        board.build_in(&[&Plans]);
+        board
+    });
+    let refused = board
+        .unwrap()
+        .call(&target, input.as_bytes(), &Plugins::default())
+        .unwrap_err()
+        .refusal();
+    assert_eq!(refused.code.as_str(), "plans::answer::already_answered");
+}

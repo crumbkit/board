@@ -69,7 +69,11 @@ struct Waiting {
     session: String,
     options: Vec<Choice>,
     recommendation: Option<String>,
+    why: Option<String>,
     blocks: Option<String>,
+    note: Option<String>,
+    mount: Option<String>,
+    context_path: Option<String>,
 }
 
 /// Options are read as objects because serde reads a struct from a list too.
@@ -81,7 +85,11 @@ struct Stored {
     #[serde(default)]
     options: Vec<Map<String, Value>>,
     recommendation: Option<String>,
+    why: Option<String>,
     blocks: Option<String>,
+    note: Option<String>,
+    mount: Option<String>,
+    context_path: Option<String>,
 }
 
 pub(crate) fn open(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
@@ -135,7 +143,11 @@ fn readable(path: &str, body: &Value) -> Option<(Instant, Waiting)> {
         session: asked.session,
         options,
         recommendation: asked.recommendation,
+        why: asked.why,
         blocks: asked.blocks,
+        note: asked.note,
+        mount: asked.mount,
+        context_path: asked.context_path,
     };
     Some((when, question))
 }
@@ -151,4 +163,4 @@ fn choice(option: &Map<String, Value>) -> Option<Choice> {
 }
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;

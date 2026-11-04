@@ -111,13 +111,13 @@ fn an_installed_copy_of_a_built_in_plugin_is_listed_with_its_directory_and_one_u
             assert_eq!(row["code"], "board::plugin::duplicate");
             assert_eq!(row["shadows"], json!(directory.display().to_string()));
             let expected = format!(
-                "degraded board::plugin::duplicate plans 0.1.0 disabled: installed again at {} offers open",
+                "degraded board::plugin::duplicate plans 0.1.0 disabled: installed again at {} offers open, answer",
                 directory.display()
             );
             assert_eq!(line, expected);
         } else {
             assert_eq!((row.get("code"), row.get("shadows")), (None, None));
-            assert_eq!(line, "ok plans 0.1.0 disabled offers open");
+            assert_eq!(line, "ok plans 0.1.0 disabled offers open, answer");
         }
     }
 }
@@ -242,6 +242,24 @@ fn call_plans_open_help_lists_its_input_as_flags() {
         "--path",
         "--limit",
         "The questions under a path whose status is open",
+    ] {
+        assert!(help.contains(flag), "{flag}: {help}");
+    }
+}
+
+#[test]
+fn call_plans_answer_help_lists_its_input_as_flags() {
+    let board = questions();
+    let (output, _) = built_in(board.workdir(), None, &["call", "plans.answer", "-h"]);
+    assert_eq!(output.code, 0, "{}", text(&output.stderr));
+    let help = text(&output.stdout);
+    for flag in [
+        "--path",
+        "--option",
+        "--words",
+        "--by",
+        "--written_by",
+        "Record the owner's answer to an open question",
     ] {
         assert!(help.contains(flag), "{flag}: {help}");
     }

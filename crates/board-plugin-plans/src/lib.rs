@@ -1,5 +1,6 @@
 //! The plans plugin built into Board (plugins/plans/README.md).
 
+mod answer;
 mod open;
 pub mod records;
 
@@ -41,9 +42,10 @@ impl Plugin for Plans {
     ) -> Result<Value, PluginError> {
         match capability.as_str() {
             "open" => open::open(host, &input),
+            "answer" => answer::answer(host, &input),
             other => Err(PluginError {
                 code: "plans::call::unknown_capability".to_owned(),
-                message: format!("plans offers no capability {other}; it offers open"),
+                message: format!("plans offers no capability {other}; it offers open and answer"),
                 fields: Map::new(),
                 hint: None,
             }),
@@ -58,7 +60,8 @@ fn manifest() -> Value {
         "version": "0.1.0",
         "description": "Questions an agent session asks the owner, the owner's answers, and the decisions \
             sessions record. `board call plans.open` lists the questions still waiting for an answer, \
-            oldest first. plugins/plans/README.md in Board's repository says where each record lives.",
+            oldest first, and `board call plans.answer` records the owner's answer to one. \
+            plugins/plans/README.md in Board's repository says where each record lives.",
         "metadata": {"area": "planning"},
         "types": record_schemas().map(|(name, _)| name),
         "capabilities": [{
@@ -72,6 +75,14 @@ fn manifest() -> Value {
                 "idempotentHint": true,
                 "openWorldHint": false,
             },
+            "_meta": {},
+        }, {
+            "name": "answer",
+            "description": "Record the owner's answer to an open question and mark the question \
+                answered, in one commit.",
+            "inputSchema": schema_of::<answer::Input>(SchemaSettings::draft2020_12()),
+            "outputSchema": schema_of::<answer::Output>(SchemaSettings::draft2020_12().for_serialize()),
+            "annotations": {"readOnlyHint": false},
             "_meta": {},
         }],
     })

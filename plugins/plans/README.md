@@ -49,7 +49,29 @@ Such a stub names its plugin and hook in `written_by`, such as
 questions below the path whose `status` is `open`, oldest first, with their options,
 recommendation and what each blocks. It returns at most 100 by default, with
 `total`, which counts the readable ones, and `truncated`. `unreadable` counts
-open questions Board marks degraded or this plugin cannot read.
+open questions Board marks degraded or this plugin cannot read. Each question
+also carries `why`, `note`, `mount` and `context_path`, null when the record
+leaves them out.
+
+`board call plans.answer --path <question> --option <id> [--words <text>]
+[--by <session>] [--written_by <plugin>/<client>]` records the owner's answer
+as the Claude Code mod's pane does, so a client without the mod, such as
+Board.app, can answer. `--option` is one of the question's option ids, or
+`none` with `--words`. `--words` defaults to the chosen option's text. It
+writes one commit of two lines: a new `plans/answer/v1` at the question's id
+under `answers/`, answered now, and the question with `status: "answered"`,
+which must still hold the blob the call read. It returns the answer's path,
+the question's path, `choice`, `words` and `answered`.
+
+It writes nothing, and fails with its own code, when the path is not
+`.../questions/<id>` (`plans::answer::not_a_question_path`), nothing there is
+a question (`plans::answer::no_question`), an answer already names the
+question (`plans::answer::already_answered`), the question's status is not
+`open` (`plans::answer::not_open`), the option is not one of the question's
+(`plans::answer::unknown_option`), or the option is `none` without words
+(`plans::answer::words_needed`). A question changed after the read fails with
+`plans::board::refused`, carrying Board's `board::put::stale`. It asks for no
+Touch ID, as the pane does not.
 
 ## The Claude Code mod
 
