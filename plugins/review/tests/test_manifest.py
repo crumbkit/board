@@ -59,6 +59,7 @@ def test_every_input_property_carries_a_sentence_that_says_what_it_means() -> No
         ("post", "pr"),
         ("covered", "base"),
         ("covered", "head"),
+        ("covered", "change"),
     }
     for key, description in descriptions.items():
         assert isinstance(description, str), key

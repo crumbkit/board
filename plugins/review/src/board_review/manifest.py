@@ -53,7 +53,8 @@ def manifest() -> dict[str, JsonValue]:
             " pinned record with the agent BOARD_REVIEW_AGENT names and records the report; `board call"
             " review.post --report /reviews/<id>/report --pr <url>` comments it on a pull request once the owner"
             " approves the comment; `board call review.covered --base <commit> --head <commit>` checks that"
-            " committed reports cover a pull request's commits. README.md in the plugin's directory says more."
+            " committed reports, or those a change attaches, cover a pull request's commits. README.md in the"
+            " plugin's directory says more."
         ),
         "run": [".venv/bin/python", "-m", "board_review"],
         "metadata": {"area": "review"},
@@ -89,7 +90,8 @@ def manifest() -> dict[str, JsonValue]:
                 "description": (
                     "The reports in the board's own tree that cover every commit from the merge base of a base"
                     " and a head to the head, each by a report's range or patch ids, after skipping commits that"
-                    " only add review records. A report asking for changes never covers. Fails when a commit is"
+                    " only add review records. With --change, the reports the change attaches, and the commits of"
+                    " the clone its mount reads. A report asking for changes never covers. Fails when a commit is"
                     " uncovered."
                 ),
                 "inputSchema": _schema(CoveredInput),
