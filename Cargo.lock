@@ -753,8 +753,8 @@ checksum = "a31eee39dddec8330830986fcd7625edb5a24ec90ea038215273bbc3adb08ac6"
 
 [[package]]
 name = "crumbkit"
-version = "0.0.0"
-source = "git+https://github.com/crumbkit/crumbkit?rev=5589a9099cb1fa7f9ae8e77113fd08c45af6cb62#5589a9099cb1fa7f9ae8e77113fd08c45af6cb62"
+version = "0.1.1"
+source = "git+https://github.com/crumbkit/crumbkit?rev=a85fa49c767a4313bbfa3261b84c4f6b4cbc73c1#a85fa49c767a4313bbfa3261b84c4f6b4cbc73c1"
 dependencies = [
  "clap",
  "clap_complete",
@@ -768,8 +768,8 @@ dependencies = [
 
 [[package]]
 name = "crumbkit-markdown"
-version = "0.0.0"
-source = "git+https://github.com/crumbkit/crumbkit?rev=5589a9099cb1fa7f9ae8e77113fd08c45af6cb62#5589a9099cb1fa7f9ae8e77113fd08c45af6cb62"
+version = "0.1.1"
+source = "git+https://github.com/crumbkit/crumbkit?rev=a85fa49c767a4313bbfa3261b84c4f6b4cbc73c1#a85fa49c767a4313bbfa3261b84c4f6b4cbc73c1"
 dependencies = [
  "crumbkit",
  "serde",
@@ -778,8 +778,8 @@ dependencies = [
 
 [[package]]
 name = "crumbkit-test"
-version = "0.0.0"
-source = "git+https://github.com/crumbkit/crumbkit?rev=5589a9099cb1fa7f9ae8e77113fd08c45af6cb62#5589a9099cb1fa7f9ae8e77113fd08c45af6cb62"
+version = "0.1.1"
+source = "git+https://github.com/crumbkit/crumbkit?rev=a85fa49c767a4313bbfa3261b84c4f6b4cbc73c1#a85fa49c767a4313bbfa3261b84c4f6b4cbc73c1"
 dependencies = [
  "clap",
  "crumbkit",

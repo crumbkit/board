@@ -124,7 +124,7 @@ Board sends the absolute logical path (architecture.md, Typed references).
 No flags and no stdin, a terminal on stdin, or stdin left unread, is
 the input `{}`. An
 input property named like one of `board call`'s own flags (`--json`, `--fields`,
-`--long`, `--full`, `--capability` or `--help`), or not made of lowercase
+`--long`, `--full`, `--capability`, `--no-input` or `--help`), or not made of lowercase
 letters, digits, `-` and `_`, is not a flag and goes on stdin. Whitespace alone
 on stdin is no input.
 Then Board:

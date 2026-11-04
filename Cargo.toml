@@ -63,10 +63,10 @@ board-validate = { path = "crates/board-validate", version = "0.0.0" }
 # upgrade is deliberate; only board-cli/src/complete.rs uses it.
 clap_complete = { version = "=4.6.11", features = ["unstable-dynamic"] }
 # crumbkit prints every command's reports, failures and help; crumbkit-test's convention
-# checks run against the built binary. Unreleased, so pinned by rev; the
-# version satisfies deny.toml's wildcards.
-crumbkit = { git = "https://github.com/crumbkit/crumbkit", rev = "5589a9099cb1fa7f9ae8e77113fd08c45af6cb62", version = "0.0.0", default-features = false }
-crumbkit-test = { git = "https://github.com/crumbkit/crumbkit", rev = "5589a9099cb1fa7f9ae8e77113fd08c45af6cb62", version = "0.0.0", default-features = false }
+# checks run against the built binary. Pinned by rev to the 0.1.1 release
+# commit until crates.io has 0.1.1; the version satisfies deny.toml's wildcards.
+crumbkit = { git = "https://github.com/crumbkit/crumbkit", rev = "a85fa49c767a4313bbfa3261b84c4f6b4cbc73c1", version = "0.1.1", default-features = false }
+crumbkit-test = { git = "https://github.com/crumbkit/crumbkit", rev = "a85fa49c767a4313bbfa3261b84c4f6b4cbc73c1", version = "0.1.1", default-features = false }
 clap = { version = "4.6.7", default-features = false, features = ["derive", "error-context", "help", "std", "suggestions", "usage"] }
 # board serve compares the per-launch token in constant time.
 constant_time_eq = "0.6.1"
