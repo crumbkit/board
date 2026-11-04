@@ -308,6 +308,7 @@ fn every_leaf_takes_json_full_and_a_whole_leaf_refuses_full_without_json() {
         );
         let without_json = line(path, options, &["--full", "--no-input", "--"], words);
         let refusal = parses(without_json).unwrap_err();
+        assert!(refusal.starts_with("error: --full "), "{refusal}");
         assert!(
             refusal.ends_with("  code:  board::cli::usage\n"),
             "{refusal}"
@@ -325,9 +326,42 @@ fn every_leaf_takes_json_full_and_a_whole_leaf_refuses_full_without_json() {
     assert_eq!(whole, WHOLE);
 }
 
-/// The note crumbkit prints on stderr when `--full` adds nothing to `--json`.
-const ADDS_NOTHING: &str =
-    "note: --full adds nothing to --json here; the JSON already holds the whole result.\n";
+/// Runs `command` with `--json` and with `--json` and `flag`, and checks that
+/// `flag` changes nothing but the note it adds to stderr. Then runs it with
+/// `flag` alone, which crumbkit refuses because the flag needs `--json`.
+fn adds_nothing(scenario: &Scenario, command: &[&str], flag: &str) {
+    let run = |flags: &[&str]| {
+        let line: Vec<&str> = command.iter().chain(flags).copied().collect();
+        board_in(scenario.workdir(), &line)
+    };
+    let alone = run(&["--json"]);
+    let flagged = run(&["--json", flag]);
+    assert_eq!(
+        flagged.code,
+        alone.code,
+        "{command:?} {flag}: {}",
+        text(&flagged.stderr)
+    );
+    assert_eq!(
+        text(&flagged.stdout),
+        text(&alone.stdout),
+        "{command:?} {flag}"
+    );
+    let note = format!(
+        "note: {flag} adds nothing to --json here; the JSON already holds the whole result.\n"
+    );
+    let stderr = text(&flagged.stderr);
+    assert!(stderr.contains(&note), "{command:?} {flag}: {stderr}");
+    assert_eq!(stderr.replacen(&note, "", 1), text(&alone.stderr));
+    let refused = run(&[flag]);
+    let refusal = text(&refused.stderr);
+    assert_eq!(refused.code, 2, "{command:?} {flag}");
+    assert!(refusal.starts_with(&format!("error: {flag} ")), "{refusal}");
+    assert!(
+        refusal.ends_with("  code:  board::cli::usage\n"),
+        "{refusal}"
+    );
+}
 
 #[test]
 fn a_whole_leaf_prints_with_json_full_what_json_alone_prints_and_a_note_on_stderr() {
@@ -340,28 +374,15 @@ fn a_whole_leaf_prints_with_json_full_what_json_alone_prints_and_a_note_on_stder
         &["plugin", "list"],
         &["query", "SELECT 1"],
     ] {
-        let run = |flags: &[&str]| {
-            let line: Vec<&str> = command
-                .iter()
-                .copied()
-                .chain(flags.iter().copied())
-                .collect();
-            board_in(scenario.workdir(), &line)
-        };
-        let alone = run(&["--json"]);
-        let full = run(&["--json", "--full"]);
-        assert_eq!(full.code, alone.code, "{command:?}: {}", text(&full.stderr));
-        assert_eq!(text(&full.stdout), text(&alone.stdout), "{command:?}");
-        let stderr = text(&full.stderr);
-        assert!(stderr.contains(ADDS_NOTHING), "{command:?}: {stderr}");
-        assert_eq!(stderr.replacen(ADDS_NOTHING, "", 1), text(&alone.stderr));
-        let refused = run(&["--full"]);
-        assert_eq!(refused.code, 2, "{command:?}");
-        assert!(
-            text(&refused.stderr).ends_with("  code:  board::cli::usage\n"),
-            "{command:?}: {}",
-            text(&refused.stderr)
-        );
+        adds_nothing(&scenario, command, "--full");
+    }
+}
+
+#[test]
+fn a_whole_row_leaf_prints_with_json_long_what_json_alone_prints_and_a_note_on_stderr() {
+    let scenario = board();
+    for command in [&["check"][..], &["ls", "/projects"]] {
+        adds_nothing(&scenario, command, "--long");
     }
 }
 
