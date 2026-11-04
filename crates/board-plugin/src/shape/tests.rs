@@ -239,12 +239,36 @@ fn the_registry_holds_each_shared_shape_by_name_as_a_field_using_it_sees_it() {
     let registry = registry();
     assert_eq!(
         registry.keys().map(String::as_str).collect::<Vec<_>>(),
-        ["Date", "Glob", "Prose", "Sha256", "Url"]
+        ["Date", "Glob", "Prose", "Sha256", "Summary", "Url"]
     );
     let properties = &schema_of::<Noted>(SchemaSettings::draft2020_12())["properties"];
     let mut why = properties["why"].clone();
     why.as_object_mut().unwrap().remove("description");
     assert_eq!(registry["Prose"], why);
+}
+
+#[test]
+fn a_summary_of_25_words_on_one_line_is_admitted_and_one_of_26_words_or_two_lines_is_refused() {
+    let schema = json!({
+        "type": "object",
+        "properties": {"summary": registry()["Summary"].clone()},
+    });
+    let schema = board_validate::Schema::compile(schema).unwrap();
+    let summary = |text: &str| json!({ "summary": text });
+    let words = |count: usize| vec!["word"; count].join(" ");
+    for (refused, admitted) in [
+        (words(26), words(25)),
+        ("Two\nlines.".to_owned(), "One line.".to_owned()),
+        (" Leading space.".to_owned(), "No leading space.".to_owned()),
+        (String::new(), "One.".to_owned()),
+    ] {
+        assert_eq!(
+            schema.validate(&summary(&refused)).unwrap_err().code(),
+            board_model::Code::RecordInvalid,
+            "{refused:?}"
+        );
+        schema.validate(&summary(&admitted)).unwrap();
+    }
 }
 
 /// The committed `shapes.json` holds, byte for byte, the canonical JSON of

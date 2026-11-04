@@ -53,23 +53,8 @@ struct Applying {
 /// path beneath a file, where nothing can be, matches no pattern.
 pub(crate) fn for_path(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
     let Input { path } = PluginError::read_input("controls", "for-path", input)?;
-    let asked = [logical(&path)?];
+    let applying = applying(host, &path)?;
     let mut controls = index::controls(host)?;
-    let refused = |error: &board_ops::RefsError| {
-        PluginError::board_refused("controls", "refs", &error.refusal())
-    };
-    let answers = host.refs(&asked, Absent::Locate).map_err(|e| refused(&e))?;
-    let [answer] = <[_; 1]>::try_from(answers).expect("refs answers each path it is asked once");
-    let mut applying = BTreeSet::new();
-    match answer {
-        Ok(report) => {
-            applying.extend(referencing(&report));
-            applying.extend(matching(host, &report)?);
-        }
-        // Only a path beneath a file names nothing, and nothing can be written there.
-        Err(error) if error.code() == Code::PathNotFound => {}
-        Err(error) => return Err(refused(&error)),
-    }
     let controls = (applying.into_iter())
         .filter_map(|logical| {
             let control = controls.remove(&logical)?;
@@ -85,6 +70,29 @@ pub(crate) fn for_path(host: &dyn Host, input: &Value) -> Result<Value, PluginEr
         .collect();
     let output = Output { controls };
     Ok(serde_json::to_value(output).expect("Output holds only strings, numbers and lists"))
+}
+
+/// The logical paths of the records whose `applies_to` reaches `path` or
+/// whose `paths` match it, matched as [`for_path`] says. A record that is
+/// not a valid control is among them; the caller keeps only controls.
+pub(crate) fn applying(host: &dyn Host, path: &str) -> Result<BTreeSet<String>, PluginError> {
+    let asked = [logical(path)?];
+    let refused = |error: &board_ops::RefsError| {
+        PluginError::board_refused("controls", "refs", &error.refusal())
+    };
+    let answers = host.refs(&asked, Absent::Locate).map_err(|e| refused(&e))?;
+    let [answer] = <[_; 1]>::try_from(answers).expect("refs answers each path it is asked once");
+    let mut applying = BTreeSet::new();
+    match answer {
+        Ok(report) => {
+            applying.extend(referencing(&report));
+            applying.extend(matching(host, &report)?);
+        }
+        // Only a path beneath a file names nothing, and nothing can be written there.
+        Err(error) if error.code() == Code::PathNotFound => {}
+        Err(error) => return Err(refused(&error)),
+    }
+    Ok(applying)
 }
 
 /// The records whose `applies_to` reaches the path `report` answers.

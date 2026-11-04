@@ -797,10 +797,10 @@
       "annotations": {
         "readOnlyHint": false
       },
-      "description": "Write a plan for the change and the records it uses, refusing a reference that reaches nothing, a plan over 3,000 words and used documents over 3,000 words in all; the newest plan is the change's plan.",
+      "description": "Write a plan for the change, the records it uses and the paths it will edit, refusing a build change's plan without paths, a path outside the change's mount, a reference that reaches nothing, a plan over 3,000 words and used documents over 3,000 words in all; the newest plan is the change's plan.",
       "inputSchema": {
         "additionalProperties": false,
-        "description": "A plan for a change, given on stdin because `uses` is an array.",
+        "description": "A plan for a change, given on stdin because `uses` and `paths` are arrays.",
         "properties": {
           "path": {
             "description": "The change's logical path, such as /changes/suite-timeout.",
@@ -808,6 +808,15 @@
             "pattern": "^/",
             "title": "Path",
             "type": "string"
+          },
+          "paths": {
+            "description": "The files and SQLite GLOB patterns the change will edit, by logical path under the change's mount, such as /repos/inbox/crates/inbox-store/**, where `*` also matches `/`; a build change needs one.",
+            "items": {
+              "pattern": "^/",
+              "type": "string"
+            },
+            "title": "Paths",
+            "type": "array"
           },
           "text": {
             "description": "The plan in Markdown, at most 3,000 words.",
@@ -866,7 +875,7 @@
       "annotations": {
         "readOnlyHint": true
       },
-      "description": "What an agent needs to start: the newest plan, one line per record it uses, the next step and the command that lists the repository's controls, in at most 600 words.",
+      "description": "What an agent needs to start: the newest plan, a one-line summary of each control on its paths, one line per record it uses, the next step and the command that lists the repository's controls, in at most 600 words.",
       "inputSchema": {
         "additionalProperties": false,
         "description": "One change, by path.",
@@ -888,6 +897,34 @@
       "name": "brief",
       "outputSchema": {
         "$defs": {
+          "BriefRule": {
+            "additionalProperties": false,
+            "description": "One control that applies to the planned paths: its summary and the planned paths that reached it.",
+            "properties": {
+              "control": {
+                "title": "Control",
+                "type": "string"
+              },
+              "matched": {
+                "items": {
+                  "type": "string"
+                },
+                "title": "Matched",
+                "type": "array"
+              },
+              "summary": {
+                "title": "Summary",
+                "type": "string"
+              }
+            },
+            "required": [
+              "control",
+              "summary",
+              "matched"
+            ],
+            "title": "BriefRule",
+            "type": "object"
+          },
           "BriefUse": {
             "additionalProperties": false,
             "description": "One record the plan uses, and one line saying what it holds.",
@@ -910,7 +947,7 @@
           }
         },
         "additionalProperties": false,
-        "description": "What an agent needs to start a change, in at most 600 words.\n\n`plan` is the newest plan's text, or `null` when the change has no plan\nrecord. `uses` gives one line per record it uses, in order, and\n`left_out` counts those the word limit left out. `controls` is the\ncommand that lists the controls on the change's repository.\n`brief_line`, `board-brief: <path>`, comes first in the output; a\nbuilder's first message starts with it, and the write guard reads it.",
+        "description": "What an agent needs to start a change, in at most 600 words.\n\n`plan` is the newest plan's text, or `null` when the change has no plan\nrecord. `rules` lists each control on the plan's paths once, as\n`controls.for-paths` finds them, and `rules_left_out` counts those the\nword limit left out; rules are counted before uses. `uses` gives one\nline per record it uses, in order, and `left_out` counts those the word\nlimit left out. `controls` is the\ncommand that lists the controls on the change's repository.\n`brief_line`, `board-brief: <path>`, comes first in the output; a\nbuilder's first message starts with it, and the write guard reads it.",
         "properties": {
           "brief_line": {
             "title": "Brief Line",
@@ -956,6 +993,17 @@
             ],
             "title": "Plan"
           },
+          "rules": {
+            "items": {
+              "$ref": "#/$defs/BriefRule"
+            },
+            "title": "Rules",
+            "type": "array"
+          },
+          "rules_left_out": {
+            "title": "Rules Left Out",
+            "type": "integer"
+          },
           "uses": {
             "items": {
               "$ref": "#/$defs/BriefUse"
@@ -968,6 +1016,8 @@
           "brief_line",
           "path",
           "plan",
+          "rules",
+          "rules_left_out",
           "uses",
           "left_out",
           "phase",
@@ -1032,7 +1082,7 @@
         "$defs": {
           "BriefOutput": {
             "additionalProperties": false,
-            "description": "What an agent needs to start a change, in at most 600 words.\n\n`plan` is the newest plan's text, or `null` when the change has no plan\nrecord. `uses` gives one line per record it uses, in order, and\n`left_out` counts those the word limit left out. `controls` is the\ncommand that lists the controls on the change's repository.\n`brief_line`, `board-brief: <path>`, comes first in the output; a\nbuilder's first message starts with it, and the write guard reads it.",
+            "description": "What an agent needs to start a change, in at most 600 words.\n\n`plan` is the newest plan's text, or `null` when the change has no plan\nrecord. `rules` lists each control on the plan's paths once, as\n`controls.for-paths` finds them, and `rules_left_out` counts those the\nword limit left out; rules are counted before uses. `uses` gives one\nline per record it uses, in order, and `left_out` counts those the word\nlimit left out. `controls` is the\ncommand that lists the controls on the change's repository.\n`brief_line`, `board-brief: <path>`, comes first in the output; a\nbuilder's first message starts with it, and the write guard reads it.",
             "properties": {
               "brief_line": {
                 "title": "Brief Line",
@@ -1078,6 +1128,17 @@
                 ],
                 "title": "Plan"
               },
+              "rules": {
+                "items": {
+                  "$ref": "#/$defs/BriefRule"
+                },
+                "title": "Rules",
+                "type": "array"
+              },
+              "rules_left_out": {
+                "title": "Rules Left Out",
+                "type": "integer"
+              },
               "uses": {
                 "items": {
                   "$ref": "#/$defs/BriefUse"
@@ -1090,6 +1151,8 @@
               "brief_line",
               "path",
               "plan",
+              "rules",
+              "rules_left_out",
               "uses",
               "left_out",
               "phase",
@@ -1097,6 +1160,34 @@
               "controls"
             ],
             "title": "BriefOutput",
+            "type": "object"
+          },
+          "BriefRule": {
+            "additionalProperties": false,
+            "description": "One control that applies to the planned paths: its summary and the planned paths that reached it.",
+            "properties": {
+              "control": {
+                "title": "Control",
+                "type": "string"
+              },
+              "matched": {
+                "items": {
+                  "type": "string"
+                },
+                "title": "Matched",
+                "type": "array"
+              },
+              "summary": {
+                "title": "Summary",
+                "type": "string"
+              }
+            },
+            "required": [
+              "control",
+              "summary",
+              "matched"
+            ],
+            "title": "BriefRule",
             "type": "object"
           },
           "BriefUse": {

@@ -11,6 +11,7 @@ such as a pull request body, instead of files.
 {
   "$type": "controls/control/v1",
   "requirement": "Keep the agent context under 1000 words.",
+  "summary": "Keep the agent context under 1000 words.",
   "purpose": "Every agent loads it, so every word costs every session.",
   "applies_to": ["/AGENTS.md", "/CLAUDE.md"],
   "paths": ["docs/*.md"],
@@ -22,6 +23,10 @@ such as a pull request body, instead of files.
 ```
 
 - `requirement` and `purpose` are required.
+- `summary` is optional: the requirement in one line of at most 25 words,
+  separated by single spaces. A change's brief shows it in place of the
+  requirement. Without it, `for-paths` gives the requirement's first
+  sentence, cut to 25 words.
 - `applies_to` holds references to entries. Board checks them, so renaming or
   deleting a referenced file makes the control `board::ref::dangling` in
   `board check`.
@@ -109,6 +114,17 @@ The plugin ships both schemas. `board plugin enable controls` writes them to
   to a new file under the link. Ask about a new record by its file name, such
   as `/tasks/new.json`. A path beneath a file, where nothing can be, matches
   no pattern.
+- `controls.for-paths` reads `{"paths": [...]}` on stdin: files and SQLite
+  `GLOB` patterns by logical path, such as
+  `/repos/inbox/crates/inbox-store/**`. It returns each control that applies
+  to any of them once, by the control's path, with its `summary` and
+  `matched`, the paths that reached it in the order asked. A path with no
+  `*`, `?` or `[` is matched as `for-path` matches it. A pattern reaches a
+  control whose `applies_to` names a path it matches, and a control one of
+  whose `paths` matches a file it matches, by the file's display path. A
+  pattern that matches no file yet is matched as if it were a path, so
+  `/crates/new/*.rs` reaches a control on `crates/*.rs` and
+  `/crates/new/**` does not. `changes.brief` calls it with a plan's paths.
 - `board call controls.check --path /repos/crumbkit` checks the controls
   under that path, following any link or mount on the way. Without `--path`
   it checks `/`. A path with nothing there fails with
@@ -214,6 +230,29 @@ The plugin ships both schemas. `board plugin enable controls` writes them to
   minutes from the start of the call, which the plugin enforces itself,
   since Board puts no deadline on a built-in call.
 
+- `board call controls.from-standards --standards /repos/<standards> --map
+  /repos/<adopter>/rust-standards.toml --into /controls/<adopter>/standards`
+  reads the adopter's map, a TOML file whose `profiles` lists the profiles
+  it adopts, and each `<standards>/profiles/<profile>.md`. Every row of a
+  table whose header has `ID`, `Rule` and `Where it applies` columns
+  becomes a control at `<into>/<id in lower case>`. `requirement` is the
+  rule, `summary` its first sentence cut to 25 words, `sources` the
+  profile file, and `paths` the cell's inline-code patterns anchored at the
+  map's directory. A pattern is a glob relative to the adopter's root, in
+  which `**/` may match no directory; each `**/` becomes both nothing and
+  `*/`, so `**/*.rs` becomes `repos/inbox/*.rs` and `repos/inbox/*/*.rs`.
+  GLOB's `*` also matches `/`, so a control can match more files than the
+  pattern meant, never fewer. The call writes nothing. Its `lines` are
+  `board put --batch` lines: one write per rule, expecting the blob held
+  there or `none`, and one removal per control under `into` that no rule
+  gives any more. `profiles` gives each profile's `name`, its `file` and
+  how many `rules` it gave. Apply the lines with
+  `board --json call controls.from-standards ... | jq -c '.data.output.lines[]' | board put --batch`.
+  It fails with `controls::standards::map_invalid` when the map has no
+  `profiles` list of names, `controls::standards::unreadable` when the map
+  or a profile cannot be read, and `controls::standards::no_pattern` when a
+  rule's Where it applies cell holds no inline code.
+
 Board refuses every call with `board::plugin::schema_differs` when the board's
 copy of either schema differs from the one the plugin ships;
 `board plugin enable controls` replaces the board's copy. When Board refuses a request the plugin makes, such as
@@ -269,6 +308,6 @@ the kind, because Board checks no reference under `anyOf` or `oneOf`.
 
 This directory keeps `SKILL.md` and the mod. The tests of the plugin through
 the binary are in `crates/board-cli/src/tests/built_in/controls.rs` and the
-two files beside it in `controls/`, which run the same commands in process.
+files beside it in `controls/`, which run the same commands in process.
 The judged tests start a stub agent script, never a model.
 `claude plugin test claude-code` runs the mod's tests.

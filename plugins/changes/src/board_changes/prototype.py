@@ -36,7 +36,7 @@ def prototype(request: CallRequest) -> dict[str, object]:
     refuse_existing(board, path)
     refuse_full(board, "prototype", path)
     task = add_task(board, title, {}, parent=str(asked["parent"]))
-    _, lines = plan_lines(path, question_plan(title, question), [])
+    _, lines = plan_lines(path, question_plan(title, question), [], [])
     change: Change = {
         "$type": CHANGE_TYPE,
         "title": title,

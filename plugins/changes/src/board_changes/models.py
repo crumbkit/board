@@ -36,6 +36,10 @@ SharedUrl = Annotated[
 ]
 Commit = Annotated[str, Field(pattern="^[0-9a-f]{7,40}$")]
 Url = Annotated[str, Field(pattern="^https?://")]
+# A SQLite GLOB pattern, which a plugin matches with GLOB in a query (crates/board-plugin/shapes.json).
+Glob = Annotated[str, Field(min_length=1, json_schema_extra={"x-board-glob": True})]
+# A file or GLOB pattern by its logical path, such as /repos/inbox/crates/inbox-store/**.
+PlannedPath = Annotated[str, Field(pattern="^/")]
 # Input properties `board call` takes as flags, relative to the run's prefix.
 LogicalPath = Annotated[str, Field(pattern="^/", json_schema_extra={"format": "board-path"})]
 
@@ -56,6 +60,12 @@ def shipped(extra: JsonDict | None = None) -> Callable[[JsonDict], None]:
         schema.update(extra or {})
 
     return hook
+
+
+def both(schema: JsonDict) -> None:
+    """A schema hook: `shipped` and `untitled` together."""
+    shipped()(schema)
+    untitled(schema)
 
 
 def untitled(schema: JsonDict) -> None:
@@ -118,14 +128,19 @@ class PlanRecord(BaseModel):
     A plan lives at `/changes/<name>/plans/<stamp>.json`, beside its text at
     `<stamp>.md`; the newest stamp is the current plan. `text` references the
     Markdown. `uses` references the standards documents, controls, decisions,
-    evals and other changes the plan relies on.
+    evals and other changes the plan relies on. `paths` holds the files and
+    SQLite GLOB patterns, by logical path, that the change will edit; a plan
+    for a build change always has them.
     """
 
-    model_config = ConfigDict(extra="forbid", frozen=True, json_schema_extra=untitled)
+    model_config = ConfigDict(extra="forbid", frozen=True, json_schema_extra=both)
 
     tag: Literal["changes/plan/v1"] = Field(alias="$type", description="The record's type.")
     text: Ref = Field(description="The plan's Markdown text, beside this record.")
     uses: list[Ref] = Field(description="The records and documents the plan relies on.")
+    paths: list[Glob] | SkipJsonSchema[None] = Field(
+        default=None, description="The files and SQLite GLOB patterns, by logical path, the change will edit."
+    )
 
 
 class Asked(BaseModel):
@@ -188,13 +203,20 @@ class UnderstandingRecord(BaseModel):
 
 
 class PlanInput(Strict):
-    """A plan for a change, given on stdin because `uses` is an array."""
+    """A plan for a change, given on stdin because `uses` and `paths` are arrays."""
+
+    model_config = ConfigDict(json_schema_extra=shipped())
 
     path: LogicalPath = Field(description="The change's logical path, such as /changes/suite-timeout.")
     text: str = Field(pattern=r"\S", description=f"The plan in Markdown, at most {PLAN_WORDS:,} words.")
     uses: list[LogicalPath] = Field(
         description="The records and documents the plan relies on; the documents hold at most "
         f"{USES_WORDS:,} words in all."
+    )
+    paths: list[PlannedPath] | SkipJsonSchema[None] = Field(
+        default=None,
+        description="The files and SQLite GLOB patterns the change will edit, by logical path under the change's "
+        "mount, such as /repos/inbox/crates/inbox-store/**, where `*` also matches `/`; a build change needs one.",
     )
 
 
@@ -213,12 +235,23 @@ class BriefUse(Strict):
     line: str
 
 
+class BriefRule(Strict):
+    """One control that applies to the planned paths: its summary and the planned paths that reached it."""
+
+    control: str
+    summary: str
+    matched: list[str]
+
+
 class BriefOutput(Strict):
     """What an agent needs to start a change, in at most 600 words.
 
     `plan` is the newest plan's text, or `null` when the change has no plan
-    record. `uses` gives one line per record it uses, in order, and
-    `left_out` counts those the word limit left out. `controls` is the
+    record. `rules` lists each control on the plan's paths once, as
+    `controls.for-paths` finds them, and `rules_left_out` counts those the
+    word limit left out; rules are counted before uses. `uses` gives one
+    line per record it uses, in order, and `left_out` counts those the word
+    limit left out. `controls` is the
     command that lists the controls on the change's repository.
     `brief_line`, `board-brief: <path>`, comes first in the output; a
     builder's first message starts with it, and the write guard reads it.
@@ -227,6 +260,8 @@ class BriefOutput(Strict):
     brief_line: str
     path: str
     plan: str | None
+    rules: list[BriefRule]
+    rules_left_out: int
     uses: list[BriefUse]
     left_out: int
     phase: Phase

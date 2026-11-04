@@ -1,11 +1,20 @@
 {
   "additionalProperties": false,
-  "description": "`changes/plan/v1`: one plan for a change, and the records it uses.\n\nA plan lives at `/changes/<name>/plans/<stamp>.json`, beside its text at\n`<stamp>.md`; the newest stamp is the current plan. `text` references the\nMarkdown. `uses` references the standards documents, controls, decisions,\nevals and other changes the plan relies on.",
+  "description": "`changes/plan/v1`: one plan for a change, and the records it uses.\n\nA plan lives at `/changes/<name>/plans/<stamp>.json`, beside its text at\n`<stamp>.md`; the newest stamp is the current plan. `text` references the\nMarkdown. `uses` references the standards documents, controls, decisions,\nevals and other changes the plan relies on. `paths` holds the files and\nSQLite GLOB patterns, by logical path, that the change will edit; a plan\nfor a build change always has them.",
   "properties": {
     "$type": {
       "const": "changes/plan/v1",
       "description": "The record's type.",
       "type": "string"
+    },
+    "paths": {
+      "description": "The files and SQLite GLOB patterns, by logical path, the change will edit.",
+      "items": {
+        "minLength": 1,
+        "type": "string",
+        "x-board-glob": true
+      },
+      "type": "array"
     },
     "text": {
       "description": "The plan's Markdown text, beside this record.",

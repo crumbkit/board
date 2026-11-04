@@ -34,6 +34,7 @@ CODES = {
     "ux": "changes::ux::not_agreed",
     "neighbours": "changes::ux::no_neighbours",
     "data": "changes::data::not_signed",
+    "paths": "changes::paths::outside_plan",
 }
 
 
@@ -57,6 +58,10 @@ class Observed:
     path.
     `suite` is the repository's check suite, or `None` when its contributing
     docs name none; only the build gate reads it.
+    The review gate reads the rest: `planned`, the paths the newest plan
+    declares; `outside`, each file the reviewed diff edits that no planned
+    path matches; and `diff_unread`, why the diff could not be read, or
+    `None` when it was.
     """
 
     path: str
@@ -65,6 +70,9 @@ class Observed:
     plan: str | None
     suite: str | None
     unreadable: dict[str, str] = field(default_factory=dict[str, str])
+    planned: list[str] = field(default_factory=list[str])
+    outside: list[str] = field(default_factory=list[str])
+    diff_unread: str | None = None
 
 
 def sections(text: str) -> dict[str, str]:
@@ -126,7 +134,7 @@ def gate(observed: Observed) -> list[Check]:
             check("recheck", recheck_missing(observed)),
         ]
     if phase == "review":
-        return [check("review", review_missing(observed))]
+        return [check("review", review_missing(observed)), check("paths", paths_missing(observed))]
     if phase == "land":
         missing = None if observed.change.get("pull_request") else "the change records no pull request URL"
         return [check("pull-request", missing)]
@@ -324,6 +332,33 @@ def run_missing(observed: Observed) -> str | None:
         ):
             return None
     return f"no attached run of {observed.suite} on {head} is full, clean and passing"
+
+
+def paths_missing(observed: Observed) -> str | None:
+    """Whether the reviewed diff edits only files that the newest plan's paths match."""
+    if not observed.planned:
+        return (
+            "the newest plan declares no paths, so every edited file is outside them; "
+            "write the plan again with `board call changes.plan` and its paths"
+        )
+    if observed.diff_unread is not None:
+        return observed.diff_unread
+    if observed.outside:
+        return (
+            "the reviewed diff edits files outside the plan's paths, so their rules were not in the brief: "
+            f"{', '.join(observed.outside)}; add them to the paths with `board call changes.plan`, or revert the edit"
+        )
+    return None
+
+
+def covering(observed: Observed) -> str | None:
+    """The base commit of the first attached review report whose range ends at the head, or `None`."""
+    head = observed.change.get("head")
+    for _, body in of_type(observed, REPORT_TYPE):
+        covered = body.get("range")
+        if head is not None and isinstance(covered, str) and same_commit(reviewed_head(body), head):
+            return covered.split("..", 1)[0]
+    return None
 
 
 def reviewed_head(report: dict[str, Any]) -> str | None:

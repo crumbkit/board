@@ -35,7 +35,10 @@ To run a command in a board other than the one you are in, add `-C <path>`.
        board -C <board> call controls.for-path --path /<file>
 
    Follow each requirement it returns. A new file is asked about by the
-   path it will have.
+   path it will have. For several files or a pattern, such as
+   `/repos/<name>/crates/store/**`, pass them on stdin:
+
+       echo '{"paths": ["/<pattern>", "/<file>"]}' | board -C <board> call controls.for-paths
 3. Some controls are obligations, with `kind: obligation`: work that a
    landed change left owed. When your work does what one asks, delete the
    control in the commit that does the work, and name the work in the

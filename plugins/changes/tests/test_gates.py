@@ -14,18 +14,31 @@ SUITE = "/suites/checks"
 RUN = f"{SUITE}/runs/1"
 
 
-def observed(
+def observed(  # noqa: PLR0913 - each argument is one thing the gate reads
     phase: str,
     records: dict[str, tuple[str, dict[str, Any]]] | None = None,
     plan: str | None = PLAN,
     suite: str | None = SUITE,
+    *,
+    planned: tuple[str, ...] = ("/repos/x/**",),
+    outside: tuple[str, ...] = (),
+    diff_unread: str | None = None,
     **fields: Any,  # noqa: ANN401 - the change's other fields
 ) -> Observed:
     """What a gate reads for a change in `phase` with a plan at /changes/t/plan.md."""
     change: Change = {"$type": "changes/change/v1", "title": "T", "mount": "/repos/x", "phase": phase, "task": TASK}
     change["plan"] = "/changes/t/plan.md"
     change.update(fields)  # type: ignore[typeddict-item]
-    return Observed(path=PATH, change=change, records=records or {}, plan=plan, suite=suite)
+    return Observed(
+        path=PATH,
+        change=change,
+        records=records or {},
+        plan=plan,
+        suite=suite,
+        planned=list(planned),
+        outside=list(outside),
+        diff_unread=diff_unread,
+    )
 
 
 def statuses(found: Observed) -> dict[str, str]:
@@ -135,7 +148,7 @@ def test_the_build_gate_says_when_no_suite_is_named_or_no_head_is_recorded() -> 
 
 
 def test_the_review_gate_passes_a_report_on_the_head_without_a_blocking_finding() -> None:
-    assert statuses(observed("review", {"/r": report()}, head=HEAD[:12])) == {"review": "pass"}
+    assert statuses(observed("review", {"/r": report()}, head=HEAD[:12])) == {"review": "pass", "paths": "pass"}
     for wrong in (
         {"range": f"{BASE}..{'b' * 40}"},
         {"range": HEAD},
@@ -143,11 +156,36 @@ def test_the_review_gate_passes_a_report_on_the_head_without_a_blocking_finding(
         {"findings": [{"severity": "high", "text": "x"}]},
         {"findings": [{"severity": "critical", "text": "x"}]},
     ):
-        assert statuses(observed("review", {"/r": report(**wrong)}, head=HEAD)) == {"review": "missing"}, wrong
+        assert statuses(observed("review", {"/r": report(**wrong)}, head=HEAD)) == {
+            "review": "missing",
+            "paths": "pass",
+        }, wrong
 
 
 def test_the_review_gate_reads_the_head_from_the_right_side_of_a_three_dot_range() -> None:
-    assert statuses(observed("review", {"/r": report(range=f"{BASE}...{HEAD}")}, head=HEAD)) == {"review": "pass"}
+    assert statuses(observed("review", {"/r": report(range=f"{BASE}...{HEAD}")}, head=HEAD)) == {
+        "review": "pass",
+        "paths": "pass",
+    }
+
+
+def test_the_review_gate_refuses_a_diff_outside_the_planned_paths_and_passes_one_inside_them() -> None:
+    reviewed = {"/r": report()}
+    [_, inside] = gate(observed("review", reviewed, head=HEAD))
+    assert inside == {"check": "paths", "status": "pass", "detail": ""}
+    [_, outside] = gate(observed("review", reviewed, head=HEAD, outside=("/repos/x/b.rs", "/repos/x/c.rs")))
+    assert outside["status"] == "missing"
+    assert outside["detail"] == (
+        "the reviewed diff edits files outside the plan's paths, so their rules were not in the brief: "
+        "/repos/x/b.rs, /repos/x/c.rs; add them to the paths with `board call changes.plan`, or revert the edit"
+    )
+    [_, unplanned] = gate(observed("review", reviewed, head=HEAD, planned=()))
+    assert unplanned["detail"] == (
+        "the newest plan declares no paths, so every edited file is outside them; "
+        "write the plan again with `board call changes.plan` and its paths"
+    )
+    [_, unread] = gate(observed("review", reviewed, head=HEAD, diff_unread="git failed"))
+    assert (unread["status"], unread["detail"]) == ("missing", "git failed")
 
 
 def test_the_land_gate_needs_the_pull_request_url_and_done_has_no_gate() -> None:

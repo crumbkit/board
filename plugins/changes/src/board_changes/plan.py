@@ -6,10 +6,10 @@ from dataclasses import replace
 from datetime import UTC, datetime
 from typing import Any, cast
 
-from board_plugin.board import Board, literal
+from board_plugin.board import Board
 from board_plugin.protocol import CallRequest, PluginError
 
-from board_changes.change import FINAL, PLAN_TYPE, PLUGIN, TREE_CODES, read, write
+from board_changes.change import FINAL, PLAN_TYPE, PLUGIN, kind_of, newest, read, write
 from board_changes.phases import next_step, referenced
 
 # The most words a plan's text holds, and the most words the documents it uses hold in all.
@@ -44,6 +44,7 @@ def plan(request: CallRequest) -> dict[str, object]:
     path, text = str(asked["path"]), str(asked["text"])
     # Board validated the input, so `uses` is a list of paths; each is kept once, in order.
     uses = list(dict.fromkeys(cast("list[str]", asked["uses"])))
+    paths = list(dict.fromkeys(cast("list[str]", asked.get("paths", []))))
     board = Board(request.board.root, PLUGIN)
     change, blob = read(board, path)
     if change["phase"] in FINAL:
@@ -53,6 +54,7 @@ def plan(request: CallRequest) -> dict[str, object]:
             "list open changes with `board call changes.open`, or start a new one",
             {"path": path, "phase": change["phase"]},
         )
+    check_paths(path, change["mount"], paths, kind_of(change))
     if words(text) > PLAN_WORDS:
         raise PluginError(
             "changes::plan::too_long",
@@ -85,19 +87,41 @@ def plan(request: CallRequest) -> dict[str, object]:
             "limit; use fewer, choosing from each directory's index.md",
             {"path": path, "words": used},
         )
-    record, lines = plan_lines(path, text, uses)
+    record, lines = plan_lines(path, text, uses, paths)
     change["plan"] = lines[0]["path"]
     write(board, [*lines, {"path": path, "expect": blob, "record": change}])
     return {"path": record, "text": change["plan"], "uses": len(uses)}
 
 
-def plan_lines(path: str, text: str, uses: list[str]) -> tuple[str, list[dict[str, Any]]]:
+def check_paths(path: str, mount: str, paths: list[str], kind: str) -> None:
+    """Refuse a build change's plan that declares no paths, and any path outside the change's mount."""
+    if not paths and kind == "build":
+        raise PluginError(
+            "changes::plan::no_paths",
+            f"the plan for {path} declares no paths; give `paths`, the files and SQLite GLOB patterns it will "
+            f"change by mounted path, such as {mount}/src/**, so its brief can list their rules",
+            {"path": path},
+        )
+    outside = [planned for planned in paths if not planned.startswith(mount.rstrip("/") + "/")]
+    if outside:
+        raise PluginError(
+            "changes::plan::outside_mount",
+            f"these planned paths are outside the change's repository {mount}: {', '.join(outside)}; "
+            f"start each with {mount}/",
+            {"path": path, "paths": outside},
+        )
+
+
+def plan_lines(path: str, text: str, uses: list[str], paths: list[str]) -> tuple[str, list[dict[str, Any]]]:
     """A new plan record for the change at `path`, and the `put` lines that write its text and then the record."""
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
     record, written = f"{path}/plans/{stamp}", f"{path}/plans/{stamp}.md"
+    body: dict[str, Any] = {"$type": PLAN_TYPE, "text": written, "uses": uses}
+    if paths:
+        body["paths"] = paths
     return record, [
         {"path": written, "expect": "none", "text": text},
-        {"path": record, "expect": "none", "record": {"$type": PLAN_TYPE, "text": written, "uses": uses}},
+        {"path": record, "expect": "none", "record": body},
     ]
 
 
@@ -120,23 +144,16 @@ def line_of(found: tuple[str, dict[str, Any]] | None, text: str | None) -> str:
     return type_name
 
 
-def newest(board: Board, path: str) -> tuple[str | None, list[str]]:
-    """The text path and `uses` of the change's newest plan record, or no text and no uses."""
-    prefix = f"{path}/plans/"
-    rows = board.rows(
-        f"SELECT body FROM records WHERE type = {literal(PLAN_TYPE)}"  # noqa: S608 - values are quoted by literal()
-        f" AND substr(logical, 1, {len(prefix)}) = {literal(prefix)}"
-        f" AND (code IS NULL OR code IN ({', '.join(literal(code) for code in TREE_CODES)}))"
-        " ORDER BY logical DESC LIMIT 1"
-    )
-    if not rows:
-        return None, []
-    body = json.loads(rows[0][0])
-    return str(body["text"]), [str(ref) for ref in body["uses"]]
+def rules_for(board: Board, paths: list[str]) -> list[dict[str, Any]]:
+    """Each control that applies to `paths`, once, as `controls.for-paths` answers; none for no paths."""
+    if not paths:
+        return []
+    report = board.document("call", "controls.for-paths", stdin=json.dumps({"paths": paths}).encode())
+    return cast("list[dict[str, Any]]", report["data"]["output"]["controls"])
 
 
 def brief(request: CallRequest) -> dict[str, object]:
-    """The newest plan, one line per record it uses within the word limit, the next step and the controls command."""
+    """The newest plan, its paths' rules and one line per record it uses within the word limit, and the next step."""
     return brief_of(request, str(request.input["path"]))
 
 
@@ -144,13 +161,21 @@ def brief_of(request: CallRequest, path: str) -> dict[str, object]:
     """The brief of the change at `path`, read from the board `request` names."""
     board = Board(request.board.root, PLUGIN)
     change, _ = read(board, path)
-    text, uses = newest(board, path)
+    text, uses, paths = newest(board, path)
     records, _ = referenced(board, uses)
     texts = documents(board, uses, records)
     step = next_step(replace(request, input={"path": path}))
     controls = f"board call controls.check --path {change['mount']}"
     brief_line = f"board-brief: {path}"
     spent = words(" ".join([brief_line, path, text or "", str(step["phase"]), str(step["instruction"]), controls]))
+    rules: list[dict[str, Any]] = []
+    found = rules_for(board, paths)
+    for rule in found:
+        cost = words(f"{rule['control']} {rule['summary']} {' '.join(rule['matched'])}")
+        if spent + cost > BRIEF_WORDS:
+            break
+        rules.append(rule)
+        spent += cost
     shown: list[dict[str, str]] = []
     for ref in uses:
         line = line_of(records.get(ref), texts.get(ref))
@@ -163,6 +188,8 @@ def brief_of(request: CallRequest, path: str) -> dict[str, object]:
         "brief_line": brief_line,
         "path": path,
         "plan": text,
+        "rules": rules,
+        "rules_left_out": len(found) - len(rules),
         "uses": shown,
         "left_out": len(uses) - len(shown),
         "phase": step["phase"],

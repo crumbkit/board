@@ -96,3 +96,18 @@ def branch_of(path: str) -> str:
 def write(board: Board, lines: list[dict[str, Any]]) -> None:
     """Write each line of a `board put --batch` in one commit, or nothing."""
     board.document("put", "--batch", stdin="".join(json.dumps(line) + "\n" for line in lines).encode())
+
+
+def newest(board: Board, path: str) -> tuple[str | None, list[str], list[str]]:
+    """The text path, `uses` and `paths` of the change's newest plan record, or no text, uses or paths."""
+    prefix = f"{path}/plans/"
+    rows = board.rows(
+        f"SELECT body FROM records WHERE type = {literal(PLAN_TYPE)}"  # noqa: S608 - values are quoted by literal()
+        f" AND substr(logical, 1, {len(prefix)}) = {literal(prefix)}"
+        f" AND (code IS NULL OR code IN ({', '.join(literal(code) for code in TREE_CODES)}))"
+        " ORDER BY logical DESC LIMIT 1"
+    )
+    if not rows:
+        return None, [], []
+    body = json.loads(rows[0][0])
+    return str(body["text"]), [str(ref) for ref in body["uses"]], [str(each) for each in body.get("paths", [])]

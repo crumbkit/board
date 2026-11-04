@@ -197,8 +197,9 @@ def board(tmp_path: Path) -> Board:
     plugins = fixture.data / "board" / "plugins"
     plugins.mkdir(parents=True)
     (plugins / "changes").symlink_to(PLUGIN)
-    enabled = fixture.run("plugin", "enable", "changes")
-    assert enabled.returncode == 0, enabled.stderr
+    for plugin in ("changes", "controls"):
+        enabled = fixture.run("plugin", "enable", plugin)
+        assert enabled.returncode == 0, enabled.stderr
     return fixture
 
 
@@ -238,10 +239,10 @@ def task(status: str = "open") -> str:
     return f"---\n$type: tasks/task/v2\ntitle: A\nstatus: {status}\n---\n"
 
 
-def report(head: str = HEAD, verdict: str = "approve", **fields: Any) -> str:  # noqa: ANN401 - other fields
+def report(head: str = HEAD, verdict: str = "approve", base: str = BASE, **fields: Any) -> str:  # noqa: ANN401
     """A review report of `base..head` with `verdict` and no findings."""
     body: dict[str, Any] = {
-        "range": f"{BASE}..{head}",
+        "range": f"{base}..{head}",
         "patch_ids": ["p1"],
         "findings": [],
         "verdict": verdict,
@@ -265,3 +266,27 @@ PLAN = (
     "# Timeout\n\n## Problem\n\nSuites hang.\n\n## Outcome\n\nA suite stops.\n\n## Out of scope\n\nRetries.\n\n"
     "## UX\n\nNo UI change: suites run headless.\n\n## Data\n\nNone.\n"
 )
+
+
+# The paths a fixture plan declares: everything under the fixture change's mount.
+PATHS = ["/repos/x/**"]
+
+
+def plan_input(
+    path: str, uses: list[str] | None = None, paths: list[str] | None = None, text: str = PLAN
+) -> dict[str, Any]:
+    """The input of `changes.plan` for the change at `path`, declaring `paths`, by default PATHS."""
+    return {"path": path, "text": text, "uses": uses or [], "paths": PATHS if paths is None else paths}
+
+
+def edited(board: Board, files: dict[str, str]) -> tuple[str, str]:
+    """A repository mounted at /repos/x with a first commit and a second that writes `files`: both commit ids."""
+    mount_repo(board, {"README.md": "x\n"})
+    root = board.root.parent / "repos-x"
+    base = git(root, "rev-parse", "HEAD")
+    for path, text in files.items():
+        (root / path).parent.mkdir(parents=True, exist_ok=True)
+        (root / path).write_text(text)
+    git(root, "add", ".")
+    git(root, "commit", "-qm", "edit")
+    return base, git(root, "rev-parse", "HEAD")

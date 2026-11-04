@@ -1,6 +1,7 @@
 """The `next`, `attach` and `advance` capabilities: where a change stands, what it cites, and moving it on."""
 
 import json
+from dataclasses import replace
 from typing import Any, Literal, cast
 
 from board_plugin.board import Board, literal
@@ -17,10 +18,12 @@ from board_changes.change import (
     Change,
     branch_of,
     kind_of,
+    newest,
     read,
     write,
 )
-from board_changes.gates import CODES, Check, Observed, gate
+from board_changes.diff import edited, outside
+from board_changes.gates import CODES, Check, Observed, covering, gate
 from board_changes.repo import check_suite
 from board_changes.wip import refuse_full
 
@@ -109,7 +112,21 @@ def observe(board: Board, path: str, change: Change) -> Observed:
     records, unreadable = referenced(board, cited)
     plan = plan_text(board, change) if phase == "plan" else None
     suite = check_suite(board, change["mount"]) if phase == "build" else None
-    return Observed(path=path, change=change, records=records, plan=plan, suite=suite, unreadable=unreadable)
+    found = Observed(path=path, change=change, records=records, plan=plan, suite=suite, unreadable=unreadable)
+    return reviewed(board, found) if phase == "review" else found
+
+
+def reviewed(board: Board, found: Observed) -> Observed:
+    """`found` with the newest plan's paths and the files the review's range edits outside them."""
+    _, _, planned = newest(board, found.path)
+    base, head = covering(found), found.change.get("head")
+    if base is None or head is None:
+        unread = "no attached review report covers the head commit, so the reviewed diff is not known"
+        return replace(found, planned=planned, diff_unread=unread)
+    files, unread = edited(board, found.change["mount"], base, head)
+    return replace(
+        found, planned=planned, outside=outside(board, files, planned) if planned else [], diff_unread=unread
+    )
 
 
 def instruction_for(path: str, change: Change, checks: list[Check]) -> str:

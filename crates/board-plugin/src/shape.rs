@@ -237,6 +237,31 @@ impl JsonSchema for Glob {
     }
 }
 
+/// A one-line summary that a person or an agent reads in place of longer
+/// text: at most 25 words, separated by single spaces, with no line break.
+/// A `String` field takes it with `#[schemars(with = "Summary")]`.
+#[derive(Debug)]
+pub enum Summary {}
+
+impl JsonSchema for Summary {
+    fn inline_schema() -> bool {
+        true
+    }
+
+    fn schema_name() -> Cow<'static, str> {
+        "Summary".into()
+    }
+
+    fn json_schema(_: &mut SchemaGenerator) -> Schema {
+        json_schema!({"type": "string", "pattern": SUMMARY_PATTERN})
+    }
+}
+
+/// One to 25 runs of non-space characters, each after the first preceded
+/// by one space, so the text is one line and its words are counted as
+/// Board counts words, by whitespace.
+const SUMMARY_PATTERN: &str = "^\\S+( \\S+){0,24}$";
+
 /// Each shared shape's schema by its name. `crates/board-plugin/shapes.json`
 /// is this map, committed, and the shapes lint admits a string field whose
 /// schema is one of its entries.
@@ -247,6 +272,7 @@ pub fn registry() -> Map<String, Value> {
         entry::<Glob>(&mut generator),
         entry::<Prose>(&mut generator),
         entry::<Sha256>(&mut generator),
+        entry::<Summary>(&mut generator),
         entry::<Url>(&mut generator),
     ])
 }
