@@ -734,4 +734,5 @@ mod evals;
 mod github;
 mod jira;
 mod plans;
+mod prompts;
 mod runs;
