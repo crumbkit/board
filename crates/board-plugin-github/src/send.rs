@@ -49,7 +49,8 @@ impl Origin<'_> {
     /// Records `result` on the crossing, and returns the output every action
     /// shares.
     fn sent(&self, passed: Passed, result: String) -> Result<Delivered, PluginError> {
-        crossing::record(&*self.personal, &passed.digest, &result)?;
+        crossing::record(&*self.personal, &passed.digest, &result)
+            .map_err(|error| sent_already(&result, error))?;
         Ok(Delivered::of(passed, result))
     }
 
@@ -192,8 +193,12 @@ fn pushed(
         parts: extra,
     };
     let line = git::push(host, top, &branch, head, &handed)?;
-    crossing::record(&*place.personal, &passed.digest, &line)?;
-    git::track(host, top, &branch)?;
+    let pushed_already = |error| {
+        let lead = format!("{head} was already pushed to {branch} on origin");
+        after_sent(&lead, &line, error)
+    };
+    crossing::record(&*place.personal, &passed.digest, &line).map_err(pushed_already)?;
+    git::track(host, top, &branch).map_err(pushed_already)?;
     Ok(Push {
         passed,
         branch,
@@ -296,7 +301,8 @@ pub(crate) fn pr_create(host: &dyn Host, input: &Value) -> Result<Value, PluginE
             &format!("printed no pull request URL after pushing {branch}"),
         ));
     };
-    let (path, _) = write(host, &place.object(number), Kind::Pull, &url, Some(&title))?;
+    let (path, _) = write(host, &place.object(number), Kind::Pull, &url, Some(&title))
+        .map_err(|error| sent_already(&url, error))?;
     let Delivered {
         digest,
         crossing,
@@ -416,7 +422,8 @@ pub(crate) fn issue_create(host: &dyn Host, input: &Value) -> Result<Value, Plug
             "answered without the issue's number",
         ));
     };
-    let (path, _) = write(host, &place.object(number), Kind::Issue, &url, Some(&title))?;
+    let (path, _) = write(host, &place.object(number), Kind::Issue, &url, Some(&title))
+        .map_err(|error| sent_already(&url, error))?;
     let Delivered {
         digest,
         crossing,
@@ -431,6 +438,20 @@ pub(crate) fn issue_create(host: &dyn Host, input: &Value) -> Result<Value, Plug
         number,
         path,
     }))
+}
+
+/// `error`, a failure after GitHub took the content at `url`, saying so.
+fn sent_already(url: &str, error: PluginError) -> PluginError {
+    after_sent(&format!("{url} was already sent"), url, error)
+}
+
+/// `error`, a failure after the content reached GitHub, which `lead` says
+/// and `sent` names, so that running the action again does not send it a
+/// second time.
+fn after_sent(lead: &str, sent: &str, mut error: PluginError) -> PluginError {
+    error.message = format!("{lead}, so do not send it again; {}", error.message);
+    error.fields.insert("sent".to_owned(), Value::from(sent));
+    error
 }
 
 /// An output as JSON.

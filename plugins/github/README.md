@@ -153,6 +153,11 @@ Refusals:
   different Board builds.
 - `github::gh::failed`: gh failed after the check passed. The message says
   the content may have been sent.
+- A refusal after GitHub took the content, such as a record that cannot be
+  written or a crossing that cannot take its result, keeps its own code but
+  starts its message by saying the content was already sent and must not be
+  sent again. `fields.sent` names the pull request's, issue's or comment's
+  URL, or git's line for a push.
 - `github::remote::unknown`: a URL could reach GitHub, but the plugin cannot
   tell which repository it names.
 - `github::push::not_commit`: the pre-push hook found a ref whose object is a
@@ -172,7 +177,7 @@ and its output is capped at 16 MiB, so a larger diff fails with
 `github::git::failed`.
 Git runs the checkout's `pre-push` hook during the push, as it does for any
 push. The plugin does not check what a hook sends. When the hook is this
-plugin's own, it checks the same parts again, as below.
+plugin's own, it reuses the check the action passed, as below.
 
 The sending actions may run for 2,400 seconds, since the check alone may take 1,800.
 

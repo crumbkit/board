@@ -291,3 +291,49 @@ fn a_boundary_naming_a_missing_control_passes_on_the_controls_code_and_with_the_
     desk.gh_answers(&json!({"html_url": url}), 0, "");
     assert_eq!(desk.output("comment", &flags)["sent"], url);
 }
+
+#[test]
+fn a_record_that_fails_after_the_pull_request_is_opened_says_it_was_sent_and_without_it_the_record_is_written()
+ {
+    let desk = Desk::new();
+    desk.git(&desk.checkout(), &["switch", "-q", "-c", "feature"]);
+    desk.commit("Add a lever");
+    desk.gh_answers(&json!(format!("{PULL_URL}\n")), 0, "");
+    let taken = "gh/octo/widgets/pulls/12.json";
+    desk.write(taken, "{}");
+    let flags = ["--title", "Add a lever", "--body", "Levers lift."];
+    let (ran, failure) = desk.call("pr-create", &flags);
+    assert_eq!(ran.code, 1, "{failure}");
+    assert_eq!(failure["code"], "github::board::refused");
+    assert_eq!(failure["fields"]["sent"], PULL_URL);
+    let message = failure["message"].as_str().unwrap();
+    assert!(
+        message.starts_with(&format!(
+            "{PULL_URL} was already sent, so do not send it again; "
+        )),
+        "{message}"
+    );
+    remove(&desk.personal.workdir().join(taken));
+    assert_eq!(desk.output("pr-create", &flags)["sent"], PULL_URL);
+}
+
+#[test]
+fn a_crossing_that_cannot_be_completed_after_a_comment_is_posted_says_it_was_sent_and_one_that_can_is_completed()
+ {
+    let desk = Desk::new();
+    let url = format!("{ISSUE_URL}#issuecomment-1");
+    desk.gh_answers(&json!({"html_url": url, "id": 1}), 0, "");
+    let crossings = desk.personal.workdir().join("crossings");
+    desk.gh_also(&format!("rm -rf '{}'", crossings.display()));
+    let flags = ["--number", "7", "--body", "Looks good."];
+    let (ran, failure) = desk.call("comment", &flags);
+    assert_eq!(ran.code, 1, "{failure}");
+    assert_eq!(failure["fields"]["sent"], url);
+    let message = failure["message"].as_str().unwrap();
+    assert!(
+        message.contains(&format!("{url} was already sent")),
+        "{message}"
+    );
+    desk.gh_also("");
+    assert_eq!(desk.output("comment", &flags)["sent"], url);
+}

@@ -213,7 +213,11 @@ fn a_detached_head_is_refused_before_the_personal_board_is_read_and_the_same_com
     desk.git(&desk.checkout(), &["switch", "-q", "--detach", &sha]);
     desk.known(&json!({"boards": [desk.personal.path()]}));
     for flags in [&[][..], &["--title", "T", "--body", "B"]] {
-        let capability = if flags.is_empty() { "push" } else { "pr-create" };
+        let capability = if flags.is_empty() {
+            "push"
+        } else {
+            "pr-create"
+        };
         let (ran, failure) = desk.call(capability, flags);
         assert_eq!(
             refused(&ran, &failure),

@@ -385,6 +385,15 @@ impl Desk {
         std::fs::write(self.bin().join("gh-exit.txt"), code.to_string()).unwrap();
     }
 
+    /// Makes the stub gh also run `script` before it answers.
+    pub(super) fn gh_also(&self, script: &str) {
+        let gh = gh_sending().replace(
+            "cat \"$here/gh-out.txt\"",
+            &format!("{script}\ncat \"$here/gh-out.txt\""),
+        );
+        put_file(&self.bin().join("gh"), &gh);
+    }
+
     /// How many times the stub gh ran.
     pub(super) fn gh_calls(&self) -> usize {
         std::fs::read_to_string(self.bin().join("gh-calls.txt"))
