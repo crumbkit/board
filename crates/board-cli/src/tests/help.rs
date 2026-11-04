@@ -214,8 +214,8 @@ fn files_of(root: &Path) -> Vec<(String, String)> {
 /// such as `plugin` and 1,200 for each other command.
 const BUDGETS: Budgets = Budgets::new()
     .root(
-        2_300,
-        "The root page lists all sixteen commands, the commands a newcomer runs first, and what a logical path and a record are, which STANDARDS.md 24 requires on one page. It also lists the global flags -C and --personal, which choose the board a run uses.",
+        2_800,
+        "The root page lists all nineteen commands under the goal each serves, the commands a newcomer runs first, and what a logical path and a record are, which STANDARDS.md 24 requires on one page. It also lists the global flags -C and --personal, which choose the board a run uses.",
     )
     .nodes(&[
         Budget::new(
@@ -225,13 +225,23 @@ const BUDGETS: Budgets = Budgets::new()
         ),
         Budget::new(
             "put",
-            1_450,
+            1_520,
             "put has six options of its own (--new, --var, --expect, --batch, --file and --wait), and a reader needs to know on one page that with a store --file may write an attachment record in place of the bytes.",
         ),
         Budget::new(
             "refs",
-            1_950,
+            2_000,
             "refs has five options and two output formats, and a reader needs the from/to line format and the --field encoding on one page to parse its text output.",
+        ),
+        Budget::new(
+            "decide",
+            1_260,
+            "decide says on one page what the owner's approval, refusal and silence each do, and its global flags line names --no-input, which a program adds to every run.",
+        ),
+        Budget::new(
+            "answer",
+            1_260,
+            "answer says on one page how an approval is signed and checked, and its global flags line names --no-input, which a program adds to every run.",
         ),
     ]);
 

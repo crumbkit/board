@@ -14,4 +14,4 @@ Every input property is a flag, so Board does not read stdin.
 Examples:
   board call tasks.available
 
-Global flags: --json. `board call tasks.available --help` describes them.
+Global flags: --json, --no-input. `board call tasks.available --help` describes them.

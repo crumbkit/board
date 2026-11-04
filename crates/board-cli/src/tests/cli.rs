@@ -271,6 +271,8 @@ fn every_listing_command_takes_limit_and_all() {
         "plugin find",
         "query",
         "ui kinds",
+        "commands list",
+        "schemas list",
     ];
     let other = [
         "init",
@@ -287,6 +289,7 @@ fn every_listing_command_takes_limit_and_all() {
         "serve",
         "ui template",
         "ui open",
+        "schemas show",
     ];
     for (name, command) in leaves() {
         let takes = |flag: &str| {
@@ -310,7 +313,7 @@ fn a_misspelt_command_is_a_coded_error_with_a_suggestion_and_the_right_one_runs(
     assert!(refused.stdout.is_empty());
     assert_eq!(
         text(&refused.stderr),
-        "error: unrecognized subcommand 'chek'; a similar subcommand exists: 'check'\n\
+        "error: unrecognized subcommand 'chek'; some similar subcommands exist: 'schemas', 'check'\n\
          \x20 usage: board [OPTIONS] <COMMAND>\n\
          \x20 help:  run `board -h`\n\
          \x20 code:  board::cli::usage\n"
@@ -468,7 +471,7 @@ fn a_misspelt_command_in_json_suggests_the_right_one_and_the_right_one_runs() {
     assert_eq!(refused["code"], "board::cli::usage");
     assert_eq!(
         refused["message"],
-        "unrecognized subcommand 'chek'; a similar subcommand exists: 'check'"
+        "unrecognized subcommand 'chek'; some similar subcommands exist: 'schemas', 'check'"
     );
     assert_eq!(refused["recovery"]["call"], "board -h");
     let admitted = board_in(scenario.workdir(), &["--json", "check"]);

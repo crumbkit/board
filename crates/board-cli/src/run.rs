@@ -90,6 +90,9 @@ pub(crate) struct Cli {
     personal: bool,
     #[command(flatten)]
     view: crumbkit::ViewFlags,
+    /// Board asks no question, so it reads the flag only to accept it.
+    #[command(flatten)]
+    no_input: crumbkit::NoInput,
     #[command(subcommand)]
     command: Command,
 }
@@ -374,6 +377,12 @@ Examples:
     /// List kinds, print a slot, or open a page.
     #[command(subcommand, after_help = crate::ui::UI_HELP)]
     Ui(crate::ui::UiCommand),
+    /// Describe Board's commands.
+    #[command(subcommand, after_help = crate::describe::COMMANDS_HELP)]
+    Commands(crate::describe::CommandsCommand),
+    /// Describe the JSON documents that Board prints.
+    #[command(subcommand, after_help = crate::describe::SCHEMAS_HELP)]
+    Schemas(crate::describe::SchemasCommand),
 }
 
 #[derive(Debug, Subcommand)]
@@ -447,6 +456,11 @@ pub(crate) fn run(
     let words = arguments.get(1..).unwrap_or_default();
     ran.command = Some(crumbkit::command_path(&Cli::command(), &GUIDE, words).join(" "));
     let printer = Printer { view };
+    match &cli.command {
+        Command::Commands(command) => return crate::describe::commands(printer, command),
+        Command::Schemas(command) => return crate::describe::schemas(printer, command),
+        _ => {}
+    }
     if cli.command.owner_only()
         && let Some(refusal) = effects::from_plugin(context, ran)
     {
@@ -566,7 +580,11 @@ fn command(
     match command {
         // `run` takes these before this match: init and answer open no
         // board, and decide is matched there to keep this function short.
-        Command::Init | Command::Answer(_) | Command::Decide(_) => unreachable!(),
+        Command::Init
+        | Command::Answer(_)
+        | Command::Decide(_)
+        | Command::Commands(_)
+        | Command::Schemas(_) => unreachable!(),
         Command::Check { path, page } => {
             let path = or_refuse!(path.map(|path| read(prefix, &path, "check")).transpose());
             match board.check(path.as_ref(), cache) {

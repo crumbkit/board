@@ -1,0 +1,26 @@
+PATH                 ABOUT
+board                Board: a fast, validated view of a git tree.
+board init           Make this git repository a board
+board check          Check every entry, or those at or beneath a path; fail if any is degraded
+board get            Print the file at each path, following pointers
+board ls             List the directory at a path, without following pointers inside it
+board refs           List the references each entry makes and the entries that reach it
+board put            Write the record on stdin at a path or --new name, or a file with --file
+board rm             Remove the file at a path
+board sync           Fetch the remote branch, replay this board's commits onto it, and push
+board mount          Work with mounts
+board mount update   Advance the mount at a path, which is not followed, to its `follow` ref
+board plugin         Work with plugins
+board plugin list    List the installed plugins, their capabilities and whether this board enables them
+board plugin find    List the installed plugins' capabilities, or those that match every filter
+board plugin enable  Enable an installed plugin: write the schemas it ships, then name it in .board/board.json
+board type           Add types
+board type add       Add a type: compile the JSON Schema on stdin and write it to .board/types/
+board call           Call a plugin's capability with flags, or else JSON on stdin
+board decide         Ask the owner to admit a plugin's op
+board answer         Answer a pending effect
+board query          Run one read-only SQL statement over the index
+board serve          Serve this board's pages on 127.0.0.1 until it is idle
+board ui             List kinds, print a slot, or open a page
+board ui kinds       List the component kinds a view's slot can name, with each kind's schema
+board ui template    Print a slot's fill for a kind, to edit into a binding's `slots`

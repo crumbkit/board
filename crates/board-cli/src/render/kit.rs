@@ -28,6 +28,7 @@ const fn guide(budget: usize) -> Guide {
         .without_terminal_detection("Board's tests read its text from a pipe")
         .refusal_alternatives(path_fixed)
         .leaves(super::LEAVES)
+        .groups(&[super::GOALS])
 }
 
 /// For a path refused only for its form, the refused line with the path
@@ -301,6 +302,32 @@ impl Printer {
             Err(refused) if !self.json() => text_only(&refused.0),
             _ => Vec::new(),
         };
+        self.emit(document, result, error, after)
+    }
+
+    /// `result` of one of crumbkit's own commands, such as `commands list`,
+    /// printed as `document`.
+    pub(crate) fn kit<T: Rows>(
+        self,
+        document: Document<T>,
+        result: Result<T, crumbkit::Error>,
+    ) -> Output {
+        let error = match &result {
+            Ok(value) => first_code(value),
+            Err(error) => Some(Spelling::COLONS.spell(error.failure().code())),
+        };
+        self.emit(document, result, error, Vec::new())
+    }
+
+    /// `result` printed as `document` with `after` on stderr, and `error`
+    /// as the code the run failed with.
+    fn emit<T: Rows, E: crumbkit::AsFailure>(
+        self,
+        document: Document<T>,
+        result: Result<T, E>,
+        error: Option<String>,
+        after: Vec<u8>,
+    ) -> Output {
         let (mut stdout, mut stderr) = (Vec::new(), Vec::new());
         let code = crumbkit::finish_to(
             &mut Sink::new(&mut stdout, &mut stderr),

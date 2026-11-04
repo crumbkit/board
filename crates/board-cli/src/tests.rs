@@ -1728,6 +1728,7 @@ mod cli;
 mod complete;
 mod consistency;
 mod decide;
+mod describe;
 mod directory;
 mod effects_mod;
 mod flags;

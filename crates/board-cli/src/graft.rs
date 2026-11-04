@@ -28,8 +28,15 @@ pub(crate) struct Grafted {
 
 /// The long flags that a grafted call takes for itself, which no input
 /// property can be.
-pub(crate) const RESERVED_FLAGS: &[&str] =
-    &["capability", "fields", "full", "help", "json", "long"];
+pub(crate) const RESERVED_FLAGS: &[&str] = &[
+    "capability",
+    "fields",
+    "full",
+    "help",
+    "json",
+    "long",
+    "no-input",
+];
 
 /// How a grafted call takes stdin, as its help says.
 const STDIN: &str =
