@@ -1,7 +1,7 @@
 //! `github.install-hook`, the git pre-push hook its command installs, which
 //! checks what a raw `git push` sends, and `github.covers`.
 
-use super::desk::{Desk, NAMES, ORIGIN, digest, put_file, remove};
+use super::desk::{Desk, NAMES, ORIGIN, digest, executable, put_file, remove};
 use super::push::{commit_parts, merged};
 use std::path::PathBuf;
 
@@ -695,4 +695,38 @@ fn a_handed_check_made_from_another_checkout_is_judged_from_this_one_and_refused
         &["commit", "-q", "--amend", "-m", "Add a gear"],
     );
     assert!(pushed(&desk, &["origin", "main"]));
+}
+
+#[test]
+fn a_remote_listing_in_the_hook_that_fails_to_sign_in_carries_the_sign_in_hint_with_no_token_and_a_reachable_remote_is_checked()
+ {
+    let desk = Desk::new();
+    let checkout = desk.checkout();
+    let helper = desk.bin().join("git-remote-unsigned");
+    put_file(
+        &helper,
+        "#!/bin/sh\necho \"fatal: Authentication failed for 'https://github.com/Octo/Widgets.git/'\" >&2\nexit 128\n",
+    );
+    executable(&helper);
+    let sha = desk.commit("Add a gear");
+    let zero = "0".repeat(40);
+    let refs = format!("refs/heads/main {sha} refs/heads/main {zero}\n");
+    let flags = ["--remote", "origin", "--refs", &refs];
+    let remote = desk.remote().display().to_string();
+    let reachable = format!("url.{remote}.insteadOf");
+    desk.git(&checkout, &["config", "--unset", &reachable]);
+    desk.git(&checkout, &["config", "url.unsigned::x.insteadOf", ORIGIN]);
+    // The hook is given no gh token, so the hint shows on git's words alone.
+    let (ran, failure) = desk.call_at(None, true, "pre-push", &flags, &[]);
+    assert_eq!(ran.code, 1, "{failure}");
+    assert_eq!(failure["code"], "github::git::failed");
+    let hint = failure["recovery"]["text"].as_str().unwrap_or_default();
+    assert!(hint.contains("gh auth login"), "{failure}");
+    desk.git(
+        &checkout,
+        &["config", "--unset", "url.unsigned::x.insteadOf"],
+    );
+    desk.git(&checkout, &["config", &reachable, ORIGIN]);
+    let (ran, document) = desk.call_at(None, true, "pre-push", &flags, &[]);
+    assert_eq!(ran.code, 0, "{document}");
 }

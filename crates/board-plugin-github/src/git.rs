@@ -184,11 +184,27 @@ pub(crate) fn lossy(
 fn sign_in(host: &dyn Host, printed: &str) -> Option<String> {
     let token =
         (GH_TOKENS.iter()).any(|name| variable(host, name).is_some_and(|value| !value.is_empty()));
-    (token && UNSIGNED.iter().any(|words| printed.contains(words))).then(|| {
-        "git is not given GH_TOKEN or GITHUB_TOKEN, which only gh sees, so git could not sign \
-         in with them; sign in with `gh auth login` and `gh auth setup-git`, or push over SSH"
-            .to_owned()
-    })
+    (token && unsigned(printed)).then(|| SIGN_IN.to_owned())
+}
+
+/// What to do when git cannot sign in without a gh token.
+const SIGN_IN: &str = "git is not given GH_TOKEN or GITHUB_TOKEN, which only gh sees, so git \
+                       could not sign in with them; sign in with `gh auth login` and `gh auth \
+                       setup-git`, or push over SSH";
+
+/// Whether `printed` holds git's words for a failed sign-in.
+fn unsigned(printed: &str) -> bool {
+    UNSIGNED.iter().any(|words| printed.contains(words))
+}
+
+/// `error` with the sign-in hint when its message quotes git failing to
+/// sign in. The pre-push hook is given no gh token, so it cannot tell
+/// whether one is set, and adds the hint on git's words alone.
+pub(crate) fn hinted(mut error: PluginError) -> PluginError {
+    if error.hint.is_none() && unsigned(&error.message) {
+        error.hint = Some(SIGN_IN.to_owned());
+    }
+    error
 }
 
 /// `git` and its first two arguments after any `-c <name>=<value>`, which

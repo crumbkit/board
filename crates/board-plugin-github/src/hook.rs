@@ -228,6 +228,11 @@ pub(crate) struct PrePushOutput {
 /// nothing. The commits are those no ref at the URL git pushes to reaches,
 /// so a push URL unlike the fetch URL is compared with what it holds.
 pub(crate) fn pre_push(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
+    check_pushed(host, input).map_err(git::hinted)
+}
+
+/// [`pre_push`] before a failure to sign in is given its hint.
+fn check_pushed(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
     let PrePushInput { remote, refs } = PluginError::read_input("github", "pre-push", input)?;
     let top = git::top(host)?;
     let url = variable(host, PUSH_URL).unwrap_or_default();
