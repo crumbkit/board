@@ -199,10 +199,10 @@ fn tool(command: &[&str]) -> String {
 
 #[test]
 fn a_plugin_calls_another_by_capability_through_board_call() {
-    let (board, data) = fixture(&["tasks", "planner"]);
+    let (board, data) = fixture(&["chores", "planner"]);
     install(
         &data,
-        "tasks",
+        "chores",
         "due",
         &format!(
             "{PRELUDE}printf '%s' '{{\"$type\": \"board/call-result/v1\", \"output\": {{\"count\": 2}}}}'\n"
@@ -255,7 +255,7 @@ exit 3
     assert_eq!(shallower["code"], "board::plugin::failed");
 }
 
-/// Installs `tasks` offering `due`, whose input is `schema` with `"type":
+/// Installs `chores` offering `due`, whose input is `schema` with `"type":
 /// "object"` and `"additionalProperties": false` added. It keeps the request
 /// Board sent it in `request.json`.
 fn install_due(data: &Scenario, schema: &Value) {
@@ -264,22 +264,22 @@ fn install_due(data: &Scenario, schema: &Value) {
         .as_object_mut()
         .unwrap()
         .extend(schema.as_object().unwrap().clone());
-    let mut manifest: Value = serde_json::from_str(&manifest("tasks", "due")).unwrap();
+    let mut manifest: Value = serde_json::from_str(&manifest("chores", "due")).unwrap();
     manifest["capabilities"][0]["inputSchema"] = input;
     manifest["run"] = json!(["sh", "./run"]);
     let script = format!(
         "{PRELUDE}printf '%s' '{{\"$type\": \"board/call-result/v1\", \"output\": {{}}}}'\n"
     );
     data.write(
-        "board/plugins/tasks/plugin.json",
+        "board/plugins/chores/plugin.json",
         Item::File(&manifest.to_string()),
     )
-    .write("board/plugins/tasks/run", Item::File(&script));
+    .write("board/plugins/chores/run", Item::File(&script));
 }
 
-/// The input Board sent `tasks`.
+/// The input Board sent `chores`.
 fn sent(data: &Scenario) -> Value {
-    let request = std::fs::read(data.workdir().join("board/plugins/tasks/request.json")).unwrap();
+    let request = std::fs::read(data.workdir().join("board/plugins/chores/request.json")).unwrap();
     serde_json::from_slice::<Value>(&request).unwrap()["input"].clone()
 }
 
@@ -313,12 +313,12 @@ fn left_open(board: &Scenario, data: &Scenario, arguments: &[&str]) -> Output {
 
 #[test]
 fn a_capability_whose_inputs_are_all_flags_answers_with_stdin_left_open() {
-    let (board, data) = fixture(&["tasks"]);
+    let (board, data) = fixture(&["chores"]);
     install_due(
         &data,
         &json!({"properties": {"limit": {"type": "integer"}}}),
     );
-    let output = left_open(&board, &data, &["call", "tasks.due"]);
+    let output = left_open(&board, &data, &["call", "chores.due"]);
     assert!(
         output.status.success(),
         "{}",
@@ -329,39 +329,39 @@ fn a_capability_whose_inputs_are_all_flags_answers_with_stdin_left_open() {
 
 #[test]
 fn a_target_nobody_offers_is_refused_with_stdin_left_open_and_the_offered_one_answers() {
-    let (board, data) = fixture(&["tasks"]);
+    let (board, data) = fixture(&["chores"]);
     install_due(
         &data,
         &json!({"properties": {"limit": {"type": "integer"}}}),
     );
-    let typo = left_open(&board, &data, &["--json", "call", "tasks.dew"]);
+    let typo = left_open(&board, &data, &["--json", "call", "chores.dew"]);
     assert_eq!(typo.status.code(), Some(1));
     let refused: Value = serde_json::from_slice(&typo.stdout).unwrap();
     assert_eq!(refused["code"], "board::plugin::not_installed");
-    let offered = left_open(&board, &data, &["--json", "call", "tasks.due"]);
+    let offered = left_open(&board, &data, &["--json", "call", "chores.due"]);
     assert_eq!(offered.status.code(), Some(0));
 }
 
 #[test]
 fn a_capability_with_an_input_that_cannot_be_a_flag_reads_stdin() {
-    let (board, data) = fixture(&["tasks"]);
+    let (board, data) = fixture(&["chores"]);
     let properties = json!({"limit": {"type": "integer"}, "tags": {"type": "array"}});
     install_due(&data, &json!({"properties": properties}));
-    let given = board_call(&board, &data, &["call", "tasks.due"], r#"{"tags": ["a"]}"#);
+    let given = board_call(&board, &data, &["call", "chores.due"], r#"{"tags": ["a"]}"#);
     assert!(
         given.status.success(),
         "{}",
         String::from_utf8_lossy(&given.stderr)
     );
     assert_eq!(sent(&data), json!({"tags": ["a"]}));
-    let torn = board_call(&board, &data, &["--json", "call", "tasks.due"], "{");
+    let torn = board_call(&board, &data, &["--json", "call", "chores.due"], "{");
     let refused: Value = serde_json::from_slice(&torn.stdout).unwrap();
     assert_eq!(refused["code"], "board::plugin::bad_input");
 }
 
 #[test]
 fn a_capability_whose_schema_admits_properties_by_pattern_reads_stdin() {
-    let (board, data) = fixture(&["tasks"]);
+    let (board, data) = fixture(&["chores"]);
     install_due(
         &data,
         &json!({
@@ -369,7 +369,7 @@ fn a_capability_whose_schema_admits_properties_by_pattern_reads_stdin() {
             "patternProperties": {"^x-": {"type": "integer"}}
         }),
     );
-    let given = board_call(&board, &data, &["call", "tasks.due"], r#"{"x-a": 1}"#);
+    let given = board_call(&board, &data, &["call", "chores.due"], r#"{"x-a": 1}"#);
     assert!(
         given.status.success(),
         "{}",

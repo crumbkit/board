@@ -8,14 +8,11 @@ mod daily;
 pub mod records;
 mod route;
 
-use std::path::Path;
-use std::time::Duration;
-
-use board_model::{CapabilityName, LogicalPath, RecordType, Refusal};
-use board_ops::{Elsewhere, Host, Origin, Plugin, PluginError};
+use board_model::{CapabilityName, RecordType};
+use board_ops::{Host, Origin, Plugin, PluginError};
 use board_plugin::Manifest;
 use board_plugin::shape::{Record, schema_of};
-use board_repos::{Clones, Repo, Writer};
+use board_repos::{Repo, Through, Writer};
 use schemars::generate::SchemaSettings;
 use serde_json::{Map, Value, json};
 
@@ -90,26 +87,6 @@ pub(crate) fn refusal<const N: usize>(
     }
 }
 
-/// The clones Board syncs and pins for a call, through its host: a sync
-/// on the host `board -C <clone>` opens, and the pin as `board mount
-/// update` moves it.
-struct Through<'a>(&'a dyn Host);
-
-impl Clones for Through<'_> {
-    fn sync(&self, clone: &Path, push: bool, deadline: Duration) -> Result<(), Box<Refusal>> {
-        let board = self.0.board(&Elsewhere::Directory(clone.to_path_buf()))?;
-        (board.sync(push, deadline))
-            .map(drop)
-            .map_err(|error| Box::new(error.refusal()))
-    }
-
-    fn mount_update(&self, path: &LogicalPath, deadline: Duration) -> Result<String, Box<Refusal>> {
-        (self.0.mount_update(path, deadline))
-            .map(|report| report.new.to_string())
-            .map_err(|error| Box::new(error.refusal()))
-    }
-}
-
 /// What a call writes through: the host, its clones, and git's deadline on
 /// each sync and pin.
 fn writer<'a>(host: &'a dyn Host, clones: &'a Through<'a>) -> Writer<'a> {
@@ -151,17 +128,6 @@ fn remote(host: &dyn Host, repo: Option<&str>, remote: Option<&str>) -> Option<S
             Origin::Url(url) => Some(url),
             Origin::Outside | Origin::Unread(_) => None,
         })
-}
-
-/// Text without trailing whitespace, as Python's `str.rstrip` drops it,
-/// which also counts U+001C to U+001F.
-fn trimmed(text: &str) -> &str {
-    text.trim_end_matches(python_space)
-}
-
-/// Whether Python's `str.isspace` holds for `c`.
-fn python_space(c: char) -> bool {
-    c.is_whitespace() || ('\u{1c}'..='\u{1f}').contains(&c)
 }
 
 fn manifest() -> Value {

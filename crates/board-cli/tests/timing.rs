@@ -176,18 +176,18 @@ fn a_scoped_check_resolves_within_its_snapshot_and_refs_resolves_before_opening_
     assert!(resolved.1 <= opened.0, "{}", records[1]);
 }
 
-/// Calls `available` of a `tasks` plugin that replies with an empty output,
+/// Calls `available` of a `chores` plugin that replies with an empty output,
 /// with `arguments` after `call`, in a board that enables it, with `{}` on
 /// stdin.
-fn call_tasks(home: &Path, arguments: &[&str]) {
+fn call_chores(home: &Path, arguments: &[&str]) {
     let scenario = Scenario::new();
     scenario.write(
         ".board/board.json",
-        Item::File(r#"{"$type": "board/config/v1", "plugins": ["tasks"]}"#),
+        Item::File(r#"{"$type": "board/config/v1", "plugins": ["chores"]}"#),
     );
     let manifest = serde_json::json!({
         "$type": "board/plugin-manifest/v1",
-        "name": "tasks",
+        "name": "chores",
         "version": "1.0.0",
         "description": "",
         "run": ["sh", "./run"],
@@ -200,11 +200,11 @@ fn call_tasks(home: &Path, arguments: &[&str]) {
     });
     let data = Scenario::new();
     data.write(
-        "board/plugins/tasks/plugin.json",
+        "board/plugins/chores/plugin.json",
         Item::File(&manifest.to_string()),
     )
     .write(
-        "board/plugins/tasks/run",
+        "board/plugins/chores/run",
         Item::File(
             "cat > /dev/null\nprintf '%s' '{\"$type\": \"board/call-result/v1\", \"output\": {}}'\n",
         ),
@@ -222,7 +222,7 @@ fn call_tasks(home: &Path, arguments: &[&str]) {
 #[test]
 fn a_call_records_the_plugin_process_it_started_and_the_time_to_its_reply() {
     let home = tempfile::tempdir().unwrap();
-    call_tasks(home.path(), &["tasks.available"]);
+    call_chores(home.path(), &["chores.available"]);
     let record = &records(home.path())[0];
     assert_eq!(record["work"]["started"], 1, "{record}");
     let (reply, call) = (span(record, "plugin.reply"), span(record, "plugin.call"));
@@ -316,10 +316,10 @@ fn a_log_that_cannot_be_written_leaves_output_and_exit_code_as_a_writable_log_do
 #[test]
 fn a_call_records_the_capability_it_ran_and_none_of_its_argument_values() {
     let home = tempfile::tempdir().unwrap();
-    call_tasks(home.path(), &["tasks.available", "--repo", "secret"]);
+    call_chores(home.path(), &["chores.available", "--repo", "secret"]);
     let record = &records(home.path())[0];
     assert_eq!(record["command"], "call", "{record}");
-    assert_eq!(record["capability"], "tasks.available", "{record}");
+    assert_eq!(record["capability"], "chores.available", "{record}");
     let text = std::fs::read_to_string(log(home.path())).unwrap();
     assert!(!text.contains("secret"), "{text}");
 }

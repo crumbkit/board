@@ -143,8 +143,6 @@ fn host() -> Host {
     Host {
         path: "/usr/bin:/bin".into(),
         home: None,
-        board: PathBuf::new(),
-        data: PathBuf::new(),
     }
 }
 

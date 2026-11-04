@@ -51,10 +51,9 @@ pub(super) fn guide() -> Guide {
     Guide::new().with_runtime_leaves(leaves)
 }
 
-/// The tasks plugin runs through `uv` from its checkout, which its README
-/// installs as a symbolic link, and crumbkit copies no symbolic link into a
-/// run's XDG directories.
-const NO_CALL: &str = "the tasks plugin runs only from a symbolic link to its checkout";
+/// The fixture board does not enable tasks, whose sweep needs notes repos
+/// the fixture does not hold.
+const NO_CALL: &str = "the fixture board does not enable the tasks plugin";
 /// A pending effect's id hashes the directory of the board that asked, so
 /// no fixture holds one with the id an example names.
 const NO_ANSWER: &str = "a pending effect's id hashes the asking board's directory, so no fixture holds the example's id";
@@ -169,16 +168,9 @@ fn every_help_example_runs_on_a_fixture_board_and_prints_its_golden_output() {
             remote.path()
         )),
     );
-    let plugin = concat!(env!("CARGO_MANIFEST_DIR"), "/../../plugins/tasks");
+    // tasks is built in, so the plugins directory holds no plugin.
     let plugins = Scenario::new();
-    let files = ["plugin.json", "types/tasks/task/v2.schema.json"];
-    for file in files {
-        let text = std::fs::read_to_string(format!("{plugin}/{file}")).unwrap();
-        plugins.write(
-            &format!("xdg/data/board/plugins/tasks/{file}"),
-            Item::File(&text),
-        );
-    }
+    plugins.write("xdg/data/board/.keep", Item::File(""));
     let (binary, fixture) = (binary(), scenario.path());
     let xdg = format!("{}/xdg", plugins.path());
     let goldens = concat!(env!("CARGO_MANIFEST_DIR"), "/src/tests/help/examples");

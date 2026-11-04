@@ -62,6 +62,7 @@ impl Host for Local {
         &self,
         _: &[LogicalPath],
         _: Absent,
+        _: &[String],
     ) -> Result<Vec<Result<RefsReport, RefsError>>, RefsError> {
         panic!("board-repos resolves no refs")
     }

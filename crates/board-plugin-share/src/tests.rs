@@ -25,6 +25,7 @@ impl Host for Nothing {
         &self,
         _paths: &[board_model::LogicalPath],
         _absent: board_ops::Absent,
+        _fields: &[String],
     ) -> Result<Vec<Result<board_ops::RefsReport, board_ops::RefsError>>, board_ops::RefsError>
     {
         panic!("a refused call resolves no paths")

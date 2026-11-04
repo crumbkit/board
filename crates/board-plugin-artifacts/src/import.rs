@@ -114,8 +114,8 @@ pub(crate) fn import(host: &dyn Host, input: &Value) -> Result<Value, PluginErro
     let paths = (rows.iter())
         .map(|(path, _)| logical(path))
         .collect::<Result<Vec<_>, _>>()?;
-    let answers =
-        (host.refs(&paths, Absent::Refuse)).map_err(|error| refused("refs", &error.refusal()))?;
+    let answers = (host.refs(&paths, Absent::Refuse, &[]))
+        .map_err(|error| refused("refs", &error.refusal()))?;
     let now = timestamp(host.settings().now);
     let mut written = Vec::new();
     let mut lines = Vec::new();

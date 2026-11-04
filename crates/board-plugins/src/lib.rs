@@ -29,4 +29,6 @@ pub const BUILT_IN: BuiltIn = BuiltIn(&[
     &board_plugin_runs::Runs,
     #[cfg(feature = "share")]
     &board_plugin_share::Share,
+    #[cfg(feature = "tasks")]
+    &board_plugin_tasks::Tasks,
 ]);

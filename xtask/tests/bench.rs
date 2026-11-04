@@ -8,7 +8,7 @@
 use std::process::Command;
 
 #[test]
-fn bench_times_a_generated_board_and_skips_the_plugin_call_without_uv() {
+fn bench_times_a_generated_board_with_the_built_in_plugin_call_and_no_path() {
     let output = Command::new(env!("CARGO_BIN_EXE_xtask"))
         .args(["bench", "--records", "20"])
         .env("PATH", "")
@@ -21,11 +21,13 @@ fn bench_times_a_generated_board_and_skips_the_plugin_call_without_uv() {
             .lines()
             .filter(|line| line.starts_with("pass"))
             .count(),
-        7,
+        8,
         "{stdout}"
     );
+    let call =
+        (stdout.lines()).find(|line| line.ends_with("`board call tasks.available --repo /`, warm"));
     assert!(
-        stdout.contains("skip  uv is not on PATH  `board call tasks.available --repo /`, warm\n"),
+        call.is_some_and(|line| line.starts_with("pass")),
         "{stdout}"
     );
 }

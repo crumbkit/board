@@ -371,6 +371,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "board-plugin-tasks"
+version = "0.0.0"
+dependencies = [
+ "board-model",
+ "board-ops",
+ "board-plugin",
+ "board-repos",
+ "board-scenario",
+ "board-tree",
+ "schemars",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "board-plugins"
 version = "0.0.0"
 dependencies = [
@@ -387,6 +402,7 @@ dependencies = [
  "board-plugin-requests",
  "board-plugin-runs",
  "board-plugin-share",
+ "board-plugin-tasks",
 ]
 
 [[package]]
@@ -3028,6 +3044,7 @@ dependencies = [
  "board-model",
  "board-ops",
  "board-plugin",
+ "board-plugin-tasks",
  "board-tree",
  "board-validate",
  "serde",

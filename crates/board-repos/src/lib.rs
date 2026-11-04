@@ -21,7 +21,20 @@ pub use listing::{
 };
 pub use repo::{File, Repo};
 pub use slug::slug;
-pub use writing::{ATTEMPTS, Clones, EDITED, MOVED, Writer, create, landed, push, refused};
+pub use writing::{
+    ATTEMPTS, Clones, EDITED, MOVED, Through, Writer, create, landed, push, refused,
+};
+
+/// Text without trailing whitespace, as Python's `str.rstrip` drops it,
+/// which also counts U+001C to U+001F.
+pub fn trimmed(text: &str) -> &str {
+    text.trim_end_matches(python_space)
+}
+
+/// Whether Python's `str.isspace` holds for `c`.
+pub fn python_space(c: char) -> bool {
+    c.is_whitespace() || ('\u{1c}'..='\u{1f}').contains(&c)
+}
 
 /// A refusal of the calling plugin's own, with `fields`.
 pub(crate) fn refusal<const N: usize>(

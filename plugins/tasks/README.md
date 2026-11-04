@@ -1,27 +1,18 @@
 # tasks
 
-This plugin is still a Python program (docs/plugins/python.md). A new plugin
-is a crate built into Board (docs/plugins/built-in/writing.md).
+A Board plugin, built into Board as `crates/board-plugin-tasks`, for tasks.
+It reads `tasks/task/v2` Markdown tasks with Board's query. `available` sorts
+the tasks of the repos in scope into the tasks to work on now, those due soon,
+the stale ones and those an owner holds. `tree` lists tasks and projects as
+one tree. `add`, `claim`, `done`, `defer`, `drop`, `reviewed` and `move` write
+tasks.
 
-A Board plugin for tasks. It reads `tasks/task/v2` Markdown tasks through
-`board query`. `available` sorts the tasks of the repos
-in scope into the tasks to work on now, those due soon, the stale ones and
-those an owner holds. `tree` lists tasks and projects as one tree. `add`,
-`claim`, `done`, `defer`, `drop`, `reviewed` and `move` write tasks.
-
-Install it from this checkout:
-
-    uv sync --frozen --no-dev
-    ln -s "$PWD" "${XDG_DATA_HOME:-$HOME/.local/share}/board/plugins/tasks"
-
-Then run `board plugin enable tasks` in a board. The manifest lists
-`tasks/task/v2` in `types`, so this writes the schema the plugin ships under
-`types/tasks/task/` to `.board/types/tasks/task/`, and names the plugin in
-`.board/board.json`. In a board enabled before this release, running
-`board plugin enable tasks` again removes `.board/types/tasks/task/v1.schema.json`,
-which the plugin no longer ships. While a `tasks/task/v1` record is left, it
-keeps that schema and lists it in `kept`. A notes repo
-needs a copy of the schema in its own `.board/types/tasks/task/` for its tasks to be checked.
+Run `board plugin enable tasks` in a board, which writes the schema the
+plugin ships to `.board/types/tasks/task/` and names the plugin in
+`.board/board.json`. A notes repo needs a copy of the schema in its own
+`.board/types/tasks/task/` for its tasks to be checked. An installed copy of
+the former Python plugin under `$XDG_DATA_HOME/board/plugins/tasks` must be
+removed, or Board refuses every tasks call with `board::plugin::duplicate`.
 
 ## The task
 
@@ -120,19 +111,14 @@ repository, every repo is in scope. Called inside one whose origin git does
 not give, because none is set or git failed or ran past 10 s, the scope is `/`
 and the personal repo, and `origin_unread` says why.
 
-The mounted repos in scope sync at once, without pushing, while the call reads
-the tasks at the pins it started with. A sync that runs past 5 s is left to
-finish on its own, since stopping Board mid-sync would leave its lock behind,
-and the repo is listed with `tasks::repo::sync_timeout`. Board kills a fetch
-still running after 60 s, so a remote that hangs holds the clone's lock for
-at most a minute per sync. While the remote hangs, every call whose scope
-holds that repo takes about 5 s and lists it with `tasks::repo::sync_timeout`,
-because its own sync stalls or Board waits 5 s for the lock, as long as the
-deadline. A notes write to that clone within a minute of such a call is
-refused with `board::put::locked`. A mount's pin moves
+The mounted repos in scope sync one after another, without pushing. Board
+stops a sync that runs past 5 s, with git and every process git started, and
+the repo is listed with `tasks::repo::sync_timeout`. So a call whose scope
+holds a repo whose remote hangs takes about 5 s more for that repo, and
+leaves no lock behind. A mount's pin moves
 only when its sync succeeded and the HEAD it reports differs from the pin, and
-only then are the tasks read again. So a call where nothing changed starts one
-`board query`, then the syncs beside one `board refs`. `unsynced` lists each
+only then are the tasks read again. So a call where nothing changed runs one
+query, and one refs when a task has an `after` or a `parent`. `unsynced` lists each
 repo whose sync or pin failed, with its code, and the call reads that repo at
 its pin. `degraded` counts the Markdown files under a `tasks/` directory in
 scope that are not a readable task. `repos` lists the repos read.
@@ -177,8 +163,8 @@ title, with `total` counting them all. The scope is chosen as `available`
 chooses it, with `--repo` and `--remote`. Giving both `--path` and `--root
 true`, or neither, is refused with `tasks::tree::path_or_root`. Both forms
 read the repos at their pins without syncing, and list `repos`, `cycles` and
-`cross_repo` for the repos read. A tree costs one `board query`, and one
-`board refs` when a task has an `after` or a `parent`.
+`cross_repo` for the repos read. A tree costs one query, and one refs when a
+task has an `after` or a `parent`.
 
 ## Writing tasks
 
@@ -255,7 +241,7 @@ finds the text the refused write sent counts as that write. It then pushes and
 moves the mount's pin to the pushed commit, and `unpushed` holds the code of a
 push that failed; the write stays committed in the clone.
 Both are `tasks::repo::not_synced` for the board's own tree, which is never
-synced. `commit` is None when the board's own tree does not commit puts.
+synced. `commit` is null when the board's own tree does not commit puts.
 
 ## The sweep skill
 
@@ -270,14 +256,13 @@ directory into the agents' shared skills to install it:
 Claude Code reads `~/.claude/skills`; link it there too unless that directory
 is itself a link to `~/.agents/skills`.
 
-## Development
+## Tests
 
-The gates, which CI runs: `uv run ruff format --check .`, `uv run ruff check .`,
-`uv run pyright` and `uv run pytest`. The tests drive `$BOARD_BIN`, by default
-the workspace's `target/debug/board`, so build it first with
-`cargo build -p board-cli`. `plugin.json` and the schema are generated from
-the pydantic models in `src/board_tasks/models.py` by `board_tasks.manifest`,
-and a test checks that the committed files match.
-
-The protocol and the `board` client come from the shared library in
-`python/board-plugin/`, which `pyproject.toml` installs from this checkout.
+`crates/board-cli/src/tests/built_in/tasks.rs` and its modules run the
+`board` binary in process against boards that mount notes repos with bare
+remotes. They are the former pytest suite: the sweep's sections, scope and
+routing, syncs, pins and their failures, blockers, trees, every write and
+its refusals, the day across UTC offsets and `day_start`, and the schema.
+The crate's own tests write through a real mount that a second Board writes
+to between the read and the put, and one whose HEAD moves after Board left
+the file uncommitted, and count the queries and refs a read makes.

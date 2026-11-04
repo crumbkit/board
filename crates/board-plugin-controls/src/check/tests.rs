@@ -60,6 +60,7 @@ impl Host for Recording {
         &self,
         paths: &[LogicalPath],
         absent: Absent,
+        _fields: &[String],
     ) -> Result<Vec<Result<RefsReport, RefsError>>, RefsError> {
         self.calls.borrow_mut().push(Call::Refs(named(paths)));
         Ok(self.board.refs(paths, absent, &[], None, None)?.collect())

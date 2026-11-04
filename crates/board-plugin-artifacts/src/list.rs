@@ -138,7 +138,7 @@ pub(crate) fn list(host: &dyn Host, input: &Value) -> Result<Value, PluginError>
 pub(crate) fn about(host: &dyn Host, subject: &str) -> Result<BTreeSet<String>, PluginError> {
     let not_found = |refusal: &Refusal| refusal.code.as_str() == Code::PathNotFound.as_str();
     let mut paths = BTreeSet::new();
-    let answers = match host.refs(&[logical(subject)?], Absent::Refuse) {
+    let answers = match host.refs(&[logical(subject)?], Absent::Refuse, &[]) {
         Ok(answers) => answers,
         Err(error) if not_found(&error.refusal()) => return Ok(paths),
         Err(error) => return Err(refused("refs", &error.refusal())),

@@ -6,7 +6,7 @@ use std::path::Path;
 use std::time::Duration;
 
 use board_model::{Code, Fields, LogicalPath, PathError, Refusal};
-use board_ops::{Host, PluginError, PutError};
+use board_ops::{Elsewhere, Host, PluginError, PutError};
 use serde_json::json;
 
 use crate::refusal;
@@ -36,6 +36,33 @@ pub trait Clones {
     /// Moves the mount at `path` to its clone's HEAD and returns that
     /// commit.
     fn mount_update(&self, path: &LogicalPath, deadline: Duration) -> Result<String, Box<Refusal>>;
+}
+
+/// The clones Board syncs and pins for a call, through its host: a sync
+/// on the host `board -C <clone>` opens, and the pin as `board mount
+/// update` moves it.
+#[derive(Clone, Copy)]
+pub struct Through<'a>(pub &'a dyn Host);
+
+impl std::fmt::Debug for Through<'_> {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("Through")
+    }
+}
+
+impl Clones for Through<'_> {
+    fn sync(&self, clone: &Path, push: bool, deadline: Duration) -> Result<(), Box<Refusal>> {
+        let board = self.0.board(&Elsewhere::Directory(clone.to_path_buf()))?;
+        (board.sync(push, deadline))
+            .map(drop)
+            .map_err(|error| Box::new(error.refusal()))
+    }
+
+    fn mount_update(&self, path: &LogicalPath, deadline: Duration) -> Result<String, Box<Refusal>> {
+        (self.0.mount_update(path, deadline))
+            .map(|report| report.new.to_string())
+            .map_err(|error| Box::new(error.refusal()))
+    }
 }
 
 /// What a write reaches: the host, the clones, the plugin whose codes it

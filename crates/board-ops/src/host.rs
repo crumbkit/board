@@ -46,11 +46,13 @@ pub trait Host {
     /// Runs `sql` as `board query` does, returning at most `limit` rows.
     fn query(&self, sql: &str, limit: Limit) -> Result<QueryReport, QueryError>;
     /// Answers `paths` as `board refs` does, each in order, through one
-    /// snapshot.
+    /// snapshot, reading each reference's target at `fields`, JSON
+    /// pointers, as `board refs --field` does.
     fn refs(
         &self,
         paths: &[LogicalPath],
         absent: Absent,
+        fields: &[String],
     ) -> Result<Vec<Result<RefsReport, RefsError>>, RefsError>;
     /// Reads `paths` as `board get` does, each in order, through one
     /// snapshot.
@@ -407,10 +409,11 @@ impl Host for Hosted<'_> {
         &self,
         paths: &[LogicalPath],
         absent: Absent,
+        fields: &[String],
     ) -> Result<Vec<Result<RefsReport, RefsError>>, RefsError> {
         Ok(self
             .board
-            .refs(paths, absent, &[], None, self.plugins.cache)?
+            .refs(paths, absent, fields, None, self.plugins.cache)?
             .collect())
     }
 

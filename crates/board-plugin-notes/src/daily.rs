@@ -2,13 +2,13 @@
 //! to, unless it is private. A read creates no note.
 
 use board_ops::{Host, PluginError};
-use board_repos::{day_start, today};
+use board_repos::{Through, day_start, python_space, today};
 use schemars::{JsonSchema, Schema, SchemaGenerator, json_schema};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use crate::route::choose;
-use crate::{PLUGIN, Through, python_space, read, remote, writer};
+use crate::{PLUGIN, read, remote, writer};
 
 /// The values of `private` that plainly show a note; any other value hides
 /// it.
