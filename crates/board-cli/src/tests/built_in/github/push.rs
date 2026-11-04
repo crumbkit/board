@@ -683,3 +683,44 @@ fn a_push_failing_on_authentication_while_a_gh_token_is_set_is_refused_with_a_si
     let pushed = desk.call_at(None, false, "push", &[], &[("GH_TOKEN", "gh-token-1")]);
     assert_eq!(pushed.0.code, 0, "{}", pushed.1);
 }
+
+#[test]
+fn a_remote_listing_that_fails_to_sign_in_while_a_gh_token_is_set_carries_the_sign_in_hint_and_a_reachable_remote_is_pushed()
+ {
+    let desk = Desk::new();
+    let checkout = desk.checkout();
+    // A remote helper on PATH that fails as git does when HTTPS sign-in
+    // fails, which `ls-remote` meets before anything is checked.
+    let helper = desk.bin().join("git-remote-unsigned");
+    put_file(
+        &helper,
+        "#!/bin/sh\necho \"fatal: Authentication failed for 'https://github.com/Octo/Widgets.git/'\" >&2\nexit 128\n",
+    );
+    executable(&helper);
+    let remote = desk.remote().display().to_string();
+    let reachable = format!("url.{remote}.insteadOf");
+    desk.git(&checkout, &["config", "--unset", &reachable]);
+    desk.git(&checkout, &["config", "url.unsigned::x.insteadOf", ORIGIN]);
+    desk.commit("Add a gear");
+    let hint = |token: &[(&str, &str)]| {
+        let (ran, failure) = desk.call_at(None, false, "push", &[], token);
+        assert_eq!(
+            refused(&ran, &failure),
+            (1, "github::git::failed".to_owned())
+        );
+        failure["recovery"]["text"].as_str().map(str::to_owned)
+    };
+    let signed = hint(&[("GH_TOKEN", "gh-token-1")]).unwrap();
+    assert!(signed.contains("gh auth login"), "{signed}");
+    assert_eq!(
+        hint(&[]).filter(|text| text.contains("gh auth login")),
+        None
+    );
+    desk.git(
+        &checkout,
+        &["config", "--unset", "url.unsigned::x.insteadOf"],
+    );
+    desk.git(&checkout, &["config", &reachable, ORIGIN]);
+    let pushed = desk.call_at(None, false, "push", &[], &[("GH_TOKEN", "gh-token-1")]);
+    assert_eq!(pushed.0.code, 0, "{}", pushed.1);
+}

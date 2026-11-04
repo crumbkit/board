@@ -179,10 +179,12 @@ variables the boundary's judged rules read. They pass the model credentials,
 check, never to git, its hooks, ssh or gh. They pass gh's tokens, `GH_TOKEN`
 and `GITHUB_TOKEN`, only to gh, never to git, its hooks or ssh, so no hook
 in the checkout can read them. `GH_CONFIG_DIR` still reaches git, so
-`gh auth git-credential` finds gh's stored sign-in for an HTTPS push. A
-push that then fails to sign in while a token variable is set is
-`github::push::failed` with a hint to sign in with `gh auth login` and
-`gh auth setup-git`, or to push over SSH. The pre-push capability is not
+`gh auth git-credential` finds gh's stored sign-in for an HTTPS push. So
+git needs a stored sign-in from `gh auth login` and `gh auth setup-git`, or
+an SSH remote; a token in `GH_TOKEN` or `GITHUB_TOKEN` alone signs in gh
+and not git. A git command that fails to sign in while a token variable is
+set, such as the `git ls-remote` before the check or the push itself, is
+`github::git::failed` or `github::push::failed` with a hint saying so. The pre-push capability is not
 given the tokens. Every git and ssh command runs
 through the host with a deadline, 300 seconds for git and 10 for `ssh -G`,
 and its output is capped at 16 MiB, so a larger diff fails with

@@ -104,7 +104,7 @@ impl Desk {
         self.root.path().join("remote.git")
     }
 
-    fn bin(&self) -> PathBuf {
+    pub(super) fn bin(&self) -> PathBuf {
         self.root.path().join("bin")
     }
 

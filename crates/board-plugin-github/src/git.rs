@@ -165,7 +165,7 @@ pub(crate) fn lossy(
         return Ok((ran.stdout, ran.utf8));
     }
     let command = named(arguments);
-    Err(error(
+    let mut failed = error(
         "github::git::failed",
         format!(
             "`{command}` exited {}: {}; check git and the checkout",
@@ -173,7 +173,22 @@ pub(crate) fn lossy(
             shown(&tail(ran.stderr.trim()))
         ),
         json!({"command": command}),
-    ))
+    );
+    failed.hint = sign_in(host, &ran.stderr);
+    Err(failed)
+}
+
+/// What to do when git failed to sign in, as `printed` says, while a gh
+/// token variable is set: git never sees the token, so it needs gh's
+/// stored sign-in or SSH.
+fn sign_in(host: &dyn Host, printed: &str) -> Option<String> {
+    let token =
+        (GH_TOKENS.iter()).any(|name| variable(host, name).is_some_and(|value| !value.is_empty()));
+    (token && UNSIGNED.iter().any(|words| printed.contains(words))).then(|| {
+        "git is not given GH_TOKEN or GITHUB_TOKEN, which only gh sees, so git could not sign \
+         in with them; sign in with `gh auth login` and `gh auth setup-git`, or push over SSH"
+            .to_owned()
+    })
 }
 
 /// `git` and its first two arguments after any `-c <name>=<value>`, which
@@ -325,16 +340,7 @@ pub(crate) fn push(
                 ),
                 json!({"branch": name, "digest": digest}),
             );
-            let token = (GH_TOKENS.iter())
-                .any(|name| variable(host, name).is_some_and(|value| !value.is_empty()));
-            if token && UNSIGNED.iter().any(|words| printed.contains(words)) {
-                failed.hint = Some(
-                    "git is not given GH_TOKEN or GITHUB_TOKEN, which only gh sees, so git could \
-                     not sign in with them; sign in with `gh auth login` and `gh auth setup-git`, \
-                     or push over SSH"
-                        .to_owned(),
-                );
-            }
+            failed.hint = sign_in(host, printed);
             Err(failed)
         }
     }
