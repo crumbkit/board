@@ -137,6 +137,22 @@ fn a_record_held_with_true_where_the_source_has_1_is_different_and_one_in_anothe
 }
 
 #[test]
+fn a_record_held_with_minus_zero_where_the_source_has_zero_is_different_and_one_with_zero_is_the_same()
+ {
+    let line = Line::Record(json!({"x": 0.0}));
+    assert!(!same(&line, br#"{"x": -0.0}"#));
+    assert!(same(&line, br#"{"x": 0.0}"#));
+}
+
+#[test]
+fn a_held_integer_board_cannot_hold_exactly_differs_from_the_float_it_reads_as_and_that_float_is_the_same()
+ {
+    let line = Line::Record(json!({"x": 1e20}));
+    assert!(!same(&line, br#"{"x": 100000000000000000000}"#));
+    assert!(same(&line, br#"{"x": 1e20}"#));
+}
+
+#[test]
 fn an_index_code_other_than_a_broken_reference_is_refused_and_a_broken_reference_is_admitted() {
     assert!(refused("record", Some("board::record::invalid")));
     assert!(refused("file", Some("board::frontmatter::invalid")));

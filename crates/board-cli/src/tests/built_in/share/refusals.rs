@@ -271,6 +271,12 @@ fn a_team_checkout_on_another_branch_refuses_the_share_and_one_on_the_followed_b
         .write(".git/HEAD", Item::File("ref: refs/heads/feature\n"));
     let refused = boards.refused(&["--path", "/evals/x"]);
     assert_eq!(refused["code"], "share::board::refused");
+    let message = refused["message"].as_str().unwrap();
+    let said = format!(
+        "`board put --batch` refused with {}: ",
+        refused["fields"]["code"].as_str().unwrap()
+    );
+    assert!(message.starts_with(&said), "{message}");
     assert_eq!(
         (boards.head().id.to_string(), boards.pin()),
         (before.to_string(), before.to_string())
@@ -299,4 +305,25 @@ fn a_team_board_that_does_not_commit_on_put_refuses_the_share_and_one_that_does_
     boards.publish(&[(".board/board.json", on)]);
     boards.share(&["--path", "/evals/x"]);
     assert_ne!(boards.head().id, before);
+}
+
+#[test]
+fn a_mount_whose_repository_is_missing_is_refused_with_boards_code_and_the_team_is_admitted() {
+    let boards = boards();
+    boards.standard();
+    let commit = boards.head().id;
+    let gone = boards.team.workdir().join("gone");
+    boards
+        .personal
+        .write("gone.json", &mount_of(&gone.display().to_string(), commit));
+    let refused = boards.refused(&["--path", "/evals/x", "--to", "/gone", "--dry_run", "true"]);
+    assert_eq!(
+        (&refused["code"], &refused["fields"]["code"]),
+        (
+            &json!("share::board::refused"),
+            &json!("board::mount::repo_missing")
+        ),
+        "{refused}"
+    );
+    boards.share(&["--path", "/evals/x", "--dry_run", "true"]);
 }

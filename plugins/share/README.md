@@ -72,7 +72,7 @@ refuses in its `paths` field.
 | `share::path::not_found` | `path` names nothing in this board's own tree |
 | `share::mount::not_found` | `to` is not the mount record of another repository: it reaches no board, mounts this board's own repository, or is a path inside a mount, a mount inside a mounted board or a link to a mount |
 | `share::link::unsupported` | a link, such as a `board/mount/v1` record, is in the set; a batch would write a copy of its target in its place |
-| `share::record::invalid` | a record in the set carries a code other than a broken reference's, so `board put` would refuse it |
+| `share::record::invalid` | a record in the set carries a code other than a broken reference's, so `board put` would refuse it, or a schema it needs stopped parsing after the set was read |
 | `share::closure::unresolved` | a reference through a mount or link does not resolve into the same repository in the destination |
 | `share::file::unsupported` | a file in the set is not UTF-8, or is a `.json` file without `$type`, which a batch line cannot write |
 | `share::attachment::local` | an attachment's `location` is a path on this machine, without `local_attachments` |

@@ -14,15 +14,20 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use board_model::{ATTACHMENT_TYPE, Fields, Location, LogicalPath, PathError, Refusal, Source};
-use board_ops::{Absent, Host, Limit, PluginError, literal, source_name};
+use board_model::{
+    ATTACHMENT_TYPE, Fields, Location, LogicalPath, PathError, Refusal, Source, canonical_json,
+    parse_json,
+};
+use board_ops::{Absent, Host, Limit, PluginError, RefsReport, literal, source_name};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 
 /// What `board get` answers for a path holding nothing, or only a directory,
 /// beside which a record may go.
-const ABSENT: [&str; 2] = ["board::path::not_found", "board::record::not_a_record"];
+const ABSENT: [&str; 2] = [NOT_FOUND, "board::record::not_a_record"];
+/// What `board refs` answers for a path holding nothing.
+const NOT_FOUND: &str = "board::path::not_found";
 /// The most paths the output lists (STANDARDS.md 23); `Output` states it.
 const LIST_LIMIT: usize = 100;
 
@@ -102,6 +107,9 @@ pub(crate) fn share_to(host: &dyn Host, input: &Value) -> Result<Value, PluginEr
     let mut schemas = BTreeMap::new();
     for (name, read) in types.iter().zip(get(host, &local)?) {
         let bytes = read.map_err(|refusal| PluginError::board_refused("share", "get", &refusal))?;
+        // The index refuses every record of a type whose schema does not
+        // parse, so this is reached only when the tree changed between the
+        // query and this read.
         let Ok(schema) = serde_json::from_slice::<Value>(&bytes) else {
             return Err(refusal(
                 "share::record::invalid",
@@ -219,11 +227,9 @@ fn closure(
     while !frontier.is_empty() {
         let mut reached = BTreeSet::new();
         let asked: Vec<LogicalPath> = (frontier.iter())
-            .map(|record| logical(record))
+            .map(|record| logical(record, "refs"))
             .collect::<Result<_, _>>()?;
-        let answers = (host.refs(&asked, Absent::Refuse))
-            .map_err(|error| PluginError::board_refused("share", "refs", &error.refusal()))?;
-        for report in answers.into_iter().flatten() {
+        for report in reports(host, &asked)?.into_iter().flatten() {
             for reference in report.from {
                 let Some(location) = reference.location.filter(|_| !reference.link) else {
                     continue;
@@ -486,14 +492,15 @@ fn schema_path(record_type: &str) -> String {
 }
 
 /// Whether the destination holds `line` already: a record with an equal
-/// value, so `true` and `1` differ and key order does not, or a file with
-/// equal bytes.
+/// value, or a file with equal bytes. Values are compared as canonical JSON
+/// text, as the Python plugin compared `json.dumps` with sorted keys, so key
+/// order does not matter while `true` and `1`, and `-0.0` and `0.0`, differ.
+/// A held number Board cannot hold exactly differs from every source value.
 pub(crate) fn same(line: &Line, now: &[u8]) -> bool {
     match line {
         Line::Text(text) => now == text.as_bytes(),
-        Line::Record(record) => {
-            serde_json::from_slice::<Value>(now).is_ok_and(|now| now == *record)
-        }
+        Line::Record(record) => parse_json(now)
+            .is_ok_and(|now| canonical_json(&now).as_str() == canonical_json(record).as_str()),
     }
 }
 
@@ -517,7 +524,7 @@ type Read = Result<Vec<u8>, Box<Refusal>>;
 fn get(host: &dyn Host, paths: &[String]) -> Result<Vec<Read>, PluginError> {
     let asked: Vec<LogicalPath> = paths
         .iter()
-        .map(|path| logical(path))
+        .map(|path| logical(path, "get"))
         .collect::<Result<_, _>>()?;
     let answers = (host.get_each(&asked))
         .map_err(|error| PluginError::board_refused("share", "get", &error.refusal("get")))?;
@@ -530,13 +537,32 @@ fn get(host: &dyn Host, paths: &[String]) -> Result<Vec<Read>, PluginError> {
         .collect())
 }
 
-/// Answers `paths` as `board refs` does: each one's location, or none
-/// where Board refuses it.
+/// Answers `paths` as `board refs` does: each one's report, or none where
+/// nothing is there. Board's other refusals are `share::board::refused`,
+/// as the Python plugin's were.
+fn reports(host: &dyn Host, paths: &[LogicalPath]) -> Result<Vec<Option<RefsReport>>, PluginError> {
+    let refused = |refusal: &Refusal| PluginError::board_refused("share", "refs", refusal);
+    let answers = (host.refs(paths, Absent::Refuse)).map_err(|error| refused(&error.refusal()))?;
+    (answers.into_iter())
+        .map(|answer| match answer {
+            Ok(report) => Ok(Some(report)),
+            Err(error) => {
+                let refusal = error.refusal();
+                if refusal.code.as_str() == NOT_FOUND {
+                    Ok(None)
+                } else {
+                    Err(refused(&refusal))
+                }
+            }
+        })
+        .collect()
+}
+
+/// Each of `paths`' locations, as [`reports`] answers them.
 fn refs(host: &dyn Host, paths: &[LogicalPath]) -> Result<Vec<Option<Location>>, PluginError> {
-    let answers = (host.refs(paths, Absent::Refuse))
-        .map_err(|error| PluginError::board_refused("share", "refs", &error.refusal()))?;
+    let answers = reports(host, paths)?;
     Ok((answers.into_iter())
-        .map(|answer| answer.ok().map(|report| report.location))
+        .map(|answer| answer.map(|report| report.location))
         .collect())
 }
 
@@ -548,11 +574,11 @@ fn query(host: &dyn Host, sql: &str) -> Result<Vec<Vec<Value>>, PluginError> {
 }
 
 /// `path` as a logical path, or `share::board::refused` with Board's code
-/// when it is not one.
-fn logical(path: &str) -> Result<LogicalPath, PluginError> {
+/// when it is not one, as `board <command>` would refuse it.
+fn logical(path: &str, command: &str) -> Result<LogicalPath, PluginError> {
     path.parse().map_err(|error: PathError| {
         let refusal = Refusal::new(error.code(), &error, &Fields::default());
-        PluginError::board_refused("share", "get", &refusal)
+        PluginError::board_refused("share", command, &refusal)
     })
 }
 
