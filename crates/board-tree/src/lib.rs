@@ -21,8 +21,8 @@ mod tests;
 
 pub use crate::git::{Contents, GitError, Repository, latest};
 pub use crate::mounts::{
-    Cache, Crossing, Held, Matched, MountPoint, Mounted, Pin, PinError, Place, Reached, Scopes,
-    in_scope, within,
+    Cache, Crossing, Held, Matched, MountPoint, Mounted, Origin, Pin, PinError, Place, Reached,
+    Scopes, in_scope, origin, within,
 };
 pub use crate::repositories::Repositories;
 pub use crate::resolve::{Ancestor, InCommit, MAX_HOPS, ResolveError, Resolver};

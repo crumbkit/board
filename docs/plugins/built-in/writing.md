@@ -9,8 +9,9 @@ messages and codes unchanged.
 
 A built-in plugin reads and writes the board through `Host` and nothing
 else: `query`, `refs`, `get_each`, `put`, `call`, `board`, `decide`,
-`settings` and `run` (docs/plugins/built-in.md). It writes records only with `put`, which takes
-the lines a Python plugin gives `board put --batch`, and maps its error with
+`settings`, `caller_remote` and `run` (docs/plugins/built-in.md). It
+writes records only with `put`, which takes the lines a Python plugin
+gives `board put --batch`, and maps its error with
 `PluginError::board_refused(<name>, "put --batch", &error.refusal())`; a
 refused `call` or `decide` maps the same way, with `"call"` or `"decide"`.
 It starts a process only with `run`, which gives

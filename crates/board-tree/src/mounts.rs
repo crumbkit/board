@@ -344,7 +344,7 @@ impl Repositories {
         if !mounted.is_empty() {
             return mounted;
         }
-        let Some(origin) = origin(directory) else {
+        let Origin::Url(origin) = origin(directory) else {
             return Vec::new();
         };
         let remote = board_model::shown_remote(&origin);
@@ -368,13 +368,33 @@ impl Repositories {
     }
 }
 
-/// The URL of the `origin` remote of the repository holding `directory`,
-/// as `git remote get-url origin` gives it, with any `insteadOf` applied.
-fn origin(directory: &Path) -> Option<String> {
-    let git = gix::discover(directory).ok()?;
-    let remote = git.find_remote("origin").ok()?;
-    let url = remote.url(gix::remote::Direction::Fetch)?;
-    Some(url.to_bstring().to_string())
+/// What the repository holding a directory says its `origin` remote is.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Origin {
+    /// The directory is in no git repository that can be opened.
+    Outside,
+    /// The URL `git remote get-url origin` gives, with any `insteadOf`
+    /// applied.
+    Url(String),
+    /// The repository gives no URL, and why, as git says it, such as
+    /// `error: No such remote 'origin'`.
+    Unread(String),
+}
+
+/// The `origin` remote of the repository holding `directory`, read from
+/// git's config without starting git.
+pub fn origin(directory: &Path) -> Origin {
+    let Ok(git) = gix::discover(directory) else {
+        return Origin::Outside;
+    };
+    match git.try_find_remote("origin") {
+        None => Origin::Unread("error: No such remote 'origin'".to_owned()),
+        Some(Err(error)) => Origin::Unread(format!("error: {error}")),
+        Some(Ok(remote)) => match remote.url(gix::remote::Direction::Fetch) {
+            Some(url) => Origin::Url(url.to_bstring().to_string()),
+            None => Origin::Unread("error: the remote origin has no url".to_owned()),
+        },
+    }
 }
 
 /// `directory`'s path beneath the working tree of the repository holding

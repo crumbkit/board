@@ -256,3 +256,38 @@ fn only_entries_the_cache_calls_repo_records_are_read_for_their_remote() {
     let only = repositories.places(&entries, &no, &lib, clone.workdir());
     assert_eq!(only, [by_remote("/repos/lib")]);
 }
+
+#[test]
+fn a_directory_in_no_repository_has_no_origin_and_one_in_a_repository_without_origin_says_why() {
+    let outside = tempfile::tempdir().unwrap();
+    assert_eq!(crate::origin(outside.path()), crate::Origin::Outside);
+    let bare = Scenario::new();
+    assert_eq!(
+        crate::origin(bare.workdir()),
+        crate::Origin::Unread("error: No such remote 'origin'".to_owned())
+    );
+    let originated = Scenario::new();
+    originating(&originated, "git@github.com:example-org/lib.git");
+    originated.write("docs/a.md", Item::File("a"));
+    let url = crate::Origin::Url("git@github.com:example-org/lib.git".to_owned());
+    assert_eq!(crate::origin(originated.workdir()), url);
+    assert_eq!(crate::origin(&originated.workdir().join("docs")), url);
+}
+
+#[test]
+fn an_origin_is_read_with_its_insteadof_applied_as_git_remote_get_url_gives_it() {
+    let (plain, rewritten) = (Scenario::new(), Scenario::new());
+    originating(&plain, "work:example-org/lib");
+    originating(&rewritten, "work:example-org/lib");
+    let rewrite = "[url \"git@github.com-work:\"]\n\tinsteadOf = work:\n";
+    rewritten.write(".git/config", Item::Appended(rewrite));
+    let read = |scenario: &Scenario| crate::origin(scenario.workdir());
+    assert_eq!(
+        read(&plain),
+        crate::Origin::Url("work:example-org/lib".to_owned())
+    );
+    assert_eq!(
+        read(&rewritten),
+        crate::Origin::Url("git@github.com-work:example-org/lib".to_owned())
+    );
+}
