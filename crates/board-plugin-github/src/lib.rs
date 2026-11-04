@@ -86,12 +86,11 @@ const SEND_ENV: [&str; 7] = [
     "CLAUDE_CODE_OAUTH_TOKEN",
     "SSH_AUTH_SOCK",
 ];
-/// What the pre-push hook passes on: a sending action's variables, the URL
+/// What the pre-push hook passes on: a sending action's variables but gh's
+/// tokens, which it never needs since git never sees them, the URL
 /// git pushes to, the check a sending action passed, and the variables that make git run another ssh command,
 /// which the URL rule reads to fail closed on an ssh alias.
-const PRE_PUSH_ENV: [&str; 11] = [
-    SEND_ENV[0],
-    SEND_ENV[1],
+const PRE_PUSH_ENV: [&str; 9] = [
     SEND_ENV[2],
     SEND_ENV[3],
     SEND_ENV[4],

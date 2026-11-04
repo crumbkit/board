@@ -176,7 +176,14 @@ Refusals:
 The sending actions receive gh's variables, `SSH_AUTH_SOCK` for git and the
 variables the boundary's judged rules read. They pass the model credentials,
 `ANTHROPIC_API_KEY` and `CLAUDE_CODE_OAUTH_TOKEN`, only to the boundary's
-check, never to git, its hooks, ssh or gh. Every git and ssh command runs
+check, never to git, its hooks, ssh or gh. They pass gh's tokens, `GH_TOKEN`
+and `GITHUB_TOKEN`, only to gh, never to git, its hooks or ssh, so no hook
+in the checkout can read them. `GH_CONFIG_DIR` still reaches git, so
+`gh auth git-credential` finds gh's stored sign-in for an HTTPS push. A
+push that then fails to sign in while a token variable is set is
+`github::push::failed` with a hint to sign in with `gh auth login` and
+`gh auth setup-git`, or to push over SSH. The pre-push capability is not
+given the tokens. Every git and ssh command runs
 through the host with a deadline, 300 seconds for git and 10 for `ssh -G`,
 and its output is capped at 16 MiB, so a larger diff fails with
 `github::git::failed`.

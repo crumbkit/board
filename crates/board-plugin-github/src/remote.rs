@@ -11,7 +11,7 @@ use board_ops::{Host, PluginError, Run};
 use regex::Regex;
 use serde_json::json;
 
-use crate::git::{MODEL_VARIABLES, error, git, run, shown, variable};
+use crate::git::{HIDDEN_FROM_GIT, error, git, run, shown, variable};
 
 /// How long `ssh -G` may run.
 const SSH_TIMEOUT: Duration = Duration::from_secs(10);
@@ -97,7 +97,7 @@ pub(crate) fn ssh_hostname(runner: &dyn Host, host: &str) -> Option<String> {
         deadline: SSH_TIMEOUT,
         added: &[],
     };
-    let exited = runner.run_hiding(&run, &MODEL_VARIABLES).ok()?;
+    let exited = runner.run_hiding(&run, &HIDDEN_FROM_GIT).ok()?;
     if exited.code != Some(0) {
         return None;
     }

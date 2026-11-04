@@ -183,8 +183,6 @@ fn the_manifest_parses_as_a_built_in_one_and_describes_the_plugin_with_the_skill
         "SSH_AUTH_SOCK"
     ]);
     let pre_push = json!([
-        "GH_TOKEN",
-        "GITHUB_TOKEN",
         "GH_CONFIG_DIR",
         "BOARD_CONTROLS_AGENT",
         "ANTHROPIC_API_KEY",

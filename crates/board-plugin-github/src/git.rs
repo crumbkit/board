@@ -21,6 +21,24 @@ pub(crate) const TAIL: usize = 2000;
 /// Variables only the boundary's judged rules need, kept from git, its
 /// hooks, ssh and gh.
 pub(crate) const MODEL_VARIABLES: [&str; 2] = ["ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN"];
+/// The tokens only gh is given.
+pub(crate) const GH_TOKENS: [&str; 2] = ["GH_TOKEN", "GITHUB_TOKEN"];
+/// What git, its hooks and ssh never see: the model credentials and gh's
+/// tokens. `GH_CONFIG_DIR` stays, so `gh auth git-credential` still finds
+/// gh's stored sign-in for an HTTPS push.
+pub(crate) const HIDDEN_FROM_GIT: [&str; 4] = [
+    MODEL_VARIABLES[0],
+    MODEL_VARIABLES[1],
+    GH_TOKENS[0],
+    GH_TOKENS[1],
+];
+/// What git prints when a push cannot sign in, over HTTPS or ssh.
+const UNSIGNED: [&str; 4] = [
+    "Authentication failed",
+    "could not read Username",
+    "Invalid username or token",
+    "Permission denied (publickey)",
+];
 /// The user and password of a URL with a scheme, which a message never
 /// quotes.
 static USERINFO: LazyLock<Regex> =
@@ -77,7 +95,7 @@ fn run_adding(
             deadline: TIMEOUT,
             added,
         },
-        &MODEL_VARIABLES,
+        &HIDDEN_FROM_GIT,
     );
     match ran {
         Ok(exited) => Ran {
@@ -298,7 +316,7 @@ pub(crate) fn push(
             } else {
                 ran.stderr.trim()
             };
-            Err(error(
+            let mut failed = error(
                 "github::push::failed",
                 format!(
                     "`git push origin {name}` failed, and may have pushed if it did not finish: \
@@ -306,7 +324,18 @@ pub(crate) fn push(
                     shown(&tail(printed))
                 ),
                 json!({"branch": name, "digest": digest}),
-            ))
+            );
+            let token = (GH_TOKENS.iter())
+                .any(|name| variable(host, name).is_some_and(|value| !value.is_empty()));
+            if token && UNSIGNED.iter().any(|words| printed.contains(words)) {
+                failed.hint = Some(
+                    "git is not given GH_TOKEN or GITHUB_TOKEN, which only gh sees, so git could \
+                     not sign in with them; sign in with `gh auth login` and `gh auth setup-git`, \
+                     or push over SSH"
+                        .to_owned(),
+                );
+            }
+            Err(failed)
         }
     }
 }

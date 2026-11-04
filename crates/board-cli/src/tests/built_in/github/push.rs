@@ -585,7 +585,8 @@ fn a_private_name_in_a_commit_header_is_refused_and_a_commit_without_it_is_pushe
 }
 
 #[test]
-fn git_hooks_and_gh_never_see_the_model_credentials_and_the_boundarys_agent_does() {
+fn git_hooks_never_see_the_model_credentials_or_gh_tokens_gh_sees_only_its_tokens_and_the_boundarys_agent_sees_the_credentials()
+ {
     let desk = Desk::new();
     let hook = desk.checkout().join(".git/hooks/pre-push");
     let seen = desk.home().join("hook-env.txt");
@@ -596,6 +597,8 @@ fn git_hooks_and_gh_never_see_the_model_credentials_and_the_boundarys_agent_does
     let keys = [
         ("ANTHROPIC_API_KEY", "model-key-1"),
         ("CLAUDE_CODE_OAUTH_TOKEN", "model-token-1"),
+        ("GH_TOKEN", "gh-token-1"),
+        ("GITHUB_TOKEN", "github-token-1"),
         ("BOARD_CONTROLS_AGENT", &agent),
     ];
     desk.commit("Add a gear");
@@ -613,6 +616,10 @@ fn git_hooks_and_gh_never_see_the_model_credentials_and_the_boundarys_agent_does
         assert!(!hooked.contains(value), "the hook saw {value}");
         assert!(!gh.contains(value), "gh saw {value}");
         assert!(judging.contains(value), "the agent did not see {value}");
+    }
+    for (_, value) in &keys[2..4] {
+        assert!(!hooked.contains(value), "the hook saw {value}");
+        assert!(gh.contains(value), "gh did not see {value}");
     }
     assert!(hooked.contains("HOME="), "the hook saw no environment");
 }
@@ -645,4 +652,34 @@ fn a_text_file_that_is_not_utf8_is_refused_and_its_utf8_twin_and_a_binary_file_a
     let binary = commit(b"\x89PNG\x00\xff\xfe", "image.png");
     let pushed = desk.output("push", &[]);
     assert_eq!(pushed["commits"], json!([binary]));
+}
+
+#[test]
+fn a_push_failing_on_authentication_while_a_gh_token_is_set_is_refused_with_a_sign_in_hint_and_without_the_failure_it_goes()
+ {
+    let desk = Desk::new();
+    let hook = desk.checkout().join(".git/hooks/pre-push");
+    // git's own words when HTTPS sign-in fails.
+    let failing = "#!/bin/sh\necho \"fatal: Authentication failed for 'https://github.com/Octo/Widgets.git/'\" >&2\nexit 1\n";
+    put_file(&hook, failing);
+    executable(&hook);
+    desk.commit("Add a gear");
+    let hint = |token: &[(&str, &str)]| {
+        let (ran, failure) = desk.call_at(None, false, "push", &[], token);
+        assert_eq!(
+            refused(&ran, &failure),
+            (1, "github::push::failed".to_owned())
+        );
+        failure["recovery"]["text"].as_str().map(str::to_owned)
+    };
+    let signed = hint(&[("GH_TOKEN", "gh-token-1")]).unwrap();
+    assert!(signed.contains("gh auth login"), "{signed}");
+    assert!(signed.contains("SSH"), "{signed}");
+    assert_eq!(
+        hint(&[]).filter(|text| text.contains("gh auth login")),
+        None
+    );
+    remove(&hook);
+    let pushed = desk.call_at(None, false, "push", &[], &[("GH_TOKEN", "gh-token-1")]);
+    assert_eq!(pushed.0.code, 0, "{}", pushed.1);
 }
