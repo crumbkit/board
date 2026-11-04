@@ -230,12 +230,14 @@ dependencies = [
  "board-plugin",
  "board-scenario",
  "board-validate",
+ "pulldown-cmark",
  "regex",
  "regex-syntax",
  "schemars",
  "serde",
  "serde_json",
  "sha2",
+ "toml",
 ]
 
 [[package]]

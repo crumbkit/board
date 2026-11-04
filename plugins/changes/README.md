@@ -186,9 +186,9 @@ skill in `claude-code/skills/` runs the check.
   dropped, as many as fit, and `rules_unnamed` counts the rest.
   `rules_command` lists every rule: run its `argv` without a shell and give
   it its `stdin`. It is null when the plan has no paths. The brief also
-  holds one line per record the plan uses (a control's `requirement`; a
-  decision's `decision`; an eval's question and verdict; a document's
-  first heading), `left_out`, the phase and instruction `next`
+  holds one line per record the plan uses (a control's `summary`, else its
+  `requirement`; a decision's `decision`; an eval's question and verdict; a
+  document's first heading), `left_out`, the phase and instruction `next`
   gives, and the `controls.check` command for the change's mount. It holds at
   most 600 words, counting each rule with its path and matched paths,
   each named dropped rule, and each line with its reference. Rules are

@@ -22,6 +22,10 @@
     "pattern": "^[0-9a-f]{64}$",
     "type": "string"
   },
+  "Summary": {
+    "pattern": "^\\S+( \\S+){0,24}$",
+    "type": "string"
+  },
   "Url": {
     "format": "uri",
     "pattern": "^https?://([^/?#@]*@)?[^/?#@:][^/?#@]*([/?#]|$)",

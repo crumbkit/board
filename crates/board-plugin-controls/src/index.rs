@@ -28,6 +28,19 @@ const PATTERNS: &str = "patterns AS MATERIALIZED (SELECT r.logical, r.path, p.va
     FROM records r, json_each(r.body, '$.paths') p \
     WHERE r.type = 'controls/control/v1' AND r.status = 'ok' AND r.source = 'worktree')";
 
+/// The first two columns of each row of `sql` that holds a string in both.
+pub(crate) fn string_pairs<C: FromIterator<(String, String)>>(
+    host: &dyn Host,
+    sql: &str,
+) -> Result<C, PluginError> {
+    Ok((rows(host, sql)?.rows.into_iter())
+        .filter_map(|row| match <[Value; 2]>::try_from(row) {
+            Ok([Value::String(first), Value::String(second)]) => Some((first, second)),
+            _ => None,
+        })
+        .collect())
+}
+
 /// Every valid control in the board's own tree. That includes one Board
 /// marks degraded only because a reference dangles or reaches the wrong
 /// type, which Board checks only of a valid record.
@@ -46,6 +59,7 @@ const DEGRADED: &str = "SELECT COALESCE(logical, path), code FROM records \
 pub(crate) struct Control {
     pub(crate) requirement: String,
     pub(crate) purpose: String,
+    pub(crate) summary: Option<String>,
     pub(crate) applies_to: Option<Vec<String>>,
     pub(crate) paths: Option<Vec<String>>,
     pub(crate) rule: Option<Rule>,

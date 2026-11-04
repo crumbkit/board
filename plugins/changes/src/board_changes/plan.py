@@ -139,7 +139,7 @@ def line_of(found: tuple[str, dict[str, Any]] | None, text: str | None) -> str:
         return "unreadable: reaches nothing or is degraded"
     type_name, body = found
     if type_name == CONTROL_TYPE:
-        return str(body.get("requirement", ""))
+        return str(body.get("summary") or body.get("requirement", ""))
     if type_name == DECISION_TYPE:
         return str(body.get("decision", ""))
     if type_name == EVAL_TYPE:

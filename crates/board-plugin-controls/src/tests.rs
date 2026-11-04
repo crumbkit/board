@@ -34,7 +34,16 @@ fn the_manifest_parses_as_a_built_in_one_and_describes_the_plugin_with_the_skill
     let names: Vec<&str> = (manifest.capabilities.iter())
         .map(|capability| capability.name.as_str())
         .collect();
-    assert_eq!(names, ["for-path", "for-paths", "check", "evaluate"]);
+    assert_eq!(
+        names,
+        [
+            "for-path",
+            "for-paths",
+            "check",
+            "evaluate",
+            "from-standards"
+        ]
+    );
     assert_eq!(manifest.description, skill_description());
 }
 
@@ -193,6 +202,14 @@ fn the_control_schema_refuses_a_bad_kind_show_or_sources_and_admits_their_twins(
                 control(fields("urls", json!(["https://example.com/x"]))),
                 control(json!({})),
             ),
+            (
+                control(fields("summary", json!(vec!["word"; 26].join(" ")))),
+                control(fields("summary", json!(vec!["word"; 25].join(" ")))),
+            ),
+            (
+                control(fields("summary", json!("Two\nlines."))),
+                control(fields("summary", json!("One line."))),
+            ),
         ],
     );
 }
@@ -280,7 +297,7 @@ fn a_capability_the_plugin_does_not_offer_is_refused_and_check_is_answered() {
     assert_eq!(refused.code, "controls::call::unknown_capability");
     assert_eq!(
         refused.message,
-        "controls offers no capability budgets; it offers for-path, for-paths, check and evaluate"
+        "controls offers no capability budgets; it offers for-path, for-paths, check, evaluate and from-standards"
     );
     let check: CapabilityName = "check".parse().unwrap();
     let answered = Controls.call(&host, &check, json!({})).unwrap();

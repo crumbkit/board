@@ -15,6 +15,10 @@ sha2.workspace = true
 schemars.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+# A standards repository's profiles are Markdown tables.
+pulldown-cmark.workspace = true
+# An adopter's standards map is TOML.
+toml.workspace = true
 
 [dev-dependencies]
 board-scenario.workspace = true
