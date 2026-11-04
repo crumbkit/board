@@ -20,13 +20,91 @@ const POLL: Duration = Duration::from_millis(10);
 /// How long a plugin has to exit after SIGTERM before Board kills it.
 const GRACE: Duration = Duration::from_secs(1);
 
-/// The process groups of the running plugins that lead their own group.
-/// Board forwards SIGINT, SIGTERM and SIGHUP to each of them. The flag
-/// marks a group that is swept when its leader exits; the forwarder kills
-/// such a group after the signal, because a non-interactive shell's
-/// background jobs ignore SIGINT.
+/// The process groups of the running children that lead their own group,
+/// each with how the forwarder stops it when Board gets SIGINT, SIGTERM or
+/// SIGHUP.
 #[cfg(unix)]
-static GROUPS: Mutex<Vec<(Pid, bool)>> = Mutex::new(Vec::new());
+static GROUPS: Mutex<Vec<(Pid, Ending)>> = Mutex::new(Vec::new());
+
+/// What the forwarder runs after it stops the listed groups and before
+/// Board stops, such as removing the lock files Board holds.
+#[cfg(unix)]
+static CLEANUPS: Mutex<Vec<fn()>> = Mutex::new(Vec::new());
+
+/// Runs `cleanup` when Board gets SIGINT, SIGTERM or SIGHUP while a child
+/// leads a group of its own, after the groups are stopped and before Board
+/// stops as the signal would have. Each function is kept once.
+pub fn clean_up_on_signals(cleanup: fn()) {
+    #[cfg(unix)]
+    {
+        let mut cleanups = CLEANUPS.lock().unwrap_or_else(PoisonError::into_inner);
+        if !cleanups
+            .iter()
+            .any(|kept| std::ptr::fn_addr_eq(*kept, cleanup))
+        {
+            cleanups.push(cleanup);
+        }
+    }
+    #[cfg(not(unix))]
+    let _ = cleanup;
+}
+
+/// How the forwarder stops a listed group.
+#[cfg(unix)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Ending {
+    /// The group gets the signal Board got.
+    Forwarded,
+    /// The group gets the signal and then SIGKILL at once, because a
+    /// non-interactive shell's background jobs ignore SIGINT. A plugin run
+    /// in sweep mode is swept.
+    Swept,
+    /// The group gets SIGTERM, its leader up to [`GRACE`] to exit, then
+    /// SIGKILL, as a [`Group`] past its deadline does.
+    Graced,
+}
+
+/// A child that leads a process group of its own, such as the git a sync
+/// runs. Board stops the whole group, SIGTERM and then SIGKILL up to a
+/// second later, when [`Group::stop`] is called or when Board gets SIGINT,
+/// SIGTERM or SIGHUP; after a signal Board then stops as the signal would
+/// have. Only [`Group::try_wait`] reaps it, so Board never signals a
+/// reused id.
+#[derive(Debug)]
+pub struct Group(Child);
+
+impl Group {
+    /// Starts `command` leading a new process group.
+    pub fn spawn(command: &mut Command) -> io::Result<Self> {
+        #[cfg(unix)]
+        let child = listed(command, Ending::Graced)?;
+        #[cfg(not(unix))]
+        let child = command.spawn()?;
+        Ok(Self(child))
+    }
+
+    /// The child's stdout, when it was piped and not taken yet.
+    pub fn stdout(&mut self) -> Option<std::process::ChildStdout> {
+        self.0.stdout.take()
+    }
+
+    /// The child's stderr, when it was piped and not taken yet.
+    pub fn stderr(&mut self) -> Option<std::process::ChildStderr> {
+        self.0.stderr.take()
+    }
+
+    /// The child's exit status once it has exited, reaping it.
+    pub fn try_wait(&mut self) -> io::Result<Option<ExitStatus>> {
+        reap(&mut self.0)
+    }
+
+    /// Sends the group SIGTERM, gives the child up to a second to exit, then
+    /// sends the group SIGKILL and reaps the child. Off Unix, the child
+    /// alone is killed at once.
+    pub fn stop(mut self) {
+        kill(&mut self.0, Scope::Group);
+    }
+}
 
 /// Whether the thread that forwards signals started.
 #[cfg(unix)]
@@ -359,13 +437,27 @@ fn spawn(command: &mut Command, scope: Scope, sweep: bool) -> io::Result<Child> 
     if let Scope::Process = scope {
         return command.spawn();
     }
+    listed(
+        command,
+        if sweep {
+            Ending::Swept
+        } else {
+            Ending::Forwarded
+        },
+    )
+}
+
+/// Starts `command` leading a new process group, listed so the forwarder
+/// stops it as `ending` says.
+#[cfg(unix)]
+fn listed(command: &mut Command, ending: Ending) -> io::Result<Child> {
     std::os::unix::process::CommandExt::process_group(command, 0);
     (*FORWARDER.get_or_init(forward)).map_err(io::Error::from)?;
     // Board holds the lock from the spawn until the group is listed, so a
     // signal that arrives in between still reaches the group.
     let mut groups = groups();
     let child = command.spawn()?;
-    groups.push((Pid::from_child(&child), sweep));
+    groups.push((Pid::from_child(&child), ending));
     Ok(child)
 }
 
@@ -395,17 +487,14 @@ fn forward() -> Result<(), io::ErrorKind> {
             // after the signal.
             let groups = groups();
             if let Some(signal) = Signal::from_named_raw(raw) {
-                for (group, _) in groups.iter() {
-                    let _ = rustix::process::kill_process_group(*group, signal);
-                }
-                // A swept group gets SIGKILL too, so nothing it started
-                // outlives Board, whatever the signal's disposition in it.
-                // Soft limit: the SIGKILL follows at once, so a handler in
-                // the group, such as git's removal of `index.lock`, rarely
-                // runs. Waiting would hold Board's exit for every signal.
-                for (group, _) in groups.iter().filter(|(_, sweep)| *sweep) {
-                    let _ = rustix::process::kill_process_group(*group, Signal::KILL);
-                }
+                stop_listed(&groups, signal);
+            }
+            for cleanup in CLEANUPS
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .iter()
+            {
+                cleanup();
             }
             // For SIGINT, SIGTERM and SIGHUP this call does not return: it
             // restores the default action and raises the signal, and falls
@@ -417,8 +506,50 @@ fn forward() -> Result<(), io::ErrorKind> {
     Ok(())
 }
 
+/// Stops each of `groups` as its ending says, on `signal`.
 #[cfg(unix)]
-fn groups() -> MutexGuard<'static, Vec<(Pid, bool)>> {
+fn stop_listed(groups: &[(Pid, Ending)], signal: Signal) {
+    use rustix::process::kill_process_group;
+    for (group, ending) in groups {
+        let sent = if *ending == Ending::Graced {
+            Signal::TERM
+        } else {
+            signal
+        };
+        let _ = kill_process_group(*group, sent);
+    }
+    // A swept group gets SIGKILL too, so nothing it started outlives Board,
+    // whatever the signal's disposition in it. Soft limit: the SIGKILL
+    // follows at once, so a handler in a plugin's group rarely runs.
+    // Waiting would hold Board's exit for every signal.
+    for (group, _) in groups.iter().filter(|(_, ending)| *ending == Ending::Swept) {
+        let _ = kill_process_group(*group, Signal::KILL);
+    }
+    // A graced group's leader, such as git removing its lock files, gets up
+    // to GRACE to exit before the SIGKILL.
+    let graced: Vec<Pid> = (groups.iter())
+        .filter(|(_, ending)| *ending == Ending::Graced)
+        .map(|(group, _)| *group)
+        .collect();
+    let until = Instant::now() + GRACE;
+    while Instant::now() < until && graced.iter().any(|&group| running(group)) {
+        thread::sleep(POLL);
+    }
+    for group in graced {
+        let _ = kill_process_group(group, Signal::KILL);
+    }
+}
+
+/// Whether the child `pid` is still running, leaving it unreaped.
+#[cfg(unix)]
+fn running(pid: Pid) -> bool {
+    use rustix::process::{WaitId, WaitIdOptions, waitid};
+    let options = WaitIdOptions::EXITED | WaitIdOptions::NOHANG | WaitIdOptions::NOWAIT;
+    matches!(waitid(WaitId::Pid(pid), options), Ok(None))
+}
+
+#[cfg(unix)]
+fn groups() -> MutexGuard<'static, Vec<(Pid, Ending)>> {
     // Each change to the list is a single push or retain, so a panic while
     // the lock was held cannot leave it half changed.
     GROUPS.lock().unwrap_or_else(PoisonError::into_inner)
@@ -427,7 +558,7 @@ fn groups() -> MutexGuard<'static, Vec<(Pid, bool)>> {
 /// Stops forwarding signals to the group `child` leads. The caller has not
 /// reaped `child` yet, so the forwarder never signals a reused id.
 #[cfg(unix)]
-fn unlist(groups: &mut Vec<(Pid, bool)>, child: &Child) {
+fn unlist(groups: &mut Vec<(Pid, Ending)>, child: &Child) {
     let pid = Pid::from_child(child);
     groups.retain(|(group, _)| *group != pid);
 }
@@ -481,19 +612,16 @@ fn read(mut pipe: impl Read + Send + 'static, sender: Sender<Event>, event: fn(V
 fn kill(child: &mut Child, scope: Scope) {
     #[cfg(unix)]
     {
-        use rustix::process::{WaitId, WaitIdOptions, waitid};
         let pid = Pid::from_child(child);
         let signal = |signal| match scope {
             Scope::Group => rustix::process::kill_process_group(pid, signal),
             Scope::Process => rustix::process::kill_process(pid, signal),
         };
-        // NOWAIT leaves an exited child unreaped, so its pid still names its
-        // own group when SIGKILL is sent.
-        let options = WaitIdOptions::EXITED | WaitIdOptions::NOHANG | WaitIdOptions::NOWAIT;
-        let running = || matches!(waitid(WaitId::Pid(pid), options), Ok(None));
+        // `running` leaves an exited child unreaped, so its pid still names
+        // its own group when SIGKILL is sent.
         if signal(Signal::TERM).is_ok() {
             let deadline = Instant::now() + GRACE;
-            while Instant::now() < deadline && running() {
+            while Instant::now() < deadline && running(pid) {
                 thread::sleep(POLL);
             }
         }

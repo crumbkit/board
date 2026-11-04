@@ -8,7 +8,9 @@
 
 use std::io::Read;
 use std::path::Path;
-use std::process::{Child, Command, ExitStatus, Output, Stdio};
+use std::process::{Command, ExitStatus, Output, Stdio};
+
+use board_plugin::Group;
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
@@ -20,8 +22,7 @@ pub const GIT_DEADLINE: Duration = Duration::from_mins(1);
 
 /// How often a run checks whether git has finished.
 const POLL: Duration = Duration::from_millis(10);
-/// How long git has to exit after SIGTERM, and its pipes to close after
-/// it exits.
+/// How long git's pipes have to close after it exits.
 const GRACE: Duration = Duration::from_secs(1);
 
 /// How long one sync may run, from when it was made: every fetch and push
@@ -127,11 +128,13 @@ pub(crate) fn rejected(stdout: &[u8]) -> Option<String> {
 }
 
 /// Runs git with `arguments` in `workdir` and returns what it printed.
-/// Git leads a process group of its own. When `deadline` passes with git
-/// still running, the whole group is stopped, ssh and what it started
-/// included, and the run is [`SyncError::TimedOut`], so a hung remote holds
-/// the board lock no longer than the sync's deadline. A helper that
-/// outlives a git that finished holds no Board lock.
+/// Git leads a process group of its own through board-plugin's process
+/// module, which stops the whole group, ssh and what it started included,
+/// when Board gets SIGINT, SIGTERM or SIGHUP. When `deadline` passes with
+/// git still running, the group is stopped the same way and the run is
+/// [`SyncError::TimedOut`], so a hung remote holds the board lock no longer
+/// than the sync's deadline. A helper that outlives a git that finished
+/// holds no Board lock.
 fn run(
     workdir: &Path,
     arguments: &[&str],
@@ -147,14 +150,14 @@ fn run(
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    #[cfg(unix)]
-    std::os::unix::process::CommandExt::process_group(&mut command, 0);
+    // A signal that stops Board mid-sync removes the board lock and git's
+    // index lock that gix holds, so the next write is not refused.
+    board_plugin::clean_up_on_signals(gix::tempfile::registry::cleanup_tempfiles);
     let left = deadline.left();
-    let mut child = command
-        .spawn()
-        .map_err(|source| SyncError::NotStarted { source })?;
-    let stdout = drain(child.stdout.take());
-    let stderr = drain(child.stderr.take());
+    let mut child =
+        Group::spawn(&mut command).map_err(|source| SyncError::NotStarted { source })?;
+    let stdout = drain(child.stdout());
+    let stderr = drain(child.stderr());
     let stopped = loop {
         match child.try_wait() {
             Ok(Some(status)) => return Ok(finished(status, stdout, stderr)),
@@ -177,7 +180,7 @@ fn run(
             }
         }
     };
-    stop(&mut child);
+    child.stop();
     Err(stopped)
 }
 
@@ -201,27 +204,6 @@ fn finished(status: ExitStatus, stdout: Drained, stderr: Drained) -> Output {
         stdout: read(stdout),
         stderr: read(stderr),
     }
-}
-
-/// Sends git's process group SIGTERM, on which git removes the lock files
-/// it holds, gives git [`GRACE`] to exit, then sends the group SIGKILL, so
-/// ssh and what it started stop too, and reaps git. Off Unix, git alone is
-/// killed at once.
-fn stop(child: &mut Child) {
-    #[cfg(unix)]
-    {
-        use rustix::process::{Pid, Signal, kill_process_group};
-        let group = Pid::from_child(child);
-        if kill_process_group(group, Signal::TERM).is_ok() {
-            let until = Instant::now() + GRACE;
-            while Instant::now() < until && matches!(child.try_wait(), Ok(None)) {
-                thread::sleep(POLL);
-            }
-        }
-        let _ = kill_process_group(group, Signal::KILL);
-    }
-    let _ = child.kill();
-    let _ = child.wait();
 }
 
 /// A pipe of git's, read to its end on a thread of its own.
