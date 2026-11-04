@@ -182,7 +182,7 @@
             "type": "string"
           },
           "head": {
-            "description": "The commit to check, in any form git resolves, such as a pull request's head commit; the change's head, or else HEAD, when left out.",
+            "description": "The commit to check, in any form git resolves, such as a pull request's head commit; HEAD, or with a change its head, when left out.",
             "minLength": 1,
             "title": "Head",
             "type": "string"

@@ -5,7 +5,7 @@ attaches when the call names a change, whose commits are then its mount's.
 """
 
 import json
-from typing import NotRequired, TypedDict, cast
+from typing import Any, NotRequired, TypedDict, cast
 
 from board_plugin.board import Board, literal
 from board_plugin.protocol import CallRequest, PluginError
@@ -18,6 +18,8 @@ from board_review.shapes import REPORT_TYPE, CoveredOutput, Verdict
 SHOWN = 20
 # The record type of a change, which the changes plugin owns.
 CHANGE_TYPE = "changes/change/v1"
+# Findings at these severities shut the changes plugin's review gate, so an attached report with one never covers.
+BLOCKING = ("critical", "high")
 
 
 class _RangeReport(TypedDict):
@@ -48,7 +50,8 @@ def covered(request: CallRequest) -> CoveredOutput:
     or an empty commit has no patch id, so only a range that contains it
     covers it. Only reports committed at HEAD in the board's own tree count,
     unless the call names a change: then only the reports the change
-    attaches count, and the commits are those of the clone its mount reads.
+    attaches count, the commits are those of the clone its mount reads, and
+    no commit is skipped, since the reports live in the board.
     """
     board = Board(request.board.root, "review")
     named = request.input.get("change")
@@ -59,13 +62,20 @@ def covered(request: CallRequest) -> CoveredOutput:
     else:
         change = _change(board, str(named))
         repository = Repository(_clone(board, change["mount"]))
-        default = change.get("head", "HEAD")
+        default = request.input.get("head", change.get("head"))
+        if default is None:
+            raise PluginError(
+                "review::change::no_head",
+                f"the change at {named} records no head commit, so nothing says which commits to check; record"
+                f" one with `board call changes.attach --path {named} --head <commit>`, or pass --head",
+                {"change": named},
+            )
         reports = _attached(board, change.get("records", []))
     head = repository.commit(str(request.input.get("head", default)))
     base = repository.commit(str(request.input["base"]))
     merge_base = repository.merge_base(base, head)
     added = repository.commits(merge_base, head)
-    commits = [commit for commit in added if not repository.review_only(commit)]
+    commits = added if named is not None else [commit for commit in added if not repository.review_only(commit)]
     skipped = len(added) - len(commits)
     patch_ids = repository.patch_ids(commits)
     counted = [(path, report) for path, report in reports if report["verdict"] != "changes"]
@@ -132,7 +142,10 @@ def _reports(board: Board, repository: Repository) -> list[tuple[str, _RangeRepo
 
 
 def _change(board: Board, path: str) -> _Change:
-    """The change at the logical `path`, or `review::change::not_found` when no readable change is there."""
+    """The change at the logical `path`, or `review::change::not_found` when no readable change is there.
+
+    A change Board marks degraded for anything but a broken reference counts as not there.
+    """
     codes = ", ".join(literal(code) for code in TREE_CODES)
     rows = board.rows(
         f"SELECT body FROM records WHERE logical = {literal(path)} AND type = {literal(CHANGE_TYPE)}"  # noqa: S608 - literals quoted
@@ -150,27 +163,24 @@ def _change(board: Board, path: str) -> _Change:
 
 def _clone(board: Board, mount: str) -> str:
     """The clone the mount at `mount` reads its pinned commit from, or `review::mount::not_found`."""
-    rows = board.rows(
-        "SELECT s.repository FROM entries AS e"  # noqa: S608 - literals quoted
-        " JOIN mounts AS m ON m.source = e.source AND m.path = e.path"
-        " JOIN sources AS s ON s.source = m.target"
-        f" WHERE e.logical = {literal(mount)} AND e.kind = 'pointer' AND s.repository IS NOT NULL"
-    )
-    if not rows:
+    [answer] = board.refs([mount])
+    location: dict[str, Any] = answer["location"] if answer is not None else {}
+    if location.get("source", "worktree") == "worktree":
         raise PluginError(
             "review::mount::not_found",
-            f"Board names no clone for the mount at {mount}, so its commits cannot be read; check the mount with"
-            f" `board check {mount}`",
+            f"no mount is at {mount}, so its commits cannot be read; name the repository by the logical path of"
+            " its mount, such as /repos/<name>, and see what is mounted with `board ls /repos`",
             {"mount": mount},
         )
-    return str(rows[0][0])
+    return str(location["repository"])
 
 
 def _attached(board: Board, refs: list[str]) -> list[tuple[str, _RangeReport]]:
     """Every readable report of a range among `refs`, in the order the change attaches them, as the gate reads them.
 
     The changes plugin's review gate counts the reports a change attaches as
-    Board reads them, committed or not, so this does too.
+    Board reads them, committed or not, and never one with a critical or high
+    finding, so this does too.
     """
     if not refs:
         return []
@@ -180,5 +190,11 @@ def _attached(board: Board, refs: list[str]) -> list[tuple[str, _RangeReport]]:
         f"SELECT logical, body FROM records WHERE logical IN ({listed}) AND type = {literal(REPORT_TYPE)}"  # noqa: S608 - literals quoted
         f" AND (status = 'ok' OR code IN ({codes}))"
     )
-    found = {str(logical): cast("_RangeReport", json.loads(body)) for logical, body in rows}
-    return [(ref, found[ref]) for ref in refs if ref in found and "range" in found[ref]]
+    found = {str(logical): json.loads(body) for logical, body in rows}
+    return [
+        (ref, cast("_RangeReport", found[ref]))
+        for ref in refs
+        if ref in found
+        and "range" in found[ref]
+        and not any(finding.get("severity") in BLOCKING for finding in found[ref].get("findings", []))
+    ]

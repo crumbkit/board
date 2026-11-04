@@ -192,7 +192,7 @@ class CoveredInput(TypedDict):
             Extra(
                 minLength=1,
                 description="The commit to check, in any form git resolves, such as a pull request's head commit;"
-                " the change's head, or else HEAD, when left out.",
+                " HEAD, or with a change its head, when left out.",
             ),
         ]
     ]
