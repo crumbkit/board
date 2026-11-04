@@ -5,14 +5,14 @@ use std::collections::BTreeMap;
 
 use board_model::parse_json;
 use board_ops::{Host, PluginError, literal};
-use board_plugin::shape::{Prose, Record, Sha256};
+use board_plugin::shape::{Prose, Record, Ref, Sha256};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 
 use crate::boundaries::{self, Globs, rows, valid};
 use crate::content::Content;
-use crate::records::CrossingRecord;
+use crate::records::{BoundaryRecord, CrossingRecord};
 use crate::{personal, refused};
 
 /// Where crossings live in the personal board, each named by its digest.
@@ -93,6 +93,7 @@ pub(crate) struct VerifyOutput {
     result: Option<String>,
     /// The boundaries the crossing was checked against, by path; empty
     /// when there is no crossing or none matched it.
+    #[schemars(with = "Vec<Ref<BoundaryRecord>>")]
     boundaries: Vec<String>,
 }
 
