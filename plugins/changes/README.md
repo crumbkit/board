@@ -194,10 +194,10 @@ skill in `claude-code/skills/` runs the check.
   each named dropped rule, and each line with its reference. Rules are
   counted before lines, but lines keep up to a quarter of the limit. A
   line that does not fit is skipped, and `left_out` counts the lines it
-  dropped. The full requirement of a rule is `controls.for-path` away. It fails with
-  `changes::brief::controls_missing` when the Board that runs it does not
-  offer `controls.for-paths`, such as when the controls plugin is not
-  enabled.
+  dropped. The full requirement of a rule is `controls.for-path` away. It
+  fails with `changes::brief::controls_missing` when the Board that runs
+  it does not offer `controls.for-paths`, such as when the controls
+  plugin is not enabled.
 
 The cap on work in progress counts build changes in `build`, at most
 three, and apart from them prototypes in `build`, at most three. A
