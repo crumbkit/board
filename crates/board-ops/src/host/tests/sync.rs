@@ -181,7 +181,9 @@ fn a_sync_past_its_deadline_is_refused_as_a_timeout_and_one_within_it_syncs() {
     );
     assert_eq!(code(&refusal), "board::sync::timeout");
     assert!(
-        refusal.message.contains("within the sync's 1 seconds"),
+        refusal
+            .message
+            .contains("the sync had left of its 1 second,"),
         "{}",
         refusal.message
     );
@@ -236,17 +238,48 @@ fn a_sync_conflict_is_refused_with_its_code_and_a_commit_of_another_file_syncs()
     assert_eq!(output["count"], json!(1));
 }
 
-/// A clone whose branch follows no remote branch is `board::sync::no_remote`.
-/// Its twin, which follows `origin/main`, is the first test.
+/// A clone whose branch follows no remote branch is `board::sync::no_remote`;
+/// the same clone still following `origin/main` syncs.
 #[test]
-fn a_clone_without_a_remote_is_refused_with_its_code() {
-    let notes = Notes::new();
-    notes.clone.write(
-        ".git/config",
-        Item::Appended("[branch \"main\"]\n\tremote = \n"),
-    );
-    let refusal = notes.sync(Duration::from_secs(30)).unwrap_err();
-    assert_eq!(code(&refusal), "board::sync::no_remote");
+fn a_clone_without_a_remote_is_refused_with_its_code_and_its_twin_with_one_syncs() {
+    let sync = |followed: bool| {
+        let notes = Notes::new();
+        let fetched = notes.remote_writes("two");
+        if !followed {
+            notes.clone.write(
+                ".git/config",
+                Item::Appended("[branch \"main\"]\n\tremote = \n"),
+            );
+        }
+        (notes.sync(Duration::from_secs(30)), fetched)
+    };
+    let (refused, _) = sync(false);
+    assert_eq!(code(&refused.unwrap_err()), "board::sync::no_remote");
+    let (synced, fetched) = sync(true);
+    assert_eq!(synced.unwrap()["pinned"], json!(fetched.to_string()));
+}
+
+/// The wait for the clone's board lock comes out of the sync's deadline: a
+/// lock held past a one-second deadline is `board::put::locked`, soon after
+/// the deadline rather than after `board sync`'s five seconds, and the same
+/// sync with the lock free syncs.
+#[test]
+fn a_held_lock_that_uses_up_the_deadline_is_refused_and_its_twin_with_the_lock_free_syncs() {
+    let sync = |held: bool| {
+        let notes = Notes::new();
+        let fetched = notes.remote_writes("two");
+        let clone = open(&notes.clone);
+        let lock = held.then(|| clone.repository().lock(Duration::ZERO).unwrap());
+        let started = Instant::now();
+        let synced = notes.sync(Duration::from_secs(1));
+        drop(lock);
+        (synced, started.elapsed(), fetched)
+    };
+    let (refused, took, _) = sync(true);
+    assert_eq!(code(&refused.unwrap_err()), "board::put::locked");
+    assert!(took < Duration::from_secs(4), "{took:?}");
+    let (synced, _, fetched) = sync(false);
+    assert_eq!(synced.unwrap()["pinned"], json!(fetched.to_string()));
 }
 
 /// A mount update that cannot take the board lock before its deadline is

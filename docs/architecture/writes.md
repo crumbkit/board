@@ -94,11 +94,13 @@ board's lock, so no put runs meanwhile, and then:
 
 A branch that follows no remote branch is `board::sync::no_remote`, and a
 fetch or push git itself refuses is `board::sync::failed`, which carries the
-end of git's stderr. A sync whose fetches and pushes together pass 60
-seconds, for example because the remote hangs, is `board::sync::timeout`. Board sends git
-SIGTERM, on which git removes its lock files, kills it a second later if it
-is still running, and lets the board lock go. The commits here stay for the
-next sync. The report is `board/sync-report/v2`: `remote`, `branch`,
-`fetched`, `old` (null before the first commit), `new`, `replayed` (each
-commit's `from` and its `to`, null when it made none), `pushed`,
-`attempts` and `kept` (each kept file's `path`, `code` and `hint`).
+end of git's stderr. A sync still running 60 seconds after it started, for
+example because the remote hangs, is `board::sync::timeout`; the 60 seconds
+start before the wait for the board lock and cover every fetch, push and
+replay. Board sends git's process group SIGTERM, on which git removes its
+lock files, kills the group, ssh included, a second later, and lets the
+board lock go. The commits here stay for the next sync. The report is
+`board/sync-report/v2`: `remote`, `branch`, `fetched`, `old` (null before
+the first commit), `new`, `replayed` (each commit's `from` and its `to`,
+null when it made none), `pushed`, `attempts` and `kept` (each kept file's
+`path`, `code` and `hint`).

@@ -14,8 +14,8 @@ use std::time::{Duration, Instant};
 
 use crate::write::sync::SyncError;
 
-/// How long `board sync`'s fetches and pushes may run in all before Board
-/// stops git.
+/// How long `board sync` may run before Board stops git. It starts before
+/// the wait for the board lock and covers every fetch, push and replay.
 pub const GIT_DEADLINE: Duration = Duration::from_mins(1);
 
 /// How often a run checks whether git has finished.
@@ -127,10 +127,11 @@ pub(crate) fn rejected(stdout: &[u8]) -> Option<String> {
 }
 
 /// Runs git with `arguments` in `workdir` and returns what it printed.
-/// Git still running when `deadline` passes is stopped, and the run is
-/// [`SyncError::TimedOut`], so a hung remote holds the board lock no longer
-/// than the sync's deadline. A helper git started, such as ssh, that outlives git
-/// holds no Board lock.
+/// Git leads a process group of its own. When `deadline` passes with git
+/// still running, the whole group is stopped, ssh and what it started
+/// included, and the run is [`SyncError::TimedOut`], so a hung remote holds
+/// the board lock no longer than the sync's deadline. A helper that
+/// outlives a git that finished holds no Board lock.
 fn run(
     workdir: &Path,
     arguments: &[&str],
@@ -138,13 +139,18 @@ fn run(
     upstream: &Upstream,
     deadline: Deadline,
 ) -> Result<Output, SyncError> {
-    let mut child = Command::new("git")
+    let mut command = Command::new("git");
+    command
         .arg("-C")
         .arg(workdir)
         .args(arguments)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
+        .stderr(Stdio::piped());
+    #[cfg(unix)]
+    std::os::unix::process::CommandExt::process_group(&mut command, 0);
+    let left = deadline.left();
+    let mut child = command
         .spawn()
         .map_err(|source| SyncError::NotStarted { source })?;
     let stdout = drain(child.stdout.take());
@@ -157,6 +163,7 @@ fn run(
                 break SyncError::TimedOut {
                     operation,
                     remote: upstream.remote.clone(),
+                    left,
                     deadline: deadline.given,
                 };
             }
@@ -196,19 +203,22 @@ fn finished(status: ExitStatus, stdout: Drained, stderr: Drained) -> Output {
     }
 }
 
-/// Sends git SIGTERM, on which git removes the lock files it holds, gives it
-/// [`GRACE`] to exit, then kills it and reaps it. Off Unix, git is killed at
-/// once.
+/// Sends git's process group SIGTERM, on which git removes the lock files
+/// it holds, gives git [`GRACE`] to exit, then sends the group SIGKILL, so
+/// ssh and what it started stop too, and reaps git. Off Unix, git alone is
+/// killed at once.
 fn stop(child: &mut Child) {
     #[cfg(unix)]
     {
-        use rustix::process::{Pid, Signal, kill_process};
-        if kill_process(Pid::from_child(child), Signal::TERM).is_ok() {
+        use rustix::process::{Pid, Signal, kill_process_group};
+        let group = Pid::from_child(child);
+        if kill_process_group(group, Signal::TERM).is_ok() {
             let until = Instant::now() + GRACE;
             while Instant::now() < until && matches!(child.try_wait(), Ok(None)) {
                 thread::sleep(POLL);
             }
         }
+        let _ = kill_process_group(group, Signal::KILL);
     }
     let _ = child.kill();
     let _ = child.wait();

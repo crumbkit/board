@@ -404,6 +404,19 @@ fn fields_at(path: &str) -> Fields {
     LogicalPath::of_physical(path).map_or_else(|_| Fields::default(), |path| Fields::at(&path))
 }
 
+/// `duration` in seconds for a message, to a tenth: `1 second`,
+/// `0.4 seconds`, `60 seconds`.
+fn seconds(duration: Duration) -> String {
+    let tenths = (duration.as_millis() + 50) / 100;
+    let text = if tenths.is_multiple_of(10) {
+        (tenths / 10).to_string()
+    } else {
+        format!("{}.{}", tenths / 10, tenths % 10)
+    };
+    let unit = if text == "1" { "second" } else { "seconds" };
+    format!("{text} {unit}")
+}
+
 /// A sync that stopped. The local commits stay where they are.
 #[derive(Debug, thiserror::Error)]
 pub enum SyncError {
@@ -421,10 +434,16 @@ pub enum SyncError {
         status: String,
         stderr: Vec<u8>,
     },
-    #[error("git did not {operation} {remote} within the sync's {} seconds, so Board stopped it", deadline.as_secs_f64())]
+    #[error(
+        "git did not {operation} {remote} in the {} the sync had left of its {}, so Board stopped it",
+        seconds(*left),
+        seconds(*deadline)
+    )]
     TimedOut {
         operation: &'static str,
         remote: String,
+        /// What was left of the deadline when this git run started.
+        left: Duration,
         deadline: Duration,
     },
     #[error("{path} changed on the remote and in a commit here that is not pushed")]

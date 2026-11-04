@@ -189,3 +189,88 @@ fn a_remote_that_stalls_past_the_deadline_times_out_and_one_that_answers_syncs()
     let (admitted, _, tip) = sync(0);
     assert_eq!(admitted.unwrap().new, tip);
 }
+
+/// The ids of the stand-in for ssh and of the `sleep` it starts, which it
+/// writes to `.git/delayed-ssh.pid` before it stalls for `delay` seconds.
+fn recording_origin(clone: &Scenario, delay: u32) {
+    clone.delayed_origin(delay);
+    let script = format!(
+        "#!/bin/sh\necho $$ > \"$0.pid\"\nsleep {delay} &\necho $! >> \"$0.pid\"\nwait\n\
+         for last; do :; done\nexec sh -c \"$last\"\n"
+    );
+    clone.write(".git/delayed-ssh", Item::Executable(&script));
+}
+
+/// Whether the process `id` still exists, as `kill -0` answers.
+fn alive(id: i32) -> bool {
+    rustix::process::Pid::from_raw(id)
+        .is_some_and(|pid| rustix::process::test_kill_process(pid).is_ok())
+}
+
+/// A sync stopped at its deadline stops git's whole process group: the
+/// stand-in for ssh git started and the `sleep` that started are gone too,
+/// so a stalled remote leaves nothing running.
+#[test]
+fn a_sync_past_its_deadline_leaves_nothing_the_stalled_remote_started_running() {
+    let remote = Scenario::new();
+    remote.commit(&[("a.json", "{}")]);
+    let clone = Scenario::clone_of(&remote);
+    remote.commit(&[("a.json", "[]")]);
+    recording_origin(&clone, 30);
+    let repository = clone.open();
+    let lock = repository.lock(LOCK_WAIT).unwrap();
+    let refused = repository
+        .sync(&lock, false, Deadline::after(Duration::from_secs(1)))
+        .unwrap_err();
+    assert_eq!(refused.code(), Code::SyncTimeout, "{refused}");
+    let recorded = std::fs::read_to_string(clone.workdir().join(".git/delayed-ssh.pid")).unwrap();
+    let ids: Vec<i32> = recorded.lines().map(|id| id.parse().unwrap()).collect();
+    assert_eq!(ids.len(), 2, "{recorded}");
+    let until = Instant::now() + Duration::from_secs(5);
+    while ids.iter().any(|&id| alive(id)) && Instant::now() < until {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let running: Vec<_> = ids.iter().filter(|&&id| alive(id)).collect();
+    assert_eq!(running, Vec::<&i32>::new(), "still running after the sync");
+}
+
+/// One deadline covers a sync's fetch and its push. A fetch that takes two
+/// seconds leaves a three-second sync too little for a push that also takes
+/// two, so the push is stopped and the remote keeps its commit; a ten-second
+/// sync, otherwise the same, pushes.
+#[test]
+fn a_push_after_a_slow_fetch_is_stopped_by_what_is_left_of_the_deadline_and_a_longer_one_pushes() {
+    let push = |deadline| {
+        let remote = Scenario::new();
+        let first = remote.commit(&[("a.json", "{}")]);
+        remote.accepting_pushes();
+        let clone = Scenario::clone_of(&remote);
+        let made = clone.commit(&[("a.json", "[]")]);
+        clone.write("a.json", Item::File("[]")).track(made);
+        clone.delayed_origin(2);
+        let repository = clone.open();
+        let lock = repository.lock(LOCK_WAIT).unwrap();
+        let synced = repository.sync(&lock, true, Deadline::after(deadline));
+        (synced, remote.head().unwrap().id, first, made)
+    };
+    let (refused, tip, first, _) = push(Duration::from_secs(3));
+    let refused = refused.unwrap_err();
+    assert!(
+        matches!(
+            &refused,
+            crate::SyncError::TimedOut {
+                operation: "push",
+                ..
+            }
+        ),
+        "{refused}"
+    );
+    assert!(
+        refused.to_string().contains("of its 3 seconds"),
+        "{refused}"
+    );
+    assert_eq!(tip, first);
+    let (pushed, tip, _, made) = push(Duration::from_secs(10));
+    assert!(pushed.unwrap().pushed);
+    assert_eq!(tip, made);
+}
