@@ -427,6 +427,12 @@ pub(super) fn put_file(path: &Path, text: &str) {
     std::fs::write(path, text).unwrap();
 }
 
+/// Writes `bytes` to the file at `path`, anywhere at the desk.
+pub(super) fn put_bytes(path: &Path, bytes: &[u8]) {
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(path, bytes).unwrap();
+}
+
 /// Makes the file at `path` executable.
 pub(super) fn executable(path: &Path) {
     std::fs::set_permissions(path, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();

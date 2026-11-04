@@ -1,7 +1,7 @@
 //! `github.push`: the commits a push would send are checked at the
 //! boundary, and pushed only on a pass.
 
-use super::desk::{Desk, NAMES, ORIGIN, TO, digest, executable, put_file, remove};
+use super::desk::{Desk, NAMES, ORIGIN, TO, digest, executable, put_bytes, put_file, remove};
 use super::*;
 
 /// The parts of one commit made as `t <t@t>`, named by its short SHA.
@@ -615,4 +615,34 @@ fn git_hooks_and_gh_never_see_the_model_credentials_and_the_boundarys_agent_does
         assert!(judging.contains(value), "the agent did not see {value}");
     }
     assert!(hooked.contains("HOME="), "the hook saw no environment");
+}
+
+#[test]
+fn a_text_file_that_is_not_utf8_is_refused_and_its_utf8_twin_and_a_binary_file_are_pushed() {
+    let desk = Desk::new();
+    let checkout = desk.checkout();
+    let commit = |bytes: &[u8], file: &str| {
+        put_bytes(&checkout.join(file), bytes);
+        desk.git(&checkout, &["add", file]);
+        desk.git(&checkout, &["commit", "-q", "-m", "Add names"]);
+        desk.head()
+    };
+    // Latin-1, which git counts as text.
+    let sha = commit(b"M\xfcller\n", "names.txt");
+    let (ran, failure) = desk.call("push", &[]);
+    assert_eq!(
+        refused(&ran, &failure),
+        (1, "github::git::not_utf8".to_owned())
+    );
+    assert_eq!(failure["fields"]["commit"], sha);
+    assert_eq!(
+        desk.remote_head("main"),
+        Some(desk.git(&checkout, &["rev-parse", "HEAD~1"]))
+    );
+    desk.git(&checkout, &["reset", "-q", "--hard", "HEAD~1"]);
+    let utf8 = commit("M\u{fc}ller\n".as_bytes(), "names.txt");
+    assert_eq!(desk.output("push", &[])["commits"], json!([utf8]));
+    let binary = commit(b"\x89PNG\x00\xff\xfe", "image.png");
+    let pushed = desk.output("push", &[]);
+    assert_eq!(pushed["commits"], json!([binary]));
 }

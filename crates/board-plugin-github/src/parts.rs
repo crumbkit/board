@@ -10,7 +10,7 @@ use board_ops::{Host, PluginError};
 use regex::Regex;
 use serde_json::json;
 
-use crate::git::{error, git, outgoing};
+use crate::git::{error, git, lossy, outgoing};
 
 /// The short SHA that names a commit's or tag's parts, at a fixed length so
 /// part names never change.
@@ -105,8 +105,10 @@ pub(crate) fn ref_parts(
 /// Each commit's message, names, emails, headers, diff and binary paths, as
 /// parts named `commit.<short sha>.<field>`. The diff is git's text of
 /// every file, binary or not, with no textconv or external diff and with
-/// file names unquoted, so it holds the bytes sent. A commit that changes a
-/// file Git LFS stores is `github::push::lfs`.
+/// file names unquoted, so a text file's lines are the bytes sent. A
+/// binary file's bytes that are not UTF-8 are replaced by U+FFFD, and a
+/// text file's are `github::git::not_utf8`. A commit that changes a file
+/// Git LFS stores is `github::push::lfs`.
 pub(crate) fn commit_parts(
     host: &dyn Host,
     at: &Path,
@@ -138,10 +140,7 @@ pub(crate) fn commit_parts(
         let object = git(host, at, &["cat-file", "commit", sha], "")?;
         let skipped = ["tree", "parent", "author", "committer"];
         parts.insert(format!("{prefix}headers"), headers(&object, &skipped));
-        let diff: Vec<&str> = (unquoted.iter().chain(&DIFF).copied())
-            .chain(["--text", sha])
-            .collect();
-        parts.insert(format!("{prefix}diff"), git(host, at, &diff, "")?);
+        parts.insert(format!("{prefix}diff"), diff(host, at, sha)?);
         let binary: String = (changed.iter())
             .filter(|(_, binary)| *binary)
             .flat_map(|(path, _)| [path.as_str(), "\n"])
@@ -149,6 +148,40 @@ pub(crate) fn commit_parts(
         parts.insert(format!("{prefix}binary"), binary);
     }
     Ok(parts)
+}
+
+/// The commit's patch, with every file's bytes, or `github::git::not_utf8`
+/// when a file git counts as text holds bytes that are not UTF-8, which
+/// could not be checked as sent. A binary file's bytes that are not UTF-8
+/// are checked with each such byte replaced by U+FFFD, and its path is in
+/// the commit's `binary` part.
+fn diff(host: &dyn Host, at: &Path, sha: &str) -> Result<String, PluginError> {
+    let unquoted = ["-c", "core.quotePath=false", "show"];
+    let arguments = |text: &'static [&'static str]| -> Vec<&str> {
+        (unquoted.iter().chain(&DIFF).chain(text).copied())
+            .chain([sha])
+            .collect()
+    };
+    let (diff, utf8) = lossy(host, at, &arguments(&["--text"]), "")?;
+    if utf8 {
+        return Ok(diff);
+    }
+    // Without `--text`, git shows a binary file as one line, so what is
+    // left is the text files.
+    let (_, text) = lossy(host, at, &arguments(&[]), "")?;
+    if text {
+        return Ok(diff);
+    }
+    let short = &sha[..SHORT.min(sha.len())];
+    Err(error(
+        "github::git::not_utf8",
+        format!(
+            "commit {short} changes a file git counts as text whose bytes are not UTF-8, so the \
+             boundary cannot check the bytes it would send, and nothing was pushed; save the \
+             file as UTF-8 and commit again, or mark it binary in .gitattributes"
+        ),
+        json!({"commit": sha}),
+    ))
 }
 
 /// `text` without one trailing newline.
@@ -184,7 +217,10 @@ pub(crate) fn headers(text: &str, skipped: &[&str]) -> String {
     let head = text.split_once("\n\n").map_or(text, |(head, _)| head);
     let mut kept = String::new();
     let mut keep = false;
-    for line in head.lines() {
+    // Split at line feeds alone, so a carriage return before one is kept,
+    // as git sends it.
+    for line in head.split_inclusive('\n') {
+        let line = line.strip_suffix('\n').unwrap_or(line);
         if !line.starts_with(' ') {
             let name = line.split(' ').next().unwrap_or_default();
             keep = !skipped.contains(&name);
@@ -262,5 +298,15 @@ mod tests {
             "encoding x\nmergetag object o\n tag v1\n"
         );
         assert_eq!(headers("tree t\n\nmessage\n", &["tree"]), "");
+    }
+
+    #[test]
+    fn headers_keep_a_carriage_return_before_a_line_feed_as_git_sends_it() {
+        let commit = "tree t\nencoding x\r\nmergetag a\r\n b\r\n\nThe message\n";
+        assert_eq!(
+            headers(commit, &["tree"]),
+            "encoding x\r\nmergetag a\r\n b\r\n"
+        );
+        assert_eq!(headers("tree t\nencoding x\n", &["tree"]), "encoding x\n");
     }
 }

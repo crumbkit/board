@@ -41,7 +41,10 @@ pub(crate) fn tail(text: &str) -> String {
 /// printed.
 pub(crate) struct Ran {
     pub(crate) code: i32,
+    /// What it printed, each byte that is not UTF-8 replaced by U+FFFD.
     pub(crate) stdout: String,
+    /// Whether stdout was UTF-8, so nothing was replaced.
+    pub(crate) utf8: bool,
     pub(crate) stderr: String,
 }
 
@@ -80,11 +83,13 @@ fn run_adding(
         Ok(exited) => Ran {
             code: exited.code.unwrap_or(1),
             stdout: String::from_utf8_lossy(&exited.stdout).into_owned(),
+            utf8: std::str::from_utf8(&exited.stdout).is_ok(),
             stderr: String::from_utf8_lossy(&exited.stderr).into_owned(),
         },
         Err(error) => Ran {
             code: 1,
             stdout: String::new(),
+            utf8: true,
             stderr: format!("it {}", unfinished(&error)),
         },
     }
@@ -102,22 +107,43 @@ pub(crate) fn unfinished(error: &ProcessError) -> String {
 }
 
 /// What `git <arguments>` prints in `at`, or `github::git::failed` naming
-/// the command and git's error.
+/// the command and git's error. Output that is not UTF-8 is
+/// `github::git::not_utf8`, since it could not be checked as git gives it.
 pub(crate) fn git(
     host: &dyn Host,
     at: &Path,
     arguments: &[&str],
     stdin: &str,
 ) -> Result<String, PluginError> {
+    let (printed, utf8) = lossy(host, at, arguments, stdin)?;
+    if utf8 {
+        return Ok(printed);
+    }
+    let command = named(arguments);
+    Err(error(
+        "github::git::not_utf8",
+        format!(
+            "`{command}` printed bytes that are not UTF-8, so the boundary cannot check them as \
+             git would send them; save the commit message, tag or file it shows as UTF-8"
+        ),
+        json!({"command": command}),
+    ))
+}
+
+/// What `git <arguments>` prints in `at`, each byte that is not UTF-8
+/// replaced by U+FFFD, and whether none was; or `github::git::failed`
+/// naming the command and git's error.
+pub(crate) fn lossy(
+    host: &dyn Host,
+    at: &Path,
+    arguments: &[&str],
+    stdin: &str,
+) -> Result<(String, bool), PluginError> {
     let ran = run(host, at, arguments, stdin);
     if ran.code == 0 {
-        return Ok(ran.stdout);
+        return Ok((ran.stdout, ran.utf8));
     }
-    let command = ["git"]
-        .into_iter()
-        .chain(arguments.iter().copied().take(2))
-        .collect::<Vec<_>>()
-        .join(" ");
+    let command = named(arguments);
     Err(error(
         "github::git::failed",
         format!(
@@ -127,6 +153,20 @@ pub(crate) fn git(
         ),
         json!({"command": command}),
     ))
+}
+
+/// `git` and its first two arguments after any `-c <name>=<value>`, which
+/// name a command in a message.
+fn named(arguments: &[&str]) -> String {
+    let mut rest = arguments;
+    while let ["-c", _, after @ ..] = rest {
+        rest = after;
+    }
+    ["git"]
+        .into_iter()
+        .chain(rest.iter().copied().take(2))
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 /// A refusal with `code`, `message` and the fields of `fields`, an object.

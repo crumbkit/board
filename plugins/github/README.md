@@ -114,7 +114,7 @@ The parts, which a boundary's `checks` name by glob:
 | `commit.<sha>.committer_name` | `push`, `pr-create` | The committer's name. |
 | `commit.<sha>.committer_email` | `push`, `pr-create` | The committer's email. |
 | `commit.<sha>.headers` | `push`, `pr-create` | The commit object's header lines other than `tree`, `parent`, `author` and `committer`, such as `encoding` or a merged signed tag's `mergetag`; empty when there are none. |
-| `commit.<sha>.diff` | `push`, `pr-create` | The commit's patch against its first parent, with every file as text: no textconv, external diff or `-diff` attribute hides a file's bytes, and file names are not quoted. |
+| `commit.<sha>.diff` | `push`, `pr-create` | The commit's patch against its first parent, with every file as text: no textconv, external diff or `-diff` attribute hides a file's bytes, and file names are not quoted. A text file's bytes, a carriage return included, are those sent. In a binary file, each byte that is not UTF-8 is checked as U+FFFD. |
 | `commit.<sha>.binary` | `push`, `pr-create` | The paths git counts as binary, one per line, so a boundary can refuse them by name; empty when there are none. |
 | `pr.title`, `pr.body` | `pr-create`, `pr-edit` | The pull request's title and body. `pr-edit` sends only those given. |
 | `comment.body` | `comment` | The comment. |
@@ -162,6 +162,11 @@ Refusals:
   tell which repository it names.
 - `github::push::not_commit`: the pre-push hook found a ref whose object is a
   tree or a blob, which it cannot check as commits.
+- `github::git::not_utf8`: a commit changes a file git counts as text whose
+  bytes are not UTF-8, or a commit message, name or tag git prints for a
+  part is not UTF-8. The boundary checks text, so it could not check the
+  bytes sent, and nothing is pushed. The fields name the commit, or the git
+  command.
 - `github::git::failed`: another git command failed.
 - `github::hook::exists`: `install-hook` found a different `pre-push` hook,
   which its command would replace.
