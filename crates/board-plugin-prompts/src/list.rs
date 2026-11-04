@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use crate::prompts::{listed_files, query};
-use crate::repos::{self, json_body};
+use board_repos::{json_body, scope, shown};
 
 /// The most prompts `list` shows; `total` counts the rest (STANDARDS.md 23).
 pub(crate) const SHOWN: usize = 100;
@@ -80,7 +80,7 @@ pub(crate) fn list(host: &dyn Host, input: &Value) -> Result<Value, PluginError>
         (_, remote) => (remote.clone(), None),
     };
     let read = query(host, &listed_files())?;
-    let roots = repos::scope(
+    let roots = scope(
         "prompts",
         &read.found,
         given.repo.as_deref(),
@@ -108,8 +108,8 @@ pub(crate) fn list(host: &dyn Host, input: &Value) -> Result<Value, PluginError>
         prompts.push(ListedPrompt {
             repo: repo.clone(),
             path: file.logical.clone(),
-            title: repos::shown(&record["title"]),
-            purpose: repos::shown(&record["purpose"]),
+            title: shown(&record["title"]),
+            purpose: shown(&record["purpose"]),
             runs_in: strings(&record["runs_in"]),
             inputs: strings(&record["inputs"]),
         });

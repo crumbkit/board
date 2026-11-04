@@ -6,11 +6,11 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use board_ops::{Host, Limit, PluginError, literal};
 use board_plugin::shape::TREE_CODES;
+use board_repos::{Listed, RECORD, json_body, parsed, root, shown};
 use serde_json::{Value, json};
 
 use crate::records::{PromptRecord, ReposRecord};
 use crate::refusal;
-use crate::repos::{self, Listed, json_body, shown};
 use board_plugin::shape::Record;
 
 /// The list of marked repos, in the board's own working tree.
@@ -68,7 +68,7 @@ pub(crate) fn listed_files() -> String {
 /// Each mount's pointer is in the board's own working tree, never inside
 /// another mount.
 fn sql(condition: &str) -> String {
-    let record = literal(repos::RECORD);
+    let record = literal(RECORD);
     let marks = literal(MARKS);
     format!(
         "SELECT 'mount', '/' || substr(m.path, 1, length(m.path) - 5), m.target, s.repository, \
@@ -111,9 +111,9 @@ pub(crate) fn query(host: &dyn Host, condition: &str) -> Result<Read, PluginErro
     };
     let marked = marks(&of("marks"))?;
     let mounts: Vec<&[Value]> = (of("mount").into_iter())
-        .filter(|row| marked.contains(&repos::root(&shown(&row[0]))))
+        .filter(|row| marked.contains(&root(&shown(&row[0]))))
         .collect();
-    let found = repos::parsed(&mounts);
+    let found = parsed("prompts", &mounts)?;
     let mut roots = BTreeMap::from([("worktree".to_owned(), "/".to_owned())]);
     for listed in &found {
         if let Some(source) = &listed.source {
@@ -161,6 +161,6 @@ fn marks(rows: &[&[Value]]) -> Result<BTreeSet<String>, PluginError> {
     Ok(mounts
         .into_iter()
         .flatten()
-        .map(|at| repos::root(&shown(at)))
+        .map(|at| root(&shown(at)))
         .collect())
 }

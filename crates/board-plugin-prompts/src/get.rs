@@ -3,9 +3,10 @@
 
 use std::collections::BTreeMap;
 
-use board_model::{Code, Fields, Object, PathError, Refusal, Source};
+use board_model::Source;
 use board_ops::{Host, Limit, PluginError, literal};
 use board_plugin::shape::{Record, TREE_CODES};
+use board_repos::{Listed, Repo, root, shown};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -14,7 +15,6 @@ use crate::prompts::{MARKS, query, refused};
 use crate::records::{PromptRecord, RunsIn};
 use crate::refusal;
 use crate::render::{Values, body, checked, placed, render, unused};
-use crate::repos;
 
 /// The prompt to render, and its input values.
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -71,37 +71,24 @@ struct Held {
 /// The file at `path` at the pin; none when nothing is there. Extra
 /// leading slashes are read as one, as the Python plugin read them.
 fn read(host: &dyn Host, path: &str) -> Result<Option<Held>, PluginError> {
-    let path = format!("/{}", path.trim_start_matches('/'));
-    let logical = path.parse().map_err(|error: PathError| {
-        refused(
-            "get",
-            &Refusal::new(error.code(), &error, &Fields::default()),
-        )
-    })?;
-    let answers =
-        (host.get_each(&[logical])).map_err(|error| refused("get", &error.refusal("get")))?;
-    let report = match answers.into_iter().next() {
-        Some(Ok(report)) => report,
-        Some(Err(error)) if error.code() != Code::PathNotFound => {
-            return Err(refused("get", &error.refusal("get")));
-        }
-        _ => return Ok(None),
+    let own = Repo {
+        root: "/".to_owned(),
+        clone: None,
     };
-    let Object::Blob(blob) = report.location.object else {
+    let file = own.read(host, "prompts", path.trim_start_matches('/'))?;
+    let (Some(blob), Some(location)) = (file.blob, file.location) else {
         return Ok(None);
     };
-    let source = match &report.location.board.source {
+    let source = match &location.board.source {
         Source::WorkingTree => "worktree".to_owned(),
         Source::Commit(commit) => commit.to_string(),
     };
-    let text = String::from_utf8(report.bytes).unwrap_or_default();
-    let record = report.record.ok();
     Ok(Some(Held {
         source,
-        inner: report.location.path,
-        blob: blob.to_string(),
-        record,
-        text,
+        inner: location.path,
+        blob,
+        record: file.record,
+        text: file.text.unwrap_or_default(),
     }))
 }
 
@@ -127,7 +114,7 @@ pub(crate) fn get(host: &dyn Host, input: &Value) -> Result<Value, PluginError> 
     let read = query(host, &condition)?;
     let file = read.files.first().cloned().unwrap_or_default();
     let Some(repo) = read.roots.get(&source).cloned() else {
-        let held = repos::root(&file.at);
+        let held = root(&file.at);
         let why = format!(
             "{path} is in {held}, which the board does not mark, and prompts come only from the \
              board's own tree and the mounts /{MARKS} names; move the prompt, or add the mount's \
@@ -154,8 +141,8 @@ pub(crate) fn get(host: &dyn Host, input: &Value) -> Result<Value, PluginError> 
             "{path} is not a valid {} under a prompts/ directory (type {}, code {}); run `board \
              check {path}` to see what is wrong",
             PromptRecord::TYPE,
-            repos::shown(&file.kind),
-            repos::shown(&file.code)
+            shown(&file.kind),
+            shown(&file.code)
         );
         let fields = [("path", json!(path)), ("code", file.code.clone())];
         return Err(refusal("prompts::prompt::not_prompt", why, fields));
@@ -181,7 +168,7 @@ pub(crate) fn get(host: &dyn Host, input: &Value) -> Result<Value, PluginError> 
 /// The refusal of a prompt in a mount whose repo lacks the prompt schema,
 /// with the commands that install it. Board itself refuses a call on a
 /// board whose own tree lacks it, so `repo` is a mount.
-fn no_schema(host: &dyn Host, repo: &str, found: &[repos::Listed]) -> PluginError {
+fn no_schema(host: &dyn Host, repo: &str, found: &[Listed]) -> PluginError {
     let sql = "SELECT repository FROM sources WHERE source = 'worktree'";
     let report = match host.query(sql, Limit::ALL) {
         Ok(report) => report,
