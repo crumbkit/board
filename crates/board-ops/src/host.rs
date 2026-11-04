@@ -85,6 +85,11 @@ pub trait Host {
     /// group. Every process still in the group is killed when it exits, past
     /// its deadline or when Board is stopped.
     fn run(&self, run: &Run<'_>) -> Result<Exited, ProcessError> {
+        self.run_hiding(run, &[])
+    }
+    /// [`Host::run`] without the variables `hidden` names, such as model
+    /// credentials that only a nested call needs.
+    fn run_hiding(&self, run: &Run<'_>, hidden: &[&str]) -> Result<Exited, ProcessError> {
         let empty;
         let directory = if let Some(directory) = run.directory {
             directory
@@ -100,7 +105,17 @@ pub trait Host {
             input: run.input,
             deadline: run.deadline,
         };
-        board_plugin::child::run(&process, &self.settings().environment.0)
+        let environment: Vec<_> = (self.settings().environment.0.iter())
+            .filter(|(name, _)| !hidden.contains(&name.as_str()))
+            .cloned()
+            .collect();
+        board_plugin::child::run(&process, &environment)
+    }
+    /// The logical path of `directory` at each mount of this board whose
+    /// repository holds it, as `board refs <directory>` would name it. A
+    /// host with no board of its own, such as a test's, finds none.
+    fn places(&self, _directory: &Path) -> Result<Vec<LogicalPath>, Box<Refusal>> {
+        Ok(Vec::new())
     }
     /// The value cached under `digest` in `place`, a directory under the
     /// cache home such as `board-controls/judged`, or none when there is
@@ -339,6 +354,15 @@ impl Host for Hosted<'_> {
         paths: &[LogicalPath],
     ) -> Result<Vec<Result<GetReport, ReadError>>, ReadError> {
         Ok(self.board.get_each(paths)?.collect())
+    }
+
+    fn places(&self, directory: &Path) -> Result<Vec<LogicalPath>, Box<Refusal>> {
+        let places = (self.board.places(directory, self.plugins.cache))
+            .map_err(|error| Box::new(Refusal::new(error.code(), &error, &Fields::default())))?;
+        Ok(places
+            .iter()
+            .filter_map(|place| place.prefix().ok())
+            .collect())
     }
 
     /// Opens the board again as the plugin, as a put through a mount opens

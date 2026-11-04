@@ -4,10 +4,10 @@
 use board_ops::{Host, PluginError};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use serde_json::{Map, Value, json};
+use serde_json::{Map, Value};
 
 use crate::gh;
-use crate::objects::{Held, Kind, Object, held};
+use crate::objects::{Held, Kind, Object, held, write};
 
 /// Record one pull request or issue.
 #[derive(Deserialize, JsonSchema)]
@@ -84,21 +84,8 @@ pub(crate) fn reference(host: &dyn Host, input: &Value) -> Result<Value, PluginE
     } else {
         Kind::Issue
     };
-    let mut record = Map::new();
-    record.insert("$type".to_owned(), Value::from(kind.record_type()));
-    record.insert("owner".to_owned(), Value::from(object.owner.as_str()));
-    record.insert("repo".to_owned(), Value::from(object.repo.as_str()));
-    record.insert("number".to_owned(), Value::from(object.number));
-    record.insert("url".to_owned(), Value::from(url));
-    if let Some(title) =
-        (issue.get("title").and_then(Value::as_str)).filter(|title| !title.is_empty())
-    {
-        record.insert("title".to_owned(), Value::from(title));
-    }
-    let path = object.path(kind);
-    let line = json!({"path": path, "expect": "none", "record": record});
-    (host.put(&[line]))
-        .map_err(|error| PluginError::board_refused("github", "put --batch", &error.refusal()))?;
+    let title = (issue.get("title").and_then(Value::as_str)).filter(|title| !title.is_empty());
+    let (path, record) = write(host, &object, kind, url, title)?;
     Ok(answer(path, kind, &record, true))
 }
 

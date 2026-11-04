@@ -89,6 +89,13 @@ control without a rule a rule, and names `board call <action>` and
 `board --personal call boundary.check` to run again. A pattern control
 shown `match-only` never reveals its expression here either.
 
+`boundary.covers --action <action> --to <destination> [--from <checkout>]`
+returns `boundaries`, the sorted paths of the boundaries a check of that
+action, destination and checkout would apply, by the same rules. It checks
+and writes nothing. It refuses with `boundary::boundary::invalid` as `check`
+does. The github plugin's Claude Code mod asks it, through `github.covers`,
+before a raw `git push` or `gh` write.
+
 ## Overrides
 
 The owner can let one exact content through a failed check without

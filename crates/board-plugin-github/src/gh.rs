@@ -1,11 +1,14 @@
 //! Running gh, the GitHub CLI, which every capability that reaches GitHub
 //! goes through.
 
+use std::path::Path;
 use std::time::Duration;
 
 use board_ops::{Host, PluginError, Run};
 use board_plugin::child::ProcessError;
 use serde_json::{Map, Value};
+
+use crate::git::{MODEL_VARIABLES, tail, unfinished};
 
 /// How long gh may run.
 const TIMEOUT: Duration = Duration::from_secs(20);
@@ -78,6 +81,80 @@ pub(crate) fn failed(endpoint: &str, why: &str, then: &str) -> PluginError {
     PluginError {
         code: "github::gh::failed".to_owned(),
         message: format!("`gh api {endpoint}` {why}; {then}"),
+        fields,
+        hint: None,
+    }
+}
+
+/// What a failure to send says, since gh may have sent the content before
+/// it failed.
+const UNSURE: &str = "it may have been sent, so look on GitHub before you run it again";
+
+/// What `gh <arguments>` prints in `at` after reading `stdin`, or
+/// `github::gh::failed` naming `named`. gh never sees the model
+/// credentials.
+pub(crate) fn send(
+    host: &dyn Host,
+    arguments: &[String],
+    stdin: &str,
+    named: &str,
+    at: Option<&Path>,
+) -> Result<String, PluginError> {
+    let run = Run {
+        program: "gh",
+        arguments,
+        directory: at,
+        input: stdin.as_bytes(),
+        deadline: TIMEOUT,
+    };
+    let exited = (host.run_hiding(&run, &MODEL_VARIABLES))
+        .map_err(|error| unsent(named, &unfinished(&error)))?;
+    if exited.code != Some(0) {
+        let stderr = String::from_utf8_lossy(&exited.stderr);
+        let code = exited
+            .code
+            .map_or_else(|| "on a signal".to_owned(), |code| code.to_string());
+        return Err(unsent(
+            named,
+            &format!("exited {code}: {}", tail(stderr.trim())),
+        ));
+    }
+    Ok(String::from_utf8_lossy(&exited.stdout).into_owned())
+}
+
+/// The object GitHub answers `gh api --method <method> <endpoint>` with
+/// `body`, which holds an https `html_url`.
+pub(crate) fn send_json(
+    host: &dyn Host,
+    method: &str,
+    endpoint: &str,
+    body: &Value,
+) -> Result<(Map<String, Value>, String), PluginError> {
+    let named = format!("gh api --method {method} {endpoint}");
+    let arguments = ["api", "--method", method, endpoint, "--input", "-"].map(str::to_owned);
+    let printed = send(host, &arguments, &body.to_string(), &named, None)?;
+    match serde_json::from_str(&printed) {
+        Ok(Value::Object(answer)) => {
+            let url = (answer.get("html_url").and_then(Value::as_str))
+                .filter(|url| url.starts_with("https://"))
+                .map(str::to_owned);
+            match url {
+                Some(url) => Ok((answer, url)),
+                None => Err(unsent(&named, "answered without an https html_url")),
+            }
+        }
+        _ => Err(unsent(&named, "answered without an https html_url")),
+    }
+}
+
+/// `github::gh::failed` for a command that sends content, which may have
+/// reached GitHub before it failed.
+pub(crate) fn unsent(named: &str, why: &str) -> PluginError {
+    let mut fields = Map::new();
+    fields.insert("command".to_owned(), Value::from(named));
+    PluginError {
+        code: "github::gh::failed".to_owned(),
+        message: format!("`{named}` {why}; {UNSURE}, and {CHECK_GH}"),
         fields,
         hint: None,
     }

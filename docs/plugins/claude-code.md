@@ -18,6 +18,9 @@ find it. `plugins/effects/` holds nothing else and is not a Board plugin.
 The artifacts mod, `board-artifacts`, records each artifact a session
 publishes or reads; [claude-code/artifacts.md](claude-code/artifacts.md)
 says what it writes.
+The github plugin's mod, `board-github`, refuses raw `git push` and `gh`
+writes to a destination a boundary covers; plugins/github/README.md says
+when.
 
 Claude Code loads a mod with `claude --plugin-dir plugins/<name>/claude-code`,
 or from the folders `CLAUDE_CODE_PLUGIN_DIRS` names. `claude plugin validate`

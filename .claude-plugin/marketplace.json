@@ -27,6 +27,10 @@
     {
       "name": "board-changes",
       "source": "./plugins/changes/claude-code"
+    },
+    {
+      "name": "board-github",
+      "source": "./plugins/github/claude-code"
     }
   ],
   "description": "Claude Code mods of Board and its plugins."
