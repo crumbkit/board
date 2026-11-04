@@ -31,11 +31,10 @@ pub(crate) struct Input {
     )]
     pub(crate) inputs: Option<Values>,
     #[schemars(
-        with = "Option<RunsIn>",
         description = "Where the work starts, in place of the prompt's own runs_in; rendered \
                        with the inputs and checked the same way."
     )]
-    pub(crate) runs_in: Option<Value>,
+    pub(crate) runs_in: Option<RunsIn>,
 }
 
 /// The rendered prompt and where it came from.
@@ -64,12 +63,15 @@ struct Held {
     /// Its path in that source.
     inner: String,
     blob: String,
-    record: Value,
+    /// Its frontmatter; none when Board refused it.
+    record: Option<Value>,
     text: String,
 }
 
-/// The file at `path` at the pin; none when nothing is there.
+/// The file at `path` at the pin; none when nothing is there. Extra
+/// leading slashes are read as one, as the Python plugin read them.
 fn read(host: &dyn Host, path: &str) -> Result<Option<Held>, PluginError> {
+    let path = format!("/{}", path.trim_start_matches('/'));
     let logical = path.parse().map_err(|error: PathError| {
         refused(
             "get",
@@ -80,16 +82,10 @@ fn read(host: &dyn Host, path: &str) -> Result<Option<Held>, PluginError> {
         (host.get_each(&[logical])).map_err(|error| refused("get", &error.refusal("get")))?;
     let report = match answers.into_iter().next() {
         Some(Ok(report)) => report,
-        Some(Err(error)) if error.code() == Code::PathNotFound => return Ok(None),
-        Some(Err(error)) => return Err(refused("get", &error.refusal("get"))),
-        None => {
-            let why = format!("board get gave no answer for {path}");
-            return Err(refusal(
-                "prompts::board::refused",
-                why,
-                [("path", json!(path))],
-            ));
+        Some(Err(error)) if error.code() != Code::PathNotFound => {
+            return Err(refused("get", &error.refusal("get")));
         }
+        _ => return Ok(None),
     };
     let Object::Blob(blob) = report.location.object else {
         return Ok(None);
@@ -99,7 +95,7 @@ fn read(host: &dyn Host, path: &str) -> Result<Option<Held>, PluginError> {
         Source::Commit(commit) => commit.to_string(),
     };
     let text = String::from_utf8(report.bytes).unwrap_or_default();
-    let record = report.record.unwrap_or(Value::Null);
+    let record = report.record.ok();
     Ok(Some(Held {
         source,
         inner: report.location.path,
@@ -129,10 +125,7 @@ pub(crate) fn get(host: &dyn Host, input: &Value) -> Result<Value, PluginError> 
         literal(&inner)
     );
     let read = query(host, &condition)?;
-    let Some(file) = read.files.first() else {
-        let why = format!("board get read {path}, but board query has no entry for it");
-        return Err(refusal("prompts::board::refused", why, []));
-    };
+    let file = read.files.first().cloned().unwrap_or_default();
     let Some(repo) = read.roots.get(&source).cloned() else {
         let held = repos::root(&file.at);
         let why = format!(
@@ -153,7 +146,10 @@ pub(crate) fn get(host: &dyn Host, input: &Value) -> Result<Value, PluginError> 
         .skip(1)
         .any(|segment| segment == "prompts");
     let tree_code = (file.code.as_str()).is_none_or(|code| TREE_CODES.contains(&code));
-    if !under_prompts || !is_prompt || !tree_code {
+    let record = (under_prompts && is_prompt && tree_code)
+        .then(|| record.and_then(|record| serde_json::from_value::<PromptRecord>(record).ok()))
+        .flatten();
+    let Some(record) = record else {
         let why = format!(
             "{path} is not a valid {} under a prompts/ directory (type {}, code {}); run `board \
              check {path}` to see what is wrong",
@@ -163,24 +159,18 @@ pub(crate) fn get(host: &dyn Host, input: &Value) -> Result<Value, PluginError> 
         );
         let fields = [("path", json!(path)), ("code", file.code.clone())];
         return Err(refusal("prompts::prompt::not_prompt", why, fields));
-    }
-    let declared: BTreeMap<String, Value> = (record.get("inputs").and_then(Value::as_object))
-        .map(|inputs| inputs.clone().into_iter().collect())
-        .unwrap_or_default();
+    };
+    let declared = record.inputs.unwrap_or_default();
     let values = checked(&declared, &given.inputs.unwrap_or_default())?;
     let text = body(&text);
-    let runs_in = given.runs_in.as_ref().unwrap_or(&record["runs_in"]);
-    let Some((key, written)) = runs_in.as_object().and_then(|map| map.iter().next()) else {
-        let why = format!("{path}'s runs_in is not an object of one place");
-        return Err(refusal("prompts::runs_in::invalid", why, []));
-    };
-    let placed = placed(key, written.as_str().unwrap_or_default(), &values)?;
+    let placed = placed(given.runs_in.as_ref().unwrap_or(&record.runs_in), &values)?;
+    let (key, value) = placed.place();
     Ok(json!(Output {
         path: path.to_owned(),
         repo,
-        title: repos::shown(&record["title"]),
-        purpose: repos::shown(&record["purpose"]),
-        runs_in: serde_json::from_value(placed).unwrap_or_default(),
+        title: record.title,
+        purpose: record.purpose,
+        runs_in: BTreeMap::from([(key.to_owned(), value.to_owned())]),
         text: render(text, &values),
         blob,
         source,
@@ -188,21 +178,25 @@ pub(crate) fn get(host: &dyn Host, input: &Value) -> Result<Value, PluginError> 
     }))
 }
 
-/// The refusal of a prompt whose repo lacks the prompt schema, with the
-/// commands that install it.
+/// The refusal of a prompt in a mount whose repo lacks the prompt schema,
+/// with the commands that install it. Board itself refuses a call on a
+/// board whose own tree lacks it, so `repo` is a mount.
 fn no_schema(host: &dyn Host, repo: &str, found: &[repos::Listed]) -> PluginError {
+    let sql = "SELECT repository FROM sources WHERE source = 'worktree'";
+    let report = match host.query(sql, Limit::ALL) {
+        Ok(report) => report,
+        Err(error) => return refused("query", &error.refusal()),
+    };
+    let board = (report.rows.first().and_then(|row| row.first()))
+        .and_then(Value::as_str)
+        .map_or_else(|| "board".to_owned(), |root| format!("board -C {root}"));
     let clone = (found.iter())
         .find(|listed| listed.root == repo)
         .and_then(|listed| listed.clone.clone())
-        .unwrap_or_default();
-    let sql = "SELECT repository FROM sources WHERE source = 'worktree'";
-    let root = (host.query(sql, Limit::ALL).ok())
-        .and_then(|report| report.rows.first().and_then(|row| row.first().cloned()))
-        .map(|root| repos::shown(&root))
-        .unwrap_or_default();
+        .unwrap_or_else(|| format!("<the clone mounted at {repo}>"));
     let why = format!(
         "{repo} holds no schema for {}, so Board cannot check its prompts; run `board -C {clone} \
-         plugin enable prompts`, push, then `board -C {root} mount update {repo}`",
+         plugin enable prompts`, push, then `{board} mount update {repo}`",
         PromptRecord::TYPE
     );
     let fields = [("repo", json!(repo)), ("type", json!(PromptRecord::TYPE))];

@@ -3,13 +3,13 @@
 //! value, and a capability the plugin does not offer is refused. These
 //! were the plugin's `test_manifest.py` and `test_render.py`.
 
-use std::collections::BTreeMap;
 use std::path::Path;
 
 use board_model::canonical_json;
 use serde_json::json;
 
 use super::*;
+use records::RunsIn;
 use render::{Values, body, checked, placed, render, repr, unused};
 
 /// Each committed schema file holds, byte for byte, the canonical JSON of
@@ -166,11 +166,8 @@ fn a_capability_the_plugin_does_not_offer_is_refused_naming_what_it_offers() {
     );
 }
 
-fn declared() -> BTreeMap<String, Value> {
-    BTreeMap::from([
-        ("repo".to_owned(), json!("The repository.")),
-        ("pr".to_owned(), json!("The pull request.")),
-    ])
+fn declared() -> Values {
+    values(&[("repo", "The repository."), ("pr", "The pull request.")])
 }
 
 fn values(pairs: &[(&str, &str)]) -> Values {
@@ -291,6 +288,11 @@ fn a_format_character_such_as_a_direction_override_or_zero_width_space_is_a_bad_
     assert_eq!(checked(&declared(), &given).unwrap(), given);
 }
 
+/// The place `key` names at `value`, as a record writes it.
+fn place(key: &str, value: &str) -> RunsIn {
+    serde_json::from_value(json!({key: value})).unwrap()
+}
+
 #[test]
 fn a_runs_in_naming_dot_or_dot_dot_or_holding_a_control_or_format_character_is_refused() {
     let none = Values::new();
@@ -301,7 +303,7 @@ fn a_runs_in_naming_dot_or_dot_dot_or_holding_a_control_or_format_character_is_r
         ("directory", "/a\r/b"),
         ("directory", "/a\tb"),
     ] {
-        let error = placed(key, value, &none).unwrap_err();
+        let error = placed(&place(key, value), &none).unwrap_err();
         assert_eq!(error.code, "prompts::runs_in::invalid", "{value:?}");
     }
 }
@@ -314,14 +316,17 @@ fn a_runs_in_with_dots_inside_a_name_or_path_is_admitted() {
         ("remote", "example-org/a..b"),
         ("directory", "/srv/a..b/.config"),
     ] {
-        assert_eq!(placed(key, value, &none).unwrap(), json!({key: value}));
+        assert_eq!(
+            placed(&place(key, value), &none).unwrap().place(),
+            (key, value)
+        );
     }
 }
 
 #[test]
 fn a_refused_runs_in_names_its_rendered_value_as_python_wrote_it_and_the_inputs_it_used() {
     let given = values(&[("base", "relative")]);
-    let error = placed("directory", "{base}/work", &given).unwrap_err();
+    let error = placed(&place("directory", "{base}/work"), &given).unwrap_err();
     assert_eq!(
         error.message,
         "runs_in.directory renders as 'relative/work', which is not an absolute path or one \
@@ -334,4 +339,22 @@ fn a_refused_runs_in_names_its_rendered_value_as_python_wrote_it_and_the_inputs_
     assert_eq!(repr("it's"), r#""it's""#);
     assert_eq!(repr("a\tb\u{202e}"), "'a\\tb\\u202e'");
     assert_eq!(repr("caf\u{e9}"), "'caf\u{e9}'");
+}
+
+#[test]
+fn a_record_body_with_a_duplicate_key_or_that_does_not_parse_is_refused_and_a_valid_one_is_read() {
+    let valid = json!(r#"{"covers": ["acme/*"]}"#);
+    let parsed = repos::json_body("prompts", "/repos/a/notes-repo", &valid).unwrap();
+    assert_eq!(parsed, json!({"covers": ["acme/*"]}));
+    for text in [r#"{"covers": [], "covers": ["acme/*"]}"#, "{"] {
+        let error = repos::json_body("prompts", "/repos/a/notes-repo", &json!(text)).unwrap_err();
+        assert_eq!(error.code, "prompts::board::refused", "{text}");
+        assert!(
+            error.message.starts_with(
+                "board query gave the body of /repos/a/notes-repo as text that does not parse: "
+            ),
+            "{}",
+            error.message
+        );
+    }
 }

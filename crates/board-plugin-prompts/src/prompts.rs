@@ -23,7 +23,7 @@ const COLUMNS: &str = "e.source, substr(e.logical, 1, length(e.logical) - length
                        e.logical, e.path, e.type, e.code, r.body";
 
 /// One file a query selected, by [`COLUMNS`].
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub(crate) struct File {
     pub(crate) source: String,
     pub(crate) at: String,
@@ -113,7 +113,7 @@ pub(crate) fn query(host: &dyn Host, condition: &str) -> Result<Read, PluginErro
     let mounts: Vec<&[Value]> = (of("mount").into_iter())
         .filter(|row| marked.contains(&repos::root(&shown(&row[0]))))
         .collect();
-    let found = repos::parsed("prompts", &mounts)?;
+    let found = repos::parsed(&mounts);
     let mut roots = BTreeMap::from([("worktree".to_owned(), "/".to_owned())]);
     for listed in &found {
         if let Some(source) = &listed.source {
@@ -156,7 +156,7 @@ fn marks(rows: &[&[Value]]) -> Result<BTreeSet<String>, PluginError> {
         let fields = [("path", json!(format!("/{MARKS}"))), ("code", code.clone())];
         return Err(refusal("prompts::repos::invalid", why, fields));
     }
-    let body = json_body(body);
+    let body = json_body("prompts", &format!("/{MARKS}"), body)?;
     let mounts = body.get("mounts").and_then(Value::as_array);
     Ok(mounts
         .into_iter()

@@ -289,3 +289,30 @@ fn list_shows_at_most_100_prompts_and_counts_them_all() {
         (100, &json!(101), &json!("P099"))
     );
 }
+
+#[test]
+fn a_notes_repo_whose_record_is_not_valid_is_refused_when_a_remote_routes_and_a_valid_one_routes() {
+    let board = routed();
+    assert!(call(&board, "list", &["--remote", "acme/x"], "").0);
+    let files = [
+        ("prompts/a.md", prompt("Broken", "", &json!({}))),
+        (
+            "notes-repo.json",
+            json!({"$type": "notes/repo/v1", "covers": "acme/*"}).to_string(),
+        ),
+    ];
+    mounted(&board, "broken", &files, true, true);
+    let (passed, refused) = call(&board, "list", &["--remote", "acme/x"], "");
+    assert!(!passed);
+    assert_eq!(
+        refused["code"], "prompts::repo::invalid_record",
+        "{refused}"
+    );
+    assert_eq!(refused["fields"]["path"], "/repos/broken/notes-repo");
+    let message = refused["message"].as_str().unwrap();
+    assert!(
+        message.starts_with("/repos/broken/notes-repo is not a valid notes/repo/v1 record"),
+        "{message}"
+    );
+    assert_eq!(list(&board, &[])["total"], 5);
+}

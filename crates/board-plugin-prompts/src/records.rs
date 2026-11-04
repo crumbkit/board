@@ -9,39 +9,46 @@ use std::collections::BTreeMap;
 
 use board_plugin::shape::{Record, Tag};
 use schemars::{JsonSchema, Schema, SchemaGenerator, json_schema};
+use serde::{Deserialize, Serialize};
 
-/// An input's name, as `{name}` names it in a prompt.
-pub const INPUT: &str = "[a-z][a-z0-9_]{0,31}";
+/// The pattern of an input's name, as `{name}` names it in a prompt, as a
+/// literal so the schemas' patterns and the renderer's can build on it.
+macro_rules! input {
+    () => {
+        "[a-z][a-z0-9_]{0,31}"
+    };
+}
+pub(crate) use input;
 
 /// Work that starts in a clone of the GitHub repository whose remote is `remote`.
-#[derive(Debug, JsonSchema)]
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 #[schemars(title = "InClone")]
 pub struct InClone {
     /// owner/name, or an input such as {repo}.
     #[schemars(
         title = "Remote",
-        regex(pattern = r"^(\{[a-z][a-z0-9_]{0,31}\}|[^/\s]+/[^/\s]+)$")
+        regex(pattern = concat!(r"^(\{", input!(), r"\}|[^/\s]+/[^/\s]+)$"))
     )]
     pub remote: String,
 }
 
 /// Work that starts in a directory that is not one repository.
-#[derive(Debug, JsonSchema)]
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 #[schemars(title = "InDirectory")]
 pub struct InDirectory {
     /// An absolute path, a path starting ~/, or an input alone or followed by /.
     #[schemars(
         title = "Directory",
-        regex(pattern = r"^((/|~/).*|\{[a-z][a-z0-9_]{0,31}\}(/.*)?)$")
+        regex(pattern = concat!(r"^((/|~/).*|\{", input!(), r"\}(/.*)?)$"))
     )]
     pub directory: String,
 }
 
 // Where the work starts: one of `InClone` and `InDirectory`. A comment, not
 // a doc comment, which would become a description in the schema.
-#[derive(Debug, JsonSchema)]
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(untagged)]
 #[schemars(inline)]
 pub enum RunsIn {
@@ -49,8 +56,26 @@ pub enum RunsIn {
     InDirectory(InDirectory),
 }
 
+impl RunsIn {
+    /// Its one key, `remote` or `directory`, and the value written there.
+    pub(crate) fn place(&self) -> (&'static str, &str) {
+        match self {
+            Self::InClone(clone) => ("remote", &clone.remote),
+            Self::InDirectory(directory) => ("directory", &directory.directory),
+        }
+    }
+
+    /// The same kind of place at `value`.
+    pub(crate) fn at(&self, value: String) -> Self {
+        match self {
+            Self::InClone(_) => Self::InClone(InClone { remote: value }),
+            Self::InDirectory(_) => Self::InDirectory(InDirectory { directory: value }),
+        }
+    }
+}
+
 /// `prompts/prompt/v1`: the frontmatter of a Markdown prompt under `prompts/`, whose body is the text to render.
-#[derive(Debug, JsonSchema)]
+#[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 #[schemars(
     title = "PromptRecord",
@@ -74,7 +99,7 @@ impl Record for PromptRecord {
     const TYPE: &'static str = "prompts/prompt/v1";
 }
 
-/// `inputs`: a description of each input by a name `INPUT` admits, and no
+/// `inputs`: a description of each input by a name `input!` admits, and no
 /// other name.
 struct Inputs;
 
@@ -88,7 +113,7 @@ impl JsonSchema for Inputs {
     }
 
     fn json_schema(_: &mut SchemaGenerator) -> Schema {
-        let pattern = format!("^{INPUT}$");
+        let pattern = concat!("^", input!(), "$");
         json_schema!({
             "type": "object",
             "patternProperties": {pattern: {"type": "string"}},

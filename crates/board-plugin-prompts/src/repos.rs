@@ -1,8 +1,6 @@
 //! Notes repos, their `notes-repo.json` records, and the git remotes the
-//! records cover: the part of `python/board-plugin`'s `repos` module that
-//! prompts uses, ported so that the `board-repos` crate (step 17 of
-//! /changes/rust-plugin-ports) can take this module whole. It names its
-//! plugin in each code, as the Python module did.
+//! records cover. Each function takes the calling plugin's name for its
+//! codes, so any plugin that routes by remote can use it.
 //!
 //! A notes repo's `notes/repo/v1` record, which the notes plugin ships,
 //! names the GitHub repositories whose work it is about.
@@ -49,50 +47,44 @@ pub(crate) fn root(path: &str) -> String {
 
 /// The repos in `rows`, each its root, source, clone, and its record's
 /// type, status, code and body, by root. Board's `sources` table names the
-/// clone a commit was first read from; a mount it names none for is
-/// `<plugin>::board::refused`.
-pub(crate) fn parsed(plugin: &str, rows: &[&[Value]]) -> Result<Vec<Listed>, PluginError> {
-    let mut found = Vec::new();
-    for row in rows {
-        let [path, source, repository, kind, status, code, body] = row else {
-            return Err(refusal(
-                &format!("{plugin}::board::refused"),
-                format!(
-                    "board query gave a row of {} columns for a repo, not 7",
-                    row.len()
-                ),
-                [],
-            ));
-        };
-        let at = root(&shown(path));
-        let mounted = source.as_str() != Some("worktree");
-        if mounted && repository.is_null() {
-            let why = format!(
-                "Board names no clone for the mount at {at}; check the mount with `board check {at}`"
-            );
-            return Err(refusal(
-                &format!("{plugin}::board::refused"),
-                why,
-                [("path", json!(at))],
-            ));
-        }
-        found.push(Listed {
-            root: at,
-            source: mounted.then(|| shown(source)),
-            clone: mounted.then(|| shown(repository)),
-            row: [kind.clone(), status.clone(), code.clone(), body.clone()],
-        });
-    }
+/// clone a commit was first read from.
+pub(crate) fn parsed(rows: &[&[Value]]) -> Vec<Listed> {
+    let mut found: Vec<Listed> = (rows.iter())
+        .map(|row| {
+            let mounted = row[1].as_str() != Some("worktree");
+            Listed {
+                root: root(&shown(&row[0])),
+                source: mounted.then(|| shown(&row[1])),
+                clone: mounted.then(|| shown(&row[2])),
+                row: [
+                    row[3].clone(),
+                    row[4].clone(),
+                    row[5].clone(),
+                    row[6].clone(),
+                ],
+            }
+        })
+        .collect();
     found.sort_by(|a, b| (&a.root, &a.source, &a.clone).cmp(&(&b.root, &b.source, &b.clone)));
-    Ok(found)
+    found
 }
 
-/// The body of a record, which Board's `records` table holds as JSON text.
-pub(crate) fn json_body(body: &Value) -> Value {
-    match body {
-        Value::String(text) => serde_json::from_str(text).unwrap_or(Value::Null),
-        other => other.clone(),
-    }
+/// The body of the record at `path`, which Board's `records` table holds
+/// as JSON text, parsed as Board parses a record; one that does not parse
+/// is `<plugin>::board::refused`.
+pub(crate) fn json_body(plugin: &str, path: &str, body: &Value) -> Result<Value, PluginError> {
+    let Value::String(text) = body else {
+        return Ok(body.clone());
+    };
+    board_model::parse_json(text.as_bytes()).map_err(|error| {
+        let why =
+            format!("board query gave the body of {path} as text that does not parse: {error}");
+        refusal(
+            &format!("{plugin}::board::refused"),
+            why,
+            [("path", json!(path))],
+        )
+    })
 }
 
 /// The record of `listed`: none without one, and refused unless valid.
@@ -104,15 +96,15 @@ pub(crate) fn record(
     if kind.is_null() && status.is_null() {
         return Ok(None);
     }
-    if kind.as_str() == Some(RECORD_TYPE) && status.as_str() == Some("ok") {
-        return Ok(json_body(body).as_object().cloned());
-    }
     let at = &listed.root;
     let path = format!(
         "{}/{}",
         at.trim_end_matches('/'),
         RECORD.trim_end_matches(".json")
     );
+    if kind.as_str() == Some(RECORD_TYPE) && status.as_str() == Some("ok") {
+        return Ok(json_body(plugin, &path, body)?.as_object().cloned());
+    }
     let clone = if at == "/" {
         "the board".to_owned()
     } else {

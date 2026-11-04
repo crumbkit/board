@@ -581,3 +581,43 @@ fn each_input_rule_refuses_through_the_call_and_names_the_inputs() {
         );
     }
 }
+
+#[test]
+fn a_path_with_extra_leading_slashes_is_read_as_one_and_answered_as_given() {
+    let board = board();
+    board.write("prompts/review-pr.md", &review());
+    let (passed, output) = call(
+        &board,
+        "get",
+        &[],
+        &given("/prompts/review-pr.md", &review_values()),
+    );
+    assert!(passed, "{output}");
+    let (passed, doubled) = call(
+        &board,
+        "get",
+        &[],
+        &given("//prompts/review-pr.md", &review_values()),
+    );
+    assert!(passed, "{doubled}");
+    assert_eq!(doubled["path"], "//prompts/review-pr.md");
+    assert_eq!(doubled["text"], output["text"]);
+    assert_eq!(doubled["blob"], output["blob"]);
+}
+
+#[test]
+fn a_path_board_cannot_read_is_refused_with_boards_own_refusal() {
+    let board = board();
+    board.write("prompts/review-pr.md", &review());
+    let stdin = given("/prompts/../prompts/review-pr.md", &review_values());
+    let (passed, refused) = call(&board, "get", &[], &stdin);
+    assert!(!passed);
+    assert_eq!(refused["code"], "prompts::board::refused", "{refused}");
+    assert_eq!(
+        refused["message"],
+        "`board get` refused with board::path::malformed: logical path \
+         \"/prompts/../prompts/review-pr.md\" is malformed: it has a . or .. segment; a logical \
+         path starts with `/`, leaves out `.json`, has no empty, `.` or `..` segment, and holds \
+         no invisible character such as U+202E"
+    );
+}

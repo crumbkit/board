@@ -7,15 +7,16 @@ use std::fmt::Write as _;
 use std::sync::LazyLock;
 
 use regex::{Captures, Regex};
-use serde_json::{Value, json};
+use serde_json::json;
 use unicode_general_category::{GeneralCategory, get_general_category};
 
+use crate::records::{RunsIn, input};
 use crate::refusal;
 use board_ops::PluginError;
 
 /// `{name}` for an input's name, as the schema's `inputs` admits it.
 static PLACEHOLDER: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"\{([a-z][a-z0-9_]{0,31})\}").expect("the placeholder pattern compiles")
+    Regex::new(concat!(r"\{(", input!(), r")\}")).expect("the placeholder pattern compiles")
 });
 
 /// The longest input value, in characters. A value is a short identifier,
@@ -50,17 +51,9 @@ pub(crate) fn body(text: &str) -> &str {
     ""
 }
 
-/// Names joined by `, `.
-fn joined(names: &[&str]) -> String {
-    names.join(", ")
-}
-
 /// The values `given`, once each names a declared input, every declared
 /// input has one, and each is one line.
-pub(crate) fn checked(
-    declared: &BTreeMap<String, Value>,
-    given: &Values,
-) -> Result<Values, PluginError> {
+pub(crate) fn checked(declared: &Values, given: &Values) -> Result<Values, PluginError> {
     let unknown: Vec<&str> = (given.keys())
         .filter(|name| !declared.contains_key(*name))
         .map(String::as_str)
@@ -70,11 +63,11 @@ pub(crate) fn checked(
         let takes = if takes.is_empty() {
             "none".to_owned()
         } else {
-            joined(&takes)
+            takes.join(", ")
         };
         let why = format!(
             "no input is named {}; the prompt takes {takes}",
-            joined(&unknown)
+            unknown.join(", ")
         );
         return Err(refusal(
             "prompts::input::unknown",
@@ -89,7 +82,7 @@ pub(crate) fn checked(
     if !missing.is_empty() {
         let why = format!(
             "the prompt needs a value for {}; give each in inputs on stdin",
-            joined(&missing)
+            missing.join(", ")
         );
         return Err(refusal(
             "prompts::input::missing",
@@ -105,7 +98,7 @@ pub(crate) fn checked(
         let why = format!(
             "the value of {} is longer than {MAX_VALUE} characters, spans lines or holds a control \
              or format character; put a longer text in the prompt itself or in a separate brief",
-            joined(&bad)
+            bad.join(", ")
         );
         return Err(refusal(
             "prompts::input::bad_value",
@@ -129,7 +122,7 @@ pub(crate) fn render(text: &str, values: &Values) -> String {
 }
 
 /// The declared inputs `text` never names, by name.
-pub(crate) fn unused(declared: &BTreeMap<String, Value>, text: &str) -> Vec<String> {
+pub(crate) fn unused(declared: &Values, text: &str) -> Vec<String> {
     let named: Vec<&str> = (PLACEHOLDER.captures_iter(text))
         .filter_map(|found| found.get(1).map(|name| name.as_str()))
         .collect();
@@ -165,27 +158,25 @@ fn directory(value: &str) -> bool {
 /// an absolute path that stays put. The rendered value obeys the rules for
 /// an input value too, so an override cannot carry a control or format
 /// character, such as a tab or U+202E, into the place the work starts.
-pub(crate) fn placed(key: &str, written: &str, values: &Values) -> Result<Value, PluginError> {
+pub(crate) fn placed(runs_in: &RunsIn, values: &Values) -> Result<RunsIn, PluginError> {
+    let (key, written) = runs_in.place();
     let value = render(written, values);
-    let shaped = if key == "remote" {
-        remote(&value)
-    } else {
-        directory(&value)
+    let (shaped, kind) = match runs_in {
+        RunsIn::InClone(_) => (remote(&value), "a GitHub owner/name"),
+        RunsIn::InDirectory(_) => (
+            directory(&value),
+            "an absolute path or one under ~/ without a .. segment",
+        ),
     };
     if unsafe_value(&value) || !shaped {
         let named: Vec<&str> = (PLACEHOLDER.captures_iter(written))
             .filter_map(|found| found.get(1).map(|name| name.as_str()))
             .filter(|name| values.contains_key(*name))
             .collect();
-        let kind = if key == "remote" {
-            "a GitHub owner/name"
-        } else {
-            "an absolute path or one under ~/ without a .. segment"
-        };
         let inputs = if named.is_empty() {
             "none".to_owned()
         } else {
-            joined(&named)
+            named.join(", ")
         };
         let why = format!(
             "runs_in.{key} renders as {}, which is not {kind}; check the values of the inputs: {inputs}",
@@ -194,7 +185,7 @@ pub(crate) fn placed(key: &str, written: &str, values: &Values) -> Result<Value,
         let fields = [("runs_in", json!({key: value})), ("inputs", json!(named))];
         return Err(refusal("prompts::runs_in::invalid", why, fields));
     }
-    Ok(json!({key: value}))
+    Ok(runs_in.at(value))
 }
 
 /// `text` as Python's `repr` writes a string, which the Python plugin's

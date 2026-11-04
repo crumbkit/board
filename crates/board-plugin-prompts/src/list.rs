@@ -101,7 +101,7 @@ pub(crate) fn list(host: &dyn Host, input: &Value) -> Result<Value, PluginError>
             degraded += 1;
             continue;
         }
-        let record = json_body(&file.frontmatter);
+        let record = json_body("prompts", &file.logical, &file.frontmatter)?;
         let strings = |value: &Value| -> BTreeMap<String, String> {
             serde_json::from_value(value.clone()).unwrap_or_default()
         };
