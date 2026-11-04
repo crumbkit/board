@@ -545,3 +545,26 @@ fn the_hook_reuses_the_check_an_action_passed_so_an_agent_without_a_model_or_cre
     assert_eq!(runs_now(), opened);
     assert!(pushed < opened);
 }
+
+#[test]
+fn a_ref_naming_a_tree_is_refused_as_no_commit_and_the_same_ref_naming_a_commit_is_checked() {
+    let desk = Desk::new();
+    let sha = desk.commit("Add a gear");
+    let tree = desk.git(&desk.checkout(), &["rev-parse", "HEAD^{tree}"]);
+    let remote = desk.remote().display().to_string();
+    let url = [("BOARD_GITHUB_PUSH_URL", remote.as_str())];
+    let zero = "0".repeat(40);
+    let pre_push = |object: &str| {
+        let refs = format!("refs/tags/t {object} refs/tags/t {zero}\n");
+        let flags = ["--remote", "origin", "--refs", &refs];
+        desk.call_at(None, true, "pre-push", &flags, &url)
+    };
+    let (ran, document) = pre_push(&tree);
+    assert_eq!(ran.code, 1, "{document}");
+    assert_eq!(document["code"], "github::push::not_commit");
+    assert_eq!(document["fields"]["object"], tree);
+    let (ran, document) = pre_push(&sha);
+    assert_eq!(ran.code, 0, "{document}");
+    let checked = &document["data"]["output"]["checked"];
+    assert_eq!(checked.as_array().unwrap().len(), 1, "{checked}");
+}
