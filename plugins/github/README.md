@@ -186,9 +186,10 @@ git needs a stored sign-in from `gh auth login` and `gh auth setup-git`, or
 an SSH remote; a token in `GH_TOKEN` or `GITHUB_TOKEN` alone signs in gh
 and not git. A git command that fails to sign in while a token variable is
 set, such as the `git ls-remote` before the check or the push itself, is
-`github::git::failed` or `github::push::failed` with a hint saying so. The pre-push capability is not
-given the tokens. Every git and ssh command runs
-through the host with a deadline, 300 seconds for git and 10 for `ssh -G`,
+`github::git::failed` or `github::push::failed` with a hint saying so. The
+pre-push capability is not given the tokens, so in the hook any git
+command that fails to sign in carries the hint. Every git and ssh command
+runs through the host with a deadline, 300 seconds for git and 10 for `ssh -G`,
 and its output is capped at 16 MiB, so a larger diff fails with
 `github::git::failed`.
 Git runs the checkout's `pre-push` hook during the push, as it does for any
@@ -264,13 +265,12 @@ The hook reuses that check only when all of these hold:
   destination, from the hook's own checkout, is among the boundaries that
   crossing was checked against.
 
-Otherwise the hook runs `boundary.check` on the ref's parts. So a value
-anyone sets in the variable stands only for a check that applied every
-boundary this push meets to exactly the content it sends. So the hook asks no agent again, even when
-`BOARD_CONTROLS_AGENT` names no `--model` and the hook, like every git hook,
-runs without the model credentials. A raw `git push` hands nothing and is
-checked. `boundary.verify` misses an edit to a matched boundary's checks or
-a control's rule made between the action's check and its push. It returns
+Otherwise the hook runs `boundary.check` on the ref's parts. A handed value
+stands for a check that applied every boundary this push meets to exactly
+the content it sends, under the rules in force when that check ran. The
+hook then asks no agent again, even when `BOARD_CONTROLS_AGENT` names no
+`--model` and the hook, like every git hook, runs without the model
+credentials. A raw `git push` hands nothing and is checked. It returns
 `checked`, each ref's `ref`, `to`, `digest` and `note`.
 
 The destinations are every GitHub repository among the URL git pushes to
@@ -284,11 +284,23 @@ Board's message, which ends with the boundary's `Next:` step when it gives
 one. It refuses
 when board is not on PATH, and when the boundary plugin is not enabled,
 because it cannot then tell whether a boundary covers the push. A push no
-boundary covers passes the check with a `note` and goes. Some pushes skip
-the hook, which is why GitHub's controls stay: `git push --no-verify`,
-`git -c core.hooksPath=<elsewhere> push` and an alias that sets it, and
-submodule commits that `push.recurseSubmodules` pushes through the
-submodule's own hooks directory, where no hook is installed.
+boundary covers passes the check with a `note` and goes.
+
+The hook guards against mistakes, not against an agent that sets out to
+get round it. `github.push` and `pr-create` check again on every run, so
+only a raw `git push` meets these ways round the hook, which is why
+GitHub's controls stay:
+
+- `git push --no-verify`, `git -c core.hooksPath=<elsewhere> push` and an
+  alias that sets it.
+- Submodule commits that `push.recurseSubmodules` pushes through the
+  submodule's own hooks directory, where no hook is installed.
+- A hand-set `BOARD_GITHUB_PASSED` that replays an earlier passing check
+  of the same content. `boundary.verify` compares only the boundaries'
+  paths, so the replay passes after a control's rule, a pattern file or a
+  boundary's checks has been tightened, at any time after that check ran.
+- Pointing Board's config at an empty board, or at none: the hook lets the
+  push go on `board::config::not_found`.
 
 ### The Claude Code mod
 
