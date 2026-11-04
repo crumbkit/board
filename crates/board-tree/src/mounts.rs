@@ -382,10 +382,26 @@ pub enum Origin {
 }
 
 /// The `origin` remote of the repository holding `directory`, read from
-/// git's config without starting git.
+/// git's config without starting git. A repository git would refuse, for
+/// its owner or a config that does not parse, is unread.
 pub fn origin(directory: &Path) -> Origin {
-    let Ok(git) = gix::discover(directory) else {
+    // Finding the repository reads no config, so only a directory in no
+    // repository, or one that cannot be read, is outside.
+    let Ok((found, trust)) = gix::discover::upwards(directory) else {
         return Origin::Outside;
+    };
+    if trust != gix::sec::Trust::Full {
+        // git refuses a repository another user owns; gix would read it
+        // with reduced trust.
+        let (git_dir, _) = found.into_repository_and_work_tree_directories();
+        return Origin::Unread(format!(
+            "fatal: detected dubious ownership in repository at '{}'",
+            git_dir.display()
+        ));
+    }
+    let git = match gix::discover(directory) {
+        Ok(git) => git,
+        Err(error) => return Origin::Unread(format!("error: {error}")),
     };
     match git.try_find_remote("origin") {
         None => Origin::Unread("error: No such remote 'origin'".to_owned()),

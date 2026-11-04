@@ -291,3 +291,17 @@ fn an_origin_is_read_with_its_insteadof_applied_as_git_remote_get_url_gives_it()
         crate::Origin::Url("git@github.com-work:example-org/lib".to_owned())
     );
 }
+
+#[test]
+fn a_repository_whose_config_does_not_parse_is_unread_and_its_twin_that_parses_gives_its_url() {
+    let (broken, whole) = (Scenario::new(), Scenario::new());
+    originating(&broken, "git@github.com:example-org/lib.git");
+    originating(&whole, "git@github.com:example-org/lib.git");
+    broken.write(".git/config", Item::Appended("[remote \"unclosed\n"));
+    let crate::Origin::Unread(why) = crate::origin(broken.workdir()) else {
+        panic!("a config that does not parse is unread");
+    };
+    assert!(why.starts_with("error: "), "{why}");
+    let url = crate::Origin::Url("git@github.com:example-org/lib.git".to_owned());
+    assert_eq!(crate::origin(whole.workdir()), url);
+}
