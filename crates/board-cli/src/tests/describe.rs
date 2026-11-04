@@ -52,9 +52,10 @@ const LINES: &[(&str, &[&str], &[&str])] = &[
     ("schemas show", &[], &["board/check-report/v2"]),
 ];
 
-/// The leaves that refuse `--full`, because their JSON already holds every
-/// field: they print prose, headed answers or rows that print whole.
-const WITHOUT_FULL: &[&str] = &[
+/// The leaves whose JSON already holds every field, because they print
+/// prose, headed answers or rows that print whole. They take `--full` only
+/// with `--json`, and say on stderr that it adds nothing.
+const WHOLE: &[&str] = &[
     "init",
     "check",
     "get",
@@ -186,6 +187,26 @@ fn root_help_lists_the_commands_under_their_goals() {
 }
 
 #[test]
+fn the_root_row_of_commands_list_names_its_goal_headings_and_a_group_without_goals_has_none() {
+    let rows = commands();
+    let row = |path: &str| rows.iter().find(|row| row["path"] == path).unwrap();
+    let goals: Vec<(&str, Vec<&str>)> = (row("board")["goals"].as_array().unwrap().iter())
+        .map(|goal| {
+            let commands = goal["commands"].as_array().unwrap().iter();
+            (
+                goal["heading"].as_str().unwrap(),
+                commands.map(|name| name.as_str().unwrap()).collect(),
+            )
+        })
+        .collect();
+    let expected: Vec<(&str, Vec<&str>)> = (crate::render::GOALS.goals().iter())
+        .map(|goal| (goal.heading(), goal.commands().to_vec()))
+        .collect();
+    assert_eq!(goals, expected);
+    assert_eq!(row("board plugin").get("goals"), None);
+}
+
+#[test]
 fn commands_list_of_a_path_lists_that_branch_and_a_path_that_names_nothing_is_refused() {
     let outside = Scenario::new();
     let branch = board_in(outside.workdir(), &["commands", "list", "plugin", "--json"]);
@@ -277,17 +298,92 @@ fn every_leaf_takes_no_input_and_json_before_its_own_words() {
 }
 
 #[test]
-fn every_leaf_whose_rows_can_print_more_takes_full_and_the_rest_refuse_it_by_name() {
-    let mut refused = Vec::new();
+fn every_leaf_takes_json_full_and_a_whole_leaf_refuses_full_without_json() {
+    let mut whole = Vec::new();
     for (path, options, words) in LINES {
-        if let Err(refusal) = parses(line(path, options, &ADDED, words)) {
-            let failure: Value = serde_json::from_str(&refusal).unwrap();
-            assert_eq!(failure["code"], "board::cli::usage", "board {path}");
-            assert_eq!(failure["fields"]["argument"], "--full", "board {path}");
-            refused.push(*path);
+        assert_eq!(
+            parses(line(path, options, &ADDED, words)),
+            Ok(()),
+            "board {path}"
+        );
+        let without_json = line(path, options, &["--full", "--no-input", "--"], words);
+        let refusal = parses(without_json).unwrap_err();
+        assert!(refusal.starts_with("error: --full "), "{refusal}");
+        assert!(
+            refusal.ends_with("  code:  board::cli::usage\n"),
+            "{refusal}"
+        );
+        let help = refusal
+            .lines()
+            .find(|line| line.starts_with("  help:"))
+            .unwrap();
+        if help == "  help:  drop --full, because --json already prints the whole result" {
+            whole.push(*path);
+        } else {
+            assert_eq!(help, "  help:  add --json, or drop --full", "board {path}");
         }
     }
-    assert_eq!(refused, WITHOUT_FULL);
+    assert_eq!(whole, WHOLE);
+}
+
+/// Runs `command` with `--json` and with `--json` and `flag`, and checks that
+/// `flag` changes nothing but the note it adds to stderr. Then runs it with
+/// `flag` alone, which crumbkit refuses because the flag needs `--json`.
+fn adds_nothing(scenario: &Scenario, command: &[&str], flag: &str) {
+    let run = |flags: &[&str]| {
+        let line: Vec<&str> = command.iter().chain(flags).copied().collect();
+        board_in(scenario.workdir(), &line)
+    };
+    let alone = run(&["--json"]);
+    let flagged = run(&["--json", flag]);
+    assert_eq!(
+        flagged.code,
+        alone.code,
+        "{command:?} {flag}: {}",
+        text(&flagged.stderr)
+    );
+    assert_eq!(
+        text(&flagged.stdout),
+        text(&alone.stdout),
+        "{command:?} {flag}"
+    );
+    let note = format!(
+        "note: {flag} adds nothing to --json here; the JSON already holds the whole result.\n"
+    );
+    let stderr = text(&flagged.stderr);
+    assert!(stderr.contains(&note), "{command:?} {flag}: {stderr}");
+    assert_eq!(stderr.replacen(&note, "", 1), text(&alone.stderr));
+    let refused = run(&[flag]);
+    let refusal = text(&refused.stderr);
+    assert_eq!(refused.code, 2, "{command:?} {flag}");
+    assert!(refusal.starts_with(&format!("error: {flag} ")), "{refusal}");
+    assert!(
+        refusal.ends_with("  code:  board::cli::usage\n"),
+        "{refusal}"
+    );
+}
+
+#[test]
+fn a_whole_leaf_prints_with_json_full_what_json_alone_prints_and_a_note_on_stderr() {
+    let scenario = board();
+    for command in [
+        &["check"][..],
+        &["get", "/projects/p"],
+        &["ls", "/projects"],
+        &["refs", "/projects/p"],
+        &["plugin", "list"],
+        &["query", "SELECT 1"],
+    ] {
+        adds_nothing(&scenario, command, "--full");
+    }
+}
+
+#[test]
+fn a_whole_row_leaf_prints_with_json_long_what_json_alone_prints_and_a_note_on_stderr() {
+    let scenario = board();
+    for command in [&["check"][..], &["ls", "/projects"]] {
+        adds_nothing(&scenario, command, "--long");
+    }
 }
 
 #[test]

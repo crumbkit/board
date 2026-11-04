@@ -443,7 +443,7 @@ pub(crate) fn run(
             {
                 return output;
             }
-            let code = unparsed.print_to(sink).number();
+            let code = unparsed.print_to(sink).exit();
             let error = (code == 2).then(|| Code::CliUsage.as_str().to_owned());
             return Output {
                 stdout,
