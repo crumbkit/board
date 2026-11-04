@@ -91,16 +91,65 @@ fn a_file_path_is_matched_as_for_path_matches_it_through_a_link_and_before_it_ex
 }
 
 #[test]
-fn a_pattern_that_matches_no_file_yet_is_matched_as_a_path_and_one_that_cannot_be_is_not() {
+fn a_pattern_for_a_new_crate_reaches_every_control_a_file_under_it_could_match() {
     let board = board();
-    board.write(
-        "controls/rust.json",
-        &control("R.", &json!({"paths": ["crates/*.rs"]})),
-    );
+    board
+        .write("crates/store/src/lib.rs", "//! Store.\n")
+        .write(
+            "controls/rust.json",
+            &control("R.", &json!({"paths": ["crates/*.rs"]})),
+        )
+        .write(
+            "controls/docs.json",
+            &control("R.", &json!({"paths": ["docs/*.md"]})),
+        );
     assert_eq!(
-        matched(&board, &["/crates/new/src/*.rs", "/crates/new/**"]),
-        pairs(&[("/controls/rust", &["/crates/new/src/*.rs"])])
+        matched(&board, &["/crates/new/**", "/crates/new/src/*.rs"]),
+        pairs(&[(
+            "/controls/rust",
+            &["/crates/new/**", "/crates/new/src/*.rs"]
+        )])
     );
+}
+
+#[test]
+fn a_new_kind_of_file_under_a_pattern_reaches_its_control_and_a_pattern_of_one_kind_does_not() {
+    let board = board();
+    board
+        .write("crates/store/src/lib.rs", "//! Store.\n")
+        .write(
+            "controls/images.json",
+            &control("R.", &json!({"paths": ["*/Dockerfile*"]})),
+        )
+        .write(
+            "controls/manifests.json",
+            &control("R.", &json!({"paths": ["*.toml"]})),
+        );
+    assert_eq!(
+        matched(&board, &["/crates/store/**", "/crates/store/src/*.rs"]),
+        // GLOB's `*` also matches `/`, so `*/Dockerfile*` matches crates/store/src/x/Dockerfile.rs.
+        pairs(&[
+            (
+                "/controls/images",
+                &["/crates/store/**", "/crates/store/src/*.rs"]
+            ),
+            ("/controls/manifests", &["/crates/store/**"]),
+        ])
+    );
+}
+
+#[test]
+fn a_path_without_a_leading_slash_is_refused_and_one_with_it_is_answered() {
+    let board = board();
+    let (refused, document) = for_paths(&board, &["docs/a.md"]);
+    assert_ne!(refused.code, 0, "{document}");
+    assert_eq!(
+        document["code"],
+        json!("board::plugin::bad_input"),
+        "{document}"
+    );
+    let (admitted, document) = for_paths(&board, &["/docs/a.md"]);
+    assert_eq!(admitted.code, 0, "{document}");
 }
 
 #[test]
@@ -138,7 +187,7 @@ fn a_pattern_into_a_mount_reaches_the_controls_of_the_mounted_files() {
         )
         .write(
             "controls/docs.json",
-            &control("R.", &json!({"paths": ["repos/lib/*.md"]})),
+            &control("R.", &json!({"paths": ["repos/lib/README.md"]})),
         );
     assert_eq!(
         matched(&board, &["/repos/lib/src/**"]),

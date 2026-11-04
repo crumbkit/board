@@ -94,6 +94,9 @@ impl Context {
                 caller: current.map(PathBuf::into_os_string),
                 day_start: None,
                 plugin: std::env::var_os(board_plugin::PLUGIN_VARIABLE),
+                // A Board a plugin started keeps naming the Board that started the plugin.
+                binary: std::env::var_os("BOARD_BIN")
+                    .or_else(|| std::env::current_exe().ok().map(PathBuf::into_os_string)),
                 inherited: std::env::vars_os().collect(),
             },
             complete: std::env::var_os("BOARD_COMPLETE"),

@@ -212,8 +212,8 @@ def tasks_board(board: Board) -> Board:
     return board
 
 
-def mount_repo(board: Board, files: dict[str, str], at: str = "repos/x") -> str:
-    """A git repository holding a board and `files`, mounted at `/<at>`; its logical path."""
+def mount_repo(board: Board, files: dict[str, str], at: str = "repos/x", follow: str = "HEAD") -> str:
+    """A git repository holding a board and `files`, mounted at `/<at>` and following `follow`; its logical path."""
     root = board.root.parent / at.replace("/", "-")
     root.mkdir()
     git(root, "init", "-q")
@@ -224,7 +224,8 @@ def mount_repo(board: Board, files: dict[str, str], at: str = "repos/x") -> str:
         (root / path).write_text(text)
     git(root, "add", ".")
     git(root, "commit", "-qm", "fixture")
-    pointer = {"$type": "board/mount/v1", "repo": str(root), "follow": "HEAD", "commit": git(root, "rev-parse", "HEAD")}
+    git(root, "branch", "-M", "main")
+    pointer = {"$type": "board/mount/v1", "repo": str(root), "follow": follow, "commit": git(root, "rev-parse", "HEAD")}
     board.write(f"{at}.json", json.dumps(pointer))
     return f"/{at}"
 
@@ -280,13 +281,25 @@ def plan_input(
 
 
 def edited(board: Board, files: dict[str, str]) -> tuple[str, str]:
-    """A repository mounted at /repos/x with a first commit and a second that writes `files`: both commit ids."""
-    mount_repo(board, {"README.md": "x\n"})
+    """A repository mounted at /repos/x, following `main`, and a branch `work` off it whose commit writes `files`.
+
+    It returns the commit `main` holds and the head of `work`.
+    """
+    mount_repo(board, {"README.md": "x\n"}, follow="main")
     root = board.root.parent / "repos-x"
     base = git(root, "rev-parse", "HEAD")
+    git(root, "checkout", "-qb", "work")
+    return base, commit(board, files)
+
+
+def commit(board: Board, files: dict[str, str], branch: str | None = None) -> str:
+    """Commit `files` to the repository /repos/x mounts, on `branch` or the branch checked out: the commit id."""
+    root = board.root.parent / "repos-x"
+    if branch is not None:
+        git(root, "checkout", "-q", branch)
     for path, text in files.items():
         (root / path).parent.mkdir(parents=True, exist_ok=True)
         (root / path).write_text(text)
     git(root, "add", ".")
     git(root, "commit", "-qm", "edit")
-    return base, git(root, "rev-parse", "HEAD")
+    return git(root, "rev-parse", "HEAD")

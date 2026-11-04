@@ -1,5 +1,6 @@
 """`changes.plan`: a change's plan, the records it uses, and the limits on both."""
 
+import json
 from typing import Any
 
 from conftest import PATHS, PLAN, Board, change, record
@@ -176,3 +177,16 @@ def test_a_planned_path_outside_the_change_s_mount_is_refused_and_one_inside_it_
         assert refused["code"] == "changes::plan::outside_mount", outside
         assert refused["fields"]["paths"] == [outside]
     assert board.call("plan", {"path": PATH, "text": PLAN, "uses": [], "paths": ["/repos/x/*"]}, stdin=True)
+
+
+def test_a_plan_record_whose_path_does_not_start_at_the_root_is_invalid_and_one_that_does_is_valid(
+    board: Board,
+) -> None:
+    board.write("changes/t.json", change())
+    output = board.call("plan", {"path": PATH, "text": PLAN, "uses": [], "paths": PATHS}, stdin=True)
+    stored = output["path"].removeprefix("/") + ".json"
+    written = board.read(stored)
+    board.write(stored, json.dumps({**written, "paths": ["repos/x/**"]}))
+    assert board.json("check", output["path"])["data"][0].get("code") == "board::record::invalid"
+    board.write(stored, json.dumps(written))
+    assert board.json("check", output["path"])["data"][0].get("code") is None

@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING, Any
 
 from conftest import BASE, HEAD, PLAN, TASK
 
-from board_changes.gates import Observed, gate, mockups, sections
+from board_changes.gates import CODES, Observed, gate, mockups, sections
 
 if TYPE_CHECKING:
     from board_changes.change import Change
@@ -174,18 +174,20 @@ def test_the_review_gate_refuses_a_diff_outside_the_planned_paths_and_passes_one
     [_, inside] = gate(observed("review", reviewed, head=HEAD))
     assert inside == {"check": "paths", "status": "pass", "detail": ""}
     [_, outside] = gate(observed("review", reviewed, head=HEAD, outside=("/repos/x/b.rs", "/repos/x/c.rs")))
-    assert outside["status"] == "missing"
+    assert (outside["status"], CODES[outside["check"]]) == ("missing", "changes::paths::outside_plan")
     assert outside["detail"] == (
-        "the reviewed diff edits files outside the plan's paths, so their rules were not in the brief: "
+        "the change's diff edits files outside the plan's paths, so their rules were not in the brief: "
         "/repos/x/b.rs, /repos/x/c.rs; add them to the paths with `board call changes.plan`, or revert the edit"
     )
     [_, unplanned] = gate(observed("review", reviewed, head=HEAD, planned=()))
+    assert (unplanned["status"], CODES[unplanned["check"]]) == ("missing", "changes::paths::outside_plan")
     assert unplanned["detail"] == (
         "the newest plan declares no paths, so every edited file is outside them; "
         "write the plan again with `board call changes.plan` and its paths"
     )
     [_, unread] = gate(observed("review", reviewed, head=HEAD, diff_unread="git failed"))
     assert (unread["status"], unread["detail"]) == ("missing", "git failed")
+    assert CODES[unread["check"]] == "changes::paths::outside_plan"
 
 
 def test_the_land_gate_needs_the_pull_request_url_and_done_has_no_gate() -> None:

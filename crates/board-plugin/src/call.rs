@@ -89,6 +89,10 @@ pub struct Environment {
     pub day_start: Option<OsString>,
     /// `BOARD_PLUGIN`, set when Board runs inside a plugin.
     pub plugin: Option<OsString>,
+    /// `BOARD_BIN`: the Board executable a plugin runs, so a nested call
+    /// runs the same build whatever `PATH` finds. It is the inherited
+    /// `BOARD_BIN` when set, else this Board's own executable.
+    pub binary: Option<OsString>,
     /// Every variable Board inherited, which a capability's `env` may name.
     pub inherited: Inherited,
 }
@@ -482,6 +486,7 @@ fn environment<'a>(
         ("BOARD_TIMINGS", &inherited.timings),
         ("BOARD_CALLER_DIR", &inherited.caller),
         ("BOARD_DAY_START", &inherited.day_start),
+        ("BOARD_BIN", &inherited.binary),
     ]
     .into_iter()
     .filter_map(|(key, value)| Some((key, value.clone()?)));
@@ -529,6 +534,7 @@ impl Environment {
             caller: Some(directory.as_os_str().to_owned()),
             day_start: self.day_start.clone(),
             plugin: get(PLUGIN_VARIABLE),
+            binary: get("BOARD_BIN"),
             inherited: (given.into_iter())
                 .map(|(name, value)| (OsString::from(name), value))
                 .collect(),

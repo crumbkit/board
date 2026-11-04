@@ -237,6 +237,26 @@ impl JsonSchema for Glob {
     }
 }
 
+/// A [`Glob`] by logical path, such as `/repos/inbox/crates/*.rs`, which
+/// starts at the board's root as a logical path does. A `String` field
+/// takes it with `#[schemars(with = "LogicalGlob")]`.
+#[derive(Debug)]
+pub enum LogicalGlob {}
+
+impl JsonSchema for LogicalGlob {
+    fn inline_schema() -> bool {
+        true
+    }
+
+    fn schema_name() -> Cow<'static, str> {
+        "LogicalGlob".into()
+    }
+
+    fn json_schema(_: &mut SchemaGenerator) -> Schema {
+        json_schema!({"type": "string", "minLength": 1, "pattern": "^/", "x-board-glob": true})
+    }
+}
+
 /// Each shared shape's schema by its name. `crates/board-plugin/shapes.json`
 /// is this map, committed, and the shapes lint admits a string field whose
 /// schema is one of its entries.
@@ -245,6 +265,7 @@ pub fn registry() -> Map<String, Value> {
     Map::from_iter([
         entry::<Date>(&mut generator),
         entry::<Glob>(&mut generator),
+        entry::<LogicalGlob>(&mut generator),
         entry::<Prose>(&mut generator),
         entry::<Sha256>(&mut generator),
         entry::<Url>(&mut generator),

@@ -7,6 +7,7 @@ plugins only through `board call`, so the same checks, limits and logs apply.
 import base64
 import binascii
 import json
+import os
 import subprocess
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
@@ -200,14 +201,17 @@ class Board:
     def _run(
         self, *arguments: str, stdin: bytes = b"", timeout: float | None = None
     ) -> subprocess.CompletedProcess[bytes]:
-        """Run `board <arguments>`, given `stdin`.
+        """Run `board <arguments>`, given `stdin`: the Board that `BOARD_BIN` names, or else the one on PATH.
+
+        Board sets `BOARD_BIN` to its own executable when it starts a plugin, so a
+        nested call runs the same build as the call that started the plugin.
 
         A run still going after `timeout` seconds is left to finish in a session of its own, and is not
         stopped: stopping Board mid-write would leave its lock behind, and every later write would be refused.
         """
-        command = ["board", *arguments]
+        command = [os.environ.get("BOARD_BIN") or "board", *arguments]
         try:
-            child = subprocess.Popen(  # noqa: S603 - the program is Board itself, found on PATH
+            child = subprocess.Popen(  # noqa: S603 - the program is Board itself
                 command,
                 cwd=self.root,
                 stdin=subprocess.PIPE,
@@ -233,7 +237,7 @@ class Board:
         stderr = ran.stderr.decode(errors="replace")[-4096:] if ran is not None else ""
         return PluginError(
             f"{self.plugin}::board::failed",
-            f"`board {arguments[0]}` {why}; check that the `board` first on PATH is this Board",
+            f"`board {arguments[0]}` {why}; check that BOARD_BIN, or else the `board` first on PATH, is this Board",
             {"stderr": stderr},
         )
 

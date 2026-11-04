@@ -176,16 +176,23 @@ skill in `claude-code/skills/` runs the check.
   message starts with it (see "The write guard"). The newest plan's text path,
   even once a reference in it breaks,
   `rules`, each control that applies to the plan's `paths`, once, from
-  `controls.for-paths`: its `control`, `summary` and the planned paths it
-  `matched`; `rules_left_out`;
+  `controls.for-paths`: its `control`, its `summary` and at most three of
+  the planned paths it `matched`, with `matched_left_out` counting the
+  rest. Both are left out when every planned path reached the rule.
+  `rules_left_out` names each rule the word limit dropped, and
+  `rules_command` is the `controls.for-paths` command that lists them all,
+  or null when the plan has no paths;
   one line per record it uses (a control's `summary`, else its
   `requirement`; a decision's `decision`; an eval's question and verdict; a
   document's first heading), `left_out`, the phase and instruction `next`
   gives, and the `controls.check` command for the change's mount. It holds at
-  most 600 words, counting each rule with its path and matched paths and
-  each line with its reference. Rules are counted before lines, and
-  `rules_left_out` and `left_out` count those it dropped. The full
-  requirement of a rule is `controls.for-path` away.
+  most 600 words, counting each rule with its path and matched paths,
+  each dropped rule's path, and each line with its reference. Rules are
+  counted before lines, and `left_out` counts the lines it dropped. The
+  full requirement of a rule is `controls.for-path` away. It fails with
+  `changes::brief::controls_missing` when the Board that runs it does not
+  offer `controls.for-paths`, such as when the controls plugin is not
+  enabled.
 
 The cap on work in progress counts build changes in `build`, at most
 three, and apart from them prototypes in `build`, at most three. A
@@ -199,7 +206,7 @@ change is `changes::change::degraded`.
 
 Each gate reads only the change, the records it references, its plan file,
 in `build` the repository's contributing docs, and in `review` the newest
-plan's paths and the reviewed diff. A referenced record
+plan's paths and the change's diff. A referenced record
 Board marks degraded satisfies nothing.
 
 | Leaving | Gate |
@@ -230,10 +237,14 @@ The plan gate's last three checks:
   `subject` is `data`. As for mockups, a decision with `written_by` set
   does not count.
 
-The review gate's `paths` check reads the diff of the first attached report
-whose `range` ends at `head`: `git diff --name-only --no-renames
-<base>...<head>` in the repository the mount names, run without the user's
-or system's git config. A rename counts as deleting one path and adding
+The review gate's `paths` check reads the whole change's diff, whatever
+range a review report covers: `git diff --name-only --no-renames <base>
+<head>` in the repository the mount names, where `<base>` is `git
+merge-base` of `head` and the ref the mount's `follow` names. It runs
+without the user's or system's git config. A rebased change leaves out
+what the followed branch gained, and a review of only the fix commits
+still checks every commit of the change. A mount without `follow` gives
+no base, and the check fails saying so. A rename counts as deleting one path and adding
 another. Each file it lists, by its path under the mount, must match one of
 the newest plan's `paths` with SQLite's `GLOB`. Otherwise `advance` refuses
 with `changes::paths::outside_plan` and names the files, because their

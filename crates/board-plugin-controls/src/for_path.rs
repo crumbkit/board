@@ -121,11 +121,5 @@ fn matching(host: &dyn Host, report: &RefsReport) -> Result<Vec<String>, PluginE
         literal(place),
         literal(display.strip_prefix('/').unwrap_or(&display)),
     );
-    let report = index::rows(host, &sql)?;
-    Ok((report.rows.into_iter())
-        .filter_map(|row| match row.into_iter().next() {
-            Some(Value::String(logical)) => Some(logical),
-            _ => None,
-        })
-        .collect())
+    index::first_strings(host, &sql)
 }

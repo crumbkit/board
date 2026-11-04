@@ -12,6 +12,7 @@ import subprocess
 from dataclasses import dataclass
 from typing import cast
 
+from board_plugin.git import ISOLATED
 from board_plugin.protocol import PluginError
 
 from board_review.shapes import BRIEF_TYPE, REPORT_TYPE
@@ -20,8 +21,6 @@ from board_review.shapes import BRIEF_TYPE, REPORT_TYPE
 REVIEW_PATH = "reviews/"
 # The type of the record each file name holds in /reviews/<id>/.
 RECORDS = {"brief.json": BRIEF_TYPE, "report.json": REPORT_TYPE}
-# The variables that keep the user's and the system's git config out of every git command.
-ISOLATED = {"GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
 # Options that fix a diff's text, whatever the repository's own config says.
 DIFF = (
     "--no-color",

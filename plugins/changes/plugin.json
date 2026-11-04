@@ -812,8 +812,10 @@
           "paths": {
             "description": "The files and SQLite GLOB patterns the change will edit, by logical path under the change's mount, such as /repos/inbox/crates/inbox-store/**, where `*` also matches `/`; a build change needs one.",
             "items": {
+              "minLength": 1,
               "pattern": "^/",
-              "type": "string"
+              "type": "string",
+              "x-board-glob": true
             },
             "title": "Paths",
             "type": "array"
@@ -899,18 +901,24 @@
         "$defs": {
           "BriefRule": {
             "additionalProperties": false,
-            "description": "One control that applies to the planned paths: its summary and the planned paths that reached it.",
+            "description": "One control that applies to the planned paths, and its summary.\n\n`matched` lists at most three of the planned paths that reached it, and\n`matched_left_out` counts the rest; both are left out when every planned\npath reached it.",
             "properties": {
               "control": {
                 "title": "Control",
                 "type": "string"
               },
               "matched": {
+                "default": null,
                 "items": {
                   "type": "string"
                 },
                 "title": "Matched",
                 "type": "array"
+              },
+              "matched_left_out": {
+                "default": null,
+                "title": "Matched Left Out",
+                "type": "integer"
               },
               "summary": {
                 "title": "Summary",
@@ -919,8 +927,7 @@
             },
             "required": [
               "control",
-              "summary",
-              "matched"
+              "summary"
             ],
             "title": "BriefRule",
             "type": "object"
@@ -947,7 +954,7 @@
           }
         },
         "additionalProperties": false,
-        "description": "What an agent needs to start a change, in at most 600 words.\n\n`plan` is the newest plan's text, or `null` when the change has no plan\nrecord. `rules` lists each control on the plan's paths once, as\n`controls.for-paths` finds them, and `rules_left_out` counts those the\nword limit left out; rules are counted before uses. `uses` gives one\nline per record it uses, in order, and `left_out` counts those the word\nlimit left out. `controls` is the\ncommand that lists the controls on the change's repository.\n`brief_line`, `board-brief: <path>`, comes first in the output; a\nbuilder's first message starts with it, and the write guard reads it.",
+        "description": "What an agent needs to start a change, in at most 600 words.\n\n`plan` is the newest plan's text, or `null` when the change has no plan\nrecord. `rules` lists each control on the plan's paths once, as\n`controls.for-paths` finds them, and `rules_left_out` names those the\nword limit left out, which `rules_command` lists in full; it is `null`\nwhen the plan has no paths. Rules are counted before uses. `uses` gives one\nline per record it uses, in order, and `left_out` counts those the word\nlimit left out. `controls` is the\ncommand that lists the controls on the change's repository.\n`brief_line`, `board-brief: <path>`, comes first in the output; a\nbuilder's first message starts with it, and the write guard reads it.",
         "properties": {
           "brief_line": {
             "title": "Brief Line",
@@ -1000,9 +1007,23 @@
             "title": "Rules",
             "type": "array"
           },
+          "rules_command": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rules Command"
+          },
           "rules_left_out": {
+            "items": {
+              "type": "string"
+            },
             "title": "Rules Left Out",
-            "type": "integer"
+            "type": "array"
           },
           "uses": {
             "items": {
@@ -1018,6 +1039,7 @@
           "plan",
           "rules",
           "rules_left_out",
+          "rules_command",
           "uses",
           "left_out",
           "phase",
@@ -1082,7 +1104,7 @@
         "$defs": {
           "BriefOutput": {
             "additionalProperties": false,
-            "description": "What an agent needs to start a change, in at most 600 words.\n\n`plan` is the newest plan's text, or `null` when the change has no plan\nrecord. `rules` lists each control on the plan's paths once, as\n`controls.for-paths` finds them, and `rules_left_out` counts those the\nword limit left out; rules are counted before uses. `uses` gives one\nline per record it uses, in order, and `left_out` counts those the word\nlimit left out. `controls` is the\ncommand that lists the controls on the change's repository.\n`brief_line`, `board-brief: <path>`, comes first in the output; a\nbuilder's first message starts with it, and the write guard reads it.",
+            "description": "What an agent needs to start a change, in at most 600 words.\n\n`plan` is the newest plan's text, or `null` when the change has no plan\nrecord. `rules` lists each control on the plan's paths once, as\n`controls.for-paths` finds them, and `rules_left_out` names those the\nword limit left out, which `rules_command` lists in full; it is `null`\nwhen the plan has no paths. Rules are counted before uses. `uses` gives one\nline per record it uses, in order, and `left_out` counts those the word\nlimit left out. `controls` is the\ncommand that lists the controls on the change's repository.\n`brief_line`, `board-brief: <path>`, comes first in the output; a\nbuilder's first message starts with it, and the write guard reads it.",
             "properties": {
               "brief_line": {
                 "title": "Brief Line",
@@ -1135,9 +1157,23 @@
                 "title": "Rules",
                 "type": "array"
               },
+              "rules_command": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Rules Command"
+              },
               "rules_left_out": {
+                "items": {
+                  "type": "string"
+                },
                 "title": "Rules Left Out",
-                "type": "integer"
+                "type": "array"
               },
               "uses": {
                 "items": {
@@ -1153,6 +1189,7 @@
               "plan",
               "rules",
               "rules_left_out",
+              "rules_command",
               "uses",
               "left_out",
               "phase",
@@ -1164,18 +1201,24 @@
           },
           "BriefRule": {
             "additionalProperties": false,
-            "description": "One control that applies to the planned paths: its summary and the planned paths that reached it.",
+            "description": "One control that applies to the planned paths, and its summary.\n\n`matched` lists at most three of the planned paths that reached it, and\n`matched_left_out` counts the rest; both are left out when every planned\npath reached it.",
             "properties": {
               "control": {
                 "title": "Control",
                 "type": "string"
               },
               "matched": {
+                "default": null,
                 "items": {
                   "type": "string"
                 },
                 "title": "Matched",
                 "type": "array"
+              },
+              "matched_left_out": {
+                "default": null,
+                "title": "Matched Left Out",
+                "type": "integer"
               },
               "summary": {
                 "title": "Summary",
@@ -1184,8 +1227,7 @@
             },
             "required": [
               "control",
-              "summary",
-              "matched"
+              "summary"
             ],
             "title": "BriefRule",
             "type": "object"

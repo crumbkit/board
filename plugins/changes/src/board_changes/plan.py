@@ -17,6 +17,10 @@ PLAN_WORDS = 3_000
 USES_WORDS = 3_000
 # The most words `brief` returns.
 BRIEF_WORDS = 600
+# The most planned paths a rule lists as matched; it counts the rest, so a rule costs about one line.
+MATCHED_SHOWN = 3
+# The codes Board refuses a call with when the controls plugin or its capability is missing.
+MISSING = ("board::plugin::not_installed", "board::plugin::not_enabled")
 CONTROL_TYPE = "controls/control/v1"
 DECISION_TYPE = "plans/decision/v1"
 EVAL_TYPE = "evals/eval/v1"
@@ -145,11 +149,42 @@ def line_of(found: tuple[str, dict[str, Any]] | None, text: str | None) -> str:
 
 
 def rules_for(board: Board, paths: list[str]) -> list[dict[str, Any]]:
-    """Each control that applies to `paths`, once, as `controls.for-paths` answers; none for no paths."""
+    """Each control that applies to `paths`, once, as `controls.for-paths` answers; none for no paths.
+
+    A Board without the controls plugin enabled, or one too old to offer
+    `for-paths`, is `changes::brief::controls_missing`.
+    """
     if not paths:
         return []
-    report = board.document("call", "controls.for-paths", stdin=json.dumps({"paths": paths}).encode())
+    try:
+        report = board.document("call", "controls.for-paths", stdin=for_paths_input(paths).encode())
+    except PluginError as error:
+        if error.code == f"{PLUGIN}::board::refused" and (error.fields or {}).get("code") in MISSING:
+            why = (
+                f"the brief lists the rules on the planned paths with controls.for-paths, which this Board "
+                f"refused: {error.message}; enable it with `board plugin enable controls`, or run a Board that "
+                "offers it"
+            )
+            raise PluginError(f"{PLUGIN}::brief::controls_missing", why) from error
+        raise
     return cast("list[dict[str, Any]]", report["data"]["output"]["controls"])
+
+
+def for_paths_input(paths: list[str]) -> str:
+    """The input `controls.for-paths` takes for `paths`, as JSON."""
+    return json.dumps({"paths": paths})
+
+
+def rule_line(rule: dict[str, Any], paths: list[str]) -> dict[str, Any]:
+    """`rule` as the brief lists it: `matched` left out when it is every planned path, and cut to MATCHED_SHOWN."""
+    line: dict[str, Any] = {"control": rule["control"], "summary": rule["summary"]}
+    matched: list[str] = rule["matched"]
+    if set(matched) == set(paths):
+        return line
+    line["matched"] = matched[:MATCHED_SHOWN]
+    if len(matched) > MATCHED_SHOWN:
+        line["matched_left_out"] = len(matched) - MATCHED_SHOWN
+    return line
 
 
 def brief(request: CallRequest) -> dict[str, object]:
@@ -168,14 +203,19 @@ def brief_of(request: CallRequest, path: str) -> dict[str, object]:
     controls = f"board call controls.check --path {change['mount']}"
     brief_line = f"board-brief: {path}"
     spent = words(" ".join([brief_line, path, text or "", str(step["phase"]), str(step["instruction"]), controls]))
+    rules_command = f"board call controls.for-paths <<< '{for_paths_input(paths)}'" if paths else None
+    spent += words(rules_command or "")
+    found = [rule_line(rule, paths) for rule in rules_for(board, paths)]
     rules: list[dict[str, Any]] = []
-    found = rules_for(board, paths)
-    for rule in found:
-        cost = words(f"{rule['control']} {rule['summary']} {' '.join(rule['matched'])}")
-        if spent + cost > BRIEF_WORDS:
+    for at, rule in enumerate(found):
+        cost = words(" ".join([rule["control"], rule["summary"], *rule.get("matched", [])]))
+        # Each rule after this one costs one word in `rules_left_out` if it does not fit.
+        if spent + cost + len(found) - at - 1 > BRIEF_WORDS:
             break
         rules.append(rule)
         spent += cost
+    left_out = [str(rule["control"]) for rule in found[len(rules) :]]
+    spent += len(left_out)
     shown: list[dict[str, str]] = []
     for ref in uses:
         line = line_of(records.get(ref), texts.get(ref))
@@ -189,7 +229,8 @@ def brief_of(request: CallRequest, path: str) -> dict[str, object]:
         "path": path,
         "plan": text,
         "rules": rules,
-        "rules_left_out": len(found) - len(rules),
+        "rules_left_out": left_out,
+        "rules_command": rules_command,
         "uses": shown,
         "left_out": len(uses) - len(shown),
         "phase": step["phase"],

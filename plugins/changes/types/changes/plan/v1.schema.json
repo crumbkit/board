@@ -11,6 +11,7 @@
       "description": "The files and SQLite GLOB patterns, by logical path, the change will edit.",
       "items": {
         "minLength": 1,
+        "pattern": "^/",
         "type": "string",
         "x-board-glob": true
       },

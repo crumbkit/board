@@ -23,7 +23,7 @@ from board_changes.change import (
     write,
 )
 from board_changes.diff import edited, outside
-from board_changes.gates import CODES, Check, Observed, covering, gate
+from board_changes.gates import CODES, Check, Observed, gate
 from board_changes.repo import check_suite
 from board_changes.wip import refuse_full
 
@@ -117,13 +117,13 @@ def observe(board: Board, path: str, change: Change) -> Observed:
 
 
 def reviewed(board: Board, found: Observed) -> Observed:
-    """`found` with the newest plan's paths and the files the review's range edits outside them."""
+    """`found` with the newest plan's paths and the files the change's diff edits outside them."""
     _, _, planned = newest(board, found.path)
-    base, head = covering(found), found.change.get("head")
-    if base is None or head is None:
-        unread = "no attached review report covers the head commit, so the reviewed diff is not known"
+    head = found.change.get("head")
+    if head is None:
+        unread = "the change records no head commit, so its diff is not known; attach one with --head"
         return replace(found, planned=planned, diff_unread=unread)
-    files, unread = edited(board, found.change["mount"], base, head)
+    files, unread = edited(board, found.change["mount"], head)
     return replace(
         found, planned=planned, outside=outside(board, files, planned) if planned else [], diff_unread=unread
     )

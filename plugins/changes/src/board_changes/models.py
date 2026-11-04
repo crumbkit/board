@@ -36,10 +36,9 @@ SharedUrl = Annotated[
 ]
 Commit = Annotated[str, Field(pattern="^[0-9a-f]{7,40}$")]
 Url = Annotated[str, Field(pattern="^https?://")]
-# A SQLite GLOB pattern, which a plugin matches with GLOB in a query (crates/board-plugin/shapes.json).
-Glob = Annotated[str, Field(min_length=1, json_schema_extra={"x-board-glob": True})]
-# A file or GLOB pattern by its logical path, such as /repos/inbox/crates/inbox-store/**.
-PlannedPath = Annotated[str, Field(pattern="^/")]
+# A SQLite GLOB pattern by logical path, such as /repos/inbox/crates/inbox-store/**, which a plugin matches
+# with GLOB in a query (LogicalGlob in crates/board-plugin/shapes.json).
+LogicalGlob = Annotated[str, Field(min_length=1, pattern="^/", json_schema_extra={"x-board-glob": True})]
 # Input properties `board call` takes as flags, relative to the run's prefix.
 LogicalPath = Annotated[str, Field(pattern="^/", json_schema_extra={"format": "board-path"})]
 
@@ -138,7 +137,7 @@ class PlanRecord(BaseModel):
     tag: Literal["changes/plan/v1"] = Field(alias="$type", description="The record's type.")
     text: Ref = Field(description="The plan's Markdown text, beside this record.")
     uses: list[Ref] = Field(description="The records and documents the plan relies on.")
-    paths: list[Glob] | SkipJsonSchema[None] = Field(
+    paths: list[LogicalGlob] | SkipJsonSchema[None] = Field(
         default=None, description="The files and SQLite GLOB patterns, by logical path, the change will edit."
     )
 
@@ -213,7 +212,7 @@ class PlanInput(Strict):
         description="The records and documents the plan relies on; the documents hold at most "
         f"{USES_WORDS:,} words in all."
     )
-    paths: list[PlannedPath] | SkipJsonSchema[None] = Field(
+    paths: list[LogicalGlob] | SkipJsonSchema[None] = Field(
         default=None,
         description="The files and SQLite GLOB patterns the change will edit, by logical path under the change's "
         "mount, such as /repos/inbox/crates/inbox-store/**, where `*` also matches `/`; a build change needs one.",
@@ -236,11 +235,17 @@ class BriefUse(Strict):
 
 
 class BriefRule(Strict):
-    """One control that applies to the planned paths: its summary and the planned paths that reached it."""
+    """One control that applies to the planned paths, and its summary.
+
+    `matched` lists at most three of the planned paths that reached it, and
+    `matched_left_out` counts the rest; both are left out when every planned
+    path reached it.
+    """
 
     control: str
     summary: str
-    matched: list[str]
+    matched: list[str] | SkipJsonSchema[None] = None
+    matched_left_out: int | SkipJsonSchema[None] = None
 
 
 class BriefOutput(Strict):
@@ -248,8 +253,9 @@ class BriefOutput(Strict):
 
     `plan` is the newest plan's text, or `null` when the change has no plan
     record. `rules` lists each control on the plan's paths once, as
-    `controls.for-paths` finds them, and `rules_left_out` counts those the
-    word limit left out; rules are counted before uses. `uses` gives one
+    `controls.for-paths` finds them, and `rules_left_out` names those the
+    word limit left out, which `rules_command` lists in full; it is `null`
+    when the plan has no paths. Rules are counted before uses. `uses` gives one
     line per record it uses, in order, and `left_out` counts those the word
     limit left out. `controls` is the
     command that lists the controls on the change's repository.
@@ -261,7 +267,8 @@ class BriefOutput(Strict):
     path: str
     plan: str | None
     rules: list[BriefRule]
-    rules_left_out: int
+    rules_left_out: list[str]
+    rules_command: str | None
     uses: list[BriefUse]
     left_out: int
     phase: Phase

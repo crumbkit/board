@@ -494,3 +494,18 @@ def test_the_real_board_gives_each_references_target_values_and_codes(real: Boar
     assert "target_code" not in done
     assert "values" not in note
     assert note["target_code"] == "board::record::not_a_record"
+
+
+def test_board_runs_the_binary_board_bin_names_and_the_board_on_path_without_it(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    for name, said in (("named/board", "named"), ("found/board", "found")):
+        script = tmp_path / name
+        script.parent.mkdir()
+        script.write_text(f"#!/bin/sh\necho '{report([[said]], truncated=False).decode()}'\n")
+        script.chmod(0o755)
+    monkeypatch.setenv("PATH", os.pathsep.join([str(tmp_path / "found"), "/usr/bin", "/bin"]))
+    monkeypatch.setenv("BOARD_BIN", str(tmp_path / "named" / "board"))
+    assert Board(str(tmp_path), "demo").rows("SELECT 1") == [["named"]]
+    monkeypatch.delenv("BOARD_BIN")
+    assert Board(str(tmp_path), "demo").rows("SELECT 1") == [["found"]]

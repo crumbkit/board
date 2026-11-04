@@ -81,7 +81,8 @@ lists every prototype with its verdict.
   rechecks that matched.
 - **review**: review the head commit with clean context and attach the
   report. The gate refuses a diff that edits a file outside the plan's
-  paths; add the file to the paths with `changes.plan`, or revert the edit. When the plan says "No UI change" or "None", list the
+  paths; add the file to the paths with `changes.plan`, or revert the
+  edit. When the plan says "No UI change" or "None", list the
   repository's UI-path and data-path controls with `controls.check`, and
   report a diff that touches a path they name as a high finding. Fix every critical or high finding, record the new head, and
   review again.
@@ -106,6 +107,8 @@ lists every prototype with its verdict.
   mount and `/`.
 - `changes::paths::outside_plan`: the diff edits the files named outside
   the plan's paths. Add them with `changes.plan`, or revert the edit.
+- `changes::brief::controls_missing`: the Board running the plugin has no
+  `controls.for-paths`. Run `board plugin enable controls`.
 - `changes::data::not_signed`: run the understanding check and attach its
   record and the sign-off decision.
 - `changes::prototype::never_lands`: a prototype ends with `verdict`.

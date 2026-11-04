@@ -95,6 +95,19 @@ fn a_plugin_inherits_the_caller_s_directory_and_day_start_when_set_and_not_when_
 }
 
 #[test]
+fn a_plugin_sees_the_board_binary_that_runs_it_in_board_bin_when_known_and_not_when_not() {
+    let known = Environment {
+        binary: Some(OsString::from("/opt/board/bin/board")),
+        ..Environment::default()
+    };
+    let passed = environment(&known, &[], 1, &tasks());
+    assert!(passed.contains(&("BOARD_BIN", OsString::from("/opt/board/bin/board"))));
+    let empty = Environment::default();
+    let unset = environment(&empty, &[], 1, &tasks());
+    assert!(!unset.iter().any(|(key, _)| *key == "BOARD_BIN"));
+}
+
+#[test]
 fn a_plugin_sees_its_name_in_board_plugin_and_inherits_xdg_config_home_only_when_set() {
     let set = Environment {
         config: Some(OsString::from("/config")),
@@ -677,6 +690,7 @@ fn every_variable_board_passes_a_plugin_is_one_a_capability_s_env_may_not_name()
         config: set.clone(),
         timings: set.clone(),
         caller: set.clone(),
+        binary: set.clone(),
         day_start: set,
         ..Environment::default()
     };

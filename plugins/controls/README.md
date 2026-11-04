@@ -113,13 +113,18 @@ The plugin ships both schemas. `board plugin enable controls` writes them to
   `GLOB` patterns by logical path, such as
   `/repos/inbox/crates/inbox-store/**`. It returns each control that applies
   to any of them once, by the control's path, with its `summary`, the
-  requirement's first sentence cut to 25 words, and `matched`, the paths that reached it in the order asked. A path with no
-  `*`, `?` or `[` is matched as `for-path` matches it. A pattern reaches a
+  requirement's first sentence cut to 25 words, and `matched`, the paths
+  that reached it in the order asked. A path with no `*`, `?` or `[` is
+  matched as `for-path` matches it. A pattern reaches a
   control whose `applies_to` names a path it matches, and a control one of
-  whose `paths` matches a file it matches, by the file's display path. A
-  pattern that matches no file yet is matched as if it were a path, so
-  `/crates/new/*.rs` reaches a control on `crates/*.rs` and
-  `/crates/new/**` does not. `changes.brief` calls it with a plan's paths.
+  whose `paths` matches a file it matches, by the file's display path. It
+  also reaches a control one of whose `paths` could match some path the
+  pattern matches, whether a file is there yet or not, so `/crates/new/**`
+  reaches a control on `crates/*.rs`, and `/crates/store/**` reaches one on
+  `*/Dockerfile*` before the first Dockerfile exists. A set such as `[ab]`
+  counts as any one character there, so a pattern can reach a control that
+  no path would put in both, never miss one that a path would.
+  `changes.brief` calls it with a plan's paths.
 - `board call controls.check --path /repos/crumbkit` checks the controls
   under that path, following any link or mount on the way. Without `--path`
   it checks `/`. A path with nothing there fails with

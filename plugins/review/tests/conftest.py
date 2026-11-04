@@ -31,8 +31,9 @@ exit "$(cat "$(dirname "$0")/exit.txt" 2>/dev/null || echo 0)"
 """
 
 
-# The `board` the plugin runs. A plugin's decide cannot be approved without the owner's signature, so with
-# `approve` present the shim runs decide as the owner, whom Board admits, and Board prints its real report.
+# The `board` the plugin runs, which BOARD_BIN names. A plugin's decide cannot be approved without the owner's
+# signature, so with `approve` present the shim runs decide as the owner, whom Board admits, and Board prints its
+# real report.
 SHIM = """#!/bin/sh
 if [ "$2" = decide ] && [ -e "$(dirname "$0")/approve" ]; then unset BOARD_PLUGIN; fi
 exec "{board}" "$@"
@@ -119,6 +120,7 @@ class Repo:
         path = os.pathsep.join([str(self.bin), str(board_binary().parent), str(Path(uv).parent), "/usr/bin", "/bin"])
         environment = {
             "PATH": path,
+            "BOARD_BIN": str(self.bin / "board"),
             "HOME": os.environ.get("HOME", str(self.root)),
             "XDG_DATA_HOME": str(self.data),
             "XDG_CACHE_HOME": str(self.cache),

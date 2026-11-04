@@ -8,6 +8,12 @@
     "type": "string",
     "x-board-glob": true
   },
+  "LogicalGlob": {
+    "minLength": 1,
+    "pattern": "^/",
+    "type": "string",
+    "x-board-glob": true
+  },
   "Prose": {
     "type": "string",
     "x-board-prose": true
