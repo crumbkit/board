@@ -8,7 +8,7 @@ A person writes records in a personal board and wants a reviewer to read one
 in a team board. `board call share.to --path /evals/x --to /team` copies the
 record, the records and files a reader needs with it, and their schemas into
 the board mounted at `/team`. Board's core has no copy or share command; the
-plugin composes `query`, `refs`, `get` and `put --batch`.
+built-in plugin composes `Host`'s `query`, `refs`, `get_each` and `put`.
 
 ## It copies
 
@@ -48,7 +48,8 @@ and an attachment its readers cannot fetch. A broken reference is not refused, b
 There is no override for a difference; the person renames the record or
 settles which copy is right.
 
-The share is one `board put --batch` through the mount. It holds a schema
+The share is one `put` of batch lines through the mount, as `board put
+--batch` takes them. It holds a schema
 line for each schema the destination lacks and a line, with `expect` set to
 `none`, for each path it does not already hold. Board checks the schema lines
 first, writes every line in the mounted board as one commit there, and then
