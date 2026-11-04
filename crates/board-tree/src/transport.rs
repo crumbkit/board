@@ -14,7 +14,8 @@ use std::time::{Duration, Instant};
 
 use crate::write::sync::SyncError;
 
-/// How long a fetch or push may run before Board stops git.
+/// How long `board sync`'s fetches and pushes may run in all before Board
+/// stops git.
 pub const GIT_DEADLINE: Duration = Duration::from_mins(1);
 
 /// How often a run checks whether git has finished.
@@ -22,6 +23,29 @@ const POLL: Duration = Duration::from_millis(10);
 /// How long git has to exit after SIGTERM, and its pipes to close after
 /// it exits.
 const GRACE: Duration = Duration::from_secs(1);
+
+/// How long one sync may run, from when it was made: every fetch and push
+/// it starts shares it.
+#[derive(Clone, Copy, Debug)]
+pub struct Deadline {
+    started: Instant,
+    given: Duration,
+}
+
+impl Deadline {
+    /// A deadline `given` from now.
+    pub fn after(given: Duration) -> Self {
+        Self {
+            started: Instant::now(),
+            given,
+        }
+    }
+
+    /// The time left, zero once it has passed.
+    pub fn left(&self) -> Duration {
+        self.given.saturating_sub(self.started.elapsed())
+    }
+}
 
 /// The remote branch that the branch HEAD is on follows.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -47,7 +71,7 @@ pub(crate) enum Pushed {
 pub(crate) fn fetch(
     workdir: &Path,
     upstream: &Upstream,
-    deadline: Duration,
+    deadline: Deadline,
 ) -> Result<(), SyncError> {
     let refspec = format!("+refs/heads/{}:{}", upstream.branch, upstream.tracking);
     let arguments = [
@@ -71,7 +95,7 @@ pub(crate) fn push(
     workdir: &Path,
     upstream: &Upstream,
     commit: &str,
-    deadline: Duration,
+    deadline: Deadline,
 ) -> Result<Pushed, SyncError> {
     let refspec = format!("{commit}:refs/heads/{}", upstream.branch);
     let arguments = [
@@ -105,14 +129,14 @@ pub(crate) fn rejected(stdout: &[u8]) -> Option<String> {
 /// Runs git with `arguments` in `workdir` and returns what it printed.
 /// Git still running when `deadline` passes is stopped, and the run is
 /// [`SyncError::TimedOut`], so a hung remote holds the board lock no longer
-/// than the deadline. A helper git started, such as ssh, that outlives git
+/// than the sync's deadline. A helper git started, such as ssh, that outlives git
 /// holds no Board lock.
 fn run(
     workdir: &Path,
     arguments: &[&str],
     operation: &'static str,
     upstream: &Upstream,
-    deadline: Duration,
+    deadline: Deadline,
 ) -> Result<Output, SyncError> {
     let mut child = Command::new("git")
         .arg("-C")
@@ -125,16 +149,15 @@ fn run(
         .map_err(|source| SyncError::NotStarted { source })?;
     let stdout = drain(child.stdout.take());
     let stderr = drain(child.stderr.take());
-    let until = Instant::now() + deadline;
     let stopped = loop {
         match child.try_wait() {
             Ok(Some(status)) => return Ok(finished(status, stdout, stderr)),
-            Ok(None) if Instant::now() < until => thread::sleep(POLL),
+            Ok(None) if !deadline.left().is_zero() => thread::sleep(POLL),
             Ok(None) => {
                 break SyncError::TimedOut {
                     operation,
                     remote: upstream.remote.clone(),
-                    deadline,
+                    deadline: deadline.given,
                 };
             }
             Err(error) => {

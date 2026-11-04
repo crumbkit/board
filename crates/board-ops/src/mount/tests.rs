@@ -38,7 +38,7 @@ fn moved() -> (Scenario, Scenario, ObjectId, ObjectId) {
 
 fn update(scenario: &Scenario, at: &str) -> Result<MountUpdateReport, Code> {
     open(scenario)
-        .mount_update(&path(at))
+        .mount_update(&path(at), board_tree::LOCK_WAIT)
         .map_err(|error| error.code())
 }
 
@@ -146,7 +146,7 @@ fn a_path_that_is_not_a_mount_is_refused_and_a_mount_is_admitted() {
         );
         assert_eq!(
             open(&scenario)
-                .mount_update(&path(refused))
+                .mount_update(&path(refused), board_tree::LOCK_WAIT)
                 .unwrap_err()
                 .refusal()
                 .fields,
@@ -197,7 +197,7 @@ fn a_mount_inside_a_mounted_board_is_refused() {
         Item::File(&mount(&library.path(), "main", commit)),
     );
     let refused = open(&scenario)
-        .mount_update(&path("/vendor/lib/inner"))
+        .mount_update(&path("/vendor/lib/inner"), board_tree::LOCK_WAIT)
         .unwrap_err();
     assert_eq!(refused.code(), Code::PutThroughMount);
     assert_eq!(refused.refusal().fields["path"], "/vendor/lib");

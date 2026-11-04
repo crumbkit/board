@@ -71,6 +71,20 @@ impl Host for Empty {
         panic!("this plugin asks the owner nothing")
     }
 
+    fn sync(
+        &self,
+        _: bool,
+        _: std::time::Duration,
+    ) -> Result<board_ops::Synced, board_ops::SyncError> {
+        unreachable!("this host syncs nothing")
+    }
+    fn mount_update(
+        &self,
+        _: &board_model::LogicalPath,
+        _: std::time::Duration,
+    ) -> Result<board_ops::MountUpdateReport, board_ops::MountError> {
+        unreachable!("this host updates no mount")
+    }
     fn settings(&self) -> &Settings {
         &self.0
     }

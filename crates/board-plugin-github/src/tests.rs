@@ -92,6 +92,20 @@ impl Host for Running {
         panic!("github asks the owner nothing")
     }
 
+    fn sync(
+        &self,
+        _: bool,
+        _: std::time::Duration,
+    ) -> Result<board_ops::Synced, board_ops::SyncError> {
+        unreachable!("this host syncs nothing")
+    }
+    fn mount_update(
+        &self,
+        _: &board_model::LogicalPath,
+        _: std::time::Duration,
+    ) -> Result<board_ops::MountUpdateReport, board_ops::MountError> {
+        unreachable!("this host updates no mount")
+    }
     fn settings(&self) -> &board_ops::Settings {
         panic!("this test reads no settings")
     }

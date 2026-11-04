@@ -63,7 +63,7 @@ fn put(scenario: &Scenario, at: &str) -> ObjectId {
 }
 
 fn sync(scenario: &Scenario, push: bool) -> Result<Synced, SyncError> {
-    open(scenario).sync(push)
+    open(scenario).sync(push, board_tree::GIT_DEADLINE)
 }
 
 fn refused(scenario: &Scenario, push: bool) -> (Code, String) {

@@ -14,7 +14,7 @@ use gix::object::tree::EntryKind;
 use super::entries::{stage_entry, unstage_entry};
 use super::{Lock, Staged, WriteError};
 use crate::git::{GitError, Repository, model_id};
-use crate::transport::{self, Pushed, Upstream};
+use crate::transport::{self, Deadline, Pushed, Upstream};
 
 /// How many times a sync fetches and pushes before it gives up.
 pub const ATTEMPTS: u32 = 3;
@@ -89,9 +89,10 @@ impl Repository {
     /// index and the working tree move to the result. A file the remote
     /// changed that is edited here stops the sync before it pushes or
     /// writes; one edited after that, such as during the push, is kept as
-    /// edited and listed in `kept`. `lock` is the board lock. Each fetch
-    /// and push that runs past `deadline` is stopped.
-    pub fn sync(&self, lock: &Lock, push: bool, deadline: Duration) -> Result<Synced, SyncError> {
+    /// edited and listed in `kept`. `lock` is the board lock. Every fetch
+    /// and push shares `deadline`, and the one running when it passes is
+    /// stopped.
+    pub fn sync(&self, lock: &Lock, push: bool, deadline: Deadline) -> Result<Synced, SyncError> {
         let upstream = self.upstream()?;
         let old = self.head()?;
         let old_files = self.files_of(old)?;
@@ -420,7 +421,7 @@ pub enum SyncError {
         status: String,
         stderr: Vec<u8>,
     },
-    #[error("git did not {operation} {remote} within {} seconds, so Board stopped it", deadline.as_secs())]
+    #[error("git did not {operation} {remote} within the sync's {} seconds, so Board stopped it", deadline.as_secs_f64())]
     TimedOut {
         operation: &'static str,
         remote: String,

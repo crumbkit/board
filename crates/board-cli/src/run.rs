@@ -594,14 +594,16 @@ fn command(
                 Err(error) => render::refused(printer, error.refusal()),
             }
         }
-        Command::Sync { no_push } => match board.sync(!no_push) {
+        Command::Sync { no_push } => match board.sync(!no_push, board_tree::GIT_DEADLINE) {
             Ok(report) => render::sync(printer, &report),
             Err(error) => render::refused(printer, error.refusal()),
         },
-        Command::Mount(MountCommand::Update { path }) => match board.mount_update(&path) {
-            Ok(report) => render::mount_update(printer, &report),
-            Err(error) => render::refused(printer, error.refusal()),
-        },
+        Command::Mount(MountCommand::Update { path }) => {
+            match board.mount_update(&path, board_tree::LOCK_WAIT) {
+                Ok(report) => render::mount_update(printer, &report),
+                Err(error) => render::refused(printer, error.refusal()),
+            }
+        }
         Command::Refs(asked) => {
             let paths = or_refuse!(at(&asked.paths, "refs"));
             refs(printer, board, context, &asked, &paths)

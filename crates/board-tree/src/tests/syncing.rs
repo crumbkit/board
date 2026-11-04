@@ -5,7 +5,7 @@ use super::*;
 use crate::transport::rejected;
 use std::time::{Duration, Instant};
 
-use crate::{GIT_DEADLINE, LOCK_WAIT, Synced};
+use crate::{Deadline, GIT_DEADLINE, LOCK_WAIT, Synced};
 
 #[test]
 fn a_clone_without_a_commit_checks_out_the_remote_branch_without_pushing() {
@@ -18,7 +18,9 @@ fn a_clone_without_a_commit_checks_out_the_remote_branch_without_pushing() {
     clone.write("d/b.json", Item::Deleted);
     let repository = clone.open();
     let lock = repository.lock(LOCK_WAIT).unwrap();
-    let synced = repository.sync(&lock, true, GIT_DEADLINE).unwrap();
+    let synced = repository
+        .sync(&lock, true, Deadline::after(GIT_DEADLINE))
+        .unwrap();
     assert_eq!(
         synced,
         Synced {
@@ -59,13 +61,19 @@ fn a_held_index_lock_stops_a_sync_before_the_index_is_read_and_a_free_one_is_adm
         .write(".git/index.lock", Item::File(""));
     let repository = clone.open();
     let lock = repository.lock(LOCK_WAIT).unwrap();
-    let error = repository.sync(&lock, false, GIT_DEADLINE).unwrap_err();
+    let error = repository
+        .sync(&lock, false, Deadline::after(GIT_DEADLINE))
+        .unwrap_err();
     assert_eq!(error.code(), Code::PutLocked, "{error}");
     assert_eq!(clone.head().unwrap().id, before);
     clone
         .write(".git/index", Item::Deleted)
         .write(".git/index.lock", Item::Deleted);
-    assert!(repository.sync(&lock, false, GIT_DEADLINE).is_ok());
+    assert!(
+        repository
+            .sync(&lock, false, Deadline::after(GIT_DEADLINE))
+            .is_ok()
+    );
 }
 
 #[test]
@@ -109,7 +117,10 @@ fn a_sync_removes_a_file_the_remote_deleted_and_keeps_the_rest() {
     let repository = clone.open();
     let lock = repository.lock(LOCK_WAIT).unwrap();
     assert_eq!(
-        repository.sync(&lock, false, GIT_DEADLINE).unwrap().new,
+        repository
+            .sync(&lock, false, Deadline::after(GIT_DEADLINE))
+            .unwrap()
+            .new,
         tip
     );
     assert!(!clone.workdir().join("a.json").exists());
@@ -130,7 +141,9 @@ fn a_sync_stops_at_a_path_it_cannot_read() {
     clone.write("d/x.json", Item::File("{}"));
     let repository = clone.open();
     let lock = repository.lock(LOCK_WAIT).unwrap();
-    let refused = repository.sync(&lock, false, GIT_DEADLINE).unwrap_err();
+    let refused = repository
+        .sync(&lock, false, Deadline::after(GIT_DEADLINE))
+        .unwrap_err();
     assert!(
         matches!(&refused, crate::SyncError::Git(crate::git::GitError::File { path, .. }) if path.ends_with("d")),
         "{refused:?}"
@@ -165,7 +178,7 @@ fn a_remote_that_stalls_past_the_deadline_times_out_and_one_that_answers_syncs()
         let repository = clone.open();
         let lock = repository.lock(LOCK_WAIT).unwrap();
         let started = Instant::now();
-        let synced = repository.sync(&lock, false, deadline);
+        let synced = repository.sync(&lock, false, Deadline::after(deadline));
         let took = started.elapsed();
         (synced, took, tip)
     };
