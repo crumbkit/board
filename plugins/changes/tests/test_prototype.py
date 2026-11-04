@@ -145,9 +145,25 @@ def test_prototype_refuses_when_three_prototypes_explore_and_starts_once_one_is_
     for number in range(3):
         tasks_board.write(f"changes/p{number}.json", prototype())
     given = {"mount": mount, "question": QUESTION, "parent": PARENT, "title": "Step list"}
-    assert tasks_board.refusal("prototype", given)["code"] == "changes::wip::full"
+    refused = tasks_board.refusal("prototype", given)
+    assert refused["code"] == "changes::wip::full"
+    assert refused["fields"]["override"] == (
+        f"board call changes.prototype --mount {mount} --question '{QUESTION}' --parent {PARENT}"
+        " --title 'Step list' --over_limit '<why>'"
+    )
     tasks_board.call("verdict", {"path": "/changes/p0", "state": "settled", "verdict": "Yes."})
     assert tasks_board.call("prototype", given)["path"] == PATH
+
+
+def test_prototype_past_the_limit_with_a_reason_starts_and_warns(tasks_board: Board) -> None:
+    mount = mount_repo(tasks_board, {"README.md": "x"})
+    tasks_board.write(PARENT.removeprefix("/"), task())
+    for number in range(3):
+        tasks_board.write(f"changes/p{number}.json", prototype())
+    given = {"mount": mount, "question": QUESTION, "parent": PARENT, "title": "Step list", "over_limit": "Urgent."}
+    output = tasks_board.call("prototype", given)
+    assert (output["path"], output["warning"]["code"]) == (PATH, "changes::wip::over_limit")
+    assert tasks_board.read("changes/step-list.json")["over_limit"] == "Urgent."
 
 
 def test_a_verdict_leaves_a_task_already_closed_as_it_is(tasks_board: Board) -> None:

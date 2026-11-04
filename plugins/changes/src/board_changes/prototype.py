@@ -1,19 +1,22 @@
 """The `prototype` and `verdict` capabilities: a change that answers one question, and what it found."""
 
+import shlex
 from dataclasses import replace
 
 from board_plugin.board import Board
 from board_plugin.protocol import CallRequest, PluginError
 
-from board_changes.change import CHANGE_TYPE, FINAL, PLUGIN, Change, branch_of, kind_of, read, write
+from board_changes.change import CHANGE_TYPE, FINAL, PLUGIN, Change, branch_of, kind_of, read, touch, write
 from board_changes.plan import brief_of, plan_lines
 from board_changes.repo import exists
 from board_changes.start import name_of, refuse_existing
 from board_changes.tasks import add_task, close_task
-from board_changes.wip import refuse_full
+from board_changes.wip import Move, active_days, admit
 
 # The phase a verdict ends a prototype in, by its state.
 ENDS = {"settled": "done", "abandoned": "dropped"}
+# The inputs a prototype's override command repeats.
+PROTOTYPE_FLAGS = ("mount", "question", "parent", "title", "name")
 
 
 def question_plan(title: str, question: str) -> str:
@@ -34,23 +37,27 @@ def prototype(request: CallRequest) -> dict[str, object]:
     board = Board(request.board.root, PLUGIN)
     exists(board, mount)
     refuse_existing(board, path)
-    refuse_full(board, "prototype", path)
-    task = add_task(board, title, {}, parent=str(asked["parent"]))
-    _, lines = plan_lines(path, question_plan(title, question), [], [])
     change: Change = {
         "$type": CHANGE_TYPE,
         "title": title,
         "mount": mount,
         "phase": "build",
         "kind": "prototype",
-        "task": task,
         "question": question,
         "state": "exploring",
-        "plan": lines[0]["path"],
     }
-    write(board, [*lines, {"path": path, "expect": "none", "record": change}])
+    flags = [f"--{name} {shlex.quote(str(asked[name]))}" for name in PROTOTYPE_FLAGS if name in asked]
+    override = f"board call changes.prototype {' '.join(flags)} --over_limit '<why>'"
+    limit = admit(board, path, change, Move(override, asked.get("over_limit"), active_days()))
+    change["task"] = add_task(board, title, {}, parent=str(asked["parent"]))
+    _, lines = plan_lines(path, question_plan(title, question), [], [])
+    change["plan"] = lines[0]["path"]
+    write(board, [*lines, {"path": path, "expect": "none", "record": touch(change)}])
     brief = brief_of(replace(request, input={"path": path}), path)
-    return {"path": path, "task": task, "branch": branch_of(path), "brief": brief}
+    output: dict[str, object] = {"path": path, "task": change["task"], "branch": branch_of(path), "brief": brief}
+    if limit is not None:
+        output["warning"] = limit
+    return output
 
 
 def verdict(request: CallRequest) -> dict[str, object]:

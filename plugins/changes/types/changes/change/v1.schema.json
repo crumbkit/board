@@ -1,11 +1,17 @@
 {
   "additionalProperties": false,
-  "description": "`changes/change/v1`: one change to a repository, its phase, and every record it produced.\n\nA change lives at `/changes/<name>.json`; its plan and any files it owns\nsit in `/changes/<name>/`. Git history holds its earlier phases. `mount`\nreferences the repository's mount, such as `/repos/board`. `phase` moves\nfrom `plan` through `build`, `review` and `land` to `done`; `dropped`\nends a change early. `route` is `owner` when no one else owns the files,\n`ask-first` when someone else does, and `unowned` when the repository\nnames no owners. `plan` references the Markdown plan.\n`issue` links the spec issue, when there is one. `head` is the commit\nunder test and review. `pull_request` is the pull request's URL.\n`tickets` references the Jira or GitHub issues the change works on, and\n`pulls` its GitHub pull requests, each as a record of that type.\nA keeper moves a change in build to `paused` to keep the work in progress\nsmall, and back to `build` when the cap allows.\n`records` references every record the change produced: tasks, runs,\nevals, questions, decisions and review reports.\n`task` references the task the change does. `kind` is `build`, as when\nit is left out, for work that lands on main, or `prototype` for work that\nanswers `question` on branch `proto/<name>` and never lands. A\nprototype's `state` is `exploring` until `verdict`, one sentence, settles\nor abandons it; `verdict_artifact` is the URL of the artifact version\nthe verdict means.",
+  "description": "`changes/change/v1`: one change to a repository, its phase, and every record it produced.\n\nA change lives at `/changes/<name>.json`; its plan and any files it owns\nsit in `/changes/<name>/`. Git history holds its earlier phases. `mount`\nreferences the repository's mount, such as `/repos/board`. `phase` moves\nfrom `plan` through `build`, `review` and `land` to `done`; `dropped`\nends a change early. `route` is `owner` when no one else owns the files,\n`ask-first` when someone else does, and `unowned` when the repository\nnames no owners. `plan` references the Markdown plan.\n`issue` links the spec issue, when there is one. `head` is the commit\nunder test and review. `pull_request` is the pull request's URL.\n`tickets` references the Jira or GitHub issues the change works on, and\n`pulls` its GitHub pull requests, each as a record of that type.\nA keeper moves a change in build to `paused` to keep the work in progress\nsmall, and back to `build` when the cap allows.\n`records` references every record the change produced: tasks, runs,\nevals, questions, decisions and review reports.\n`task` references the task the change does. `kind` is `build`, as when\nit is left out, for work that lands on main, or `prototype` for work that\nanswers `question` on branch `proto/<name>` and never lands. A\nprototype's `state` is `exploring` until `verdict`, one sentence, settles\nor abandons it; `verdict_artifact` is the URL of the artifact version\nthe verdict means.\n`sync` records `merge_commit_url`, the merge commit's GitHub URL, when it ends a\nchange whose pull request merged; `sync` and `drop` record\n`dropped_reason` when they drop one. `over_limit` is the reason given\nfor the latest move into build past the WIP limit. `touched` is the UTC\nday a changes capability last touched the change, which keeps it active\nunder the limit.",
   "properties": {
     "$type": {
       "const": "changes/change/v1",
       "title": "$Type",
       "type": "string"
+    },
+    "dropped_reason": {
+      "minLength": 1,
+      "title": "Dropped Reason",
+      "type": "string",
+      "x-board-prose": true
     },
     "head": {
       "pattern": "^[0-9a-f]{7,40}$",
@@ -25,10 +31,22 @@
       "title": "Kind",
       "type": "string"
     },
+    "merge_commit_url": {
+      "format": "uri",
+      "pattern": "^https?://([^/?#@]*@)?[^/?#@:][^/?#@]*([/?#]|$)",
+      "title": "Merge Commit Url",
+      "type": "string"
+    },
     "mount": {
       "format": "board-ref",
       "title": "Mount",
       "type": "string"
+    },
+    "over_limit": {
+      "minLength": 1,
+      "title": "Over Limit",
+      "type": "string",
+      "x-board-prose": true
     },
     "phase": {
       "enum": [
@@ -117,6 +135,11 @@
     "title": {
       "minLength": 1,
       "title": "Title",
+      "type": "string"
+    },
+    "touched": {
+      "format": "date",
+      "title": "Touched",
       "type": "string"
     },
     "verdict": {

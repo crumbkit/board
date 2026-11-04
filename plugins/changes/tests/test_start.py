@@ -1,6 +1,6 @@
 """`changes.start`: a new change, its plan, its route and the repository's brief."""
 
-from conftest import TASK, Board, mount_repo, record
+from conftest import TASK, TODAY, Board, mount_repo, record
 
 CONTRIBUTING = "Run the checks.\n\nThe check suite is `/suites/checks`.\n"
 
@@ -20,6 +20,7 @@ def test_start_creates_the_change_in_plan_with_a_plan_whose_sections_are_left_to
         "plan": "/changes/let-a-suite-declare-a-timeout/plan.md",
         "route": "unowned",
         "task": TASK,
+        "touched": TODAY,
     }
     plan = (board.root / "changes/let-a-suite-declare-a-timeout/plan.md").read_text()
     assert (

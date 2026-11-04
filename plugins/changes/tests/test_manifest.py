@@ -50,6 +50,8 @@ def test_board_lists_the_plugin_as_enabled_and_enabling_wrote_the_schema_it_ship
         "verdict",
         "pause",
         "resume",
+        "sync",
+        "drop",
     ]
     for path, schema in schemas().items():
         assert json.loads((board.root / ".board" / "types" / path).read_text()) == schema, path
@@ -99,6 +101,7 @@ def test_every_input_property_carries_a_sentence_that_says_what_it_means() -> No
         ("attach", "issue"),
         ("attach", "pull_request"),
         ("advance", "path"),
+        ("advance", "over_limit"),
         ("open", "kind"),
         ("open", "limit"),
         ("pr", "path"),
@@ -112,12 +115,18 @@ def test_every_input_property_carries_a_sentence_that_says_what_it_means() -> No
         ("prototype", "parent"),
         ("prototype", "title"),
         ("prototype", "name"),
+        ("prototype", "over_limit"),
         ("verdict", "path"),
         ("verdict", "state"),
         ("verdict", "verdict"),
         ("verdict", "artifact"),
         ("pause", "path"),
         ("resume", "path"),
+        ("resume", "over_limit"),
+        ("sync", "dry_run"),
+        ("sync", "limit"),
+        ("drop", "path"),
+        ("drop", "reason"),
     }
     for key, description in descriptions.items():
         assert isinstance(description, str), key

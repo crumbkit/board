@@ -5,16 +5,20 @@ from typing import Any
 from board_plugin.protocol import dumped
 from pydantic import BaseModel, JsonValue
 
-from board_changes.change import CHANGE_TYPE, PLAN_TYPE, UNDERSTANDING_TYPE
+from board_changes.change import CHANGE_TYPE, PLAN_TYPE, SYNC_TYPE, UNDERSTANDING_TYPE
 from board_changes.models import (
     CHANGE_SCHEMA_PATH,
     PLAN_SCHEMA_PATH,
+    SYNC_SCHEMA_PATH,
     UNDERSTANDING_SCHEMA_PATH,
+    AdvanceInput,
     AdvanceOutput,
     AttachInput,
     AttachOutput,
     BriefOutput,
     ChangeRecord,
+    DropInput,
+    DropOutput,
     NextOutput,
     OpenInput,
     OpenOutput,
@@ -27,6 +31,9 @@ from board_changes.models import (
     PrOutput,
     StartInput,
     StartOutput,
+    SyncInput,
+    SyncOutput,
+    SyncRecord,
     UnderstandingRecord,
     VerdictInput,
     VerdictOutput,
@@ -35,6 +42,12 @@ from board_changes.models import (
 # Seconds a call that runs `tasks.add`, `tasks.done` or `tasks.drop` through a nested `board call` may take: the
 # nested call syncs and pushes a notes repo, and may first build the tasks plugin's environment.
 NESTED_TIMEOUT = 120
+# Seconds `sync` may take: it runs gh once for each open change with a pull request, each for up to 20 seconds.
+SYNC_TIMEOUT = 600
+# The variable that sets how many days a change stays active under the WIP limit.
+ACTIVE_DAYS_ENV = ["BOARD_CHANGES_ACTIVE_DAYS"]
+# The variables gh reads for its account and configuration.
+GH_ENV = ["GH_TOKEN", "GITHUB_TOKEN", "GH_CONFIG_DIR"]
 
 
 def capability(
@@ -56,6 +69,11 @@ def nested(tool: dict[str, Any]) -> dict[str, Any]:
     return tool | {"timeout": NESTED_TIMEOUT}
 
 
+def with_env(tool: dict[str, Any], names: list[str]) -> dict[str, Any]:
+    """A capability that also receives the variables `names` from Board's environment."""
+    return tool | {"env": names}
+
+
 def manifest() -> dict[str, JsonValue]:
     """`board/plugin-manifest/v1` for this plugin."""
     return {
@@ -72,7 +90,7 @@ def manifest() -> dict[str, JsonValue]:
         ),
         "run": ["uv", "run", "--frozen", "--no-dev", "python", "-m", "board_changes"],
         "metadata": {"area": "delivery"},
-        "types": [CHANGE_TYPE, PLAN_TYPE, UNDERSTANDING_TYPE],
+        "types": [CHANGE_TYPE, PLAN_TYPE, UNDERSTANDING_TYPE, SYNC_TYPE],
         "capabilities": [
             nested(
                 capability(
@@ -98,18 +116,22 @@ def manifest() -> dict[str, JsonValue]:
                 AttachOutput,
                 read_only=False,
             ),
-            capability(
-                "advance",
-                "Move the change to its next phase when its gate passes and, into build, while fewer than three"
-                " changes are in build; otherwise refuse and say what is missing.",
-                PathInput,
-                AdvanceOutput,
-                read_only=False,
+            with_env(
+                capability(
+                    "advance",
+                    "Move the change to its next phase when its gate passes; otherwise refuse and say what is"
+                    " missing. Into build, refuse while three active changes of its kind are in build for its mount,"
+                    " unless over_limit gives a reason, which the change records and the output warns about.",
+                    AdvanceInput,
+                    AdvanceOutput,
+                    read_only=False,
+                ),
+                ACTIVE_DAYS_ENV,
             ),
             capability(
                 "open",
                 "The changes that are not done or dropped, with their phase, route, task and kind; by kind, every"
-                " prototype with its question, state, verdict and branch.",
+                " prototype with its question, state, verdict and branch; and the day of the last sync.",
                 OpenInput,
                 OpenOutput,
                 read_only=True,
@@ -141,15 +163,19 @@ def manifest() -> dict[str, JsonValue]:
                 BriefOutput,
                 read_only=True,
             ),
-            nested(
-                capability(
-                    "prototype",
-                    "Start a prototype that answers one question: add its task under a parent, write its change in"
-                    " build on branch proto/<name>, and return its brief. It never lands.",
-                    PrototypeInput,
-                    PrototypeOutput,
-                    read_only=False,
-                )
+            with_env(
+                nested(
+                    capability(
+                        "prototype",
+                        "Start a prototype that answers one question: add its task under a parent, write its change"
+                        " in build on branch proto/<name>, and return its brief. It never lands. Refused while three"
+                        " active prototypes explore for its mount, unless over_limit gives a reason.",
+                        PrototypeInput,
+                        PrototypeOutput,
+                        read_only=False,
+                    )
+                ),
+                ACTIVE_DAYS_ENV,
             ),
             nested(
                 capability(
@@ -163,16 +189,42 @@ def manifest() -> dict[str, JsonValue]:
             ),
             capability(
                 "pause",
-                "Move a change in build to paused, which frees its place under the cap of three changes in build.",
+                "Move a change in build to paused, which frees its place under the WIP limit.",
                 PathInput,
                 AdvanceOutput,
                 read_only=False,
             ),
+            with_env(
+                capability(
+                    "resume",
+                    "Move a paused change back to build, refused while three active changes of its kind are in"
+                    " build for its mount, unless over_limit gives a reason.",
+                    AdvanceInput,
+                    AdvanceOutput,
+                    read_only=False,
+                ),
+                ACTIVE_DAYS_ENV,
+            ),
+            with_env(
+                capability(
+                    "sync",
+                    "Read each open change's GitHub pull request with gh and end the change when it closed: done,"
+                    " with its merge commit, when it merged and no attached task is open, else dropped with the"
+                    " reason. List the changes with no pull request and what to do with each. dry_run writes"
+                    " nothing; otherwise every move and the day of the sync are written in one commit, or nothing"
+                    " when gh fails.",
+                    SyncInput,
+                    SyncOutput,
+                    read_only=False,
+                )
+                | {"timeout": SYNC_TIMEOUT},
+                GH_ENV,
+            ),
             capability(
-                "resume",
-                "Move a paused change back to build, refused while three changes of its kind hold places.",
-                PathInput,
-                AdvanceOutput,
+                "drop",
+                "End a change that is not done or dropped in dropped, recording the reason, and name its task.",
+                DropInput,
+                DropOutput,
                 read_only=False,
             ),
         ],
@@ -185,6 +237,7 @@ def schemas() -> dict[str, dict[str, JsonValue]]:
         CHANGE_SCHEMA_PATH: ChangeRecord.model_json_schema(by_alias=True),
         PLAN_SCHEMA_PATH: PlanRecord.model_json_schema(by_alias=True),
         UNDERSTANDING_SCHEMA_PATH: UnderstandingRecord.model_json_schema(by_alias=True),
+        SYNC_SCHEMA_PATH: SyncRecord.model_json_schema(by_alias=True),
     }
 
 

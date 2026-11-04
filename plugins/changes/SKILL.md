@@ -27,14 +27,27 @@ The gate is the contract. `next` says what the current phase still lacks;
    with `--ticket <path>` or `--pull <path>`.
 4. Run `board -C <board> call changes.advance --path /changes/<name>`
    when every check passes.
-5. To drop a change, `board put` it with `phase` set to `dropped`.
-6. At most three build changes are in `build` at once, and apart from them
-   three prototypes exploring. When `advance` or `prototype` refuses with
-   `changes::wip::full`, pause the lowest-ranked change with
-   `changes.pause --path /changes/<name>` and stop its builder, or wait.
-   Pause new work too when more than five items wait on the owner, or one
-   has waited more than two days; ask him one question when the ranking is
-   unclear. Resume with `changes.resume`.
+5. To drop a change, run
+   `board -C <board> call changes.drop --path /changes/<name> --reason '<why>'`.
+6. When `open` or `next` reports `sync.stale`, run
+   `board -C <board> call changes.sync`. It ends each change whose pull
+   request closed: `done` when it merged, `dropped` when it closed without
+   merging. Add `--dry_run true` to see what it would do first. Close the
+   task of each change it ends. An entry with `changes::sync::owed` still
+   has open tasks; close them and sync again.
+7. At most three active build changes per mount are in `build`, and apart
+   from them three active prototypes exploring. A change is active when a
+   changes capability touched it, its head was committed or a run it
+   references finished on one of the last three days, today included
+   (`BOARD_CHANGES_ACTIVE_DAYS` sets the number).
+   When `advance`, `resume` or `prototype` refuses with `changes::wip::full`,
+   first deal with the changes in `idle`: run each one's `command`, which
+   syncs, drops or resumes it. If the work must still start now, run the
+   `override` command with the reason in `--over_limit`; the change records
+   it and the output carries the warning `changes::wip::over_limit`. Pause new
+   work too when more than five items wait on the owner, or one has waited
+   more than two days; ask him one question when the ranking is unclear.
+   Pause a change with `changes.pause` and resume it with `changes.resume`.
 
 ## Prototypes
 
@@ -112,8 +125,22 @@ lists every prototype with its verdict.
 - `changes::data::not_signed`: run the understanding check and attach its
   record and the sign-off decision.
 - `changes::prototype::never_lands`: a prototype ends with `verdict`.
-- `changes::wip::full`: `building` lists the changes holding places. Pause
-  one, or wait.
+- `changes::wip::full`: `active` lists the changes holding places for the
+  mount and `idle` the idle ones with a `command` each. Deal with the idle
+  ones, pause one, wait, or run `override` with a reason.
+- `changes::wip::over_limit`: a warning, not a refusal. The change went past
+  the limit with the reason it records in `over_limit`.
+- `changes::wip::bad_active_days`: set `BOARD_CHANGES_ACTIVE_DAYS` to a whole
+  number of days, or unset it.
+- `changes::sync::stale`: a warning in `open` and `next`. No sync has run
+  today; run `changes.sync`.
+- `changes::sync::gh_failed`: gh could not read a pull request, and sync wrote
+  nothing. Check `gh auth status` and sync again.
+- `changes::sync::owed`, `changes::sync::pull_not_found`,
+  `changes::sync::not_github`, `changes::sync::no_pull_request`: entries
+  that sync left alone. Run each entry's `command`. For
+  `pull_not_found`, check `gh auth status` first, since GitHub answers 404
+  for a repository gh cannot see.
 - `changes::phase::paused`: `resume` the change first.
 - `changes::pause::not_building`, `changes::resume::not_paused`: only a
   change in `build` is paused, and only a paused one resumed.

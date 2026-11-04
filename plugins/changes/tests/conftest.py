@@ -6,6 +6,7 @@ import shutil
 import subprocess
 import sys
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -54,6 +55,15 @@ REVIEW_SCHEMA = {
     },
 }
 BASE = "0123456789abcdef0123456789abcdef01234567"
+# Today's UTC day, on which a fixture change was last touched, so it is active under the WIP limit.
+TODAY = datetime.now(UTC).date().isoformat()
+
+
+def days_ago(days: int) -> str:
+    """The UTC day `days` days before today."""
+    return (datetime.now(UTC).date() - timedelta(days=days)).isoformat()
+
+
 # The task every fixture change does, which the fixture board holds.
 TASK = "/tasks/given.md"
 # The fixture plugins a test installs.
@@ -90,6 +100,9 @@ class Board:
     root: Path
     data: Path
     cache: Path
+    # Directories put before the rest of PATH, such as one holding a stub gh, and variables added to the environment.
+    bins: tuple[Path, ...] = ()
+    env: tuple[tuple[str, str], ...] = ()
 
     def write(self, path: str, text: str) -> None:
         """Write a fixture file at `path`, relative to the board's root. Every test writes through here."""
@@ -106,12 +119,15 @@ class Board:
         """Run `board` in the board's root, with only the variables a user's shell would pass it."""
         uv = shutil.which("uv")
         assert uv is not None, "uv is on PATH"
-        path = os.pathsep.join([str(board_binary().parent), str(Path(uv).parent), "/usr/bin", "/bin"])
+        path = os.pathsep.join(
+            [*map(str, self.bins), str(board_binary().parent), str(Path(uv).parent), "/usr/bin", "/bin"]
+        )
         environment = {
             "PATH": path,
             "HOME": os.environ.get("HOME", str(self.root)),
             "XDG_DATA_HOME": str(self.data),
             "XDG_CACHE_HOME": str(self.cache),
+            **dict(self.env),
         }
         return subprocess.run(
             [str(board_binary()), *arguments],
@@ -252,12 +268,13 @@ def report(head: str = HEAD, verdict: str = "approve", base: str = BASE, **field
 
 
 def change(phase: str = "plan", **fields: Any) -> str:  # noqa: ANN401 - the record's other fields, as JSON
-    """An `changes/change/v1` record in `phase`."""
+    """A `changes/change/v1` record in `phase`, touched today."""
     defaults: dict[str, Any] = {
         "title": "Let a suite declare a timeout",
         "mount": "/repos/x",
         "phase": phase,
         "task": TASK,
+        "touched": TODAY,
     }
     return record("changes/change/v1", **(defaults | fields))
 

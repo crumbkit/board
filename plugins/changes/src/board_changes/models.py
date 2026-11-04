@@ -12,9 +12,18 @@ from pydantic import BaseModel, ConfigDict, Field
 from pydantic.config import JsonDict
 from pydantic.json_schema import SkipJsonSchema
 
-from board_changes.change import CHANGE_TYPE, PLAN_TYPE, PULL_TYPES, TASK_TYPE, TICKET_TYPES, UNDERSTANDING_TYPE
+from board_changes.change import (
+    CHANGE_TYPE,
+    PLAN_TYPE,
+    PULL_TYPES,
+    SYNC_TYPE,
+    TASK_TYPE,
+    TICKET_TYPES,
+    UNDERSTANDING_TYPE,
+)
 from board_changes.open import OPEN_LIMIT
 from board_changes.plan import PLAN_WORDS, USES_WORDS
+from board_changes.sync import SYNC_LIMIT
 
 # The most changes `open` returns.
 OPEN_MAX = 10_000
@@ -34,6 +43,7 @@ Prose = Annotated[str, Field(min_length=1, json_schema_extra={"x-board-prose": T
 SharedUrl = Annotated[
     str, Field(pattern="^https?://([^/?#@]*@)?[^/?#@:][^/?#@]*([/?#]|$)", json_schema_extra={"format": "uri"})
 ]
+SharedDate = Annotated[str, Field(json_schema_extra={"format": "date"})]
 Commit = Annotated[str, Field(pattern="^[0-9a-f]{7,40}$")]
 Url = Annotated[str, Field(pattern="^https?://")]
 # A SQLite GLOB pattern by logical path, such as /repos/inbox/crates/inbox-store/**, which a plugin matches
@@ -97,6 +107,12 @@ class ChangeRecord(BaseModel):
     prototype's `state` is `exploring` until `verdict`, one sentence, settles
     or abandons it; `verdict_artifact` is the URL of the artifact version
     the verdict means.
+    `sync` records `merge_commit_url`, the merge commit's GitHub URL, when it ends a
+    change whose pull request merged; `sync` and `drop` record
+    `dropped_reason` when they drop one. `over_limit` is the reason given
+    for the latest move into build past the WIP limit. `touched` is the UTC
+    day a changes capability last touched the change, which keeps it active
+    under the limit.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True, json_schema_extra=shipped())
@@ -119,6 +135,19 @@ class ChangeRecord(BaseModel):
     state: State | SkipJsonSchema[None] = None
     verdict: Prose | SkipJsonSchema[None] = None
     verdict_artifact: SharedUrl | SkipJsonSchema[None] = None
+    merge_commit_url: SharedUrl | SkipJsonSchema[None] = None
+    dropped_reason: Prose | SkipJsonSchema[None] = None
+    over_limit: Prose | SkipJsonSchema[None] = None
+    touched: SharedDate | SkipJsonSchema[None] = None
+
+
+class SyncRecord(BaseModel):
+    """`changes/sync/v1`, at `/changes/sync.json`: the UTC day of the last writing `changes.sync`."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, json_schema_extra=both)
+
+    tag: Literal["changes/sync/v1"] = Field(alias="$type", description="The record's type.")
+    synced: SharedDate = Field(description="The UTC day the last writing sync ran.")
 
 
 class PlanRecord(BaseModel):
@@ -340,6 +369,9 @@ class PrototypeInput(Strict):
         pattern="^[a-z0-9][a-z0-9-]{0,59}$",
         description="The change's name, so it lives at /changes/<name>; made from the title when left out.",
     )
+    over_limit: Prose | SkipJsonSchema[None] = Field(
+        default=None, description="Why the prototype starts although the WIP limit is reached; recorded on it."
+    )
 
 
 class VerdictInput(Strict):
@@ -383,6 +415,39 @@ class AttachInput(Strict):
     head: Commit | SkipJsonSchema[None] = Field(default=None, description="The commit under test and review.")
     issue: Url | SkipJsonSchema[None] = Field(default=None, description="The URL of the issue the change answers.")
     pull_request: Url | SkipJsonSchema[None] = Field(default=None, description="The pull request's URL.")
+
+
+class AdvanceInput(Strict):
+    """A change to move on, and why it may go past the WIP limit when that is reached."""
+
+    model_config = ConfigDict(json_schema_extra=shipped())
+
+    path: LogicalPath = Field(description="The change's logical path, such as /changes/suite-timeout.")
+    over_limit: Prose | SkipJsonSchema[None] = Field(
+        default=None,
+        description="Why the change moves into build although the WIP limit is reached; recorded on the change.",
+    )
+
+
+class DropInput(Strict):
+    """A change to end in dropped, and why."""
+
+    path: LogicalPath = Field(description="The change's logical path, such as /changes/suite-timeout.")
+    reason: Prose = Field(description="Why the change is dropped, recorded on it.")
+
+
+class SyncInput(Strict):
+    """Whether sync only reports, and how many entries it lists."""
+
+    model_config = ConfigDict(json_schema_extra=shipped())
+
+    dry_run: bool = Field(default=False, description="Report what sync would do, and write nothing.")
+    limit: int = Field(
+        default=SYNC_LIMIT,
+        ge=1,
+        le=OPEN_MAX,
+        description=f"The most entries to list, 1 to {OPEN_MAX:,}; {SYNC_LIMIT} when left out.",
+    )
 
 
 class OpenInput(Strict):
@@ -437,14 +502,24 @@ class Check(Strict):
     detail: str
 
 
+class LastSync(Strict):
+    """The UTC day the last writing sync ran, and, when that is before today or never, the warning and its command."""
+
+    synced: str | None
+    stale: bool
+    code: Literal["changes::sync::stale"] | None
+    command: str
+
+
 class NextOutput(Strict):
-    """Where the change stands: its phase, route, the gate's checks and what to do now."""
+    """Where the change stands: its phase, route, the gate's checks, what to do now and the last sync."""
 
     path: str
     phase: Phase
     route: Route | None
     gate: list[Check]
     instruction: str
+    sync: LastSync
 
 
 class AttachOutput(Strict):
@@ -454,12 +529,75 @@ class AttachOutput(Strict):
     records: int
 
 
+class Idle(Strict):
+    """An idle change in build and what to do with it: sync, drop or resume, and the command."""
+
+    path: str
+    action: Literal["sync", "drop", "resume"]
+    command: str
+
+
+class Limit(Strict):
+    """The WIP limit a move into build went past: the active changes holding places, the idle ones, the override."""
+
+    code: Literal["changes::wip::over_limit"]
+    mount: str
+    kind: Kind
+    limit: int
+    active_days: int
+    active: list[str]
+    idle: list[Idle]
+    override: str
+
+
 class AdvanceOutput(Strict):
-    """The phase the change left and the phase it entered."""
+    """The phase the change left and the phase it entered, and the warning when it went past the WIP limit."""
 
     path: str
     from_: Phase = Field(alias="from")
     to: Phase
+    warning: Limit | SkipJsonSchema[None] = None
+
+
+class DropOutput(Strict):
+    """The phase the change left for dropped, and its task, which stays open until it is closed."""
+
+    path: str
+    from_: Phase = Field(alias="from")
+    to: Literal["dropped"]
+    task: str | None
+
+
+class SyncEntry(Strict):
+    """What sync found for one change, and the phase it moved it `to`, or why it left it in `code`."""
+
+    path: str
+    phase: Phase
+    to: Literal["done", "dropped"] | None
+    status: Literal["merged", "closed", "open", "owed", "not_found", "not_github", "no_pull_request"]
+    code: (
+        Literal[
+            "changes::sync::owed",
+            "changes::sync::pull_not_found",
+            "changes::sync::not_github",
+            "changes::sync::no_pull_request",
+        ]
+        | None
+    )
+    pull_request: str | None
+    task: str | None
+    detail: str
+    command: str | None
+
+
+class SyncOutput(Strict):
+    """Each open change of the board's own and what sync did with it; `moved` counts those it ended."""
+
+    dry_run: bool
+    changes: list[SyncEntry]
+    total: int
+    moved: int
+    truncated: bool
 
 
 class Prototype(Strict):
@@ -490,13 +628,14 @@ class OpenOutput(Strict):
 
     `total` counts every open change and `truncated` says whether the limit
     left some out. `unreadable` is how many were left out because Board marks
-    them degraded.
+    them degraded. `sync` is the day of the last sync.
     """
 
     changes: list[OpenChange]
     total: int
     truncated: bool
     unreadable: int
+    sync: LastSync
 
 
 class PrototypeOutput(Strict):
@@ -506,6 +645,7 @@ class PrototypeOutput(Strict):
     task: str
     branch: str
     brief: BriefOutput
+    warning: Limit | SkipJsonSchema[None] = None
 
 
 class VerdictOutput(Strict):
@@ -536,3 +676,4 @@ class PrOutput(Strict):
 CHANGE_SCHEMA_PATH = f"{CHANGE_TYPE}.schema.json"
 UNDERSTANDING_SCHEMA_PATH = f"{UNDERSTANDING_TYPE}.schema.json"
 PLAN_SCHEMA_PATH = f"{PLAN_TYPE}.schema.json"
+SYNC_SCHEMA_PATH = f"{SYNC_TYPE}.schema.json"

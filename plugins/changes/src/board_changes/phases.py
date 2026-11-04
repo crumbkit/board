@@ -1,8 +1,7 @@
 """The `next`, `attach` and `advance` capabilities: where a change stands, what it cites, and moving it on."""
 
-import json
 from dataclasses import replace
-from typing import Any, Literal, cast
+from typing import Literal
 
 from board_plugin.board import Board, literal
 from board_plugin.protocol import CallRequest, PluginError
@@ -14,18 +13,20 @@ from board_changes.change import (
     PULL_TYPES,
     TASK_TYPE,
     TICKET_TYPES,
-    TREE_CODES,
     Change,
     branch_of,
     kind_of,
+    last_sync,
     newest,
     read,
+    referenced,
+    touch,
     write,
 )
 from board_changes.diff import edited, outside
 from board_changes.gates import CODES, Check, Observed, gate
 from board_changes.repo import check_suite
-from board_changes.wip import refuse_full
+from board_changes.wip import Limit, Move, active_days, admit
 
 # Each input that adds a reference, the list it adds to, and the record types it accepts; none means any entry.
 ATTACHED: tuple[tuple[str, Literal["records", "tickets", "pulls"], tuple[str, ...]], ...] = (
@@ -64,37 +65,6 @@ PROTOTYPE = (
 
 # The phases whose gates read the records a change references.
 READS_RECORDS = ("plan", "build", "review")
-
-
-def referenced(board: Board, refs: list[str]) -> tuple[dict[str, tuple[str, dict[str, Any]]], dict[str, str]]:
-    """Each entry `refs` reaches as (type, body), in their order, and each unreadable one with the code that says why.
-
-    A file that is not a record is of type `file`; a path Board resolves to a
-    directory is of type `directory`.
-    """
-    records: dict[str, tuple[str, dict[str, Any]]] = {}
-    unreadable = dict.fromkeys(refs, "board::path::not_found")
-    if not refs:
-        return records, unreadable
-    listed = ", ".join(literal(ref) for ref in refs)
-    rows = board.rows(
-        "SELECT e.logical, e.type, e.code, r.body FROM entries AS e"  # noqa: S608 - values are quoted by literal()
-        " LEFT JOIN records AS r ON r.logical = e.logical AND r.blob = e.blob"
-        f" WHERE e.logical IN ({listed})"
-    )
-    for logical, type_name, code, text in rows:
-        if code is not None and code not in TREE_CODES:
-            unreadable[logical] = str(code)
-        else:
-            body = cast("dict[str, Any]", json.loads(text)) if text is not None else {}
-            records[logical] = (str(type_name or "file"), body)
-            unreadable.pop(logical, None)
-    unfound = [ref for ref, code in unreadable.items() if code == "board::path::not_found"]
-    for ref, answer in zip(unfound, board.refs(unfound), strict=True):
-        if answer is not None:
-            records[ref] = ("directory", {})
-            del unreadable[ref]
-    return {ref: records[ref] for ref in refs if ref in records}, unreadable
 
 
 def plan_text(board: Board, change: Change) -> str | None:
@@ -151,6 +121,7 @@ def next_step(request: CallRequest) -> dict[str, object]:
         "route": change.get("route"),
         "gate": checks,
         "instruction": instruction_for(path, change, checks),
+        "sync": last_sync(board),
     }
 
 
@@ -174,7 +145,7 @@ def attach(request: CallRequest) -> dict[str, object]:
         value = asked.get(field)
         if isinstance(value, str):
             change[field] = value
-    write(board, [{"path": path, "expect": blob, "record": change}])
+    write(board, [{"path": path, "expect": blob, "record": touch(change)}])
     return {"path": path, "records": len(change.get("records", []))}
 
 
@@ -232,10 +203,12 @@ def advance(request: CallRequest) -> dict[str, object]:
             {"path": path, "phase": phase, "missing": [found["check"] for found in missing]},
         )
     change["phase"] = PHASES[PHASES.index(phase) + 1]
+    limit = None
     if change["phase"] == "build":
-        refuse_full(board, kind_of(change), path)
-    write(board, [{"path": path, "expect": blob, "record": change}])
-    return {"path": path, "from": phase, "to": change["phase"]}
+        reason = request.input.get("over_limit")
+        limit = admit(board, path, change, Move(over_limit("advance", path), reason, active_days()))
+    write(board, [{"path": path, "expect": blob, "record": touch(change)}])
+    return moved(path, phase, change, limit)
 
 
 def pause(request: CallRequest) -> dict[str, object]:
@@ -267,7 +240,21 @@ def resume(request: CallRequest) -> dict[str, object]:
             f"run `board call changes.next --path {path}` for its next step",
             {"path": path, "phase": change["phase"]},
         )
-    refuse_full(board, kind_of(change), path)
     change["phase"] = "build"
-    write(board, [{"path": path, "expect": blob, "record": change}])
-    return {"path": path, "from": "paused", "to": "build"}
+    reason = request.input.get("over_limit")
+    limit = admit(board, path, change, Move(over_limit("resume", path), reason, active_days()))
+    write(board, [{"path": path, "expect": blob, "record": touch(change)}])
+    return moved(path, "paused", change, limit)
+
+
+def over_limit(capability: str, path: str) -> str:
+    """The command that moves the change at `path` into build past the WIP limit, recording why."""
+    return f"board call changes.{capability} --path {path} --over_limit '<why>'"
+
+
+def moved(path: str, phase: str, change: Change, limit: Limit | None) -> dict[str, object]:
+    """The phase the change left and entered, and, when it went past the WIP limit, the warning."""
+    output: dict[str, object] = {"path": path, "from": phase, "to": change["phase"]}
+    if limit is not None:
+        output["warning"] = limit
+    return output

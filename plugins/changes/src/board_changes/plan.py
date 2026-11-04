@@ -9,8 +9,8 @@ from typing import Any, cast
 from board_plugin.board import Board
 from board_plugin.protocol import CallRequest, PluginError
 
-from board_changes.change import FINAL, PLAN_TYPE, PLUGIN, kind_of, newest, read, write
-from board_changes.phases import next_step, referenced
+from board_changes.change import FINAL, PLAN_TYPE, PLUGIN, kind_of, newest, read, referenced, touch, write
+from board_changes.phases import next_step
 
 # The most words a plan's text holds, and the most words the documents it uses hold in all.
 PLAN_WORDS = 3_000
@@ -97,7 +97,7 @@ def plan(request: CallRequest) -> dict[str, object]:
         )
     record, lines = plan_lines(path, text, uses, paths)
     change["plan"] = lines[0]["path"]
-    write(board, [*lines, {"path": path, "expect": blob, "record": change}])
+    write(board, [*lines, {"path": path, "expect": blob, "record": touch(change)}])
     return {"path": record, "text": change["plan"], "uses": len(uses)}
 
 
