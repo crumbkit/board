@@ -47,8 +47,10 @@ Board is called. `artifacts`, `boundary`, `controls`, `plans`, `evals`, `runs`,
     would see, its `env` among them, and `cache_home`, `XDG_CACHE_HOME` when
     it is absolute, else `~/.cache`. A built-in plugin reads no environment
     of its own.
-  - `run(process)` starts a program, such as git, gh or an agent, and
-    `cached` and `cache` keep a small value by content hash
+  - `run(process)` starts a program, such as git, gh or an agent;
+    `run_hiding`, which implementors override, starts one without some
+    variables; `places` names a directory's mounts; and `cached` and
+    `cache` keep a small value by content hash
     ([built-in/running.md](built-in/running.md)).
 - `board_ops::agent` starts a clean-context model agent, the argv a person
   names in a variable, through `Host::run` in an empty directory, and
