@@ -797,10 +797,10 @@
       "annotations": {
         "readOnlyHint": false
       },
-      "description": "Write a plan for the change and the records it uses, refusing a reference that reaches nothing, a plan over 3,000 words and used documents over 3,000 words in all; the newest plan is the change's plan.",
+      "description": "Write a plan for the change, the records it uses and the paths it will edit, refusing a build change's plan without paths, a path outside the change's mount, a reference that reaches nothing, a plan over 3,000 words and used documents over 3,000 words in all; the newest plan is the change's plan.",
       "inputSchema": {
         "additionalProperties": false,
-        "description": "A plan for a change, given on stdin because `uses` is an array.",
+        "description": "A plan for a change, given on stdin because `uses` and `paths` are arrays.",
         "properties": {
           "path": {
             "description": "The change's logical path, such as /changes/suite-timeout.",
@@ -808,6 +808,17 @@
             "pattern": "^/",
             "title": "Path",
             "type": "string"
+          },
+          "paths": {
+            "description": "The files and SQLite GLOB patterns the change will edit, by logical path under the change's mount, such as /repos/inbox/crates/inbox-store/**, where `*` also matches `/`; a build change needs one.",
+            "items": {
+              "minLength": 1,
+              "pattern": "^/",
+              "type": "string",
+              "x-board-glob": true
+            },
+            "title": "Paths",
+            "type": "array"
           },
           "text": {
             "description": "The plan in Markdown, at most 3,000 words.",
@@ -866,7 +877,7 @@
       "annotations": {
         "readOnlyHint": true
       },
-      "description": "What an agent needs to start: the newest plan, one line per record it uses, the next step and the command that lists the repository's controls, in at most 600 words.",
+      "description": "What an agent needs to start: the newest plan, a one-line summary of each control on its paths, one line per record it uses, the next step and the command that lists the repository's controls, in at most 600 words.",
       "inputSchema": {
         "additionalProperties": false,
         "description": "One change, by path.",
@@ -888,6 +899,39 @@
       "name": "brief",
       "outputSchema": {
         "$defs": {
+          "BriefRule": {
+            "additionalProperties": false,
+            "description": "One control that applies to the planned paths, and its summary.\n\n`matched` lists at most three of the planned paths that reached it, and\n`matched_left_out` counts the rest; both are left out when every planned\npath reached it.",
+            "properties": {
+              "control": {
+                "title": "Control",
+                "type": "string"
+              },
+              "matched": {
+                "default": null,
+                "items": {
+                  "type": "string"
+                },
+                "title": "Matched",
+                "type": "array"
+              },
+              "matched_left_out": {
+                "default": null,
+                "title": "Matched Left Out",
+                "type": "integer"
+              },
+              "summary": {
+                "title": "Summary",
+                "type": "string"
+              }
+            },
+            "required": [
+              "control",
+              "summary"
+            ],
+            "title": "BriefRule",
+            "type": "object"
+          },
           "BriefUse": {
             "additionalProperties": false,
             "description": "One record the plan uses, and one line saying what it holds.",
@@ -907,10 +951,33 @@
             ],
             "title": "BriefUse",
             "type": "object"
+          },
+          "RulesCommand": {
+            "additionalProperties": false,
+            "description": "A command to run without a shell: `argv` is the program and its arguments, and `stdin` is its input.",
+            "properties": {
+              "argv": {
+                "items": {
+                  "type": "string"
+                },
+                "title": "Argv",
+                "type": "array"
+              },
+              "stdin": {
+                "title": "Stdin",
+                "type": "string"
+              }
+            },
+            "required": [
+              "argv",
+              "stdin"
+            ],
+            "title": "RulesCommand",
+            "type": "object"
           }
         },
         "additionalProperties": false,
-        "description": "What an agent needs to start a change, in at most 600 words.\n\n`plan` is the newest plan's text, or `null` when the change has no plan\nrecord. `uses` gives one line per record it uses, in order, and\n`left_out` counts those the word limit left out. `controls` is the\ncommand that lists the controls on the change's repository.\n`brief_line`, `board-brief: <path>`, comes first in the output; a\nbuilder's first message starts with it, and the write guard reads it.",
+        "description": "What an agent needs to start a change, in at most 600 words.\n\n`plan` is the newest plan's text, or `null` when the change has no plan\nrecord. `rules` lists each control on the plan's paths once, as\n`controls.for-paths` finds them: those that matched only some planned\npaths first, then the others, each group by control path. Each rule's\npath and summary are fitted first, skipping any that do not fit, and\nits matched paths after, while room remains. `rules_left_out` names up\nto 20 rules the word limit left out, as many as fit, and\n`rules_unnamed` counts the rest. `rules_command` is the command that\nlists every rule, as an `argv` to run and the `stdin` to give it; it is\n`null` when the plan has no paths. Rules are counted before uses, but\nthe uses keep up to a quarter of the limit. `uses` gives one line per\nrecord it uses, in order, skipping any that do not fit, and `left_out`\ncounts those the word limit left out. `controls` is the\ncommand that lists the controls on the change's repository.\n`brief_line`, `board-brief: <path>`, comes first in the output; a\nbuilder's first message starts with it, and the write guard reads it.",
         "properties": {
           "brief_line": {
             "title": "Brief Line",
@@ -956,6 +1023,34 @@
             ],
             "title": "Plan"
           },
+          "rules": {
+            "items": {
+              "$ref": "#/$defs/BriefRule"
+            },
+            "title": "Rules",
+            "type": "array"
+          },
+          "rules_command": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/RulesCommand"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "rules_left_out": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Rules Left Out",
+            "type": "array"
+          },
+          "rules_unnamed": {
+            "title": "Rules Unnamed",
+            "type": "integer"
+          },
           "uses": {
             "items": {
               "$ref": "#/$defs/BriefUse"
@@ -968,6 +1063,10 @@
           "brief_line",
           "path",
           "plan",
+          "rules",
+          "rules_left_out",
+          "rules_unnamed",
+          "rules_command",
           "uses",
           "left_out",
           "phase",
@@ -1032,7 +1131,7 @@
         "$defs": {
           "BriefOutput": {
             "additionalProperties": false,
-            "description": "What an agent needs to start a change, in at most 600 words.\n\n`plan` is the newest plan's text, or `null` when the change has no plan\nrecord. `uses` gives one line per record it uses, in order, and\n`left_out` counts those the word limit left out. `controls` is the\ncommand that lists the controls on the change's repository.\n`brief_line`, `board-brief: <path>`, comes first in the output; a\nbuilder's first message starts with it, and the write guard reads it.",
+            "description": "What an agent needs to start a change, in at most 600 words.\n\n`plan` is the newest plan's text, or `null` when the change has no plan\nrecord. `rules` lists each control on the plan's paths once, as\n`controls.for-paths` finds them: those that matched only some planned\npaths first, then the others, each group by control path. Each rule's\npath and summary are fitted first, skipping any that do not fit, and\nits matched paths after, while room remains. `rules_left_out` names up\nto 20 rules the word limit left out, as many as fit, and\n`rules_unnamed` counts the rest. `rules_command` is the command that\nlists every rule, as an `argv` to run and the `stdin` to give it; it is\n`null` when the plan has no paths. Rules are counted before uses, but\nthe uses keep up to a quarter of the limit. `uses` gives one line per\nrecord it uses, in order, skipping any that do not fit, and `left_out`\ncounts those the word limit left out. `controls` is the\ncommand that lists the controls on the change's repository.\n`brief_line`, `board-brief: <path>`, comes first in the output; a\nbuilder's first message starts with it, and the write guard reads it.",
             "properties": {
               "brief_line": {
                 "title": "Brief Line",
@@ -1078,6 +1177,34 @@
                 ],
                 "title": "Plan"
               },
+              "rules": {
+                "items": {
+                  "$ref": "#/$defs/BriefRule"
+                },
+                "title": "Rules",
+                "type": "array"
+              },
+              "rules_command": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/RulesCommand"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "rules_left_out": {
+                "items": {
+                  "type": "string"
+                },
+                "title": "Rules Left Out",
+                "type": "array"
+              },
+              "rules_unnamed": {
+                "title": "Rules Unnamed",
+                "type": "integer"
+              },
               "uses": {
                 "items": {
                   "$ref": "#/$defs/BriefUse"
@@ -1090,6 +1217,10 @@
               "brief_line",
               "path",
               "plan",
+              "rules",
+              "rules_left_out",
+              "rules_unnamed",
+              "rules_command",
               "uses",
               "left_out",
               "phase",
@@ -1097,6 +1228,39 @@
               "controls"
             ],
             "title": "BriefOutput",
+            "type": "object"
+          },
+          "BriefRule": {
+            "additionalProperties": false,
+            "description": "One control that applies to the planned paths, and its summary.\n\n`matched` lists at most three of the planned paths that reached it, and\n`matched_left_out` counts the rest; both are left out when every planned\npath reached it.",
+            "properties": {
+              "control": {
+                "title": "Control",
+                "type": "string"
+              },
+              "matched": {
+                "default": null,
+                "items": {
+                  "type": "string"
+                },
+                "title": "Matched",
+                "type": "array"
+              },
+              "matched_left_out": {
+                "default": null,
+                "title": "Matched Left Out",
+                "type": "integer"
+              },
+              "summary": {
+                "title": "Summary",
+                "type": "string"
+              }
+            },
+            "required": [
+              "control",
+              "summary"
+            ],
+            "title": "BriefRule",
             "type": "object"
           },
           "BriefUse": {
@@ -1117,6 +1281,29 @@
               "line"
             ],
             "title": "BriefUse",
+            "type": "object"
+          },
+          "RulesCommand": {
+            "additionalProperties": false,
+            "description": "A command to run without a shell: `argv` is the program and its arguments, and `stdin` is its input.",
+            "properties": {
+              "argv": {
+                "items": {
+                  "type": "string"
+                },
+                "title": "Argv",
+                "type": "array"
+              },
+              "stdin": {
+                "title": "Stdin",
+                "type": "string"
+              }
+            },
+            "required": [
+              "argv",
+              "stdin"
+            ],
+            "title": "RulesCommand",
             "type": "object"
           }
         },

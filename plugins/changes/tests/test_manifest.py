@@ -105,6 +105,7 @@ def test_every_input_property_carries_a_sentence_that_says_what_it_means() -> No
         ("plan", "path"),
         ("plan", "text"),
         ("plan", "uses"),
+        ("plan", "paths"),
         ("brief", "path"),
         ("prototype", "mount"),
         ("prototype", "question"),

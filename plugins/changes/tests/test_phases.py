@@ -3,7 +3,7 @@
 import json
 from typing import Any
 
-from conftest import HEAD, PLAN, TASK, Board, change, mount_repo, record, report, task
+from conftest import HEAD, PLAN, TASK, Board, change, commit, edited, git, mount_repo, plan_input, record, report, task
 
 PATH = "/changes/t"
 
@@ -48,32 +48,91 @@ def test_a_plan_with_no_route_blocks_the_plan_gate_and_setting_one_clears_it(boa
     assert board.call("advance", {"path": PATH})["to"] == "build"
 
 
+def reviewing(board: Board, records: list[str] | None = None) -> tuple[str, str]:
+    """A change in review whose head edits /repos/x/src/a.rs, under its plan's paths: the base and head."""
+    base, head = edited(board, {"src/a.rs": "a\n"})
+    board.write("changes/t.json", change("review", head=head, records=records or []))
+    board.call("plan", plan_input(PATH, paths=["/repos/x/src/**"]), stdin=True)
+    return base, head
+
+
 def test_a_degraded_referenced_record_satisfies_nothing_and_a_valid_one_does(board: Board) -> None:
-    board.write("changes/t.json", change("review", head=HEAD, records=["/r/1"]))
+    base, head = reviewing(board, ["/r/1"])
     board.write("r/1.json", "{not json")
     assert board.refusal("advance", {"path": PATH})["fields"]["missing"] == ["review"]
-    board.write("r/1.json", report())
+    board.write("r/1.json", report(head, base=base))
     assert board.call("advance", {"path": PATH})["to"] == "land"
 
 
 def test_a_referenced_record_degraded_only_by_a_dangling_reference_still_counts(board: Board) -> None:
-    board.write("changes/t.json", change("review", head=HEAD, records=["/r/1"]))
-    board.write("r/1.json", report(verdict="changes", brief="/briefs/none"))
+    base, head = reviewing(board, ["/r/1"])
+    board.write("r/1.json", report(head, base=base, verdict="changes", brief="/briefs/none"))
     assert board.refusal("advance", {"path": PATH})["fields"]["missing"] == ["review"]
-    board.write("r/1.json", report(brief="/briefs/none"))
+    board.write("r/1.json", report(head, base=base, brief="/briefs/none"))
     code = board.json("check", "/r/1")["data"][0].get("code")
     assert code == "board::ref::dangling"
     assert board.call("advance", {"path": PATH})["to"] == "land"
 
 
 def test_a_referenced_record_deleted_after_it_was_attached_satisfies_nothing(board: Board) -> None:
-    board.write("changes/t.json", change("review", head=HEAD))
-    board.write("r/1.json", report())
+    base, head = reviewing(board)
+    board.write("r/1.json", report(head, base=base))
     board.call("attach", {"path": PATH, "ref": "/r/1"})
     (board.root / "r/1.json").unlink()
     assert board.refusal("advance", {"path": PATH})["fields"]["missing"] == ["review"]
-    board.write("r/1.json", report())
+    board.write("r/1.json", report(head, base=base))
     assert board.call("advance", {"path": PATH})["to"] == "land"
+
+
+def test_review_refuses_a_diff_that_edits_a_file_outside_the_planned_paths_until_the_plan_covers_it(
+    board: Board,
+) -> None:
+    base, head = edited(board, {"src/a.rs": "a\n", "docs/b.md": "b\n"})
+    board.write("changes/t.json", change("review", head=head, records=["/r/1"]))
+    board.write("r/1.json", report(head, base=base))
+    board.call("plan", plan_input(PATH, paths=["/repos/x/src/**"]), stdin=True)
+    refused = board.refusal("advance", {"path": PATH})
+    assert refused["code"] == "changes::paths::outside_plan"
+    assert "/repos/x/docs/b.md" in refused["message"]
+    assert "/repos/x/src/a.rs" not in refused["message"]
+    board.call("plan", plan_input(PATH, paths=["/repos/x/src/**", "/repos/x/docs/b.md"]), stdin=True)
+    assert board.call("advance", {"path": PATH})["to"] == "land"
+
+
+def test_review_checks_every_commit_since_the_followed_branch_when_a_report_covers_only_the_fix(
+    board: Board,
+) -> None:
+    _, first = edited(board, {"docs/b.md": "b\n"})
+    head = commit(board, {"src/a.rs": "a\n"})
+    board.write("changes/t.json", change("review", head=head, records=["/r/1"]))
+    board.write("r/1.json", report(head, base=first))
+    board.call("plan", plan_input(PATH, paths=["/repos/x/src/**"]), stdin=True)
+    refused = board.refusal("advance", {"path": PATH})
+    assert refused["code"] == "changes::paths::outside_plan"
+    assert "/repos/x/docs/b.md" in refused["message"]
+    board.call("plan", plan_input(PATH, paths=["/repos/x/src/**", "/repos/x/docs/**"]), stdin=True)
+    assert board.call("advance", {"path": PATH})["to"] == "land"
+
+
+def test_review_leaves_out_what_the_followed_branch_gained_when_the_change_is_rebased_on_it(board: Board) -> None:
+    old, _ = edited(board, {"src/a.rs": "a\n"})
+    root = board.root.parent / "repos-x"
+    commit(board, {"docs/upstream.md": "u\n"}, branch="main")
+    git(root, "checkout", "-q", "work")
+    git(root, "rebase", "-q", "main")
+    head = git(root, "rev-parse", "HEAD")
+    board.write("changes/t.json", change("review", head=head, records=["/r/1"]))
+    board.write("r/1.json", report(head, base=old))
+    board.call("plan", plan_input(PATH, paths=["/repos/x/src/**"]), stdin=True)
+    assert board.call("advance", {"path": PATH})["to"] == "land"
+    commit(board, {"docs/mine.md": "m\n"})
+    head = git(root, "rev-parse", "HEAD")
+    board.write("changes/t.json", change("review", head=head, records=["/r/1"]))
+    board.write("r/1.json", report(head, base=old))
+    refused = board.refusal("advance", {"path": PATH})
+    assert refused["code"] == "changes::paths::outside_plan"
+    assert "/repos/x/docs/mine.md" in refused["message"]
+    assert "/repos/x/docs/upstream.md" not in refused["message"]
 
 
 def test_the_build_gate_finds_the_check_suite_in_the_repositorys_contributing_docs(board: Board) -> None:
@@ -302,3 +361,55 @@ def test_the_understanding_schema_refuses_a_mismatch_left_unsettled_and_admits_a
     report = board.json("check", "--all")
     codes = {entry["logical"]: entry.get("code") for entry in report["data"] if entry["logical"].startswith("/u/")}
     assert codes == {"/u/open": "board::record::invalid", "/u/settled": None}
+
+
+def test_review_refuses_a_change_with_no_head_until_one_is_attached(board: Board) -> None:
+    base, head = edited(board, {"src/a.rs": "a\n"})
+    board.write("changes/t.json", change("review", records=["/r/1"]))
+    board.write("r/1.json", report(head, base=base))
+    board.call("plan", plan_input(PATH, paths=["/repos/x/src/**"]), stdin=True)
+    refused = board.refusal("advance", {"path": PATH})
+    assert (refused["code"], refused["fields"]["missing"]) == ("changes::gate::unmet", ["review", "paths"])
+    assert "paths: the change records no head commit, so its diff is not known" in refused["message"]
+    board.call("attach", {"path": PATH, "head": head})
+    assert board.call("advance", {"path": PATH})["to"] == "land"
+
+
+def test_review_refuses_a_change_whose_mount_holds_nothing_until_it_names_the_mount(board: Board) -> None:
+    base, head = edited(board, {"src/a.rs": "a\n"})
+    board.write("changes/t.json", change("review", head=head, records=["/r/1"]))
+    board.write("r/1.json", report(head, base=base))
+    board.call("plan", plan_input(PATH, paths=["/repos/x/src/**"]), stdin=True)
+    board.write("changes/t.json", change("review", head=head, records=["/r/1"], mount="/repos/gone"))
+    refused = board.refusal("advance", {"path": PATH})
+    assert refused["code"] == "changes::paths::outside_plan"
+    assert "nothing is at /repos/gone" in refused["message"]
+    board.write("changes/t.json", change("review", head=head, records=["/r/1"]))
+    assert board.call("advance", {"path": PATH})["to"] == "land"
+
+
+def test_review_refuses_a_change_whose_mount_is_a_plain_directory_until_it_names_a_mount(board: Board) -> None:
+    base, head = edited(board, {"src/a.rs": "a\n"})
+    board.write("changes/t.json", change("review", head=head, records=["/r/1"]))
+    board.write("r/1.json", report(head, base=base))
+    board.call("plan", plan_input(PATH, paths=["/repos/x/src/**"]), stdin=True)
+    board.write("changes/t.json", change("review", head=head, records=["/r/1"], mount="/r"))
+    refused = board.refusal("advance", {"path": PATH})
+    assert refused["code"] == "changes::paths::outside_plan"
+    assert "/r is not a mount" in refused["message"]
+    board.write("changes/t.json", change("review", head=head, records=["/r/1"]))
+    assert board.call("advance", {"path": PATH})["to"] == "land"
+
+
+def test_review_refuses_a_head_the_mounted_repository_lacks_until_the_head_is_one_it_holds(board: Board) -> None:
+    base, head = edited(board, {"src/a.rs": "a\n"})
+    missing = "e" * 40
+    board.write("changes/t.json", change("review", head=missing, records=["/r/1"]))
+    board.write("r/1.json", report(missing, base=base))
+    board.call("plan", plan_input(PATH, paths=["/repos/x/src/**"]), stdin=True)
+    refused = board.refusal("advance", {"path": PATH})
+    assert refused["code"] == "changes::paths::outside_plan"
+    assert f"fetch {missing} and main into the mounted repository" in refused["message"]
+    board.write("changes/t.json", change("review", head=head, records=["/r/1"]))
+    board.write("r/1.json", report(head, base=base))
+    assert board.call("advance", {"path": PATH})["to"] == "land"

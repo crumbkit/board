@@ -28,6 +28,17 @@ pub enum Pointer {
     Mount(Mount),
 }
 
+impl Pointer {
+    /// The ref a mount follows; `None` for a link.
+    #[must_use]
+    pub fn follow(&self) -> Option<String> {
+        match self {
+            Self::Link(_) => None,
+            Self::Mount(mount) => Some(mount.follow.clone()),
+        }
+    }
+}
+
 /// A mounted repository, read at `commit`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Mount {

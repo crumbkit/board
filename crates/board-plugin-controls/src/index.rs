@@ -89,6 +89,19 @@ pub(crate) fn rows(host: &dyn Host, sql: &str) -> Result<QueryReport, PluginErro
         .map_err(|error| PluginError::board_refused("controls", "query", &error.refusal()))
 }
 
+/// The first column of each row of `sql` that holds a string there.
+pub(crate) fn first_strings<C: FromIterator<String>>(
+    host: &dyn Host,
+    sql: &str,
+) -> Result<C, PluginError> {
+    Ok((rows(host, sql)?.rows.into_iter())
+        .filter_map(|row| match row.into_iter().next() {
+            Some(Value::String(text)) => Some(text),
+            _ => None,
+        })
+        .collect())
+}
+
 /// Every valid control in the board's own tree, by its logical path.
 pub(crate) fn controls(host: &dyn Host) -> Result<BTreeMap<String, Control>, PluginError> {
     let report = rows(host, CONTROLS)?;

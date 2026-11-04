@@ -121,7 +121,7 @@ Neither does a target nobody offers, which Board refuses whatever the input.
 A flag whose property has `"format": "board-path"` may be given relative to
 the run's prefix, such as `--path docs` from inside a mounted repository;
 Board sends the absolute logical path (architecture.md, Typed references).
-No flags and nothing on stdin, a terminal on stdin, or stdin left unread, is
+No flags and no stdin, a terminal on stdin, or stdin left unread, is
 the input `{}`. An
 input property named like one of `board call`'s own flags (`--json`, `--fields`,
 `--long`, `--full`, `--capability` or `--help`), or not made of lowercase
@@ -135,8 +135,9 @@ Then Board:
 2. validates it against `inputSchema` (`board::plugin::bad_input`);
 3. starts `run` in the plugin's directory (a program whose name holds `/` is
    found from there, any other through `PATH`), with an environment holding only
-   `BOARD_CALL_DEPTH` and `BOARD_PLUGIN` (the plugin's name, or the outer
-   plugin's when Board already runs inside one); `PATH`, `HOME`, `LANG`, `TZ`,
+   `BOARD_CALL_DEPTH`, `BOARD_PLUGIN` (the plugin's name, or the outer
+   plugin's when Board runs inside one) and `BOARD_BIN`, the Board nested
+   calls run; `PATH`, `HOME`, `LANG`, `TZ`,
    `XDG_CACHE_HOME`, `XDG_DATA_HOME`, `XDG_CONFIG_HOME`, `BOARD_TIMINGS`,
    `BOARD_CALLER_DIR` and `BOARD_DAY_START` when set; and those its
    capability's `env` names;

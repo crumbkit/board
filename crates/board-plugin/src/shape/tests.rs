@@ -239,7 +239,7 @@ fn the_registry_holds_each_shared_shape_by_name_as_a_field_using_it_sees_it() {
     let registry = registry();
     assert_eq!(
         registry.keys().map(String::as_str).collect::<Vec<_>>(),
-        ["Date", "Glob", "Prose", "Sha256", "Url"]
+        ["Date", "Glob", "LogicalGlob", "Prose", "Sha256", "Url"]
     );
     let properties = &schema_of::<Noted>(SchemaSettings::draft2020_12())["properties"];
     let mut why = properties["why"].clone();
@@ -314,4 +314,14 @@ fn a_sha256_not_in_lowercase_hex_and_an_empty_glob_are_refused_and_their_twins_a
     assert_eq!(code(&sha256, &lower), None);
     assert_eq!(code(&glob, ""), invalid);
     assert_eq!(code(&glob, "*"), None);
+}
+
+/// A logical glob starts at the board's root, as a logical path does.
+#[test]
+fn a_logical_glob_without_a_leading_slash_is_refused_and_one_with_it_is_admitted() {
+    let schema = schema_of::<LogicalGlob>(SchemaSettings::draft2020_12());
+    let glob = board_validate::Schema::compile(schema).unwrap();
+    let code = |text: &str| glob.validate(&json!(text)).err().map(|e| e.code());
+    assert_eq!(code("repos/x/**"), Some(board_model::Code::RecordInvalid));
+    assert_eq!(code("/repos/x/**"), None);
 }

@@ -3,9 +3,12 @@
 mod check;
 mod evaluate;
 mod for_path;
+mod for_paths;
 mod index;
 mod judged;
+mod overlap;
 pub mod records;
+mod summary;
 
 use board_model::{CapabilityName, Code, Fields, LogicalPath, RecordType, Refusal};
 use board_ops::{Host, Plugin, PluginError};
@@ -47,12 +50,13 @@ impl Plugin for Controls {
     ) -> Result<Value, PluginError> {
         match capability.as_str() {
             "for-path" => for_path::for_path(host, &input),
+            "for-paths" => for_paths::for_paths(host, &input),
             "check" => check::check(host, &input),
             "evaluate" => evaluate::evaluate(host, &input),
             other => Err(PluginError {
                 code: "controls::call::unknown_capability".to_owned(),
                 message: format!(
-                    "controls offers no capability {other}; it offers for-path, check and evaluate"
+                    "controls offers no capability {other}; it offers for-path, for-paths, check and evaluate"
                 ),
                 fields: Map::new(),
                 hint: None,
@@ -90,6 +94,14 @@ fn manifest() -> Value {
             "description": "The controls that apply to a path.",
             "inputSchema": schema_of::<for_path::Input>(SchemaSettings::draft2020_12()),
             "outputSchema": schema_of::<for_path::Output>(settings()),
+            "annotations": {"readOnlyHint": true},
+            "_meta": {},
+        }, {
+            "name": "for-paths",
+            "description": "The controls that apply to any of several files and SQLite GLOB patterns, \
+                each once with its summary and the paths that reached it.",
+            "inputSchema": schema_of::<for_paths::Input>(SchemaSettings::draft2020_12()),
+            "outputSchema": schema_of::<for_paths::Output>(settings()),
             "annotations": {"readOnlyHint": true},
             "_meta": {},
         }, {

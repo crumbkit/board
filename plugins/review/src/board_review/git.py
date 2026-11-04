@@ -7,11 +7,10 @@ is the same on every machine.
 """
 
 import json
-import os
-import subprocess
 from dataclasses import dataclass
 from typing import cast
 
+from board_plugin.git import Failed, git
 from board_plugin.protocol import PluginError
 
 from board_review.shapes import BRIEF_TYPE, REPORT_TYPE
@@ -20,8 +19,6 @@ from board_review.shapes import BRIEF_TYPE, REPORT_TYPE
 REVIEW_PATH = "reviews/"
 # The type of the record each file name holds in /reviews/<id>/.
 RECORDS = {"brief.json": BRIEF_TYPE, "report.json": REPORT_TYPE}
-# The variables that keep the user's and the system's git config out of every git command.
-ISOLATED = {"GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
 # Options that fix a diff's text, whatever the repository's own config says.
 DIFF = (
     "--no-color",
@@ -56,26 +53,19 @@ class Repository:
 
     def git(self, *arguments: str, stdin: bytes = b"") -> str:
         """What `git <arguments>` printed, or `review::git::failed` with its stderr."""
-        try:
-            ran = subprocess.run(  # noqa: S603 - the arguments are the plugin's own
-                ["git", *CONFIG, *arguments],  # noqa: S607 - git is found on PATH
-                cwd=self.root,
-                input=stdin,
-                capture_output=True,
-                env=os.environ | ISOLATED,
-                check=False,
-            )
-        except OSError as error:
-            raise PluginError("review::git::failed", f"git cannot be run: {error}; put git on PATH") from error
-        if ran.returncode != 0:
-            stderr = ran.stderr.decode(errors="replace").strip()[-4096:]
-            raise PluginError(
-                "review::git::failed",
-                f"`git {arguments[0]}` failed in {self.root}: {stderr}; check that the board's root is in a git"
-                " repository that holds the commits, and fetch them if it does not",
-                {"stderr": stderr},
-            )
-        return ran.stdout.decode(errors="replace")
+        ran = git(self.root, *CONFIG, *arguments, stdin=stdin)
+        if not isinstance(ran, Failed):
+            return ran
+        if not ran.started:
+            raise PluginError("review::git::failed", ran.why)
+        if ran.timed_out:
+            raise PluginError("review::git::failed", f"{ran.why}; run the review again once git is not held up")
+        raise PluginError(
+            "review::git::failed",
+            f"{ran.why}; check that the board's root is in a git repository that holds the commits, and fetch"
+            " them if it does not",
+            {"stderr": ran.stderr},
+        )
 
     def commit(self, revision: str) -> str:
         """The full id of the commit `revision` names, or `review::range::unknown`."""

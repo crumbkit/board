@@ -14,7 +14,7 @@ use serde_json::{Map, Value};
 
 /// The variables Board sets for every plugin. A capability's `env` may name
 /// none of them.
-pub(crate) const PASSED: [&str; 12] = [
+pub(crate) const PASSED: [&str; 13] = [
     "PATH",
     "HOME",
     "LANG",
@@ -27,6 +27,7 @@ pub(crate) const PASSED: [&str; 12] = [
     "BOARD_DAY_START",
     "BOARD_CALL_DEPTH",
     "BOARD_PLUGIN",
+    "BOARD_BIN",
 ];
 
 /// An environment variable's name: ASCII letters, digits and underscores,

@@ -64,7 +64,9 @@ lists every prototype with its verdict.
   Data starts with "None", or holds the data shapes, where each is stored,
   who reads and writes it and what users see; then run the
   `understanding-check` skill and attach its record and the owner's
-  decision that references it.
+  decision that references it. Write the plan with `changes.plan`, whose
+  `paths` lists every file and pattern the change will edit, by mounted
+  path; the brief lists the rules for those paths.
   On the `ask-first` route, attach the owner's `plans/decision/v1` whose
   `refs` name the plan.
 - **build**: start each builder in a fresh agent whose first message
@@ -78,10 +80,12 @@ lists every prototype with its verdict.
   record's `rechecks`. The build gate refuses until each record holds two
   rechecks that matched.
 - **review**: review the head commit with clean context and attach the
-  report. When the plan says "No UI change" or "None", list the
+  report. The gate refuses a diff that edits a file outside the plan's
+  paths; add the file to the paths with `changes.plan`, or revert the
+  edit. When the plan says "No UI change" or "None", list the
   repository's UI-path and data-path controls with `controls.check`, and
-  report a diff that touches a path they name as a high finding. Fix every critical or high finding, record the new head, and
-  review again.
+  report a diff that touches a path they name as a high finding. Fix
+  every critical or high finding, record the new head, and review again.
 - **land**: add `## What the tests prove` and `## What the tests do not
   prove` sections to the plan with what the runs cannot show on their own.
   Run `board -C <board> call changes.pr --path /changes/<name>`, read
@@ -97,6 +101,14 @@ lists every prototype with its verdict.
 - `changes::ux::not_agreed`: a mockup has no owner decision naming it, or
   UX lists none and does not say "No UI change".
 - `changes::ux::no_neighbours`: add a Neighbours list under UX.
+- `changes::plan::no_paths`: give the plan `paths`, the files and patterns
+  it will edit.
+- `changes::plan::outside_mount`: start each planned path with the change's
+  mount and `/`.
+- `changes::paths::outside_plan`: the diff edits the files named outside
+  the plan's paths. Add them with `changes.plan`, or revert the edit.
+- `changes::brief::controls_missing`: the Board running the plugin has no
+  `controls.for-paths`. Run `board plugin enable controls`.
 - `changes::data::not_signed`: run the understanding check and attach its
   record and the sign-off decision.
 - `changes::prototype::never_lands`: a prototype ends with `verdict`.

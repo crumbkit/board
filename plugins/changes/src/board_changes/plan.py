@@ -6,10 +6,10 @@ from dataclasses import replace
 from datetime import UTC, datetime
 from typing import Any, cast
 
-from board_plugin.board import Board, literal
+from board_plugin.board import Board
 from board_plugin.protocol import CallRequest, PluginError
 
-from board_changes.change import FINAL, PLAN_TYPE, PLUGIN, TREE_CODES, read, write
+from board_changes.change import FINAL, PLAN_TYPE, PLUGIN, kind_of, newest, read, write
 from board_changes.phases import next_step, referenced
 
 # The most words a plan's text holds, and the most words the documents it uses hold in all.
@@ -17,6 +17,14 @@ PLAN_WORDS = 3_000
 USES_WORDS = 3_000
 # The most words `brief` returns.
 BRIEF_WORDS = 600
+# The most planned paths a rule lists as matched; it counts the rest, so a rule costs about one line.
+MATCHED_SHOWN = 3
+# The most rules the brief names in `rules_left_out`; `rules_unnamed` counts the rest.
+LEFT_OUT_NAMED = 20
+# The share of the word limit kept for the lines of the records the plan uses, when they need it.
+USES_SHARE = 4
+# The codes Board refuses a call with when the controls plugin or its capability is missing.
+CONTROLS_UNAVAILABLE = ("board::plugin::not_installed", "board::plugin::not_enabled")
 CONTROL_TYPE = "controls/control/v1"
 DECISION_TYPE = "plans/decision/v1"
 EVAL_TYPE = "evals/eval/v1"
@@ -44,6 +52,7 @@ def plan(request: CallRequest) -> dict[str, object]:
     path, text = str(asked["path"]), str(asked["text"])
     # Board validated the input, so `uses` is a list of paths; each is kept once, in order.
     uses = list(dict.fromkeys(cast("list[str]", asked["uses"])))
+    paths = list(dict.fromkeys(cast("list[str]", asked.get("paths", []))))
     board = Board(request.board.root, PLUGIN)
     change, blob = read(board, path)
     if change["phase"] in FINAL:
@@ -53,6 +62,7 @@ def plan(request: CallRequest) -> dict[str, object]:
             "list open changes with `board call changes.open`, or start a new one",
             {"path": path, "phase": change["phase"]},
         )
+    check_paths(path, change["mount"], paths, kind_of(change))
     if words(text) > PLAN_WORDS:
         raise PluginError(
             "changes::plan::too_long",
@@ -85,19 +95,41 @@ def plan(request: CallRequest) -> dict[str, object]:
             "limit; use fewer, choosing from each directory's index.md",
             {"path": path, "words": used},
         )
-    record, lines = plan_lines(path, text, uses)
+    record, lines = plan_lines(path, text, uses, paths)
     change["plan"] = lines[0]["path"]
     write(board, [*lines, {"path": path, "expect": blob, "record": change}])
     return {"path": record, "text": change["plan"], "uses": len(uses)}
 
 
-def plan_lines(path: str, text: str, uses: list[str]) -> tuple[str, list[dict[str, Any]]]:
+def check_paths(path: str, mount: str, paths: list[str], kind: str) -> None:
+    """Refuse a build change's plan that declares no paths, and any path outside the change's mount."""
+    if not paths and kind == "build":
+        raise PluginError(
+            "changes::plan::no_paths",
+            f"the plan for {path} declares no paths; give `paths`, the files and SQLite GLOB patterns it will "
+            f"change by mounted path, such as {mount}/src/**, so its brief can list their rules",
+            {"path": path},
+        )
+    outside = [planned for planned in paths if not planned.startswith(mount.rstrip("/") + "/")]
+    if outside:
+        raise PluginError(
+            "changes::plan::outside_mount",
+            f"these planned paths are outside the change's repository {mount}: {', '.join(outside)}; "
+            f"start each with {mount}/",
+            {"path": path, "paths": outside},
+        )
+
+
+def plan_lines(path: str, text: str, uses: list[str], paths: list[str]) -> tuple[str, list[dict[str, Any]]]:
     """A new plan record for the change at `path`, and the `put` lines that write its text and then the record."""
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
     record, written = f"{path}/plans/{stamp}", f"{path}/plans/{stamp}.md"
+    body: dict[str, Any] = {"$type": PLAN_TYPE, "text": written, "uses": uses}
+    if paths:
+        body["paths"] = paths
     return record, [
         {"path": written, "expect": "none", "text": text},
-        {"path": record, "expect": "none", "record": {"$type": PLAN_TYPE, "text": written, "uses": uses}},
+        {"path": record, "expect": "none", "record": body},
     ]
 
 
@@ -107,7 +139,7 @@ def line_of(found: tuple[str, dict[str, Any]] | None, text: str | None) -> str:
         return "unreadable: reaches nothing or is degraded"
     type_name, body = found
     if type_name == CONTROL_TYPE:
-        return str(body.get("summary") or body.get("requirement", ""))
+        return str(body.get("requirement", ""))
     if type_name == DECISION_TYPE:
         return str(body.get("decision", ""))
     if type_name == EVAL_TYPE:
@@ -120,23 +152,94 @@ def line_of(found: tuple[str, dict[str, Any]] | None, text: str | None) -> str:
     return type_name
 
 
-def newest(board: Board, path: str) -> tuple[str | None, list[str]]:
-    """The text path and `uses` of the change's newest plan record, or no text and no uses."""
-    prefix = f"{path}/plans/"
-    rows = board.rows(
-        f"SELECT body FROM records WHERE type = {literal(PLAN_TYPE)}"  # noqa: S608 - values are quoted by literal()
-        f" AND substr(logical, 1, {len(prefix)}) = {literal(prefix)}"
-        f" AND (code IS NULL OR code IN ({', '.join(literal(code) for code in TREE_CODES)}))"
-        " ORDER BY logical DESC LIMIT 1"
-    )
-    if not rows:
-        return None, []
-    body = json.loads(rows[0][0])
-    return str(body["text"]), [str(ref) for ref in body["uses"]]
+def rules_for(board: Board, paths: list[str]) -> list[dict[str, Any]]:
+    """Each control that applies to `paths`, once, as `controls.for-paths` answers; none for no paths.
+
+    A Board without the controls plugin enabled, or one too old to offer
+    `for-paths`, is `changes::brief::controls_missing`.
+    """
+    if not paths:
+        return []
+    try:
+        report = board.document("call", "controls.for-paths", stdin=for_paths_input(paths).encode())
+    except PluginError as error:
+        if error.code == f"{PLUGIN}::board::refused" and (error.fields or {}).get("code") in CONTROLS_UNAVAILABLE:
+            why = (
+                f"the brief lists the rules on the planned paths with controls.for-paths, which this Board "
+                f"refused: {error.message}; enable it with `board plugin enable controls`, or run a Board that "
+                "offers it"
+            )
+            raise PluginError(f"{PLUGIN}::brief::controls_missing", why) from error
+        raise
+    return cast("list[dict[str, Any]]", report["data"]["output"]["controls"])
+
+
+# The command that lists every rule on the planned paths; it reads `for_paths_input` on stdin.
+RULES_ARGV = ["board", "call", "controls.for-paths"]
+
+
+def for_paths_input(paths: list[str]) -> str:
+    """The input `controls.for-paths` takes for `paths`, as JSON."""
+    return json.dumps({"paths": paths})
+
+
+def rule_line(rule: dict[str, Any], paths: list[str]) -> dict[str, Any]:
+    """`rule` as the brief lists it: `matched` left out when it is every planned path, and cut to MATCHED_SHOWN."""
+    line: dict[str, Any] = {"control": rule["control"], "summary": rule["summary"]}
+    matched: list[str] = rule["matched"]
+    if set(matched) == set(paths):
+        return line
+    line["matched"] = matched[:MATCHED_SHOWN]
+    if len(matched) > MATCHED_SHOWN:
+        line["matched_left_out"] = len(matched) - MATCHED_SHOWN
+    return line
+
+
+def fit_rules(found: list[dict[str, Any]], room: int) -> tuple[list[dict[str, Any]], list[str], int, int]:
+    """The rules that fit in `room` words, the names of up to 20 left out, how many more were, and the words used.
+
+    Rules that matched only some of the planned paths come first, then the
+    others, each group by control path. When every rule fits, they take
+    the whole room. Otherwise the words for the left-out names that fit
+    are kept back first, so the rules and names never pass `room`.
+    """
+    ordered = sorted(found, key=lambda rule: ("matched" not in rule, str(rule["control"])))
+    rules, left_out, spent = fill(ordered, room)
+    if not left_out:
+        return rules, [], 0, spent
+    kept = min(LEFT_OUT_NAMED, max(room, 0))
+    rules, left_out, spent = fill(ordered, room - kept)
+    named = left_out[: min(LEFT_OUT_NAMED, max(room - spent, 0))]
+    return rules, named, len(left_out) - len(named), spent + len(named)
+
+
+def fill(ordered: list[dict[str, Any]], room: int) -> tuple[list[dict[str, Any]], list[str], int]:
+    """The rules of `ordered` that fit in `room` words, the paths of those left out, and the words they take.
+
+    Each rule's path and summary come first, in order, skipping any that do
+    not fit, so one long rule leaves room for the shorter ones after it.
+    Matched paths are added after, in order, while room remains.
+    """
+    spent = 0
+    fitted: list[tuple[dict[str, Any], dict[str, Any]]] = []
+    left_out: list[str] = []
+    for rule in ordered:
+        cost = words(f"{rule['control']} {rule['summary']}")
+        if spent + cost > room:
+            left_out.append(str(rule["control"]))
+            continue
+        fitted.append(({"control": rule["control"], "summary": rule["summary"]}, rule))
+        spent += cost
+    for line, rule in fitted:
+        cost = len(rule.get("matched", []))
+        if cost and spent + cost <= room:
+            line.update({key: rule[key] for key in ("matched", "matched_left_out") if key in rule})
+            spent += cost
+    return [line for line, _ in fitted], left_out, spent
 
 
 def brief(request: CallRequest) -> dict[str, object]:
-    """The newest plan, one line per record it uses within the word limit, the next step and the controls command."""
+    """The newest plan, its paths' rules and one line per record it uses within the word limit, and the next step."""
     return brief_of(request, str(request.input["path"]))
 
 
@@ -144,25 +247,36 @@ def brief_of(request: CallRequest, path: str) -> dict[str, object]:
     """The brief of the change at `path`, read from the board `request` names."""
     board = Board(request.board.root, PLUGIN)
     change, _ = read(board, path)
-    text, uses = newest(board, path)
+    text, uses, paths = newest(board, path)
     records, _ = referenced(board, uses)
     texts = documents(board, uses, records)
     step = next_step(replace(request, input={"path": path}))
     controls = f"board call controls.check --path {change['mount']}"
     brief_line = f"board-brief: {path}"
     spent = words(" ".join([brief_line, path, text or "", str(step["phase"]), str(step["instruction"]), controls]))
+    rules_command = {"argv": RULES_ARGV, "stdin": for_paths_input(paths)} if paths else None
+    spent += words(" ".join([*RULES_ARGV, for_paths_input(paths)])) if paths else 0
+    lines = [(ref, line_of(records.get(ref), texts.get(ref))) for ref in uses]
+    # The uses keep up to a quarter of the limit from the rules, so many rules cannot drop every line.
+    kept = min(sum(words(f"{ref} {line}") for ref, line in lines), BRIEF_WORDS // USES_SHARE)
+    found = [rule_line(rule, paths) for rule in rules_for(board, paths)]
+    rules, named, unnamed, cost = fit_rules(found, BRIEF_WORDS - spent - kept)
+    spent += cost
     shown: list[dict[str, str]] = []
-    for ref in uses:
-        line = line_of(records.get(ref), texts.get(ref))
+    for ref, line in lines:
         cost = words(f"{ref} {line}")
         if spent + cost > BRIEF_WORDS:
-            break
+            continue
         shown.append({"ref": ref, "line": line})
         spent += cost
     return {
         "brief_line": brief_line,
         "path": path,
         "plan": text,
+        "rules": rules,
+        "rules_left_out": named,
+        "rules_unnamed": unnamed,
+        "rules_command": rules_command,
         "uses": shown,
         "left_out": len(uses) - len(shown),
         "phase": step["phase"],

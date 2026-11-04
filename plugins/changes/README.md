@@ -59,13 +59,17 @@ at `<stamp>.md`. The newest stamp is the change's current plan.
 {
   "$type": "changes/plan/v1",
   "text": "/changes/suite-timeout/plans/20261101T120000000000Z.md",
-  "uses": ["/repos/board/STANDARDS.md", "/controls/rules/pair-refusals", "/evals/board-standards-selection"]
+  "uses": ["/repos/board/STANDARDS.md", "/controls/rules/pair-refusals", "/evals/board-standards-selection"],
+  "paths": ["/repos/board/plugins/changes/**", "/repos/board/docs/plugins.md"]
 }
 ```
 
 - `text` and each of `uses` are references. `uses` names the standards
   documents, controls, decisions, evals and other changes the plan relies
   on.
+- `paths` holds the files and SQLite `GLOB` patterns, by logical path, that
+  the change will edit, in which `*` also matches `/`. A build change's plan
+  always has them; a prototype's plan has none.
 
 `changes/understanding/v1`, by convention at
 `/changes/<name>/understanding/<subject>`, records how the owner showed he
@@ -105,6 +109,7 @@ skill in `claude-code/skills/` runs the check.
   passes. Otherwise it refuses, and `missing` lists the failed checks. The
   code is that of the first failed check: `changes::ux::not_agreed`,
   `changes::ux::no_neighbours`, `changes::data::not_signed`,
+  `changes::paths::outside_plan` for the review gate's `paths` check,
   `changes::prototype::never_lands` for a prototype's `verdict` check, else
   `changes::gate::unmet`. Moving into `build` is also refused with
   `changes::wip::full`, whose `building` lists them, while three other
@@ -151,8 +156,11 @@ skill in `claude-code/skills/` runs the check.
   `command`, `pull_request` and `unreadable`. It never opens the pull request, never runs
   `gh` or git, and makes no model calls. See "The pull request body".
 
-- `plan` takes `{path, text, uses}` on stdin, since `uses` is an array. It
-  writes the plan record and its text and points the change's `plan` at the
+- `plan` takes `{path, text, uses, paths}` on stdin, since `uses` and
+  `paths` are arrays. It keeps each path once. It refuses a build change's
+  plan with no paths (`changes::plan::no_paths`) and a path that does not
+  start with the change's mount and `/` (`changes::plan::outside_mount`,
+  whose `paths` lists them). It writes the plan record and its text and points the change's `plan` at the
   text, in one write, in any phase but `done` and `dropped`
   (`changes::phase::final`). It keeps each reference in `uses` once. It
   refuses a reference that reaches nothing, or a record Board marks degraded
@@ -167,12 +175,29 @@ skill in `claude-code/skills/` runs the check.
   `board-brief: /changes/<name>`, which comes first; a builder's first
   message starts with it (see "The write guard"). The newest plan's text path,
   even once a reference in it breaks,
-  one line per record it uses (a control's `summary`, else its
-  `requirement`; a decision's `decision`; an eval's question and verdict; a
-  document's first heading), `left_out`, the phase and instruction `next`
+  `rules`, each control that applies to the plan's `paths`, once, from
+  `controls.for-paths`: its `control`, its `summary` and at most three of
+  the planned paths it `matched`, with `matched_left_out` counting the
+  rest. Both are left out when every planned path reached the rule.
+  Rules that matched only some planned paths come first, then the others,
+  each group by control path. Each rule's path and summary are fitted
+  first, skipping any that do not fit, and matched paths are added after
+  while room remains. `rules_left_out` names up to 20 rules the word limit
+  dropped, as many as fit, and `rules_unnamed` counts the rest.
+  `rules_command` lists every rule: run its `argv` without a shell and give
+  it its `stdin`. It is null when the plan has no paths. The brief also
+  holds one line per record the plan uses (a control's `requirement`; a
+  decision's `decision`; an eval's question and verdict; a document's
+  first heading), `left_out`, the phase and instruction `next`
   gives, and the `controls.check` command for the change's mount. It holds at
-  most 600 words, counting each line with its reference, and `left_out`
-  counts the lines it dropped.
+  most 600 words, counting each rule with its path and matched paths,
+  each named dropped rule, and each line with its reference. Rules are
+  counted before lines, but lines keep up to a quarter of the limit. A
+  line that does not fit is skipped, and `left_out` counts the lines it
+  dropped. The full requirement of a rule is `controls.for-path` away. It
+  fails with `changes::brief::controls_missing` when the Board that runs
+  it does not offer `controls.for-paths`, such as when the controls
+  plugin is not enabled.
 
 The cap on work in progress counts build changes in `build`, at most
 three, and apart from them prototypes in `build`, at most three. A
@@ -184,15 +209,16 @@ appears in a gate.
 A path that holds no change is `changes::change::not_found`; a degraded
 change is `changes::change::degraded`.
 
-Each gate reads only the change, the records it references, its plan file
-and, in `build`, the repository's contributing docs. A referenced record
+Each gate reads only the change, the records it references, its plan file,
+in `build` the repository's contributing docs, and in `review` the newest
+plan's paths and the change's diff. A referenced record
 Board marks degraded satisfies nothing.
 
 | Leaving | Gate |
 | --- | --- |
 | plan | Each plan section has text, `task` is set, and `route` is set. On `ask-first`, also a `plans/decision/v1` whose `refs` name the plan or the change. Any such decision passes, including a rejection. Then `ux`, `neighbours` and `data`, below. |
 | build | Every attached `tasks/task/v2` is `done` or `dropped`. A repeating task never reaches `done`, so drop it to release the gate. An attached `runs/run/v1` under `<suite>/runs/` of the check suite is full, clean, has no `fail` or `error`, and names `head` in `versions`. Each attached `changes/understanding/v1` of this change holds at least two `rechecks`, and every one of them matched. |
-| review | An attached `review/report/v1` whose `range` ends at `head`, whose `verdict` is not `changes`, and which has no `critical` or `high` finding. |
+| review | An attached `review/report/v1` whose `range` ends at `head`, whose `verdict` is not `changes`, and which has no `critical` or `high` finding. Then `paths`, below. |
 | land | `pull_request` is set. Advancing enters `done`. |
 | build, for a prototype | Never passes: `verdict` ends a prototype instead. |
 
@@ -216,7 +242,24 @@ The plan gate's last three checks:
   `subject` is `data`. As for mockups, a decision with `written_by` set
   does not count.
 
-The gate cannot see the diff. At review, when the plan says "No UI change"
+The review gate's `paths` check reads the whole change's diff, whatever
+range a review report covers: `git diff --name-only --no-renames
+--merge-base <follow> <head>` in the repository the mount names, which
+diffs from the merge base of `head` and `<follow>`, the ref the mount
+follows as `board refs` reports it. It runs without the user's or
+system's git config. A rebased change leaves out what the followed branch
+gained, and a review of only the fix commits still checks every commit of
+the change. The check fails, saying why, when the change has no head,
+when nothing is at its mount, when its mount is a plain directory ("<mount>
+is not a mount"), and when git cannot give the diff. A rename counts as
+deleting one path and adding another. Each file it lists, by its path under the mount, must match one of
+the newest plan's `paths` with SQLite's `GLOB`. Otherwise `advance` refuses
+with `changes::paths::outside_plan` and names the files, because their
+rules were not in the brief. Update the plan's paths with `plan`, or revert
+the edit. A plan with no paths, no report on `head`, or a diff git cannot
+list also fails the check.
+
+Beyond the planned paths, the gate does not read the diff. At review, when the plan says "No UI change"
 or "None", the reviewer lists the repository's UI-path and data-path
 controls, `/controls/<repo>/ui-paths` and `/controls/<repo>/data-paths`,
 with `controls.check`, and reports a diff that touches a path they name as

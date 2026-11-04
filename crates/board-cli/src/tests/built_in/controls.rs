@@ -7,6 +7,7 @@ use super::*;
 
 mod check;
 mod evaluate;
+mod for_paths;
 
 const INVALID: Option<&str> = Some("board::record::invalid");
 

@@ -124,17 +124,19 @@ def manifest() -> dict[str, JsonValue]:
             ),
             capability(
                 "plan",
-                "Write a plan for the change and the records it uses, refusing a reference that reaches nothing, a"
-                " plan over 3,000 words and used documents over 3,000 words in all; the newest plan is the change's"
-                " plan.",
+                "Write a plan for the change, the records it uses and the paths it will edit, refusing a build"
+                " change's plan without paths, a path outside the change's mount, a reference that reaches nothing,"
+                " a plan over 3,000 words and used documents over 3,000 words in all; the newest plan is the"
+                " change's plan.",
                 PlanInput,
                 PlanOutput,
                 read_only=False,
             ),
             capability(
                 "brief",
-                "What an agent needs to start: the newest plan, one line per record it uses, the next step and the"
-                " command that lists the repository's controls, in at most 600 words.",
+                "What an agent needs to start: the newest plan, a one-line summary of each control on its paths,"
+                " one line per record it uses, the next step and the command that lists the repository's"
+                " controls, in at most 600 words.",
                 PathInput,
                 BriefOutput,
                 read_only=True,

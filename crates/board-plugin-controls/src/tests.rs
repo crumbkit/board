@@ -34,14 +34,14 @@ fn the_manifest_parses_as_a_built_in_one_and_describes_the_plugin_with_the_skill
     let names: Vec<&str> = (manifest.capabilities.iter())
         .map(|capability| capability.name.as_str())
         .collect();
-    assert_eq!(names, ["for-path", "check", "evaluate"]);
+    assert_eq!(names, ["for-path", "for-paths", "check", "evaluate"]);
     assert_eq!(manifest.description, skill_description());
 }
 
 #[test]
 fn every_input_property_carries_a_sentence_and_names_a_board_path() {
     let manifest = manifest();
-    let [for_path, check] = [0, 1].map(|n| manifest["capabilities"][n]["inputSchema"].clone());
+    let [for_path, check] = [0, 2].map(|n| manifest["capabilities"][n]["inputSchema"].clone());
     for input in [&for_path, &check] {
         let properties = input["properties"].as_object().unwrap();
         assert_eq!(properties.keys().collect::<Vec<_>>(), ["path"]);
@@ -63,7 +63,7 @@ fn every_input_property_carries_a_sentence_and_names_a_board_path() {
 #[test]
 fn the_check_output_schema_admits_a_null_or_string_largest_and_refuses_a_number() {
     let manifest = Controls.manifest();
-    let output = &manifest.capabilities[1].output;
+    let output = &manifest.capabilities[2].output;
     let measured = |largest: Value| {
         json!({
             "measured": [{
@@ -280,7 +280,7 @@ fn a_capability_the_plugin_does_not_offer_is_refused_and_check_is_answered() {
     assert_eq!(refused.code, "controls::call::unknown_capability");
     assert_eq!(
         refused.message,
-        "controls offers no capability budgets; it offers for-path, check and evaluate"
+        "controls offers no capability budgets; it offers for-path, for-paths, check and evaluate"
     );
     let check: CapabilityName = "check".parse().unwrap();
     let answered = Controls.call(&host, &check, json!({})).unwrap();
@@ -301,7 +301,7 @@ fn a_malformed_path_is_refused_as_board_refs_refuses_it_and_a_well_formed_one_is
 #[test]
 fn evaluate_takes_at_least_one_control_by_path_and_one_named_part_each_with_a_sentence() {
     let parsed = Controls.manifest();
-    let input = &parsed.capabilities[2].input;
+    let input = &parsed.capabilities[3].input;
     let given = |controls: Value, parts: Value| json!({"controls": controls, "parts": parts});
     for (refused, admitted) in [
         (
@@ -324,7 +324,7 @@ fn evaluate_takes_at_least_one_control_by_path_and_one_named_part_each_with_a_se
         assert!(input.validate(&refused).is_err(), "{refused}");
         input.validate(&admitted).unwrap();
     }
-    let schema = &manifest()["capabilities"][2]["inputSchema"];
+    let schema = &manifest()["capabilities"][3]["inputSchema"];
     for name in ["controls", "parts"] {
         let description = schema["properties"][name]["description"].as_str().unwrap();
         assert!(description.ends_with('.'), "{description}");
