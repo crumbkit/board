@@ -16,7 +16,8 @@ from board_review.shapes import REPORT_TYPE, CoveredOutput, Verdict
 
 # How many uncovered commits a refusal names.
 SHOWN = 20
-# The record type of a change, which the changes plugin owns.
+# The record type of a change, which the changes plugin owns. Plugins share no code, so this and BLOCKING copy
+# its constants, and a test checks that the copies agree.
 CHANGE_TYPE = "changes/change/v1"
 # Findings at these severities shut the changes plugin's review gate, so an attached report with one never covers.
 BLOCKING = ("critical", "high")
@@ -79,9 +80,9 @@ def covered(request: CallRequest) -> CoveredOutput:
     commits = added if named is not None else [commit for commit in added if not repository.review_only(commit)]
     skipped = len(added) - len(commits)
     patch_ids = repository.patch_ids(commits)
-    blocked = [path for path, report in reports if named is not None and _blocking(report)]
-    counted = [(path, r) for path, r in reports if r["verdict"] != "changes" and path not in blocked]
-    asking = sum(1 for _, report in reports if report["verdict"] == "changes")
+    asking = [path for path, report in reports if report["verdict"] == "changes"]
+    blocked = [path for path, report in reports if named is not None and path not in asking and _blocking(report)]
+    counted = [(path, report) for path, report in reports if path not in asking and path not in blocked]
     covering: list[str] = []
     uncovered = set(commits)
     present = set(patch_ids.values())
@@ -115,7 +116,7 @@ def covered(request: CallRequest) -> CoveredOutput:
         f"{len(missing)} of the {len(commits)} commits from {merge_base} to {head} are covered by no"
         f" review/report/v1 {where}"
         + (f", not counting {skipped} commits that only add review records" if skipped else "")
-        + f"; of {len(reports)} reports, {asking} ask for changes"
+        + f"; of {len(reports)} reports, {len(asking)} ask for changes"
         + (f" and {len(blocked)} have a critical or high finding" if named is not None else "")
         + f". The first is {missing[0]}. "
         + fix,
@@ -167,10 +168,13 @@ def _change(board: Board, path: str) -> _Change:
 
 
 def _clone(board: Board, mount: str) -> str:
-    """The clone the mount at `mount` reads its pinned commit from, or `review::mount::not_found`."""
+    """The clone the mount at `mount` reads its pinned commit from, or `review::mount::not_found`.
+
+    Only a mount's root names a mount: a path in the board's own tree, or below a mount's root, does not.
+    """
     [answer] = board.refs([mount])
     location: dict[str, Any] = answer["location"] if answer is not None else {}
-    if location.get("source", "worktree") == "worktree":
+    if location.get("source", "worktree") == "worktree" or location.get("path") != "":
         raise PluginError(
             "review::mount::not_found",
             f"no mount is at {mount}, so its commits cannot be read; name the repository by the logical path of"
@@ -181,7 +185,7 @@ def _clone(board: Board, mount: str) -> str:
 
 
 def _attached(board: Board, refs: list[str]) -> list[tuple[str, _RangeReport]]:
-    """Every readable report of a range among `refs`, in the order the change attaches them, as the gate reads them.
+    """Every readable report of a range among `refs`, each once, in the order the change first attaches them.
 
     The changes plugin's review gate counts the reports a change attaches as
     Board reads them, committed or not, so this does too.
@@ -195,7 +199,7 @@ def _attached(board: Board, refs: list[str]) -> list[tuple[str, _RangeReport]]:
         f" AND (status = 'ok' OR code IN ({codes}))"
     )
     found = {str(logical): cast("_RangeReport", json.loads(body)) for logical, body in rows}
-    return [(ref, found[ref]) for ref in refs if ref in found and "range" in found[ref]]
+    return [(ref, found[ref]) for ref in dict.fromkeys(refs) if ref in found and "range" in found[ref]]
 
 
 def _blocking(report: _RangeReport) -> bool:
