@@ -44,7 +44,8 @@ fn call(personal: &dyn Host, capability: &str, input: &Value) -> Result<Value, B
 ///
 /// Board requires this plugin's codes to start with `github::`, so the
 /// boundary's message, fields and hint are kept, with the boundary's code
-/// in `code` and any code the boundary carried in `cause`. Any other
+/// in `code` and any code the boundary carried in `cause`. A hint that is
+/// a `Next:` step is also appended to the message. Any other
 /// refusal is `github::board::refused`.
 pub(crate) fn check(
     personal: &dyn Host,
@@ -75,9 +76,19 @@ fn passed_on(refusal: &Refusal) -> PluginError {
         fields.insert("cause".to_owned(), cause);
     }
     fields.insert("code".to_owned(), Value::from(code));
+    // The boundary's `Next:` step ends the message too, so a caller that
+    // shows only the message, such as git showing the pre-push hook's
+    // stderr, still says what to do.
+    let message = match refusal.hint.as_deref() {
+        Some(hint) if hint.starts_with("Next:") => {
+            let message = refusal.message.trim_end_matches('.');
+            format!("{message}. {hint}")
+        }
+        _ => refusal.message.clone(),
+    };
     PluginError {
         code: "github::boundary::refused".to_owned(),
-        message: refusal.message.clone(),
+        message,
         fields,
         hint: refusal.hint.clone(),
     }

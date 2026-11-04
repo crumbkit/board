@@ -121,6 +121,8 @@ fn a_private_name_in_a_commit_message_is_refused_with_the_boundarys_next_step_an
     assert_eq!(fields["code"], "boundary::check::failed");
     let hint = failure["recovery"]["text"].as_str().unwrap();
     assert!(hint.starts_with("Next: change commit."), "{hint}");
+    let message = failure["message"].as_str().unwrap();
+    assert!(message.ends_with(hint), "{message}");
     assert_eq!(
         fields["failures"],
         json!([{"control": NAMES, "part": format!("commit.{}.message", &sha[..12]), "text": "acme-123", "line": 1}])

@@ -129,9 +129,10 @@ Refusals:
 
 - The boundary's refusal is `github::boundary::refused`. Board requires a
   plugin's codes to start with its own name, so `fields.code` holds the
-  boundary's code, such as `boundary::check::failed`. The message, the
-  hint, which starts `Next:`, and the other fields are the boundary's own,
-  unchanged: `failures`, `digest`, `crossing` and `effect`. A code the
+  boundary's code, such as `boundary::check::failed`. The message is the
+  boundary's, followed by its `Next:` step, which is also the hint. The
+  other fields are the boundary's own, unchanged: `failures`, `digest`,
+  `crossing` and `effect`. A code the
   boundary's refusal carried, such as `controls::control::not_found` inside
   `boundary::board::refused`, is in `cause`. Nothing is sent.
 - Any other refusal of the check, such as boundary not being enabled in the
@@ -246,7 +247,8 @@ person wrote. A URL that is `github::remote::unknown` refuses the push. A push
 to no GitHub repository is not checked.
 
 The hook refuses the push whenever the check fails or cannot run, with
-Board's message, which ends with the boundary's `Next:` step. It refuses
+Board's message, which ends with the boundary's `Next:` step when it gives
+one. It refuses
 when board is not on PATH, and when the boundary plugin is not enabled,
 because it cannot then tell whether a boundary covers the push. A push no
 boundary covers passes the check with a `note` and goes. Some pushes skip
