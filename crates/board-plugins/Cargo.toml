@@ -15,6 +15,7 @@ jira = ["dep:board-plugin-jira"]
 plans = ["dep:board-plugin-plans"]
 requests = ["dep:board-plugin-requests"]
 runs = ["dep:board-plugin-runs"]
+share = ["dep:board-plugin-share"]
 
 [dependencies]
 board-ops.workspace = true
@@ -27,6 +28,7 @@ board-plugin-jira = { workspace = true, optional = true }
 board-plugin-plans = { workspace = true, optional = true }
 board-plugin-requests = { workspace = true, optional = true }
 board-plugin-runs = { workspace = true, optional = true }
+board-plugin-share = { workspace = true, optional = true }
 
 [lints]
 workspace = true

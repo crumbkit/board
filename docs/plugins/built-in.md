@@ -2,7 +2,8 @@
 
 This file holds detail for docs/plugins.md. It says how a plugin compiled into
 Board is called. `artifacts`, `boundary`, `controls`, `plans`, `evals`, `runs`,
-`github`, `jira` and [`requests`](built-in/requests.md) are built in.
+`github`, `jira`, [`share`](share.md) and [`requests`](built-in/requests.md)
+are built in.
 [built-in/writing.md](built-in/writing.md) says how to write one.
 
 - A built-in plugin is a crate, `board-plugin-<name>`, behind a Cargo feature
