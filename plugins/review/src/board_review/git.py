@@ -58,10 +58,12 @@ class Repository:
             return ran
         if not ran.started:
             raise PluginError("review::git::failed", ran.why)
+        if ran.timed_out:
+            raise PluginError("review::git::failed", f"{ran.why}; run the review again once git is not held up")
         raise PluginError(
             "review::git::failed",
-            f"`git {arguments[0]}` failed in {self.root}: {ran.stderr}; check that the board's root is in a git"
-            " repository that holds the commits, and fetch them if it does not",
+            f"{ran.why}; check that the board's root is in a git repository that holds the commits, and fetch"
+            " them if it does not",
             {"stderr": ran.stderr},
         )
 

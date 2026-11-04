@@ -260,15 +260,17 @@ class BriefOutput(Strict):
 
     `plan` is the newest plan's text, or `null` when the change has no plan
     record. `rules` lists each control on the plan's paths once, as
-    `controls.for-paths` finds them. Each rule's path and summary are
-    fitted first, in order, and its matched paths after, while room remains.
-    `rules_left_out` names up to 20 rules the word limit left out, and
+    `controls.for-paths` finds them: those that matched only some planned
+    paths first, then the others, each group by control path. Each rule's
+    path and summary are fitted first, skipping any that do not fit, and
+    its matched paths after, while room remains. `rules_left_out` names up
+    to 20 rules the word limit left out, as many as fit, and
     `rules_unnamed` counts the rest. `rules_command` is the command that
     lists every rule, as an `argv` to run and the `stdin` to give it; it is
     `null` when the plan has no paths. Rules are counted before uses, but
     the uses keep up to a quarter of the limit. `uses` gives one line per
-    record it uses, in order, and `left_out` counts those the word limit
-    left out. `controls` is the
+    record it uses, in order, skipping any that do not fit, and `left_out`
+    counts those the word limit left out. `controls` is the
     command that lists the controls on the change's repository.
     `brief_line`, `board-brief: <path>`, comes first in the output; a
     builder's first message starts with it, and the write guard reads it.
