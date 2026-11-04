@@ -498,7 +498,7 @@ fn generic(code: Code) -> &'static str {
             "clone the board from its remote, or set the branch's upstream with `git push -u <remote> <branch>`, then sync again"
         }
         Code::SyncFailed => {
-            "git's stderr follows this error; `git remote -v` shows the remote, and `git fetch` run by hand shows what git asks for"
+            "git's stderr follows this error; `git remote -v` shows the remote. Board lets neither git nor ssh ask for a passphrase, host key or password, so load the key into ssh-agent with `ssh-add`, or run `git fetch` by hand once to answer, then sync again"
         }
         Code::SyncConflict => {
             "a commit here that is not pushed changed a file the remote also changed; resolve it in git, for example with `git pull --rebase`, then sync again"

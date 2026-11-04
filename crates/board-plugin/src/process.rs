@@ -494,7 +494,9 @@ fn forward() -> Result<(), io::ErrorKind> {
                 .unwrap_or_else(PoisonError::into_inner)
                 .iter()
             {
-                cleanup();
+                // A cleanup that panics must not stop the forwarder before
+                // Board stops as the signal says.
+                let _ = std::panic::catch_unwind(*cleanup);
             }
             // For SIGINT, SIGTERM and SIGHUP this call does not return: it
             // restores the default action and raises the signal, and falls

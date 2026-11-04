@@ -94,19 +94,20 @@ impl Repository {
     /// stopped.
     pub fn sync(&self, lock: &Lock, push: bool, deadline: Deadline) -> Result<Synced, SyncError> {
         let upstream = self.upstream()?;
+        let ssh = self.ssh();
         let old = self.head()?;
         let old_files = self.files_of(old)?;
         let mut reason = String::new();
         let (attempts, fetched, new, replayed, pushed, changes) = 'synced: {
             for attempts in 1..=ATTEMPTS {
-                transport::fetch(self.path(), &upstream, deadline)?;
+                transport::fetch(self.path(), &upstream, &ssh, deadline)?;
                 let fetched = self.tracking(&upstream)?;
                 let (new, replayed) = self.replay(old, fetched)?;
                 let changes = self.changes(&old_files, &self.files_of(Some(new))?)?;
                 if !push || new == fetched {
                     break 'synced (attempts, fetched, new, replayed, false, changes);
                 }
-                match transport::push(self.path(), &upstream, &new.to_string(), deadline)? {
+                match transport::push(self.path(), &upstream, &new.to_string(), &ssh, deadline)? {
                     Pushed::Done => {
                         break 'synced (attempts, fetched, new, replayed, true, changes);
                     }

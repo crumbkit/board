@@ -14,6 +14,7 @@ use board_plugin::Group;
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
+use crate::git::Repository;
 use crate::write::sync::SyncError;
 
 /// How long `board sync` may run before Board stops git. It starts before
@@ -59,6 +60,50 @@ pub struct Upstream {
     pub(crate) tracking: String,
 }
 
+/// How git reaches a remote over ssh, as `GIT_SSH_COMMAND` gives it: the
+/// owner's command with `-o BatchMode=yes` added, so ssh asks for no
+/// passphrase or host key. git runs in a process group of its own, where a
+/// prompt would stop it until the deadline, so a sync that needs one fails
+/// at once instead.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct Ssh(pub(crate) String);
+
+impl Repository {
+    /// The ssh command git would run, as git chooses it: `GIT_SSH_COMMAND`
+    /// or `core.sshCommand`, then `GIT_SSH`, then `ssh`, with `BatchMode`
+    /// added unless `ssh.variant`, or the program's name, says it is not
+    /// OpenSSH. gix reads the variables through git's config, as git does.
+    pub(crate) fn ssh(&self) -> Ssh {
+        let config = self.git().config_snapshot();
+        let shell = |key: &str| config.string(key).map(|value| value.to_string());
+        let command = (shell("core.sshCommand").filter(|command| !command.is_empty()))
+            .or_else(|| {
+                shell("gitoxide.ssh.commandWithoutShellFallback")
+                    .filter(|program| !program.is_empty())
+                    .map(|program| format!("'{}'", program.replace('\'', "'\\''")))
+            })
+            .unwrap_or_else(|| "ssh".to_owned());
+        let variant = shell("ssh.variant").unwrap_or_default().to_lowercase();
+        let program = command.split_whitespace().next().unwrap_or_default();
+        let name = program
+            .trim_matches(['\'', '"'])
+            .rsplit('/')
+            .next()
+            .unwrap_or_default();
+        let openssh = match variant.as_str() {
+            "" | "auto" => !["plink", "putty", "tortoiseplink"]
+                .iter()
+                .any(|other| name.to_lowercase().starts_with(other)),
+            other => other == "ssh",
+        };
+        if openssh {
+            Ssh(format!("{command} -o BatchMode=yes"))
+        } else {
+            Ssh(command)
+        }
+    }
+}
+
 /// What a push did: moved the remote branch, or was refused by the remote
 /// with the reason git printed, such as `[rejected] (fetch first)`.
 #[derive(Debug, PartialEq, Eq)]
@@ -72,6 +117,7 @@ pub(crate) enum Pushed {
 pub(crate) fn fetch(
     workdir: &Path,
     upstream: &Upstream,
+    ssh: &Ssh,
     deadline: Deadline,
 ) -> Result<(), SyncError> {
     let refspec = format!("+refs/heads/{}:{}", upstream.branch, upstream.tracking);
@@ -84,7 +130,7 @@ pub(crate) fn fetch(
         &upstream.remote,
         &refspec,
     ];
-    let output = run(workdir, &arguments, "fetch", upstream, deadline)?;
+    let output = run(workdir, &arguments, "fetch", upstream, ssh, deadline)?;
     if output.status.success() {
         return Ok(());
     }
@@ -96,6 +142,7 @@ pub(crate) fn push(
     workdir: &Path,
     upstream: &Upstream,
     commit: &str,
+    ssh: &Ssh,
     deadline: Deadline,
 ) -> Result<Pushed, SyncError> {
     let refspec = format!("{commit}:refs/heads/{}", upstream.branch);
@@ -108,7 +155,7 @@ pub(crate) fn push(
         &upstream.remote,
         &refspec,
     ];
-    let output = run(workdir, &arguments, "push", upstream, deadline)?;
+    let output = run(workdir, &arguments, "push", upstream, ssh, deadline)?;
     if output.status.success() {
         return Ok(Pushed::Done);
     }
@@ -134,12 +181,14 @@ pub(crate) fn rejected(stdout: &[u8]) -> Option<String> {
 /// git still running, the group is stopped the same way and the run is
 /// [`SyncError::TimedOut`], so a hung remote holds the board lock no longer
 /// than the sync's deadline. A helper that outlives a git that finished
-/// holds no Board lock.
+/// holds no Board lock. Neither git nor ssh may ask anything: git gets
+/// `GIT_TERMINAL_PROMPT=0` and `ssh` as its `GIT_SSH_COMMAND`.
 fn run(
     workdir: &Path,
     arguments: &[&str],
     operation: &'static str,
     upstream: &Upstream,
+    ssh: &Ssh,
     deadline: Deadline,
 ) -> Result<Output, SyncError> {
     let mut command = Command::new("git");
@@ -147,6 +196,8 @@ fn run(
         .arg("-C")
         .arg(workdir)
         .args(arguments)
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .env("GIT_SSH_COMMAND", &ssh.0)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());

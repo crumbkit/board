@@ -94,7 +94,10 @@ board's lock, so no put runs meanwhile, and then:
 
 A branch that follows no remote branch is `board::sync::no_remote`, and a
 fetch or push git itself refuses is `board::sync::failed`, which carries the
-end of git's stderr. A sync still running 60 seconds after it started, for
+end of git's stderr. Neither git nor ssh may ask anything: git runs with
+`GIT_TERMINAL_PROMPT=0`, and the owner's ssh command with `-o BatchMode=yes`
+for OpenSSH, so a remote that needs a passphrase, host key or password fails
+at once this way. A sync still running 60 seconds after it started, for
 example because the remote hangs, is `board::sync::timeout`; the 60 seconds
 start before the wait for the board lock and cover every fetch, push and
 replay. Board sends git's process group SIGTERM, on which git removes its

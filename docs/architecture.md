@@ -359,7 +359,7 @@ STANDARDS.md 23 to 26 hold the rules.
 | Crate | Owns | Depends on |
 | --- | --- | --- |
 | `board-model` | pure types and decisions: logical paths, Locations, record types, codes and their hints, refusals, canonical JSON, the duplicate-key parse | serde, serde_json, thiserror |
-| `board-tree` | every read and write of git objects and the working tree; resolution; walking a board and every board its mounts reach | board-model, gix |
+| `board-tree` | every read and write of git objects and the working tree; resolution; walking a board and every board its mounts reach | board-model, board-plugin, gix |
 | `board-validate` | JSON Schema validation of record bytes against schema bytes | board-model, jsonschema |
 | `board-index` | the index, the timing log and the cache directory | board-model, board-tree, rusqlite |
 | `board-plugin` | manifests, discovery, child processes, signals, schema shapes | board-model, board-validate, schemars, rustix and signal-hook (Unix) |
