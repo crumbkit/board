@@ -7,7 +7,7 @@ mod for_paths;
 mod index;
 mod judged;
 pub mod records;
-mod standards;
+mod summary;
 
 use board_model::{CapabilityName, Code, Fields, LogicalPath, RecordType, Refusal};
 use board_ops::{Host, Plugin, PluginError};
@@ -52,11 +52,10 @@ impl Plugin for Controls {
             "for-paths" => for_paths::for_paths(host, &input),
             "check" => check::check(host, &input),
             "evaluate" => evaluate::evaluate(host, &input),
-            "from-standards" => standards::from_standards(host, &input),
             other => Err(PluginError {
                 code: "controls::call::unknown_capability".to_owned(),
                 message: format!(
-                    "controls offers no capability {other}; it offers for-path, for-paths, check, evaluate and from-standards"
+                    "controls offers no capability {other}; it offers for-path, for-paths, check and evaluate"
                 ),
                 fields: Map::new(),
                 hint: None,
@@ -122,14 +121,6 @@ fn manifest() -> Value {
             "_meta": {},
             "timeout": judged::EVALUATE_TIMEOUT,
             "env": [judged::AGENT_VARIABLE, "ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN"],
-        }, {
-            "name": "from-standards",
-            "description": "The controls a standards repository's rule tables give a repository that \
-                adopts its profiles, as `board put --batch` lines that make a directory hold exactly them.",
-            "inputSchema": schema_of::<standards::Input>(SchemaSettings::draft2020_12()),
-            "outputSchema": schema_of::<standards::Output>(settings()),
-            "annotations": {"readOnlyHint": true},
-            "_meta": {},
         }],
     })
 }

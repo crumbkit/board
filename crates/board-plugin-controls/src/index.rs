@@ -46,7 +46,6 @@ const DEGRADED: &str = "SELECT COALESCE(logical, path), code FROM records \
 pub(crate) struct Control {
     pub(crate) requirement: String,
     pub(crate) purpose: String,
-    pub(crate) summary: Option<String>,
     pub(crate) applies_to: Option<Vec<String>>,
     pub(crate) paths: Option<Vec<String>>,
     pub(crate) rule: Option<Rule>,

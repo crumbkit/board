@@ -203,12 +203,6 @@
       },
       "title": "Sources",
       "type": "array"
-    },
-    "summary": {
-      "description": "The requirement in one line of at most 25 words, which a change's\nbrief shows in its place.",
-      "pattern": "^\\S+( \\S+){0,24}$",
-      "title": "Summary",
-      "type": "string"
     }
   },
   "required": [

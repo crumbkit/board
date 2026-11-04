@@ -10,7 +10,7 @@ use serde_json::Value;
 
 use crate::for_path;
 use crate::index::{self, FILES};
-use crate::standards;
+use crate::summary::summary;
 
 /// The files and patterns to list the controls of.
 #[derive(Deserialize, JsonSchema)]
@@ -30,8 +30,8 @@ pub(crate) struct Output {
     controls: Vec<Applying>,
 }
 
-/// A control, its summary, or else its requirement's first sentence cut to
-/// 25 words, and the asked paths that reached it, in the order they were
+/// A control, its requirement's first sentence cut to 25 words, and the
+/// asked paths that reached it, in the order they were
 /// asked.
 #[derive(Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -69,8 +69,7 @@ pub(crate) fn for_paths(host: &dyn Host, input: &Value) -> Result<Value, PluginE
             let control = controls.remove(&logical)?;
             Some(Applying {
                 control: logical,
-                summary: (control.summary)
-                    .unwrap_or_else(|| standards::summary(&control.requirement)),
+                summary: summary(&control.requirement),
                 matched,
             })
         })
