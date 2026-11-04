@@ -177,7 +177,7 @@ class PostOutput(TypedDict):
 
 
 class CoveredInput(TypedDict):
-    """Whether a committed report covers the commits a pull request adds to its base."""
+    """Whether a committed report, or a report a change attaches, covers the commits a pull request adds to its base."""
 
     base: Annotated[
         str,
@@ -192,7 +192,17 @@ class CoveredInput(TypedDict):
             Extra(
                 minLength=1,
                 description="The commit to check, in any form git resolves, such as a pull request's head commit;"
-                " HEAD when left out.",
+                " the change's head, or else HEAD, when left out.",
+            ),
+        ]
+    ]
+    change: NotRequired[
+        Annotated[
+            str,
+            Extra(
+                format="board-path",
+                description="A change, by its logical path, such as /changes/fix-sync: count the reports it"
+                " attaches, and read the commits from the clone its mount reads.",
             ),
         ]
     ]

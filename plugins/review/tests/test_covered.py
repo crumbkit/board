@@ -1,9 +1,11 @@
 """`review.covered` passes when committed reports cover each commit of a pull request, by range or by patch id."""
 
 import json
+import os
+import subprocess
 from pathlib import Path
 
-from conftest import Repo, library
+from conftest import ISOLATED, PLUGIN, Repo, library
 
 from board_review.git import Repository
 
@@ -304,3 +306,77 @@ def test_a_report_changed_on_disk_is_ignored_and_the_committed_one_counts(repo: 
     code, output = repo.call("covered", "--base", "main")
     assert code == 0, output
     assert output["reports"] == [path]
+
+
+def mounted(repo: Repo, tmp_path: Path) -> tuple[str, str]:
+    """Mount a project at /project whose second commit no report covers yet, with changes enabled: its base and head.
+
+    The project's commits are only in its own clone, so `covered` finds them only through the mount.
+    """
+    (repo.data / "board" / "plugins" / "changes").symlink_to(PLUGIN.parent / "changes")
+    enabled = repo.run("plugin", "enable", "changes")
+    assert enabled.returncode == 0, enabled.stderr
+    clone = tmp_path / "project"
+    pointer = library(clone, {"README.md": "A project.\n"})
+    (clone / "src.txt").write_text("one\n")
+    git = ["git", "-c", "user.name=t", "-c", "user.email=t@t"]
+    for arguments in (["add", "."], ["commit", "-qm", "work"]):
+        subprocess.run([*git, *arguments], cwd=clone, env=os.environ | ISOLATED, check=True)
+    head = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=clone, env=os.environ | ISOLATED, check=True, capture_output=True, text=True
+    ).stdout.strip()
+    repo.commit("project.json", json.dumps(pointer))
+    return str(pointer["commit"]), head
+
+
+def change(repo: Repo, head: str, records: list[str], mount: str = "/project") -> str:
+    """Write the change /changes/work on `mount` at `head`, attaching `records`, and return its path."""
+    record = {"$type": "changes/change/v1", "title": "Work", "mount": mount, "phase": "review", "head": head}
+    repo.write("changes/work.json", json.dumps(record | {"records": list[str](records)}))
+    return "/changes/work"
+
+
+def attached_report(repo: Repo, base: str, head: str) -> str:
+    """Write, without committing, a person's approving report of `base..head` beside the change."""
+    record: dict[str, object] = {
+        "$type": "review/report/v1",
+        "range": f"{base}..{head}",
+        "patch_ids": [],
+        "findings": [],
+    }
+    repo.write("changes/work/reviews/one.json", json.dumps(record | {"verdict": "approve", "by": "a person"}))
+    return "/changes/work/reviews/one"
+
+
+def test_a_report_the_change_does_not_attach_is_refused_and_an_attached_one_covers_the_mounts_commits(
+    repo: Repo, tmp_path: Path
+) -> None:
+    base, head = mounted(repo, tmp_path)
+    report_path = attached_report(repo, base, head)
+    path = change(repo, head, [])
+    code, document = repo.call("covered", "--base", base, "--change", path)
+    assert (code, document["code"]) == (1, "review::head::uncovered"), document
+    assert document["fields"]["uncovered"] == [head]
+    assert "changes.attach --path /changes/work" in document["message"]
+    change(repo, head, [report_path])
+    code, output = repo.call("covered", "--base", base, "--change", path)
+    assert code == 0, output
+    assert output == {"head": head, "merge_base": base, "skipped": 0, "commits": 1, "reports": [report_path]}
+
+
+def test_a_change_that_is_not_there_is_refused_and_one_that_is_admitted(repo: Repo, tmp_path: Path) -> None:
+    base, head = mounted(repo, tmp_path)
+    path = change(repo, head, [attached_report(repo, base, head)])
+    code, document = repo.call("covered", "--base", base, "--change", "/changes/other")
+    assert (code, document["code"]) == (1, "review::change::not_found"), document
+    assert repo.call("covered", "--base", base, "--change", path)[0] == 0
+
+
+def test_a_change_whose_mount_names_no_clone_is_refused_and_one_on_a_mount_admitted(repo: Repo, tmp_path: Path) -> None:
+    base, head = mounted(repo, tmp_path)
+    report_path = attached_report(repo, base, head)
+    path = change(repo, head, [report_path], mount="/nowhere")
+    code, document = repo.call("covered", "--base", base, "--change", path)
+    assert (code, document["code"]) == (1, "review::mount::not_found"), document
+    change(repo, head, [report_path])
+    assert repo.call("covered", "--base", base, "--change", path)[0] == 0

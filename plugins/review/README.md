@@ -9,7 +9,8 @@ change, and records what it found as a report. A brief can instead name a
 record pinned by its blob, such as a plan, and the agent reviews that record.
 `review.post` comments a report on a pull request once the owner approves the
 comment. `review.covered` checks that a committed report covers a pull
-request's commits, so CI can require a review of each pull request.
+request's commits, so CI can require a review of each pull request, or that
+the reports a change attaches cover the commits of the repository it changes.
 
 ## Records
 
@@ -146,7 +147,7 @@ export BOARD_REVIEW_AGENT='["claude", "-p", "--output-format", "json", "--settin
 - If gh posted but the report could not be written, posting again posts a
   second comment.
 
-`board call review.covered --base <commit> [--head <commit>]`:
+`board call review.covered --base <commit> [--head <commit>] [--change <path>]`:
 
 - Checks each commit from the merge base of `--base` and the head to the head.
   `--base` is required, so CI cannot check the tip alone. The head is HEAD by
@@ -167,8 +168,20 @@ export BOARD_REVIEW_AGENT='["claude", "-p", "--output-format", "json", "--settin
   commit in the range. A review of two commits, where the second undoes part
   of the first, then does not cover the first alone. This refines
   plan/review.md.
-- Only reports committed at HEAD in the board's own tree count. A report
-  changed on disk, or reached through a mount, is ignored.
+- Without `--change`, only reports committed at HEAD in the board's own tree
+  count. A report changed on disk, or reached through a mount, is ignored.
+- With `--change`, such as `--change /changes/fix-sync`, the call checks the
+  `changes/change/v1` there, as a personal board checks a mounted repository.
+  - Only the reports the change attaches in `records` count, read as Board
+    reads them, committed or not, which is how the changes plugin's review
+    gate reads them. A report need not be at `/reviews/<id>/report`.
+  - The commits are read from the clone that the change's `mount`, such as
+    `/repos/<name>`, reads its pinned commit from. Fetch the commits there.
+  - The head is the change's `head`, or HEAD of that clone when the change
+    records none, unless `--head` names another.
+  - Fails with `review::change::not_found` when no readable change is at the
+    path, and `review::mount::not_found` when Board names no clone for its
+    mount.
 - Returns the head, the merge base, the number of commits skipped and checked,
   and the reports that cover them.
 - Fails with `review::head::uncovered`, which lists the first uncovered

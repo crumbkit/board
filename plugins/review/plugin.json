@@ -164,10 +164,10 @@
       "annotations": {
         "readOnlyHint": true
       },
-      "description": "The reports in the board's own tree that cover every commit from the merge base of a base and a head to the head, each by a report's range or patch ids, after skipping commits that only add review records. A report asking for changes never covers. Fails when a commit is uncovered.",
+      "description": "The reports in the board's own tree that cover every commit from the merge base of a base and a head to the head, each by a report's range or patch ids, after skipping commits that only add review records. With --change, the reports the change attaches, and the commits of the clone its mount reads. A report asking for changes never covers. Fails when a commit is uncovered.",
       "inputSchema": {
         "additionalProperties": false,
-        "description": "Whether a committed report covers the commits a pull request adds to its base.",
+        "description": "Whether a committed report, or a report a change attaches, covers the commits a pull request adds to its base.",
         "properties": {
           "base": {
             "description": "The commit the pull request merges into, in any form git resolves, such as its base commit.",
@@ -175,8 +175,14 @@
             "title": "Base",
             "type": "string"
           },
+          "change": {
+            "description": "A change, by its logical path, such as /changes/fix-sync: count the reports it attaches, and read the commits from the clone its mount reads.",
+            "format": "board-path",
+            "title": "Change",
+            "type": "string"
+          },
           "head": {
-            "description": "The commit to check, in any form git resolves, such as a pull request's head commit; HEAD when left out.",
+            "description": "The commit to check, in any form git resolves, such as a pull request's head commit; the change's head, or else HEAD, when left out.",
             "minLength": 1,
             "title": "Head",
             "type": "string"
@@ -229,7 +235,7 @@
       }
     }
   ],
-  "description": "Review briefs, the reports a clean-context agent or a person writes for them, and whether a commit is covered by reports. `board call review.run --brief /reviews/<id>/brief` reviews the brief's range or pinned record with the agent BOARD_REVIEW_AGENT names and records the report; `board call review.post --report /reviews/<id>/report --pr <url>` comments it on a pull request once the owner approves the comment; `board call review.covered --base <commit> --head <commit>` checks that committed reports cover a pull request's commits. README.md in the plugin's directory says more.",
+  "description": "Review briefs, the reports a clean-context agent or a person writes for them, and whether a commit is covered by reports. `board call review.run --brief /reviews/<id>/brief` reviews the brief's range or pinned record with the agent BOARD_REVIEW_AGENT names and records the report; `board call review.post --report /reviews/<id>/report --pr <url>` comments it on a pull request once the owner approves the comment; `board call review.covered --base <commit> --head <commit>` checks that committed reports, or those a change attaches, cover a pull request's commits. README.md in the plugin's directory says more.",
   "metadata": {
     "area": "review"
   },
