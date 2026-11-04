@@ -530,6 +530,30 @@ fn approving_with_a_signature_over_the_limit_is_refused_as_usage_and_one_at_the_
 #[test]
 #[expect(
     clippy::disallowed_methods,
+    reason = "it signs the approval with the test key, as a phone would"
+)]
+fn approving_with_no_input_and_no_signature_is_refused_as_usage_and_with_a_signature_is_admitted() {
+    let (personal, xdg, effect, pending) = one_pending();
+    let (id, signer) = (effect.id(), Signer::new());
+    let signature = signer.sign(&effect.approval());
+    let refused = answering(&xdg, &signer, &[&id, "approve", "--no-input"], b"");
+    assert_eq!(refused.code, 2);
+    assert_eq!(code(&refused), "board::cli::usage");
+    assert!(
+        text(&refused.stderr).contains("pass it with --signature <FILE>"),
+        "{}",
+        text(&refused.stderr)
+    );
+    assert!(personal.workdir().join(&pending).exists());
+    let approve = [id.as_str(), "approve", "--no-input", "--signature", "-"];
+    let admitted = answering(&xdg, &signer, &approve, signature.as_bytes());
+    assert_eq!(admitted.code, 0, "{}", text(&admitted.stderr));
+    assert!(!personal.workdir().join(&pending).exists());
+}
+
+#[test]
+#[expect(
+    clippy::disallowed_methods,
     reason = "it signs the approval with the test key"
 )]
 fn refusing_with_a_signature_is_refused_as_usage_and_refusing_without_one_is_admitted() {

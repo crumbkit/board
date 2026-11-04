@@ -249,7 +249,14 @@ fn schemas_list_names_each_document_board_prints_and_show_prints_its_schema() {
     assert!(row["schema"]["$schema"].is_string(), "{row}");
     let unknown = board_in(
         outside.workdir(),
-        &["schemas", "show", "--json", "--", "board/chek-report/v2"],
+        &[
+            "schemas",
+            "show",
+            "--json",
+            "--no-input",
+            "--",
+            "board/chek-report/v2",
+        ],
     );
     assert_eq!(unknown.code, 1, "{}", text(&unknown.stdout));
     assert_eq!(
@@ -274,10 +281,9 @@ fn every_leaf_whose_rows_can_print_more_takes_full_and_the_rest_refuse_it_by_nam
     let mut refused = Vec::new();
     for (path, options, words) in LINES {
         if let Err(refusal) = parses(line(path, options, &ADDED, words)) {
-            assert!(
-                refusal.contains("--full prints every field of every row"),
-                "board {path}: {refusal}"
-            );
+            let failure: Value = serde_json::from_str(&refusal).unwrap();
+            assert_eq!(failure["code"], "board::cli::usage", "board {path}");
+            assert_eq!(failure["fields"]["argument"], "--full", "board {path}");
             refused.push(*path);
         }
     }
@@ -287,15 +293,22 @@ fn every_leaf_whose_rows_can_print_more_takes_full_and_the_rest_refuse_it_by_nam
 #[test]
 fn no_input_before_the_command_is_admitted_and_a_misspelling_is_refused() {
     let outside = Scenario::new();
-    let admitted = board_in(outside.workdir(), &["--no-input", "commands", "list"]);
+    let admitted = board_in(
+        outside.workdir(),
+        &["--no-input", "commands", "list", "--json"],
+    );
     assert_eq!(admitted.code, 0, "{}", text(&admitted.stderr));
-    let refused = board_in(outside.workdir(), &["--no-inputs", "commands", "list"]);
+    let refused = board_in(
+        outside.workdir(),
+        &["--no-inputs", "commands", "list", "--json"],
+    );
     assert_eq!(refused.code, 2, "{}", text(&refused.stderr));
+    assert_eq!(json(&refused)["code"], "board::cli::usage");
 }
 
-/// Why a write that commits takes no `--yes`: Board asks no question, and
-/// git keeps the commit that a revert undoes.
-const COMMITTED: &str = "Board asks no question, so it has no confirmation to skip, and git keeps each commit it makes, which a revert undoes";
+/// Why a write that commits takes no `--yes`: it asks no question, and git
+/// keeps the commit that a revert undoes.
+const COMMITTED: &str = "the command asks no question, so it has no confirmation to skip, and git keeps each commit it makes, which a revert undoes";
 
 /// Why `put` and `rm` keep their own `--expect`.
 const BLOB: &str = "Board's --expect names the git blob the file must hold, or none for a new file, which crumbkit's Expect does not take";
@@ -313,7 +326,7 @@ const EFFECTS: &[Allow] = &[
     Allow::new(
         Rule::Yes,
         "answer",
-        "an approval already waits for the owner's Touch ID, and a refusal writes only the answer",
+        "an approval waits for the owner's Touch ID unless --signature gives a signature made elsewhere, --no-input refuses that wait, and a refusal writes only the answer",
     ),
     Allow::new(Rule::ExpectFlag, "put", BLOB),
     Allow::new(Rule::ExpectFlag, "rm", BLOB),

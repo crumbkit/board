@@ -226,22 +226,22 @@ const BUDGETS: Budgets = Budgets::new()
         Budget::new(
             "put",
             1_520,
-            "put has six options of its own (--new, --var, --expect, --batch, --file and --wait), and a reader needs to know on one page that with a store --file may write an attachment record in place of the bytes.",
+            "put has six options of its own (--new, --var, --expect, --batch, --file and --wait), and a reader needs to know on one page that with a store --file may write an attachment record in place of the bytes. Its page also ends with the Effects: line and a global flags line that names --no-input.",
         ),
         Budget::new(
             "refs",
             2_000,
-            "refs has five options and two output formats, and a reader needs the from/to line format and the --field encoding on one page to parse its text output.",
+            "refs has five options and two output formats, and a reader needs the from/to line format and the --field encoding on one page to parse its text output. Its page also ends with the Effects: line and a global flags line that names --no-input.",
         ),
         Budget::new(
             "decide",
             1_260,
-            "decide says on one page what the owner's approval, refusal and silence each do, and its global flags line names --no-input, which a program adds to every run.",
+            "decide says on one page what the owner's approval, refusal and silence each do, its Effects: line says that it adds, and its global flags line names --no-input, which a program adds to every run.",
         ),
         Budget::new(
             "answer",
             1_260,
-            "answer says on one page how an approval is signed and checked, and its global flags line names --no-input, which a program adds to every run.",
+            "answer says on one page how an approval is signed and checked, its Effects: line says that it is destructive, and its global flags line names --no-input, which a program adds to every run.",
         ),
     ]);
 

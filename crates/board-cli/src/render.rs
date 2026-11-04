@@ -49,7 +49,9 @@ pub(crate) const LEAVES: &[Leaf] = &[
     get::LEAF.effects(READS.open_world()),
     Leaf::new(&["ls"]).document(LS).effects(READS),
     refs::LEAF.effects(READS),
-    Leaf::new(&["put"]).document(PUT).effects(CHANGES),
+    Leaf::new(&["put"])
+        .document(PUT)
+        .effects(CHANGES.open_world()),
     Leaf::new(&["rm"]).document(PUT).effects(CHANGES),
     Leaf::new(&["sync"])
         .document(SYNC)
@@ -63,7 +65,7 @@ pub(crate) const LEAVES: &[Leaf] = &[
     Leaf::new(&["query"]).document(QUERY).effects(READS),
     Leaf::new(&["decide"])
         .document(effects::DECIDE)
-        .effects(ADDS),
+        .effects(ADDS.idempotent()),
     Leaf::new(&["answer"])
         .document(effects::ANSWER)
         .effects(CHANGES),

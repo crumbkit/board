@@ -139,7 +139,7 @@ Write the record on stdin at a path or --new name, or a file with --file
   With a `store` setting, --file uploads bytes over 1 MiB or not UTF-8 under their digest and writes a board/attachment/v1 record.
 - `--wait <DURATION>`: How long to wait for the board's lock, with a unit: 500ms, 30s, 2m or 1h. Default: `5s`.
 
-Effects: destructive, not idempotent, closed-world.
+Effects: destructive, not idempotent, open-world.
 
 ## `board rm`
 
@@ -300,7 +300,7 @@ Ask the owner to admit a plugin's op
 - `--text <FILE>`: The UTF-8 text the op writes: this file, or - for stdin
 - `--record <FILE>`: The JSON object the op writes: this file, or - for stdin
 
-Effects: additive, not idempotent, closed-world.
+Effects: additive, idempotent, closed-world.
 
 ## `board answer`
 

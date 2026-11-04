@@ -92,8 +92,15 @@ pub(crate) fn answer(
     context: &Context,
     printer: Printer,
     answering: Answering,
+    no_input: bool,
     stdin: &mut dyn Read,
 ) -> Output {
+    // An approval without --signature waits for Touch ID, which is a question.
+    if no_input && answering.answer == Answer::Approve && answering.signature.is_none() {
+        let message = "approve without --signature waits for the owner's Touch ID, and --no-input asks for no wait";
+        let hint = "sign the approval elsewhere and pass it with --signature <FILE>, or answer without --no-input to sign with Touch ID";
+        return render::refused(printer, plain(Code::CliUsage, &message).with_hint(hint));
+    }
     match answered(context, answering, stdin) {
         Ok(report) => render::answer(printer, &report),
         Err(refusal) => render::refused(printer, *refusal),

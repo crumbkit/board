@@ -90,7 +90,7 @@ pub(crate) struct Cli {
     personal: bool,
     #[command(flatten)]
     view: crumbkit::ViewFlags,
-    /// Board asks no question, so it reads the flag only to accept it.
+    /// Fail instead of asking. Only `answer approve` asks, for Touch ID.
     #[command(flatten)]
     no_input: crumbkit::NoInput,
     #[command(subcommand)]
@@ -485,7 +485,8 @@ pub(crate) fn run(
         };
     }
     if let Command::Answer(answering) = cli.command {
-        return effects::answer(context, printer, answering, stdin);
+        let no_input = cli.no_input != crumbkit::NoInput::default();
+        return effects::answer(context, printer, answering, no_input, stdin);
     }
     let opening = Instant::now();
     let opened = open(context, &start);
