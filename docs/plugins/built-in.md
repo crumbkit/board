@@ -2,8 +2,8 @@
 
 This file holds detail for docs/plugins.md. It says how a plugin compiled into
 Board is called. `artifacts`, `boundary`, `controls`, `plans`, `evals`, `runs`,
-`github`, `jira`, [`share`](share.md) and [`requests`](built-in/requests.md)
-are built in.
+`github`, `jira`, `prompts`, [`share`](share.md) and
+[`requests`](built-in/requests.md) are built in.
 [built-in/writing.md](built-in/writing.md) says how to write one.
 
 - A built-in plugin is a crate, `board-plugin-<name>`, behind a Cargo feature
@@ -48,6 +48,11 @@ are built in.
     would see, its `env` among them, and `cache_home`, `XDG_CACHE_HOME` when
     it is absolute, else `~/.cache`. A built-in plugin reads no environment
     of its own.
+  - `caller_remote()` reads the `origin` of the git repository holding
+    `caller`, as `git remote get-url origin` there gives it, from git's
+    config through board-tree, so no process starts. It is `Outside`
+    without a caller or a repository, `Url`, or `Unread` with why the
+    repository gave none.
   - `run(process)` starts a program, such as git, gh or an agent, and
     `cached` and `cache` keep a small value by content hash
     ([built-in/running.md](built-in/running.md)).

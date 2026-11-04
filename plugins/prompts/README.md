@@ -1,9 +1,6 @@
 # prompts
 
-This plugin is still a Python program (docs/plugins/python.md). A new plugin
-is a crate built into Board (docs/plugins/built-in/writing.md).
-
-A Board plugin for stored prompts. A prompt is a Markdown record a person
+A Board plugin, built into Board as `crates/board-plugin-prompts`, for stored prompts. A prompt is a Markdown record a person
 writes to start one specific piece of work, such as reviewing one pull
 request. Its frontmatter says what the prompt is for, where the work runs and
 which inputs it takes. Its body is the text an agent receives, with each
@@ -15,13 +12,8 @@ agent loads it when its description matches a request. A person or a task
 chooses a prompt by its path, and no agent loads a prompt because its text
 looks relevant.
 
-Install it from this checkout:
-
-    uv sync --frozen --no-dev
-    ln -s "$PWD" "${XDG_DATA_HOME:-$HOME/.local/share}/board/plugins/prompts"
-
-Then run `board plugin enable prompts` in a board. This writes the schemas the
-plugin ships under `types/prompts/` to `.board/types/prompts/`. A mounted repo
+Run `board plugin enable prompts` in a board. This writes the schemas the
+plugin ships to `.board/types/prompts/`. A mounted repo
 needs the prompt schema in its own `.board/types/` before it can hold a prompt,
 so run `board -C <clone> plugin enable prompts` in its clone, push, and run
 `board mount update <mount>` in the board. Then mark the repo, as
@@ -126,7 +118,8 @@ that `board check` marks degraded for any code but a broken link
 (`board::ref::dangling` or `board::ref::wrong_type`): an invalid prompt, or
 frontmatter that does not parse or names an unknown type. Plain Markdown, such
 as an eval's evidence, is not counted. `repos` names the repos read, and
-`origin_unread` says why the caller's git repository gave no origin.
+`origin_unread` says why the caller's git repository gave no origin. Board
+reads the origin from git's config without starting git.
 
 ## Codes
 
@@ -148,8 +141,7 @@ as an eval's evidence, is not counted. `repos` names the repos read, and
   declared input, or a value is too long, spans lines or holds a control or
   format character. `fields.inputs` names the inputs.
 - `prompts::repo::not_found`: `list --repo` names no repo in the board.
-- `prompts::board::refused` and `prompts::board::failed`: `board` refused a
-  query or failed.
+- `prompts::board::refused`: Board refused a read or query.
 - `prompts::call::unknown_capability`: the plugin offers only `get` and `list`.
 
 ## Safety

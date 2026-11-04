@@ -296,6 +296,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "board-plugin-prompts"
+version = "0.0.0"
+dependencies = [
+ "board-model",
+ "board-ops",
+ "board-plugin",
+ "regex",
+ "schemars",
+ "serde",
+ "serde_json",
+ "unicode-general-category",
+]
+
+[[package]]
 name = "board-plugin-requests"
 version = "0.0.0"
 dependencies = [
@@ -347,6 +361,7 @@ dependencies = [
  "board-plugin-github",
  "board-plugin-jira",
  "board-plugin-plans",
+ "board-plugin-prompts",
  "board-plugin-requests",
  "board-plugin-runs",
  "board-plugin-share",
