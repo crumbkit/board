@@ -1,7 +1,12 @@
-"""The soft limit on work in progress: three active changes of a kind in build, per mount.
+"""The soft limit on work in progress: active changes of a kind in build per repository, per owner or in the board.
 
-Build changes and prototypes are counted apart. A change counts while it is
-active: within the last `BOARD_CHANGES_ACTIVE_DAYS` days, 3 by default, a
+One cap applies at a time: three per repository, unless the caps record
+names another limit and scope. Build changes and prototypes are counted
+apart, each against that cap. A change's repository is the clone Board says
+its mount reads, keyed by that clone's origin in its stored form, so two
+mounts of one repository count together. A clone whose origin git cannot
+read is keyed by its path, and a mount Board cannot resolve by the mount
+itself. A change counts while it is active: within the last `BOARD_CHANGES_ACTIVE_DAYS` days, 3 by default, a
 changes capability touched it, its head commit was committed, or a run it
 references finished. An idle change and a paused change count toward
 nothing. When the limit is reached, a move into build is refused unless the
@@ -11,18 +16,23 @@ warning.
 
 import json
 import os
+import re
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
-from typing import TypedDict, cast
+from typing import NamedTuple, NotRequired, TypedDict, cast
 
 from board_plugin.board import Board, literal
 from board_plugin.git import Failed, git
 from board_plugin.protocol import PluginError
+from board_plugin.repos import GITHUB, origin, shown_remote
 
-from board_changes.change import CHANGE_TYPE, OWN, TREE_CODES, Change, kind_of, referenced
+from board_changes.change import CAPS_PATH, CAPS_TYPE, CHANGE_TYPE, OWN, TREE_CODES, Change, kind_of, referenced
 
-# The most active changes of a kind in build per mount before a move into build needs a reason.
+# The most active changes of a kind in build in one repository, when there is no caps record, before a move into
+# build needs a reason.
 WIP_LIMIT = 3
+# A GitHub URL through www.github.com or with a port, which `shown_remote` does not reduce: what precedes the host.
+GITHUB_HOST = re.compile(r"^([a-z+]+://(?:[^@/]+@)?)(?:www\.)?github\.com(?::\d+)?/", re.IGNORECASE)
 # How many days a change stays active after its last touch, commit or run, unless the variable below says otherwise.
 ACTIVE_DAYS = 3
 ACTIVE_DAYS_VARIABLE = "BOARD_CHANGES_ACTIVE_DAYS"
@@ -40,16 +50,37 @@ class Idle(TypedDict):
 
 
 class Limit(TypedDict):
-    """The limit reached: the active changes holding places, the idle ones apart, and the override."""
+    """The limit reached: the cap, the active changes holding places, the idle ones apart, and the override.
+
+    `repository` or `owner` names what the cap counted together when its
+    scope is one of those; `unread` names each mount whose clone git read no
+    origin for, and why.
+    """
 
     code: str
     mount: str
     kind: str
+    scope: str
+    repository: NotRequired[str]
+    owner: NotRequired[str]
     limit: int
     active_days: int
     active: list[str]
     idle: list[Idle]
     override: str
+    unread: NotRequired[dict[str, str]]
+
+
+class Repository(NamedTuple):
+    """Where a change's mount reads: the repository's key, its owner, its clone, and why git gave no origin for it.
+
+    The owner is the GitHub owner, or the key itself for a repository off GitHub.
+    """
+
+    key: str
+    owner: str
+    clone: str | None
+    unread: str | None
 
 
 def building(changes: list[Change], kind: str) -> list[Change]:
@@ -67,6 +98,48 @@ def in_build(board: Board) -> dict[str, Change]:
     return {
         str(path): cast("Change", json.loads(body)) for path, code, body in rows if code is None or code in TREE_CODES
     }
+
+
+def cap(board: Board) -> tuple[int, str]:
+    """The cap's limit and scope: the caps record's, or WIP_LIMIT per repository without one.
+
+    A caps record Board marks degraded is `changes::caps::degraded`, since its numbers cannot be trusted.
+    """
+    rows = board.rows(
+        f"SELECT code, body FROM records WHERE logical = {literal(CAPS_PATH)} AND type = {literal(CAPS_TYPE)}"  # noqa: S608 - values are quoted by literal()
+    )
+    if not rows:
+        return WIP_LIMIT, "repository"
+    [[code, body]] = rows
+    if code is not None:
+        raise PluginError(
+            "changes::caps::degraded",
+            f"the caps record at {CAPS_PATH} is degraded with {code}; it needs both `limit` and `scope`; "
+            f"run `board check {CAPS_PATH}` and fix it",
+            {"path": CAPS_PATH, "code": code},
+        )
+    record = json.loads(body)
+    return int(record["limit"]), str(record["scope"])
+
+
+def repositories(board: Board, mounts: list[str]) -> dict[str, Repository]:
+    """The repository each of `mounts` reads, by mount."""
+    # Each mount's location is all that is read, so one row of what reaches it is enough.
+    answers = board.refs(mounts, limit=1)
+    found: dict[str, Repository] = {}
+    for mount, answer in zip(mounts, answers, strict=True):
+        located = (answer or {}).get("location", {}).get("repository")
+        clone = located if isinstance(located, str) else None
+        url, unread = origin(clone) if clone is not None else (None, None)
+        key = shown_remote(GITHUB_HOST.sub(r"\1github.com/", url)).casefold() if url else clone or mount
+        matched = GITHUB.fullmatch(key) if url else None
+        found[mount] = Repository(key, matched[1] if matched else key, clone, unread)
+    return found
+
+
+def within(repository: Repository, scope: str) -> str | None:
+    """What a change in `repository` shares with the others it counts with in `scope`; None for the board."""
+    return {"repository": repository.key, "owner": repository.owner}.get(scope)
 
 
 def active_days() -> int:
@@ -95,23 +168,18 @@ def day_of(stamp: object) -> date | None:
     return parsed.astimezone(UTC).date() if parsed.tzinfo else parsed.date()
 
 
-def committed(board: Board, changes: dict[str, Change]) -> dict[str, date]:
-    """The UTC day each change's head was committed, read with git from its mount's repository, when git knows it.
+def committed(changes: dict[str, Change], read: dict[str, Repository]) -> dict[str, date]:
+    """The UTC day each change's head was committed, read with git from its mount's clone in `read`, when git knows it.
 
     git resolves each head on its own, so an abbreviated head names exactly
     one commit or none.
     """
-    mounts = sorted({change["mount"] for change in changes.values() if "head" in change})
-    repositories = {
-        mount: (answer or {}).get("location", {}).get("repository")
-        for mount, answer in zip(mounts, board.refs(mounts), strict=True)
-    }
     found: dict[str, date] = {}
     for path, change in changes.items():
-        repository = repositories.get(change["mount"])
-        if "head" not in change or not isinstance(repository, str):
+        clone = read[change["mount"]].clone
+        if "head" not in change or clone is None:
             continue
-        out = git(repository, "log", "-1", "--format=%ct", "--end-of-options", change["head"])
+        out = git(clone, "log", "-1", "--format=%ct", "--end-of-options", change["head"])
         if not isinstance(out, Failed) and out.strip().isdigit():
             found[path] = datetime.fromtimestamp(int(out.strip()), UTC).date()
     return found
@@ -132,9 +200,9 @@ def finished(board: Board, changes: dict[str, Change]) -> dict[str, date]:
     return found
 
 
-def last_active(board: Board, changes: dict[str, Change]) -> dict[str, date | None]:
+def last_active(board: Board, changes: dict[str, Change], read: dict[str, Repository]) -> dict[str, date | None]:
     """The newest day each change was touched, committed to or run, or `None` when nothing says."""
-    commits, runs = committed(board, changes), finished(board, changes)
+    commits, runs = committed(changes, read), finished(board, changes)
     newest: dict[str, date | None] = {}
     for path, change in changes.items():
         days = [day for day in (day_of(change.get("touched")), commits.get(path), runs.get(path)) if day is not None]
@@ -174,41 +242,53 @@ class Move:
 def admit(board: Board, path: str, change: Change, move: Move) -> Limit | None:
     """Whether `change` may move into build at `path`: `None` below the limit, else the limit it goes past.
 
-    At the limit, without a reason the move is refused with
+    The cap counts the active changes of the change's kind in build that
+    share its repository, its owner, or the board, as the caps record's
+    scope says. At the limit, without a reason the move is refused with
     `changes::wip::full`; with one, the change records it in `over_limit`
     and the returned limit is the warning to show.
     """
     kind, mount = kind_of(change), change["mount"]
-    others = {
-        other: held
-        for other, held in in_build(board).items()
-        if other != path and held["mount"] == mount and building([held], kind)
-    }
-    if len(others) < WIP_LIMIT:
+    limit, scope = cap(board)
+    others = {other: held for other, held in in_build(board).items() if other != path and building([held], kind)}
+    if len(others) < limit:
+        return None
+    read = repositories(board, sorted({mount, *(held["mount"] for held in others.values())}))
+    counted = within(read[mount], scope)
+    others = {other: held for other, held in others.items() if within(read[held["mount"]], scope) == counted}
+    if len(others) < limit:
         return None
     days = move.days
-    active, idle = split(last_active(board, others), datetime.now(UTC).date(), days)
-    if len(active) < WIP_LIMIT:
+    active, idle = split(last_active(board, others, read), datetime.now(UTC).date(), days)
+    if len(active) < limit:
         return None
-    limit = Limit(
+    reached = Limit(
         code=OVER_LIMIT,
         mount=mount,
         kind=kind,
-        limit=WIP_LIMIT,
+        scope=scope,
+        limit=limit,
         active_days=days,
         active=active,
         idle=[idle_action(other, others[other]) for other in idle],
         override=move.override,
     )
+    if counted is not None:
+        reached["repository" if scope == "repository" else "owner"] = counted
+    unread = {each: repo.unread for each, repo in read.items() if repo.unread is not None}
+    if unread:
+        reached["unread"] = unread
     if isinstance(move.reason, str):
         change["over_limit"] = move.reason
-        return limit
+        return reached
     what = "build changes" if kind == "build" else "prototypes"
-    fields = {key: value for key, value in limit.items() if key != "code"}
+    where = "in the board" if counted is None else f"{'in' if scope == 'repository' else 'of'} {counted}"
+    note = f"; git read no origin for {', '.join(unread)}, so each counts by its clone" if unread else ""
+    fields = {key: value for key, value in reached.items() if key != "code"}
     raise PluginError(
         "changes::wip::full",
-        f"{len(active)} {what} active in the last {days} days are in build for {mount}, the limit of {WIP_LIMIT} "
-        f"({', '.join(active)}), so {path} waits; finish, pause or drop one, deal with the idle ones in `idle`, "
-        f"or go ahead and record why with `{move.override}`",
+        f"{len(active)} {what} active in the last {days} days are in build {where}, the {scope} cap of {limit} "
+        f"({', '.join(active)}), so {path} waits{note}; finish, pause or drop one, deal with the idle ones in "
+        f"`idle`, or go ahead and record why with `{move.override}`",
         {"path": path, **fields},
     )

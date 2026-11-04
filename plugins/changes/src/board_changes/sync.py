@@ -1,7 +1,8 @@
-"""The `sync` and `drop` capabilities: a change ends when its pull request closes, or when it is dropped by hand.
+"""The `sync`, `close` and `drop` capabilities: a change ends when its pull request closes, or when dropped by hand.
 
 `sync` reads each open change's pull request once with `gh api` and writes
-every move in one commit, or, when gh fails, writes nothing. `open` and
+every move in one commit, or, when gh fails, writes nothing. `close` does
+the same for one named change and the pull request it is given. `open` and
 `next` never run gh; they report the day of the last sync.
 """
 
@@ -69,8 +70,8 @@ def gh_failed(endpoint: str, why: str) -> PluginError:
     """`changes::sync::gh_failed` for `gh api <endpoint>`, saying `why`; nothing was written."""
     return PluginError(
         GH_FAILED,
-        f"`gh api {endpoint}` {why}, so sync wrote nothing; check gh on PATH and `gh auth status`, then run "
-        f"`{SYNC_COMMAND}` again",
+        f"`gh api {endpoint}` {why}, so nothing was written; check gh on PATH and `gh auth status`, then run "
+        "the call again",
         {"endpoint": endpoint},
     )
 
@@ -241,6 +242,43 @@ def sync(request: CallRequest) -> dict[str, object]:
         "moved": sum(1 for found in entries if found["to"] is not None),
         "truncated": len(entries) > limit,
     }
+
+
+def close(request: CallRequest) -> dict[str, object]:
+    """End one change by the pull request given, as `sync` would: done when it merged, else dropped.
+
+    The change records the pull request in `pull_request`. Only a change in
+    a phase `sync` reads may close; an open pull request is
+    `changes::close::open`, and anything sync would leave alone is refused
+    with the code sync gives it.
+    """
+    path, url = str(request.input["path"]), str(request.input["pr"])
+    board = Board(request.board.root, PLUGIN)
+    change, blob = read(board, path)
+    phase = change["phase"]
+    if phase not in SYNCED:
+        raise PluginError(
+            "changes::close::phase",
+            f"the change at {path} is in {phase}, and only a change in {', '.join(SYNCED)} closes by its pull "
+            "request; run `board call changes.next` for its next step, or `changes.drop` to end it",
+            {"path": path, "phase": phase, "phases": list(SYNCED)},
+        )
+    found, ended = synced(board, path, {**change, "pull_request": url}, time.monotonic() + SYNC_SECONDS)
+    if ended is None:
+        code = found["code"] or "changes::close::open"
+        detail = found["detail"] if found["code"] else f"its pull request {url} is still open"
+        raise PluginError(
+            code,
+            f"{path} did not close: {detail}",
+            {"path": path, "pull_request": url, "status": found["status"], "command": found["command"]},
+        )
+    write(board, [{"path": path, "expect": blob, "record": ended}])
+    output: dict[str, object] = {"path": path, "from": phase, "to": ended["phase"], "pull_request": url}
+    if "merge_commit_url" in ended:
+        output["merge_commit_url"] = ended["merge_commit_url"]
+    if "dropped_reason" in ended:
+        output["dropped_reason"] = ended["dropped_reason"]
+    return output
 
 
 def drop(request: CallRequest) -> dict[str, object]:

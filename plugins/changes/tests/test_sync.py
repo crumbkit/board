@@ -1,4 +1,4 @@
-"""`changes.sync`, `changes.drop` and the last sync that `open` and `next` report.
+"""`changes.sync`, `changes.close`, `changes.drop` and the last sync that `open` and `next` report.
 
 A stub gh, first on PATH, answers `gh api repos/<owner>/<repo>/pulls/<number>`
 with `pulls/<number>.json` from its own directory, or with GitHub's 404 when
@@ -179,3 +179,84 @@ def test_a_change_that_merged_from_build_ends_and_says_which_gates_it_skipped(gh
     found = board.call("sync", {})["changes"][0]
     assert found["to"] == "done"
     assert found["detail"].endswith("it left build without passing the build and review gates")
+
+
+CLOSE = {"path": "/changes/t", "pr": PULL.format(number=7)}
+
+
+@pytest.mark.parametrize("phase", ["build", "review", "land", "paused"])
+def test_close_ends_one_change_by_the_pull_request_given_as_sync_would(gh: tuple[Board, Path], phase: str) -> None:
+    board, stub = gh
+    board.write("changes/t.json", change(phase))
+    answers(stub, 7, state="closed", merged=True, merge_commit_sha=MERGE)
+    assert board.call("close", CLOSE) == {
+        "path": "/changes/t",
+        "from": phase,
+        "to": "done",
+        "pull_request": CLOSE["pr"],
+        "merge_commit_url": f"https://github.com/octo/widgets/commit/{MERGE}",
+    }
+    ended = board.read("changes/t.json")
+    assert (ended["phase"], ended["pull_request"]) == ("done", CLOSE["pr"])
+    assert (stub / "gh-calls.txt").read_text().splitlines() == ["api repos/octo/widgets/pulls/7"]
+
+
+def test_close_drops_a_change_whose_pull_request_closed_unmerged_with_the_reason(gh: tuple[Board, Path]) -> None:
+    board, stub = gh
+    board.write("changes/t.json", change("review"))
+    answers(stub, 7, state="closed", merged=False, closed_at="2026-11-03T09:00:00Z")
+    output = board.call("close", CLOSE)
+    reason = f"its pull request {CLOSE['pr']} was closed without merging on 2026-11-03"
+    assert (output["to"], output["dropped_reason"]) == ("dropped", reason)
+    assert board.read("changes/t.json")["dropped_reason"] == reason
+
+
+def test_close_refuses_an_open_pull_request_and_admits_it_once_merged(gh: tuple[Board, Path]) -> None:
+    board, stub = gh
+    board.write("changes/t.json", change("review"))
+    answers(stub, 7, state="open", merged=False)
+    assert board.refusal("close", CLOSE)["code"] == "changes::close::open"
+    assert board.read("changes/t.json")["phase"] == "review"
+    answers(stub, 7, state="closed", merged=True, merge_commit_sha=MERGE)
+    assert board.call("close", CLOSE)["to"] == "done"
+
+
+def test_close_refuses_a_merged_change_with_an_open_task_and_admits_it_once_the_task_is_done(
+    gh: tuple[Board, Path],
+) -> None:
+    board, stub = gh
+    board.write("tasks/left.md", task())
+    board.write("changes/t.json", change("land", records=["/tasks/left.md"]))
+    answers(stub, 7, state="closed", merged=True, merge_commit_sha=MERGE)
+    refused = board.refusal("close", CLOSE)
+    assert refused["code"] == "changes::sync::owed"
+    assert "/tasks/left.md" in refused["message"]
+    board.write("tasks/left.md", task("done"))
+    assert board.call("close", CLOSE)["to"] == "done"
+
+
+@pytest.mark.parametrize("phase", ["plan", "done", "dropped"])
+def test_close_refuses_a_change_outside_the_phases_sync_reads_and_admits_one_in_build(
+    gh: tuple[Board, Path], phase: str
+) -> None:
+    board, stub = gh
+    answers(stub, 7, state="closed", merged=True, merge_commit_sha=MERGE)
+    board.write("changes/t.json", change(phase))
+    refused = board.refusal("close", CLOSE)
+    assert (refused["code"], refused["fields"]["phase"]) == ("changes::close::phase", phase)
+    assert not (stub / "gh-calls.txt").exists()
+    board.write("changes/t.json", change("build"))
+    assert board.call("close", CLOSE)["to"] == "done"
+
+
+def test_close_refuses_when_gh_fails_or_github_answers_404_and_admits_once_gh_answers(gh: tuple[Board, Path]) -> None:
+    board, stub = gh
+    board.write("changes/t.json", change("land"))
+    assert board.refusal("close", CLOSE)["code"] == "changes::sync::pull_not_found"
+    answers(stub, 7, state="closed", merged=True, merge_commit_sha=MERGE)
+    (stub / "fail").write_text("")
+    refused = board.refusal("close", CLOSE)
+    assert (refused["code"], "HTTP 502" in refused["message"]) == ("changes::sync::gh_failed", True)
+    assert board.read("changes/t.json")["phase"] == "land"
+    (stub / "fail").unlink()
+    assert board.call("close", CLOSE)["to"] == "done"

@@ -13,6 +13,7 @@ from pydantic.config import JsonDict
 from pydantic.json_schema import SkipJsonSchema
 
 from board_changes.change import (
+    CAPS_TYPE,
     CHANGE_TYPE,
     PLAN_TYPE,
     PULL_TYPES,
@@ -46,6 +47,8 @@ SharedUrl = Annotated[
 SharedDate = Annotated[str, Field(json_schema_extra={"format": "date"})]
 Commit = Annotated[str, Field(pattern="^[0-9a-f]{7,40}$")]
 Url = Annotated[str, Field(pattern="^https?://")]
+# A GitHub pull request's URL, which `close` reads with gh.
+PullUrl = Annotated[str, Field(pattern="^https://github\\.com/[^/]+/[^/]+/pull/[0-9]+$")]
 # A SQLite GLOB pattern by logical path, such as /repos/inbox/crates/inbox-store/**, which a plugin matches
 # with GLOB in a query (LogicalGlob in crates/board-plugin/shapes.json).
 LogicalGlob = Annotated[str, Field(min_length=1, pattern="^/", json_schema_extra={"x-board-glob": True})]
@@ -107,10 +110,10 @@ class ChangeRecord(BaseModel):
     prototype's `state` is `exploring` until `verdict`, one sentence, settles
     or abandons it; `verdict_artifact` is the URL of the artifact version
     the verdict means.
-    `sync` records `merge_commit_url`, the merge commit's GitHub URL, when it ends a
-    change whose pull request merged; `sync` and `drop` record
-    `dropped_reason` when they drop one. `over_limit` is the reason given
-    for the latest move into build past the WIP limit. `touched` is the UTC
+    `sync` and `close` record `merge_commit_url`, the merge commit's GitHub
+    URL, when they end a change whose pull request merged; `sync`, `close`
+    and `drop` record `dropped_reason` when they drop one. `over_limit` is
+    the reason given for the latest move into build past the WIP limit. `touched` is the UTC
     day a changes capability last touched the change, which keeps it active
     under the limit.
     """
@@ -228,6 +231,29 @@ class UnderstandingRecord(BaseModel):
     mismatches: list[Mismatch] = Field(description="Each answer that differed from the plan, and how it was settled.")
     parked: list[Prose] = Field(description="What was named and left out of scope.")
     rechecks: list[Recheck] = Field(description="The questions asked again before review.")
+
+
+# A cap: at least one change.
+Count = Annotated[int, Field(ge=1)]
+
+
+class CapsRecord(BaseModel):
+    """`changes/caps/v1`: the one cap on changes of a kind in build, at `/changes/caps.json` in the board's tree.
+
+    Build changes and prototypes are counted apart, each against `limit`.
+    `scope` says what is counted together: the changes whose mounts read one
+    `repository`, those whose repositories one `owner` holds (the GitHub
+    owner, or the repository itself off GitHub), or every change in the
+    `board`. Without this record the cap is three per repository. Only
+    active changes count, and a move into build past the cap goes ahead
+    only with an `over_limit` reason, as under the default cap.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True, json_schema_extra=both)
+
+    tag: Literal["changes/caps/v1"] = Field(alias="$type", description="The record's type.")
+    limit: Count = Field(description="The most changes of a kind in build within one scope.")
+    scope: Literal["repository", "owner", "board"] = Field(description="What the limit counts together.")
 
 
 class PlanInput(Strict):
@@ -538,16 +564,25 @@ class Idle(Strict):
 
 
 class Limit(Strict):
-    """The WIP limit a move into build went past: the active changes holding places, the idle ones, the override."""
+    """The WIP limit a move went past: its cap, the active changes holding places, the idle ones and the override.
+
+    `repository` or `owner` names what the cap counted together when its
+    scope is one of those; `unread` names each mount whose clone git read no
+    origin for, and why.
+    """
 
     code: Literal["changes::wip::over_limit"]
     mount: str
     kind: Kind
+    scope: Literal["repository", "owner", "board"]
+    repository: str | SkipJsonSchema[None] = None
+    owner: str | SkipJsonSchema[None] = None
     limit: int
     active_days: int
     active: list[str]
     idle: list[Idle]
     override: str
+    unread: dict[str, str] | SkipJsonSchema[None] = None
 
 
 class AdvanceOutput(Strict):
@@ -656,6 +691,24 @@ class VerdictOutput(Strict):
     phase: Phase
 
 
+class CloseInput(Strict):
+    """A change and the pull request that ended it."""
+
+    path: LogicalPath = Field(description="The change's logical path, such as /changes/suite-timeout.")
+    pr: PullUrl = Field(description="The pull request's URL, such as https://github.com/octo/widgets/pull/7.")
+
+
+class CloseOutput(Strict):
+    """The phase the change left, the phase its pull request ended it in, the pull request, and what was recorded."""
+
+    path: str
+    from_: Phase = Field(alias="from")
+    to: Literal["done", "dropped"]
+    pull_request: str
+    merge_commit_url: str | SkipJsonSchema[None] = None
+    dropped_reason: str | SkipJsonSchema[None] = None
+
+
 class PrOutput(Strict):
     """The pull request drafted for a change.
 
@@ -677,3 +730,4 @@ CHANGE_SCHEMA_PATH = f"{CHANGE_TYPE}.schema.json"
 UNDERSTANDING_SCHEMA_PATH = f"{UNDERSTANDING_TYPE}.schema.json"
 PLAN_SCHEMA_PATH = f"{PLAN_TYPE}.schema.json"
 SYNC_SCHEMA_PATH = f"{SYNC_TYPE}.schema.json"
+CAPS_SCHEMA_PATH = f"{CAPS_TYPE}.schema.json"

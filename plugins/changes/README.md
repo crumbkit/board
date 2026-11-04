@@ -93,6 +93,14 @@ whether the plan or his expectation changed to settle it, what was parked,
 and the questions asked again before review. The `understanding-check`
 skill in `claude-code/skills/` runs the check.
 
+`changes/caps/v1` at `/changes/caps.json`, which is optional, sets the cap
+on work in progress described under The cap on work in progress. Both
+`limit` and `scope` are required.
+
+```json
+{"$type": "changes/caps/v1", "limit": 6, "scope": "owner"}
+```
+
 ## Capabilities
 
 - `start --mount /repos/<name> --title '<title>' [--task <path> | --task-repo <repo>] [--name <name>] [--handle @<you>]`
@@ -174,6 +182,19 @@ skill in `claude-code/skills/` runs the check.
   entry names it. The
   call receives `GH_TOKEN`, `GITHUB_TOKEN` and `GH_CONFIG_DIR` for gh, and
   may run for 600 seconds.
+- `close --path /changes/<name> --pr <url>` does what `sync` does for one
+  change and the GitHub pull request given, and records the URL in
+  `pull_request`. It reads the pull request with the same `gh api` call. A
+  merged pull request moves the change to `done` and sets
+  `merge_commit_url`, unless a task its `records` reach is open, which is
+  refused with `changes::sync::owed`. A pull request closed without merging
+  moves it to `dropped` and sets `dropped_reason`. It returns `path`,
+  `from`, `to`, `pull_request`, and `merge_commit_url` or `dropped_reason`.
+  Only a change in `build`, `review`, `land` or `paused` closes; any other
+  phase is refused with `changes::close::phase`. An open pull request is
+  refused with `changes::close::open`, a 404 with
+  `changes::sync::pull_not_found`, and a gh failure with
+  `changes::sync::gh_failed`. The change's own task is left as it is.
 - `open [--kind build|prototype] [--limit <n>]`: read-only. Changes not
   `done` or `dropped`, by path, at most 100 by default, with `total`,
   `truncated`, `unreadable` and `sync`. Each names its `task` and `kind`, and a
@@ -249,14 +270,29 @@ skill in `claude-code/skills/` runs the check.
   it does not offer `controls.for-paths`, such as when the controls
   plugin is not enabled.
 
-The WIP limit counts, for each mount, the active build changes in
-`build`, at most three, and apart from them the active prototypes in
-`build`, at most three. A prototype in `build` is always `exploring`,
-because `verdict` moves it out of `build` in the same write that sets its
-state. A paused change holds no place. Only the board's own changes, under
-`/changes/`, count. A change is active when the newest of these days is
-one of the last N days, in UTC, today included; with N at 3 on
-2026-11-04, that is 2026-11-02 to 2026-11-04:
+The WIP limit counts the active build changes in `build` and, apart from
+them, the active prototypes in `build`. A prototype in `build` is always
+`exploring`, because `verdict` moves it out of `build` in the same write
+that sets its state. A paused change holds no place. Only the board's own
+changes, under `/changes/`, count. One cap applies at a time: 3 per
+repository, unless `/changes/caps.json`, a `changes/caps/v1` record, names
+another `limit` and one `scope`:
+
+- `repository`: the changes in one repository. A change's repository is
+  the clone Board says its `mount` reads, keyed by that clone's `origin`
+  as git gives it, in its stored form (`owner/name` for GitHub, without
+  case, through `www.github.com` or an ssh port alike). Board does not
+  record origins, so the plugin reads the clone's git config. Two mounts of
+  one repository count together, even from two clones. A clone whose
+  origin git cannot read is keyed by its path, and a mount Board cannot
+  resolve by the mount. Origins off GitHub are compared as written.
+- `owner`: the changes in the repositories of one GitHub owner, such as
+  crumbkit. A repository off GitHub is its own owner.
+- `board`: every change of the kind.
+
+A change is active when the newest of these days is one of the last N
+days, in UTC, today included; with N at 3 on 2026-11-04, that is
+2026-11-02 to 2026-11-04:
 
 - `touched`;
 - the day its `head` was committed, by `git log -1` on that head in the
@@ -271,21 +307,25 @@ N is 3, or `BOARD_CHANGES_ACTIVE_DAYS` when that is set. A value that is
 not a whole number of at least 1 is refused with
 `changes::wip::bad_active_days`. A change with none of those days is idle.
 
-When three other active changes of the kind hold places for the mount,
-`advance` into `build`, `resume` and `prototype` refuse with
-`changes::wip::full`, unless `--over_limit '<why>'` is given. The refusal's
-fields, and with `--over_limit` the output's `warning`, hold `mount`,
-`kind`, `limit`, `active_days`, `active`, the changes holding places,
-`idle`, each idle change of the kind in `build` for the mount with its
-`action` and `command`, and `override`, the command with `--over_limit`.
-The action is `sync` for a change with a pull request, `resume`
-(`changes.next`) for one with a head, and `drop` otherwise. With
-`--over_limit` the call goes ahead, the change records the reason in
-`over_limit`, and `warning.code` is `changes::wip::over_limit`. A call
-without it is refused, so an agent reads the idle list and records why it
-goes past the limit, which a warning in a successful result would not make
-it do. The limit is checked when a change moves into `build` and never
-appears in a gate.
+When as many other active changes of the kind as the cap's limit hold
+places within its scope, `advance` into `build`, `resume` and `prototype`
+refuse with `changes::wip::full`, unless `--over_limit '<why>'` is given.
+The refusal's fields, and with `--over_limit` the output's `warning`, hold
+`mount`, `kind`, `scope`, `limit`, `repository` or `owner` (what the cap
+counted, absent for `board`), `active_days`, `active`, the changes holding
+places, `idle`, each idle change of the kind in `build` within the scope
+with its `action` and `command`, and `override`, the command with
+`--over_limit`. `unread`, when present, maps each mount whose origin git
+could not read to git's reason. The action is `sync` for a change with a
+pull request, `resume` (`changes.next`) for one with a head, and `drop`
+otherwise. With `--over_limit` the call goes ahead, the change records the
+reason in `over_limit`, and `warning.code` is `changes::wip::over_limit`.
+A call without it is refused, so an agent reads the idle list and records
+why it goes past the limit, which a warning in a successful result would
+not make it do. A caps record Board marks degraded is
+`changes::caps::degraded`, whether or not other changes are in build, and
+`--over_limit` does not pass it. The limit is checked when a change moves
+into `build` and never appears in a gate.
 
 A path that holds no change is `changes::change::not_found`; a degraded
 change is `changes::change::degraded`.

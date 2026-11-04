@@ -481,7 +481,7 @@
       "annotations": {
         "readOnlyHint": false
       },
-      "description": "Move the change to its next phase when its gate passes; otherwise refuse and say what is missing. Into build, refuse while three active changes of its kind are in build for its mount, unless over_limit gives a reason, which the change records and the output warns about.",
+      "description": "Move the change to its next phase when its gate passes; otherwise refuse and say what is missing. Into build, refuse while its cap is full: three active changes of its kind per repository, or the caps record's limit and scope; unless over_limit gives a reason, which the change records and the output warns about.",
       "env": [
         "BOARD_CHANGES_ACTIVE_DAYS"
       ],
@@ -545,7 +545,7 @@
           },
           "Limit": {
             "additionalProperties": false,
-            "description": "The WIP limit a move into build went past: the active changes holding places, the idle ones, the override.",
+            "description": "The WIP limit a move went past: its cap, the active changes holding places, the idle ones and the override.\n\n`repository` or `owner` names what the cap counted together when its\nscope is one of those; `unread` names each mount whose clone git read no\norigin for, and why.",
             "properties": {
               "active": {
                 "items": {
@@ -589,12 +589,40 @@
               "override": {
                 "title": "Override",
                 "type": "string"
+              },
+              "owner": {
+                "default": null,
+                "title": "Owner",
+                "type": "string"
+              },
+              "repository": {
+                "default": null,
+                "title": "Repository",
+                "type": "string"
+              },
+              "scope": {
+                "enum": [
+                  "repository",
+                  "owner",
+                  "board"
+                ],
+                "title": "Scope",
+                "type": "string"
+              },
+              "unread": {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "default": null,
+                "title": "Unread",
+                "type": "object"
               }
             },
             "required": [
               "code",
               "mount",
               "kind",
+              "scope",
               "limit",
               "active_days",
               "active",
@@ -1288,7 +1316,7 @@
       "annotations": {
         "readOnlyHint": false
       },
-      "description": "Start a prototype that answers one question: add its task under a parent, write its change in build on branch proto/<name>, and return its brief. It never lands. Refused while three active prototypes explore for its mount, unless over_limit gives a reason.",
+      "description": "Start a prototype that answers one question: add its task under a parent, write its change in build on branch proto/<name>, and return its brief. It never lands. Refused while its cap on active prototypes is full, unless over_limit gives a reason.",
       "env": [
         "BOARD_CHANGES_ACTIVE_DAYS"
       ],
@@ -1531,7 +1559,7 @@
           },
           "Limit": {
             "additionalProperties": false,
-            "description": "The WIP limit a move into build went past: the active changes holding places, the idle ones, the override.",
+            "description": "The WIP limit a move went past: its cap, the active changes holding places, the idle ones and the override.\n\n`repository` or `owner` names what the cap counted together when its\nscope is one of those; `unread` names each mount whose clone git read no\norigin for, and why.",
             "properties": {
               "active": {
                 "items": {
@@ -1575,12 +1603,40 @@
               "override": {
                 "title": "Override",
                 "type": "string"
+              },
+              "owner": {
+                "default": null,
+                "title": "Owner",
+                "type": "string"
+              },
+              "repository": {
+                "default": null,
+                "title": "Repository",
+                "type": "string"
+              },
+              "scope": {
+                "enum": [
+                  "repository",
+                  "owner",
+                  "board"
+                ],
+                "title": "Scope",
+                "type": "string"
+              },
+              "unread": {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "default": null,
+                "title": "Unread",
+                "type": "object"
               }
             },
             "required": [
               "code",
               "mount",
               "kind",
+              "scope",
               "limit",
               "active_days",
               "active",
@@ -1797,7 +1853,7 @@
           },
           "Limit": {
             "additionalProperties": false,
-            "description": "The WIP limit a move into build went past: the active changes holding places, the idle ones, the override.",
+            "description": "The WIP limit a move went past: its cap, the active changes holding places, the idle ones and the override.\n\n`repository` or `owner` names what the cap counted together when its\nscope is one of those; `unread` names each mount whose clone git read no\norigin for, and why.",
             "properties": {
               "active": {
                 "items": {
@@ -1841,12 +1897,40 @@
               "override": {
                 "title": "Override",
                 "type": "string"
+              },
+              "owner": {
+                "default": null,
+                "title": "Owner",
+                "type": "string"
+              },
+              "repository": {
+                "default": null,
+                "title": "Repository",
+                "type": "string"
+              },
+              "scope": {
+                "enum": [
+                  "repository",
+                  "owner",
+                  "board"
+                ],
+                "title": "Scope",
+                "type": "string"
+              },
+              "unread": {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "default": null,
+                "title": "Unread",
+                "type": "object"
               }
             },
             "required": [
               "code",
               "mount",
               "kind",
+              "scope",
               "limit",
               "active_days",
               "active",
@@ -1910,7 +1994,7 @@
       "annotations": {
         "readOnlyHint": false
       },
-      "description": "Move a paused change back to build, refused while three active changes of its kind are in build for its mount, unless over_limit gives a reason.",
+      "description": "Move a paused change back to build, refused while its cap on active changes of its kind is full, unless over_limit gives a reason.",
       "env": [
         "BOARD_CHANGES_ACTIVE_DAYS"
       ],
@@ -1974,7 +2058,7 @@
           },
           "Limit": {
             "additionalProperties": false,
-            "description": "The WIP limit a move into build went past: the active changes holding places, the idle ones, the override.",
+            "description": "The WIP limit a move went past: its cap, the active changes holding places, the idle ones and the override.\n\n`repository` or `owner` names what the cap counted together when its\nscope is one of those; `unread` names each mount whose clone git read no\norigin for, and why.",
             "properties": {
               "active": {
                 "items": {
@@ -2018,12 +2102,40 @@
               "override": {
                 "title": "Override",
                 "type": "string"
+              },
+              "owner": {
+                "default": null,
+                "title": "Owner",
+                "type": "string"
+              },
+              "repository": {
+                "default": null,
+                "title": "Repository",
+                "type": "string"
+              },
+              "scope": {
+                "enum": [
+                  "repository",
+                  "owner",
+                  "board"
+                ],
+                "title": "Scope",
+                "type": "string"
+              },
+              "unread": {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "default": null,
+                "title": "Unread",
+                "type": "object"
               }
             },
             "required": [
               "code",
               "mount",
               "kind",
+              "scope",
               "limit",
               "active_days",
               "active",
@@ -2354,6 +2466,97 @@
         "title": "DropOutput",
         "type": "object"
       }
+    },
+    {
+      "_meta": {},
+      "annotations": {
+        "readOnlyHint": false
+      },
+      "description": "End one change in build, review, land or paused by the GitHub pull request given, read with gh as sync reads it: done, with its merge commit, when it merged and no attached task is open, dropped with the reason when it closed unmerged; refuse an open pull request.",
+      "env": [
+        "GH_TOKEN",
+        "GITHUB_TOKEN",
+        "GH_CONFIG_DIR"
+      ],
+      "inputSchema": {
+        "additionalProperties": false,
+        "description": "A change and the pull request that ended it.",
+        "properties": {
+          "path": {
+            "description": "The change's logical path, such as /changes/suite-timeout.",
+            "format": "board-path",
+            "pattern": "^/",
+            "title": "Path",
+            "type": "string"
+          },
+          "pr": {
+            "description": "The pull request's URL, such as https://github.com/octo/widgets/pull/7.",
+            "pattern": "^https://github\\.com/[^/]+/[^/]+/pull/[0-9]+$",
+            "title": "Pr",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "pr"
+        ],
+        "title": "CloseInput",
+        "type": "object"
+      },
+      "name": "close",
+      "outputSchema": {
+        "additionalProperties": false,
+        "description": "The phase the change left, the phase its pull request ended it in, the pull request, and what was recorded.",
+        "properties": {
+          "dropped_reason": {
+            "default": null,
+            "title": "Dropped Reason",
+            "type": "string"
+          },
+          "from": {
+            "enum": [
+              "plan",
+              "build",
+              "review",
+              "land",
+              "done",
+              "dropped",
+              "paused"
+            ],
+            "title": "From",
+            "type": "string"
+          },
+          "merge_commit_url": {
+            "default": null,
+            "title": "Merge Commit Url",
+            "type": "string"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "pull_request": {
+            "title": "Pull Request",
+            "type": "string"
+          },
+          "to": {
+            "enum": [
+              "done",
+              "dropped"
+            ],
+            "title": "To",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "from",
+          "to",
+          "pull_request"
+        ],
+        "title": "CloseOutput",
+        "type": "object"
+      }
     }
   ],
   "description": "Walk one change to a repository from its plan to its pull request, and gather every record it produces. Use it when you start a change to a repository mounted in the board, and whenever you resume one. Start with `board -C <board> call changes.start --mount /repos/<name> --title '<title>'`, then call `changes.next --path /changes/<name>` for the next step. SKILL.md and README.md in the plugin's directory say more.",
@@ -2374,7 +2577,8 @@
     "changes/change/v1",
     "changes/plan/v1",
     "changes/understanding/v1",
-    "changes/sync/v1"
+    "changes/sync/v1",
+    "changes/caps/v1"
   ],
   "version": "0.1.0"
 }

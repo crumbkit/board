@@ -52,13 +52,14 @@ def test_board_lists_the_plugin_as_enabled_and_enabling_wrote_the_schema_it_ship
         "resume",
         "sync",
         "drop",
+        "close",
     ]
     for path, schema in schemas().items():
         assert json.loads((board.root / ".board" / "types" / path).read_text()) == schema, path
 
 
 def test_a_capability_the_plugin_does_not_offer_is_refused_and_one_it_offers_is_answered(board: Board) -> None:
-    code, document = board.plugin("close", {})
+    code, document = board.plugin("merge", {})
     assert (code, document["code"]) == (1, "changes::call::unknown_capability")
     assert board.plugin("open", {}) == (0, {"$type": "board/call-result/v1", "output": board.call("open", {})})
 
@@ -127,6 +128,8 @@ def test_every_input_property_carries_a_sentence_that_says_what_it_means() -> No
         ("sync", "limit"),
         ("drop", "path"),
         ("drop", "reason"),
+        ("close", "path"),
+        ("close", "pr"),
     }
     for key, description in descriptions.items():
         assert isinstance(description, str), key

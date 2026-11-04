@@ -1,0 +1,32 @@
+{
+  "additionalProperties": false,
+  "description": "`changes/caps/v1`: the one cap on changes of a kind in build, at `/changes/caps.json` in the board's tree.\n\nBuild changes and prototypes are counted apart, each against `limit`.\n`scope` says what is counted together: the changes whose mounts read one\n`repository`, those whose repositories one `owner` holds (the GitHub\nowner, or the repository itself off GitHub), or every change in the\n`board`. Without this record the cap is three per repository. Only\nactive changes count, and a move into build past the cap goes ahead\nonly with an `over_limit` reason, as under the default cap.",
+  "properties": {
+    "$type": {
+      "const": "changes/caps/v1",
+      "description": "The record's type.",
+      "type": "string"
+    },
+    "limit": {
+      "description": "The most changes of a kind in build within one scope.",
+      "minimum": 1,
+      "type": "integer"
+    },
+    "scope": {
+      "description": "What the limit counts together.",
+      "enum": [
+        "repository",
+        "owner",
+        "board"
+      ],
+      "type": "string"
+    }
+  },
+  "required": [
+    "$type",
+    "limit",
+    "scope"
+  ],
+  "title": "CapsRecord",
+  "type": "object"
+}

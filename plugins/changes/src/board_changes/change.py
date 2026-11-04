@@ -17,6 +17,9 @@ SYNC_PATH = "/changes/sync"
 SYNC_COMMAND = "board call changes.sync"
 # The board's own changes; a mounted board's changes sit under the mount and are that board's to keep.
 OWN = "/changes/"
+# The caps on work in progress, read only from CAPS_PATH in the board's own tree.
+CAPS_TYPE = "changes/caps/v1"
+CAPS_PATH = "/changes/caps"
 # The record types a change's `tickets` and `pulls` may reference; the jira and github plugins own them.
 TICKET_TYPES = ("jira/issue/v1", "github/issue/v1")
 PULL_TYPES = ("github/pull/v1",)

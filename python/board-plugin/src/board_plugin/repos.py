@@ -178,14 +178,19 @@ def caller_remote() -> str | None:
 
 
 def caller_origin() -> tuple[str | None, str | None]:
-    """The origin of the git repository Board was started in, and why there is none inside a repository.
+    """The `origin` of the git repository Board was started in, from BOARD_CALLER_DIR, as `origin` gives it."""
+    directory = os.environ.get("BOARD_CALLER_DIR")
+    if not directory:
+        return None, None
+    return origin(directory)
+
+
+def origin(directory: str) -> tuple[str | None, str | None]:
+    """The origin of the git repository holding `directory`, and why there is none inside a repository.
 
     Both are None outside a git repository. Inside one whose origin git did not give, the reason names why:
     no origin is set, git failed or ran past its 10 s deadline.
     """
-    directory = os.environ.get("BOARD_CALLER_DIR")
-    if not directory:
-        return None, None
     try:
         ran = subprocess.run(  # noqa: S603 - this reads git's config only, and changes nothing
             ["git", "-C", directory, "remote", "get-url", "origin"],  # noqa: S607 - git is found on PATH

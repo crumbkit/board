@@ -35,11 +35,13 @@ The gate is the contract. `next` says what the current phase still lacks;
    merging. Add `--dry_run true` to see what it would do first. Close the
    task of each change it ends. An entry with `changes::sync::owed` still
    has open tasks; close them and sync again.
-7. At most three active build changes per mount are in `build`, and apart
-   from them three active prototypes exploring. A change is active when a
-   changes capability touched it, its head was committed or a run it
-   references finished on one of the last three days, today included
-   (`BOARD_CHANGES_ACTIVE_DAYS` sets the number).
+7. At most three active build changes per repository are in `build`, and
+   apart from them three active prototypes exploring there.
+   `/changes/caps.json` may set another limit over one scope: repository,
+   owner or board (README.md). A change is active when a changes capability
+   touched it, its head was committed or a run it references finished on
+   one of the last three days, today included (`BOARD_CHANGES_ACTIVE_DAYS`
+   sets the number).
    When `advance`, `resume` or `prototype` refuses with `changes::wip::full`,
    first deal with the changes in `idle`: run each one's `command`, which
    syncs, drops or resumes it. If the work must still start now, run the
@@ -106,7 +108,10 @@ lists every prototype with its verdict.
   `unreadable` and run `pr` again, or say why in the body. Run `command`
   yourself, in a POSIX shell, from a checkout of the repository on the
   change's `head`, then record the pull request's URL. Merging happens
-  outside Board. Advancing from `land` ends the change in `done`.
+  outside Board. Advancing from `land` ends the change in `done`. Once the
+  pull request merges or closes,
+  `changes.close --path /changes/<name> --pr <url>` ends that change as
+  `changes.sync` would, from `build`, `review`, `land` or `paused`.
 
 ## Refusals
 
@@ -125,8 +130,8 @@ lists every prototype with its verdict.
 - `changes::data::not_signed`: run the understanding check and attach its
   record and the sign-off decision.
 - `changes::prototype::never_lands`: a prototype ends with `verdict`.
-- `changes::wip::full`: `active` lists the changes holding places for the
-  mount and `idle` the idle ones with a `command` each. Deal with the idle
+- `changes::wip::full`: `scope` names the full cap, `active` the changes
+  holding its places and `idle` the idle ones with a `command` each. Deal with the idle
   ones, pause one, wait, or run `override` with a reason.
 - `changes::wip::over_limit`: a warning, not a refusal. The change went past
   the limit with the reason it records in `over_limit`.
@@ -141,6 +146,12 @@ lists every prototype with its verdict.
   that sync left alone. Run each entry's `command`. For
   `pull_not_found`, check `gh auth status` first, since GitHub answers 404
   for a repository gh cannot see.
+- `changes::caps::degraded`: run `board check /changes/caps` and fix it;
+  it needs both `limit` and `scope`.
+- `changes::close::open`: the pull request is still open; close the change
+  once it merges or closes.
+- `changes::close::phase`: only a change in `build`, `review`, `land` or
+  `paused` closes by its pull request. Run `next`, or drop the change.
 - `changes::phase::paused`: `resume` the change first.
 - `changes::pause::not_building`, `changes::resume::not_paused`: only a
   change in `build` is paused, and only a paused one resumed.

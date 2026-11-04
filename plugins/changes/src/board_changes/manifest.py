@@ -5,8 +5,9 @@ from typing import Any
 from board_plugin.protocol import dumped
 from pydantic import BaseModel, JsonValue
 
-from board_changes.change import CHANGE_TYPE, PLAN_TYPE, SYNC_TYPE, UNDERSTANDING_TYPE
+from board_changes.change import CAPS_TYPE, CHANGE_TYPE, PLAN_TYPE, SYNC_TYPE, UNDERSTANDING_TYPE
 from board_changes.models import (
+    CAPS_SCHEMA_PATH,
     CHANGE_SCHEMA_PATH,
     PLAN_SCHEMA_PATH,
     SYNC_SCHEMA_PATH,
@@ -16,7 +17,10 @@ from board_changes.models import (
     AttachInput,
     AttachOutput,
     BriefOutput,
+    CapsRecord,
     ChangeRecord,
+    CloseInput,
+    CloseOutput,
     DropInput,
     DropOutput,
     NextOutput,
@@ -90,7 +94,7 @@ def manifest() -> dict[str, JsonValue]:
         ),
         "run": ["uv", "run", "--frozen", "--no-dev", "python", "-m", "board_changes"],
         "metadata": {"area": "delivery"},
-        "types": [CHANGE_TYPE, PLAN_TYPE, UNDERSTANDING_TYPE, SYNC_TYPE],
+        "types": [CHANGE_TYPE, PLAN_TYPE, UNDERSTANDING_TYPE, SYNC_TYPE, CAPS_TYPE],
         "capabilities": [
             nested(
                 capability(
@@ -120,8 +124,9 @@ def manifest() -> dict[str, JsonValue]:
                 capability(
                     "advance",
                     "Move the change to its next phase when its gate passes; otherwise refuse and say what is"
-                    " missing. Into build, refuse while three active changes of its kind are in build for its mount,"
-                    " unless over_limit gives a reason, which the change records and the output warns about.",
+                    " missing. Into build, refuse while its cap is full: three active changes of its kind per"
+                    " repository, or the caps record's limit and scope; unless over_limit gives a reason, which the"
+                    " change records and the output warns about.",
                     AdvanceInput,
                     AdvanceOutput,
                     read_only=False,
@@ -168,8 +173,8 @@ def manifest() -> dict[str, JsonValue]:
                     capability(
                         "prototype",
                         "Start a prototype that answers one question: add its task under a parent, write its change"
-                        " in build on branch proto/<name>, and return its brief. It never lands. Refused while three"
-                        " active prototypes explore for its mount, unless over_limit gives a reason.",
+                        " in build on branch proto/<name>, and return its brief. It never lands. Refused while its"
+                        " cap on active prototypes is full, unless over_limit gives a reason.",
                         PrototypeInput,
                         PrototypeOutput,
                         read_only=False,
@@ -197,8 +202,8 @@ def manifest() -> dict[str, JsonValue]:
             with_env(
                 capability(
                     "resume",
-                    "Move a paused change back to build, refused while three active changes of its kind are in"
-                    " build for its mount, unless over_limit gives a reason.",
+                    "Move a paused change back to build, refused while its cap on active changes of its kind is"
+                    " full, unless over_limit gives a reason.",
                     AdvanceInput,
                     AdvanceOutput,
                     read_only=False,
@@ -227,6 +232,18 @@ def manifest() -> dict[str, JsonValue]:
                 DropOutput,
                 read_only=False,
             ),
+            with_env(
+                capability(
+                    "close",
+                    "End one change in build, review, land or paused by the GitHub pull request given, read with gh"
+                    " as sync reads it: done, with its merge commit, when it merged and no attached task is open,"
+                    " dropped with the reason when it closed unmerged; refuse an open pull request.",
+                    CloseInput,
+                    CloseOutput,
+                    read_only=False,
+                ),
+                GH_ENV,
+            ),
         ],
     }
 
@@ -238,6 +255,7 @@ def schemas() -> dict[str, dict[str, JsonValue]]:
         PLAN_SCHEMA_PATH: PlanRecord.model_json_schema(by_alias=True),
         UNDERSTANDING_SCHEMA_PATH: UnderstandingRecord.model_json_schema(by_alias=True),
         SYNC_SCHEMA_PATH: SyncRecord.model_json_schema(by_alias=True),
+        CAPS_SCHEMA_PATH: CapsRecord.model_json_schema(by_alias=True),
     }
 
 
