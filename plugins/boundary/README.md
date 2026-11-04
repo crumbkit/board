@@ -132,8 +132,8 @@ changing a rule. Only a failed check asks; a passing check writes no effect.
   one by deleting its seen record from `/effects/seen/`.
 
 `boundary.verify` takes `--digest`, or `action`, `to` and `parts` on stdin,
-and returns `digest`, `crossing` (null when there is none), `passed` and
-`result`. `passed` is true only while the boundaries that match the
+and returns `digest`, `crossing` (null when there is none), `passed`,
+`result` and `boundaries`, the paths the crossing was checked against. `passed` is true only while the boundaries that match the
 crossing's action, destination and checkout are the ones it was checked
 against. It does not notice an edit to a matched boundary's checks or to a
 control's rule, so a gate that must see those runs `check` again. Giving

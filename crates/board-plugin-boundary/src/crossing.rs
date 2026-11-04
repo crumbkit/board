@@ -91,6 +91,9 @@ pub(crate) struct VerifyOutput {
     /// What the destination returned, or null.
     #[schemars(with = "Option<Prose>")]
     result: Option<String>,
+    /// The boundaries the crossing was checked against, by path; empty
+    /// when there is no crossing or none matched it.
+    boundaries: Vec<String>,
 }
 
 /// Whether a passing crossing exists for the digest given, or for the
@@ -110,6 +113,7 @@ pub(crate) fn verify(host: &dyn Host, input: &Value) -> Result<Value, PluginErro
             crossing: None,
             passed: false,
             result: None,
+            boundaries: Vec::new(),
         }));
     };
     // The crossing passes only while the same boundaries match. This misses
@@ -129,6 +133,7 @@ pub(crate) fn verify(host: &dyn Host, input: &Value) -> Result<Value, PluginErro
         crossing: Some(path(&digest)),
         passed: record.passed && matching == record.boundaries,
         result: record.result,
+        boundaries: record.boundaries,
         digest,
     }))
 }

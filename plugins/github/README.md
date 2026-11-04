@@ -248,9 +248,21 @@ on the parts as the action `github.push`. A push made by `push` or
 `pr-create` has already passed the boundary, so the action hands the hook
 that check in `BOARD_GITHUB_PASSED`: the crossing's digest, its action, and
 the parts it checked beyond the ref's, the pull request's title and body.
-The hook adds those parts to its own and asks `boundary.verify` whether that
-content has a passing crossing of that digest. Only when it does not does
-the hook run `boundary.check`. So the hook asks no agent again, even when
+The hook reuses that check only when all of these hold:
+
+- the action is `github.push` or `github.pr-create`;
+- the handed parts are only those the action adds, `pr.title` and
+  `pr.body` for `pr-create` and none for `push`, and none replaces a part
+  the hook built from the ref;
+- `boundary.verify` finds a passing crossing of that digest for the ref's
+  parts with the handed ones;
+- every boundary that `boundary.covers` names for `github.push` to that
+  destination, from the hook's own checkout, is among the boundaries that
+  crossing was checked against.
+
+Otherwise the hook runs `boundary.check` on the ref's parts. So a value
+anyone sets in the variable stands only for a check that applied every
+boundary this push meets to exactly the content it sends. So the hook asks no agent again, even when
 `BOARD_CONTROLS_AGENT` names no `--model` and the hook, like every git hook,
 runs without the model credentials. A raw `git push` hands nothing and is
 checked. `boundary.verify` misses an edit to a matched boundary's checks or

@@ -12,7 +12,7 @@ use serde_json::{Value, json};
 use crate::crossing::{self, Passed};
 use crate::gh;
 use crate::git;
-use crate::hook::Handed;
+use crate::hook::{Handed, Pushing};
 use crate::objects::{Kind, Object, write};
 use crate::parts::{Parts, push_parts};
 use crate::remote;
@@ -179,17 +179,17 @@ fn pushed(
     place: &Origin<'_>,
     branch: String,
     head: &str,
-    action: &str,
+    action: Pushing,
     extra: Parts,
 ) -> Result<Push, PluginError> {
     let (host, top) = (place.host, &place.top);
     let have = git::advertised(host, top, "origin")?;
     let (commits, mut parts) = push_parts(host, top, &branch, head, &have)?;
     parts.extend(extra.clone());
-    let passed = place.check(action, &parts)?;
+    let passed = place.check(action.capability(), &parts)?;
     let handed = Handed {
         digest: passed.digest.clone(),
-        action: format!("github.{action}"),
+        action,
         parts: extra,
     };
     let line = git::push(host, top, &branch, head, &handed)?;
@@ -224,7 +224,7 @@ pub(crate) fn push(host: &dyn Host, input: &Value) -> Result<Value, PluginError>
         branch,
         commits,
         line,
-    } = pushed(&place, branch, &head, "push", Parts::new())?;
+    } = pushed(&place, branch, &head, Pushing::Push, Parts::new())?;
     Ok(output(&Pushed {
         digest: passed.digest,
         crossing: passed.crossing,
@@ -272,7 +272,7 @@ pub(crate) fn pr_create(host: &dyn Host, input: &Value) -> Result<Value, PluginE
         branch,
         commits,
         ..
-    } = pushed(&place, branch, &head, "pr-create", extra)?;
+    } = pushed(&place, branch, &head, Pushing::PrCreate, extra)?;
     let repository = format!("{}/{}", place.owner, place.repo);
     let mut arguments: Vec<String> = ["pr", "create", "--repo", &repository, "--head", &branch]
         .into_iter()

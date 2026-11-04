@@ -162,12 +162,39 @@ pub(crate) struct PrePushInput {
 
 /// The check a sending action passed before it pushed: the crossing's
 /// digest, its action, and the parts it checked beyond those the hook
-/// builds from the ref, such as a pull request's title and body.
+/// builds from the ref, a pull request's title and body.
 #[derive(Serialize, Deserialize)]
 pub(crate) struct Handed {
     pub(crate) digest: String,
-    pub(crate) action: String,
+    pub(crate) action: Pushing,
     pub(crate) parts: Parts,
+}
+
+/// The actions that push, and so hand the hook their check.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) enum Pushing {
+    #[serde(rename = "github.push")]
+    Push,
+    #[serde(rename = "github.pr-create")]
+    PrCreate,
+}
+
+impl Pushing {
+    /// The capability's name, such as `pr-create`.
+    pub(crate) fn capability(self) -> &'static str {
+        match self {
+            Self::Push => "push",
+            Self::PrCreate => "pr-create",
+        }
+    }
+
+    /// The parts it checks beyond a ref's, which it may hand the hook.
+    fn extra(self) -> &'static [&'static str] {
+        match self {
+            Self::Push => &[],
+            Self::PrCreate => &["pr.title", "pr.body"],
+        }
+    }
 }
 
 /// What a ref's check is called when the hook reuses the check the action
@@ -226,7 +253,7 @@ pub(crate) fn pre_push(host: &dyn Host, input: &Value) -> Result<Value, PluginEr
         let parts = ref_parts(host, &top, reference, sha, &have)?;
         for to in &destinations {
             let (digest, note) = if let Some(handed) =
-                reused(personal, handed.as_ref(), to, &parts)?
+                reused(personal, handed.as_ref(), to, from.as_deref(), &parts)?
             {
                 (handed.to_owned(), Some(REUSED.to_owned()))
             } else {
@@ -244,22 +271,40 @@ pub(crate) fn pre_push(host: &dyn Host, input: &Value) -> Result<Value, PluginEr
     Ok(output(&PrePushOutput { checked }))
 }
 
-/// The digest of the check the action handed the hook, when the boundary
-/// verifies that it passed exactly `parts` of the ref, with the action's
-/// own parts, to `to`; none when nothing was handed or it does not match.
+/// The digest of the check the action handed the hook, when it can stand
+/// for checking the ref's `parts` as `github.push` to `to` from `from`.
+/// That needs four things. The handed parts are only those its action adds,
+/// and none replaces a part of the ref. `boundary.verify` finds a passing
+/// crossing of that digest for the ref's parts with the handed ones. And
+/// every boundary that covers `github.push` to `to` from this checkout is
+/// among those the crossing was checked against, so a check made for
+/// another action or from another checkout stands for nothing it did not
+/// apply. Otherwise none, and the hook checks the ref itself.
 fn reused<'a>(
     personal: &dyn Host,
     handed: Option<&'a Handed>,
     to: &str,
+    from: Option<&str>,
     parts: &Parts,
 ) -> Result<Option<&'a str>, PluginError> {
     let Some(handed) = handed else {
         return Ok(None);
     };
+    let allowed = handed.action.extra();
+    let foreign = (handed.parts.keys())
+        .any(|name| !allowed.contains(&name.as_str()) || parts.contains_key(name));
+    if foreign {
+        return Ok(None);
+    }
     let mut content = parts.clone();
     content.extend(handed.parts.clone());
-    let matched = crossing::verified(personal, &handed.action, to, &content, &handed.digest)?;
-    Ok(matched.then_some(handed.digest.as_str()))
+    let action = format!("github.{}", handed.action.capability());
+    let Some(applied) = crossing::verified(personal, &action, to, &content, &handed.digest)? else {
+        return Ok(None);
+    };
+    let covering = crossing::covers(personal, "github.push", to, from)?;
+    let all = covering.iter().all(|boundary| applied.contains(boundary));
+    Ok(all.then_some(handed.digest.as_str()))
 }
 
 /// Name the boundaries that cover a write from the checkout, checking

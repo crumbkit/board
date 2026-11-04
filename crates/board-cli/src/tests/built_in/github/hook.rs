@@ -581,3 +581,118 @@ fn a_ref_naming_a_tree_is_refused_as_no_commit_and_the_same_ref_naming_a_commit_
     let checked = &document["data"]["output"]["checked"];
     assert_eq!(checked.as_array().unwrap().len(), 1, "{checked}");
 }
+
+/// Runs `boundary.check` in the personal board for `parts` of `action` to
+/// octo/widgets, from `from` when given, as anyone at the desk could, and
+/// returns the crossing's digest.
+fn checked_elsewhere(desk: &Desk, action: &str, parts: &Value, from: Option<&str>) -> String {
+    let mut input = json!({"action": action, "to": "github:octo/widgets", "parts": parts});
+    if let Some(from) = from {
+        input["from"] = json!(from);
+    }
+    let script = format!(
+        "printf '%s' '{}' | board --personal --json call boundary.check",
+        input.to_string().replace('\'', r"'\''")
+    );
+    let (code, stdout, stderr) = desk.process("sh", &desk.checkout(), &["-c", &script], &[]);
+    assert_eq!(code, 0, "{stdout}{stderr}");
+    let document: Value = serde_json::from_str(&stdout).unwrap();
+    document["data"]["output"]["digest"]
+        .as_str()
+        .unwrap()
+        .to_owned()
+}
+
+/// A raw push of main in the checkout, handed `handed` as if an action
+/// had passed it: whether it went.
+fn pushed_handed(desk: &Desk, handed: &Value) -> bool {
+    let handed = handed.to_string();
+    desk.push(&["origin", "main"], &[("BOARD_GITHUB_PASSED", &handed)])
+        .0
+        == 0
+}
+
+#[test]
+fn a_handed_check_of_an_action_the_hook_does_not_reuse_is_judged_and_refused_and_the_clean_commit_goes()
+ {
+    let desk = Desk::new();
+    desk.refuse(&["*"], "github.push");
+    install(&desk);
+    let sha = desk.commit_to("Leak acme-123", "widget.txt", Some("A gear.\n"));
+    let real = merged(
+        json!({"push.branch": "main"}),
+        &[commit_parts(&desk, &sha, "Leak acme-123", "")],
+    );
+    // No boundary covers either action, so each check passes having
+    // applied none.
+    let nothing = checked_elsewhere(&desk, "github.nothing", &real, None);
+    let handed = json!({"digest": nothing, "action": "github.nothing", "parts": {}});
+    assert!(!pushed_handed(&desk, &handed));
+    let pr = json!({"pr.title": "T", "pr.body": "B"});
+    let opened = merged(real, std::slice::from_ref(&pr));
+    let digest = checked_elsewhere(&desk, "github.pr-create", &opened, None);
+    let handed = json!({"digest": digest, "action": "github.pr-create", "parts": pr});
+    assert!(!pushed_handed(&desk, &handed));
+    assert_ne!(desk.remote_head("main"), Some(sha));
+    desk.git(
+        &desk.checkout(),
+        &["commit", "-q", "--amend", "-m", "Add a gear"],
+    );
+    assert!(pushed(&desk, &["origin", "main"]));
+}
+
+#[test]
+fn handed_parts_that_replace_the_refs_own_are_not_reused_and_the_push_is_refused_and_the_clean_commit_goes()
+ {
+    let desk = Desk::new();
+    desk.refuse(&["*"], "github.push");
+    install(&desk);
+    let sha = desk.commit_to("Leak acme-123", "widget.txt", Some("A gear.\n"));
+    let real = merged(
+        json!({"push.branch": "main"}),
+        &[commit_parts(&desk, &sha, "Leak acme-123", "")],
+    );
+    let (message, diff) = (
+        format!("commit.{}.message", &sha[..12]),
+        format!("commit.{}.diff", &sha[..12]),
+    );
+    let forged = json!({message.clone(): "Add a gear", diff.clone(): ""});
+    let benign = merged(real, std::slice::from_ref(&forged));
+    let digest = checked_elsewhere(&desk, "github.push", &benign, None);
+    let handed = json!({"digest": digest, "action": "github.push", "parts": forged});
+    assert!(!pushed_handed(&desk, &handed));
+    assert_ne!(desk.remote_head("main"), Some(sha));
+    desk.git(
+        &desk.checkout(),
+        &["commit", "-q", "--amend", "-m", "Add a gear"],
+    );
+    assert!(pushed(&desk, &["origin", "main"]));
+}
+
+#[test]
+fn a_handed_check_made_from_another_checkout_is_judged_from_this_one_and_refused_and_the_clean_commit_goes()
+ {
+    let desk = Desk::new();
+    desk.refuse(&["*"], "github.push");
+    let mut boundary: Value = serde_json::from_str(
+        &std::fs::read_to_string(desk.personal.workdir().join("boundaries/octo.json")).unwrap(),
+    )
+    .unwrap();
+    boundary["from"] = json!(["/repos/widgets"]);
+    desk.write("boundaries/octo.json", &boundary.to_string());
+    install(&desk);
+    let sha = desk.commit_to("Leak acme-123", "widget.txt", Some("A gear.\n"));
+    let real = merged(
+        json!({"push.branch": "main"}),
+        &[commit_parts(&desk, &sha, "Leak acme-123", "")],
+    );
+    let digest = checked_elsewhere(&desk, "github.push", &real, Some("/repos/gears"));
+    let handed = json!({"digest": digest, "action": "github.push", "parts": {}});
+    assert!(!pushed_handed(&desk, &handed));
+    assert_ne!(desk.remote_head("main"), Some(sha));
+    desk.git(
+        &desk.checkout(),
+        &["commit", "-q", "--amend", "-m", "Add a gear"],
+    );
+    assert!(pushed(&desk, &["origin", "main"]));
+}
