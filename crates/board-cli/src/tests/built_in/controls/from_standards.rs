@@ -14,6 +14,11 @@ const SERVICE: &str = "# service\n\n## review\n\n\
     | ID | Rule | Where it applies |\n| --- | --- | --- |\n\
     | SVC-9 | Log through tracing. | `crates/*-server/**` |\n";
 
+const REPEAT: &str = "# repeat\n\n## review\n\n\
+    | ID | Rule | Where it applies |\n| --- | --- | --- |\n\
+    | REP-1 | One rule. | `**` |\n\
+    | REP-1 | The same ID again. | `**` |\n";
+
 const SHARED: &str = "# shared\n\n## review\n\n\
     | ID | Rule | Where it applies |\n| --- | --- | --- |\n\
     | base-31 | Another rule with the same ID. | `**` |\n";
@@ -31,6 +36,7 @@ fn adopting(profiles: &str) -> (Fixture, Scenario, Scenario) {
             ("profiles/base.md", BASE),
             ("profiles/service.md", SERVICE),
             ("profiles/shared.md", SHARED),
+            ("profiles/repeat.md", REPEAT),
         ],
     );
     let app = library(
@@ -203,6 +209,11 @@ fn two_adopted_profiles_that_share_a_rule_id_are_refused_and_profiles_with_disti
         json!("controls::standards::duplicate_rule"),
         "{document}"
     );
+    let message = document["message"].as_str().unwrap();
+    assert!(
+        message.ends_with("give one of the two rules another ID"),
+        "{message}"
+    );
     assert_eq!(
         document["fields"]["files"],
         json!([
@@ -212,4 +223,43 @@ fn two_adopted_profiles_that_share_a_rule_id_are_refused_and_profiles_with_disti
     );
     let (board, _standards, _app) = adopting(r#"["service", "shared"]"#);
     assert_eq!(generate(&board)["profiles"][1]["rules"], json!(1));
+}
+
+#[test]
+fn a_profile_that_gives_one_id_twice_is_refused_saying_so_and_a_profile_with_distinct_ids_is_read()
+{
+    let (board, _standards, _app) = adopting(r#"["repeat"]"#);
+    let (ran, document) = from_standards(&board);
+    assert_ne!(ran.code, 0);
+    assert_eq!(
+        document["code"],
+        json!("controls::standards::duplicate_rule"),
+        "{document}"
+    );
+    let message = document["message"].as_str().unwrap();
+    assert!(
+        message.starts_with("/repos/standards/profiles/repeat.md gives the rule ID REP-1 twice"),
+        "{message}"
+    );
+    let (board, _standards, _app) = adopting(r#"["service"]"#);
+    assert_eq!(generate(&board)["profiles"][0]["rules"], json!(1));
+}
+
+#[test]
+fn a_map_that_lists_a_profile_twice_is_refused_saying_so_and_one_that_lists_it_once_is_read() {
+    let (board, _standards, _app) = adopting(r#"["service", "service"]"#);
+    let (ran, document) = from_standards(&board);
+    assert_ne!(ran.code, 0);
+    assert_eq!(
+        document["code"],
+        json!("controls::standards::duplicate_rule"),
+        "{document}"
+    );
+    let message = document["message"].as_str().unwrap();
+    assert!(
+        message.starts_with("/repos/app/rust-standards.toml lists the profile service twice"),
+        "{message}"
+    );
+    let (board, _standards, _app) = adopting(r#"["service"]"#);
+    assert_eq!(generate(&board)["profiles"][0]["rules"], json!(1));
 }

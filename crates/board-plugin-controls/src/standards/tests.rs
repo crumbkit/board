@@ -100,3 +100,14 @@ fn inline_html_in_a_cell_reads_as_a_space() {
     .unwrap();
     assert_eq!(rows[0].rule, "One. Two.");
 }
+
+#[test]
+fn an_id_written_as_inline_code_is_read_without_its_backticks() {
+    let table = "| ID | Rule | Where it applies |\n| --- | --- | --- |\n";
+    let rows = rules(
+        "base.md",
+        &format!("{table}| `BASE-31` | A rule. | `**` |\n"),
+    )
+    .unwrap();
+    assert_eq!(rows[0].id, "BASE-31");
+}

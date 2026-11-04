@@ -262,8 +262,10 @@ The plugin ships both schemas. `board plugin enable controls` writes them to
   `controls::standards::empty_rule` when its Rule cell is empty,
   `controls::standards::bad_id` when its ID holds anything but ASCII
   letters, digits, `-` and `_`, and `controls::standards::duplicate_rule`
-  when two adopted profiles give the same ID, ignoring case. Inline HTML
-  in a cell, such as `<br>`, reads as a space.
+  when two rules give the same ID, ignoring case, in one profile or in
+  two, or when the map lists a profile twice. Inline HTML
+  in a cell, such as `<br>`, reads as a space, and an ID written as inline
+  code is read without its backticks.
 
 Board refuses every call with `board::plugin::schema_differs` when the board's
 copy of either schema differs from the one the plugin ships;

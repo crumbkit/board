@@ -89,6 +89,16 @@ pub(crate) fn from_standards(host: &dyn Host, input: &Value) -> Result<Value, Pl
         fields: Map::from_iter([("map".to_owned(), json!(map))]),
         hint: None,
     })?;
+    if let Some(twice) = (adopted.profiles.iter())
+        .enumerate()
+        .find_map(|(at, profile)| adopted.profiles[..at].contains(profile).then_some(profile))
+    {
+        let message = format!(
+            "{map} lists the profile {twice} twice, so each of its rules would be written twice; \
+             list it once"
+        );
+        return Err(duplicate(message, ("profile", twice), &[map.as_str()]));
+    }
     let anchor = map_display.parent();
     let anchor = anchor.as_str().trim_start_matches('/');
     let files: Vec<String> = (adopted.profiles.iter())
@@ -123,19 +133,20 @@ pub(crate) fn from_standards(host: &dyn Host, input: &Value) -> Result<Value, Pl
             });
             let path = format!("{}/{}", into.trim_end_matches('/'), row.id.to_lowercase());
             if let Some((_, first)) = generated.get(&path) {
-                return Err(PluginError {
-                    code: "controls::standards::duplicate_rule".to_owned(),
-                    message: format!(
-                        "{first} and {file} both give the rule {}, so both would write {path}; \
-                         give one of them another ID, or adopt only one of their profiles",
+                let message = if *first == file.as_str() {
+                    format!(
+                        "{file} gives the rule ID {} twice, ignoring case, so both rules would write \
+                         {path}; give one of the two rules another ID",
                         row.id
-                    ),
-                    fields: Map::from_iter([
-                        ("rule".to_owned(), json!(row.id)),
-                        ("files".to_owned(), json!([first, file])),
-                    ]),
-                    hint: None,
-                });
+                    )
+                } else {
+                    format!(
+                        "{first} and {file} both give the rule ID {}, ignoring case, so both rules \
+                         would write {path}; give one of the two rules another ID",
+                        row.id
+                    )
+                };
+                return Err(duplicate(message, ("rule", &row.id), &[first, file]));
             }
             generated.insert(path, (record, file));
         }
@@ -154,6 +165,21 @@ pub(crate) fn from_standards(host: &dyn Host, input: &Value) -> Result<Value, Pl
     );
     let output = Output { profiles, lines };
     Ok(serde_json::to_value(output).expect("Output holds only strings, numbers and lists"))
+}
+
+/// `controls::standards::duplicate_rule` with `message`, naming what
+/// repeats, as `(field, value)` such as `("rule", "BASE-31")`, and the
+/// `files` that repeat it.
+fn duplicate(message: String, (field, value): (&str, &str), files: &[&str]) -> PluginError {
+    PluginError {
+        code: "controls::standards::duplicate_rule".to_owned(),
+        message,
+        fields: Map::from_iter([
+            (field.to_owned(), json!(value)),
+            ("files".to_owned(), json!(files)),
+        ]),
+        hint: None,
+    }
 }
 
 /// Each of `paths` read through one `get_each`: its display path and text,
@@ -219,7 +245,8 @@ pub(crate) fn rules(file: &str, text: &str) -> Result<Vec<Row>, PluginError> {
         };
         for cells in body {
             let cell = |at: usize| cells.get(at).cloned().unwrap_or_default();
-            let (id, rule, place) = (cell(id).text, cell(rule).text, cell(place).code);
+            let id = cell(id).text.trim_matches('`').trim().to_owned();
+            let (rule, place) = (cell(rule).text, cell(place).code);
             let refused = |code: &str, message: String| PluginError {
                 code: code.to_owned(),
                 message,
@@ -327,7 +354,7 @@ fn take(cell: &mut Cell, event: &Event<'_>) {
                 cell.code.push(code.to_owned());
             }
         }
-        Event::SoftBreak | Event::HardBreak | Event::InlineHtml(_) | Event::Html(_) => {
+        Event::SoftBreak | Event::HardBreak | Event::InlineHtml(_) => {
             cell.text.push(' ');
         }
         _ => {}
