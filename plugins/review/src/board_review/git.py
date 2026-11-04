@@ -7,12 +7,10 @@ is the same on every machine.
 """
 
 import json
-import os
-import subprocess
 from dataclasses import dataclass
 from typing import cast
 
-from board_plugin.git import ISOLATED
+from board_plugin.git import Failed, git
 from board_plugin.protocol import PluginError
 
 from board_review.shapes import BRIEF_TYPE, REPORT_TYPE
@@ -55,26 +53,17 @@ class Repository:
 
     def git(self, *arguments: str, stdin: bytes = b"") -> str:
         """What `git <arguments>` printed, or `review::git::failed` with its stderr."""
-        try:
-            ran = subprocess.run(  # noqa: S603 - the arguments are the plugin's own
-                ["git", *CONFIG, *arguments],  # noqa: S607 - git is found on PATH
-                cwd=self.root,
-                input=stdin,
-                capture_output=True,
-                env=os.environ | ISOLATED,
-                check=False,
-            )
-        except OSError as error:
-            raise PluginError("review::git::failed", f"git cannot be run: {error}; put git on PATH") from error
-        if ran.returncode != 0:
-            stderr = ran.stderr.decode(errors="replace").strip()[-4096:]
-            raise PluginError(
-                "review::git::failed",
-                f"`git {arguments[0]}` failed in {self.root}: {stderr}; check that the board's root is in a git"
-                " repository that holds the commits, and fetch them if it does not",
-                {"stderr": stderr},
-            )
-        return ran.stdout.decode(errors="replace")
+        ran = git(self.root, *CONFIG, *arguments, stdin=stdin)
+        if not isinstance(ran, Failed):
+            return ran
+        if not ran.started:
+            raise PluginError("review::git::failed", ran.why)
+        raise PluginError(
+            "review::git::failed",
+            f"`git {arguments[0]}` failed in {self.root}: {ran.stderr}; check that the board's root is in a git"
+            " repository that holds the commits, and fetch them if it does not",
+            {"stderr": ran.stderr},
+        )
 
     def commit(self, revision: str) -> str:
         """The full id of the commit `revision` names, or `review::range::unknown`."""

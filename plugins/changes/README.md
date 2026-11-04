@@ -179,16 +179,20 @@ skill in `claude-code/skills/` runs the check.
   `controls.for-paths`: its `control`, its `summary` and at most three of
   the planned paths it `matched`, with `matched_left_out` counting the
   rest. Both are left out when every planned path reached the rule.
-  `rules_left_out` names each rule the word limit dropped, and
-  `rules_command` is the `controls.for-paths` command that lists them all,
-  or null when the plan has no paths;
-  one line per record it uses (a control's `summary`, else its
+  Each rule's path and summary are fitted first, in order, skipping any
+  that do not fit, and matched paths are added after while room remains.
+  `rules_left_out` names up to 20 rules the word limit dropped, and
+  `rules_unnamed` counts the rest. `rules_command` lists every rule: run
+  its `argv` without a shell and give it its `stdin`. It is null when the
+  plan has no paths.
+  The brief also holds one line per record the plan uses (a control's `summary`, else its
   `requirement`; a decision's `decision`; an eval's question and verdict; a
   document's first heading), `left_out`, the phase and instruction `next`
   gives, and the `controls.check` command for the change's mount. It holds at
   most 600 words, counting each rule with its path and matched paths,
-  each dropped rule's path, and each line with its reference. Rules are
-  counted before lines, and `left_out` counts the lines it dropped. The
+  each named dropped rule, and each line with its reference. Rules are
+  counted before lines, but lines keep up to a quarter of the limit, and
+  `left_out` counts the lines it dropped. The
   full requirement of a rule is `controls.for-path` away. It fails with
   `changes::brief::controls_missing` when the Board that runs it does not
   offer `controls.for-paths`, such as when the controls plugin is not

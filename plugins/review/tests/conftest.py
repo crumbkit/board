@@ -16,10 +16,9 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from board_plugin.git import ISOLATED
 
 PLUGIN = Path(__file__).resolve().parents[1]
-# The variables that keep the owner's and the system's git config out of the tests' own git commands.
-ISOLATED = {"GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
 REPOSITORY = PLUGIN.parents[1]
 
 AGENT = """#!/bin/sh

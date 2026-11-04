@@ -588,6 +588,7 @@ fn a_pointer_the_index_does_not_hold_is_read_as_the_pointer_type_and_a_record_as
             path: path.to_owned(),
             object: Object::Blob(scenario.blob(text)),
             pointers: Vec::new(),
+            follow: None,
         };
         decide.record_type(&location).unwrap()
     };

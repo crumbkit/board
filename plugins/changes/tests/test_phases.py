@@ -361,3 +361,55 @@ def test_the_understanding_schema_refuses_a_mismatch_left_unsettled_and_admits_a
     report = board.json("check", "--all")
     codes = {entry["logical"]: entry.get("code") for entry in report["data"] if entry["logical"].startswith("/u/")}
     assert codes == {"/u/open": "board::record::invalid", "/u/settled": None}
+
+
+def test_review_refuses_a_change_with_no_head_until_one_is_attached(board: Board) -> None:
+    base, head = edited(board, {"src/a.rs": "a\n"})
+    board.write("changes/t.json", change("review", records=["/r/1"]))
+    board.write("r/1.json", report(head, base=base))
+    board.call("plan", plan_input(PATH, paths=["/repos/x/src/**"]), stdin=True)
+    refused = board.refusal("advance", {"path": PATH})
+    assert (refused["code"], refused["fields"]["missing"]) == ("changes::gate::unmet", ["review", "paths"])
+    assert "paths: the change records no head commit, so its diff is not known" in refused["message"]
+    board.call("attach", {"path": PATH, "head": head})
+    assert board.call("advance", {"path": PATH})["to"] == "land"
+
+
+def test_review_refuses_a_change_whose_mount_holds_nothing_until_it_names_the_mount(board: Board) -> None:
+    base, head = edited(board, {"src/a.rs": "a\n"})
+    board.write("changes/t.json", change("review", head=head, records=["/r/1"]))
+    board.write("r/1.json", report(head, base=base))
+    board.call("plan", plan_input(PATH, paths=["/repos/x/src/**"]), stdin=True)
+    board.write("changes/t.json", change("review", head=head, records=["/r/1"], mount="/repos/gone"))
+    refused = board.refusal("advance", {"path": PATH})
+    assert refused["code"] == "changes::paths::outside_plan"
+    assert "nothing is at /repos/gone" in refused["message"]
+    board.write("changes/t.json", change("review", head=head, records=["/r/1"]))
+    assert board.call("advance", {"path": PATH})["to"] == "land"
+
+
+def test_review_refuses_a_change_whose_mount_is_a_plain_directory_until_it_names_a_mount(board: Board) -> None:
+    base, head = edited(board, {"src/a.rs": "a\n"})
+    board.write("changes/t.json", change("review", head=head, records=["/r/1"]))
+    board.write("r/1.json", report(head, base=base))
+    board.call("plan", plan_input(PATH, paths=["/repos/x/src/**"]), stdin=True)
+    board.write("changes/t.json", change("review", head=head, records=["/r/1"], mount="/r"))
+    refused = board.refusal("advance", {"path": PATH})
+    assert refused["code"] == "changes::paths::outside_plan"
+    assert "/r is not a mount" in refused["message"]
+    board.write("changes/t.json", change("review", head=head, records=["/r/1"]))
+    assert board.call("advance", {"path": PATH})["to"] == "land"
+
+
+def test_review_refuses_a_head_the_mounted_repository_lacks_until_the_head_is_one_it_holds(board: Board) -> None:
+    base, head = edited(board, {"src/a.rs": "a\n"})
+    missing = "e" * 40
+    board.write("changes/t.json", change("review", head=missing, records=["/r/1"]))
+    board.write("r/1.json", report(missing, base=base))
+    board.call("plan", plan_input(PATH, paths=["/repos/x/src/**"]), stdin=True)
+    refused = board.refusal("advance", {"path": PATH})
+    assert refused["code"] == "changes::paths::outside_plan"
+    assert f"fetch {missing} and main into the mounted repository" in refused["message"]
+    board.write("changes/t.json", change("review", head=head, records=["/r/1"]))
+    board.write("r/1.json", report(head, base=base))
+    assert board.call("advance", {"path": PATH})["to"] == "land"

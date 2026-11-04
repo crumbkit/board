@@ -210,6 +210,7 @@ impl Repositories {
                         path: physical.join("/"),
                         object,
                         pointers: Vec::new(),
+                        follow: next.follow(),
                     });
                     if trail.pointers.len() > MAX_HOPS {
                         return Err(ResolveError::TooManyHops { path: path.clone() });
@@ -248,6 +249,7 @@ impl Repositories {
             path: physical.join("/"),
             object,
             pointers: std::mem::take(&mut trail.pointers),
+            follow: None,
         })
     }
 
@@ -509,6 +511,7 @@ impl Trail {
         let at = self.pointers.split_last().and_then(|(pointer, before)| {
             Location {
                 pointers: before.to_vec(),
+                follow: None,
                 ..pointer.clone()
             }
             .display_path()

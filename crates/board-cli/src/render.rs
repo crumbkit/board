@@ -520,11 +520,15 @@ fn location(location: &Location, display: &str) -> Value {
             .pointers
             .iter()
             .map(|pointer| {
-                json!({
+                let mut value = json!({
                     "repository": pointer.board.repository.to_string_lossy(),
                     "source": source_name(&pointer.board.source),
                     "path": pointer.path,
-                })
+                });
+                if let (Some(follow), Some(object)) = (&pointer.follow, value.as_object_mut()) {
+                    object.insert("follow".to_owned(), json!(follow));
+                }
+                value
             })
             .collect();
         object.insert("pointers".to_owned(), Value::Array(pointers));

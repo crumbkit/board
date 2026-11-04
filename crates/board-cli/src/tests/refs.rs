@@ -455,3 +455,30 @@ fn a_target_changed_after_the_check_has_its_code_and_no_values_in_json_and_its_t
         serde_json::json!([{"pointer": "/status", "absent": true}])
     );
 }
+
+#[test]
+fn a_mount_pointer_in_a_location_names_the_ref_it_follows_and_a_link_pointer_names_none() {
+    let library = Scenario::new();
+    let commit = library.commit(&[("README.md", "L.\n")]);
+    let scenario = board();
+    scenario
+        .write(
+            "repos/lib.json",
+            Item::File(&board_scenario::seed::mount_of(&library.path(), commit)),
+        )
+        .write(
+            "links/l.json",
+            Item::File(r#"{"$type": "board/mount/v1", "path": "/repos/lib"}"#),
+        );
+    let pointers = |path: &str| {
+        let output = board_in(scenario.workdir(), &["--json", "refs", path]);
+        json(&output)["data"][0]["location"]["pointers"].clone()
+    };
+    let mounted = pointers("/repos/lib");
+    assert_eq!(mounted[0]["path"], "repos/lib.json");
+    assert_eq!(mounted[0]["follow"], "main");
+    let linked = pointers("/links/l");
+    assert_eq!(linked[0]["path"], "links/l.json");
+    assert!(linked[0].get("follow").is_none(), "{linked}");
+    assert_eq!(linked[1]["follow"], "main");
+}

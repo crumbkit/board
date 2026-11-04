@@ -80,6 +80,7 @@ fn a_failed_read_marks_the_decision_unkeepable_and_a_later_read_that_succeeds_do
             path: path.to_owned(),
             object: Object::Blob(blob),
             pointers: Vec::new(),
+            follow: None,
         };
         decide.record_type(&location).unwrap()
     };

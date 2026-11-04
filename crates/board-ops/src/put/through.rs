@@ -101,6 +101,7 @@ impl Board {
                 path: crossing.inside.file.clone(),
                 object: Object::Blob(blob),
                 pointers: Vec::new(),
+                follow: None,
             });
             writes.push(Written {
                 display: location
