@@ -1,0 +1,41 @@
+{
+  "additionalProperties": false,
+  "description": "`controls/source/v1`: an outside source a control cites through its\n`sources`, so one note serves every control that cites it.",
+  "properties": {
+    "$type": {
+      "const": "controls/source/v1",
+      "description": "The record's type.",
+      "type": "string"
+    },
+    "read_on": {
+      "description": "The day the source was read.",
+      "format": "date",
+      "type": "string"
+    },
+    "title": {
+      "description": "The source's title.",
+      "type": "string",
+      "x-board-prose": true
+    },
+    "url": {
+      "description": "Where the source is published.",
+      "format": "uri",
+      "pattern": "^https?://([^/?#@]*@)?[^/?#@:][^/?#@]*([/?#]|$)",
+      "type": "string"
+    },
+    "why": {
+      "description": "Why the source matters to the controls that cite it.",
+      "type": "string",
+      "x-board-prose": true
+    }
+  },
+  "required": [
+    "$type",
+    "url",
+    "title",
+    "read_on",
+    "why"
+  ],
+  "title": "SourceRecord",
+  "type": "object"
+}

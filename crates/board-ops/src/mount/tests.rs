@@ -247,3 +247,27 @@ fn a_mount_update_refused_as_stale_names_what_it_found_and_one_refused_otherwise
     );
     assert!(other.fields.is_empty());
 }
+
+#[test]
+fn a_repo_record_moves_its_checkout_commit_to_its_follow_and_keeps_its_remote() {
+    let library = Scenario::new();
+    let old = library.commit(&[("a.md", "one")]);
+    let new = library.commit(&[("a.md", "two")]);
+    let scenario = board();
+    let record = format!(
+        r#"{{"$type": "board/repo/v1", "remote": "example-org/lib", "checkout": {{"repo": "{}", "follow": "main", "commit": "{old}"}}}}"#,
+        library.path()
+    );
+    scenario
+        .write(
+            ".board/board.json",
+            Item::File(r#"{"$type": "board/config/v1", "commit_on_put": false}"#),
+        )
+        .write("repos/lib.json", Item::File(&record));
+    let report = update(&scenario, "/repos/lib").unwrap();
+    assert_eq!((report.old, report.new, report.wrote), (old, new, true));
+    let written = parse_json(&file(&scenario, "repos/lib.json")).unwrap();
+    assert_eq!(written["checkout"]["commit"], new.to_string());
+    assert_eq!(written["remote"], "example-org/lib");
+    assert!(written.get("commit").is_none());
+}
