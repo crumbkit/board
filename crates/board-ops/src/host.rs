@@ -10,6 +10,7 @@ use std::time::SystemTime;
 use board_model::{CapabilityName, Code, Fields, LogicalPath, PluginName, RecordType, Refusal};
 use board_plugin::child::{Exited, Process, ProcessError};
 use board_plugin::{CallReport, Manifest, Target};
+pub use board_tree::Origin;
 use serde::de::DeserializeOwned;
 use serde_json::{Map, Value};
 
@@ -80,6 +81,23 @@ pub trait Host {
         shown: Option<&Shown>,
     ) -> Result<DecideReport, Box<Refusal>>;
     fn settings(&self) -> &Settings;
+    /// The `origin` of the git repository holding the caller's directory,
+    /// as `git remote get-url origin` there gives it, read from git's
+    /// config so no process starts. Without a caller, or outside a
+    /// repository, it is [`Origin::Outside`]; a repository that gives no
+    /// origin is [`Origin::Unread`], saying why.
+    fn caller_remote(&self) -> Origin {
+        let Some(directory) = &self.settings().caller else {
+            return Origin::Outside;
+        };
+        match board_tree::origin(directory) {
+            Origin::Unread(why) => Origin::Unread(format!(
+                "git gave no origin for {}: {why}",
+                directory.display()
+            )),
+            read => read,
+        }
+    }
     /// Runs `run` through board-plugin's process module with the settings'
     /// `environment` and nothing else, as the leader of its own process
     /// group. Every process still in the group is killed when it exits, past

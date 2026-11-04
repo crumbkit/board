@@ -1,8 +1,5 @@
 # share
 
-This plugin is still a Python program (docs/plugins/python.md). A new plugin
-is a crate built into Board (docs/plugins/built-in/writing.md).
-
 A Board plugin that copies a record from a board into a board it mounts, such
 as a team's, with everything a reader there needs to open it. The source keeps
 its record. [docs/plugins/share.md](../../docs/plugins/share.md) holds the
@@ -75,7 +72,7 @@ refuses in its `paths` field.
 | `share::path::not_found` | `path` names nothing in this board's own tree |
 | `share::mount::not_found` | `to` is not the mount record of another repository: it reaches no board, mounts this board's own repository, or is a path inside a mount, a mount inside a mounted board or a link to a mount |
 | `share::link::unsupported` | a link, such as a `board/mount/v1` record, is in the set; a batch would write a copy of its target in its place |
-| `share::record::invalid` | a record in the set carries a code other than a broken reference's, so `board put` would refuse it |
+| `share::record::invalid` | a record in the set carries a code other than a broken reference's, so `board put` would refuse it, or a schema it needs stopped parsing after the set was read |
 | `share::closure::unresolved` | a reference through a mount or link does not resolve into the same repository in the destination |
 | `share::file::unsupported` | a file in the set is not UTF-8, or is a `.json` file without `$type`, which a batch line cannot write |
 | `share::attachment::local` | an attachment's `location` is a path on this machine, without `local_attachments` |
@@ -89,20 +86,23 @@ branch, when its board does not commit on put, or when a path changed in the
 mounted board since the pin. Then `refusals` lists each refused batch line
 with its code and a message naming the path.
 
-## Installing
+## Enabling
 
-    uv sync --frozen --no-dev
-    ln -s "$PWD" "${XDG_DATA_HOME:-$HOME/.local/share}/board/plugins/share"
+Board has the plugin built in, so nothing is installed:
+
     board plugin enable share
 
-The plugin ships no types. `SKILL.md` holds the steps an agent follows.
+The plugin ships no types. An older install at
+`${XDG_DATA_HOME:-$HOME/.local/share}/board/plugins/share` makes `call` and
+`plugin enable` fail with `board::plugin::duplicate`. Remove it; it is
+usually a symlink to a checkout, so remove the link, not the checkout.
+`SKILL.md` holds the steps an agent follows.
 
 ## Developing
 
-The gates, which CI runs: `uv run ruff format --check .`, `uv run ruff check .`,
-`uv run pyright` and `uv run pytest`. The tests drive `$BOARD_BIN`, by default
-the workspace's `target/debug/board`, so build it first with
-`cargo build -p board-cli`. They share records of the evals plugin's types
-from a personal board into a mounted team board, both real git repositories.
-`plugin.json` is generated from `src/board_share/models.py` by
-`board_share.manifest`, and a test checks that the committed file matches.
+The plugin is the crate `crates/board-plugin-share`. It generates the
+manifest's input and output schemas from Rust structs with schemars. The
+tests of the plugin through the binary are in
+`crates/board-cli/src/tests/built_in/share.rs` and `share/refusals.rs`. They
+share records of the evals and runs plugins' types from a board into a
+mounted team board, both real git repositories.

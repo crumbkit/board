@@ -23,9 +23,12 @@ github.pre-push disabled Run by the pre-push hook: check the refs git pushes as 
 github.covers disabled Name the boundaries that cover a git push or gh write from the checkout, and where it goes, checking nothing and writing nothing.
 jira.ref disabled Write the issue at /jira/<site>/<key> with its title, read once through acli, unless a record is already there.
 plans.open disabled The questions under a path whose status is open, oldest first.
+prompts.get disabled Read one prompt at its pin and render its body and runs_in with the input values given on stdin.
+prompts.list disabled List the prompts in the board's own tree and the marked repos the caller's remote chooses, at their pins, by repo then title.
 requests.thread disabled Every version of the effect's request, oldest first, with its answer, and the owner's replies to them, oldest first.
 runs.latest disabled The latest full run of a clean revision of a suite, with its outcome, measures, failed cases and age, or null when no run qualifies.
 runs.trend disabled One measure of a suite, or of one of its cases, over its full runs of clean revisions, newest first.
+share.to disabled Copy a record, its children, everything they reference and the schemas it lacks into a mounted board, as one commit there, and move the mount's pin to it.
 tasks.available disabled Sync the repos the caller's remote chooses, then list their open tasks available now, those due within seven days, the stale ones, and those an owner holds.
 tasks.tree disabled List a task and its descendants in every status, nested by title, or with --root every top-level tree in the repos the caller's remote chooses, read at their pins.
 tasks.add disabled Write a new open task to tasks/<slug>.md in the repo the caller's remote routes to. It syncs the task's repo first and pushes after, and sets reviewed.

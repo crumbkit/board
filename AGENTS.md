@@ -14,6 +14,8 @@ run the ui part, which needs Docker. CI runs the same scripts on
 Linux, split across parallel jobs. A slow lane runs them on macOS weekly and
 before each release, without the ui part, which CI runs on Linux. The slow lane also runs fuzzing, timing and mutants nightly.
 STANDARDS.md lists what they enforce and the rules they cannot.
+The check suite is `/suites/board-gates`, which runs these gates on the commit
+under test.
 
 ## Rules tooling cannot enforce
 

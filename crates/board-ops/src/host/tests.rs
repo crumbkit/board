@@ -841,6 +841,86 @@ fn a_built_in_resolves_and_reads_paths_as_refs_and_get_do_and_a_missing_path_is_
     assert_eq!(output["read"], json!(["a\n", "board::path::not_found"]));
 }
 
+/// A host whose only setting that matters is the caller's directory.
+struct Caller(Settings);
+
+impl Caller {
+    fn at(caller: Option<&std::path::Path>) -> Self {
+        Self(Settings {
+            now: UNIX_EPOCH,
+            day_start: None,
+            caller: caller.map(std::path::Path::to_path_buf),
+            environment: Variables::default(),
+            cache_home: None,
+        })
+    }
+}
+
+impl Host for Caller {
+    fn query(&self, _: &str, _: Limit) -> Result<QueryReport, QueryError> {
+        unreachable!("caller_remote reads no query")
+    }
+    fn refs(
+        &self,
+        _: &[LogicalPath],
+        _: Absent,
+    ) -> Result<Vec<Result<RefsReport, RefsError>>, RefsError> {
+        unreachable!("caller_remote reads no refs")
+    }
+    fn get_each(&self, _: &[LogicalPath]) -> Result<Vec<Result<GetReport, ReadError>>, ReadError> {
+        unreachable!("caller_remote reads no paths")
+    }
+    fn put(&self, _: &[Value]) -> Result<PutReport, PutError> {
+        unreachable!("caller_remote writes nothing")
+    }
+    fn call(&self, _: &Target, _: &Value) -> Result<CallReport, Box<Refusal>> {
+        unreachable!("caller_remote calls no plugin")
+    }
+    fn board(&self, _: &Elsewhere) -> Result<Box<dyn Host + '_>, Box<Refusal>> {
+        unreachable!("caller_remote opens no board")
+    }
+    fn decide(
+        &self,
+        _: &str,
+        _: &LogicalPath,
+        _: Option<&Shown>,
+    ) -> Result<DecideReport, Box<Refusal>> {
+        unreachable!("caller_remote asks no owner")
+    }
+    fn settings(&self) -> &Settings {
+        &self.0
+    }
+}
+
+#[test]
+fn the_callers_remote_is_its_repositorys_origin_and_none_outside_a_repository_or_without_a_caller()
+{
+    let outside = tempfile::tempdir().unwrap();
+    let remote = |caller: Option<&std::path::Path>| Caller::at(caller).caller_remote();
+    assert_eq!(remote(None), Origin::Outside);
+    assert_eq!(remote(Some(outside.path())), Origin::Outside);
+    let repository = Scenario::new();
+    let config = "[remote \"origin\"]\n\turl = git@github.com:acme/x.git\n";
+    repository.write(".git/config", Item::Appended(config));
+    let url = Origin::Url("git@github.com:acme/x.git".to_owned());
+    assert_eq!(remote(Some(repository.workdir())), url);
+}
+
+#[test]
+fn a_caller_repository_without_origin_says_why_as_git_would_and_its_twin_with_one_gives_it() {
+    let (bare, originated) = (Scenario::new(), Scenario::new());
+    let config = "[remote \"origin\"]\n\turl = https://github.com/acme/x\n";
+    originated.write(".git/config", Item::Appended(config));
+    let remote = |at: &Scenario| Caller::at(Some(at.workdir())).caller_remote();
+    let why = format!(
+        "git gave no origin for {}: error: No such remote 'origin'",
+        bare.workdir().display()
+    );
+    assert_eq!(remote(&bare), Origin::Unread(why));
+    let url = Origin::Url("https://github.com/acme/x".to_owned());
+    assert_eq!(remote(&originated), url);
+}
+
 #[test]
 fn a_cache_place_is_plain_names_under_the_cache_home_and_none_without_one() {
     let mut settings = Settings {

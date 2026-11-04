@@ -1,16 +1,17 @@
 # Writing a built-in plugin
 
 This file holds detail for docs/plugins/built-in.md. `artifacts`, `boundary`,
-`controls`, `evals`, `github`, `jira`, `plans`, `requests` and `runs` are
-built-in crates; `controls` (#48) shows a Python plugin ported with its output,
-messages and codes unchanged.
+`controls`, `evals`, `github`, `jira`, `plans`, `prompts`, `requests`, `runs`
+and `share` are built-in crates; `controls` (#48) shows a Python plugin ported
+with its output, messages and codes unchanged.
 
 ## What a built-in plugin can do
 
 A built-in plugin reads and writes the board through `Host` and nothing
 else: `query`, `refs`, `get_each`, `put`, `call`, `board`, `decide`,
-`settings` and `run` (docs/plugins/built-in.md). It writes records only with `put`, which takes
-the lines a Python plugin gives `board put --batch`, and maps its error with
+`settings`, `caller_remote` and `run` (docs/plugins/built-in.md). It
+writes records only with `put`, which takes the lines a Python plugin
+gives `board put --batch`, and maps its error with
 `PluginError::board_refused(<name>, "put --batch", &error.refusal())`; a
 refused `call` or `decide` maps the same way, with `"call"` or `"decide"`.
 It starts a process only with `run`, which gives
