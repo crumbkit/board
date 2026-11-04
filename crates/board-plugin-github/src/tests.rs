@@ -167,21 +167,46 @@ fn the_manifest_parses_as_a_built_in_one_and_describes_the_plugin_with_the_skill
             "covers"
         ]
     );
-    let declared = |index: usize| super::manifest()["capabilities"][index]["env"].clone();
-    assert_eq!(
-        declared(0),
-        json!(["GH_TOKEN", "GITHUB_TOKEN", "GH_CONFIG_DIR"])
-    );
-    assert_eq!(declared(1), json!(SEND_ENV));
-    assert_eq!(declared(6), Value::Null);
-    assert_eq!(declared(8), json!(["GIT_SSH_COMMAND", "GIT_SSH"]));
-    let pre_push = declared(7);
-    assert!(
-        pre_push
-            .as_array()
-            .unwrap()
-            .contains(&json!("BOARD_GITHUB_PUSH_URL"))
-    );
+    let declared: Vec<(Value, Value)> = (super::manifest()["capabilities"].as_array())
+        .unwrap()
+        .iter()
+        .map(|capability| (capability["name"].clone(), capability["env"].clone()))
+        .collect();
+    let gh = json!(["GH_TOKEN", "GITHUB_TOKEN", "GH_CONFIG_DIR"]);
+    let send = json!([
+        "GH_TOKEN",
+        "GITHUB_TOKEN",
+        "GH_CONFIG_DIR",
+        "BOARD_CONTROLS_AGENT",
+        "ANTHROPIC_API_KEY",
+        "CLAUDE_CODE_OAUTH_TOKEN",
+        "SSH_AUTH_SOCK"
+    ]);
+    let pre_push = json!([
+        "GH_TOKEN",
+        "GITHUB_TOKEN",
+        "GH_CONFIG_DIR",
+        "BOARD_CONTROLS_AGENT",
+        "ANTHROPIC_API_KEY",
+        "CLAUDE_CODE_OAUTH_TOKEN",
+        "SSH_AUTH_SOCK",
+        "BOARD_GITHUB_PUSH_URL",
+        "GIT_SSH_COMMAND",
+        "GIT_SSH"
+    ]);
+    let expected = [
+        ("ref", gh),
+        ("push", send.clone()),
+        ("pr-create", send.clone()),
+        ("pr-edit", send.clone()),
+        ("comment", send.clone()),
+        ("issue-create", send),
+        ("install-hook", Value::Null),
+        ("pre-push", pre_push),
+        ("covers", json!(["GIT_SSH_COMMAND", "GIT_SSH"])),
+    ]
+    .map(|(name, env)| (json!(name), env));
+    assert_eq!(declared, expected);
     assert_eq!(super::manifest()["capabilities"][1]["timeout"], 2400);
     assert_eq!(super::manifest()["description"], skill_description());
 }
