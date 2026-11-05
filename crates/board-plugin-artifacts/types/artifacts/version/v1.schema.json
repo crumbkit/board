@@ -25,7 +25,7 @@
     }
   },
   "additionalProperties": false,
-  "description": "`artifacts/version/v1` at `/artifacts/<id>/versions/<key>`: one version,\nwritten once.\n\nThe page is beside it as `<key>.html` or `<key>.md`. `<key>` is\n`version`, the version id the Artifact tool returned, or, when it\nreturned none, the first 16 hex digits of `sha256`, and the record leaves\n`version` out. `title` and `description` are the artifact's at this\nversion. A version with no local page, such as one an Artifact type\nwrote, has no copy and says `copy: \"none\"`, and then has no `sha256`.",
+  "description": "`artifacts/version/v1` at `/artifacts/<id>/versions/<key>`: one version,\nwritten once.\n\nThe page is beside it as `<key>.html` or `<key>.md`. `<key>` is\n`version`, the version id the Artifact tool returned, or, when it\nreturned none, the first 16 hex digits after `sha256:` in `sha256`, and the record leaves\n`version` out. `title` and `description` are the artifact's at this\nversion. A version with no local page, such as one an Artifact type\nwrote, has no copy and says `copy: \"none\"`, and then has no `sha256`.",
   "else": {
     "required": [
       "sha256"
@@ -64,7 +64,7 @@
       "x-board-prose": true
     },
     "sha256": {
-      "description": "The SHA-256 of the page copied beside this record, in hex.",
+      "description": "The digest of the page copied beside this record.",
       "pattern": "^sha256:[0-9a-f]{64}$",
       "type": "string"
     },
