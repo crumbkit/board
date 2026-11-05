@@ -1,5 +1,6 @@
 //! The plugins built into the binary, run in-process: boundary, controls,
-//! plans, prompts, requests, evals, runs and share, beside installed plugins.
+//! plans, prompts, requests, evals, review, runs and share, beside installed
+//! plugins.
 
 use std::collections::BTreeMap;
 
@@ -770,6 +771,7 @@ mod jira;
 mod notes;
 mod plans;
 mod prompts;
+mod review;
 mod runs;
 mod share;
 mod tasks;

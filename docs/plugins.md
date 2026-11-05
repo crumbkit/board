@@ -221,7 +221,7 @@ comes right after the alias; a flag in its place is a usage error.
 
 A new plugin is a built-in crate, never a Python program
 ([plugins/built-in/writing.md](plugins/built-in/writing.md)).
-[plugins/python.md](plugins/python.md) describes the plugins still in
+[plugins/python.md](plugins/python.md) describes the plugin still in
 Python. Each `plugins/<name>/` README describes its records and
 capabilities. [plugins/share.md](plugins/share.md) explains `share`, and
 [plugins/claude-code.md](plugins/claude-code.md) covers Claude Code mods,

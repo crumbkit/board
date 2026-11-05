@@ -25,6 +25,8 @@ pub const BUILT_IN: BuiltIn = BuiltIn(&[
     &board_plugin_prompts::Prompts,
     #[cfg(feature = "requests")]
     &board_plugin_requests::Requests,
+    #[cfg(feature = "review")]
+    &board_plugin_review::Review,
     #[cfg(feature = "runs")]
     &board_plugin_runs::Runs,
     #[cfg(feature = "share")]

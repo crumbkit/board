@@ -8,6 +8,7 @@ ok notes 0.1.0 disabled offers add, daily
 ok plans 0.1.0 disabled offers open
 ok prompts 0.1.0 disabled offers get, list
 ok requests 0.1.0 disabled offers thread
+ok review 0.2.0 disabled offers run, post, covered
 ok runs 0.1.0 disabled offers latest, trend
 ok share 0.1.0 disabled offers to
 ok tasks 0.4.0 disabled offers available, tree, add, claim, done, defer, drop, reviewed, move

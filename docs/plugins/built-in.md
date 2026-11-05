@@ -2,7 +2,7 @@
 
 This file holds detail for docs/plugins.md. It says how a plugin compiled into
 Board is called. `artifacts`, `boundary`, `controls`, `plans`, `evals`, `runs`,
-`github`, `jira`, `notes`, `prompts`, [`share`](share.md), `tasks` and
+`github`, `jira`, `notes`, `prompts`, `review`, [`share`](share.md), `tasks` and
 [`requests`](built-in/requests.md) are built in.
 [built-in/writing.md](built-in/writing.md) says how to write one.
 
