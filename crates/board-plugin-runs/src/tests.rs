@@ -100,7 +100,7 @@ fn the_shipped_schemas_refuse_a_misshapen_record_and_admit_its_twin() {
     };
     let a_run = |fields| {
         let record = json!({
-            "$type": "runs/run/v1", "suite": "/suites/a", "by": {"program": "claude"},
+            "$type": "runs/run/v1", "suite": "/suites/a", "by": {"program": "claude-code"},
             "started": "2026-10-01T09:00:00Z", "scope": "full", "results": [],
         });
         with(record, fields)
@@ -206,6 +206,11 @@ fn subjects_and_by_take_the_shared_subject_and_actor_shapes() {
             a_run(Some(json!({"session": "local_0a1b"}))),
         ),
         (&run, a_run(Some(json!({}))), a_run(None)),
+        (
+            &suite,
+            a_suite(json!([])),
+            json!({"$type": "runs/suite/v1", "method": "Run it."}),
+        ),
     ] {
         assert_eq!(
             schema.validate(&refused).unwrap_err().code(),

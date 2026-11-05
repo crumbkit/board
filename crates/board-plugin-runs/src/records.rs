@@ -18,15 +18,21 @@ use serde_json::{Map, Value};
 #[serde(deny_unknown_fields)]
 #[schemars(
     title = "SuiteRecord",
-    description = "`runs/suite/v1`: what gets run, how, and what a run of it measures.\n\nA suite's name is its path: the suite at `/suites/<name>.json` is\n`<name>`, and its runs sit in `/suites/<name>/runs/`. `subjects` name what\nis tested: a repository as `owner/name`, or a board path. `cases` lists the cases inline, or `cases_file`\nreferences a file that does; a suite whose cases are found when it runs,\nsuch as a test suite, has neither.",
+    description = "`runs/suite/v1`: what gets run, how, and what a run of it measures.\n\nA suite's name is its path: the suite at `/suites/<name>.json` is\n`<name>`, and its runs sit in `/suites/<name>/runs/`. `subjects`, when\npresent, name what is tested: a repository as `owner/name`, or a board path. `cases` lists the cases inline, or `cases_file`\nreferences a file that does; a suite whose cases are found when it runs,\nsuch as a test suite, has neither.",
     extend("not" = {"required": ["cases", "cases_file"]})
 )]
 pub struct SuiteRecord {
     #[serde(rename = "$type")]
     #[schemars(title = "$Type")]
     pub tag: Tag<Self>,
-    #[schemars(title = "Subjects", with = "Vec<Subject>", length(min = 1))]
-    pub subjects: Vec<String>,
+    // A suite may test no named subject, such as one named only for itself.
+    #[schemars(
+        title = "Subjects",
+        with = "Option<Vec<Subject>>",
+        length(min = 1),
+        extend("type" = "array")
+    )]
+    pub subjects: Option<Vec<String>>,
     #[schemars(title = "Method")]
     pub method: String,
     // A field left out admits no null: `type` replaces Option's `["string", "null"]`.

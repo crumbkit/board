@@ -37,7 +37,8 @@ pub(crate) struct ClaimInput {
     pub(crate) person: Option<String>,
 }
 
-/// Sets the task's owner, refused when another owner holds it.
+/// Sets the task's owner, refused when another owner holds it. An owner
+/// with the same session as the one that holds it is the same owner.
 pub(crate) fn claim(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
     let given: ClaimInput = PluginError::read_input(PLUGIN, "claim", input)?;
     let owner = Actor::of(given.session, given.program, given.person);
@@ -52,11 +53,15 @@ pub(crate) fn claim(host: &dyn Host, input: &Value) -> Result<Value, PluginError
             [("path", json!(given.path))],
         ));
     };
+    let same = |held: &Value| {
+        serde_json::from_value::<Actor>(held.clone()).is_ok_and(|held| held.same(&owner))
+    };
     let owner = json!(owner);
     let change = |record: &Map<String, Value>, _: Date| -> Result<Values, PluginError> {
         match record.get("owner") {
             None | Some(Value::Null) => {}
-            Some(held) if *held == owner => {}
+            // The same session claims again: the owner it was given stays.
+            Some(held) if same(held) => return Ok(vec![("owner", Some(held.clone()))]),
             Some(held) => {
                 let path = &given.path;
                 let shown = held

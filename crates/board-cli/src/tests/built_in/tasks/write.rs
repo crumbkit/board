@@ -267,6 +267,30 @@ fn an_owner_part_outside_its_grammar_is_refused_by_available_and_claim_and_its_t
     }
 }
 
+/// An owner with the same session is the same owner however else it is
+/// described, so its claim keeps the owner as it was given and `available`
+/// lists the task; another session is refused.
+#[test]
+fn a_claim_by_another_session_is_refused_and_one_by_the_same_session_with_fewer_parts_is_admitted()
+{
+    let tasks = Tasks::new();
+    let held = json!({"session": "local_0a1b", "program": "claude-code"});
+    tasks.write("tasks/a.md", &open("A", json!({"owner": held})));
+    let refused = tasks.refused("claim", &["--path", "/tasks/a.md", "--session", "local_0c"]);
+    assert_eq!(refused["code"], "tasks::task::held");
+    let session = ["--session", "local_0a1b"];
+    let output = tasks.call(
+        "claim",
+        &[&["--path", "/tasks/a.md"][..], &session].concat(),
+    );
+    assert_eq!(output.unwrap()["owner"], held);
+    let listed = tasks.call("available", &session).unwrap();
+    let titles: Vec<&Value> = (listed["available"]["tasks"].as_array().unwrap().iter())
+        .map(|task| &task["title"])
+        .collect();
+    assert_eq!(titles, [&json!("A")]);
+}
+
 #[test]
 fn a_claim_that_names_nobody_is_refused_and_one_naming_a_program_is_admitted() {
     let tasks = Tasks::new();

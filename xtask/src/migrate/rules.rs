@@ -10,7 +10,7 @@ use serde_json::{Map, Value, json};
 pub(crate) enum Outcome {
     /// The field was rewritten to its new shape.
     Changed(&'static str),
-    /// An optional actor named nobody a reader can parse, so the field went.
+    /// An optional actor held only blank text, so the field went.
     Dropped(&'static str, String),
     /// The old value maps to nothing, so it was left for a person to fix.
     Unmapped(&'static str, String),
@@ -18,23 +18,42 @@ pub(crate) enum Outcome {
 
 /// The `--map` file: an old string to the value that replaces it, an actor
 /// object or a subject string.
+#[derive(Default)]
 pub(crate) struct Context {
     map: Map<String, Value>,
 }
 
 impl Context {
-    pub(crate) fn new(map: Value) -> Self {
+    /// The map `map`, or the first key whose value is neither an `Actor` nor
+    /// a `Subject`, so a bad entry is refused before anything is written.
+    pub(crate) fn new(map: Value) -> Result<Self, String> {
         let Value::Object(map) = map else {
-            return Self { map: Map::new() };
+            return Ok(Self { map: Map::new() });
         };
-        Self { map }
+        let shapes = board_plugin::shape::registry();
+        let compiled = |name: &str| {
+            let schema = shapes.get(name).cloned().unwrap_or(Value::Null);
+            board_validate::Schema::compile(schema).ok()
+        };
+        let (Some(actor), Some(subject)) = (compiled("Actor"), compiled("Subject")) else {
+            return Err(String::new());
+        };
+        for (key, value) in &map {
+            let shape = if value.is_object() { &actor } else { &subject };
+            if shape.validate(value).is_err() {
+                return Err(key.clone());
+            }
+        }
+        Ok(Self { map })
     }
 }
 
-/// Rewrites the record `value` in place. `mount` gives the GitHub
-/// `owner/name` of the repository a board mounts at `/repos/<name>`.
+/// Rewrites the record `value`, whose file is named `name` without its
+/// extension, in place. `mount` gives the GitHub `owner/name` of the
+/// repository a board mounts at `/repos/<name>`.
 pub(crate) fn record(
     value: &mut Value,
+    name: &str,
     context: &Context,
     mount: &dyn Fn(&str) -> Option<String>,
 ) -> Vec<Outcome> {
@@ -49,15 +68,15 @@ pub(crate) fn record(
     match kind.as_str() {
         "plans/question/v1" => renamed(
             record,
-            "session",
             "plans/question/v1.session",
+            true,
             context,
             &mut outcomes,
         ),
         "plans/decision/v1" => renamed(
             record,
-            "session",
             "plans/decision/v1.session",
+            false,
             context,
             &mut outcomes,
         ),
@@ -75,14 +94,14 @@ pub(crate) fn record(
         }
         "evals/eval/v1" => subjects(
             record,
-            "evals/eval/v1.subjects",
+            ("evals/eval/v1.subjects", name, false),
             context,
             mount,
             &mut outcomes,
         ),
         "runs/suite/v1" => subjects(
             record,
-            "runs/suite/v1.subjects",
+            ("runs/suite/v1.subjects", name, true),
             context,
             mount,
             &mut outcomes,
@@ -108,9 +127,9 @@ pub(crate) fn record(
     outcomes
 }
 
-/// A task's owner, which becomes an actor. An owner holds a claim, so one
-/// that names nobody is left for a person to map rather than dropped, which
-/// would free the task.
+/// A task's owner, which becomes an actor. An owner holds a claim, so a
+/// blank one is left for a person to fix rather than dropped, which would
+/// free the task.
 fn owner(record: &mut Map<String, Value>, context: &Context, outcomes: &mut Vec<Outcome>) {
     let Some(Value::String(owner)) = record.get("owner") else {
         return;
@@ -129,7 +148,8 @@ fn version(record: &mut Map<String, Value>, context: &Context, outcomes: &mut Ve
     // The released artifacts mod wrote the session's bare uuid, which
     // names no `local_` session; the mod is the program that wrote it.
     if let Some(Value::String(session)) = record.remove("session") {
-        let by = actor(&session, context).unwrap_or_else(|| json!({"program": "claude-code"}));
+        let by = (actor(&session, context).filter(|by| by.get("session").is_some()))
+            .unwrap_or_else(|| json!({"program": "claude-code"}));
         record.insert("by".into(), by);
         outcomes.push(Outcome::Changed("artifacts/version/v1.session"));
     }
@@ -142,7 +162,7 @@ fn seen(record: &mut Map<String, Value>, outcomes: &mut Vec<Outcome>) {
         .map(|effect| effect.rsplit('/').next().unwrap_or(effect).to_owned());
     let field = "board/seen/v1.effect";
     match (record.get("effect").and_then(Value::as_str), id) {
-        (Some(effect), _) if effect.starts_with("sha256:") => {}
+        (Some(effect), _) if effect.strip_prefix("sha256:").is_some_and(hex) => {}
         (_, Some(id)) if hex(&id) => {
             record.insert("effect".into(), Value::String(format!("sha256:{id}")));
             outcomes.push(Outcome::Changed(field));
@@ -152,20 +172,22 @@ fn seen(record: &mut Map<String, Value>, outcomes: &mut Vec<Outcome>) {
     }
 }
 
-/// A required actor stored as the string `old`, which becomes `by`.
+/// A required actor stored as the string `session`, which becomes `by`.
+/// When `session` is true the actor must hold a session, so one without is
+/// left for a person to map.
 fn renamed(
     record: &mut Map<String, Value>,
-    old: &str,
     field: &'static str,
+    session: bool,
     context: &Context,
     outcomes: &mut Vec<Outcome>,
 ) {
-    let Some(Value::String(text)) = record.get(old) else {
+    let Some(Value::String(text)) = record.get("session") else {
         return;
     };
-    match actor(text, context) {
+    match actor(text, context).filter(|by| !session || by.get("session").is_some()) {
         Some(by) => {
-            record.remove(old);
+            record.remove("session");
             record.insert("by".into(), by);
             outcomes.push(Outcome::Changed(field));
         }
@@ -173,8 +195,8 @@ fn renamed(
     }
 }
 
-/// An optional actor stored as a string in `key`, which goes when it names
-/// nobody.
+/// An optional actor stored as a string in `key`, which goes only when it
+/// is blank.
 fn optional(
     record: &mut Map<String, Value>,
     key: &str,
@@ -194,9 +216,14 @@ fn optional(
     }
 }
 
+/// The subjects of the record named `name`: each that is a `Subject`
+/// stays, the map or a mount's repository replaces the rest, and a repeat
+/// goes. A record is not its own subject, so its own name goes, and a
+/// suite left with no subject has none. An eval must have a subject, so an
+/// eval whose only subject is its own name keeps it and it is reported.
 fn subjects(
     record: &mut Map<String, Value>,
-    field: &'static str,
+    (field, name, optional): (&'static str, &str, bool),
     context: &Context,
     mount: &dyn Fn(&str) -> Option<String>,
     outcomes: &mut Vec<Outcome>,
@@ -204,7 +231,17 @@ fn subjects(
     let Some(Value::Array(subjects)) = record.get_mut("subjects") else {
         return;
     };
-    for entry in subjects {
+    let own = |entry: &Value| entry.as_str() == Some(name) && !context.map.contains_key(name);
+    let only = subjects.iter().all(own);
+    if subjects.iter().any(own) && (optional || !only) {
+        subjects.retain(|entry| !own(entry));
+        outcomes.push(Outcome::Changed(field));
+    }
+    if subjects.is_empty() {
+        record.remove("subjects");
+        return;
+    }
+    for entry in subjects.iter_mut() {
         let Value::String(text) = entry else {
             continue;
         };
@@ -225,10 +262,20 @@ fn subjects(
             None => outcomes.push(Outcome::Unmapped(field, text.clone())),
         }
     }
+    // A name the map or a mount resolved may repeat a subject already there.
+    let mut kept = Vec::new();
+    subjects.retain(|entry| {
+        let first = !kept.contains(entry);
+        if first {
+            kept.push(entry.clone());
+        }
+        first
+    });
 }
 
 /// A hash in `key` that is bare hex, which gains its `sha256:` prefix. A
-/// value that is neither is reported.
+/// value that is neither bare hex nor a digest, such as `sha256:ab`, is
+/// reported.
 fn digest(
     record: &mut Map<String, Value>,
     key: &str,
@@ -238,7 +285,7 @@ fn digest(
     let Some(text) = record.get(key).and_then(Value::as_str) else {
         return;
     };
-    if text.starts_with("sha256:") {
+    if text.strip_prefix("sha256:").is_some_and(hex) {
         return;
     }
     if !hex(text) {
@@ -252,11 +299,16 @@ fn digest(
 }
 
 /// The actor the old text names: its `local_` session, the program its
-/// words name (Codex, or Claude and its subagents), and Luke. The map's
-/// entry for the text wins.
+/// words name (Codex, or Claude and its subagents), and Luke. The whole
+/// text is the agent's name when it names a program and is more than the
+/// program's name, or when it names no part at all. The map's entry for
+/// the text wins, and blank text names nobody.
 pub(crate) fn actor(text: &str, context: &Context) -> Option<Value> {
     if let Some(mapped) = context.map.get(text).filter(|value| value.is_object()) {
         return Some(mapped.clone());
+    }
+    if text.trim().is_empty() {
+        return None;
     }
     let mut actor = Map::new();
     let session = text
@@ -283,7 +335,12 @@ pub(crate) fn actor(text: &str, context: &Context) -> Option<Value> {
     if named("luke") {
         actor.insert("person".into(), json!("luke"));
     }
-    (!actor.is_empty()).then_some(Value::Object(actor))
+    let bare = ["codex", "claude", "claude-code", "claude code"]
+        .contains(&text.trim().to_ascii_lowercase().as_str());
+    if (actor.contains_key("program") && !bare) || actor.is_empty() {
+        actor.insert("agent".into(), json!(text.trim()));
+    }
+    Some(Value::Object(actor))
 }
 
 /// Whether `text` is a `Subject`: an `owner/name` repository or a board path.

@@ -60,7 +60,9 @@ together, so update a board in this order:
 1. Install the new Board.
 2. Run `cargo xtask migrate-shapes <board>`, read what it could not map,
    and write a `--map <file>` that maps each such old string to an actor
-   object or a subject.
+   object or a subject. It refuses a map value outside those shapes. An
+   actor name it cannot parse becomes the actor's `agent`, so it drops no
+   attribution, and a suite's own name leaves its subjects.
 3. Run it again with `--write` and the map. A second run changes nothing.
 4. Run `board plugin enable` for each enabled plugin, so the stored schemas
    are the new ones, then `board check`.

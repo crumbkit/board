@@ -2,6 +2,7 @@
 //! actor, digest, subject and reference shapes of `board_plugin::shape`.
 //! Without `--write` it only counts what it would change.
 
+mod ordered;
 mod rules;
 
 use std::cell::RefCell;
@@ -54,6 +55,8 @@ pub(crate) enum MigrateError {
         #[source]
         source: serde_json::Error,
     },
+    #[error("the map {path} maps {key:?} to a value that is neither an Actor nor a Subject")]
+    MapEntry { path: PathBuf, key: String },
 }
 
 impl MigrateError {
@@ -62,6 +65,7 @@ impl MigrateError {
             Self::Read { .. } => "xtask::migrate::unreadable",
             Self::Write { .. } => "xtask::migrate::unwritable",
             Self::Map { .. } => "xtask::migrate::map_invalid",
+            Self::MapEntry { .. } => "xtask::migrate::map_entry_invalid",
         }
     }
 }
@@ -77,9 +81,12 @@ pub(crate) fn run(board: &Path, options: &Options) -> Result<Value, MigrateError
                 path: path.clone(),
                 source,
             })?;
-            Context::new(map)
+            Context::new(map).map_err(|key| MigrateError::MapEntry {
+                path: path.clone(),
+                key,
+            })?
         }
-        None => Context::new(Value::Null),
+        None => Context::default(),
     };
     let resolved = RefCell::new(HashMap::new());
     let mount = |name: &str| {
@@ -103,9 +110,9 @@ pub(crate) fn run(board: &Path, options: &Options) -> Result<Value, MigrateError
                 continue;
             };
             seen += 1;
-            let outcomes = rules::record(&mut value, &context, &mount);
-            let text = serde_json::to_string_pretty(&value).unwrap_or_default() + "\n";
-            Some((text, outcomes))
+            let stem = path.file_stem().unwrap_or_default().to_string_lossy();
+            let outcomes = rules::record(&mut value, &stem, &context, &mount);
+            Some((ordered::text(&value, &text), outcomes))
         };
         let Some((text, outcomes)) = migrated else {
             continue;
@@ -158,7 +165,7 @@ fn repository(board: &Path, name: &str, depth: usize) -> Option<String> {
     if let Some(repo) = mount.get("repo").and_then(Value::as_str) {
         let output = crate::process::command("git")
             .arg("-C")
-            .arg(repo)
+            .arg(home(repo))
             .args(["remote", "get-url", "origin"])
             .output()
             .ok()?;
@@ -172,7 +179,16 @@ fn repository(board: &Path, name: &str, depth: usize) -> Option<String> {
     )
     .ok()?;
     let directory = outer.get("repo").and_then(Value::as_str)?;
-    repository(Path::new(directory), inner, depth + 1)
+    repository(&home(directory), inner, depth + 1)
+}
+
+/// The mount's `repo` path, with a leading `~/` read as the home directory,
+/// as Board reads it.
+fn home(repo: &str) -> PathBuf {
+    match (repo.strip_prefix("~/"), crate::process::var("HOME")) {
+        (Some(rest), Some(home)) => Path::new(&home).join(rest),
+        _ => PathBuf::from(repo),
+    }
 }
 
 /// The `.json` and `.md` files below `board`, outside hidden directories,

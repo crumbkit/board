@@ -340,8 +340,8 @@ patterned! {
     Subject = "^([A-Za-z0-9-]+/[A-Za-z0-9._-]+|/\\S+)$"
 }
 
-/// Who wrote a record or acted: the session, the program and the person,
-/// each when known, and at least one. Every record type that names who
+/// Who wrote a record or acted: the session, the program, the person and
+/// the agent's name, each when known, and at least one. Every record type that names who
 /// acted holds one.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -359,6 +359,11 @@ pub struct Actor {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "Option<Person>")]
     pub person: Option<String>,
+    /// The name the agent was given, such as `soundcheck scheduler`, as
+    /// free text.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "Option<Prose>")]
+    pub agent: Option<String>,
 }
 
 impl Actor {
@@ -374,16 +379,28 @@ impl Actor {
             session,
             program,
             person,
+            agent: None,
         };
         (actor != Self::default()).then_some(actor)
+    }
+
+    /// Whether `other` is the same actor: the same session when both name
+    /// one, since a session is one agent however else it is described, and
+    /// otherwise every part equal.
+    #[must_use]
+    pub fn same(&self, other: &Self) -> bool {
+        match (&self.session, &other.session) {
+            (Some(one), Some(two)) => one == two,
+            _ => self == other,
+        }
     }
 }
 
 impl std::fmt::Display for Actor {
-    /// The parts it holds, in the order program, person and session,
-    /// separated by `, `, such as `claude-code, luke`.
+    /// The parts it holds, in the order program, agent, person and
+    /// session, separated by `, `, such as `claude-code, luke`.
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let parts: Vec<&str> = [&self.program, &self.person, &self.session]
+        let parts: Vec<&str> = [&self.program, &self.agent, &self.person, &self.session]
             .into_iter()
             .filter_map(Option::as_deref)
             .collect();

@@ -7,12 +7,12 @@ use super::rules::{self, Context, Outcome};
 use super::{Options, run};
 
 fn context() -> Context {
-    Context::new(json!({"Board app": "crumbkit/board-app", "odd one": {"person": "luke"}}))
+    Context::new(json!({"Board app": "crumbkit/board-app", "odd one": {"person": "luke"}})).unwrap()
 }
 
 fn migrated(record: Value) -> (Value, Vec<Outcome>) {
     let mut record = record;
-    let outcomes = rules::record(&mut record, &context(), &|_| None);
+    let outcomes = rules::record(&mut record, "r", &context(), &|_| None);
     (record, outcomes)
 }
 
@@ -23,12 +23,20 @@ fn old_actor_text_becomes_an_actor_with_the_parts_it_names() {
             "local_84ccdcef-4c52",
             json!({"session": "local_84ccdcef-4c52"}),
         ),
-        ("Codex recording builder", json!({"program": "codex"})),
+        (
+            "Codex recording builder",
+            json!({"program": "codex", "agent": "Codex recording builder"}),
+        ),
         (
             "claude-opus-5-5 subagent",
-            json!({"program": "claude-code"}),
+            json!({"program": "claude-code", "agent": "claude-opus-5-5 subagent"}),
         ),
-        ("clean-context sub-agent", json!({"program": "claude-code"})),
+        (
+            "clean-context sub-agent",
+            json!({"program": "claude-code", "agent": "clean-context sub-agent"}),
+        ),
+        ("Codex", json!({"program": "codex"})),
+        ("claude", json!({"program": "claude-code"})),
         (
             "Luke, relayed by the session local_7455.",
             json!({"session": "local_7455", "person": "luke"}),
@@ -40,20 +48,19 @@ fn old_actor_text_becomes_an_actor_with_the_parts_it_names() {
     }
 }
 
+/// Text that names no session, program or person is the agent's name, and
+/// only blank text names nobody.
 #[test]
-fn actor_text_that_names_nobody_maps_to_nothing_and_its_twin_does() {
+fn actor_text_that_names_no_part_is_the_agent_and_blank_text_names_nobody() {
     assert_eq!(
         rules::actor("c2-completion-codec-builder", &context()),
-        None
-    );
-    assert_eq!(
-        rules::actor("re-review of lukerandall/auth#4", &context()),
-        None
+        Some(json!({"agent": "c2-completion-codec-builder"}))
     );
     assert_eq!(
         rules::actor("c2-completion-codex-builder", &context()),
-        Some(json!({"program": "codex"}))
+        Some(json!({"program": "codex", "agent": "c2-completion-codex-builder"}))
     );
+    assert_eq!(rules::actor(" ", &context()), None);
 }
 
 #[test]
@@ -68,28 +75,42 @@ fn a_question_session_becomes_its_by() {
     assert_eq!(outcomes, [Outcome::Changed("plans/question/v1.session")]);
 }
 
+/// A question's `by` must hold a session, so a question whose session is a
+/// name is left and reported, while a decision records the name as its
+/// agent.
 #[test]
-fn a_decision_whose_session_names_nobody_is_left_and_reported() {
-    let before = json!({"$type": "plans/decision/v1", "session": "xenodochial-knuth"});
+fn a_question_whose_session_is_a_name_is_reported_and_a_decision_records_it_as_its_agent() {
+    let before = json!({"$type": "plans/question/v1", "session": "xenodochial-knuth"});
     let (record, outcomes) = migrated(before.clone());
     assert_eq!(record, before);
     assert_eq!(
         outcomes,
         [Outcome::Unmapped(
-            "plans/decision/v1.session",
+            "plans/question/v1.session",
             "xenodochial-knuth".into()
         )]
     );
+    let (record, outcomes) =
+        migrated(json!({"$type": "plans/decision/v1", "session": "xenodochial-knuth"}));
+    assert_eq!(
+        record,
+        json!({"$type": "plans/decision/v1", "by": {"agent": "xenodochial-knuth"}})
+    );
+    assert_eq!(outcomes, [Outcome::Changed("plans/decision/v1.session")]);
 }
 
+/// An optional `by` keeps a name as its agent, and only a blank one goes.
 #[test]
-fn an_optional_by_that_names_nobody_is_dropped_and_reported() {
-    let (record, outcomes) = migrated(json!({"$type": "runs/run/v1", "by": "ui-lead-01a1"}));
+fn an_optional_by_that_is_blank_is_dropped_and_its_twin_keeps_the_name_as_its_agent() {
+    let (record, outcomes) = migrated(json!({"$type": "runs/run/v1", "by": " "}));
     assert_eq!(record, json!({"$type": "runs/run/v1"}));
+    assert_eq!(outcomes, [Outcome::Dropped("runs/run/v1.by", " ".into())]);
+    let (record, outcomes) = migrated(json!({"$type": "runs/run/v1", "by": "ui-lead-01a1"}));
     assert_eq!(
-        outcomes,
-        [Outcome::Dropped("runs/run/v1.by", "ui-lead-01a1".into())]
+        record,
+        json!({"$type": "runs/run/v1", "by": {"agent": "ui-lead-01a1"}})
     );
+    assert_eq!(outcomes, [Outcome::Changed("runs/run/v1.by")]);
 }
 
 #[test]
@@ -144,9 +165,9 @@ fn subjects_keep_valid_ones_and_map_or_resolve_the_rest() {
     let context = context();
     let mounts = |name: &str| (name == "board").then(|| "crumbkit/board".to_owned());
     let mut record = json!({"$type": "runs/suite/v1", "subjects": [
-        "octo/core", "board", "Board app", "Raycast Workspaces", "/repos/x"
+        "octo/core", "board", "Board app", "Raycast Workspaces", "/repos/x", "crumbkit/board"
     ]});
-    let outcomes = rules::record(&mut record, &context, &mounts);
+    let outcomes = rules::record(&mut record, "s", &context, &mounts);
     assert_eq!(
         record["subjects"],
         json!([
@@ -167,17 +188,67 @@ fn subjects_keep_valid_ones_and_map_or_resolve_the_rest() {
     );
 }
 
+/// A suite or eval is not its own subject, so its own name goes. A suite
+/// left with no subject has none, while an eval must keep one, so an eval
+/// whose only subject is its own name keeps it and it is reported.
 #[test]
-fn a_task_owner_that_names_nobody_is_kept_and_reported_and_its_twin_is_mapped() {
-    let before = json!({"$type": "tasks/task/v2", "owner": "lead-7f3a"});
+fn a_record_loses_its_own_name_as_a_subject_unless_it_is_an_evals_only_one() {
+    for kind in ["runs/suite/v1", "evals/eval/v1"] {
+        let mut more = json!({"$type": kind, "subjects": ["pipecat-ci", "octo/pipecat"]});
+        rules::record(&mut more, "pipecat-ci", &context(), &|_| None);
+        assert_eq!(more["subjects"], json!(["octo/pipecat"]), "{kind}");
+        let mut other = json!({"$type": kind, "subjects": ["pipecat-ci"]});
+        let outcomes = rules::record(&mut other, "other", &context(), &|_| None);
+        assert_eq!(other["subjects"], json!(["pipecat-ci"]));
+        assert!(matches!(outcomes[..], [Outcome::Unmapped(..)]), "{kind}");
+    }
+    let mut suite = json!({"$type": "runs/suite/v1", "subjects": ["pipecat-ci"]});
+    let outcomes = rules::record(&mut suite, "pipecat-ci", &context(), &|_| None);
+    assert_eq!(
+        (suite, outcomes),
+        (
+            json!({"$type": "runs/suite/v1"}),
+            vec![Outcome::Changed("runs/suite/v1.subjects")]
+        )
+    );
+    let mut eval = json!({"$type": "evals/eval/v1", "subjects": ["pipecat-ci"]});
+    let outcomes = rules::record(&mut eval, "pipecat-ci", &context(), &|_| None);
+    assert_eq!(eval["subjects"], json!(["pipecat-ci"]));
+    assert_eq!(
+        outcomes,
+        [Outcome::Unmapped(
+            "evals/eval/v1.subjects",
+            "pipecat-ci".into()
+        )]
+    );
+}
+
+/// A map entry that is neither an `Actor` nor a `Subject` is refused by
+/// its key, and its twin is admitted.
+#[test]
+fn a_map_entry_outside_the_shapes_is_refused_by_its_key_and_its_twin_is_admitted() {
+    for (refused, admitted) in [
+        (json!({"program": "Codex"}), json!({"program": "codex"})),
+        (json!({"model": "opus"}), json!({"agent": "opus reviewer"})),
+        (json!("pipecat"), json!("octo/pipecat")),
+    ] {
+        let error = Context::new(json!({"old": refused})).err();
+        assert_eq!(error.as_deref(), Some("old"), "{refused}");
+        assert!(Context::new(json!({"old": admitted})).is_ok(), "{admitted}");
+    }
+}
+
+#[test]
+fn a_task_owner_becomes_an_actor_and_a_blank_one_is_kept_and_reported() {
+    let before = json!({"$type": "tasks/task/v2", "owner": " "});
     let (record, outcomes) = migrated(before.clone());
     assert_eq!(record, before);
     assert_eq!(
         outcomes,
-        [Outcome::Unmapped("tasks/task/v2.owner", "lead-7f3a".into())]
+        [Outcome::Unmapped("tasks/task/v2.owner", " ".into())]
     );
-    let (record, _) = migrated(json!({"$type": "tasks/task/v2", "owner": "codex lead"}));
-    assert_eq!(record["owner"], json!({"program": "codex"}));
+    let (record, _) = migrated(json!({"$type": "tasks/task/v2", "owner": "lead-7f3a"}));
+    assert_eq!(record["owner"], json!({"agent": "lead-7f3a"}));
 }
 
 #[test]
@@ -192,11 +263,22 @@ fn a_version_session_the_released_mod_wrote_becomes_the_mods_program() {
 
 #[test]
 fn a_hash_that_is_neither_bare_hex_nor_a_digest_is_reported_and_its_twin_is_prefixed() {
-    let (record, outcomes) = migrated(json!({"$type": "requests/reply/v1", "effect": "ab"}));
-    assert_eq!(record["effect"], json!("ab"));
+    for effect in ["ab", "sha256:ab"] {
+        let (record, outcomes) = migrated(json!({"$type": "requests/reply/v1", "effect": effect}));
+        assert_eq!(record["effect"], json!(effect));
+        assert_eq!(
+            outcomes,
+            [Outcome::Unmapped("requests/reply/v1.effect", effect.into())]
+        );
+    }
+    let (seen, outcomes) = migrated(json!({"$type": "board/seen/v1", "effect": "sha256:ab"}));
+    assert_eq!(seen["effect"], json!("sha256:ab"));
     assert_eq!(
         outcomes,
-        [Outcome::Unmapped("requests/reply/v1.effect", "ab".into())]
+        [Outcome::Unmapped(
+            "board/seen/v1.effect",
+            "sha256:ab".into()
+        )]
     );
     let (seen, outcomes) = migrated(json!({"$type": "board/seen/v1", "effect": "/effects/x"}));
     assert_eq!(seen["effect"], json!("/effects/x"));
@@ -241,24 +323,21 @@ fn a_github_remote_names_its_repository() {
 }
 
 #[test]
-fn a_task_owner_line_in_frontmatter_becomes_an_actor_or_is_kept_and_reported() {
+fn a_task_owner_line_in_frontmatter_becomes_an_actor() {
     let text = "---\n$type: \"tasks/task/v2\"\nowner: Codex integrator\ntitle: t\n---\nbody\n";
     let (migrated, outcomes) = rules::markdown(text, &context()).unwrap();
     assert_eq!(
         migrated,
-        "---\n$type: \"tasks/task/v2\"\nowner: {\"program\":\"codex\"}\ntitle: t\n---\nbody\n"
+        "---\n$type: \"tasks/task/v2\"\nowner: {\"agent\":\"Codex integrator\",\"program\":\"codex\"}\ntitle: t\n---\nbody\n"
     );
     assert_eq!(outcomes, [Outcome::Changed("tasks/task/v2.owner")]);
     let text = "---\n$type: tasks/task/v2\nowner: \"c2_b_builder\"\n---\n";
-    let (kept, outcomes) = rules::markdown(text, &context()).unwrap();
-    assert_eq!(kept, text);
+    let (named, outcomes) = rules::markdown(text, &context()).unwrap();
     assert_eq!(
-        outcomes,
-        [Outcome::Unmapped(
-            "tasks/task/v2.owner",
-            "c2_b_builder".into()
-        )]
+        named,
+        "---\n$type: tasks/task/v2\nowner: {\"agent\":\"c2_b_builder\"}\n---\n"
     );
+    assert_eq!(outcomes, [Outcome::Changed("tasks/task/v2.owner")]);
     let done = "---\n$type: tasks/task/v2\nowner: {\"person\":\"luke\"}\n---\n";
     assert_eq!(rules::markdown(done, &context()), None);
     assert_eq!(
@@ -336,6 +415,30 @@ fn a_dry_run_counts_and_writes_nothing_and_a_write_is_idempotent() {
     );
 }
 
+/// A rewritten record keeps its keys in the order its file had them, and a
+/// renamed field takes the old field's place.
+#[test]
+fn a_rewritten_record_keeps_its_key_order_and_a_renamed_field_takes_the_old_place() {
+    let board = tempfile::tempdir().unwrap();
+    let root = board.path();
+    write(
+        root,
+        "plans/p/decisions/d.json",
+        r#"{"title": "t", "session": "local_ab", "$type": "plans/decision/v1", "refs": [{"z": 1, "a": 2}]}"#,
+    );
+    let options = Options {
+        write: true,
+        ..Options::default()
+    };
+    run(root, &options).unwrap();
+    assert_eq!(
+        fs::read_to_string(root.join("plans/p/decisions/d.json")).unwrap(),
+        "{\n  \"title\": \"t\",\n  \"by\": {\n    \"session\": \"local_ab\"\n  },\n  \
+         \"$type\": \"plans/decision/v1\",\n  \"refs\": [\n    {\n      \"z\": 1,\n      \
+         \"a\": 2\n    }\n  ]\n}\n"
+    );
+}
+
 #[test]
 fn a_subject_naming_a_mount_resolves_through_the_mount_chain() {
     let board = tempfile::tempdir().unwrap();
@@ -390,8 +493,68 @@ fn a_subject_naming_a_mount_resolves_through_the_mount_chain() {
     );
 }
 
+/// Each committed type schema in the workspace's crates, compiled, by type.
+fn schemas() -> std::collections::BTreeMap<String, board_validate::Schema> {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../crates");
+    let mut found = std::collections::BTreeMap::new();
+    for entry in fs::read_dir(&root).unwrap() {
+        let types = entry.unwrap().path().join("types");
+        let mut pending = vec![types.clone()];
+        while let Some(directory) = pending.pop() {
+            let Ok(entries) = fs::read_dir(&directory) else {
+                continue;
+            };
+            for entry in entries {
+                let path = entry.unwrap().path();
+                let name = path
+                    .strip_prefix(&types)
+                    .unwrap()
+                    .to_string_lossy()
+                    .into_owned();
+                if path.is_dir() {
+                    pending.push(path);
+                } else if let Some(kind) = name.strip_suffix(".schema.json") {
+                    let schema = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+                    found.insert(
+                        kind.to_owned(),
+                        board_validate::Schema::compile(schema).unwrap(),
+                    );
+                }
+            }
+        }
+    }
+    found
+}
+
+/// The board paths of the JSON records under `board` that a committed type
+/// schema refuses.
+fn refused(
+    board: &Path,
+    schemas: &std::collections::BTreeMap<String, board_validate::Schema>,
+) -> std::collections::BTreeSet<String> {
+    let mut refused = std::collections::BTreeSet::new();
+    for path in super::files(board).unwrap() {
+        let Ok(record) = serde_json::from_str::<Value>(&fs::read_to_string(&path).unwrap()) else {
+            continue;
+        };
+        let kind = record
+            .get("$type")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        if schemas
+            .get(kind)
+            .is_some_and(|schema| schema.validate(&record).is_err())
+        {
+            refused.insert(format!("/{}", path.strip_prefix(board).unwrap().display()));
+        }
+    }
+    refused
+}
+
 /// Migrates a copy of the board `MIGRATE_BOARD` names, when it is set, and
-/// checks that a second run changes nothing. It never writes the board itself.
+/// checks that every record it changed passes its type's committed schema,
+/// except those it reported unmapped, and that a second run changes nothing.
+/// It never writes the board itself.
 #[test]
 fn a_copy_of_a_real_board_migrates_and_a_second_run_changes_nothing() {
     let Some(source) = crate::process::var("MIGRATE_BOARD") else {
@@ -410,8 +573,33 @@ fn a_copy_of_a_real_board_migrates_and_a_second_run_changes_nothing() {
     );
     let map = crate::process::var("MIGRATE_MAP").map(std::path::PathBuf::from);
     let options = Options { write: true, map };
+    let schemas = schemas();
+    let before = refused(&board, &schemas);
     let first = run(&board, &options).unwrap();
     assert_ne!(first["files"]["read"], json!(0));
+    let unmapped: std::collections::BTreeSet<String> = (first["unmapped"].as_array().unwrap())
+        .iter()
+        .filter_map(|entry| entry["path"].as_str().map(str::to_owned))
+        .collect();
+    let after = refused(&board, &schemas);
+    let new: Vec<&String> = after
+        .difference(&before)
+        .filter(|path| !unmapped.contains(*path))
+        .collect();
+    assert_eq!(new, Vec::<&String>::new());
     let second = run(&board, &options).unwrap();
     assert_eq!(second["files"]["changed"], json!(0));
+}
+
+/// A mount's `repo` that starts with `~/` is read from the home directory,
+/// and any other path is read as it is.
+#[test]
+fn a_home_relative_mount_path_is_read_from_the_home_directory_and_its_twin_as_it_is() {
+    let home = super::home("~/Code/x");
+    assert!(
+        home.is_absolute() && home.ends_with("Code/x"),
+        "{}",
+        home.display()
+    );
+    assert_eq!(super::home("/srv/x"), std::path::PathBuf::from("/srv/x"));
 }

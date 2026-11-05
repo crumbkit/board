@@ -53,7 +53,7 @@ fn run_record() -> Value {
     json!({
         "$type": "runs/run/v1",
         "suite": "/suites/x",
-        "by": {"program": "claude"},
+        "by": {"program": "claude-code"},
         "started": "2026-10-01T09:00:00Z",
         "scope": "full",
         "results": [{"case": "cold", "outcome": "pass", "evidence": ["/evals/x/evidence/log.txt"]}],

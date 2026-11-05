@@ -274,7 +274,8 @@ fn prompt(path: &str, brief: &BriefRecord, what: &str, shown: &str, body: &str) 
 }
 
 /// Who reviewed: the program `program` starts, by its file name, when that
-/// name is a slug such as `claude`; else nobody known.
+/// name is a slug; else nobody known. The `claude` command is Claude Code,
+/// so it is recorded as `claude-code`, as every other writer names it.
 pub(crate) fn reviewer(program: &str) -> Option<Actor> {
     let name = Path::new(program).file_name()?.to_str()?;
     let slug = !name.is_empty()
@@ -284,6 +285,11 @@ pub(crate) fn reviewer(program: &str) -> Option<Actor> {
                     .bytes()
                     .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit())
         });
+    let name = if name == "claude" {
+        "claude-code"
+    } else {
+        name
+    };
     slug.then(|| Actor {
         program: Some(name.to_owned()),
         ..Actor::default()

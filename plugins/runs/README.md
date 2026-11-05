@@ -21,9 +21,10 @@ sit in `/suites/<name>/runs/`.
 }
 ```
 
-- `subjects` and `method` are required.
-- `subjects` name what is tested, without versions, each as an `owner/name`
-  repository or a board path, the `Subject` shape.
+- `method` is required.
+- `subjects`, when present, name what is tested, without versions, each as
+  an `owner/name` repository or a board path, the `Subject` shape. A suite
+  that tests no named subject leaves it out.
 - `cases` lists the cases inline: each has an `id`, which a run's results name,
   and optional `input` and `expected`. `cases_file` references a file that
   lists them instead. A suite whose cases are found when it runs, such as a
@@ -57,7 +58,7 @@ names a new run there.
 ```
 
 - `suite`, `started`, `scope` and `results` are required.
-- `by` is the `Actor` who ran it: `{session, program, person}`, each part
+- `by` is the `Actor` who ran it: `{session, program, person, agent}`, each part
   optional and at least one present.
   `suite` must reach a `runs/suite/v1` record, or `check` reports
   `board::ref::dangling` or `board::ref::wrong_type`.

@@ -2,9 +2,14 @@
   "$defs": {
     "Actor": {
       "additionalProperties": false,
-      "description": "Who wrote a record or acted: the session, the program and the person,\neach when known, and at least one. Every record type that names who\nacted holds one.",
+      "description": "Who wrote a record or acted: the session, the program, the person and\nthe agent's name, each when known, and at least one. Every record type that names who\nacted holds one.",
       "minProperties": 1,
       "properties": {
+        "agent": {
+          "description": "The name the agent was given, such as `soundcheck scheduler`, as\nfree text.",
+          "type": "string",
+          "x-board-prose": true
+        },
         "person": {
           "description": "The person who acted, such as `luke`, or their email address.",
           "pattern": "^([a-z0-9]+(-[a-z0-9]+)*|[^@\\s]+@[^@\\s]+)$",

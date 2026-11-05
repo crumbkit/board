@@ -160,7 +160,7 @@ pub(crate) fn run(started: &str, fields: &Value) -> String {
     let mut record = json!({
         "$type": "runs/run/v1",
         "suite": "/suites/a",
-        "by": {"program": "claude"},
+        "by": {"program": "claude-code"},
         "started": started,
         "scope": "full",
         "dirty": false,
@@ -191,7 +191,7 @@ fn a_run_the_python_model_refused_is_unreadable_and_its_twin_is_read() {
         (json!({"scope": "partial"}), json!({"scope": "targeted"})),
         (
             json!({"by": "claude"}),
-            json!({"by": {"program": "claude"}}),
+            json!({"by": {"program": "claude-code"}}),
         ),
         (json!({"suite": null}), json!({"suite": "/suites/b"})),
         (json!({"results": null}), json!({"results": []})),

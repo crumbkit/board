@@ -289,7 +289,9 @@ pub(crate) fn sweep(
     });
     let day = clock.day;
     for task in sorted {
-        if owner.is_some() && task.owner.is_some() && task.owner.as_ref() != owner {
+        if let (Some(owner), Some(held)) = (owner, &task.owner)
+            && !held.same(owner)
+        {
             continue;
         }
         let waits = blocked.get(&task.path).cloned().unwrap_or_default();

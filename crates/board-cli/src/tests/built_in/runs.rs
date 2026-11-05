@@ -24,7 +24,7 @@ fn run(suite: &str, started: &str, fields: &Value) -> String {
         json!({
             "$type": "runs/run/v1",
             "suite": suite,
-            "by": {"program": "claude"},
+            "by": {"program": "claude-code"},
             "started": started,
             "scope": "full",
             "dirty": false,

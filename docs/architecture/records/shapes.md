@@ -111,9 +111,9 @@ Built-in plugins generate schemas from structs with schemars, through
   slug or an email address, and `ObjectId` is a git object id of 40 or 64
   lowercase hex digits. `Subject` is what a test or study concerns: an
   `owner/name` repository or a board path that starts with `/`.
-- `Actor` is who wrote or acted: `{session, program, person}`, each part
-  optional and at least one present. Every field that names who acted is
-  an `Actor`. `Pinned` is `{record, blob}`, a reference and the `ObjectId`
+- `Actor` is who wrote or acted: `{session, program, person, agent}`, each part
+  optional and at least one present. `agent` is the name the agent was
+  given, as free text. Every field that names who acted is an `Actor`. `Pinned` is `{record, blob}`, a reference and the `ObjectId`
   it was read at. A `$defs` entry named like an object shape must equal it,
   and `xtask/tests/shapes.rs` checks that.
 - Every hash Board defines is a `Digest`. The prefix names the
