@@ -13,6 +13,7 @@ import {
   originOf,
   parseBoards,
   parseChange,
+  parseKind,
   parseMounts,
   parseOrigins,
   repositoryOf,
@@ -221,7 +222,14 @@ async function refusal($: EngineInterface, file: string, agentId: string | undef
         const why = ran.exitCode !== 0 && ran.stdout.trim() === '' ? said(ran) : change.why
         return unknown(file, `\`board -C ${at.board} get ${named}\` failed with ${why}`)
       }
-      return judge(file, at, named, change, change.changeKind === 'prototype' ? await branchOf($, file) : '')
+      const held = await sh($, GET, [at.board, `${named}/prototype`])
+      const kind = parseKind(held.stdout)
+      if (kind.kind === 'failed') {
+        const why = held.exitCode !== 0 && held.stdout.trim() === '' ? said(held) : kind.why
+        return unknown(file, `\`board -C ${at.board} get ${named}/prototype\` failed with ${why}`)
+      }
+      const prototype = kind.kind === 'prototype'
+      return judge(file, at, named, change, prototype, prototype ? await branchOf($, file) : '')
     }
     return noBrief(file, mounts[0]!, named)
   } catch (error) {

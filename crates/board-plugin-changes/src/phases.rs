@@ -10,8 +10,8 @@ use serde_json::{Value, json};
 use crate::board::{self, get_text, rows, text};
 use crate::change::write;
 use crate::change::{
-    LastSync, attached, branch_of, kind_of, last_sync, line, newest, plan_at, read, referenced,
-    touch,
+    LastSync, attached, branch_of, current, kind_of, last_sync, line, plan_at, pull_of, read,
+    referenced, touch,
 };
 use crate::diff::{edited, outside};
 use crate::gates::{Check, Observed, Status, code_of, gate};
@@ -223,6 +223,10 @@ pub(crate) fn observe(
         }
         Phase::Build => found.suite = check_suite(host, &change.mount)?,
         Phase::Review => reviewed(host, &mut found)?,
+        Phase::Land => {
+            let newest = change.pulls().last().map_or("", String::as_str);
+            found.pull_read = pull_of(host, newest)?.is_some();
+        }
         _ => {}
     }
     Ok(found)
@@ -231,7 +235,7 @@ pub(crate) fn observe(
 /// Adds the newest plan's paths and the files the change's diff edits
 /// outside them to `found`.
 fn reviewed(host: &dyn Host, found: &mut Observed) -> Result<(), PluginError> {
-    let (_, _, planned) = newest(host, &found.path)?;
+    let (_, _, planned) = current(host, &found.change)?;
     found.planned = planned;
     let Some(head) = found.change.head.clone() else {
         found.diff_unread = Some(

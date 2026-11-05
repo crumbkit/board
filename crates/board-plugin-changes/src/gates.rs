@@ -88,6 +88,9 @@ pub(crate) struct Observed {
     pub(crate) planned: Vec<String>,
     pub(crate) outside: Vec<String>,
     pub(crate) diff_unread: Option<String>,
+    /// Whether the change's newest pull request reads as a github/pull/v1
+    /// record, which the land gate needs.
+    pub(crate) pull_read: bool,
 }
 
 impl Observed {
@@ -104,6 +107,7 @@ impl Observed {
             planned: Vec::new(),
             outside: Vec::new(),
             diff_unread: None,
+            pull_read: false,
         }
     }
 }
@@ -210,11 +214,19 @@ pub(crate) fn gate(observed: &Observed) -> Vec<Check> {
             check("paths", paths_missing(observed)),
         ],
         Phase::Land => {
-            let missing = (observed.change.pulls().is_empty()).then(|| {
-                "the change references no github/pull/v1 record; record the pull request with \
-                 `board call github.ref` and attach it with --pull"
-                    .to_owned()
-            });
+            let missing = match observed.change.pulls().last() {
+                None => Some(
+                    "the change references no github/pull/v1 record; record the pull request \
+                     with `board call github.ref` and attach it with --pull"
+                        .to_owned(),
+                ),
+                Some(pull) if !observed.pull_read => Some(format!(
+                    "the change's newest pull request {pull} does not read as a github/pull/v1 \
+                     record; run `board check {pull}`, or record the pull request with `board \
+                     call github.ref` and attach it with --pull"
+                )),
+                Some(_) => None,
+            };
             vec![check("pull-request", missing)]
         }
         Phase::Done | Phase::Dropped | Phase::Paused => Vec::new(),
@@ -407,6 +419,22 @@ fn data_missing(observed: &Observed, found: &BTreeMap<String, String>) -> Option
 }
 
 fn recheck_missing(observed: &Observed) -> Option<String> {
+    // An understanding check Board does not read holds no rechecks it can
+    // count, so it fails the check rather than drop out of it.
+    for (path, code) in &observed.records.unreadable {
+        if observed
+            .records
+            .unreadable_types
+            .get(path)
+            .map(String::as_str)
+            == Some(UNDERSTANDING_TYPE)
+        {
+            return Some(format!(
+                "the understanding check at {path} is degraded with {code}, so its rechecks \
+                 cannot be counted; run `board check {path}` and fix it"
+            ));
+        }
+    }
     for (path, body) in observed.records.of_type(UNDERSTANDING_TYPE) {
         let matching = (body
             .get("rechecks")

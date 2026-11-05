@@ -137,9 +137,7 @@ fn applying_splits_each_old_change_into_records_board_reads_as_valid_and_a_secon
         board.read("changes/proto/prototype.json"),
         json!({
             "$type": "changes/prototype/v1",
-            "change": "/changes/proto",
             "question": "Does it read better?",
-            "state": "exploring",
         })
     );
     assert!(!board.exists("changes/sync.json"));
@@ -178,4 +176,75 @@ fn applying_without_the_github_plugin_is_refused_and_writes_nothing_and_with_it_
         admitted.call("migrate", &json!({"apply": true}))["applied"],
         true
     );
+}
+
+/// A stub gh that answers every call with GitHub's 404.
+const GH_NOT_FOUND: &str = "#!/bin/sh\necho \"gh: Not Found (HTTP 404)\" >&2\nexit 1\n";
+
+#[test]
+fn a_page_github_ref_cannot_record_leaves_its_change_and_the_rest_migrate() {
+    let board = old_board(true);
+    board.bin.write("gh", Item::Executable(GH_NOT_FOUND));
+    // Without its record, github.ref asks gh for the issue, which GitHub
+    // does not have.
+    board.delete("gh/o/r/issues/2.json");
+    let before = board.text("changes/old.json");
+    let output = board.call("migrate", &json!({"apply": true}));
+    assert_eq!(
+        (&output["changes"], &output["total"]),
+        (&json!(["/changes/proto"]), &json!(1))
+    );
+    let left = output["left"].as_array().unwrap();
+    let old = left
+        .iter()
+        .find(|each| each["path"] == "/changes/old")
+        .unwrap();
+    assert_eq!(old["page"], ISSUE, "{old}");
+    let why = old["why"].as_str().unwrap();
+    assert!(
+        why.starts_with(&format!("github.ref could not record {ISSUE}: github::")),
+        "{why}"
+    );
+    assert_eq!(board.text("changes/old.json"), before);
+    assert_eq!(board.code("/changes/proto"), None);
+}
+
+#[test]
+fn a_dry_run_leaves_a_change_whose_rewrite_fails_its_schema_and_lists_one_that_passes() {
+    let board = Changes::new();
+    board.mount_x(&[("README.md", "x\n")]);
+    board.write(
+        "changes/blank.json",
+        &change("build", &json!({"route": "sometimes", "records": [TASK]})),
+    );
+    board.write(
+        "changes/fine.json",
+        &change("build", &json!({"records": [TASK]})),
+    );
+    let output = board.call("migrate", &json!({}));
+    assert_eq!(output["changes"], json!(["/changes/fine"]));
+    let left = &output["left"][0];
+    assert_eq!(left["path"], "/changes/blank");
+    let why = left["why"].as_str().unwrap();
+    assert!(
+        why.starts_with("its rewritten record at /changes/blank fails its schema at"),
+        "{why}"
+    );
+}
+
+#[test]
+fn a_prototype_record_already_beside_an_old_prototype_is_kept_and_the_change_migrates() {
+    let board = old_board(true);
+    let held = typed(
+        "changes/prototype/v1",
+        &json!({"question": "Is it already split?"}),
+    );
+    board.write("changes/proto/prototype.json", &held);
+    let output = board.call("migrate", &json!({"apply": true}));
+    assert_eq!(
+        (&output["total"], &output["prototypes"]),
+        (&json!(2), &json!(0))
+    );
+    assert_eq!(board.text("changes/proto/prototype.json"), held);
+    assert_eq!(board.code("/changes/proto"), None);
 }

@@ -34,6 +34,10 @@ struct Given {
     outside: Vec<&'static str>,
     diff_unread: Option<&'static str>,
     fields: Value,
+    /// Referenced records Board does not read: path, type and code.
+    unreadable: Vec<(&'static str, &'static str, &'static str)>,
+    /// Whether the newest pull request reads as a github/pull/v1 record.
+    pull_read: bool,
 }
 
 fn given(phase: &'static str) -> Given {
@@ -46,6 +50,8 @@ fn given(phase: &'static str) -> Given {
         outside: Vec::new(),
         diff_unread: None,
         fields: json!({}),
+        unreadable: Vec::new(),
+        pull_read: true,
     }
 }
 
@@ -62,6 +68,11 @@ impl Given {
 
     fn with(mut self, fields: Value) -> Self {
         self.fields = fields;
+        self
+    }
+
+    fn unreadable(mut self, unreadable: Vec<(&'static str, &'static str, &'static str)>) -> Self {
+        self.unreadable = unreadable;
         self
     }
 
@@ -85,7 +96,12 @@ impl Given {
                     ((*path).to_owned(), ((*found).to_owned(), body))
                 })
                 .collect(),
-            unreadable: Vec::new(),
+            unreadable: (self.unreadable.iter())
+                .map(|(path, _, code)| ((*path).to_owned(), (*code).to_owned()))
+                .collect(),
+            unreadable_types: (self.unreadable.iter())
+                .map(|(path, kind, _)| ((*path).to_owned(), (*kind).to_owned()))
+                .collect(),
         };
         let mut observed = Observed::new(PATH, change, Kind::Build, records);
         observed.plan.clone_from(&self.plan);
@@ -97,6 +113,7 @@ impl Given {
         observed.planned = self.planned.iter().map(|each| (*each).to_owned()).collect();
         observed.outside = self.outside.iter().map(|each| (*each).to_owned()).collect();
         observed.diff_unread = self.diff_unread.map(str::to_owned);
+        observed.pull_read = self.pull_read;
         observed
     }
 
@@ -387,6 +404,14 @@ fn the_land_gate_needs_a_pull_request_record_and_done_has_no_gate() {
     assert_eq!(
         given("land").statuses(),
         statuses(&[("pull-request", "missing")])
+    );
+    let mut unread = given("land").with(json!({"pulls": ["/runs/1"]}));
+    unread.pull_read = false;
+    assert_eq!(
+        unread.check("pull-request").1,
+        "the change's newest pull request /runs/1 does not read as a github/pull/v1 record; run \
+         `board check /runs/1`, or record the pull request with `board call github.ref` and \
+         attach it with --pull"
     );
     let landed = given("land").with(json!({"pulls": ["/gh/o/r/pulls/1"]}));
     assert_eq!(landed.statuses(), statuses(&[("pull-request", "pass")]));
@@ -680,6 +705,27 @@ fn the_build_gate_needs_two_matching_rechecks_on_each_attached_understanding_che
             ("recheck", "pass")
         ])
     );
+}
+
+#[test]
+fn an_attached_understanding_check_board_does_not_read_fails_the_recheck_and_another_record_does_not()
+ {
+    let built = |kind: &'static str| {
+        (given("build").records(vec![(RUN, run(&json!({})))]))
+            .with(json!({"head": HEAD}))
+            .unreadable(vec![(UNDERSTOOD, kind, "board::record::invalid")])
+    };
+    assert_eq!(
+        built("changes/understanding/v1").check("recheck"),
+        (
+            "missing",
+            "the understanding check at /changes/t/understanding/data is degraded with \
+             board::record::invalid, so its rechecks cannot be counted; run `board check \
+             /changes/t/understanding/data` and fix it"
+                .to_owned()
+        )
+    );
+    assert_eq!(built("tasks/task/v2").statuses()["recheck"], "pass");
 }
 
 #[test]

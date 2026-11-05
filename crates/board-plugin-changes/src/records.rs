@@ -249,22 +249,19 @@ impl ChangeRecord {
 /// `changes/prototype/v1`: what makes a change a prototype, the question it
 /// answers and its verdict.
 ///
-/// It lives at `/changes/<name>/prototype`, beside its change. A prototype
-/// works on branch `proto/<name>` and never lands.
+/// It lives at `/changes/<name>/prototype`, beside its change, and its path
+/// names the change. A prototype works on branch `proto/<name>` and never
+/// lands. The change's phase says where it stands: exploring until
+/// `verdict` ends it in done when settled or in dropped when abandoned.
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct PrototypeRecord {
     /// The record's type.
     #[serde(rename = "$type")]
     pub(crate) tag: Tag<Self>,
-    /// The change the prototype is.
-    #[schemars(with = "Ref<ChangeRecord>")]
-    pub(crate) change: String,
     /// The one question the prototype answers.
     #[schemars(with = "Prose", extend("minLength" = 1))]
     pub(crate) question: String,
-    /// Where the prototype stands.
-    pub(crate) state: State,
     /// What it found, in one sentence.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "Option<Prose>", extend("minLength" = 1))]
@@ -283,9 +280,7 @@ impl Clone for PrototypeRecord {
     fn clone(&self) -> Self {
         Self {
             tag: Tag::default(),
-            change: self.change.clone(),
             question: self.question.clone(),
-            state: self.state,
             verdict: self.verdict.clone(),
             verdict_artifact: self.verdict_artifact.clone(),
         }

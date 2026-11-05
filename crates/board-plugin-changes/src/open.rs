@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::board::{readable, rows, text};
-use crate::change::{LastSync, branch_of, kind_in, last_sync, parsed, prototypes};
+use crate::change::{LastSync, branch_of, kind_in, last_sync, parsed, prototypes, state_of};
 use crate::records::{ChangeRecord, Kind, Phase, PrototypeRecord, Route, State};
 use crate::{PLUGIN, to_value};
 
@@ -84,7 +84,7 @@ fn listed(path: &str, change: ChangeRecord, prototype: Option<&PrototypeRecord>)
     };
     let prototype = prototype.map(|found| Prototype {
         question: Some(found.question.clone()),
-        state: Some(found.state),
+        state: Some(state_of(change.phase)),
         verdict: found.verdict.clone(),
         verdict_artifact: found.verdict_artifact.clone(),
         branch: branch_of(path),
@@ -125,8 +125,18 @@ pub(crate) fn open(host: &dyn Host, input: &Value) -> Result<Value, PluginError>
             unreadable += 1;
             continue;
         };
+        // A prototype record Board does not read leaves the change
+        // unreadable, since its kind is not known.
+        let prototype = match prototypes.get(path) {
+            Some(None) => {
+                unreadable += 1;
+                continue;
+            }
+            Some(Some(record)) => Some(record),
+            None => None,
+        };
         if kind.is_none_or(|kind| kind_in(&prototypes, path) == kind) {
-            found.push(listed(path, change, prototypes.get(path)));
+            found.push(listed(path, change, prototype));
         }
     }
     let total = found.len();

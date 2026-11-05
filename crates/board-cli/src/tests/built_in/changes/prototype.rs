@@ -71,9 +71,7 @@ fn prototype_adds_its_task_under_the_parent_and_writes_an_exploring_change_in_bu
         held,
         json!({
             "$type": "changes/prototype/v1",
-            "change": CHANGE,
             "question": QUESTION,
-            "state": "exploring",
         })
     );
     let task = board.text("tasks/step-list.md");
@@ -122,6 +120,41 @@ fn a_prototype_refuses_to_advance_and_a_build_change_in_build_is_held_by_its_own
 }
 
 #[test]
+fn a_prototype_record_board_does_not_read_makes_next_and_advance_refuse_and_open_count_it_unreadable()
+ {
+    let board = Changes::new();
+    exploring(&board, "changes/step-list.json");
+    exploring(&board, "changes/other.json");
+    board.write(
+        "changes/step-list/prototype.json",
+        &typed(
+            "changes/prototype/v1",
+            &json!({"question": QUESTION, "unknown": true}),
+        ),
+    );
+    for capability in ["next", "advance"] {
+        let refused = board.refusal(capability, &json!({"path": CHANGE}));
+        assert_eq!(
+            (&refused["code"], &refused["fields"]["path"]),
+            (
+                &json!("changes::change::degraded"),
+                &json!("/changes/step-list/prototype")
+            ),
+            "{capability}"
+        );
+    }
+    let output = board.call("open", &json!({}));
+    assert_eq!(paths(&output), ["/changes/other"]);
+    assert_eq!(output["unreadable"], 1);
+    // The twin whose prototype record reads is a prototype, held by its
+    // verdict.
+    assert_eq!(
+        board.refusal("advance", &json!({"path": "/changes/other"}))["code"],
+        "changes::prototype::never_lands"
+    );
+}
+
+#[test]
 fn next_tells_a_prototypes_builder_to_iterate_on_its_branch_and_ask_for_the_verdict() {
     let board = Changes::new();
     exploring(&board, "changes/step-list.json");
@@ -157,7 +190,7 @@ fn a_settled_verdict_ends_the_prototype_in_done_with_the_artifact_it_means() {
             &written["verdict_artifact"]
         ),
         (
-            &json!("settled"),
+            &Value::Null,
             &json!("A step list reads better."),
             &json!(artifact)
         )
@@ -253,7 +286,7 @@ fn open_by_kind_prototype_lists_every_prototype_with_its_question_verdict_and_br
 }
 
 #[test]
-fn the_schema_refuses_a_change_holding_a_kind_or_a_prototype_in_an_unknown_state_and_admits_a_prototype()
+fn the_schema_refuses_a_change_holding_a_kind_or_a_prototype_holding_a_state_and_admits_a_prototype()
  {
     let board = Changes::new();
     board.mount_x(&[("README.md", "x\n")]);
@@ -263,11 +296,15 @@ fn the_schema_refuses_a_change_holding_a_kind_or_a_prototype_in_an_unknown_state
         "changes/kind.json",
         &change("build", &json!({"kind": "prototype"})),
     );
-    prototype(
-        &board,
-        "changes/state.json",
-        "build",
-        &json!({"state": "paused"}),
+    // The change's phase gives a prototype's state, so a prototype record
+    // that holds one is invalid.
+    exploring(&board, "changes/state.json");
+    board.write(
+        "changes/state/prototype.json",
+        &typed(
+            "changes/prototype/v1",
+            &json!({"question": "Does it work?", "state": "exploring"}),
+        ),
     );
     exploring(&board, "changes/good.json");
     assert_eq!(

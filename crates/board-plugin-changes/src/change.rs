@@ -15,7 +15,7 @@ use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
 
 use crate::board::{self, body, readable, rows, text, tree_codes};
-use crate::records::{ChangeRecord, Kind, PULL_TYPES, PlanRecord, PrototypeRecord};
+use crate::records::{ChangeRecord, Kind, PULL_TYPES, Phase, PlanRecord, PrototypeRecord, State};
 use crate::refusal;
 
 /// Where in Board's cache `sync` keeps the day it last ran, by board.
@@ -37,6 +37,8 @@ pub(crate) type Found = (String, Map<String, Value>);
 pub(crate) struct Referenced {
     pub(crate) records: Vec<(String, Found)>,
     pub(crate) unreadable: Vec<(String, String)>,
+    /// The type Board gives each unreadable record that has one.
+    pub(crate) unreadable_types: BTreeMap<String, String>,
 }
 
 impl Referenced {
@@ -104,23 +106,57 @@ pub(crate) fn parsed(value: Option<&Value>) -> Option<ChangeRecord> {
     serde_json::from_value(value).ok()
 }
 
-/// The prototype record of the change at `path`, at `<path>/prototype`,
-/// and its blob, or none when the change is not a prototype.
+/// What sits at a change's `<path>/prototype`, the one fact that makes the
+/// change a prototype: nothing, a prototype record Board reads, with its
+/// blob, or something else, with the code Board gives it.
+pub(crate) enum Held {
+    Nothing,
+    Prototype(PrototypeRecord, String),
+    Unreadable(String),
+}
+
+/// What a row of `entries` joined to its body holds, as [`Held`].
+fn held_in(row: &[Value]) -> Held {
+    let (blob, kind, code, body) = (row.first(), row.get(1), row.get(2), row.get(3));
+    if !readable(code) {
+        return Held::Unreadable(text(code).unwrap_or_default().to_owned());
+    }
+    if text(kind) != Some(PrototypeRecord::TYPE) {
+        return Held::Unreadable("board::ref::wrong_type".to_owned());
+    }
+    match from_body::<PrototypeRecord>(body) {
+        Some(record) => Held::Prototype(record, text(blob).unwrap_or_default().to_owned()),
+        None => Held::Unreadable("board::record::invalid".to_owned()),
+    }
+}
+
+/// The prototype record of the change at `path` and its blob, or none when
+/// nothing is at `<path>/prototype`. Anything there that Board does not
+/// read as a prototype record is `changes::change::degraded`, so a
+/// prototype never passes for a build change.
 pub(crate) fn prototype_of(
     host: &dyn Host,
     path: &str,
 ) -> Result<Option<(PrototypeRecord, String)>, PluginError> {
+    let at = format!("{path}/prototype");
     let sql = format!(
-        "SELECT blob, body FROM records WHERE logical = {} AND type = {} AND ({})",
-        literal(&format!("{path}/prototype")),
-        literal(PrototypeRecord::TYPE),
-        sound()
+        "SELECT e.blob, e.type, e.code, b.body FROM entries AS e \
+         LEFT JOIN bodies AS b ON b.blob = e.blob WHERE e.logical = {}",
+        literal(&at)
     );
     let found = rows(host, &sql)?;
-    Ok(found.first().and_then(|row| {
-        let record = from_body(row.get(1))?;
-        Some((record, text(row.first()).unwrap_or_default().to_owned()))
-    }))
+    match found.first().map_or(Held::Nothing, |row| held_in(row)) {
+        Held::Nothing => Ok(None),
+        Held::Prototype(record, blob) => Ok(Some((record, blob))),
+        Held::Unreadable(code) => Err(refusal(
+            "changes::change::degraded",
+            format!(
+                "the prototype record of {path} at {at} is degraded with {code}, so whether the \
+                 change is a prototype is not known; run `board check {at}` and fix it"
+            ),
+            [("path", json!(at)), ("code", json!(code))],
+        )),
+    }
 }
 
 /// The kind of the change at `path`: a prototype when its prototype record
@@ -133,30 +169,57 @@ pub(crate) fn kind_of(host: &dyn Host, path: &str) -> Result<Kind, PluginError> 
     })
 }
 
-/// Every prototype record in the board's own tree, by the change it names.
+/// What sits at `<change>/prototype` for every change of the board's own
+/// that has something there, by the change's path: the record, or none
+/// when Board does not read it as one.
 pub(crate) fn prototypes(
     host: &dyn Host,
-) -> Result<BTreeMap<String, PrototypeRecord>, PluginError> {
+) -> Result<BTreeMap<String, Option<PrototypeRecord>>, PluginError> {
+    let suffix = "/prototype";
     let sql = format!(
-        "SELECT body FROM records WHERE type = {} AND substr(logical, 1, {}) = {} AND ({})",
-        literal(PrototypeRecord::TYPE),
+        "SELECT e.blob, e.type, e.code, b.body, e.logical FROM entries AS e \
+         LEFT JOIN bodies AS b ON b.blob = e.blob \
+         WHERE substr(e.logical, 1, {}) = {} AND e.logical LIKE {}",
         OWN.len(),
         literal(OWN),
-        sound()
+        literal(&format!("%{suffix}"))
     );
-    Ok((rows(host, &sql)?.iter())
-        .filter_map(|row| from_body::<PrototypeRecord>(row.first()))
-        .map(|record| (record.change.clone(), record))
-        .collect())
+    let mut found = BTreeMap::new();
+    for row in rows(host, &sql)? {
+        let Some(change) = text(row.get(4)).and_then(|logical| logical.strip_suffix(suffix)) else {
+            continue;
+        };
+        // Only `/changes/<name>/prototype` is a change's prototype.
+        if change[OWN.len()..].contains('/') {
+            continue;
+        }
+        let record = match held_in(&row) {
+            Held::Prototype(record, _) => Some(record),
+            Held::Nothing | Held::Unreadable(_) => None,
+        };
+        found.insert(change.to_owned(), record);
+    }
+    Ok(found)
 }
 
-/// The kind of the change at `path`: a prototype when its prototype record
-/// names it.
-pub(crate) fn kind_in(prototypes: &BTreeMap<String, PrototypeRecord>, path: &str) -> Kind {
+/// The kind of the change at `path`: a prototype when anything sits at its
+/// `<path>/prototype`, read or not, so an unread one is never a build
+/// change.
+pub(crate) fn kind_in(prototypes: &BTreeMap<String, Option<PrototypeRecord>>, path: &str) -> Kind {
     if prototypes.contains_key(path) {
         Kind::Prototype
     } else {
         Kind::Build
+    }
+}
+
+/// Where a prototype stands, which its change's phase says: settled when
+/// done, abandoned when dropped, and exploring otherwise.
+pub(crate) fn state_of(phase: Phase) -> State {
+    match phase {
+        Phase::Done => State::Settled,
+        Phase::Dropped => State::Abandoned,
+        _ => State::Exploring,
     }
 }
 
@@ -284,36 +347,25 @@ pub(crate) fn write(
 }
 
 /// A plan's text path, its `uses` and its `paths`.
-pub(crate) type Newest = (Option<String>, Vec<String>, Vec<String>);
+pub(crate) type Current = (Option<String>, Vec<String>, Vec<String>);
 
-/// The change's newest plan: its text's path, its `uses` and its `paths`,
-/// or no text, uses or paths when it has no plan record.
-pub(crate) fn newest(host: &dyn Host, path: &str) -> Result<Newest, PluginError> {
-    let prefix = format!("{path}/plans/");
-    let sql = format!(
-        "SELECT body FROM records WHERE type = {} AND substr(logical, 1, {}) = {} \
-         AND ({}) ORDER BY logical DESC LIMIT 1",
-        literal(PlanRecord::TYPE),
-        prefix.chars().count(),
-        literal(&prefix),
-        sound()
-    );
-    let found = rows(host, &sql)?;
-    let Some(row) = found.first() else {
+/// The change's current plan, the record its `plan` names: its text's
+/// path, its `uses` and its `paths`, or no text, uses or paths when it names
+/// none that Board reads. Every reader of the plan reads it here, so the
+/// gates and the brief never read one plan's text and another's paths.
+pub(crate) fn current(host: &dyn Host, change: &ChangeRecord) -> Result<Current, PluginError> {
+    let Some(plan) = &change.plan else {
         return Ok((None, Vec::new(), Vec::new()));
     };
-    let plan = body(row.first());
-    let strings = |key: &str| -> Vec<String> {
-        (plan
-            .get(key)
-            .and_then(Value::as_array)
-            .into_iter()
-            .flatten())
-        .filter_map(|each| each.as_str().map(str::to_owned))
-        .collect()
-    };
-    let text = plan.get("text").and_then(Value::as_str).map(str::to_owned);
-    Ok((text, strings("uses"), strings("paths")))
+    Ok(
+        plan_at(host, plan)?.map_or((None, Vec::new(), Vec::new()), |(record, _)| {
+            (
+                Some(record.text),
+                record.uses,
+                record.paths.unwrap_or_default(),
+            )
+        }),
+    )
 }
 
 /// Each entry `refs` reaches, as its type and body, in their order, and
@@ -331,6 +383,7 @@ pub(crate) fn referenced(host: &dyn Host, refs: &[String]) -> Result<Referenced,
     );
     let mut records: BTreeMap<String, Found> = BTreeMap::new();
     let mut codes: BTreeMap<String, String> = BTreeMap::new();
+    let mut types: BTreeMap<String, String> = BTreeMap::new();
     for row in rows(host, &sql)? {
         let Some(logical) = text(row.first()) else {
             continue;
@@ -342,6 +395,9 @@ pub(crate) fn referenced(host: &dyn Host, refs: &[String]) -> Result<Referenced,
         } else if !records.contains_key(logical) {
             let code = text(row.get(2)).unwrap_or_default();
             codes.insert(logical.to_owned(), code.to_owned());
+            if let Some(kind) = text(row.get(1)) {
+                types.insert(logical.to_owned(), kind.to_owned());
+            }
         }
     }
     let unfound: Vec<String> = (refs.iter())
@@ -365,6 +421,9 @@ pub(crate) fn referenced(host: &dyn Host, refs: &[String]) -> Result<Referenced,
         } else {
             let code = codes.get(each).map_or(NOT_FOUND, String::as_str);
             found.unreadable.push((each.clone(), code.to_owned()));
+            if let Some(kind) = types.get(each) {
+                found.unreadable_types.insert(each.clone(), kind.clone());
+            }
         }
     }
     Ok(found)
@@ -389,13 +448,22 @@ fn sync_key(host: &dyn Host) -> Result<Option<Vec<u8>>, PluginError> {
     }))
 }
 
-/// Records `day` as the day of the last writing sync in Board's cache. A
-/// lost cache only makes the next `next` or `open` warn that sync is stale.
-pub(crate) fn record_sync(host: &dyn Host, day: &str) -> Result<(), PluginError> {
-    if let Some(key) = sync_key(host)? {
-        let _ = host.cache(SYNC_PLACE, &key, day.as_bytes());
-    }
-    Ok(())
+/// Records `day` as the day of the last writing sync in Board's cache, or
+/// says why the cache did not take it. A lost day only makes `next` and
+/// `open` on this checkout warn that sync is stale until a sync records one.
+pub(crate) fn record_sync(host: &dyn Host, day: &str) -> Result<Option<String>, PluginError> {
+    let Some(key) = sync_key(host)? else {
+        return Ok(None);
+    };
+    Ok(host
+        .cache(SYNC_PLACE, &key, day.as_bytes())
+        .err()
+        .map(|error| {
+            format!(
+                "Board's cache did not take {day} as the day of this sync ({error}), so `next` and \
+             `open` on this checkout warn that sync is stale until a sync records it"
+            )
+        }))
 }
 
 /// The day the last writing sync ran and whether that is before today, with

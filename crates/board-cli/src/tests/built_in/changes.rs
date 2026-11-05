@@ -292,7 +292,21 @@ impl Changes {
         let mut kept = fields.as_object().unwrap().clone();
         let records = kept.remove("records");
         let named = kept.remove("plan");
-        if records.is_some() || named.is_some() {
+        // A plan that `changes.plan` wrote since stays the change's plan, and
+        // the records go on it, as `attach --ref` would put them.
+        let current = (named.is_none() && self.exists(file))
+            .then(|| self.read(file)["plan"].as_str().map(str::to_owned))
+            .flatten()
+            .filter(|plan| *plan != format!("{at}/plans/1"));
+        if let Some(plan) = current {
+            let held = format!("{}.json", plan.trim_start_matches('/'));
+            let mut record = self.read(&held);
+            if let Some(records) = records {
+                record["records"] = records;
+            }
+            self.write(&held, &serde_json::to_string(&record).unwrap());
+            kept.insert("plan".to_owned(), json!(plan));
+        } else if records.is_some() || named.is_some() {
             let text = match named.as_ref().and_then(Value::as_str) {
                 Some(named) if std::path::Path::new(named).extension() != Some("md".as_ref()) => {
                     kept.insert("plan".to_owned(), json!(named));
@@ -347,8 +361,10 @@ impl Changes {
             kept.insert(list.to_owned(), json!([format!("/{path}")]));
         }
         let kind = kept.remove("kind");
-        let mut prototype = json!({"change": at, "state": "exploring"});
-        for key in ["question", "state", "verdict", "verdict_artifact"] {
+        // The phase gives a prototype's state, so the record keeps none.
+        kept.remove("state");
+        let mut prototype = json!({});
+        for key in ["question", "verdict", "verdict_artifact"] {
             if let Some(value) = kept.remove(key) {
                 prototype[key] = value;
             }

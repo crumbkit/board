@@ -2,10 +2,12 @@
 //! an origin, and the day of a time. The limit itself runs through the
 //! binary in board-cli's changes tests.
 
-use board_repos::Date;
-use serde_json::Value;
+use std::time::Instant;
 
-use super::{day_of, split, stored};
+use board_repos::Date;
+use serde_json::{Value, json};
+
+use super::{GIT_READ, Reads, day_of, split, stored};
 
 fn day(text: &str) -> Date {
     Date::parse(text).unwrap()
@@ -75,4 +77,18 @@ fn a_time_is_read_as_its_utc_day_and_text_that_is_no_time_has_none() {
     }
     assert_eq!(day_of(Some(&Value::from(3))), None);
     assert_eq!(day_of(None), None);
+}
+
+#[test]
+fn the_git_reads_refuse_with_timeout_once_their_deadline_passed_and_admit_a_read_before_it() {
+    let passed = Reads {
+        until: Instant::now(),
+    };
+    let refused = passed.left("/changes/a").unwrap_err();
+    assert_eq!(
+        (refused.code.as_str(), &refused.fields["path"]),
+        ("changes::wip::timeout", &json!("/changes/a"))
+    );
+    let left = Reads::start().left("/changes/a").unwrap();
+    assert!(!left.is_zero() && left <= GIT_READ, "{left:?}");
 }

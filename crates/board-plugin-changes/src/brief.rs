@@ -7,7 +7,7 @@ use serde::Serialize;
 use serde_json::{Map, Value, json};
 
 use crate::board::{call_or_refusal, refused};
-use crate::change::{newest, read, referenced};
+use crate::change::{current, read, referenced};
 use crate::gates::HEADING;
 use crate::phases::{PathInput, next_of};
 use crate::plan::{documents, words};
@@ -301,7 +301,7 @@ pub(crate) fn brief(host: &dyn Host, input: &Value) -> Result<Value, PluginError
 /// The brief of the change at `path`.
 pub(crate) fn brief_of(host: &dyn Host, path: &str) -> Result<Output, PluginError> {
     let (change, _) = read(host, path)?;
-    let (text, uses, paths) = newest(host, path)?;
+    let (text, uses, paths) = current(host, &change)?;
     let records = referenced(host, &uses)?;
     let texts = documents(host, &uses, &records)?;
     let step = next_of(host, path)?;

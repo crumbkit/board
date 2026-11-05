@@ -380,3 +380,35 @@ fn a_change_that_merged_from_build_ends_and_says_which_gates_it_skipped() {
         "{detail}"
     );
 }
+
+/// Removes the file at `file`, which a test put in the cache.
+#[expect(
+    clippy::disallowed_methods,
+    reason = "the test blocks the cache's directory with a file and then frees it"
+)]
+fn remove_file(file: &Path) {
+    std::fs::remove_file(file).unwrap();
+}
+
+#[test]
+fn a_sync_whose_day_the_cache_cannot_take_says_why_and_one_it_can_says_nothing() {
+    let board = Changes::new();
+    board.change_at("changes/t.json", "build", &json!({}));
+    // A file where the cache keeps its directory makes every write fail.
+    let place = board.cache.path().join("board-changes");
+    write_file(&place, "not a directory");
+    let output = board.call("sync", &json!({}));
+    let why = output["unrecorded"].as_str().unwrap_or_default();
+    assert!(
+        why.starts_with(&format!(
+            "Board's cache did not take {} as the day",
+            today()
+        )),
+        "{output}"
+    );
+    assert_eq!(board.call("open", &json!({}))["sync"]["stale"], true);
+    remove_file(&place);
+    let output = board.call("sync", &json!({}));
+    assert_eq!(output.get("unrecorded"), None, "{output}");
+    assert_eq!(board.call("open", &json!({}))["sync"]["stale"], false);
+}

@@ -101,7 +101,8 @@ struct Entry {
 }
 
 /// Each open change of the board's own and what sync did with it; `moved`
-/// counts those it ended.
+/// counts those it ended. `unrecorded` says why Board's cache did not take
+/// the day of the sync, when it did not.
 #[derive(Debug, Serialize, JsonSchema)]
 #[schemars(rename = "SyncOutput")]
 pub(crate) struct Output {
@@ -110,6 +111,8 @@ pub(crate) struct Output {
     total: usize,
     moved: usize,
     truncated: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    unrecorded: Option<String>,
 }
 
 /// An entry with no move, code or command yet, for the pull request at
@@ -399,11 +402,12 @@ pub(crate) fn sync(host: &dyn Host, input: &Value) -> Result<Value, PluginError>
             lines.push(json!({"path": path, "expect": blob, "record": ended}));
         }
     }
+    let mut unrecorded = None;
     if !dry_run {
         if !lines.is_empty() {
             board::put(host, &lines)?;
         }
-        record_sync(host, &today(host).to_string())?;
+        unrecorded = record_sync(host, &today(host).to_string())?;
     }
     let total = entries.len();
     let moved = entries.iter().filter(|found| found.to.is_some()).count();
@@ -414,6 +418,7 @@ pub(crate) fn sync(host: &dyn Host, input: &Value) -> Result<Value, PluginError>
         total,
         moved,
         truncated: total > limit,
+        unrecorded,
     }))
 }
 

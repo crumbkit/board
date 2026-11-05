@@ -14,17 +14,18 @@ use std::path::Path;
 use std::sync::LazyLock;
 
 use board_model::parse_json;
-use board_ops::{Host, PluginError, literal};
-use board_plugin::shape::{Record, Tag};
+use board_ops::{Host, Plugin, PluginError, literal};
+use board_plugin::shape::{Record, Tag, Url};
+use board_validate::Schema;
 use regex::Regex;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 
 use crate::board::{self, rows, text};
-use crate::change::{OWN, record_sync};
+use crate::change::{OWN, prototypes, record_sync};
 use crate::plan::stamp;
-use crate::records::{ChangeRecord, PlanRecord, PrototypeRecord, State, UnderstandingRecord};
+use crate::records::{ChangeRecord, PlanRecord, PrototypeRecord, UnderstandingRecord};
 use crate::{PLUGIN, to_value};
 
 /// A GitHub pull request or issue page, as the Python plugin stored it:
@@ -70,11 +71,15 @@ pub(crate) struct Input {
     apply: bool,
 }
 
-/// A record the migration could not rewrite, and why.
+/// A record the migration could not rewrite, and why, with the GitHub page
+/// `github.ref` could not record when that is the reason.
 #[derive(Debug, Serialize, JsonSchema)]
 struct Left {
     path: String,
     why: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "Option<Url>")]
+    page: Option<String>,
 }
 
 /// What the migration rewrote or would rewrite.
@@ -84,7 +89,8 @@ struct Left {
 /// lists each pull request or issue that `github.ref` records, as
 /// owner/repo#number. `left` lists the changes and understanding checks
 /// left as they are, which the owner fixes by hand. `synced` is the day moved from `/changes/sync` to
-/// Board's cache.
+/// Board's cache, and `unrecorded` says why the cache did not take it, when
+/// it did not.
 #[derive(Debug, Serialize, JsonSchema)]
 #[schemars(rename = "MigrateOutput")]
 pub(crate) struct Output {
@@ -97,6 +103,8 @@ pub(crate) struct Output {
     refs: Vec<String>,
     left: Vec<Left>,
     synced: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    unrecorded: Option<String>,
 }
 
 /// One old change: its path, blob and body.
@@ -142,11 +150,13 @@ fn old_plan(body: &Map<String, Value>) -> bool {
 }
 
 /// What the migration reads once for the whole board: every plan record
-/// under `/changes/`, by its change and then by path, with its blob, and
-/// which of the Markdown plans the old changes name are there.
+/// under `/changes/`, by its change and then by path, with its blob, which
+/// of the Markdown plans the old changes name are there, and the changes
+/// that already have something at `<path>/prototype`.
 struct Known {
     plans: BTreeMap<String, BTreeMap<String, (PlanRecord, String)>>,
     files: BTreeSet<String>,
+    prototypes: BTreeSet<String>,
 }
 
 fn known(host: &dyn Host, olds: &[Old]) -> Result<Known, PluginError> {
@@ -186,7 +196,12 @@ fn known(host: &dyn Host, olds: &[Old]) -> Result<Known, PluginError> {
             }
         }
     }
-    Ok(Known { plans, files })
+    let prototypes = prototypes(host)?.into_keys().collect();
+    Ok(Known {
+        plans,
+        files,
+        prototypes,
+    })
 }
 
 /// The understanding checks of the old shape, which the migration cannot
@@ -208,6 +223,7 @@ fn old_checks(host: &dyn Host) -> Result<Vec<Left>, PluginError> {
         };
         if serde_json::from_value::<UnderstandingRecord>(body).is_err() {
             left.push(Left {
+                page: None,
                 path: path.to_owned(),
                 why: "it is an understanding check of the old shape; give each question the \
                       design's answer in `design`, and keep only the fields \
@@ -253,7 +269,7 @@ fn add(listed: &mut Vec<String>, each: String) {
 #[derive(Default)]
 struct Plan {
     lines: Vec<Value>,
-    refs: Vec<(String, bool)>,
+    refs: Vec<Page>,
     plans: usize,
     prototype: bool,
 }
@@ -290,7 +306,11 @@ fn rewrite(known: &Known, old: &Old, record: &str) -> Result<Plan, String> {
                     "its {key} {url} is not a GitHub page, so no github record can stand for it"
                 ));
             };
-            plan.refs.push(found);
+            plan.refs.push(Page {
+                reference: found.0,
+                pull: found.1,
+                url,
+            });
         }
     }
     let mut change = body.clone();
@@ -319,19 +339,14 @@ fn rewrite(known: &Known, old: &Old, record: &str) -> Result<Plan, String> {
             .push(json!({"path": target, "expect": expect, "record": kept}));
     }
     change.insert("plan".to_owned(), json!(target));
-    if string(body, "kind").as_deref() == Some("prototype") {
-        let state = match string(body, "state").as_deref() {
-            Some("settled") => State::Settled,
-            Some("abandoned") => State::Abandoned,
-            _ => State::Exploring,
-        };
+    // A prototype's state is its change's phase, so only the question and
+    // the verdict move. A prototype record already there is kept.
+    if string(body, "kind").as_deref() == Some("prototype") && !known.prototypes.contains(path) {
         let prototype = PrototypeRecord {
             tag: Tag::default(),
-            change: path.clone(),
             question: string(body, "question")
                 .or_else(|| string(body, "title"))
                 .unwrap_or_default(),
-            state,
             verdict: string(body, "verdict"),
             verdict_artifact: string(body, "verdict_artifact"),
         };
@@ -397,6 +412,121 @@ fn old_sync(host: &dyn Host) -> Result<Option<(String, String)>, PluginError> {
         .and_then(|row| Some((text(row.get(1))?.to_owned(), text(row.first())?.to_owned()))))
 }
 
+/// A GitHub page an old change names: its `owner/repo#number`, whether it
+/// is a pull request, and its URL.
+struct Page {
+    reference: String,
+    pull: bool,
+    url: String,
+}
+
+/// Why `github.ref` did not record a page: the page itself, which leaves
+/// its change as it is, or Board, which stops the migration.
+enum Unrecorded<'a> {
+    Page(&'a Page, String),
+    Board(PluginError),
+}
+
+/// The path of the github record `github.ref` writes for each page, or
+/// with no `apply` none. A refusal of the github plugin's own, such as a
+/// page GitHub does not have, names the page; any other refusal, such as
+/// the plugin not being enabled, stops the migration.
+fn recorded<'a>(
+    host: &dyn Host,
+    apply: bool,
+    pages: &'a [Page],
+) -> Result<Vec<Option<String>>, Unrecorded<'a>> {
+    let mut paths = Vec::new();
+    for page in pages {
+        if !apply {
+            paths.push(None);
+            continue;
+        }
+        let output =
+            match board::call_or_refusal(host, "github.ref", &json!({"ref": page.reference})) {
+                Ok(output) => output,
+                Err(refusal) if refusal.code.as_str().starts_with("github::") => {
+                    let why = format!(
+                        "github.ref could not record {}: {}: {}; fix or remove the page, then run \
+                     migrate again",
+                        page.url,
+                        refusal.code.as_str(),
+                        refusal.message
+                    );
+                    return Err(Unrecorded::Page(page, why));
+                }
+                Err(refusal) => return Err(Unrecorded::Board(board::refused("call", &refusal))),
+            };
+        match string(output.as_object().unwrap_or(&Map::new()), "path") {
+            Some(at) if !at.is_empty() => paths.push(Some(at)),
+            _ => {
+                let why = format!(
+                    "github.ref recorded {} but named no record path; run migrate again",
+                    page.url
+                );
+                return Err(Unrecorded::Page(page, why));
+            }
+        }
+    }
+    Ok(paths)
+}
+
+/// The plugin's own schemas, compiled, by type.
+fn compiled() -> BTreeMap<String, Schema> {
+    (crate::Changes.schemas().into_iter())
+        .filter_map(|(kind, document)| {
+            Some((kind.as_str().to_owned(), Schema::compile(document).ok()?))
+        })
+        .collect()
+}
+
+/// Whether every record among `lines` passes its type's schema, so a dry
+/// run that lists a change promises an apply that writes it. A record of a
+/// type the plugin does not ship is left to Board's own check.
+fn conforms(schemas: &BTreeMap<String, Schema>, lines: &[Value]) -> Result<(), String> {
+    for line in lines {
+        let Some(record) = line.get("record").or_else(|| line.get("change")) else {
+            continue;
+        };
+        let kind = record
+            .get("$type")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        if let Some(schema) = schemas.get(kind)
+            && let Err(error) = schema.validate(record)
+        {
+            let at = line.get("path").and_then(Value::as_str).unwrap_or_default();
+            return Err(format!(
+                "its rewritten record at {at} {error}, so nothing of it is written; fix the old \
+                 change and run migrate again"
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Adds the github records' paths to the rewritten change, the last of
+/// `written`, and makes it the line's record.
+fn finish(written: &mut [Value], pulls: Vec<String>, tickets: Vec<String>) {
+    let Some(last) = written.last_mut().and_then(Value::as_object_mut) else {
+        return;
+    };
+    if let Some(Value::Object(change)) = last.get_mut("change") {
+        for (key, found) in [("pulls", pulls), ("tickets", tickets)] {
+            let mut listed = strings(change, key);
+            for each in found {
+                add(&mut listed, each);
+            }
+            if !listed.is_empty() {
+                change.insert(key.to_owned(), json!(listed));
+            }
+        }
+    }
+    if let Some(change) = last.remove("change") {
+        last.insert("record".to_owned(), change);
+    }
+}
+
 /// Rewrites each old change, or with no `apply` says what it would write.
 ///
 /// With `apply`, `github.ref` writes each GitHub record first, each in its
@@ -411,6 +541,7 @@ pub(crate) fn migrate(host: &dyn Host, input: &Value) -> Result<Value, PluginErr
     let mut lines = Vec::new();
     let olds = olds(host)?;
     let known = known(host, &olds)?;
+    let schemas = compiled();
     for old in olds {
         let planned = match rewrite(&known, &old, &record) {
             Ok(planned) => planned,
@@ -418,6 +549,7 @@ pub(crate) fn migrate(host: &dyn Host, input: &Value) -> Result<Value, PluginErr
                 left.push(Left {
                     path: old.path.clone(),
                     why,
+                    page: None,
                 });
                 continue;
             }
@@ -428,39 +560,38 @@ pub(crate) fn migrate(host: &dyn Host, input: &Value) -> Result<Value, PluginErr
             plans: plan_count,
             prototype,
         } = planned;
-        let mut pulls = Vec::new();
-        let mut tickets = Vec::new();
-        for (reference, pull) in pages {
-            add(&mut refs, reference.clone());
-            if apply {
-                let output = board::call(host, "github.ref", &json!({"ref": reference}))?;
-                let at =
-                    string(output.as_object().unwrap_or(&Map::new()), "path").unwrap_or_default();
-                if pull {
-                    pulls.push(at);
-                } else {
-                    tickets.push(at);
+        // Checked before github.ref writes anything for the change.
+        if let Err(why) = conforms(&schemas, &written) {
+            left.push(Left {
+                path: old.path.clone(),
+                why,
+                page: None,
+            });
+            continue;
+        }
+        let (mut pulls, mut tickets) = (Vec::new(), Vec::new());
+        match recorded(host, apply, &pages) {
+            Ok(paths) => {
+                for (page, at) in pages.iter().zip(paths) {
+                    add(&mut refs, page.reference.clone());
+                    if page.pull {
+                        pulls.extend(at);
+                    } else {
+                        tickets.extend(at);
+                    }
                 }
             }
-        }
-        if let Some(Value::Object(change)) =
-            written.last_mut().and_then(|line| line.get_mut("change"))
-        {
-            for (key, found) in [("pulls", pulls), ("tickets", tickets)] {
-                let mut listed = strings(change, key);
-                for each in found {
-                    add(&mut listed, each);
-                }
-                if !listed.is_empty() {
-                    change.insert(key.to_owned(), json!(listed));
-                }
+            Err(Unrecorded::Page(page, why)) => {
+                left.push(Left {
+                    path: old.path.clone(),
+                    why,
+                    page: Some(page.url.clone()),
+                });
+                continue;
             }
+            Err(Unrecorded::Board(error)) => return Err(error),
         }
-        if let Some(last) = written.last_mut().and_then(Value::as_object_mut)
-            && let Some(change) = last.remove("change")
-        {
-            last.insert("record".to_owned(), change);
-        }
+        finish(&mut written, pulls, tickets);
         plans += plan_count;
         prototypes += usize::from(prototype);
         changes.push(old.path.clone());
@@ -471,12 +602,13 @@ pub(crate) fn migrate(host: &dyn Host, input: &Value) -> Result<Value, PluginErr
     if let Some((_, blob)) = &sync {
         lines.push(json!({"path": SYNC_PATH, "expect": blob, "remove": true}));
     }
+    let mut unrecorded = None;
     if apply {
         if !lines.is_empty() {
             board::put(host, &lines)?;
         }
         if let Some((day, _)) = &sync {
-            record_sync(host, day)?;
+            unrecorded = record_sync(host, day)?;
         }
     }
     let total = changes.len();
@@ -491,6 +623,7 @@ pub(crate) fn migrate(host: &dyn Host, input: &Value) -> Result<Value, PluginErr
         refs,
         left,
         synced: sync.map(|(day, _)| day),
+        unrecorded,
     }))
 }
 

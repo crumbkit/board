@@ -13,7 +13,7 @@ use crate::change::{branch_of, line, prototype_of, read, touch};
 use crate::phases::final_phase;
 use crate::plan::plan_lines;
 use crate::pr::quote;
-use crate::records::{ChangeRecord, Kind, Phase, PrototypeRecord, State};
+use crate::records::{ChangeRecord, Kind, Phase, PrototypeRecord};
 use crate::repo::exists;
 use crate::start::{name_of, refuse_existing};
 use crate::tasks::{add_task, close_task};
@@ -145,9 +145,7 @@ pub(crate) fn prototype(host: &dyn Host, input: &Value) -> Result<Value, PluginE
     let mut change = ChangeRecord::new(title.clone(), mount, Phase::Build);
     let prototype = PrototypeRecord {
         tag: Tag::default(),
-        change: path.clone(),
         question: asked.question.clone(),
-        state: State::Exploring,
         verdict: None,
         verdict_artifact: None,
     };
@@ -219,11 +217,6 @@ pub(crate) fn verdict(host: &dyn Host, input: &Value) -> Result<Value, PluginErr
         ));
     }
     let settled = state == Ended::Settled;
-    prototype.state = if settled {
-        State::Settled
-    } else {
-        State::Abandoned
-    };
     prototype.verdict = Some(verdict);
     change.phase = if settled { Phase::Done } else { Phase::Dropped };
     if artifact.is_some() {

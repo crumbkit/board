@@ -53,7 +53,9 @@ phases.
   (someone else does) or `unowned` (no CODEOWNERS pattern names anyone).
 
 `changes/plan/v1` at `/changes/<name>/plans/<stamp>.json`, beside its text
-at `<stamp>.md`. The newest stamp is the change's current plan.
+at `<stamp>.md`. The plan the change's `plan` names is its current plan,
+and every reader of the plan, the gates and `brief` among them, reads
+that one record.
 
 ```json
 {
@@ -76,18 +78,23 @@ at `<stamp>.md`. The newest stamp is the change's current plan.
   are those every one of its plans lists.
 
 `changes/prototype/v1` at `/changes/<name>/prototype.json` makes the change
-a prototype. A prototype answers `question` on branch `proto/<name>` and
-never lands. Its `state` is `exploring` until `verdict`, one sentence,
-ends it as `settled` or `abandoned`; `verdict_artifact` is the URL of the
-artifact version the verdict means. A change with no prototype record is
-a build change.
+a prototype, and its path names the change. A prototype answers
+`question` on branch `proto/<name>` and never lands. `verdict`, one
+sentence, ends it in `done` when settled or in `dropped` when abandoned;
+`verdict_artifact` is the URL of the artifact version the verdict means.
+The change's phase gives the prototype's state, which `open` reports:
+`settled` when done, `abandoned` when dropped and `exploring` otherwise.
+A change with nothing at `<path>/prototype` is a build change. When
+something is there that Board does not read as a prototype record,
+whether the change is a prototype is not known: `next`, `advance`, `plan`
+and `pr` refuse with `changes::change::degraded`, `open` counts the
+change as unreadable, the WIP limit counts it with the prototypes, and
+the write guard refuses the builder's edits.
 
 ```json
 {
   "$type": "changes/prototype/v1",
-  "change": "/changes/step-list",
-  "question": "Does a step list read better than a graph?",
-  "state": "exploring"
+  "question": "Does a step list read better than a graph?"
 }
 ```
 
@@ -99,15 +106,23 @@ words, and the `design`'s answer, and may say its `kind` (`predict`,
 `rechecks` holds the questions asked again before review. The
 `understanding-check` skill in `claude-code/skills/` runs the check.
 
-The day of the last sync lives in Board's cache, keyed by the board, so a
-lost cache only makes `open` and `next` call the sync stale.
+The day of the last sync lives in Board's cache, keyed by the path of the
+board's checkout, so the stale warning is per checkout: another clone or
+worktree of the board, or a cleared cache, reports `changes::sync::stale`
+until a sync runs there. When the cache does not take the day, `sync` and
+`migrate` say why in `unrecorded`.
 
 `migrate [--apply true]` rewrites change records of the shape before this
 split: it moves `records` to the newest plan, a prototype's fields to its
 prototype record and a `/changes/sync` day to the cache, and records each
 GitHub `pull_request` or `issue` URL through `github.ref`, which needs the
 github plugin enabled. Without `--apply` it writes nothing and says what
-it would. `left` lists each change with a field no shape has.
+it would. Both check each rewritten record against its schema. `left`
+lists each change and understanding check it leaves as it is, with why: a
+field no shape has, a rewritten record that fails its schema, or, with
+`page`, a GitHub page that `github.ref` refused. The rest migrate. A
+refusal from Board itself, such as the github plugin not being enabled,
+stops the migration before it writes the changes.
 
 ## Capabilities
 
@@ -194,14 +209,14 @@ it would. `left` lists each change with a field no shape has.
 - `open [--kind build|prototype] [--limit <n>]`: read-only. Changes not
   `done` or `dropped`, by path, at most 100 by default, with `total`,
   `truncated`, `unreadable` and `sync`. Each names its `task` and `kind`, and a
-  prototype also its `question`, `state`, `verdict`, `verdict_artifact` and
-  `branch`. `--kind` keeps one kind; `--kind prototype` also lists the
+  prototype also its `question`, `state` (from its phase), `verdict`,
+  `verdict_artifact` and `branch`. `--kind` keeps one kind; `--kind prototype` also lists the
   settled and abandoned prototypes, since their verdicts are what is looked
   for.
 - `prototype --mount /repos/<name> --question '<question>' --parent <task> [--title '<title>'] [--name <name>]`
   adds the prototype's task under `--parent` through `board call tasks.add
   --parent`, in the parent's repo. It writes a change in `build`, its prototype
-  record with `state: exploring`, and a plan whose text is the question, and returns
+  record with its question, and a plan whose text is the question, and returns
   `path`, `task`, `branch` and the `brief` its one builder starts from. The
   owner then iterates with that builder for as many rounds as he likes.
   The task is added before the change is written, so a refused write leaves
@@ -329,9 +344,9 @@ Board marks degraded satisfies nothing.
 | Leaving | Gate |
 | --- | --- |
 | plan | Each plan section has text, `task` is set, and `route` is set. On `ask-first`, also a `plans/decision/v1` whose `refs` name the plan or the change. Any such decision passes, including a rejection. Then `ux`, `neighbours` and `data`, below. |
-| build | Every attached `tasks/task/v2` is `done` or `dropped`. A repeating task never reaches `done`, so drop it to release the gate. An attached `runs/run/v1` under `<suite>/runs/` of the check suite is full, clean, has no `fail` or `error`, and names `head` in `versions`. Each attached `changes/understanding/v1` of this change holds at least two `rechecks`, and every one of them matched. |
+| build | Every attached `tasks/task/v2` is `done` or `dropped`. A repeating task never reaches `done`, so drop it to release the gate. An attached `runs/run/v1` under `<suite>/runs/` of the check suite is full, clean, has no `fail` or `error`, and names `head` in `versions`. Each attached `changes/understanding/v1` of this change holds at least two `rechecks`, and every one of them matched; an attached understanding check that Board does not read fails the check. |
 | review | An attached `review/report/v1` whose `range` ends at `head`, whose `verdict` is not `changes`, and which has no `critical` or `high` finding. Then `paths`, below. |
-| land | `pulls` names a pull request. Advancing enters `done`. |
+| land | The newest of `pulls` reads as a `github/pull/v1` record. Advancing enters `done`. |
 | build, for a prototype | Never passes: `verdict` ends a prototype instead. |
 
 The plan gate's last three checks:
@@ -452,8 +467,10 @@ every Edit, Write and NotebookEdit. Install it with
 4. It reads that change from each board that mounts the repository. It
    admits the call when the change's `phase` is `build` and its `mount` is the
    mount that holds the file; a paused change is refused and told to
-   resume. For a prototype, the file's checkout must also
-   be on branch `proto/<name>`.
+   resume. It then reads `<change>/prototype`: when a prototype record is
+   there, the file's checkout must also be on branch `proto/<name>`, and
+   when something there does not read, the edit is refused with
+   `changes::guard::unknown`.
 
 Before any of that, the guard refuses three kinds of file to every agent,
 brief or not, because they change only through board commands: the board
