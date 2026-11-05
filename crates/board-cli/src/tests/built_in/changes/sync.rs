@@ -47,12 +47,13 @@ impl Changes {
 }
 
 /// Changes whose pull requests merged, closed, stayed open and are unknown
-/// to GitHub, three without one, one still in plan and one in a mounted
-/// board.
+/// to GitHub, one whose pull request record Board does not hold, two
+/// without one, one still in plan and one in a mounted board.
 fn pulls(board: &Changes) {
-    board.write(
+    board.change_at(
         "changes/merged.json",
-        &change("land", &json!({"pull_request": pull(1)})),
+        "land",
+        &json!({"pull_request": pull(1)}),
     );
     board.answers(
         1,
@@ -63,9 +64,10 @@ fn pulls(board: &Changes) {
             "closed_at": "2026-11-02T10:00:00Z",
         }),
     );
-    board.write(
+    board.change_at(
         "changes/closed.json",
-        &change("build", &json!({"pull_request": pull(2)})),
+        "build",
+        &json!({"pull_request": pull(2)}),
     );
     board.answers(
         2,
@@ -76,34 +78,32 @@ fn pulls(board: &Changes) {
             "closed_at": "2026-11-03T09:00:00Z",
         }),
     );
-    board.write(
+    board.change_at(
         "changes/open.json",
-        &change("review", &json!({"pull_request": pull(3)})),
+        "review",
+        &json!({"pull_request": pull(3)}),
     );
     board.answers(3, &json!({"state": "open", "merged": false}));
-    board.write(
+    board.change_at(
         "changes/gone.json",
-        &change("build", &json!({"pull_request": pull(4)})),
+        "build",
+        &json!({"pull_request": pull(4)}),
     );
-    board.write(
+    board.change_at(
         "changes/elsewhere.json",
-        &change(
-            "build",
-            &json!({"pull_request": "https://gitlab.com/o/r/-/merge_requests/1"}),
-        ),
+        "build",
+        &json!({"pulls": ["/gh/octo/widgets/pulls/9"]}),
     );
-    board.write("changes/bare.json", &change("build", &json!({})));
-    board.write(
-        "changes/started.json",
-        &change("build", &json!({"head": "a3f9c0d"})),
-    );
-    board.write(
+    board.change_at("changes/bare.json", "build", &json!({}));
+    board.change_at("changes/started.json", "build", &json!({"head": "a3f9c0d"}));
+    board.change_at(
         "changes/planning.json",
-        &change("plan", &json!({"pull_request": pull(5)})),
+        "plan",
+        &json!({"pull_request": pull(5)}),
     );
     board.write(
         "repos/other/changes/theirs.json",
-        &change("build", &json!({"pull_request": pull(6)})),
+        &change("build", &json!({"pulls": ["/gh/octo/widgets/pulls/6"]})),
     );
 }
 
@@ -137,7 +137,11 @@ fn expected() -> BTreeMap<String, (Value, Value, Value)> {
         ("/changes/closed", ("closed", Some("dropped"), None)),
         (
             "/changes/elsewhere",
-            ("not_github", None, Some("changes::sync::not_github")),
+            (
+                "pull_unreadable",
+                None,
+                Some("changes::sync::pull_unreadable"),
+            ),
         ),
         (
             "/changes/gone",
@@ -199,10 +203,7 @@ fn sync_ends_merged_and_closed_changes_and_reports_the_rest() {
         )
     );
     assert_eq!(board.read("changes/open.json")["phase"], "review");
-    assert_eq!(
-        board.read("changes/sync.json"),
-        json!({"$type": "changes/sync/v1", "synced": today()})
-    );
+    assert_eq!(board.call("open", &json!({}))["sync"]["synced"], today());
     let commands = by_path(&output, "command");
     assert_eq!(
         commands["/changes/bare"],
@@ -214,7 +215,7 @@ fn sync_ends_merged_and_closed_changes_and_reports_the_rest() {
     );
     assert_eq!(
         commands["/changes/elsewhere"],
-        "board call changes.attach --path /changes/elsewhere --pull_request <url>"
+        "board call changes.attach --path /changes/elsewhere --pull <record>"
     );
     let tasks: BTreeSet<&str> = (output["changes"].as_array().unwrap().iter())
         .map(|entry| entry["task"].as_str().unwrap())
@@ -247,19 +248,20 @@ fn a_dry_run_reports_the_same_and_writes_nothing() {
     assert_eq!(statuses(&output), expected());
     assert_eq!(output["dry_run"], true);
     assert_eq!(board.text("changes/merged.json"), before);
-    assert!(!board.exists("changes/sync.json"));
+    assert_eq!(
+        board.call("open", &json!({}))["sync"]["synced"],
+        Value::Null
+    );
 }
 
 #[test]
 fn a_merged_change_with_an_open_task_is_owed_and_moves_once_the_task_is_done() {
     let board = gh();
     board.write("tasks/left.md", &task("open"));
-    board.write(
+    board.change_at(
         "changes/merged.json",
-        &change(
-            "build",
-            &json!({"pull_request": pull(1), "records": ["/tasks/left.md"]}),
-        ),
+        "build",
+        &json!({"pull_request": pull(1), "records": ["/tasks/left.md"]}),
     );
     board.answers(
         1,
@@ -288,7 +290,10 @@ fn a_gh_failure_refuses_the_whole_sync_and_writes_nothing() {
     let message = refused["message"].as_str().unwrap();
     assert!(message.contains("HTTP 502"), "{message}");
     assert_eq!(board.read("changes/merged.json")["phase"], "land");
-    assert!(!board.exists("changes/sync.json"));
+    assert_eq!(
+        board.call("open", &json!({}))["sync"]["synced"],
+        Value::Null
+    );
     board.bin.write("fail", Item::Deleted);
     // The merged change and the closed one move.
     assert_eq!(board.call("sync", &json!({}))["moved"], 2);
@@ -297,7 +302,7 @@ fn a_gh_failure_refuses_the_whole_sync_and_writes_nothing() {
 #[test]
 fn open_and_next_warn_that_the_sync_is_stale_until_it_ran_today() {
     let board = Changes::new();
-    board.write("changes/t.json", &change("build", &json!({})));
+    board.change_at("changes/t.json", "build", &json!({}));
     for output in [
         board.call("open", &json!({})),
         board.call("next", &json!({"path": "/changes/t"})),
@@ -312,18 +317,8 @@ fn open_and_next_warn_that_the_sync_is_stale_until_it_ran_today() {
             })
         );
     }
-    board.write(
-        "changes/sync.json",
-        &typed("changes/sync/v1", &json!({"synced": days_ago(1)})),
-    );
-    assert_eq!(
-        board.call("open", &json!({}))["sync"]["code"],
-        "changes::sync::stale"
-    );
-    board.write(
-        "changes/sync.json",
-        &typed("changes/sync/v1", &json!({"synced": today()})),
-    );
+    // No change records a pull request, so the sync asks gh nothing.
+    board.call("sync", &json!({}));
     for output in [
         board.call("open", &json!({})),
         board.call("next", &json!({"path": "/changes/t"})),
@@ -343,7 +338,7 @@ fn open_and_next_warn_that_the_sync_is_stale_until_it_ran_today() {
 #[test]
 fn drop_ends_an_open_change_with_its_reason_and_refuses_one_already_ended() {
     let board = Changes::new();
-    board.write("changes/t.json", &change("build", &json!({})));
+    board.change_at("changes/t.json", "build", &json!({}));
     let given = json!({"path": "/changes/t", "reason": "Superseded by another change."});
     assert_eq!(
         board.call("drop", &given),
@@ -368,9 +363,10 @@ fn drop_ends_an_open_change_with_its_reason_and_refuses_one_already_ended() {
 #[test]
 fn a_change_that_merged_from_build_ends_and_says_which_gates_it_skipped() {
     let board = gh();
-    board.write(
+    board.change_at(
         "changes/early.json",
-        &change("build", &json!({"pull_request": pull(1)})),
+        "build",
+        &json!({"pull_request": pull(1)}),
     );
     board.answers(
         1,

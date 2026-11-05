@@ -16,7 +16,7 @@ pub(super) enum Kind {
 use Kind::{Local, UntilAdopted};
 
 #[rustfmt::skip]
-pub(super) const UNSHARED: [(&str, &str, Kind, &str); 107] = [
+pub(super) const UNSHARED: [(&str, &str, Kind, &str); 103] = [
     // This repository's board's copy of the controls schema.
     (".board/controls/control/v1", "/paths/-", UntilAdopted, "BoardGlob (audit row 3)"),
     (".board/controls/control/v1", "/rule/at_least", Local, "a version floor of dotted numbers, which only a version rule compares"),
@@ -34,10 +34,6 @@ pub(super) const UNSHARED: [(&str, &str, Kind, &str); 107] = [
     ("boundary/crossing/v1", "/to", Local, "a destination is named by the action that sends to it, and only boundaries match it"),
     ("boundary/crossing/v1", "/verdicts/-/part", Local, "a part is named by the action that sends it, and only boundaries match it"),
     ("changes/change/v1", "/head", UntilAdopted, "ObjectId (audit row 2)"),
-    ("changes/change/v1", "/issue", UntilAdopted, "Url (audit row 11)"),
-    ("changes/change/v1", "/mount", UntilAdopted, "Ref<Mount> (audit row 27)"),
-    ("changes/change/v1", "/pull_request", UntilAdopted, "PullRequestUrl (audit row 12)"),
-    ("changes/change/v1", "/title", UntilAdopted, "Prose"),
     ("controls/control/v1", "/paths/-", UntilAdopted, "BoardGlob (audit row 3)"),
     ("controls/control/v1", "/rule/at_least", Local, "a version floor of dotted numbers, which only a version rule compares"),
     ("controls/control/v1", "/rule/capture", Local, "a regular expression in the syntax of Rust's regex crate, which only a version rule compiles"),

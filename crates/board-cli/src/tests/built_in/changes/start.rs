@@ -21,13 +21,11 @@ fn start_creates_the_change_in_plan_with_a_plan_whose_sections_are_left_to_fill_
         "start",
         &json!({"mount": mount, "task": TASK, "title": "Let a suite declare a timeout!"}),
     );
-    assert_eq!(
-        (&output["path"], &output["plan"]),
-        (
-            &json!("/changes/let-a-suite-declare-a-timeout"),
-            &json!("/changes/let-a-suite-declare-a-timeout/plan.md")
-        )
-    );
+    let at = "/changes/let-a-suite-declare-a-timeout";
+    assert_eq!(output["path"], at);
+    let text = output["plan"].as_str().unwrap();
+    let record = text.strip_suffix(".md").unwrap();
+    assert!(record.starts_with(&format!("{at}/plans/")), "{output}");
     assert_eq!(
         board.read("changes/let-a-suite-declare-a-timeout.json"),
         json!({
@@ -35,28 +33,20 @@ fn start_creates_the_change_in_plan_with_a_plan_whose_sections_are_left_to_fill_
             "title": "Let a suite declare a timeout!",
             "mount": "/repos/x",
             "phase": "plan",
-            "plan": "/changes/let-a-suite-declare-a-timeout/plan.md",
+            "plan": record,
             "route": "unowned",
             "task": TASK,
             "touched": today(),
         })
     );
     assert_eq!(
-        board.text("changes/let-a-suite-declare-a-timeout/plan.md"),
+        board.read(&format!("{}.json", record.trim_start_matches('/'))),
+        json!({"$type": "changes/plan/v1", "text": text, "uses": []})
+    );
+    assert_eq!(
+        board.text(text.trim_start_matches('/')),
         "# Let a suite declare a timeout!\n\n## Problem\n\n## Outcome\n\n## Out of scope\n\n## UX\n\n## Data\n"
     );
-}
-
-#[test]
-fn start_keeps_a_plan_already_written_at_the_plan_path() {
-    let board = Changes::new();
-    let mount = board.mount_x(&[("README.md", "x")]);
-    board.write("changes/t/plan.md", "# Mine\n");
-    board.call(
-        "start",
-        &json!({"mount": mount, "task": TASK, "title": "T"}),
-    );
-    assert_eq!(board.text("changes/t/plan.md"), "# Mine\n");
 }
 
 #[test]

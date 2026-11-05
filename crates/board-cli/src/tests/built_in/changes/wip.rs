@@ -21,10 +21,7 @@ fn at(fields: &Value) -> Value {
 /// `count` other changes in build, with `fields`.
 fn fill(board: &Changes, count: usize, fields: &Value) {
     for number in 0..count {
-        board.write(
-            &format!("changes/busy-{number}.json"),
-            &change("build", fields),
-        );
+        board.change_at(&format!("changes/busy-{number}.json"), "build", fields);
     }
 }
 
@@ -37,12 +34,10 @@ fn busy(count: usize) -> Value {
 
 /// A change in plan whose gate passes.
 fn ready(board: &Changes) {
-    board.write(
+    board.change_at(
         "changes/t.json",
-        &change(
-            "plan",
-            &json!({"plan": "/changes/t/plan.md", "route": "owner"}),
-        ),
+        "plan",
+        &json!({"plan": "/changes/t/plan.md", "route": "owner"}),
     );
     board.write("changes/t/plan.md", PLAN);
 }
@@ -78,12 +73,12 @@ fn prototypes_exploring_do_not_fill_the_build_cap() {
 #[test]
 fn pause_moves_a_change_in_build_to_paused_and_refuses_one_in_another_phase() {
     let board = Changes::new();
-    board.write("changes/t.json", &change("review", &json!({})));
+    board.change_at("changes/t.json", "review", &json!({}));
     assert_eq!(
         board.refusal("pause", &path())["code"],
         "changes::pause::not_building"
     );
-    board.write("changes/t.json", &change("build", &json!({})));
+    board.change_at("changes/t.json", "build", &json!({}));
     assert_eq!(
         board.call("pause", &path()),
         json!({"path": CHANGE, "from": "build", "to": "paused"})
@@ -97,7 +92,7 @@ fn pause_moves_a_change_in_build_to_paused_and_refuses_one_in_another_phase() {
 #[test]
 fn a_paused_change_does_not_advance_and_says_to_resume() {
     let board = Changes::new();
-    board.write("changes/t.json", &change("paused", &json!({})));
+    board.change_at("changes/t.json", "paused", &json!({}));
     assert_eq!(
         board.refusal("advance", &path())["code"],
         "changes::phase::paused"
@@ -105,7 +100,7 @@ fn a_paused_change_does_not_advance_and_says_to_resume() {
     let output = board.call("next", &path());
     let instruction = output["instruction"].as_str().unwrap();
     assert!(instruction.contains("changes.resume"), "{instruction}");
-    board.write("changes/t.json", &change("build", &json!({})));
+    board.change_at("changes/t.json", "build", &json!({}));
     assert_eq!(
         board.refusal("advance", &path())["code"],
         "changes::gate::unmet"
@@ -115,7 +110,7 @@ fn a_paused_change_does_not_advance_and_says_to_resume() {
 #[test]
 fn resume_refuses_when_the_cap_is_full_and_moves_the_change_back_to_build_below_it() {
     let board = Changes::new();
-    board.write("changes/t.json", &change("paused", &json!({})));
+    board.change_at("changes/t.json", "paused", &json!({}));
     fill(&board, WIP_LIMIT, &json!({}));
     assert_eq!(
         board.refusal("resume", &path())["code"],
@@ -131,12 +126,12 @@ fn resume_refuses_when_the_cap_is_full_and_moves_the_change_back_to_build_below_
 #[test]
 fn resume_refuses_a_change_that_is_not_paused_and_admits_one_that_is() {
     let board = Changes::new();
-    board.write("changes/t.json", &change("build", &json!({})));
+    board.change_at("changes/t.json", "build", &json!({}));
     assert_eq!(
         board.refusal("resume", &path())["code"],
         "changes::resume::not_paused"
     );
-    board.write("changes/t.json", &change("paused", &json!({})));
+    board.change_at("changes/t.json", "paused", &json!({}));
     assert_eq!(board.call("resume", &path())["to"], "build");
 }
 
@@ -187,20 +182,20 @@ fn advance_past_the_limit_with_a_reason_goes_ahead_records_it_and_warns() {
 /// one with a head, one with neither.
 fn idle(board: &Changes) {
     let touched = days_ago(10);
-    board.write(
+    board.change_at(
         "changes/idle-pr.json",
-        &change(
-            "build",
-            &json!({"touched": touched, "pull_request": "https://github.com/o/r/pull/1"}),
-        ),
+        "build",
+        &json!({"touched": touched, "pull_request": "https://github.com/o/r/pull/1"}),
     );
-    board.write(
+    board.change_at(
         "changes/idle-head.json",
-        &change("build", &json!({"touched": touched, "head": "a3f9c0d"})),
+        "build",
+        &json!({"touched": touched, "head": "a3f9c0d"}),
     );
-    board.write(
+    board.change_at(
         "changes/idle-bare.json",
-        &change("build", &json!({"touched": touched})),
+        "build",
+        &json!({"touched": touched}),
     );
 }
 
@@ -210,12 +205,10 @@ fn idle_changes_do_not_count_and_the_refusal_lists_each_with_its_action() {
     ready(&board);
     idle(&board);
     assert_eq!(advanced(&board), "build");
-    board.write(
+    board.change_at(
         "changes/t.json",
-        &change(
-            "plan",
-            &json!({"plan": "/changes/t/plan.md", "route": "owner"}),
-        ),
+        "plan",
+        &json!({"plan": "/changes/t/plan.md", "route": "owner"}),
     );
     fill(&board, WIP_LIMIT, &json!({}));
     let refused = board.refusal("advance", &path());
@@ -258,12 +251,10 @@ fn a_run_that_finished_today_keeps_an_untouched_change_active() {
         ),
     );
     fill(&board, WIP_LIMIT - 1, &json!({}));
-    board.write(
+    board.change_at(
         "changes/ran.json",
-        &change(
-            "build",
-            &json!({"touched": days_ago(10), "records": ["/suites/s/runs/r"]}),
-        ),
+        "build",
+        &json!({"touched": days_ago(10), "records": ["/suites/s/runs/r"]}),
     );
     assert_eq!(
         board.refusal("advance", &path())["code"],
@@ -286,20 +277,19 @@ fn a_head_committed_today_keeps_an_untouched_change_active() {
     board.mount_x(&[("README.md", "x\n")]);
     let head = board.commit(&[("a.txt", "a\n")], None);
     fill(&board, WIP_LIMIT - 1, &json!({}));
-    board.write(
+    board.change_at(
         "changes/committed.json",
-        &change("build", &json!({"touched": days_ago(10), "head": head})),
+        "build",
+        &json!({"touched": days_ago(10), "head": head}),
     );
     assert_eq!(
         board.refusal("advance", &path())["code"],
         "changes::wip::full"
     );
-    board.write(
+    board.change_at(
         "changes/committed.json",
-        &change(
-            "build",
-            &json!({"touched": days_ago(10), "head": "b".repeat(40)}),
-        ),
+        "build",
+        &json!({"touched": days_ago(10), "head": "b".repeat(40)}),
     );
     assert_eq!(advanced(&board), "build");
 }
@@ -325,7 +315,7 @@ fn board_changes_active_days_widens_the_window_and_refuses_a_value_that_is_not_a
 #[test]
 fn resume_past_the_limit_with_a_reason_goes_ahead_and_warns() {
     let board = Changes::new();
-    board.write("changes/t.json", &change("paused", &json!({})));
+    board.change_at("changes/t.json", "paused", &json!({}));
     fill(&board, WIP_LIMIT, &json!({}));
     let output = board.call(
         "resume",
@@ -344,10 +334,7 @@ fn resume_past_the_limit_with_a_reason_goes_ahead_and_warns() {
 #[test]
 fn attach_touches_a_change_so_it_counts_as_active_again() {
     let board = Changes::new();
-    board.write(
-        "changes/t.json",
-        &change("build", &json!({"touched": days_ago(10)})),
-    );
+    board.change_at("changes/t.json", "build", &json!({"touched": days_ago(10)}));
     board.call("attach", &at(&json!({"head": "a3f9c0d"})));
     assert_eq!(board.read("changes/t.json")["touched"], today());
 }
@@ -368,9 +355,10 @@ impl Changes {
     fn building_in(&self, mount: &str, count: usize, prefix: &str) -> Vec<String> {
         (0..count)
             .map(|number| {
-                self.write(
+                self.change_at(
                     &format!("changes/{prefix}-{number}.json"),
-                    &change("build", &json!({"mount": mount})),
+                    "build",
+                    &json!({"mount": mount}),
                 );
                 format!("/changes/{prefix}-{number}")
             })
@@ -379,12 +367,10 @@ impl Changes {
 
     /// A change in plan for the repository at `mount` whose gate passes.
     fn ready_in(&self, mount: &str) {
-        self.write(
+        self.change_at(
             "changes/t.json",
-            &change(
-                "plan",
-                &json!({"plan": "/changes/t/plan.md", "route": "owner", "mount": mount}),
-            ),
+            "plan",
+            &json!({"plan": "/changes/t/plan.md", "route": "owner", "mount": mount}),
         );
         self.write("changes/t/plan.md", PLAN);
     }
@@ -479,20 +465,16 @@ fn prototypes_of_one_repository_count_together_apart_from_build_changes() {
     let again = board.repository("repos/a-again", Some("git@github.com:crumbkit/a.git"));
     board.building_in(&a, WIP_LIMIT, "a");
     for number in 0..WIP_LIMIT {
-        board.write(
+        board.change_at(
             &format!("changes/p-{number}.json"),
-            &change(
-                "build",
-                &json!({"mount": a, "kind": "prototype", "state": "exploring"}),
-            ),
+            "build",
+            &json!({"mount": a, "kind": "prototype", "state": "exploring"}),
         );
     }
-    board.write(
+    board.change_at(
         "changes/t.json",
-        &change(
-            "paused",
-            &json!({"mount": again, "kind": "prototype", "state": "exploring"}),
-        ),
+        "paused",
+        &json!({"mount": again, "kind": "prototype", "state": "exploring"}),
     );
     let refused = board.refusal("resume", &path());
     assert_eq!(
@@ -504,9 +486,10 @@ fn prototypes_of_one_repository_count_together_apart_from_build_changes() {
         .collect();
     assert_eq!(refused["fields"]["active"], prototypes);
     let b = board.repository("repos/b", None);
-    board.write(
+    board.change_at(
         "changes/t.json",
-        &change("paused", &json!({"mount": b, "kind": "prototype"})),
+        "paused",
+        &json!({"mount": b, "kind": "prototype"}),
     );
     assert_eq!(board.call("resume", &path())["to"], "build");
 }

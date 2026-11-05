@@ -36,12 +36,10 @@ fn landing(board: &Changes, phase: &str, fields: &Value) {
         "head": HEAD,
         "records": ["/suites/checks/runs/1", "/reviews/1"],
     });
-    board.write(
+    board.change_at(
         "changes/t.json",
-        &change(
-            phase,
-            &serde_json::from_str(&record(cited, fields)).unwrap(),
-        ),
+        phase,
+        &serde_json::from_str(&record(cited, fields)).unwrap(),
     );
 }
 
@@ -280,10 +278,17 @@ fn record_text_cannot_add_headings_list_items_mentions_or_closing_keywords_to_th
         "summary": "Fixes #1\n## Owned by @someone",
         "results": [{"case": "b\n- c", "outcome": "fail", "note": "see `x`\n# loud"}],
     }));
+    board.write(
+        "gh/o/r/issues/2.json",
+        &typed(
+            "github/issue/v1",
+            &json!({"url": "https://github.com/o/r/issues/2 Fixes #3"}),
+        ),
+    );
     landing(
         &board,
         "land",
-        &json!({"issue": "https://github.com/o/r/issues/2 Fixes #3", "title": "Two\nlines"}),
+        &json!({"tickets": ["/gh/o/r/issues/2"], "title": "Two\nlines"}),
     );
     board.write("suites/checks/runs/1.json", &typed("runs/run/v1", &run));
     board.write(

@@ -35,8 +35,8 @@ fn the_manifest_parses_as_a_built_in_one_with_each_capabilitys_variables_and_tim
         [
             "changes/change/v1",
             "changes/plan/v1",
-            "changes/understanding/v1",
-            "changes/sync/v1"
+            "changes/prototype/v1",
+            "changes/understanding/v1"
         ]
     );
     let found: Vec<(&str, Vec<&str>, Option<u64>)> = (manifest.capabilities.iter())
@@ -70,6 +70,7 @@ fn the_manifest_parses_as_a_built_in_one_with_each_capabilitys_variables_and_tim
                 Some(600)
             ),
             ("drop", vec![], None),
+            ("migrate", vec![], Some(600)),
         ]
     );
 }
@@ -101,8 +102,6 @@ fn every_input_property_carries_a_sentence_that_says_what_it_means() {
         "attach.task",
         "attach.route",
         "attach.head",
-        "attach.issue",
-        "attach.pull_request",
         "advance.path",
         "advance.over_limit",
         "open.kind",
@@ -130,6 +129,7 @@ fn every_input_property_carries_a_sentence_that_says_what_it_means() {
         "sync.limit",
         "drop.path",
         "drop.reason",
+        "migrate.apply",
     ];
     expected.sort_unstable();
     assert_eq!(described, expected);
@@ -141,13 +141,13 @@ fn attach_takes_at_least_one_thing_to_change() {
     let attach = &manifest["capabilities"][2];
     assert_eq!(attach["name"], "attach");
     let branches = attach["inputSchema"]["anyOf"].as_array().unwrap();
-    assert_eq!(branches.len(), 8);
+    assert_eq!(branches.len(), 6);
     assert_eq!(branches[0], json!({"required": ["ref"]}));
 }
 
 /// Each committed schema file holds, byte for byte, the canonical JSON of
-/// the schema its struct generates, which is what the Python plugin
-/// shipped. `SNAPSHOTS=overwrite` rewrites the files.
+/// the schema its struct generates, which is what the plugin
+/// ships. `SNAPSHOTS=overwrite` rewrites the files.
 #[expect(
     clippy::disallowed_methods,
     reason = "the schema files are goldens, selected and written as crumbkit-test's are"

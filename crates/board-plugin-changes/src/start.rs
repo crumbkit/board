@@ -12,6 +12,7 @@ use crate::board::{self, get};
 use crate::change::{line, touch};
 use crate::gates::SECTIONS;
 use crate::phases::check_target;
+use crate::plan::plan_lines;
 use crate::records::{ChangeRecord, Phase, Route, TASK_TYPE};
 use crate::repo::{CODEOWNERS, DOCS, Rule, ask_first, exists, files, owners, route, suite_in};
 use crate::tasks::{add_task, routing};
@@ -143,31 +144,31 @@ pub(crate) fn start(host: &dyn Host, input: &Value) -> Result<Value, PluginError
         .filter(|name| !name.is_empty())
         .unwrap_or_else(|| name_of(&title));
     let path = format!("/changes/{name}");
-    let plan = format!("/changes/{name}/plan.md");
     exists(host, &mount)?;
     refuse_existing(host, &path)?;
-    let held = get(host, std::slice::from_ref(&plan))?
-        .into_iter()
-        .next()
-        .flatten();
     let codeowners = files(host, &mount, &CODEOWNERS)?;
     let rules = owners(codeowners.first().map_or("", |(_, text)| text.as_str()));
     let asking = ask_first(&rules, asked.handle.as_deref());
     let docs = files(host, &mount, &DOCS)?;
+    let mut skeleton = format!("# {title}\n");
+    for section in SECTIONS {
+        let _ = write!(skeleton, "\n## {section}\n");
+    }
+    let (record, mut lines) = plan_lines(
+        host.settings().now,
+        &path,
+        &skeleton,
+        Vec::new(),
+        Vec::new(),
+    );
+    let plan = format!("{record}.md");
     let mut change = ChangeRecord::new(title.clone(), mount.clone(), Phase::Plan);
-    change.plan = Some(plan.clone());
+    change.plan = Some(record);
     let routed = route(&rules, &asking);
     change.route = Some(routed);
     let task = task_for(host, &asked, &title)?;
     change.task = Some(task.clone());
-    let mut lines = vec![line(&path, "none", &touch(host, change))];
-    if held.is_none() {
-        let mut skeleton = format!("# {title}\n");
-        for section in SECTIONS {
-            let _ = write!(skeleton, "\n## {section}\n");
-        }
-        lines.push(json!({"path": plan, "expect": "none", "text": skeleton}));
-    }
+    lines.push(line(&path, "none", &touch(host, change)));
     board::put(host, &lines)?;
     Ok(to_value(Output {
         path,

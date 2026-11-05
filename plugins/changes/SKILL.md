@@ -21,10 +21,11 @@ The gate is the contract. `next` says what the current phase still lacks;
    and fix each check whose `status` is `missing`.
 3. Attach every record you make with
    `board -C <board> call changes.attach --path /changes/<name> --ref <path>`.
-   Set the commit under test with `--head <sha>` after each push, the issue
-   with `--issue <url>`, and the pull request with `--pull-request <url>`.
-   When the board holds the ticket or pull request as a record, attach it
-   with `--ticket <path>` or `--pull <path>`.
+   The records go on the change's newest plan, so write the plan first.
+   Set the commit under test with `--head <sha>` after each push. Record a
+   GitHub issue or pull request with
+   `board -C <board> call github.ref --ref <owner>/<repo>#<number>`, then
+   attach the path it returns with `--ticket <path>` or `--pull <path>`.
 4. Run `board -C <board> call changes.advance --path /changes/<name>`
    when every check passes.
 5. To drop a change, run
@@ -140,7 +141,7 @@ lists every prototype with its verdict.
 - `changes::sync::gh_failed`: gh could not read a pull request, and sync wrote
   nothing. Check `gh auth status` and sync again.
 - `changes::sync::owed`, `changes::sync::pull_not_found`,
-  `changes::sync::not_github`, `changes::sync::no_pull_request`: entries
+  `changes::sync::pull_unreadable`, `changes::sync::no_pull_request`: entries
   that sync left alone. Run each entry's `command`. For
   `pull_not_found`, check `gh auth status` first, since GitHub answers 404
   for a repository gh cannot see.
@@ -155,6 +156,8 @@ lists every prototype with its verdict.
   add it to with `--task-repo`.
 - `changes::ref::dangling`: nothing is at the path. Write the record
   first.
+- `changes::attach::no_plan`: the change names no plan record to keep the
+  reference. Write its plan with `changes.plan`, then attach again.
 - `changes::ref::wrong_type`: the ticket or pull is not a record of a type
   its list accepts. Point it at a `jira/issue/v1`, `github/issue/v1` or
   `github/pull/v1` record.

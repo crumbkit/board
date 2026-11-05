@@ -77,8 +77,13 @@ pub(crate) enum Status {
 pub(crate) struct Observed {
     pub(crate) path: String,
     pub(crate) change: ChangeRecord,
+    pub(crate) kind: Kind,
+    /// The records attached to the change's plans, in order.
+    pub(crate) cited: Vec<String>,
     pub(crate) records: Referenced,
     pub(crate) plan: Option<String>,
+    /// The Markdown file the change's plan record names as its text.
+    pub(crate) plan_file: Option<String>,
     pub(crate) suite: Option<String>,
     pub(crate) planned: Vec<String>,
     pub(crate) outside: Vec<String>,
@@ -86,12 +91,15 @@ pub(crate) struct Observed {
 }
 
 impl Observed {
-    pub(crate) fn new(path: &str, change: ChangeRecord, records: Referenced) -> Self {
+    pub(crate) fn new(path: &str, change: ChangeRecord, kind: Kind, records: Referenced) -> Self {
         Self {
             path: path.to_owned(),
             change,
+            kind,
+            cited: Vec::new(),
             records,
             plan: None,
+            plan_file: None,
             suite: None,
             planned: Vec::new(),
             outside: Vec::new(),
@@ -173,7 +181,7 @@ fn check(name: &'static str, missing: Option<String>) -> Check {
 /// `paused` have none.
 pub(crate) fn gate(observed: &Observed) -> Vec<Check> {
     let phase = observed.change.phase;
-    if observed.change.kind() == Kind::Prototype && phase == Phase::Build {
+    if observed.kind == Kind::Prototype && phase == Phase::Build {
         return vec![check("verdict", Some(verdict_missing(observed)))];
     }
     match phase {
@@ -202,8 +210,11 @@ pub(crate) fn gate(observed: &Observed) -> Vec<Check> {
             check("paths", paths_missing(observed)),
         ],
         Phase::Land => {
-            let missing = (observed.change.pull_request.is_none())
-                .then(|| "the change records no pull request URL".to_owned());
+            let missing = (observed.change.pulls().is_empty()).then(|| {
+                "the change references no github/pull/v1 record; record the pull request with \
+                 `board call github.ref` and attach it with --pull"
+                    .to_owned()
+            });
             vec![check("pull-request", missing)]
         }
         Phase::Done | Phase::Dropped | Phase::Paused => Vec::new(),
@@ -212,10 +223,10 @@ pub(crate) fn gate(observed: &Observed) -> Vec<Check> {
 
 fn plan_missing(observed: &Observed) -> Option<String> {
     let Some(plan) = &observed.change.plan else {
-        return Some("the change names no plan file".to_owned());
+        return Some("the change names no plan record".to_owned());
     };
     let Some(text) = &observed.plan else {
-        return Some(format!("no plan file is at {plan}"));
+        return Some(format!("no plan record and its text are at {plan}"));
     };
     let found = sections(text);
     let empty: Vec<&str> = (SECTIONS.iter().copied())
@@ -427,7 +438,9 @@ fn route_missing(observed: &Observed) -> Option<String> {
 
 fn approval_missing(observed: &Observed) -> Option<String> {
     let plan = observed.change.plan.as_deref();
-    let names_the_plan = |each: &str| each == observed.path || Some(each) == plan;
+    let file = observed.plan_file.as_deref();
+    let names_the_plan =
+        |each: &str| each == observed.path || Some(each) == plan || Some(each) == file;
     let approved = (observed.records.of_type(DECISION_TYPE))
         .any(|(_, body)| strings(body, "refs").any(names_the_plan));
     (!approved).then(|| {

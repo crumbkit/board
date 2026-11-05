@@ -1,6 +1,6 @@
 {
   "additionalProperties": false,
-  "description": "`changes/plan/v1`: one plan for a change, and the records it uses.\n\nA plan lives at `/changes/<name>/plans/<stamp>.json`, beside its text at\n`<stamp>.md`; the newest stamp is the current plan. `text` references the\nMarkdown. `uses` references the standards documents, controls, decisions,\nevals and other changes the plan relies on. `paths` holds the files and\nSQLite GLOB patterns, by logical path, that the change will edit; a plan\nfor a build change always has them.",
+  "description": "`changes/plan/v1`: one plan for a change, the records it uses, the paths\nit will edit and the records attached while it was the newest.\n\nA plan lives at `/changes/<name>/plans/<stamp>`, beside its text at\n`<stamp>.md`; the change's `plan` names the newest. A plan for a build\nchange that `changes.plan` wrote always has `paths`.",
   "properties": {
     "$type": {
       "const": "changes/plan/v1",
@@ -8,7 +8,7 @@
       "type": "string"
     },
     "paths": {
-      "description": "The files and SQLite GLOB patterns, by logical path, the change will edit.",
+      "description": "The files and SQLite GLOB patterns, by logical path, the change will\nedit.",
       "items": {
         "minLength": 1,
         "pattern": "^/",
@@ -17,13 +17,21 @@
       },
       "type": "array"
     },
+    "records": {
+      "description": "The records the change produced while this plan was its newest, which\n`changes.attach --ref` adds: tasks, runs, evals, decisions,\nunderstanding checks and review reports. The gates read those of\nevery plan of the change.",
+      "items": {
+        "format": "board-ref",
+        "type": "string"
+      },
+      "type": "array"
+    },
     "text": {
-      "description": "The plan's Markdown text, beside this record.",
+      "description": "The plan's Markdown text.",
       "format": "board-ref",
       "type": "string"
     },
     "uses": {
-      "description": "The records and documents the plan relies on.",
+      "description": "The standards documents, controls, decisions, evals and other changes\nthe plan relies on.",
       "items": {
         "format": "board-ref",
         "type": "string"
@@ -37,5 +45,6 @@
     "uses"
   ],
   "title": "PlanRecord",
-  "type": "object"
+  "type": "object",
+  "x-board-folder": "/changes/{change}/plans/"
 }

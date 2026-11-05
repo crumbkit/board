@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use crate::board::{self};
-use crate::change::{Referenced, line, read, referenced, touch};
+use crate::change::{Referenced, kind_of, line, read, referenced, touch};
 use crate::phases::final_phase;
 use crate::records::{Kind, PlanRecord};
 use crate::{PLUGIN, refusal, to_value};
@@ -140,7 +140,7 @@ pub(crate) fn plan(host: &dyn Host, input: &Value) -> Result<Value, PluginError>
             ),
         ));
     }
-    check_paths(&path, &change.mount, &paths, change.kind())?;
+    check_paths(&path, &change.mount, &paths, kind_of(host, &path)?)?;
     let counted = words(&text);
     if counted > PLAN_WORDS {
         return Err(refusal(
@@ -206,7 +206,7 @@ pub(crate) fn plan(host: &dyn Host, input: &Value) -> Result<Value, PluginError>
     let count = uses.len();
     let (record, mut lines) = plan_lines(host.settings().now, &path, &text, uses, paths);
     let written = format!("{record}.md");
-    change.plan = Some(written.clone());
+    change.plan = Some(record.clone());
     lines.push(line(&path, &blob, &touch(host, change)));
     board::put(host, &lines)?;
     Ok(to_value(Output {
@@ -300,6 +300,7 @@ pub(crate) fn plan_lines(
         text: written.clone(),
         uses,
         paths: (!paths.is_empty()).then_some(paths),
+        records: None,
     };
     let lines = vec![
         json!({"path": written, "expect": "none", "text": text}),

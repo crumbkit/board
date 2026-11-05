@@ -28,7 +28,7 @@ use serde::Serialize;
 use serde_json::{Value, json};
 
 use crate::board::{self, rows, text};
-use crate::change::{OWN, parsed, referenced, today};
+use crate::change::{OWN, attached, kind_in, parsed, prototypes, referenced, today};
 use crate::diff::git;
 use crate::gates::RUN_TYPE;
 use crate::records::{ChangeRecord, Kind, Phase};
@@ -401,8 +401,8 @@ fn finished(
     changes: &[(String, ChangeRecord)],
 ) -> Result<BTreeMap<String, Date>, PluginError> {
     let mut found = BTreeMap::new();
-    for (path, change) in changes {
-        let records = referenced(host, change.records())?;
+    for (path, _) in changes {
+        let records = referenced(host, &attached(host, path)?)?;
         let newest = (records.of_type(RUN_TYPE))
             .filter_map(|(_, body)| day_of(body.get("finished")))
             .max();
@@ -432,7 +432,7 @@ pub(crate) fn split(
 /// What to do with an idle change: sync one with a pull request, resume one
 /// with commits, else drop it.
 pub(crate) fn idle_action(path: &str, change: &ChangeRecord) -> Idle {
-    let (action, command) = if change.pull_request.is_some() {
+    let (action, command) = if !change.pulls().is_empty() {
         (Action::Sync, "board call changes.sync".to_owned())
     } else if change.head.is_some() {
         (
@@ -477,11 +477,14 @@ pub(crate) fn admit(
     host: &dyn Host,
     path: &str,
     change: &mut ChangeRecord,
+    kind: Kind,
     moving: &Move<'_>,
 ) -> Result<Option<Limit>, PluginError> {
-    let kind = change.kind();
+    let prototypes = prototypes(host)?;
     let candidates: Vec<(String, ChangeRecord)> = (in_build(host)?.into_iter())
-        .filter(|(other, held)| other != path && held.phase == Phase::Build && held.kind() == kind)
+        .filter(|(other, held)| {
+            other != path && held.phase == Phase::Build && kind_in(&prototypes, other) == kind
+        })
         .collect();
     if candidates.len() < WIP_LIMIT {
         return Ok(None);

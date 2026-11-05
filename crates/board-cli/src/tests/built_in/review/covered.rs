@@ -4,10 +4,13 @@
 
 use super::*;
 
-/// The changes plugin's `changes/change/v1` schema, which the board holds
-/// so a change reads as valid without enabling the changes plugin.
+/// The changes plugin's change and plan schemas, which the board holds so a
+/// change and the plan that attaches its reports read as valid without
+/// enabling the changes plugin.
 const CHANGE_SCHEMA: &str =
     include_str!("../../../../../board-plugin-changes/types/changes/change/v1.schema.json");
+const PLAN_SCHEMA: &str =
+    include_str!("../../../../../board-plugin-changes/types/changes/plan/v1.schema.json");
 
 /// Two commits on a branch, reviewed: the base, the head and the report,
 /// which `board put` commits.
@@ -464,6 +467,7 @@ impl Mounted {
     /// them only through the mount.
     fn new(repo: &Repo) -> Self {
         repo.write(".board/types/changes/change/v1.schema.json", CHANGE_SCHEMA);
+        repo.write(".board/types/changes/plan/v1.schema.json", PLAN_SCHEMA);
         let (project, mount) = library(&[("README.md", "A project.\n")]);
         repo.commit("project.json", &mount.to_string());
         let mut mounted = Self {
@@ -484,14 +488,20 @@ impl Mounted {
 }
 
 /// Writes the change /changes/work on `mount` at `head`, or with no head,
-/// attaching `records`, and returns its path.
+/// with a plan that attaches `records`, and returns its path.
 fn change(repo: &Repo, head: Option<&str>, records: &[&str], mount: &str) -> String {
     let mut record = json!({
-        "$type": "changes/change/v1", "title": "Work", "mount": mount, "phase": "review", "records": records,
+        "$type": "changes/change/v1", "title": "Work", "mount": mount, "phase": "review",
+        "plan": "/changes/work/plans/1",
     });
     if let Some(head) = head {
         record["head"] = json!(head);
     }
+    let plan = json!({
+        "$type": "changes/plan/v1", "text": "/changes/work/plans/1.md", "uses": [], "records": records,
+    });
+    repo.write("changes/work/plans/1.md", "# Work\n");
+    repo.write("changes/work/plans/1.json", &plan.to_string());
     repo.write("changes/work.json", &record.to_string());
     "/changes/work".to_owned()
 }

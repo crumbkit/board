@@ -7,7 +7,7 @@ use serde_json::{Map, Value, json};
 
 use super::{Observed, Status, code_of, gate, mockups, sections};
 use crate::change::Referenced;
-use crate::records::{ChangeRecord, Phase};
+use crate::records::{ChangeRecord, Kind, Phase};
 
 const PATH: &str = "/changes/t";
 const SUITE: &str = "/suites/checks";
@@ -23,7 +23,7 @@ const UNDERSTOOD: &str = "/changes/t/understanding/data";
 type Records = Vec<(&'static str, (&'static str, Value))>;
 
 /// What a gate reads for a change in `phase` with a plan at
-/// /changes/t/plan.md, the fixture plan and suite, every file planned, and
+/// /changes/t/plans/1, the fixture plan and suite, every file planned, and
 /// `fields` set on the change.
 struct Given {
     phase: &'static str,
@@ -72,7 +72,7 @@ impl Given {
             "mount": "/repos/x",
             "phase": self.phase,
             "task": TASK,
-            "plan": "/changes/t/plan.md",
+            "plan": "/changes/t/plans/1",
         });
         for (key, value) in self.fields.as_object().unwrap() {
             change[key] = value.clone();
@@ -87,8 +87,12 @@ impl Given {
                 .collect(),
             unreadable: Vec::new(),
         };
-        let mut observed = Observed::new(PATH, change, records);
+        let mut observed = Observed::new(PATH, change, Kind::Build, records);
         observed.plan.clone_from(&self.plan);
+        observed.plan_file = self
+            .plan
+            .as_ref()
+            .map(|_| "/changes/t/plans/1.md".to_owned());
         observed.suite = self.suite.map(str::to_owned);
         observed.planned = self.planned.iter().map(|each| (*each).to_owned()).collect();
         observed.outside = self.outside.iter().map(|each| (*each).to_owned()).collect();
@@ -163,19 +167,19 @@ fn the_plan_gate_passes_when_each_plan_section_has_text_and_misses_when_one_is_e
         owned.check("plan"),
         (
             "missing",
-            "the plan at /changes/t/plan.md has no text under: Outcome, UX, Data".to_owned()
+            "the plan at /changes/t/plans/1 has no text under: Outcome, UX, Data".to_owned()
         )
     );
 }
 
 #[test]
-fn the_plan_gate_misses_a_plan_file_that_is_not_there_and_passes_one_with_text() {
+fn the_plan_gate_misses_a_plan_that_is_not_there_and_passes_one_with_text() {
     let owned = || given("plan").with(json!({"route": "owner"}));
     assert_eq!(
         owned().plan(None).check("plan"),
         (
             "missing",
-            "no plan file is at /changes/t/plan.md".to_owned()
+            "no plan record and its text are at /changes/t/plans/1".to_owned()
         )
     );
     assert_eq!(owned().statuses()["plan"], "pass");
@@ -209,7 +213,7 @@ fn on_the_ask_first_route_the_plan_gate_needs_a_decision_whose_refs_name_the_pla
         asking().records(unrelated).statuses()["owner-approval"],
         "missing"
     );
-    for named in ["/changes/t/plan.md", PATH] {
+    for named in ["/changes/t/plans/1", "/changes/t/plans/1.md", PATH] {
         let approved = vec![("/d", ("plans/decision/v1", json!({"refs": [named]})))];
         assert_eq!(
             asking().records(approved).statuses()["owner-approval"],
@@ -379,12 +383,12 @@ fn the_review_gate_refuses_a_diff_outside_the_planned_paths_and_passes_one_insid
 }
 
 #[test]
-fn the_land_gate_needs_the_pull_request_url_and_done_has_no_gate() {
+fn the_land_gate_needs_a_pull_request_record_and_done_has_no_gate() {
     assert_eq!(
         given("land").statuses(),
         statuses(&[("pull-request", "missing")])
     );
-    let landed = given("land").with(json!({"pull_request": "https://github.com/o/r/pull/1"}));
+    let landed = given("land").with(json!({"pulls": ["/gh/o/r/pulls/1"]}));
     assert_eq!(landed.statuses(), statuses(&[("pull-request", "pass")]));
     assert!(gate(&given("done").observed()).is_empty());
 }
@@ -447,7 +451,7 @@ fn the_plan_gate_needs_text_under_ux_and_data() {
     let bare = format!("{}## UX\n\n## Data\n", PLAN.split("## UX").next().unwrap());
     assert_eq!(
         detail(&bare, "plan", Vec::new()),
-        "the plan at /changes/t/plan.md has no text under: UX, Data"
+        "the plan at /changes/t/plans/1 has no text under: UX, Data"
     );
     let plan = planned_ux("No UI change: it is headless.");
     assert_eq!(plan_checks(&plan, Vec::new())["plan"], "pass");
@@ -640,7 +644,7 @@ fn a_data_decision_a_hook_wrote_signs_nothing_and_one_the_owner_signed_does() {
 fn rechecked(matches: &[bool]) -> Value {
     (matches.iter())
         .map(
-            |matched| json!({"kind": "edge", "question": "Q?", "answer": "A.", "matches": matched}),
+            |matched| json!({"kind": "edge", "question": "Q?", "answer": "A.", "design": "A.", "matches": matched}),
         )
         .collect()
 }

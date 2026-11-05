@@ -1,0 +1,52 @@
+{
+  "additionalProperties": false,
+  "description": "`changes/prototype/v1`: what makes a change a prototype, the question it\nanswers and its verdict.\n\nIt lives at `/changes/<name>/prototype`, beside its change. A prototype\nworks on branch `proto/<name>` and never lands.",
+  "properties": {
+    "$type": {
+      "const": "changes/prototype/v1",
+      "description": "The record's type.",
+      "type": "string"
+    },
+    "change": {
+      "description": "The change the prototype is.",
+      "format": "board-ref",
+      "type": "string",
+      "x-board-type": "changes/change/v1"
+    },
+    "question": {
+      "description": "The one question the prototype answers.",
+      "minLength": 1,
+      "type": "string",
+      "x-board-prose": true
+    },
+    "state": {
+      "description": "Where the prototype stands.",
+      "enum": [
+        "exploring",
+        "settled",
+        "abandoned"
+      ],
+      "type": "string"
+    },
+    "verdict": {
+      "description": "What it found, in one sentence.",
+      "minLength": 1,
+      "type": "string",
+      "x-board-prose": true
+    },
+    "verdict_artifact": {
+      "description": "The page of the artifact version the verdict means.",
+      "format": "uri",
+      "pattern": "^https?://([^/?#@]*@)?[^/?#@:][^/?#@]*([/?#]|$)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "$type",
+    "change",
+    "question",
+    "state"
+  ],
+  "title": "PrototypeRecord",
+  "type": "object"
+}

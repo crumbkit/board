@@ -515,6 +515,11 @@ impl Decide<'_> {
         &self,
         location: &Location,
     ) -> Result<Option<RecordType>, IndexError> {
+        // A mounted board's root is reached through its mount, whose
+        // record is what a reference to `/repos/<name>` names.
+        if let (true, Some(mount)) = (location.path.is_empty(), location.pointers.last()) {
+            return self.record_type(mount);
+        }
         let Object::Blob(blob) = location.object else {
             return Ok(None);
         };

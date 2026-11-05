@@ -7,18 +7,20 @@ const CHANGE: &str = "/changes/step-list";
 const QUESTION: &str = "Does a step list read better than a graph?";
 const PARENT: &str = "/tasks/flows-editor.md";
 
-/// A prototype change in `phase`, still exploring its question, with
-/// `fields`.
-fn prototype(phase: &str, fields: &Value) -> String {
+/// Writes a prototype change in `phase` at `file`, still exploring its
+/// question, with `fields`.
+fn prototype(board: &Changes, file: &str, phase: &str, fields: &Value) {
     let given = json!({"kind": "prototype", "question": QUESTION, "state": "exploring"});
-    change(
+    board.change_at(
+        file,
         phase,
         &serde_json::from_str(&record(given, fields)).unwrap(),
-    )
+    );
 }
 
-fn exploring() -> String {
-    prototype("build", &json!({}))
+/// Writes a prototype change exploring in build at `file`.
+fn exploring(board: &Changes, file: &str) {
+    prototype(board, file, "build", &json!({}));
 }
 
 /// `given` with `fields`.
@@ -60,26 +62,30 @@ fn prototype_adds_its_task_under_the_parent_and_writes_an_exploring_change_in_bu
     );
     assert_eq!(output["brief"]["phase"], "build");
     let written = board.read("changes/step-list.json");
-    let kept: BTreeMap<&str, &Value> = ["phase", "kind", "task", "question", "state"]
-        .into_iter()
-        .map(|key| (key, &written[key]))
-        .collect();
+    let held = board.read("changes/step-list/prototype.json");
     assert_eq!(
-        kept,
-        BTreeMap::from([
-            ("phase", &json!("build")),
-            ("kind", &json!("prototype")),
-            ("task", &json!("/tasks/step-list.md")),
-            ("question", &json!(QUESTION)),
-            ("state", &json!("exploring")),
-        ])
+        (&written["phase"], &written["task"]),
+        (&json!("build"), &json!("/tasks/step-list.md"))
+    );
+    assert_eq!(
+        held,
+        json!({
+            "$type": "changes/prototype/v1",
+            "change": CHANGE,
+            "question": QUESTION,
+            "state": "exploring",
+        })
     );
     let task = board.text("tasks/step-list.md");
     assert!(
         task.contains(r#"parent: "/tasks/flows-editor.md""#),
         "{task}"
     );
-    let plan = board.text(written["plan"].as_str().unwrap().trim_start_matches('/'));
+    let plan = board.read(&format!(
+        "{}.json",
+        written["plan"].as_str().unwrap().trim_start_matches('/')
+    ));
+    let plan = board.text(plan["text"].as_str().unwrap().trim_start_matches('/'));
     assert_eq!(plan, format!("# Step list\n\n## Question\n\n{QUESTION}\n"));
 }
 
@@ -87,7 +93,7 @@ fn prototype_adds_its_task_under_the_parent_and_writes_an_exploring_change_in_bu
 fn prototype_refuses_a_name_a_change_already_has_and_admits_another() {
     let board = Changes::with_tasks();
     let given = proposing(&board);
-    board.write("changes/step-list.json", &exploring());
+    exploring(&board, "changes/step-list.json");
     assert_eq!(
         board.refusal("prototype", &given)["code"],
         "changes::change::exists"
@@ -99,7 +105,7 @@ fn prototype_refuses_a_name_a_change_already_has_and_admits_another() {
 #[test]
 fn a_prototype_refuses_to_advance_and_a_build_change_in_build_is_held_by_its_own_gate() {
     let board = Changes::new();
-    board.write("changes/step-list.json", &exploring());
+    exploring(&board, "changes/step-list.json");
     let refused = board.refusal("advance", &json!({"path": CHANGE}));
     assert_eq!(
         (&refused["code"], &refused["fields"]["missing"]),
@@ -108,7 +114,7 @@ fn a_prototype_refuses_to_advance_and_a_build_change_in_build_is_held_by_its_own
             &json!(["verdict"])
         )
     );
-    board.write("changes/step-list.json", &change("build", &json!({})));
+    board.change_at("changes/step-list.json", "build", &json!({}));
     assert_eq!(
         board.refusal("advance", &json!({"path": CHANGE}))["code"],
         "changes::gate::unmet"
@@ -118,7 +124,7 @@ fn a_prototype_refuses_to_advance_and_a_build_change_in_build_is_held_by_its_own
 #[test]
 fn next_tells_a_prototypes_builder_to_iterate_on_its_branch_and_ask_for_the_verdict() {
     let board = Changes::new();
-    board.write("changes/step-list.json", &exploring());
+    exploring(&board, "changes/step-list.json");
     let output = board.call("next", &json!({"path": CHANGE}));
     let instruction = output["instruction"].as_str().unwrap();
     assert!(
@@ -131,7 +137,7 @@ fn next_tells_a_prototypes_builder_to_iterate_on_its_branch_and_ask_for_the_verd
 #[test]
 fn a_settled_verdict_ends_the_prototype_in_done_with_the_artifact_it_means() {
     let board = Changes::with_tasks();
-    board.write("changes/step-list.json", &exploring());
+    exploring(&board, "changes/step-list.json");
     let artifact = "https://claude.ai/artifact/abc";
     let given = json!({
         "path": CHANGE,
@@ -143,7 +149,7 @@ fn a_settled_verdict_ends_the_prototype_in_done_with_the_artifact_it_means() {
         board.call("verdict", &given),
         json!({"path": CHANGE, "state": "settled", "phase": "done"})
     );
-    let written = board.read("changes/step-list.json");
+    let written = board.read("changes/step-list/prototype.json");
     assert_eq!(
         (
             &written["state"],
@@ -163,7 +169,7 @@ fn a_settled_verdict_ends_the_prototype_in_done_with_the_artifact_it_means() {
 #[test]
 fn an_abandoned_verdict_ends_the_prototype_in_dropped() {
     let board = Changes::with_tasks();
-    board.write("changes/step-list.json", &exploring());
+    exploring(&board, "changes/step-list.json");
     let given =
         json!({"path": CHANGE, "state": "abandoned", "verdict": "The owner lost interest."});
     assert_eq!(board.call("verdict", &given)["phase"], "dropped");
@@ -177,12 +183,12 @@ fn an_abandoned_verdict_ends_the_prototype_in_dropped() {
 fn verdict_refuses_a_build_change_and_admits_a_prototype() {
     let board = Changes::with_tasks();
     let given = json!({"path": CHANGE, "state": "settled", "verdict": "Yes."});
-    board.write("changes/step-list.json", &change("build", &json!({})));
+    board.change_at("changes/step-list.json", "build", &json!({}));
     assert_eq!(
         board.refusal("verdict", &given)["code"],
         "changes::prototype::not_prototype"
     );
-    board.write("changes/step-list.json", &exploring());
+    exploring(&board, "changes/step-list.json");
     assert_eq!(board.call("verdict", &given)["phase"], "done");
 }
 
@@ -190,26 +196,30 @@ fn verdict_refuses_a_build_change_and_admits_a_prototype() {
 fn verdict_refuses_a_prototype_already_ended_and_admits_one_exploring() {
     let board = Changes::with_tasks();
     let given = json!({"path": CHANGE, "state": "settled", "verdict": "Yes."});
-    board.write(
+    prototype(
+        &board,
         "changes/step-list.json",
-        &prototype("done", &json!({"state": "settled", "verdict": "Yes."})),
+        "done",
+        &json!({"state": "settled", "verdict": "Yes."}),
     );
     assert_eq!(
         board.refusal("verdict", &given)["code"],
         "changes::phase::final"
     );
-    board.write("changes/step-list.json", &exploring());
+    exploring(&board, "changes/step-list.json");
     assert_eq!(board.call("verdict", &given)["phase"], "done");
 }
 
 #[test]
 fn open_by_kind_prototype_lists_every_prototype_with_its_question_verdict_and_branch() {
     let board = Changes::new();
-    board.write("changes/a.json", &change("build", &json!({})));
-    board.write("changes/b.json", &exploring());
-    board.write(
+    board.change_at("changes/a.json", "build", &json!({}));
+    exploring(&board, "changes/b.json");
+    prototype(
+        &board,
         "changes/c.json",
-        &prototype("done", &json!({"state": "settled", "verdict": "Yes."})),
+        "done",
+        &json!({"state": "settled", "verdict": "Yes."}),
     );
     let output = board.call("open", &json!({"kind": "prototype"}));
     let listed: Vec<(&Value, &Value)> = (output["changes"].as_array().unwrap().iter())
@@ -243,24 +253,31 @@ fn open_by_kind_prototype_lists_every_prototype_with_its_question_verdict_and_br
 }
 
 #[test]
-fn the_schema_refuses_an_unknown_kind_or_state_and_admits_a_prototype() {
+fn the_schema_refuses_a_change_holding_a_kind_or_a_prototype_in_an_unknown_state_and_admits_a_prototype()
+ {
     let board = Changes::new();
-    board.write("repos/x/README.md", "x");
+    board.mount_x(&[("README.md", "x\n")]);
+    // A change's kind is whether a prototype record sits beside it, so a
+    // change that holds one is invalid.
     board.write(
         "changes/kind.json",
-        &prototype("build", &json!({"kind": "spike"})),
+        &change("build", &json!({"kind": "prototype"})),
     );
-    board.write(
+    prototype(
+        &board,
         "changes/state.json",
-        &prototype("build", &json!({"state": "paused"})),
+        "build",
+        &json!({"state": "paused"}),
     );
-    board.write("changes/good.json", &exploring());
+    exploring(&board, "changes/good.json");
     assert_eq!(
         board.checked("/changes/"),
         codes(&[
             ("/changes/kind", Some("board::record::invalid")),
-            ("/changes/state", Some("board::record::invalid")),
+            ("/changes/state", None),
+            ("/changes/state/prototype", Some("board::record::invalid")),
             ("/changes/good", None),
+            ("/changes/good/prototype", None),
         ])
     );
 }
@@ -270,7 +287,7 @@ fn prototype_refuses_when_three_prototypes_explore_and_starts_once_one_is_settle
     let board = Changes::with_tasks();
     let given = proposing(&board);
     for number in 0..3 {
-        board.write(&format!("changes/p{number}.json"), &exploring());
+        exploring(&board, &format!("changes/p{number}.json"));
     }
     let refused = board.refusal("prototype", &given);
     assert_eq!(refused["code"], "changes::wip::full");
@@ -293,7 +310,7 @@ fn prototype_past_the_limit_with_a_reason_starts_and_warns() {
     let board = Changes::with_tasks();
     let given = proposing(&board);
     for number in 0..3 {
-        board.write(&format!("changes/p{number}.json"), &exploring());
+        exploring(&board, &format!("changes/p{number}.json"));
     }
     let output = board.call(
         "prototype",
@@ -313,7 +330,7 @@ fn prototype_past_the_limit_with_a_reason_starts_and_warns() {
 fn a_verdict_leaves_a_task_already_closed_as_it_is() {
     let board = Changes::with_tasks();
     board.write("tasks/given.md", &task("done"));
-    board.write("changes/step-list.json", &exploring());
+    exploring(&board, "changes/step-list.json");
     let given = json!({"path": CHANGE, "state": "abandoned", "verdict": "Not needed."});
     assert_eq!(board.call("verdict", &given)["phase"], "dropped");
     let task = board.text("tasks/given.md");
@@ -342,10 +359,7 @@ fn build_changes_in_build_do_not_fill_the_prototype_cap() {
     let board = Changes::with_tasks();
     let given = proposing(&board);
     for number in 0..3 {
-        board.write(
-            &format!("changes/b{number}.json"),
-            &change("build", &json!({})),
-        );
+        board.change_at(&format!("changes/b{number}.json"), "build", &json!({}));
     }
     assert_eq!(board.call("prototype", &given)["path"], CHANGE);
 }
@@ -353,13 +367,13 @@ fn build_changes_in_build_do_not_fill_the_prototype_cap() {
 #[test]
 fn a_paused_prototype_resumes_only_while_fewer_than_three_others_explore() {
     let board = Changes::new();
-    board.write("changes/step-list.json", &exploring());
+    exploring(&board, "changes/step-list.json");
     assert_eq!(
         board.call("pause", &json!({"path": CHANGE}))["to"],
         "paused"
     );
     for number in 0..3 {
-        board.write(&format!("changes/p{number}.json"), &exploring());
+        exploring(&board, &format!("changes/p{number}.json"));
     }
     let refused = board.refusal("resume", &json!({"path": CHANGE}));
     assert_eq!(
@@ -376,7 +390,7 @@ fn a_paused_prototype_resumes_only_while_fewer_than_three_others_explore() {
 #[test]
 fn a_verdict_ends_a_paused_prototype() {
     let board = Changes::with_tasks();
-    board.write("changes/step-list.json", &prototype("paused", &json!({})));
+    prototype(&board, "changes/step-list.json", "paused", &json!({}));
     let given =
         json!({"path": CHANGE, "state": "abandoned", "verdict": "The owner lost interest."});
     assert_eq!(board.call("verdict", &given)["phase"], "dropped");

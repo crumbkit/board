@@ -6,31 +6,26 @@
 //! `open` and `next` never run gh; they report the day of the last sync.
 
 use std::fmt::Write as _;
-use std::sync::LazyLock;
 use std::time::{Duration, Instant};
 
 use board_model::parse_json;
 use board_ops::{Host, PluginError, Run, literal};
 use board_plugin::child::ProcessError;
 use board_plugin::shape::{Prose, Record};
-use regex::Regex;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 
 use crate::board::{self, readable, rows, text};
-use crate::change::{OWN, SYNC_COMMAND, SYNC_PATH, parsed, read, referenced, today, write};
+use crate::change::{
+    OWN, Pull, SYNC_COMMAND, attached, parsed, pull_of, read, record_sync, referenced, today, write,
+};
 use crate::gates::open_task;
 use crate::phases::final_phase;
-use crate::records::{ChangeRecord, Phase, SyncRecord, TASK_TYPE};
+use crate::records::{ChangeRecord, Phase, TASK_TYPE};
 use crate::wip::idle_action;
 use crate::{PLUGIN, refusal, to_value};
 
-/// A GitHub pull request's URL: its owner, repository and number.
-static PULL_URL: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"^https://github\.com/([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+)/pull/([0-9]+)/?$")
-        .expect("the pattern is a constant; the sync tests compile it")
-});
 /// How long one gh call may run.
 const GH_SECONDS: Duration = Duration::from_secs(20);
 /// How long all of a sync's gh calls may run together: less than the
@@ -117,15 +112,22 @@ pub(crate) struct Output {
     truncated: bool,
 }
 
-/// An entry with no move, code or command yet.
-fn entry(path: &str, change: &ChangeRecord, status: &'static str, detail: String) -> Entry {
+/// An entry with no move, code or command yet, for the pull request at
+/// `url`.
+fn entry(
+    path: &str,
+    change: &ChangeRecord,
+    url: Option<&str>,
+    status: &'static str,
+    detail: String,
+) -> Entry {
     Entry {
         path: path.to_owned(),
         phase: change.phase,
         to: None,
         status,
         code: None,
-        pull_request: change.pull_request.clone(),
+        pull_request: url.map(str::to_owned),
         task: change.task.clone(),
         detail,
         command: None,
@@ -149,10 +151,10 @@ fn gh_failed(endpoint: &str, why: &str) -> PluginError {
 /// runs at most until `deadline`.
 fn pull_state(
     host: &dyn Host,
-    (owner, repo, number): (&str, &str, &str),
+    pull: &Pull,
     deadline: Instant,
 ) -> Result<Option<Map<String, Value>>, PluginError> {
-    let endpoint = format!("repos/{owner}/{repo}/pulls/{number}");
+    let endpoint = format!("repos/{}/{}/pulls/{}", pull.owner, pull.repo, pull.number);
     let left = deadline.saturating_duration_since(Instant::now());
     if left.is_zero() {
         return Err(gh_failed(
@@ -219,10 +221,10 @@ fn open_changes(host: &dyn Host) -> Result<Vec<(String, ChangeRecord, String)>, 
         .collect())
 }
 
-/// The tasks the change references in `records`, through any link, that are
+/// The tasks attached to the change's plans, through any link, that are
 /// neither done nor dropped.
-fn open_tasks(host: &dyn Host, change: &ChangeRecord) -> Result<Vec<String>, PluginError> {
-    let records = referenced(host, change.records())?;
+fn open_tasks(host: &dyn Host, path: &str) -> Result<Vec<String>, PluginError> {
+    let records = referenced(host, &attached(host, path)?)?;
     Ok((records.of_type(TASK_TYPE))
         .filter(|(_, body)| open_task(body))
         .map(|(path, _)| path.to_owned())
@@ -234,13 +236,14 @@ fn without_pull(path: &str, change: &ChangeRecord) -> Entry {
     let action = idle_action(path, change);
     let detail = format!(
         "it records no pull request; {} it, or record its pull request with `board call \
-         changes.attach --path {path} --pull_request <url>`",
+         github.ref --ref <owner>/<repo>#<number>` and attach it with `board call \
+         changes.attach --path {path} --pull <record>`",
         action.action.as_str()
     );
     Entry {
         code: Some("changes::sync::no_pull_request"),
         command: Some(action.command),
-        ..entry(path, change, "no_pull_request", detail)
+        ..entry(path, change, None, "no_pull_request", detail)
     }
 }
 
@@ -250,10 +253,11 @@ fn merged(
     host: &dyn Host,
     path: &str,
     change: &ChangeRecord,
-    url: &str,
+    pull: &Pull,
     answer: &Map<String, Value>,
 ) -> Result<(Entry, Option<ChangeRecord>), PluginError> {
-    let owed = open_tasks(host, change)?;
+    let url = pull.url.as_str();
+    let owed = open_tasks(host, path)?;
     if !owed.is_empty() {
         let detail = format!(
             "its pull request merged, but these tasks are not done or dropped: {}; close them \
@@ -263,7 +267,7 @@ fn merged(
         let owing = Entry {
             code: Some("changes::sync::owed"),
             command: Some(SYNC_COMMAND.to_owned()),
-            ..entry(path, change, "owed", detail)
+            ..entry(path, change, Some(url), "owed", detail)
         };
         return Ok((owing, None));
     }
@@ -278,8 +282,10 @@ fn merged(
                 .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
     }) {
         Some(sha) => {
-            let repository = url.split("/pull/").next().unwrap_or(url);
-            ended.merge_commit_url = Some(format!("{repository}/commit/{sha}"));
+            ended.merge_commit_url = Some(format!(
+                "https://github.com/{}/{}/commit/{sha}",
+                pull.owner, pull.repo
+            ));
         }
         None => detail.push_str(", and GitHub gave no merge commit, so none is recorded"),
     }
@@ -297,7 +303,7 @@ fn merged(
     }
     let done = Entry {
         to: Some(Phase::Done),
-        ..entry(path, change, "merged", detail)
+        ..entry(path, change, Some(url), "merged", detail)
     };
     Ok((done, Some(ended)))
 }
@@ -310,28 +316,22 @@ fn synced(
     change: &ChangeRecord,
     deadline: Instant,
 ) -> Result<(Entry, Option<ChangeRecord>), PluginError> {
-    let url = change.pull_request.clone().unwrap_or_default();
-    let matched = PULL_URL.captures(&url).and_then(|captures| {
-        Some((
-            captures.get(1)?.as_str(),
-            captures.get(2)?.as_str(),
-            captures.get(3)?.as_str(),
-        ))
-    });
-    let Some(pull) = matched else {
+    let reference = change.pulls().last().cloned().unwrap_or_default();
+    let Some(pull) = pull_of(host, &reference)? else {
         let detail = format!(
-            "{url} is not a GitHub pull request URL, so its state cannot be read; record the \
-             right URL"
+            "{reference} is not a github/pull/v1 record Board reads, so the pull request's state \
+             cannot be read; record it with `board call github.ref` and attach it with --pull"
         );
-        let attach = format!("board call changes.attach --path {path} --pull_request <url>");
+        let attach = format!("board call changes.attach --path {path} --pull <record>");
         let unread = Entry {
-            code: Some("changes::sync::not_github"),
+            code: Some("changes::sync::pull_unreadable"),
             command: Some(attach),
-            ..entry(path, change, "not_github", detail)
+            ..entry(path, change, None, "pull_unreadable", detail)
         };
         return Ok((unread, None));
     };
-    let Some(answer) = pull_state(host, pull, deadline)? else {
+    let url = pull.url.clone();
+    let Some(answer) = pull_state(host, &pull, deadline)? else {
         let detail = format!(
             "GitHub answers 404 for {url}: no such pull request, or gh's account cannot see the \
              repository; check `gh auth status`, then drop the change or record the right URL"
@@ -341,12 +341,12 @@ fn synced(
             command: Some(format!(
                 "board call changes.drop --path {path} --reason '<why>'"
             )),
-            ..entry(path, change, "not_found", detail)
+            ..entry(path, change, Some(&url), "not_found", detail)
         };
         return Ok((missing, None));
     };
     if answer.get("merged") == Some(&Value::Bool(true)) {
-        return merged(host, path, change, &url, &answer);
+        return merged(host, path, change, &pull, &answer);
     }
     if answer.get("state").and_then(Value::as_str) == Some("closed") {
         let closed: String = (answer.get("closed_at").and_then(Value::as_str))
@@ -365,13 +365,14 @@ fn synced(
         ended.dropped_reason = Some(reason.clone());
         let dropped = Entry {
             to: Some(Phase::Dropped),
-            ..entry(path, change, "closed", reason)
+            ..entry(path, change, Some(&url), "closed", reason)
         };
         return Ok((dropped, Some(ended)));
     }
     let open = entry(
         path,
         change,
+        Some(&url),
         "open",
         format!("its pull request {url} is open"),
     );
@@ -388,7 +389,7 @@ pub(crate) fn sync(host: &dyn Host, input: &Value) -> Result<Value, PluginError>
     let mut entries = Vec::new();
     let mut lines = Vec::new();
     for (path, change, blob) in open_changes(host)? {
-        if change.pull_request.is_none() {
+        if change.pulls().is_empty() {
             entries.push(without_pull(&path, &change));
             continue;
         }
@@ -399,18 +400,10 @@ pub(crate) fn sync(host: &dyn Host, input: &Value) -> Result<Value, PluginError>
         }
     }
     if !dry_run {
-        let sql = format!(
-            "SELECT blob FROM entries WHERE logical = {}",
-            literal(SYNC_PATH)
-        );
-        let found = rows(host, &sql)?;
-        let expect = (found.first().and_then(|row| text(row.first()))).unwrap_or("none");
-        let record = SyncRecord {
-            tag: board_plugin::shape::Tag::default(),
-            synced: today(host).to_string(),
-        };
-        lines.push(json!({"path": SYNC_PATH, "expect": expect, "record": record}));
-        board::put(host, &lines)?;
+        if !lines.is_empty() {
+            board::put(host, &lines)?;
+        }
+        record_sync(host, &today(host).to_string())?;
     }
     let total = entries.len();
     let moved = entries.iter().filter(|found| found.to.is_some()).count();
@@ -449,20 +442,4 @@ pub(crate) fn drop(host: &dyn Host, input: &Value) -> Result<Value, PluginError>
         to: Phase::Dropped,
         task: change.task,
     }))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::PULL_URL;
-
-    #[test]
-    fn a_pull_request_url_gives_its_owner_repository_and_number() {
-        let captures = PULL_URL
-            .captures("https://github.com/crumbkit/board/pull/12/")
-            .unwrap();
-        assert_eq!(&captures[1], "crumbkit");
-        assert_eq!(&captures[2], "board");
-        assert_eq!(&captures[3], "12");
-        assert!(!PULL_URL.is_match("https://github.com/crumbkit/board/issues/12"));
-    }
 }

@@ -9,7 +9,7 @@ boundary.verify disabled Whether a passing crossing exists for a digest, or for 
 boundary.record disabled Add what the destination returned, such as a URL, to a passing crossing.
 changes.start disabled Create a change, its plan to fill in and, unless one is named, its task, set its route from CODEOWNERS, and return the repository's owners, contributing docs and check suite.
 changes.next disabled The change's phase, each check of its gate as pass or missing, and what to do now.
-changes.attach disabled Add a reference to a record the change produced, or set its task, route, head commit or pull request.
+changes.attach disabled Add a reference to a record the change produced, which its newest plan keeps, or set its task, route, head commit, ticket or pull request.
 changes.advance disabled Move the change to its next phase when its gate passes; otherwise refuse and say what is missing. Into build, refuse while three active changes of its kind are in build for its mount, unless over_limit gives a reason, which the change records and the output warns about.
 changes.open disabled The changes that are not done or dropped, with their phase, route, task and kind; by kind, every prototype with its question, state, verdict and branch; and the day of the last sync.
 changes.pr disabled Write pr.md in the change's directory, a pull request body that says what changes, why, what the tests prove and do not prove, and the evidence, and return the gh command that would use it.
@@ -21,6 +21,7 @@ changes.pause disabled Move a change in build to paused, which frees its place u
 changes.resume disabled Move a paused change back to build, refused while three active changes of its kind are in build for its mount, unless over_limit gives a reason.
 changes.sync disabled Read each open change's GitHub pull request with gh and end the change when it closed: done, with its merge commit, when it merged and no attached task is open, else dropped with the reason. List the changes with no pull request and what to do with each. dry_run writes nothing; otherwise every move and the day of the sync are written in one commit, or nothing when gh fails.
 changes.drop disabled End a change that is not done or dropped in dropped, recording the reason, and name its task.
+changes.migrate disabled Rewrite the board's change records written before the split of changes/change/v1: a prototype's fields move to changes/prototype/v1, the records a change lists move to its newest plan, a pull request's URL becomes a github/pull/v1 record through github.ref, and the sync stamp moves to Board's cache. apply writes every line in one commit; without it nothing is written.
 controls.for-path disabled The controls that apply to a path.
 controls.for-paths disabled The controls that apply to any of several files and SQLite GLOB patterns, each once with its summary and the paths that reached it.
 controls.check disabled Check the controls under a path, `/` when left out. Fails naming each control over budget, behind its version or degraded.

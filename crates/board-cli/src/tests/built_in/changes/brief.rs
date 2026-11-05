@@ -88,7 +88,7 @@ fn control(requirement: &str, paths: &[&str], fields: &Value) -> String {
 /// `src/a.rs`.
 fn with_source() -> Changes {
     let board = Changes::new();
-    board.write("changes/t.json", &change("plan", &json!({})));
+    board.change_at("changes/t.json", "plan", &json!({}));
     board.mount_x(&[("src/a.rs", "a\n")]);
     board
 }
@@ -107,7 +107,7 @@ fn listed(board: &Changes, command: &Value) -> Vec<String> {
 #[test]
 fn brief_gives_one_line_for_each_record_the_newest_plan_uses() {
     let board = Changes::new();
-    board.write("changes/t.json", &change("plan", &json!({})));
+    board.change_at("changes/t.json", "plan", &json!({}));
     board.write(
         ".board/types/evals/eval/v1.schema.json",
         r#"{"type": "object"}"#,
@@ -178,7 +178,7 @@ fn brief_gives_one_line_for_each_record_the_newest_plan_uses() {
 #[test]
 fn brief_stays_within_600_words_with_100_uses_and_counts_what_it_left_out() {
     let board = Changes::new();
-    board.write("changes/t.json", &change("plan", &json!({})));
+    board.change_at("changes/t.json", "plan", &json!({}));
     let count = 100;
     let uses: Vec<String> = (0..count)
         .map(|number| format!("/standards/s{number:03}.md"))
@@ -201,7 +201,7 @@ fn brief_stays_within_600_words_with_100_uses_and_counts_what_it_left_out() {
 #[test]
 fn brief_without_a_plan_record_names_no_plan_and_no_uses() {
     let board = Changes::new();
-    board.write("changes/t.json", &change("plan", &json!({})));
+    board.change_at("changes/t.json", "plan", &json!({}));
     let brief = brief(&board);
     assert_eq!(
         (&brief["plan"], &brief["uses"], &brief["left_out"]),
@@ -212,7 +212,7 @@ fn brief_without_a_plan_record_names_no_plan_and_no_uses() {
 #[test]
 fn brief_keeps_the_newest_plan_when_a_document_it_uses_is_deleted() {
     let board = Changes::new();
-    board.write("changes/t.json", &change("plan", &json!({})));
+    board.change_at("changes/t.json", "plan", &json!({}));
     board.write("standards/a.md", "# A\n");
     board.write("standards/b.md", "# B\n");
     board.call_stdin("plan", &planned(&["/standards/a.md"], &PATHS));
@@ -229,7 +229,7 @@ fn brief_keeps_the_newest_plan_when_a_document_it_uses_is_deleted() {
 #[test]
 fn brief_starts_with_the_line_the_write_guard_reads() {
     let board = Changes::new();
-    board.write("changes/t.json", &change("plan", &json!({})));
+    board.change_at("changes/t.json", "plan", &json!({}));
     let ran = board.run(&["--json", "call", "changes.brief", "--path", CHANGE], "");
     assert_eq!(ran.code, 0, "{}", text(&ran.stderr));
     // The guard reads the output's first key, which a parsed document's
@@ -248,7 +248,7 @@ fn brief_starts_with_the_line_the_write_guard_reads() {
 #[test]
 fn brief_lists_each_control_on_the_planned_paths_once_matched_ones_first_and_what_they_matched() {
     let board = Changes::new();
-    board.write("changes/t.json", &change("plan", &json!({})));
+    board.change_at("changes/t.json", "plan", &json!({}));
     board.mount_x(&[("src/a.rs", "a\n"), ("docs/a.md", "a\n")]);
     board.write(
         "controls/rust.json",
@@ -292,7 +292,7 @@ fn brief_lists_each_control_on_the_planned_paths_once_matched_ones_first_and_wha
 #[test]
 fn a_rule_lists_at_most_three_matched_paths_and_counts_the_rest() {
     let board = Changes::new();
-    board.write("changes/t.json", &change("plan", &json!({})));
+    board.change_at("changes/t.json", "plan", &json!({}));
     board.mount_x(&[("a.rs", "a\n")]);
     board.write(
         "controls/rust.json",
@@ -484,7 +484,7 @@ fn many_rules_leave_room_for_the_lines_of_the_records_the_plan_uses() {
 #[test]
 fn brief_without_the_controls_plugin_is_refused_and_with_it_is_admitted() {
     let board = Changes::new();
-    board.write("changes/t.json", &change("plan", &json!({})));
+    board.change_at("changes/t.json", "plan", &json!({}));
     board.call_stdin("plan", &planned(&[], &PATHS));
     let config = board.read(".board/board.json");
     board.write(
@@ -503,7 +503,7 @@ fn brief_without_the_controls_plugin_is_refused_and_with_it_is_admitted() {
 #[test]
 fn brief_of_a_plan_without_paths_lists_no_rules() {
     let board = Changes::new();
-    board.write("changes/t.json", &change("plan", &json!({})));
+    board.change_at("changes/t.json", "plan", &json!({}));
     let brief = brief(&board);
     assert_eq!(
         (
@@ -601,7 +601,7 @@ fn a_plan_that_leaves_five_words_stays_within_the_limit_and_counts_the_rules_it_
 #[test]
 fn a_use_too_long_to_fit_leaves_room_for_the_shorter_uses_after_it() {
     let board = Changes::new();
-    board.write("changes/t.json", &change("plan", &json!({})));
+    board.change_at("changes/t.json", "plan", &json!({}));
     let uses = ["/standards/a.md", "/standards/long.md", "/standards/b.md"];
     board.write("standards/a.md", "# Short.\n");
     board.write(

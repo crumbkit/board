@@ -1,5 +1,6 @@
-//! A change: reading and writing its record, the records it references,
-//! its newest plan and the day of the last sync.
+//! A change: reading and writing its record, its prototype record, the
+//! records attached to its plans, its newest plan and the day of the last
+//! sync.
 
 use std::collections::BTreeMap;
 use std::time::Duration;
@@ -11,13 +12,14 @@ use board_repos::Date;
 use schemars::JsonSchema;
 use serde::Serialize;
 use serde_json::{Map, Value, json};
+use sha2::{Digest, Sha256};
 
 use crate::board::{self, body, readable, rows, text, tree_codes};
-use crate::records::{ChangeRecord, PlanRecord, SyncRecord};
+use crate::records::{ChangeRecord, Kind, PULL_TYPES, PlanRecord, PrototypeRecord};
 use crate::refusal;
 
-/// Where `sync` records the day it last ran.
-pub(crate) const SYNC_PATH: &str = "/changes/sync";
+/// Where in Board's cache `sync` keeps the day it last ran, by board.
+const SYNC_PLACE: &str = "board-changes/synced";
 pub(crate) const SYNC_COMMAND: &str = "board call changes.sync";
 /// The board's own changes; a mounted board's changes sit under the mount
 /// and are that board's to keep.
@@ -102,6 +104,145 @@ pub(crate) fn parsed(value: Option<&Value>) -> Option<ChangeRecord> {
     serde_json::from_value(value).ok()
 }
 
+/// The prototype record of the change at `path`, at `<path>/prototype`,
+/// and its blob, or none when the change is not a prototype.
+pub(crate) fn prototype_of(
+    host: &dyn Host,
+    path: &str,
+) -> Result<Option<(PrototypeRecord, String)>, PluginError> {
+    let sql = format!(
+        "SELECT blob, body FROM records WHERE logical = {} AND type = {} AND ({})",
+        literal(&format!("{path}/prototype")),
+        literal(PrototypeRecord::TYPE),
+        sound()
+    );
+    let found = rows(host, &sql)?;
+    Ok(found.first().and_then(|row| {
+        let record = from_body(row.get(1))?;
+        Some((record, text(row.first()).unwrap_or_default().to_owned()))
+    }))
+}
+
+/// The kind of the change at `path`: a prototype when its prototype record
+/// is there.
+pub(crate) fn kind_of(host: &dyn Host, path: &str) -> Result<Kind, PluginError> {
+    Ok(if prototype_of(host, path)?.is_some() {
+        Kind::Prototype
+    } else {
+        Kind::Build
+    })
+}
+
+/// Every prototype record in the board's own tree, by the change it names.
+pub(crate) fn prototypes(
+    host: &dyn Host,
+) -> Result<BTreeMap<String, PrototypeRecord>, PluginError> {
+    let sql = format!(
+        "SELECT body FROM records WHERE type = {} AND substr(logical, 1, {}) = {} AND ({})",
+        literal(PrototypeRecord::TYPE),
+        OWN.len(),
+        literal(OWN),
+        sound()
+    );
+    Ok((rows(host, &sql)?.iter())
+        .filter_map(|row| from_body::<PrototypeRecord>(row.first()))
+        .map(|record| (record.change.clone(), record))
+        .collect())
+}
+
+/// The kind of the change at `path`: a prototype when its prototype record
+/// names it.
+pub(crate) fn kind_in(prototypes: &BTreeMap<String, PrototypeRecord>, path: &str) -> Kind {
+    if prototypes.contains_key(path) {
+        Kind::Prototype
+    } else {
+        Kind::Build
+    }
+}
+
+/// A record Board reads as valid, or degraded only for a broken reference.
+fn sound() -> String {
+    format!("code IS NULL OR code IN ({})", tree_codes())
+}
+
+/// The record a `body` column holds, or none when it does not read as one.
+fn from_body<R: serde::de::DeserializeOwned>(value: Option<&Value>) -> Option<R> {
+    let value = parse_json(text(value)?.as_bytes()).ok()?;
+    serde_json::from_value(value).ok()
+}
+
+/// The records attached to the change at `path`: those each of its plans
+/// lists in `records`, oldest plan first, each once.
+pub fn attached(host: &dyn Host, path: &str) -> Result<Vec<String>, PluginError> {
+    let prefix = format!("{path}/plans/");
+    let sql = format!(
+        "SELECT body FROM records WHERE type = {} AND substr(logical, 1, {}) = {} AND ({}) \
+         ORDER BY logical",
+        literal(PlanRecord::TYPE),
+        prefix.chars().count(),
+        literal(&prefix),
+        sound()
+    );
+    let mut found: Vec<String> = Vec::new();
+    for row in rows(host, &sql)? {
+        let plan: Option<PlanRecord> = from_body(row.first());
+        for each in plan.and_then(|plan| plan.records).unwrap_or_default() {
+            if !found.contains(&each) {
+                found.push(each);
+            }
+        }
+    }
+    Ok(found)
+}
+
+/// The plan record at `path` and its blob, or none when no valid plan is
+/// there.
+pub(crate) fn plan_at(
+    host: &dyn Host,
+    path: &str,
+) -> Result<Option<(PlanRecord, String)>, PluginError> {
+    let sql = format!(
+        "SELECT blob, body FROM records WHERE logical = {} AND type = {} AND ({})",
+        literal(path),
+        literal(PlanRecord::TYPE),
+        sound()
+    );
+    let found = rows(host, &sql)?;
+    Ok(found.first().and_then(|row| {
+        let record = from_body(row.get(1))?;
+        Some((record, text(row.first()).unwrap_or_default().to_owned()))
+    }))
+}
+
+/// A pull request as its github/pull/v1 record names it: owner, repository,
+/// number and page.
+pub(crate) struct Pull {
+    pub(crate) owner: String,
+    pub(crate) repo: String,
+    pub(crate) number: u64,
+    pub(crate) url: String,
+}
+/// The github/pull/v1 record at `reference`, or none when Board reads no
+/// such record there.
+pub(crate) fn pull_of(host: &dyn Host, reference: &str) -> Result<Option<Pull>, PluginError> {
+    if reference.is_empty() {
+        return Ok(None);
+    }
+    let found = referenced(host, &[reference.to_owned()])?;
+    let Some((_, body)) = (found.of_type(PULL_TYPES[0])).next() else {
+        return Ok(None);
+    };
+    let field = |key: &str| body.get(key).and_then(Value::as_str).map(str::to_owned);
+    Ok((|| {
+        Some(Pull {
+            owner: field("owner")?,
+            repo: field("repo")?,
+            number: body.get("number").and_then(Value::as_u64)?,
+            url: field("url")?,
+        })
+    })())
+}
+
 /// Today's UTC day.
 pub(crate) fn today(host: &dyn Host) -> Date {
     board_repos::today(host.settings().now, 0, Duration::ZERO)
@@ -151,11 +292,11 @@ pub(crate) fn newest(host: &dyn Host, path: &str) -> Result<Newest, PluginError>
     let prefix = format!("{path}/plans/");
     let sql = format!(
         "SELECT body FROM records WHERE type = {} AND substr(logical, 1, {}) = {} \
-         AND (code IS NULL OR code IN ({})) ORDER BY logical DESC LIMIT 1",
+         AND ({}) ORDER BY logical DESC LIMIT 1",
         literal(PlanRecord::TYPE),
         prefix.chars().count(),
         literal(&prefix),
-        tree_codes()
+        sound()
     );
     let found = rows(host, &sql)?;
     let Some(row) = found.first() else {
@@ -239,19 +380,30 @@ pub(crate) struct LastSync {
     command: &'static str,
 }
 
+/// The key Board's cache keeps this board's sync day under: the SHA-256 of
+/// the board's repository path, or none when Board names no root.
+fn sync_key(host: &dyn Host) -> Result<Option<Vec<u8>>, PluginError> {
+    Ok(board::resolve(host, "/")?.map(|report| {
+        let root = report.location.board.repository;
+        Sha256::digest(root.as_os_str().as_encoded_bytes()).to_vec()
+    }))
+}
+
+/// Records `day` as the day of the last writing sync in Board's cache. A
+/// lost cache only makes the next `next` or `open` warn that sync is stale.
+pub(crate) fn record_sync(host: &dyn Host, day: &str) -> Result<(), PluginError> {
+    if let Some(key) = sync_key(host)? {
+        let _ = host.cache(SYNC_PLACE, &key, day.as_bytes());
+    }
+    Ok(())
+}
+
 /// The day the last writing sync ran and whether that is before today, with
 /// the warning when it is.
 pub(crate) fn last_sync(host: &dyn Host) -> Result<LastSync, PluginError> {
-    let sql = format!(
-        "SELECT json_extract(body, '$.synced') FROM records WHERE logical = {} AND type = {}",
-        literal(SYNC_PATH),
-        literal(SyncRecord::TYPE)
-    );
-    let found = rows(host, &sql)?;
-    let synced = found
-        .first()
-        .and_then(|row| text(row.first()))
-        .map(str::to_owned);
+    let synced = (sync_key(host)?)
+        .and_then(|key| host.cached(SYNC_PLACE, &key))
+        .and_then(|bytes| String::from_utf8(bytes).ok());
     let today = today(host).to_string();
     let stale = synced.as_ref().is_none_or(|day| *day < today);
     Ok(LastSync {

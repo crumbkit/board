@@ -9,9 +9,9 @@ use serde::Serialize;
 use serde_json::{Map, Value, json};
 
 use crate::board;
-use crate::change::{read, referenced};
+use crate::change::{attached, kind_of, pull_of, read, referenced};
 use crate::gates::{Observed, REPORT_TYPE, RUN_TYPE, objects, ran_on, sections};
-use crate::phases::{PathInput, plan_text};
+use crate::phases::{PathInput, plan_file, plan_text};
 use crate::{PLUGIN, to_value};
 
 /// Severities in the order a report's findings are counted.
@@ -27,6 +27,8 @@ const DOES_NOT_PROVE: &str = "What the tests do not prove";
 /// Cases a run lists as failed, errored or skipped before the rest are only
 /// counted.
 const CASES: usize = 20;
+/// The record type of a GitHub issue, whose page the body closes.
+const GITHUB_ISSUE: &str = "github/issue/v1";
 
 /// The pull request drafted for a change.
 ///
@@ -208,7 +210,7 @@ fn bullets(lines: &[String]) -> String {
 /// tests prove" and "What the tests do not prove" sections lead those parts
 /// of the body, followed by what each attached run shows. Every reference
 /// is listed as evidence.
-pub(crate) fn body(observed: &Observed) -> String {
+pub(crate) fn body(observed: &Observed, closes: &[String]) -> String {
     let change = &observed.change;
     let plan = sections(observed.plan.as_deref().unwrap_or_default());
     let section = |name: &str| -> Option<String> {
@@ -265,11 +267,13 @@ pub(crate) fn body(observed: &Observed) -> String {
     if !reports.is_empty() {
         parts.push(format!("## Review\n\n{}", bullets(&reports)));
     }
+    if let Some(reason) = &change.over_limit {
+        parts.push(format!(
+            "## Work in progress\n\nIt moved into build past the WIP limit: {reason}"
+        ));
+    }
     parts.push(format!("## Evidence\n\n{}", bullets(&evidence(observed))));
-    if let Some(issue) = &change.issue
-        && !issue.is_empty()
-        && !issue.chars().any(char::is_whitespace)
-    {
+    for issue in closes {
         parts.push(format!("Closes {issue}"));
     }
     parts.join("\n\n") + "\n"
@@ -279,10 +283,9 @@ pub(crate) fn body(observed: &Observed) -> String {
 /// be read, after the change and plan.
 fn evidence(observed: &Observed) -> Vec<String> {
     let mut lines = vec![format!("{}: the change", quoted_text(&observed.path))];
-    if let Some(plan) = observed
-        .change
-        .plan
-        .as_deref()
+    // The plan's text is what a reader opens, so it is cited when known.
+    if let Some(plan) = (observed.plan_file.as_deref())
+        .or(observed.change.plan.as_deref())
         .filter(|plan| !plan.is_empty())
     {
         let gone = if observed.plan.is_some() {
@@ -292,7 +295,7 @@ fn evidence(observed: &Observed) -> Vec<String> {
         };
         lines.push(format!("{}: the plan{gone}", quoted_text(plan)));
     }
-    for path in observed.change.records() {
+    for path in &observed.cited {
         let cited = if let Some((found, _)) = observed.records.get(path) {
             found.clone()
         } else {
@@ -306,6 +309,15 @@ fn evidence(observed: &Observed) -> Vec<String> {
     lines
 }
 
+/// The pages of the GitHub issues among `tickets`, which the body closes.
+fn issue_urls(host: &dyn Host, tickets: &[String]) -> Result<Vec<String>, PluginError> {
+    let found = referenced(host, tickets)?;
+    Ok((found.of_type(GITHUB_ISSUE))
+        .filter_map(|(_, body)| body.get("url").and_then(Value::as_str).map(str::to_owned))
+        .filter(|url| !url.is_empty() && !url.chars().any(char::is_whitespace))
+        .collect())
+}
+
 /// Writes `<change>/pr.md` and returns its path and the `gh pr create` line
 /// that would use it. A change that records a pull request gets its URL
 /// instead, and no pr.md is written.
@@ -313,24 +325,34 @@ pub(crate) fn pr(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
     let PathInput { path } = PluginError::read_input(PLUGIN, "pr", input)?;
     let path = path.trim_end_matches('/').to_owned();
     let (change, _) = read(host, &path)?;
-    let records = referenced(host, change.records())?;
+    let cited = attached(host, &path)?;
+    let records = referenced(host, &cited)?;
     let left: Vec<String> = (records.unreadable.iter())
         .map(|(each, _)| each.clone())
         .collect();
     let target = format!("{path}/pr.md");
-    if let Some(opened) = change.pull_request.clone() {
+    if let Some(reference) = change.pulls().last()
+        && let Some(opened) = pull_of(host, reference)?
+    {
         return Ok(to_value(Output {
             path: target,
             command: None,
-            pull_request: Some(opened),
+            pull_request: Some(opened.url),
             unreadable: left,
         }));
     }
+    let closes = issue_urls(host, change.tickets.as_deref().unwrap_or_default())?;
     let plan = plan_text(host, &change)?;
+    let plan_file = plan_file(host, &change)?;
     let title = one_line(Some(&Value::from(change.title.as_str())));
-    let mut observed = Observed::new(&path, change, records);
+    let mut observed = Observed::new(&path, change, kind_of(host, &path)?, records);
+    observed.cited = cited;
     observed.plan = plan;
-    board::put(host, &[json!({"path": target, "text": body(&observed)})])?;
+    observed.plan_file = plan_file;
+    board::put(
+        host,
+        &[json!({"path": target, "text": body(&observed, &closes)})],
+    )?;
     let written = board::resolve(host, &target)?;
     let file = written.map_or_else(String::new, |answer| {
         let location = answer.location;

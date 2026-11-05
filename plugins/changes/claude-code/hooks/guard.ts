@@ -140,8 +140,13 @@ export const mountRecord = (file: string, at: Mount) =>
   `which changes only through board commands. Use \`board -C ${at.board} mount update ${at.mount}\` to ` +
   'follow its repository, or `board put` to change the mount.'
 
-/** Whether `relative`, a path inside a board, is a change record: `changes/<name>.json`. */
-export const isChangeRecord = (relative: string) => /^changes\/[^/]+\.json$/.test(relative)
+/**
+ * Whether `relative`, a path inside a board, is a record only board commands change: a change at
+ * `changes/<name>.json`, its prototype at `changes/<name>/prototype.json`, or a plan, which lists the records
+ * attached, at `changes/<name>/plans/<stamp>.json`. A plan's Markdown text stays writable.
+ */
+export const isChangeRecord = (relative: string) =>
+  /^changes\/[^/]+(\/prototype|\/plans\/[^/]+)?\.json$/.test(relative)
 
 /** The refusal of an edit the guard cannot check. */
 export const unknown = (file: string, why: string) =>

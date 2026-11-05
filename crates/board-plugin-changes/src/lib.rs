@@ -10,6 +10,7 @@ mod brief;
 mod change;
 mod diff;
 mod gates;
+mod migrate;
 mod open;
 mod phases;
 mod plan;
@@ -22,6 +23,8 @@ mod sync;
 mod tasks;
 mod wip;
 
+pub use change::attached;
+
 use board_model::{CapabilityName, RecordType};
 use board_ops::{Host, Plugin, PluginError};
 use board_plugin::Manifest;
@@ -30,14 +33,14 @@ use schemars::JsonSchema;
 use schemars::generate::SchemaSettings;
 use serde_json::{Map, Value, json};
 
-use records::{ChangeRecord, PlanRecord, SyncRecord, UnderstandingRecord};
+use records::{ChangeRecord, PlanRecord, PrototypeRecord, UnderstandingRecord};
 
 /// The plugin's name, which its codes start with.
 const PLUGIN: &str = "changes";
-/// The severities that shut the review gate. The review plugin keeps a copy,
-/// which its tests compare with this one.
+/// The severities that shut the review gate, which the review plugin reads
+/// too.
 pub const BLOCKING: [&str; 2] = ["critical", "high"];
-/// The record type of a change, which the review plugin copies.
+/// The record type of a change, which the review plugin reads too.
 pub const CHANGE_TYPE: &str = "changes/change/v1";
 
 #[derive(Clone, Copy, Debug)]
@@ -81,7 +84,7 @@ fn output<T: JsonSchema>() -> Value {
 /// Every capability, in the order the manifest lists them. A capability
 /// that rewrites a field of a change, or ends it, is destructive; one that
 /// adds a task or reads GitHub reaches the open world.
-const CAPABILITIES: [Capability; 14] = [
+const CAPABILITIES: [Capability; 15] = [
     Capability {
         name: "start",
         description: "Create a change, its plan to fill in and, unless one is named, its task, set \
@@ -109,8 +112,8 @@ const CAPABILITIES: [Capability; 14] = [
     },
     Capability {
         name: "attach",
-        description: "Add a reference to a record the change produced, or set its task, route, \
-            head commit or pull request.",
+        description: "Add a reference to a record the change produced, which its newest plan \
+            keeps, or set its task, route, head commit, ticket or pull request.",
         run: phases::attach,
         input: input::<phases::AttachInput>,
         output: output::<phases::AttachOutput>,
@@ -253,6 +256,22 @@ const CAPABILITIES: [Capability; 14] = [
         env: &[],
         timeout: None,
     },
+    Capability {
+        name: "migrate",
+        description: "Rewrite the board's change records written before the split of \
+            changes/change/v1: a prototype's fields move to changes/prototype/v1, the records a \
+            change lists move to its newest plan, a pull request's URL becomes a github/pull/v1 \
+            record through github.ref, and the sync stamp moves to Board's cache. apply writes \
+            every line in one commit; without it nothing is written.",
+        run: migrate::migrate,
+        input: input::<migrate::Input>,
+        output: output::<migrate::Output>,
+        // Each pull request it records is written once; a second run finds
+        // nothing to rewrite.
+        hints: [false, true, true, true],
+        env: &[],
+        timeout: Some(SYNC_TIMEOUT),
+    },
 ];
 
 impl Plugin for Changes {
@@ -278,7 +297,10 @@ impl Plugin for Changes {
                 UnderstandingRecord::TYPE,
                 schema_of::<UnderstandingRecord>(settings()),
             ),
-            typed(SyncRecord::TYPE, schema_of::<SyncRecord>(settings())),
+            typed(
+                PrototypeRecord::TYPE,
+                schema_of::<PrototypeRecord>(settings()),
+            ),
         ]
     }
 
@@ -345,8 +367,8 @@ fn manifest() -> Value {
         "types": [
             ChangeRecord::TYPE,
             PlanRecord::TYPE,
+            PrototypeRecord::TYPE,
             UnderstandingRecord::TYPE,
-            SyncRecord::TYPE,
         ],
         "capabilities": capabilities,
     })

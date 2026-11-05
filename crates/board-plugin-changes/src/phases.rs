@@ -8,7 +8,11 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use crate::board::{self, get_text, rows, text};
-use crate::change::{LastSync, branch_of, last_sync, newest, read, referenced, touch, write};
+use crate::change::write;
+use crate::change::{
+    LastSync, attached, branch_of, kind_of, last_sync, line, newest, plan_at, read, referenced,
+    touch,
+};
 use crate::diff::{edited, outside};
 use crate::gates::{Check, Observed, Status, code_of, gate};
 use crate::records::{ChangeRecord, Kind, PULL_TYPES, Phase, Route, TASK_TYPE, TICKET_TYPES};
@@ -48,14 +52,13 @@ pub(crate) struct AdvanceInput {
     over_limit: Option<String>,
 }
 
-/// Add a record, ticket or pull reference, or set the task, route, head
-/// commit, issue or pull request.
+/// Add a record, ticket or pull reference, or set the task, route or head
+/// commit.
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 #[schemars(extend("anyOf" = [
     {"required": ["ref"]}, {"required": ["ticket"]}, {"required": ["pull"]},
     {"required": ["task"]}, {"required": ["route"]}, {"required": ["head"]},
-    {"required": ["issue"]}, {"required": ["pull_request"]},
 ]))]
 pub(crate) struct AttachInput {
     #[schemars(
@@ -69,7 +72,8 @@ pub(crate) struct AttachInput {
         rename = "ref",
         regex(pattern = "^/"),
         extend("format" = "board-path"),
-        description = "A record the change produced, such as /suites/board-tests/runs/<id>."
+        description = "A record the change produced, such as /suites/board-tests/runs/<id>; \
+                       the change's newest plan keeps it."
     )]
     reference: Option<String>,
     #[schemars(
@@ -81,7 +85,8 @@ pub(crate) struct AttachInput {
     #[schemars(
         regex(pattern = "^/"),
         extend("format" = "board-path"),
-        description = "A pull request of the change, a github/pull/v1 record."
+        description = "A pull request of the change, a github/pull/v1 record, which `board \
+                       call github.ref --ref <owner>/<repo>#<number>` writes."
     )]
     pull: Option<String>,
     #[schemars(
@@ -97,13 +102,6 @@ pub(crate) struct AttachInput {
         description = "The commit under test and review."
     )]
     head: Option<String>,
-    #[schemars(
-        regex(pattern = "^https?://"),
-        description = "The URL of the issue the change answers."
-    )]
-    issue: Option<String>,
-    #[schemars(regex(pattern = "^https?://"), description = "The pull request's URL.")]
-    pull_request: Option<String>,
 }
 
 /// Where the change stands: its phase, route, the gate's checks, what to do
@@ -118,7 +116,7 @@ pub(crate) struct NextOutput {
     pub(crate) sync: LastSync,
 }
 
-/// The change written, and how many records it now references.
+/// The change written, and how many records its plans now hold.
 #[derive(Debug, Serialize, JsonSchema)]
 pub(crate) struct AttachOutput {
     path: String,
@@ -162,8 +160,9 @@ fn instruction(phase: Phase) -> &'static str {
              new head and review again."
         }
         Phase::Land => {
-            "Draft the pull request with `board call changes.pr`, open it with the command it \
-             returns, and record its URL with --pull-request. Merging happens outside Board."
+            "Draft the pull request with `board call changes.pr` and open it with the command \
+             it returns. Record it with `board call github.ref --ref <owner>/<repo>#<number>` \
+             and attach that record with --pull. Merging happens outside Board."
         }
         Phase::Done | Phase::Dropped => "Nothing is left to do.",
         Phase::Paused => {
@@ -179,10 +178,22 @@ pub(crate) fn plan_text(
     host: &dyn Host,
     change: &ChangeRecord,
 ) -> Result<Option<String>, PluginError> {
-    match &change.plan {
-        Some(plan) => get_text(host, plan),
-        None => Ok(None),
-    }
+    Ok(match plan_file(host, change)? {
+        Some(file) => get_text(host, &file)?,
+        None => None,
+    })
+}
+
+/// The Markdown file the change's plan record names as its text, or none
+/// when it names no plan Board reads.
+pub(crate) fn plan_file(
+    host: &dyn Host,
+    change: &ChangeRecord,
+) -> Result<Option<String>, PluginError> {
+    let Some(plan) = &change.plan else {
+        return Ok(None);
+    };
+    Ok(plan_at(host, plan)?.map(|(record, _)| record.text))
 }
 
 /// What the change's gate reads: references where the gate uses them, the
@@ -194,11 +205,22 @@ pub(crate) fn observe(
 ) -> Result<Observed, PluginError> {
     let phase = change.phase;
     let reads = matches!(phase, Phase::Plan | Phase::Build | Phase::Review);
-    let cited: &[String] = if reads { change.records() } else { &[] };
-    let records = referenced(host, cited)?;
-    let mut found = Observed::new(path, change.clone(), records);
+    let cited = if reads {
+        attached(host, path)?
+    } else {
+        Vec::new()
+    };
+    let records = referenced(host, &cited)?;
+    let mut found = Observed::new(path, change.clone(), kind_of(host, path)?, records);
+    found.cited = cited;
     match phase {
-        Phase::Plan => found.plan = plan_text(host, change)?,
+        Phase::Plan => {
+            found.plan_file = plan_file(host, change)?;
+            found.plan = match &found.plan_file {
+                Some(file) => get_text(host, file)?,
+                None => None,
+            };
+        }
         Phase::Build => found.suite = check_suite(host, &change.mount)?,
         Phase::Review => reviewed(host, &mut found)?,
         _ => {}
@@ -230,9 +252,10 @@ fn reviewed(host: &dyn Host, found: &mut Observed) -> Result<(), PluginError> {
 
 /// What to do now: the prototype's loop, the advance command once the gate
 /// passes, or the phase's instruction.
-fn instruction_for(path: &str, change: &ChangeRecord, checks: &[Check]) -> String {
+fn instruction_for(observed: &Observed, checks: &[Check]) -> String {
+    let (path, change) = (observed.path.as_str(), &observed.change);
     let phase = change.phase;
-    if change.kind() == Kind::Prototype && phase == Phase::Build {
+    if observed.kind == Kind::Prototype && phase == Phase::Build {
         return format!(
             "Iterate with the owner on branch {}, committing and pushing after every round. When \
              the owner has his answer, ask for the verdict in one sentence and record it with \
@@ -244,19 +267,25 @@ fn instruction_for(path: &str, change: &ChangeRecord, checks: &[Check]) -> Strin
     if open && checks.iter().all(|found| found.status == Status::Pass) {
         return format!("The gate passes: run `board call changes.advance --path {path}`.");
     }
-    instruction(phase).to_owned()
+    let said = instruction(phase);
+    match (phase, &change.merge_commit_url, &change.dropped_reason) {
+        (Phase::Done, Some(merged), _) => format!("{said} It merged as {merged}."),
+        (Phase::Dropped, _, Some(reason)) => format!("{said} It was dropped: {reason}"),
+        _ => said.to_owned(),
+    }
 }
 
 /// The change's phase and route, its gate's checks, and the next
 /// instruction.
 pub(crate) fn next_of(host: &dyn Host, path: &str) -> Result<NextOutput, PluginError> {
     let (change, _) = read(host, path)?;
-    let checks = gate(&observe(host, path, &change)?);
+    let observed = observe(host, path, &change)?;
+    let checks = gate(&observed);
     Ok(NextOutput {
         path: path.to_owned(),
         phase: change.phase,
         route: change.route,
-        instruction: instruction_for(path, &change, &checks),
+        instruction: instruction_for(&observed, &checks),
         gate: checks,
         sync: last_sync(host)?,
     })
@@ -279,9 +308,12 @@ pub(crate) fn attach(host: &dyn Host, input: &Value) -> Result<Value, PluginErro
     let asked: AttachInput = PluginError::read_input(PLUGIN, "attach", input)?;
     let path = asked.path;
     let (mut change, blob) = read(host, &path)?;
+    let mut lines = Vec::new();
     if let Some(reference) = &asked.reference {
         check_target(host, reference, &[])?;
-        add(&mut change.records, reference);
+        let (plan_path, mut plan, plan_blob) = newest_plan(host, &path, &change)?;
+        add(&mut plan.records, reference);
+        lines.push(json!({"path": plan_path, "expect": plan_blob, "record": plan}));
     }
     if let Some(ticket) = &asked.ticket {
         check_target(host, ticket, &TICKET_TYPES)?;
@@ -297,11 +329,33 @@ pub(crate) fn attach(host: &dyn Host, input: &Value) -> Result<Value, PluginErro
     }
     change.route = asked.route.or(change.route);
     change.head = asked.head.or(change.head);
-    change.issue = asked.issue.or(change.issue);
-    change.pull_request = asked.pull_request.or(change.pull_request);
     let change = touch(host, change);
-    write(host, &path, &blob, &change)?;
-    Ok(json!({"path": path, "records": change.records().len()}))
+    lines.push(line(&path, &blob, &change));
+    board::put(host, &lines)?;
+    Ok(json!({"path": path, "records": attached(host, &path)?.len()}))
+}
+
+/// The plan record the change at `path` names as its newest, its blob, or
+/// `changes::attach::no_plan` when it names none that Board reads.
+fn newest_plan(
+    host: &dyn Host,
+    path: &str,
+    change: &ChangeRecord,
+) -> Result<(String, crate::records::PlanRecord, String), PluginError> {
+    let found = match &change.plan {
+        Some(plan) => plan_at(host, plan)?.map(|(record, blob)| (plan.clone(), record, blob)),
+        None => None,
+    };
+    found.ok_or_else(|| {
+        refusal(
+            "changes::attach::no_plan",
+            format!(
+                "the change at {path} names no plan record to keep the reference; write its plan \
+                 with `board call changes.plan --path {path}`, then attach it again"
+            ),
+            [("path", json!(path))],
+        )
+    })
 }
 
 /// Refuses `reference` when nothing is there, or when `types` names some
@@ -426,7 +480,7 @@ pub(crate) fn advance(host: &dyn Host, input: &Value) -> Result<Value, PluginErr
             reason: over_limit.as_deref(),
             days: active_days(host)?,
         };
-        limit = admit(host, &path, &mut change, &moving)?;
+        limit = admit(host, &path, &mut change, kind_of(host, &path)?, &moving)?;
     }
     let change = touch(host, change);
     write(host, &path, &blob, &change)?;
@@ -482,7 +536,7 @@ pub(crate) fn resume(host: &dyn Host, input: &Value) -> Result<Value, PluginErro
         reason: over_limit.as_deref(),
         days: active_days(host)?,
     };
-    let limit = admit(host, &path, &mut change, &moving)?;
+    let limit = admit(host, &path, &mut change, kind_of(host, &path)?, &moving)?;
     let change = touch(host, change);
     write(host, &path, &blob, &change)?;
     Ok(to_value(Moved {

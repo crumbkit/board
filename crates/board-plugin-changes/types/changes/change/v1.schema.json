@@ -1,54 +1,43 @@
 {
   "additionalProperties": false,
-  "description": "`changes/change/v1`: one change to a repository, its phase, and every record it produced.\n\nA change lives at `/changes/<name>.json`; its plan and any files it owns\nsit in `/changes/<name>/`. Git history holds its earlier phases. `mount`\nreferences the repository's mount, such as `/repos/board`. `phase` moves\nfrom `plan` through `build`, `review` and `land` to `done`; `dropped`\nends a change early. `route` is `owner` when no one else owns the files,\n`ask-first` when someone else does, and `unowned` when the repository\nnames no owners. `plan` references the Markdown plan.\n`issue` links the spec issue, when there is one. `head` is the commit\nunder test and review. `pull_request` is the pull request's URL.\n`tickets` references the Jira or GitHub issues the change works on, and\n`pulls` its GitHub pull requests, each as a record of that type.\nA keeper moves a change in build to `paused` to keep the work in progress\nsmall, and back to `build` when the cap allows.\n`records` references every record the change produced: tasks, runs,\nevals, questions, decisions and review reports.\n`task` references the task the change does. `kind` is `build`, as when\nit is left out, for work that lands on main, or `prototype` for work that\nanswers `question` on branch `proto/<name>` and never lands. A\nprototype's `state` is `exploring` until `verdict`, one sentence, settles\nor abandons it; `verdict_artifact` is the URL of the artifact version\nthe verdict means.\n`sync` records `merge_commit_url`, the merge commit's GitHub URL, when it ends a\nchange whose pull request merged; `sync` and `drop` record\n`dropped_reason` when they drop one. `over_limit` is the reason given\nfor the latest move into build past the WIP limit. `touched` is the UTC\nday a changes capability last touched the change, which keeps it active\nunder the limit.",
+  "description": "`changes/change/v1`: one change to a repository and its phase.\n\nA change lives at `/changes/<name>`, and the records it owns sit under\n`/changes/<name>/`: its plans, a prototype's record and its\nunderstanding checks. Git history holds its earlier phases.",
   "properties": {
     "$type": {
       "const": "changes/change/v1",
-      "title": "$Type",
+      "description": "The record's type.",
       "type": "string"
     },
     "dropped_reason": {
+      "description": "Why the change was dropped, which `sync` and `drop` record and `next`\nshows.",
       "minLength": 1,
-      "title": "Dropped Reason",
       "type": "string",
       "x-board-prose": true
     },
     "head": {
+      "description": "The commit under test and review.",
       "pattern": "^[0-9a-f]{7,40}$",
-      "title": "Head",
-      "type": "string"
-    },
-    "issue": {
-      "pattern": "^https?://",
-      "title": "Issue",
-      "type": "string"
-    },
-    "kind": {
-      "enum": [
-        "build",
-        "prototype"
-      ],
-      "title": "Kind",
       "type": "string"
     },
     "merge_commit_url": {
+      "description": "The merge commit's GitHub page, which `sync` records when the pull\nrequest merged and `next` shows.",
       "format": "uri",
       "pattern": "^https?://([^/?#@]*@)?[^/?#@:][^/?#@]*([/?#]|$)",
-      "title": "Merge Commit Url",
       "type": "string"
     },
     "mount": {
+      "description": "The mount of the repository the change edits, such as `/repos/board`.",
       "format": "board-ref",
-      "title": "Mount",
-      "type": "string"
+      "type": "string",
+      "x-board-type": "board/mount/v1"
     },
     "over_limit": {
+      "description": "The reason given for the latest move into build past the WIP limit,\nwhich `pr` puts in the pull request body.",
       "minLength": 1,
-      "title": "Over Limit",
       "type": "string",
       "x-board-prose": true
     },
     "phase": {
+      "description": "Where the change stands.",
       "enum": [
         "plan",
         "build",
@@ -58,69 +47,40 @@
         "dropped",
         "paused"
       ],
-      "title": "Phase",
       "type": "string"
     },
     "plan": {
+      "description": "The change's newest plan, a `changes/plan/v1` under\n`/changes/<name>/plans/`.",
       "format": "board-ref",
-      "title": "Plan",
-      "type": "string"
-    },
-    "pull_request": {
-      "pattern": "^https?://",
-      "title": "Pull Request",
-      "type": "string"
+      "type": "string",
+      "x-board-type": "changes/plan/v1"
     },
     "pulls": {
+      "description": "The change's GitHub pull requests; `sync` reads the newest.",
       "items": {
         "format": "board-ref",
         "type": "string",
-        "x-board-type": [
-          "github/pull/v1"
-        ]
+        "x-board-type": "github/pull/v1"
       },
-      "title": "Pulls",
-      "type": "array"
-    },
-    "question": {
-      "minLength": 1,
-      "title": "Question",
-      "type": "string",
-      "x-board-prose": true
-    },
-    "records": {
-      "items": {
-        "format": "board-ref",
-        "type": "string"
-      },
-      "title": "Records",
       "type": "array"
     },
     "route": {
+      "description": "Who must agree to the change before it is built.",
       "enum": [
         "owner",
         "ask-first",
         "unowned"
       ],
-      "title": "Route",
-      "type": "string"
-    },
-    "state": {
-      "enum": [
-        "exploring",
-        "settled",
-        "abandoned"
-      ],
-      "title": "State",
       "type": "string"
     },
     "task": {
+      "description": "The task the change does.",
       "format": "board-ref",
-      "title": "Task",
       "type": "string",
       "x-board-type": "tasks/task/v2"
     },
     "tickets": {
+      "description": "The Jira or GitHub issues the change works on.",
       "items": {
         "format": "board-ref",
         "type": "string",
@@ -129,29 +89,17 @@
           "github/issue/v1"
         ]
       },
-      "title": "Tickets",
       "type": "array"
     },
     "title": {
+      "description": "What the change does, in a few words.",
       "minLength": 1,
-      "title": "Title",
-      "type": "string"
-    },
-    "touched": {
-      "format": "date",
-      "title": "Touched",
-      "type": "string"
-    },
-    "verdict": {
-      "minLength": 1,
-      "title": "Verdict",
       "type": "string",
       "x-board-prose": true
     },
-    "verdict_artifact": {
-      "format": "uri",
-      "pattern": "^https?://([^/?#@]*@)?[^/?#@:][^/?#@]*([/?#]|$)",
-      "title": "Verdict Artifact",
+    "touched": {
+      "description": "The UTC day a changes capability last touched the change, which keeps\nit active under the WIP limit.",
+      "format": "date",
       "type": "string"
     }
   },
@@ -162,5 +110,6 @@
     "phase"
   ],
   "title": "ChangeRecord",
-  "type": "object"
+  "type": "object",
+  "x-board-folder": "/changes/"
 }

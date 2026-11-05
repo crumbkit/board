@@ -8,8 +8,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::board::{readable, rows, text};
-use crate::change::{LastSync, branch_of, last_sync, parsed};
-use crate::records::{ChangeRecord, Kind, Phase, Route, State};
+use crate::change::{LastSync, branch_of, kind_in, last_sync, parsed, prototypes};
+use crate::records::{ChangeRecord, Kind, Phase, PrototypeRecord, Route, State};
 use crate::{PLUGIN, to_value};
 
 /// The default `limit` (STANDARDS 23).
@@ -76,13 +76,17 @@ pub(crate) struct Output {
     sync: LastSync,
 }
 
-fn listed(path: &str, change: ChangeRecord) -> Listed {
-    let kind = change.kind();
-    let prototype = (kind == Kind::Prototype).then(|| Prototype {
-        question: change.question.clone(),
-        state: change.state,
-        verdict: change.verdict.clone(),
-        verdict_artifact: change.verdict_artifact.clone(),
+fn listed(path: &str, change: ChangeRecord, prototype: Option<&PrototypeRecord>) -> Listed {
+    let kind = if prototype.is_some() {
+        Kind::Prototype
+    } else {
+        Kind::Build
+    };
+    let prototype = prototype.map(|found| Prototype {
+        question: Some(found.question.clone()),
+        state: Some(found.state),
+        verdict: found.verdict.clone(),
+        verdict_artifact: found.verdict_artifact.clone(),
         branch: branch_of(path),
     });
     Listed {
@@ -112,6 +116,7 @@ pub(crate) fn open(host: &dyn Host, input: &Value) -> Result<Value, PluginError>
         "SELECT logical, code, body FROM records WHERE type = {}{unfinished} ORDER BY logical",
         literal(ChangeRecord::TYPE)
     );
+    let prototypes = prototypes(host)?;
     let mut found = Vec::new();
     let mut unreadable = 0;
     for row in rows(host, &sql)? {
@@ -120,8 +125,8 @@ pub(crate) fn open(host: &dyn Host, input: &Value) -> Result<Value, PluginError>
             unreadable += 1;
             continue;
         };
-        if kind.is_none_or(|kind| change.kind() == kind) {
-            found.push(listed(path, change));
+        if kind.is_none_or(|kind| kind_in(&prototypes, path) == kind) {
+            found.push(listed(path, change, prototypes.get(path)));
         }
     }
     let total = found.len();

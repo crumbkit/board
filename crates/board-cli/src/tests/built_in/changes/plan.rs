@@ -34,9 +34,9 @@ fn stored(board: &Changes, output: &Value) -> Value {
 }
 
 #[test]
-fn plan_writes_the_plan_and_its_text_and_points_the_change_at_the_text() {
+fn plan_writes_the_plan_and_its_text_and_points_the_change_at_the_plan() {
     let board = Changes::new();
-    board.write("changes/t.json", &change("plan", &json!({})));
+    board.change_at("changes/t.json", "plan", &json!({}));
     board.write("standards/errors.md", "# Errors\n");
     let output = board.call_stdin("plan", &given(PLAN, &["/standards/errors.md"]));
     let stamp = output["path"]
@@ -65,14 +65,14 @@ fn plan_writes_the_plan_and_its_text_and_points_the_change_at_the_text() {
     assert_eq!(board.text(&format!("changes/t/plans/{stamp}.md")), PLAN);
     assert_eq!(
         board.read("changes/t.json")["plan"],
-        format!("/changes/t/plans/{stamp}.md")
+        format!("/changes/t/plans/{stamp}")
     );
 }
 
 #[test]
 fn a_second_plan_is_written_beside_the_first_and_becomes_the_change_s_plan() {
     let board = Changes::new();
-    board.write("changes/t.json", &change("plan", &json!({})));
+    board.change_at("changes/t.json", "plan", &json!({}));
     let first = board.call_stdin("plan", &given(PLAN, &[]));
     let second = board.call_stdin("plan", &given(&format!("{PLAN}More.\n"), &[]));
     assert!(
@@ -81,13 +81,13 @@ fn a_second_plan_is_written_beside_the_first_and_becomes_the_change_s_plan() {
     );
     // Two plans, each a record and its text.
     assert_eq!(plans(&board), 2 * 2);
-    assert_eq!(board.read("changes/t.json")["plan"], second["text"]);
+    assert_eq!(board.read("changes/t.json")["plan"], second["path"]);
 }
 
 #[test]
 fn a_plan_that_uses_a_path_holding_nothing_is_refused_and_writes_nothing() {
     let board = Changes::new();
-    board.write("changes/t.json", &change("plan", &json!({})));
+    board.change_at("changes/t.json", "plan", &json!({}));
     board.write("standards/errors.md", "# Errors\n");
     let refused = board.refusal_stdin(
         "plan",
@@ -103,7 +103,7 @@ fn a_plan_that_uses_a_path_holding_nothing_is_refused_and_writes_nothing() {
 #[test]
 fn a_plan_over_3000_words_is_refused_and_one_of_3000_is_written() {
     let board = Changes::new();
-    board.write("changes/t.json", &change("plan", &json!({})));
+    board.change_at("changes/t.json", "plan", &json!({}));
     let refused = board.refusal_stdin("plan", &given(&words(PLAN_WORDS), &[]));
     assert_eq!(refused["code"], "changes::plan::too_long");
     assert_eq!(refused["fields"]["words"], PLAN_WORDS + 1);
@@ -114,7 +114,7 @@ fn a_plan_over_3000_words_is_refused_and_one_of_3000_is_written() {
 #[test]
 fn documents_used_over_3000_words_in_all_are_refused_and_3000_are_admitted() {
     let board = Changes::new();
-    board.write("changes/t.json", &change("plan", &json!({})));
+    board.change_at("changes/t.json", "plan", &json!({}));
     board.write("standards/a.md", &words(1499));
     board.write("standards/b.md", &words(1500));
     board.write(
@@ -133,19 +133,19 @@ fn documents_used_over_3000_words_in_all_are_refused_and_3000_are_admitted() {
 #[test]
 fn a_plan_for_a_done_change_is_refused_and_one_for_a_change_in_build_is_written() {
     let board = Changes::new();
-    board.write("changes/t.json", &change("done", &json!({})));
+    board.change_at("changes/t.json", "done", &json!({}));
     assert_eq!(
         board.refusal_stdin("plan", &given(PLAN, &[]))["code"],
         "changes::phase::final"
     );
-    board.write("changes/t.json", &change("build", &json!({})));
+    board.change_at("changes/t.json", "build", &json!({}));
     assert_eq!(board.call_stdin("plan", &given(PLAN, &[]))["uses"], 0);
 }
 
 #[test]
 fn a_plan_that_uses_a_directory_is_refused_and_one_using_a_document_in_it_is_written() {
     let board = Changes::new();
-    board.write("changes/t.json", &change("plan", &json!({})));
+    board.change_at("changes/t.json", "plan", &json!({}));
     board.write("standards/errors.md", "# Errors\n");
     let refused = board.refusal_stdin("plan", &given(PLAN, &["/standards"]));
     assert_eq!(
@@ -159,7 +159,7 @@ fn a_plan_that_uses_a_directory_is_refused_and_one_using_a_document_in_it_is_wri
 #[test]
 fn a_used_record_that_fails_its_schema_is_refused_and_one_that_keeps_it_is_written() {
     let board = Changes::new();
-    board.write("changes/t.json", &change("plan", &json!({})));
+    board.change_at("changes/t.json", "plan", &json!({}));
     board.write(
         ".board/types/x/thing/v1.schema.json",
         r#"{"type": "object", "required": ["a"]}"#,
@@ -180,7 +180,7 @@ fn a_used_record_that_fails_its_schema_is_refused_and_one_that_keeps_it_is_writt
 #[test]
 fn a_reference_given_twice_is_kept_once() {
     let board = Changes::new();
-    board.write("changes/t.json", &change("plan", &json!({})));
+    board.change_at("changes/t.json", "plan", &json!({}));
     board.write("standards/errors.md", "# Errors\n");
     let output = board.call_stdin(
         "plan",
@@ -195,7 +195,7 @@ fn a_reference_given_twice_is_kept_once() {
 #[test]
 fn a_plan_of_only_whitespace_is_refused_and_one_word_is_written() {
     let board = Changes::new();
-    board.write("changes/t.json", &change("plan", &json!({})));
+    board.change_at("changes/t.json", "plan", &json!({}));
     let refused = board.refusal_stdin("plan", &given("  \n ", &[]));
     assert_eq!(refused["code"], "board::plugin::bad_input");
     assert_eq!(board.call_stdin("plan", &given("Plan.", &[]))["uses"], 0);
@@ -204,7 +204,7 @@ fn a_plan_of_only_whitespace_is_refused_and_one_word_is_written() {
 #[test]
 fn a_used_record_degraded_only_by_a_broken_reference_of_its_own_is_written() {
     let board = Changes::new();
-    board.write("changes/t.json", &change("plan", &json!({})));
+    board.change_at("changes/t.json", "plan", &json!({}));
     board.write(
         ".board/types/x/link/v1.schema.json",
         r#"{"type": "object", "properties": {"to": {"format": "board-ref"}}}"#,
@@ -222,7 +222,7 @@ fn a_used_record_degraded_only_by_a_broken_reference_of_its_own_is_written() {
 #[test]
 fn a_plan_for_a_build_change_without_paths_is_refused_and_one_with_paths_is_written() {
     let board = Changes::new();
-    board.write("changes/t.json", &change("plan", &json!({})));
+    board.change_at("changes/t.json", "plan", &json!({}));
     for unplanned in [
         json!({"path": CHANGE, "text": PLAN, "uses": []}),
         json!({"path": CHANGE, "text": PLAN, "uses": [], "paths": []}),
@@ -242,7 +242,7 @@ fn a_plan_for_a_build_change_without_paths_is_refused_and_one_with_paths_is_writ
 #[test]
 fn a_planned_path_outside_the_change_s_mount_is_refused_and_one_inside_it_is_written() {
     let board = Changes::new();
-    board.write("changes/t.json", &change("plan", &json!({})));
+    board.change_at("changes/t.json", "plan", &json!({}));
     for outside in ["/repos/xy/src/**", "/repos/**"] {
         let refused = board.refusal_stdin("plan", &plan_input(CHANGE, &[outside]));
         assert_eq!(refused["code"], "changes::plan::outside_mount", "{outside}");
@@ -255,7 +255,7 @@ fn a_planned_path_outside_the_change_s_mount_is_refused_and_one_inside_it_is_wri
 #[test]
 fn a_plan_record_whose_path_does_not_start_at_the_root_is_invalid_and_one_that_does_is_valid() {
     let board = Changes::new();
-    board.write("changes/t.json", &change("plan", &json!({})));
+    board.change_at("changes/t.json", "plan", &json!({}));
     let output = board.call_stdin("plan", &given(PLAN, &[]));
     let logical = output["path"].as_str().unwrap();
     let file = format!("{}.json", logical.trim_start_matches('/'));

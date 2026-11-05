@@ -11,6 +11,7 @@ use std::path::PathBuf;
 use super::*;
 
 mod brief;
+mod migrate;
 mod phases;
 mod plan;
 mod pr;
@@ -26,8 +27,8 @@ const PLAN_SCHEMA: &str =
     include_str!("../../../../board-plugin-changes/types/changes/plan/v1.schema.json");
 const UNDERSTANDING_SCHEMA: &str =
     include_str!("../../../../board-plugin-changes/types/changes/understanding/v1.schema.json");
-const SYNC_SCHEMA: &str =
-    include_str!("../../../../board-plugin-changes/types/changes/sync/v1.schema.json");
+const PROTOTYPE_SCHEMA: &str =
+    include_str!("../../../../board-plugin-changes/types/changes/prototype/v1.schema.json");
 
 const HEAD: &str = "a3f9c0de1234567890abcdef1234567890abcdef";
 const BASE: &str = "0123456789abcdef0123456789abcdef01234567";
@@ -277,6 +278,91 @@ impl Changes {
 
     fn delete(&self, path: &str) {
         self.board.write(path, Item::Deleted);
+    }
+
+    /// Writes a change in `phase` at `file`, such as `changes/t.json`, with
+    /// `fields`, and the records the change's fields would name: `records`
+    /// and a plan file named by `plan` go on a plan record at
+    /// `<change>/plans/1`, a `pull_request` or `issue` page becomes a
+    /// GitHub record the change's `pulls` or `tickets` names, and `kind`
+    /// prototype with its `question`, `state`, `verdict` and
+    /// `verdict_artifact` becomes the change's prototype record.
+    fn change_at(&self, file: &str, phase: &str, fields: &Value) {
+        let at = format!("/{}", file.trim_end_matches(".json"));
+        let mut kept = fields.as_object().unwrap().clone();
+        let records = kept.remove("records");
+        let named = kept.remove("plan");
+        if records.is_some() || named.is_some() {
+            let text = match named.as_ref().and_then(Value::as_str) {
+                Some(named) if std::path::Path::new(named).extension() != Some("md".as_ref()) => {
+                    kept.insert("plan".to_owned(), json!(named));
+                    None
+                }
+                Some(named) => Some(named.to_owned()),
+                None => None,
+            };
+            if kept.get("plan").is_none() {
+                let written = text.unwrap_or_else(|| {
+                    let written = format!("{at}/plans/1.md");
+                    self.write(written.trim_start_matches('/'), "# Plan\n");
+                    written
+                });
+                let mut plan = json!({"text": written, "uses": []});
+                if let Some(records) = records {
+                    plan["records"] = records;
+                }
+                self.write(
+                    &format!("{}/plans/1.json", at.trim_start_matches('/')),
+                    &typed("changes/plan/v1", &plan),
+                );
+                kept.insert("plan".to_owned(), json!(format!("{at}/plans/1")));
+            }
+        }
+        for (key, list, kind) in [
+            ("pull_request", "pulls", "pull"),
+            ("issue", "tickets", "issue"),
+        ] {
+            let Some(url) = kept.remove(key) else {
+                continue;
+            };
+            let url = url.as_str().unwrap().to_owned();
+            let parts: Vec<&str> = url
+                .trim_start_matches("https://github.com/")
+                .split('/')
+                .collect();
+            let [owner, repo, _, number] = parts.as_slice() else {
+                panic!("{url} is no GitHub page");
+            };
+            let path = format!("gh/{owner}/{repo}/{kind}s/{number}");
+            let body = json!({
+                "owner": owner,
+                "repo": repo,
+                "number": number.parse::<u64>().unwrap(),
+                "url": url,
+            });
+            self.write(
+                &format!("{path}.json"),
+                &typed(&format!("github/{kind}/v1"), &body),
+            );
+            kept.insert(list.to_owned(), json!([format!("/{path}")]));
+        }
+        let kind = kept.remove("kind");
+        let mut prototype = json!({"change": at, "state": "exploring"});
+        for key in ["question", "state", "verdict", "verdict_artifact"] {
+            if let Some(value) = kept.remove(key) {
+                prototype[key] = value;
+            }
+        }
+        let held = format!("{}/prototype.json", at.trim_start_matches('/'));
+        if kind.as_ref().and_then(Value::as_str) == Some("prototype") {
+            if prototype.get("question").is_none() {
+                prototype["question"] = json!("Does it work?");
+            }
+            self.write(&held, &typed("changes/prototype/v1", &prototype));
+        } else if self.exists(&held) {
+            self.delete(&held);
+        }
+        self.write(file, &change(phase, &Value::Object(kept)));
     }
 
     /// The board's root.
@@ -585,14 +671,15 @@ fn board_lists_the_plugin_as_enabled_and_enabling_wrote_the_schema_it_ships() {
             "pause",
             "resume",
             "sync",
-            "drop"
+            "drop",
+            "migrate"
         ])
     );
     for (kind, schema) in [
         ("change", CHANGE_SCHEMA),
         ("plan", PLAN_SCHEMA),
         ("understanding", UNDERSTANDING_SCHEMA),
-        ("sync", SYNC_SCHEMA),
+        ("prototype", PROTOTYPE_SCHEMA),
     ] {
         let written = board.read(&format!(".board/types/changes/{kind}/v1.schema.json"));
         let shipped: Value = serde_json::from_str(schema).unwrap();
@@ -605,13 +692,10 @@ fn board_lists_the_plugin_as_enabled_and_enabling_wrote_the_schema_it_ships() {
 #[test]
 fn open_lists_changes_that_are_not_done_or_dropped_by_path() {
     let board = Changes::new();
-    board.write(
-        "changes/b.json",
-        &change("build", &json!({"route": "owner"})),
-    );
-    board.write("changes/a.json", &change("plan", &json!({})));
-    board.write("changes/c.json", &change("done", &json!({})));
-    board.write("changes/d.json", &change("dropped", &json!({})));
+    board.change_at("changes/b.json", "build", &json!({"route": "owner"}));
+    board.change_at("changes/a.json", "plan", &json!({}));
+    board.change_at("changes/c.json", "done", &json!({}));
+    board.change_at("changes/d.json", "dropped", &json!({}));
     let output = board.call("open", &json!({}));
     assert_eq!(
         output["changes"],
@@ -652,7 +736,7 @@ fn open_lists_changes_that_are_not_done_or_dropped_by_path() {
 fn open_returns_at_most_the_limit_and_says_how_many_it_left_out() {
     let board = Changes::new();
     for name in ["a", "b", "c"] {
-        board.write(&format!("changes/{name}.json"), &change("plan", &json!({})));
+        board.change_at(&format!("changes/{name}.json"), "plan", &json!({}));
     }
     let output = board.call("open", &json!({"limit": 2}));
     let paths: Vec<&Value> = (output["changes"].as_array().unwrap().iter())
@@ -668,11 +752,8 @@ fn open_returns_at_most_the_limit_and_says_how_many_it_left_out() {
 #[test]
 fn open_counts_a_degraded_change_as_unreadable_and_lists_a_valid_one() {
     let board = Changes::new();
-    board.write(
-        "changes/bad.json",
-        &change("plan", &json!({"route": "sometimes"})),
-    );
-    board.write("changes/good.json", &change("plan", &json!({})));
+    board.change_at("changes/bad.json", "plan", &json!({"route": "sometimes"}));
+    board.change_at("changes/good.json", "plan", &json!({}));
     let output = board.call("open", &json!({}));
     let paths: Vec<&Value> = (output["changes"].as_array().unwrap().iter())
         .map(|entry| &entry["path"])
@@ -684,23 +765,24 @@ fn open_counts_a_degraded_change_as_unreadable_and_lists_a_valid_one() {
 #[test]
 fn the_schema_refuses_an_unknown_phase_or_field_and_reports_a_reference_that_reaches_nothing() {
     let board = Changes::new();
-    board.write("repos/x/README.md", "x");
-    board.write("tasks/a.md", "x");
-    board.write(
+    board.mount_x(&[("README.md", "x\n")]);
+    board.write("tasks/a.md", &task("open"));
+    board.change_at(
         "changes/good.json",
-        &change(
-            "plan",
-            &json!({"records": ["/tasks/a.md"], "head": "a3f9c0d"}),
-        ),
+        "plan",
+        &json!({"task": "/tasks/a.md", "head": "a3f9c0d"}),
     );
-    board.write("changes/phase.json", &change("later", &json!({})));
+    board.change_at("changes/phase.json", "later", &json!({}));
+    // `records` moved to the change's plans, so a change holding it is
+    // invalid.
     board.write(
         "changes/extra.json",
-        &change("plan", &json!({"owner": "someone"})),
+        &change("plan", &json!({"records": ["/tasks/a.md"]})),
     );
-    board.write(
+    board.change_at(
         "changes/dangling.json",
-        &change("plan", &json!({"records": ["/tasks/b"]})),
+        "plan",
+        &json!({"task": "/tasks/b"}),
     );
     assert_eq!(
         board.checked("/changes/"),
@@ -714,13 +796,14 @@ fn the_schema_refuses_an_unknown_phase_or_field_and_reports_a_reference_that_rea
 }
 
 #[test]
-fn the_schema_refuses_a_repository_by_owner_and_name_or_under_the_old_repo_key_and_admits_its_mount()
+fn the_schema_refuses_a_repository_by_owner_and_name_or_a_plain_directory_or_under_the_old_repo_key_and_admits_its_mount()
  {
     let board = Changes::new();
-    board.write("repos/x/README.md", "x");
-    board.write(
+    board.mount_x(&[("README.md", "x\n")]);
+    board.change_at(
         "changes/named.json",
-        &change("plan", &json!({"mount": "crumbkit/board"})),
+        "plan",
+        &json!({"mount": "crumbkit/board"}),
     );
     board.write(
         "changes/old.json",
@@ -729,15 +812,19 @@ fn the_schema_refuses_a_repository_by_owner_and_name_or_under_the_old_repo_key_a
             &json!({"title": "T", "repo": "/repos/x", "phase": "plan"}),
         ),
     );
-    board.write(
+    board.change_at(
         "changes/mounted.json",
-        &change("plan", &json!({"mount": "/repos/x"})),
+        "plan",
+        &json!({"mount": "/repos/x"}),
     );
+    board.write("plain/README.md", "x");
+    board.change_at("changes/plain.json", "plan", &json!({"mount": "/plain"}));
     assert_eq!(
         board.checked("/changes/"),
         codes(&[
             ("/changes/named", Some("board::ref::malformed")),
             ("/changes/old", Some("board::record::invalid")),
+            ("/changes/plain", Some("board::ref::wrong_type")),
             ("/changes/mounted", None),
         ])
     );
@@ -757,9 +844,10 @@ fn mounted() -> Changes {
 #[test]
 fn check_reports_a_ticket_that_reaches_nothing_and_admits_one_that_does() {
     let board = mounted();
-    board.write(
+    board.change_at(
         "changes/t.json",
-        &change("plan", &json!({"tickets": ["/tickets/ACME-123"]})),
+        "plan",
+        &json!({"tickets": ["/tickets/ACME-123"]}),
     );
     assert_eq!(
         board.code("/changes/t").as_deref(),
@@ -781,20 +869,19 @@ fn check_reports_a_ticket_of_another_type_and_admits_each_issue_type() {
         "pulls/octo-widgets-7.json",
         &typed("github/pull/v1", &json!({})),
     );
-    board.write(
+    board.change_at(
         "changes/t.json",
-        &change("plan", &json!({"tickets": ["/pulls/octo-widgets-7"]})),
+        "plan",
+        &json!({"tickets": ["/pulls/octo-widgets-7"]}),
     );
     assert_eq!(
         board.code("/changes/t").as_deref(),
         Some("board::ref::wrong_type")
     );
-    board.write(
+    board.change_at(
         "changes/t.json",
-        &change(
-            "plan",
-            &json!({"tickets": ["/tickets/ACME-123", "/issues/octo-widgets-6"]}),
-        ),
+        "plan",
+        &json!({"tickets": ["/tickets/ACME-123", "/issues/octo-widgets-6"]}),
     );
     assert_eq!(board.code("/changes/t"), None);
 }
@@ -810,17 +897,19 @@ fn check_reports_a_pull_of_another_type_and_admits_a_pull() {
         "pulls/octo-widgets-7.json",
         &typed("github/pull/v1", &json!({})),
     );
-    board.write(
+    board.change_at(
         "changes/t.json",
-        &change("plan", &json!({"pulls": ["/issues/octo-widgets-6"]})),
+        "plan",
+        &json!({"pulls": ["/issues/octo-widgets-6"]}),
     );
     assert_eq!(
         board.code("/changes/t").as_deref(),
         Some("board::ref::wrong_type")
     );
-    board.write(
+    board.change_at(
         "changes/t.json",
-        &change("plan", &json!({"pulls": ["/pulls/octo-widgets-7"]})),
+        "plan",
+        &json!({"pulls": ["/pulls/octo-widgets-7"]}),
     );
     assert_eq!(board.code("/changes/t"), None);
 }
@@ -829,11 +918,12 @@ fn check_reports_a_pull_of_another_type_and_admits_a_pull() {
 fn refs_finds_the_changes_that_reference_a_ticket_and_not_one_that_does_not() {
     let board = mounted();
     board.write("tickets/ACME-123.json", &typed("jira/issue/v1", &json!({})));
-    board.write(
+    board.change_at(
         "changes/t.json",
-        &change("plan", &json!({"tickets": ["/tickets/ACME-123"]})),
+        "plan",
+        &json!({"tickets": ["/tickets/ACME-123"]}),
     );
-    board.write("changes/u.json", &change("plan", &json!({})));
+    board.change_at("changes/u.json", "plan", &json!({}));
     let report = board.json(&["refs", "/tickets/ACME-123"]);
     let [answer] = report["data"].as_array().unwrap().as_slice() else {
         panic!("{report}");

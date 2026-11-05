@@ -2,10 +2,16 @@
   "$defs": {
     "Asked": {
       "additionalProperties": false,
-      "description": "One question of an understanding check, the owner's answer, and whether it matches the plan.",
+      "description": "One question of an understanding check, the owner's answer and the\ndesign's.",
       "properties": {
         "answer": {
-          "description": "The owner's answer, in his words.",
+          "description": "The owner's answer, in his own words.",
+          "minLength": 1,
+          "type": "string",
+          "x-board-prose": true
+        },
+        "design": {
+          "description": "What the design says the answer is.",
           "minLength": 1,
           "type": "string",
           "x-board-prose": true
@@ -21,7 +27,7 @@
           "type": "string"
         },
         "matches": {
-          "description": "Whether the answer matches the plan.",
+          "description": "Whether the owner's answer matches the design.",
           "type": "boolean"
         },
         "question": {
@@ -29,104 +35,19 @@
           "minLength": 1,
           "type": "string",
           "x-board-prose": true
-        },
-        "round": {
-          "description": "The round it was asked in; a round holds at most three questions.",
-          "minimum": 1,
-          "type": "integer"
         }
       },
       "required": [
-        "round",
-        "kind",
         "question",
         "answer",
-        "matches"
+        "design"
       ],
       "title": "Asked",
-      "type": "object"
-    },
-    "Mismatch": {
-      "additionalProperties": false,
-      "description": "An answer that differed from the plan, and which of the two changed to settle it.",
-      "properties": {
-        "difference": {
-          "description": "How the answer and the plan differ, said plainly.",
-          "minLength": 1,
-          "type": "string",
-          "x-board-prose": true
-        },
-        "how": {
-          "description": "What changed.",
-          "minLength": 1,
-          "type": "string",
-          "x-board-prose": true
-        },
-        "question": {
-          "description": "The question whose answer differed.",
-          "minLength": 1,
-          "type": "string",
-          "x-board-prose": true
-        },
-        "settled": {
-          "description": "plan when the plan changed, expectation when the owner's expectation did.",
-          "enum": [
-            "plan",
-            "expectation"
-          ],
-          "type": "string"
-        }
-      },
-      "required": [
-        "question",
-        "difference",
-        "settled",
-        "how"
-      ],
-      "title": "Mismatch",
-      "type": "object"
-    },
-    "Recheck": {
-      "additionalProperties": false,
-      "description": "A predict or edge question asked again, worded differently, before review.",
-      "properties": {
-        "answer": {
-          "description": "The owner's answer.",
-          "minLength": 1,
-          "type": "string",
-          "x-board-prose": true
-        },
-        "kind": {
-          "description": "The kind of question asked again.",
-          "enum": [
-            "predict",
-            "edge"
-          ],
-          "type": "string"
-        },
-        "matches": {
-          "description": "Whether the answer matches the plan; a wrong one reopens that part.",
-          "type": "boolean"
-        },
-        "question": {
-          "description": "The question, as asked again.",
-          "minLength": 1,
-          "type": "string",
-          "x-board-prose": true
-        }
-      },
-      "required": [
-        "kind",
-        "question",
-        "answer",
-        "matches"
-      ],
-      "title": "Recheck",
       "type": "object"
     }
   },
   "additionalProperties": false,
-  "description": "`changes/understanding/v1`: how the owner showed he understands a change's data or UX.\n\nThe owner's sign-off decision references this record in its `refs`.",
+  "description": "`changes/understanding/v1`: the owner's answers to a check that he\nunderstands a change's data or UX.\n\nIt lives at `/changes/<name>/understanding/<subject>`. The owner's\nsign-off decision references it in its `refs`.",
   "properties": {
     "$type": {
       "const": "changes/understanding/v1",
@@ -134,41 +55,10 @@
       "type": "string"
     },
     "change": {
-      "description": "The change whose plan was checked.",
+      "description": "The change whose design was checked.",
       "format": "board-ref",
       "type": "string",
       "x-board-type": "changes/change/v1"
-    },
-    "corrections": {
-      "description": "Each correction the owner made to the play-back.",
-      "items": {
-        "minLength": 1,
-        "type": "string",
-        "x-board-prose": true
-      },
-      "type": "array"
-    },
-    "mismatches": {
-      "description": "Each answer that differed from the plan, and how it was settled.",
-      "items": {
-        "$ref": "#/$defs/Mismatch"
-      },
-      "type": "array"
-    },
-    "parked": {
-      "description": "What was named and left out of scope.",
-      "items": {
-        "minLength": 1,
-        "type": "string",
-        "x-board-prose": true
-      },
-      "type": "array"
-    },
-    "playback": {
-      "description": "What the agent played back: what is stored, where, who shares it, what users see.",
-      "minLength": 1,
-      "type": "string",
-      "x-board-prose": true
     },
     "questions": {
       "description": "Each question asked, in order.",
@@ -179,14 +69,14 @@
       "type": "array"
     },
     "rechecks": {
-      "description": "The questions asked again before review.",
+      "description": "Predict or edge questions asked again, worded differently, before\nreview; the build gate wants two that match.",
       "items": {
-        "$ref": "#/$defs/Recheck"
+        "$ref": "#/$defs/Asked"
       },
       "type": "array"
     },
     "subject": {
-      "description": "What was checked: the plan's Data or its UX.",
+      "description": "What was checked: the design's data or its UX.",
       "enum": [
         "data",
         "ux"
@@ -198,13 +88,9 @@
     "$type",
     "change",
     "subject",
-    "playback",
-    "corrections",
-    "questions",
-    "mismatches",
-    "parked",
-    "rechecks"
+    "questions"
   ],
   "title": "UnderstandingRecord",
-  "type": "object"
+  "type": "object",
+  "x-board-folder": "/changes/{change}/understanding/"
 }

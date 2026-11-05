@@ -195,11 +195,7 @@ fn sources<'a>(
             [("change", json!(named))],
         ));
     };
-    let refs: Vec<String> = (change.get("records").and_then(Value::as_array))
-        .into_iter()
-        .flatten()
-        .filter_map(|record| record.as_str().map(str::to_owned))
-        .collect();
+    let refs = board_plugin_changes::attached(host, named)?;
     Ok((repository, head, attached(host, &refs)?))
 }
 

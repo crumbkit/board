@@ -2,18 +2,18 @@
 //! question, and what it found.
 
 use board_ops::{Host, PluginError};
-use board_plugin::shape::{Prose, Url};
+use board_plugin::shape::{Prose, Tag, Url};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use crate::board;
 use crate::brief::{self, brief_of};
-use crate::change::{branch_of, line, read, touch, write};
+use crate::change::{branch_of, line, prototype_of, read, touch};
 use crate::phases::final_phase;
 use crate::plan::plan_lines;
 use crate::pr::quote;
-use crate::records::{ChangeRecord, Kind, Phase, State};
+use crate::records::{ChangeRecord, Kind, Phase, PrototypeRecord, State};
 use crate::repo::exists;
 use crate::start::{name_of, refuse_existing};
 use crate::tasks::{add_task, close_task};
@@ -143,9 +143,14 @@ pub(crate) fn prototype(host: &dyn Host, input: &Value) -> Result<Value, PluginE
     exists(host, &mount)?;
     refuse_existing(host, &path)?;
     let mut change = ChangeRecord::new(title.clone(), mount, Phase::Build);
-    change.kind = Some(Kind::Prototype);
-    change.question = Some(asked.question.clone());
-    change.state = Some(State::Exploring);
+    let prototype = PrototypeRecord {
+        tag: Tag::default(),
+        change: path.clone(),
+        question: asked.question.clone(),
+        state: State::Exploring,
+        verdict: None,
+        verdict_artifact: None,
+    };
     let given = [
         ("mount", Some(&asked.mount)),
         ("question", Some(&asked.question)),
@@ -164,13 +169,14 @@ pub(crate) fn prototype(host: &dyn Host, input: &Value) -> Result<Value, PluginE
         reason: asked.over_limit.as_deref(),
         days: active_days(host)?,
     };
-    let limit = admit(host, &path, &mut change, &moving)?;
+    let limit = admit(host, &path, &mut change, Kind::Prototype, &moving)?;
     let task = add_task(host, &title, serde_json::Map::new(), Some(&asked.parent))?;
     change.task = Some(task.clone());
     let plan = question_plan(&title, &asked.question);
     let (record, mut lines) = plan_lines(host.settings().now, &path, &plan, Vec::new(), Vec::new());
-    change.plan = Some(format!("{record}.md"));
+    change.plan = Some(record);
     lines.push(line(&path, "none", &touch(host, change)));
+    lines.push(json!({"path": format!("{path}/prototype"), "expect": "none", "record": prototype}));
     board::put(host, &lines)?;
     Ok(to_value(Output {
         brief: brief_of(host, &path)?,
@@ -191,17 +197,16 @@ pub(crate) fn verdict(host: &dyn Host, input: &Value) -> Result<Value, PluginErr
         artifact,
     } = PluginError::read_input(PLUGIN, "verdict", input)?;
     let (mut change, blob) = read(host, &path)?;
-    if change.kind() != Kind::Prototype {
+    let Some((mut prototype, prototype_blob)) = prototype_of(host, &path)? else {
         return Err(refusal(
             "changes::prototype::not_prototype",
             format!(
-                "{path} is a {} change, and only a prototype takes a verdict; move it on with \
-                 `board call changes.next --path {path}`",
-                change.kind().as_str()
+                "{path} is a build change, and only a prototype takes a verdict; move it on with \
+                 `board call changes.next --path {path}`"
             ),
-            [("path", json!(path)), ("kind", json!(change.kind()))],
+            [("path", json!(path)), ("kind", json!(Kind::Build))],
         ));
-    }
+    };
     if change.phase.is_final() {
         return Err(final_phase(
             &path,
@@ -214,17 +219,23 @@ pub(crate) fn verdict(host: &dyn Host, input: &Value) -> Result<Value, PluginErr
         ));
     }
     let settled = state == Ended::Settled;
-    change.state = Some(if settled {
+    prototype.state = if settled {
         State::Settled
     } else {
         State::Abandoned
-    });
-    change.verdict = Some(verdict);
+    };
+    prototype.verdict = Some(verdict);
     change.phase = if settled { Phase::Done } else { Phase::Dropped };
     if artifact.is_some() {
-        change.verdict_artifact = artifact;
+        prototype.verdict_artifact = artifact;
     }
-    write(host, &path, &blob, &change)?;
+    board::put(
+        host,
+        &[
+            line(&path, &blob, &change),
+            json!({"path": format!("{path}/prototype"), "expect": prototype_blob, "record": prototype}),
+        ],
+    )?;
     if let Some(task) = &change.task {
         close_task(host, task, settled)?;
     }

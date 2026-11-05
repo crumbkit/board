@@ -142,9 +142,3 @@ fn a_report_with_no_findings_says_so_and_names_the_report_it_follows() {
     assert!(text.contains("\nNo findings.\n"), "{text}");
     assert!(text.contains("\nFollows /reviews/r0/report.\n"), "{text}");
 }
-
-#[test]
-fn the_changes_plugins_constants_that_covered_copies_agree_with_its_own() {
-    assert_eq!(BLOCKING, board_plugin_changes::BLOCKING);
-    assert_eq!(CHANGE_TYPE, board_plugin_changes::CHANGE_TYPE);
-}

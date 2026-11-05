@@ -34,9 +34,10 @@ fn advanced(board: &Changes) -> Value {
 /// paths: the base and head.
 fn reviewing(board: &Changes, records: &[&str]) -> (String, String) {
     let (base, head) = board.edited(&[("src/a.rs", "a\n")]);
-    board.write(
+    board.change_at(
         "changes/t.json",
-        &change("review", &json!({"head": head, "records": records})),
+        "review",
+        &json!({"head": head, "records": records}),
     );
     board.call_stdin("plan", &planning(&["/repos/x/src/**"]));
     (base, head)
@@ -50,12 +51,10 @@ fn approving(head: &str, base: &str) -> String {
 #[test]
 fn next_reads_the_gate_from_the_plan_file_and_says_what_to_do() {
     let board = Changes::new();
-    board.write(
+    board.change_at(
         "changes/t.json",
-        &change(
-            "plan",
-            &json!({"plan": "/changes/t/plan.md", "route": "owner"}),
-        ),
+        "plan",
+        &json!({"plan": "/changes/t/plan.md", "route": "owner"}),
     );
     board.write(
         "changes/t/plan.md",
@@ -101,12 +100,10 @@ fn next_reads_the_gate_from_the_plan_file_and_says_what_to_do() {
 #[test]
 fn advance_refuses_an_unmet_gate_naming_what_is_missing_and_moves_on_once_it_is_met() {
     let board = Changes::new();
-    board.write(
+    board.change_at(
         "changes/t.json",
-        &change(
-            "plan",
-            &json!({"plan": "/changes/t/plan.md", "route": "owner"}),
-        ),
+        "plan",
+        &json!({"plan": "/changes/t/plan.md", "route": "owner"}),
     );
     board.write("changes/t/plan.md", "# T\n");
     let refused = board.refusal("advance", &path());
@@ -124,9 +121,10 @@ fn advance_refuses_an_unmet_gate_naming_what_is_missing_and_moves_on_once_it_is_
 #[test]
 fn a_plan_with_no_route_blocks_the_plan_gate_and_setting_one_clears_it() {
     let board = Changes::new();
-    board.write(
+    board.change_at(
         "changes/t.json",
-        &change("plan", &json!({"plan": "/changes/t/plan.md"})),
+        "plan",
+        &json!({"plan": "/changes/t/plan.md"}),
     );
     board.write("changes/t/plan.md", PLAN);
     assert_eq!(missing(&board), json!(["route"]));
@@ -177,9 +175,10 @@ fn a_referenced_record_deleted_after_it_was_attached_satisfies_nothing() {
 fn review_refuses_a_diff_that_edits_a_file_outside_the_planned_paths_until_the_plan_covers_it() {
     let board = Changes::new();
     let (base, head) = board.edited(&[("src/a.rs", "a\n"), ("docs/b.md", "b\n")]);
-    board.write(
+    board.change_at(
         "changes/t.json",
-        &change("review", &json!({"head": head, "records": ["/r/1"]})),
+        "review",
+        &json!({"head": head, "records": ["/r/1"]}),
     );
     board.write("r/1.json", &approving(&head, &base));
     board.call_stdin("plan", &planning(&["/repos/x/src/**"]));
@@ -200,9 +199,10 @@ fn review_checks_every_commit_since_the_followed_branch_when_a_report_covers_onl
     let board = Changes::new();
     let (_, first) = board.edited(&[("docs/b.md", "b\n")]);
     let head = board.commit(&[("src/a.rs", "a\n")], None);
-    board.write(
+    board.change_at(
         "changes/t.json",
-        &change("review", &json!({"head": head, "records": ["/r/1"]})),
+        "review",
+        &json!({"head": head, "records": ["/r/1"]}),
     );
     board.write("r/1.json", &approving(&head, &first));
     board.call_stdin("plan", &planning(&["/repos/x/src/**"]));
@@ -223,18 +223,20 @@ fn review_leaves_out_what_the_followed_branch_gained_when_the_change_is_rebased_
     git(&root, &["checkout", "-q", "work"]);
     git(&root, &["rebase", "-q", "main"]);
     let head = git(&root, &["rev-parse", "HEAD"]);
-    board.write(
+    board.change_at(
         "changes/t.json",
-        &change("review", &json!({"head": head, "records": ["/r/1"]})),
+        "review",
+        &json!({"head": head, "records": ["/r/1"]}),
     );
     board.write("r/1.json", &approving(&head, &old));
     board.call_stdin("plan", &planning(&["/repos/x/src/**"]));
     assert_eq!(advanced(&board), "land");
     board.commit(&[("docs/mine.md", "m\n")], None);
     let head = git(&root, &["rev-parse", "HEAD"]);
-    board.write(
+    board.change_at(
         "changes/t.json",
-        &change("review", &json!({"head": head, "records": ["/r/1"]})),
+        "review",
+        &json!({"head": head, "records": ["/r/1"]}),
     );
     board.write("r/1.json", &approving(&head, &old));
     let refused = board.refusal("advance", &path());
@@ -257,12 +259,10 @@ fn the_build_gate_finds_the_check_suite_in_the_repositorys_contributing_docs() {
         "results": [],
     });
     board.write("suites/checks/runs/1.json", &typed("runs/run/v1", &run));
-    board.write(
+    board.change_at(
         "changes/t.json",
-        &change(
-            "build",
-            &json!({"head": HEAD, "records": ["/suites/checks/runs/1"]}),
-        ),
+        "build",
+        &json!({"head": HEAD, "records": ["/suites/checks/runs/1"]}),
     );
     assert_eq!(advanced(&board), "review");
 }
@@ -290,12 +290,10 @@ fn the_build_gate_counts_a_run_of_a_suite_in_the_repositorys_own_board_by_where_
         ("suites/other.json", &suite),
         ("suites/other/runs/1.json", &other_run),
     ]);
-    board.write(
+    board.change_at(
         "changes/t.json",
-        &change(
-            "build",
-            &json!({"head": HEAD, "records": ["/repos/x/suites/other/runs/1"]}),
-        ),
+        "build",
+        &json!({"head": HEAD, "records": ["/repos/x/suites/other/runs/1"]}),
     );
     assert_eq!(missing(&board), json!(["check-run"]));
     board.call(
@@ -308,7 +306,7 @@ fn the_build_gate_counts_a_run_of_a_suite_in_the_repositorys_own_board_by_where_
 #[test]
 fn next_on_a_done_change_has_no_gate_and_nothing_to_do() {
     let board = Changes::new();
-    board.write("changes/t.json", &change("done", &json!({})));
+    board.change_at("changes/t.json", "done", &json!({}));
     let output = board.call("next", &path());
     assert_eq!(
         (&output["phase"], &output["gate"], &output["instruction"]),
@@ -319,12 +317,10 @@ fn next_on_a_done_change_has_no_gate_and_nothing_to_do() {
 #[test]
 fn advance_runs_from_land_to_done_and_refuses_to_leave_done() {
     let board = Changes::new();
-    board.write(
+    board.change_at(
         "changes/t.json",
-        &change(
-            "land",
-            &json!({"pull_request": "https://github.com/o/r/pull/1"}),
-        ),
+        "land",
+        &json!({"pull_request": "https://github.com/o/r/pull/1"}),
     );
     assert_eq!(advanced(&board), "done");
     let refused = board.refusal("advance", &path());
@@ -339,7 +335,7 @@ fn advance_runs_from_land_to_done_and_refuses_to_leave_done() {
 #[test]
 fn attach_refuses_a_reference_that_reaches_nothing_and_adds_one_that_does_once() {
     let board = Changes::new();
-    board.write("changes/t.json", &change("plan", &json!({})));
+    board.change_at("changes/t.json", "plan", &json!({"records": []}));
     board.write("tasks/a.md", &task("open"));
     let refused = board.refusal("attach", &at(&json!({"ref": "/tasks/b.md"})));
     assert_eq!(
@@ -353,38 +349,79 @@ fn attach_refuses_a_reference_that_reaches_nothing_and_adds_one_that_does_once()
         );
     }
     assert_eq!(
-        board.read("changes/t.json")["records"],
+        board.read("changes/t/plans/1.json")["records"],
         json!(["/tasks/a.md"])
     );
 }
 
 #[test]
-fn attach_sets_the_route_head_issue_and_pull_request() {
+fn attach_refuses_a_reference_for_a_change_with_no_plan_record_and_keeps_it_on_the_plan_once_written()
+ {
     let board = Changes::new();
-    board.write("changes/t.json", &change("plan", &json!({})));
-    let url = "https://github.com/o/r/pull/1";
-    let issue = "https://github.com/o/r/issues/2";
+    board.change_at("changes/t.json", "plan", &json!({}));
+    board.write("tasks/a.md", &task("open"));
+    let refused = board.refusal("attach", &at(&json!({"ref": "/tasks/a.md"})));
+    assert_eq!(
+        (&refused["code"], &refused["fields"]["path"]),
+        (&json!("changes::attach::no_plan"), &json!(CHANGE))
+    );
+    let message = refused["message"].as_str().unwrap();
+    assert!(
+        message.contains("changes.plan --path /changes/t"),
+        "{message}"
+    );
+    let written = board.call_stdin("plan", &planning(&["/repos/x/**"]));
+    assert_eq!(
+        board.call("attach", &at(&json!({"ref": "/tasks/a.md"}))),
+        json!({"path": CHANGE, "records": 1})
+    );
+    let plan = written["path"].as_str().unwrap().trim_start_matches('/');
+    assert_eq!(
+        board.read(&format!("{plan}.json"))["records"],
+        json!(["/tasks/a.md"])
+    );
+}
+
+#[test]
+fn attach_sets_the_route_head_ticket_and_pull() {
+    let board = Changes::new();
+    board.change_at("changes/t.json", "plan", &json!({}));
+    let fields = |number: u64, kind: &str| {
+        json!({
+            "owner": "o",
+            "repo": "r",
+            "number": number,
+            "url": format!("https://github.com/o/r/{kind}/{number}"),
+        })
+    };
+    board.write(
+        "gh/o/r/pulls/1.json",
+        &typed("github/pull/v1", &fields(1, "pull")),
+    );
+    board.write(
+        "gh/o/r/issues/2.json",
+        &typed("github/issue/v1", &fields(2, "issues")),
+    );
     board.call(
         "attach",
-        &at(&json!({"route": "owner", "head": HEAD, "pull_request": url})),
+        &at(&json!({"route": "owner", "head": HEAD, "pull": "/gh/o/r/pulls/1"})),
     );
     let written = board.read("changes/t.json");
     assert_eq!(
-        (
-            &written["route"],
-            &written["head"],
-            &written["pull_request"]
-        ),
-        (&json!("owner"), &json!(HEAD), &json!(url))
+        (&written["route"], &written["head"], &written["pulls"]),
+        (&json!("owner"), &json!(HEAD), &json!(["/gh/o/r/pulls/1"]))
     );
-    board.call("attach", &at(&json!({"issue": issue})));
-    assert_eq!(board.read("changes/t.json")["issue"], issue);
+    board.call("attach", &at(&json!({"ticket": "/gh/o/r/issues/2"})));
+    assert_eq!(
+        board.read("changes/t.json")["tickets"],
+        json!(["/gh/o/r/issues/2"])
+    );
 }
 
 #[test]
 fn attach_with_nothing_to_change_is_refused_by_its_input_schema_and_with_one_thing_is_admitted() {
     let board = Changes::new();
-    board.write("changes/t.json", &change("plan", &json!({})));
+    board.change_at("changes/t.json", "plan", &json!({}));
     let refused = board.refusal("attach", &path());
     assert_eq!(refused["code"], "board::plugin::bad_input");
     assert_eq!(
@@ -396,7 +433,7 @@ fn attach_with_nothing_to_change_is_refused_by_its_input_schema_and_with_one_thi
 #[test]
 fn a_path_that_holds_no_change_is_refused_and_one_that_does_is_answered() {
     let board = Changes::new();
-    board.write("changes/t.json", &change("plan", &json!({})));
+    board.change_at("changes/t.json", "plan", &json!({}));
     board.write("tasks/a.md", &task("open"));
     for capability in ["next", "attach", "advance"] {
         let given = if capability == "attach" {
@@ -416,19 +453,19 @@ fn a_path_that_holds_no_change_is_refused_and_one_that_does_is_answered() {
 #[test]
 fn a_change_board_marks_degraded_is_refused_and_a_valid_one_is_answered() {
     let board = Changes::new();
-    board.write("changes/t.json", &change("later", &json!({})));
+    board.change_at("changes/t.json", "later", &json!({}));
     assert_eq!(
         board.refusal("next", &path())["code"],
         "changes::change::degraded"
     );
-    board.write("changes/t.json", &change("plan", &json!({})));
+    board.change_at("changes/t.json", "plan", &json!({}));
     assert_eq!(board.call("next", &path())["phase"], "plan");
 }
 
 #[test]
 fn attach_refuses_a_ticket_or_pull_that_reaches_nothing_and_adds_one_that_does_once() {
     let board = Changes::new();
-    board.write("changes/t.json", &change("plan", &json!({})));
+    board.change_at("changes/t.json", "plan", &json!({}));
     board.write("tickets/ACME-123.json", &typed("jira/issue/v1", &json!({})));
     board.write(
         "pulls/octo-widgets-7.json",
@@ -464,7 +501,7 @@ fn attach_refuses_a_ticket_or_pull_that_reaches_nothing_and_adds_one_that_does_o
 #[test]
 fn attach_refuses_a_ticket_or_pull_of_another_type_and_adds_each_type_it_accepts() {
     let board = Changes::new();
-    board.write("changes/t.json", &change("plan", &json!({})));
+    board.change_at("changes/t.json", "plan", &json!({}));
     board.write("tickets/ACME-123.json", &typed("jira/issue/v1", &json!({})));
     board.write(
         "issues/octo-widgets-6.json",
@@ -501,7 +538,7 @@ fn attach_refuses_a_ticket_or_pull_of_another_type_and_adds_each_type_it_accepts
 #[test]
 fn attach_refuses_a_ticket_that_is_a_markdown_file_and_adds_a_ticket_record() {
     let board = Changes::new();
-    board.write("changes/t.json", &change("plan", &json!({})));
+    board.change_at("changes/t.json", "plan", &json!({}));
     board.write("tickets/ACME-123.md", "# ACME-123\n");
     board.write("tickets/ACME-123.json", &typed("jira/issue/v1", &json!({})));
     let refused = board.refusal("attach", &at(&json!({"ticket": "/tickets/ACME-123.md"})));
@@ -522,6 +559,13 @@ fn attach_refuses_a_ticket_that_is_a_markdown_file_and_adds_a_ticket_record() {
 fn a_change_with_no_task_blocks_the_plan_gate_and_attaching_one_clears_it() {
     let board = Changes::new();
     board.write(
+        "changes/t/plans/1.json",
+        &typed(
+            "changes/plan/v1",
+            &json!({"text": "/changes/t/plan.md", "uses": []}),
+        ),
+    );
+    board.write(
         "changes/t.json",
         &typed(
             "changes/change/v1",
@@ -529,7 +573,7 @@ fn a_change_with_no_task_blocks_the_plan_gate_and_attaching_one_clears_it() {
                 "title": "T",
                 "mount": "/repos/x",
                 "phase": "plan",
-                "plan": "/changes/t/plan.md",
+                "plan": "/changes/t/plans/1",
                 "route": "owner",
             }),
         ),
@@ -556,12 +600,10 @@ fn ux_plan(ux: &str, data: &str) -> String {
 
 /// An owner-routed change in plan whose plan file holds `plan`.
 fn planned_change(board: &Changes, plan: &str) {
-    board.write(
+    board.change_at(
         "changes/t.json",
-        &change(
-            "plan",
-            &json!({"plan": "/changes/t/plan.md", "route": "owner"}),
-        ),
+        "plan",
+        &json!({"plan": "/changes/t/plan.md", "route": "owner"}),
     );
     board.write("changes/t/plan.md", plan);
 }
@@ -627,14 +669,15 @@ fn understanding_record() -> Value {
         "$type": "changes/understanding/v1",
         "change": CHANGE,
         "subject": "data",
-        "playback": "One record per call.",
-        "corrections": [],
         "questions": [
-            {"round": 1, "kind": "predict", "question": "Q?", "answer": "A.", "matches": true},
+            {
+                "question": "How many records does one call write?",
+                "answer": "One, I think.",
+                "design": "One record per call.",
+                "kind": "predict",
+                "matches": true,
+            },
         ],
-        "mismatches": [],
-        "parked": [],
-        "rechecks": [],
     })
 }
 
@@ -669,30 +712,26 @@ fn advance_refuses_unsigned_data_and_moves_on_once_a_decision_references_the_und
 }
 
 #[test]
-fn the_understanding_schema_refuses_a_mismatch_left_unsettled_and_admits_a_settled_one() {
+fn the_understanding_schema_refuses_a_question_without_the_designs_answer_and_admits_one_with_it() {
     let board = Changes::new();
-    board.write("changes/t.json", &change("plan", &json!({})));
-    board.write("repos/x/README.md", "x");
-    let mismatch = json!({
-        "question": "Q?",
-        "difference": "He expected one record per utterance.",
-        "how": "The plan changed.",
-    });
-    let settled: Value =
-        serde_json::from_str(&record(mismatch.clone(), &json!({"settled": "plan"}))).unwrap();
+    board.mount_x(&[("README.md", "x\n")]);
+    board.change_at("changes/t.json", "plan", &json!({}));
+    let asked = json!({"question": "Q?", "answer": "In my words."});
+    let answered: Value =
+        serde_json::from_str(&record(asked.clone(), &json!({"design": "The design's."}))).unwrap();
     board.write(
-        "u/open.json",
-        &record(understanding_record(), &json!({"mismatches": [mismatch]})),
+        "u/unanswered.json",
+        &record(understanding_record(), &json!({"questions": [asked]})),
     );
     board.write(
-        "u/settled.json",
-        &record(understanding_record(), &json!({"mismatches": [settled]})),
+        "u/answered.json",
+        &record(understanding_record(), &json!({"questions": [answered]})),
     );
     assert_eq!(
         board.checked("/u/"),
         codes(&[
-            ("/u/open", Some("board::record::invalid")),
-            ("/u/settled", None),
+            ("/u/unanswered", Some("board::record::invalid")),
+            ("/u/answered", None),
         ])
     );
 }
@@ -701,10 +740,7 @@ fn the_understanding_schema_refuses_a_mismatch_left_unsettled_and_admits_a_settl
 fn review_refuses_a_change_with_no_head_until_one_is_attached() {
     let board = Changes::new();
     let (base, head) = board.edited(&[("src/a.rs", "a\n")]);
-    board.write(
-        "changes/t.json",
-        &change("review", &json!({"records": ["/r/1"]})),
-    );
+    board.change_at("changes/t.json", "review", &json!({"records": ["/r/1"]}));
     board.write("r/1.json", &approving(&head, &base));
     board.call_stdin("plan", &planning(&["/repos/x/src/**"]));
     let refused = board.refusal("advance", &path());
@@ -725,18 +761,17 @@ fn review_refuses_a_change_with_no_head_until_one_is_attached() {
 /// report, rewritten to name `mount`: the head and what refusing it says.
 fn reviewed_at(board: &Changes, mount: &str) -> (String, String) {
     let (base, head) = board.edited(&[("src/a.rs", "a\n")]);
-    board.write(
+    board.change_at(
         "changes/t.json",
-        &change("review", &json!({"head": head, "records": ["/r/1"]})),
+        "review",
+        &json!({"head": head, "records": ["/r/1"]}),
     );
     board.write("r/1.json", &approving(&head, &base));
     board.call_stdin("plan", &planning(&["/repos/x/src/**"]));
-    board.write(
+    board.change_at(
         "changes/t.json",
-        &change(
-            "review",
-            &json!({"head": head, "records": ["/r/1"], "mount": mount}),
-        ),
+        "review",
+        &json!({"head": head, "records": ["/r/1"], "mount": mount}),
     );
     let refused = board.refusal("advance", &path());
     assert_eq!(refused["code"], "changes::paths::outside_plan");
@@ -748,9 +783,10 @@ fn review_refuses_a_change_whose_mount_holds_nothing_until_it_names_the_mount() 
     let board = Changes::new();
     let (head, message) = reviewed_at(&board, "/repos/gone");
     assert!(message.contains("nothing is at /repos/gone"), "{message}");
-    board.write(
+    board.change_at(
         "changes/t.json",
-        &change("review", &json!({"head": head, "records": ["/r/1"]})),
+        "review",
+        &json!({"head": head, "records": ["/r/1"]}),
     );
     assert_eq!(advanced(&board), "land");
 }
@@ -760,9 +796,10 @@ fn review_refuses_a_change_whose_mount_is_a_plain_directory_until_it_names_a_mou
     let board = Changes::new();
     let (head, message) = reviewed_at(&board, "/r");
     assert!(message.contains("/r is not a mount"), "{message}");
-    board.write(
+    board.change_at(
         "changes/t.json",
-        &change("review", &json!({"head": head, "records": ["/r/1"]})),
+        "review",
+        &json!({"head": head, "records": ["/r/1"]}),
     );
     assert_eq!(advanced(&board), "land");
 }
@@ -772,9 +809,10 @@ fn review_refuses_a_head_the_mounted_repository_lacks_until_the_head_is_one_it_h
     let board = Changes::new();
     let (base, head) = board.edited(&[("src/a.rs", "a\n")]);
     let missing = "e".repeat(40);
-    board.write(
+    board.change_at(
         "changes/t.json",
-        &change("review", &json!({"head": missing, "records": ["/r/1"]})),
+        "review",
+        &json!({"head": missing, "records": ["/r/1"]}),
     );
     board.write("r/1.json", &approving(&missing, &base));
     board.call_stdin("plan", &planning(&["/repos/x/src/**"]));
@@ -787,9 +825,10 @@ fn review_refuses_a_head_the_mounted_repository_lacks_until_the_head_is_one_it_h
         )),
         "{message}"
     );
-    board.write(
+    board.change_at(
         "changes/t.json",
-        &change("review", &json!({"head": head, "records": ["/r/1"]})),
+        "review",
+        &json!({"head": head, "records": ["/r/1"]}),
     );
     board.write("r/1.json", &approving(&head, &base));
     assert_eq!(advanced(&board), "land");

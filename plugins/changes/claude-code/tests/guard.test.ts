@@ -58,7 +58,10 @@ const FILES = new Set([
   CONFIG,
   `${HOME}/.config/board/notes.txt`,
   `${BOARD}/changes/fix-it.json`,
-  `${BOARD}/changes/fix-it/plan.md`,
+  `${BOARD}/changes/new.json`,
+  `${BOARD}/changes/fix-it/prototype.json`,
+  `${BOARD}/changes/fix-it/plans/20261105T120000Z.json`,
+  `${BOARD}/changes/fix-it/plans/20261105T120000Z.md`,
   `${BOARD}/repos/widgets.json`,
   `${BOARD}/repos/README.md`,
 ])
@@ -484,7 +487,7 @@ test('the board config is refused to every agent, and another file beside it is 
   expect(edits).toEqual(['Write'])
 })
 
-test('a change record is refused to every agent, and its plan is admitted', async ($, on) => {
+test("a change's records are refused to every agent, and its plan's text is admitted", async ($, on) => {
   const { edits } = engine(on, { first: { a1: BRIEF } })
   for (const agent of [undefined, 'a1']) {
     expect((await edit($, `${BOARD}/changes/fix-it.json`, agent)).deny).toBe(
@@ -493,8 +496,10 @@ test('a change record is refused to every agent, and its plan is admitted', asyn
         'or `changes.advance`, or `board put` to drop a change.',
     )
   }
-  expect((await edit($, `${BOARD}/changes/new.json`)).deny).toMatch(/^changes::guard::board_record: /)
-  expect((await edit($, `${BOARD}/changes/fix-it/plan.md`)).deny).toBeUndefined()
+  for (const record of ['new.json', 'fix-it/prototype.json', 'fix-it/plans/20261105T120000Z.json']) {
+    expect((await edit($, `${BOARD}/changes/${record}`)).deny).toMatch(/^changes::guard::board_record: /)
+  }
+  expect((await edit($, `${BOARD}/changes/fix-it/plans/20261105T120000Z.md`)).deny).toBeUndefined()
   expect(edits).toEqual(['Edit'])
 })
 
