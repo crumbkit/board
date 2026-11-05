@@ -499,6 +499,28 @@ fn plugins_codes() -> BTreeSet<String> {
         shared_codes(name, &texts, &mut codes);
     }
     assert!(unlisted.is_empty(), "{}", unlisted.join("\n"));
+    // A code a plugin's README promises must be one the scan found, so a
+    // reason given to a listed placeholder does not slip past unlisted.
+    for name in by_plugin.keys() {
+        let readme = Path::new(ROOT).join(format!("plugins/{name}/README.md"));
+        let Ok(text) = std::fs::read_to_string(&readme) else {
+            continue;
+        };
+        let mut promised = BTreeSet::new();
+        for quoted in text.split('`').skip(1).step_by(2) {
+            plugin_codes(
+                name,
+                &format!("\"{quoted}\""),
+                &mut promised,
+                &mut BTreeSet::new(),
+            );
+        }
+        let missed: Vec<&String> = promised.difference(&codes).collect();
+        assert!(
+            missed.is_empty(),
+            "plugins/{name}/README.md promises {missed:?}, which no source spells"
+        );
+    }
     codes
 }
 
