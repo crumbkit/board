@@ -243,6 +243,38 @@ fn the_agent_sees_the_variables_the_manifest_names_and_not_others() {
     );
 }
 
+/// A stand-in git, first on the plugin's `PATH`, that appends its
+/// environment to `git-env.txt` and runs the system's git.
+const GIT: &str = r#"#!/bin/sh
+env >> "$(dirname "$0")/git-env.txt"
+exec /usr/bin/git "$@"
+"#;
+
+#[test]
+fn git_does_not_see_the_model_credentials_that_the_agent_sees() {
+    let repo = Repo::new();
+    let brief = fix_sync(&repo);
+    repo.bin.write("git", Item::Executable(GIT));
+    let extra = [
+        ("ANTHROPIC_API_KEY", "test-key"),
+        ("CLAUDE_CODE_OAUTH_TOKEN", "test-token"),
+    ];
+    let (code, output) = repo.call_with("run", &["--brief", &brief], &extra);
+    assert_eq!(code, 0, "{output}");
+    let agent = repo.agent_file("env.txt");
+    let git = std::fs::read_to_string(repo.bin.workdir().join("git-env.txt")).unwrap();
+    assert!(git.lines().any(|line| line.starts_with("PATH=")), "{git}");
+    for (name, value) in extra {
+        let line = format!("{name}={value}");
+        assert!(agent.lines().any(|seen| seen == line), "{agent}");
+        assert!(
+            !git.lines()
+                .any(|seen| seen.starts_with(&format!("{name}="))),
+            "{git}"
+        );
+    }
+}
+
 #[test]
 fn a_brief_that_is_not_there_is_refused_and_one_that_is_runs() {
     let repo = Repo::new();

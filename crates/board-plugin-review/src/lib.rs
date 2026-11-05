@@ -65,10 +65,11 @@ const CAPABILITIES: [Capability; 3] = [
         run: run::run,
         input: input::<run::Input>,
         output: output::<run::Output>,
-        // It only adds a report, and a second run of the brief is refused
-        // before the agent starts. The agent sends the brief and the diff
-        // to its model provider.
-        hints: [false, false, true, true],
+        // It only adds a report. A retry sends the prompt to the model
+        // provider again, and two runs at once both start the agent, so it
+        // is not idempotent. The agent sends the brief and the diff to its
+        // model provider.
+        hints: [false, false, false, true],
         env: &run::ENV,
         timeout: Some(run::TIMEOUT),
     },
@@ -80,9 +81,10 @@ const CAPABILITIES: [Capability; 3] = [
         run: post::post,
         input: input::<post::Input>,
         output: output::<post::Output>,
-        // It adds a comment and the report's source, and a report whose
-        // source is set is skipped.
-        hints: [false, false, true, true],
+        // It adds a comment and the report's source. A gh call that failed
+        // may still have posted, and a retry posts the comment again, so it
+        // is not idempotent.
+        hints: [false, false, false, true],
         env: &post::ENV,
         timeout: Some(post::TIMEOUT),
     },

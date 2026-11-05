@@ -807,3 +807,25 @@ fn an_attached_report_that_is_not_there_is_refused_and_admitted_once_written() {
         "{output}"
     );
 }
+
+#[test]
+fn a_commit_whose_patch_is_larger_than_board_keeps_of_a_process_is_covered_by_its_range() {
+    let repo = Repo::new();
+    let base = repo.git(&["rev-parse", "HEAD"]);
+    repo.git(&["checkout", "-q", "-b", "change"]);
+    // More than the 16 MiB of stdout Board keeps of a process.
+    let large = "a line of a large generated file\n".repeat(600_000);
+    let head = repo.commit("src/large.txt", &large);
+    let (code, refused) = repo.call("covered", &["--base", "main"]);
+    assert_eq!(
+        (code, &refused["code"]),
+        (1, &json!("review::head::uncovered")),
+        "{refused}"
+    );
+    let path = report(&repo, "large", &base, &head, &json!({}));
+    let output = covered(&repo, &[]);
+    assert_eq!(
+        (&output["commits"], &output["reports"]),
+        (&json!(1), &json!([path]))
+    );
+}

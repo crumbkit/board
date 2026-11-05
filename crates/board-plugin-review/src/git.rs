@@ -71,9 +71,23 @@ impl Repository<'_> {
         let arguments: Vec<String> = (CONFIG.iter().chain(arguments))
             .map(|argument| (*argument).to_owned())
             .collect();
+        self.ran("git", &arguments, command, stdin, false)
+    }
+
+    /// What `program <arguments>` printed, or `review::git::failed` naming
+    /// `git <command>`. With `quiet`, anything on stderr is a failure too,
+    /// for a pipeline whose first command's exit code is lost.
+    fn ran(
+        &self,
+        program: &str,
+        arguments: &[String],
+        command: &str,
+        stdin: &[u8],
+        quiet: bool,
+    ) -> Result<Vec<u8>, PluginError> {
         let run = Run {
-            program: "git",
-            arguments: &arguments,
+            program,
+            arguments,
             directory: Some(&self.root),
             input: stdin,
             deadline: TIMEOUT,
@@ -82,6 +96,15 @@ impl Repository<'_> {
         let root = self.root.display();
         let exited = match self.host.run_hiding(&run, &HIDDEN) {
             Ok(exited) => exited,
+            Err(ProcessError::NotStarted { .. }) if !self.root.is_dir() => {
+                return Err(failed(
+                    format!(
+                        "the repository's directory {root} does not exist, so git cannot run \
+                         there; check the path, or the clone a mount reads"
+                    ),
+                    Map::new(),
+                ));
+            }
             Err(ProcessError::NotStarted { source }) => {
                 return Err(failed(
                     format!("git cannot be run: {source}; put git on PATH"),
@@ -108,7 +131,7 @@ impl Repository<'_> {
                 ));
             }
         };
-        if exited.code == Some(0) {
+        if exited.code == Some(0) && !(quiet && !exited.stderr.is_empty()) {
             return Ok(exited.stdout);
         }
         let stderr = String::from_utf8_lossy(&exited.stderr);
@@ -177,9 +200,15 @@ impl Repository<'_> {
             return Ok(HashMap::new());
         }
         let stdin = commits.join("\n") + "\n";
-        let arguments: Vec<&str> = ["diff-tree", "--stdin"].into_iter().chain(PATCH).collect();
-        let patches = self.bytes(&arguments, stdin.as_bytes())?;
-        let listed = self.bytes(&["patch-id", "--verbatim"], &patches)?;
+        // A commit's patch can be larger than Board keeps of a process's
+        // output, so git pipes it to patch-id and only the ids come back.
+        let config = CONFIG.join(" ");
+        let script = format!(
+            "git {config} diff-tree --stdin {} | git {config} patch-id --verbatim",
+            PATCH.join(" ")
+        );
+        let arguments = ["-c".to_owned(), script];
+        let listed = self.ran("sh", &arguments, "diff-tree", stdin.as_bytes(), true)?;
         Ok((String::from_utf8_lossy(&listed).lines())
             .filter_map(|line| {
                 let (patch_id, commit) = line.split_once(' ')?;

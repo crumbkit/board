@@ -326,8 +326,8 @@ fn every_capability_states_its_effect_hints_as_its_code_has_them() {
     assert_eq!(
         hints,
         [
-            ("run".to_owned(), stated(false, false, true, true)),
-            ("post".to_owned(), stated(false, false, true, true)),
+            ("run".to_owned(), stated(false, false, false, true)),
+            ("post".to_owned(), stated(false, false, false, true)),
             ("covered".to_owned(), stated(true, false, true, false)),
         ]
     );
