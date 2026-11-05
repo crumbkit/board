@@ -2,7 +2,7 @@ import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 import type { Engine } from 'claude-code/testing'
 
-import { questionSql, report, REPORT_SQL } from '../hooks/plans'
+import { NAMES, questionSql, report, REPORT_SQL } from '../hooks/plans'
 
 // These prove what the band and the panes draw, which `board` commands the
 // mod runs, the batch it hands `board put`, and what the asking session is
@@ -188,7 +188,7 @@ test('the pane lists each question with its options, and an option answers it in
         written_by: 'plans/pane-answer',
       },
     },
-    { path: MERGE.path, expect: 'b10b', record: { ...JSON.parse(BODY), status: 'answered' } },
+    { path: MERGE.path, expect: 'b10b', record: JSON.parse(BODY) },
   ])
   expect(sent).toEqual([
     {
@@ -298,6 +298,13 @@ test('/yesterday reads the day from 07:00 in one query, opens the report pane an
   expect(result.text).toBe('board: 1 decision, 0 questions asked, 0 answered, 1 run and 0 decision stubs that want a why, since 2026-10-24 07:00.')
   const ui = await $.ui.mount({ ...pane('yesterday'), surface: 'desktop' })
   expect((await ui.find({ type: 'Markdown' }))?.text).toContain('- Keep the types at v1. `/projects/board/decisions/d1`, review wanted')
+})
+
+test("a question's detail in the report is answered when an answer names it, and its status otherwise", () => {
+  expect(REPORT_SQL).toContain(
+    "CASE WHEN EXISTS (SELECT 1 FROM records a, records q WHERE q.logical = r.logical AND a.type = 'plans/answer/v1' AND " + NAMES + ')',
+  )
+  expect(REPORT_SQL).toContain("THEN 'answered' ELSE json_extract(r.body, '$.status') END")
 })
 
 test("a stub's detail in the report is the first of its urls, where the runs mod writes the pull request", () => {

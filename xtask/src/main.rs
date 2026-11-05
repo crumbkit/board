@@ -1,7 +1,8 @@
 //! Repository lints that clippy cannot express: the word budgets, the
 //! source file length cap, the `#[expect]` ratchet, the signing literals'
 //! owners, and the budget controls' agreement with lint.toml. `bin/lint` runs it as
-//! `cargo xtask lint`; `lint.toml` holds every number it enforces.
+//! `cargo xtask lint`; `lint.toml` holds every number it enforces. It also
+//! times Board, profiles it, and migrates question records.
 
 mod bench;
 mod budgets;
@@ -10,6 +11,7 @@ mod controls;
 mod files;
 mod process;
 mod profile;
+mod questions;
 mod report;
 mod signing;
 mod source;
@@ -48,6 +50,22 @@ fn main() -> ExitCode {
             Some(options) => finish(bench(root, &options), bench::BenchError::code),
             None => usage(),
         },
+        Some("migrate-questions") => {
+            let board = arguments.next();
+            let dry_run = match arguments.next().as_deref() {
+                None => false,
+                Some("--dry-run") if arguments.next().is_none() => true,
+                Some(_) => return usage(),
+            };
+            let Some(board) = board else {
+                return usage();
+            };
+            let migrated = questions::migrate(Path::new(&board), dry_run).map(|migrated| {
+                report::emit(&Output::Migrated(&migrated));
+                true
+            });
+            finish(migrated, questions::MigrateError::code)
+        }
         Some("profile") => match profile::Profile::parse(arguments) {
             Some(profile) => finish(
                 profile::run(root, &profile).map(|()| true),

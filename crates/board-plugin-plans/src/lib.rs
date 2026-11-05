@@ -2,7 +2,9 @@
 
 mod answer;
 mod open;
+mod question;
 pub mod records;
+mod withdraw;
 
 use board_model::{CapabilityName, RecordType};
 use board_ops::{Host, Plugin, PluginError};
@@ -43,9 +45,12 @@ impl Plugin for Plans {
         match capability.as_str() {
             "open" => open::open(host, &input),
             "answer" => answer::answer(host, &input),
+            "withdraw" => withdraw::withdraw(host, &input),
             other => Err(PluginError {
                 code: "plans::call::unknown_capability".to_owned(),
-                message: format!("plans offers no capability {other}; it offers open and answer"),
+                message: format!(
+                    "plans offers no capability {other}; it offers open, answer and withdraw"
+                ),
                 fields: Map::new(),
                 hint: None,
             }),
@@ -60,13 +65,15 @@ fn manifest() -> Value {
         "version": "0.1.0",
         "description": "Questions an agent session asks the owner, the owner's answers, and the decisions \
             sessions record. `board call plans.open` lists the questions still waiting for an answer, \
-            oldest first, and `board call plans.answer` records the owner's answer to one. \
+            oldest first, `board call plans.answer` records the owner's answer to one, and \
+            `board call plans.withdraw` withdraws one that no longer matters. \
             plugins/plans/README.md in Board's repository says where each record lives.",
         "metadata": {"area": "planning"},
         "types": record_schemas().map(|(name, _)| name),
         "capabilities": [{
             "name": "open",
-            "description": "The questions under a path whose status is open, oldest first.",
+            "description": "The questions under a path whose status is open and that no answer names, \
+                oldest first.",
             "inputSchema": schema_of::<open::Input>(SchemaSettings::draft2020_12()),
             "outputSchema": schema_of::<open::Output>(SchemaSettings::draft2020_12().for_serialize()),
             "annotations": {
@@ -78,14 +85,27 @@ fn manifest() -> Value {
             "_meta": {},
         }, {
             "name": "answer",
-            "description": "Record the owner's answer to an open question and mark the question \
-                answered, in one commit.",
+            "description": "Record the owner's answer to an open question. The answer is what \
+                marks the question answered; the question itself is left unchanged.",
             "inputSchema": schema_of::<answer::Input>(SchemaSettings::draft2020_12()),
             "outputSchema": schema_of::<answer::Output>(SchemaSettings::draft2020_12().for_serialize()),
             "annotations": {
                 "readOnlyHint": false,
                 "destructiveHint": false,
                 "idempotentHint": false,
+                "openWorldHint": false,
+            },
+            "_meta": {},
+        }, {
+            "name": "withdraw",
+            "description": "Withdraw an open question that no answer names, with the reason, so \
+                that plans.open stops listing it.",
+            "inputSchema": schema_of::<withdraw::Input>(SchemaSettings::draft2020_12()),
+            "outputSchema": schema_of::<withdraw::Output>(SchemaSettings::draft2020_12().for_serialize()),
+            "annotations": {
+                "readOnlyHint": false,
+                "destructiveHint": true,
+                "idempotentHint": true,
                 "openWorldHint": false,
             },
             "_meta": {},

@@ -177,7 +177,7 @@ fn opened(rows: Vec<Vec<Value>>, input: &Value) -> (Vec<String>, Value) {
 fn open_asks_for_every_open_question_once_with_no_row_limit() {
     let host = host(Vec::new());
     open(&host, &json!({})).unwrap();
-    assert_eq!(host.asked.take(), [(QUESTIONS.to_owned(), Limit::ALL)]);
+    assert_eq!(host.asked.take(), [(questions(), Limit::ALL)]);
 }
 
 #[test]
@@ -498,7 +498,7 @@ fn a_failing_query_is_refused_with_boards_code_and_the_same_host_answering_is_re
 }
 
 #[test]
-fn board_calls_plans_open_in_its_own_process_over_the_boards_records() {
+fn board_calls_plans_open_in_its_own_process_and_leaves_out_answered_and_withdrawn_questions() {
     let (_scenario, board) = plans_board(&[
         (
             "projects/a/questions/late",
@@ -510,7 +510,27 @@ fn board_calls_plans_open_in_its_own_process_over_the_boards_records() {
         ),
         (
             "projects/a/questions/done",
-            body("2026-09-01T09:00:00Z", &json!({"status": "answered"})),
+            body("2026-09-01T09:00:00Z", &json!({})),
+        ),
+        (
+            "projects/a/questions/dropped",
+            body(
+                "2026-09-01T09:00:00Z",
+                &json!({"status": "withdrawn", "withdrawn_reason": "Stale."}),
+            ),
+        ),
+        (
+            "projects/a/answers/elsewhere",
+            Value::String(
+                json!({
+                    "$type": "plans/answer/v1",
+                    "question": "/projects/a/questions/done",
+                    "choice": "none",
+                    "words": "Done already.",
+                    "answered": "2026-09-02T09:00:00Z",
+                })
+                .to_string(),
+            ),
         ),
         (
             "projects/b/questions/other",

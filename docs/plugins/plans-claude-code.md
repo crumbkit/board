@@ -43,8 +43,9 @@ nothing and the toast says the status.
 
 An answer to an open question is one `board put --batch --wait 2s` of two
 lines: a new `plans/answer/v1` at the question's id under `answers/`, which
-must not exist yet, and the question with `status: "answered"`, which must
-still hold the blob the mod read. Board writes both or neither, so a question
+must not exist yet, and the question unchanged, which must still hold the
+blob the mod read. The answer is what marks the question answered; its
+status stays `open`. Board writes both or neither, so a question
 that changed after the read is refused whole. The mod then reads the question
 again, and the toast names an answer written meanwhile, or else gives Board's
 refusal. The put waits at most 2 seconds for board's lock, so a held lock is
@@ -76,7 +77,8 @@ message was not delivered.
 out the window from board's clock, daylight saving included. The pane lists,
 as Markdown, the decisions made, the questions asked, the questions answered
 and the runs recorded in that window, and every decision stub that still has
-an empty `why`, whenever it was written. The command's output row gives the
+an empty `why`, whenever it was written. Each question asked shows
+`answered` when an answer names it, and its status otherwise. The command's output row gives the
 totals. The query reads at most 1000 records, and when Board cuts it there,
 both the pane and the output row say so. The report quotes record fields only and calls no model.
 

@@ -57,7 +57,7 @@ async function held($: EngineInterface, options: PluginOptions, path: string) {
 }
 
 /**
- * Records the owner's answer and the question's new status in one batch, then
+ * Records the owner's answer, with the question put back unchanged, in one batch, then
  * tries to send the answer to the session that asked. A question that is no
  * longer open, or that already has an answer at any id, is refused before the
  * put; one that changes between the read and the put is refused by the put's

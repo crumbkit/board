@@ -76,10 +76,9 @@
       "type": "string"
     },
     "status": {
-      "description": "`open` until an answer is recorded, then `answered`; `withdrawn` when\nthe question no longer matters.",
+      "description": "`open` while the question stands, and `withdrawn` when it no longer\nmatters. A question is answered when a `plans/answer/v1` names it in\n`question`; its status stays `open`.",
       "enum": [
         "open",
-        "answered",
         "withdrawn"
       ],
       "type": "string"
@@ -87,6 +86,12 @@
     "why": {
       "description": "Why the asker recommends it.",
       "type": "string"
+    },
+    "withdrawn_reason": {
+      "description": "Why the question was withdrawn, as `plans.withdraw` records it.",
+      "minLength": 1,
+      "type": "string",
+      "x-board-prose": true
     }
   },
   "required": [

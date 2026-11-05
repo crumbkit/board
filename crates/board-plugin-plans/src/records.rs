@@ -4,7 +4,7 @@
 use schemars::JsonSchema;
 use serde::Serialize;
 
-use board_plugin::shape::{Record, Ref, Tag, Url};
+use board_plugin::shape::{Prose, Record, Ref, Tag, Url};
 
 /// `plans/question/v1`: a question an agent session needs the owner to answer.
 ///
@@ -29,9 +29,13 @@ pub struct QuestionRecord {
     /// When the question was asked.
     #[schemars(extend("format" = "date-time"))]
     pub asked: String,
-    /// `open` until an answer is recorded, then `answered`; `withdrawn` when
-    /// the question no longer matters.
+    /// `open` while the question stands, and `withdrawn` when it no longer
+    /// matters. A question is answered when a `plans/answer/v1` names it in
+    /// `question`; its status stays `open`.
     pub status: Status,
+    /// Why the question was withdrawn, as `plans.withdraw` records it.
+    #[schemars(with = "Option<Prose>", length(min = 1))]
+    pub withdrawn_reason: Option<String>,
     /// The mount of the repository the question concerns, such as
     /// `/repos/board`, when there is one.
     pub mount: Option<Ref>,
@@ -61,7 +65,6 @@ impl Record for QuestionRecord {
 #[schemars(inline)]
 pub enum Status {
     Open,
-    Answered,
     Withdrawn,
 }
 
@@ -107,9 +110,10 @@ pub struct AnswerRecord {
     pub by: Option<String>,
     /// Where the owner gave the answer.
     pub evidence: Option<Evidence>,
-    /// The plugin and hook that wrote this record, such as
-    /// `plans/pane-answer`, when the owner answered through a mod rather than
-    /// to an agent; absent when an agent or a person wrote it.
+    /// The plugin and hook, or the client and surface, that wrote this
+    /// record, such as `plans/pane-answer` or `board-app/phone`, when the
+    /// owner answered through it rather than to an agent; absent when an
+    /// agent or a person wrote it.
     #[schemars(regex(pattern = r"^[a-z0-9-]+/[a-z0-9-]+$"))]
     pub written_by: Option<String>,
 }

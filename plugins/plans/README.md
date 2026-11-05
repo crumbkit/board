@@ -14,14 +14,16 @@ so it is written at its path. Its schema declares its folder too, so
 - `plans/question/v1` at `/projects/<project>/questions/<id>`. `<id>` is a
   sortable UTC time and a short suffix, such as `20261024T1830Z-k3`.
   `question`, `session` (the asking session's `local_` id), `asked` and
-  `status` (`open`, `answered` or `withdrawn`) are required. `options`,
-  `recommendation`, `why`, `blocks`, `mount`, `context_path` and `note` are
-  optional.
+  `status` (`open` or `withdrawn`) are required. `options`,
+  `recommendation`, `why`, `blocks`, `mount`, `context_path`, `note` and
+  `withdrawn_reason` are optional. A question is answered when a
+  `plans/answer/v1` names it in `question`; answering leaves its status
+  `open`.
 - `plans/answer/v1` at `/projects/<project>/answers/<id>`, with its question's
   id. `question` references the question; `choice` names an option's `id`, or
   `none`; `words` holds the owner's words verbatim; `answered` is when.
-  `written_by` names the plugin and hook when a mod wrote the answer, such as
-  `plans/pane-answer`.
+  `written_by` names the plugin and hook, or the client and surface, that
+  wrote the answer, such as `plans/pane-answer` or `board-app/phone`.
 - `plans/decision/v1` at `/projects/<project>/decisions/<id>`. `decision`,
   `why`, `session` and `decided` are required; `alternatives`, `refs`,
   `urls`, `review` (`wanted` or `none`) and `written_by` are optional. `refs` lists board
@@ -46,7 +48,7 @@ Such a stub names its plugin and hook in `written_by`, such as
 ## Capabilities
 
 `board call plans.open [--path /projects/<project>] [--limit <n>]` lists the
-questions below the path whose `status` is `open`, oldest first, with their options,
+questions below the path whose `status` is `open` and that no answer names, oldest first, with their options,
 recommendation and what each blocks. It returns at most 100 by default, with
 `total`, which counts the readable ones, and `truncated`. `unreadable` counts
 open questions Board marks degraded or this plugin cannot read. Each question
@@ -57,9 +59,10 @@ leaves them out.
 [--by <session>] [--written_by <plugin>/<client>]` records the owner's answer
 as the Claude Code mod's pane does, so a client without the mod, such as
 Board.app, can answer. `--option` is one of the question's option ids, or
-`none` with `--words`. `--words` defaults to the chosen option's text. It
-writes one commit of two lines: a new `plans/answer/v1` at the question's id
-under `answers/`, answered now, and the question with `status: "answered"`,
+`none` with `--words`; a question with an option whose id is `none` takes
+`--option none` as that option. `--words` defaults to the chosen option's
+text. It writes one commit of two lines: a new `plans/answer/v1` at the
+question's id under `answers/`, answered now, and the question unchanged,
 which must still hold the blob the call read. It returns the answer's path,
 the question's path, `choice`, `words` and `answered`.
 
@@ -72,6 +75,14 @@ question (`plans::answer::already_answered`), the question's status is not
 (`plans::answer::words_needed`). A question changed after the read fails with
 `plans::board::refused`, carrying Board's `board::put::stale`. It asks for no
 Touch ID, as the pane does not.
+
+`board call plans.withdraw --path <question> --reason <text>` withdraws a
+question that no longer matters: it rewrites the question with `status:
+"withdrawn"` and the reason in `withdrawn_reason`, if it still holds the blob
+the call read, and returns the question's path and the reason. It refuses
+with `plans::withdraw::<reason>` for the same paths, missing questions,
+answered questions and questions that are not open as `plans.answer` does,
+and writes nothing then.
 
 ## The Claude Code mod
 
