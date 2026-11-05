@@ -579,10 +579,10 @@ impl Fixture {
         json(&output)
     }
 
-    /// Each entry's code from `board check --all` whose path starts with
+    /// Each entry's code from `board check --healthy --all` whose path starts with
     /// `prefix`; `None` when it is whole.
     fn checked(&self, prefix: &str) -> BTreeMap<String, Option<String>> {
-        let report = self.json(&["check", "--all"]);
+        let report = self.json(&["check", "--healthy", "--all"]);
         (report["data"].as_array().unwrap().iter())
             .filter_map(|entry| {
                 let logical = entry["logical"].as_str()?;

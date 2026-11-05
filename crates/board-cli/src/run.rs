@@ -182,15 +182,19 @@ Examples:
     /// Check every entry, or those at or beneath a path; list and fail on the degraded ones.
     #[command(after_help = "\
 By default it lists only the degraded entries, and its summary counts the
-entries checked. --all lists every entry, degraded ones first.
+entries checked. --healthy lists the healthy entries too, after the
+degraded ones. --limit and --all page whichever entries it lists.
 
 Examples:
   board check
-  board check /projects --all
+  board check /projects --healthy --all
   board check --json")]
     Check {
         /// Check only the entries at or beneath this logical path, such as /projects, or . for the current directory.
         path: Option<Given>,
+        /// List the healthy entries too, after the degraded ones.
+        #[arg(long)]
+        healthy: bool,
         #[command(flatten)]
         page: Page,
     },
@@ -607,10 +611,14 @@ fn command(
         | Command::Decide(_)
         | Command::Commands(_)
         | Command::Schemas(_) => unreachable!(),
-        Command::Check { path, page } => {
+        Command::Check {
+            path,
+            healthy,
+            page,
+        } => {
             let path = or_refuse!(path.map(|path| read(prefix, &path, "check")).transpose());
             match board.check(path.as_ref(), cache) {
-                Ok(report) => render::check(printer, &report, &page),
+                Ok(report) => render::check(printer, &report, healthy, &page),
                 Err(error) => render::refused(printer, error.refusal()),
             }
         }

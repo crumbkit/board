@@ -189,4 +189,4 @@ def test_a_plan_record_whose_path_does_not_start_at_the_root_is_invalid_and_one_
     board.write(stored, json.dumps({**written, "paths": ["repos/x/**"]}))
     assert board.json("check", output["path"])["data"][0].get("code") == "board::record::invalid"
     board.write(stored, json.dumps(written))
-    assert board.json("check", output["path"], "--all")["data"][0].get("code") is None
+    assert board.json("check", output["path"], "--healthy")["data"][0].get("code") is None

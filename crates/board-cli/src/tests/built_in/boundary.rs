@@ -531,7 +531,7 @@ fn enabling_writes_both_schemas_so_a_boundary_with_a_check_is_whole_and_one_with
     personal
         .write("boundaries/ok.json", &boundary(&fields(names_check())))
         .write("boundaries/bad.json", &boundary(&fields(json!([]))));
-    let report = json(&personal.run(&["--json", "check", "--all"]));
+    let report = json(&personal.run(&["--json", "check", "--healthy", "--all"]));
     let codes: BTreeMap<&str, &Value> = (report["data"].as_array().unwrap().iter())
         .map(|entry| (entry["logical"].as_str().unwrap(), &entry["code"]))
         .collect();
@@ -555,7 +555,7 @@ fn a_check_naming_a_missing_control_dangles_and_one_naming_a_control_does_not() 
         let fields = json!({"to": "github:octo/*", "actions": ["*"], "checks": checks});
         personal.write(&format!("boundaries/{name}.json"), &boundary(&fields));
     }
-    let report = json(&personal.run(&["--json", "check", "--all"]));
+    let report = json(&personal.run(&["--json", "check", "--healthy", "--all"]));
     let codes: BTreeMap<&str, &Value> = (report["data"].as_array().unwrap().iter())
         .map(|entry| (entry["logical"].as_str().unwrap(), &entry["code"]))
         .collect();

@@ -128,7 +128,7 @@ def test_the_schema_refuses_an_unknown_kind_or_state_and_admits_a_prototype(boar
     board.write("changes/kind.json", prototype(kind="spike"))
     board.write("changes/state.json", prototype(state="paused"))
     board.write("changes/good.json", prototype())
-    report = board.json("check", "--all")
+    report = board.json("check", "--healthy", "--all")
     codes = {
         entry["logical"]: entry.get("code") for entry in report["data"] if entry["logical"].startswith("/changes/")
     }

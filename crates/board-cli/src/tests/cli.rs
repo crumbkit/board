@@ -381,7 +381,10 @@ fn check_degrades_a_name_with_a_format_character_and_text_escapes_it() {
     }
     assert!(err.contains("hint: c\\u{202e}d.md: "), "{err}");
     assert!(!err.contains("café"), "{err}");
-    let checked = json(&board_in(scenario.workdir(), &["check", "--json", "--all"]));
+    let checked = json(&board_in(
+        scenario.workdir(),
+        &["check", "--json", "--healthy"],
+    ));
     let codes: Vec<(&str, &str)> = (checked["data"].as_array().unwrap().iter())
         .filter_map(|entry| {
             Some((
@@ -635,10 +638,7 @@ fn a_limited_check_lists_degraded_entries_and_counts_every_entry_checked() {
          is invalid: json does not parse: EOF while parsing an object at line 1 column 1\n"
     );
     let stderr = text(&output.stderr);
-    assert!(
-        stderr.starts_with("Showing 1 of 2 degraded entries. "),
-        "{stderr}"
-    );
+    assert!(stderr.starts_with("Showing 1 of 2 entries. "), "{stderr}");
     let report = json(&board_in(
         scenario.workdir(),
         &["check", "--limit", "1", "--json"],
@@ -652,7 +652,7 @@ fn a_limited_check_lists_degraded_entries_and_counts_every_entry_checked() {
 
 /// A limited check prints, as text and as JSON, exactly the first entries
 /// of the unlimited default listing, which holds only degraded entries,
-/// and the same total, summary and exit code. `--all` has the same summary.
+/// and the same total, summary and exit code. `--healthy` has the same summary.
 #[test]
 fn a_limited_check_prints_the_first_entries_of_the_whole_listing() {
     let scenario = notes(3);
@@ -672,7 +672,7 @@ fn a_limited_check_prints_the_first_entries_of_the_whole_listing() {
     let whole_json = json(&check(&["--json"]));
     let data = whole_json["data"].as_array().unwrap();
     assert_eq!(entries.len(), 2);
-    let every = json(&check(&["--all", "--json"]));
+    let every = json(&check(&["--healthy", "--json"]));
     assert_eq!(every["summary"], whole_json["summary"]);
     assert_eq!(every["total"], 9);
     for shown in 1..=entries.len() {
@@ -950,7 +950,7 @@ fn check_names_an_entry_by_its_logical_path_and_one_without_or_sharing_it_by_its
         .write(".json", Item::File("{}"))
         .write("x.json", Item::File(r#"{"$type": "lr/project/v1"}"#))
         .write("x", Item::File(""));
-    let output = board_in(scenario.workdir(), &["check", "--all"]);
+    let output = board_in(scenario.workdir(), &["check", "--healthy"]);
     let stdout = text(&output.stdout);
     for line in [
         "degraded board::json::parse /zz/bad \

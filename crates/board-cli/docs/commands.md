@@ -53,6 +53,7 @@ Check every entry, or those at or beneath a path; list and fail on the degraded 
 ### Arguments
 
 - `<PATH>`: Check only the entries at or beneath this logical path, such as /projects, or . for the current directory
+- `--healthy`: List the healthy entries too, after the degraded ones
 - `--limit <N>`: Print at most this many rows, up to 10000. Default: `100`.
 - `--all`: Print every row
 

@@ -250,7 +250,7 @@ fn on_the_seed(starts: &mut Starts) {
 /// in `dir`, read through the index in `cache`.
 fn degraded(starts: &mut Starts, fixture: &RuntimePlace, dir: &Path, cache: &Path) {
     let run = |words: &[&str]| board_cached(dir, Some(cache), words);
-    let report = json(&run(&["check", "--json", "--all"]));
+    let report = json(&run(&["check", "--json", "--healthy", "--all"]));
     // A twin for each code: one entry's twin shows what any other's would.
     let mut twinned = BTreeSet::new();
     for entry in report["data"].as_array().unwrap() {

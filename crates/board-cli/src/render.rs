@@ -154,14 +154,18 @@ fn said(value: Value, text: String) -> Answer {
     Prose::new(Said::new(value, text))
 }
 
-/// `check`: a line or an object per degraded entry, or with `--all` per
+/// `check`: a line or an object per degraded entry, or with `healthy` per
 /// entry, degraded first, so a limited listing never hides one behind
 /// healthy entries. The summary counts the entries checked and the
 /// degraded ones. Each degraded entry reports a problem, so the run exits 1.
-pub(crate) fn check(printer: Printer, report: &CheckReport, page: &crate::run::Page) -> Output {
-    let every = page.limit().is_none();
+pub(crate) fn check(
+    printer: Printer,
+    report: &CheckReport,
+    healthy: bool,
+    page: &crate::run::Page,
+) -> Output {
     let mut entries: Vec<&Checked> = (report.entries.iter())
-        .filter(|entry| every || entry.status != Status::Ok)
+        .filter(|entry| healthy || entry.status != Status::Ok)
         .collect();
     entries.sort_by_key(|entry| entry.status == Status::Ok);
     let degraded = entries.iter().filter(|entry| entry.status != Status::Ok);
@@ -199,8 +203,7 @@ pub(crate) fn check(printer: Printer, report: &CheckReport, page: &crate::run::P
         }
         Flagged(Whole::lined(value, line))
     });
-    let listed = if every { "entries" } else { "degraded entries" };
-    let listing = page.first_of(rows.collect()).described(listed);
+    let listing = page.first_of(rows.collect()).described("entries");
     let checked = report.entries.len();
     let summary = Said::new(
         json!({"checked": checked, "degraded": degraded}),
@@ -213,13 +216,13 @@ pub(crate) fn check(printer: Printer, report: &CheckReport, page: &crate::run::P
     printer.noted(CHECK, listing, notes(report.memory, hints))
 }
 
-/// `check`'s document: each degraded entry, or with `--all` each entry,
+/// `check`'s document: each degraded entry, or with `--healthy` each entry,
 /// with the counts of entries checked and degraded under `summary`.
 const CHECK: Document<Listing<Flagged, Said>> = Document::new(
     "board",
     "check-report",
     2,
-    "The degraded entries, or with --all every entry, and how many were checked.",
+    "The degraded entries, or with --healthy every entry, and how many were checked.",
 )
 .when_empty("no entry is degraded");
 
@@ -423,7 +426,7 @@ pub(crate) fn init(printer: Printer, report: &InitReport) -> Output {
     let value = json!({"root": report.root.to_string_lossy(), "created": report.created});
     let answer = said(value, text);
     let answer = if report.created {
-        answer.note("next: run `board check`; it lists every file and says how to fix any it cannot read. Then commit .board/board.json")
+        answer.note("next: run `board check`; it checks every file and says how to fix any it cannot read. Then commit .board/board.json")
     } else {
         answer
     };

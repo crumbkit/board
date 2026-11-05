@@ -15,7 +15,7 @@ def mounted(board: Board) -> Board:
 
 def code(board: Board) -> str | None:
     """The code `board check` gives the change, or None when it is valid."""
-    found: str | None = board.json("check", PATH, "--all")["data"][0].get("code")
+    found: str | None = board.json("check", PATH, "--healthy")["data"][0].get("code")
     return found
 
 

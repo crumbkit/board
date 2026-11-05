@@ -6,7 +6,7 @@ use super::*;
 /// Each task's code from `board check`, by its path; null when it is
 /// valid.
 fn checked(tasks: &Tasks) -> BTreeMap<String, Value> {
-    let report = json(&tasks.run(&["--json", "check", "--all"], 0, None, ""));
+    let report = json(&tasks.run(&["--json", "check", "--healthy", "--all"], 0, None, ""));
     (report["data"].as_array().unwrap().iter())
         .filter(|entry| entry["logical"].as_str().unwrap().starts_with("/tasks/"))
         .map(|entry| {

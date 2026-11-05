@@ -54,7 +54,7 @@ def test_open_counts_a_degraded_change_as_unreadable_and_lists_a_valid_one(board
 
 def checked(board: Board) -> dict[str, str | None]:
     """Each change's code from `board check`, by its path; `None` when it is valid."""
-    report = json.loads(board.run("--json", "check", "--all").stdout)
+    report = json.loads(board.run("--json", "check", "--healthy", "--all").stdout)
     return {entry["logical"]: entry.get("code") for entry in report["data"] if entry["logical"].startswith("/changes/")}
 
 

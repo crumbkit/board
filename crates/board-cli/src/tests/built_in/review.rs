@@ -275,10 +275,10 @@ impl Repo {
         format!("/reviews/{name}/brief")
     }
 
-    /// Each review record's code from `board check --all`, by its path;
+    /// Each review record's code from `board check --healthy --all`, by its path;
     /// `None` when it is whole.
     fn checked(&self) -> BTreeMap<String, Option<String>> {
-        let report = json(&self.run(&["--json", "check", "--all"], &[]));
+        let report = json(&self.run(&["--json", "check", "--healthy", "--all"], &[]));
         (report["data"].as_array().unwrap().iter())
             .filter_map(|entry| {
                 let logical = entry["logical"].as_str()?;
@@ -300,7 +300,7 @@ fn board_lists_the_plugin_as_working_with_its_types_installed() {
         .unwrap()
         .clone();
     assert_eq!(review["status"], "ok", "{review}");
-    let checked = json(&repo.run(&["--json", "check", "--all"], &[]));
+    let checked = json(&repo.run(&["--json", "check", "--healthy", "--all"], &[]));
     let status = (checked["data"].as_array().unwrap().iter())
         .find(|entry| entry["logical"] == "/.board/types/review/report/v1.schema")
         .map(|entry| entry["status"].clone());
