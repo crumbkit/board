@@ -367,19 +367,20 @@ pub struct Actor {
 }
 
 impl Actor {
-    /// The actor that `session`, `program` and `person` name, or none when
-    /// they name nobody.
+    /// The actor that `session`, `program`, `person` and `agent` name, or
+    /// none when they name nobody. A blank agent name names nobody.
     #[must_use]
     pub fn of(
         session: Option<String>,
         program: Option<String>,
         person: Option<String>,
+        agent: Option<String>,
     ) -> Option<Self> {
         let actor = Self {
             session,
             program,
             person,
-            agent: None,
+            agent: agent.filter(|name| !name.trim().is_empty()),
         };
         (actor != Self::default()).then_some(actor)
     }

@@ -74,8 +74,7 @@ export BOARD_REVIEW_AGENT='["claude", "-p", "--output-format", "json", "--settin
   stronger than the agent's resistance to text in the diff.
 - The answer must end with a JSON object holding `verdict` and `findings`.
 - When the output is the JSON envelope of `claude -p --output-format json`,
-  `review.run` reads the answer from `result`, the tokens from `usage` and the
-  models from `modelUsage`.
+  `review.run` reads the answer from `result` and the tokens from `usage`.
 
 Sign-in is broken. The example agent currently exits with "Not logged in",
 and `review.run` then fails with `review::agent::failed`. The cause is not

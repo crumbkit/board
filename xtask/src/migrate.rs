@@ -57,6 +57,8 @@ pub(crate) enum MigrateError {
     },
     #[error("the map {path} maps {key:?} to a value that is neither an Actor nor a Subject")]
     MapEntry { path: PathBuf, key: String },
+    #[error("the map {path} is not a JSON object of old strings to new values")]
+    NotObject { path: PathBuf },
 }
 
 impl MigrateError {
@@ -64,7 +66,7 @@ impl MigrateError {
         match self {
             Self::Read { .. } => "xtask::migrate::unreadable",
             Self::Write { .. } => "xtask::migrate::unwritable",
-            Self::Map { .. } => "xtask::migrate::map_invalid",
+            Self::Map { .. } | Self::NotObject { .. } => "xtask::migrate::map_invalid",
             Self::MapEntry { .. } => "xtask::migrate::map_entry_invalid",
         }
     }
@@ -81,9 +83,12 @@ pub(crate) fn run(board: &Path, options: &Options) -> Result<Value, MigrateError
                 path: path.clone(),
                 source,
             })?;
-            Context::new(map).map_err(|key| MigrateError::MapEntry {
-                path: path.clone(),
-                key,
+            Context::new(map).map_err(|key| match key.as_str() {
+                "" => MigrateError::NotObject { path: path.clone() },
+                _ => MigrateError::MapEntry {
+                    path: path.clone(),
+                    key,
+                },
             })?
         }
         None => Context::default(),

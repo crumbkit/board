@@ -70,7 +70,7 @@ test('a subagent that stops is recorded as a run by Claude Code in its session, 
   expect(puts[1]?.record).toEqual({
     $type: 'runs/run/v1',
     suite: '/suites/claude-code',
-    by: { program: 'claude-code', session: 'local_cd34' },
+    by: { program: 'claude-code', session: 'local_cd34', agent: 'Explore' },
     started: '2026-10-25T09:30:00Z',
     finished: '2026-10-25T09:31:30Z',
     scope: 'full',
@@ -101,7 +101,7 @@ test('a completed task is recorded under the configured board and suite, with it
   await $.classic.TaskCompleted({ task_id: '7', task_subject: 'Write the parser', teammate_name: 'builder' })
   expect(puts[1]?.argv).toEqual(['board', '-C', '/boards/work', '--json', 'put', '/suites/agents/runs/20261025T093000Z-7'])
   expect(puts[1]?.record).toMatchObject({
-    by: { program: 'claude-code' },
+    by: { program: 'claude-code', agent: 'builder' },
     measures: { duration_s: 5 },
     summary: 'Write the parser',
     written_by: 'runs/task-completed',

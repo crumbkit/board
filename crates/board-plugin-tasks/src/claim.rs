@@ -1,7 +1,7 @@
 //! `claim`: set who holds a task, refused when someone else holds it.
 
 use board_ops::{Host, PluginError};
-use board_plugin::shape::{Actor, Person, SessionId, Slug};
+use board_plugin::shape::{Actor, Person, Prose, SessionId, Slug};
 use board_repos::Date;
 use schemars::JsonSchema;
 use serde::Deserialize;
@@ -35,16 +35,22 @@ pub(crate) struct ClaimInput {
         description = "The person who holds the task, such as luke."
     )]
     pub(crate) person: Option<String>,
+    #[schemars(
+        with = "Option<Prose>",
+        description = "The name the agent that holds the task was given, such as \
+                       inbox foundation builder."
+    )]
+    pub(crate) agent: Option<String>,
 }
 
 /// Sets the task's owner, refused when another owner holds it. An owner
 /// with the same session as the one that holds it is the same owner.
 pub(crate) fn claim(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
     let given: ClaimInput = PluginError::read_input(PLUGIN, "claim", input)?;
-    let owner = Actor::of(given.session, given.program, given.person);
+    let owner = Actor::of(given.session, given.program, given.person, given.agent);
     let Some(owner) = owner else {
         let why = format!(
-            "claiming {} names nobody; give --session, --program or --person",
+            "claiming {} names nobody; give --session, --program, --person or --agent",
             given.path
         );
         return Err(refusal(

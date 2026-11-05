@@ -25,10 +25,11 @@ pub(crate) struct Context {
 
 impl Context {
     /// The map `map`, or the first key whose value is neither an `Actor` nor
-    /// a `Subject`, so a bad entry is refused before anything is written.
+    /// a `Subject`, so a bad entry is refused before anything is written. A
+    /// map that is not a JSON object is refused with an empty key.
     pub(crate) fn new(map: Value) -> Result<Self, String> {
         let Value::Object(map) = map else {
-            return Ok(Self { map: Map::new() });
+            return Err(String::new());
         };
         let shapes = board_plugin::shape::registry();
         let compiled = |name: &str| {
@@ -146,10 +147,11 @@ fn owner(record: &mut Map<String, Value>, context: &Context, outcomes: &mut Vec<
 /// A version's `session`, which becomes `by`, and its hash.
 fn version(record: &mut Map<String, Value>, context: &Context, outcomes: &mut Vec<Outcome>) {
     // The released artifacts mod wrote the session's bare uuid, which
-    // names no `local_` session; the mod is the program that wrote it.
+    // names no `local_` session. The mod is the program that wrote it, and
+    // the uuid is kept as the agent's name so nothing is lost.
     if let Some(Value::String(session)) = record.remove("session") {
         let by = (actor(&session, context).filter(|by| by.get("session").is_some()))
-            .unwrap_or_else(|| json!({"program": "claude-code"}));
+            .unwrap_or_else(|| json!({"program": "claude-code", "agent": session}));
         record.insert("by".into(), by);
         outcomes.push(Outcome::Changed("artifacts/version/v1.session"));
     }

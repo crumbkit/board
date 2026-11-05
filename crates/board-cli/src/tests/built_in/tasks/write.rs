@@ -289,6 +289,32 @@ fn a_claim_by_another_session_is_refused_and_one_by_the_same_session_with_fewer_
         .map(|task| &task["title"])
         .collect();
     assert_eq!(titles, [&json!("A")]);
+    tasks.write(
+        "tasks/later.md",
+        &open("Later", json!({"owner": held, "defer": day(30)})),
+    );
+    let listed = tasks.call("available", &session).unwrap();
+    let held: Vec<&Value> = (listed["held"]["tasks"].as_array().unwrap().iter())
+        .map(|task| &task["title"])
+        .collect();
+    assert_eq!(held, [&json!("Later")]);
+}
+
+/// An owner that is only an agent's name, as the shapes migration writes
+/// for an old owner it cannot parse, is claimed and listed by `--agent`.
+#[test]
+fn a_task_held_by_an_agent_name_is_claimed_and_listed_by_that_name_and_refused_to_another() {
+    let tasks = Tasks::new();
+    let held = json!({"agent": "c2_b_builder"});
+    tasks.write("tasks/a.md", &open("A", json!({"owner": held})));
+    let path = ["--path", "/tasks/a.md"];
+    let refused = tasks.refused("claim", &[&path[..], &["--agent", "c3_builder"]].concat());
+    assert_eq!(refused["code"], "tasks::task::held");
+    let agent = ["--agent", "c2_b_builder"];
+    let output = tasks.call("claim", &[&path[..], &agent].concat());
+    assert_eq!(output.unwrap()["owner"], held);
+    let listed = tasks.call("available", &agent).unwrap();
+    assert_eq!(listed["available"]["tasks"][0]["title"], json!("A"));
 }
 
 #[test]

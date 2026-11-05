@@ -238,6 +238,22 @@ fn a_map_entry_outside_the_shapes_is_refused_by_its_key_and_its_twin_is_admitted
     }
 }
 
+/// A map file that is not a JSON object is refused before anything is
+/// written, and an object map is admitted.
+#[test]
+fn a_map_file_that_is_not_an_object_is_refused_and_its_twin_is_admitted() {
+    let board = tempfile::tempdir().unwrap();
+    write(board.path(), "maps/array.json", "[]");
+    write(board.path(), "maps/object.json", "{}");
+    let options = |name: &str| Options {
+        map: Some(board.path().join(format!("maps/{name}.json"))),
+        ..Options::default()
+    };
+    let refused = run(board.path(), &options("array")).unwrap_err();
+    assert_eq!(refused.code(), "xtask::migrate::map_invalid");
+    assert!(run(board.path(), &options("object")).is_ok());
+}
+
 #[test]
 fn a_task_owner_becomes_an_actor_and_a_blank_one_is_kept_and_reported() {
     let before = json!({"$type": "tasks/task/v2", "owner": " "});
@@ -252,12 +268,12 @@ fn a_task_owner_becomes_an_actor_and_a_blank_one_is_kept_and_reported() {
 }
 
 #[test]
-fn a_version_session_the_released_mod_wrote_becomes_the_mods_program() {
+fn a_version_session_the_released_mod_wrote_becomes_the_mods_program_keeping_the_uuid() {
     let (record, _) =
         migrated(json!({"$type": "artifacts/version/v1", "session": "0b8a7c6e-1f2d"}));
     assert_eq!(
         record,
-        json!({"$type": "artifacts/version/v1", "by": {"program": "claude-code"}})
+        json!({"$type": "artifacts/version/v1", "by": {"program": "claude-code", "agent": "0b8a7c6e-1f2d"}})
     );
 }
 
@@ -533,8 +549,18 @@ fn refused(
     schemas: &std::collections::BTreeMap<String, board_validate::Schema>,
 ) -> std::collections::BTreeSet<String> {
     let mut refused = std::collections::BTreeSet::new();
+    let actor = board_plugin::shape::registry()["Actor"].clone();
+    let actor = board_validate::Schema::compile(actor).unwrap();
     for path in super::files(board).unwrap() {
-        let Ok(record) = serde_json::from_str::<Value>(&fs::read_to_string(&path).unwrap()) else {
+        let text = fs::read_to_string(&path).unwrap();
+        let name = format!("/{}", path.strip_prefix(board).unwrap().display());
+        if path.extension().is_some_and(|extension| extension == "md") {
+            if owner(&text).is_some_and(|owner| actor.validate(&owner).is_err()) {
+                refused.insert(name);
+            }
+            continue;
+        }
+        let Ok(record) = serde_json::from_str::<Value>(&text) else {
             continue;
         };
         let kind = record
@@ -545,10 +571,26 @@ fn refused(
             .get(kind)
             .is_some_and(|schema| schema.validate(&record).is_err())
         {
-            refused.insert(format!("/{}", path.strip_prefix(board).unwrap().display()));
+            refused.insert(name);
         }
     }
     refused
+}
+
+/// The owner a `tasks/task/v2` Markdown record's frontmatter gives, as
+/// JSON, or the text itself when it is not JSON; none when it has none.
+fn owner(text: &str) -> Option<Value> {
+    let front = text.strip_prefix("---\n")?.split("\n---").next()?;
+    let task = front.lines().any(|line| {
+        line.strip_prefix("$type:")
+            .is_some_and(|kind| kind.trim().trim_matches('"') == "tasks/task/v2")
+    });
+    let line = front
+        .lines()
+        .find_map(|line| line.strip_prefix("owner:"))?
+        .trim();
+    (task && !line.is_empty() && line != "null")
+        .then(|| serde_json::from_str(line).unwrap_or_else(|_| Value::String(line.to_owned())))
 }
 
 /// Migrates a copy of the board `MIGRATE_BOARD` names, when it is set, and

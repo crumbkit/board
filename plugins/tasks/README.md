@@ -56,9 +56,10 @@ The plan covers ...
   task is available. An hour before `BOARD_DAY_START` falls on the next date.
 - `contexts` are lowercase tags, `[a-z0-9-]+`.
 - `owner` is the `Actor` who holds the task: an object of `session` (a
-  `local_` id), `program` (a slug such as `claude-code`) and `person` (a
-  slug or an email), each optional and at least one present, written as one
-  line of JSON. `claim` sets it.
+  `local_` id), `program` (a slug such as `claude-code`), `person` (a
+  slug or an email) and `agent` (the name the agent was given), each
+  optional and at least one present, written as one line of JSON. `claim`
+  sets it.
 - `parent` names the one task this task is part of, by its path in the
   task's own repo, as `after` does, and `board check` reports it the same way.
   A second task that needs the same work lists it in `after` instead.
@@ -85,7 +86,8 @@ returns four sections of their `open` tasks:
 - `stale`: the tasks neither available nor deferred that have no `reviewed`,
   or were reviewed more than 14 days ago. A deferred task, `someday` included,
   is left out until its deferral ends;
-- `held`: with an owner, given by `--session`, `--program` and `--person`,
+- `held`: with an owner, given by `--session`, `--program`, `--person` and
+  `--agent`,
   the tasks that owner holds that are not available, because they are
   blocked, deferred or before their `from_hour`. It is empty without one.
 
@@ -204,9 +206,10 @@ kept.
 ends, counted from today. `drop` sets `status: dropped`. `claim`, `done`,
 `defer` and `drop` refuse a task that is not open with
 `tasks::task::finished`; `reviewed` marks any task. `claim` with `--session`,
-`--program` or `--person` sets `owner` to the actor they name, refusing
-`tasks::claim::no_owner` when they name nobody. It claims an open task that
-nobody or the same owner holds, and refuses one another owner holds with `tasks::task::held`, whose `owner` field names
+`--program`, `--person` or `--agent` sets `owner` to the actor they name,
+refusing `tasks::claim::no_owner` when they name nobody. It claims an open
+task that nobody or the same owner holds, where two owners that both name a
+session are the same when their sessions match, and refuses one another owner holds with `tasks::task::held`, whose `owner` field names
 the holder. `done`, `defer`, `drop` and `reviewed` leave `owner` as it is, so
 a finished task still says who held it. No call clears `owner`; edit the task
 to hand it on.

@@ -7,7 +7,7 @@ use std::time::{Duration, SystemTime};
 
 use board_model::Code;
 use board_ops::{Elsewhere, Host, PluginError};
-use board_plugin::shape::{Actor, Person, SessionId, Slug};
+use board_plugin::shape::{Actor, Person, Prose, SessionId, Slug};
 use board_repos::{Date, Repo, Through, day_start, scope, today};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -41,7 +41,7 @@ pub(crate) struct Input {
     pub(crate) context: Option<String>,
     #[schemars(
         with = "Option<SessionId>",
-        description = "With program and person, the owner: only tasks it holds or nobody holds, \
+        description = "With program, person and agent, the owner: only tasks it holds or nobody holds, \
                        and in held the ones it holds that are not available. The owner's \
                        session, by its local_ id."
     )]
@@ -56,6 +56,11 @@ pub(crate) struct Input {
         description = "The owner's person, such as luke."
     )]
     pub(crate) person: Option<String>,
+    #[schemars(
+        with = "Option<Prose>",
+        description = "The name the owning agent was given, such as inbox foundation builder."
+    )]
+    pub(crate) agent: Option<String>,
     #[schemars(
         regex(pattern = r"^/"),
         description = "One repo's tasks: / for the board's own tree, or a notes repo's mount path \
@@ -214,7 +219,7 @@ pub(crate) fn available(host: &dyn Host, input: &Value) -> Result<Value, PluginE
         tree: &tree,
         nodes: &nodes,
     };
-    let owner = Actor::of(given.session, given.program, given.person);
+    let owner = Actor::of(given.session, given.program, given.person, given.agent);
     let [available, due_soon, stale, held] = sweep(&open, &blocked, places, &clock, owner.as_ref());
     Ok(json!(Output {
         available,
@@ -317,7 +322,8 @@ pub(crate) fn sweep(
             tree_path: tree_path(places.tree, &task.path),
         };
         let due = task.due.is_some_and(|due| due <= day.plus(DUE_SOON));
-        let held = !free && owner.is_some() && task.owner.as_ref() == owner;
+        let held =
+            !free && matches!((owner, &task.owner), (Some(owner), Some(held)) if held.same(owner));
         for (keep, section) in [free, due, !free && old, held].into_iter().zip(&mut shown) {
             if keep {
                 section.push(item.clone());

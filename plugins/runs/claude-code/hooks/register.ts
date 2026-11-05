@@ -17,12 +17,12 @@ const PR_CREATE = /(^|[\s;&|(])gh\s+pr\s+create\b/
 const PR_URL = /https:\/\/[^\s/]+\/[^\s/]+\/([^\s/]+)\/pull\/(\d+)/g
 
 type Config = { board: string; suite: string; decisionsTemplate: string }
-type Unit = { kind: 'agent' | 'task'; id: string; summary: string | undefined; noun: string }
+type Unit = { kind: 'agent' | 'task'; id: string; agent: string | undefined; summary: string | undefined; noun: string }
 const HOOK = { agent: 'subagent-stop', task: 'task-completed' }
 type Refused = { code: string; message: string }
 
-/** A shared actor shape: `{session, program, person}`, each part optional. */
-type Actor = { session?: string; program?: string; person?: string }
+/** A shared actor shape: `{session, program, person, agent}`, each part optional. */
+type Actor = { session?: string; program?: string; person?: string; agent?: string }
 
 /**
  * Who acts in this session: Claude Code, and the session by the `local_` id
@@ -104,7 +104,7 @@ async function writeRun($: EngineInterface, { board, suite }: Config, unit: Unit
     const run = {
       $type: 'runs/run/v1',
       suite,
-      by: await actor($),
+      by: { ...(await actor($)), ...(unit.agent ? { agent: unit.agent } : {}) },
       started: iso(since ?? finished),
       finished: iso(finished),
       scope: 'full',
@@ -167,7 +167,8 @@ export const register: Register = (on, options) => {
     const result = await next(e)
     if (result.block !== undefined) return result
     const noun = `${e.agent_type} subagent`
-    await writeRun($, cfg, { kind: 'agent', id: e.agent_id, summary: finalLine(e.last_assistant_message), noun })
+    const unit = { kind: 'agent', id: e.agent_id, agent: e.agent_type, summary: finalLine(e.last_assistant_message), noun } as const
+    await writeRun($, cfg, unit)
     return result
   })
 
@@ -179,7 +180,8 @@ export const register: Register = (on, options) => {
   on('classic.TaskCompleted', async ($, e, next) => {
     const result = await next(e)
     if (result.block !== undefined) return result
-    await writeRun($, cfg, { kind: 'task', id: e.task_id, summary: e.task_subject, noun: `task ${e.task_id}` })
+    const unit = { kind: 'task', id: e.task_id, agent: e.teammate_name, summary: e.task_subject, noun: `task ${e.task_id}` } as const
+    await writeRun($, cfg, unit)
     return result
   })
 
