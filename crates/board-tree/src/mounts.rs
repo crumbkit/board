@@ -317,8 +317,8 @@ impl Repositories {
     /// directory a linked worktree shares with its main one, so a linked
     /// worktree matches too. When no mount holds it, each mount whose
     /// repository has the same `origin` in its stored form, so a separate
-    /// clone matches its mount, saying whether the clone holds the mount's
-    /// commit. When no mount has that origin either, each repo record whose
+    /// clone matches its mount; when the clone holds the commit of some of
+    /// them, only those. When no mount has that origin either, each repo record whose
     /// `remote` is the stored form of that repository's `origin`, at its
     /// own path. `is_pointer` says, from a cache, which physical paths hold
     /// a pointer that parses, and `is_repo` which hold a valid repo record.
@@ -378,7 +378,12 @@ impl Repositories {
             })
             .collect();
         if !cloned.is_empty() {
-            return cloned;
+            let held = cloned
+                .iter()
+                .any(|place| place.matched == Matched::OriginWithCommit);
+            return (cloned.into_iter())
+                .filter(|place| !held || place.matched == Matched::OriginWithCommit)
+                .collect();
         }
         let reader = &mut root.reader();
         let named = |entry: &Entry| {

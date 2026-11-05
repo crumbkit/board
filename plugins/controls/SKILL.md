@@ -32,7 +32,8 @@ To run a command in a board other than the one you are in, add `-C <path>`.
    `board get <control>` shows which files a control names. `passed` is
    false when a budget is exceeded, a pin is behind or a measured control
    lists a file in `unreadable`; the call still exits 0. It exits 1 when a
-   control is degraded, and the error names each control.
+   control is degraded or a version rule's capture is invalid, and the error
+   names each control.
 2. Before you edit a file, ask which controls apply to it:
 
        board -C <board> call controls.for-path --path /<file>

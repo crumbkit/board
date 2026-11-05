@@ -539,3 +539,22 @@ fn two_boards_mounting_clones_of_one_origin_open_the_one_whose_commit_the_clone_
         b.workdir().canonicalize().unwrap()
     );
 }
+
+#[test]
+fn a_mount_of_a_clone_with_its_origin_wins_over_another_boards_repo_record_and_the_record_alone_is_used()
+ {
+    let url = "git@github.com:example-org/lib.git";
+    let (library, commit) = committed(url, &[("y.json", "1")]);
+    let mounted = board();
+    mounted.write(
+        "repos/lib.json",
+        Item::File(&mount_of(&library.path(), commit)),
+    );
+    let recorded = recording("example-org/lib", "work/lib.json");
+    let (clone, _) = committed(url, &[("y.json", "1")]);
+    let docs = clone.workdir().join("docs");
+    let both = listing(&[&recorded, &mounted]);
+    assert_eq!(opened(&docs, &both, None).unwrap(), "/repos/lib/docs");
+    let alone = listing(&[&recorded]);
+    assert_eq!(opened(&docs, &alone, None).unwrap(), "/work/lib");
+}
