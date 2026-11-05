@@ -243,18 +243,13 @@ fn the_agent_sees_the_variables_the_manifest_names_and_not_others() {
     );
 }
 
-/// A stand-in git, first on the plugin's `PATH`, that appends its
-/// environment to `git-env.txt` and runs the system's git.
-const GIT: &str = r#"#!/bin/sh
-env >> "$(dirname "$0")/git-env.txt"
-exec /usr/bin/git "$@"
-"#;
-
 #[test]
 fn git_does_not_see_the_model_credentials_that_the_agent_sees() {
     let repo = Repo::new();
     let brief = fix_sync(&repo);
-    repo.bin.write("git", Item::Executable(GIT));
+    // The stand-in appends its environment to `git-env.txt`.
+    let git = stand_in_git(r#"env >> "$(dirname "$0")/git-env.txt""#);
+    repo.bin.write("git", Item::Executable(&git));
     let extra = [
         ("ANTHROPIC_API_KEY", "test-key"),
         ("CLAUDE_CODE_OAUTH_TOKEN", "test-token"),

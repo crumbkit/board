@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use board_ops::{Host, PluginError, Run};
-use board_plugin::child::ProcessError;
+use board_plugin::child::{Exited, ProcessError};
 use board_plugin::shape::Record;
 use serde_json::{Map, Value, json};
 
@@ -28,7 +28,8 @@ const ISOLATED: [(&str, &str); 3] = [
 /// The model credentials `run` passes the agent, which git never needs.
 const HIDDEN: [&str; 2] = ["ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN"];
 /// Options that fix a diff's text, whatever the repository's own config
-/// says.
+/// says. `patch_ids` pastes these and `PATCH` into a shell script unquoted,
+/// so each must stay shell-safe: letters, digits and `-=./_` only.
 const CONFIG: [&str; 4] = ["-c", "diff.algorithm=myers", "-c", "diff.noprefix=false"];
 const DIFF: [&str; 8] = [
     "--no-color",
@@ -41,7 +42,8 @@ const DIFF: [&str; 8] = [
     "--dst-prefix=b/",
 ];
 /// The options plan/review.md gives a patch id's diff, with those a
-/// repository's config could change fixed.
+/// repository's config could change fixed. Like `CONFIG`, they must stay
+/// shell-safe.
 const PATCH: [&str; 9] = [
     "-p",
     "--full-index",
@@ -53,6 +55,10 @@ const PATCH: [&str; 9] = [
     "--src-prefix=a/",
     "--dst-prefix=b/",
 ];
+/// The exit code of `patch_ids`'s script when `git diff-tree` failed.
+const DIFF_TREE_FAILED: i32 = 2;
+/// The exit code of `patch_ids`'s script when `git patch-id` failed.
+const PATCH_ID_FAILED: i32 = 3;
 /// The directory, from the board's root, that holds every review record.
 const REVIEW_PATH: &str = "reviews/";
 /// How much of git's stderr a failure carries.
@@ -71,20 +77,23 @@ impl Repository<'_> {
         let arguments: Vec<String> = (CONFIG.iter().chain(arguments))
             .map(|argument| (*argument).to_owned())
             .collect();
-        self.ran("git", &arguments, command, stdin, false)
+        let exited = self.exited("git", &arguments, command, stdin)?;
+        if exited.code == Some(0) {
+            return Ok(exited.stdout);
+        }
+        Err(self.failure(command, &exited))
     }
 
-    /// What `program <arguments>` printed, or `review::git::failed` naming
-    /// `git <command>`. With `quiet`, anything on stderr is a failure too,
-    /// for a pipeline whose first command's exit code is lost.
-    fn ran(
+    /// How `program <arguments>` exited, or `review::git::failed` naming
+    /// `git <command>` when it did not start, ran too long or printed too
+    /// much.
+    fn exited(
         &self,
         program: &str,
         arguments: &[String],
         command: &str,
         stdin: &[u8],
-        quiet: bool,
-    ) -> Result<Vec<u8>, PluginError> {
+    ) -> Result<Exited, PluginError> {
         let run = Run {
             program,
             arguments,
@@ -94,57 +103,52 @@ impl Repository<'_> {
             added: &ISOLATED,
         };
         let root = self.root.display();
-        let exited = match self.host.run_hiding(&run, &HIDDEN) {
-            Ok(exited) => exited,
-            Err(ProcessError::NotStarted { .. }) if !self.root.is_dir() => {
-                return Err(failed(
-                    format!(
-                        "the repository's directory {root} does not exist, so git cannot run \
-                         there; check the path, or the clone a mount reads"
-                    ),
-                    Map::new(),
-                ));
-            }
-            Err(ProcessError::NotStarted { source }) => {
-                return Err(failed(
-                    format!("git cannot be run: {source}; put git on PATH"),
-                    Map::new(),
-                ));
-            }
-            Err(ProcessError::Timeout { .. }) => {
-                return Err(failed(
-                    format!(
-                        "`git {command}` timed out after {} s in {root}; run the review again \
-                         once git is not held up",
-                        TIMEOUT.as_secs()
-                    ),
-                    Map::new(),
-                ));
-            }
-            Err(ProcessError::TooLarge { limit, .. }) => {
-                return Err(failed(
-                    format!(
-                        "`git {command}` printed more than {limit} bytes in {root}; review a \
-                         shorter range"
-                    ),
-                    Map::new(),
-                ));
-            }
-        };
-        if exited.code == Some(0) && (!quiet || exited.stderr.is_empty()) {
-            return Ok(exited.stdout);
+        match self.host.run_hiding(&run, &HIDDEN) {
+            Ok(exited) => Ok(exited),
+            Err(ProcessError::NotStarted { .. }) if !self.root.is_dir() => Err(failed(
+                format!(
+                    "the repository's directory {root} does not exist, so git cannot run \
+                     there; check the path, or the clone a mount reads"
+                ),
+                Map::new(),
+            )),
+            Err(ProcessError::NotStarted { source }) => Err(failed(
+                format!("{program} cannot be run: {source}; put {program} on PATH"),
+                Map::new(),
+            )),
+            Err(ProcessError::Timeout { .. }) => Err(failed(
+                format!(
+                    "`git {command}` timed out after {} s in {root}; run the review again \
+                     once git is not held up",
+                    TIMEOUT.as_secs()
+                ),
+                Map::new(),
+            )),
+            Err(ProcessError::TooLarge { limit, .. }) => Err(failed(
+                format!(
+                    "`git {command}` printed more than {limit} bytes in {root}; review a \
+                     shorter range"
+                ),
+                Map::new(),
+            )),
         }
+    }
+
+    /// `review::git::failed` for `git <command>`, which exited as `exited`
+    /// says, with the end of its stderr.
+    fn failure(&self, command: &str, exited: &Exited) -> PluginError {
         let stderr = String::from_utf8_lossy(&exited.stderr);
         let stderr = board_ops::agent::tail(stderr.trim(), TAIL).to_owned();
         let mut fields = Map::new();
         fields.insert("stderr".to_owned(), json!(stderr));
-        Err(failed(
+        failed(
             format!(
-                "`git {command}` failed in {root}: {stderr}; check that the board's root is in a \
-                 git repository that holds the commits, and fetch them if it does not"
+                "`git {command}` failed in {}: {stderr}; check that the board's root is in a \
+                 git repository that holds the commits, and fetch them if it does not",
+                self.root.display()
             ),
             fields,
-        ))
+        )
     }
 
     fn git(&self, arguments: &[&str]) -> Result<String, PluginError> {
@@ -201,14 +205,29 @@ impl Repository<'_> {
         }
         let stdin = commits.join("\n") + "\n";
         // A commit's patch can be larger than Board keeps of a process's
-        // output, so git pipes it to patch-id and only the ids come back.
+        // output, so git pipes it to patch-id and only the ids come back. A
+        // pipeline's status is its last command's, so diff-tree echoes its
+        // own status to fd 4, which the command substitution captures, while
+        // patch-id writes the ids to the script's stdout through fd 3. git
+        // may print hints on stderr and still succeed, so only the two exit
+        // codes decide whether it failed.
         let config = CONFIG.join(" ");
         let script = format!(
-            "git {config} diff-tree --stdin {} | git {config} patch-id --verbatim",
+            "exec 3>&1\n\
+             status=$( {{ {{ git {config} diff-tree --stdin {}; echo $? >&4; }} \
+             | git {config} patch-id --verbatim >&3; }} 4>&1 ) || exit {PATCH_ID_FAILED}\n\
+             [ \"$status\" = 0 ] || exit {DIFF_TREE_FAILED}\n",
             PATCH.join(" ")
         );
         let arguments = ["-c".to_owned(), script];
-        let listed = self.ran("sh", &arguments, "diff-tree", stdin.as_bytes(), true)?;
+        let pipeline = "diff-tree | git patch-id";
+        let exited = self.exited("sh", &arguments, pipeline, stdin.as_bytes())?;
+        let listed = match exited.code {
+            Some(0) => exited.stdout,
+            Some(DIFF_TREE_FAILED) => return Err(self.failure("diff-tree", &exited)),
+            Some(PATCH_ID_FAILED) => return Err(self.failure("patch-id", &exited)),
+            _ => return Err(self.failure(pipeline, &exited)),
+        };
         Ok((String::from_utf8_lossy(&listed).lines())
             .filter_map(|line| {
                 let (patch_id, commit) = line.split_once(' ')?;
@@ -343,5 +362,20 @@ pub(crate) fn at<'a>(host: &'a dyn Host, root: &Path) -> Repository<'a> {
     Repository {
         host,
         root: root.to_path_buf(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{CONFIG, PATCH};
+
+    #[test]
+    fn the_options_pasted_into_the_patch_id_script_are_shell_safe() {
+        for option in CONFIG.iter().chain(&PATCH) {
+            assert!(
+                (option.chars()).all(|c| c.is_ascii_alphanumeric() || "-=./_".contains(c)),
+                "{option}"
+            );
+        }
     }
 }

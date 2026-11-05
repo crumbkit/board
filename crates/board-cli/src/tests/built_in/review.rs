@@ -72,6 +72,14 @@ fn git(directory: &Path, arguments: &[&str]) -> String {
     text(&ran.stdout).trim().to_owned()
 }
 
+/// A stand-in git for the plugin's `PATH`, whose first entry is its own
+/// directory: it runs `before`, then the git that follows on `PATH`.
+fn stand_in_git(before: &str) -> String {
+    format!(
+        "#!/bin/sh\n{before}\nhere=$(dirname \"$0\")\nPATH=${{PATH#\"$here:\"}}\nexport PATH\nexec git \"$@\"\n"
+    )
+}
+
 /// Commits everything in `directory` and returns the commit.
 fn commit_all(directory: &Path, message: &str) -> String {
     git(directory, &["add", "-A"]);

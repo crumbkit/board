@@ -829,3 +829,37 @@ fn a_commit_whose_patch_is_larger_than_board_keeps_of_a_process_is_covered_by_it
         (&json!(1), &json!([path]))
     );
 }
+
+#[test]
+fn git_printing_a_hint_on_stderr_does_not_stop_a_range_being_covered() {
+    let repo = Repo::new();
+    let (base, head, _) = reviewed(&repo);
+    // git prints hints like this one for a repository with a grafts file,
+    // and exits 0.
+    let git = stand_in_git(r#"echo "hint: support for grafts is deprecated" >&2"#);
+    repo.bin.write("git", Item::Executable(&git));
+    let output = covered(&repo, &[]);
+    assert_eq!(output["commits"], json!(2), "{output} {base} {head}");
+}
+
+#[test]
+fn git_diff_tree_failing_inside_the_patch_id_pipeline_is_refused_and_named() {
+    let repo = Repo::new();
+    reviewed(&repo);
+    let git = stand_in_git(
+        r#"case " $* " in *" diff-tree --stdin "*) echo "fatal: bad object" >&2; exit 128;; esac"#,
+    );
+    repo.bin.write("git", Item::Executable(&git));
+    let (code, refused) = repo.call("covered", &["--base", "main"]);
+    assert_eq!(
+        (code, &refused["code"]),
+        (1, &json!("review::git::failed")),
+        "{refused}"
+    );
+    let message = refused["message"].as_str().unwrap();
+    assert!(
+        message.starts_with("`git diff-tree` failed in "),
+        "{message}"
+    );
+    assert!(message.contains(": fatal: bad object; "), "{message}");
+}
