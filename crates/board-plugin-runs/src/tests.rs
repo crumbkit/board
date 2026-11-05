@@ -41,7 +41,7 @@ fn the_manifest_parses_as_a_built_in_one_with_its_types_and_capabilities() {
         (manifest.name.as_str(), manifest.version.as_str()),
         ("runs", "0.1.0")
     );
-    assert!(manifest.run.is_empty());
+    assert_eq!(manifest.run, Vec::<String>::new());
     let types: Vec<&str> = manifest.types.iter().map(RecordType::as_str).collect();
     assert_eq!(types, [SuiteRecord::TYPE, RunRecord::TYPE]);
     let names: Vec<&str> = (manifest.capabilities.iter())

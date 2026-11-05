@@ -136,7 +136,7 @@ fn find_filters_by_capability_and_skips_broken_plugins() {
         ["notes.search false", "tasks.search true"]
     );
     assert_eq!(find(Some("due"), &[]), ["tasks.due true"]);
-    assert!(find(Some("late"), &[]).is_empty());
+    assert_eq!(find(Some("late"), &[]), Vec::<String>::new());
     assert_eq!(
         find(None, &[]),
         ["notes.search false", "tasks.due true", "tasks.search true"]

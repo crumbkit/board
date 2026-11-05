@@ -73,7 +73,7 @@ fn the_same_schema_again_writes_nothing_and_a_different_one_is_refused() {
     open(&board).type_add(&note(1), SCHEMA.as_bytes()).unwrap();
     let same = r#"{"required": ["title"], "type": "object"}"#;
     let again = open(&board).type_add(&note(1), same.as_bytes()).unwrap();
-    assert!(again.writes.is_empty());
+    assert_eq!(again.writes, Vec::new());
     assert_eq!(again.commit, None);
     let other = r#"{"type": "object", "required": ["title", "body"]}"#;
     let refused = open(&board)
@@ -187,7 +187,7 @@ fn an_equal_schema_left_uncommitted_is_committed_and_a_committed_one_is_left_as_
     assert_eq!(committed.commit, Some(head.id));
     assert!(head.files.contains_key(AT), "{:?}", head.files.keys());
     let again = open(&board).type_add(&note(1), SCHEMA.as_bytes()).unwrap();
-    assert!(again.writes.is_empty());
+    assert_eq!(again.writes, Vec::new());
     assert_eq!(again.commit, None);
 }
 

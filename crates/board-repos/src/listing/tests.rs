@@ -146,7 +146,7 @@ fn covering_names_the_repos_covering_the_remote_and_the_personal_ones() {
         )
     );
     let (covered, _) = covering("notes", &found(), None).unwrap();
-    assert!(covered.is_empty());
+    assert_eq!(covered, Vec::<String>::new());
 }
 
 #[test]

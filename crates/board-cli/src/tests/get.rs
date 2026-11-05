@@ -120,7 +120,7 @@ fn get_answers_at_most_max_limit_paths_and_refuses_one_more() {
         (refused.code, refused.error.as_deref()),
         (2, Some("board::cli::usage"))
     );
-    assert!(refused.stdout.is_empty());
+    assert_eq!(refused.stdout, b"");
     let stderr = String::from_utf8(refused.stderr).unwrap();
     let limit = board_ops::MAX_LIMIT;
     let message =
@@ -135,7 +135,7 @@ fn get_answers_at_most_max_limit_paths_and_refuses_one_more() {
     arguments.extend(std::iter::repeat_n("/projects/p", limit + 1));
     let refused = board_cached(scenario.workdir(), Some(cache.path()), &arguments);
     assert_eq!(refused.code, 2);
-    assert!(refused.stderr.is_empty());
+    assert_eq!(refused.stderr, b"");
     let failure = json(&refused);
     assert_eq!(
         (

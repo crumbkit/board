@@ -73,7 +73,7 @@ A claim.[^1] Another.[^note]
 
 #[test]
 fn bytes_that_are_not_utf8_have_no_links() {
-    assert!(links(b"[a](a.md) \xff").is_empty());
+    assert_eq!(links(b"[a](a.md) \xff"), Vec::<String>::new());
     assert_eq!(links(b"[a](a.md) x"), ["a.md"]);
 }
 

@@ -108,7 +108,7 @@ fn the_manifest_parses_as_board_reads_a_built_in_one_and_offers_thread() {
         (manifest.name.as_str(), manifest.version.as_str()),
         ("requests", "0.1.0")
     );
-    assert!(manifest.run.is_empty());
+    assert_eq!(manifest.run, Vec::<String>::new());
     let types: Vec<&str> = manifest.types.iter().map(RecordType::as_str).collect();
     assert_eq!(types, ["requests/reply/v1"]);
     let [thread] = &manifest.capabilities[..] else {

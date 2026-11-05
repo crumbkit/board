@@ -76,7 +76,7 @@ fn a_directory_that_does_not_exist_is_refused_and_one_that_exists_is_admitted() 
     let scenario = board();
     let refused = board_in(scenario.workdir(), &["-C", "nowhere", "check"]);
     assert_eq!(refused.code, 2);
-    assert!(refused.stdout.is_empty());
+    assert_eq!(refused.stdout, b"");
     assert_eq!(
         text(&refused.stderr),
         format!(
@@ -114,7 +114,7 @@ fn a_refused_directory_is_an_error_document_with_json_and_an_admitted_one_is_a_r
     let scenario = board();
     let refused = board_in(scenario.workdir(), &["-C", "nowhere", "--json", "check"]);
     assert_eq!(refused.code, 2);
-    assert!(refused.stderr.is_empty());
+    assert_eq!(refused.stderr, b"");
     let error = json(&refused);
     assert_eq!(error["schema"], "board/failure/v1");
     assert_eq!(error["code"], "board::cli::usage");

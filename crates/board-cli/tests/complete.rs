@@ -37,7 +37,7 @@ fn offered(
         .output()
         .unwrap();
     assert_eq!(output.status.code(), Some(0));
-    assert!(output.stderr.is_empty());
+    assert_eq!(output.stderr, b"");
     String::from_utf8(output.stdout).unwrap()
 }
 

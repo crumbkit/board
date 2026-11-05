@@ -16,7 +16,10 @@ fn an_import_is_a_token_that_starts_with_an_at_sign() {
 
 #[test]
 fn an_at_sign_inside_a_word_is_not_an_import() {
-    assert!(imports("mail owner@example.com, or write @ alone").is_empty());
+    assert_eq!(
+        imports("mail owner@example.com, or write @ alone"),
+        Vec::<String>::new()
+    );
 }
 
 #[test]

@@ -103,21 +103,21 @@ fn a_prefix_through_a_mount_lists_the_mounted_commit() {
 #[test]
 fn a_prefix_that_matches_nothing_offers_nothing() {
     let scenario = tasks();
-    assert!(complete(&scenario, "/tasks/z").is_empty());
-    assert!(complete(&scenario, "/missing/t").is_empty());
+    assert_eq!(complete(&scenario, "/tasks/z"), Vec::<String>::new());
+    assert_eq!(complete(&scenario, "/missing/t"), Vec::<String>::new());
 }
 
 #[test]
 fn a_prefix_beneath_a_file_offers_nothing_while_one_beneath_its_directory_does() {
     let scenario = tasks();
-    assert!(complete(&scenario, "/tasks/t1/").is_empty());
+    assert_eq!(complete(&scenario, "/tasks/t1/"), Vec::<String>::new());
     assert_eq!(complete(&scenario, "/tasks/done/"), ["/tasks/done/t3"]);
 }
 
 #[test]
 fn a_prefix_without_a_leading_slash_offers_nothing_while_the_same_with_one_does() {
     let scenario = tasks();
-    assert!(complete(&scenario, "tasks/t2").is_empty());
+    assert_eq!(complete(&scenario, "tasks/t2"), Vec::<String>::new());
     assert_eq!(complete(&scenario, "/tasks/t2"), ["/tasks/t2"]);
 }
 

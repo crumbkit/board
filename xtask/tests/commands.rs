@@ -24,7 +24,7 @@ fn lint_with_an_extra_argument_prints_the_usage_and_lint_alone_lints() {
     let lint = xtask(&["lint"]).unwrap();
     let stdout = String::from_utf8(lint.stdout).unwrap();
     assert_eq!(lint.status.code(), Some(0), "{stdout}");
-    assert!(!stdout.is_empty());
+    assert_ne!(stdout, "");
 }
 
 #[test]

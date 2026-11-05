@@ -110,7 +110,7 @@ fn the_manifest_parses_as_board_reads_a_built_in_one_and_names_no_program_to_run
         (manifest.name.as_str(), manifest.version.as_str()),
         ("plans", "0.1.0")
     );
-    assert!(manifest.run.is_empty());
+    assert_eq!(manifest.run, Vec::<String>::new());
     let types: Vec<&str> = manifest.types.iter().map(RecordType::as_str).collect();
     assert_eq!(
         types,

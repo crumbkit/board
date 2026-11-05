@@ -119,7 +119,7 @@ fn links_in_code_and_to_other_sites_are_not_references_and_their_twins_are() {
     let quoted = "`[a](/nowhere)`\n\n```\n[b](/nowhere)\n```\n\n[c](https://x.example/nowhere)";
     scenario.write("notes/a.md", Item::File(quoted));
     assert_eq!(status(&scenario, "notes/a.md"), Status::Ok);
-    assert!(refs(&scenario, "/notes/a.md", None).from.is_empty());
+    assert_eq!(refs(&scenario, "/notes/a.md", None).from, Vec::new());
     scenario.write("notes/a.md", Item::File("[a](/nowhere)"));
     assert_eq!(
         status(&scenario, "notes/a.md"),

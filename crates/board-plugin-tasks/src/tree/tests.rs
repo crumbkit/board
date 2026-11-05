@@ -156,13 +156,13 @@ fn a_parent_waits_on_its_open_children_and_on_the_open_descendants_of_a_finished
         "Choose store",
     );
     let finished = flows_with(&[store, dropped]);
-    assert!(
+    assert_eq!(
         waits_on(
             &forest(&finished),
             &finished,
             &at("dispatch-owns-flow-documents")
-        )
-        .is_empty()
+        ),
+        Vec::<String>::new()
     );
 }
 

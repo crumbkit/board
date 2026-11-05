@@ -69,5 +69,5 @@ fn bench_against_is_refused_when_the_release_build_left_no_board() {
     let stderr = String::from_utf8(output.stderr).unwrap();
     assert!(!output.status.success());
     assert!(stderr.contains("xtask::bench::no_board"), "{stderr}");
-    assert!(output.stdout.is_empty());
+    assert_eq!(output.stdout, b"");
 }

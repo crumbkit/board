@@ -121,7 +121,7 @@ fn a_type_whose_shipped_schema_is_missing_or_unusable_is_a_bad_manifest_naming_t
         );
         assert!(message.contains("notes/note/v1"), "{message}");
         assert!(message.contains(reason), "{message}");
-        assert!(found[0].schemas.is_empty());
+        assert_eq!(found[0].schemas, Vec::new());
     }
     scenario.write(SHIPPED, Item::File(r#"{"type": "object"}"#));
     let found = installed(&plugins(&scenario)).unwrap();
@@ -169,7 +169,7 @@ fn a_built_in_plugin_must_ship_a_compiling_schema_for_each_declared_type() {
         "the schema the plugin ships for tasks/task/v1 is missing or cannot be read"
     );
     let broken = built_in(3, manifest(), &shipped(serde_json::json!({"type": 5})));
-    assert!(broken.schemas.is_empty());
+    assert_eq!(broken.schemas, Vec::new());
     let refused = broken.manifest.unwrap_err();
     assert_eq!(refused.code(), Code::PluginBadManifest);
     assert!(

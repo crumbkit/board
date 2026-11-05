@@ -14,7 +14,7 @@ mod tests {
 
     #[test]
     fn the_binary_name_is_one_lowercase_word_a_shell_can_run() {
-        assert!(!BINARY_NAME.is_empty());
+        assert_ne!(BINARY_NAME, "");
         assert!(
             BINARY_NAME
                 .bytes()
@@ -24,7 +24,7 @@ mod tests {
 
     #[test]
     fn the_display_name_is_a_name_without_surrounding_space() {
-        assert!(!DISPLAY_NAME.is_empty());
+        assert_ne!(DISPLAY_NAME, "");
         assert_eq!(DISPLAY_NAME.trim(), DISPLAY_NAME);
     }
 }

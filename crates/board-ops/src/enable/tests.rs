@@ -75,7 +75,7 @@ fn enabling_twice_writes_nothing_the_second_time() {
     let again = open(&board)
         .plugin_enable(Some(&plugins), None, &notes(), &[])
         .unwrap();
-    assert!(again.put.writes.is_empty());
+    assert_eq!(again.put.writes, Vec::new());
     assert_eq!(again.put.commit, None);
 }
 
@@ -193,7 +193,7 @@ fn the_same_schema_in_another_layout_is_left_alone_and_not_reported() {
     let report = open(&board)
         .plugin_enable(Some(&plugins), None, &notes(), &[])
         .unwrap();
-    assert!(report.replaced.is_empty());
+    assert_eq!(report.replaced, Vec::<String>::new());
     assert_eq!(report.put.writes.len(), 1, "only the config is written");
     assert_eq!(read(&board, at), same.as_bytes());
 }
@@ -204,7 +204,7 @@ fn a_new_schema_is_written_but_not_reported_as_replaced() {
     let report = open(&board)
         .plugin_enable(Some(&plugins), None, &notes(), &[])
         .unwrap();
-    assert!(report.replaced.is_empty());
+    assert_eq!(report.replaced, Vec::<String>::new());
 }
 
 #[test]
@@ -345,7 +345,7 @@ fn a_schema_the_plugin_no_longer_ships_is_kept_while_a_record_has_its_type_and_r
     let report = open(&board)
         .plugin_enable(Some(&plugins), None, &notes(), &[])
         .unwrap();
-    assert!(report.removed.is_empty());
+    assert_eq!(report.removed, Vec::<String>::new());
     let old: RecordType = "notes/old/v1".parse().unwrap();
     assert_eq!(
         report.kept,
@@ -366,7 +366,7 @@ fn a_schema_the_plugin_no_longer_ships_is_kept_while_a_record_has_its_type_and_r
     let report = open(&board)
         .plugin_enable(Some(&plugins), None, &notes(), &[])
         .unwrap();
-    assert!(report.kept.is_empty());
+    assert_eq!(report.kept, Vec::new());
     assert_eq!(report.removed, [OLD]);
     assert!(!board.workdir().join(OLD).exists());
 }
@@ -455,7 +455,7 @@ fn a_degraded_record_of_the_type_keeps_its_schema_and_a_valid_one_of_another_typ
     let report = open(&board)
         .plugin_enable(Some(&plugins), None, &notes(), &[])
         .unwrap();
-    assert!(report.kept.is_empty());
+    assert_eq!(report.kept, Vec::new());
     assert_eq!(report.removed, [OLD]);
 }
 
@@ -467,7 +467,7 @@ fn an_enable_of_an_enabled_plugin_only_removes_what_it_no_longer_ships() {
     let report = open(&board)
         .plugin_enable(Some(&plugins), None, &notes(), &[])
         .unwrap();
-    assert!(report.put.writes.is_empty());
+    assert_eq!(report.put.writes, Vec::new());
     assert_eq!(report.removed, [OLD]);
     assert!(!board.workdir().join(OLD).exists());
 }
