@@ -159,6 +159,12 @@ impl Repo {
     /// Writes `text` at `path`, commits it, and returns the commit.
     fn commit(&self, path: &str, text: &str) -> String {
         self.write(path, text);
+        // A rewrite of the same size within the index's second can look
+        // unchanged to git, so the file is hashed again.
+        git(
+            self.root(),
+            &["rm", "-q", "--cached", "--ignore-unmatch", path],
+        );
         commit_all(self.root(), &format!("change {path}"))
     }
 
