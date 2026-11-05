@@ -13,12 +13,16 @@ use crate::Plans;
 
 /// A host that answers every query with `rows` and records what it was
 /// asked, or answers with `failing`'s refusal of a query that names no
-/// table.
-struct Answering {
+/// table. With `board`, it queries that board and puts there instead, after
+/// running `between`. It records each put's lines either way.
+pub(crate) struct Answering {
     rows: Vec<Vec<Value>>,
-    asked: RefCell<Vec<(String, Limit)>>,
+    pub(crate) asked: RefCell<Vec<(String, Limit)>>,
     failing: Option<Board>,
-    settings: Settings,
+    pub(crate) board: Option<Board>,
+    pub(crate) between: RefCell<Option<Box<dyn FnOnce()>>>,
+    pub(crate) puts: RefCell<Vec<Vec<Value>>>,
+    pub(crate) settings: Settings,
 }
 
 impl Host for Answering {
@@ -26,6 +30,9 @@ impl Host for Answering {
         self.asked.borrow_mut().push((sql.to_owned(), limit));
         if let Some(board) = &self.failing {
             board.query("SELECT logical FROM nowhere", 1, None, None)?;
+        }
+        if let Some(board) = &self.board {
+            return board.query(sql, usize::MAX, None, None);
         }
         Ok(QueryReport {
             columns: vec!["logical".into(), "code".into(), "body".into()],
@@ -55,9 +62,24 @@ impl Host for Answering {
 
     fn put(
         &self,
-        _lines: &[serde_json::Value],
+        lines: &[serde_json::Value],
     ) -> Result<board_ops::PutReport, board_ops::PutError> {
-        panic!("this plugin writes no records")
+        self.puts.borrow_mut().push(lines.to_vec());
+        if let Some(between) = self.between.take() {
+            between();
+        }
+        let Some(board) = &self.board else {
+            return Ok(board_ops::PutReport {
+                writes: Vec::new(),
+                removed: Vec::new(),
+                absent: Vec::new(),
+                commit: None,
+            });
+        };
+        let text = (lines.iter().map(Value::to_string))
+            .collect::<Vec<_>>()
+            .join("\n");
+        board.put_batch(&mut text.as_bytes())
     }
 
     fn call(
@@ -103,11 +125,14 @@ impl Host for Answering {
     }
 }
 
-fn host(rows: Vec<Vec<Value>>) -> Answering {
+pub(crate) fn host(rows: Vec<Vec<Value>>) -> Answering {
     Answering {
         rows,
         asked: RefCell::default(),
         failing: None,
+        board: None,
+        between: RefCell::default(),
+        puts: RefCell::default(),
         settings: Settings {
             now: std::time::SystemTime::UNIX_EPOCH,
             day_start: None,
@@ -121,7 +146,7 @@ fn host(rows: Vec<Vec<Value>>) -> Answering {
 
 /// A `plans/question/v1` body asked at `asked`, with `fields` added or
 /// replacing its own.
-fn body(asked: &str, fields: &Value) -> Value {
+pub(crate) fn body(asked: &str, fields: &Value) -> Value {
     let mut record = json!({
         "$type": "plans/question/v1",
         "question": "Which way?",
@@ -324,6 +349,16 @@ fn twins() -> Vec<(Value, Value)> {
             json!({"recommendation": null}),
         ),
         (json!({"blocks": ["release"]}), json!({"blocks": "release"})),
+        (json!({"why": 1}), json!({"why": "It is simpler."})),
+        (
+            json!({"note": false}),
+            json!({"note": "Nobody wrote it down."}),
+        ),
+        (json!({"mount": ["/repos/r"]}), json!({"mount": "/repos/r"})),
+        (
+            json!({"context_path": {}}),
+            json!({"context_path": "/projects/a/notes/background"}),
+        ),
         (options(json!("a")), options(json!([]))),
         (json!({"options": Value::Null}), json!({})),
         (
@@ -390,13 +425,46 @@ fn a_question_is_returned_with_its_original_time_and_null_for_what_it_leaves_out
             "session": "local_0a1b",
             "options": [{"id": "a", "text": "A"}],
             "recommendation": "a",
+            "why": null,
             "blocks": null,
+            "note": null,
+            "mount": "/repos/r",
+            "context_path": null,
         })
     );
 }
 
+#[test]
+fn a_question_is_returned_with_the_reasoning_and_background_it_carries() {
+    let fields = json!({
+        "options": [{"id": "a", "text": "A"}],
+        "recommendation": "a",
+        "why": "It is simpler.",
+        "note": "Nobody wrote down the deadline.",
+        "mount": "/repos/r",
+        "context_path": "/projects/a/notes/background.md",
+    });
+    let rows = vec![row("/q/a", None, body("2026-10-01T09:00:00Z", &fields))];
+    let (_, output) = opened(rows, &json!({}));
+    let question = &output["questions"][0];
+    assert_eq!(
+        (
+            &question["why"],
+            &question["note"],
+            &question["mount"],
+            &question["context_path"]
+        ),
+        (
+            &json!("It is simpler."),
+            &json!("Nobody wrote down the deadline."),
+            &json!("/repos/r"),
+            &json!("/projects/a/notes/background.md"),
+        )
+    );
+}
+
 /// A board that enables plans, built in, holding `questions`.
-fn plans_board(questions: &[(&str, Value)]) -> (Scenario, Board) {
+pub(crate) fn plans_board(questions: &[(&str, Value)]) -> (Scenario, Board) {
     let scenario = Scenario::new();
     scenario.write(
         ".board/board.json",

@@ -309,6 +309,7 @@ dependencies = [
  "board-scenario",
  "board-validate",
  "bolero",
+ "humantime",
  "proptest",
  "schemars",
  "serde",

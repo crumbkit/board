@@ -1,5 +1,6 @@
-//! The plans plugin through the binary: what `plans.open` lists, and what
-//! the shipped schemas admit. These were the plugin's pytest parity suite.
+//! The plans plugin through the binary: what `plans.open` lists, what
+//! `plans.answer` records, and what the shipped schemas admit. Most were the
+//! plugin's pytest parity suite.
 
 use super::*;
 
@@ -88,7 +89,8 @@ fn open_lists_open_questions_oldest_first_and_leaves_out_answered_and_withdrawn_
 fn open_shows_what_the_owner_needs_to_answer() {
     let board = board();
     let options = json!([{"id": "a", "text": "Go."}, {"id": "b", "text": "Stay."}]);
-    let fields = json!({"options": options, "recommendation": "a", "blocks": "step 2"});
+    let fields =
+        json!({"options": options, "recommendation": "a", "why": "It ships.", "blocks": "step 2"});
     board.write("projects/a/questions/q.json", &open(&fields));
     let (_, output) = listed(&board, &[]);
     assert_eq!(
@@ -100,9 +102,71 @@ fn open_shows_what_the_owner_needs_to_answer() {
             "session": "local_0a1b",
             "options": options,
             "recommendation": "a",
+            "why": "It ships.",
             "blocks": "step 2",
+            "note": null,
+            "mount": null,
+            "context_path": null,
         }])
     );
+}
+
+#[test]
+fn answer_records_the_owners_choice_and_open_no_longer_lists_the_question() {
+    let board = board();
+    let options = json!([{"id": "a", "text": "Go."}, {"id": "b", "text": "Stay."}]);
+    board.write(
+        "projects/a/questions/q.json",
+        &open(&json!({"options": options})),
+    );
+    let flags = [
+        "--path",
+        "/projects/a/questions/q",
+        "--option",
+        "b",
+        "--written_by",
+        "board-app/phone",
+    ];
+    let output = board.call("plans.answer", &flags);
+    assert_eq!(
+        (&output["answer"], &output["choice"], &output["words"]),
+        (
+            &json!("/projects/a/answers/q"),
+            &json!("b"),
+            &json!("Stay.")
+        )
+    );
+    let recorded: Value = serde_json::from_str(&board.read("projects/a/answers/q.json")).unwrap();
+    assert_eq!(recorded["written_by"], "board-app/phone");
+    assert_eq!(recorded["answered"], output["answered"]);
+    let asked: Value = serde_json::from_str(&board.read("projects/a/questions/q.json")).unwrap();
+    assert_eq!(asked["status"], "answered");
+    assert_eq!(listed(&board, &[]).0, Vec::<String>::new());
+    assert_eq!(
+        board.checked("/projects/a/"),
+        codes(&[
+            ("/projects/a/answers/q", None),
+            ("/projects/a/questions/q", None),
+        ])
+    );
+}
+
+#[test]
+fn answer_refuses_an_option_the_question_does_not_offer_and_records_one_it_does() {
+    let board = board();
+    let options = json!([{"id": "a", "text": "Go."}]);
+    board.write(
+        "projects/a/questions/q.json",
+        &open(&json!({"options": options})),
+    );
+    let flags = |option| ["--path", "/projects/a/questions/q", "--option", option];
+    let refused = board.refusal("plans.answer", &flags("c"));
+    assert_eq!(
+        refused["code"], "plans::answer::unknown_option",
+        "{refused}"
+    );
+    let output = board.call("plans.answer", &flags("a"));
+    assert_eq!(output["choice"], "a");
 }
 
 #[test]
