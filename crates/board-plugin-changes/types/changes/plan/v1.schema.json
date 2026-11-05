@@ -1,6 +1,6 @@
 {
   "additionalProperties": false,
-  "description": "`changes/plan/v1`: one plan for a change, the records it uses, the paths\nit will edit and the records attached while it was the newest.\n\nA plan lives at `/changes/<name>/plans/<stamp>`, beside its text at\n`<stamp>.md`; the change's `plan` names the newest. A plan for a build\nchange that `changes.plan` wrote always has `paths`.",
+  "description": "`changes/plan/v1`: one plan for a change, the records it uses, the paths\nit will edit and the records attached while it was the change's plan.\n\nA plan lives at `/changes/<name>/plans/<stamp>`, beside its text at\n`<stamp>.md`; the change's `plan` names its current one. A plan for a build\nchange that `changes.plan` wrote always has `paths`.",
   "properties": {
     "$type": {
       "const": "changes/plan/v1",

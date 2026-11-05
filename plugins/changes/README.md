@@ -30,7 +30,8 @@ phases.
 - `phase`: `plan`, `build`, `review`, `land`, `done`, or `dropped` to end a
   change early. `paused` holds a change the keeper took out of `build`.
 - `mount` references the repository's `board/mount/v1` record, and `plan`
-  the change's newest `changes/plan/v1`. `board check` reports a reference
+  the change's current `changes/plan/v1`, which `changes.plan` sets to
+  the plan it writes. `board check` reports a reference
   that reaches nothing (`board::ref::dangling`) or a record of another type
   (`board::ref::wrong_type`).
 - `tickets` references the `jira/issue/v1` or `github/issue/v1` records the
@@ -74,7 +75,7 @@ that one record.
   the change will edit, in which `*` also matches `/`. A build change's plan
   always has them; a prototype's plan has none.
 - `records` lists the runs, reviews, decisions and other records `attach
-  --ref` attached while this plan was the newest. The records a change owns
+  --ref` attached while this plan was the change's plan. The records a change owns
   are those every one of its plans lists.
 
 `changes/prototype/v1` at `/changes/<name>/prototype.json` makes the change

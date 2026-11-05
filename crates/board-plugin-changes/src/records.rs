@@ -288,10 +288,10 @@ impl Clone for PrototypeRecord {
 }
 
 /// `changes/plan/v1`: one plan for a change, the records it uses, the paths
-/// it will edit and the records attached while it was the newest.
+/// it will edit and the records attached while it was the change's plan.
 ///
 /// A plan lives at `/changes/<name>/plans/<stamp>`, beside its text at
-/// `<stamp>.md`; the change's `plan` names the newest. A plan for a build
+/// `<stamp>.md`; the change's `plan` names its current one. A plan for a build
 /// change that `changes.plan` wrote always has `paths`.
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]

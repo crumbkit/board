@@ -315,7 +315,7 @@ pub(crate) fn attach(host: &dyn Host, input: &Value) -> Result<Value, PluginErro
     let mut lines = Vec::new();
     if let Some(reference) = &asked.reference {
         check_target(host, reference, &[])?;
-        let (plan_path, mut plan, plan_blob) = newest_plan(host, &path, &change)?;
+        let (plan_path, mut plan, plan_blob) = current_plan(host, &path, &change)?;
         add(&mut plan.records, reference);
         lines.push(json!({"path": plan_path, "expect": plan_blob, "record": plan}));
     }
@@ -341,7 +341,7 @@ pub(crate) fn attach(host: &dyn Host, input: &Value) -> Result<Value, PluginErro
 
 /// The plan record the change at `path` names as its plan, its blob, or
 /// `changes::attach::no_plan` when it names none that Board reads.
-fn newest_plan(
+fn current_plan(
     host: &dyn Host,
     path: &str,
     change: &ChangeRecord,
