@@ -382,6 +382,58 @@ fn a_mounted_answer_naming_its_question_in_its_own_board_answers_it() {
     }
 }
 
+/// `plans.answer` writes through a mount into the question's own board, so
+/// the answer names the question by its path there, which is how a
+/// reference in that board is read; `open` then leaves the question out.
+#[test]
+fn an_answer_written_through_a_mount_names_its_question_in_that_board() {
+    let board = board();
+    // The mounted board commits its puts, its schemas admit any object, and
+    // its working tree holds the commit, as a checkout would.
+    let config = r#"{"$type": "board/config/v1", "commit_on_put": true}"#.to_owned();
+    let any = r#"{"type": "object"}"#.to_owned();
+    let files = [
+        (".board/board.json", config),
+        (".board/types/plans/question/v1.schema.json", any.clone()),
+        (".board/types/plans/answer/v1.schema.json", any),
+        ("projects/m/questions/q.json", open(&json!({}))),
+        ("projects/m/questions/waiting.json", open(&json!({}))),
+    ];
+    let library = Scenario::new();
+    for (path, text) in &files {
+        library.write(path, Item::File(text));
+    }
+    let tree: Vec<(&str, &str)> = files.iter().map(|(p, t)| (*p, t.as_str())).collect();
+    let commit = library.commit(&tree);
+    library
+        .track(commit)
+        .write(".git/config", Item::Appended(IDENTITY));
+    mount(&board, "lib.json", &library, commit);
+    let flags = [
+        "--path",
+        "/lib/projects/m/questions/q",
+        "--option",
+        "none",
+        "--words",
+        "Neither.",
+    ];
+    let output = board.call("plans.answer", &flags);
+    assert_eq!(output["answer"], "/lib/projects/m/answers/q");
+    let text = std::fs::read_to_string(library.workdir().join("projects/m/answers/q.json"));
+    let recorded: Value = serde_json::from_str(&text.unwrap()).unwrap();
+    assert_eq!(recorded["question"], "/projects/m/questions/q");
+    let (paths, _) = listed(&board, &[]);
+    assert_eq!(paths, ["/lib/projects/m/questions/waiting"]);
+    let refused = board.refusal(
+        "plans.withdraw",
+        &[flags[0], flags[1], "--reason", "Stale."],
+    );
+    assert_eq!(
+        refused["code"], "plans::withdraw::already_answered",
+        "{refused}"
+    );
+}
+
 #[test]
 fn board_lists_plans_as_enabled_and_enabling_wrote_the_schemas_it_ships() {
     let board = board();

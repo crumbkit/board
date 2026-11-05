@@ -98,7 +98,9 @@ pub(crate) fn answer(host: &dyn Host, input: &Value) -> Result<Value, PluginErro
     let answered = humantime::format_rfc3339_seconds(host.settings().now).to_string();
     let mut record = Map::new();
     record.insert("$type".to_owned(), json!(AnswerRecord::TYPE));
-    record.insert("question".to_owned(), json!(path));
+    // A reference is read from the root of the board it is in, and the
+    // answer lands in the question's board.
+    record.insert("question".to_owned(), json!(asked.own));
     record.insert("choice".to_owned(), json!(option));
     record.insert("words".to_owned(), json!(words));
     record.insert("answered".to_owned(), json!(answered));

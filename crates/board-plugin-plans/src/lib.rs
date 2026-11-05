@@ -86,7 +86,7 @@ fn manifest() -> Value {
         }, {
             "name": "answer",
             "description": "Record the owner's answer to an open question. The answer is what \
-                marks the question answered; the question itself is left unchanged.",
+                marks the question answered; the question's content is left unchanged.",
             "inputSchema": schema_of::<answer::Input>(SchemaSettings::draft2020_12()),
             "outputSchema": schema_of::<answer::Output>(SchemaSettings::draft2020_12().for_serialize()),
             "annotations": {

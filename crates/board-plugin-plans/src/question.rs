@@ -8,21 +8,35 @@ use serde_json::{Map, Value, json};
 
 use crate::records::{AnswerRecord, QuestionRecord};
 
+/// SQL for the question `q`'s path in its own board, the path a reference
+/// from that board names it by.
+macro_rules! own_path {
+    () => {
+        "'/' || CASE WHEN q.path LIKE '%.json' THEN substr(q.path, 1, length(q.path) - 5) ELSE q.path END"
+    };
+}
+
+const OWN_PATH: &str = own_path!();
+
 /// SQL that is true when the answer `a` names the question `q`. A reference
 /// in a mounted board is read from that board's root, so an answer names a
-/// question by its path in the board both are in, and an answer in the root
-/// board also names a mounted question by its logical path.
-pub(crate) const NAMES: &str = "((a.source = 'worktree' AND json_extract(a.body, '$.question') = q.logical) \
-     OR (a.source = q.source AND json_extract(a.body, '$.question') = '/' || \
-     CASE WHEN q.path LIKE '%.json' THEN substr(q.path, 1, length(q.path) - 5) ELSE q.path END))";
+/// question by its path in the board both are in. An answer in the root
+/// board, or in the question's own board, also names it by its logical path.
+pub(crate) const NAMES: &str = concat!(
+    "(((a.source = 'worktree' OR a.source = q.source) AND json_extract(a.body, '$.question') = q.logical) \
+     OR (a.source = q.source AND json_extract(a.body, '$.question') = ",
+    own_path!(),
+    "))"
+);
 
-/// The question at `path` and every answer that names it, at any id.
+/// The question at `path`, with its path in its own board, and every answer
+/// that names it, at any id.
 pub(crate) fn question_sql(path: &str) -> String {
     let path = literal(path);
     format!(
-        "SELECT 'question' AS kind, logical, type, blob, body FROM records \
+        "SELECT 'question' AS kind, logical, type, blob, body, {OWN_PATH} FROM records q \
          WHERE logical = {path} \
-         UNION ALL SELECT 'answer', a.logical, a.type, a.blob, NULL FROM records a, records q \
+         UNION ALL SELECT 'answer', a.logical, a.type, a.blob, NULL, NULL FROM records a, records q \
          WHERE q.logical = {path} AND a.type = '{}' AND {NAMES}",
         AnswerRecord::TYPE
     )
@@ -32,6 +46,9 @@ pub(crate) fn question_sql(path: &str) -> String {
 /// answers that name it.
 pub(crate) struct Asked {
     pub(crate) blob: String,
+    /// The question's path in its own board, which an answer written there
+    /// names it by; its logical path in the root board.
+    pub(crate) own: String,
     pub(crate) fields: Map<String, Value>,
     pub(crate) answers: Vec<String>,
 }
@@ -60,7 +77,7 @@ pub(crate) fn read(host: &dyn Host, call: &str, path: &str) -> Result<Asked, Plu
     let row = rows
         .iter()
         .find(|row| row.first().and_then(Value::as_str) == Some("question"));
-    let Some([_, _, kind, Value::String(blob), body]) = row.map(Vec::as_slice) else {
+    let Some([_, _, kind, Value::String(blob), body, own @ ..]) = row.map(Vec::as_slice) else {
         return Err(no_question(
             format!("nothing at {path} is a question"),
             "list the open questions with `board call plans.open`",
@@ -88,8 +105,10 @@ pub(crate) fn read(host: &dyn Host, call: &str, path: &str) -> Result<Asked, Plu
         .filter_map(|row| row.get(1).and_then(Value::as_str))
         .map(str::to_owned)
         .collect();
+    let own = (own.first().and_then(Value::as_str)).unwrap_or(path);
     Ok(Asked {
         blob: blob.clone(),
+        own: own.to_owned(),
         fields,
         answers,
     })

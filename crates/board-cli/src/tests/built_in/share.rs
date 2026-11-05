@@ -10,7 +10,6 @@ use super::*;
 
 mod refusals;
 
-const IDENTITY: &str = "[user]\n\tname = Board Test\n\temail = board@example.com\n";
 const EVAL_SCHEMA: &str = ".board/types/evals/eval/v1.schema.json";
 const RUN_SCHEMA: &str = ".board/types/runs/run/v1.schema.json";
 const SUITE_SCHEMA: &str = ".board/types/runs/suite/v1.schema.json";

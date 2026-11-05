@@ -43,6 +43,7 @@ type Answers = {
   delivered?: boolean
   report?: string
   host?: string | null
+  own?: string
 }
 
 /** Stands in for `board` and the engine: what each command answers, and what the mod ran, opened, sent and toasted. */
@@ -67,8 +68,8 @@ function engine(on: On, answers: Answers = {}) {
       return { value: { ...(answers.put ?? { exitCode: 0, stdout: '{}' }), ...whole } }
     }
     if (args[1]?.startsWith("SELECT 'question'")) {
-      const found = [['question', MERGE.path, 'b10b', answers.body ?? BODY], ...answered.map(path => ['answer', path, 'a5a5', null])]
-      return { value: { exitCode: 0, stdout: rows(['kind', 'path', 'blob', 'body'], found), ...whole } }
+      const found = [['question', MERGE.path, 'b10b', answers.body ?? BODY, answers.own ?? MERGE.path], ...answered.map(path => ['answer', path, 'a5a5', null, null])]
+      return { value: { exitCode: 0, stdout: rows(['kind', 'path', 'blob', 'body', 'own'], found), ...whole } }
     }
     return { value: { exitCode: 0, stdout: answers.report ?? rows(['kind', 'path', 'at', 'title', 'detail'], [['since', null, '2026-10-24 07:00:00', null, null]]), ...whole } }
   })
@@ -217,6 +218,18 @@ test('the owner answers in words where the surface has a field, and none of the 
   const record = JSON.parse(stdins[0]?.split('\n')[0] ?? '{}').record
   expect(record).toMatchObject({ choice: 'none', words: 'About 40; ask Kechen for the exact figure.' })
   expect('by' in record).toBe(false)
+})
+
+test("an answer to a mounted question names it by its path in its own board, where the answer lands", async ($, on) => {
+  mock.clock(on, { now: NOW })
+  const { stdins } = engine(on, { own: '/projects/home/questions/20261024T1830Z-k3-in-its-board' })
+  await start($)
+  const ui = await $.ui.mount({ ...pane('questions'), surface: 'terminal' })
+  await ui.press({ key: `${MERGE.path}#a` })
+  const [answer, question] = (stdins[0] ?? '').split('\n').map(line => JSON.parse(line))
+  expect(answer.path).toBe('/projects/home/answers/20261024T1830Z-k3')
+  expect(answer.record.question).toBe('/projects/home/questions/20261024T1830Z-k3-in-its-board')
+  expect(question.path).toBe(MERGE.path)
 })
 
 test('a send the asking session cannot take still records the answer, and says the message was not delivered', async ($, on) => {

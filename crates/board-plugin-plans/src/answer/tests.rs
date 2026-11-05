@@ -127,9 +127,10 @@ fn a_question_quoted_in_sql_is_read_by_its_own_path() {
     assert_eq!(
         question_sql(path),
         format!(
-            "SELECT 'question' AS kind, logical, type, blob, body FROM records \
+            "SELECT 'question' AS kind, logical, type, blob, body, '/' || CASE WHEN q.path LIKE \
+             '%.json' THEN substr(q.path, 1, length(q.path) - 5) ELSE q.path END FROM records q \
              WHERE logical = '/projects/o''brien/questions/q' \
-             UNION ALL SELECT 'answer', a.logical, a.type, a.blob, NULL FROM records a, records q \
+             UNION ALL SELECT 'answer', a.logical, a.type, a.blob, NULL, NULL FROM records a, records q \
              WHERE q.logical = '/projects/o''brien/questions/q' AND a.type = 'plans/answer/v1' \
              AND {}",
             crate::question::NAMES

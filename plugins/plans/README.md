@@ -18,7 +18,9 @@ so it is written at its path. Its schema declares its folder too, so
   `recommendation`, `why`, `blocks`, `mount`, `context_path`, `note` and
   `withdrawn_reason` are optional. A question is answered when a
   `plans/answer/v1` names it in `question`; answering leaves its status
-  `open`.
+  `open`. A reference is read from the root of the board it is in, so an
+  answer in a mounted board names its question by the question's path in
+  that board.
 - `plans/answer/v1` at `/projects/<project>/answers/<id>`, with its question's
   id. `question` references the question; `choice` names an option's `id`, or
   `none`; `words` holds the owner's words verbatim; `answered` is when.
@@ -62,7 +64,8 @@ Board.app, can answer. `--option` is one of the question's option ids, or
 `none` with `--words`; a question with an option whose id is `none` takes
 `--option none` as that option. `--words` defaults to the chosen option's
 text. It writes one commit of two lines: a new `plans/answer/v1` at the
-question's id under `answers/`, answered now, and the question with its content unchanged,
+question's id under `answers/`, answered now, whose `question` names the
+question by its path in the board the answer lands in, and the question with its content unchanged,
 which must still hold the blob the call read. It returns the answer's path,
 the question's path, `choice`, `words` and `answered`.
 

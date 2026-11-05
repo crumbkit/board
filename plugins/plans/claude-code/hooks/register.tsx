@@ -76,7 +76,7 @@ async function answer($: EngineInterface, options: PluginOptions, q: Question, c
     // The desktop app names this session's `local_` id, the form questions use.
     const host = await $.env.get('CLAUDE_CODE_HOST_SESSION_ID')
     const by = host?.startsWith('local_') ? host : undefined
-    const batch = answerBatch(q.path, String(row.blob), String(row.body), choice, words, by, await $.clock.now())
+    const batch = answerBatch(q.path, String(row.own ?? q.path), String(row.blob), String(row.body), choice, words, by, await $.clock.now())
     const put = await board($, options, ['put', '--batch', '--wait', LOCK_WAIT], batch)
     if (put.exitCode !== 0) {
       const why = failure(put.exitCode, put.stdout, put.stderr)

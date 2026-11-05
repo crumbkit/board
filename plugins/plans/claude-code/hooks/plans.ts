@@ -49,19 +49,23 @@ const quoted = (text: string) => `'${text.replaceAll("'", "''")}'`
  * own id or another.
  */
 export const questionSql = (path: string) =>
-  `SELECT 'question' AS kind, logical AS path, blob, body FROM records WHERE logical = ${quoted(path)} ` +
-  `UNION ALL SELECT 'answer', a.logical, a.blob, NULL FROM records a, records q ` +
+  `SELECT 'question' AS kind, logical AS path, blob, body, ${OWN} AS own FROM records q WHERE logical = ${quoted(path)} ` +
+  `UNION ALL SELECT 'answer', a.logical, a.blob, NULL, NULL FROM records a, records q ` +
   `WHERE q.logical = ${quoted(path)} AND a.type = 'plans/answer/v1' AND ${NAMES}`
+
+/** The question `q`'s path in its own board, which a reference from that board names it by. */
+const OWN = "'/' || CASE WHEN q.path LIKE '%.json' THEN substr(q.path, 1, length(q.path) - 5) ELSE q.path END"
 
 /**
  * True when the answer `a` names the question `q`: by its path in the board
  * both are in, since a mounted board's reference is read from that board's
- * root, or by its logical path from an answer in the root board. plans.open
+ * root, or by its logical path from an answer in the root board or in the
+ * question's own board. plans.open
  * and plans.answer use the same rule (question::NAMES in the plugin's crate).
  */
 export const NAMES =
-  "((a.source = 'worktree' AND json_extract(a.body, '$.question') = q.logical) OR (a.source = q.source AND json_extract(a.body, '$.question') = '/' || " +
-  "CASE WHEN q.path LIKE '%.json' THEN substr(q.path, 1, length(q.path) - 5) ELSE q.path END))"
+  "(((a.source = 'worktree' OR a.source = q.source) AND json_extract(a.body, '$.question') = q.logical) " +
+  `OR (a.source = q.source AND json_extract(a.body, '$.question') = ${OWN}))`
 
 /**
  * Why the owner's answer to `path` must not be recorded, or null when it may:
@@ -89,12 +93,14 @@ export const iso = (ms: number) => new Date(ms).toISOString().replace(/\.\d{3}Z$
  * be new, and the question unchanged, which must still hold `blob`, so a
  * question withdrawn or edited since the read refuses the batch. The answer
  * is what marks the question answered; its status stays open. `by` is left
- * out when the pane cannot name its own session's `local_` id.
+ * out when the pane cannot name its own session's `local_` id. `own` is the
+ * question's path in its own board, which the answer names it by.
  */
-export function answerBatch(question: string, blob: string, body: string, choice: string, words: string, by: string | undefined, now: number): string {
+export function answerBatch(question: string, own: string, blob: string, body: string, choice: string, words: string, by: string | undefined, now: number): string {
+  // The answer lands in the question's board, where a reference is read from that board's root.
   const answer = {
     $type: 'plans/answer/v1',
-    question,
+    question: own,
     choice,
     words,
     answered: iso(now),
