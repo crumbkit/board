@@ -157,7 +157,7 @@ pub(crate) fn run(board: &Path, options: &Options) -> Result<Value, MigrateError
             written += 1;
         }
     }
-    let created = create(board, &gathered, options.write)?;
+    let (created, existing) = create(board, &gathered, options.write)?;
     if options.write {
         written += created.len();
     }
@@ -167,20 +167,27 @@ pub(crate) fn run(board: &Path, options: &Options) -> Result<Value, MigrateError
         "dropped": dropped,
         "unmapped": unmapped,
         "topics": created,
+        "topics_existing": existing,
     }))
 }
 
 /// The topics `gathered` holds that the board at `board` does not, each as
-/// its path and record, written under `topics/` when `write` is true.
+/// its path and record, written under `topics/` when `write` is true; and
+/// each topic the board already holds as JSON or Markdown, with the names
+/// that led to it, which it keeps as it is for a person to merge.
 fn create(
     board: &Path,
     gathered: &topics::Gathered,
     write: bool,
-) -> Result<Vec<Value>, MigrateError> {
-    let mut created = Vec::new();
-    for (slug, record) in gathered.records() {
+) -> Result<(Vec<Value>, Vec<Value>), MigrateError> {
+    let (mut created, mut existing) = (Vec::new(), Vec::new());
+    for (slug, record, names) in gathered.records() {
         let path = board.join("topics").join(format!("{slug}.json"));
-        if path.exists() {
+        let held = ["json", "md"]
+            .iter()
+            .any(|extension| path.with_extension(extension).exists());
+        if held {
+            existing.push(json!({"path": format!("/topics/{slug}"), "names": names}));
             continue;
         }
         if write {
@@ -189,7 +196,7 @@ fn create(
         }
         created.push(json!({"path": format!("/topics/{slug}"), "record": record}));
     }
-    Ok(created)
+    Ok((created, existing))
 }
 
 /// The GitHub `owner/name` of the repository the board at `board` mounts at

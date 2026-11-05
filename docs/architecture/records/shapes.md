@@ -100,7 +100,7 @@ Built-in plugins generate schemas from structs with schemars, through
   `T`, to a marker that lists several types, or to any entry when `T` is left
   out. Both are always inlined.
 - `Prose`, `Date`, `Url`, `Digest`, `Glob`, `LogicalGlob`, `Summary`,
-  `SessionId`, `Slug`, `Person`, `ObjectId` and `Subject` are shared string
+  `SessionId`, `Slug`, `Person`, `ObjectId`, `Repository` and `Subject` are shared string
   shapes, and `Actor` and `Pinned` are shared object shapes. A `String` field takes one with
   `#[schemars(with = "Prose")]`, and a `urls` field with `#[schemars(with = "Vec<Url>")]`. `Digest` is `sha256:` and 64
   lowercase hex digits, such as an effect's id in a record. `Glob` is an SQLite GLOB pattern, which a

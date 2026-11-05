@@ -37,7 +37,7 @@ pub(crate) const SOURCES: &str = "SELECT logical, source FROM records \
 #[serde(deny_unknown_fields)]
 #[schemars(extend("oneOf" = [{"required": ["subject"]}, {"required": ["mount"]}]))]
 pub(crate) struct AboutInput {
-    /// What is tested, as an eval's subjects name it, such as clap-rs/clap, or as a topic's title or alias names it, such as seatbelt for an eval naming /topics/seatbelt, matched ignoring ASCII case; give subject or mount, not both.
+    /// What is tested, as an eval's subjects name it, such as clap-rs/clap or clap alone, or as a topic's title or alias names it, such as seatbelt for an eval naming /topics/seatbelt, matched ignoring ASCII case; give subject or mount, not both.
     #[schemars(length(min = 1))]
     subject: Option<String>,
     /// A repository's mount, such as /repos/crumbkit, to list the evals that name it or live in it; give subject or mount, not both.
@@ -132,6 +132,7 @@ pub(crate) fn about(host: &dyn Host, input: &Value) -> Result<Value, PluginError
                 let source = sources.get(path);
                 (eval.subjects.iter()).any(|named| {
                     named.eq_ignore_ascii_case(&subject)
+                        || repository_named(named, &subject)
                         || source
                             .is_some_and(|source| topics.contains(&(source.clone(), named.clone())))
                 })
@@ -165,6 +166,17 @@ fn topics(host: &dyn Host, subject: &str) -> Result<BTreeSet<(String, String)>, 
             .then(|| (source.to_string(), path.clone()))
     });
     Ok(found.collect())
+}
+
+/// Whether the `owner/name` subject `named` is the repository `subject`
+/// names by its name alone, such as `clap` for `clap-rs/clap`, ignoring
+/// ASCII case. A board path never matches by its last part.
+fn repository_named(named: &str, subject: &str) -> bool {
+    !named.starts_with('/')
+        && !subject.contains('/')
+        && named
+            .split_once('/')
+            .is_some_and(|(_, name)| name.eq_ignore_ascii_case(subject))
 }
 
 /// The source of the board that holds each eval, as JSON text, by the

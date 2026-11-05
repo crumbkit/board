@@ -180,3 +180,62 @@ fn a_map_topic_without_a_usable_title_or_with_a_bare_repo_is_refused_and_its_twi
     }
     assert!(Context::new(topic(json!({"repos": ["crumbkit/typescript-standards"]}))).is_ok());
 }
+
+/// A map key that gives a topic for a subject names no actor, so the same
+/// old text as an actor is read as text, never as the topic record.
+#[test]
+fn a_map_topic_key_that_is_also_an_actors_text_leaves_the_actor_read_from_the_text() {
+    let board = tempfile::tempdir().unwrap();
+    let root = board.path();
+    let topic = json!({"$type": "topics/topic/v1", "title": "Widget Kit"});
+    write(root, ".map.json", &json!({"Widget Kit": topic}).to_string());
+    let eval = json!({"$type": "evals/eval/v1", "subjects": ["Widget Kit"]});
+    write(root, "evals/a.json", &eval.to_string());
+    let run_record = json!({"$type": "runs/run/v1", "by": "Widget Kit"});
+    write(root, "runs/a.json", &run_record.to_string());
+    let options = Options {
+        write: true,
+        map: Some(root.join(".map.json")),
+    };
+    run(root, &options).unwrap();
+    assert_eq!(
+        read(root, "evals/a.json")["subjects"],
+        json!(["/topics/widget-kit"])
+    );
+    assert_eq!(
+        read(root, "runs/a.json")["by"],
+        json!({"agent": "Widget Kit"})
+    );
+}
+
+/// A topic the board already holds, as JSON or Markdown, is not written
+/// again, and the run reports the names it would have added to it.
+#[test]
+fn a_topic_the_board_holds_as_json_or_markdown_is_kept_and_the_names_it_would_gain_are_reported() {
+    let board = tempfile::tempdir().unwrap();
+    let root = board.path();
+    write(
+        root,
+        "topics/uv-tool.md",
+        "---\n$type: topics/topic/v1\ntitle: uv tool\n---\n",
+    );
+    write(
+        root,
+        "evals/a.json",
+        &json!({"$type": "evals/eval/v1", "subjects": ["uv tool", "uv-tool"]}).to_string(),
+    );
+    let report = run(
+        root,
+        &Options {
+            write: true,
+            map: None,
+        },
+    )
+    .unwrap();
+    assert!(!root.join("topics/uv-tool.json").exists());
+    assert_eq!(report["topics"], json!([]));
+    assert_eq!(
+        report["topics_existing"],
+        json!([{"path": "/topics/uv-tool", "names": ["uv tool", "uv-tool"]}])
+    );
+}

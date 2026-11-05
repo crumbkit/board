@@ -86,6 +86,8 @@ fn a_topic_with_a_malformed_field_is_refused_and_its_twin_is_admitted() {
     assert!(schema.validate(&untitled).is_err());
 }
 
+/// Board refuses a call to a capability the manifest does not list before
+/// the plugin runs, so a call to topics never reaches it.
 #[test]
 fn a_call_is_refused_because_the_plugin_offers_no_capability() {
     let scenario = Scenario::new();
@@ -100,6 +102,8 @@ fn a_call_is_refused_because_the_plugin_offers_no_capability() {
         .unwrap();
     let target: Target = "topics.find".parse().unwrap();
     let called = board.call(&target, b"{}", &Plugins::default());
-    let code = called.map_err(|failed| failed.refusal().code.as_str().to_owned());
-    assert!(code.is_err(), "{code:?}");
+    let code = called
+        .map(|_| ())
+        .map_err(|failed| failed.refusal().code.as_str().to_owned());
+    assert_eq!(code, Err("board::plugin::not_installed".to_owned()));
 }

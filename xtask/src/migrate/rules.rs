@@ -241,7 +241,8 @@ fn optional(
 /// stays, the map or a mount's repository replaces the rest, and a repeat
 /// goes. A record is not its own subject, so its own name goes, and a
 /// suite left with no subject has none. An eval must have a subject, so an
-/// eval whose only subject is its own name keeps it and it is reported.
+/// eval whose only subject is its own name keeps it, and like any other
+/// name that nothing maps it becomes a topic.
 fn subjects(
     record: &mut Map<String, Value>,
     (field, name, optional): (&'static str, &str, bool),
@@ -344,9 +345,12 @@ fn digest(
 }
 
 /// The actor the old text names, as [`Actor::from_text`] reads it. The
-/// map's entry for the text wins.
+/// map's entry for the text wins when it is an actor; an entry that gives a
+/// topic is for a subject, so the text is read as it is.
 pub(crate) fn actor(text: &str, context: &Context) -> Option<Value> {
-    if let Some(mapped) = context.map.get(text).filter(|value| value.is_object()) {
+    let mapped = context.map.get(text);
+    let topic = mapped.and_then(|value| value.get("$type")).is_some();
+    if let Some(mapped) = mapped.filter(|value| value.is_object() && !topic) {
         return Some(mapped.clone());
     }
     Actor::from_text(text).map(|actor| json!(actor))

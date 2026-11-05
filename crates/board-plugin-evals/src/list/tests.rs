@@ -576,3 +576,18 @@ fn about_finds_an_eval_naming_a_topic_by_the_topics_title_or_alias_and_only_in_i
     assert_eq!(about("/topics/seatbelt"), both);
     assert_eq!(about("landlock"), Vec::<String>::new());
 }
+
+/// A bare name matches an `owner/name` subject by its name, as it did
+/// before subjects named repositories, and never a board path's last part.
+#[test]
+fn a_bare_name_matches_a_repository_subject_by_its_name_and_not_a_paths_last_part() {
+    let rows = vec![
+        row("/evals/a", None, &json!({"subjects": ["clap-rs/clap"]})),
+        row("/evals/b", None, &json!({"subjects": ["/repos/clap"]})),
+        row("/evals/c", None, &json!({"subjects": ["o/clapper"]})),
+    ];
+    let (paths, _) = listed(about, rows.clone(), &json!({"subject": "CLAP"}));
+    assert_eq!(paths, ["/evals/a"]);
+    let (paths, _) = listed(about, rows, &json!({"subject": "clap-rs/clap"}));
+    assert_eq!(paths, ["/evals/a"]);
+}

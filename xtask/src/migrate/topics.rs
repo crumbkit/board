@@ -54,11 +54,11 @@ impl Gathered {
         }
     }
 
-    /// Each topic's slug and record. A topic a `--map` entry gave keeps its
+    /// Each topic's slug, record and the names that led to it. A topic a `--map` entry gave keeps its
     /// own fields. Otherwise its title is the name that is the slug, or one
     /// whose slug is the topic's, or else the first name in order, and the other names are
     /// its aliases; a given topic gains them as aliases too.
-    pub(crate) fn records(&self) -> Vec<(String, Value)> {
+    pub(crate) fn records(&self) -> Vec<(String, Value, Vec<String>)> {
         (self.topics.iter())
             .map(|(slug, (names, given))| {
                 let title = (given.as_ref())
@@ -94,7 +94,11 @@ impl Gathered {
                 if !aliases.is_empty() {
                     record.insert("aliases".to_owned(), json!(aliases));
                 }
-                (slug.clone(), Value::Object(record))
+                (
+                    slug.clone(),
+                    Value::Object(record),
+                    names.iter().cloned().collect(),
+                )
             })
             .collect()
     }
