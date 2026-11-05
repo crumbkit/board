@@ -154,11 +154,15 @@ fn said(value: Value, text: String) -> Answer {
     Prose::new(Said::new(value, text))
 }
 
-/// `check`: a line or an object per entry, degraded entries first, so a
-/// limited listing never hides one behind healthy entries. Each degraded
-/// entry reports a problem, so the run exits 1.
+/// `check`: a line or an object per degraded entry, or with `--all` per
+/// entry, degraded first, so a limited listing never hides one behind
+/// healthy entries. The summary counts the entries checked and the
+/// degraded ones. Each degraded entry reports a problem, so the run exits 1.
 pub(crate) fn check(printer: Printer, report: &CheckReport, page: &crate::run::Page) -> Output {
-    let mut entries: Vec<&Checked> = report.entries.iter().collect();
+    let every = page.limit().is_none();
+    let mut entries: Vec<&Checked> = (report.entries.iter())
+        .filter(|entry| every || entry.status != Status::Ok)
+        .collect();
     entries.sort_by_key(|entry| entry.status == Status::Ok);
     let degraded = entries.iter().filter(|entry| entry.status != Status::Ok);
     let degraded = degraded.count();
@@ -195,28 +199,29 @@ pub(crate) fn check(printer: Printer, report: &CheckReport, page: &crate::run::P
         }
         Flagged(Whole::lined(value, line))
     });
-    let listing = page.first_of(rows.collect()).described("entries");
-    let total = report.entries.len();
+    let listed = if every { "entries" } else { "degraded entries" };
+    let listing = page.first_of(rows.collect()).described(listed);
+    let checked = report.entries.len();
     let summary = Said::new(
-        json!({"degraded": degraded}),
+        json!({"checked": checked, "degraded": degraded}),
         format!(
-            "{total} {}, {degraded} degraded",
-            if total == 1 { "entry" } else { "entries" }
+            "{checked} {} checked, {degraded} degraded",
+            if checked == 1 { "entry" } else { "entries" }
         ),
     );
     let listing = listing.summary(summary);
     printer.noted(CHECK, listing, notes(report.memory, hints))
 }
 
-/// `check`'s document: each entry, degraded first, with the count of
-/// degraded entries under `summary`.
+/// `check`'s document: each degraded entry, or with `--all` each entry,
+/// with the counts of entries checked and degraded under `summary`.
 const CHECK: Document<Listing<Flagged, Said>> = Document::new(
     "board",
     "check-report",
     2,
-    "Every entry and whether it is healthy.",
+    "The degraded entries, or with --all every entry, and how many were checked.",
 )
-.when_empty("no entries are at or beneath the path");
+.when_empty("no entry is degraded");
 
 /// `put`: as text, one line per write naming its display path and new
 /// blob, and the commit when one was made. A write left degraded gets a

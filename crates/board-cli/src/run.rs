@@ -40,7 +40,7 @@ use crate::values::{duration, expect, pointer, removal, var};
 const ROOT_EXAMPLES: &str = "\
 Start here:
   board init                        make this git repository a board
-  board check                       check every entry; exit 1 if any is degraded
+  board check                       list degraded entries; exit 1 if any
   board ls /                        list the board's root
   board get /projects/p             print the record in projects/p.json
   board put /tasks/a < task.json    write the record and commit it
@@ -179,9 +179,10 @@ Examples:
   board init
   board init --json")]
     Init,
-    /// Check every entry, or those at or beneath a path; fail if any is degraded.
+    /// Check every entry, or those at or beneath a path; list and fail on the degraded ones.
     #[command(after_help = "\
-Degraded entries come first, so a limited listing never hides one.
+By default it lists only the degraded entries, and its summary counts the
+entries checked. --all lists every entry, degraded ones first.
 
 Examples:
   board check

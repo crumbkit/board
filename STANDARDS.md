@@ -85,8 +85,9 @@ make it concrete. Rule 17 already fixes the report, the exit codes and `--json`.
     entries are left out, text output prints a note on stderr that gives the
     count shown, the total and the flag that shows more. JSON carries `total` and
     `truncated`. `query` gives no total, because it does not fetch the rows it
-    leaves out. `check` lists degraded
-    entries first, so a cut never hides a problem behind healthy entries. `refs`
+    leaves out. `check` lists only degraded
+    entries unless `--all` asks for every entry, so a cut never hides a
+    problem behind healthy entries. `refs`
     limits each path's answer on its own, so the caller bounds a run by how many
     paths it asks. `get` and `refs` stop answering once their output reaches
     64 MiB and name every later path in the `left_out` of one

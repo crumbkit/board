@@ -9,7 +9,7 @@ Board: a fast, validated view of a git tree.
 ### Commands
 
 - [`board init`](#board-init): Make this git repository a board
-- [`board check`](#board-check): Check every entry, or those at or beneath a path; fail if any is degraded
+- [`board check`](#board-check): Check every entry, or those at or beneath a path; list and fail on the degraded ones
 - [`board get`](#board-get): Print the file at each path, following pointers
 - [`board ls`](#board-ls): List the directory at a path, without following pointers inside it
 - [`board refs`](#board-refs): List the references each entry makes and the entries that reach it
@@ -48,7 +48,7 @@ Effects: additive, idempotent, closed-world.
 
 ## `board check`
 
-Check every entry, or those at or beneath a path; fail if any is degraded
+Check every entry, or those at or beneath a path; list and fail on the degraded ones
 
 ### Arguments
 
@@ -58,7 +58,10 @@ Check every entry, or those at or beneath a path; fail if any is degraded
 
 ### Columns
 
+- `logical`
+- `kind`
 - `code`
+- `hint`
 
 Effects: read-only, closed-world.
 
