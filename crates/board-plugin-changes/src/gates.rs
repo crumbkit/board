@@ -70,7 +70,7 @@ pub(crate) enum Status {
 /// it satisfies nothing. `plan` is none when no file is at the plan's
 /// path. `suite` is the repository's check suite, or none when its
 /// contributing docs name none; only the build gate reads it. The review
-/// gate reads the rest: `planned`, the paths the newest plan declares;
+/// gate reads the rest: `planned`, the paths the change's plan declares;
 /// `outside`, each file the change's diff edits that no planned path
 /// matches; and `diff_unread`, why the diff could not be read.
 #[derive(Debug)]
@@ -553,7 +553,7 @@ fn run_missing(observed: &Observed) -> Option<String> {
 fn paths_missing(observed: &Observed) -> Option<String> {
     if observed.planned.is_empty() {
         return Some(
-            "the newest plan declares no paths, so every edited file is outside them; write the \
+            "the change's plan declares no paths, so every edited file is outside them; write the \
              plan again with `board call changes.plan` and its paths"
                 .to_owned(),
         );

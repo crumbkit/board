@@ -3,7 +3,7 @@
 //!
 //! A change of the old shape keeps its entity fields. A prototype's fields
 //! move to a `changes/prototype/v1` beside it, the records it lists move to
-//! its newest plan, and a GitHub pull request or issue URL becomes the
+//! the plan it names, and a GitHub pull request or issue URL becomes the
 //! github plugin's record of it, which `github.ref` writes. The old
 //! `/changes/sync` stamp moves to Board's cache. Everything else in the
 //! board is left as it is.
@@ -80,6 +80,10 @@ struct Left {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[schemars(with = "Option<Url>")]
     page: Option<String>,
+    /// The github records `github.ref` wrote for the change's earlier pages
+    /// before it refused `page`. They stay, and the next run uses them.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    recorded: Vec<String>,
 }
 
 /// What the migration rewrote or would rewrite.
@@ -156,7 +160,7 @@ fn old_plan(body: &Map<String, Value>) -> bool {
 struct Known {
     plans: BTreeMap<String, BTreeMap<String, (PlanRecord, String)>>,
     files: BTreeSet<String>,
-    prototypes: BTreeSet<String>,
+    prototypes: BTreeMap<String, Option<PrototypeRecord>>,
 }
 
 fn known(host: &dyn Host, olds: &[Old]) -> Result<Known, PluginError> {
@@ -196,7 +200,7 @@ fn known(host: &dyn Host, olds: &[Old]) -> Result<Known, PluginError> {
             }
         }
     }
-    let prototypes = prototypes(host)?.into_keys().collect();
+    let prototypes = prototypes(host)?;
     Ok(Known {
         plans,
         files,
@@ -224,6 +228,7 @@ fn old_checks(host: &dyn Host) -> Result<Vec<Left>, PluginError> {
         if serde_json::from_value::<UnderstandingRecord>(body).is_err() {
             left.push(Left {
                 page: None,
+                recorded: Vec::new(),
                 path: path.to_owned(),
                 why: "it is an understanding check of the old shape; give each question the \
                       design's answer in `design`, and keep only the fields \
@@ -340,8 +345,8 @@ fn rewrite(known: &Known, old: &Old, record: &str) -> Result<Plan, String> {
     }
     change.insert("plan".to_owned(), json!(target));
     // A prototype's state is its change's phase, so only the question and
-    // the verdict move. A prototype record already there is kept.
-    if string(body, "kind").as_deref() == Some("prototype") && !known.prototypes.contains(path) {
+    // the verdict move.
+    if string(body, "kind").as_deref() == Some("prototype") {
         let prototype = PrototypeRecord {
             tag: Tag::default(),
             question: string(body, "question")
@@ -350,14 +355,53 @@ fn rewrite(known: &Known, old: &Old, record: &str) -> Result<Plan, String> {
             verdict: string(body, "verdict"),
             verdict_artifact: string(body, "verdict_artifact"),
         };
-        plan.lines.push(
-            json!({"path": format!("{path}/prototype"), "expect": "none", "record": prototype}),
-        );
-        plan.prototype = true;
+        if kept_prototype(known, path, &prototype)? {
+            plan.lines.push(
+                json!({"path": format!("{path}/prototype"), "expect": "none", "record": prototype}),
+            );
+            plan.prototype = true;
+        }
     }
     plan.lines
         .push(json!({"path": path, "expect": old.blob, "change": change}));
     Ok(plan)
+}
+
+/// Whether the old change's prototype fields still need a record: true
+/// when nothing is at `<path>/prototype`, false when the record there holds
+/// the same question and verdict. A record there that Board does not read,
+/// or that says something else, is why the change is left as it is.
+fn kept_prototype(known: &Known, path: &str, old: &PrototypeRecord) -> Result<bool, String> {
+    let at = format!("{path}/prototype");
+    match known.prototypes.get(path) {
+        None => Ok(true),
+        Some(None) => Err(format!(
+            "a prototype record is already at {at}, and Board does not read it; run `board \
+             check {at}`, fix it, then run migrate again"
+        )),
+        Some(Some(held)) => {
+            let differs: Vec<&str> = [
+                ("question", held.question != old.question),
+                ("verdict", held.verdict != old.verdict),
+                (
+                    "verdict_artifact",
+                    held.verdict_artifact != old.verdict_artifact,
+                ),
+            ]
+            .into_iter()
+            .filter_map(|(field, differs)| differs.then_some(field))
+            .collect();
+            if differs.is_empty() {
+                Ok(false)
+            } else {
+                Err(format!(
+                    "the prototype record already at {at} holds another {} than the change; make \
+                     them agree, then run migrate again",
+                    differs.join(", ")
+                ))
+            }
+        }
+    }
 }
 
 /// A new plan record at `{change}/plans/{record}`, with its text the old
@@ -421,16 +465,28 @@ struct Page {
 }
 
 /// Why `github.ref` did not record a page: the page itself, which leaves
-/// its change as it is, or Board, which stops the migration.
+/// its change as it is, or gh or Board, which stops the migration.
 enum Unrecorded<'a> {
-    Page(&'a Page, String),
-    Board(PluginError),
+    /// The page, why, and the github records already written for the
+    /// change's earlier pages.
+    Page(&'a Page, String, Vec<String>),
+    Stop(PluginError),
 }
 
+/// The code github.ref gives a page GitHub answers with 404.
+const PAGE_GONE: &str = "github::ref::not_found";
+/// The code of every failure of gh itself, such as being signed out or
+/// offline.
+const GH_FAILED: &str = "github::gh::failed";
+
 /// The path of the github record `github.ref` writes for each page, or
-/// with no `apply` none. A refusal of the github plugin's own, such as a
-/// page GitHub does not have, names the page; any other refusal, such as
-/// the plugin not being enabled, stops the migration.
+/// with no `apply` none.
+///
+/// A page GitHub does not have, or another refusal the github plugin gives
+/// for one page, names the page. A failure of gh itself, such as gh being
+/// signed out or offline, says nothing about the page, so it stops the
+/// migration, as does a refusal from Board, such as the github plugin not
+/// being enabled.
 fn recorded<'a>(
     host: &dyn Host,
     apply: bool,
@@ -442,21 +498,42 @@ fn recorded<'a>(
             paths.push(None);
             continue;
         }
-        let output =
-            match board::call_or_refusal(host, "github.ref", &json!({"ref": page.reference})) {
-                Ok(output) => output,
-                Err(refusal) if refusal.code.as_str().starts_with("github::") => {
-                    let why = format!(
-                        "github.ref could not record {}: {}: {}; fix or remove the page, then run \
-                     migrate again",
-                        page.url,
-                        refusal.code.as_str(),
-                        refusal.message
-                    );
-                    return Err(Unrecorded::Page(page, why));
-                }
-                Err(refusal) => return Err(Unrecorded::Board(board::refused("call", &refusal))),
-            };
+        let written = || paths.iter().flatten().cloned().collect::<Vec<String>>();
+        let output = match board::call_or_refusal(
+            host,
+            "github.ref",
+            &json!({"ref": page.reference}),
+        ) {
+            Ok(output) => output,
+            Err(refusal) if refusal.code.as_str() == GH_FAILED => {
+                return Err(Unrecorded::Stop(refusal_of(
+                    "changes::migrate::gh_failed",
+                    format!(
+                        "gh failed while github.ref read {}, so whether the page exists is not \
+                         known: {}; check `gh auth status` and the network, sign in with `gh auth \
+                         login` if gh is signed out, then run migrate again, which keeps what it \
+                         already wrote",
+                        page.url, refusal.message
+                    ),
+                    &page.url,
+                )));
+            }
+            Err(refusal) if refusal.code.as_str().starts_with("github::") => {
+                let what = if refusal.code.as_str() == PAGE_GONE {
+                    "GitHub has no such page, so remove it from the change or name the page it moved to"
+                } else {
+                    "fix what the refusal names"
+                };
+                let why = format!(
+                    "github.ref could not record {}: {}: {}; {what}, then run migrate again",
+                    page.url,
+                    refusal.code.as_str(),
+                    refusal.message
+                );
+                return Err(Unrecorded::Page(page, why, written()));
+            }
+            Err(refusal) => return Err(Unrecorded::Stop(board::refused("call", &refusal))),
+        };
         match string(output.as_object().unwrap_or(&Map::new()), "path") {
             Some(at) if !at.is_empty() => paths.push(Some(at)),
             _ => {
@@ -464,11 +541,16 @@ fn recorded<'a>(
                     "github.ref recorded {} but named no record path; run migrate again",
                     page.url
                 );
-                return Err(Unrecorded::Page(page, why));
+                return Err(Unrecorded::Page(page, why, written()));
             }
         }
     }
     Ok(paths)
+}
+
+/// The refusal `code` saying `message`, naming the page at `url`.
+fn refusal_of(code: &str, message: String, url: &str) -> PluginError {
+    crate::refusal(code, message, [("page", json!(url))])
 }
 
 /// The plugin's own schemas, compiled, by type.
@@ -550,6 +632,7 @@ pub(crate) fn migrate(host: &dyn Host, input: &Value) -> Result<Value, PluginErr
                     path: old.path.clone(),
                     why,
                     page: None,
+                    recorded: Vec::new(),
                 });
                 continue;
             }
@@ -566,6 +649,7 @@ pub(crate) fn migrate(host: &dyn Host, input: &Value) -> Result<Value, PluginErr
                 path: old.path.clone(),
                 why,
                 page: None,
+                recorded: Vec::new(),
             });
             continue;
         }
@@ -581,15 +665,16 @@ pub(crate) fn migrate(host: &dyn Host, input: &Value) -> Result<Value, PluginErr
                     }
                 }
             }
-            Err(Unrecorded::Page(page, why)) => {
+            Err(Unrecorded::Page(page, why, recorded)) => {
                 left.push(Left {
                     path: old.path.clone(),
                     why,
                     page: Some(page.url.clone()),
+                    recorded,
                 });
                 continue;
             }
-            Err(Unrecorded::Board(error)) => return Err(error),
+            Err(Unrecorded::Stop(error)) => return Err(error),
         }
         finish(&mut written, pulls, tickets);
         plans += plan_count;

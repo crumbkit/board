@@ -21,7 +21,7 @@ The gate is the contract. `next` says what the current phase still lacks;
    and fix each check whose `status` is `missing`.
 3. Attach every record you make with
    `board -C <board> call changes.attach --path /changes/<name> --ref <path>`.
-   The records go on the change's newest plan, so write the plan first.
+   The records go on the plan the change names, so write the plan first.
    Set the commit under test with `--head <sha>` after each push. Record a
    GitHub issue or pull request with
    `board -C <board> call github.ref --ref <owner>/<repo>#<number>`, then

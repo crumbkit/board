@@ -1,5 +1,5 @@
 //! A change: reading and writing its record, its prototype record, the
-//! records attached to its plans, its newest plan and the day of the last
+//! records attached to its plans, its current plan and the day of the last
 //! sync.
 
 use std::collections::BTreeMap;

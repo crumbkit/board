@@ -50,7 +50,7 @@
       "type": "string"
     },
     "plan": {
-      "description": "The change's newest plan, a `changes/plan/v1` under\n`/changes/<name>/plans/`.",
+      "description": "The change's current plan, a `changes/plan/v1` under\n`/changes/<name>/plans/`.",
       "format": "board-ref",
       "type": "string",
       "x-board-type": "changes/plan/v1"

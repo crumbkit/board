@@ -73,7 +73,7 @@ pub(crate) struct AttachInput {
         regex(pattern = "^/"),
         extend("format" = "board-path"),
         description = "A record the change produced, such as /suites/board-tests/runs/<id>; \
-                       the change's newest plan keeps it."
+                       the plan the change names keeps it."
     )]
     reference: Option<String>,
     #[schemars(
@@ -232,7 +232,7 @@ pub(crate) fn observe(
     Ok(found)
 }
 
-/// Adds the newest plan's paths and the files the change's diff edits
+/// Adds the paths of the plan the change names and the files the change's diff edits
 /// outside them to `found`.
 fn reviewed(host: &dyn Host, found: &mut Observed) -> Result<(), PluginError> {
     let (_, _, planned) = current(host, &found.change)?;
@@ -339,7 +339,7 @@ pub(crate) fn attach(host: &dyn Host, input: &Value) -> Result<Value, PluginErro
     Ok(json!({"path": path, "records": attached(host, &path)?.len()}))
 }
 
-/// The plan record the change at `path` names as its newest, its blob, or
+/// The plan record the change at `path` names as its plan, its blob, or
 /// `changes::attach::no_plan` when it names none that Board reads.
 fn newest_plan(
     host: &dyn Host,

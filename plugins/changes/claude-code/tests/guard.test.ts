@@ -41,13 +41,27 @@ const notFound = (key: string) =>
 const PROTOTYPE = report('board/get-report/v2', [
   { record: { $type: 'changes/prototype/v1', question: 'Does a step list read better?' } },
 ])
-const DEGRADED_PROTOTYPE = JSON.stringify({
-  schema: 'board/get-report/v2',
-  data: [],
-  failures: [
-    { key: '/changes/fix-it/prototype', code: 'board::record::invalid', message: '/changes/fix-it/prototype fails its schema' },
-  ],
+// What Board prints for a prototype record that fails its schema: `get`
+// prints it as it prints a valid one and exits 0, and `check --healthy`
+// reports it degraded and exits 1.
+const DEGRADED_PROTOTYPE = report('board/get-report/v2', [
+  { record: { $type: 'changes/prototype/v1', question: 'Does a step list read better?', unknown: true } },
+])
+const checked = (entry: object) =>
+  JSON.stringify({
+    schema: 'board/check-report/v2',
+    data: [{ kind: 'record', logical: '/changes/fix-it/prototype', path: 'changes/fix-it/prototype.json', source: 'worktree', ...entry }],
+    total: 1,
+    truncated: false,
+  })
+const HEALTHY = checked({ status: 'ok' })
+const DEGRADED_CHECK = checked({
+  status: 'degraded',
+  code: 'board::record::invalid',
+  reason: "fails its schema at its root: Additional properties are not allowed ('unknown' was unexpected)",
 })
+// A record of another type at <change>/prototype.
+const OTHER_TYPE = report('board/get-report/v2', [{ record: { $type: 'tasks/task/v2', title: 'x' } }])
 const DEGRADED = JSON.stringify({
   schema: 'board/get-report/v2',
   data: [],
@@ -118,6 +132,8 @@ type Answers = {
   entries?: number
   /** What `board get` prints for the change's `<change>/prototype`; nothing there when left out. */
   prototype?: string
+  /** What `board check --healthy` prints for `<change>/prototype`; HEALTHY when left out. */
+  checked?: string
   /** What `board get` prints for the change, by board; BUILDING when left out. */
   change?: string
   changes?: Record<string, string>
@@ -178,10 +194,15 @@ function engine(on: On, answers: Answers) {
       ran.push(`query ${args[0]}`)
       return answers.queryFails ? run(2, '', 'board: the index could not be built') : run(0, MOUNTS)
     }
+    if (script.includes('check --healthy')) {
+      ran.push(`check ${args[0]} ${args[1]}`)
+      const health = answers.checked ?? HEALTHY
+      return run(health === HEALTHY ? 0 : 1, health)
+    }
     ran.push(`get ${args[0]} ${args[1]}`)
     if (args[1]?.endsWith('/prototype')) {
       const held = answers.prototype ?? notFound(args[1])
-      return run(held === PROTOTYPE ? 0 : 1, held)
+      return run(answers.prototype === undefined ? 1 : 0, held)
     }
     const printed = answers.changes?.[args[0] ?? ''] ?? answers.change ?? BUILDING
     return run(printed === MISSING || printed === DEGRADED ? 1 : 0, printed)
@@ -298,14 +319,28 @@ test('a prototype builder is refused off its proto branch and admitted on it', a
 })
 
 test('a prototype record Board does not read refuses the edit, and with none there the change builds', async ($, on) => {
-  const answers: Answers = { first: { a1: BRIEF }, prototype: DEGRADED_PROTOTYPE, branch: 'proto/other' }
-  const { edits } = engine(on, answers)
+  const answers: Answers = {
+    first: { a1: BRIEF },
+    prototype: DEGRADED_PROTOTYPE,
+    checked: DEGRADED_CHECK,
+    branch: 'proto/fix-it',
+  }
+  const { ran, edits } = engine(on, answers)
   expect((await edit($, FILE, 'a1')).deny).toMatch(
-    /`board -C \/home\/me\/board get \/changes\/fix-it\/prototype` failed with board::record::invalid: /,
+    /`board -C \/home\/me\/board check --healthy \/changes\/fix-it\/prototype` failed with board::record::invalid: fails its schema/,
   )
+  expect(ran).toContain(`check ${BOARD} /changes/fix-it/prototype`)
+  // The same record when Board reads it admits the builder on its branch.
+  delete answers.checked
+  answers.prototype = PROTOTYPE
+  expect((await edit($, FILE, 'a1')).deny).toBeUndefined()
+  // A record of another type there is refused too.
+  answers.prototype = OTHER_TYPE
+  expect((await edit($, FILE, 'a1')).deny).toMatch(/failed with it holds a tasks\/task\/v2, not a changes\/prototype\/v1/)
+  answers.branch = 'proto/other'
   delete answers.prototype
   expect((await edit($, FILE, 'a1')).deny).toBeUndefined()
-  expect(edits).toEqual(['Edit'])
+  expect(edits).toEqual(['Edit', 'Edit'])
 })
 
 test('a build change is admitted on any branch', async ($, on) => {

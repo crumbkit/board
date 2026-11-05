@@ -113,16 +113,27 @@ until a sync runs there. When the cache does not take the day, `sync` and
 `migrate` say why in `unrecorded`.
 
 `migrate [--apply true]` rewrites change records of the shape before this
-split: it moves `records` to the newest plan, a prototype's fields to its
+split: it moves `records` to the plan the change names, a prototype's fields to its
 prototype record and a `/changes/sync` day to the cache, and records each
 GitHub `pull_request` or `issue` URL through `github.ref`, which needs the
 github plugin enabled. Without `--apply` it writes nothing and says what
 it would. Both check each rewritten record against its schema. `left`
-lists each change and understanding check it leaves as it is, with why: a
-field no shape has, a rewritten record that fails its schema, or, with
-`page`, a GitHub page that `github.ref` refused. The rest migrate. A
+lists each change and understanding check it leaves as it is, with why:
+
+- a field no shape has;
+- a rewritten record that fails its schema;
+- a prototype record already at `<change>/prototype` that Board does not
+  read, or whose question or verdict differs from the old change's;
+- with `page`, a GitHub page that `github.ref` refused, such as one GitHub
+  answers with 404. `recorded` lists the github records already written for
+  the change's earlier pages; they stay, and the next run uses them.
+
+The rest migrate. A failure of gh itself, such as gh being signed out or
+offline, says nothing about the page, so migrate stops with
+`changes::migrate::gh_failed` and says to check `gh auth status`. A
 refusal from Board itself, such as the github plugin not being enabled,
-stops the migration before it writes the changes.
+also stops it. Either stops it before it writes the changes, and the next
+run keeps the github records already written.
 
 ## Capabilities
 
@@ -150,7 +161,7 @@ stops the migration before it writes the changes.
   read-only and work offline.
 - `attach --path /changes/<name> [--ref <path>] [--ticket <path>] [--pull <path>] [--task <path>] [--route <route>] [--head <sha>]`
   adds a reference once or sets the fields. `--task` sets `task`, and must
-  be a `tasks/task/v2`. `--ref` adds to the newest plan's `records`, and
+  be a `tasks/task/v2`. `--ref` adds to the `records` of the plan the change names, and
   refuses a change whose `plan` names no plan record
   (`changes::attach::no_plan`).
   `--ticket` to `tickets` and `--pull` to `pulls`. Refuses a reference that
@@ -255,7 +266,7 @@ stops the migration before it writes the changes.
   standards from each directory's `index.md` stayed within it.
 - `brief --path /changes/<name>`: read-only. `brief_line`,
   `board-brief: /changes/<name>`, which comes first; a builder's first
-  message starts with it (see "The write guard"). The newest plan's text path,
+  message starts with it (see "The write guard"). The text path of the plan the change names,
   even once a reference in it breaks,
   `rules`, each control that applies to the plan's `paths`, once, from
   `controls.for-paths`: its `control`, its `summary` and at most three of
@@ -380,7 +391,7 @@ the change. The check fails, saying why, when the change has no head,
 when nothing is at its mount, when its mount is a plain directory ("<mount>
 is not a mount"), and when git cannot give the diff. A rename counts as
 deleting one path and adding another. Each file it lists, by its path under the mount, must match one of
-the newest plan's `paths` with SQLite's `GLOB`. Otherwise `advance` refuses
+the `paths` of the plan the change names with SQLite's `GLOB`. Otherwise `advance` refuses
 with `changes::paths::outside_plan` and names the files, because their
 rules were not in the brief. Update the plan's paths with `plan`, or revert
 the edit. A plan with no paths, no report on `head`, or a diff git cannot
@@ -467,9 +478,12 @@ every Edit, Write and NotebookEdit. Install it with
 4. It reads that change from each board that mounts the repository. It
    admits the call when the change's `phase` is `build` and its `mount` is the
    mount that holds the file; a paused change is refused and told to
-   resume. It then reads `<change>/prototype`: when a prototype record is
-   there, the file's checkout must also be on branch `proto/<name>`, and
-   when something there does not read, the edit is refused with
+   resume. It then reads `<change>/prototype` with `board get`, and when a
+   prototype record is there it asks `board check --healthy` whether Board
+   reads it, because `board get` prints a degraded record as it prints a
+   valid one. When a readable prototype record is there, the file's
+   checkout must also be on branch `proto/<name>`. When the record there is
+   degraded or of another type, the edit is refused with
    `changes::guard::unknown`.
 
 Before any of that, the guard refuses three kinds of file to every agent,

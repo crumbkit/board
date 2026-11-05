@@ -69,7 +69,7 @@ struct RulesCommand {
 
 /// What an agent needs to start a change, in at most 600 words.
 ///
-/// `plan` is the path of the newest plan's text, or null when the change
+/// `plan` is the path of the text of the plan the change names, or null when the change
 /// has no plan record. `rules` lists each control on the plan's paths once,
 /// as `controls.for-paths` finds them: those that matched only some planned
 /// paths first, then the others, each group by control path. Each rule's

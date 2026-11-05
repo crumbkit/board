@@ -155,7 +155,7 @@ pub(crate) struct ChangeRecord {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "Option<Ref<Task>>")]
     pub(crate) task: Option<String>,
-    /// The change's newest plan, a `changes/plan/v1` under
+    /// The change's current plan, a `changes/plan/v1` under
     /// `/changes/<name>/plans/`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "Option<Ref<PlanRecord>>")]
@@ -312,7 +312,7 @@ pub(crate) struct PlanRecord {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "Option<Vec<LogicalGlob>>")]
     pub(crate) paths: Option<Vec<String>>,
-    /// The records the change produced while this plan was its newest, which
+    /// The records the change produced while this plan was its current one, which
     /// `changes.attach --ref` adds: tasks, runs, evals, decisions,
     /// understanding checks and review reports. The gates read those of
     /// every plan of the change.

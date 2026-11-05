@@ -389,7 +389,7 @@ fn the_review_gate_refuses_a_diff_outside_the_planned_paths_and_passes_one_insid
         unplanned.check("paths"),
         (
             "missing",
-            "the newest plan declares no paths, so every edited file is outside them; write the \
+            "the change's plan declares no paths, so every edited file is outside them; write the \
              plan again with `board call changes.plan` and its paths"
                 .to_owned()
         )

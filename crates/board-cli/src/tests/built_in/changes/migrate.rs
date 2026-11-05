@@ -200,9 +200,13 @@ fn a_page_github_ref_cannot_record_leaves_its_change_and_the_rest_migrate() {
         .find(|each| each["path"] == "/changes/old")
         .unwrap();
     assert_eq!(old["page"], ISSUE, "{old}");
+    // The pull request's record was written before the issue was refused.
+    assert_eq!(old["recorded"], json!(["/gh/o/r/pulls/1"]), "{old}");
     let why = old["why"].as_str().unwrap();
     assert!(
-        why.starts_with(&format!("github.ref could not record {ISSUE}: github::")),
+        why.starts_with(&format!(
+            "github.ref could not record {ISSUE}: github::ref::not_found: "
+        )) && why.contains("GitHub has no such page"),
         "{why}"
     );
     assert_eq!(board.text("changes/old.json"), before);
@@ -232,19 +236,73 @@ fn a_dry_run_leaves_a_change_whose_rewrite_fails_its_schema_and_lists_one_that_p
     );
 }
 
+/// A stub gh that fails as gh does when it is signed out.
+const GH_SIGNED_OUT: &str =
+    "#!/bin/sh\necho \"To get started with GitHub CLI, please run:  gh auth login\" >&2\nexit 4\n";
+
 #[test]
-fn a_prototype_record_already_beside_an_old_prototype_is_kept_and_the_change_migrates() {
+fn a_gh_that_fails_stops_the_migration_and_says_to_sign_in_and_a_working_gh_migrates() {
     let board = old_board(true);
-    let held = typed(
-        "changes/prototype/v1",
-        &json!({"question": "Is it already split?"}),
-    );
-    board.write("changes/proto/prototype.json", &held);
-    let output = board.call("migrate", &json!({"apply": true}));
+    board.bin.write("gh", Item::Executable(GH_SIGNED_OUT));
+    board.delete("gh/o/r/issues/2.json");
+    let before = board.text("changes/old.json");
+    let refused = board.refusal("migrate", &json!({"apply": true}));
     assert_eq!(
-        (&output["total"], &output["prototypes"]),
-        (&json!(2), &json!(0))
+        (&refused["code"], &refused["fields"]["page"]),
+        (&json!("changes::migrate::gh_failed"), &json!(ISSUE)),
+        "{refused}"
     );
-    assert_eq!(board.text("changes/proto/prototype.json"), held);
-    assert_eq!(board.code("/changes/proto"), None);
+    let message = refused["message"].as_str().unwrap();
+    assert!(message.contains("gh auth login"), "{message}");
+    assert_eq!(board.text("changes/old.json"), before);
+    // With the issue's record back, gh is not asked and the change migrates.
+    let admitted = old_board(true);
+    admitted.bin.write("gh", Item::Executable(GH_SIGNED_OUT));
+    assert_eq!(
+        admitted.call("migrate", &json!({"apply": true}))["total"],
+        2
+    );
+}
+
+#[test]
+fn a_prototype_record_already_there_that_agrees_is_kept_and_one_that_differs_or_does_not_read_is_left()
+ {
+    for (held, left) in [
+        (json!({"question": "Does it read better?"}), None),
+        (
+            json!({"question": "Is it already split?"}),
+            Some(
+                "the prototype record already at /changes/proto/prototype holds another question than the change",
+            ),
+        ),
+        (
+            json!({"question": "Does it read better?", "unknown": true}),
+            Some(
+                "a prototype record is already at /changes/proto/prototype, and Board does not read it",
+            ),
+        ),
+    ] {
+        let board = old_board(true);
+        let text = typed("changes/prototype/v1", &held);
+        board.write("changes/proto/prototype.json", &text);
+        let output = board.call("migrate", &json!({"apply": true}));
+        assert_eq!(output["prototypes"], 0, "{held}");
+        assert_eq!(board.text("changes/proto/prototype.json"), text);
+        let entry = (output["left"].as_array().unwrap().iter())
+            .find(|each| each["path"] == "/changes/proto");
+        match left {
+            None => {
+                assert!(entry.is_none(), "{output}");
+                assert_eq!(board.code("/changes/proto"), None);
+            }
+            Some(start) => {
+                let why = entry.unwrap()["why"].as_str().unwrap();
+                assert!(why.starts_with(start), "{why}");
+                assert_eq!(
+                    board.code("/changes/proto").as_deref(),
+                    Some("board::record::invalid")
+                );
+            }
+        }
+    }
 }

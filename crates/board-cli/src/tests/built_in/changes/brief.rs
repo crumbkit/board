@@ -1,5 +1,5 @@
 //! `test_brief.py`: `changes.brief`, which gives an agent what it needs to
-//! start from the change's newest plan.
+//! start from the plan the change names.
 
 use super::*;
 

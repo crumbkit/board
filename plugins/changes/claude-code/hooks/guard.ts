@@ -135,11 +135,29 @@ export function parseKind(stdout: string): Kind {
   const report = parseJson(stdout) as
     | { data?: { record?: { $type?: unknown } }[]; failures?: { code?: unknown; message?: unknown }[] }
     | undefined
-  if (report?.data?.[0]?.record?.$type === 'changes/prototype/v1') return { kind: 'prototype' }
+  const found = report?.data?.[0]?.record?.$type
+  if (found === 'changes/prototype/v1') return { kind: 'prototype' }
+  if (found !== undefined) return { kind: 'failed', why: `it holds a ${String(found)}, not a changes/prototype/v1` }
   const failure = report?.failures?.[0]
   if (failure?.code === 'board::path::not_found') return { kind: 'build' }
   if (typeof failure?.code === 'string') return { kind: 'failed', why: `${failure.code}: ${String(failure.message)}` }
   return { kind: 'failed', why: 'it printed no prototype record' }
+}
+
+/**
+ * Whether a `board --json check --healthy` report of one record says Board
+ * reads it, or the code and reason that say why not. `board get` prints a
+ * degraded record as it prints a valid one, so the guard asks `check`.
+ */
+export function parseHealth(stdout: string): { kind: 'ok' } | { kind: 'failed'; why: string } {
+  const report = parseJson(stdout) as
+    | { schema?: unknown; data?: { status?: unknown; code?: unknown; reason?: unknown }[]; code?: unknown; message?: unknown }
+    | undefined
+  const entry = report?.data?.[0]
+  if (report?.schema === 'board/check-report/v2' && entry?.status === 'ok') return { kind: 'ok' }
+  if (typeof entry?.code === 'string') return { kind: 'failed', why: `${entry.code}: ${String(entry.reason)}` }
+  if (typeof report?.code === 'string') return { kind: 'failed', why: `${report.code}: ${String(report.message)}` }
+  return { kind: 'failed', why: 'it printed no check of the record' }
 }
 
 /** The refusal of an edit of the board config. */

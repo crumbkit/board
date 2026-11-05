@@ -112,8 +112,8 @@ const CAPABILITIES: [Capability; 15] = [
     },
     Capability {
         name: "attach",
-        description: "Add a reference to a record the change produced, which its newest plan \
-            keeps, or set its task, route, head commit, ticket or pull request.",
+        description: "Add a reference to a record the change produced, which the plan the \
+            change names keeps, or set its task, route, head commit, ticket or pull request.",
         run: phases::attach,
         input: input::<phases::AttachInput>,
         output: output::<phases::AttachOutput>,
@@ -163,7 +163,7 @@ const CAPABILITIES: [Capability; 15] = [
         description: "Write a plan for the change, the records it uses and the paths it will \
             edit, refusing a build change's plan without paths, a path outside the change's \
             mount, a reference that reaches nothing, a plan over 3,000 words and used documents \
-            over 3,000 words in all; the newest plan is the change's plan.",
+            over 3,000 words in all; the new plan becomes the change's plan.",
         run: plan::plan,
         input: input::<plan::Input>,
         output: output::<plan::Output>,
@@ -174,7 +174,7 @@ const CAPABILITIES: [Capability; 15] = [
     },
     Capability {
         name: "brief",
-        description: "What an agent needs to start: the newest plan, a one-line summary of each \
+        description: "What an agent needs to start: the change's plan, a one-line summary of each \
             control on its paths, one line per record it uses, the next step and the command \
             that lists the repository's controls, in at most 600 words.",
         run: brief::brief,
@@ -260,7 +260,7 @@ const CAPABILITIES: [Capability; 15] = [
         name: "migrate",
         description: "Rewrite the board's change records written before the split of \
             changes/change/v1: a prototype's fields move to changes/prototype/v1, the records a \
-            change lists move to its newest plan, a pull request's URL becomes a github/pull/v1 \
+            change lists move to the plan it names, a pull request's URL becomes a github/pull/v1 \
             record through github.ref, and the sync stamp moves to Board's cache. apply writes \
             every line in one commit; without it nothing is written.",
         run: migrate::migrate,
