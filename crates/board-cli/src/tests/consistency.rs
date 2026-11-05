@@ -38,7 +38,7 @@ fn key(source: &Value, path: &str) -> Key {
 }
 
 fn checked(run: &impl Fn(&[&str]) -> Output) -> BTreeMap<Key, Said> {
-    let report = json(&run(&["check", "--all", "--json"]));
+    let report = json(&run(&["check", "--healthy", "--all", "--json"]));
     report["data"]
         .as_array()
         .unwrap()
@@ -178,9 +178,9 @@ fn viewed(run: &impl Fn(&[&str]) -> Output) -> Vec<String> {
     .collect()
 }
 
-/// What `check --all --json` prints, then each view.
+/// What `check --healthy --all --json` prints, then each view.
 fn answered(run: &impl Fn(&[&str]) -> Output) -> Vec<String> {
-    let mut answers = vec![printed(&run(&["check", "--all", "--json"]))];
+    let mut answers = vec![printed(&run(&["check", "--healthy", "--all", "--json"]))];
     answers.extend(viewed(run));
     answers
 }

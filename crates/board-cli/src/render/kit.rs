@@ -156,13 +156,14 @@ impl Row for Whole {
 }
 
 /// A [`Whole`] row whose `code`, when it has one, reports a problem, so a
-/// listing of them exits 1.
+/// listing of them exits 1. It is `check`'s row, and its columns say
+/// where an entry is, what it is, and why and how to fix it.
 #[derive(Serialize, JsonSchema)]
 #[serde(transparent)]
 pub(crate) struct Flagged(pub(crate) Whole);
 
 impl Row for Flagged {
-    const COLUMNS: &'static [&'static str] = &["code"];
+    const COLUMNS: &'static [&'static str] = &["logical", "kind", "code", "hint"];
     const WHOLE: bool = true;
     const LINE: Option<&'static str> = Some("<ENTRY>");
     const PROBLEM: Option<&'static str> = Some("code");

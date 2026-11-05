@@ -195,22 +195,137 @@ fn a_refused_command_line_exits_two() {
     }
 }
 
+/// A healthy board prints only the count it checked, and lists every entry
+/// with `--healthy`; the same board with one degraded entry fails.
 #[test]
-fn check_prints_one_line_per_entry_and_fails_when_any_is_degraded() {
+fn check_of_a_healthy_board_prints_one_summary_line_and_exits_0() {
     let scenario = board();
     let clean = board_in(scenario.workdir(), &["check"]);
     assert_eq!(clean.code, 0);
-    let printed = text(&clean.stdout);
+    assert_eq!(text(&clean.stdout), "4 entries checked, 0 degraded\n");
+    assert!(text(&clean.stderr).starts_with("note: no entry is degraded\n"));
+    let report = json(&board_in(scenario.workdir(), &["check", "--json"]));
+    assert_eq!(report["data"], json!([]));
+    assert_eq!(report["total"], 0);
+    assert_eq!(report["summary"], json!({"checked": 4, "degraded": 0}));
+    let healthy = board_in(scenario.workdir(), &["check", "--healthy"]);
+    assert_eq!(healthy.code, 0);
+    let printed = text(&healthy.stdout);
     let mut lines = printed.lines();
-    assert_eq!(lines.next(), Some("4 entries, 0 degraded"));
+    assert_eq!(lines.next(), Some("4 entries checked, 0 degraded"));
+    assert_eq!(lines.clone().count(), 4, "{printed}");
     assert!(lines.all(|line| line.starts_with("ok ")), "{printed}");
+    scenario.write("bad.json", Item::File("{"));
+    assert_eq!(board_in(scenario.workdir(), &["check"]).code, 1);
+}
+
+/// One degraded entry is the whole default listing, and `--healthy` lists
+/// it first with every healthy entry after it. Both runs fail.
+#[test]
+fn check_lists_only_the_degraded_entry_by_default_and_every_entry_with_healthy() {
+    let scenario = board();
     scenario.write("bad.json", Item::File("{"));
     let degraded = board_in(scenario.workdir(), &["check"]);
     assert_eq!(degraded.code, 1);
-    assert!(text(&degraded.stdout).contains(
-        "degraded board::json::parse /bad \
+    assert_eq!(
+        text(&degraded.stdout),
+        "5 entries checked, 1 degraded\n\
+         degraded board::json::parse /bad \
          is invalid: json does not parse: EOF while parsing an object at line 1 column 1\n"
+    );
+    let report = json(&board_in(scenario.workdir(), &["check", "--json"]));
+    assert_eq!(report["summary"], json!({"checked": 5, "degraded": 1}));
+    assert_eq!(
+        (report["total"].clone(), report["truncated"].clone()),
+        (json!(1), json!(false))
+    );
+    let rows = report["data"].as_array().unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0]["logical"], "/bad");
+    let healthy = board_in(scenario.workdir(), &["check", "--healthy"]);
+    assert_eq!(healthy.code, 1);
+    let printed = text(&healthy.stdout);
+    let lines: Vec<&str> = printed.lines().collect();
+    assert_eq!(lines.len(), 6, "{printed}");
+    assert!(lines[1].starts_with("degraded board::json::parse /bad "));
+    assert!(
+        lines[2..].iter().all(|line| line.starts_with("ok ")),
+        "{printed}"
+    );
+    let report = json(&board_in(
+        scenario.workdir(),
+        &["check", "--healthy", "--json"],
     ));
+    assert_eq!(report["total"], 5);
+    assert_eq!(report["data"].as_array().unwrap().len(), 5);
+}
+
+/// `--all` is the paging flag: it lists every degraded entry and no healthy
+/// one, and the note on a cut listing points to it. With `--healthy` it
+/// lists every entry, and `--healthy` with `--limit` cuts the whole listing.
+#[test]
+fn check_all_pages_every_degraded_entry_and_with_healthy_every_entry() {
+    let scenario = board();
+    scenario
+        .write("bad.json", Item::File("{"))
+        .write("worse.json", Item::File("["));
+    let cut = board_in(scenario.workdir(), &["check", "--limit", "1"]);
+    assert_eq!(cut.code, 1);
+    let note = text(&cut.stderr);
+    assert!(note.starts_with("Showing 1 of 2 entries. "), "{note}");
+    assert!(note.contains("--all shows every one"), "{note}");
+    let all = json(&board_in(scenario.workdir(), &["check", "--all", "--json"]));
+    assert_eq!(
+        (all["total"].clone(), all["truncated"].clone()),
+        (json!(2), json!(false))
+    );
+    let rows = all["data"].as_array().unwrap();
+    assert!(
+        rows.iter().all(|row| row["status"] == "degraded"),
+        "{rows:?}"
+    );
+    let every = json(&board_in(
+        scenario.workdir(),
+        &["check", "--healthy", "--all", "--json"],
+    ));
+    assert_eq!(every["total"], 6);
+    assert_eq!(every["data"].as_array().unwrap().len(), 6);
+    let first = json(&board_in(
+        scenario.workdir(),
+        &["check", "--healthy", "--limit", "3", "--json"],
+    ));
+    assert_eq!(
+        first["data"].as_array().unwrap()[..],
+        every["data"].as_array().unwrap()[..3]
+    );
+    assert_eq!(
+        (first["total"].clone(), first["truncated"].clone()),
+        (json!(6), json!(true))
+    );
+    assert_eq!(first["summary"], json!({"checked": 6, "degraded": 2}));
+}
+
+/// The row declares the columns a table shows, so flightdeck shows where an
+/// entry is, what it is, its code and its hint.
+#[test]
+fn check_declares_the_columns_logical_kind_code_and_hint() {
+    let scenario = board();
+    let help = text(&board_in(scenario.workdir(), &["check", "--help"]).stdout);
+    assert!(
+        help.contains("Columns:\n  logical\n  kind\n  code\n  hint\n"),
+        "{help}"
+    );
+    let listed = json(&board_in(
+        scenario.workdir(),
+        &["commands", "list", "check", "--json", "--full"],
+    ));
+    let columns: Vec<&str> = listed["data"][0]["columns"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|column| column["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(columns, ["logical", "kind", "code", "hint"]);
 }
 
 #[test]
@@ -258,7 +373,7 @@ fn check_says_where_and_why_an_entry_is_degraded_and_how_many_failures_it_has() 
             "tasks/t10.json",
             Item::File(r#"{"$type": "lr/task/v1", "title": "t", "project": "a//b"}"#),
         );
-    let output = board_in(scenario.workdir(), &["check"]);
+    let output = board_in(scenario.workdir(), &["check", "--healthy"]);
     let lines = text(&output.stdout);
     for line in [
         r#"degraded board::record::invalid /tasks/t5 fails its schema at "/title": 5 is not of type "string""#,
@@ -273,7 +388,10 @@ fn check_says_where_and_why_an_entry_is_degraded_and_how_many_failures_it_has() 
             "{line}\n{lines}"
         );
     }
-    let report = json(&board_in(scenario.workdir(), &["check", "--json"]));
+    let report = json(&board_in(
+        scenario.workdir(),
+        &["check", "--json", "--healthy"],
+    ));
     let entry = |path: &str| {
         report["data"]
             .as_array()
@@ -363,7 +481,9 @@ fn get_refuses_a_path_beside_an_invalid_pointer_with_the_code_check_gives_it() {
         .write("x/c.json", Item::File("{}"));
     let get = board_in(scenario.workdir(), &["get", "/x/c"]);
     assert_eq!((get.code, text(&get.stdout)), (0, "{}".to_owned()));
-    assert!(text(&board_in(scenario.workdir(), &["check"]).stdout).contains("ok /x/c\n"));
+    assert!(
+        text(&board_in(scenario.workdir(), &["check", "--healthy"]).stdout).contains("ok /x/c\n")
+    );
     scenario.write(
         "x.json",
         Item::File(r#"{"$type": "board/mount/v1", "path": "/a", "repo": "r"}"#),
@@ -520,7 +640,7 @@ fn check_gives_each_seed_exhibit_its_code_from_a_warm_index_and_a_cold_one() {
     let seed = Seed::new();
     let cache = tempfile::tempdir().unwrap();
     let dir = seed.board.workdir();
-    let arguments = ["check", "--json", "--all"];
+    let arguments = ["check", "--json", "--healthy", "--all"];
     let cold = json(&board_cached(dir, Some(cache.path()), &arguments));
     // A warm check hashes, parses and writes nothing, and opens only the
     // schema it could not read.
@@ -567,12 +687,13 @@ fn check_says_on_stderr_when_the_index_is_in_memory() {
     let cache = tempfile::tempdir().unwrap();
     let kept = board_cached(scenario.workdir(), Some(cache.path()), &["check"]);
     assert_eq!(kept.code, 0);
-    assert_eq!(text(&kept.stderr), "");
+    assert_eq!(text(&kept.stderr), "note: no entry is degraded\n");
     let memory = board_cached(scenario.workdir(), None, &["check"]);
     assert_eq!(memory.stdout, kept.stdout);
     assert_eq!(
         text(&memory.stderr),
-        "note: the index is in memory for this run: there is no cache directory\n"
+        "note: no entry is degraded\n\
+         note: the index is in memory for this run: there is no cache directory\n"
     );
 }
 
@@ -625,10 +746,13 @@ fn check_names_a_mounted_entry_by_its_logical_path_and_its_source() {
         "vendor/lib.json",
         Item::File(&mount_of(library.workdir().to_str().unwrap(), commit)),
     );
-    let output = board_in(scenario.workdir(), &["check"]);
+    let output = board_in(scenario.workdir(), &["check", "--healthy"]);
     assert!(text(&output.stdout).contains("ok /vendor/lib/notes/a.md\n"));
     assert!(text(&output.stdout).contains("ok /vendor/lib\n"));
-    let report = json(&board_in(scenario.workdir(), &["check", "--json"]));
+    let report = json(&board_in(
+        scenario.workdir(),
+        &["check", "--json", "--healthy"],
+    ));
     let entry = report["data"]
         .as_array()
         .unwrap()

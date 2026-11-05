@@ -381,7 +381,10 @@ fn check_degrades_a_name_with_a_format_character_and_text_escapes_it() {
     }
     assert!(err.contains("hint: c\\u{202e}d.md: "), "{err}");
     assert!(!err.contains("café"), "{err}");
-    let checked = json(&board_in(scenario.workdir(), &["check", "--json"]));
+    let checked = json(&board_in(
+        scenario.workdir(),
+        &["check", "--json", "--healthy"],
+    ));
     let codes: Vec<(&str, &str)> = (checked["data"].as_array().unwrap().iter())
         .filter_map(|entry| {
             Some((
@@ -619,33 +622,37 @@ fn limit_and_all_together_are_refused_and_each_alone_is_admitted() {
     assert_eq!(run(&["ls", "--all"]), 0);
 }
 
+/// A limit counts degraded entries, the only ones a check lists, and the
+/// summary still counts every entry checked.
 #[test]
-fn check_lists_degraded_entries_first_so_a_limit_never_hides_one() {
+fn a_limited_check_lists_degraded_entries_and_counts_every_entry_checked() {
     let scenario = notes(3);
-    scenario.write("zz/bad.json", Item::File("{"));
+    scenario
+        .write("zz/bad.json", Item::File("{"))
+        .write("zz/worse.json", Item::File("["));
     let output = board_in(scenario.workdir(), &["check", "--limit", "1"]);
     assert_eq!(output.code, 1);
     assert_eq!(
         text(&output.stdout),
-        "8 entries, 1 degraded\ndegraded board::json::parse /zz/bad \
+        "9 entries checked, 2 degraded\ndegraded board::json::parse /zz/bad \
          is invalid: json does not parse: EOF while parsing an object at line 1 column 1\n"
     );
     let stderr = text(&output.stderr);
-    assert!(stderr.starts_with("Showing 1 of 8 entries. "), "{stderr}");
+    assert!(stderr.starts_with("Showing 1 of 2 entries. "), "{stderr}");
     let report = json(&board_in(
         scenario.workdir(),
         &["check", "--limit", "1", "--json"],
     ));
-    assert_eq!(report["summary"]["degraded"], 1);
-    assert_eq!(report["total"], 8);
+    assert_eq!(report["summary"], json!({"checked": 9, "degraded": 2}));
+    assert_eq!(report["total"], 2);
     assert_eq!(report["data"].as_array().unwrap().len(), 1);
     assert_eq!(report["data"][0]["path"], "zz/bad.json");
     assert_eq!(report["data"][0]["status"], "degraded");
 }
 
 /// A limited check prints, as text and as JSON, exactly the first entries
-/// of the whole listing, whichever side of the limit its degraded and
-/// healthy entries fall, and the same total and exit code.
+/// of the unlimited default listing, which holds only degraded entries,
+/// and the same total, summary and exit code. `--healthy` has the same summary.
 #[test]
 fn a_limited_check_prints_the_first_entries_of_the_whole_listing() {
     let scenario = notes(3);
@@ -658,13 +665,16 @@ fn a_limited_check_prints_the_first_entries_of_the_whole_listing() {
         all.extend_from_slice(arguments);
         board_cached(scenario.workdir(), Some(cache.path()), &all)
     };
-    let whole = check(&["--all"]);
+    let whole = check(&[]);
     assert_eq!(whole.code, 1);
     let lines: Vec<String> = text(&whole.stdout).lines().map(str::to_owned).collect();
     let (summary, entries) = lines.split_first().unwrap();
-    let whole_json = json(&check(&["--all", "--json"]));
+    let whole_json = json(&check(&["--json"]));
     let data = whole_json["data"].as_array().unwrap();
-    assert_eq!(entries.len(), 9);
+    assert_eq!(entries.len(), 2);
+    let every = json(&check(&["--healthy", "--json"]));
+    assert_eq!(every["summary"], whole_json["summary"]);
+    assert_eq!(every["total"], 9);
     for shown in 1..=entries.len() {
         let limit = shown.to_string();
         let cut = check(&["--limit", &limit]);
@@ -940,7 +950,7 @@ fn check_names_an_entry_by_its_logical_path_and_one_without_or_sharing_it_by_its
         .write(".json", Item::File("{}"))
         .write("x.json", Item::File(r#"{"$type": "lr/project/v1"}"#))
         .write("x", Item::File(""));
-    let output = board_in(scenario.workdir(), &["check"]);
+    let output = board_in(scenario.workdir(), &["check", "--healthy"]);
     let stdout = text(&output.stdout);
     for line in [
         "degraded board::json::parse /zz/bad \

@@ -1,7 +1,7 @@
 ID                             KIND    FORM      DESCRIPTION
 board/failure/v1               output  document  The document that a command prints on standard output when it fails with --json.
 board/init-report/v2           output  document  Where the board is, and whether init made it.
-board/check-report/v2          output  document  Every entry and whether it is healthy.
+board/check-report/v2          output  document  The degraded entries, or with --healthy every entry, and how many were checked.
 board/get-report/v2            output  document  Each file asked for, or why not.
 board/ls-report/v2             output  document  The entries of one directory.
 board/refs-report/v2           output  document  The references of each path asked for.

@@ -358,7 +358,7 @@ def test_the_understanding_schema_refuses_a_mismatch_left_unsettled_and_admits_a
     body = json.loads(understanding_record())
     board.write("u/open.json", json.dumps(body | {"mismatches": [mismatch]}))
     board.write("u/settled.json", json.dumps(body | {"mismatches": [mismatch | {"settled": "plan"}]}))
-    report = board.json("check", "--all")
+    report = board.json("check", "--healthy", "--all")
     codes = {entry["logical"]: entry.get("code") for entry in report["data"] if entry["logical"].startswith("/u/")}
     assert codes == {"/u/open": "board::record::invalid", "/u/settled": None}
 

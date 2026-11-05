@@ -372,7 +372,10 @@ fn check_hints_how_to_fix_each_degraded_entry_and_gives_a_healthy_one_no_hint() 
             format!("hint: /tasks/t: {reference}"),
         ]
     );
-    let report = json(&board_in(scenario.workdir(), &["check", "--json"]));
+    let report = json(&board_in(
+        scenario.workdir(),
+        &["check", "--json", "--healthy"],
+    ));
     let hint = |path: &str| {
         report["data"]
             .as_array()
@@ -442,7 +445,7 @@ fn check_says_why_json_does_not_parse_and_json_that_parses_is_ok() {
         .write("dup.json", Item::File(r#"{"a": 1, "a": 2}"#))
         .write(".board/types/board/x/v1.schema.json", Item::File("{}"))
         .write("good.json", Item::File(r#"{"a": 1}"#));
-    let lines = text(&board_in(scenario.workdir(), &["check"]).stdout);
+    let lines = text(&board_in(scenario.workdir(), &["check", "--healthy"]).stdout);
     for line in [
         "degraded board::json::parse /bad is invalid: json does not parse: key must be a string at line 1 column 2",
         r#"degraded board::json::duplicate_key /dup is invalid: json repeats the key "a" in one object"#,

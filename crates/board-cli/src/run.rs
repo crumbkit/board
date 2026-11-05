@@ -40,7 +40,7 @@ use crate::values::{duration, expect, pointer, removal, var};
 const ROOT_EXAMPLES: &str = "\
 Start here:
   board init                        make this git repository a board
-  board check                       check every entry; exit 1 if any is degraded
+  board check                       list degraded entries; exit 1 if any
   board ls /                        list the board's root
   board get /projects/p             print the record in projects/p.json
   board put /tasks/a < task.json    write the record and commit it
@@ -179,17 +179,22 @@ Examples:
   board init
   board init --json")]
     Init,
-    /// Check every entry, or those at or beneath a path; fail if any is degraded.
+    /// Check every entry, or those at or beneath a path; list and fail on the degraded ones.
     #[command(after_help = "\
-Degraded entries come first, so a limited listing never hides one.
+By default it lists only the degraded entries, and its summary counts the
+entries checked. --healthy lists the healthy entries too, after the
+degraded ones. --limit and --all page whichever entries it lists.
 
 Examples:
   board check
-  board check /projects --all
+  board check /projects --healthy --all
   board check --json")]
     Check {
         /// Check only the entries at or beneath this logical path, such as /projects, or . for the current directory.
         path: Option<Given>,
+        /// List the healthy entries too, after the degraded ones.
+        #[arg(long)]
+        healthy: bool,
         #[command(flatten)]
         page: Page,
     },
@@ -606,10 +611,14 @@ fn command(
         | Command::Decide(_)
         | Command::Commands(_)
         | Command::Schemas(_) => unreachable!(),
-        Command::Check { path, page } => {
+        Command::Check {
+            path,
+            healthy,
+            page,
+        } => {
             let path = or_refuse!(path.map(|path| read(prefix, &path, "check")).transpose());
             match board.check(path.as_ref(), cache) {
-                Ok(report) => render::check(printer, &report, &page),
+                Ok(report) => render::check(printer, &report, healthy, &page),
                 Err(error) => render::refused(printer, error.refusal()),
             }
         }

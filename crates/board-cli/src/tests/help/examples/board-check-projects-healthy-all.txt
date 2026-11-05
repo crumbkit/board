@@ -1,0 +1,2 @@
+1 entry checked, 0 degraded
+ok /projects/p

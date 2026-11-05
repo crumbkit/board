@@ -1,7 +1,7 @@
 PATH                 ABOUT
 board                Board: a fast, validated view of a git tree.
 board init           Make this git repository a board
-board check          Check every entry, or those at or beneath a path; fail if any is degraded
+board check          Check every entry, or those at or beneath a path; list and fail on the degraded ones
 board get            Print the file at each path, following pointers
 board ls             List the directory at a path, without following pointers inside it
 board refs           List the references each entry makes and the entries that reach it
