@@ -7,7 +7,8 @@ must read the records and reports of a later one, so:
 
 - a changed type is a new version, `<namespace>/<kind>/v<n+1>`, and the old
   version's schema stays readable;
-- an `enum` outside `if`, `not` and `oneOf` may gain a value, never lose one;
+- an `enum` that `if`, `not` or `oneOf` cannot reach may gain a value, never
+  lose one;
   an older Board may treat a record holding a newer value as invalid;
 - a report or capability keeps every field, and a capability field its type;
   no input becomes required; a field may be added;

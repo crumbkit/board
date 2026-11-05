@@ -83,10 +83,11 @@ struct Field {
     /// none.
     #[serde(default, rename = "type", skip_serializing_if = "BTreeSet::is_empty")]
     types: BTreeSet<String>,
-    /// Whether the object holding the field requires it.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    required: bool,
-    /// The values the field's `enum` admits.
+    /// The fields a value must hold, one set for each way to satisfy its
+    /// schema; empty when it requires none.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    requires: Vec<BTreeSet<String>>,
+    /// The values the field's `enum` or `const` admits.
     #[serde(default, rename = "enum", skip_serializing_if = "Vec::is_empty")]
     values: Vec<Value>,
 }
@@ -248,10 +249,10 @@ fn violations(released: &Released, present: &Released) -> Vec<String> {
 }
 
 /// What the capability `name`, which declared `was`, broke by declaring
-/// `now`: a field gone, a type changed, an input newly required or an enum
-/// value removed. An input is newly required when it sits directly in the
-/// input or in a listed field, since a new input that only a new optional
-/// input requires breaks no caller.
+/// `now`: a field gone, a type changed, an enum value removed, an input
+/// newly limited to an enum, an input newly required or an output field no
+/// longer always held. Only listed fields are compared, since a new input
+/// that only a new optional input requires breaks no caller.
 fn changed(
     name: &str,
     was: &BTreeMap<String, Field>,
@@ -263,24 +264,27 @@ fn changed(
             .collect::<Vec<_>>()
             .join(" or ")
     };
-    for (path, field) in now {
-        let parent = path.rsplit_once('.').map_or("", |(parent, _)| parent);
-        let listed = parent == "input" || was.contains_key(parent);
-        if field.required
-            && listed
-            && path.starts_with("input.")
-            && !was.get(path).is_some_and(|was| was.required)
-        {
-            found.push(format!(
-                "{name} now requires {path}; a newly required input is a new version"
-            ));
-        }
-    }
     for (path, field) in was {
         let Some(held) = now.get(path) else {
             found.push(format!("{name} no longer holds {path}"));
             continue;
         };
+        if path == "input" || path.starts_with("input.") {
+            found.extend(required(name, path, &field.requires, &held.requires));
+            if field.values.is_empty() && !held.values.is_empty() {
+                found.push(format!(
+                    "{name} now limits {path} to {}; an enum on an input is a new version",
+                    Value::from(held.values.clone())
+                ));
+            }
+        } else {
+            let (before, after) = (always(&field.requires), always(&held.requires));
+            for child in before.difference(&after) {
+                found.push(format!(
+                    "{name} no longer always holds {path}.{child}; a reader relies on it"
+                ));
+            }
+        }
         for value in (field.values.iter()).filter(|value| !held.values.contains(value)) {
             found.push(format!(
                 "{name} no longer admits {value} at {path}; an enum value is never removed"
@@ -295,6 +299,48 @@ fn changed(
         }
     }
     found
+}
+
+/// The ways to satisfy a schema whose `requires` is `ways`: one that requires
+/// nothing when `ways` is empty.
+fn ways(ways: &[BTreeSet<String>]) -> Vec<BTreeSet<String>> {
+    if ways.is_empty() {
+        vec![BTreeSet::new()]
+    } else {
+        ways.to_vec()
+    }
+}
+
+/// The fields every way to satisfy a schema whose `requires` is `ways`
+/// holds.
+fn always(ways: &[BTreeSet<String>]) -> BTreeSet<String> {
+    let mut all = self::ways(ways).into_iter();
+    let first = all.next().unwrap_or_default();
+    all.fold(first, |always, way| &always & &way)
+}
+
+/// The inputs of the field `path` of `name` that a caller who satisfied
+/// `was` must now add to satisfy `now`: for each old way that no new way
+/// fits inside, the fields the closest new way adds.
+fn required(
+    name: &str,
+    path: &str,
+    was: &[BTreeSet<String>],
+    now: &[BTreeSet<String>],
+) -> Vec<String> {
+    let now = ways(now);
+    let mut added = BTreeSet::new();
+    for way in ways(was) {
+        if !now.iter().any(|new| new.is_subset(&way)) {
+            let closest = now.iter().map(|new| new - &way).min_by_key(BTreeSet::len);
+            added.extend(closest.unwrap_or_default());
+        }
+    }
+    (added.into_iter())
+        .map(|child| {
+            format!("{name} now requires {path}.{child}; a newly required input is a new version")
+        })
+        .collect()
 }
 
 /// Fields whose contents are not Board's: a record, a plugin's schemas and
@@ -356,28 +402,17 @@ fn declared(
             }
             _ => {}
         }
-        for value in schema
-            .get("enum")
-            .and_then(Value::as_array)
-            .into_iter()
-            .flatten()
-        {
+        let one = schema.get("const").map(std::slice::from_ref);
+        let values = (schema.get("enum").and_then(Value::as_array)).map(Vec::as_slice);
+        for value in one.into_iter().chain(values).flatten() {
             if !field.values.contains(value) {
                 field.values.push(value.clone());
             }
         }
     }
-    if let Some(name) = (schema.get("$ref").and_then(Value::as_str))
-        .and_then(|reference| reference.strip_prefix("#/$defs/"))
-        && !seen.contains(name)
-        && let Some(definition) = root.get("$defs").and_then(|defs| defs.get(name))
-    {
-        let mut seen = seen.clone();
-        seen.insert(name);
+    if let Some((definition, seen)) = referenced(root, schema, seen) {
         declared(root, definition, prefix, &seen, into);
     }
-    let required =
-        (schema.get("required").and_then(Value::as_array)).map_or(&[][..], Vec::as_slice);
     if let Some(Value::Object(properties)) = schema.get("properties") {
         for (key, property) in properties {
             let path = if prefix.is_empty() {
@@ -385,16 +420,11 @@ fn declared(
             } else {
                 format!("{prefix}.{key}")
             };
-            into.entry(path.clone()).or_default().required |= required
-                .iter()
-                .any(|name| name.as_str() == Some(key.as_str()));
-            declared(root, property, &path, seen, into);
+            entered(root, property, &path, seen, into);
         }
     }
     if let Some(items) = schema.get("items") {
-        let path = format!("{prefix}[]");
-        into.entry(path.clone()).or_default();
-        declared(root, items, &path, seen, into);
+        entered(root, items, &format!("{prefix}[]"), seen, into);
     }
     for variants in ["oneOf", "anyOf", "allOf"] {
         if let Some(Value::Array(variants)) = schema.get(variants) {
@@ -402,6 +432,93 @@ fn declared(
                 declared(root, variant, prefix, seen, into);
             }
         }
+    }
+}
+
+/// The definition the local `$ref` of `schema` names, with `seen` and its
+/// name, unless `seen` already holds it.
+fn referenced<'a>(
+    root: &'a Value,
+    schema: &'a serde_json::Map<String, Value>,
+    seen: &BTreeSet<&'a str>,
+) -> Option<(&'a Value, BTreeSet<&'a str>)> {
+    let name = (schema.get("$ref").and_then(Value::as_str))?.strip_prefix("#/$defs/")?;
+    let definition = root.get("$defs")?.get(name)?;
+    let mut seen = seen.clone();
+    seen.insert(name).then_some((definition, seen))
+}
+
+/// Declares the field at `path`, whose schema is `node`, with each way to
+/// satisfy it, and every field below it.
+fn entered(
+    root: &Value,
+    node: &Value,
+    path: &str,
+    seen: &BTreeSet<&str>,
+    into: &mut BTreeMap<String, Field>,
+) {
+    let field = into.entry(path.to_owned()).or_default();
+    let mut ways = std::mem::take(&mut field.requires);
+    ways.extend(requirements(root, node, seen));
+    field.requires = least(ways);
+    declared(root, node, path, seen, into);
+}
+
+/// The sets of fields a value of `node` must hold, one for each way to
+/// satisfy it: its `required` with those of its `$ref` and every `allOf`
+/// variant, and with those of one `oneOf` or `anyOf` variant.
+fn requirements(root: &Value, node: &Value, seen: &BTreeSet<&str>) -> Vec<BTreeSet<String>> {
+    let Value::Object(schema) = node else {
+        return vec![BTreeSet::new()];
+    };
+    let names = (schema
+        .get("required")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten())
+    .filter_map(Value::as_str)
+    .map(str::to_owned);
+    let mut ways = vec![names.collect::<BTreeSet<_>>()];
+    let both = |ways: Vec<BTreeSet<String>>, others: Vec<BTreeSet<String>>| {
+        let joined = ways
+            .iter()
+            .flat_map(|way| others.iter().map(move |other| way | other));
+        joined.collect::<Vec<_>>()
+    };
+    if let Some((definition, seen)) = referenced(root, schema, seen) {
+        ways = both(ways, requirements(root, definition, &seen));
+    }
+    for variant in schema
+        .get("allOf")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+    {
+        ways = both(ways, requirements(root, variant, seen));
+    }
+    for key in ["oneOf", "anyOf"] {
+        if let Some(Value::Array(variants)) = schema.get(key) {
+            let any = variants
+                .iter()
+                .flat_map(|variant| requirements(root, variant, seen));
+            ways = both(ways, any.collect());
+        }
+    }
+    ways
+}
+
+/// `ways` without a way that holds another, and empty when one requires
+/// nothing.
+fn least(mut ways: Vec<BTreeSet<String>>) -> Vec<BTreeSet<String>> {
+    ways.sort();
+    ways.dedup();
+    let held =
+        |way: &BTreeSet<String>| (ways.iter()).any(|other| other != way && other.is_subset(way));
+    let least: Vec<BTreeSet<String>> = ways.iter().filter(|way| !held(way)).cloned().collect();
+    if least.iter().any(BTreeSet::is_empty) {
+        Vec::new()
+    } else {
+        least
     }
 }
 
@@ -853,7 +970,7 @@ fn rendered() -> Vec<(Vec<&'static str>, Output)> {
 fn fields(input: &Value, output: &Value) -> BTreeMap<String, Field> {
     let mut fields = BTreeMap::new();
     for (prefix, schema) in [("input", input), ("output", output)] {
-        declared(schema, schema, prefix, &BTreeSet::new(), &mut fields);
+        entered(schema, schema, prefix, &BTreeSet::new(), &mut fields);
     }
     fields
 }
@@ -1075,7 +1192,7 @@ fn every_released_type_report_and_code_is_as_it_was_released() {
     // Each capability field carries its type, read from the schemas Board
     // serves, so a capability another change adds is listed with no edit here.
     assert_eq!(check["input.path"].types, ["string".to_owned()].into());
-    assert!(!check["input.path"].required, "{check:?}");
+    assert!(check["input"].requires.is_empty(), "{check:?}");
     assert_eq!(check["output.measured"].types, ["array".to_owned()].into());
     if overwrite {
         write(&present);
@@ -1431,18 +1548,119 @@ fn capability(required: &[&str], kind: &str, modes: &[&str], extra: &[(&str, Val
 }
 
 #[test]
-fn a_capability_freezes_each_fields_types_whether_an_input_is_required_and_its_enum_values() {
+fn a_capability_freezes_each_fields_types_what_each_object_requires_and_its_enum_values() {
     let fields = &capability(&["path"], "string", &["a"], &[]).capabilities["x.y"];
-    let path = Field {
-        types: ["string".to_owned()].into(),
-        required: true,
+    let input = Field {
+        types: ["object".to_owned()].into(),
+        requires: vec![["path".to_owned()].into()],
         values: Vec::new(),
     };
-    assert_eq!(fields["input.path"], path);
+    assert_eq!(fields["input"], input);
+    assert_eq!(fields["input.path"].types, ["string".to_owned()].into());
     assert_eq!(fields["input.mode"].values, [json!("a")]);
-    assert_eq!(fields["output.rows[].name"].types, path.types);
+    assert_eq!(
+        fields["input.filter"].requires,
+        Vec::<BTreeSet<String>>::new()
+    );
+    assert_eq!(
+        fields["output.rows[].name"].types,
+        ["string".to_owned()].into()
+    );
     assert!(fields.contains_key("output.rows[]"), "{fields:?}");
-    assert!(!fields["input.mode"].required);
+}
+
+/// A capability `x.y` whose input is `input` and whose output is `output`.
+fn declaring(input: &Value, output: &Value) -> Released {
+    Released {
+        capabilities: [("x.y".to_owned(), fields(input, output))].into(),
+        ..Released::default()
+    }
+}
+
+#[test]
+fn an_input_that_one_of_its_variants_requires_is_frozen_with_each_way_to_satisfy_it() {
+    let input = |ways: Value| json!({"properties": {"subject": {}, "mount": {}, "limit": {}}, "oneOf": ways});
+    let released = declaring(
+        &input(json!([{"required": ["subject"]}, {"required": ["mount"]}])),
+        &json!({}),
+    );
+    let either = [["mount".to_owned()].into(), ["subject".to_owned()].into()];
+    assert_eq!(released.capabilities["x.y"]["input"].requires, either);
+    let three =
+        input(json!([{"required": ["subject"]}, {"required": ["mount"]}, {"required": ["limit"]}]));
+    assert_eq!(
+        violations(&released, &declaring(&three, &json!({}))),
+        Vec::<String>::new(),
+        "a new way to satisfy the input breaks no caller"
+    );
+    let any = json!({"properties": {"subject": {}, "mount": {}, "limit": {}}, "anyOf": [{"required": ["mount"]}, {"required": ["subject"]}]});
+    assert_eq!(
+        violations(&released, &declaring(&any, &json!({}))),
+        Vec::<String>::new()
+    );
+    let one = input(json!([{"required": ["subject"]}]));
+    assert_eq!(
+        violations(&released, &declaring(&one, &json!({}))),
+        ["x.y now requires input.subject; a newly required input is a new version"]
+    );
+    let more = input(json!([{"required": ["subject"]}, {"required": ["mount", "limit"]}]));
+    assert_eq!(
+        violations(&released, &declaring(&more, &json!({}))),
+        ["x.y now requires input.limit; a newly required input is a new version"]
+    );
+}
+
+#[test]
+fn an_output_field_made_optional_is_refused_and_one_made_required_is_admitted() {
+    let output =
+        |required: &[&str]| json!({"properties": {"path": {}, "commit": {}}, "required": required});
+    let released = declaring(&json!({}), &output(&["path"]));
+    assert_eq!(
+        violations(
+            &released,
+            &declaring(&json!({}), &output(&["path", "commit"]))
+        ),
+        Vec::<String>::new()
+    );
+    assert_eq!(
+        violations(&released, &declaring(&json!({}), &output(&[]))),
+        ["x.y no longer always holds output.path; a reader relies on it"]
+    );
+}
+
+#[test]
+fn an_input_that_gains_an_enum_and_an_output_const_that_changes_are_refused_and_an_output_that_gains_an_enum_value_is_admitted()
+ {
+    let with = |input: Value, output: Value| {
+        declaring(
+            &json!({"properties": {"kind": input}}),
+            &json!({"properties": {"to": output}}),
+        )
+    };
+    let released = with(json!({"type": "string"}), json!({"const": "dropped"}));
+    assert_eq!(
+        violations(
+            &released,
+            &with(
+                json!({"type": "string"}),
+                json!({"enum": ["dropped", "done"]})
+            )
+        ),
+        Vec::<String>::new()
+    );
+    assert_eq!(
+        violations(
+            &released,
+            &with(
+                json!({"type": "string", "enum": ["a"]}),
+                json!({"const": "done"})
+            )
+        ),
+        [
+            "x.y now limits input.kind to [\"a\"]; an enum on an input is a new version",
+            "x.y no longer admits \"dropped\" at output.to; an enum value is never removed",
+        ]
+    );
 }
 
 #[test]
@@ -1496,8 +1714,8 @@ fn a_capability_input_newly_required_a_changed_type_and_a_lost_enum_value_are_re
     assert_eq!(
         violations(&released, &added),
         [
-            "x.y now requires input.filter.tag; a newly required input is a new version",
             "x.y now requires input.limit; a newly required input is a new version",
+            "x.y now requires input.filter.tag; a newly required input is a new version",
         ]
     );
 }
