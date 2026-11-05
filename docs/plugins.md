@@ -44,17 +44,17 @@ plugin update proceeds and how a plugin migrates its records.
 ```json
 {
   "$type": "board/plugin-manifest/v1",
-  "name": "changes",
+  "name": "review",
   "version": "0.1.0",
-  "description": "Walk one change from its plan to its pull request.",
-  "run": ["uv", "run", "--frozen", "--no-dev", "python", "-m", "board_changes"],
-  "metadata": { "area": "delivery" },
-  "types": ["changes/change/v1"],
+  "description": "Review a brief and record the report.",
+  "run": ["uv", "run", "--frozen", "--no-dev", "python", "-m", "board_review"],
+  "metadata": { "area": "review" },
+  "types": ["review/report/v1"],
   "capabilities": [
     {
-      "name": "start",
-      "title": "Start a change",
-      "description": "Create a change and its plan.",
+      "name": "run",
+      "title": "Review a brief",
+      "description": "Review a brief and write its report.",
       "inputSchema": { "type": "object" },
       "outputSchema": { "type": "object" },
       "annotations": { "readOnlyHint": false },
@@ -221,8 +221,8 @@ comes right after the alias; a flag in its place is a usage error.
 
 A new plugin is a built-in crate, never a Python program
 ([plugins/built-in/writing.md](plugins/built-in/writing.md)).
-[plugins/python.md](plugins/python.md) describes the plugin still in
-Python. Each `plugins/<name>/` README describes its records and
+[plugins/python.md](plugins/python.md) describes the Python library
+that remains. Each `plugins/<name>/` README describes its records and
 capabilities. [plugins/share.md](plugins/share.md) explains `share`, and
 [plugins/claude-code.md](plugins/claude-code.md) covers Claude Code mods,
 with [the controls mod](plugins/controls-claude-code.md) and

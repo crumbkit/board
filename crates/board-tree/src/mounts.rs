@@ -385,9 +385,27 @@ pub enum Origin {
 /// git's config without starting git. A repository git would refuse, for
 /// its owner or a config that does not parse, is unread.
 pub fn origin(directory: &Path) -> Origin {
+    origin_below(directory, &[])
+}
+
+/// The `origin` remote of the repository at `directory` itself, as git
+/// reads it with `GIT_CEILING_DIRECTORIES` set to the directory's parent:
+/// a directory that is not a repository is outside, even inside another
+/// repository's working tree.
+pub fn own_origin(directory: &Path) -> Origin {
+    let ceiling: Vec<PathBuf> = directory.parent().map(Path::to_path_buf).into_iter().collect();
+    origin_below(directory, &ceiling)
+}
+
+/// [`origin`], looking no higher than below each of `ceiling`.
+fn origin_below(directory: &Path, ceiling: &[PathBuf]) -> Origin {
+    let options = || gix::discover::upwards::Options {
+        ceiling_dirs: ceiling.to_vec(),
+        ..gix::discover::upwards::Options::default()
+    };
     // Finding the repository reads no config, so only a directory in no
     // repository, or one that cannot be read, is outside.
-    let Ok((found, trust)) = gix::discover::upwards(directory) else {
+    let Ok((found, trust)) = gix::discover::upwards_opts(directory, options()) else {
         return Origin::Outside;
     };
     if trust != gix::sec::Trust::Full {
@@ -399,8 +417,8 @@ pub fn origin(directory: &Path) -> Origin {
             git_dir.display()
         ));
     }
-    let git = match gix::discover(directory) {
-        Ok(git) => git,
+    let git = match gix::ThreadSafeRepository::discover_opts(directory, options(), gix::sec::trust::Mapping::default()) {
+        Ok(git) => git.to_thread_local(),
         Err(error) => return Origin::Unread(format!("error: {error}")),
     };
     match git.try_find_remote("origin") {

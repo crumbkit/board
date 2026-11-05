@@ -782,6 +782,7 @@ fn uncommitted() -> Scenario {
 
 mod artifacts;
 mod boundary;
+mod changes;
 mod controls;
 mod evals;
 mod github;

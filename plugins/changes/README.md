@@ -1,9 +1,6 @@
 # changes
 
-This plugin is still a Python program (docs/plugins/python.md). A new plugin
-is a crate built into Board (docs/plugins/built-in/writing.md).
-
-A Board plugin that walks an agent through one change to a mounted
+A Board plugin, built into Board as `crates/board-plugin-changes`, that walks an agent through one change to a mounted
 repository, from its plan to its pull request, and gathers every record the
 change produces. SKILL.md holds the procedure for each phase.
 
@@ -260,7 +257,10 @@ path or `file://` URL, is followed to that clone's origin, through at most
 three clones. Two mounts of one repository count together, even from two
 clones. A clone whose origin git cannot read is keyed by its path, a chain
 of local clones that runs out by its last clone, and a mount Board cannot
-resolve by the mount. Each git read has 10 s. A prototype in `build` is always `exploring`,
+resolve by the mount. Origins are read from each clone's git config, and
+never from a repository around a directory that is not one. Each `git log`
+has 10 s, and all of them 20 s; past that the move is refused with
+`changes::wip::timeout`. A prototype in `build` is always `exploring`,
 because `verdict` moves it out of `build` in the same write that sets its
 state. A paused change holds no place. Only the board's own changes, under
 `/changes/`, count. A change is active when the newest of these days is
@@ -489,23 +489,20 @@ capabilities instead.
 
 ## Installing
 
-    uv sync --frozen --no-dev
-    ln -s "$PWD" "${XDG_DATA_HOME:-$HOME/.local/share}/board/plugins/changes"
-    board plugin enable changes
-
-Enabling writes the schema to `.board/types/changes/` and names the
-plugin in `.board/board.json`. The type stays at v1 and changes in place while
-the plugin has one user; after such a change, enable it again.
-
-## Developing
-
-The gates, which CI runs: `uv run ruff format --check .`, `uv run ruff check .`,
-`uv run pyright` and `uv run pytest`. The tests drive `$BOARD_BIN`, by default
-the workspace's `target/debug/board`, so build it first with
-`cargo build -p board-cli`. `plugin.json` and the shipped schema are generated
-from `src/board_changes/models.py` by `board_changes.manifest`, and
-a test checks that the committed files match.
+Run `board plugin enable changes` in a board. Enabling writes the schemas to
+`.board/types/changes/` and names the plugin in `.board/board.json`. The type
+stays at v1 and changes in place while the plugin has one user; after such a
+change, enable it again.
 
 `start`, `prototype` and `verdict` call the tasks plugin through a nested
 `board call`, which syncs and pushes a notes repo, so each may run for 120
 seconds instead of Board's default limit.
+
+## Tests
+
+`crates/board-cli/src/tests/built_in/changes.rs` and its modules run the
+`board` binary in process against real git repositories mounted beside the
+board and a stand-in gh. They are the former pytest suite. The crate's own
+tests cover the gates, the WIP limit's window and origin forms, the pull
+request body, the brief's fitting of rules, and the manifest and its
+committed schemas.

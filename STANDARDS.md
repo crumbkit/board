@@ -228,12 +228,11 @@ make it concrete. Rule 17 already fixes the report, the exit codes and `--json`.
     print_stdout = "deny"
     print_stderr = "deny"
 
-## Plugins still in Python
+## The Python library
 
 A new plugin is a built-in Rust crate under rules 1 to 29
 (docs/plugins/built-in/writing.md), never a Python project. P1 to P5 hold for
-the plugins still in Python and the shared `python/board-plugin/` library
-(docs/plugins/python.md).
+the shared `python/board-plugin/` library (docs/plugins/python.md).
 
 - **P1. Toolchain.** Python 3.12 or newer, managed with uv. Commit the lockfile; CI installs with `uv sync --frozen`.
 - **P2. Gates.** `ruff format --check`, `ruff check` with every rule selected and each ignored rule listed with its reason, `pyright` in strict mode, and `pytest`, run in every Python project by `bin/lint` and `bin/test`.

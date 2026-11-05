@@ -119,6 +119,15 @@ pub trait Host {
             read => read,
         }
     }
+    /// The `origin` of the git repository at `clone` itself, as `git remote
+    /// get-url origin` gives it there with `GIT_CEILING_DIRECTORIES` set to
+    /// the clone's parent, read from git's config so no process starts. A
+    /// directory that is not a repository is [`Origin::Outside`], even inside
+    /// another repository; a repository that gives no origin is
+    /// [`Origin::Unread`], saying why.
+    fn clone_origin(&self, clone: &Path) -> Origin {
+        board_tree::own_origin(clone)
+    }
     /// Runs `run` through board-plugin's process module with the settings'
     /// `environment` and nothing else, as the leader of its own process
     /// group. Every process still in the group is killed when it exits, past
