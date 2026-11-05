@@ -243,6 +243,7 @@ struct RawCapability {
 }
 
 /// MCP's `ToolAnnotations`: hints Board stores and acts on none of.
+/// `board commands list` reports all but `title` as a capability's effects.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct Annotations {

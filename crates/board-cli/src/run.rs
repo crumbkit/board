@@ -430,8 +430,8 @@ pub(crate) fn run(
     let sink = &mut Sink::new(&mut stdout, &mut stderr);
     let parsed = crumbkit::try_parse_to::<graft::Parsed, _, _, _, _>(
         sink,
-        graft::command(found.as_ref()).subcommands(aliases),
-        &graft::guide(found.as_ref()),
+        graft::command(found.as_slice()).subcommands(aliases),
+        &graft::guide(found.as_slice()),
         arguments.clone(),
     );
     ran.trace.add("parse", parsing);
@@ -455,12 +455,10 @@ pub(crate) fn run(
     };
     let words = arguments.get(1..).unwrap_or_default();
     ran.command = Some(crumbkit::command_path(&Cli::command(), &GUIDE, words).join(" "));
-    let printer = Printer { view };
-    match &cli.command {
-        Command::Commands(command) => return crate::describe::commands(printer, command),
-        Command::Schemas(command) => return crate::describe::schemas(printer, command),
-        _ => {}
+    if let Command::Commands(_) | Command::Schemas(_) = cli.command {
+        return describe(&arguments, context, &cli, view, ran);
     }
+    let printer = Printer { view };
     if cli.command.owner_only()
         && let Some(refusal) = effects::from_plugin(context, ran)
     {
@@ -518,6 +516,28 @@ pub(crate) fn run(
     };
     ran.trace.extend(board.take_trace());
     output
+}
+
+/// `board commands` and `board schemas`, which in a board also describe
+/// the capabilities of the plugins it enables.
+fn describe(
+    arguments: &[OsString],
+    context: &Context,
+    cli: &Cli,
+    view: crumbkit::Output,
+    ran: &mut Ran,
+) -> Output {
+    let base = cli.personal.then(|| context.personal());
+    let base = base.unwrap_or_else(|| Ok(context.start.clone()));
+    let start = base.and_then(|base| entered(&base, &cli.directories));
+    let (guide, notes, view) =
+        crate::describe::grafted(arguments, context, start, view, &mut ran.trace);
+    let printer = Printer { view };
+    match &cli.command {
+        Command::Commands(command) => crate::describe::commands(printer, &guide, command, notes),
+        Command::Schemas(command) => crate::describe::schemas(printer, &guide, command, notes),
+        _ => unreachable!("run passes only commands and schemas"),
+    }
 }
 
 /// The output of a refused command line that Board reads again: one that

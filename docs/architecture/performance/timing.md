@@ -35,6 +35,7 @@ after each commit, so board-cli recompiles after every commit.
 | --- | --- |
 | `parse` | parsing the command line |
 | `open` | finding and opening the board |
+| `plugin.list` | reading the enabled plugins' manifests, for `commands` and `schemas` |
 | `resolve` | resolving the path that `get`, `ls`, `refs` or a scoped `check` names |
 | `index.open` | opening the index |
 | `snapshot` | refreshing the index and deciding every entry, for `check`, `ls`, `query` and `refs` |
@@ -58,7 +59,8 @@ after each commit, so board-cli recompiles after every commit.
 `work` holds the counts a run has: `entries`, `hashed`, `parsed`, `validated`,
 `trees`, `rows`, `target_changed`, how many targets `refs --field` left
 unread because they changed after the check (it does not name them),
-`started`, the plugin processes a call started, `repositories`, the
+`started`, the plugin processes a call started, `capabilities`, the
+capabilities `commands` or `schemas` listed, `repositories`, the
 repositories a snapshot opened from disk besides the board's own, `kept`,
 the mounted sources a query or check read from kept decisions without
 walking them (architecture/performance/decisions.md), `walked`, the mounted

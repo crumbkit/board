@@ -440,6 +440,241 @@ fn commands_and_schemas_sit_at_crumbkits_fixed_paths() {
 
 #[test]
 fn every_command_matches_the_checked_in_command_reference() {
+    // The reference describes `call` alone, so the check runs Board outside
+    // any board, where `commands list` lists no plugin's capabilities. Its
+    // test runs in this repository, whose board enables controls.
+    let outside = Scenario::new();
+    let script = format!(
+        "#!/bin/sh\ncd '{}' && exec '{}' \"$@\"\n",
+        outside.path(),
+        super::help::binary()
+    );
+    outside.write("bin/board", Item::Executable(&script));
     let reference = concat!(env!("CARGO_MANIFEST_DIR"), "/docs/commands.md");
-    crumbkit_test::check_command_reference(&super::help::binary(), reference);
+    let binary = outside.workdir().join("bin/board");
+    crumbkit_test::check_command_reference(binary.to_str().unwrap(), reference);
+}
+
+/// A plugin installed beside the built-in ones, with one capability that
+/// adds idempotently within the board and one that reads, the first with an
+/// enum flag.
+const CHORES: &str = r#"{
+  "$type": "board/plugin-manifest/v1",
+  "name": "chores",
+  "version": "0.1.0",
+  "description": "Chores.",
+  "run": ["./run"],
+  "capabilities": [{
+    "name": "add",
+    "description": "Add a chore.",
+    "inputSchema": {"type": "object", "additionalProperties": false, "properties": {
+      "room": {"type": "string", "enum": ["kitchen", "hall"], "description": "Where."}
+    }},
+    "outputSchema": {"type": "object"},
+    "annotations": {"readOnlyHint": false, "destructiveHint": false, "idempotentHint": true, "openWorldHint": false}
+  }, {
+    "name": "list",
+    "description": "List the chores.",
+    "inputSchema": {"type": "object"},
+    "outputSchema": {"type": "object"},
+    "annotations": {"readOnlyHint": true}
+  }]
+}"#;
+
+/// A board that enables `plugins`, beside a plugins directory holding
+/// chores and a plugin whose manifest does not parse.
+fn enabling(plugins: &str) -> (Scenario, Scenario) {
+    let board = Scenario::new();
+    let config = format!(r#"{{"$type": "board/config/v1", "plugins": [{plugins}]}}"#);
+    board.write(".board/board.json", Item::File(&config));
+    let data = Scenario::new();
+    data.write("plugins/chores/plugin.json", Item::File(CHORES))
+        .write("plugins/broken/plugin.json", Item::File("{}"));
+    (board, data)
+}
+
+/// The `call <plugin>.<capability>` rows of `commands list` in `board`,
+/// the row of the bare `call`, and what the run printed on stderr.
+fn capability_rows(board: &Scenario, data: &Scenario) -> (Vec<Value>, Value, String) {
+    let arguments = ["commands", "list", "call", "--json", "--full", "--all"];
+    let (output, _) = super::built_in::built_in(board.workdir(), Some(data), &arguments);
+    assert_eq!(output.code, 0, "{}", text(&output.stderr));
+    let rows = json(&output)["data"].as_array().unwrap().clone();
+    let bare = row(&rows, "board call").clone();
+    let rows = rows
+        .into_iter()
+        .filter(|row| row["path"].as_str().unwrap().contains('.'));
+    (rows.collect(), bare, text(&output.stderr))
+}
+
+/// The row of `rows` at `path`.
+fn row<'a>(rows: &'a [Value], path: &str) -> &'a Value {
+    let found = rows.iter().find(|row| row["path"] == path);
+    found.unwrap_or_else(|| panic!("no {path} in {rows:#?}"))
+}
+
+#[test]
+fn commands_list_in_a_board_enabling_a_built_in_plugin_lists_a_call_row_for_each_capability() {
+    let (board, data) = enabling(r#""tasks""#);
+    let (rows, bare, stderr) = capability_rows(&board, &data);
+    assert_eq!(stderr, "");
+    assert!(rows.iter().all(|row| {
+        let path = row["path"].as_str().unwrap();
+        path.starts_with("board call tasks.")
+    }));
+    let add = row(&rows, "board call tasks.add");
+    assert_eq!(add["form"], "document");
+    assert_eq!(add["columns"], bare["columns"]);
+    assert_eq!(add["effects"]["destructive"], true);
+    let flag = |row: &Value, name: &str| -> Value {
+        let arguments = row["arguments"].as_array().unwrap();
+        (arguments.iter().find(|argument| argument["name"] == name))
+            .unwrap()
+            .clone()
+    };
+    assert_eq!(
+        flag(add, "--kind")["possible_values"],
+        json!(["task", "project"])
+    );
+    let available = row(&rows, "board call tasks.available");
+    assert!(flag(available, "--context")["help"].is_string());
+}
+
+#[test]
+fn commands_list_lists_an_installed_plugins_capabilities_with_the_effects_their_hints_declare() {
+    let (board, data) = enabling(r#""chores", "tasks""#);
+    let (rows, _, stderr) = capability_rows(&board, &data);
+    assert_eq!(stderr, "");
+    let paths: Vec<&Value> = (rows.iter().map(|row| &row["path"]))
+        .filter(|path| path.as_str().unwrap().contains("chores"))
+        .collect();
+    assert_eq!(paths, ["board call chores.add", "board call chores.list"]);
+    // read_only, destructive, idempotent, open_world
+    let effects = |path: &str| {
+        let effects = &row(&rows, path)["effects"];
+        let names = ["read_only", "destructive", "idempotent", "open_world"];
+        names.map(|name| effects[name].as_bool().unwrap())
+    };
+    assert_eq!(
+        effects("board call chores.add"),
+        [false, false, true, false]
+    );
+    assert_eq!(effects("board call chores.list"), [true, false, true, true]);
+    // tasks.add declares no hint, so it has MCP's defaults.
+    assert_eq!(effects("board call tasks.add"), [false, true, false, true]);
+    assert_eq!(row(&rows, "board call chores.add")["about"], "Add a chore.");
+}
+
+#[test]
+fn commands_list_notes_a_plugin_it_cannot_read_and_only_it_and_schemas_read_manifests() {
+    let (board, data) = enabling(r#""chores", "broken", "gone""#);
+    let (rows, _, stderr) = capability_rows(&board, &data);
+    assert_eq!(rows.len(), 2, "{rows:#?}");
+    assert_eq!(
+        stderr,
+        "note: board::plugin::bad_manifest: plugin broken is skipped: the manifest is not a plugin manifest: missing field `$type`\n\
+         note: board::plugin::not_installed: plugin gone is enabled but not installed, so it is skipped\n"
+    );
+    let phases = |arguments: &[&str]| {
+        let (output, ran) = super::built_in::built_in(board.workdir(), Some(&data), arguments);
+        assert_eq!(output.code, 0, "{}", text(&output.stderr));
+        let phases = ran.trace.phases.iter().map(|phase| phase.name);
+        (
+            phases.collect::<Vec<_>>(),
+            ran.trace.work.get("capabilities").copied(),
+        )
+    };
+    for listing in [&["commands", "list"][..], &["schemas", "list"]] {
+        let (phases, capabilities) = phases(listing);
+        assert!(phases.contains(&"plugin.list"), "{listing:?}: {phases:?}");
+        assert_eq!(capabilities, Some(2), "{listing:?}");
+    }
+    let (phases, capabilities) = phases(&["ls"]);
+    assert!(!phases.contains(&"plugin.list"), "{phases:?}");
+    assert_eq!(capabilities, None);
+}
+
+#[test]
+fn commands_list_notes_why_a_board_that_exists_does_not_open_and_says_nothing_outside_a_board() {
+    let (board, data) = enabling(r#""tasks""#);
+    board.write(
+        ".board/board.json",
+        Item::File(r#"{"$type": "board/config/v1", "plugins": 1}"#),
+    );
+    let (rows, _, stderr) = capability_rows(&board, &data);
+    assert!(rows.is_empty(), "{rows:#?}");
+    assert!(
+        stderr.starts_with("note: board::config::invalid: the board cannot be opened, so no plugin capability is listed: "),
+        "{stderr}"
+    );
+    let outside = Scenario::new();
+    let (rows, _, stderr) = capability_rows(&outside, &data);
+    assert!(rows.is_empty(), "{rows:#?}");
+    assert_eq!(stderr, "");
+}
+
+#[test]
+fn commands_list_notes_an_unreadable_plugins_directory_and_lists_the_built_in_plugins() {
+    let (board, _) = enabling(r#""tasks""#);
+    let data = Scenario::new();
+    data.write("plugins", Item::File("not a directory"));
+    let (rows, _, stderr) = capability_rows(&board, &data);
+    assert!(
+        rows.iter().any(|row| row["path"] == "board call tasks.add"),
+        "{rows:#?}"
+    );
+    assert!(
+        stderr.starts_with("note: board::plugin::not_installed: the plugins directory cannot be read, so only built-in plugins are listed: "),
+        "{stderr}"
+    );
+}
+
+#[test]
+fn commands_list_in_a_board_that_enables_no_plugin_lists_only_the_bare_call() {
+    let (board, data) = enabling("");
+    let (rows, _, stderr) = capability_rows(&board, &data);
+    assert!(rows.is_empty(), "{rows:#?}");
+    assert_eq!(stderr, "");
+}
+
+#[test]
+fn each_capability_rows_command_line_parses_with_the_flags_a_program_adds() {
+    let (board, data) = enabling(r#""tasks", "controls", "chores""#);
+    let (rows, ..) = capability_rows(&board, &data);
+    assert!(rows.len() > 2);
+    let plugins = data.workdir().join("plugins");
+    for row in &rows {
+        let path = row["path"].as_str().unwrap().trim_start_matches("board ");
+        let arguments = line(path, &[], &ADDED, &[]);
+        let found = crate::graft::find(&arguments, board_plugins::BUILT_IN, Some(&plugins));
+        let (mut stdout, mut stderr) = (Vec::new(), Vec::new());
+        let sink = &mut crumbkit::Sink::new(&mut stdout, &mut stderr);
+        let parsed = crumbkit::try_parse_to::<crate::graft::Parsed, _, _, _, _>(
+            sink,
+            crate::graft::command(found.as_slice()),
+            &crate::graft::guide(found.as_slice()),
+            arguments,
+        );
+        assert!(parsed.is_ok(), "{path}: {}{}", text(&stdout), text(&stderr));
+    }
+}
+
+#[test]
+fn an_enum_flag_lists_its_values_and_the_input_schema_refuses_another_value() {
+    let (board, data) = enabling(r#""chores""#);
+    let script = super::plugins::answering(super::plugins::RESULT, 0);
+    data.write("plugins/chores/run", Item::Executable(&script));
+    let call = |room: &str| {
+        let arguments = ["call", "chores.add", "--room", room, "--json"];
+        super::built_in::built_in(board.workdir(), Some(&data), &arguments).0
+    };
+    let refused = call("attic");
+    assert_eq!(refused.code, 1, "{}", text(&refused.stdout));
+    assert_eq!(json(&refused)["code"], "board::plugin::bad_input");
+    let admitted = call("hall");
+    assert_eq!(admitted.code, 0, "{}", text(&admitted.stderr));
+    assert_eq!(json(&admitted)["data"]["output"], json!({"count": 2}));
+    let (rows, ..) = capability_rows(&board, &data);
+    let room = &row(&rows, "board call chores.add")["arguments"][0];
+    assert_eq!(room["possible_values"], json!(["kitchen", "hall"]));
 }

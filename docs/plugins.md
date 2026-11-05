@@ -74,7 +74,8 @@ The plugin's `metadata` is any JSON object, which `board plugin find` can
 match. Each capability is an MCP Tool object (MCP 2025-11-25): `description`,
 `inputSchema` and `outputSchema` are required, and `title`, `annotations`,
 `_meta`, `timeout` and `env` are optional. Each schema's root is `"type": "object"`. `annotations`
-holds only MCP's five hint keys, which Board ignores. `_meta`
+holds only MCP's five hint keys. Board acts on none of them, and
+`board commands list` reports four of them as the capability's effects. `_meta`
 is any JSON object. `icons` and `execution` are refused. `types` lists the
 types whose schemas the plugin ships, at `types/<namespace>/<kind>/v<n>.schema.json`
 in its directory. Each type's namespace is the plugin's name, never
@@ -118,6 +119,16 @@ has no `patternProperties`. A capability whose schema admits only flag
 properties never reads stdin, so a pipe nobody closes does not hold it up.
 Neither does a target nobody offers, which Board refuses whatever the input.
 `board call --capability <name>` takes no flags and always reads stdin.
+A string property's `enum` lists the flag's values in its help. In a board,
+`board commands list`, `board schemas list` and `board schemas show` also
+describe `call <plugin>.<capability>` for each capability of each plugin the
+board enables, with its flags. Its effects follow MCP's hints and defaults:
+read-only with `readOnlyHint: true`, otherwise additive with
+`destructiveHint: false` and destructive without it, idempotent with
+`idempotentHint: true`, and open-world unless `openWorldHint` is `false`.
+Only these commands read the manifests for it. They skip a plugin they
+cannot read, and a board that does not open, with a note on stderr that
+names the code.
 A flag whose property has `"format": "board-path"` may be given relative to
 the run's prefix, such as `--path docs` from inside a mounted repository;
 Board sends the absolute logical path (architecture.md, Typed references).

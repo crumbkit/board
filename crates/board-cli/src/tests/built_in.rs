@@ -10,7 +10,11 @@ use super::*;
 
 /// Runs `board` in `directory` with the binary's built-in plugins and those
 /// installed in `data`, if any, and returns what the run recorded.
-fn built_in(directory: &Path, data: Option<&Scenario>, arguments: &[&str]) -> (Output, Ran) {
+pub(super) fn built_in(
+    directory: &Path,
+    data: Option<&Scenario>,
+    arguments: &[&str],
+) -> (Output, Ran) {
     cached(directory, data, None, arguments)
 }
 

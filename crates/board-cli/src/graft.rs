@@ -4,13 +4,13 @@
 use std::ffi::OsString;
 use std::path::Path;
 
-use board_model::LogicalPath;
-use board_ops::BuiltIn;
+use board_model::{Code, LogicalPath};
+use board_ops::{Board, BuiltIn, PluginState};
 use board_plugin::{Capability, Target};
-use clap::builder::{BoolValueParser, StringValueParser};
-use clap::builder::{TypedValueParser as _, ValueParser};
+use clap::builder::{BoolValueParser, PossibleValue, StringValueParser};
+use clap::builder::{TypedValueParser, ValueParser};
 use clap::{Arg, ArgMatches, Command, CommandFactory as _, FromArgMatches};
-use crumbkit::help::{Guide, RuntimeLeaf};
+use crumbkit::help::{Effects, Guide, RuntimeLeaf};
 use serde_json::{Map, Value};
 
 use crate::render::{CALL_REPORT, GUIDE};
@@ -21,7 +21,7 @@ use crate::run::{Cli, Prefix};
 /// under that name.
 pub(crate) struct Grafted {
     name: String,
-    offered: Option<(String, Vec<Flag>, String)>,
+    offered: Option<(String, Vec<Flag>, String, Effects)>,
     /// Whether an input property can go only on stdin.
     stdin: bool,
 }
@@ -95,7 +95,7 @@ pub(crate) fn resolve(
 ) {
     let offered = found.and_then(|found| found.offered.as_ref()).into_iter();
     for (name, ..) in offered
-        .flat_map(|(_, flags, _)| flags)
+        .flat_map(|(_, flags, ..)| flags)
         .filter(|flag| flag.3)
     {
         if let Some(Value::String(text)) = flags.get_mut(name)
@@ -120,47 +120,102 @@ pub(crate) fn find(
         Ok(Target::Named { plugin, capability }) => Some((word, plugin, capability)),
         _ => None,
     })?;
-    let offered = || {
-        let manifest = (built_in.0.iter().map(|built| built.manifest()))
-            .find(|manifest| manifest.name == plugin)
-            .or_else(|| {
-                (board_plugin::installed(plugins?).ok()?.into_iter())
-                    .find(|entry| entry.name == plugin.as_str())?
-                    .manifest
-                    .ok()
-            })?;
-        let offered = manifest
-            .capabilities
-            .iter()
-            .find(|offered| offered.name == capability)?;
-        let flags = flags(offered);
-        let document = offered.input.document();
-        let properties = document.get("properties").and_then(Value::as_object);
-        let rest: Vec<&str> = (properties
-            .into_iter()
-            .flatten()
-            .map(|(name, _)| name.as_str()))
-        .filter(|name| flags.iter().all(|(flag, ..)| flag != name))
-        .collect();
-        // A schema that admits properties it does not name takes them only on stdin.
-        let open = document.get("additionalProperties") != Some(&Value::Bool(false))
-            || document.get("patternProperties").is_some();
-        let help = match rest.as_slice() {
-            [] if open => STDIN.to_owned(),
-            [] => NO_STDIN.to_owned(),
-            rest => format!("{STDIN} These properties go on stdin: {}.", rest.join(", ")),
-        };
-        let stdin = open || !rest.is_empty();
-        Some(((offered.description.clone(), flags, help), stdin))
-    };
+    let manifest = (built_in.0.iter().map(|built| built.manifest()))
+        .find(|manifest| manifest.name == plugin)
+        .or_else(|| {
+            (board_plugin::installed(plugins?).ok()?.into_iter())
+                .find(|entry| entry.name == plugin.as_str())?
+                .manifest
+                .ok()
+        });
+    let offered = (manifest.iter().flat_map(|manifest| &manifest.capabilities))
+        .find(|offered| offered.name == capability);
     // Board refuses a target nobody offers, whatever its input.
-    let (offered, stdin) =
-        offered().map_or((None, false), |(offered, stdin)| (Some(offered), stdin));
-    Some(Grafted {
+    Some(offered.map_or_else(
+        || Grafted {
+            name: name.to_owned(),
+            offered: None,
+            stdin: false,
+        },
+        |offered| graft(name, offered),
+    ))
+}
+
+/// Every capability of each plugin that `board` enables, built in or
+/// installed in `plugins`, and a note for each enabled plugin whose
+/// capabilities cannot be read.
+pub(crate) fn enabled(board: &Board, plugins: Option<&Path>) -> (Vec<Grafted>, Vec<String>) {
+    let mut notes = Vec::new();
+    let listed = board.plugin_list(plugins).or_else(|error| {
+        notes.push(format!(
+            "{}: the plugins directory cannot be read, so only built-in plugins are listed: {error}",
+            error.code()
+        ));
+        board.plugin_list(None)
+    });
+    let mut grafted = Vec::new();
+    for entry in listed.map(|listed| listed.plugins).unwrap_or_default() {
+        match &entry.state {
+            _ if !entry.enabled => {}
+            PluginState::Installed(manifest) => grafted.extend(
+                (manifest.capabilities.iter())
+                    .map(|offered| graft(&format!("{}.{}", entry.name, offered.name), offered)),
+            ),
+            PluginState::BadManifest(error) => notes.push(format!(
+                "{}: plugin {} is skipped: {error}",
+                error.code(),
+                entry.name
+            )),
+            PluginState::NotInstalled => notes.push(format!(
+                "{}: plugin {} is enabled but not installed, so it is skipped",
+                Code::PluginNotInstalled,
+                entry.name
+            )),
+        }
+    }
+    (grafted, notes)
+}
+
+/// The graft of `offered`, the capability that `call` names `name`.
+fn graft(name: &str, offered: &Capability) -> Grafted {
+    let flags = flags(offered);
+    let document = offered.input.document();
+    let properties = document.get("properties").and_then(Value::as_object);
+    let rest: Vec<&str> = (properties
+        .into_iter()
+        .flatten()
+        .map(|(name, _)| name.as_str()))
+    .filter(|name| flags.iter().all(|(flag, ..)| flag != name))
+    .collect();
+    // A schema that admits properties it does not name takes them only on stdin.
+    let open = document.get("additionalProperties") != Some(&Value::Bool(false))
+        || document.get("patternProperties").is_some();
+    let help = match rest.as_slice() {
+        [] if open => STDIN.to_owned(),
+        [] => NO_STDIN.to_owned(),
+        rest => format!("{STDIN} These properties go on stdin: {}.", rest.join(", ")),
+    };
+    // MCP's hints, with MCP's defaults: a capability that declares none
+    // is destructive and open-world, as the `call` leaf declares.
+    let hints = offered.annotations.clone().unwrap_or_default();
+    let effects = match (hints.read_only_hint, hints.destructive_hint) {
+        (Some(true), _) => Effects::read_only(),
+        (_, Some(false)) => Effects::additive(),
+        _ => Effects::destructive(),
+    };
+    let effects = match hints.idempotent_hint {
+        Some(true) => effects.idempotent(),
+        _ => effects,
+    };
+    let effects = match hints.open_world_hint {
+        Some(false) => effects,
+        _ => effects.open_world(),
+    };
+    Grafted {
         name: name.to_owned(),
-        offered,
-        stdin,
-    })
+        offered: Some((offered.description.clone(), flags, help, effects)),
+        stdin: open || !rest.is_empty(),
+    }
 }
 
 /// Whether the call `found` names reads stdin when no flag is given: when
@@ -189,13 +244,20 @@ fn flags(capability: &Capability) -> Vec<Flag> {
         })
         .filter_map(|(name, property)| {
             let kind = property.get("type")?.as_str()?;
-            let parser: ValueParser = match kind {
-                "string" => StringValueParser::new().map(Value::from).into(),
-                "integer" => clap::value_parser!(i64).map(Value::from).into(),
-                "number" => StringValueParser::new()
+            let choices = property.get("enum").and_then(Value::as_array);
+            let choices: Option<Vec<String>> = choices.and_then(|choices| {
+                (choices.iter())
+                    .map(|choice| choice.as_str().map(str::to_owned))
+                    .collect()
+            });
+            let parser: ValueParser = match (kind, choices) {
+                ("string", Some(choices)) => Choices(choices).into(),
+                ("string", None) => StringValueParser::new().map(Value::from).into(),
+                ("integer", _) => clap::value_parser!(i64).map(Value::from).into(),
+                ("number", _) => StringValueParser::new()
                     .try_map(|text| text.parse::<serde_json::Number>().map(Value::from))
                     .into(),
-                "boolean" => BoolValueParser::new().map(Value::from).into(),
+                ("boolean", _) => BoolValueParser::new().map(Value::from).into(),
                 _ => return None,
             };
             let help = property
@@ -211,50 +273,89 @@ fn flags(capability: &Capability) -> Vec<Flag> {
         .collect()
 }
 
-/// Board's command tree, with `grafted` below `call`. A target that no
-/// installed plugin offers takes any words, help among them, so the run
-/// reaches Board's refusal of the target.
-pub(crate) fn command(grafted: Option<&Grafted>) -> Command {
-    let Some(grafted) = grafted else {
+/// A string flag whose property's `enum` lists `.0`, all strings. Help and
+/// `commands list` show them, and it takes any string, so the input schema
+/// judges the value as it judges stdin.
+#[derive(Clone)]
+struct Choices(Vec<String>);
+
+impl TypedValueParser for Choices {
+    type Value = Value;
+
+    fn parse_ref(
+        &self,
+        command: &Command,
+        arg: Option<&Arg>,
+        value: &std::ffi::OsStr,
+    ) -> Result<Value, clap::Error> {
+        StringValueParser::new()
+            .parse_ref(command, arg, value)
+            .map(Value::from)
+    }
+
+    fn possible_values(&self) -> Option<Box<dyn Iterator<Item = PossibleValue> + '_>> {
+        Some(Box::new(
+            self.0
+                .iter()
+                .map(|choice| PossibleValue::new(choice.clone())),
+        ))
+    }
+}
+
+/// Board's command tree, with each of `grafted` below `call`. A target
+/// that no installed plugin offers takes any words, help among them, so
+/// the run reaches Board's refusal of the target.
+pub(crate) fn command(grafted: &[Grafted]) -> Command {
+    if grafted.is_empty() {
         return Cli::command();
-    };
-    let leaf = Command::new(grafted.name.clone());
-    let leaf = match &grafted.offered {
-        Some((about, flags, stdin)) => {
-            let leaf = leaf.about(about.clone()).after_help(stdin.clone());
-            flags.iter().fold(leaf, |leaf, (name, help, parser, _)| {
-                leaf.arg(
-                    Arg::new(name.clone())
-                        .long(name.clone())
-                        .value_parser(parser.clone())
-                        .allow_negative_numbers(true)
-                        .help(help.clone()),
-                )
-            })
+    }
+    let leaves = grafted.iter().map(|grafted| {
+        let leaf = Command::new(grafted.name.clone());
+        match &grafted.offered {
+            Some((about, flags, stdin, _)) => {
+                let leaf = leaf.about(about.clone()).after_help(stdin.clone());
+                flags.iter().fold(leaf, |leaf, (name, help, parser, _)| {
+                    leaf.arg(
+                        Arg::new(name.clone())
+                            .long(name.clone())
+                            .value_parser(parser.clone())
+                            .allow_negative_numbers(true)
+                            .help(help.clone()),
+                    )
+                })
+            }
+            // Its words are values; Board refuses the target whatever they are.
+            None => leaf.disable_help_flag(true).arg(
+                Arg::new("words")
+                    .value_parser(StringValueParser::new().map(Value::from))
+                    .num_args(0..)
+                    .trailing_var_arg(true)
+                    .allow_hyphen_values(true),
+            ),
         }
-        // Its words are values; Board refuses the target whatever they are.
-        None => leaf.disable_help_flag(true).arg(
-            Arg::new("words")
-                .value_parser(StringValueParser::new().map(Value::from))
-                .num_args(0..)
-                .trailing_var_arg(true)
-                .allow_hyphen_values(true),
-        ),
-    };
+    });
     Cli::command().mut_subcommand("call", |call| {
-        call.subcommand_negates_reqs(true).subcommand(leaf)
+        call.subcommand_negates_reqs(true).subcommands(leaves)
     })
 }
 
-/// Board's guide, with a leaf for `grafted` that prints a call report.
-pub(crate) fn guide(grafted: Option<&Grafted>) -> Guide {
-    let Some(grafted) = grafted else {
+/// Board's guide, with a leaf for each of `grafted` that prints a call
+/// report, with the effects its capability's hints declare.
+pub(crate) fn guide(grafted: &[Grafted]) -> Guide {
+    if grafted.is_empty() {
         return GUIDE;
-    };
-    let about = format!(
-        "Call {} with the input its flags give, or else the JSON on stdin, or else {{}}",
-        grafted.name
-    );
-    let leaf = RuntimeLeaf::new(vec!["call".to_owned(), grafted.name.clone()]);
-    GUIDE.with_runtime_leaves(vec![leaf.example(Vec::new(), about).document(CALL_REPORT)])
+    }
+    let leaves = grafted.iter().map(|grafted| {
+        let about = format!(
+            "Call {} with the input its flags give, or else the JSON on stdin, or else {{}}",
+            grafted.name
+        );
+        let leaf = RuntimeLeaf::new(vec!["call".to_owned(), grafted.name.clone()]);
+        let leaf = leaf.example(Vec::new(), about).document(CALL_REPORT);
+        match &grafted.offered {
+            Some((.., effects)) => leaf.effects(*effects),
+            None => leaf,
+        }
+    });
+    GUIDE.with_runtime_leaves(leaves.collect())
 }
