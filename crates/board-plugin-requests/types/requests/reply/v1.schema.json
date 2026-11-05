@@ -8,8 +8,8 @@
       "type": "string"
     },
     "effect": {
-      "description": "The id of the effect the reply answers: 64 lowercase hex digits.",
-      "pattern": "^[0-9a-f]{64}$",
+      "description": "The id of the effect the reply answers, as a digest: `sha256:` and 64\nlowercase hex digits.",
+      "pattern": "^sha256:[0-9a-f]{64}$",
       "type": "string"
     },
     "text": {

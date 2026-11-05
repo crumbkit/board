@@ -65,7 +65,7 @@
     },
     "sha256": {
       "description": "The SHA-256 of the page copied beside this record, in hex.",
-      "pattern": "^[0-9a-f]{64}$",
+      "pattern": "^sha256:[0-9a-f]{64}$",
       "type": "string"
     },
     "source": {

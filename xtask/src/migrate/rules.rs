@@ -61,13 +61,16 @@ pub(crate) fn record(
             context,
             &mut outcomes,
         ),
-        "artifacts/version/v1" => renamed(
-            record,
-            "session",
-            "artifacts/version/v1.session",
-            context,
-            &mut outcomes,
-        ),
+        "artifacts/version/v1" => {
+            let field = "artifacts/version/v1.session";
+            renamed(record, "session", field, context, &mut outcomes);
+            digest(
+                record,
+                "sha256",
+                "artifacts/version/v1.sha256",
+                &mut outcomes,
+            );
+        }
         "plans/answer/v1" => optional(record, "by", "plans/answer/v1.by", context, &mut outcomes),
         "runs/run/v1" => optional(record, "by", "runs/run/v1.by", context, &mut outcomes),
         "review/report/v1" => optional(record, "by", "review/report/v1.by", context, &mut outcomes),
@@ -99,18 +102,28 @@ pub(crate) fn record(
             mount,
             &mut outcomes,
         ),
-        "board/effect/v1" => digest(record, "board/effect/v1.digest", &mut outcomes),
-        "board/attachment/v1" => digest(record, "board/attachment/v1.digest", &mut outcomes),
         "board/seen/v1" => {
-            let id = record
-                .get("effect")
-                .and_then(Value::as_str)
-                .and_then(|effect| effect.rsplit_once('/'))
-                .map(|(_, id)| id.to_owned());
+            let id = (record.get("effect").and_then(Value::as_str))
+                .map(|effect| effect.rsplit('/').next().unwrap_or(effect).to_owned());
             if let Some(id) = id.filter(|id| hex(id)) {
-                record.insert("effect".into(), Value::String(id));
+                record.insert("effect".into(), Value::String(format!("sha256:{id}")));
                 outcomes.push(Outcome::Changed("board/seen/v1.effect"));
             }
+        }
+        "requests/reply/v1" => digest(record, "effect", "requests/reply/v1.effect", &mut outcomes),
+        "boundary/crossing/v1" => {
+            digest(
+                record,
+                "digest",
+                "boundary/crossing/v1.digest",
+                &mut outcomes,
+            );
+            digest(
+                record,
+                "override",
+                "boundary/crossing/v1.override",
+                &mut outcomes,
+            );
         }
         _ => {}
     }
@@ -192,16 +205,19 @@ fn subjects(
     }
 }
 
-fn digest(record: &mut Map<String, Value>, field: &'static str, outcomes: &mut Vec<Outcome>) {
-    let bare = record
-        .get("digest")
-        .and_then(Value::as_str)
-        .and_then(|digest| digest.strip_prefix("sha256:"))
-        .map(str::to_owned);
-    if let Some(bare) = bare {
-        record.insert("digest".into(), Value::String(bare));
-        outcomes.push(Outcome::Changed(field));
-    }
+/// A hash in `key` that is bare hex, which gains its `sha256:` prefix.
+fn digest(
+    record: &mut Map<String, Value>,
+    key: &str,
+    field: &'static str,
+    outcomes: &mut Vec<Outcome>,
+) {
+    let Some(bare) = (record.get(key).and_then(Value::as_str)).filter(|text| hex(text)) else {
+        return;
+    };
+    let prefixed = format!("sha256:{bare}");
+    record.insert(key.into(), Value::String(prefixed));
+    outcomes.push(Outcome::Changed(field));
 }
 
 /// The actor the old text names: its `local_` session, the program its

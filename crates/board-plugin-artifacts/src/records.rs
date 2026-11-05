@@ -1,7 +1,7 @@
 //! The record types the plugin ships. Their schemas are generated from
 //! these structs; the files under `types/` are those schemas, committed.
 
-use board_plugin::shape::{Accepts, Actor, Prose, Record, Ref, Sha256, Tag};
+use board_plugin::shape::{Accepts, Actor, Digest, Prose, Record, Ref, Tag};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -130,7 +130,7 @@ pub struct VersionRecord {
     pub description: Option<String>,
     /// The SHA-256 of the page copied beside this record, in hex.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(with = "Option<Sha256>")]
+    #[schemars(with = "Option<Digest>")]
     pub sha256: Option<String>,
     /// The local file the publish sent, when a publish wrote this version.
     #[serde(default, skip_serializing_if = "Option::is_none")]

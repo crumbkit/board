@@ -118,7 +118,7 @@
     },
     "digest": {
       "description": "The SHA-256 of the content's action, destination and parts.",
-      "pattern": "^[0-9a-f]{64}$",
+      "pattern": "^sha256:[0-9a-f]{64}$",
       "type": "string"
     },
     "from": {
@@ -128,7 +128,7 @@
     },
     "override": {
       "description": "The id of the owner's approved effect that let this content through\nits failed checks.",
-      "pattern": "^[0-9a-f]{64}$",
+      "pattern": "^sha256:[0-9a-f]{64}$",
       "type": "string"
     },
     "passed": {

@@ -98,7 +98,8 @@ fn an_actor_already_in_the_new_shape_is_left_alone() {
         json!({"$type": "runs/run/v1", "by": {"program": "codex"}}),
         json!({"$type": "plans/question/v1", "by": {"session": "local_ab"}}),
         json!({"$type": "artifacts/artifact/v1", "account": {"person": "a@b.c"}}),
-        json!({"$type": "board/effect/v1", "digest": "ab".repeat(32)}),
+        json!({"$type": "board/seen/v1", "effect": format!("sha256:{}", "ab".repeat(32))}),
+        json!({"$type": "requests/reply/v1", "effect": format!("sha256:{}", "ab".repeat(32))}),
         json!({"$type": "evals/eval/v1", "subjects": ["crumbkit/board", "/repos/board"]}),
     ] {
         assert_eq!(migrated(record.clone()), (record, vec![]));
@@ -117,19 +118,25 @@ fn an_artifact_account_becomes_a_person_and_a_version_session_its_by() {
 }
 
 #[test]
-fn digests_lose_their_prefix_and_a_seen_effect_becomes_its_id() {
+fn bare_hashes_gain_their_prefix_and_a_seen_effect_path_becomes_its_digest() {
     let hex = "ab".repeat(32);
-    let (effect, _) =
-        migrated(json!({"$type": "board/effect/v1", "digest": format!("sha256:{hex}")}));
-    assert_eq!(effect["digest"], json!(hex));
-    let (attachment, _) =
-        migrated(json!({"$type": "board/attachment/v1", "digest": format!("sha256:{hex}")}));
-    assert_eq!(attachment["digest"], json!(hex));
-    let (seen, outcomes) = migrated(json!({
-        "$type": "board/seen/v1", "effect": format!("/effects/answered/{hex}")
-    }));
-    assert_eq!(seen["effect"], json!(hex));
-    assert_eq!(outcomes, [Outcome::Changed("board/seen/v1.effect")]);
+    let prefixed = json!(format!("sha256:{hex}"));
+    for (kind, key) in [
+        ("requests/reply/v1", "effect"),
+        ("boundary/crossing/v1", "digest"),
+        ("boundary/crossing/v1", "override"),
+        ("artifacts/version/v1", "sha256"),
+    ] {
+        let (record, _) = migrated(json!({"$type": kind, key: hex}));
+        assert_eq!(record[key], prefixed, "{kind}.{key}");
+    }
+    for effect in [format!("/effects/answered/{hex}"), hex.clone()] {
+        let (seen, outcomes) = migrated(json!({"$type": "board/seen/v1", "effect": effect}));
+        assert_eq!(seen["effect"], prefixed);
+        assert_eq!(outcomes, [Outcome::Changed("board/seen/v1.effect")]);
+    }
+    let effect = json!({"$type": "board/effect/v1", "digest": format!("sha256:{hex}")});
+    assert_eq!(migrated(effect.clone()), (effect, vec![]));
 }
 
 #[test]

@@ -129,7 +129,7 @@ fn the_boundary_schema_refuses_a_boundary_without_checks_or_with_a_bad_field_and
 #[test]
 fn the_crossing_schema_refuses_a_bad_digest_null_or_unknown_field_and_admits_its_twin() {
     let schema = compiled(CrossingRecord::TYPE);
-    let digest = "ab".repeat(32);
+    let digest = format!("sha256:{}", "ab".repeat(32));
     let crossing = json!({
         "$type": "boundary/crossing/v1",
         "digest": digest,
@@ -146,7 +146,11 @@ fn the_crossing_schema_refuses_a_bad_digest_null_or_unknown_field_and_admits_its
         }],
     });
     for (refused, admitted) in [
-        (json!({"digest": "AB".repeat(32)}), json!({})),
+        (json!({"digest": "ab".repeat(32)}), json!({})),
+        (
+            json!({"digest": format!("sha256:{}", "AB".repeat(32))}),
+            json!({}),
+        ),
         (json!({"override": "x"}), json!({"override": digest})),
         (
             json!({"verdicts": [{"control": "/controls/names", "part": "p", "status": "late", "findings": []}]}),

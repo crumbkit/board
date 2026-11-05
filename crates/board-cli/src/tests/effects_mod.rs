@@ -40,7 +40,7 @@ fn see(scenario: &Scenario, id: &str, record: &Value) {
 
 /// A seen record of `id` with `answer`.
 fn seen(id: &str, answer: &str) -> Value {
-    json!({"$type": "board/seen/v1", "effect": id, "answer": answer})
+    json!({"$type": "board/seen/v1", "effect": format!("sha256:{id}"), "answer": answer})
 }
 
 /// What `sql` returns in `scenario`: its columns and its rows.

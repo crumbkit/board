@@ -102,7 +102,7 @@ The owner can let one exact content through a failed check without
 changing a rule. Only a failed check asks; a passing check writes no effect.
 
 - A failed check asks Board to decide the op `boundary.override` at
-  `/crossings/<digest>` in the personal board, as plugin `boundary`, showing
+  `/crossings/<hex>` in the personal board, as plugin `boundary`, showing
   the owner the action, destination and each part. Board writes a pending
   effect in the personal board, and the refusal's `effect` field holds its
   id. The hint ends saying the owner may approve the content with
@@ -147,8 +147,8 @@ not exist is `boundary::crossing::not_found`, and one that failed is
 
 ## The crossing record
 
-`boundary/crossing/v1` lives at `/crossings/<digest>`. The digest is the
-SHA-256, in lowercase hex, of the UTF-8 JSON
+`boundary/crossing/v1` lives at `/crossings/<hex>`. Its digest is
+`sha256:` and `<hex>`, the SHA-256 in lowercase hex of the UTF-8 JSON
 `{"action": ..., "parts": ..., "to": ...}` with keys sorted, no whitespace
 and characters unescaped, as Python's
 `json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)`

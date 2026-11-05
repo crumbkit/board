@@ -1,7 +1,7 @@
 //! The record type the plugin ships. Its schema is generated from this
 //! struct; the file under `types/` is that schema, committed.
 
-use board_plugin::shape::{Record, Tag};
+use board_plugin::shape::{Digest, Record, Tag};
 use schemars::JsonSchema;
 
 /// `requests/reply/v1`: the owner's reply to a pending effect. It approves
@@ -16,8 +16,9 @@ pub struct ReplyRecord {
     /// The record's type.
     #[serde(rename = "$type")]
     pub tag: Tag<Self>,
-    /// The id of the effect the reply answers: 64 lowercase hex digits.
-    #[schemars(regex(pattern = r"^[0-9a-f]{64}$"))]
+    /// The id of the effect the reply answers, as a digest: `sha256:` and 64
+    /// lowercase hex digits.
+    #[schemars(with = "Digest")]
     pub effect: String,
     /// What the owner says.
     #[schemars(length(min = 1))]

@@ -1,5 +1,5 @@
 //! `cargo xtask migrate-shapes`: rewrites a board's records to the shared
-//! actor, hash, subject and reference shapes of `board_plugin::shape`.
+//! actor, digest, subject and reference shapes of `board_plugin::shape`.
 //! Without `--write` it only counts what it would change.
 
 mod rules;

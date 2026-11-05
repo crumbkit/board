@@ -15,14 +15,14 @@ pub(crate) struct Content<'a> {
 }
 
 impl Content<'_> {
-    /// The SHA-256, in lowercase hex, of the UTF-8 JSON
+    /// The digest, `sha256:` and lowercase hex, of the UTF-8 JSON
     /// `{"action", "parts", "to"}` with keys sorted, no whitespace and
     /// characters unescaped, as Python's
     /// `json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)`
     /// writes it.
     pub(crate) fn digest(&self) -> String {
         let canonical = json!({"action": self.action, "parts": self.parts, "to": self.to});
-        Digest::of(canonical.to_string().as_bytes()).hex()
+        Digest::of(canonical.to_string().as_bytes()).to_string()
     }
 
     /// The content as the owner's approval shows it: the action,
@@ -68,7 +68,7 @@ mod tests {
     }
 
     #[test]
-    fn the_digest_is_the_sha256_of_the_canonical_json_python_writes() {
+    fn the_digest_is_sha256_and_the_hex_of_the_canonical_json_python_writes() {
         // python3 -c 'import hashlib, json; print(hashlib.sha256(json.dumps({"action": "github.pr-create",
         //   "parts": {"pr.body": "Fïne.\n\"q\"\t\x01", "pr.title": "T"}, "to": "github:octo/board"},
         //   sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()).hexdigest())'
@@ -76,7 +76,7 @@ mod tests {
         let content = content("github.pr-create", "github:octo/board", &parts);
         assert_eq!(
             content.digest(),
-            "38d2eafae704c1752d244eb85318dbb8bdc10e6702d161c93dc95800bbfd1482"
+            "sha256:38d2eafae704c1752d244eb85318dbb8bdc10e6702d161c93dc95800bbfd1482"
         );
     }
 

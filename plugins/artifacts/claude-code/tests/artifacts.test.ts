@@ -123,7 +123,7 @@ test('a first publish records the artifact, the page and the version, and a seco
         version: '1793473476-1c42',
         title: 'Release plan',
         description: 'The plan for the next release.',
-        sha256: SHA,
+        sha256: `sha256:${SHA}`,
         source: SOURCE,
         by: { program: 'claude-code', session: 'local_cd34' },
         at: '2026-10-31T18:20:00Z',
@@ -281,7 +281,7 @@ test('a read of an unrecorded version writes it with the page it returned, and a
     $type: 'artifacts/version/v1',
     version: '1793480000-0d0d',
     title: 'Release plan',
-    sha256: hash,
+    sha256: `sha256:${hash}`,
     by: { program: 'claude-code', session: 'local_cd34' },
     at: '2026-10-31T18:20:00Z',
   })

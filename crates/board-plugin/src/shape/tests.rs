@@ -242,6 +242,7 @@ fn the_registry_holds_each_shared_shape_by_name_as_a_field_using_it_sees_it() {
         [
             "Actor",
             "Date",
+            "Digest",
             "Glob",
             "LogicalGlob",
             "ObjectId",
@@ -249,7 +250,6 @@ fn the_registry_holds_each_shared_shape_by_name_as_a_field_using_it_sees_it() {
             "Pinned",
             "Prose",
             "SessionId",
-            "Sha256",
             "Slug",
             "Subject",
             "Summary",
@@ -332,12 +332,13 @@ fn a_url_without_a_host_or_a_web_scheme_is_refused_and_its_twin_is_admitted() {
     }
 }
 
-/// Board's validator refuses a digest that is not 64 lowercase hex digits
+/// Board's validator refuses a digest that is not sha256: and 64 lowercase hex digits
 /// and an empty glob, and admits each one's twin.
 #[test]
-fn a_sha256_not_in_lowercase_hex_and_an_empty_glob_are_refused_and_their_twins_are_admitted() {
+fn a_digest_without_its_prefix_or_lowercase_hex_and_an_empty_glob_are_refused_and_their_twins_are_admitted()
+ {
     let compiled = |schema| board_validate::Schema::compile(schema).unwrap();
-    let sha256 = compiled(schema_of::<Sha256>(SchemaSettings::draft2020_12()));
+    let digest = compiled(schema_of::<Digest>(SchemaSettings::draft2020_12()));
     let glob = compiled(schema_of::<Glob>(SchemaSettings::draft2020_12()));
     let code = |schema: &board_validate::Schema, text: &str| {
         schema.validate(&json!(text)).err().map(|e| e.code())
@@ -345,13 +346,15 @@ fn a_sha256_not_in_lowercase_hex_and_an_empty_glob_are_refused_and_their_twins_a
     let invalid = Some(board_model::Code::RecordInvalid);
     let lower = "0123456789abcdef".repeat(4);
     for refused in [
-        lower.to_uppercase(),
-        lower[1..].to_owned(),
-        format!("{lower}0"),
+        lower.clone(),
+        format!("sha256:{}", lower.to_uppercase()),
+        format!("sha256:{}", &lower[1..]),
+        format!("sha256:{lower}0"),
+        format!("SHA256:{lower}"),
     ] {
-        assert_eq!(code(&sha256, &refused), invalid, "{refused}");
+        assert_eq!(code(&digest, &refused), invalid, "{refused}");
     }
-    assert_eq!(code(&sha256, &lower), None);
+    assert_eq!(code(&digest, &format!("sha256:{lower}")), None);
     assert_eq!(code(&glob, ""), invalid);
     assert_eq!(code(&glob, "*"), None);
 }

@@ -250,7 +250,7 @@ async function record($: EngineInterface, seen: Seen): Promise<Recorded | undefi
       title: seen.title,
       description: seen.description,
       copy: sha === undefined ? 'none' : undefined,
-      sha256: sha,
+      sha256: sha === undefined ? undefined : `sha256:${sha}`,
       source: seen.source,
       by: await actor($),
       at: iso(await $.clock.now()),

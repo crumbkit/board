@@ -250,7 +250,7 @@ fn version(fields: &Value) -> Value {
 #[test]
 fn a_version_has_either_a_copy_with_its_hash_or_none_and_no_hash() {
     let schema = schema(VersionRecord::TYPE);
-    let sha = "ab".repeat(32);
+    let sha = format!("sha256:{}", "ab".repeat(32));
     assert!(schema.validate(&version(&json!({"sha256": sha}))).is_ok());
     assert!(schema.validate(&version(&json!({"copy": "none"}))).is_ok());
     assert!(schema.validate(&version(&json!({}))).is_err());
@@ -308,7 +308,7 @@ fn an_artifact_is_a_claude_ai_link_an_account_and_a_time_with_its_zone() {
 #[test]
 fn a_version_names_who_wrote_it_and_when_and_may_leave_its_version_id_out() {
     let schema = schema(VersionRecord::TYPE);
-    let copied = json!({"sha256": "ab".repeat(32)});
+    let copied = json!({"sha256": format!("sha256:{}", "ab".repeat(32))});
     assert!(schema.validate(&version(&copied)).is_ok());
     let mut keyed = version(&copied);
     keyed.as_object_mut().unwrap().remove("version");

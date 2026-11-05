@@ -195,23 +195,24 @@ impl JsonSchema for Url {
     }
 }
 
-/// A SHA-256 in 64 lowercase hex digits, such as an effect's id or the
-/// digest of some content. A `String` field takes it with
-/// `#[schemars(with = "Sha256")]`.
+/// A hash Board defines: its algorithm, `sha256:`, and 64 lowercase hex
+/// digits, such as an effect's id in a record or the digest of some
+/// content. A later Board can admit a second algorithm by widening the
+/// pattern. A `String` field takes it with `#[schemars(with = "Digest")]`.
 #[derive(Debug)]
-pub enum Sha256 {}
+pub enum Digest {}
 
-impl JsonSchema for Sha256 {
+impl JsonSchema for Digest {
     fn inline_schema() -> bool {
         true
     }
 
     fn schema_name() -> Cow<'static, str> {
-        "Sha256".into()
+        "Digest".into()
     }
 
     fn json_schema(_: &mut SchemaGenerator) -> Schema {
-        json_schema!({"type": "string", "pattern": "^[0-9a-f]{64}$"})
+        json_schema!({"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"})
     }
 }
 
@@ -418,7 +419,7 @@ pub fn registry() -> Map<String, Value> {
         object::<Pinned>(),
         entry::<Prose>(&mut generator),
         entry::<SessionId>(&mut generator),
-        entry::<Sha256>(&mut generator),
+        entry::<Digest>(&mut generator),
         entry::<Slug>(&mut generator),
         entry::<Subject>(&mut generator),
         entry::<Summary>(&mut generator),

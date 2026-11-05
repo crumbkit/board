@@ -99,11 +99,11 @@ Built-in plugins generate schemas from structs with schemars, through
 - `Tag<Self>` is the `$type` field; `Ref<T>` is a reference to a record type
   `T`, to a marker that lists several types, or to any entry when `T` is left
   out. Both are always inlined.
-- `Prose`, `Date`, `Url`, `Sha256`, `Glob`, `LogicalGlob`, `Summary`,
+- `Prose`, `Date`, `Url`, `Digest`, `Glob`, `LogicalGlob`, `Summary`,
   `SessionId`, `Slug`, `Person`, `ObjectId` and `Subject` are shared string
   shapes, and `Actor` and `Pinned` are shared object shapes. A `String` field takes one with
-  `#[schemars(with = "Prose")]`, and a `urls` field with `#[schemars(with = "Vec<Url>")]`. `Sha256` is 64 lowercase hex
-  digits, such as an effect's id. `Glob` is an SQLite GLOB pattern, which a
+  `#[schemars(with = "Prose")]`, and a `urls` field with `#[schemars(with = "Vec<Url>")]`. `Digest` is `sha256:` and 64
+  lowercase hex digits, such as an effect's id in a record. `Glob` is an SQLite GLOB pattern, which a
   plugin matches with GLOB in a query. `LogicalGlob` is a `Glob` that
   starts with `/`, such as a change's planned path. `Summary` is one line
   of at most `SUMMARY_WORDS`, 25, words. `SessionId` is `local_` and a
@@ -116,8 +116,10 @@ Built-in plugins generate schemas from structs with schemars, through
   an `Actor`. `Pinned` is `{record, blob}`, a reference and the `ObjectId`
   it was read at. A `$defs` entry named like an object shape must equal it,
   and `xtask/tests/shapes.rs` checks that.
-- Every hash is a `Sha256` with no `sha256:` prefix.
-  `shape::registry()` lists every
+- Every hash Board defines is a `Digest`. The prefix names the
+  algorithm, so a later Board can admit another by widening the pattern
+  without a new type version. Git's own ids, such as commit ids, stay as
+  git prints them. `shape::registry()` lists every
   shared shape by name, and `crates/board-plugin/shapes.json` is its golden.
 - `Tag<R>` writes `R::TYPE` and reads only that string, so a record struct
   can derive `Serialize` and `Deserialize`.

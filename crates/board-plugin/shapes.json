@@ -26,6 +26,10 @@
     "format": "date",
     "type": "string"
   },
+  "Digest": {
+    "pattern": "^sha256:[0-9a-f]{64}$",
+    "type": "string"
+  },
   "Glob": {
     "minLength": 1,
     "type": "string",
@@ -72,10 +76,6 @@
   },
   "SessionId": {
     "pattern": "^local_[0-9a-f-]+$",
-    "type": "string"
-  },
-  "Sha256": {
-    "pattern": "^[0-9a-f]{64}$",
     "type": "string"
   },
   "Slug": {
