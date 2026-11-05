@@ -8,7 +8,7 @@ const ISSUE: &str = "https://github.com/o/r/issues/2";
 
 /// A board holding what the Python plugin wrote: a change with a plan
 /// file, attached records and GitHub pages, a prototype, the last sync's
-/// day, and a change with a field no shape has. With `github`, the github
+/// day, an understanding check, and a change with a field no shape has. With `github`, the github
 /// plugin is enabled and holds the pull request and the issue, so
 /// `github.ref` runs no gh.
 fn old_board(github: bool) -> Changes {
@@ -44,6 +44,18 @@ fn old_board(github: bool) -> Changes {
         &typed("changes/sync/v1", &json!({"synced": days_ago(1)})),
     );
     board.write(
+        "changes/old/understanding/data.json",
+        &typed(
+            "changes/understanding/v1",
+            &json!({
+                "change": "/changes/old",
+                "subject": "data",
+                "playback": "One record per call.",
+                "questions": [{"round": 1, "question": "Q?", "answer": "A.", "matches": true}],
+            }),
+        ),
+    );
+    board.write(
         "changes/odd.json",
         &change("build", &json!({"owner": "someone"})),
     );
@@ -74,10 +86,18 @@ fn a_dry_run_says_what_it_would_rewrite_and_what_it_leaves_and_writes_nothing() 
             "plans": 2,
             "prototypes": 1,
             "refs": ["o/r#1", "o/r#2"],
-            "left": [{
-                "path": "/changes/odd",
-                "why": "it holds fields no shape of changes/change/v1 has: owner",
-            }],
+            "left": [
+                {
+                    "path": "/changes/odd",
+                    "why": "it holds fields no shape of changes/change/v1 has: owner",
+                },
+                {
+                    "path": "/changes/old/understanding/data",
+                    "why": "it is an understanding check of the old shape; give each question the \
+                            design's answer in `design`, and keep only the fields \
+                            changes/understanding/v1 has",
+                },
+            ],
             "synced": days_ago(1),
         })
     );
@@ -131,12 +151,13 @@ fn applying_splits_each_old_change_into_records_board_reads_as_valid_and_a_secon
     let degraded: Vec<(String, Option<String>)> = (board.checked("/changes/").into_iter())
         .filter(|(_, code)| code.is_some())
         .collect();
+    let invalid = Some("board::record::invalid".to_owned());
     assert_eq!(
         degraded,
-        [(
-            "/changes/odd".to_owned(),
-            Some("board::record::invalid".to_owned())
-        )]
+        [
+            ("/changes/odd".to_owned(), invalid.clone()),
+            ("/changes/old/understanding/data".to_owned(), invalid),
+        ]
     );
     let again = board.call("migrate", &json!({"apply": true}));
     assert_eq!(

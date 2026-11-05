@@ -24,7 +24,7 @@ use serde_json::{Map, Value, json};
 use crate::board::{self, rows, text};
 use crate::change::{OWN, record_sync};
 use crate::plan::stamp;
-use crate::records::{ChangeRecord, PlanRecord, PrototypeRecord, State};
+use crate::records::{ChangeRecord, PlanRecord, PrototypeRecord, State, UnderstandingRecord};
 use crate::{PLUGIN, to_value};
 
 /// A GitHub pull request or issue page, as the Python plugin stored it:
@@ -82,8 +82,8 @@ struct Left {
 /// `changes` lists the rewritten changes, at most 100, with `total` and
 /// `truncated`. `plans` and `prototypes` count the records written. `refs`
 /// lists each pull request or issue that `github.ref` records, as
-/// owner/repo#number. `left` lists the records left as they are, which the
-/// owner fixes by hand. `synced` is the day moved from `/changes/sync` to
+/// owner/repo#number. `left` lists the changes and understanding checks
+/// left as they are, which the owner fixes by hand. `synced` is the day moved from `/changes/sync` to
 /// Board's cache.
 #[derive(Debug, Serialize, JsonSchema)]
 #[schemars(rename = "MigrateOutput")]
@@ -187,6 +187,36 @@ fn known(host: &dyn Host, olds: &[Old]) -> Result<Known, PluginError> {
         }
     }
     Ok(Known { plans, files })
+}
+
+/// The understanding checks of the old shape, which the migration cannot
+/// rewrite, since a question of that shape holds no answer of the design's.
+/// Each is left with why, for the owner to fix by hand.
+fn old_checks(host: &dyn Host) -> Result<Vec<Left>, PluginError> {
+    let sql = format!(
+        "SELECT logical, body FROM records WHERE type = {} AND substr(logical, 1, {}) = {} \
+         ORDER BY logical",
+        literal(UnderstandingRecord::TYPE),
+        OWN.len(),
+        literal(OWN)
+    );
+    let mut left = Vec::new();
+    for row in rows(host, &sql)? {
+        let parsed = text(row.get(1)).and_then(|body| parse_json(body.as_bytes()).ok());
+        let (Some(path), Some(body)) = (text(row.first()), parsed) else {
+            continue;
+        };
+        if serde_json::from_value::<UnderstandingRecord>(body).is_err() {
+            left.push(Left {
+                path: path.to_owned(),
+                why: "it is an understanding check of the old shape; give each question the \
+                      design's answer in `design`, and keep only the fields \
+                      changes/understanding/v1 has"
+                    .to_owned(),
+            });
+        }
+    }
+    Ok(left)
 }
 
 /// The owner/repo#number a GitHub page names, and whether it is a pull
@@ -436,6 +466,7 @@ pub(crate) fn migrate(host: &dyn Host, input: &Value) -> Result<Value, PluginErr
         changes.push(old.path.clone());
         lines.extend(written);
     }
+    left.extend(old_checks(host)?);
     let sync = old_sync(host)?;
     if let Some((_, blob)) = &sync {
         lines.push(json!({"path": SYNC_PATH, "expect": blob, "remove": true}));
