@@ -53,7 +53,7 @@ fn run_record() -> Value {
     json!({
         "$type": "runs/run/v1",
         "suite": "/suites/x",
-        "by": "claude",
+        "by": {"program": "claude"},
         "started": "2026-10-01T09:00:00Z",
         "scope": "full",
         "results": [{"case": "cold", "outcome": "pass", "evidence": ["/evals/x/evidence/log.txt"]}],
@@ -244,7 +244,7 @@ fn a_path_the_team_holds_differently_refuses_the_share_and_writes_nothing_and_on
  {
     let boards = boards();
     boards.standard();
-    let other = record(run_record(), &json!({"by": "someone else"}));
+    let other = record(run_record(), &json!({"by": {"person": "someone-else"}}));
     let before = boards.publish(&[("suites/x/runs/1.json", &other)]);
     let refused = boards.refused(&["--path", "/evals/x"]);
     assert_eq!(refused["code"], "share::target::differs");

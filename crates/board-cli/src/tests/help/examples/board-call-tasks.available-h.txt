@@ -4,9 +4,11 @@ Usage: board call tasks.available [OPTIONS]
 
 Options:
       --context <context>  Only tasks tagged with this context, such as errands.
-      --owner <owner>      Only tasks this owner, such as a session id, holds or nobody holds, and list in held the ones it holds that are not available.
+      --person <person>    The owner's person, such as luke.
+      --program <program>  The owner's program, such as claude-code.
       --remote <remote>    A git remote, or owner/name, to choose the repos by in place of the origin of the directory board was started in.
       --repo <repo>        One repo's tasks: / for the board's own tree, or a notes repo's mount path such as /repos/notes-personal; the caller's git remote chooses the repos when left out.
+      --session <session>  With program and person, the owner: only tasks it holds or nobody holds, and in held the ones it holds that are not available. The owner's session, by its local_ id.
   -h, --help               Print help (see more with '--help')
 
 Every input property is a flag, so Board does not read stdin.
