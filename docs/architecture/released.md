@@ -9,7 +9,8 @@ must read the records and reports of a later one, so:
   version's schema stays readable;
 - an `enum` outside `if`, `not` and `oneOf` may gain a value, never lose one;
   an older Board may treat a record holding a newer value as invalid;
-- a report or capability keeps every field; a field may be added;
+- a report or capability keeps every field, and a capability field its type;
+  no input becomes required; a field may be added;
 - a code is never renamed or removed; a code may be added;
 - `plugin enable` reports each schema it replaced, in `replaced`.
 
@@ -30,8 +31,8 @@ listed.
 
 The `released` test in `board-cli` refuses a listed schema whose shape changed,
 and a listed enum value, field or code that is gone. Of `query` and `call`
-only the envelopes are listed: a query's rows are its statement's, and a
-call's output is listed under its capability.
+only the envelopes are listed: a call's output is listed under
+its capability.
 
 A release writes the file by running that test with `SNAPSHOTS=overwrite`,
 which lists everything the checkout ships, and then runs it with
