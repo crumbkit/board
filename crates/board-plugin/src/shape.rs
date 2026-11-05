@@ -385,6 +385,49 @@ impl Actor {
         (actor != Self::default()).then_some(actor)
     }
 
+    /// The actor that one text names, as a released Board recorded who
+    /// acted: its `local_` session, the program its words name (Codex, or
+    /// Claude and its subagents), and Luke. The whole text is also the
+    /// agent's name unless it is only a program's name, Luke's name or the
+    /// session id, so no words are lost. Blank text names nobody. The shapes
+    /// migration reads old actors with it, and `--owner` reads its text with
+    /// it, so the two agree on who an old name is.
+    #[must_use]
+    pub fn from_text(text: &str) -> Option<Self> {
+        let trimmed = text.trim();
+        if trimmed.is_empty() {
+            return None;
+        }
+        let session = (text.split(|c: char| !(c.is_ascii_alphanumeric() || c == '_' || c == '-')))
+            .find(|word| {
+                word.strip_prefix("local_").is_some_and(|id| {
+                    !id.is_empty() && id.chars().all(|c| matches!(c, '0'..='9' | 'a'..='f' | '-'))
+                })
+            })
+            .map(|session| session.trim_end_matches('-'));
+        let words: Vec<String> = (text.split(|c: char| !c.is_ascii_alphanumeric()))
+            .map(str::to_ascii_lowercase)
+            .collect();
+        let named = |name: &str| words.iter().any(|word| word == name);
+        let subagent = text.to_ascii_lowercase().contains("sub-agent");
+        let program = if named("codex") {
+            Some("codex")
+        } else if named("claude") || named("subagent") || subagent {
+            Some("claude-code")
+        } else {
+            None
+        };
+        let bare = ["codex", "claude", "claude-code", "claude code", "luke"]
+            .contains(&trimmed.to_ascii_lowercase().as_str())
+            || session == Some(trimmed);
+        Some(Self {
+            session: session.map(str::to_owned),
+            program: program.map(str::to_owned),
+            person: named("luke").then(|| "luke".to_owned()),
+            agent: (!bare).then(|| trimmed.to_owned()),
+        })
+    }
+
     /// Whether `other` is the same actor: the same session when both name
     /// one, since a session is one agent however else it is described, and
     /// otherwise every part equal.

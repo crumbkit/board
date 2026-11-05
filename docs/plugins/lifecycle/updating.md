@@ -79,5 +79,7 @@ The migration leaves seen records and Board.app alone. A seen record keeps
 naming its effect by `/effects/answered/<id>`, which Board.app reads, and a
 reply may still name its effect by the bare id, which Board.app's relay
 writes. The migration gives a bare reply effect its `sha256:` prefix, and
-both forms stay valid, so Board.app and Board can be updated in either
-order.
+both forms stay valid, so Board.app as it is today keeps working before and
+after Board updates. A Board.app that writes `sha256:` reply effects needs
+this Board first, because a released Board's reply schema admits only the
+bare id.

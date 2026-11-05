@@ -3,6 +3,7 @@
 
 use std::fmt::Write as _;
 
+use board_plugin::shape::Actor;
 use serde_json::{Map, Value, json};
 
 /// What happened to one field of one record.
@@ -293,53 +294,13 @@ fn digest(
     outcomes.push(Outcome::Changed(field));
 }
 
-/// The actor the old text names: its `local_` session, the program its
-/// words name (Codex, or Claude and its subagents), and Luke. The whole
-/// text is also the agent's name unless it is only a program's name, Luke's
-/// name or the session id, so no words are lost. The map's entry for the
-/// text wins, and blank text names nobody.
+/// The actor the old text names, as [`Actor::from_text`] reads it. The
+/// map's entry for the text wins.
 pub(crate) fn actor(text: &str, context: &Context) -> Option<Value> {
     if let Some(mapped) = context.map.get(text).filter(|value| value.is_object()) {
         return Some(mapped.clone());
     }
-    if text.trim().is_empty() {
-        return None;
-    }
-    let mut actor = Map::new();
-    let session = text
-        .split(|c: char| !(c.is_ascii_alphanumeric() || c == '_' || c == '-'))
-        .find(|word| {
-            word.strip_prefix("local_").is_some_and(|id| {
-                !id.is_empty() && id.chars().all(|c| matches!(c, '0'..='9' | 'a'..='f' | '-'))
-            })
-        });
-    if let Some(session) = session {
-        actor.insert("session".into(), json!(session.trim_end_matches('-')));
-    }
-    let words: Vec<String> = text
-        .split(|c: char| !c.is_ascii_alphanumeric())
-        .map(str::to_ascii_lowercase)
-        .collect();
-    let named = |name: &str| words.iter().any(|word| word == name);
-    let subagent = text.to_ascii_lowercase().contains("sub-agent");
-    if named("codex") {
-        actor.insert("program".into(), json!("codex"));
-    } else if named("claude") || named("subagent") || subagent {
-        actor.insert("program".into(), json!("claude-code"));
-    }
-    if named("luke") {
-        actor.insert("person".into(), json!("luke"));
-    }
-    // The text is kept whole unless it is only the part it names, so no
-    // words of an old actor are lost.
-    let trimmed = text.trim();
-    let bare = ["codex", "claude", "claude-code", "claude code", "luke"]
-        .contains(&trimmed.to_ascii_lowercase().as_str())
-        || session.is_some_and(|session| trimmed == session.trim_end_matches('-'));
-    if !bare {
-        actor.insert("agent".into(), json!(trimmed));
-    }
-    Some(Value::Object(actor))
+    Actor::from_text(text).map(|actor| json!(actor))
 }
 
 /// Whether `text` is a `Subject`: an `owner/name` repository or a board path.

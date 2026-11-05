@@ -259,7 +259,7 @@ impl Seen {
         let seen = Self::deserialize(value)?;
         if seen.effect_id().is_none() {
             return Err(serde::de::Error::custom(format!(
-                "effect {:?} is not /effects/answered/ and an effect id of 64 lowercase hex digits",
+                "effect {:?} is not /effects/answered/, /effects/pending/ or sha256: followed by an effect id of 64 lowercase hex digits",
                 seen.effect
             )));
         }

@@ -1,19 +1,24 @@
 //! `--owner`, the one owner flag a released Board's `claim` and
-//! `available` took: a session's id or a person's handle, which each
-//! still accept beside `--session`, `--program`, `--person` and `--agent`.
+//! `available` took, which each still accept beside `--session`,
+//! `--program`, `--person` and `--agent`. It reads its text as the shapes
+//! migration reads an old owner, so the two agree.
 
 use super::*;
 
-/// A released caller's `--owner local_…` names a session and `--owner
-/// luke` a person; any other text names an agent.
+/// `--owner` names the owner the shapes migration makes of the same text: a
+/// `local_` id is the session, Luke is the person, and any other words are
+/// the agent's name, kept whole.
 #[test]
-fn owner_names_a_session_by_its_id_a_person_by_a_handle_and_otherwise_an_agent() {
+fn owner_names_the_owner_the_shapes_migration_makes_of_the_same_text() {
     let tasks = Tasks::new();
     let cases = [
         ("local_0a1b", json!({"session": "local_0a1b"})),
-        ("lead-1", json!({"person": "lead-1"})),
-        ("owner@example.com", json!({"person": "owner@example.com"})),
-        ("Inbox builder", json!({"agent": "Inbox builder"})),
+        ("luke", json!({"person": "luke"})),
+        ("lead-1", json!({"agent": "lead-1"})),
+        (
+            "Codex recording builder",
+            json!({"program": "codex", "agent": "Codex recording builder"}),
+        ),
     ];
     for (at, (owner, expected)) in cases.into_iter().enumerate() {
         let path = format!("/tasks/{at}.md");
@@ -23,7 +28,24 @@ fn owner_names_a_session_by_its_id_a_person_by_a_handle_and_otherwise_an_agent()
     }
 }
 
-/// `available --owner` lists what that owner holds, as it did before
+/// A task a released Board's `claim --owner lead-1` wrote holds the owner
+/// the migration made of it, and the same `--owner` claims it again and
+/// lists it, while another name is refused.
+#[test]
+fn a_migrated_owner_is_claimed_and_listed_by_the_same_owner_text_and_refused_to_another() {
+    let tasks = Tasks::new();
+    let migrated = json!({"agent": "lead-1"});
+    tasks.write("tasks/a.md", &open("A", json!({"owner": migrated})));
+    let path = ["--path", "/tasks/a.md"];
+    let output = tasks.call("claim", &[&path[..], &["--owner", "lead-1"]].concat());
+    assert_eq!(output.unwrap()["owner"], migrated);
+    let listed = tasks.call("available", &["--owner", "lead-1"]).unwrap();
+    assert_eq!(listed["available"]["tasks"][0]["title"], json!("A"));
+    let refused = tasks.refused("claim", &[&path[..], &["--owner", "lead-2"]].concat());
+    assert_eq!(refused["code"], "tasks::task::held");
+}
+
+/// `available --owner` lists what that session holds, as it did before
 /// owners were actors.
 #[test]
 fn available_by_owner_lists_the_tasks_that_session_holds_and_leaves_out_another_sessions() {
@@ -40,9 +62,9 @@ fn available_by_owner_lists_the_tasks_that_session_holds_and_leaves_out_another_
 }
 
 /// `--owner` and the parts it stands for name the owner twice, so the two
-/// together are refused.
+/// together are refused, and `--owner` alone is admitted.
 #[test]
-fn owner_with_another_owner_flag_is_refused_by_claim_and_available() {
+fn owner_with_another_owner_flag_is_refused_by_claim_and_available_and_owner_alone_is_admitted() {
     let tasks = Tasks::new();
     tasks.write("tasks/a.md", &open("A", json!({})));
     let both = ["--owner", "local_0a1b", "--program", "codex"];
@@ -50,5 +72,7 @@ fn owner_with_another_owner_flag_is_refused_by_claim_and_available() {
     for (capability, flags) in [("available", &[][..]), ("claim", &claim[..])] {
         let refused = tasks.refused(capability, &[flags, &both].concat());
         assert_eq!(refused["code"], "tasks::owner::twice", "{capability}");
+        let admitted = tasks.call(capability, &[flags, &both[..2]].concat());
+        assert!(admitted.is_ok(), "{capability}: {admitted:?}");
     }
 }

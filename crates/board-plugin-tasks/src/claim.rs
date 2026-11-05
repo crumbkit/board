@@ -23,8 +23,9 @@ pub(crate) struct ClaimInput {
     #[schemars(
         length(min = 1),
         description = "Who holds the task, as one text in place of session, program, person and \
-                       agent: a session's local_ id, a person's handle such as luke, or else an \
-                       agent's name."
+                       agent, read as the shapes migration reads an old owner: a local_ id in it \
+                       is the session, Codex or Claude the program, Luke the person, and the \
+                       text the agent's name."
     )]
     pub(crate) owner: Option<String>,
     #[schemars(
@@ -98,9 +99,9 @@ pub(crate) fn claim(host: &dyn Host, input: &Value) -> Result<Value, PluginError
 
 /// The owner that `owner` or the parts `[session, program, person, agent]`
 /// name, or none when they name nobody. `owner` is the one text a released
-/// Board took: a session by its `local_` id, a person by a handle or an
-/// email address, and otherwise an agent by its name. It is refused beside
-/// any part, since the two would name the owner twice.
+/// Board took, read as [`Actor::from_text`] reads it, so it names the owner
+/// the shapes migration made of the same text. It is refused beside any
+/// part, since the two would name the owner twice.
 pub(crate) fn owner(
     owner: Option<String>,
     parts: [Option<String>; 4],
@@ -123,30 +124,5 @@ pub(crate) fn owner(
             [("owner", json!(text))],
         ));
     }
-    let session = (text.strip_prefix("local_")).is_some_and(|id| {
-        !id.is_empty()
-            && id
-                .bytes()
-                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b) || b == b'-')
-    });
-    let slug = !text.is_empty()
-        && (text.split('-')).all(|word| {
-            !word.is_empty()
-                && word
-                    .bytes()
-                    .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit())
-        });
-    let email = matches!(text.split_once('@'), Some((name, host)) if !name.is_empty() && !host.is_empty() && !host.contains('@'))
-        && !text.contains(char::is_whitespace);
-    Ok(Some(match (session, slug || email) {
-        (true, _) => Actor {
-            session: Some(text),
-            ..Actor::default()
-        },
-        (false, true) => Actor {
-            person: Some(text),
-            ..Actor::default()
-        },
-        (false, false) => return Ok(Actor::of(None, None, None, Some(text))),
-    }))
+    Ok(Actor::from_text(&text))
 }

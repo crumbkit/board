@@ -41,8 +41,8 @@ pub(crate) struct Input {
     pub(crate) context: Option<String>,
     #[schemars(
         length(min = 1),
-        description = "The owner as one text in place of session, program, person and agent: a \
-                       session's local_ id, a person's handle such as luke, or else an agent's name."
+        description = "The owner as one text in place of session, program, person and agent, \
+                       read as tasks.claim reads its owner."
     )]
     pub(crate) owner: Option<String>,
     #[schemars(
