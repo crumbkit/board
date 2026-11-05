@@ -185,7 +185,7 @@ fn the_digest_names_the_crossing_and_is_the_sha256_of_the_canonical_json_python_
     //   "parts": {"pr.body": "Fïne.", "pr.title": "T"}, "to": "github:octo/board"}, sort_keys=True,
     //   separators=(",", ":"), ensure_ascii=False).encode()).hexdigest())'
     let expected = "aa46b4f4d17f4e7c8796d1cea265d404e5fc11c9ecee18e13dae54dc5cb8b54c";
-    assert_eq!(output(&document)["digest"], expected);
+    assert_eq!(output(&document)["digest"], format!("sha256:{expected}"));
     assert_eq!(
         output(&document)["crossing"],
         format!("/crossings/{expected}")

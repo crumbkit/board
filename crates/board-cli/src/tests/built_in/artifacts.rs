@@ -36,7 +36,7 @@ fn version(at: &str, fields: &Value) -> String {
             "$type": "artifacts/version/v1",
             "version": "1793473476-1c42",
             "title": "Plan",
-            "sha256": "0".repeat(64),
+            "sha256": format!("sha256:{}", "0".repeat(64)),
             "source": "/work/scratch/plan.html",
             "by": {"program": "claude-code"},
             "at": at,

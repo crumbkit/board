@@ -267,7 +267,9 @@ fn a_push_git_refuses_is_reported_and_the_crossing_keeps_no_result() {
         (1, "github::push::failed".to_owned())
     );
     let digest = failure["fields"]["digest"].as_str().unwrap();
-    let crossing = desk.record(&format!("/crossings/{digest}")).unwrap();
+    let crossing = desk
+        .record(&format!("/crossings/{}", &digest[7..]))
+        .unwrap();
     assert_eq!(crossing.get("result"), None);
     desk.git(&checkout, &["pull", "-q", "--rebase", "origin", "main"]);
     assert_eq!(

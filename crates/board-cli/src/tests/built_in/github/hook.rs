@@ -125,7 +125,7 @@ fn the_hook_checks_the_parts_github_push_would_send_for_each_ref_git_pushes() {
         json!({"push.branch": "feature"}),
         &[commit_parts(&desk, &sha, "Add a lever", "")],
     );
-    let path = format!("/crossings/{}", digest("github.push", &parts));
+    let path = format!("/crossings/{}", &digest("github.push", &parts)[7..]);
     let crossing = desk.record(&path).unwrap();
     assert_eq!(
         (&crossing["passed"], &crossing["from"]),

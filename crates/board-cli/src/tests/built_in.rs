@@ -306,7 +306,7 @@ fn call_requests_thread_answers_from_a_warm_index_as_from_a_cold_one_after_a_new
     };
     let before = answer(Some(cache.path()));
     let second = request(&board, "two\n", "2026-10-30T10:00:00.000000Z");
-    let reply = json!({"$type": "requests/reply/v1", "effect": first, "text": "Shorter."});
+    let reply = json!({"$type": "requests/reply/v1", "effect": format!("sha256:{first}"), "text": "Shorter."});
     let path = format!("requests/replies/{first}/20261030T093000Z.json");
     board.write(&path, Item::File(&reply.to_string()));
     let warm = answer(Some(cache.path()));
