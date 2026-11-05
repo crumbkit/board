@@ -6,30 +6,32 @@ a second user, and every reader on the machine moves in the same step
 must read the records and reports of a later one, so:
 
 - a changed type is a new version, `<namespace>/<kind>/v<n+1>`, and the old
-  version's schema stays where it was and stays readable;
-- an `enum` may gain a value in place but never loses one, and a reader
-  treats a value it does not know as unknown;
-- a `--json` report keeps every field it had; a field may be added;
+  version's schema stays readable;
+- an `enum` outside `if`, `not` and `oneOf` may gain a value, never lose one;
+  an older Board may treat a record holding a newer value as invalid;
+- a report or capability keeps every field; a field may be added;
 - a code is never renamed or removed; a code may be added;
 - `plugin enable` reports each schema it replaced, in `replaced`.
 
-The `changes/*` types change in place until a later release, while the
-changes plugin is ported. The index may change freely.
+Until a later release, the `changes/*` types change in place while the
+changes plugin is ported, and Board's own `board/*` types, which have no
+schema files, are not listed. The index may change freely.
 
 ## released.json
 
-`released.json` at the repository root lists what the last release shipped.
-Each schema under `plugins/<name>/types/` or `crates/board-plugin-<name>/types/`
-is listed with the blob id of its canonical JSON with every `enum` emptied, and
-each `enum`'s values by JSON pointer. Each document `board schemas list` names
-is listed with its field paths (`[]` for every array element): those its JSON
-Schema declares and those a sample run prints in `data`. The codes are Board's
-and each built-in plugin's. `.board/types/` holds the repository board's own
-copies and is not listed.
+`released.json` at the repository root lists what the last release shipped:
+each schema under `plugins/<name>/types/` or `crates/board-plugin-<name>/types/`,
+as the blob id of its canonical JSON with those enums emptied, and their values
+by JSON pointer; each document `board schemas list` names, and each built-in
+capability, with the field paths (`[]` for every array element) their JSON
+Schemas declare and sample runs print; and Board's and each built-in plugin's
+codes. `.board/types/` holds the repository board's own copies and is not
+listed.
 
 The `released` test in `board-cli` refuses a listed schema whose shape changed,
-and a listed enum value, field or code that is gone. The `data` of `query` and
-`call` is not Board's, so only their envelopes are listed.
+and a listed enum value, field or code that is gone. Of `query` and `call`
+only the envelopes are listed: a query's rows are its statement's, and a
+call's output is listed under its capability.
 
 A release writes the file by running that test with `SNAPSHOTS=overwrite`,
 which lists everything the checkout ships, and then runs it with

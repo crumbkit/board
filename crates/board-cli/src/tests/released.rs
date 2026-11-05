@@ -9,8 +9,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
+use board_model::Location;
 use board_model::{Answer, canonical_json};
-use board_ops::{AnswerReport, PutReport};
+use board_ops::{AnswerReport, Detail, EnableReport, Kept, PutReport, Removed, Written};
 use board_serve::{Opened, Served};
 use serde::{Deserialize, Serialize};
 
@@ -47,6 +48,11 @@ struct Released {
     /// Each `--json` report by its `schema`, with the paths of the fields
     /// it holds; `[]` stands for every element of an array.
     reports: BTreeMap<String, BTreeSet<String>>,
+    /// Each built-in plugin's capability, as `<plugin>.<capability>`, with
+    /// the paths of the fields its input schema declares, under `input`,
+    /// and its output schema, under `output`.
+    #[serde(default)]
+    capabilities: BTreeMap<String, BTreeSet<String>>,
     /// Board's codes and those of every built-in plugin.
     codes: BTreeSet<String>,
     /// Each vector file but a README, by its path from the repository root,
@@ -71,6 +77,12 @@ struct Frozen {
 /// one is data.
 const INSTANCES: &[&str] = &["const", "default", "examples", "enum"];
 
+/// Keywords under which an added enum value can refuse a record the schema
+/// admitted: it changes which branch of an `if` applies, makes a `not`
+/// refuse more, or lets a value match two branches of a `oneOf`. An enum
+/// under one of them stays in the shape, so adding to it is a new version.
+const NARROWING: &[&str] = &["if", "not", "oneOf"];
+
 /// The schema `bytes` as the freeze holds it.
 fn frozen(hasher: &Scenario, bytes: &[u8]) -> Frozen {
     let mut schema: Value = serde_json::from_slice(bytes).unwrap();
@@ -80,7 +92,8 @@ fn frozen(hasher: &Scenario, bytes: &[u8]) -> Frozen {
     Frozen { shape, enums }
 }
 
-/// Empties every `enum` in `schema`, at `pointer`, into `enums`.
+/// Empties every `enum` in `schema`, at `pointer`, into `enums`, but none
+/// under a [`NARROWING`] keyword.
 fn emptied(schema: &mut Value, pointer: &str, enums: &mut BTreeMap<String, Vec<Value>>) {
     match schema {
         Value::Object(fields) => {
@@ -90,7 +103,7 @@ fn emptied(schema: &mut Value, pointer: &str, enums: &mut BTreeMap<String, Vec<V
                     && let Value::Array(values) = value
                 {
                     enums.insert(at, std::mem::take(values));
-                } else if !INSTANCES.contains(&key.as_str()) {
+                } else if !INSTANCES.contains(&key.as_str()) && !NARROWING.contains(&key.as_str()) {
                     emptied(value, &at, enums);
                 }
             }
@@ -127,9 +140,12 @@ fn violations(released: &Released, present: &Released) -> Vec<String> {
             }
         }
     }
-    for (report, fields) in &released.reports {
+    let listed = released.reports.iter().chain(&released.capabilities);
+    let held =
+        |name: &String| (present.reports.get(name)).or_else(|| present.capabilities.get(name));
+    for (report, fields) in listed {
         for field in fields {
-            let held = present.reports.get(report);
+            let held = held(report);
             if !held.is_some_and(|held| held.contains(field)) {
                 found.push(format!("{report} no longer holds {field}"));
             }
@@ -250,9 +266,9 @@ fn files(directory: &Path, wanted: fn(&str) -> bool, into: &mut Vec<(String, Vec
 /// Whether the file at `relative` is a schema a plugin Board ships keeps,
 /// outside [`UNFROZEN`].
 fn is_schema(relative: &str) -> bool {
-    let in_plugin = relative.starts_with("plugins/")
-        || (relative.starts_with("crates/board-plugin-")
-            && relative.split('/').nth(2) == Some("types"));
+    let in_types = relative.split('/').nth(2) == Some("types");
+    let in_plugin = in_types
+        && (relative.starts_with("plugins/") || relative.starts_with("crates/board-plugin-"));
     relative.ends_with(".schema.json")
         && in_plugin
         && !UNFROZEN
@@ -279,11 +295,18 @@ fn is_plugin_source(relative: &str) -> bool {
             .any(|part| *part == "tests" || *part == "tests.rs")
 }
 
-/// Each code the source text of the plugin `name` spells: a string literal
-/// that is `name` and two or more `::`-separated words, or a format string
-/// that starts with a `{CONSTANT}` standing for `name`, as
-/// `format!("{PLUGIN}::repo::not_synced")` does.
-fn plugin_codes(name: &str, source: &str, into: &mut BTreeSet<String>) {
+/// What the source text of the plugin `name` spells as its codes: a
+/// string literal that is `name` and two or more `::`-separated words, or a
+/// format string that starts with a `{CONSTANT}` standing for `name`, as
+/// `format!("{PLUGIN}::repo::not_synced")` does, into `codes`. A spelling
+/// with a placeholder in a word, such as `"tasks::{call}::cross_repo"`, goes
+/// into `dynamic` as it is spelled, for [`DYNAMIC`] to expand.
+fn plugin_codes(
+    name: &str,
+    source: &str,
+    codes: &mut BTreeSet<String>,
+    dynamic: &mut BTreeSet<String>,
+) {
     for (at, _) in source.match_indices('"') {
         let literal = &source[at + 1..];
         let rest = if let Some(rest) = literal.strip_prefix(name) {
@@ -305,10 +328,66 @@ fn plugin_codes(name: &str, source: &str, into: &mut BTreeSet<String>) {
             !word.is_empty()
                 && (word.chars()).all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
         };
-        if words.len() >= 3 && words[0].is_empty() && words[1..].iter().all(word) {
-            into.insert(format!("{name}{}", &rest[..end]));
+        let placeholder = |word: &&str| word.starts_with('{') && word.ends_with('}');
+        if words.len() < 3 || !words[0].is_empty() {
+            continue;
+        }
+        if words[1..].iter().all(word) {
+            codes.insert(format!("{name}{}", &rest[..end]));
+        } else if words[1..].iter().all(|w| word(w) || placeholder(w)) {
+            dynamic.insert(format!("{name}{}", &rest[..end]));
         }
     }
+}
+
+/// Each code a plugin spells with a placeholder, and the codes it builds.
+/// [`plugins_codes`] checks that each word standing for a placeholder is a
+/// literal in the plugin's source, and refuses a spelling not listed here.
+const DYNAMIC: &[(&str, &[&str])] = &[
+    (
+        "boundary::crossing::{reason}",
+        &[
+            "boundary::crossing::not_found",
+            "boundary::crossing::failed",
+        ],
+    ),
+    (
+        "review::{area}::not_found",
+        &["review::brief::not_found", "review::report::not_found"],
+    ),
+    (
+        "tasks::{call}::cross_repo",
+        &["tasks::add::cross_repo", "tasks::move::cross_repo"],
+    ),
+    (
+        "tasks::{call}::parent_not_found",
+        &[
+            "tasks::add::parent_not_found",
+            "tasks::move::parent_not_found",
+        ],
+    ),
+];
+
+/// The codes `spelled` builds, as [`DYNAMIC`] lists them, each checked
+/// against `sources`; an error names a spelling it does not list.
+fn expanded(spelled: &str, sources: &[&str]) -> Result<Vec<String>, String> {
+    let Some((_, codes)) = DYNAMIC.iter().find(|(listed, _)| *listed == spelled) else {
+        return Err(format!(
+            "{spelled} is a code with a placeholder that DYNAMIC does not list; list the codes it builds"
+        ));
+    };
+    for code in *codes {
+        let pairs = spelled.split("::").zip(code.split("::"));
+        for (placeholder, word) in pairs.filter(|(placeholder, _)| placeholder.starts_with('{')) {
+            let quoted = format!("\"{word}\"");
+            if !sources.iter().any(|source| source.contains(&quoted)) {
+                return Err(format!(
+                    "{code}: no source spells {quoted} for {placeholder}"
+                ));
+            }
+        }
+    }
+    Ok(codes.iter().map(|code| (*code).to_owned()).collect())
 }
 
 /// Codes that Board's own crates build from a plugin's name, as
@@ -342,13 +421,20 @@ const SHARED: &[(&str, &str, &[&str])] = &[
         "crates/board-repos/src/listing.rs",
         &["board::refused", "repo::invalid_record", "repo::not_found"],
     ),
+    (
+        "Writer",
+        "crates/board-repos/src/writing.rs",
+        &["repo::not_synced"],
+    ),
 ];
 
-/// Whether `source` builds `<plugin>::<suffix>`: in one format string, or
-/// as `<plugin>::<family>::{reason}` with the reason as its own literal.
+/// Whether `source` builds `<plugin>::<suffix>`: in one format string, as
+/// `{plugin}::<suffix>` or `{}::<suffix>`, or as
+/// `<plugin>::<family>::{reason}` with the reason as its own literal.
 fn builds(source: &str, suffix: &str) -> bool {
     let (family, reason) = suffix.split_once("::").unwrap();
     source.contains(&format!("\"{{plugin}}::{suffix}\""))
+        || source.contains(&format!("\"{{}}::{suffix}\""))
         || (source.contains(&format!("\"{{plugin}}::{family}::{{reason}}\""))
             && source.contains(&format!("\"{reason}\"")))
 }
@@ -386,14 +472,22 @@ fn plugins_codes() -> BTreeSet<String> {
         let text = String::from_utf8(bytes).unwrap();
         by_plugin.entry(name).or_default().push(text);
     }
-    let mut codes = BTreeSet::new();
+    let (mut codes, mut unlisted) = (BTreeSet::new(), Vec::new());
     for (name, texts) in &by_plugin {
         let texts: Vec<&str> = texts.iter().map(String::as_str).collect();
+        let mut dynamic = BTreeSet::new();
         for text in &texts {
-            plugin_codes(name, text, &mut codes);
+            plugin_codes(name, text, &mut codes, &mut dynamic);
+        }
+        for spelled in dynamic {
+            match expanded(&spelled, &texts) {
+                Ok(built) => codes.extend(built),
+                Err(error) => unlisted.push(error),
+            }
         }
         shared_codes(name, &texts, &mut codes);
     }
+    assert!(unlisted.is_empty(), "{}", unlisted.join("\n"));
     codes
 }
 
@@ -429,9 +523,10 @@ fn documents() -> BTreeMap<String, BTreeSet<String>> {
     documents
 }
 
-/// Reports whose `data` is not Board's to freeze: `query`'s is the
-/// statement's rows and `call`'s is the plugin's output. Their envelopes
-/// are frozen as their JSON Schemas declare them.
+/// Reports whose `data` is listed elsewhere or not at all: `query`'s is
+/// the statement's rows, and `call`'s is a capability's output, which
+/// [`capabilities`] lists. Their envelopes are frozen as their JSON Schemas
+/// declare them.
 const OPEN_DATA: &[&str] = &["board/query-report/v2", "board/call-report/v2"];
 
 /// Every report once, from a board holding a record, a mount one commit
@@ -504,32 +599,7 @@ fn samples() -> Vec<(String, Value)> {
     board_in(a.workdir(), &["sync"]);
     let arguments = vec!["--json", "sync"];
     outputs.push((arguments.clone(), board_in(b.workdir(), &arguments)));
-    let printer = |words: &[&str]| Printer::of(true, BUDGET, words);
-    let served = Served {
-        port: 1,
-        requests: 1,
-        idle: std::time::Duration::from_secs(1),
-    };
-    outputs.push((vec!["serve"], render::serve(printer(&["serve"]), &served)));
-    let opened = Opened {
-        binding: "/bindings/review".parse().unwrap(),
-        port: 1,
-        started: true,
-    };
-    let open = render::ui_open(printer(&["ui", "open"]), &opened);
-    outputs.push((vec!["ui", "open"], open));
-    let answered = AnswerReport {
-        id: "a".repeat(64),
-        answer: Answer::Refuse,
-        put: PutReport {
-            writes: Vec::new(),
-            removed: Vec::new(),
-            absent: Vec::new(),
-            commit: None,
-        },
-    };
-    let answer = render::answer(printer(&["answer"]), &answered);
-    outputs.push((vec!["answer"], answer));
+    outputs.extend(rendered());
     (outputs.into_iter())
         .map(|(arguments, output)| {
             let report = json(&output);
@@ -541,6 +611,139 @@ fn samples() -> Vec<(String, Value)> {
         .collect()
 }
 
+/// The reports of `serve`, `ui open`, `answer`, and of a `put` and a
+/// `plugin enable` that hold every optional field, from the functions that
+/// render them.
+fn rendered() -> Vec<(Vec<&'static str>, Output)> {
+    let mut rendered = Vec::new();
+    let printer = |words: &[&str]| Printer::of(true, BUDGET, words);
+    let served = Served {
+        port: 1,
+        requests: 1,
+        idle: std::time::Duration::from_secs(1),
+    };
+    rendered.push((vec!["serve"], render::serve(printer(&["serve"]), &served)));
+    let opened = Opened {
+        binding: "/bindings/review".parse().unwrap(),
+        port: 1,
+        started: true,
+    };
+    let open = render::ui_open(printer(&["ui", "open"]), &opened);
+    rendered.push((vec!["ui", "open"], open));
+    let put = full_put();
+    let answered = AnswerReport {
+        id: "a".repeat(64),
+        answer: Answer::Refuse,
+        put: put.clone(),
+    };
+    rendered.push((vec!["put"], render::put(printer(&["put"]), &put, None)));
+    let enabled = EnableReport {
+        name: "tasks".parse().unwrap(),
+        put: put.clone(),
+        replaced: vec![".board/types/tasks/task/v2.schema.json".to_owned()],
+        removed: vec![".board/types/tasks/old/v1.schema.json".to_owned()],
+        kept: vec![Kept {
+            schema: ".board/types/tasks/kept/v1.schema.json".to_owned(),
+            record_type: "tasks/kept/v1".parse().unwrap(),
+            records: 1,
+        }],
+    };
+    let enable = render::plugin_enable(printer(&["plugin", "enable"]), &enabled);
+    rendered.push((vec!["plugin", "enable"], enable));
+    let answer = render::answer(printer(&["answer"]), &answered);
+    rendered.push((vec!["answer"], answer));
+    rendered
+}
+
+/// Each built-in plugin's capability with the fields its input and output
+/// schemas declare, as `plugin find` lists them in a board.
+fn capabilities() -> BTreeMap<String, BTreeSet<String>> {
+    let board = board();
+    let context = Context {
+        start: board.workdir().to_path_buf(),
+        home: None,
+        cache: None,
+        plugins: None,
+        boards: None,
+        signer: None,
+        allowed_signers: None,
+        environment: board_plugin::Environment::default(),
+        complete: None,
+        terminal: false,
+        browser: None,
+        binary: None,
+        cursor: None,
+        built_in: board_plugins::BUILT_IN,
+    };
+    let arguments = [BINARY_NAME, "--json", "plugin", "find", "--all"].map(OsString::from);
+    let found = run(arguments, &context, &mut &b""[..], &mut Ran::default());
+    assert_eq!(found.code, 0, "{}", text(&found.stderr));
+    let mut capabilities = BTreeMap::new();
+    for row in json(&found)["data"].as_array().unwrap() {
+        let name = format!(
+            "{}.{}",
+            row["plugin"].as_str().unwrap(),
+            row["capability"].as_str().unwrap()
+        );
+        let mut fields = BTreeSet::new();
+        for (prefix, schema) in [
+            ("input", &row["inputSchema"]),
+            ("output", &row["outputSchema"]),
+        ] {
+            declared(schema, schema, prefix, &BTreeSet::new(), &mut fields);
+        }
+        capabilities.insert(name, fields);
+    }
+    capabilities
+}
+
+/// A put that holds every field a put report can print: a degraded write
+/// reached through a mount, a removal, an absent path and a commit.
+fn full_put() -> PutReport {
+    let blob = Scenario::new().blob("{}");
+    let board = |repository: &str| board_model::Board {
+        repository: repository.into(),
+        source: board_model::Source::WorkingTree,
+    };
+    let mount = Location {
+        board: board("/a"),
+        path: "vendor/lib.json".to_owned(),
+        object: board_model::Object::Blob(blob),
+        pointers: Vec::new(),
+        follow: Some("main".to_owned()),
+    };
+    let written = Written {
+        location: Location {
+            board: board("/b"),
+            path: "tasks/b.json".to_owned(),
+            object: board_model::Object::Blob(blob),
+            pointers: vec![mount],
+            follow: None,
+        },
+        display: "/vendor/lib/tasks/b".parse().unwrap(),
+        previous: Some(blob),
+        blob,
+        degraded: Some((
+            Code::RefDangling,
+            Detail {
+                pointer: Some("/project".to_owned()),
+                reason: "nothing is at /missing".to_owned(),
+                failures: 2,
+                ..Detail::default()
+            },
+        )),
+    };
+    PutReport {
+        writes: vec![written],
+        removed: vec![Removed {
+            path: "/tasks/a".parse().unwrap(),
+            blob,
+        }],
+        absent: vec!["/tasks/c".parse().unwrap()],
+        commit: Some(blob),
+    }
+}
+
 /// Every report, with the fields its JSON Schema declares and those its
 /// samples hold.
 fn reports() -> BTreeMap<String, BTreeSet<String>> {
@@ -549,6 +752,7 @@ fn reports() -> BTreeMap<String, BTreeSet<String>> {
         let fields = (reports.get_mut(&schema))
             .unwrap_or_else(|| panic!("{schema} is printed but schemas list does not name it"));
         paths("data", &report["data"], fields);
+        paths("summary", &report["summary"], fields);
     }
     reports
 }
@@ -572,6 +776,7 @@ fn present() -> Released {
     Released {
         types,
         reports: reports(),
+        capabilities: capabilities(),
         codes,
         vectors,
     }
@@ -645,17 +850,30 @@ fn every_released_type_report_and_code_is_as_it_was_released() {
         "notes::repo::not_synced",
         "notes::repo::not_found",
         "tasks::call::bad_input",
+        "tasks::repo::not_synced",
+        "tasks::move::parent_not_found",
+        "boundary::crossing::failed",
         "board::path::not_found",
     ] {
         assert!(present.codes.contains(code), "{code}");
     }
+    // Each report's `data` fields are listed, from its schema or its
+    // samples, but for those whose `data` is not Board's.
     for (report, fields) in &present.reports {
-        let sampled = fields
-            .iter()
-            .any(|field| field.starts_with("data.") || field.starts_with("data[]"));
+        let holds_data =
+            (fields.iter()).any(|field| field.starts_with("data.") || field.starts_with("data[]"));
         let expected = !OPEN_DATA.contains(&report.as_str()) && report != "board/failure/v1";
-        assert_eq!(sampled, expected, "{report}: {fields:?}");
+        assert_eq!(holds_data, expected, "{report}: {fields:?}");
     }
+    let enable = &present.reports["board/plugin-enable-report/v2"];
+    assert!(enable.contains("data.writes[].degraded.code"), "{enable:?}");
+    assert!(enable.contains("data.kept[].records"), "{enable:?}");
+    assert!(present.reports["board/check-report/v2"].contains("summary.degraded"));
+    let check = &present.capabilities["controls.check"];
+    assert!(
+        check.contains("input.path") && check.contains("output.measured"),
+        "{check:?}"
+    );
     if overwrite {
         write(&present);
         return;
@@ -730,6 +948,45 @@ fn an_enum_that_gains_a_value_is_admitted_and_one_that_loses_one_or_a_changed_sh
 }
 
 #[test]
+fn a_value_added_to_an_enum_under_if_not_or_one_of_is_refused_and_one_added_beside_them_is_admitted()
+ {
+    let hasher = Scenario::new();
+    let path = "crates/board-plugin-x/types/x/y/v1.schema.json";
+    // As runs/run/v1 requires a note on a failed result.
+    let schema = |under: &str, outcome: &[&str], beside: &[&str]| {
+        let branch = json!({"properties": {"outcome": {"enum": outcome}}});
+        let mut schema =
+            json!({"properties": {"kind": {"enum": beside}}, "then": {"required": ["note"]}});
+        schema[under] = if under == "oneOf" {
+            json!([branch, {"required": ["x"]}])
+        } else {
+            branch
+        };
+        Released {
+            types: [(
+                path.to_owned(),
+                frozen(&hasher, schema.to_string().as_bytes()),
+            )]
+            .into(),
+            ..Released::default()
+        }
+    };
+    for under in NARROWING {
+        let released = schema(under, &["fail"], &["a"]);
+        assert_eq!(
+            violations(&released, &schema(under, &["fail"], &["a", "b"])),
+            Vec::<String>::new(),
+            "{under}"
+        );
+        assert_eq!(
+            violations(&released, &schema(under, &["fail", "pass"], &["a"])),
+            [format!("{path} changed; a changed type is a new version")],
+            "{under}"
+        );
+    }
+}
+
+#[test]
 fn a_plugin_source_names_its_codes_in_literals_and_in_format_strings_that_start_with_its_name() {
     let source = r#"
         refusal("runs::suite::not_found", message);
@@ -739,9 +996,10 @@ fn a_plugin_source_names_its_codes_in_literals_and_in_format_strings_that_start_
         let spaced = "runs::suite not found";
         let lowered = format!("{plugin}::repo::x");
         let nested = "runs::a::b::c_2";
+        let built = format!("runs::{call}::cross_repo");
     "#;
-    let mut codes = BTreeSet::new();
-    plugin_codes("runs", source, &mut codes);
+    let (mut codes, mut dynamic) = (BTreeSet::new(), BTreeSet::new());
+    plugin_codes("runs", source, &mut codes, &mut dynamic);
     assert_eq!(
         codes.into_iter().collect::<Vec<_>>(),
         [
@@ -750,12 +1008,45 @@ fn a_plugin_source_names_its_codes_in_literals_and_in_format_strings_that_start_
             "runs::suite::not_found"
         ]
     );
+    assert_eq!(
+        dynamic.into_iter().collect::<Vec<_>>(),
+        ["runs::{call}::cross_repo"]
+    );
+}
+
+#[test]
+fn a_listed_placeholder_code_expands_when_its_words_are_spelled_and_an_unlisted_one_is_refused() {
+    let spelled = "tasks::{call}::cross_repo";
+    let both = r#"in_repo(.., "add"); in_repo(.., "move");"#;
+    assert_eq!(
+        expanded(spelled, &[both]),
+        Ok(vec![
+            "tasks::add::cross_repo".to_owned(),
+            "tasks::move::cross_repo".to_owned()
+        ])
+    );
+    assert_eq!(
+        expanded(spelled, &[r#"in_repo(.., "add");"#]),
+        Err(r#"tasks::move::cross_repo: no source spells "move" for {call}"#.to_owned())
+    );
+    assert_eq!(
+        expanded("tasks::{call}::other", &[both]),
+        Err("tasks::{call}::other is a code with a placeholder that DYNAMIC does not list; list the codes it builds".to_owned())
+    );
 }
 
 #[test]
 fn a_shared_code_is_built_by_its_source_in_one_string_or_from_its_family_and_reason() {
     let whole = r#"code: format!("{plugin}::board::refused"),"#;
     assert!(builds(whole, "board::refused"));
+    assert!(builds(
+        r#"format!("{}::repo::not_synced", writer.plugin)"#,
+        "repo::not_synced"
+    ));
+    assert!(builds(
+        r#"format!("{}::repo::not_synced", writer.plugin)"#,
+        "repo::not_synced"
+    ));
     assert!(!builds(whole, "board::other"));
     let split = r#"refused(plugin, "timeout", ...); code: format!("{plugin}::agent::{reason}"),"#;
     assert!(builds(split, "agent::timeout"));
@@ -806,6 +1097,7 @@ fn only_a_shipped_plugins_schemas_and_sources_are_read_and_the_changes_types_are
         "crates/board-plugin-runs/src/fixture.schema.json"
     ));
     assert!(is_schema("plugins/effects/types/effects/x/v1.schema.json"));
+    assert!(!is_schema("plugins/effects/fixtures/x.schema.json"));
     assert!(!is_schema(
         "plugins/changes/types/changes/change/v1.schema.json"
     ));
@@ -831,6 +1123,7 @@ fn a_changed_schema_a_dropped_field_and_a_gone_code_are_refused_and_the_unchange
         )]
         .into(),
         reports: [("board/x-report/v2".to_owned(), [field.to_owned()].into())].into(),
+        capabilities: [("x.y".to_owned(), [format!("output.{field}")].into())].into(),
         codes: [code.to_owned()].into(),
         vectors: BTreeMap::new(),
     };
@@ -842,6 +1135,7 @@ fn a_changed_schema_a_dropped_field_and_a_gone_code_are_refused_and_the_unchange
         [
             "plugins/x/types/x/y/v1.schema.json changed; a changed type is a new version",
             "board/x-report/v2 no longer holds data.gone",
+            "x.y no longer holds output.data.gone",
             "board::x::gone is gone; a code is never renamed",
         ]
     );
