@@ -144,13 +144,13 @@ fn subjects_keep_valid_ones_and_map_or_resolve_the_rest() {
     let context = context();
     let mounts = |name: &str| (name == "board").then(|| "crumbkit/board".to_owned());
     let mut record = json!({"$type": "runs/suite/v1", "subjects": [
-        "virtualq/core", "board", "Board app", "Raycast Workspaces", "/repos/x"
+        "octo/core", "board", "Board app", "Raycast Workspaces", "/repos/x"
     ]});
     let outcomes = rules::record(&mut record, &context, &mounts);
     assert_eq!(
         record["subjects"],
         json!([
-            "virtualq/core",
+            "octo/core",
             "crumbkit/board",
             "crumbkit/board-app",
             "Raycast Workspaces",

@@ -388,7 +388,7 @@ fn an_actor_with_no_part_a_bad_part_or_an_unknown_key_is_refused_and_its_twin_is
         (json!({}), json!({"program": "codex"})),
         (json!({"session": "84ccdcef"}), json!({"session": session})),
         (
-            json!({"program": "Codex Soundcheck scheduler"}),
+            json!({"program": "Codex nightly scheduler"}),
             json!({"program": "claude-code"}),
         ),
         (json!({"person": "Luke"}), json!({"person": "luke"})),
