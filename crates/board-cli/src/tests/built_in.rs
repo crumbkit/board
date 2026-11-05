@@ -121,18 +121,18 @@ fn an_installed_copy_of_a_built_in_plugin_is_listed_with_its_directory_and_one_u
     }
 }
 
-/// MCP makes a capability open-world unless it says otherwise, so a
-/// built-in capability that states whether it only reads must also state
-/// whether it reaches beyond the boards and the checkout.
+/// MCP's defaults make a capability destructive and open-world unless it
+/// says otherwise, so every built-in capability states whether it only
+/// reads and whether it reaches beyond the boards and the checkout.
 #[test]
-fn every_built_in_capability_that_states_read_only_hint_also_states_open_world_hint() {
+fn every_built_in_capability_states_read_only_hint_and_open_world_hint() {
     let unstated: Vec<String> = (board_plugins::BUILT_IN.0.iter())
         .map(|plugin| plugin.manifest())
         .flat_map(|manifest| {
             (manifest.capabilities.into_iter())
                 .filter(|capability| {
-                    capability.annotations.as_ref().is_some_and(|hints| {
-                        hints.read_only_hint.is_some() && hints.open_world_hint.is_none()
+                    capability.annotations.as_ref().is_none_or(|hints| {
+                        hints.read_only_hint.is_none() || hints.open_world_hint.is_none()
                     })
                 })
                 .map(move |capability| format!("{}.{}", manifest.name, capability.name))

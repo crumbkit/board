@@ -49,7 +49,7 @@ pub(crate) const SSH_VARIABLES: [&str; 2] = ["GIT_SSH_COMMAND", "GIT_SSH"];
 
 /// How the checkout's git resolves an ssh host to the host it connects to.
 pub(crate) enum Resolver<'a> {
-    /// `ssh -G`, which reads ssh's config and connects to nothing.
+    /// `ssh -G`, which reads ssh's config and opens no connection.
     Ssh(&'a dyn Host),
     /// Git runs another ssh command, which may resolve hosts differently,
     /// so no host is resolved.

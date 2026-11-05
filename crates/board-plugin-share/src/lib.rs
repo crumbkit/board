@@ -61,7 +61,7 @@ fn manifest() -> Value {
                 it lacks into a mounted board, as one commit there, and move the mount's pin to it.",
             "inputSchema": schema_of::<to::Input>(SchemaSettings::draft2020_12()),
             "outputSchema": schema_of::<to::Output>(SchemaSettings::draft2020_12().for_serialize()),
-            "annotations": {"openWorldHint": false},
+            "annotations": {"readOnlyHint": false, "openWorldHint": false},
             "_meta": {},
         }],
     })

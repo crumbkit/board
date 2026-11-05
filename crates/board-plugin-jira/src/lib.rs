@@ -74,7 +74,11 @@ fn manifest() -> Value {
                 through acli, unless a record is already there.",
             "inputSchema": schema_of::<issue::Input>(SchemaSettings::draft2020_12()),
             "outputSchema": schema_of::<issue::Output>(SchemaSettings::draft2020_12().for_serialize()),
-            "annotations": {"idempotentHint": true},
+            "annotations": {
+                "readOnlyHint": false,
+                "idempotentHint": true,
+                "openWorldHint": true,
+            },
             "_meta": {},
         }],
     })

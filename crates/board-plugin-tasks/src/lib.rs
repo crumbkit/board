@@ -204,12 +204,13 @@ fn manifest() -> Value {
                 "description": description,
                 "inputSchema": input,
                 "outputSchema": output,
+                "annotations": {"readOnlyHint": false, "openWorldHint": true},
                 "_meta": {},
             });
-            // Every capability but `tree` syncs or pushes the task's repo;
-            // `tree` reads the repos at their pins.
+            // Every capability but `tree` syncs or pushes the task's repo,
+            // which changes its clone; `tree` reads the repos at their pins.
             if *name == "tree" {
-                tool["annotations"] = json!({"openWorldHint": false});
+                tool["annotations"] = json!({"readOnlyHint": true, "openWorldHint": false});
             }
             tool
         })
