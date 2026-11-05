@@ -36,8 +36,13 @@ ACTIVE_DAYS_VARIABLE = "BOARD_CHANGES_ACTIVE_DAYS"
 RUN_TYPE = "runs/run/v1"
 # The warning a move past the limit carries.
 OVER_LIMIT = "changes::wip::over_limit"
-# A GitHub URL through www.github.com or with a port, which `shown_remote` does not reduce: what precedes the host.
-GITHUB_HOST = re.compile(r"^([a-z+]+://(?:[^@/]+@)?)(?:www\.)?github\.com(?::\d+)?/", re.IGNORECASE)
+# A GitHub origin in a form `shown_remote` does not reduce, with any scheme, case, www or port; its path.
+GITHUB_URL = re.compile(r"^[a-z][a-z0-9+.-]*://(?:[^@/]+@)?(?:www\.)?github\.com(?::\d+)?/(.+)$", re.IGNORECASE)
+GITHUB_SCP = re.compile(r"^[^@/:]+@(?:www\.)?github\.com:(.+)$", re.IGNORECASE)
+# How many local clones an origin is followed through to the origin they follow.
+HOPS = 3
+# Seconds each git read the limit makes may take, well inside the plugin's 30 s.
+GIT_TIMEOUT = 10
 
 
 class Idle(TypedDict):
@@ -70,6 +75,33 @@ class Repository(NamedTuple):
     unread: str | None
 
 
+def stored(origin: str) -> str:
+    """`origin` as a repository is keyed by, in lower case: `owner/name` for GitHub, else as written."""
+    matched = GITHUB_URL.match(origin) or GITHUB_SCP.match(origin)
+    return shown_remote(f"https://github.com/{matched[1]}" if matched else origin).casefold()
+
+
+def local(origin: str) -> str | None:
+    """The clone a local origin names, as an absolute path or a file:// URL; else None."""
+    path = origin.removeprefix("file://")
+    return path if path.startswith("/") else None
+
+
+def followed(clone: str) -> Repository:
+    """The repository `clone` follows: its origin's stored form, through up to HOPS local clones."""
+    for hop in range(HOPS + 1):
+        url = git(clone, "remote", "get-url", "origin", timeout=GIT_TIMEOUT)
+        if isinstance(url, Failed) or not url.strip():
+            return Repository(clone, url.why if isinstance(url, Failed) else f"git gave {clone} an empty origin")
+        nearer = local(url.strip())
+        if nearer is None:
+            return Repository(stored(url.strip()), None)
+        if hop == HOPS:
+            return Repository(nearer, f"followed {HOPS} local clones to {nearer}, whose origin was not read")
+        clone = nearer
+    raise AssertionError  # the loop returns on its last hop
+
+
 def repositories(board: Board, mounts: list[str]) -> dict[str, Repository]:
     """The repository each of `mounts` reads, by mount."""
     # Each mount's location is all that is read, so one row of what reaches it is enough.
@@ -77,14 +109,7 @@ def repositories(board: Board, mounts: list[str]) -> dict[str, Repository]:
     found: dict[str, Repository] = {}
     for mount, answer in zip(mounts, answers, strict=True):
         clone = (answer or {}).get("location", {}).get("repository")
-        if not isinstance(clone, str):
-            found[mount] = Repository(mount, None)
-            continue
-        url = git(clone, "remote", "get-url", "origin", timeout=10)
-        if isinstance(url, Failed) or not url.strip():
-            found[mount] = Repository(clone, url.why if isinstance(url, Failed) else "git gave an empty origin")
-            continue
-        found[mount] = Repository(shown_remote(GITHUB_HOST.sub(r"\1github.com/", url.strip())).casefold(), None)
+        found[mount] = followed(clone) if isinstance(clone, str) else Repository(mount, None)
     return found
 
 
@@ -147,7 +172,7 @@ def committed(board: Board, changes: dict[str, Change]) -> dict[str, date]:
         repository = repositories.get(change["mount"])
         if "head" not in change or not isinstance(repository, str):
             continue
-        out = git(repository, "log", "-1", "--format=%ct", "--end-of-options", change["head"])
+        out = git(repository, "log", "-1", "--format=%ct", "--end-of-options", change["head"], timeout=GIT_TIMEOUT)
         if not isinstance(out, Failed) and out.strip().isdigit():
             found[path] = datetime.fromtimestamp(int(out.strip()), UTC).date()
     return found
