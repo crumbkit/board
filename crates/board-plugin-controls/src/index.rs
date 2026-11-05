@@ -4,7 +4,7 @@
 use std::collections::BTreeMap;
 
 use board_model::{LogicalPath, parse_json};
-use board_ops::{Host, Limit, PluginError, QueryReport};
+use board_ops::{Host, Limit, PluginError, QueryReport, literal};
 use serde::Deserialize;
 use serde_json::Value;
 
@@ -143,13 +143,25 @@ pub(crate) fn degraded(host: &dyn Host) -> Result<Vec<(String, Value)>, PluginEr
         .collect())
 }
 
-/// Each control and each file one of its patterns matches. A pattern
-/// matches a file's `full` path (see [`FILES`]), so files in mounted boards
-/// match by their display path through the mount. A pointer's file holds
-/// where it leads, never what a budget counts, so no pattern matches one.
-pub(crate) fn matched(host: &dyn Host) -> Result<Vec<Match>, PluginError> {
+/// Each control and each file one of its patterns matches, of the files
+/// at or under `scope`. A pattern matches a file's `full` path (see
+/// [`FILES`]), so files in mounted boards match by their display path
+/// through the mount. A pointer's file holds where it leads, never what a
+/// budget counts, so no pattern matches one. Under `/` every file is
+/// compared; under another path only the files there are, which keeps the
+/// comparison of every file with every pattern small in a board that
+/// mounts many repositories. A file with no display path lies under `/`
+/// alone.
+pub(crate) fn matched(host: &dyn Host, scope: &LogicalPath) -> Result<Vec<Match>, PluginError> {
+    let within = if *scope == LogicalPath::root() {
+        String::new()
+    } else {
+        let exact = literal(scope.as_str());
+        let beneath = literal(&format!("{}/", scope.as_str()));
+        format!(" WHERE logical = {exact} OR substr(logical, 1, length({beneath})) = {beneath}")
+    };
     let sql = format!(
-        "WITH files AS MATERIALIZED {FILES}, {PATTERNS} SELECT DISTINCT \
+        "WITH files AS MATERIALIZED (SELECT * FROM {FILES}{within}), {PATTERNS} SELECT DISTINCT \
          c.logical, COALESCE(e.logical, e.full), e.status, e.code, c.path, e.full, e.source \
          FROM patterns c, files e WHERE e.full GLOB c.pattern \
          ORDER BY c.path, e.full, e.source"

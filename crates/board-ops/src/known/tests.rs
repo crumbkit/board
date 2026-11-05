@@ -444,3 +444,52 @@ fn a_clone_one_board_mounts_runs_there_though_another_has_its_repo_record() {
     let (_, prefix) = open(&docs, None, None, || known(&both)).unwrap();
     assert_eq!(prefix.unwrap().unwrap().as_str(), "/repos/lib/docs");
 }
+
+/// A repository with `url` as its `origin`, a commit of `files` and a
+/// `docs` directory, and that commit.
+fn committed(url: &str, files: &[(&str, &str)]) -> (Scenario, board_model::ObjectId) {
+    let repository = clone_of(url);
+    let commit = repository.commit(files);
+    (repository, commit)
+}
+
+#[test]
+fn a_separate_clone_with_a_mounts_origin_opens_its_board_and_one_with_another_origin_finds_none() {
+    let url = "git@github.com:example-org/lib.git";
+    let (library, commit) = committed(url, &[("x.json", "1")]);
+    let board = board();
+    board.write(
+        "repos/lib.json",
+        Item::File(&mount_of(&library.path(), commit)),
+    );
+    let xdg = listing(&[&board]);
+    let (clone, _) = committed("https://github.com/Example-Org/lib", &[("x.json", "1")]);
+    let docs = clone.workdir().join("docs");
+    assert_eq!(opened(&docs, &xdg, None).unwrap(), "/repos/lib/docs");
+    let (stranger, _) = committed("git@github.com:example-org/other.git", &[("x.json", "1")]);
+    let lost = refused(stranger.workdir(), &xdg);
+    assert_eq!(lost.code.as_str(), "board::config::not_found");
+}
+
+#[test]
+fn two_mounts_of_one_origin_open_the_one_whose_commit_the_clone_holds_and_are_ambiguous_when_it_holds_neither()
+ {
+    let url = "git@github.com:example-org/lib.git";
+    let (one, first) = committed(url, &[("x.json", "1")]);
+    let (two, second) = committed(url, &[("x.json", "2")]);
+    assert_ne!(first, second);
+    let board = board();
+    board
+        .write("repos/one.json", Item::File(&mount_of(&one.path(), first)))
+        .write("repos/two.json", Item::File(&mount_of(&two.path(), second)));
+    let xdg = listing(&[&board]);
+    let (holding, held) = committed(url, &[("x.json", "2")]);
+    assert_eq!(held, second, "the clone holds the second mount's commit");
+    assert_eq!(opened(holding.workdir(), &xdg, None).unwrap(), "/repos/two");
+    let (neither, _) = committed(url, &[("x.json", "3")]);
+    let refusal = refused(neither.workdir(), &xdg);
+    assert_eq!(refusal.code.as_str(), "board::config::ambiguous");
+    for mount in ["/repos/one", "/repos/two"] {
+        assert!(refusal.message.contains(mount), "{}", refusal.message);
+    }
+}

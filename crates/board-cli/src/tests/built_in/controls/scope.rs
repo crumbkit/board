@@ -151,3 +151,30 @@ fn a_file_missing_from_another_mount_leaves_the_first_mount_passing_and_the_root
     assert!(unreadable[0]["code"].is_string(), "{unreadable}");
     assert_eq!(root["measured"][0]["used"], 2, "{root}");
 }
+
+#[test]
+fn a_degraded_file_in_another_mount_leaves_the_first_mount_passing_and_the_root_lists_it() {
+    let board = board();
+    board.write(
+        "controls/docs.json",
+        &control(
+            "Short docs.",
+            &json!({"paths": ["repos/*/docs/*"], "rule": {"budget": "words", "max": 9}}),
+        ),
+    );
+    let _new = library(&board, "repos/new.json", &[("docs/a", "one")]);
+    let _old = library(
+        &board,
+        "repos/old.json",
+        &[("docs/a", "one"), ("docs/a.json", "{}")],
+    );
+    let new = board.call("controls.check", &["--path", "/repos/new"]);
+    assert_eq!(new["passed"], true, "{new}");
+    assert_eq!(new["measured"][0]["files"], json!(["/repos/new/docs/a"]));
+    let root = board.call("controls.check", &[]);
+    assert_eq!(root["passed"], false, "{root}");
+    assert_eq!(
+        root["measured"][0]["unreadable"][0]["file"], "/repos/old/docs/a",
+        "{root}"
+    );
+}

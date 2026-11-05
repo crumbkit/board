@@ -30,7 +30,9 @@ that is not `HH:MM`. Board refreshes each
 known board's index and reads the mounts in its working tree. A board
 listed under several spellings counts once. A mount
 matches when its repository has the same git common directory as the
-directory's repository, so a linked worktree matches too. With exactly one
+directory's repository, so a linked worktree matches too. Failing that,
+a mount matches when its repository has the same origin, so a separate clone
+matches; of several, those whose commit the clone holds. With exactly one
 match, Board runs as that board, as git runs from a subdirectory. The prefix
 is the mount's path joined with the directory's path beneath the
 repository's root, such as `/repos/crumbkit/docs`, and the timing log

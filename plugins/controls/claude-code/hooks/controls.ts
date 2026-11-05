@@ -61,7 +61,7 @@ export function parseCheck(root: string, exitCode: number, stdout: string, stder
     const measured = (found.measured as Measured[]).map(m => ({
       control: m.control,
       requirement: m.requirement,
-      usage: `${m.used} of ${m.max} ${m.budget}${unread(m.unreadable)}`,
+      usage: `${m.used} of ${m.max} ${m.budget}${m.used > m.max ? ', over budget' : ''}${unread(m.unreadable)}`,
     }))
     const versions = (Array.isArray(found.versions) ? (found.versions as Pinned[]) : []).map(v => ({
       control: v.control,

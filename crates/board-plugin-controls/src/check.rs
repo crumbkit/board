@@ -178,7 +178,7 @@ pub(crate) fn check(host: &dyn Host, input: &Value) -> Result<Value, PluginError
     let mut unreadable: BTreeMap<String, Vec<Unreadable>> = BTreeMap::new();
     // Files with no display path, by control. They lie under no path but `/`.
     let mut unnamed: BTreeMap<String, usize> = BTreeMap::new();
-    for found in index::matched(host)? {
+    for found in index::matched(host, &scope)? {
         let Some(reached) = files.get_mut(&found.control) else {
             continue;
         };
