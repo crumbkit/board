@@ -647,10 +647,11 @@ fn a_copy_of_a_real_board_migrates_and_a_second_run_changes_nothing() {
     let values: Vec<(&str, &Value)> = (first["unmapped"].as_array().unwrap().iter())
         .map(|entry| (entry["path"].as_str().unwrap(), &entry["value"]))
         .collect();
-    for path in after
-        .difference(&before)
-        .filter(|path| path.ends_with(".json"))
-    {
+    for path in after.difference(&before).filter(|path| {
+        Path::new(path.as_str())
+            .extension()
+            .is_some_and(|extension| extension == "json")
+    }) {
         let mut record: Value =
             serde_json::from_str(&fs::read_to_string(board.join(&path[1..])).unwrap()).unwrap();
         if let Some(Value::Array(subjects)) = record.get_mut("subjects") {
