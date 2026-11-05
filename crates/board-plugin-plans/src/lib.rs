@@ -82,7 +82,12 @@ fn manifest() -> Value {
                 answered, in one commit.",
             "inputSchema": schema_of::<answer::Input>(SchemaSettings::draft2020_12()),
             "outputSchema": schema_of::<answer::Output>(SchemaSettings::draft2020_12().for_serialize()),
-            "annotations": {"readOnlyHint": false},
+            "annotations": {
+                "readOnlyHint": false,
+                "destructiveHint": false,
+                "idempotentHint": false,
+                "openWorldHint": false,
+            },
             "_meta": {},
         }],
     })
