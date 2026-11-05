@@ -92,7 +92,7 @@ fn manifest() -> Value {
             "annotations": {
                 "readOnlyHint": false,
                 "destructiveHint": false,
-                "idempotentHint": false,
+                "idempotentHint": true,
                 "openWorldHint": false,
             },
             "_meta": {},

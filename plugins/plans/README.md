@@ -62,7 +62,7 @@ Board.app, can answer. `--option` is one of the question's option ids, or
 `none` with `--words`; a question with an option whose id is `none` takes
 `--option none` as that option. `--words` defaults to the chosen option's
 text. It writes one commit of two lines: a new `plans/answer/v1` at the
-question's id under `answers/`, answered now, and the question unchanged,
+question's id under `answers/`, answered now, and the question with its content unchanged,
 which must still hold the blob the call read. It returns the answer's path,
 the question's path, `choice`, `words` and `answered`.
 
@@ -82,7 +82,9 @@ question that no longer matters: it rewrites the question with `status:
 the call read, and returns the question's path and the reason. It refuses
 with `plans::withdraw::<reason>` for the same paths, missing questions,
 answered questions and questions that are not open as `plans.answer` does,
-and writes nothing then.
+and writes nothing then. An answer recorded between its read and its put
+does not stop it, so such a question is both answered and withdrawn, and
+`plans.open` does not list it.
 
 ## The Claude Code mod
 

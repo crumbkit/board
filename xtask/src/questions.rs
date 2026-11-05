@@ -31,7 +31,8 @@ pub(crate) struct Migrated {
     /// The questions rewritten from `answered` to `open`, or that would be
     /// with `--dry-run`.
     pub(crate) rewritten: Vec<String>,
-    /// Each question whose stored status disagreed with its answers.
+    /// Each question whose stored status disagreed with its answers, and
+    /// each whose status is none of `open`, `answered` and `withdrawn`.
     pub(crate) disagreed: Vec<Disagreement>,
     /// Answers whose `question` names no question in the board.
     pub(crate) dangling: Vec<String>,
@@ -115,7 +116,7 @@ pub(crate) fn migrate(root: &Path, dry_run: bool) -> Result<Migrated, MigrateErr
         let agrees = match question.status.as_str() {
             "answered" => answered,
             "open" | "withdrawn" => !answered,
-            _ => true,
+            _ => false,
         };
         if !agrees {
             migrated.disagreed.push(Disagreement {

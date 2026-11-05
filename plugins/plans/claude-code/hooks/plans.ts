@@ -54,12 +54,13 @@ export const questionSql = (path: string) =>
   `WHERE q.logical = ${quoted(path)} AND a.type = 'plans/answer/v1' AND ${NAMES}`
 
 /**
- * True when the answer `a` names the question `q`: by its logical path, or by
- * its path in the board both are in, since a mounted board's reference is
- * read from that board's root. plans.open and plans.answer use the same rule.
+ * True when the answer `a` names the question `q`: by its path in the board
+ * both are in, since a mounted board's reference is read from that board's
+ * root, or by its logical path from an answer in the root board. plans.open
+ * and plans.answer use the same rule (question::NAMES in the plugin's crate).
  */
 export const NAMES =
-  "(json_extract(a.body, '$.question') = q.logical OR (a.source = q.source AND json_extract(a.body, '$.question') = '/' || " +
+  "((a.source = 'worktree' AND json_extract(a.body, '$.question') = q.logical) OR (a.source = q.source AND json_extract(a.body, '$.question') = '/' || " +
   "CASE WHEN q.path LIKE '%.json' THEN substr(q.path, 1, length(q.path) - 5) ELSE q.path END))"
 
 /**
@@ -138,7 +139,7 @@ export const REPORT_SQL = [
   `FROM w, records r WHERE r.type = 'plans/question/v1' AND ${within('r', 'asked')}`,
   `UNION ALL SELECT 'answered', a.logical, ${field('a', 'answered')},`,
   `coalesce(${field('q', 'question')}, ${field('a', 'question')}), ${field('a', 'words')}`,
-  `FROM w, records a LEFT JOIN records q ON q.logical = ${field('a', 'question')}`,
+  `FROM w, records a LEFT JOIN records q ON q.type = 'plans/question/v1' AND ${NAMES}`,
   `WHERE a.type = 'plans/answer/v1' AND ${within('a', 'answered')}`,
   `UNION ALL SELECT 'run', r.logical, ${field('r', 'finished')}, coalesce(${field('r', 'summary')}, ${field('r', 'by')}), ${field('r', 'by')}`,
   `FROM w, records r WHERE r.type = 'runs/run/v1' AND ${within('r', 'finished')}`,

@@ -62,6 +62,7 @@ fn every_case() -> Fixture {
         ),
         ("projects/a/questions/waiting.json", question("open")),
         ("projects/a/questions/gone.json", question("withdrawn")),
+        ("projects/a/questions/closed.json", question("closed")),
         (
             "projects/a/answers/lost.json",
             answer("/projects/a/questions/nowhere"),
@@ -78,9 +79,14 @@ fn each_answered_question_becomes_open_and_each_disagreement_is_reported() {
     assert_eq!(
         migrated,
         Migrated {
-            questions: [("answered", 2), ("open", 2), ("withdrawn", 1)]
-                .map(|(status, count)| (status.to_owned(), count))
-                .into(),
+            questions: [
+                ("answered", 2),
+                ("closed", 1),
+                ("open", 2),
+                ("withdrawn", 1)
+            ]
+            .map(|(status, count)| (status.to_owned(), count))
+            .into(),
             answers: 3,
             rewritten: vec![
                 "/projects/a/questions/agrees".to_owned(),
@@ -91,6 +97,11 @@ fn each_answered_question_becomes_open_and_each_disagreement_is_reported() {
                     question: "/projects/a/questions/answered".to_owned(),
                     status: "open".to_owned(),
                     answers: vec!["/projects/a/answers/later".to_owned()],
+                },
+                Disagreement {
+                    question: "/projects/a/questions/closed".to_owned(),
+                    status: "closed".to_owned(),
+                    answers: Vec::new(),
                 },
                 Disagreement {
                     question: "/projects/a/questions/unanswered".to_owned(),

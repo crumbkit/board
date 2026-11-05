@@ -10,8 +10,9 @@ use crate::records::{AnswerRecord, QuestionRecord};
 
 /// SQL that is true when the answer `a` names the question `q`. A reference
 /// in a mounted board is read from that board's root, so an answer names a
-/// question by its logical path, or by its path in the board both are in.
-pub(crate) const NAMES: &str = "(json_extract(a.body, '$.question') = q.logical \
+/// question by its path in the board both are in, and an answer in the root
+/// board also names a mounted question by its logical path.
+pub(crate) const NAMES: &str = "((a.source = 'worktree' AND json_extract(a.body, '$.question') = q.logical) \
      OR (a.source = q.source AND json_extract(a.body, '$.question') = '/' || \
      CASE WHEN q.path LIKE '%.json' THEN substr(q.path, 1, length(q.path) - 5) ELSE q.path END))";
 

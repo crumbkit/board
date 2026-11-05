@@ -341,8 +341,17 @@ fn a_mounted_answer_naming_its_question_in_its_own_board_answers_it() {
     ];
     let (library, commit) = repository(&[], &files);
     mount(&board, "lib.json", &library, commit);
+    // The root board's question at the same path as the mounted one is not
+    // the one the mounted answer names.
+    board.write("projects/m/questions/done.json", &open(&json!({})));
     let (paths, _) = listed(&board, &[]);
-    assert_eq!(paths, ["/lib/projects/m/questions/waiting"]);
+    assert_eq!(
+        paths,
+        [
+            "/lib/projects/m/questions/waiting",
+            "/projects/m/questions/done"
+        ]
+    );
     for (capability, flag, value) in [
         ("plans.answer", "--option", "none"),
         ("plans.withdraw", "--reason", "Stale."),

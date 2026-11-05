@@ -305,6 +305,7 @@ test("a question's detail in the report is answered when an answer names it, and
     "CASE WHEN EXISTS (SELECT 1 FROM records a, records q WHERE q.logical = r.logical AND a.type = 'plans/answer/v1' AND " + NAMES + ')',
   )
   expect(REPORT_SQL).toContain("THEN 'answered' ELSE json_extract(r.body, '$.status') END")
+  expect(REPORT_SQL).toContain(`LEFT JOIN records q ON q.type = 'plans/question/v1' AND ${NAMES}`)
 })
 
 test("a stub's detail in the report is the first of its urls, where the runs mod writes the pull request", () => {
