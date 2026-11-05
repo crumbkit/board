@@ -129,21 +129,27 @@ struct Capability {
 enum Effect {
     /// It writes nothing.
     Reads,
-    /// It only adds, and a repeat adds again.
-    Adds,
     /// It only adds, and a repeat adds nothing more.
     AddsOnce,
-    /// It may overwrite what is there, and a repeat changes nothing more.
-    Overwrites,
+    /// It may overwrite what is there, and a repeat may change it again.
+    /// Each sending action and the pre-push hook run the boundary check,
+    /// which rewrites the content's crossing and clears its result when the
+    /// check fails.
+    OverwritesEachTime,
 }
 
 impl Effect {
     /// The MCP annotations it stands for, with `openWorldHint`.
     fn annotations(self, open_world: bool) -> Value {
+        let [read_only, destructive, idempotent] = match self {
+            Self::Reads => [true, false, true],
+            Self::AddsOnce => [false, false, true],
+            Self::OverwritesEachTime => [false, true, false],
+        };
         json!({
-            "readOnlyHint": matches!(self, Self::Reads),
-            "destructiveHint": matches!(self, Self::Overwrites),
-            "idempotentHint": !matches!(self, Self::Adds),
+            "readOnlyHint": read_only,
+            "destructiveHint": destructive,
+            "idempotentHint": idempotent,
             "openWorldHint": open_world,
         })
     }
@@ -178,7 +184,7 @@ const CAPABILITIES: [Capability; 9] = [
         run: send::push,
         input: input::<send::PushInput>,
         output: output::<send::Pushed>,
-        effect: Effect::AddsOnce,
+        effect: Effect::OverwritesEachTime,
         open_world: true,
         env: &SEND_ENV,
         timeout: Some(SEND_TIMEOUT),
@@ -191,7 +197,7 @@ const CAPABILITIES: [Capability; 9] = [
         run: send::pr_create,
         input: input::<send::PrCreateInput>,
         output: output::<send::Opened>,
-        effect: Effect::Adds,
+        effect: Effect::OverwritesEachTime,
         open_world: true,
         env: &SEND_ENV,
         timeout: Some(SEND_TIMEOUT),
@@ -202,7 +208,7 @@ const CAPABILITIES: [Capability; 9] = [
         run: send::pr_edit,
         input: input::<send::PrEditInput>,
         output: output::<send::Delivered>,
-        effect: Effect::Overwrites,
+        effect: Effect::OverwritesEachTime,
         open_world: true,
         env: &SEND_ENV,
         timeout: Some(SEND_TIMEOUT),
@@ -213,7 +219,7 @@ const CAPABILITIES: [Capability; 9] = [
         run: send::comment,
         input: input::<send::CommentInput>,
         output: output::<send::Delivered>,
-        effect: Effect::Adds,
+        effect: Effect::OverwritesEachTime,
         open_world: true,
         env: &SEND_ENV,
         timeout: Some(SEND_TIMEOUT),
@@ -225,7 +231,7 @@ const CAPABILITIES: [Capability; 9] = [
         run: send::issue_create,
         input: input::<send::IssueCreateInput>,
         output: output::<send::Filed>,
-        effect: Effect::Adds,
+        effect: Effect::OverwritesEachTime,
         open_world: true,
         env: &SEND_ENV,
         timeout: Some(SEND_TIMEOUT),
@@ -250,7 +256,7 @@ const CAPABILITIES: [Capability; 9] = [
         run: hook::pre_push,
         input: input::<hook::PrePushInput>,
         output: output::<hook::PrePushOutput>,
-        effect: Effect::Adds,
+        effect: Effect::OverwritesEachTime,
         open_world: true,
         env: &PRE_PUSH_ENV,
         timeout: Some(SEND_TIMEOUT),

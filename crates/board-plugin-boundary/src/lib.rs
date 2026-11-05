@@ -116,7 +116,8 @@ fn manifest() -> Value {
             "outputSchema": schema_of::<check::Output>(settings()),
             "annotations": {
                 "readOnlyHint": false,
-                "destructiveHint": false,
+                // A failing re-check rewrites the crossing and clears its result.
+                "destructiveHint": true,
                 "idempotentHint": false,
                 "openWorldHint": true,
             },

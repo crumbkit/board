@@ -71,10 +71,23 @@ impl Plugin for Artifacts {
 enum Effect {
     /// It writes nothing.
     Reads,
-    /// It only adds records or fills empty fields, so a repeat adds nothing.
-    Adds,
-    /// It changes fields of existing records, and a repeat changes nothing.
-    Changes,
+    /// It only adds records or fills empty fields, and a repeat adds
+    /// nothing more.
+    AddsOnce,
+    /// It changes fields of existing records, and a repeat changes nothing
+    /// more.
+    OverwritesOnce,
+}
+
+impl Effect {
+    /// MCP's read-only, destructive and idempotent hints for it.
+    fn hints(self) -> [bool; 3] {
+        match self {
+            Self::Reads => [true, false, true],
+            Self::AddsOnce => [false, false, true],
+            Self::OverwritesOnce => [false, true, true],
+        }
+    }
 }
 
 /// One capability's manifest entry.
@@ -83,15 +96,16 @@ fn capability<I: JsonSchema, O: JsonSchema>(
     description: &str,
     effect: Effect,
 ) -> Value {
+    let [read_only, destructive, idempotent] = effect.hints();
     json!({
         "name": name,
         "description": description,
         "inputSchema": schema_of::<I>(SchemaSettings::draft2020_12()),
         "outputSchema": schema_of::<O>(SchemaSettings::draft2020_12().for_serialize()),
         "annotations": {
-            "readOnlyHint": matches!(effect, Effect::Reads),
-            "destructiveHint": matches!(effect, Effect::Changes),
-            "idempotentHint": true,
+            "readOnlyHint": read_only,
+            "destructiveHint": destructive,
+            "idempotentHint": idempotent,
             "openWorldHint": false,
         },
         "_meta": {},
@@ -124,24 +138,24 @@ fn manifest() -> Value {
                 "import",
                 "Write an artifact record, without a version, for each artifact of an Artifact \
                  tool listing that the board does not have.",
-                Effect::Adds,
+                Effect::AddsOnce,
             ),
             capability::<record::Input, record::Output>(
                 "record",
                 "Write the artifact record a session published or read when it is missing, with \
                  the session's subject, and name the shown or agreed artifacts it may replace.",
-                Effect::Adds,
+                Effect::AddsOnce,
             ),
             capability::<set::Input, set::Output>(
                 "set",
                 "Add a subject or area to an artifact, set what it shows or whether it was \
                  shown, and mark the artifact it replaces superseded.",
-                Effect::Changes,
+                Effect::OverwritesOnce,
             ),
             capability::<agree::Input, agree::Output>(
                 "agree",
                 "Move an artifact to agreed once the owner approves it with Touch ID, naming the decision that accepts it.",
-                Effect::Changes,
+                Effect::OverwritesOnce,
             ),
         ],
     })
