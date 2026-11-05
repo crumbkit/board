@@ -30,9 +30,10 @@ const ROOT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../..");
 const SCHEMAS: &[&str] = &["plugins", "crates"];
 
 /// Schemas that change in place until a later release (released.md). The
-/// changes plugin is being ported and its records split, so freezing its
-/// types now would freeze a shape the port is about to change.
-const UNFROZEN: &[&str] = &["plugins/changes/"];
+/// changes plugin's records were split as it was ported, and its types stay
+/// unfrozen until that shape has been used, both in its old directory and
+/// in its crate.
+const UNFROZEN: &[&str] = &["plugins/changes/", "crates/board-plugin-changes/types/"];
 
 /// Where the repository keeps the vectors other repositories test against.
 const VECTORS: &str = "vectors";
@@ -802,11 +803,42 @@ fn plugins_codes() -> BTreeSet<String> {
                 &mut BTreeSet::new(),
             );
         }
-        let missed: Vec<&String> = promised.difference(&codes).collect();
+        let spelled = mod_codes(name);
+        let missed: Vec<&String> = (promised.difference(&codes))
+            .filter(|code| !spelled.contains(*code))
+            .collect();
         assert!(
             missed.is_empty(),
             "plugins/{name}/README.md promises {missed:?}, which no source spells"
         );
+    }
+    codes
+}
+
+/// The codes the plugin `name`'s Claude Code mod spells at the start of a
+/// template string in its hooks, such as `changes::guard::no_brief`. The
+/// README may promise them; the freeze does not cover a mod.
+fn mod_codes(name: &str) -> BTreeSet<String> {
+    let hooks = Path::new(ROOT).join(format!("plugins/{name}/claude-code/hooks"));
+    let mut codes = BTreeSet::new();
+    let Ok(listed) = std::fs::read_dir(hooks) else {
+        return codes;
+    };
+    for entry in listed.flatten() {
+        let Ok(text) = std::fs::read_to_string(entry.path()) else {
+            continue;
+        };
+        for piece in text.split('`').skip(1) {
+            let code: String = (piece.chars())
+                .take_while(|c| {
+                    c.is_ascii_lowercase() || c.is_ascii_digit() || matches!(c, '_' | ':')
+                })
+                .collect();
+            let code = code.trim_end_matches(':');
+            if code.starts_with(&format!("{name}::")) && code.matches("::").count() >= 2 {
+                codes.insert(code.to_owned());
+            }
+        }
     }
     codes
 }
@@ -1165,8 +1197,10 @@ fn every_released_type_report_and_code_is_as_it_was_released() {
         present.types.keys()
     );
     assert!(
-        !(present.types.keys())
-            .any(|path| path.starts_with("plugins/changes/") || path.starts_with(".board/")),
+        !(present.types.keys()).any(|path| UNFROZEN
+            .iter()
+            .any(|unfrozen| path.starts_with(unfrozen))
+            || path.starts_with(".board/")),
         "{:?}",
         present.types.keys()
     );
@@ -1434,6 +1468,9 @@ fn only_a_shipped_plugins_schemas_and_sources_are_read_and_the_changes_types_are
     assert!(!is_schema("plugins/effects/fixtures/x.schema.json"));
     assert!(!is_schema(
         "plugins/changes/types/changes/change/v1.schema.json"
+    ));
+    assert!(!is_schema(
+        "crates/board-plugin-changes/types/changes/change/v1.schema.json"
     ));
     assert!(!is_schema(".board/types/controls/control/v1.schema.json"));
     assert!(is_plugin_source(
