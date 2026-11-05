@@ -14,5 +14,5 @@ Every input property is a flag, so Board does not read stdin.
 Examples:
   board call tasks.available
 
-Effects: destructive, not idempotent, open-world.
+Effects: additive, idempotent, open-world.
 Global flags: --json, --no-input. `board call tasks.available --help` describes them.

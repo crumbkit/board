@@ -488,7 +488,9 @@ fn enabling(plugins: &str) -> (Scenario, Scenario) {
     let config = format!(r#"{{"$type": "board/config/v1", "plugins": [{plugins}]}}"#);
     board.write(".board/board.json", Item::File(&config));
     let data = Scenario::new();
+    let hintless = super::plugins::TASKS.replace(r#""tasks""#, r#""hintless""#);
     data.write("plugins/chores/plugin.json", Item::File(CHORES))
+        .write("plugins/hintless/plugin.json", Item::File(&hintless))
         .write("plugins/broken/plugin.json", Item::File("{}"));
     (board, data)
 }
@@ -525,7 +527,7 @@ fn commands_list_in_a_board_enabling_a_built_in_plugin_lists_a_call_row_for_each
     let add = row(&rows, "board call tasks.add");
     assert_eq!(add["form"], "document");
     assert_eq!(add["columns"], bare["columns"]);
-    assert_eq!(add["effects"]["destructive"], true);
+    assert_eq!(add["effects"]["destructive"], false);
     let flag = |row: &Value, name: &str| -> Value {
         let arguments = row["arguments"].as_array().unwrap();
         (arguments.iter().find(|argument| argument["name"] == name))
@@ -542,7 +544,7 @@ fn commands_list_in_a_board_enabling_a_built_in_plugin_lists_a_call_row_for_each
 
 #[test]
 fn commands_list_lists_an_installed_plugins_capabilities_with_the_effects_their_hints_declare() {
-    let (board, data) = enabling(r#""chores", "tasks""#);
+    let (board, data) = enabling(r#""chores", "hintless", "tasks""#);
     let (rows, _, stderr) = capability_rows(&board, &data);
     assert_eq!(stderr, "");
     let paths: Vec<&Value> = (rows.iter().map(|row| &row["path"]))
@@ -560,8 +562,12 @@ fn commands_list_lists_an_installed_plugins_capabilities_with_the_effects_their_
         [false, false, true, false]
     );
     assert_eq!(effects("board call chores.list"), [true, false, true, true]);
-    // tasks.add declares no hint, so it has MCP's defaults.
-    assert_eq!(effects("board call tasks.add"), [false, true, false, true]);
+    assert_eq!(effects("board call tasks.add"), [false, false, false, true]);
+    // hintless.due declares no hint, so it has MCP's defaults.
+    assert_eq!(
+        effects("board call hintless.due"),
+        [false, true, false, true]
+    );
     assert_eq!(row(&rows, "board call chores.add")["about"], "Add a chore.");
 }
 

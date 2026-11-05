@@ -65,19 +65,49 @@ impl Plugin for Artifacts {
     }
 }
 
-/// One capability's manifest entry. Every capability reads and writes only
-/// the board, so each is closed-world.
+/// What a capability does to the board. Every capability reads and writes
+/// only the board, so each is closed-world.
+#[derive(Clone, Copy)]
+enum Effect {
+    /// It writes nothing.
+    Reads,
+    /// It only adds records or fills empty fields, and a repeat adds
+    /// nothing more.
+    AddsOnce,
+    /// It changes fields of existing records, and a repeat changes nothing
+    /// more.
+    OverwritesOnce,
+}
+
+impl Effect {
+    /// MCP's read-only, destructive and idempotent hints for it.
+    fn hints(self) -> [bool; 3] {
+        match self {
+            Self::Reads => [true, false, true],
+            Self::AddsOnce => [false, false, true],
+            Self::OverwritesOnce => [false, true, true],
+        }
+    }
+}
+
+/// One capability's manifest entry.
 fn capability<I: JsonSchema, O: JsonSchema>(
     name: &str,
     description: &str,
-    read_only: bool,
+    effect: Effect,
 ) -> Value {
+    let [read_only, destructive, idempotent] = effect.hints();
     json!({
         "name": name,
         "description": description,
         "inputSchema": schema_of::<I>(SchemaSettings::draft2020_12()),
         "outputSchema": schema_of::<O>(SchemaSettings::draft2020_12().for_serialize()),
-        "annotations": {"readOnlyHint": read_only, "openWorldHint": false},
+        "annotations": {
+            "readOnlyHint": read_only,
+            "destructiveHint": destructive,
+            "idempotentHint": idempotent,
+            "openWorldHint": false,
+        },
         "_meta": {},
     })
 }
@@ -102,30 +132,30 @@ fn manifest() -> Value {
                 "list",
                 "The artifacts in the board with every version, newest first, by account, \
                  subject, state, area, or with no subject or shows.",
-                true,
+                Effect::Reads,
             ),
             capability::<import::Input, import::Output>(
                 "import",
                 "Write an artifact record, without a version, for each artifact of an Artifact \
                  tool listing that the board does not have.",
-                false,
+                Effect::AddsOnce,
             ),
             capability::<record::Input, record::Output>(
                 "record",
                 "Write the artifact record a session published or read when it is missing, with \
                  the session's subject, and name the shown or agreed artifacts it may replace.",
-                false,
+                Effect::AddsOnce,
             ),
             capability::<set::Input, set::Output>(
                 "set",
                 "Add a subject or area to an artifact, set what it shows or whether it was \
                  shown, and mark the artifact it replaces superseded.",
-                false,
+                Effect::OverwritesOnce,
             ),
             capability::<agree::Input, agree::Output>(
                 "agree",
                 "Move an artifact to agreed once the owner approves it with Touch ID, naming the decision that accepts it.",
-                false,
+                Effect::OverwritesOnce,
             ),
         ],
     })

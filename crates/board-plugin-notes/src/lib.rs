@@ -150,7 +150,14 @@ fn manifest() -> Value {
                 "description": description,
                 "inputSchema": input,
                 "outputSchema": output,
-                "annotations": {"readOnlyHint": false, "openWorldHint": true},
+                "annotations": {
+                    "readOnlyHint": false,
+                    // `add` appends, so a repeat appends again; `daily`
+                    // only syncs before it reads.
+                    "destructiveHint": false,
+                    "idempotentHint": *name == "daily",
+                    "openWorldHint": true,
+                },
                 "_meta": {},
             })
         })

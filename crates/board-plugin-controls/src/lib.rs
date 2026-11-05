@@ -96,7 +96,12 @@ fn manifest() -> Value {
             "description": "The controls that apply to a path.",
             "inputSchema": schema_of::<for_path::Input>(SchemaSettings::draft2020_12()),
             "outputSchema": schema_of::<for_path::Output>(settings()),
-            "annotations": {"readOnlyHint": true, "openWorldHint": false},
+            "annotations": {
+                "readOnlyHint": true,
+                "destructiveHint": false,
+                "idempotentHint": true,
+                "openWorldHint": false,
+            },
             "_meta": {},
         }, {
             "name": "for-paths",
@@ -104,7 +109,12 @@ fn manifest() -> Value {
                 each once with its summary and the paths that reached it.",
             "inputSchema": schema_of::<for_paths::Input>(SchemaSettings::draft2020_12()),
             "outputSchema": schema_of::<for_paths::Output>(settings()),
-            "annotations": {"readOnlyHint": true, "openWorldHint": false},
+            "annotations": {
+                "readOnlyHint": true,
+                "destructiveHint": false,
+                "idempotentHint": true,
+                "openWorldHint": false,
+            },
             "_meta": {},
         }, {
             "name": "check",
@@ -112,7 +122,12 @@ fn manifest() -> Value {
                 control over budget or degraded.",
             "inputSchema": schema_of::<check::Input>(SchemaSettings::draft2020_12()),
             "outputSchema": schema_of::<check::Output>(settings()),
-            "annotations": {"readOnlyHint": true, "openWorldHint": false},
+            "annotations": {
+                "readOnlyHint": true,
+                "destructiveHint": false,
+                "idempotentHint": true,
+                "openWorldHint": false,
+            },
             "_meta": {},
         }, {
             "name": "evaluate",
@@ -120,7 +135,12 @@ fn manifest() -> Value {
                 rules, and return each control's verdict on each part with its findings.",
             "inputSchema": schema_of::<evaluate::Input>(SchemaSettings::draft2020_12()),
             "outputSchema": schema_of::<evaluate::Output>(settings()),
-            "annotations": {"readOnlyHint": true, "openWorldHint": true},
+            "annotations": {
+                "readOnlyHint": true,
+                "destructiveHint": false,
+                "idempotentHint": true,
+                "openWorldHint": true,
+            },
             "_meta": {},
             "timeout": judged::EVALUATE_TIMEOUT,
             "env": [judged::AGENT_VARIABLE, "ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN"],
@@ -130,7 +150,12 @@ fn manifest() -> Value {
                 adopts its profiles, as `board put --batch` lines that make a directory hold exactly them.",
             "inputSchema": schema_of::<standards::Input>(SchemaSettings::draft2020_12()),
             "outputSchema": schema_of::<standards::Output>(settings()),
-            "annotations": {"readOnlyHint": true, "openWorldHint": false},
+            "annotations": {
+                "readOnlyHint": true,
+                "destructiveHint": false,
+                "idempotentHint": true,
+                "openWorldHint": false,
+            },
             "_meta": {},
         }],
     })

@@ -31,6 +31,10 @@ const PLUGIN: &str = "tasks";
 #[derive(Clone, Copy, Debug)]
 pub struct Tasks;
 
+/// The capabilities that change an existing task. `add` writes a new
+/// task, a second one on a repeat, and `done` defers a repeating task
+/// again on each call.
+const EDITS: [&str; 6] = ["claim", "done", "defer", "drop", "reviewed", "move"];
 /// What every write call but `move` says after its own description.
 const WRITES: &str = " It syncs the task's repo first and pushes after, and sets reviewed.";
 
@@ -204,13 +208,23 @@ fn manifest() -> Value {
                 "description": description,
                 "inputSchema": input,
                 "outputSchema": output,
-                "annotations": {"readOnlyHint": false, "openWorldHint": true},
+                "annotations": {
+                    "readOnlyHint": false,
+                    "destructiveHint": EDITS.contains(name),
+                    "idempotentHint": !["add", "done"].contains(name),
+                    "openWorldHint": true,
+                },
                 "_meta": {},
             });
             // Every capability but `tree` syncs or pushes the task's repo,
             // which changes its clone; `tree` reads the repos at their pins.
             if *name == "tree" {
-                tool["annotations"] = json!({"readOnlyHint": true, "openWorldHint": false});
+                tool["annotations"] = json!({
+                    "readOnlyHint": true,
+                    "destructiveHint": false,
+                    "idempotentHint": true,
+                    "openWorldHint": false,
+                });
             }
             tool
         })
