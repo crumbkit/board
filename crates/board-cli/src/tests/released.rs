@@ -352,6 +352,17 @@ const DYNAMIC: &[(&str, &[&str])] = &[
         ],
     ),
     (
+        "plans::answer::{reason}",
+        &[
+            "plans::answer::already_answered",
+            "plans::answer::no_question",
+            "plans::answer::not_a_question_path",
+            "plans::answer::not_open",
+            "plans::answer::unknown_option",
+            "plans::answer::words_needed",
+        ],
+    ),
+    (
         "review::{area}::not_found",
         &["review::brief::not_found", "review::report::not_found"],
     ),
