@@ -3,7 +3,7 @@
 //! makes the question answered; the question's status stays `open`.
 
 use board_ops::{Host, PluginError};
-use board_plugin::shape::Record;
+use board_plugin::shape::{Actor, Person, Prose, Record, SessionId, Slug};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
@@ -27,9 +27,18 @@ pub(crate) struct Input {
     /// The owner's words, verbatim; the chosen option's text when left out, and needed when option none chooses no option.
     #[schemars(length(min = 1))]
     words: Option<String>,
-    /// The session or client that writes the answer, such as a local_ session id.
-    #[schemars(length(min = 1))]
-    by: Option<String>,
+    /// The session that writes the answer, by its local_ id.
+    #[schemars(with = "Option<SessionId>")]
+    session: Option<String>,
+    /// The program that writes the answer, such as board-app.
+    #[schemars(with = "Option<Slug>")]
+    program: Option<String>,
+    /// The person who writes the answer, such as luke.
+    #[schemars(with = "Option<Person>")]
+    person: Option<String>,
+    /// The name the agent that writes the answer was given.
+    #[schemars(with = "Option<Prose>")]
+    agent: Option<String>,
     /// The plugin and hook, or the client and surface, that wrote the answer, such as plans/pane-answer or board-app/phone, when the owner answered through it rather than to an agent.
     #[schemars(regex(pattern = r"^[a-z0-9-]+/[a-z0-9-]+$"))]
     written_by: Option<String>,
@@ -58,9 +67,13 @@ pub(crate) fn answer(host: &dyn Host, input: &Value) -> Result<Value, PluginErro
         path,
         option,
         words,
-        by,
+        session,
+        program,
+        person,
+        agent,
         written_by,
     } = PluginError::read_input("plans", "answer", input)?;
+    let by = Actor::of(session, program, person, agent);
     let answer_path = answer_path_of("answer", &path)?;
     let asked = question::read(host, "answer", &path)?;
     asked.still_open("answer", &path)?;

@@ -281,7 +281,7 @@ fn a_question_stored_as_answered_is_refused_and_its_open_twin_is_admitted() {
         json!({
             "$type": "plans/question/v1",
             "question": "Which way?",
-            "session": "local_0a1b",
+            "by": {"session": "local_0a1b"},
             "asked": "2026-10-01T09:00:00Z",
             "status": status,
         })
