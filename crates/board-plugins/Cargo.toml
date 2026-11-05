@@ -16,6 +16,7 @@ notes = ["dep:board-plugin-notes"]
 plans = ["dep:board-plugin-plans"]
 prompts = ["dep:board-plugin-prompts"]
 requests = ["dep:board-plugin-requests"]
+review = ["dep:board-plugin-review"]
 runs = ["dep:board-plugin-runs"]
 share = ["dep:board-plugin-share"]
 tasks = ["dep:board-plugin-tasks"]
@@ -32,6 +33,7 @@ board-plugin-notes = { workspace = true, optional = true }
 board-plugin-plans = { workspace = true, optional = true }
 board-plugin-prompts = { workspace = true, optional = true }
 board-plugin-requests = { workspace = true, optional = true }
+board-plugin-review = { workspace = true, optional = true }
 board-plugin-runs = { workspace = true, optional = true }
 board-plugin-share = { workspace = true, optional = true }
 board-plugin-tasks = { workspace = true, optional = true }

@@ -1,9 +1,7 @@
 # review
 
-This plugin is still a Python program (docs/plugins/python.md). A new plugin
-is a crate built into Board (docs/plugins/built-in/writing.md).
-
-A Board plugin for code review. The author of a change writes a brief.
+A Board plugin for code review, built into Board as
+`crates/board-plugin-review`. The author of a change writes a brief.
 `review.run` gives the brief and the diff to an agent that has not seen the
 change, and records what it found as a report. A brief can instead name a
 record pinned by its blob, such as a plan, and the agent reviews that record.
@@ -77,6 +75,11 @@ export BOARD_REVIEW_AGENT='["claude", "-p", "--output-format", "json", "--settin
   `review.run` reads the answer from `result`, the tokens from `usage` and the
   models from `modelUsage`.
 
+Sign-in is broken. The example agent currently exits with "Not logged in",
+and `review.run` then fails with `review::agent::failed`. The cause is not
+yet known, and the launch is kept as it was until a fix is chosen. Until then, write a report by hand or with a
+subagent, and commit it.
+
 ## Capabilities
 
 `board call review.run --brief /reviews/<id>/brief`:
@@ -95,9 +98,10 @@ export BOARD_REVIEW_AGENT='["claude", "-p", "--output-format", "json", "--settin
   has them.
 - Tells the agent that it has no tools, so the diff or record is all it has.
 - Stops the agent, with every process it started, when it exits, after 29
-  minutes with `review::agent::timeout`, or when the plugin gets SIGTERM,
-  SIGINT or SIGHUP. After a timeout it reads the agent's output for at most
-  5 seconds more, in case a process that left the group still holds it.
+  minutes with `review::agent::timeout`, or when Board gets SIGTERM, SIGINT
+  or SIGHUP.
+- Runs git without the model credentials, and without the user's or the
+  system's git config.
 - Writes the report at `/reviews/<id>/report` with `board put`, and returns
   its path, the range or the subject, the verdict and the number of findings.
   A subject report holds the brief's `subject` and no range.
@@ -217,24 +221,22 @@ out the full history and pass the branch's base and head to the check:
     --head "${{ github.event.pull_request.head.sha }}"
 ```
 
-## Installing
+## Enabling
 
-    uv sync --frozen --no-dev
-    ln -s "$PWD" "${XDG_DATA_HOME:-$HOME/.local/share}/board/plugins/review"
-    board plugin enable review
+`board plugin enable review` installs the types in a board. Then set
+`BOARD_REVIEW_AGENT`. The types stay at v1 and change in place while the
+plugin has one user; after such a change, run `board plugin enable review`
+again. Remove an installed copy of the former Python plugin from
+`${XDG_DATA_HOME:-$HOME/.local/share}/board/plugins/review`, or Board refuses
+both with `board::plugin::duplicate`.
 
-Then set `BOARD_REVIEW_AGENT`. The types stay at v1 and change in place while
-the plugin has one user; after such a change, run `board plugin enable review`
-again.
+## Tests
 
-## Developing
-
-The gates, which CI runs: `uv run ruff format --check .`, `uv run ruff check .`,
-`uv run pyright` and `uv run pytest`. The tests drive `$BOARD_BIN`, by default
-the workspace's `target/debug/board`, so build it first with
-`cargo build -p board-cli`. The tests start a stub agent script, never a
-model, and a stub gh, never GitHub. An approval needs the owner's
-signature, so the approved tests put a `board` shim on PATH that runs the
-plugin's decide as the owner, whom Board admits. `plugin.json` and the shipped schemas are generated from the shapes in
-`src/board_review/shapes.py` by `board_review.manifest`, and a test checks that
-the committed files match.
+`crates/board-cli/src/tests/built_in/review.rs` and its modules run the
+`board` binary in process against a board in a git repository. They are the
+former pytest suite: briefs, runs, subjects, posting and coverage, including
+coverage of a change's mounted repository. They start a stand-in agent
+script, never a model, and a stand-in gh, never GitHub. The owner approves
+a post with `board answer`, which the test signer signs. The crate's own
+tests check that the committed schemas are what the record structs generate,
+which are the bytes the Python plugin shipped. No test signs in to a model.

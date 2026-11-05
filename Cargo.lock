@@ -345,6 +345,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "board-plugin-review"
+version = "0.0.0"
+dependencies = [
+ "board-model",
+ "board-ops",
+ "board-plugin",
+ "schemars",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "board-plugin-runs"
 version = "0.0.0"
 dependencies = [
@@ -400,6 +412,7 @@ dependencies = [
  "board-plugin-plans",
  "board-plugin-prompts",
  "board-plugin-requests",
+ "board-plugin-review",
  "board-plugin-runs",
  "board-plugin-share",
  "board-plugin-tasks",

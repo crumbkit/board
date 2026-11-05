@@ -30,6 +30,9 @@ plans.open disabled The questions under a path whose status is open, oldest firs
 prompts.get disabled Read one prompt at its pin and render its body and runs_in with the input values given on stdin.
 prompts.list disabled List the prompts in the board's own tree and the marked repos the caller's remote chooses, at their pins, by repo then title.
 requests.thread disabled Every version of the effect's request, oldest first, with its answer, and the owner's replies to them, oldest first.
+review.run disabled Review the range or pinned record a brief names with the agent the BOARD_REVIEW_AGENT variable names, and write the report beside the brief.
+review.post disabled Comment a report on a GitHub pull request with gh, once the owner approves the whole comment through `board decide`, and set the report's source to the comment's URL. A report whose source is set is skipped.
+review.covered disabled The reports in the board's own tree that cover every commit from the merge base of a base and a head to the head, each by a report's range or patch ids, after skipping commits that only add review records. With --change, the reports the change attaches, and the commits of the clone its mount reads. A report asking for changes never covers. Fails when a commit is uncovered.
 runs.latest disabled The latest full run of a clean revision of a suite, with its outcome, measures, failed cases and age, or null when no run qualifies.
 runs.trend disabled One measure of a suite, or of one of its cases, over its full runs of clean revisions, newest first.
 share.to disabled Copy a record, its children, everything they reference and the schemas it lacks into a mounted board, as one commit there, and move the mount's pin to it.
