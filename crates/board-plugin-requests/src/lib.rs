@@ -62,7 +62,7 @@ fn manifest() -> Value {
                 and the owner's replies to them, oldest first.",
             "inputSchema": schema_of::<thread::Input>(SchemaSettings::draft2020_12()),
             "outputSchema": schema_of::<thread::Output>(SchemaSettings::draft2020_12().for_serialize()),
-            "annotations": {"readOnlyHint": true},
+            "annotations": {"readOnlyHint": true, "openWorldHint": false},
             "_meta": {},
         }],
     })

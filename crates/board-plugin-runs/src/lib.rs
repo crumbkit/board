@@ -80,7 +80,7 @@ fn manifest() -> Value {
                 failed cases and age, or null when no run qualifies.",
             "inputSchema": schema_of::<latest::Input>(SchemaSettings::draft2020_12()),
             "outputSchema": schema_of::<latest::Output>(output()),
-            "annotations": {"readOnlyHint": true},
+            "annotations": {"readOnlyHint": true, "openWorldHint": false},
             "_meta": {},
         }, {
             "name": "trend",
@@ -88,7 +88,7 @@ fn manifest() -> Value {
                 revisions, newest first.",
             "inputSchema": schema_of::<trend::Input>(SchemaSettings::draft2020_12()),
             "outputSchema": schema_of::<trend::Output>(output()),
-            "annotations": {"readOnlyHint": true},
+            "annotations": {"readOnlyHint": true, "openWorldHint": false},
             "_meta": {},
         }],
     })

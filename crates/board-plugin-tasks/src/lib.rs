@@ -199,13 +199,19 @@ fn manifest() -> Value {
             } else {
                 (*description).to_owned()
             };
-            json!({
+            let mut tool = json!({
                 "name": name,
                 "description": description,
                 "inputSchema": input,
                 "outputSchema": output,
                 "_meta": {},
-            })
+            });
+            // Every capability but `tree` syncs or pushes the task's repo;
+            // `tree` reads the repos at their pins.
+            if *name == "tree" {
+                tool["annotations"] = json!({"openWorldHint": false});
+            }
+            tool
         })
         .collect();
     json!({

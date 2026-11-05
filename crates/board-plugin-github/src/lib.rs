@@ -108,8 +108,9 @@ const PRE_PUSH_ENV: [&str; 9] = [
 const SEND_TIMEOUT: u64 = 2400;
 
 /// One capability: its name, what it does, the function that runs it, its
-/// input and output schemas, whether it only reads, the variables it is
-/// given and how long it may run.
+/// input and output schemas, whether it only reads, whether it reaches
+/// beyond the checkout and the boards, the variables it is given and how
+/// long it may run.
 struct Capability {
     name: &'static str,
     description: &'static str,
@@ -117,6 +118,7 @@ struct Capability {
     input: fn() -> Value,
     output: fn() -> Value,
     read_only: bool,
+    open_world: bool,
     env: &'static [&'static str],
     timeout: Option<u64>,
 }
@@ -139,6 +141,7 @@ const CAPABILITIES: [Capability; 9] = [
         input: input::<reference::Input>,
         output: output::<reference::Output>,
         read_only: false,
+        open_world: true,
         env: &gh::ENV,
         timeout: None,
     },
@@ -150,6 +153,7 @@ const CAPABILITIES: [Capability; 9] = [
         input: input::<send::PushInput>,
         output: output::<send::Pushed>,
         read_only: false,
+        open_world: true,
         env: &SEND_ENV,
         timeout: Some(SEND_TIMEOUT),
     },
@@ -162,6 +166,7 @@ const CAPABILITIES: [Capability; 9] = [
         input: input::<send::PrCreateInput>,
         output: output::<send::Opened>,
         read_only: false,
+        open_world: true,
         env: &SEND_ENV,
         timeout: Some(SEND_TIMEOUT),
     },
@@ -172,6 +177,7 @@ const CAPABILITIES: [Capability; 9] = [
         input: input::<send::PrEditInput>,
         output: output::<send::Delivered>,
         read_only: false,
+        open_world: true,
         env: &SEND_ENV,
         timeout: Some(SEND_TIMEOUT),
     },
@@ -182,6 +188,7 @@ const CAPABILITIES: [Capability; 9] = [
         input: input::<send::CommentInput>,
         output: output::<send::Delivered>,
         read_only: false,
+        open_world: true,
         env: &SEND_ENV,
         timeout: Some(SEND_TIMEOUT),
     },
@@ -193,6 +200,7 @@ const CAPABILITIES: [Capability; 9] = [
         input: input::<send::IssueCreateInput>,
         output: output::<send::Filed>,
         read_only: false,
+        open_world: true,
         env: &SEND_ENV,
         timeout: Some(SEND_TIMEOUT),
     },
@@ -205,6 +213,7 @@ const CAPABILITIES: [Capability; 9] = [
         input: input::<hook::InstallHookInput>,
         output: output::<hook::InstallHookOutput>,
         read_only: true,
+        open_world: false,
         env: &[],
         timeout: None,
     },
@@ -216,6 +225,7 @@ const CAPABILITIES: [Capability; 9] = [
         input: input::<hook::PrePushInput>,
         output: output::<hook::PrePushOutput>,
         read_only: false,
+        open_world: true,
         env: &PRE_PUSH_ENV,
         timeout: Some(SEND_TIMEOUT),
     },
@@ -227,6 +237,7 @@ const CAPABILITIES: [Capability; 9] = [
         input: input::<hook::CoversInput>,
         output: output::<hook::CoversOutput>,
         read_only: true,
+        open_world: false,
         env: &remote::SSH_VARIABLES,
         timeout: None,
     },
@@ -240,7 +251,10 @@ fn manifest() -> Value {
                 "description": offered.description,
                 "inputSchema": (offered.input)(),
                 "outputSchema": (offered.output)(),
-                "annotations": {"readOnlyHint": offered.read_only},
+                "annotations": {
+                    "readOnlyHint": offered.read_only,
+                    "openWorldHint": offered.open_world,
+                },
                 "_meta": {},
             });
             if !offered.env.is_empty() {
