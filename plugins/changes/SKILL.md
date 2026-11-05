@@ -35,8 +35,11 @@ The gate is the contract. `next` says what the current phase still lacks;
    merging. Add `--dry_run true` to see what it would do first. Close the
    task of each change it ends. An entry with `changes::sync::owed` still
    has open tasks; close them and sync again.
-7. At most three active build changes per mount are in `build`, and apart
-   from them three active prototypes exploring. A change is active when a
+7. At most three active build changes per repository are in `build`, and
+   apart from them three active prototypes exploring. Mounts of one
+   repository count together; `repository` in the refusal names it, and
+   `unread` lists any mount whose origin git could not read. A change is
+   active when a
    changes capability touched it, its head was committed or a run it
    references finished on one of the last three days, today included
    (`BOARD_CHANGES_ACTIVE_DAYS` sets the number).

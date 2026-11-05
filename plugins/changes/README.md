@@ -249,9 +249,15 @@ skill in `claude-code/skills/` runs the check.
   it does not offer `controls.for-paths`, such as when the controls
   plugin is not enabled.
 
-The WIP limit counts, for each mount, the active build changes in
+The WIP limit counts, for each repository, the active build changes in
 `build`, at most three, and apart from them the active prototypes in
-`build`, at most three. A prototype in `build` is always `exploring`,
+`build`, at most three. A change's repository is the clone Board says its
+`mount` reads, keyed by that clone's `origin` as git gives it without the
+user's config, in its stored form (`owner/name` for GitHub, without case,
+through `www.github.com` or an ssh port alike). Two mounts of one
+repository count together, even from two clones. A clone whose origin git
+cannot read is keyed by its path, and a mount Board cannot resolve by the
+mount. Origins off GitHub are compared as written. A prototype in `build` is always `exploring`,
 because `verdict` moves it out of `build` in the same write that sets its
 state. A paused change holds no place. Only the board's own changes, under
 `/changes/`, count. A change is active when the newest of these days is
@@ -271,12 +277,13 @@ N is 3, or `BOARD_CHANGES_ACTIVE_DAYS` when that is set. A value that is
 not a whole number of at least 1 is refused with
 `changes::wip::bad_active_days`. A change with none of those days is idle.
 
-When three other active changes of the kind hold places for the mount,
+When three other active changes of the kind hold places for the repository,
 `advance` into `build`, `resume` and `prototype` refuse with
 `changes::wip::full`, unless `--over_limit '<why>'` is given. The refusal's
 fields, and with `--over_limit` the output's `warning`, hold `mount`,
-`kind`, `limit`, `active_days`, `active`, the changes holding places,
-`idle`, each idle change of the kind in `build` for the mount with its
+`repository`, the key counted, `unread`, each mount whose origin git
+could not read with git's reason, `kind`, `limit`, `active_days`, `active`, the changes holding places,
+`idle`, each idle change of the kind in `build` for the repository with its
 `action` and `command`, and `override`, the command with `--over_limit`.
 The action is `sync` for a change with a pull request, `resume`
 (`changes.next`) for one with a head, and `drop` otherwise. With

@@ -545,7 +545,7 @@
           },
           "Limit": {
             "additionalProperties": false,
-            "description": "The WIP limit a move into build went past: the active changes holding places, the idle ones, the override.",
+            "description": "The WIP limit a move into build went past: the active changes holding places, the idle ones, the override.\n\n`repository` is the repository counted, by its origin's stored form, or by its clone or mount when there is\nnone; `unread` maps each mount whose origin git could not read to why.",
             "properties": {
               "active": {
                 "items": {
@@ -589,11 +589,24 @@
               "override": {
                 "title": "Override",
                 "type": "string"
+              },
+              "repository": {
+                "title": "Repository",
+                "type": "string"
+              },
+              "unread": {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "title": "Unread",
+                "type": "object"
               }
             },
             "required": [
               "code",
               "mount",
+              "repository",
+              "unread",
               "kind",
               "limit",
               "active_days",
@@ -1531,7 +1544,7 @@
           },
           "Limit": {
             "additionalProperties": false,
-            "description": "The WIP limit a move into build went past: the active changes holding places, the idle ones, the override.",
+            "description": "The WIP limit a move into build went past: the active changes holding places, the idle ones, the override.\n\n`repository` is the repository counted, by its origin's stored form, or by its clone or mount when there is\nnone; `unread` maps each mount whose origin git could not read to why.",
             "properties": {
               "active": {
                 "items": {
@@ -1575,11 +1588,24 @@
               "override": {
                 "title": "Override",
                 "type": "string"
+              },
+              "repository": {
+                "title": "Repository",
+                "type": "string"
+              },
+              "unread": {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "title": "Unread",
+                "type": "object"
               }
             },
             "required": [
               "code",
               "mount",
+              "repository",
+              "unread",
               "kind",
               "limit",
               "active_days",
@@ -1797,7 +1823,7 @@
           },
           "Limit": {
             "additionalProperties": false,
-            "description": "The WIP limit a move into build went past: the active changes holding places, the idle ones, the override.",
+            "description": "The WIP limit a move into build went past: the active changes holding places, the idle ones, the override.\n\n`repository` is the repository counted, by its origin's stored form, or by its clone or mount when there is\nnone; `unread` maps each mount whose origin git could not read to why.",
             "properties": {
               "active": {
                 "items": {
@@ -1841,11 +1867,24 @@
               "override": {
                 "title": "Override",
                 "type": "string"
+              },
+              "repository": {
+                "title": "Repository",
+                "type": "string"
+              },
+              "unread": {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "title": "Unread",
+                "type": "object"
               }
             },
             "required": [
               "code",
               "mount",
+              "repository",
+              "unread",
               "kind",
               "limit",
               "active_days",
@@ -1974,7 +2013,7 @@
           },
           "Limit": {
             "additionalProperties": false,
-            "description": "The WIP limit a move into build went past: the active changes holding places, the idle ones, the override.",
+            "description": "The WIP limit a move into build went past: the active changes holding places, the idle ones, the override.\n\n`repository` is the repository counted, by its origin's stored form, or by its clone or mount when there is\nnone; `unread` maps each mount whose origin git could not read to why.",
             "properties": {
               "active": {
                 "items": {
@@ -2018,11 +2057,24 @@
               "override": {
                 "title": "Override",
                 "type": "string"
+              },
+              "repository": {
+                "title": "Repository",
+                "type": "string"
+              },
+              "unread": {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "title": "Unread",
+                "type": "object"
               }
             },
             "required": [
               "code",
               "mount",
+              "repository",
+              "unread",
               "kind",
               "limit",
               "active_days",

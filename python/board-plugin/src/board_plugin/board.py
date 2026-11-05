@@ -109,11 +109,12 @@ class Board:
         return rows
 
     def refs(
-        self, paths: Sequence[str], *, missing: bool = False, fields: Sequence[str] = ()
+        self, paths: Sequence[str], *, missing: bool = False, fields: Sequence[str] = (), limit: int | None = None
     ) -> list[dict[str, Any] | None]:
-        """`board refs --all` for `paths`, from as few runs as Board allows.
+        """`board refs` for `paths`, from as few runs as Board allows.
 
         Each answer, in order, is where the path resolves and what reaches it,
+        every row of it, or at most `limit` rows when `limit` is given,
         or `None` when nothing is there. With `missing`, a path with nothing
         there yet reports where a file there would be. Each of `fields`, a
         JSON pointer, adds to each reference the path makes its target's value
@@ -122,14 +123,15 @@ class Board:
         unanswered, so those are asked again in the next run. No paths start
         no run.
         """
-        flags = ["--missing"] if missing else []
+        flags = ["--all"] if limit is None else ["--limit", str(limit)]
+        flags += ["--missing"] if missing else []
         for field in fields:
             flags += ["--field", field]
         return self._each(paths, lambda left: self._refs_run(left, flags))
 
     def _refs_run(self, paths: list[str], flags: list[str]) -> list[dict[str, Any] | None]:
         """The answers of one `board refs` run, up to the first path it left over its budget."""
-        report, ran = self._read("refs", "--all", *flags, "--", *paths, partial="board/refs-report/v2")
+        report, ran = self._read("refs", *flags, "--", *paths, partial="board/refs-report/v2")
         answers = _answers(report, len(paths))
         if answers is None:
             raise self._failed(("refs",), ran, "printed a report without one answer per path")
