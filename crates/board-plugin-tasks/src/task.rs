@@ -108,21 +108,6 @@ pub(crate) fn model(record: &Value, offset: i32) -> Result<Model, usize> {
     }
 }
 
-/// The actor that `session`, `program` and `person` name, or none when
-/// they name nobody.
-pub(crate) fn actor(
-    session: Option<String>,
-    program: Option<String>,
-    person: Option<String>,
-) -> Option<Actor> {
-    let actor = Actor {
-        session,
-        program,
-        person,
-    };
-    (actor != Actor::default()).then_some(actor)
-}
-
 /// The field `name` read by `read`: none when it is absent or null, and
 /// counted as an error when `read` refuses it.
 fn optional<T>(

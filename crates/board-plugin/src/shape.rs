@@ -360,6 +360,24 @@ pub struct Actor {
     pub person: Option<String>,
 }
 
+impl Actor {
+    /// The actor that `session`, `program` and `person` name, or none when
+    /// they name nobody.
+    #[must_use]
+    pub fn of(
+        session: Option<String>,
+        program: Option<String>,
+        person: Option<String>,
+    ) -> Option<Self> {
+        let actor = Self {
+            session,
+            program,
+            person,
+        };
+        (actor != Self::default()).then_some(actor)
+    }
+}
+
 impl std::fmt::Display for Actor {
     /// The parts it holds, in the order program, person and session,
     /// separated by `, `, such as `claude-code, luke`.

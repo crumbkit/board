@@ -194,7 +194,18 @@ fn answers_input_names_the_question_and_option_and_admits_no_null() {
     let input = schema_of::<answer::Input>(SchemaSettings::draft2020_12());
     let properties = input["properties"].as_object().unwrap();
     let names: Vec<&str> = properties.keys().map(String::as_str).collect();
-    assert_eq!(names, ["by", "option", "path", "words", "written_by"]);
+    assert_eq!(
+        names,
+        [
+            "option",
+            "path",
+            "person",
+            "program",
+            "session",
+            "words",
+            "written_by"
+        ]
+    );
     for (name, property) in properties {
         let description = property["description"].as_str().unwrap();
         assert!(description.ends_with('.'), "{name}: {description}");

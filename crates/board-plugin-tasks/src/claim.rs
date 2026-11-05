@@ -1,13 +1,12 @@
 //! `claim`: set who holds a task, refused when someone else holds it.
 
 use board_ops::{Host, PluginError};
-use board_plugin::shape::{Person, SessionId, Slug};
+use board_plugin::shape::{Actor, Person, SessionId, Slug};
 use board_repos::Date;
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 
-use crate::task::actor;
 use crate::write::{Values, stamped};
 use crate::{PLUGIN, refusal};
 
@@ -41,7 +40,7 @@ pub(crate) struct ClaimInput {
 /// Sets the task's owner, refused when another owner holds it.
 pub(crate) fn claim(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
     let given: ClaimInput = PluginError::read_input(PLUGIN, "claim", input)?;
-    let owner = actor(given.session, given.program, given.person);
+    let owner = Actor::of(given.session, given.program, given.person);
     let Some(owner) = owner else {
         let why = format!(
             "claiming {} names nobody; give --session, --program or --person",

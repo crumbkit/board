@@ -70,8 +70,7 @@ fn at_now(rows: Vec<Vec<Value>>) -> Answering {
 #[test]
 fn an_answer_is_one_put_of_the_new_answer_and_the_question_unchanged() {
     let host = at_now(rows("plans/question/v1", &json!({}), &[]));
-    let input =
-        json!({"path": QUESTION, "option": "b", "by": "local_0c", "written_by": "board-app/phone"});
+    let input = json!({"path": QUESTION, "option": "b", "session": "local_0c", "written_by": "board-app/phone"});
     let output = answer(&host, &input).unwrap();
     assert_eq!(
         output,
@@ -94,7 +93,7 @@ fn an_answer_is_one_put_of_the_new_answer_and_the_question_unchanged() {
                 "choice": "b",
                 "words": "Stay.",
                 "answered": "2026-11-04T22:50:00Z",
-                "by": "local_0c",
+                "by": {"session": "local_0c"},
                 "written_by": "board-app/phone",
             }}),
             json!({"path": QUESTION, "expect": BLOB, "record": unchanged}),

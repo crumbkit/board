@@ -59,7 +59,8 @@ also carries `why`, `note`, `mount` and `context_path`, null when the record
 leaves them out.
 
 `board call plans.answer --path <question> --option <id> [--words <text>]
-[--by <session>] [--written_by <plugin>/<client>]` records the owner's answer
+[--session <local_ id>] [--program <slug>] [--person <slug>]
+[--written_by <plugin>/<client>]` records the owner's answer
 as the Claude Code mod's pane does, so a client without the mod, such as
 Board.app, can answer. `--option` is one of the question's option ids, or
 `none` with `--words`; a question with an option whose id is `none` takes

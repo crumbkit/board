@@ -15,7 +15,6 @@ use serde_json::{Value, json};
 
 use crate::dates::{Defer, Until};
 use crate::listing::{Crossing, Task, grown, listing, read, resolve, waited};
-use crate::task::actor;
 use crate::tree::{Forest, Nodes, Subtasks, subtasks, tree_path};
 use crate::{PLUGIN, chosen_by, writer};
 
@@ -215,7 +214,7 @@ pub(crate) fn available(host: &dyn Host, input: &Value) -> Result<Value, PluginE
         tree: &tree,
         nodes: &nodes,
     };
-    let owner = actor(given.session, given.program, given.person);
+    let owner = Actor::of(given.session, given.program, given.person);
     let [available, due_soon, stale, held] = sweep(&open, &blocked, places, &clock, owner.as_ref());
     Ok(json!(Output {
         available,

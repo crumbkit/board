@@ -260,7 +260,9 @@ fn call_plans_answer_help_lists_its_input_as_flags() {
         "--path",
         "--option",
         "--words",
-        "--by",
+        "--session",
+        "--program",
+        "--person",
         "--written_by",
         "Record the owner's answer to an open question",
     ] {
