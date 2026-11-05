@@ -376,7 +376,7 @@ fn trend_reads_one_cases_measure_when_given_a_case() {
     assert_eq!(with(&["--case", "get"]).0, [json!(3.5), json!(4.0)]);
     assert_eq!(with(&[]).0, [json!(99.0), json!(99.0)]);
     let (values, output) = with(&["--case", "list"]);
-    assert!(values.is_empty());
+    assert_eq!(values, [] as [Value; 0]);
     assert_eq!(output["without_measure"], 2);
 }
 

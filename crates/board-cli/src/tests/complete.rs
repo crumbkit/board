@@ -92,7 +92,7 @@ fn an_unknown_shell_asking_for_a_script_is_refused_with_the_shells_it_could_be()
     let scenario = board();
     let refused = completing(scenario.workdir(), "tcsh", &[]);
     assert_eq!(refused.code, 2);
-    assert!(refused.stdout.is_empty());
+    assert_eq!(refused.stdout, b"");
     assert_eq!(
         text(&refused.stderr),
         "error: BOARD_COMPLETE names the shell 'tcsh', which completion does not support\n\
@@ -102,7 +102,7 @@ fn an_unknown_shell_asking_for_a_script_is_refused_with_the_shells_it_could_be()
     );
     let admitted = completing(scenario.workdir(), "fish", &[]);
     assert_eq!(admitted.code, 0);
-    assert!(!admitted.stdout.is_empty());
+    assert_ne!(admitted.stdout, b"");
 }
 
 #[test]
@@ -190,7 +190,10 @@ fn every_path_argument_completes_from_the_board() {
         );
     }
     assert_eq!(offered(scenario.workdir(), &["get", "/ta"]), ["/tasks/"]);
-    assert!(offered(scenario.workdir(), &["get", "/zz"]).is_empty());
+    assert_eq!(
+        offered(scenario.workdir(), &["get", "/zz"]),
+        Vec::<String>::new()
+    );
 }
 
 #[test]
@@ -212,7 +215,10 @@ fn a_path_typed_with_shell_escapes_completes_as_the_name_it_spells() {
             "{typed}"
         );
     }
-    assert!(offered(scenario.workdir(), &["get", r"/with\ spade/"]).is_empty());
+    assert_eq!(
+        offered(scenario.workdir(), &["get", r"/with\ spade/"]),
+        Vec::<String>::new()
+    );
 }
 
 #[test]
@@ -249,7 +255,10 @@ fn a_path_completes_in_the_board_that_dash_c_names() {
         offered(outside.path(), &["-C", board, "get", "/ta"]),
         ["/tasks/"]
     );
-    assert!(offered(outside.path(), &["-C", "/does/not/exist", "get", "/ta"]).is_empty());
+    assert_eq!(
+        offered(outside.path(), &["-C", "/does/not/exist", "get", "/ta"]),
+        Vec::<String>::new()
+    );
 }
 
 #[test]
@@ -296,7 +305,10 @@ fn a_dash_c_joined_by_an_equals_sign_names_the_board() {
         offered(outside.path(), &[&joined, "get", "/ta"]),
         ["/tasks/"]
     );
-    assert!(offered(outside.path(), &["-C=/does/not/exist", "get", "/ta"]).is_empty());
+    assert_eq!(
+        offered(outside.path(), &["-C=/does/not/exist", "get", "/ta"]),
+        Vec::<String>::new()
+    );
 }
 
 #[test]
@@ -308,7 +320,10 @@ fn a_dash_c_fish_has_already_unquoted_is_taken_as_it_is() {
         offered(outside.path(), &["-C", "it's", "get", "/ta"]),
         ["/tasks/"]
     );
-    assert!(offered(outside.path(), &["-C", "its", "get", "/ta"]).is_empty());
+    assert_eq!(
+        offered(outside.path(), &["-C", "its", "get", "/ta"]),
+        Vec::<String>::new()
+    );
 }
 
 #[test]
@@ -322,10 +337,16 @@ fn a_dash_c_under_the_home_directory_completes_through_a_tilde() {
         offered_at(outside.path(), Some(home), &["-C", &tilde, "get", "/ta"]),
         ["/tasks/"]
     );
-    assert!(offered_at(outside.path(), None, &["-C", &tilde, "get", "/ta"]).is_empty());
+    assert_eq!(
+        offered_at(outside.path(), None, &["-C", &tilde, "get", "/ta"]),
+        Vec::<String>::new()
+    );
     // `~name` is another user's home, which completion does not look up.
     let user = format!("~{name}");
-    assert!(offered_at(outside.path(), Some(home), &["-C", &user, "get", "/ta"]).is_empty());
+    assert_eq!(
+        offered_at(outside.path(), Some(home), &["-C", &user, "get", "/ta"]),
+        Vec::<String>::new()
+    );
 }
 
 #[test]

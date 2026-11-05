@@ -364,7 +364,10 @@ fn a_push_to_another_host_goes_to_no_github_repository_and_one_to_github_does() 
     let at = host.repository();
     let elsewhere = "https://gitlab.example/o/w.git";
     host.git(&at, &["remote", "add", "elsewhere", elsewhere]);
-    assert!(found(&host, &at, "elsewhere", elsewhere, Via::Push).is_empty());
+    assert_eq!(
+        found(&host, &at, "elsewhere", elsewhere, Via::Push),
+        Vec::<String>::new()
+    );
     assert_eq!(
         found(&host, &at, "origin", "", Via::Push),
         ["github:octo/widgets"]

@@ -55,7 +55,7 @@ fn the_manifest_parses_as_a_built_in_one_and_describes_the_plugin_with_the_skill
         (manifest.name.as_str(), manifest.version.as_str()),
         ("prompts", "0.1.0")
     );
-    assert!(manifest.run.is_empty());
+    assert_eq!(manifest.run, Vec::<String>::new());
     let types: Vec<&str> = manifest.types.iter().map(RecordType::as_str).collect();
     assert_eq!(types, [PromptRecord::TYPE, ReposRecord::TYPE]);
     let names: Vec<&str> = (manifest.capabilities.iter())
@@ -226,7 +226,10 @@ fn rendering_is_one_pass_so_a_value_naming_another_input_stays_literal() {
 #[test]
 fn unused_lists_each_declared_input_the_body_never_names() {
     assert_eq!(unused(&declared(), "Review #{pr}."), ["repo"]);
-    assert!(unused(&declared(), "Review #{pr} in {repo}.").is_empty());
+    assert_eq!(
+        unused(&declared(), "Review #{pr} in {repo}."),
+        Vec::<String>::new()
+    );
 }
 
 fn refused(given: &[(&str, &str)]) -> (String, Value) {

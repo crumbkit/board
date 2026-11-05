@@ -44,7 +44,7 @@ fn a_record_and_a_file_are_removed_and_reported_and_a_missing_path_is_not_found(
     let held = blob(&scenario, "projects/p.json");
     let report = rm(&scenario, "/projects/p", Expect::Any).unwrap();
     assert_eq!(file(&scenario, "projects/p.json"), None);
-    assert!(report.writes.is_empty());
+    assert_eq!(report.writes, Vec::new());
     assert_eq!(report.removed.len(), 1);
     assert_eq!(report.removed[0].path, path("/projects/p"));
     assert_eq!(report.removed[0].blob, held);
@@ -244,7 +244,7 @@ fn an_absent_path_with_ignore_unmatch_is_reported_absent_and_without_it_is_not_f
     for how in [Removing::File(Expect::Any), Removing::Beneath] {
         let report = removing(&scenario, "/tasks/zz", how, Unmatched::Ignore).unwrap();
         assert_eq!(report.absent, [path("/tasks/zz")]);
-        assert!(report.removed.is_empty());
+        assert_eq!(report.removed, Vec::new());
         assert_eq!(report.commit, None);
         let refused = removing(&scenario, "/tasks/zz", how, Unmatched::Refuse);
         assert_eq!(code(refused), Code::PathNotFound);
@@ -266,7 +266,7 @@ fn ignore_unmatch_still_refuses_a_directory_or_a_stale_expect_and_removes_a_file
     );
     let report = ignore("/projects/p", file_with(Expect::Any)).unwrap();
     assert_eq!(paths(&report), ["/projects/p"]);
-    assert!(report.absent.is_empty());
+    assert_eq!(report.absent, Vec::new());
 }
 
 #[test]

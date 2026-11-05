@@ -236,7 +236,7 @@ fn references_carry_their_pointer_path_and_accepted_types() {
             accepts: Some(vec!["lr/project/v1".parse().unwrap()]),
         }]
     );
-    assert!(schema.references(&json!({"title": "t"})).is_empty());
+    assert_eq!(schema.references(&json!({"title": "t"})), Vec::new());
 }
 
 #[test]
@@ -391,7 +391,7 @@ fn a_ref_cycle_in_a_schema_ends() {
         "$ref": "#/$defs/loop"
     }))
     .unwrap();
-    assert!(schema.references(&json!({"a": "/x"})).is_empty());
+    assert_eq!(schema.references(&json!({"a": "/x"})), Vec::new());
 }
 
 #[test]

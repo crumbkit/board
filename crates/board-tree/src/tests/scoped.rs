@@ -182,17 +182,17 @@ fn walking_a_directory_gives_exactly_what_the_whole_walk_gives_beneath_it() {
 fn walking_a_path_that_is_not_a_directory_finds_nothing() {
     let (scenario, _) = board_with(0);
     let repository = scenario.open();
-    assert!(
+    assert_eq!(
         repository
             .walk_under(&Source::WorkingTree, "tasks/a.json")
-            .unwrap()
-            .is_empty()
+            .unwrap(),
+        Vec::new()
     );
-    assert!(
+    assert_eq!(
         repository
             .walk_under(&Source::WorkingTree, "nowhere")
-            .unwrap()
-            .is_empty()
+            .unwrap(),
+        Vec::new()
     );
     assert_eq!(
         repository

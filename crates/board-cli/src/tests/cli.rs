@@ -310,7 +310,7 @@ fn a_misspelt_command_is_a_coded_error_with_a_suggestion_and_the_right_one_runs(
     let scenario = board();
     let refused = board_in(scenario.workdir(), &["chek"]);
     assert_eq!(refused.code, 2);
-    assert!(refused.stdout.is_empty());
+    assert_eq!(refused.stdout, b"");
     assert_eq!(
         text(&refused.stderr),
         "error: unrecognized subcommand 'chek'; some similar subcommands exist: 'schemas', 'check'\n\
@@ -326,7 +326,7 @@ fn a_group_without_its_command_prints_its_help_page_and_with_one_runs() {
     let scenario = board();
     let refused = board_in(scenario.workdir(), &["plugin"]);
     assert_eq!(refused.code, 2);
-    assert!(refused.stdout.is_empty());
+    assert_eq!(refused.stdout, b"");
     let page = board_in(scenario.workdir(), &["plugin", "-h"]);
     assert_eq!(text(&refused.stderr), text(&page.stdout));
     assert_eq!(board_in(scenario.workdir(), &["plugin", "list"]).code, 0);
@@ -431,7 +431,7 @@ fn a_refused_command_line_is_an_error_document_when_json_is_asked_for() {
     let scenario = board();
     let refused = board_in(scenario.workdir(), &["get", "--json"]);
     assert_eq!(refused.code, 2);
-    assert!(refused.stderr.is_empty());
+    assert_eq!(refused.stderr, b"");
     let error = json(&refused);
     assert_eq!(error["schema"], "board/failure/v1");
     assert_eq!(error["code"], "board::cli::usage");

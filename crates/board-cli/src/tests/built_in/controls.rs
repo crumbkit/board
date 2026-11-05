@@ -214,7 +214,7 @@ fn a_control_applies_to_what_it_references_and_to_what_its_patterns_match() {
         );
     assert_eq!(applying(&board, "/AGENTS.md"), ["/controls/agents"]);
     assert_eq!(applying(&board, "/docs/a.md"), ["/controls/docs"]);
-    assert!(applying(&board, "/docs/b.txt").is_empty());
+    assert_eq!(applying(&board, "/docs/b.txt"), Vec::<String>::new());
 }
 
 #[test]
@@ -296,7 +296,7 @@ fn a_path_with_no_file_yet_is_matched_by_pattern_and_a_record_by_its_file() {
         )
         .write("tasks/a.json", "{}");
     assert_eq!(applying(&board, "/docs/new.md"), ["/controls/docs"]);
-    assert!(applying(&board, "/docs/new.txt").is_empty());
+    assert_eq!(applying(&board, "/docs/new.txt"), Vec::<String>::new());
     assert_eq!(applying(&board, "/tasks/a"), ["/controls/docs"]);
 }
 
@@ -329,7 +329,7 @@ fn a_new_file_asked_through_a_link_is_matched_where_it_would_be_written() {
     let board = linked();
     assert_eq!(applying(&board, "/alias/new.md"), ["/controls/docs"]);
     assert_eq!(applying(&board, "/alias/sub/new.md"), ["/controls/docs"]);
-    assert!(applying(&board, "/alias/new.txt").is_empty());
+    assert_eq!(applying(&board, "/alias/new.txt"), Vec::<String>::new());
     assert!(
         applying(&board, "/alias/a.md/new.md").is_empty(),
         "nothing can be beneath a file"
@@ -370,7 +370,10 @@ fn a_pattern_reaching_into_a_mount_matches_files_there_and_one_that_does_not_mat
         ["/controls/vendor"],
         "a record is matched by its file"
     );
-    assert!(applying(&board, "/vendor/lib/docs/a.txt").is_empty());
+    assert_eq!(
+        applying(&board, "/vendor/lib/docs/a.txt"),
+        Vec::<String>::new()
+    );
     board
         .write(
             "controls/beside.json",
@@ -488,7 +491,7 @@ fn a_malformed_path_is_refused_with_boards_code_and_a_well_formed_one_is_answere
             .contains("first on PATH"),
         "{refused}"
     );
-    assert!(applying(&board, "/docs/x").is_empty());
+    assert_eq!(applying(&board, "/docs/x"), Vec::<String>::new());
 }
 
 #[test]

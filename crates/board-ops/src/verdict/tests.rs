@@ -200,7 +200,7 @@ fn a_pointer_and_boards_own_types_are_admitted_without_a_schema_and_their_broken
     for (bytes, pointer) in [(mount, true), (config, false), (MANIFEST, false)] {
         let admitted = record(Role::Json.classify(Some(bytes.as_bytes())), unasked).unwrap();
         assert_eq!(admitted.pointer, pointer, "{bytes}");
-        assert!(admitted.references.is_empty());
+        assert_eq!(admitted.references, Vec::new());
         assert_eq!(admitted.value, parse_json(bytes.as_bytes()).unwrap());
     }
     for (bytes, code) in [

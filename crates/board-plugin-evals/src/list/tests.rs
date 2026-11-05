@@ -159,7 +159,7 @@ fn each_capability_asks_for_every_eval_once_with_no_row_limit() {
         capability(&host, &json!({"subject": "gix"})).unwrap_or_default();
         capability(&host, &json!({})).unwrap_or_default();
         let asked = host.asked.take();
-        assert!(!asked.is_empty());
+        assert_ne!(asked, Vec::new());
         assert!(
             asked
                 .iter()

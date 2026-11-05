@@ -185,7 +185,7 @@ fn a_board_is_found_from_any_directory_inside_it() {
         open(&scenario).repository().path()
     );
     assert!(from_inside.config().commit_on_put);
-    assert!(from_inside.config().plugins.is_empty());
+    assert_eq!(from_inside.config().plugins, Vec::new());
 }
 
 #[test]

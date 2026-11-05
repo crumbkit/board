@@ -278,7 +278,7 @@ fn a_date_defer_ends_when_the_persons_day_starts_and_not_at_midnight() {
     let tasks = [deferred_by("monday", "2026-10-26")];
     let none = BTreeMap::new();
     let [available, ..] = sections(&tasks, &clock(at("2026-10-26", 5), SEVEN), &none);
-    assert!(available.is_empty());
+    assert_eq!(available, Vec::<String>::new());
     let [available, ..] = sections(&tasks, &clock(at("2026-10-26", 8), SEVEN), &none);
     assert_eq!(available, titles(&["monday"]));
 }

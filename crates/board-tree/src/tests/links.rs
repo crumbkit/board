@@ -26,7 +26,7 @@ fn a_link_resolves_to_its_target_and_records_itself() {
     let to_y = link("/work/y");
     let commit = scenario.commit(&[("x.json", &to_y), ("work/y.json", "{}")]);
     let direct = resolve(&scenario, commit, "/work/y").unwrap();
-    assert!(direct.pointers.is_empty());
+    assert_eq!(direct.pointers, Vec::new());
     let through = resolve(&scenario, commit, "/x").unwrap();
     assert_eq!(through.path, "work/y.json");
     assert_eq!(through.object, direct.object);

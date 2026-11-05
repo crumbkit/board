@@ -59,7 +59,7 @@ fn the_manifest_parses_as_a_built_in_one_and_describes_the_plugin_with_the_skill
         (manifest.name.as_str(), manifest.version.as_str()),
         ("tasks", "0.4.0")
     );
-    assert!(manifest.run.is_empty());
+    assert_eq!(manifest.run, Vec::<String>::new());
     let types: Vec<&str> = manifest.types.iter().map(RecordType::as_str).collect();
     assert_eq!(types, ["tasks/task/v2"]);
     let names: Vec<&str> = (manifest.capabilities.iter())

@@ -319,7 +319,7 @@ fn a_plan_leaf_that_plan_md_does_not_link_fails_and_its_linked_twin_passes() {
         ["plan/a.md is not linked from PLAN.md"]
     );
     let linked = plan_checks(&fixture, "[a](plan/a.md#goal)", 5);
-    assert!(index_problems(&linked).is_empty());
+    assert_eq!(index_problems(&linked), Vec::<&str>::new());
 }
 
 #[test]
@@ -332,7 +332,7 @@ fn a_plan_link_to_a_missing_leaf_fails_and_its_twin_naming_a_leaf_passes() {
         ["PLAN.md links plan/b.md, which does not exist"]
     );
     let present = plan_checks(&fixture, "[a](plan/a.md) [c](docs/c.md)", 5);
-    assert!(index_problems(&present).is_empty());
+    assert_eq!(index_problems(&present), Vec::<&str>::new());
 }
 
 #[test]
@@ -342,7 +342,7 @@ fn a_plan_leaf_linked_twice_fails_and_its_twin_linked_once_passes() {
     let twice = plan_checks(&fixture, "[a](plan/a.md) [again](plan/a.md)", 5);
     assert_eq!(index_problems(&twice), ["PLAN.md links plan/a.md 2 times"]);
     let once = plan_checks(&fixture, "[a](plan/a.md)", 5);
-    assert!(index_problems(&once).is_empty());
+    assert_eq!(index_problems(&once), Vec::<&str>::new());
 }
 
 #[test]
@@ -356,7 +356,7 @@ fn a_subdirectory_in_the_plan_directory_fails_and_its_flat_twin_passes() {
     let flat = Fixture::new();
     flat.write("plan/a.md", "").write("plan/b.md", "");
     let checks = plan_checks(&flat, "[a](plan/a.md) [b](plan/b.md)", 5);
-    assert!(index_problems(&checks).is_empty());
+    assert_eq!(index_problems(&checks), Vec::<&str>::new());
 }
 
 #[test]

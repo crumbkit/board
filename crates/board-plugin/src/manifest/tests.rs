@@ -165,7 +165,10 @@ fn an_empty_run_is_refused() {
 fn only_a_built_in_manifest_may_leave_run_out() {
     let mut without = manifest();
     without.as_object_mut().unwrap().remove("run");
-    assert!(Manifest::built_in(without.clone()).unwrap().run.is_empty());
+    assert_eq!(
+        Manifest::built_in(without.clone()).unwrap().run,
+        Vec::<String>::new()
+    );
     let refused = Manifest::from_value(without).unwrap_err();
     assert_eq!(refused.code(), Code::PluginBadManifest);
     assert!(matches!(refused, ManifestError::EmptyRun));
@@ -234,7 +237,7 @@ fn retaining_by_capability_keeps_only_that_capability() {
     let value = two_capabilities();
     assert_eq!(offered(&value, Some("due"), &[]), ["due"]);
     assert_eq!(offered(&value, None, &[]), ["due", "open"]);
-    assert!(offered(&value, Some("late"), &[]).is_empty());
+    assert_eq!(offered(&value, Some("late"), &[]), Vec::<String>::new());
 }
 
 #[test]
@@ -242,13 +245,16 @@ fn a_capabilitys_metadata_answers_for_its_keys_and_the_plugins_for_the_rest() {
     let value = two_capabilities();
     assert_eq!(offered(&value, None, &["area=deadlines"]), ["due"]);
     assert_eq!(offered(&value, None, &["area=planning"]), ["open"]);
-    assert!(offered(&value, None, &["area=planning", "area=deadlines"]).is_empty());
+    assert_eq!(
+        offered(&value, None, &["area=planning", "area=deadlines"]),
+        Vec::<String>::new()
+    );
 }
 
 #[test]
 fn a_filter_matches_only_a_string_value() {
     let value = two_capabilities();
-    assert!(offered(&value, None, &["level=2"]).is_empty());
+    assert_eq!(offered(&value, None, &["level=2"]), Vec::<String>::new());
     assert_eq!(offered(&value, None, &["area="]), Vec::<String>::new());
 }
 
@@ -394,7 +400,7 @@ fn capability_with(key: &str, value: Value) -> Value {
 fn a_capability_without_a_timeout_or_variables_has_neither() {
     let manifest = parse(&manifest()).unwrap();
     assert_eq!(manifest.capabilities[0].timeout, None);
-    assert!(manifest.capabilities[0].env.is_empty());
+    assert_eq!(manifest.capabilities[0].env, Vec::new());
 }
 
 #[test]

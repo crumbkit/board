@@ -307,5 +307,5 @@ fn a_held_issue_without_its_site_is_refused_and_a_whole_one_is_admitted() {
         .board
         .write(path, &issue(&json!({"title": "Fix it"})).to_string());
     assert_eq!(board.answer(&flags)["title"], "Fix it");
-    assert!(board.acli_calls().is_empty());
+    assert_eq!(board.acli_calls(), Vec::<String>::new());
 }

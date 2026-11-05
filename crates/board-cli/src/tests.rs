@@ -190,8 +190,8 @@ fn a_refused_command_line_exits_two() {
     ] {
         let output = board_in(scenario.workdir(), refused);
         assert_eq!(output.code, 2, "{refused:?}");
-        assert!(output.stdout.is_empty());
-        assert!(!output.stderr.is_empty());
+        assert_eq!(output.stdout, b"");
+        assert_ne!(output.stderr, b"");
     }
 }
 
@@ -452,7 +452,7 @@ fn a_failure_is_an_error_line_or_an_error_document() {
     let scenario = board();
     let plain = board_in(scenario.workdir(), &["get", "/missing"]);
     assert_eq!(plain.code, 1);
-    assert!(plain.stdout.is_empty());
+    assert_eq!(plain.stdout, b"");
     assert_eq!(
         text(&plain.stderr),
         "error: nothing is at /missing\n\
@@ -1130,7 +1130,7 @@ fn a_batch_refused_for_several_reasons_prints_each_line_as_golden_text_and_its_f
             .as_bytes(),
     );
     assert_eq!(refused.code, 1);
-    assert!(refused.stdout.is_empty());
+    assert_eq!(refused.stdout, b"");
     assert_eq!(
         text(&refused.stderr),
         "error: the batch is refused\n\

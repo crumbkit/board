@@ -111,7 +111,10 @@ fn about_matches_a_subject_without_regard_to_case_and_misses_a_different_subject
         assert_eq!(paths(&board, "about", &["--subject", asked]), ["/evals/a"]);
     }
     for missed in ["git", "gitoxide2"] {
-        assert!(paths(&board, "about", &["--subject", missed]).is_empty());
+        assert_eq!(
+            paths(&board, "about", &["--subject", missed]),
+            Vec::<String>::new()
+        );
     }
 }
 
@@ -122,7 +125,10 @@ fn about_quotes_a_subject_so_it_matches_only_itself() {
         .write("evals/a.json", &eval("A?", &json!({"subjects": ["it's"]})))
         .write("evals/b.json", &eval("B?", &json!({"subjects": ["other"]})));
     assert_eq!(paths(&board, "about", &["--subject", "it's"]), ["/evals/a"]);
-    assert!(paths(&board, "about", &["--subject", "x' OR '1'='1"]).is_empty());
+    assert_eq!(
+        paths(&board, "about", &["--subject", "x' OR '1'='1"]),
+        Vec::<String>::new()
+    );
 }
 
 #[test]
@@ -398,8 +404,14 @@ fn about_a_mount_lists_the_evals_that_name_its_mount_here_and_in_mounted_boards(
             "truncated": false,
         })
     );
-    assert!(paths(&board, "about", &["--mount", "/repos/crumb"]).is_empty());
-    assert!(paths(&board, "about", &["--subject", "/repos/crumbkit"]).is_empty());
+    assert_eq!(
+        paths(&board, "about", &["--mount", "/repos/crumb"]),
+        Vec::<String>::new()
+    );
+    assert_eq!(
+        paths(&board, "about", &["--subject", "/repos/crumbkit"]),
+        Vec::<String>::new()
+    );
     let cold = board.answer("evals.about", &["--mount", "/repos/crumbkit"], true);
     assert_eq!(cold, output);
 }
@@ -586,7 +598,7 @@ fn an_eval_that_concludes_leaves_the_open_list() {
     assert_eq!(paths(&board, "open", &[]), ["/evals/a"]);
     let concluded = json!({"status": "concluded", "verdict": "refuted", "conclusion": "No."});
     board.write("evals/a.json", &eval("A?", &concluded));
-    assert!(paths(&board, "open", &[]).is_empty());
+    assert_eq!(paths(&board, "open", &[]), Vec::<String>::new());
 }
 
 #[test]

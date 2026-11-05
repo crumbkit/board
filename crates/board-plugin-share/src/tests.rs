@@ -103,8 +103,8 @@ fn the_manifest_parses_as_a_built_in_one_and_describes_the_plugin_with_the_skill
         (manifest.name.as_str(), manifest.version.as_str()),
         ("share", "0.1.0")
     );
-    assert!(manifest.run.is_empty());
-    assert!(manifest.types.is_empty());
+    assert_eq!(manifest.run, Vec::<String>::new());
+    assert_eq!(manifest.types, Vec::new());
     assert!(Share.schemas().is_empty(), "the plugin ships no types");
     let names: Vec<&str> = (manifest.capabilities.iter())
         .map(|capability| capability.name.as_str())

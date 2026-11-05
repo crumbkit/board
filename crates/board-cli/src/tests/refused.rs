@@ -32,7 +32,7 @@ fn a_refusal_prints_its_code_message_hint_and_stderr_as_text_and_its_fields_as_j
     };
     let plain = refused(false, &refusal);
     assert_eq!(plain.code, 1);
-    assert!(plain.stdout.is_empty());
+    assert_eq!(plain.stdout, b"");
     assert_eq!(
         text(&plain.stderr),
         "error: plugin tasks exited 1\n\
@@ -42,7 +42,7 @@ fn a_refusal_prints_its_code_message_hint_and_stderr_as_text_and_its_fields_as_j
     );
     let document = refused(true, &refusal);
     assert_eq!(document.code, 1);
-    assert!(document.stderr.is_empty());
+    assert_eq!(document.stderr, b"");
     assert_eq!(
         serde_json::from_slice::<Value>(&document.stdout).unwrap(),
         json!({
