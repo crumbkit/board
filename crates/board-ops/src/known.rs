@@ -10,7 +10,7 @@ use std::io::{self, ErrorKind};
 use std::path::{Path, PathBuf};
 
 use board_model::{Code, Fields, LogicalPath, PathError, PluginName, Refusal};
-use board_tree::{Matched, Place};
+use board_tree::Place;
 use serde::Deserialize;
 
 use crate::{Asker, Board, OpenError, Signing};
@@ -267,15 +267,18 @@ fn find(
             matches.push((root, board, places));
         }
     }
-    // A mount of the clone in any known board outranks a repo record that
-    // another board holds for its remote.
-    let mounted = (matches.iter())
-        .any(|(_, _, places)| places.iter().any(|place| place.matched == Matched::Mount));
+    // Across the known boards only the best kind of match counts: a mount of
+    // the directory's own repository, then a mount of a clone with its
+    // origin whose commit it holds, then one whose commit it does not, then
+    // a repo record for its remote.
+    let best = (matches.iter())
+        .flat_map(|(_, _, places)| places.iter().map(|place| place.matched))
+        .min();
     let mut named = Vec::new();
     let mut chosen = None;
     for (root, board, places) in matches {
         let places: Vec<Place> = (places.into_iter())
-            .filter(|place| !mounted || place.matched == Matched::Mount)
+            .filter(|place| Some(place.matched) == best)
             .collect();
         named.extend(places.iter().map(|place| match place.prefix() {
             Ok(prefix) => format!("{} at {prefix}", root.display()),

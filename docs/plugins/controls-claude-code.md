@@ -18,7 +18,9 @@ the board that holds or mounts it. The answer goes into one `prompt.context`
 block, which the engine sends in the first request and again after a
 compaction. A repository that no board holds gives `board::config::not_found`,
 and the mod then adds nothing. Any other failure is said in the block, with
-the command to run by hand.
+the command to run by hand. A budget over its max, a pin behind or an unreadable file is
+data in a passing answer, and the block says so beside the control, such as
+"now 300 of 200 words, over budget".
 
 The mod shows one line, such as "2 controls on crumbkit". When the attention
 mod is loaded, which the mod learns from its

@@ -119,8 +119,10 @@ fn manifest() -> Value {
             "_meta": {},
         }, {
             "name": "check",
-            "description": "Check the controls under a path, `/` when left out. Fails naming each \
-                control over budget, behind its version or degraded.",
+            "description": "Check the controls under a path, `/` when left out, measuring only \
+                the files under it. `passed` is false when a budget is over, a pin is behind \
+                or a file is unreadable; fails when a control is degraded or a version rule's \
+                capture is invalid.",
             "inputSchema": schema_of::<check::Input>(SchemaSettings::draft2020_12()),
             "outputSchema": schema_of::<check::Output>(settings()),
             "annotations": {

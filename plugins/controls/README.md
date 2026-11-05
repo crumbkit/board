@@ -38,8 +38,8 @@ such as a pull request body, instead of files.
   the one display path Board's index gives it: through the shortest mount
   when a commit is mounted more than once, whichever path `for-path` was
   asked. A file with a malformed path has no such name. In the
-  board's own tree it is matched by its path, so `check` fails with
-  `controls::file::unreadable`; in a mounted board it matches nothing, and
+  board's own tree it is matched by its path, so `check` under `/` lists it
+  as unreadable; in a mounted board it matches nothing, and
   that board's own `board check` reports it.
 - `rule` is optional. Without it, the control is a written requirement.
   There are four kinds of rule:
@@ -83,7 +83,7 @@ such as a pull request body, instead of files.
   before the first edit of a file it covers, or `failing` only when `check`
   reports it failing. Left out, an obligation shows at `start`, a control
   with a budget or a version rule when `failing`, and any other control at
-  `edit`. `check` fails only a control with a budget or a version rule, so a control without one that says
+  `edit`. `check` reports failing only a control with a budget or a version rule, so a control without one that says
   `failing` is never shown. It is unrelated to a pattern rule's `show`, which says what a finding quotes.
 - `sources` holds references to what justifies the control, such as a
   source note or an eval. Board checks them as it checks `applies_to`, so a
@@ -146,26 +146,29 @@ The plugin ships both schemas. `board plugin enable controls` writes them to
   pattern matches nothing shows with `files: []` if measured and `files: 0` if
   stated; under another path, only those reaching a file there. `measured`
   holds the budget controls, with `used`, `max` and `files`: every file the
-  budget counts, inside the path or not. A `total` control's `used` is the
-  sum over its files. A `file` control also carries `per: "file"`,
+  budget counts under the path. A control reaching files under the path
+  runs on those files alone, so a breach in another repository never
+  decides this one's check; under `/` it runs on all of them. A `total`
+  control's `used` is the sum over its files. A `file` control also carries `per: "file"`,
   `largest`, the file with the most usage (`null` when it has no files),
   `used`, that file's usage, and `over`, each file over `max` with its
-  usage, so the error names the files to shorten. `versions` holds the
+  usage. `versions` holds the
   version controls, with `at_least`, `files`, and `behind`: each `file`,
-  `line` and version `found` that is older than `at_least`. `stated` holds the rest,
+  `line` and version `found` that is older than `at_least`. Each measured
+  and version control carries `unreadable`: each `file` it reaches that is
+  not a readable file, such as a directory, a degraded file or a blob a
+  partial clone lacks, with Board's `code`; it counts nothing toward
+  `used`. `stated` holds the rest,
   with their `paths` patterns and `files`, the number of their files under
   the path, so the output stays short; `board get <control>` shows its
   `applies_to`, `paths` and `sources`. Every item carries `kind` and the
-  effective `show`. A stated control never fails the call. It
-  fails, exiting 1, with `controls::budget::exceeded` when a measured
-  control is over budget, whose fields carry `report`, the output the call
-  would otherwise have returned; `controls::version::behind`, carrying
-  `report` too, when a file pins a version older than a version rule's;
+  effective `show`. `passed` is false when a budget is over its max, a pin
+  is behind or a file is unreadable. These are answers, so the call still
+  exits 0, and a reader sees the whole report. It fails with
   `controls::capture::invalid` when a version rule's `capture` does not
-  compile or has no group;
+  compile or has no group, and with
   `controls::control::degraded` when Board marks any control degraded, under
-  any path; and `controls::file::unreadable` when a measured control reaches
-  something that is not a readable file, such as a directory. Each error names
+  any path. Each error names
   every control it applies to. A file counts once, however many references,
   patterns, links or mounts reach it, and a link's own file counts nothing.
   The call reads each file once, and resolves every control's `applies_to`

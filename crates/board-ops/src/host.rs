@@ -168,7 +168,8 @@ pub trait Host {
         board_plugin::child::run(&process, &environment)
     }
     /// The logical path of `directory` at each mount of this board whose
-    /// repository holds it, as `board refs <directory>` would name it, or
+    /// repository holds it, or else whose repository has its repository's
+    /// origin, as `board refs <directory>` would name it, or
     /// `board::path::malformed` when one of them is too long to be a logical
     /// path. A host with no board of its own, such as a test's, finds none.
     fn places(&self, _directory: &Path) -> Result<Vec<LogicalPath>, Box<Refusal>> {

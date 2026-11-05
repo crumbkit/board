@@ -9,6 +9,7 @@ mod check;
 mod evaluate;
 mod for_paths;
 mod from_standards;
+mod scope;
 mod versions;
 
 const INVALID: Option<&str> = Some("board::record::invalid");

@@ -305,3 +305,44 @@ fn a_repository_whose_config_does_not_parse_is_unread_and_its_twin_that_parses_g
     let url = crate::Origin::Url("git@github.com:example-org/lib.git".to_owned());
     assert_eq!(crate::origin(whole.workdir()), url);
 }
+
+/// A repository whose `origin` is `url`, holding one commit of `files`, and
+/// that commit.
+fn originated(url: &str, files: &[(&str, &str)]) -> (Scenario, ObjectId) {
+    let repository = Scenario::new();
+    let remote = format!("[remote \"origin\"]\n\turl = {url}\n");
+    repository.write(".git/config", Item::Appended(&remote));
+    let commit = repository.commit(files);
+    (repository, commit)
+}
+
+#[test]
+fn a_clone_is_placed_at_the_mounts_with_its_origin_and_only_at_those_whose_commit_it_holds() {
+    let url = "git@github.com:example-org/lib.git";
+    let (one, first) = originated(url, &[("a.json", "1")]);
+    let (two, second) = originated(url, &[("a.json", "2")]);
+    let board = Scenario::new();
+    board
+        .write("repos/one.json", Item::File(&mount(&one.path(), first)))
+        .write("repos/two.json", Item::File(&mount(&two.path(), second)));
+    let by_origin = |at: &str, matched| Place {
+        matched,
+        ..place(at, "/")
+    };
+    let (holding, held) = originated(url, &[("a.json", "2")]);
+    assert_eq!(held, second);
+    assert_eq!(
+        places(&board, holding.workdir()),
+        [by_origin("/repos/two", crate::Matched::OriginWithCommit)]
+    );
+    let (neither, _) = originated(url, &[("a.json", "3")]);
+    assert_eq!(
+        places(&board, neither.workdir()),
+        [
+            by_origin("/repos/one", crate::Matched::Origin),
+            by_origin("/repos/two", crate::Matched::Origin),
+        ]
+    );
+    let (stranger, _) = originated("git@github.com:example-org/other.git", &[("a.json", "2")]);
+    assert_eq!(places(&board, stranger.workdir()), []);
+}

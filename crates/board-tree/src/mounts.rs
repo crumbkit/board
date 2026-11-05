@@ -291,11 +291,15 @@ pub struct Place {
     pub matched: Matched,
 }
 
-/// How a place was found: a mount of the directory's repository, or a repo
-/// record whose `remote` is that repository's origin.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// How a place was found, best first: a mount of the directory's
+/// repository; a mount of another clone with the same origin whose commit
+/// the directory's repository holds; one whose commit it does not hold; or
+/// a repo record whose `remote` is that repository's origin.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Matched {
     Mount,
+    OriginWithCommit,
+    Origin,
     Remote,
 }
 
@@ -311,7 +315,10 @@ impl Repositories {
     /// Each mount among `entries`, the working tree's, whose repository is
     /// the one holding `directory`. Repositories are compared by the git
     /// directory a linked worktree shares with its main one, so a linked
-    /// worktree matches too. When no mount holds it, each repo record whose
+    /// worktree matches too. When no mount holds it, each mount whose
+    /// repository has the same `origin` in its stored form, so a separate
+    /// clone matches its mount; when the clone holds the commit of some of
+    /// them, only those. When no mount has that origin either, each repo record whose
     /// `remote` is the stored form of that repository's `origin`, at its
     /// own path. `is_pointer` says, from a cache, which physical paths hold
     /// a pointer that parses, and `is_repo` which hold a valid repo record.
@@ -332,14 +339,15 @@ impl Repositories {
             mounted.and_then(|mounted| mounted.git().common_dir().canonicalize().ok())
                 == Some(common.clone())
         };
-        let mounted: Vec<Place> = pointers(root, &Source::WorkingTree, entries, is_pointer)
-            .into_iter()
+        let mounts = pointers(root, &Source::WorkingTree, entries, is_pointer);
+        let place = |mount: &LogicalPath| Place {
+            mount: mount.clone(),
+            within: within.clone(),
+            matched: Matched::Mount,
+        };
+        let mounted: Vec<Place> = (mounts.iter())
             .filter(|(_, _, mount)| shares(mount))
-            .map(|(mount, _, _)| Place {
-                mount,
-                within: within.clone(),
-                matched: Matched::Mount,
-            })
+            .map(|(mount, _, _)| place(mount))
             .collect();
         if !mounted.is_empty() {
             return mounted;
@@ -348,6 +356,35 @@ impl Repositories {
             return Vec::new();
         };
         let remote = board_model::shown_remote(&origin);
+        let same_origin = |mount: &Mount| {
+            let mounted = self.mounted(root.path(), mount);
+            let url = mounted.and_then(|mounted| remote_url(mounted.git()).ok());
+            url.is_some_and(|url| board_model::shown_remote(&url) == remote)
+        };
+        let clone = gix::discover(directory).ok();
+        let holds = |mount: &Mount| {
+            let id = gix::ObjectId::try_from(mount.commit.as_bytes()).ok();
+            (clone.as_ref().zip(id)).is_some_and(|(git, id)| git.has_object(id))
+        };
+        let cloned: Vec<Place> = (mounts.iter())
+            .filter(|(_, _, mount)| same_origin(mount))
+            .map(|(path, _, mount)| Place {
+                matched: if holds(mount) {
+                    Matched::OriginWithCommit
+                } else {
+                    Matched::Origin
+                },
+                ..place(path)
+            })
+            .collect();
+        if !cloned.is_empty() {
+            let held = cloned
+                .iter()
+                .any(|place| place.matched == Matched::OriginWithCommit);
+            return (cloned.into_iter())
+                .filter(|place| !held || place.matched == Matched::OriginWithCommit)
+                .collect();
+        }
         let reader = &mut root.reader();
         let named = |entry: &Entry| {
             let blob = entry
@@ -419,12 +456,21 @@ fn read_origin(directory: &Path, own: bool) -> Origin {
         Ok(git) => git.to_thread_local(),
         Err(error) => return Origin::Unread(format!("error: {error}")),
     };
+    match remote_url(&git) {
+        Ok(url) => Origin::Url(url),
+        Err(reason) => Origin::Unread(reason),
+    }
+}
+
+/// The fetch URL of `git`'s `origin` remote, or why it has none, as git
+/// says it.
+fn remote_url(git: &gix::Repository) -> Result<String, String> {
     match git.try_find_remote("origin") {
-        None => Origin::Unread("error: No such remote 'origin'".to_owned()),
-        Some(Err(error)) => Origin::Unread(format!("error: {error}")),
+        None => Err("error: No such remote 'origin'".to_owned()),
+        Some(Err(error)) => Err(format!("error: {error}")),
         Some(Ok(remote)) => match remote.url(gix::remote::Direction::Fetch) {
-            Some(url) => Origin::Url(url.to_bstring().to_string()),
-            None => Origin::Unread("error: the remote origin has no url".to_owned()),
+            Some(url) => Ok(url.to_bstring().to_string()),
+            None => Err("error: the remote origin has no url".to_owned()),
         },
     }
 }
