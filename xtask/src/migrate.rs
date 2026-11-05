@@ -4,6 +4,7 @@
 
 mod ordered;
 mod rules;
+mod topics;
 
 use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap};
@@ -108,6 +109,7 @@ pub(crate) fn run(board: &Path, options: &Options) -> Result<Value, MigrateError
     let mut counts: BTreeMap<&'static str, usize> = BTreeMap::new();
     let mut dropped = Vec::new();
     let mut unmapped = Vec::new();
+    let mut gathered = topics::Gathered::default();
     let [mut seen, mut changed, mut written] = [0; 3];
     for path in files(board)? {
         let text = read(&path)?;
@@ -141,6 +143,9 @@ pub(crate) fn run(board: &Path, options: &Options) -> Result<Value, MigrateError
                 Outcome::Unmapped(field, value) => {
                     unmapped.push(json!({"path": name, "field": field, "value": value}));
                 }
+                Outcome::Topic { slug, name, given } => {
+                    gathered.add(&slug, &name, given.as_ref());
+                }
             }
         }
         if !edited {
@@ -152,12 +157,39 @@ pub(crate) fn run(board: &Path, options: &Options) -> Result<Value, MigrateError
             written += 1;
         }
     }
+    let created = create(board, &gathered, options.write)?;
+    if options.write {
+        written += created.len();
+    }
     Ok(json!({
         "files": {"read": seen, "changed": changed, "written": written},
         "changed": counts,
         "dropped": dropped,
         "unmapped": unmapped,
+        "topics": created,
     }))
+}
+
+/// The topics `gathered` holds that the board at `board` does not, each as
+/// its path and record, written under `topics/` when `write` is true.
+fn create(
+    board: &Path,
+    gathered: &topics::Gathered,
+    write: bool,
+) -> Result<Vec<Value>, MigrateError> {
+    let mut created = Vec::new();
+    for (slug, record) in gathered.records() {
+        let path = board.join("topics").join(format!("{slug}.json"));
+        if path.exists() {
+            continue;
+        }
+        if write {
+            let text = serde_json::to_string_pretty(&record).unwrap_or_default() + "\n";
+            self::write(&path, &text)?;
+        }
+        created.push(json!({"path": format!("/topics/{slug}"), "record": record}));
+    }
+    Ok(created)
 }
 
 /// The GitHub `owner/name` of the repository the board at `board` mounts at
@@ -242,10 +274,14 @@ fn read(path: &Path) -> Result<String, MigrateError> {
     reason = "the migration rewrites the board it was pointed at, and nothing else"
 )]
 fn write(path: &Path, text: &str) -> Result<(), MigrateError> {
-    std::fs::write(path, text).map_err(|source| MigrateError::Write {
+    let failed = |source| MigrateError::Write {
         path: path.to_path_buf(),
         source,
-    })
+    };
+    if let Some(folder) = path.parent() {
+        std::fs::create_dir_all(folder).map_err(failed)?;
+    }
+    std::fs::write(path, text).map_err(failed)
 }
 
 #[cfg(test)]

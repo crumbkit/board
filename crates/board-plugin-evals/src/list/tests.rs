@@ -152,6 +152,8 @@ fn listed(
     (paths.collect(), output)
 }
 
+/// Each capability asks for every eval once with no row limit, and `about`
+/// by subject also asks for every topic once.
 #[test]
 fn each_capability_asks_for_every_eval_once_with_no_row_limit() {
     for capability in [about, open] {
@@ -161,11 +163,16 @@ fn each_capability_asks_for_every_eval_once_with_no_row_limit() {
         let asked = host.asked.take();
         assert_ne!(asked, Vec::new());
         assert!(
-            asked
+            asked.iter().all(|asked| [EVALS, TOPICS, SOURCES]
                 .iter()
-                .all(|asked| *asked == (EVALS.to_owned(), Limit::ALL))
+                .any(|sql| *asked == ((*sql).to_owned(), Limit::ALL))),
+            "{asked:?}"
         );
     }
+    let host = host(Vec::new());
+    about(&host, &json!({"subject": "o/gix"})).unwrap();
+    let asked: Vec<String> = host.asked.take().into_iter().map(|(sql, _)| sql).collect();
+    assert_eq!(asked, [TOPICS, EVALS]);
 }
 
 #[test]
@@ -490,4 +497,82 @@ proptest! {
         let equal = sqlite_says(&format!("substr({a_sql}, 1, length({b_sql})) = {b_sql}"));
         prop_assert_eq!(a.starts_with(&b), equal);
     }
+}
+
+/// A board that enables evals and topics, built in, holding `records` by
+/// path, and a mounted board that holds a topic and an eval naming it.
+fn topics_board(records: &[(&str, Value)]) -> (Scenario, Scenario, Board) {
+    let scenario = Scenario::new();
+    scenario.write(
+        ".board/board.json",
+        Item::File(r#"{"$type": "board/config/v1", "commit_on_put": false}"#),
+    );
+    let mut board = Board::open(scenario.workdir(), None).unwrap();
+    board.build_in(&[&Evals, &board_plugin_topics::Topics]);
+    for plugin in ["evals", "topics"] {
+        (board.plugin_enable(None, None, &plugin.parse().unwrap(), &[])).unwrap();
+    }
+    let read = |path: &str| std::fs::read_to_string(scenario.workdir().join(path)).unwrap();
+    let (eval, topic) = (
+        read(".board/types/evals/eval/v1.schema.json"),
+        read(".board/types/topics/topic/v1.schema.json"),
+    );
+    let library = Scenario::new();
+    let seatbelt = json!({"$type": "topics/topic/v1", "title": "seatbelt"}).to_string();
+    let pinned = library.commit(&[
+        (
+            ".board/board.json",
+            r#"{"$type": "board/config/v1", "plugins": ["evals", "topics"]}"#,
+        ),
+        (".board/types/evals/eval/v1.schema.json", &eval),
+        (".board/types/topics/topic/v1.schema.json", &topic),
+        ("topics/seatbelt.json", &seatbelt),
+        (
+            "evals/l.json",
+            &record(&json!({"subjects": ["/topics/seatbelt"]})).to_string(),
+        ),
+    ]);
+    let mount = json!({"$type": "board/mount/v1", "repo": library.path(), "follow": "main", "commit": pinned.to_string()});
+    scenario.write("vendor.json", Item::File(&mount.to_string()));
+    for (path, record) in records {
+        scenario.write(&format!("{path}.json"), Item::File(&record.to_string()));
+    }
+    let mut board = Board::open(scenario.workdir(), None).unwrap();
+    board.build_in(&[&Evals, &board_plugin_topics::Topics]);
+    (scenario, library, board)
+}
+
+/// `about` finds an eval whose subject is a topic by the topic's title or
+/// any alias, ignoring case, and a topic in a mounted board only for that
+/// board's evals.
+#[test]
+fn about_finds_an_eval_naming_a_topic_by_the_topics_title_or_alias_and_only_in_its_own_board() {
+    let topic =
+        json!({"$type": "topics/topic/v1", "title": "seatbelt", "aliases": ["sandbox-exec"]});
+    let (_scenario, _library, board) = topics_board(&[
+        ("topics/seatbelt", topic),
+        (
+            "evals/a",
+            record(&json!({"subjects": ["/topics/seatbelt"]})),
+        ),
+        (
+            "evals/b",
+            record(&json!({"subjects": ["/topics/landlock"]})),
+        ),
+    ]);
+    let about = |subject: &str| {
+        let target: Target = "evals.about".parse().unwrap();
+        let input = json!({ "subject": subject }).to_string();
+        let report = board
+            .call(&target, input.as_bytes(), &Plugins::default())
+            .unwrap();
+        (report.output["evals"].as_array().unwrap().iter())
+            .map(|eval| eval["path"].as_str().unwrap().to_owned())
+            .collect::<Vec<_>>()
+    };
+    let both = ["/evals/a", "/vendor/evals/l"];
+    assert_eq!(about("Seatbelt"), both);
+    assert_eq!(about("SANDBOX-EXEC"), ["/evals/a"]);
+    assert_eq!(about("/topics/seatbelt"), both);
+    assert_eq!(about("landlock"), Vec::<String>::new());
 }

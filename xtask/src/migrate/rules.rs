@@ -15,6 +15,13 @@ pub(crate) enum Outcome {
     Dropped(&'static str, String),
     /// The old value maps to nothing, so it was left for a person to fix.
     Unmapped(&'static str, String),
+    /// A subject named `name`, which now names the topic at
+    /// `/topics/<slug>`, as the `--map` entry gave it when one did.
+    Topic {
+        slug: String,
+        name: String,
+        given: Option<Value>,
+    },
 }
 
 /// Why a `--map` file cannot be used.
@@ -22,14 +29,16 @@ pub(crate) enum Outcome {
 pub(crate) enum MapError {
     /// The file is not a JSON object.
     NotObject,
-    /// The entry with this key maps to neither an `Actor` nor a `Subject`.
+    /// The entry with this key maps to neither an `Actor`, a `Subject` nor
+    /// a topic.
     Entry(String),
     /// The shared shapes' schemas did not compile, so nothing can be checked.
     Shapes,
 }
 
 /// The `--map` file: an old string to the value that replaces it, an actor
-/// object or a subject string.
+/// object, a subject string, or a `topics/topic/v1` record, which the
+/// subject names by `/topics/<slug of its title>`.
 #[derive(Default)]
 pub(crate) struct Context {
     map: Map<String, Value>,
@@ -47,12 +56,28 @@ impl Context {
             let schema = shapes.get(name).cloned().unwrap_or(Value::Null);
             board_validate::Schema::compile(schema).ok()
         };
-        let (Some(actor), Some(subject)) = (compiled("Actor"), compiled("Subject")) else {
+        let topic = (serde_json::from_str(super::topics::SCHEMA).ok())
+            .and_then(|schema| board_validate::Schema::compile(schema).ok());
+        let (Some(actor), Some(subject), Some(topic)) =
+            (compiled("Actor"), compiled("Subject"), topic)
+        else {
             return Err(MapError::Shapes);
         };
         for (key, value) in &map {
-            let shape = if value.is_object() { &actor } else { &subject };
-            if shape.validate(value).is_err() {
+            let is_topic = value
+                .as_object()
+                .is_some_and(|object| object.contains_key("$type"));
+            let shape = match value {
+                _ if is_topic => &topic,
+                Value::Object(_) => &actor,
+                _ => &subject,
+            };
+            // A topic's path comes from its title, so the title needs a slug.
+            let untitled = is_topic
+                && (value.get("title").and_then(Value::as_str))
+                    .and_then(super::topics::slug)
+                    .is_none();
+            if shape.validate(value).is_err() || untitled {
                 return Err(MapError::Entry(key.clone()));
             }
         }
@@ -244,16 +269,40 @@ fn subjects(
         if subject(text) {
             continue;
         }
-        let mapped = context
-            .map
-            .get(text.as_str())
-            .and_then(Value::as_str)
-            .map(str::to_owned)
-            .or_else(|| mount(text));
+        let given = context.map.get(text.as_str());
+        // A name the map gives a topic for, or maps to no subject and no
+        // mount resolves, becomes a topic of its own.
+        let topic = |slug: String, given: Option<&Value>| Outcome::Topic {
+            slug,
+            name: text.clone(),
+            given: given.cloned(),
+        };
+        let (mapped, made) = match given {
+            Some(Value::Object(object)) if object.contains_key("$type") => {
+                let title = object
+                    .get("title")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default();
+                let slug = super::topics::slug(title).unwrap_or_default();
+                (Some(format!("/topics/{slug}")), Some(topic(slug, given)))
+            }
+            Some(Value::String(mapped)) => {
+                let made = super::topics::named(mapped).map(|slug| topic(slug.to_owned(), None));
+                (Some(mapped.clone()), made)
+            }
+            _ => match mount(text) {
+                Some(mapped) => (Some(mapped), None),
+                None => match super::topics::slug(text) {
+                    Some(slug) => (Some(format!("/topics/{slug}")), Some(topic(slug, None))),
+                    None => (None, None),
+                },
+            },
+        };
         match mapped {
             Some(mapped) => {
                 *entry = Value::String(mapped);
                 outcomes.push(Outcome::Changed(field));
+                outcomes.extend(made);
             }
             None => outcomes.push(Outcome::Unmapped(field, text.clone())),
         }

@@ -35,4 +35,6 @@ pub const BUILT_IN: BuiltIn = BuiltIn(&[
     &board_plugin_share::Share,
     #[cfg(feature = "tasks")]
     &board_plugin_tasks::Tasks,
+    #[cfg(feature = "topics")]
+    &board_plugin_topics::Topics,
 ]);

@@ -10,6 +10,15 @@ fn context() -> Context {
     Context::new(json!({"Board app": "crumbkit/board-app", "odd one": {"person": "luke"}})).unwrap()
 }
 
+/// The outcome of a subject `name` that now names the topic `slug`.
+fn topic(slug: &str, name: &str) -> Outcome {
+    Outcome::Topic {
+        slug: slug.into(),
+        name: name.into(),
+        given: None,
+    }
+}
+
 fn migrated(record: Value) -> (Value, Vec<Outcome>) {
     let mut record = record;
     let outcomes = rules::record(&mut record, "r", &context(), &|_| None);
@@ -179,7 +188,7 @@ fn subjects_keep_valid_ones_and_map_or_resolve_the_rest() {
             "octo/core",
             "crumbkit/board",
             "crumbkit/board-app",
-            "Raycast Workspaces",
+            "/topics/raycast-workspaces",
             "/repos/x"
         ])
     );
@@ -188,7 +197,8 @@ fn subjects_keep_valid_ones_and_map_or_resolve_the_rest() {
         [
             Outcome::Changed("runs/suite/v1.subjects"),
             Outcome::Changed("runs/suite/v1.subjects"),
-            Outcome::Unmapped("runs/suite/v1.subjects", "Raycast Workspaces".into()),
+            Outcome::Changed("runs/suite/v1.subjects"),
+            topic("raycast-workspaces", "Raycast Workspaces"),
         ]
     );
 }
@@ -197,15 +207,15 @@ fn subjects_keep_valid_ones_and_map_or_resolve_the_rest() {
 /// left with no subject has none, while an eval must keep one, so an eval
 /// whose only subject is its own name keeps it and it is reported.
 #[test]
-fn a_record_loses_its_own_name_as_a_subject_unless_it_is_an_evals_only_one() {
+fn a_record_loses_its_own_name_as_a_subject_unless_it_is_an_evals_only_one_which_becomes_a_topic() {
     for kind in ["runs/suite/v1", "evals/eval/v1"] {
         let mut more = json!({"$type": kind, "subjects": ["pipecat-ci", "octo/pipecat"]});
         rules::record(&mut more, "pipecat-ci", &context(), &|_| None);
         assert_eq!(more["subjects"], json!(["octo/pipecat"]), "{kind}");
         let mut other = json!({"$type": kind, "subjects": ["pipecat-ci"]});
         let outcomes = rules::record(&mut other, "other", &context(), &|_| None);
-        assert_eq!(other["subjects"], json!(["pipecat-ci"]));
-        assert!(matches!(outcomes[..], [Outcome::Unmapped(..)]), "{kind}");
+        assert_eq!(other["subjects"], json!(["/topics/pipecat-ci"]));
+        assert!(matches!(outcomes[..], [_, Outcome::Topic { .. }]), "{kind}");
     }
     let mut suite = json!({"$type": "runs/suite/v1", "subjects": ["pipecat-ci"]});
     let outcomes = rules::record(&mut suite, "pipecat-ci", &context(), &|_| None);
@@ -218,13 +228,13 @@ fn a_record_loses_its_own_name_as_a_subject_unless_it_is_an_evals_only_one() {
     );
     let mut eval = json!({"$type": "evals/eval/v1", "subjects": ["pipecat-ci"]});
     let outcomes = rules::record(&mut eval, "pipecat-ci", &context(), &|_| None);
-    assert_eq!(eval["subjects"], json!(["pipecat-ci"]));
+    assert_eq!(eval["subjects"], json!(["/topics/pipecat-ci"]));
     assert_eq!(
         outcomes,
-        [Outcome::Unmapped(
-            "evals/eval/v1.subjects",
-            "pipecat-ci".into()
-        )]
+        [
+            Outcome::Changed("evals/eval/v1.subjects"),
+            topic("pipecat-ci", "pipecat-ci")
+        ]
     );
 }
 
@@ -493,10 +503,11 @@ fn a_subject_naming_a_mount_resolves_through_the_mount_chain() {
     let eval: Value =
         serde_json::from_str(&fs::read_to_string(board.path().join("evals/e.json")).unwrap())
             .unwrap();
-    assert_eq!(eval["subjects"], json!(["crumbkit/core", "outer"]));
+    assert_eq!(eval["subjects"], json!(["crumbkit/core", "/topics/outer"]));
+    assert_eq!(report["unmapped"], json!([]));
     assert_eq!(
-        report["unmapped"],
-        json!([{"path": "/evals/e.json", "field": "evals/eval/v1.subjects", "value": "outer"}])
+        report["topics"],
+        json!([{"path": "/topics/outer", "record": {"$type": "topics/topic/v1", "title": "outer"}}])
     );
 }
 

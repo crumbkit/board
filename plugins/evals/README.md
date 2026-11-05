@@ -31,8 +31,11 @@ An eval is a file `/evals/<name>.json`. Its evidence sits beside it, in
 - `question`, `subjects` and `status` are required.
 - `subjects` name what is tested, without versions. Each is a `Subject`:
   an `owner/name` repository, such as `GitoxideLabs/gitoxide`, or a board
-  path, such as `/repos/board`. `evals.about` matches subjects without
-  regard to case. A run holds the versions used.
+  path, such as `/repos/board`. A tool, model or concept with no
+  repository of its own is a topic, named by its path, such as
+  `/topics/seatbelt` (docs/plugins/built-in/topics.md in Board's
+  repository). `evals.about` matches subjects without regard to case. A run
+  holds the versions used.
 - `mounts` references the mount of each repository the eval concerns, such as
   `/repos/board`, a `board/mount/v1` record at `/repos/board.json`. `check`
   reports `board::ref::dangling` for a path the board does not have, and
@@ -54,7 +57,8 @@ An eval is a file `/evals/<name>.json`. Its evidence sits beside it, in
 ## Capabilities
 
 `board call evals.about --subject gix` returns the evals that name that
-subject, whatever their status. `board call evals.about --mount /repos/board`
+subject, or name a topic whose title or alias is that subject, whatever
+their status. `board call evals.about --mount /repos/board`
 returns the evals whose `mounts` include that exact path, and the
 evals stored in that mounted board, whose paths start with `/repos/board/`.
 Board refuses input with both or neither as `board::plugin::bad_input`.

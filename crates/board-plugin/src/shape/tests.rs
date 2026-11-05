@@ -249,6 +249,7 @@ fn the_registry_holds_each_shared_shape_by_name_as_a_field_using_it_sees_it() {
             "Person",
             "Pinned",
             "Prose",
+            "Repository",
             "SessionId",
             "Slug",
             "Subject",
@@ -448,6 +449,22 @@ fn a_subject_that_is_neither_a_repository_nor_a_path_is_refused_and_its_twin_is_
         ("crumbkit/board/crates", "/repos/board/crates"),
         ("/", "/repos/board"),
         ("/repos/a b", "nextest-rs/nextest"),
+    ] {
+        assert_eq!((refused, code(json!(refused))), (refused, invalid));
+        assert_eq!((admitted, code(json!(admitted))), (admitted, None));
+    }
+}
+
+/// A repository is `owner/name`, as GitHub names it.
+#[test]
+fn a_repository_that_is_not_owner_and_name_is_refused_and_its_twin_is_admitted() {
+    let code = refusal_of::<Repository>();
+    let invalid = Some(board_model::Code::RecordInvalid);
+    for (refused, admitted) in [
+        ("typescript-standards", "crumbkit/typescript-standards"),
+        ("/repos/board", "crumbkit/board"),
+        ("crumbkit/board/crates", "TanStack/query"),
+        ("a b/c", "llvm/llvm-project"),
     ] {
         assert_eq!((refused, code(json!(refused))), (refused, invalid));
         assert_eq!((admitted, code(json!(admitted))), (admitted, None));

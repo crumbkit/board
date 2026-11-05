@@ -13,3 +13,4 @@ ok review 0.2.0 disabled offers run, post, covered
 ok runs 0.1.0 disabled offers latest, trend
 ok share 0.1.0 disabled offers to
 ok tasks 0.4.0 disabled offers available, tree, add, claim, done, defer, drop, reviewed, move
+ok topics 0.1.0 disabled

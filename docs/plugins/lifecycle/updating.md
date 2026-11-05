@@ -58,14 +58,21 @@ one board's own tree to them. A board's records and its stored schemas move
 together, so update a board in this order:
 
 1. Install the new Board.
-2. Run `cargo xtask migrate-shapes <board>`, read what it could not map,
-   and write a `--map <file>` that maps each such old string to an actor
-   object or a subject. It refuses a map value outside those shapes. An
-   actor name it cannot parse becomes the actor's `agent`, so it drops no
-   attribution, and a suite's own name leaves its subjects.
+2. Run `cargo xtask migrate-shapes <board>`, read what it could not map
+   and the topics it would create, and write a `--map <file>`. The map
+   maps an old string to an actor object, a subject, or a
+   `topics/topic/v1` record, and it refuses a value outside those shapes.
+   An actor name it cannot parse becomes the actor's `agent`, so it drops
+   no attribution, and a suite's own name leaves its subjects.
+   A subject that is neither a repository nor a board path, and that no
+   mount resolves, becomes a topic at `/topics/<slug>`, which the subject
+   then names. Names with the same slug, and names the map sends to
+   `/topics/<slug>`, become one topic whose other names are its aliases. A
+   topic the board already holds is left as it is.
 3. Run it again with `--write` and the map. A second run changes nothing.
-4. Run `board plugin enable` for each enabled plugin, so the stored schemas
-   are the new ones, then `board check`.
+4. Run `board plugin enable` for each enabled plugin, and for `topics` if
+   the migration created any topic, so the stored schemas are the new ones,
+   then `board check`.
 
 It reads only the board's own tree, so each mounted board and each mounted
 notes repository is migrated on its own, with

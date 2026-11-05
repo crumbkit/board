@@ -117,7 +117,9 @@ have no capability: query the `records` view with `json_each` over
 
 `claude-code/` holds a Claude Code mod that records each subagent and task a
 session delegates as a run, and each pull request it opens as a decision
-stub. docs/plugins/claude-code.md says what it writes and how to load it.
+stub. docs/plugins/claude-code.md says what it writes and how to load it. Outside the
+desktop app the session's own id names no `local_` session, so a decision
+stub's `by` keeps that id as its `agent`.
 
 ## Enabling
 

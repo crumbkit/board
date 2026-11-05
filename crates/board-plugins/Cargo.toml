@@ -21,6 +21,7 @@ review = ["dep:board-plugin-review"]
 runs = ["dep:board-plugin-runs"]
 share = ["dep:board-plugin-share"]
 tasks = ["dep:board-plugin-tasks"]
+topics = ["dep:board-plugin-topics"]
 
 [dependencies]
 board-ops.workspace = true
@@ -39,6 +40,7 @@ board-plugin-review = { workspace = true, optional = true }
 board-plugin-runs = { workspace = true, optional = true }
 board-plugin-share = { workspace = true, optional = true }
 board-plugin-tasks = { workspace = true, optional = true }
+board-plugin-topics = { workspace = true, optional = true }
 
 [lints]
 workspace = true
