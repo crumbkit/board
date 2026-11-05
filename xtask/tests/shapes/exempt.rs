@@ -16,9 +16,11 @@ pub(super) enum Kind {
 use Kind::{Local, UntilAdopted};
 
 #[rustfmt::skip]
-pub(super) const UNSHARED: [(&str, &str, Kind, &str); 103] = [
+pub(super) const UNSHARED: [(&str, &str, Kind, &str); 107] = [
     // This repository's board's copy of the controls schema.
     (".board/controls/control/v1", "/paths/-", UntilAdopted, "BoardGlob (audit row 3)"),
+    (".board/controls/control/v1", "/rule/at_least", Local, "a version floor of dotted numbers, which only a version rule compares"),
+    (".board/controls/control/v1", "/rule/capture", Local, "a regular expression in the syntax of Rust's regex crate, which only a version rule compiles"),
     // The schemas the plugins ship.
     ("artifacts/artifact/v1", "/account", UntilAdopted, "Actor, once an account email has its own shape"),
     ("artifacts/artifact/v1", "/area/-", Local, "an area tag groups only artifacts, for finding neighbouring work"),
@@ -37,6 +39,8 @@ pub(super) const UNSHARED: [(&str, &str, Kind, &str); 103] = [
     ("changes/change/v1", "/pull_request", UntilAdopted, "PullRequestUrl (audit row 12)"),
     ("changes/change/v1", "/title", UntilAdopted, "Prose"),
     ("controls/control/v1", "/paths/-", UntilAdopted, "BoardGlob (audit row 3)"),
+    ("controls/control/v1", "/rule/at_least", Local, "a version floor of dotted numbers, which only a version rule compares"),
+    ("controls/control/v1", "/rule/capture", Local, "a regular expression in the syntax of Rust's regex crate, which only a version rule compiles"),
     ("evals/eval/v1", "/conclusion", UntilAdopted, "Prose"),
     ("evals/eval/v1", "/decision", UntilAdopted, "Prose"),
     ("evals/eval/v1", "/mounts/-", UntilAdopted, "Ref<Mount> (audit row 25)"),

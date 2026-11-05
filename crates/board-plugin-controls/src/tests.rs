@@ -88,6 +88,7 @@ fn the_check_output_schema_admits_a_null_or_string_largest_and_refuses_a_number(
                 "largest": largest,
                 "over": [],
             }],
+            "versions": [],
             "stated": [],
         })
     };
@@ -301,7 +302,10 @@ fn a_capability_the_plugin_does_not_offer_is_refused_and_check_is_answered() {
     );
     let check: CapabilityName = "check".parse().unwrap();
     let answered = Controls.call(&host, &check, json!({})).unwrap();
-    assert_eq!(answered, json!({"measured": [], "stated": []}));
+    assert_eq!(
+        answered,
+        json!({"measured": [], "versions": [], "stated": []})
+    );
 }
 
 #[test]

@@ -1,5 +1,5 @@
-//! `check`: the controls that apply under a path, each budget measured
-//! against the files it applies to.
+//! `check`: the controls that apply under a path, each budget and version
+//! rule measured against the files it applies to.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -11,7 +11,8 @@ use serde_json::{Map, Value, json};
 
 use crate::index::{self, Control, File, Health};
 use crate::logical;
-use crate::records::{Budget, Kind, Measure, Per, Rule, ShowAt};
+use crate::records::{Budget, Kind, Measure, Per, Rule, ShowAt, Version};
+use crate::version;
 
 /// Check the controls that apply to a file at or under `path`, `/` when left out.
 #[derive(Deserialize, JsonSchema)]
@@ -22,13 +23,38 @@ pub(crate) struct Input {
     path: Option<String>,
 }
 
-/// The controls that apply under the path, by the control's path; each budget is met.
+/// The controls that apply under the path, by the control's path; each
+/// budget is met and no file pins a version older than a version rule's.
 #[derive(Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 #[schemars(rename = "CheckOutput")]
 pub(crate) struct Output {
     measured: Vec<Checked>,
+    versions: Vec<Pinned>,
     stated: Vec<Stated>,
+}
+
+/// A version control, the files it reads, and each version they pin that
+/// is older than `at_least`.
+#[derive(Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct Pinned {
+    control: String,
+    requirement: String,
+    at_least: String,
+    files: Vec<String>,
+    behind: Vec<FileBehind>,
+    kind: Kind,
+    show: ShowAt,
+}
+
+/// A version a file pins that is older than the rule's, and its line.
+#[derive(Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct FileBehind {
+    file: String,
+    line: usize,
+    found: String,
 }
 
 /// A budget control and what its files use: all of them summed, or its
@@ -150,28 +176,10 @@ pub(crate) fn check(host: &dyn Host, input: &Value) -> Result<Value, PluginError
     let applying: Vec<&String> = (controls.keys())
         .filter(|logical| root || files[*logical].iter().any(|path| under(path, &scope)))
         .collect();
-    let budgets: Vec<(&String, &Budget)> = (applying.iter())
-        .filter_map(|logical| match &controls[*logical].rule {
-            Some(Rule::Budget(budget)) => Some((*logical, budget)),
-            _ => None,
-        })
-        .collect();
-    if let Some((logical, (file, code))) = (budgets.iter())
-        .find_map(|(logical, _)| unreadable.get(*logical).map(|found| (*logical, found)))
-    {
-        return Err(unreadable_file(logical, file, code.as_deref()));
-    }
-    let distinct: BTreeSet<&LogicalPath> = (budgets.iter())
-        .flat_map(|(logical, _)| &files[*logical])
-        .collect();
-    let reads = read(host, distinct)?;
-    let mut measured = Vec::new();
-    for (logical, budget) in budgets {
-        let control = &controls[logical];
-        measured.push(checked(logical, control, budget, &files[logical], &reads)?);
-    }
+    let (measured_controls, versions) =
+        measure_files(host, &applying, &controls, &files, &unreadable)?;
     let stated = (applying.into_iter())
-        .filter(|logical| !matches!(controls[*logical].rule, Some(Rule::Budget(_))))
+        .filter(|logical| !measured(&controls[*logical]))
         .map(|logical| {
             let control = &controls[logical];
             Stated {
@@ -193,14 +201,68 @@ pub(crate) fn check(host: &dyn Host, input: &Value) -> Result<Value, PluginError
             }
         })
         .collect();
-    let output = Output { measured, stated };
+    let output = Output {
+        measured: measured_controls,
+        versions,
+        stated,
+    };
     let failing: Vec<&Checked> = (output.measured.iter())
         .filter(|item| item.used > item.max)
         .collect();
     if !failing.is_empty() {
         return Err(exceeded(&failing, &output));
     }
+    let lagging: Vec<&Pinned> = (output.versions.iter())
+        .filter(|item| !item.behind.is_empty())
+        .collect();
+    if !lagging.is_empty() {
+        return Err(behind(&lagging, &output));
+    }
     Ok(serde_json::to_value(output).expect("Output holds only strings, numbers and lists"))
+}
+
+/// Each budget control and each version control among `applying`,
+/// measured over its files, which are each read once. A file Board cannot
+/// read is `controls::file::unreadable`.
+fn measure_files(
+    host: &dyn Host,
+    applying: &[&String],
+    controls: &BTreeMap<String, Control>,
+    files: &BTreeMap<String, BTreeSet<LogicalPath>>,
+    unreadable: &BTreeMap<String, (String, Option<String>)>,
+) -> Result<(Vec<Checked>, Vec<Pinned>), PluginError> {
+    let read_by: Vec<&String> = (applying.iter().copied())
+        .filter(|logical| measured(&controls[*logical]))
+        .collect();
+    if let Some((logical, (file, code))) =
+        (read_by.iter()).find_map(|logical| unreadable.get(*logical).map(|found| (*logical, found)))
+    {
+        return Err(unreadable_file(logical, file, code.as_deref()));
+    }
+    let distinct: BTreeSet<&LogicalPath> = (read_by.iter())
+        .flat_map(|logical| &files[*logical])
+        .collect();
+    let reads = read(host, distinct)?;
+    let (mut budgets, mut versions) = (Vec::new(), Vec::new());
+    for logical in read_by {
+        let (control, reached) = (&controls[logical], &files[logical]);
+        match &control.rule {
+            Some(Rule::Budget(budget)) => {
+                budgets.push(checked(logical, control, budget, reached, &reads)?);
+            }
+            Some(Rule::Version(rule)) => {
+                versions.push(pinned(logical, control, rule, reached, &reads)?);
+            }
+            _ => {}
+        }
+    }
+    Ok((budgets, versions))
+}
+
+/// Whether `check` measures the control's files: it has a budget or a
+/// version rule.
+fn measured(control: &Control) -> bool {
+    matches!(control.rule, Some(Rule::Budget(_) | Rule::Version(_)))
 }
 
 /// The display path `path` resolves to, through any link or mount.
@@ -345,6 +407,74 @@ fn checked(
         over,
     });
     Ok(checked)
+}
+
+/// A version control's verdict on its files: each version they pin that is
+/// older than the rule's, in file order and then line order.
+fn pinned(
+    logical: &str,
+    control: &Control,
+    rule: &Version,
+    files: &BTreeSet<LogicalPath>,
+    reads: &BTreeMap<LogicalPath, Result<Vec<u8>, String>>,
+) -> Result<Pinned, PluginError> {
+    let expression = version::compile(logical, rule)?;
+    let mut behind = Vec::new();
+    for path in files {
+        let data = match &reads[path] {
+            Ok(data) => data,
+            Err(code) => return Err(unreadable_file(logical, path.as_str(), Some(code))),
+        };
+        let text = String::from_utf8_lossy(data);
+        let found = version::behind(&expression, &rule.at_least, &text);
+        behind.extend(found.into_iter().map(|old| FileBehind {
+            file: path.to_string(),
+            line: old.line,
+            found: old.found,
+        }));
+    }
+    Ok(Pinned {
+        control: logical.to_owned(),
+        requirement: control.requirement.clone(),
+        at_least: rule.at_least.clone(),
+        files: files.iter().map(ToString::to_string).collect(),
+        behind,
+        kind: control.kind,
+        show: control.show(),
+    })
+}
+
+/// The controls whose files pin an older version, and in `report` the
+/// output `check` would otherwise have returned.
+fn behind(lagging: &[&Pinned], report: &Output) -> PluginError {
+    let names: Vec<String> = (lagging.iter())
+        .map(|item| {
+            let files: Vec<String> = (item.behind.iter())
+                .map(|old| format!("{}:{} pins {}", old.file, old.line, old.found))
+                .collect();
+            format!(
+                "{} (at least {}: {})",
+                item.control,
+                item.at_least,
+                files.join(", ")
+            )
+        })
+        .collect();
+    let controls = serde_json::to_value(lagging).expect("Pinned holds only strings and numbers");
+    let report =
+        serde_json::to_value(report).expect("Output holds only strings, numbers and lists");
+    PluginError {
+        code: "controls::version::behind".to_owned(),
+        message: format!(
+            "older than the control allows: {}; raise each pin to at least the control's version",
+            names.join("; ")
+        ),
+        fields: Map::from_iter([
+            ("controls".to_owned(), controls),
+            ("report".to_owned(), report),
+        ]),
+        hint: None,
+    }
 }
 
 fn degraded(broken: &[(String, Value)]) -> PluginError {
