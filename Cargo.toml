@@ -31,7 +31,7 @@ resolver = "3"
 [workspace.package]
 edition = "2024"
 publish = false
-rust-version = "1.97"
+rust-version = "1.99"
 
 [workspace.dependencies]
 # 0.13.5 and later depend on bolero-generator-derive, which pins indexmap =2.11.2
