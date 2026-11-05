@@ -5,7 +5,7 @@ mod asked;
 
 use board_model::parse_json;
 use board_ops::{Host, Limit, PluginError};
-use board_plugin::shape::{TREE_CODES, whole};
+use board_plugin::shape::{Actor, TREE_CODES, whole};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
@@ -88,7 +88,7 @@ struct Waiting {
 #[derive(Deserialize)]
 struct Stored {
     question: String,
-    session: String,
+    by: Actor,
     asked: String,
     #[serde(default)]
     options: Vec<Map<String, Value>>,
@@ -148,7 +148,7 @@ fn readable(path: &str, body: &Value) -> Option<(Instant, Waiting)> {
         path: path.to_owned(),
         question: asked.question,
         asked: asked.asked,
-        session: asked.session,
+        session: asked.by.session?,
         options,
         recommendation: asked.recommendation,
         why: asked.why,

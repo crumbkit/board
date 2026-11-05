@@ -8,7 +8,7 @@ use serde_json::{Value, json};
 
 use crate::held::{self, logical, refused, timestamp};
 use crate::list::LIST_LIMIT;
-use board_plugin::shape::Tag;
+use board_plugin::shape::{Actor, Person, Tag};
 
 use crate::records::{ArtifactRecord, State};
 
@@ -22,7 +22,7 @@ pub(crate) const ARTIFACT_URL: &str = r"^https://claude\.ai/(code/)?artifact/[A-
 #[schemars(rename = "ImportInput")]
 pub(crate) struct Input {
     /// The email address of the claude.ai account that published the artifacts.
-    #[schemars(length(min = 1))]
+    #[schemars(with = "Person")]
     account: String,
     /// The Artifact tool's list result, unchanged. Board reads stdin only
     /// when no flag is given, so give the whole input as JSON on stdin:
@@ -126,7 +126,10 @@ pub(crate) fn import(host: &dyn Host, input: &Value) -> Result<Value, PluginErro
         let record = ArtifactRecord {
             tag: Tag::default(),
             url: row.url.clone(),
-            account: account.clone(),
+            account: Actor {
+                person: Some(account.clone()),
+                ..Actor::default()
+            },
             first_seen: row.updated_at.clone().unwrap_or_else(|| now.clone()),
             subject: Vec::new(),
             shows: None,

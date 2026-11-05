@@ -12,7 +12,8 @@ use sha2::{Digest as _, Sha256};
 /// The `$type` of an attachment.
 pub const ATTACHMENT_TYPE: &str = "board/attachment/v1";
 
-/// The SHA-256 of a file's bytes, spelled `sha256:<64 hex digits>`.
+/// The SHA-256 of some bytes, spelled as 64 lowercase hex digits, as every
+/// hash in a record is.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(try_from = "String", into = "String")]
 pub struct Digest([u8; 32]);
@@ -34,7 +35,7 @@ impl Digest {
 
 impl fmt::Display for Digest {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(formatter, "sha256:{}", self.hex())
+        formatter.write_str(&self.hex())
     }
 }
 
@@ -42,9 +43,9 @@ impl FromStr for Digest {
     type Err = String;
 
     fn from_str(text: &str) -> Result<Self, String> {
-        let malformed = || format!("{text:?} is not sha256: followed by 64 hex digits");
-        let hex = text.strip_prefix("sha256:").ok_or_else(malformed)?;
-        if hex.len() != 64 {
+        let malformed = || format!("{text:?} is not 64 lowercase hex digits");
+        let hex = text;
+        if hex.len() != 64 || !(hex.bytes()).all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')) {
             return Err(malformed());
         }
         let mut bytes = [0; 32];

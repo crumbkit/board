@@ -202,13 +202,13 @@ fn a_task_admits_fields_another_tool_writes_and_still_checks_its_own() {
 }
 
 #[test]
-fn owner_is_a_non_empty_string() {
+fn owner_is_an_actor_with_at_least_one_part() {
     let tasks = Tasks::new();
     tasks.write(
         "tasks/owned.md",
-        &open("Owned", json!({"owner": "session-7f3a"})),
+        &open("Owned", json!({"owner": {"person": "session-7f3a"}})),
     );
-    tasks.write("tasks/empty.md", &open("Empty", json!({"owner": ""})));
+    tasks.write("tasks/empty.md", &open("Empty", json!({"owner": {}})));
     tasks.write("tasks/number.md", &open("Number", json!({"owner": 7})));
     assert_eq!(
         checked(&tasks),

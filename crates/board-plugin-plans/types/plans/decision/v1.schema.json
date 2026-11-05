@@ -1,4 +1,29 @@
 {
+  "$defs": {
+    "Actor": {
+      "additionalProperties": false,
+      "description": "Who wrote a record or acted: the session, the program and the person,\neach when known, and at least one. Every record type that names who\nacted holds one.",
+      "minProperties": 1,
+      "properties": {
+        "person": {
+          "description": "The person who acted, such as `luke`, or their email address.",
+          "pattern": "^([a-z0-9]+(-[a-z0-9]+)*|[^@\\s]+@[^@\\s]+)$",
+          "type": "string"
+        },
+        "program": {
+          "description": "The program that acted, such as `claude-code` or `codex`.",
+          "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+          "type": "string"
+        },
+        "session": {
+          "description": "The Claude Code session's `local_` id.",
+          "pattern": "^local_[0-9a-f-]+$",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
   "additionalProperties": false,
   "description": "`plans/decision/v1`: a decision a session made, and why.\n\nOnly a stub a hook wrote, which names itself in `written_by`, may leave\n`why` empty, for the agent to fill in.",
   "if": {
@@ -21,6 +46,10 @@
         "type": "string"
       },
       "type": "array"
+    },
+    "by": {
+      "$ref": "#/$defs/Actor",
+      "description": "Who decided."
     },
     "decided": {
       "description": "When it was decided.",
@@ -47,10 +76,6 @@
       ],
       "type": "string"
     },
-    "session": {
-      "description": "The session that decided.",
-      "type": "string"
-    },
     "urls": {
       "default": [],
       "description": "Web pages the decision concerns, such as a pull request.",
@@ -75,7 +100,7 @@
     "$type",
     "decision",
     "why",
-    "session",
+    "by",
     "decided"
   ],
   "then": {

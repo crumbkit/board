@@ -17,7 +17,7 @@ An eval is a file `/evals/<name>.json`. Its evidence sits beside it, in
 {
   "$type": "evals/eval/v1",
   "question": "Can gix resolve a ref faster than git2?",
-  "subjects": ["gix", "git2"],
+  "subjects": ["GitoxideLabs/gitoxide", "rust-lang/git2-rs"],
   "mounts": ["/repos/board"],
   "suites": ["/suites/gix-refs"],
   "runs": ["/suites/gix-refs/runs/20261001T090000Z-a3f9"],
@@ -29,10 +29,10 @@ An eval is a file `/evals/<name>.json`. Its evidence sits beside it, in
 ```
 
 - `question`, `subjects` and `status` are required.
-- `subjects` are the names of what is tested, without versions, such as `gix`
-  or a model family. A repository the eval concerns goes in `mounts`, by its
-  mount, and never as `owner/name` here. `evals.about` matches subjects
-  without regard to case. A run holds the versions used.
+- `subjects` name what is tested, without versions. Each is a `Subject`:
+  an `owner/name` repository, such as `GitoxideLabs/gitoxide`, or a board
+  path, such as `/repos/board`. `evals.about` matches subjects without
+  regard to case. A run holds the versions used.
 - `mounts` references the mount of each repository the eval concerns, such as
   `/repos/board`, a `board/mount/v1` record at `/repos/board.json`. `check`
   reports `board::ref::dangling` for a path the board does not have, and

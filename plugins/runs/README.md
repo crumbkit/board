@@ -13,7 +13,7 @@ sit in `/suites/<name>/runs/`.
 ```json
 {
   "$type": "runs/suite/v1",
-  "subjects": ["board"],
+  "subjects": ["crumbkit/board"],
   "method": "Time each operation over a 10,000-file board; take the median of 20 runs.",
   "command": "cargo xtask bench",
   "cases": [{"id": "get"}, {"id": "put"}],
@@ -22,7 +22,8 @@ sit in `/suites/<name>/runs/`.
 ```
 
 - `subjects` and `method` are required.
-- `subjects` are the names of what is tested, without versions.
+- `subjects` name what is tested, without versions, each as an `owner/name`
+  repository or a board path, the `Subject` shape.
 - `cases` lists the cases inline: each has an `id`, which a run's results name,
   and optional `input` and `expected`. `cases_file` references a file that
   lists them instead. A suite whose cases are found when it runs, such as a
@@ -41,7 +42,7 @@ names a new run there.
 {
   "$type": "runs/run/v1",
   "suite": "/suites/board-tests",
-  "by": "claude",
+  "by": {"program": "claude-code", "session": "local_0b5c1e2a-3f4d-4e6a-9b7c-1d2e3f4a5b6c"},
   "started": "2026-10-18T10:15:00Z",
   "finished": "2026-10-18T10:16:12Z",
   "scope": "full",
@@ -55,7 +56,9 @@ names a new run there.
 }
 ```
 
-- `suite`, `by`, `started`, `scope` and `results` are required.
+- `suite`, `started`, `scope` and `results` are required.
+- `by` is the `Actor` who ran it: `{session, program, person}`, each part
+  optional and at least one present.
   `suite` must reach a `runs/suite/v1` record, or `check` reports
   `board::ref::dangling` or `board::ref::wrong_type`.
 - `started` and `finished` carry a time zone.

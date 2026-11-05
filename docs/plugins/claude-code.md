@@ -73,7 +73,8 @@ Three options, set in the `/config` menu or in settings under
 
 When a subagent stops, or a task is completed, the mod writes a
 `runs/run/v1` at `<suite>/runs/<started>-<id>`, where `<id>` is the agent or
-task id. Its `by` is the agent type or the teammate, `measures.duration_s` the
+task id. Its `by` is the actor `{"program": "claude-code"}`, with the
+session's `local_` id in the desktop app, `measures.duration_s` the
 seconds since it started, and `summary` the subagent's last line of text or
 the task's subject. A stop that another hook blocks writes nothing, because
 the subagent goes on. When the mod did not see the unit start, as when it

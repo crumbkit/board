@@ -4,7 +4,7 @@
 //! property as pydantic wrote it, so a board that enabled review before the
 //! port needs no `plugin enable`.
 
-use board_plugin::shape::{Record, Tag};
+use board_plugin::shape::{Actor, Pinned, Record, Tag};
 use schemars::{JsonSchema, Schema, SchemaGenerator, json_schema};
 use serde::{Deserialize, Serialize};
 
@@ -24,7 +24,7 @@ pub struct BriefRecord {
     #[schemars(schema_with = "commits")]
     pub range: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub subject: Option<Subject>,
+    pub subject: Option<Pinned>,
     #[schemars(schema_with = "focus")]
     pub focus: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -43,7 +43,7 @@ impl Record for BriefRecord {
 #[serde(deny_unknown_fields)]
 #[schemars(
     title = "ReportRecord",
-    description = "`review/report/v1`, at /reviews/<id>/report: what one review of a range or a record found.\n\n`range` holds the full commit ids reviewed, and `patch_ids` the\n`git patch-id --verbatim` of each commit in it that has a diff, oldest first,\nso the review still covers the commits after a rebase. A review of a record\nholds its `subject` instead, and covers no commit. `brief` is absent for\na review a person wrote. `by` names the models the agent reported, else the\nprogram the agent command starts, or the person. `source` is a URL, such as\na GitHub review. `follows` is the previous report.",
+    description = "`review/report/v1`, at /reviews/<id>/report: what one review of a range or a record found.\n\n`range` holds the full commit ids reviewed, and `patch_ids` the\n`git patch-id --verbatim` of each commit in it that has a diff, oldest first,\nso the review still covers the commits after a rebase. A review of a record\nholds its `subject` instead, and covers no commit. `brief` is absent for\na review a person wrote. `by` names who reviewed: the program the agent\ncommand starts, its session, or the person. `source` is a URL, such as\na GitHub review. `follows` is the previous report.",
     extend(
         "oneOf" = [{"required": ["range"]}, {"required": ["subject"]}],
         "dependentRequired" = {"range": ["patch_ids"], "patch_ids": ["range"]}
@@ -63,13 +63,13 @@ pub struct ReportRecord {
     #[schemars(schema_with = "patch_ids")]
     pub patch_ids: Option<Vec<String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub subject: Option<Subject>,
+    pub subject: Option<Pinned>,
     #[schemars(title = "Findings")]
     pub findings: Vec<Finding>,
     #[schemars(schema_with = "verdict")]
     pub verdict: Verdict,
-    #[schemars(schema_with = "by")]
-    pub by: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub by: Option<Actor>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cost: Option<Cost>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -82,19 +82,6 @@ pub struct ReportRecord {
 
 impl Record for ReportRecord {
     const TYPE: &'static str = "review/report/v1";
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-#[schemars(
-    title = "Subject",
-    description = "A record under review, pinned by its blob, so a review names exactly which version it read."
-)]
-pub struct Subject {
-    #[schemars(title = "Record", extend("format" = "board-ref"))]
-    pub record: String,
-    #[schemars(schema_with = "blob")]
-    pub blob: String,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
@@ -177,10 +164,6 @@ fn commits(_: &mut SchemaGenerator) -> Schema {
     json_schema!({"pattern": COMMITS, "title": "Range", "type": "string"})
 }
 
-fn blob(_: &mut SchemaGenerator) -> Schema {
-    json_schema!({"pattern": "^[0-9a-f]{40,64}$", "title": "Blob", "type": "string"})
-}
-
 fn patch_ids(_: &mut SchemaGenerator) -> Schema {
     json_schema!({
         "items": {"pattern": "^[0-9a-f]{40,64}$", "type": "string"},
@@ -215,10 +198,6 @@ pub(crate) fn verdict(_: &mut SchemaGenerator) -> Schema {
 
 fn severity(_: &mut SchemaGenerator) -> Schema {
     json_schema!({"enum": ["high", "medium", "low"], "title": "Severity", "type": "string"})
-}
-
-fn by(_: &mut SchemaGenerator) -> Schema {
-    json_schema!({"minLength": 1, "title": "By", "type": "string"})
 }
 
 fn text(_: &mut SchemaGenerator) -> Schema {

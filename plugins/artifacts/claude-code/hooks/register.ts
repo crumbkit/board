@@ -137,6 +137,15 @@ async function put($: EngineInterface, path: string, body: { record: object } | 
   throw new BoardRefused(failure)
 }
 
+/**
+ * Who acts in this session, as the shared actor shape: Claude Code, and the
+ * session by the `local_` id the desktop app names, when it names one.
+ */
+async function actor($: EngineInterface): Promise<{ program: string; session?: string }> {
+  const host = await $.env.get('CLAUDE_CODE_HOST_SESSION_ID')
+  return { program: 'claude-code', ...(host?.startsWith('local_') ? { session: host } : {}) }
+}
+
 /** The account the session is signed in to, from `oauthAccount.emailAddress` in `.claude.json`. */
 async function account($: EngineInterface): Promise<string | undefined> {
   const dir = (await $.env.get('CLAUDE_CONFIG_DIR')) ?? (await $.env.get('HOME'))
@@ -243,7 +252,7 @@ async function record($: EngineInterface, seen: Seen): Promise<Recorded | undefi
       copy: sha === undefined ? 'none' : undefined,
       sha256: sha,
       source: seen.source,
-      session: await $.session.id(),
+      by: await actor($),
       at: iso(await $.clock.now()),
     }
     const written = await put($, path, { record: version })

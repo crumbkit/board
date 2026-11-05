@@ -1,7 +1,7 @@
 //! The record types the plugin ships. Their schemas are generated from
 //! these structs; the files under `types/` are those schemas, committed.
 
-use board_plugin::shape::{Accepts, Prose, Record, Ref, Sha256, Tag};
+use board_plugin::shape::{Accepts, Actor, Prose, Record, Ref, Sha256, Tag};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -30,9 +30,9 @@ pub struct ArtifactRecord {
         regex(pattern = ARTIFACT_URL)
     )]
     pub url: String,
-    /// The email address of the claude.ai account that published the artifact.
-    #[schemars(length(min = 1))]
-    pub account: String,
+    /// The claude.ai account that published the artifact, as a person named
+    /// by the account's email address.
+    pub account: Actor,
     /// When the board first saw the artifact, with a time zone.
     #[schemars(extend("format" = "date-time"))]
     pub first_seen: String,
@@ -136,10 +136,9 @@ pub struct VersionRecord {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(length(min = 1))]
     pub source: Option<String>,
-    /// The Claude Code session that published or read this version.
-    #[schemars(length(min = 1))]
-    pub session: String,
-    /// When the session published or read this version, with a time zone.
+    /// Who published or read this version.
+    pub by: Actor,
+    /// When it was published or read, with a time zone.
     #[schemars(extend("format" = "date-time"))]
     pub at: String,
     /// none when the version has no local page, so nothing was copied.

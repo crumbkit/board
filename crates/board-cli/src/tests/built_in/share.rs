@@ -41,7 +41,7 @@ fn eval() -> Value {
     json!({
         "$type": "evals/eval/v1",
         "question": "Does gix resolve a ref faster than git2?",
-        "subjects": ["gix", "git2"],
+        "subjects": ["o/gix", "o/git2"],
         "suites": ["/suites/x"],
         "runs": ["/suites/x/runs/1"],
         "status": "concluded",
@@ -85,7 +85,7 @@ impl Boards {
     fn experiment(&self, cases_file: &str, fields: &Value) -> &Self {
         let suite = json!({
             "$type": "runs/suite/v1",
-            "subjects": ["gix", "git2"],
+            "subjects": ["o/gix", "o/git2"],
             "method": "Resolve 1,000 refs and compare wall time.",
             "cases_file": cases_file,
         });

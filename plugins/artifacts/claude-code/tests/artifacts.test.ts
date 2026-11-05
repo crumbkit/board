@@ -86,7 +86,7 @@ function host(on: On, { imported = { written: [] as string[], known: 0, truncate
   })
   on('fs.exists', (_, e) => ({ value: e.path === CONFIG }))
   on('fs.read', (_, e) => ({ value: e.path === CONFIG ? JSON.stringify({ personal: '~/Code/board', boards: ['~/Code/board'] }) : '' }))
-  mock.env(on, { HOME: '/home/owner' })
+  mock.env(on, { HOME: '/home/owner', CLAUDE_CODE_HOST_SESSION_ID: 'local_cd34' })
   return { account, held, writes, commands, logs, imports, recorded, conversation }
 }
 
@@ -125,7 +125,7 @@ test('a first publish records the artifact, the page and the version, and a seco
         description: 'The plan for the next release.',
         sha256: SHA,
         source: SOURCE,
-        session: 'session-1',
+        by: { program: 'claude-code', session: 'local_cd34' },
         at: '2026-10-31T18:20:00Z',
       },
     },
@@ -282,7 +282,7 @@ test('a read of an unrecorded version writes it with the page it returned, and a
     version: '1793480000-0d0d',
     title: 'Release plan',
     sha256: hash,
-    session: 'session-1',
+    by: { program: 'claude-code', session: 'local_cd34' },
     at: '2026-10-31T18:20:00Z',
   })
 

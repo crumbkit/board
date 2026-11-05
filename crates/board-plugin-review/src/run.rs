@@ -7,12 +7,12 @@ use std::time::{Duration, Instant};
 use board_model::{Code, LogicalPath};
 use board_ops::agent::{self, Agent};
 use board_ops::{Absent, Host, PluginError, literal};
-use board_plugin::shape::{Record, Tag};
+use board_plugin::shape::{Actor, Pinned, Record, Tag};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 
-use crate::records::{BriefRecord, Cost, Finding, ReportRecord, Severity, Subject, Verdict};
+use crate::records::{BriefRecord, Cost, Finding, ReportRecord, Severity, Verdict};
 use crate::{PLUGIN, git, read_record, refusal, refused, root, rows};
 
 /// The variable that holds the agent `run` starts, as a JSON array of
@@ -68,7 +68,7 @@ pub(crate) struct Output {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) range: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) subject: Option<Subject>,
+    pub(crate) subject: Option<Pinned>,
     #[schemars(schema_with = "crate::records::verdict")]
     pub(crate) verdict: Verdict,
     pub(crate) findings: usize,
@@ -144,18 +144,10 @@ pub(crate) fn run(host: &dyn Host, input: &Value) -> Result<Value, PluginError> 
     };
     let clock = Instant::now();
     let stdout = agent.ask(host, &prompt, AGENT_TIMEOUT, "narrow the brief's range")?;
-    let (answer, tokens, models) = envelope(&stdout);
+    let (answer, tokens) = envelope(&stdout);
     let (verdict, findings) = answered(&answer, &stdout)?;
     let seconds = (clock.elapsed().as_secs_f64() * 1000.0).round() / 1000.0;
-    let by = if models.is_empty() {
-        let program = Path::new(&agent.argv[0]).file_name();
-        program.map_or_else(
-            || agent.argv[0].clone(),
-            |name| name.to_string_lossy().into_owned(),
-        )
-    } else {
-        models.join(", ")
-    };
+    let by = reviewer(&agent.argv[0]);
     let output = Output {
         report: report_path.clone(),
         range: covered.as_ref().map(|(range, _)| range.clone()),
@@ -192,7 +184,7 @@ pub(crate) fn run(host: &dyn Host, input: &Value) -> Result<Value, PluginError> 
 /// Else `review::subject::not_found`, or `review::subject::moved` when the
 /// record is no longer at its pinned blob. The blob is the one Board read
 /// the bytes from, so the agent reads exactly the pinned version.
-fn record(host: &dyn Host, subject: &Subject) -> Result<String, PluginError> {
+fn record(host: &dyn Host, subject: &Pinned) -> Result<String, PluginError> {
     let record = &subject.record;
     let not_found = || {
         refusal(
@@ -281,15 +273,32 @@ fn prompt(path: &str, brief: &BriefRecord, what: &str, shown: &str, body: &str) 
     )
 }
 
-/// The agent's answer, its input and output tokens, and its models: from
+/// Who reviewed: the program `program` starts, by its file name, when that
+/// name is a slug such as `claude`; else nobody known.
+pub(crate) fn reviewer(program: &str) -> Option<Actor> {
+    let name = Path::new(program).file_name()?.to_str()?;
+    let slug = !name.is_empty()
+        && (name.split('-')).all(|word| {
+            !word.is_empty()
+                && word
+                    .bytes()
+                    .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit())
+        });
+    slug.then(|| Actor {
+        program: Some(name.to_owned()),
+        ..Actor::default()
+    })
+}
+
+/// The agent's answer and its input and output tokens: from
 /// `claude -p --output-format json`'s envelope, else stdout and none.
-fn envelope(stdout: &str) -> (String, Option<(u64, u64)>, Vec<String>) {
+fn envelope(stdout: &str) -> (String, Option<(u64, u64)>) {
     let parsed: Option<Map<String, Value>> = serde_json::from_str(stdout).ok();
     let Some((envelope, result)) = parsed.and_then(|envelope| {
         let result = envelope.get("result")?.as_str()?.to_owned();
         Some((envelope, result))
     }) else {
-        return (stdout.to_owned(), None, Vec::new());
+        return (stdout.to_owned(), None);
     };
     let tokens = envelope
         .get("usage")
@@ -303,11 +312,7 @@ fn envelope(stdout: &str) -> (String, Option<(u64, u64)>, Vec<String>) {
             ];
             (inputs.into_iter().map(count).sum(), count("output_tokens"))
         });
-    let mut models: Vec<String> = (envelope.get("modelUsage").and_then(Value::as_object))
-        .map(|models| models.keys().cloned().collect())
-        .unwrap_or_default();
-    models.sort();
-    (result, tokens, models)
+    (result, tokens)
 }
 
 /// The verdict and findings of the last JSON object in `answer` that holds

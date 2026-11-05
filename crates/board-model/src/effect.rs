@@ -130,13 +130,17 @@ impl Effect {
     /// plugin, op and path, and for a put the digest of what it writes and
     /// the blob it replaces. The same request has the same id, and an
     /// answer to it does not admit a put over another blob.
+    ///
+    /// The request spells the digest `sha256:<hex>`, as records did before
+    /// every hash dropped the prefix, so an effect keeps the id, and the
+    /// approval the signature covers, that it had then.
     pub fn id(&self) -> String {
         let request = json!({
             "board": self.board,
             "plugin": self.plugin,
             "op": self.op,
             "path": self.path,
-            "digest": self.digest.as_ref().map(ToString::to_string),
+            "digest": self.digest.as_ref().map(|digest| format!("sha256:{}", digest.hex())),
             "prior": self.prior,
         });
         Digest::of(canonical_json(&request).as_bytes()).hex()
@@ -234,8 +238,8 @@ pub fn utc(time: SystemTime) -> String {
     humantime::format_rfc3339_micros(time).to_string()
 }
 
-/// A `board/seen/v1` record: the owner's answer to the effect at `effect`,
-/// under `/effects/answered/`. An approval carries `signature`, the owner's SSH signature
+/// A `board/seen/v1` record: the owner's answer to the effect whose id is
+/// `effect`, which `/effects/answered/<effect>` keeps. An approval carries `signature`, the owner's SSH signature
 /// over [`Effect::approval`].
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -251,6 +255,20 @@ pub struct Seen {
 }
 
 impl Seen {
+    /// The seen record `value` holds, refused when its `effect` is not an
+    /// effect id.
+    pub fn from_value(value: &Value) -> Result<Self, serde_json::Error> {
+        let seen = Self::deserialize(value)?;
+        if !is_effect_id(&seen.effect) {
+            return Err(serde::de::Error::custom(format!(
+                "effect {:?} is not an effect id, 64 lowercase hex digits",
+                seen.effect
+            )));
+        }
+        Ok(seen)
+    }
+
+    /// The answer to the effect whose id is `effect`.
     pub fn new(effect: String, answer: Answer, reason: Option<String>) -> Self {
         Self {
             record_type: SEEN_TYPE.to_owned(),
@@ -259,10 +277,6 @@ impl Seen {
             reason,
             signature: None,
         }
-    }
-
-    pub fn from_value(value: &Value) -> Result<Self, serde_json::Error> {
-        Self::deserialize(value)
     }
 }
 

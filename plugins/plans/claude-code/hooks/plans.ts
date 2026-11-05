@@ -92,9 +92,10 @@ export const iso = (ms: number) => new Date(ms).toISOString().replace(/\.\d{3}Z$
  * The `board put --batch` lines that record an answer: the answer, which must
  * be new, and the question unchanged, which must still hold `blob`, so a
  * question withdrawn or edited since the read refuses the batch. The answer
- * is what marks the question answered; its status stays open. `by` is left
- * out when the pane cannot name its own session's `local_` id. `own` is the
- * question's path in its own board, which the answer names it by.
+ * is what marks the question answered; its status stays open. `by` names the
+ * pane's own session by its `local_` id, and is left out when the pane
+ * cannot name it. `own` is the question's path in its own board, which the
+ * answer names it by.
  */
 export function answerBatch(question: string, own: string, blob: string, body: string, choice: string, words: string, by: string | undefined, now: number): string {
   // The answer lands in the question's board, where a reference is read from that board's root.
@@ -104,7 +105,7 @@ export function answerBatch(question: string, own: string, blob: string, body: s
     choice,
     words,
     answered: iso(now),
-    ...(by === undefined ? {} : { by }),
+    ...(by === undefined ? {} : { by: { session: by } }),
     written_by: WRITTEN_BY,
   }
   return [

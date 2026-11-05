@@ -45,11 +45,7 @@ fn an_effect_and_a_seen_record_read_back_as_written_and_refuse_an_extra_field() 
     let mut extra = value;
     extra["extra"] = json!(1);
     assert!(effect_record(EFFECT_TYPE, &extra).unwrap().is_err());
-    let mut seen = Seen::new(
-        format!("/effects/pending/{}", effect.id()),
-        Answer::Approve,
-        None,
-    );
+    let mut seen = Seen::new(effect.id(), Answer::Approve, None);
     seen.signature = Some("-----BEGIN SSH SIGNATURE-----".to_owned());
     let value = serde_json::to_value(&seen).unwrap();
     assert_eq!(Seen::from_value(&value).unwrap(), seen);
@@ -57,6 +53,46 @@ fn an_effect_and_a_seen_record_read_back_as_written_and_refuse_an_extra_field() 
     extra["extra"] = json!(1);
     assert!(effect_record(SEEN_TYPE, &extra).unwrap().is_err());
     assert!(effect_record("lr/task/v1", &extra).is_none());
+}
+
+/// A seen record names its effect by the bare id, as a reply and a
+/// crossing do; a path to the effect is refused.
+#[test]
+fn a_seen_record_naming_its_effect_by_path_is_refused_and_its_twin_by_id_is_read() {
+    let id = "ab".repeat(32);
+    let seen = |effect: &str| json!({"$type": SEEN_TYPE, "effect": effect, "answer": "refuse"});
+    let path = format!("/effects/answered/{id}");
+    assert!(effect_record(SEEN_TYPE, &seen(&path)).unwrap().is_err());
+    assert_eq!(Seen::from_value(&seen(&id)).unwrap().effect, id);
+}
+
+/// An effect's digest is bare hex, and its id is the id the request had
+/// when the digest carried a `sha256:` prefix, so the answers and
+/// signatures already given still name it.
+#[test]
+fn an_effect_with_a_prefixed_digest_is_refused_and_its_bare_twin_keeps_the_old_id() {
+    let mut effect = Effect::new(
+        "/b".to_owned(),
+        "tasks".parse().unwrap(),
+        "put".to_owned(),
+        "/x".to_owned(),
+    );
+    effect.digest = Some(Digest::of(b"{}"));
+    let hex = Digest::of(b"{}").hex();
+    let value = serde_json::to_value(&effect).unwrap();
+    assert_eq!(value["digest"], json!(hex));
+    let mut prefixed = value.clone();
+    prefixed["digest"] = json!(format!("sha256:{hex}"));
+    assert!(effect_record(EFFECT_TYPE, &prefixed).unwrap().is_err());
+    assert!(effect_record(EFFECT_TYPE, &value).unwrap().is_ok());
+    let request = json!({
+        "board": "/b", "plugin": "tasks", "op": "put", "path": "/x",
+        "digest": format!("sha256:{hex}"), "prior": null,
+    });
+    assert_eq!(
+        effect.id(),
+        Digest::of(canonical_json(&request).as_bytes()).hex()
+    );
 }
 
 #[test]

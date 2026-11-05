@@ -126,7 +126,7 @@ fn record(fields: &Value) -> Value {
     let mut record = json!({
         "$type": "evals/eval/v1",
         "question": "Is gix faster?",
-        "subjects": ["gix"],
+        "subjects": ["o/gix"],
         "status": "planned",
     });
     for (name, value) in fields.as_object().unwrap() {
@@ -156,7 +156,7 @@ fn listed(
 fn each_capability_asks_for_every_eval_once_with_no_row_limit() {
     for capability in [about, open] {
         let host = host(Vec::new());
-        capability(&host, &json!({"subject": "gix"})).unwrap_or_default();
+        capability(&host, &json!({"subject": "o/gix"})).unwrap_or_default();
         capability(&host, &json!({})).unwrap_or_default();
         let asked = host.asked.take();
         assert_ne!(asked, Vec::new());
@@ -187,7 +187,7 @@ fn open_lists_planned_and_running_evals_and_leaves_out_concluded_and_abandoned_o
         json!({
             "path": "/evals/a",
             "question": "Is gix faster?",
-            "subjects": ["gix"],
+            "subjects": ["o/gix"],
             "status": "planned",
             "verdict": null,
             "decision": null,
@@ -198,14 +198,18 @@ fn open_lists_planned_and_running_evals_and_leaves_out_concluded_and_abandoned_o
 #[test]
 fn a_subject_matches_ignoring_ascii_case_only_and_percent_and_underscore_match_only_themselves() {
     let rows = vec![
-        row("/evals/gix", None, &json!({"subjects": ["clap", "gix"]})),
+        row(
+            "/evals/gix",
+            None,
+            &json!({"subjects": ["o/clap", "o/gix"]}),
+        ),
         row("/evals/a", None, &json!({"subjects": ["a"]})),
         row("/evals/umlaut", None, &json!({"subjects": ["ä"]})),
         row("/evals/percent", None, &json!({"subjects": ["%"]})),
         row("/evals/under", None, &json!({"subjects": ["_"]})),
     ];
     for (subject, expected) in [
-        ("GIX", &["/evals/gix"][..]),
+        ("O/GIX", &["/evals/gix"][..]),
         ("A", &["/evals/a"]),
         ("Ä", &[]),
         ("ä", &["/evals/umlaut"]),
@@ -235,7 +239,7 @@ fn a_mount_matches_an_eval_naming_it_exactly_or_living_below_it_and_no_other() {
         let (paths, _) = listed(about, rows.clone(), &json!({"mount": mount}));
         assert_eq!(paths, expected, "{mount}");
     }
-    let both = json!({"mount": "/repos/ab", "subject": "gix"});
+    let both = json!({"mount": "/repos/ab", "subject": "o/gix"});
     assert_eq!(
         listed(about, rows, &both).0,
         ["/evals/names-ab", "/repos/ab/evals/x"]
@@ -276,12 +280,12 @@ fn an_eval_degraded_by_a_reference_is_listed_and_one_degraded_by_its_own_content
 fn twins() -> Vec<(Value, Value)> {
     vec![
         (json!({"question": null}), json!({"question": ""})),
-        (json!({"subjects": []}), json!({"subjects": ["gix"]})),
+        (json!({"subjects": []}), json!({"subjects": ["o/gix"]})),
         (
-            json!({"subjects": ["gix", 5]}),
-            json!({"subjects": ["gix", "5"]}),
+            json!({"subjects": ["o/gix", 5]}),
+            json!({"subjects": ["o/gix", "5"]}),
         ),
-        (json!({"subjects": "gix"}), json!({"subjects": ["gix"]})),
+        (json!({"subjects": "o/gix"}), json!({"subjects": ["o/gix"]})),
         (json!({"status": "someday"}), json!({"status": "running"})),
         (json!({"verdict": "maybe"}), json!({"verdict": "refuted"})),
         (
@@ -325,7 +329,7 @@ fn a_misshapen_eval_is_left_out_and_its_well_formed_twin_is_listed() {
     for (misshapen, twin) in twins() {
         let read = |fields: &Value| {
             let rows = vec![row("/evals/e", None, fields)];
-            listed(about, rows, &json!({"subject": "GIX"})).1["total"].clone()
+            listed(about, rows, &json!({"subject": "O/GIX"})).1["total"].clone()
         };
         assert_eq!(read(&misshapen), 0, "{misshapen}");
         assert_eq!(read(&twin), 1, "{twin}");
@@ -344,7 +348,7 @@ fn an_unknown_field_and_a_null_optional_field_are_listed_and_a_missing_question_
         vec![
             json!("/evals/bare"),
             Value::Null,
-            json!(r#"{"subjects": ["gix"], "status": "planned"}"#),
+            json!(r#"{"subjects": ["o/gix"], "status": "planned"}"#),
         ],
         vec![json!("/evals/torn"), Value::Null, json!(r#"{"question": "#)],
     ];
@@ -380,7 +384,7 @@ fn evals_board(evals: &[(&str, Value)]) -> (Scenario, Scenario, Board) {
         (".board/types/evals/eval/v1.schema.json", &schema),
         (
             "evals/l.json",
-            &record(&json!({"subjects": ["clap"]})).to_string(),
+            &record(&json!({"subjects": ["o/clap"]})).to_string(),
         ),
     ]);
     let mount = json!({"$type": "board/mount/v1", "repo": library.path(), "follow": "main", "commit": pinned.to_string()});
@@ -410,7 +414,7 @@ fn a_failing_query_is_refused_with_boards_code_and_the_same_host_answering_is_re
 #[test]
 fn board_calls_evals_in_its_own_process_over_this_board_and_its_mounted_ones() {
     let (_scenario, _library, board) = evals_board(&[
-        ("evals/b", record(&json!({"subjects": ["clap", "gix"]}))),
+        ("evals/b", record(&json!({"subjects": ["o/clap", "o/gix"]}))),
         (
             "evals/a",
             record(&json!({"status": "concluded", "verdict": "supported"})),
@@ -425,7 +429,7 @@ fn board_calls_evals_in_its_own_process_over_this_board_and_its_mounted_ones() {
             .collect::<Vec<_>>()
     };
     assert_eq!(
-        call("evals.about", br#"{"subject": "CLAP"}"#),
+        call("evals.about", br#"{"subject": "O/CLAP"}"#),
         ["/evals/b", "/vendor/evals/l"]
     );
     assert_eq!(

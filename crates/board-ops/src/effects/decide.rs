@@ -215,7 +215,7 @@ pub fn answer(
     let personal = asker.personal(|| "an answer is written in the personal board".to_owned())?;
     let (effect, blob) = read_pending(&personal, id)?;
     let not_found = || EffectError::NotFound { id: id.to_owned() };
-    let mut seen = Seen::new(format!("/{ANSWERED}/{id}"), answer, reason);
+    let mut seen = Seen::new(id.to_owned(), answer, reason);
     if answer == Answer::Approve {
         seen.signature = Some(match signature {
             Some(signature) => {

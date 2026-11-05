@@ -185,7 +185,7 @@ test('the pane lists each question with its options, and an option answers it in
         choice: 'a',
         words: 'Merge',
         answered: '2026-10-25T09:30:00Z',
-        by: 'local_cd34',
+        by: { session: 'local_cd34' },
         written_by: 'plans/pane-answer',
       },
     },

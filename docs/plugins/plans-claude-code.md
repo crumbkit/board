@@ -54,8 +54,8 @@ refused as a Board failure before the mod's 5-second process timeout.
 own process, for clients without the mod.
 
 The answer carries `written_by: "plans/pane-answer"`. In the desktop app it
-also carries `by`, this session's `local_` id from
-`CLAUDE_CODE_HOST_SESSION_ID`, the same form questions use. Elsewhere no
+also carries `by`, the actor `{"session": <local_ id>}` with this session's
+id from `CLAUDE_CODE_HOST_SESSION_ID`, the same form questions use. Elsewhere no
 `local_` id names the session, so `by` is left out. Answering needs no Touch
 ID, because the press is the owner's own.
 

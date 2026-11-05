@@ -341,7 +341,7 @@ fn sample_records_validate_and_their_references_are_the_ones_the_structs_declare
     let question = json!({
         "$type": "plans/question/v1",
         "question": "Which way?",
-        "session": "local_0a1b",
+        "by": {"session": "local_0a1b"},
         "asked": "2026-10-01T09:00:00Z",
         "status": "open",
         "options": [{"id": "a", "text": "A"}],
@@ -360,7 +360,7 @@ fn sample_records_validate_and_their_references_are_the_ones_the_structs_declare
         "$type": "plans/decision/v1",
         "decision": "A",
         "why": "It is simpler.",
-        "session": "s",
+        "by": {"session": "local_0a1b"},
         "decided": "2026-10-01T10:00:00Z",
         "refs": ["/projects/a/answers/q"],
         "urls": ["https://example.com/pull/1"],
@@ -420,7 +420,7 @@ fn a_decision_keeps_board_paths_in_refs_and_web_addresses_in_urls() {
             "$type": "plans/decision/v1",
             "decision": "A",
             "why": "It is simpler.",
-            "session": "s",
+            "by": {"session": "local_0a1b"},
             "decided": "2026-10-01T10:00:00Z",
             field: [value],
         })
@@ -460,7 +460,7 @@ fn a_question_names_its_repository_by_a_reference_to_its_mount() {
         json!({
             "$type": "plans/question/v1",
             "question": "Which way?",
-            "session": "local_0a1b",
+            "by": {"session": "local_0a1b"},
             "asked": "2026-10-01T09:00:00Z",
             "status": "open",
             field: value,
@@ -490,7 +490,7 @@ fn open_reads_fields_the_question_struct_declares() {
     let question = &Plans.schemas()[0].1;
     for field in [
         "question",
-        "session",
+        "by",
         "asked",
         "options",
         "recommendation",

@@ -240,11 +240,18 @@ fn the_registry_holds_each_shared_shape_by_name_as_a_field_using_it_sees_it() {
     assert_eq!(
         registry.keys().map(String::as_str).collect::<Vec<_>>(),
         [
+            "Actor",
             "Date",
             "Glob",
             "LogicalGlob",
+            "ObjectId",
+            "Person",
+            "Pinned",
             "Prose",
+            "SessionId",
             "Sha256",
+            "Slug",
+            "Subject",
             "Summary",
             "Url"
         ]
@@ -357,4 +364,134 @@ fn a_logical_glob_without_a_leading_slash_is_refused_and_one_with_it_is_admitted
     let code = |text: &str| glob.validate(&json!(text)).err().map(|e| e.code());
     assert_eq!(code("repos/x/**"), Some(board_model::Code::RecordInvalid));
     assert_eq!(code("/repos/x/**"), None);
+}
+
+/// Compiles the schema of `T` and gives the code each value is refused
+/// with, or none when it is admitted.
+fn refusal_of<T: JsonSchema>() -> impl Fn(Value) -> Option<board_model::Code> {
+    let schema =
+        board_validate::Schema::compile(schema_of::<T>(SchemaSettings::draft2020_12())).unwrap();
+    move |value| schema.validate(&value).err().map(|error| error.code())
+}
+
+/// An actor names at least one of its session, program and person, each in
+/// its own grammar, and nothing else.
+#[test]
+fn an_actor_with_no_part_a_bad_part_or_an_unknown_key_is_refused_and_its_twin_is_admitted() {
+    let code = refusal_of::<Actor>();
+    let invalid = Some(board_model::Code::RecordInvalid);
+    let session = "local_84ccdcef-4c52-487a-9ac6-ebf2f157e440";
+    for (refused, admitted) in [
+        (json!({}), json!({"program": "codex"})),
+        (json!({"session": "84ccdcef"}), json!({"session": session})),
+        (
+            json!({"program": "Codex Soundcheck scheduler"}),
+            json!({"program": "claude-code"}),
+        ),
+        (json!({"person": "Luke"}), json!({"person": "luke"})),
+        (
+            json!({"person": "a b@c"}),
+            json!({"person": "owner@example.com"}),
+        ),
+        (
+            json!({"person": "luke", "model": "opus"}),
+            json!({"session": session, "program": "claude-code", "person": "luke"}),
+        ),
+    ] {
+        assert_eq!((code(refused.clone()), &refused), (invalid, &refused));
+        assert_eq!((code(admitted.clone()), &admitted), (None, &admitted));
+    }
+}
+
+/// An actor reads and writes only the parts it holds.
+#[test]
+fn an_actor_writes_only_the_parts_it_holds() {
+    let actor = Actor {
+        program: Some("codex".into()),
+        ..Actor::default()
+    };
+    assert_eq!(
+        serde_json::to_value(&actor).unwrap(),
+        json!({"program": "codex"})
+    );
+    assert_eq!(
+        serde_json::from_value::<Actor>(json!({"program": "codex"})).unwrap(),
+        actor
+    );
+    let all = Actor {
+        session: Some("local_1".into()),
+        person: Some("luke".into()),
+        ..actor.clone()
+    };
+    assert_eq!(
+        (actor.to_string(), all.to_string()),
+        ("codex".into(), "codex, luke, local_1".into())
+    );
+}
+
+/// A subject is an `owner/name` repository or a board path.
+#[test]
+fn a_subject_that_is_neither_a_repository_nor_a_path_is_refused_and_its_twin_is_admitted() {
+    let code = refusal_of::<Subject>();
+    let invalid = Some(board_model::Code::RecordInvalid);
+    for (refused, admitted) in [
+        ("board", "crumbkit/board"),
+        ("Raycast Workspaces", "raycast/extensions"),
+        ("crumbkit/board/crates", "/repos/board/crates"),
+        ("/", "/repos/board"),
+        ("/repos/a b", "nextest-rs/nextest"),
+    ] {
+        assert_eq!((refused, code(json!(refused))), (refused, invalid));
+        assert_eq!((admitted, code(json!(admitted))), (admitted, None));
+    }
+}
+
+/// A pinned reference names a record and the 40- or 64-digit blob it was
+/// read at.
+#[test]
+fn a_pinned_reference_with_a_short_blob_or_no_record_is_refused_and_its_twin_is_admitted() {
+    let code = refusal_of::<Pinned>();
+    let invalid = Some(board_model::Code::RecordInvalid);
+    let sha1 = "a".repeat(40);
+    let sha256 = "b".repeat(64);
+    for (refused, admitted) in [
+        (
+            json!({"record": "/r", "blob": "a".repeat(39)}),
+            json!({"record": "/r", "blob": sha1}),
+        ),
+        (
+            json!({"record": "/r", "blob": "b".repeat(50)}),
+            json!({"record": "/r", "blob": sha256}),
+        ),
+        (
+            json!({"blob": "a".repeat(40)}),
+            json!({"record": "/r", "blob": "a".repeat(40)}),
+        ),
+    ] {
+        assert_eq!((code(refused.clone()), &refused), (invalid, &refused));
+        assert_eq!((code(admitted.clone()), &admitted), (None, &admitted));
+    }
+    let schema = schema_of::<Pinned>(SchemaSettings::draft2020_12());
+    assert_eq!(
+        schema["properties"]["record"],
+        json!({"description": "The record.", "type": "string", "format": "board-ref"})
+    );
+}
+
+/// The registry holds each object shape as a record schema's `$defs` holds
+/// it, so the lint can compare a type's copy with it.
+#[test]
+fn the_registry_holds_each_object_shape_as_a_record_schemas_defs_holds_it() {
+    #[derive(JsonSchema)]
+    struct Uses {
+        /// Who.
+        by: Actor,
+        /// What.
+        subject: Pinned,
+    }
+    let schema = schema_of::<Uses>(SchemaSettings::draft2020_12());
+    let registry = registry();
+    assert_eq!(schema["$defs"]["Actor"], registry["Actor"]);
+    assert_eq!(schema["$defs"]["Pinned"], registry["Pinned"]);
+    assert!(!registry["Actor"].to_string().contains("null"));
 }

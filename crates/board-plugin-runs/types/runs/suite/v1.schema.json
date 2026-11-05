@@ -47,7 +47,7 @@
     }
   },
   "additionalProperties": false,
-  "description": "`runs/suite/v1`: what gets run, how, and what a run of it measures.\n\nA suite's name is its path: the suite at `/suites/<name>.json` is\n`<name>`, and its runs sit in `/suites/<name>/runs/`. `subjects` are the\nnames of what is tested. `cases` lists the cases inline, or `cases_file`\nreferences a file that does; a suite whose cases are found when it runs,\nsuch as a test suite, has neither.",
+  "description": "`runs/suite/v1`: what gets run, how, and what a run of it measures.\n\nA suite's name is its path: the suite at `/suites/<name>.json` is\n`<name>`, and its runs sit in `/suites/<name>/runs/`. `subjects` name what\nis tested: a repository as `owner/name`, or a board path. `cases` lists the cases inline, or `cases_file`\nreferences a file that does; a suite whose cases are found when it runs,\nsuch as a test suite, has neither.",
   "not": {
     "required": [
       "cases",
@@ -89,6 +89,7 @@
     },
     "subjects": {
       "items": {
+        "pattern": "^([A-Za-z0-9-]+/[A-Za-z0-9._-]+|/\\S+)$",
         "type": "string"
       },
       "minItems": 1,

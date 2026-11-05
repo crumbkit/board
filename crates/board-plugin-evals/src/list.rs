@@ -24,7 +24,7 @@ pub(crate) const EVALS: &str = "SELECT logical, code, body FROM records \
 #[serde(deny_unknown_fields)]
 #[schemars(extend("oneOf" = [{"required": ["subject"]}, {"required": ["mount"]}]))]
 pub(crate) struct AboutInput {
-    /// The name of what is tested, such as crumbkit or clap, matched ignoring ASCII case; give subject or mount, not both.
+    /// What is tested, as an eval's subjects name it, such as clap-rs/clap, matched ignoring ASCII case; give subject or mount, not both.
     #[schemars(length(min = 1))]
     subject: Option<String>,
     /// A repository's mount, such as /repos/crumbkit, to list the evals that name it or live in it; give subject or mount, not both.

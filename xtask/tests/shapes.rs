@@ -688,3 +688,53 @@ fn each_string_shape_the_lint_refuses_has_an_admitted_twin() {
         .collect();
     assert_eq!(without, ["/remote", "/urls/-"]);
 }
+
+/// The `$defs` entries of `schema` named like an object shape of
+/// `registry`, such as `Actor`, that differ from that shape.
+#[cfg(test)]
+fn copies(schema: &Value, registry: &Map<String, Value>) -> Vec<String> {
+    let defs = schema.get("$defs").and_then(Value::as_object);
+    (defs.into_iter().flatten())
+        .filter(|(name, definition)| {
+            (registry.get(*name))
+                .is_some_and(|shape| shape["type"] == "object" && shape != *definition)
+        })
+        .map(|(name, _)| name.clone())
+        .collect()
+}
+
+#[test]
+fn each_defs_entry_named_like_an_object_shape_is_that_shape() {
+    let registry = registry();
+    assert!(registry["Actor"]["type"] == "object", "{registry:?}");
+    let mut used = 0;
+    let mut failures = Vec::new();
+    for (name, schema) in &schemas() {
+        let defs = schema.get("$defs").and_then(Value::as_object);
+        used += (defs.into_iter().flatten())
+            .filter(|(def, _)| registry.contains_key(*def))
+            .count();
+        failures.extend(
+            (copies(schema, &registry).into_iter()).map(|def| format!("{name} $defs/{def}")),
+        );
+    }
+    assert!(
+        failures.is_empty(),
+        "each of these differs from its shape in crates/board-plugin/shapes.json; take the shape \
+         from board_plugin::shape instead of a copy:\n{failures:#?}"
+    );
+    assert!(used > 0, "no schema uses an object shape");
+}
+
+#[test]
+fn a_copy_of_an_object_shape_that_differs_is_found_and_the_shape_itself_is_not() {
+    let registry = registry();
+    let schema = |actor: Value| json!({"$defs": {"Actor": actor, "Other": {"type": "object"}}});
+    let mut changed = registry["Actor"].clone();
+    changed["properties"]["model"] = json!({"type": "string"});
+    assert_eq!(copies(&schema(changed), &registry), ["Actor"]);
+    assert_eq!(
+        copies(&schema(registry["Actor"].clone()), &registry),
+        Vec::<String>::new()
+    );
+}

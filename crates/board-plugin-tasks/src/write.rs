@@ -1,4 +1,4 @@
-//! The write calls: `add`, `claim`, `done`, `defer`, `drop`, `reviewed`
+//! The write calls: `add`, `done`, `defer`, `drop`, `reviewed`
 //! and `move` (plugins/tasks/README.md, Writing tasks).
 //!
 //! Each call syncs a mounted repo before it writes and pushes after, as
@@ -9,7 +9,7 @@ use std::path::Path;
 
 use board_model::Source;
 use board_ops::{Host, PluginError};
-use board_plugin::shape::Record as _;
+use board_plugin::shape::{Actor, Record as _};
 use board_repos::{
     ATTEMPTS, Date, EDITED, Listed, MOVED, Repo, Through, Writer, covering, create, day_start,
     landed, listed, push, refused, root, slug, today, trimmed,
@@ -80,23 +80,6 @@ pub(crate) struct MoveInput {
                        /tasks/ship-flows-editor.md, or none to clear it."
     )]
     pub(crate) parent: String,
-}
-
-/// The task to claim, and who claims it.
-#[derive(Debug, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct ClaimInput {
-    #[schemars(
-        regex(pattern = r"^/.*\.md$"),
-        description = "The task's path in the board, such as /tasks/call-the-bank.md or \
-                       /repos/personal/tasks/x.md."
-    )]
-    pub(crate) path: String,
-    #[schemars(
-        length(min = 1),
-        description = "Who holds the task: an agent's session id, or a person's handle."
-    )]
-    pub(crate) owner: String,
 }
 
 /// A new open task, and the fields it starts with.
@@ -195,7 +178,7 @@ pub(crate) struct Written {
     pub(crate) path: String,
     pub(crate) status: String,
     pub(crate) defer: Option<String>,
-    pub(crate) owner: Option<String>,
+    pub(crate) owner: Option<Actor>,
     pub(crate) reviewed: String,
     pub(crate) commit: Option<String>,
     pub(crate) unsynced: Option<String>,
@@ -216,7 +199,7 @@ pub(crate) struct Moved {
 }
 
 /// The fields a call sets, each to a value or, as none, removed.
-type Values = Vec<(&'static str, Option<String>)>;
+pub(crate) type Values = Vec<(&'static str, Option<Value>)>;
 
 /// The person's today, by the call's time zone and `day_start`.
 fn day(host: &dyn Host) -> Date {
@@ -331,32 +314,11 @@ fn origin(host: &dyn Host, repo: Option<&str>) -> Result<Option<String>, PluginE
     }
 }
 
-/// Sets the task's owner, refused when another owner holds it.
-pub(crate) fn claim(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
-    let given: ClaimInput = PluginError::read_input(PLUGIN, "claim", input)?;
-    let change = |record: &Map<String, Value>, _: Date| -> Result<Values, PluginError> {
-        match record.get("owner") {
-            None | Some(Value::Null) => {}
-            Some(held) if held.as_str() == Some(given.owner.as_str()) => {}
-            Some(held) => {
-                let path = &given.path;
-                let shown = held
-                    .as_str()
-                    .map_or_else(|| held.to_string(), str::to_owned);
-                let why = format!(
-                    "{path} is held by {shown}, so it is left as it is; leave it to {shown}, or \
-                     claim another task"
-                );
-                return Err(refusal(
-                    "tasks::task::held",
-                    why,
-                    [("path", json!(path)), ("owner", held.clone())],
-                ));
-            }
-        }
-        Ok(vec![("owner", Some(given.owner.clone()))])
-    };
-    stamped(host, &given.path, &change, false)
+/// Each value of `values` as a JSON string.
+fn json_values(values: Vec<(&'static str, Option<String>)>) -> Values {
+    (values.into_iter())
+        .map(|(key, value)| (key, value.map(Value::from)))
+        .collect()
 }
 
 /// Marks the task done, or defers a repeating one to its next occurrence.
@@ -365,7 +327,7 @@ pub(crate) fn done(host: &dyn Host, input: &Value) -> Result<Value, PluginError>
     stamped(
         host,
         &given.path,
-        &|record, day| Ok(completed(record, day)),
+        &|record, day| Ok(json_values(completed(record, day))),
         false,
     )
 }
@@ -373,14 +335,15 @@ pub(crate) fn done(host: &dyn Host, input: &Value) -> Result<Value, PluginError>
 /// Defers the task until a date, writing a horizon as the date it ends on.
 pub(crate) fn defer(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
     let given: DeferInput = PluginError::read_input(PLUGIN, "defer", input)?;
-    let change = |_: &Map<String, Value>, day| Ok(vec![("defer", Some(until(&given.until, day)))]);
+    let change =
+        |_: &Map<String, Value>, day| Ok(vec![("defer", Some(until(&given.until, day).into()))]);
     stamped(host, &given.path, &change, false)
 }
 
 /// Marks the task dropped.
 pub(crate) fn drop(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
     let given: TaskPath = PluginError::read_input(PLUGIN, "drop", input)?;
-    let change = |_: &Map<String, Value>, _| Ok(vec![("status", Some("dropped".to_owned()))]);
+    let change = |_: &Map<String, Value>, _| Ok(vec![("status", Some("dropped".into()))]);
     stamped(host, &given.path, &change, false)
 }
 
@@ -392,7 +355,7 @@ pub(crate) fn reviewed(host: &dyn Host, input: &Value) -> Result<Value, PluginEr
 
 /// Sets the fields `change` names and `reviewed` on the task at `logical`,
 /// an open one unless `finished`, and gives the written task.
-fn stamped(
+pub(crate) fn stamped(
     host: &dyn Host,
     logical: &str,
     change: &Change<'_>,
@@ -402,7 +365,7 @@ fn stamped(
     let repo = held(&found, logical);
     let stamp = |record: &Map<String, Value>, day: Date| {
         let mut values = change(record, day)?;
-        values.push(("reviewed", Some(day.to_string())));
+        values.push(("reviewed", Some(day.to_string().into())));
         Ok(values)
     };
     let clones = Through(host);
@@ -451,7 +414,7 @@ pub(crate) fn move_task(host: &dyn Host, input: &Value) -> Result<Value, PluginE
             );
             return Err(refusal("tasks::move::cycle", why, fields.clone()));
         }
-        Ok(vec![("parent", written_as.clone())])
+        Ok(vec![("parent", written_as.clone().map(Value::from))])
     };
     let clones = Through(host);
     let writer = writer(host, &clones);
@@ -786,7 +749,7 @@ fn written(
         path: repo.logical(path),
         status: text("status").unwrap_or_default(),
         defer: text("defer"),
-        owner: text("owner"),
+        owner: (record.get("owner")).and_then(|owner| Actor::deserialize(owner).ok()),
         reviewed: text("reviewed").unwrap_or_default(),
         commit,
         unsynced: synced,

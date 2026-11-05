@@ -16,18 +16,16 @@ pub(super) enum Kind {
 use Kind::{Local, UntilAdopted};
 
 #[rustfmt::skip]
-pub(super) const UNSHARED: [(&str, &str, Kind, &str); 103] = [
+pub(super) const UNSHARED: [(&str, &str, Kind, &str); 91] = [
     // This repository's board's copy of the controls schema.
     (".board/controls/control/v1", "/paths/-", UntilAdopted, "BoardGlob (audit row 3)"),
     (".board/controls/control/v1", "/rule/at_least", Local, "a version floor of dotted numbers, which only a version rule compares"),
     (".board/controls/control/v1", "/rule/capture", Local, "a regular expression in the syntax of Rust's regex crate, which only a version rule compiles"),
     // The schemas the plugins ship.
-    ("artifacts/artifact/v1", "/account", UntilAdopted, "Actor, once an account email has its own shape"),
     ("artifacts/artifact/v1", "/area/-", Local, "an area tag groups only artifacts, for finding neighbouring work"),
     ("artifacts/artifact/v1", "/first_seen", UntilAdopted, "Timestamp, as plans' (audit rows 37 to 41)"),
     ("artifacts/artifact/v1", "/url", Local, "a claude.ai artifact link, narrower than the shared Url shape"),
     ("artifacts/version/v1", "/at", UntilAdopted, "Timestamp, as plans' (audit rows 37 to 41)"),
-    ("artifacts/version/v1", "/session", UntilAdopted, "SessionId, as plans' (audit row 14)"),
     ("artifacts/version/v1", "/source", Local, "a file path on the machine that published, which only artifacts records"),
     ("artifacts/version/v1", "/version", Local, "an Artifact tool version id is the artifacts plugin's own identifier"),
     ("boundary/crossing/v1", "/action", Local, "the action that sends content names itself, and only boundaries match it"),
@@ -41,7 +39,6 @@ pub(super) const UNSHARED: [(&str, &str, Kind, &str); 103] = [
     ("evals/eval/v1", "/decision", UntilAdopted, "Prose"),
     ("evals/eval/v1", "/mounts/-", UntilAdopted, "Ref<Mount> (audit row 25)"),
     ("evals/eval/v1", "/question", UntilAdopted, "Prose"),
-    ("evals/eval/v1", "/subjects/-", UntilAdopted, "Subject (audit row 23)"),
     ("evals/eval/v1", "/written_by", UntilAdopted, "HookName (audit row 46)"),
     ("github/issue/v1", "/owner", Local, "a GitHub repository owner is the github plugin's own identifier"),
     ("github/issue/v1", "/repo", Local, "a GitHub repository name is the github plugin's own identifier"),
@@ -54,7 +51,6 @@ pub(super) const UNSHARED: [(&str, &str, Kind, &str); 103] = [
     ("jira/issue/v1", "/url", UntilAdopted, "Url, when that shape lands"),
     ("notes/repo/v1", "/covers/-", UntilAdopted, "RemotePattern (audit row 43)"),
     ("plans/answer/v1", "/answered", UntilAdopted, "Timestamp (audit row 38)"),
-    ("plans/answer/v1", "/by", UntilAdopted, "SessionId (audit row 15)"),
     ("plans/answer/v1", "/choice", UntilAdopted, "Slug, with none reserved (audit row 34)"),
     ("plans/answer/v1", "/evidence/entry", UntilAdopted, "Uuid (audit row 17)"),
     ("plans/answer/v1", "/evidence/quote", UntilAdopted, "Prose"),
@@ -64,7 +60,6 @@ pub(super) const UNSHARED: [(&str, &str, Kind, &str); 103] = [
     ("plans/decision/v1", "/alternatives/-", UntilAdopted, "Prose"),
     ("plans/decision/v1", "/decided", UntilAdopted, "Timestamp (audit row 39)"),
     ("plans/decision/v1", "/decision", UntilAdopted, "Prose"),
-    ("plans/decision/v1", "/session", UntilAdopted, "SessionId (audit row 14)"),
     ("plans/decision/v1", "/why", UntilAdopted, "Prose"),
     ("plans/decision/v1", "/written_by", UntilAdopted, "HookName (audit row 48)"),
     ("plans/question/v1", "/asked", UntilAdopted, "Timestamp (audit row 37)"),
@@ -75,7 +70,6 @@ pub(super) const UNSHARED: [(&str, &str, Kind, &str); 103] = [
     ("plans/question/v1", "/options/-/text", UntilAdopted, "Prose"),
     ("plans/question/v1", "/question", UntilAdopted, "Prose"),
     ("plans/question/v1", "/recommendation", UntilAdopted, "Slug (audit row 33)"),
-    ("plans/question/v1", "/session", UntilAdopted, "SessionId (audit row 36)"),
     ("plans/question/v1", "/why", UntilAdopted, "Prose"),
     ("prompts/prompt/v1", "/inputs/{key}", UntilAdopted, "Prose: an input's default text"),
     ("prompts/prompt/v1", "/purpose", UntilAdopted, "Prose"),
@@ -87,15 +81,11 @@ pub(super) const UNSHARED: [(&str, &str, Kind, &str); 103] = [
     ("review/brief/v1", "/focus", UntilAdopted, "Prose"),
     ("review/brief/v1", "/questions/-", UntilAdopted, "Prose"),
     ("review/brief/v1", "/range", UntilAdopted, "CommitRange (audit row 4)"),
-    ("review/brief/v1", "/subject/blob", UntilAdopted, "ObjectId (audit row 7)"),
-    ("review/report/v1", "/by", UntilAdopted, "Actor, once a model name has its own shape (audit row 58)"),
     ("review/report/v1", "/findings/-/file", UntilAdopted, "RepoPath (audit row 35)"),
     ("review/report/v1", "/findings/-/text", UntilAdopted, "Prose"),
     ("review/report/v1", "/patch_ids/-", UntilAdopted, "ObjectId (audit row 6)"),
     ("review/report/v1", "/range", UntilAdopted, "CommitRange (audit row 5)"),
     ("review/report/v1", "/source", UntilAdopted, "Url (audit row 13)"),
-    ("review/report/v1", "/subject/blob", UntilAdopted, "ObjectId (audit row 8)"),
-    ("runs/run/v1", "/by", UntilAdopted, "Actor (audit row 19)"),
     ("runs/run/v1", "/finished", UntilAdopted, "Timestamp (audit row 41)"),
     ("runs/run/v1", "/host/arch", UntilAdopted, "an inline enum (audit row 54)"),
     ("runs/run/v1", "/host/os", UntilAdopted, "an inline enum (audit row 53)"),
@@ -116,10 +106,8 @@ pub(super) const UNSHARED: [(&str, &str, Kind, &str); 103] = [
     ("runs/suite/v1", "/measures/-/name", UntilAdopted, "Slug, an identifier the audit did not list"),
     ("runs/suite/v1", "/measures/-/unit", UntilAdopted, "an inline enum of units (audit row 52)"),
     ("runs/suite/v1", "/method", UntilAdopted, "Prose"),
-    ("runs/suite/v1", "/subjects/-", UntilAdopted, "Subject (audit row 24)"),
     ("tasks/task/v2", "/contexts/-", UntilAdopted, "Slug (audit row 57)"),
     ("tasks/task/v2", "/defer", Local, "another tool co-writes tasks, and its date-time may carry an offset, which Timestamp refuses"),
-    ("tasks/task/v2", "/owner", UntilAdopted, "Actor (audit row 18)"),
     ("tasks/task/v2", "/repeat", Local, "the repeat grammar is the tasks plugin's own"),
     ("tasks/task/v2", "/title", UntilAdopted, "Prose"),
 ];

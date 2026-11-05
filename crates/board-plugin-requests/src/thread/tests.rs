@@ -50,11 +50,7 @@ fn held(scenario: &Scenario, directory: &str, effect: &Effect) -> String {
 
 fn answered(scenario: &Scenario, effect: &Effect, answer: Answer, reason: Option<&str>) -> String {
     let id = held(scenario, "answered", effect);
-    let seen = Seen::new(
-        format!("/effects/answered/{id}"),
-        answer,
-        reason.map(str::to_owned),
-    );
+    let seen = Seen::new(id.clone(), answer, reason.map(str::to_owned));
     let text = serde_json::to_string(&seen).unwrap();
     scenario.write(&format!("effects/seen/{id}.json"), Item::File(&text));
     id
@@ -193,7 +189,7 @@ fn an_id_that_names_only_a_seen_record_or_a_misnamed_effect_is_refused_as_not_fo
     let scenario = personal();
     let one = effect("/x", "one\n", None);
     let id = one.id();
-    let seen = Seen::new(format!("/effects/answered/{id}"), Answer::Refuse, None);
+    let seen = Seen::new(id.clone(), Answer::Refuse, None);
     let seen = serde_json::to_string(&seen).unwrap();
     scenario.write(&format!("effects/seen/{id}.json"), Item::File(&seen));
     assert_eq!(
@@ -240,7 +236,7 @@ fn a_pending_effect_beside_an_answered_copy_of_the_same_id_is_one_pending_versio
 fn a_pending_effect_the_owner_has_answered_no_longer_waits_and_is_not_latest() {
     let scenario = personal();
     let id = held(&scenario, "pending", &effect("/x", "one\n", None));
-    let seen = Seen::new(format!("/effects/pending/{id}"), Answer::Approve, None);
+    let seen = Seen::new(id.clone(), Answer::Approve, None);
     let seen = serde_json::to_string(&seen).unwrap();
     scenario.write(&format!("effects/seen/{id}.json"), Item::File(&seen));
     let output = thread(&scenario, &id).unwrap();

@@ -21,7 +21,7 @@ fn report() -> Value {
             {"severity": "low", "text": "The change has no test."},
         ],
         "verdict": "changes",
-        "by": "claude-opus",
+        "by": {"program": "claude-opus"},
     })
 }
 
@@ -219,7 +219,7 @@ fn a_report_that_is_not_there_is_refused_as_not_found_and_one_that_is_there_is_a
 #[test]
 fn a_report_its_schema_refuses_is_refused_as_not_found_before_asking_and_a_valid_one_is_asked() {
     let repo = Repo::new();
-    repo.reported(&json!({"by": ""}));
+    repo.reported(&json!({"by": {}}));
     let (code, invalid) = repo.post();
     assert_eq!(
         (code, &invalid["code"]),

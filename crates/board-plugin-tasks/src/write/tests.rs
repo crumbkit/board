@@ -23,7 +23,7 @@ fn done(host: &Real, logical: &str) -> Result<Edited, PluginError> {
         plugin: PLUGIN,
         deadline: board_tree::GIT_DEADLINE,
     };
-    let change = |record: &Map<String, Value>, day| Ok(completed(record, day));
+    let change = |record: &Map<String, Value>, day| Ok(json_values(completed(record, day)));
     edit(writer, &repo, logical, &change, false)
 }
 

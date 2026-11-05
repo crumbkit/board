@@ -3,18 +3,20 @@ use serde_json::json;
 use super::*;
 
 #[test]
-fn a_digest_is_the_sha256_of_the_bytes_and_round_trips_through_its_spelling() {
+fn a_digest_is_the_sha256_of_the_bytes_in_lowercase_hex_and_round_trips_through_its_spelling() {
     let digest = Digest::of(b"abc");
+    let hex = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
     assert_eq!(
-        digest.to_string(),
-        "sha256:ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        (digest.to_string(), digest.hex()),
+        (hex.to_owned(), hex.to_owned())
     );
     assert_eq!(digest.to_string().parse::<Digest>(), Ok(digest));
     for malformed in [
-        "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
-        "sha256:ba78",
-        "sha256:zz7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
-        "sha1:ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+        format!("sha256:{hex}"),
+        hex.to_uppercase(),
+        "ba78".to_owned(),
+        hex.replacen("ba", "zz", 1),
+        format!("{hex}0"),
     ] {
         assert!(malformed.parse::<Digest>().is_err(), "{malformed}");
     }

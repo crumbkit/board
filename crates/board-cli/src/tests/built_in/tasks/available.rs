@@ -515,16 +515,16 @@ fn owner_keeps_the_tasks_it_or_nobody_holds_and_lists_its_unavailable_ones_in_he
     let tasks = Tasks::new();
     tasks.write(
         "tasks/mine.md",
-        &open("Mine", reviewed(json!({"owner": "lead-1"}))),
+        &open("Mine", reviewed(json!({"owner": {"person": "lead-1"}}))),
     );
     tasks.write("tasks/free.md", &open("Free", reviewed(json!({}))));
     tasks.write(
         "tasks/theirs.md",
-        &open("Theirs", reviewed(json!({"owner": "worker-2"}))),
+        &open("Theirs", reviewed(json!({"owner": {"person": "worker-2"}}))),
     );
-    let parked = reviewed(json!({"owner": "lead-1", "defer": day(30)}));
+    let parked = reviewed(json!({"owner": {"person": "lead-1"}, "defer": day(30)}));
     tasks.write("tasks/parked.md", &open("Parked", parked));
-    let output = tasks.call("available", &["--owner", "lead-1"]).unwrap();
+    let output = tasks.call("available", &["--person", "lead-1"]).unwrap();
     assert_eq!(
         (
             shown(&output),
@@ -540,7 +540,7 @@ fn owner_keeps_the_tasks_it_or_nobody_holds_and_lists_its_unavailable_ones_in_he
     let owners: Vec<&Value> = (output["available"]["tasks"].as_array().unwrap().iter())
         .map(|item| &item["owner"])
         .collect();
-    assert_eq!(owners, [&Value::Null, &json!("lead-1")]);
+    assert_eq!(owners, [&Value::Null, &json!({"person": "lead-1"})]);
     let output = tasks.call("available", &[]).unwrap();
     assert_eq!(
         (shown(&output), titles(&output, "held")),

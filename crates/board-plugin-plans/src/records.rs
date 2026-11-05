@@ -4,7 +4,7 @@
 use schemars::JsonSchema;
 use serde::Serialize;
 
-use board_plugin::shape::{Prose, Record, Ref, Tag, Url};
+use board_plugin::shape::{Actor, Prose, Record, Ref, Tag, Url};
 
 /// `plans/question/v1`: a question an agent session needs the owner to answer.
 ///
@@ -15,7 +15,10 @@ use board_plugin::shape::{Prose, Record, Ref, Tag, Url};
 /// value in a question.
 #[derive(Debug, JsonSchema)]
 #[serde(deny_unknown_fields)]
-#[schemars(extend("x-board-folder" = "/projects/{project}/questions/"))]
+#[schemars(extend(
+    "x-board-folder" = "/projects/{project}/questions/",
+    "allOf" = [{"properties": {"by": {"required": ["session"]}}}],
+))]
 pub struct QuestionRecord {
     /// The record's type.
     #[serde(rename = "$type")]
@@ -23,9 +26,9 @@ pub struct QuestionRecord {
     /// What the owner is asked.
     #[schemars(length(min = 1))]
     pub question: String,
-    /// The asking session's `local_` id, so the answer can be sent back to it.
-    #[schemars(regex(pattern = r"^local_[0-9a-f-]+$"))]
-    pub session: String,
+    /// Who asked. It names the asking session, so the answer can be sent
+    /// back to it.
+    pub by: Actor,
     /// When the question was asked.
     #[schemars(extend("format" = "date-time"))]
     pub asked: String,
@@ -105,9 +108,8 @@ pub struct AnswerRecord {
     /// When the owner gave them.
     #[schemars(extend("format" = "date-time"))]
     pub answered: String,
-    /// The session that wrote the record, which may differ from the session
-    /// that asked.
-    pub by: Option<String>,
+    /// Who wrote the record, which may differ from who asked.
+    pub by: Option<Actor>,
     /// Where the owner gave the answer.
     pub evidence: Option<Evidence>,
     /// The plugin and hook, or the client and surface, that wrote this
@@ -154,8 +156,8 @@ pub struct DecisionRecord {
     pub decision: String,
     /// The reason for it.
     pub why: String,
-    /// The session that decided.
-    pub session: String,
+    /// Who decided.
+    pub by: Actor,
     /// When it was decided.
     #[schemars(extend("format" = "date-time"))]
     pub decided: String,

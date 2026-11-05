@@ -12,7 +12,7 @@ fn board() -> Fixture {
 
 fn suite(fields: &Value) -> String {
     record(
-        json!({"$type": "runs/suite/v1", "subjects": ["board"], "method": "Run it."}),
+        json!({"$type": "runs/suite/v1", "subjects": ["crumbkit/board"], "method": "Run it."}),
         fields,
     )
 }
@@ -24,7 +24,7 @@ fn run(suite: &str, started: &str, fields: &Value) -> String {
         json!({
             "$type": "runs/run/v1",
             "suite": suite,
-            "by": "claude",
+            "by": {"program": "claude"},
             "started": started,
             "scope": "full",
             "dirty": false,

@@ -165,7 +165,7 @@ fn questions() -> Scenario {
         let question = json!({
             "$type": "plans/question/v1",
             "question": "Which way?",
-            "session": "local_0a1b",
+            "by": {"session": "local_0a1b"},
             "asked": "2026-10-01T09:00:00Z",
             "status": "open",
         });
@@ -198,7 +198,7 @@ fn question(status: &str) -> String {
     let question = json!({
         "$type": "plans/question/v1",
         "question": "Which way?",
-        "session": "local_0a1b",
+        "by": {"session": "local_0a1b"},
         "asked": "2026-10-01T09:00:00Z",
         "status": status,
     });
@@ -319,7 +319,7 @@ fn eval(status: &str) -> String {
     let eval = json!({
         "$type": "evals/eval/v1",
         "question": "Is gix faster?",
-        "subjects": ["gix"],
+        "subjects": ["GitoxideLabs/gitoxide"],
         "status": status,
     });
     eval.to_string()
@@ -347,7 +347,13 @@ fn call_evals_about_and_open_answer_from_a_warm_index_as_from_a_cold_one_after_e
         json(&output)["data"]["output"].clone()
     };
     let calls: [&[&str]; 2] = [
-        &["--json", "call", "evals.about", "--subject", "GIX"],
+        &[
+            "--json",
+            "call",
+            "evals.about",
+            "--subject",
+            "GITOXIDELABS/GITOXIDE",
+        ],
         &["--json", "call", "evals.open"],
     ];
     let before = calls.map(|arguments| answer(Some(cache.path()), arguments));

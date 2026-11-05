@@ -86,7 +86,7 @@ fn a_run_writes_the_report_beside_the_brief() {
     assert_eq!(report["findings"], json!([finding, low]));
     assert_eq!(
         (&report["verdict"], &report["by"]),
-        (&json!("changes"), &json!("sh"))
+        (&json!("changes"), &json!({"program": "sh"}))
     );
     assert!(report["cost"]["seconds"].as_f64().unwrap() >= 0.0);
     assert_eq!(report["cost"].get("input_tokens"), None);
@@ -196,7 +196,7 @@ fn a_second_run_of_a_reviewed_brief_is_refused_and_a_brief_that_follows_it_runs(
 }
 
 #[test]
-fn claudes_json_envelope_gives_the_answer_tokens_and_model() {
+fn claudes_json_envelope_gives_the_answer_and_tokens_and_the_reviewer_is_the_program() {
     let repo = Repo::new();
     let brief = fix_sync(&repo);
     let envelope = json!({
@@ -214,7 +214,7 @@ fn claudes_json_envelope_gives_the_answer_tokens_and_model() {
     let (code, output) = repo.call("run", &["--brief", &brief]);
     assert_eq!(code, 0, "{output}");
     let report = repo.get("/reviews/fix-sync/report");
-    assert_eq!(report["by"], "claude-test-model");
+    assert_eq!(report["by"], json!({"program": "sh"}));
     assert_eq!(
         (
             &report["cost"]["input_tokens"],

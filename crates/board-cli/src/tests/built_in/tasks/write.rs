@@ -207,72 +207,101 @@ fn claim_refuses_a_task_another_owner_holds_and_admits_one_held_by_nobody_or_the
     tasks.write("tasks/free.md", &open("Free", json!({})));
     tasks.write(
         "tasks/taken.md",
-        &open("Taken", json!({"owner": "worker-2"})),
+        &open("Taken", json!({"owner": {"person": "worker-2"}})),
     );
-    let refused = tasks.refused("claim", &["--path", "/tasks/taken.md", "--owner", "lead-1"]);
+    let refused = tasks.refused(
+        "claim",
+        &["--path", "/tasks/taken.md", "--person", "lead-1"],
+    );
     assert_eq!(refused["code"], "tasks::task::held");
     assert_eq!(
         (&refused["fields"]["path"], &refused["fields"]["owner"]),
-        (&json!("/tasks/taken.md"), &json!("worker-2"))
+        (&json!("/tasks/taken.md"), &json!({"person": "worker-2"}))
     );
-    assert!(tasks.read("tasks/taken.md").contains("owner: \"worker-2\""));
+    assert!(
+        tasks
+            .read("tasks/taken.md")
+            .contains(r#"owner: {"person":"worker-2"}"#)
+    );
     let output = tasks.call(
         "claim",
-        &["--path", "/tasks/taken.md", "--owner", "worker-2"],
+        &["--path", "/tasks/taken.md", "--person", "worker-2"],
     );
     let output = output.unwrap();
     assert_eq!(
         (&output["owner"], &output["reviewed"]),
-        (&json!("worker-2"), &json!(day(0)))
+        (&json!({"person": "worker-2"}), &json!(day(0)))
     );
     let output = tasks
-        .call("claim", &["--path", "/tasks/free.md", "--owner", "lead-1"])
+        .call("claim", &["--path", "/tasks/free.md", "--person", "lead-1"])
         .unwrap();
     assert_eq!(
         (&output["owner"], &output["status"]),
-        (&json!("lead-1"), &json!("open"))
+        (&json!({"person": "lead-1"}), &json!("open"))
     );
-    assert!(tasks.read("tasks/free.md").contains("owner: \"lead-1\""));
+    assert!(
+        tasks
+            .read("tasks/free.md")
+            .contains(r#"owner: {"person":"lead-1"}"#)
+    );
 }
 
 #[test]
-fn an_empty_owner_is_refused_by_available_and_claim_and_a_non_empty_one_is_admitted() {
+fn an_owner_part_outside_its_grammar_is_refused_by_available_and_claim_and_its_twin_is_admitted() {
+    let tasks = Tasks::new();
+    let cases = [
+        (["--person", ""], ["--person", "lead-1"]),
+        (["--session", "lead-1"], ["--session", "local_0a1b"]),
+        (["--program", "Claude Code"], ["--program", "claude-code"]),
+    ];
+    for (at, (refused, admitted)) in cases.into_iter().enumerate() {
+        let path = format!("/tasks/{at}.md");
+        tasks.write(&path[1..], &open("A", json!({})));
+        let claim = ["--path", path.as_str()];
+        for (capability, flags) in [("available", &[][..]), ("claim", &claim[..])] {
+            let shown = tasks.refused(capability, &[flags, &refused].concat());
+            assert_eq!(shown["code"], "board::plugin::bad_input", "{capability}");
+            let answered = tasks.call(capability, &[flags, &admitted].concat());
+            assert!(answered.is_ok(), "{capability}: {answered:?}");
+        }
+    }
+}
+
+#[test]
+fn a_claim_that_names_nobody_is_refused_and_one_naming_a_program_is_admitted() {
     let tasks = Tasks::new();
     tasks.write("tasks/a.md", &open("A", json!({})));
-    let cases: [(&str, &[&str]); 2] = [("available", &[]), ("claim", &["--path", "/tasks/a.md"])];
-    for (capability, flags) in cases {
-        let refused = tasks.refused(capability, &[flags, &["--owner", ""]].concat());
-        assert_eq!(refused["code"], "board::plugin::bad_input", "{capability}");
-        let admitted = tasks.call(capability, &[flags, &["--owner", "lead-1"]].concat());
-        assert!(admitted.is_ok(), "{capability}: {admitted:?}");
-    }
+    let refused = tasks.refused("claim", &["--path", "/tasks/a.md"]);
+    assert_eq!(refused["code"], "tasks::claim::no_owner");
+    let output = tasks.call("claim", &["--path", "/tasks/a.md", "--program", "codex"]);
+    assert_eq!(output.unwrap()["owner"], json!({"program": "codex"}));
 }
 
 #[test]
 fn done_defer_and_drop_leave_the_owner_and_claim_refuses_a_finished_task() {
     let tasks = Tasks::new();
     for name in ["a", "b"] {
-        let text = open(&name.to_uppercase(), json!({"owner": "lead-1"}));
+        let text = open(&name.to_uppercase(), json!({"owner": {"person": "lead-1"}}));
         tasks.write(&format!("tasks/{name}.md"), &text);
     }
     let deferred = tasks.call("defer", &["--path", "/tasks/a.md", "--until", "soon"]);
-    assert_eq!(deferred.unwrap()["owner"], "lead-1");
+    assert_eq!(deferred.unwrap()["owner"], json!({"person": "lead-1"}));
     assert_eq!(
         tasks.call("done", &["--path", "/tasks/a.md"]).unwrap()["owner"],
-        "lead-1"
+        json!({"person": "lead-1"})
     );
     assert_eq!(
         tasks.call("drop", &["--path", "/tasks/b.md"]).unwrap()["owner"],
-        "lead-1"
+        json!({"person": "lead-1"})
     );
     for name in ["a", "b"] {
         assert!(
             tasks
                 .read(&format!("tasks/{name}.md"))
-                .contains("owner: \"lead-1\"")
+                .contains(r#"owner: {"person":"lead-1"}"#)
         );
     }
-    let refused = tasks.refused("claim", &["--path", "/tasks/a.md", "--owner", "lead-1"]);
+    let refused = tasks.refused("claim", &["--path", "/tasks/a.md", "--person", "lead-1"]);
     assert_eq!(refused["code"], "tasks::task::finished");
 }
 

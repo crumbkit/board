@@ -21,7 +21,7 @@ fn artifact(url: &str, fields: &Value) -> String {
         json!({
             "$type": "artifacts/artifact/v1",
             "url": url,
-            "account": ACCOUNT,
+            "account": {"person": ACCOUNT},
             "first_seen": "2026-10-31T18:20:00Z",
             "state": "draft",
         }),
@@ -38,7 +38,7 @@ fn version(at: &str, fields: &Value) -> String {
             "title": "Plan",
             "sha256": "0".repeat(64),
             "source": "/work/scratch/plan.html",
-            "session": "session-1",
+            "by": {"program": "claude-code"},
             "at": at,
         }),
         fields,
@@ -106,7 +106,7 @@ fn list_gives_each_artifact_every_version_newest_first() {
                 {
                     "path": "/artifacts/A",
                     "url": A,
-                    "account": ACCOUNT,
+                    "account": {"person": ACCOUNT},
                     "first_seen": "2026-10-31T18:20:00Z",
                     "subject": [],
                     "shows": null,
@@ -122,7 +122,7 @@ fn list_gives_each_artifact_every_version_newest_first() {
                 {
                     "path": "/artifacts/B",
                     "url": B,
-                    "account": ACCOUNT,
+                    "account": {"person": ACCOUNT},
                     "first_seen": "2026-10-02T09:00:00Z",
                     "subject": [],
                     "shows": null,
@@ -177,7 +177,7 @@ fn list_keeps_one_account_and_stops_at_the_limit() {
             "artifacts/B.json",
             &artifact(
                 B,
-                &json!({"first_seen": "2026-10-02T09:00:00Z", "account": "work@example.com"}),
+                &json!({"first_seen": "2026-10-02T09:00:00Z", "account": {"person": "work@example.com"}}),
             ),
         )
         .write(
@@ -392,7 +392,7 @@ fn import_writes_only_the_artifacts_the_board_does_not_have() {
         json!({
             "$type": "artifacts/artifact/v1",
             "url": B,
-            "account": ACCOUNT,
+            "account": {"person": ACCOUNT},
             "first_seen": "2026-11-01T02:41:45Z",
             "state": "draft",
         })
@@ -741,7 +741,7 @@ fn decided() -> Personal {
             "$type": "plans/decision/v1",
             "decision": text,
             "why": "The owner said so.",
-            "session": "local_0a1b",
+            "by": {"session": "local_0a1b"},
             "decided": "2026-11-01T09:05:00Z",
             "refs": ["/artifacts/A"],
         })

@@ -6,7 +6,7 @@
 use board_repos::Date;
 use serde_json::{Map, Value};
 
-use board_plugin::shape::Record as _;
+use board_plugin::shape::{Actor, Record as _};
 
 use crate::dates::Defer;
 use crate::records::TaskRecord;
@@ -23,7 +23,7 @@ pub(crate) struct Model {
     pub(crate) from_hour: Option<u8>,
     pub(crate) contexts: Vec<String>,
     pub(crate) reviewed: Option<Date>,
-    pub(crate) owner: Option<String>,
+    pub(crate) owner: Option<Actor>,
     pub(crate) parent: Option<String>,
     pub(crate) kind: Option<String>,
     pub(crate) brief: Option<String>,
@@ -76,10 +76,9 @@ pub(crate) fn model(record: &Value, offset: i32) -> Result<Model, usize> {
         Date::parse(value.as_str()?)
     });
     let owner = optional(fields, "owner", &mut count, |value| {
-        value
-            .as_str()
-            .filter(|owner| !owner.is_empty())
-            .map(str::to_owned)
+        serde_json::from_value::<Actor>(value.clone())
+            .ok()
+            .filter(|owner| *owner != Actor::default())
     });
     let text = |value: &Value| value.as_str().map(str::to_owned);
     let parent = optional(fields, "parent", &mut count, text);
@@ -107,6 +106,21 @@ pub(crate) fn model(record: &Value, offset: i32) -> Result<Model, usize> {
         }),
         _ => Err(errors.max(1)),
     }
+}
+
+/// The actor that `session`, `program` and `person` name, or none when
+/// they name nobody.
+pub(crate) fn actor(
+    session: Option<String>,
+    program: Option<String>,
+    person: Option<String>,
+) -> Option<Actor> {
+    let actor = Actor {
+        session,
+        program,
+        person,
+    };
+    (actor != Actor::default()).then_some(actor)
 }
 
 /// The field `name` read by `read`: none when it is absent or null, and

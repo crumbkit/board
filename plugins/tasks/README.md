@@ -31,7 +31,7 @@ after: [/tasks/agree-scope.md]
 from_hour: 17
 contexts: [errands]
 reviewed: 2026-10-25
-owner: lead-7f3a
+owner: {"program": "claude-code", "session": "local_7f3a2b1c-0d9e-4f8a-b7c6-5d4e3f2a1b0c"}
 parent: /tasks/ship-the-release.md
 ---
 The plan covers ...
@@ -55,8 +55,10 @@ The plan covers ...
 - `from_hour`, from 0 to 23, is the hour of the person's day from which the
   task is available. An hour before `BOARD_DAY_START` falls on the next date.
 - `contexts` are lowercase tags, `[a-z0-9-]+`.
-- `owner` names the agent or person who holds the task, such as a session id
-  or a handle. It is free-form and not empty. `claim` sets it.
+- `owner` is the `Actor` who holds the task: an object of `session` (a
+  `local_` id), `program` (a slug such as `claude-code`) and `person` (a
+  slug or an email), each optional and at least one present, written as one
+  line of JSON. `claim` sets it.
 - `parent` names the one task this task is part of, by its path in the
   task's own repo, as `after` does, and `board check` reports it the same way.
   A second task that needs the same work lists it in `after` instead.
@@ -83,9 +85,9 @@ returns four sections of their `open` tasks:
 - `stale`: the tasks neither available nor deferred that have no `reviewed`,
   or were reviewed more than 14 days ago. A deferred task, `someday` included,
   is left out until its deferral ends;
-- `held`: with `--owner <id>`, the tasks that owner holds that are not
-  available, because they are blocked, deferred or before their `from_hour`.
-  It is empty without `--owner`.
+- `held`: with an owner, given by `--session`, `--program` and `--person`,
+  the tasks that owner holds that are not available, because they are
+  blocked, deferred or before their `from_hour`. It is empty without one.
 
 Each section lists at most 100 tasks by repo, title and path, with `total`
 counting all of them. Each task carries `blocked_by`, the unfinished tasks it
@@ -96,10 +98,10 @@ open ones. So a parent is available once every task under it is done or
 dropped, and the agent then marks it done; nothing closes it on its own. Each
 task also carries `parent`, `subtasks` and `tree_path`, as Projects and trees
 says. `--context <tag>` keeps the
-tasks with that tag in every section, and `--owner <id>` keeps the tasks that
+tasks with that tag in every section, and an owner keeps the tasks that
 owner or nobody holds; `waiting` still counts every task. Each task also
 carries its `owner`, or null. So a lead agent that calls
-`tasks.available --owner <id>` sees every task it holds, available or not,
+`tasks.available --session <id>` sees every task it holds, available or not,
 with the unowned ones it may take.
 
 The scope is the board's own tree, `/`, with the notes repos the board mounts.
@@ -201,9 +203,10 @@ kept.
 `defer --until` takes a date or a horizon, and writes a horizon as the date it
 ends, counted from today. `drop` sets `status: dropped`. `claim`, `done`,
 `defer` and `drop` refuse a task that is not open with
-`tasks::task::finished`; `reviewed` marks any task. `claim --owner <id>`
-sets `owner` on an open task that nobody or the same owner holds, and refuses
-one another owner holds with `tasks::task::held`, whose `owner` field names
+`tasks::task::finished`; `reviewed` marks any task. `claim` with `--session`,
+`--program` or `--person` sets `owner` to the actor they name, refusing
+`tasks::claim::no_owner` when they name nobody. It claims an open task that
+nobody or the same owner holds, and refuses one another owner holds with `tasks::task::held`, whose `owner` field names
 the holder. `done`, `defer`, `drop` and `reviewed` leave `owner` as it is, so
 a finished task still says who held it. No call clears `owner`; edit the task
 to hand it on.

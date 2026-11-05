@@ -167,7 +167,7 @@ fn artifact(fields: &Value) -> Value {
     let mut record = json!({
         "$type": "artifacts/artifact/v1",
         "url": "https://claude.ai/artifact/AbCdEf0123456789xyzQ",
-        "account": "owner@example.com",
+        "account": {"person": "owner@example.com"},
         "first_seen": "2026-11-01T09:00:00Z",
         "state": "draft",
     });
@@ -238,7 +238,7 @@ fn version(fields: &Value) -> Value {
     let mut record = json!({
         "$type": "artifacts/version/v1",
         "version": "1793473476-1c42",
-        "session": "session-1",
+        "by": {"program": "claude-code"},
         "at": "2026-11-01T09:00:00Z",
     });
     for (name, value) in fields.as_object().unwrap() {
@@ -295,7 +295,9 @@ fn an_artifact_is_a_claude_ai_link_an_account_and_a_time_with_its_zone() {
         (json!({"url": "https://example.com/artifact/AbCd"}), false),
         (json!({"url": "https://claude.ai/artifact/../AbCd"}), false),
         (json!({"url": "https://example.com/../elsewhere"}), false),
-        (json!({"account": ""}), false),
+        (json!({"account": "owner@example.com"}), false),
+        (json!({"account": {"person": "luke"}}), true),
+        (json!({"account": {}}), false),
         (json!({"first_seen": "2026-10-31T18:20:00"}), false),
     ] {
         let record = artifact(&fields);
@@ -304,7 +306,7 @@ fn an_artifact_is_a_claude_ai_link_an_account_and_a_time_with_its_zone() {
 }
 
 #[test]
-fn a_version_names_its_session_and_time_and_may_leave_its_version_id_out() {
+fn a_version_names_who_wrote_it_and_when_and_may_leave_its_version_id_out() {
     let schema = schema(VersionRecord::TYPE);
     let copied = json!({"sha256": "ab".repeat(32)});
     assert!(schema.validate(&version(&copied)).is_ok());
@@ -312,7 +314,7 @@ fn a_version_names_its_session_and_time_and_may_leave_its_version_id_out() {
     keyed.as_object_mut().unwrap().remove("version");
     assert!(schema.validate(&keyed).is_ok());
     for fields in [
-        json!({"session": ""}),
+        json!({"by": "session-1"}),
         json!({"at": "2026-10-31T18:20:00"}),
         json!({"version": "1/2"}),
         json!({"pinned": true}),

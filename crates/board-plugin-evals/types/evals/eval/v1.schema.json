@@ -57,8 +57,9 @@
       "type": "string"
     },
     "subjects": {
-      "description": "The names of what is tested, such as `crumbkit` or `clap`, without\nversions, which go in a run's `versions`. Name a repository by its\nmount, in `mounts`.",
+      "description": "What is tested: each a repository as `owner/name`, such as\n`clap-rs/clap`, or a board path, without versions, which go in a\nrun's `versions`. A repository the board mounts is named by its mount\nin `mounts` too.",
       "items": {
+        "pattern": "^([A-Za-z0-9-]+/[A-Za-z0-9._-]+|/\\S+)$",
         "type": "string"
       },
       "minItems": 1,

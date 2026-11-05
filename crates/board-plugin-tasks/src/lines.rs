@@ -10,12 +10,12 @@ use serde_json::{Value, json};
 
 use crate::refusal;
 
-/// `text` with each key's line set to its value, written as JSON, which is
-/// YAML; a missing key goes last. A value of none removes the key's line,
+/// `text` with each key's line set to its value, written as JSON on one
+/// line, which is YAML; a missing key goes last. A value of none removes the key's line,
 /// and adds none when the key is missing.
 pub(crate) fn with_fields(
     text: &str,
-    values: &[(&str, Option<String>)],
+    values: &[(&str, Option<Value>)],
     path: &str,
 ) -> Result<String, PluginError> {
     let lines: Vec<&str> = text.split_inclusive('\n').collect();
@@ -44,7 +44,7 @@ pub(crate) fn with_fields(
     for (key, value) in values {
         let line = value
             .as_ref()
-            .map(|value| format!("{key}: {}{newline}", Value::from(value.as_str())));
+            .map(|value| format!("{key}: {value}{newline}"));
         let found: Vec<usize> = (1..end).filter(|&at| keyed(lines[at], key)).collect();
         let Some(&at) = found.first() else {
             added.extend(line);
@@ -93,11 +93,14 @@ fn keyed(line: &str, key: &str) -> bool {
         .is_some_and(|rest| rest.is_empty() || rest.starts_with(python_space))
 }
 
-/// Whether `held` is a value a line holds on its own: a double- or
-/// single-quoted string closed on the line, or a plain scalar that starts
-/// with none of YAML's indicators of a block, a collection, an anchor or a
-/// tag; then an optional comment.
+/// Whether `held` is a value a line holds on its own: a JSON object, as
+/// this editor writes one, a double- or single-quoted string closed on the
+/// line, or a plain scalar that starts with none of YAML's indicators of a
+/// block, a collection, an anchor or a tag; then an optional comment.
 fn one_line(held: &str) -> bool {
+    if serde_json::from_str::<serde_json::Map<String, Value>>(held).is_ok() {
+        return true;
+    }
     let rest = if let Some(inner) = held.strip_prefix('"') {
         let mut chars = inner.char_indices();
         let mut closed = None;

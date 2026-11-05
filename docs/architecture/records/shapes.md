@@ -99,13 +99,25 @@ Built-in plugins generate schemas from structs with schemars, through
 - `Tag<Self>` is the `$type` field; `Ref<T>` is a reference to a record type
   `T`, to a marker that lists several types, or to any entry when `T` is left
   out. Both are always inlined.
-- `Prose`, `Date`, `Url`, `Sha256`, `Glob`, `LogicalGlob` and `Summary` are
-  shared shapes. A `String` field takes one with
+- `Prose`, `Date`, `Url`, `Sha256`, `Glob`, `LogicalGlob`, `Summary`,
+  `SessionId`, `Slug`, `Person`, `ObjectId` and `Subject` are shared string
+  shapes, and `Actor` and `Pinned` are shared object shapes. A `String` field takes one with
   `#[schemars(with = "Prose")]`, and a `urls` field with `#[schemars(with = "Vec<Url>")]`. `Sha256` is 64 lowercase hex
   digits, such as an effect's id. `Glob` is an SQLite GLOB pattern, which a
   plugin matches with GLOB in a query. `LogicalGlob` is a `Glob` that
   starts with `/`, such as a change's planned path. `Summary` is one line
-  of at most `SUMMARY_WORDS`, 25, words. `shape::registry()` lists every
+  of at most `SUMMARY_WORDS`, 25, words. `SessionId` is `local_` and a
+  lowercase uuid, `Slug` is lowercase words joined by `-`, `Person` is a
+  slug or an email address, and `ObjectId` is a git object id of 40 or 64
+  lowercase hex digits. `Subject` is what a test or study concerns: an
+  `owner/name` repository or a board path that starts with `/`.
+- `Actor` is who wrote or acted: `{session, program, person}`, each part
+  optional and at least one present. Every field that names who acted is
+  an `Actor`. `Pinned` is `{record, blob}`, a reference and the `ObjectId`
+  it was read at. A `$defs` entry named like an object shape must equal it,
+  and `xtask/tests/shapes.rs` checks that.
+- Every hash is a `Sha256` with no `sha256:` prefix.
+  `shape::registry()` lists every
   shared shape by name, and `crates/board-plugin/shapes.json` is its golden.
 - `Tag<R>` writes `R::TYPE` and reads only that string, so a record struct
   can derive `Serialize` and `Deserialize`.

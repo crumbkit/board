@@ -910,7 +910,7 @@ fn pending_effect(mine: &Scenario, id: &str) -> Effect {
 /// An approval of `id` written straight into `mine`, as an agent with the
 /// owner's shell could write it, carrying `signature`.
 fn approve_by_hand(mine: &Scenario, id: &str, signature: Option<String>) {
-    let mut seen = Seen::new(format!("/effects/answered/{id}"), Answer::Approve, None);
+    let mut seen = Seen::new(id.to_owned(), Answer::Approve, None);
     seen.signature = signature;
     let text = json!(seen).to_string();
     mine.write(&format!("effects/seen/{id}.json"), Item::File(&text));
@@ -1019,7 +1019,7 @@ fn an_approval_with_a_signature_by_another_key_or_in_the_write_namespace_is_refu
     assert!(!exists(&mine, &format!("effects/seen/{id}.json")));
     let signature = signer().sign(&approval);
     approve(signature.clone()).unwrap();
-    let mut expected = Seen::new(format!("/effects/answered/{id}"), Answer::Approve, None);
+    let mut expected = Seen::new(id.clone(), Answer::Approve, None);
     expected.signature = Some(signature);
     let seen = Seen::from_value(&read(&mine, &format!("effects/seen/{id}.json"))).unwrap();
     assert_eq!(seen, expected);
