@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 
 use board_model::{LogicalPath, Source};
 use board_ops::{Absent, Host, Limit, PluginError, RefsReport};
-use board_plugin::shape::{Record as _, TREE_CODES};
+use board_plugin::shape::{Actor, Record as _, TREE_CODES};
 use board_repos::{COLUMNS, Date, Listed, json_body, parsed, query, root, shown};
 use schemars::JsonSchema;
 use serde::Serialize;
@@ -88,7 +88,7 @@ pub(crate) struct Task {
     pub(crate) reviewed: Option<Date>,
     pub(crate) contexts: Vec<String>,
     pub(crate) waits: bool,
-    pub(crate) owner: Option<String>,
+    pub(crate) owner: Option<Actor>,
     pub(crate) status: String,
     pub(crate) linked: bool,
     pub(crate) kind: String,

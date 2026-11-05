@@ -5,15 +5,15 @@ use super::*;
 
 const TASK: &str = "---\n$type: tasks/task/v2\ntitle: \"Call the bank\"  # by phone\nstatus: open\nid: abc\n---\n\nBody.\n";
 
-fn set(key: &'static str, value: &str) -> Vec<(&'static str, Option<String>)> {
-    vec![(key, Some(value.to_owned()))]
+fn set(key: &'static str, value: &str) -> Vec<(&'static str, Option<Value>)> {
+    vec![(key, Some(value.into()))]
 }
 
 #[test]
 fn a_plain_line_is_replaced_a_missing_key_is_added_last_and_every_other_byte_is_kept() {
     let values = [
-        ("status", Some("done".to_owned())),
-        ("reviewed", Some("2026-10-25".to_owned())),
+        ("status", Some("done".into())),
+        ("reviewed", Some("2026-10-25".into())),
     ];
     assert_eq!(
         with_fields(TASK, &values, "/tasks/bank.md").unwrap(),
@@ -98,4 +98,18 @@ fn a_key_set_to_none_loses_its_line_and_a_missing_one_adds_none() {
         with_fields("---\ntitle: T\n---\n", &cleared, "/t.md").unwrap(),
         "---\ntitle: T\n---\n"
     );
+}
+
+/// An owner this editor wrote as a JSON object on one line is replaced,
+/// and a YAML flow mapping that is no JSON is still refused.
+#[test]
+fn a_json_object_line_is_replaced_and_a_flow_mapping_that_is_no_json_is_refused() {
+    let owner = |held: &str| format!("---\ntitle: T\nowner: {held}\n---\n");
+    let values = [("owner", Some(serde_json::json!({"person": "lead"})))];
+    assert_eq!(
+        with_fields(&owner(r#"{"session": "local_0a1b"}"#), &values, "/t.md").unwrap(),
+        owner(r#"{"person":"lead"}"#)
+    );
+    let refused = with_fields(&owner("{person: lead}"), &values, "/t.md").unwrap_err();
+    assert_eq!(refused.code, "tasks::task::not_plain");
 }

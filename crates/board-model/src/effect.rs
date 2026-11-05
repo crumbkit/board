@@ -234,8 +234,10 @@ pub fn utc(time: SystemTime) -> String {
     humantime::format_rfc3339_micros(time).to_string()
 }
 
-/// A `board/seen/v1` record: the owner's answer to the effect at `effect`,
-/// under `/effects/answered/`. An approval carries `signature`, the owner's SSH signature
+/// A `board/seen/v1` record: the owner's answer to an effect. `effect` is
+/// `/effects/answered/<id>`, the path that keeps the answered effect, which
+/// Board.app's list of answered requests reads. An approval carries
+/// `signature`, the owner's SSH signature
 /// over [`Effect::approval`].
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -251,18 +253,39 @@ pub struct Seen {
 }
 
 impl Seen {
-    pub fn new(effect: String, answer: Answer, reason: Option<String>) -> Self {
+    /// The seen record `value` holds, refused when its `effect` names no
+    /// effect id.
+    pub fn from_value(value: &Value) -> Result<Self, serde_json::Error> {
+        let seen = Self::deserialize(value)?;
+        if seen.effect_id().is_none() {
+            return Err(serde::de::Error::custom(format!(
+                "effect {:?} is not /effects/answered/, /effects/pending/ or sha256: followed by an effect id of 64 lowercase hex digits",
+                seen.effect
+            )));
+        }
+        Ok(seen)
+    }
+
+    /// The id of the effect it answers. Board writes the effect's answered
+    /// path, `/effects/answered/<id>`. A seen record that names it as a
+    /// digest, `sha256:<id>`, or by its pending path, as Board wrote before
+    /// it kept answered effects, is read too.
+    pub fn effect_id(&self) -> Option<&str> {
+        let id = (self.effect.strip_prefix("sha256:"))
+            .or_else(|| self.effect.strip_prefix("/effects/answered/"))
+            .or_else(|| self.effect.strip_prefix("/effects/pending/"))?;
+        is_effect_id(id).then_some(id)
+    }
+
+    /// The answer to the effect whose id is `id`.
+    pub fn new(id: &str, answer: Answer, reason: Option<String>) -> Self {
         Self {
             record_type: SEEN_TYPE.to_owned(),
-            effect,
+            effect: format!("/effects/answered/{id}"),
             answer,
             reason,
             signature: None,
         }
-    }
-
-    pub fn from_value(value: &Value) -> Result<Self, serde_json::Error> {
-        Self::deserialize(value)
     }
 }
 

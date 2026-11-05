@@ -13,10 +13,10 @@ so it is written at its path. Its schema declares its folder too, so
 
 - `plans/question/v1` at `/projects/<project>/questions/<id>`. `<id>` is a
   sortable UTC time and a short suffix, such as `20261024T1830Z-k3`.
-  `question`, `session` (the asking session's `local_` id), `asked` and
-  `status` (`open` or `withdrawn`) are required. `options`,
-  `recommendation`, `why`, `blocks`, `mount`, `context_path`, `note` and
-  `withdrawn_reason` are optional. A question is answered when a
+  `question`, `by` (an `Actor` whose `session` is the asking session's
+  `local_` id), `asked` and `status` (`open` or `withdrawn`) are required.
+  `options`, `recommendation`, `why`, `blocks`, `mount`, `context_path`,
+  `note` and `withdrawn_reason` are optional. A question is answered when a
   `plans/answer/v1` names it in `question`; answering leaves its status
   `open`. A reference is read from the root of the board it is in, so an
   answer in a mounted board names its question by the question's path in
@@ -24,10 +24,11 @@ so it is written at its path. Its schema declares its folder too, so
 - `plans/answer/v1` at `/projects/<project>/answers/<id>`, with its question's
   id. `question` references the question; `choice` names an option's `id`, or
   `none`; `words` holds the owner's words verbatim; `answered` is when.
-  `written_by` names the plugin and hook, or the client and surface, that
-  wrote the answer, such as `plans/pane-answer` or `board-app/phone`.
+  `by`, optional, is the `Actor` who recorded it. `written_by` names the
+  plugin and hook, or the client and surface, that wrote the answer, such as
+  `plans/pane-answer` or `board-app/phone`.
 - `plans/decision/v1` at `/projects/<project>/decisions/<id>`. `decision`,
-  `why`, `session` and `decided` are required; `alternatives`, `refs`,
+  `why`, `by` (the deciding `Actor`) and `decided` are required; `alternatives`, `refs`,
   `urls`, `review` (`wanted` or `none`) and `written_by` are optional. `refs` lists board
   entries the decision concerns, such as an answer; `urls` lists web pages,
   such as a pull request.
@@ -37,7 +38,7 @@ so it is written at its path. Its schema declares its folder too, so
   "$type": "plans/decision/v1",
   "decision": "Ship the plans types unchanged.",
   "why": "Records already in the personal board must stay valid.",
-  "session": "local_335a90f9",
+  "by": {"session": "local_335a90f9-0c1d-4e2f-8a9b-7c6d5e4f3a2b"},
   "decided": "2026-10-25T12:00:00Z",
   "review": "wanted"
 }
@@ -58,7 +59,8 @@ also carries `why`, `note`, `mount` and `context_path`, null when the record
 leaves them out.
 
 `board call plans.answer --path <question> --option <id> [--words <text>]
-[--by <session>] [--written_by <plugin>/<client>]` records the owner's answer
+[--session <local_ id>] [--program <slug>] [--person <slug>] [--agent <name>]
+[--written_by <plugin>/<client>]` records the owner's answer
 as the Claude Code mod's pane does, so a client without the mod, such as
 Board.app, can answer. `--option` is one of the question's option ids, or
 `none` with `--words`; a question with an option whose id is `none` takes

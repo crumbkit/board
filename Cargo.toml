@@ -20,6 +20,7 @@ members = [
     "crates/board-plugin-runs",
     "crates/board-plugin-share",
     "crates/board-plugin-tasks",
+    "crates/board-plugin-topics",
     "crates/board-plugins",
     "crates/board-repos",
     "crates/board-scenario",
@@ -59,6 +60,7 @@ board-plugin-review = { path = "crates/board-plugin-review", version = "0.0.0" }
 board-plugin-runs = { path = "crates/board-plugin-runs", version = "0.0.0" }
 board-plugin-share = { path = "crates/board-plugin-share", version = "0.0.0" }
 board-plugin-tasks = { path = "crates/board-plugin-tasks", version = "0.0.0" }
+board-plugin-topics = { path = "crates/board-plugin-topics", version = "0.0.0" }
 board-plugins = { path = "crates/board-plugins", version = "0.0.0" }
 board-scenario = { path = "crates/board-scenario", version = "0.0.0" }
 board-serve = { path = "crates/board-serve", version = "0.0.0" }

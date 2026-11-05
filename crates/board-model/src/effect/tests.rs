@@ -45,11 +45,7 @@ fn an_effect_and_a_seen_record_read_back_as_written_and_refuse_an_extra_field() 
     let mut extra = value;
     extra["extra"] = json!(1);
     assert!(effect_record(EFFECT_TYPE, &extra).unwrap().is_err());
-    let mut seen = Seen::new(
-        format!("/effects/pending/{}", effect.id()),
-        Answer::Approve,
-        None,
-    );
+    let mut seen = Seen::new(&effect.id(), Answer::Approve, None);
     seen.signature = Some("-----BEGIN SSH SIGNATURE-----".to_owned());
     let value = serde_json::to_value(&seen).unwrap();
     assert_eq!(Seen::from_value(&value).unwrap(), seen);
@@ -57,6 +53,31 @@ fn an_effect_and_a_seen_record_read_back_as_written_and_refuse_an_extra_field() 
     extra["extra"] = json!(1);
     assert!(effect_record(SEEN_TYPE, &extra).unwrap().is_err());
     assert!(effect_record("lr/task/v1", &extra).is_none());
+}
+
+/// A seen record names its effect by the answered effect's path, which
+/// Board.app reads, and one naming it as a digest, `sha256:<id>`, or by its
+/// pending path is read too. A bare id and a path elsewhere are refused.
+#[test]
+fn a_seen_record_naming_its_effect_by_bare_id_or_another_path_is_refused_and_its_twins_are_read() {
+    let id = "ab".repeat(32);
+    let seen = |effect: &str| json!({"$type": SEEN_TYPE, "effect": effect, "answer": "refuse"});
+    for refused in [id.clone(), format!("/notes/{id}"), format!("sha256:{id}0")] {
+        assert!(
+            effect_record(SEEN_TYPE, &seen(&refused)).unwrap().is_err(),
+            "{refused}"
+        );
+    }
+    for read in [
+        format!("sha256:{id}"),
+        format!("/effects/answered/{id}"),
+        format!("/effects/pending/{id}"),
+    ] {
+        let read = Seen::from_value(&seen(&read)).unwrap();
+        assert_eq!(read.effect_id(), Some(id.as_str()));
+    }
+    let written = serde_json::to_value(Seen::new(&id, Answer::Refuse, None)).unwrap();
+    assert_eq!(written["effect"], json!(format!("/effects/answered/{id}")));
 }
 
 #[test]

@@ -18,7 +18,7 @@ fn question(status: &str, asked: &str, fields: &Value) -> String {
         json!({
             "$type": "plans/question/v1",
             "question": "Which way?",
-            "session": "local_0a1b",
+            "by": {"session": "local_0a1b"},
             "asked": asked,
             "status": status,
         }),
@@ -38,7 +38,7 @@ fn decision(fields: &Value) -> String {
             "$type": "plans/decision/v1",
             "decision": "Do it.",
             "why": "It is needed.",
-            "session": "local_0a1b",
+            "by": {"session": "local_0a1b"},
             "decided": "2026-10-01T09:00:00Z",
         }),
         fields,
@@ -247,7 +247,7 @@ fn a_question_whose_only_fault_is_a_dangling_reference_is_listed_and_an_invalid_
         )
         .write(
             "projects/a/questions/bad.json",
-            &open(&json!({"session": "someone"})),
+            &open(&json!({"by": {"person": "someone"}})),
         );
     let (paths, output) = listed(&board, &[]);
     assert_eq!(paths, ["/projects/a/questions/dangling"]);
@@ -583,7 +583,7 @@ fn a_question_is_open_or_withdrawn_and_names_an_asking_session() {
         )
         .write(
             "projects/a/questions/nameless.json",
-            &open(&json!({"session": "someone"})),
+            &open(&json!({"by": {"person": "someone"}})),
         );
     assert_eq!(
         board.checked("/projects/a/questions/"),

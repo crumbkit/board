@@ -8,7 +8,7 @@
 
 use std::collections::BTreeMap;
 
-use board_plugin::shape::{Record, Ref, Tag};
+use board_plugin::shape::{Actor, Record, Ref, Subject, Tag};
 use schemars::{JsonSchema, Schema, SchemaGenerator, json_schema};
 use serde::Deserialize;
 use serde_json::{Map, Value};
@@ -18,15 +18,21 @@ use serde_json::{Map, Value};
 #[serde(deny_unknown_fields)]
 #[schemars(
     title = "SuiteRecord",
-    description = "`runs/suite/v1`: what gets run, how, and what a run of it measures.\n\nA suite's name is its path: the suite at `/suites/<name>.json` is\n`<name>`, and its runs sit in `/suites/<name>/runs/`. `subjects` are the\nnames of what is tested. `cases` lists the cases inline, or `cases_file`\nreferences a file that does; a suite whose cases are found when it runs,\nsuch as a test suite, has neither.",
+    description = "`runs/suite/v1`: what gets run, how, and what a run of it measures.\n\nA suite's name is its path: the suite at `/suites/<name>.json` is\n`<name>`, and its runs sit in `/suites/<name>/runs/`. `subjects`, when\npresent, name what is tested: a repository as `owner/name`, or a board path. `cases` lists the cases inline, or `cases_file`\nreferences a file that does; a suite whose cases are found when it runs,\nsuch as a test suite, has neither.",
     extend("not" = {"required": ["cases", "cases_file"]})
 )]
 pub struct SuiteRecord {
     #[serde(rename = "$type")]
     #[schemars(title = "$Type")]
     pub tag: Tag<Self>,
-    #[schemars(title = "Subjects", length(min = 1))]
-    pub subjects: Vec<String>,
+    // A suite may test no named subject, such as one named only for itself.
+    #[schemars(
+        title = "Subjects",
+        with = "Option<Vec<Subject>>",
+        length(min = 1),
+        extend("type" = "array")
+    )]
+    pub subjects: Option<Vec<String>>,
     #[schemars(title = "Method")]
     pub method: String,
     // A field left out admits no null: `type` replaces Option's `["string", "null"]`.
@@ -75,7 +81,7 @@ pub struct Measure {
 #[serde(deny_unknown_fields)]
 #[schemars(
     title = "RunRecord",
-    description = "`runs/run/v1`: one run of a suite, by whom, when, on what, and what it gave.\n\n`scope` is `full` when the run ran every case and `targeted` when it ran\nsome. `dirty` says whether the working tree under test had uncommitted\nchanges; a run that does not say is never counted as clean. `versions`\nmaps what was used, such as a commit, a model or a library, to its\nversion. `setup` says how this run was prepared, and `summary` what it\nshowed. `measures` holds the run's own measures, such as `tests` and\n`failures`. A test suite's run lists only the cases that did not pass and\nthe cases that measured something; an eval's run may list every case.\n`written_by` names the plugin and hook that wrote a run without an agent.",
+    description = "`runs/run/v1`: one run of a suite, by whom, when, on what, and what it gave.\n\n`by` names who ran it, when known. `scope` is `full` when the run ran every case and `targeted` when it ran\nsome. `dirty` says whether the working tree under test had uncommitted\nchanges; a run that does not say is never counted as clean. `versions`\nmaps what was used, such as a commit, a model or a library, to its\nversion. `setup` says how this run was prepared, and `summary` what it\nshowed. `measures` holds the run's own measures, such as `tests` and\n`failures`. A test suite's run lists only the cases that did not pass and\nthe cases that measured something; an eval's run may list every case.\n`written_by` names the plugin and hook that wrote a run without an agent.",
     extend("x-board-folder" = "/suites/{suite}/runs/")
 )]
 pub struct RunRecord {
@@ -85,7 +91,7 @@ pub struct RunRecord {
     #[schemars(title = "Suite")]
     pub suite: Ref<SuiteRecord>,
     #[schemars(title = "By")]
-    pub by: String,
+    pub by: Option<Actor>,
     #[schemars(title = "Started", extend("format" = "date-time"))]
     pub started: String,
     #[schemars(title = "Scope")]

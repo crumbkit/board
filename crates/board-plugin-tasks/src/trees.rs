@@ -4,6 +4,7 @@
 use std::collections::BTreeMap;
 
 use board_ops::{Host, PluginError};
+use board_plugin::shape::Actor;
 use board_repos::scope;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -57,7 +58,7 @@ pub(crate) struct TreeNode {
     pub(crate) status: String,
     pub(crate) kind: String,
     pub(crate) brief: Option<String>,
-    pub(crate) owner: Option<String>,
+    pub(crate) owner: Option<Actor>,
     pub(crate) blocked_by: Vec<String>,
     pub(crate) subtasks: Subtasks,
     pub(crate) tree_path: String,

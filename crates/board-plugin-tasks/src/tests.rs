@@ -112,10 +112,14 @@ fn every_input_property_carries_a_sentence_that_says_what_it_means() {
     }
     described.sort();
     let mut expected = vec![
+        "available.agent",
         "available.context",
         "available.owner",
+        "available.person",
+        "available.program",
         "available.remote",
         "available.repo",
+        "available.session",
         "tree.path",
         "tree.remote",
         "tree.repo",
@@ -134,8 +138,12 @@ fn every_input_property_carries_a_sentence_that_says_what_it_means() {
         "add.repo",
         "add.text",
         "add.title",
+        "claim.agent",
         "claim.owner",
         "claim.path",
+        "claim.person",
+        "claim.program",
+        "claim.session",
         "done.path",
         "defer.path",
         "defer.until",

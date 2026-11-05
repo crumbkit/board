@@ -2,13 +2,15 @@
 //! source file length cap, the `#[expect]` ratchet, the signing literals'
 //! owners, and the budget controls' agreement with lint.toml. `bin/lint` runs it as
 //! `cargo xtask lint`; `lint.toml` holds every number it enforces. It also
-//! times Board, profiles it, and migrates question records.
+//! times Board, profiles it, migrates question records, and migrates a
+//! board's records to the shared shapes.
 
 mod bench;
 mod budgets;
 mod config;
 mod controls;
 mod files;
+mod migrate;
 mod process;
 mod profile;
 mod questions;
@@ -70,6 +72,16 @@ fn main() -> ExitCode {
             Some(profile) => finish(
                 profile::run(root, &profile).map(|()| true),
                 profile::ProfileError::code,
+            ),
+            None => usage(),
+        },
+        Some("migrate-shapes") => match migrate::Options::parse(arguments) {
+            Some((board, options)) => finish(
+                migrate::run(&board, &options).map(|migrated| {
+                    report::emit(&Output::MigratedShapes(&migrated));
+                    true
+                }),
+                migrate::MigrateError::code,
             ),
             None => usage(),
         },

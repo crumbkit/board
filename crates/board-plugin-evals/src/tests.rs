@@ -180,7 +180,7 @@ fn the_output_schema_admits_an_answer_and_refuses_one_without_its_total() {
         "evals": [{
             "path": "/evals/e",
             "question": "Is gix faster?",
-            "subjects": ["gix"],
+            "subjects": ["o/gix"],
             "status": "concluded",
             "verdict": "supported",
             "decision": null,
@@ -199,7 +199,7 @@ fn concluded() -> Value {
     json!({
         "$type": "evals/eval/v1",
         "question": "Is gix faster?",
-        "subjects": ["gix"],
+        "subjects": ["o/gix"],
         "status": "concluded",
         "verdict": "supported",
         "mounts": ["/repos/board"],
@@ -293,6 +293,10 @@ fn the_shipped_schema_refuses_a_concluded_eval_without_a_verdict_a_null_and_a_ba
         (
             with("written_by", json!("the hook")),
             with("written_by", json!("a/b")),
+        ),
+        (
+            with("subjects", json!(["gix"])),
+            with("subjects", json!(["/repos/gix"])),
         ),
     ] {
         assert_eq!(

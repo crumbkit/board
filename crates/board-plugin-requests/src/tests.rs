@@ -148,13 +148,22 @@ fn the_committed_reply_schema_is_what_its_struct_generates() {
 #[test]
 fn a_reply_without_text_or_naming_a_malformed_effect_is_refused_and_its_twin_is_admitted() {
     let schema = board_validate::Schema::compile(reply_schema()).unwrap();
-    let reply = json!({"$type": "requests/reply/v1", "effect": "a".repeat(64), "text": "Why?"});
+    let reply = json!({"$type": "requests/reply/v1", "effect": format!("sha256:{}", "a".repeat(64)), "text": "Why?"});
     schema.validate(&reply).unwrap();
-    for (key, value) in [("text", json!("")), ("effect", json!("A".repeat(64)))] {
+    for (key, value) in [
+        ("text", json!("")),
+        ("effect", json!(format!("sha256:{}", "A".repeat(64)))),
+        ("effect", json!(format!("sha256:{}", "a".repeat(63)))),
+    ] {
         let mut refused = reply.clone();
         refused[key] = value;
         assert!(schema.validate(&refused).is_err(), "{key}");
     }
+    // Board.app's relay writes the bare id, which stays admitted until it
+    // writes the digest.
+    let mut bare = reply;
+    bare["effect"] = json!("a".repeat(64));
+    schema.validate(&bare).unwrap();
 }
 
 #[test]

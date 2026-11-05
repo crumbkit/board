@@ -1,7 +1,7 @@
 //! The record types the plugin ships. Their schemas are generated from
 //! these structs; the files under `types/` are those schemas, committed.
 
-use board_plugin::shape::{Accepts, Prose, Record, Ref, Sha256, Tag};
+use board_plugin::shape::{Accepts, Actor, Digest, Prose, Record, Ref, Tag};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -30,9 +30,9 @@ pub struct ArtifactRecord {
         regex(pattern = ARTIFACT_URL)
     )]
     pub url: String,
-    /// The email address of the claude.ai account that published the artifact.
-    #[schemars(length(min = 1))]
-    pub account: String,
+    /// The claude.ai account that published the artifact, as a person named
+    /// by the account's email address.
+    pub account: Actor,
     /// When the board first saw the artifact, with a time zone.
     #[schemars(extend("format" = "date-time"))]
     pub first_seen: String,
@@ -101,7 +101,7 @@ impl Record for Decision {
 ///
 /// The page is beside it as `<key>.html` or `<key>.md`. `<key>` is
 /// `version`, the version id the Artifact tool returned, or, when it
-/// returned none, the first 16 hex digits of `sha256`, and the record leaves
+/// returned none, the first 16 hex digits after `sha256:` in `sha256`, and the record leaves
 /// `version` out. `title` and `description` are the artifact's at this
 /// version. A version with no local page, such as one an Artifact type
 /// wrote, has no copy and says `copy: "none"`, and then has no `sha256`.
@@ -128,18 +128,17 @@ pub struct VersionRecord {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "Option<Prose>")]
     pub description: Option<String>,
-    /// The SHA-256 of the page copied beside this record, in hex.
+    /// The digest of the page copied beside this record.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(with = "Option<Sha256>")]
+    #[schemars(with = "Option<Digest>")]
     pub sha256: Option<String>,
     /// The local file the publish sent, when a publish wrote this version.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(length(min = 1))]
     pub source: Option<String>,
-    /// The Claude Code session that published or read this version.
-    #[schemars(length(min = 1))]
-    pub session: String,
-    /// When the session published or read this version, with a time zone.
+    /// Who published or read this version.
+    pub by: Actor,
+    /// When it was published or read, with a time zone.
     #[schemars(extend("format" = "date-time"))]
     pub at: String,
     /// none when the version has no local page, so nothing was copied.

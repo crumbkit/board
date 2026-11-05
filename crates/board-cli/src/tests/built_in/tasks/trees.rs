@@ -31,7 +31,7 @@ fn flows() -> Tasks {
             "dispatch-owns-flow-documents",
             open(
                 "Dispatch owns flow documents",
-                json!({"parent": "/tasks/ship-flows-editor.md", "owner": "lead"}),
+                json!({"parent": "/tasks/ship-flows-editor.md", "owner": {"person": "lead"}}),
             ),
         ),
         (
@@ -181,7 +181,7 @@ fn tree_returns_the_task_and_its_descendants_in_every_status_nested_by_title() {
         "path": path,
         "title": "Dispatch owns flow documents",
         "status": "open",
-        "owner": "lead",
+        "owner": {"person": "lead"},
         "tree_path": "ship-flows-editor/dispatch-owns-flow-documents",
         "blocked_by": ["/tasks/flow-document-store.md"],
         "subtasks": {"open": 2, "total": 3},

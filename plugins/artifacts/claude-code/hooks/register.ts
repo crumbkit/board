@@ -137,6 +137,18 @@ async function put($: EngineInterface, path: string, body: { record: object } | 
   throw new BoardRefused(failure)
 }
 
+/**
+ * Who acts in this session, as the shared actor shape: Claude Code, and the
+ * session by the `local_` id the desktop app names. Outside the desktop app
+ * the session's own id names no `local_` session, so it is kept as the
+ * agent, as the shapes migration keeps it for older records.
+ */
+async function actor($: EngineInterface): Promise<{ program: string; session?: string; agent?: string }> {
+  const host = await $.env.get('CLAUDE_CODE_HOST_SESSION_ID')
+  if (host?.startsWith('local_')) return { program: 'claude-code', session: host }
+  return { program: 'claude-code', agent: await $.session.id() }
+}
+
 /** The account the session is signed in to, from `oauthAccount.emailAddress` in `.claude.json`. */
 async function account($: EngineInterface): Promise<string | undefined> {
   const dir = (await $.env.get('CLAUDE_CONFIG_DIR')) ?? (await $.env.get('HOME'))
@@ -241,9 +253,9 @@ async function record($: EngineInterface, seen: Seen): Promise<Recorded | undefi
       title: seen.title,
       description: seen.description,
       copy: sha === undefined ? 'none' : undefined,
-      sha256: sha,
+      sha256: sha === undefined ? undefined : `sha256:${sha}`,
       source: seen.source,
-      session: await $.session.id(),
+      by: await actor($),
       at: iso(await $.clock.now()),
     }
     const written = await put($, path, { record: version })

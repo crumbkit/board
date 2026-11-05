@@ -194,7 +194,19 @@ fn answers_input_names_the_question_and_option_and_admits_no_null() {
     let input = schema_of::<answer::Input>(SchemaSettings::draft2020_12());
     let properties = input["properties"].as_object().unwrap();
     let names: Vec<&str> = properties.keys().map(String::as_str).collect();
-    assert_eq!(names, ["by", "option", "path", "words", "written_by"]);
+    assert_eq!(
+        names,
+        [
+            "agent",
+            "option",
+            "path",
+            "person",
+            "program",
+            "session",
+            "words",
+            "written_by"
+        ]
+    );
     for (name, property) in properties {
         let description = property["description"].as_str().unwrap();
         assert!(description.ends_with('.'), "{name}: {description}");
@@ -269,7 +281,7 @@ fn a_question_stored_as_answered_is_refused_and_its_open_twin_is_admitted() {
         json!({
             "$type": "plans/question/v1",
             "question": "Which way?",
-            "session": "local_0a1b",
+            "by": {"session": "local_0a1b"},
             "asked": "2026-10-01T09:00:00Z",
             "status": status,
         })
@@ -341,7 +353,7 @@ fn sample_records_validate_and_their_references_are_the_ones_the_structs_declare
     let question = json!({
         "$type": "plans/question/v1",
         "question": "Which way?",
-        "session": "local_0a1b",
+        "by": {"session": "local_0a1b"},
         "asked": "2026-10-01T09:00:00Z",
         "status": "open",
         "options": [{"id": "a", "text": "A"}],
@@ -360,7 +372,7 @@ fn sample_records_validate_and_their_references_are_the_ones_the_structs_declare
         "$type": "plans/decision/v1",
         "decision": "A",
         "why": "It is simpler.",
-        "session": "s",
+        "by": {"session": "local_0a1b"},
         "decided": "2026-10-01T10:00:00Z",
         "refs": ["/projects/a/answers/q"],
         "urls": ["https://example.com/pull/1"],
@@ -420,7 +432,7 @@ fn a_decision_keeps_board_paths_in_refs_and_web_addresses_in_urls() {
             "$type": "plans/decision/v1",
             "decision": "A",
             "why": "It is simpler.",
-            "session": "s",
+            "by": {"session": "local_0a1b"},
             "decided": "2026-10-01T10:00:00Z",
             field: [value],
         })
@@ -460,7 +472,7 @@ fn a_question_names_its_repository_by_a_reference_to_its_mount() {
         json!({
             "$type": "plans/question/v1",
             "question": "Which way?",
-            "session": "local_0a1b",
+            "by": {"session": "local_0a1b"},
             "asked": "2026-10-01T09:00:00Z",
             "status": "open",
             field: value,
@@ -490,7 +502,7 @@ fn open_reads_fields_the_question_struct_declares() {
     let question = &Plans.schemas()[0].1;
     for field in [
         "question",
-        "session",
+        "by",
         "asked",
         "options",
         "recommendation",

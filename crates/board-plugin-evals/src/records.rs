@@ -1,7 +1,7 @@
 //! The record type the plugin ships. Its schema is generated from this
 //! struct; the file under `types/` is that schema, committed.
 
-use board_plugin::shape::{Record, Ref, Tag};
+use board_plugin::shape::{Record, Ref, Subject, Tag};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -19,10 +19,11 @@ pub struct EvalRecord {
     pub tag: Tag<Self>,
     /// The question the eval answers.
     pub question: String,
-    /// The names of what is tested, such as `crumbkit` or `clap`, without
-    /// versions, which go in a run's `versions`. Name a repository by its
-    /// mount, in `mounts`.
-    #[schemars(length(min = 1))]
+    /// What is tested: each a repository as `owner/name`, such as
+    /// `clap-rs/clap`, or a board path, without versions, which go in a
+    /// run's `versions`. A repository the board mounts is named by its mount
+    /// in `mounts` too.
+    #[schemars(with = "Vec<Subject>", length(min = 1))]
     pub subjects: Vec<String>,
     /// Where the eval stands.
     pub status: Status,

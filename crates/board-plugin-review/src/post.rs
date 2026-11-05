@@ -103,7 +103,10 @@ pub(crate) fn comment(path: &str, pr: &str, report: &ReportRecord) -> String {
         (None, range) => format!("Commits `{}`.", range.as_deref().unwrap_or_default()),
     };
     let mut lines = vec![
-        format!("**Review: {}** by {}", report.verdict.as_str(), report.by),
+        match &report.by {
+            Some(by) => format!("**Review: {}** by {by}", report.verdict.as_str()),
+            None => format!("**Review: {}**", report.verdict.as_str()),
+        },
         String::new(),
         reviewed,
         String::new(),

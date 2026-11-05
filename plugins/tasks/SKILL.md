@@ -40,19 +40,19 @@ the fields the person gives; `contexts` and `after` go as JSON on stdin, and
 
 An agent that coordinates other agents keeps the work it owes in tasks, not in
 its conversation, which forgets in a busy period. Use one id for yourself,
-such as your session id, in every call.
+such as your session's `local_` id as `--session`, in every call.
 
 1. At the start of each turn, run
-   `board -C <board> call tasks.available --owner <your id>`. `held` lists
+   `board -C <board> call tasks.available --session <your id>`. `held` lists
    your tasks that wait, and `available` the ones you hold or may take.
 2. Before you start a task, run
-   `board -C <board> call tasks.claim --path <path> --owner <your id>`.
+   `board -C <board> call tasks.claim --path <path> --session <your id>`.
    On `tasks::task::held`, another owner has it; take another task.
 3. When a turn leaves work owed, add a task for it with `tasks.add` and claim
    it. Never hold owed work only in the conversation.
 4. Finish a task with `tasks.done`, or `tasks.drop` when it is no longer owed.
 5. Now and then, run `board -C <board> call tasks.available` without
-   `--owner`. A task held by a session that has ended is hidden from every
+   `--session`. A task held by a session that has ended is hidden from every
    other owner's sweep. Hand each one on by changing its `owner` line, as
    Edit below says.
 

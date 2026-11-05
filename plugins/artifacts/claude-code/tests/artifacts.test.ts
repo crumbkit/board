@@ -33,7 +33,7 @@ const CONFIG = '/home/owner/.config/board/config.json'
  * and agent, so a test whose first message is a brief passes its own
  * `session`.
  */
-function host(on: On, { imported = { written: [] as string[], known: 0, truncated: null as unknown }, replaces = [] as string[], first = 'Publish the plan.', session = 'session-1' } = {}) {
+function host(on: On, { imported = { written: [] as string[], known: 0, truncated: null as unknown }, replaces = [] as string[], first = 'Publish the plan.', session = 'session-1', env = { HOME: '/home/owner', CLAUDE_CODE_HOST_SESSION_ID: 'local_cd34' } as Record<string, string> } = {}) {
   const conversation = { first, entries: 1 }
   const account = { email: 'owner@example.com', refuse: undefined as string | undefined }
   const held = new Map<string, unknown>()
@@ -86,7 +86,7 @@ function host(on: On, { imported = { written: [] as string[], known: 0, truncate
   })
   on('fs.exists', (_, e) => ({ value: e.path === CONFIG }))
   on('fs.read', (_, e) => ({ value: e.path === CONFIG ? JSON.stringify({ personal: '~/Code/board', boards: ['~/Code/board'] }) : '' }))
-  mock.env(on, { HOME: '/home/owner' })
+  mock.env(on, env)
   return { account, held, writes, commands, logs, imports, recorded, conversation }
 }
 
@@ -123,9 +123,9 @@ test('a first publish records the artifact, the page and the version, and a seco
         version: '1793473476-1c42',
         title: 'Release plan',
         description: 'The plan for the next release.',
-        sha256: SHA,
+        sha256: `sha256:${SHA}`,
         source: SOURCE,
-        session: 'session-1',
+        by: { program: 'claude-code', session: 'local_cd34' },
         at: '2026-10-31T18:20:00Z',
       },
     },
@@ -281,8 +281,8 @@ test('a read of an unrecorded version writes it with the page it returned, and a
     $type: 'artifacts/version/v1',
     version: '1793480000-0d0d',
     title: 'Release plan',
-    sha256: hash,
-    session: 'session-1',
+    sha256: `sha256:${hash}`,
+    by: { program: 'claude-code', session: 'local_cd34' },
     at: '2026-10-31T18:20:00Z',
   })
 
@@ -470,4 +470,12 @@ test('a filed artifact that may replace nothing owes nothing, and one with no su
       'Set the change or task it belongs to: board --personal call artifacts.set --path /artifacts/A --subject /changes/<name>',
     ].join('\n'),
   )
+})
+
+test('outside the desktop app a recorded version keeps the session id as its agent', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  const { writes } = host(on, { env: { HOME: '/home/owner' } })
+  on('tool.call', () => read('1793480000-0d0d', header('1793480000-0d0d', 'raw HTML follows') + '<p>x</p>'))
+  await $.tool.call({ tool: 'Artifact', action: 'read', url: URL })
+  expect((writes[1]?.body as { by?: unknown } | undefined)?.by).toEqual({ program: 'claude-code', agent: 'session-1' })
 })

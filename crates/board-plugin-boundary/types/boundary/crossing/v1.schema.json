@@ -96,7 +96,7 @@
     }
   },
   "additionalProperties": false,
-  "description": "`boundary/crossing/v1`: the verdicts on one content, at\n`/crossings/<digest>` in the personal board.",
+  "description": "`boundary/crossing/v1`: the verdicts on one content, at\n`/crossings/<hex>` in the personal board, where `<hex>` is its digest\nwithout `sha256:`.",
   "properties": {
     "$type": {
       "const": "boundary/crossing/v1",
@@ -117,8 +117,8 @@
       "type": "array"
     },
     "digest": {
-      "description": "The SHA-256 of the content's action, destination and parts.",
-      "pattern": "^[0-9a-f]{64}$",
+      "description": "The digest of the content's action, destination and parts.",
+      "pattern": "^sha256:[0-9a-f]{64}$",
       "type": "string"
     },
     "from": {
@@ -128,7 +128,7 @@
     },
     "override": {
       "description": "The id of the owner's approved effect that let this content through\nits failed checks.",
-      "pattern": "^[0-9a-f]{64}$",
+      "pattern": "^sha256:[0-9a-f]{64}$",
       "type": "string"
     },
     "passed": {

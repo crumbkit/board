@@ -2,7 +2,7 @@
 //! Their schemas are generated from these structs; the files under `types/`
 //! are those schemas, committed.
 
-use board_plugin::shape::{Glob, Prose, Record, Ref, Sha256, Tag};
+use board_plugin::shape::{Digest, Glob, Prose, Record, Ref, Tag};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -59,15 +59,16 @@ impl Record for Control {
 }
 
 /// `boundary/crossing/v1`: the verdicts on one content, at
-/// `/crossings/<digest>` in the personal board.
+/// `/crossings/<hex>` in the personal board, where `<hex>` is its digest
+/// without `sha256:`.
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct CrossingRecord {
     /// The record's type.
     #[serde(rename = "$type")]
     pub tag: Tag<Self>,
-    /// The SHA-256 of the content's action, destination and parts.
-    #[schemars(with = "Sha256")]
+    /// The digest of the content's action, destination and parts.
+    #[schemars(with = "Digest")]
     pub digest: String,
     /// The capability that sends the parts, such as github.pr-create.
     pub action: String,
@@ -92,7 +93,7 @@ pub struct CrossingRecord {
     /// The id of the owner's approved effect that let this content through
     /// its failed checks.
     #[serde(rename = "override", skip_serializing_if = "Option::is_none")]
-    #[schemars(with = "Option<Sha256>")]
+    #[schemars(with = "Option<Digest>")]
     pub overridden: Option<String>,
 }
 

@@ -11,7 +11,7 @@ use serde_json::{Value, json};
 use crate::held::{self, timestamp};
 use crate::import::{ARTIFACT_URL, artifact_id};
 use crate::list::about;
-use board_plugin::shape::Tag;
+use board_plugin::shape::{Actor, Person, Tag};
 
 use crate::records::{ArtifactRecord, State};
 
@@ -27,7 +27,7 @@ pub(crate) struct Input {
     )]
     url: String,
     /// The email address of the claude.ai account the session is signed in to.
-    #[schemars(length(min = 1))]
+    #[schemars(with = "Person")]
     account: String,
     /// The change or task the publishing session works on, such as
     /// /changes/flows-editor; left out for a read or when the session names
@@ -66,7 +66,10 @@ pub(crate) fn record(host: &dyn Host, input: &Value) -> Result<Value, PluginErro
             let record = ArtifactRecord {
                 tag: Tag::default(),
                 url,
-                account,
+                account: Actor {
+                    person: Some(account),
+                    ..Actor::default()
+                },
                 first_seen: timestamp(host.settings().now),
                 subject,
                 shows: None,

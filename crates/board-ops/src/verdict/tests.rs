@@ -225,8 +225,7 @@ fn a_pointer_and_boards_own_types_are_admitted_without_a_schema_and_their_broken
 
 #[test]
 fn an_effects_record_is_admitted_without_a_schema_and_its_twin_with_a_bad_field_is_refused() {
-    let seen =
-        r#"{"$type": "board/seen/v1", "effect": "/effects/pending/0a", "answer": "approve"}"#;
+    let seen = r#"{"$type": "board/seen/v1", "effect": "sha256:0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a", "answer": "approve"}"#;
     assert_eq!(code(Role::Json, seen), None);
     assert_eq!(
         code(Role::Json, &seen.replace("approve", "yes")),

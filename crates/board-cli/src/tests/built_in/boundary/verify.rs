@@ -40,7 +40,7 @@ fn a_passing_crossing_verifies_by_digest_and_by_its_content_naming_the_boundarie
  {
     let personal = Personal::new();
     let digest = checked(&personal, "Fine.", None);
-    let expected = json!({"digest": digest, "crossing": format!("/crossings/{digest}"), "passed": true, "result": null, "boundaries": ["/boundaries/octo"]});
+    let expected = json!({"digest": digest, "crossing": format!("/crossings/{}", &digest[7..]), "passed": true, "result": null, "boundaries": ["/boundaries/octo"]});
     assert_eq!(verify(&personal, &["--digest", &digest]), expected);
     let (_, document) = personal.call("verify", &request("Fine."));
     assert_eq!(output(&document), &expected);
@@ -125,7 +125,7 @@ fn record_adds_the_result_to_a_passing_crossing_and_verify_reports_it() {
     let digest = checked(&personal, "Fine.", None);
     let (ran, document) = record_url(&personal, &digest);
     assert_eq!(ran.code, 0, "{}", printed(&ran));
-    let path = format!("/crossings/{digest}");
+    let path = format!("/crossings/{}", &digest[7..]);
     assert_eq!(output(&document), &json!({"crossing": path, "result": URL}));
     let crossing = personal.record(&path).unwrap();
     assert_eq!(
@@ -146,7 +146,7 @@ fn a_passing_recheck_keeps_the_recorded_result_and_a_failing_one_drops_it() {
     assert_eq!(checked(&personal, "Fine.", Some("Fine")), digest);
     assert_eq!(
         verify(&personal, &["--digest", &digest]),
-        json!({"digest": digest, "crossing": format!("/crossings/{digest}"), "passed": false, "result": null, "boundaries": ["/boundaries/octo"]})
+        json!({"digest": digest, "crossing": format!("/crossings/{}", &digest[7..]), "passed": false, "result": null, "boundaries": ["/boundaries/octo"]})
     );
 }
 
@@ -157,9 +157,11 @@ fn record_refuses_a_failed_crossing_and_one_never_checked() {
     let (ran, document) = record_url(&personal, &failed);
     assert_eq!(ran.code, 1);
     assert_eq!(document["code"], "boundary::crossing::failed");
-    let crossing = personal.record(&format!("/crossings/{failed}")).unwrap();
+    let crossing = personal
+        .record(&format!("/crossings/{}", &failed[7..]))
+        .unwrap();
     assert_eq!(crossing.get("result"), None);
-    let (_, document) = record_url(&personal, &"0".repeat(64));
+    let (_, document) = record_url(&personal, &format!("sha256:{}", "0".repeat(64)));
     assert_eq!(document["code"], "boundary::crossing::not_found");
     let passed = checked(&personal, "Fine.", None);
     let (ran, _) = record_url(&personal, &passed);

@@ -1,5 +1,33 @@
 {
   "$defs": {
+    "Actor": {
+      "additionalProperties": false,
+      "description": "Who wrote a record or acted: the session, the program, the person and\nthe agent's name, each when known, and at least one. Every record type that names who\nacted holds one.",
+      "minProperties": 1,
+      "properties": {
+        "agent": {
+          "description": "The name the agent was given, such as `soundcheck scheduler`, as\nfree text.",
+          "type": "string",
+          "x-board-prose": true
+        },
+        "person": {
+          "description": "The person who acted, such as `luke`, or their email address.",
+          "pattern": "^([a-z0-9]+(-[a-z0-9]+)*|[^@\\s]+@[^@\\s]+)$",
+          "type": "string"
+        },
+        "program": {
+          "description": "The program that acted, such as `claude-code` or `codex`.",
+          "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+          "type": "string"
+        },
+        "session": {
+          "description": "The Claude Code session's `local_` id.",
+          "pattern": "^local_[0-9a-f-]+$",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
     "Host": {
       "additionalProperties": false,
       "description": "The machine a run ran on.",
@@ -121,7 +149,7 @@
     }
   },
   "additionalProperties": false,
-  "description": "`runs/run/v1`: one run of a suite, by whom, when, on what, and what it gave.\n\n`scope` is `full` when the run ran every case and `targeted` when it ran\nsome. `dirty` says whether the working tree under test had uncommitted\nchanges; a run that does not say is never counted as clean. `versions`\nmaps what was used, such as a commit, a model or a library, to its\nversion. `setup` says how this run was prepared, and `summary` what it\nshowed. `measures` holds the run's own measures, such as `tests` and\n`failures`. A test suite's run lists only the cases that did not pass and\nthe cases that measured something; an eval's run may list every case.\n`written_by` names the plugin and hook that wrote a run without an agent.",
+  "description": "`runs/run/v1`: one run of a suite, by whom, when, on what, and what it gave.\n\n`by` names who ran it, when known. `scope` is `full` when the run ran every case and `targeted` when it ran\nsome. `dirty` says whether the working tree under test had uncommitted\nchanges; a run that does not say is never counted as clean. `versions`\nmaps what was used, such as a commit, a model or a library, to its\nversion. `setup` says how this run was prepared, and `summary` what it\nshowed. `measures` holds the run's own measures, such as `tests` and\n`failures`. A test suite's run lists only the cases that did not pass and\nthe cases that measured something; an eval's run may list every case.\n`written_by` names the plugin and hook that wrote a run without an agent.",
   "properties": {
     "$type": {
       "const": "runs/run/v1",
@@ -129,8 +157,8 @@
       "type": "string"
     },
     "by": {
-      "title": "By",
-      "type": "string"
+      "$ref": "#/$defs/Actor",
+      "title": "By"
     },
     "dirty": {
       "title": "Dirty",
@@ -215,7 +243,6 @@
   "required": [
     "$type",
     "suite",
-    "by",
     "started",
     "scope",
     "results"

@@ -4,6 +4,14 @@
 use super::*;
 use crate::tree::forest;
 
+/// The owner a person named `name` is.
+fn person(name: &str) -> Actor {
+    Actor {
+        person: Some(name.to_owned()),
+        ..Actor::default()
+    }
+}
+
 /// Three hours east of UTC.
 const OFFSET: i32 = 3 * 3600;
 const SEVEN: Duration = Duration::from_hours(7);
@@ -72,7 +80,7 @@ fn swept(
         tree: &tree,
         nodes: &nodes,
     };
-    sweep(tasks, blocked, places, clock, owner)
+    sweep(tasks, blocked, places, clock, owner.map(person).as_ref())
 }
 
 /// The titles in each section: available, due soon, stale and held.
@@ -315,7 +323,7 @@ fn a_task_whose_dates_cannot_be_read_is_degraded_and_one_whose_dates_can_is_read
 fn an_owner_keeps_the_tasks_it_or_nobody_holds_and_held_lists_its_tasks_that_are_not_available() {
     let due = Some(date("2026-10-26"));
     let owned = |owner: Option<&str>, task: Task| Task {
-        owner: owner.map(str::to_owned),
+        owner: owner.map(person),
         ..task
     };
     let tasks = [

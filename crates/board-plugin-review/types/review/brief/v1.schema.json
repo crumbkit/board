@@ -1,17 +1,17 @@
 {
   "$defs": {
-    "Subject": {
+    "Pinned": {
       "additionalProperties": false,
-      "description": "A record under review, pinned by its blob, so a review names exactly which version it read.",
+      "description": "A reference to a record pinned to the git blob it was read at, such as\nthe brief a review read.",
       "properties": {
         "blob": {
-          "pattern": "^[0-9a-f]{40,64}$",
-          "title": "Blob",
+          "description": "The git blob id of the record as it was read.",
+          "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$",
           "type": "string"
         },
         "record": {
+          "description": "The record.",
           "format": "board-ref",
-          "title": "Record",
           "type": "string"
         }
       },
@@ -19,7 +19,6 @@
         "record",
         "blob"
       ],
-      "title": "Subject",
       "type": "object"
     }
   },
@@ -67,7 +66,7 @@
       "type": "string"
     },
     "subject": {
-      "$ref": "#/$defs/Subject"
+      "$ref": "#/$defs/Pinned"
     }
   },
   "required": [

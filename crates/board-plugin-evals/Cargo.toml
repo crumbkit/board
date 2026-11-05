@@ -14,6 +14,7 @@ serde.workspace = true
 serde_json.workspace = true
 
 [dev-dependencies]
+board-plugin-topics.workspace = true
 board-scenario.workspace = true
 board-validate.workspace = true
 proptest.workspace = true

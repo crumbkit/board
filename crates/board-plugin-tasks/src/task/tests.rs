@@ -46,7 +46,14 @@ fn each_field_the_model_refuses_has_a_twin_it_reads() {
             json!({"repeat": "weekly-mon"}),
         ),
         (json!({"from_hour": 24}), json!({"from_hour": 23})),
-        (json!({"owner": ""}), json!({"owner": "lead"})),
+        (
+            json!({"owner": "lead"}),
+            json!({"owner": {"person": "lead"}}),
+        ),
+        (
+            json!({"owner": {}}),
+            json!({"owner": {"session": "local_0a1b"}}),
+        ),
         (json!({"kind": "epic"}), json!({"kind": "project"})),
         (
             json!({"parent": ["/tasks/a.md"]}),

@@ -1,6 +1,38 @@
 {
+  "Actor": {
+    "additionalProperties": false,
+    "description": "Who wrote a record or acted: the session, the program, the person and\nthe agent's name, each when known, and at least one. Every record type that names who\nacted holds one.",
+    "minProperties": 1,
+    "properties": {
+      "agent": {
+        "description": "The name the agent was given, such as `soundcheck scheduler`, as\nfree text.",
+        "type": "string",
+        "x-board-prose": true
+      },
+      "person": {
+        "description": "The person who acted, such as `luke`, or their email address.",
+        "pattern": "^([a-z0-9]+(-[a-z0-9]+)*|[^@\\s]+@[^@\\s]+)$",
+        "type": "string"
+      },
+      "program": {
+        "description": "The program that acted, such as `claude-code` or `codex`.",
+        "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+        "type": "string"
+      },
+      "session": {
+        "description": "The Claude Code session's `local_` id.",
+        "pattern": "^local_[0-9a-f-]+$",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  },
   "Date": {
     "format": "date",
+    "type": "string"
+  },
+  "Digest": {
+    "pattern": "^sha256:[0-9a-f]{64}$",
     "type": "string"
   },
   "Glob": {
@@ -14,12 +46,53 @@
     "type": "string",
     "x-board-glob": true
   },
+  "ObjectId": {
+    "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$",
+    "type": "string"
+  },
+  "Person": {
+    "pattern": "^([a-z0-9]+(-[a-z0-9]+)*|[^@\\s]+@[^@\\s]+)$",
+    "type": "string"
+  },
+  "Pinned": {
+    "additionalProperties": false,
+    "description": "A reference to a record pinned to the git blob it was read at, such as\nthe brief a review read.",
+    "properties": {
+      "blob": {
+        "description": "The git blob id of the record as it was read.",
+        "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$",
+        "type": "string"
+      },
+      "record": {
+        "description": "The record.",
+        "format": "board-ref",
+        "type": "string"
+      }
+    },
+    "required": [
+      "record",
+      "blob"
+    ],
+    "type": "object"
+  },
   "Prose": {
     "type": "string",
     "x-board-prose": true
   },
-  "Sha256": {
-    "pattern": "^[0-9a-f]{64}$",
+  "Repository": {
+    "pattern": "^[A-Za-z0-9-]+/[A-Za-z0-9._-]+$",
+    "type": "string"
+  },
+  "SessionId": {
+    "pattern": "^local_[0-9a-f-]+$",
+    "type": "string"
+  },
+  "Slug": {
+    "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+    "type": "string"
+  },
+  "Subject": {
+    "pattern": "^([A-Za-z0-9-]+/[A-Za-z0-9._-]+|/\\S+)$",
     "type": "string"
   },
   "Summary": {

@@ -17,9 +17,24 @@ const PR_CREATE = /(^|[\s;&|(])gh\s+pr\s+create\b/
 const PR_URL = /https:\/\/[^\s/]+\/[^\s/]+\/([^\s/]+)\/pull\/(\d+)/g
 
 type Config = { board: string; suite: string; decisionsTemplate: string }
-type Unit = { kind: 'agent' | 'task'; id: string; by: string; summary: string | undefined; noun: string }
+type Unit = { kind: 'agent' | 'task'; id: string; agent: string | undefined; summary: string | undefined; noun: string }
 const HOOK = { agent: 'subagent-stop', task: 'task-completed' }
 type Refused = { code: string; message: string }
+
+/** A shared actor shape: `{session, program, person, agent}`, each part optional. */
+type Actor = { session?: string; program?: string; person?: string; agent?: string }
+
+/**
+ * Who acts in this session: Claude Code, and the session by the `local_` id
+ * the desktop app names. Outside the desktop app the session's own id names
+ * no `local_` session, so it is kept as the agent, as the shapes migration
+ * keeps it for older records.
+ */
+async function actor($: EngineInterface): Promise<Actor> {
+  const host = await $.env.get('CLAUDE_CODE_HOST_SESSION_ID')
+  if (host?.startsWith('local_')) return { program: 'claude-code', session: host }
+  return { program: 'claude-code', agent: await $.session.id() }
+}
 
 /** The last line of `text` that holds anything but spaces, trimmed. */
 export function finalLine(text: string | undefined): string | undefined {
@@ -84,7 +99,7 @@ async function writeRun($: EngineInterface, { board, suite }: Config, unit: Unit
     await update($, started, ({ [key]: _, ...rest }) => rest)
     if (!suiteReady) {
       const method = 'Each run is one subagent or task a Claude Code session delegated, recorded when it stopped.'
-      const refusal = await put($, board, suite, { $type: 'runs/suite/v1', subjects: ['claude-code'], method }, true)
+      const refusal = await put($, board, suite, { $type: 'runs/suite/v1', subjects: ['anthropics/claude-code'], method }, true)
       if (refusal !== undefined && refusal.code !== 'board::put::stale') return refused($, `no suite ${suite}`, refusal)
       suiteReady = true
     }
@@ -92,7 +107,7 @@ async function writeRun($: EngineInterface, { board, suite }: Config, unit: Unit
     const run = {
       $type: 'runs/run/v1',
       suite,
-      by: unit.by,
+      by: { ...(await actor($)), ...(unit.agent ? { agent: unit.agent } : {}) },
       started: iso(since ?? finished),
       finished: iso(finished),
       scope: 'full',
@@ -124,7 +139,7 @@ async function stub($: EngineInterface, { board, decisionsTemplate }: Config, st
       $type: 'plans/decision/v1',
       decision: title,
       why: '',
-      session: await $.session.id(),
+      by: await actor($),
       decided: iso(now),
       urls: [pr.url],
       review: 'wanted',
@@ -155,7 +170,8 @@ export const register: Register = (on, options) => {
     const result = await next(e)
     if (result.block !== undefined) return result
     const noun = `${e.agent_type} subagent`
-    await writeRun($, cfg, { kind: 'agent', id: e.agent_id, by: e.agent_type, summary: finalLine(e.last_assistant_message), noun })
+    const unit = { kind: 'agent', id: e.agent_id, agent: e.agent_type, summary: finalLine(e.last_assistant_message), noun } as const
+    await writeRun($, cfg, unit)
     return result
   })
 
@@ -167,8 +183,8 @@ export const register: Register = (on, options) => {
   on('classic.TaskCompleted', async ($, e, next) => {
     const result = await next(e)
     if (result.block !== undefined) return result
-    const by = e.teammate_name ?? 'claude-code'
-    await writeRun($, cfg, { kind: 'task', id: e.task_id, by, summary: e.task_subject, noun: `task ${e.task_id}` })
+    const unit = { kind: 'task', id: e.task_id, agent: e.teammate_name, summary: e.task_subject, noun: `task ${e.task_id}` } as const
+    await writeRun($, cfg, unit)
     return result
   })
 

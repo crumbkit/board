@@ -165,7 +165,7 @@ fn questions() -> Scenario {
         let question = json!({
             "$type": "plans/question/v1",
             "question": "Which way?",
-            "session": "local_0a1b",
+            "by": {"session": "local_0a1b"},
             "asked": "2026-10-01T09:00:00Z",
             "status": "open",
         });
@@ -198,7 +198,7 @@ fn question(status: &str) -> String {
     let question = json!({
         "$type": "plans/question/v1",
         "question": "Which way?",
-        "session": "local_0a1b",
+        "by": {"session": "local_0a1b"},
         "asked": "2026-10-01T09:00:00Z",
         "status": status,
     });
@@ -260,7 +260,9 @@ fn call_plans_answer_help_lists_its_input_as_flags() {
         "--path",
         "--option",
         "--words",
-        "--by",
+        "--session",
+        "--program",
+        "--person",
         "--written_by",
         "Record the owner's answer to an open question",
     ] {
@@ -304,7 +306,7 @@ fn call_requests_thread_answers_from_a_warm_index_as_from_a_cold_one_after_a_new
     };
     let before = answer(Some(cache.path()));
     let second = request(&board, "two\n", "2026-10-30T10:00:00.000000Z");
-    let reply = json!({"$type": "requests/reply/v1", "effect": first, "text": "Shorter."});
+    let reply = json!({"$type": "requests/reply/v1", "effect": format!("sha256:{first}"), "text": "Shorter."});
     let path = format!("requests/replies/{first}/20261030T093000Z.json");
     board.write(&path, Item::File(&reply.to_string()));
     let warm = answer(Some(cache.path()));
@@ -319,7 +321,7 @@ fn eval(status: &str) -> String {
     let eval = json!({
         "$type": "evals/eval/v1",
         "question": "Is gix faster?",
-        "subjects": ["gix"],
+        "subjects": ["GitoxideLabs/gitoxide"],
         "status": status,
     });
     eval.to_string()
@@ -347,7 +349,13 @@ fn call_evals_about_and_open_answer_from_a_warm_index_as_from_a_cold_one_after_e
         json(&output)["data"]["output"].clone()
     };
     let calls: [&[&str]; 2] = [
-        &["--json", "call", "evals.about", "--subject", "GIX"],
+        &[
+            "--json",
+            "call",
+            "evals.about",
+            "--subject",
+            "GITOXIDELABS/GITOXIDE",
+        ],
         &["--json", "call", "evals.open"],
     ];
     let before = calls.map(|arguments| answer(Some(cache.path()), arguments));

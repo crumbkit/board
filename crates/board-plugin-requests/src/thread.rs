@@ -197,14 +197,22 @@ fn effects(host: &dyn Host) -> Result<(Effects, BTreeMap<String, Seen>), PluginE
 /// The replies to `versions`, ordered by file name, then by path. A reply
 /// counts only under `/requests/replies/<its effect>/` in this board.
 fn replies(host: &dyn Host, versions: &[Version]) -> Result<Vec<Reply>, PluginError> {
-    // Each id was computed as 64 hex digits, so it is safe in SQL.
+    // Each id was computed as 64 hex digits, so it is safe in SQL. A reply
+    // names its effect as `sha256:<id>`, or by the id alone as Board.app's
+    // relay writes it, and its folder by the id alone.
     let ids: Vec<String> = (versions.iter())
-        .map(|version| format!("'{}'", version.id))
+        .flat_map(|version| {
+            [
+                format!("'sha256:{}'", version.id),
+                format!("'{}'", version.id),
+            ]
+        })
         .collect();
     let sql = format!(
         "SELECT logical, body FROM records WHERE code IS NULL AND type = '{}' \
          AND json_extract(body, '$.effect') IN ({}) \
-         AND logical LIKE '/requests/replies/' || json_extract(body, '$.effect') || '/%'",
+         AND logical LIKE '/requests/replies/' || \
+         replace(json_extract(body, '$.effect'), 'sha256:', '') || '/%'",
         ReplyRecord::TYPE,
         ids.join(", ")
     );
@@ -212,6 +220,8 @@ fn replies(host: &dyn Host, versions: &[Version]) -> Result<Vec<Reply>, PluginEr
         .filter_map(|(path, body)| {
             let text = |key: &str| Some(body.get(key)?.as_str()?.to_owned());
             let (effect, text) = (text("effect")?, text("text")?);
+            // The output names the version by its id, as `versions` does.
+            let effect = effect.strip_prefix("sha256:").unwrap_or(&effect).to_owned();
             Some(Reply { path, effect, text })
         })
         .collect();

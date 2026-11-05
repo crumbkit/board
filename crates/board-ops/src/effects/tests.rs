@@ -538,7 +538,7 @@ fn a_plugins_put_of_an_effect_or_seen_record_is_refused_in_any_board_and_the_own
         OP.to_owned(),
         "/x".to_owned(),
     );
-    let seen = json!({"$type": "board/seen/v1", "effect": "0".repeat(64), "answer": "approve"});
+    let seen = json!({"$type": "board/seen/v1", "effect": format!("sha256:{}", "0".repeat(64)), "answer": "approve"});
     let records = [serde_json::to_string(&effect).unwrap(), seen.to_string()];
     let plugin = opened(&scenario, Some("tasks"), Some(&mine));
     let owner = opened(&scenario, None, Some(&mine));
@@ -910,7 +910,7 @@ fn pending_effect(mine: &Scenario, id: &str) -> Effect {
 /// An approval of `id` written straight into `mine`, as an agent with the
 /// owner's shell could write it, carrying `signature`.
 fn approve_by_hand(mine: &Scenario, id: &str, signature: Option<String>) {
-    let mut seen = Seen::new(format!("/effects/answered/{id}"), Answer::Approve, None);
+    let mut seen = Seen::new(id, Answer::Approve, None);
     seen.signature = signature;
     let text = json!(seen).to_string();
     mine.write(&format!("effects/seen/{id}.json"), Item::File(&text));
@@ -1019,7 +1019,7 @@ fn an_approval_with_a_signature_by_another_key_or_in_the_write_namespace_is_refu
     assert!(!exists(&mine, &format!("effects/seen/{id}.json")));
     let signature = signer().sign(&approval);
     approve(signature.clone()).unwrap();
-    let mut expected = Seen::new(format!("/effects/answered/{id}"), Answer::Approve, None);
+    let mut expected = Seen::new(&id, Answer::Approve, None);
     expected.signature = Some(signature);
     let seen = Seen::from_value(&read(&mine, &format!("effects/seen/{id}.json"))).unwrap();
     assert_eq!(seen, expected);

@@ -150,7 +150,8 @@ pub(crate) fn board(files: &[(&str, String)]) -> (Scenario, Real) {
 
 /// A `runs/suite/v1` record.
 pub(crate) fn suite() -> String {
-    json!({"$type": "runs/suite/v1", "subjects": ["board"], "method": "Run it."}).to_string()
+    json!({"$type": "runs/suite/v1", "subjects": ["crumbkit/board"], "method": "Run it."})
+        .to_string()
 }
 
 /// A full run of a clean revision of `/suites/a` that started at
@@ -159,7 +160,7 @@ pub(crate) fn run(started: &str, fields: &Value) -> String {
     let mut record = json!({
         "$type": "runs/run/v1",
         "suite": "/suites/a",
-        "by": "claude",
+        "by": {"program": "claude-code"},
         "started": started,
         "scope": "full",
         "dirty": false,
@@ -188,7 +189,10 @@ fn a_run_the_python_model_refused_is_unreadable_and_its_twin_is_read() {
             json!({"finished": "2026-10-01T09:05:00Z"}),
         ),
         (json!({"scope": "partial"}), json!({"scope": "targeted"})),
-        (json!({"by": 5}), json!({"by": "5"})),
+        (
+            json!({"by": "claude"}),
+            json!({"by": {"program": "claude-code"}}),
+        ),
         (json!({"suite": null}), json!({"suite": "/suites/b"})),
         (json!({"results": null}), json!({"results": []})),
         (

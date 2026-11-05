@@ -11,14 +11,12 @@ board-ops.workspace = true
 board-plugin.workspace = true
 board-plugin-tasks.workspace = true
 board-tree.workspace = true
+board-validate.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 tempfile.workspace = true
 toml.workspace = true
-
-[dev-dependencies]
-board-validate.workspace = true
 
 [lints]
 workspace = true

@@ -1,5 +1,33 @@
 {
   "$defs": {
+    "Actor": {
+      "additionalProperties": false,
+      "description": "Who wrote a record or acted: the session, the program, the person and\nthe agent's name, each when known, and at least one. Every record type that names who\nacted holds one.",
+      "minProperties": 1,
+      "properties": {
+        "agent": {
+          "description": "The name the agent was given, such as `soundcheck scheduler`, as\nfree text.",
+          "type": "string",
+          "x-board-prose": true
+        },
+        "person": {
+          "description": "The person who acted, such as `luke`, or their email address.",
+          "pattern": "^([a-z0-9]+(-[a-z0-9]+)*|[^@\\s]+@[^@\\s]+)$",
+          "type": "string"
+        },
+        "program": {
+          "description": "The program that acted, such as `claude-code` or `codex`.",
+          "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+          "type": "string"
+        },
+        "session": {
+          "description": "The Claude Code session's `local_` id.",
+          "pattern": "^local_[0-9a-f-]+$",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
     "Cost": {
       "additionalProperties": false,
       "description": "What a review took: its seconds, and its tokens when a model ran and said.",
@@ -61,18 +89,18 @@
       "title": "Finding",
       "type": "object"
     },
-    "Subject": {
+    "Pinned": {
       "additionalProperties": false,
-      "description": "A record under review, pinned by its blob, so a review names exactly which version it read.",
+      "description": "A reference to a record pinned to the git blob it was read at, such as\nthe brief a review read.",
       "properties": {
         "blob": {
-          "pattern": "^[0-9a-f]{40,64}$",
-          "title": "Blob",
+          "description": "The git blob id of the record as it was read.",
+          "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$",
           "type": "string"
         },
         "record": {
+          "description": "The record.",
           "format": "board-ref",
-          "title": "Record",
           "type": "string"
         }
       },
@@ -80,7 +108,6 @@
         "record",
         "blob"
       ],
-      "title": "Subject",
       "type": "object"
     }
   },
@@ -93,7 +120,7 @@
       "patch_ids"
     ]
   },
-  "description": "`review/report/v1`, at /reviews/<id>/report: what one review of a range or a record found.\n\n`range` holds the full commit ids reviewed, and `patch_ids` the\n`git patch-id --verbatim` of each commit in it that has a diff, oldest first,\nso the review still covers the commits after a rebase. A review of a record\nholds its `subject` instead, and covers no commit. `brief` is absent for\na review a person wrote. `by` names the models the agent reported, else the\nprogram the agent command starts, or the person. `source` is a URL, such as\na GitHub review. `follows` is the previous report.",
+  "description": "`review/report/v1`, at /reviews/<id>/report: what one review of a range or a record found.\n\n`range` holds the full commit ids reviewed, and `patch_ids` the\n`git patch-id --verbatim` of each commit in it that has a diff, oldest first,\nso the review still covers the commits after a rebase. A review of a record\nholds its `subject` instead, and covers no commit. `brief` is absent for\na review a person wrote. `by` names who reviewed: the program the agent\ncommand starts, its session, or the person. `source` is a URL, such as\na GitHub review. `follows` is the previous report.",
   "oneOf": [
     {
       "required": [
@@ -119,9 +146,7 @@
       "x-board-type": "review/brief/v1"
     },
     "by": {
-      "minLength": 1,
-      "title": "By",
-      "type": "string"
+      "$ref": "#/$defs/Actor"
     },
     "cost": {
       "$ref": "#/$defs/Cost"
@@ -158,7 +183,7 @@
       "type": "string"
     },
     "subject": {
-      "$ref": "#/$defs/Subject"
+      "$ref": "#/$defs/Pinned"
     },
     "verdict": {
       "enum": [
@@ -173,8 +198,7 @@
   "required": [
     "$type",
     "findings",
-    "verdict",
-    "by"
+    "verdict"
   ],
   "title": "ReportRecord",
   "type": "object"

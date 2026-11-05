@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 
 use board_model::parse_json;
 use board_ops::{Host, PluginError, literal};
-use board_plugin::shape::{Prose, Record, Ref, Sha256};
+use board_plugin::shape::{Digest, Prose, Record, Ref};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
@@ -15,9 +15,11 @@ use crate::content::Content;
 use crate::records::{BoundaryRecord, CrossingRecord};
 use crate::{personal, refused};
 
-/// Where crossings live in the personal board, each named by its digest.
+/// Where crossings live in the personal board, each named by its
+/// digest's hex digits.
 pub(crate) fn path(digest: &str) -> String {
-    format!("/crossings/{digest}")
+    let hex = digest.strip_prefix("sha256:").unwrap_or(digest);
+    format!("/crossings/{hex}")
 }
 
 /// The valid crossing of `digest` in the personal board, and its blob.
@@ -64,7 +66,7 @@ pub(crate) fn write(
 #[schemars(rename = "VerifyInput")]
 pub(crate) struct VerifyInput {
     /// The crossing's digest, given alone.
-    #[schemars(with = "Option<Sha256>")]
+    #[schemars(with = "Option<Digest>")]
     digest: Option<String>,
     /// The capability that sends the parts, such as github.pr-create.
     action: Option<String>,
@@ -81,7 +83,7 @@ pub(crate) struct VerifyInput {
 #[schemars(rename = "VerifyOutput")]
 pub(crate) struct VerifyOutput {
     /// The SHA-256 of the crossing's content.
-    #[schemars(with = "Sha256")]
+    #[schemars(with = "Digest")]
     digest: String,
     /// The crossing's path in the personal board, or null when there is none.
     crossing: Option<String>,
@@ -178,7 +180,7 @@ fn bad_input(given: &VerifyInput) -> PluginError {
 #[schemars(rename = "RecordInput")]
 pub(crate) struct RecordInput {
     /// The crossing's digest.
-    #[schemars(with = "Sha256")]
+    #[schemars(with = "Digest")]
     digest: String,
     /// What the destination returned, such as the pull request's URL.
     #[schemars(length(min = 1))]

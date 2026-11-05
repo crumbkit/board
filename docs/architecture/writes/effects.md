@@ -35,16 +35,20 @@ Each is a Board type, checked by its Rust type, with no schema file.
     approval covers it. An effect written before Board set it has none; a
     reader that orders effects puts those first, in id order.
   - `digest` is the SHA-256 of the text's exact bytes, a final newline
-    included, or of the record's canonical JSON.
+    included, or of the record's canonical JSON, as a `Digest`.
   - An answer refuses an effect that shows content without its digest.
   - Board never sets `prior` yet.
 - `board/seen/v1`: the owner's answer at `/effects/seen/<id>`: `approve` or
   `refuse`, with an optional `reason`. An approval holds the owner's
   `signature`. Its `effect` names `/effects/answered/<id>`, where the
-  answered effect moves, unchanged. A seen record written before Board
-  kept answered effects names `/effects/pending/<id>`.
+  answered effect moves, unchanged, and which Board.app's list of answered
+  requests reads. Board also reads a seen record that names the effect as
+  `sha256:<id>`, or by `/effects/pending/<id>` as Board wrote before it
+  kept answered effects.
 - The id is the 64 hex digits of the SHA-256 of the canonical JSON of the
-  board root, plugin, op, path, digest and prior blob.
+  board root, plugin, op, path, digest and prior blob. Paths and commands
+  name an effect by these digits alone. A reply names it as `sha256:<id>`
+  or by the bare id, and a seen record by its answered path.
 
 ## What only the owner writes
 

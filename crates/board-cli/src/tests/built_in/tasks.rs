@@ -13,6 +13,7 @@ use std::path::PathBuf;
 use super::*;
 
 mod available;
+mod owner;
 mod schema;
 mod trees;
 mod write;

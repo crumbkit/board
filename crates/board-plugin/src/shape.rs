@@ -195,23 +195,24 @@ impl JsonSchema for Url {
     }
 }
 
-/// A SHA-256 in 64 lowercase hex digits, such as an effect's id or the
-/// digest of some content. A `String` field takes it with
-/// `#[schemars(with = "Sha256")]`.
+/// A hash Board defines: its algorithm, `sha256:`, and 64 lowercase hex
+/// digits, such as an effect's id in a record or the digest of some
+/// content. A later Board can admit a second algorithm by widening the
+/// pattern. A `String` field takes it with `#[schemars(with = "Digest")]`.
 #[derive(Debug)]
-pub enum Sha256 {}
+pub enum Digest {}
 
-impl JsonSchema for Sha256 {
+impl JsonSchema for Digest {
     fn inline_schema() -> bool {
         true
     }
 
     fn schema_name() -> Cow<'static, str> {
-        "Sha256".into()
+        "Digest".into()
     }
 
     fn json_schema(_: &mut SchemaGenerator) -> Schema {
-        json_schema!({"type": "string", "pattern": "^[0-9a-f]{64}$"})
+        json_schema!({"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"})
     }
 }
 
@@ -285,17 +286,210 @@ impl JsonSchema for Summary {
     }
 }
 
+/// A string shape: a `pattern` with an inline schema named `$name`. A
+/// `String` field takes it with `#[schemars(with = "Name")]`.
+macro_rules! patterned {
+    ($(#[$doc:meta])* $name:ident = $pattern:expr) => {
+        $(#[$doc])*
+        #[derive(Debug)]
+        pub enum $name {}
+
+        impl JsonSchema for $name {
+            fn inline_schema() -> bool {
+                true
+            }
+
+            fn schema_name() -> Cow<'static, str> {
+                stringify!($name).into()
+            }
+
+            fn json_schema(_: &mut SchemaGenerator) -> Schema {
+                json_schema!({"type": "string", "pattern": $pattern})
+            }
+        }
+    };
+}
+
+patterned! {
+    /// A Claude Code session's id: `local_` and a lowercase uuid, such as
+    /// `local_84ccdcef-4c52-487a-9ac6-ebf2f157e440`.
+    SessionId = "^local_[0-9a-f-]+$"
+}
+
+patterned! {
+    /// A lowercase name of letters and digits in words joined by `-`, such
+    /// as `claude-code`.
+    Slug = "^[a-z0-9]+(-[a-z0-9]+)*$"
+}
+
+patterned! {
+    /// A person: a [`Slug`], such as `luke`, or an email address, such as
+    /// `owner@example.com`.
+    Person = "^([a-z0-9]+(-[a-z0-9]+)*|[^@\\s]+@[^@\\s]+)$"
+}
+
+patterned! {
+    /// A git object id: 40 lowercase hex digits in a SHA-1 repository, or
+    /// 64 in a SHA-256 one.
+    ObjectId = "^[0-9a-f]{40}([0-9a-f]{24})?$"
+}
+
+patterned! {
+    /// A repository as GitHub names it, `owner/name`, such as
+    /// `crumbkit/board`.
+    Repository = "^[A-Za-z0-9-]+/[A-Za-z0-9._-]+$"
+}
+
+patterned! {
+    /// What an eval or a suite tests: a repository as `owner/name`, such as
+    /// `crumbkit/board`, or a board path, such as `/repos/board/crates`.
+    Subject = "^([A-Za-z0-9-]+/[A-Za-z0-9._-]+|/\\S+)$"
+}
+
+/// Who wrote a record or acted: the session, the program, the person and
+/// the agent's name, each when known, and at least one. Every record type that names who
+/// acted holds one.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+#[schemars(extend("minProperties" = 1))]
+pub struct Actor {
+    /// The Claude Code session's `local_` id.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "Option<SessionId>")]
+    pub session: Option<String>,
+    /// The program that acted, such as `claude-code` or `codex`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "Option<Slug>")]
+    pub program: Option<String>,
+    /// The person who acted, such as `luke`, or their email address.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "Option<Person>")]
+    pub person: Option<String>,
+    /// The name the agent was given, such as `soundcheck scheduler`, as
+    /// free text.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "Option<Prose>")]
+    pub agent: Option<String>,
+}
+
+impl Actor {
+    /// The actor that `session`, `program`, `person` and `agent` name, or
+    /// none when they name nobody. A blank agent name names nobody.
+    #[must_use]
+    pub fn of(
+        session: Option<String>,
+        program: Option<String>,
+        person: Option<String>,
+        agent: Option<String>,
+    ) -> Option<Self> {
+        let actor = Self {
+            session,
+            program,
+            person,
+            agent: agent.filter(|name| !name.trim().is_empty()),
+        };
+        (actor != Self::default()).then_some(actor)
+    }
+
+    /// The actor that one text names, as a released Board recorded who
+    /// acted: its `local_` session, the program its words name (Codex, or
+    /// Claude and its subagents), and Luke. The whole text is also the
+    /// agent's name unless it is only a program's name, Luke's name or the
+    /// session id, so no words are lost. Blank text names nobody. The shapes
+    /// migration reads old actors with it, and `--owner` reads its text with
+    /// it, so the two agree on who an old name is.
+    #[must_use]
+    pub fn from_text(text: &str) -> Option<Self> {
+        let trimmed = text.trim();
+        if trimmed.is_empty() {
+            return None;
+        }
+        let session = (text.split(|c: char| !(c.is_ascii_alphanumeric() || c == '_' || c == '-')))
+            .find(|word| {
+                word.strip_prefix("local_").is_some_and(|id| {
+                    !id.is_empty() && id.chars().all(|c| matches!(c, '0'..='9' | 'a'..='f' | '-'))
+                })
+            })
+            .map(|session| session.trim_end_matches('-'));
+        let words: Vec<String> = (text.split(|c: char| !c.is_ascii_alphanumeric()))
+            .map(str::to_ascii_lowercase)
+            .collect();
+        let named = |name: &str| words.iter().any(|word| word == name);
+        let subagent = text.to_ascii_lowercase().contains("sub-agent");
+        let program = if named("codex") {
+            Some("codex")
+        } else if named("claude") || named("subagent") || subagent {
+            Some("claude-code")
+        } else {
+            None
+        };
+        let bare = ["codex", "claude", "claude-code", "claude code", "luke"]
+            .contains(&trimmed.to_ascii_lowercase().as_str())
+            || session == Some(trimmed);
+        Some(Self {
+            session: session.map(str::to_owned),
+            program: program.map(str::to_owned),
+            person: named("luke").then(|| "luke".to_owned()),
+            agent: (!bare).then(|| trimmed.to_owned()),
+        })
+    }
+
+    /// Whether `other` is the same actor: the same session when both name
+    /// one, since a session is one agent however else it is described, and
+    /// otherwise every part equal.
+    #[must_use]
+    pub fn same(&self, other: &Self) -> bool {
+        match (&self.session, &other.session) {
+            (Some(one), Some(two)) => one == two,
+            _ => self == other,
+        }
+    }
+}
+
+impl std::fmt::Display for Actor {
+    /// The parts it holds, in the order program, agent, person and
+    /// session, separated by `, `, such as `claude-code, luke`.
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let parts: Vec<&str> = [&self.program, &self.agent, &self.person, &self.session]
+            .into_iter()
+            .filter_map(Option::as_deref)
+            .collect();
+        formatter.write_str(&parts.join(", "))
+    }
+}
+
+/// A reference to a record pinned to the git blob it was read at, such as
+/// the brief a review read.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Pinned {
+    /// The record.
+    #[schemars(with = "Ref")]
+    pub record: String,
+    /// The git blob id of the record as it was read.
+    #[schemars(with = "ObjectId")]
+    pub blob: String,
+}
+
 /// Each shared shape's schema by its name. `crates/board-plugin/shapes.json`
 /// is this map, committed, and the shapes lint admits a string field whose
 /// schema is one of its entries.
 pub fn registry() -> Map<String, Value> {
     let mut generator = SchemaGenerator::default();
     Map::from_iter([
+        object::<Actor>(),
         entry::<Date>(&mut generator),
         entry::<Glob>(&mut generator),
         entry::<LogicalGlob>(&mut generator),
+        entry::<ObjectId>(&mut generator),
+        entry::<Person>(&mut generator),
+        object::<Pinned>(),
         entry::<Prose>(&mut generator),
-        entry::<Sha256>(&mut generator),
+        entry::<Repository>(&mut generator),
+        entry::<SessionId>(&mut generator),
+        entry::<Digest>(&mut generator),
+        entry::<Slug>(&mut generator),
+        entry::<Subject>(&mut generator),
         entry::<Summary>(&mut generator),
         entry::<Url>(&mut generator),
     ])
@@ -306,6 +500,16 @@ fn entry<T: JsonSchema>(generator: &mut SchemaGenerator) -> (String, Value) {
         T::schema_name().into_owned(),
         T::json_schema(generator).into(),
     )
+}
+
+/// An object shape as a record schema's `$defs` holds it: made as
+/// [`schema_of`] makes it, without the `title` a schema's root carries.
+fn object<T: JsonSchema>() -> (String, Value) {
+    let mut schema = schema_of::<T>(SchemaSettings::draft2020_12());
+    if let Some(keywords) = schema.as_object_mut() {
+        keywords.remove("title");
+    }
+    (T::schema_name().into_owned(), schema)
 }
 
 /// `T`'s JSON Schema, draft 2020-12 without `$schema`. A field a writer may

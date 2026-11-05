@@ -43,8 +43,10 @@ the reports a change attaches cover the commits of the repository it changes.
 - `findings`: each has `severity` (`high`, `medium` or `low`) and `text`, and
   `file` and `line` when it is about one place.
 - `verdict`: `approve`, `changes` or `comment`.
-- `by`: the models the agent reported, or the person. When the agent reports
-  no model, it is the program the agent command starts.
+- `by`: the `Actor` who reviewed, `{session, program, person, agent}`.
+  `review.run` writes the program its agent command starts, and records the
+  `claude` command as `{"program": "claude-code"}`. It leaves `by` out when
+  that name is not a slug. Optional.
 - `brief`, `cost` (`seconds`, `input_tokens`, `output_tokens`), `source` (a
   URL such as a GitHub review) and `follows`: optional.
 
@@ -72,8 +74,7 @@ export BOARD_REVIEW_AGENT='["claude", "-p", "--output-format", "json", "--settin
   stronger than the agent's resistance to text in the diff.
 - The answer must end with a JSON object holding `verdict` and `findings`.
 - When the output is the JSON envelope of `claude -p --output-format json`,
-  `review.run` reads the answer from `result`, the tokens from `usage` and the
-  models from `modelUsage`.
+  `review.run` reads the answer from `result` and the tokens from `usage`.
 
 Sign-in is broken. The example agent currently exits with "Not logged in",
 and `review.run` then fails with `review::agent::failed`. The cause is not

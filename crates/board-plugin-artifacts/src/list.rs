@@ -5,7 +5,7 @@ use std::collections::BTreeSet;
 
 use board_model::{Code, Refusal};
 use board_ops::{Absent, Host, PluginError};
-use board_plugin::shape::whole;
+use board_plugin::shape::{Actor, whole};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -79,7 +79,7 @@ pub(crate) struct Output {
 pub(crate) struct Listed {
     path: String,
     url: String,
-    account: String,
+    account: Actor,
     first_seen: String,
     subject: Vec<String>,
     shows: Option<String>,
@@ -162,7 +162,7 @@ pub(crate) fn about(host: &dyn Host, subject: &str) -> Result<BTreeSet<String>, 
 
 fn matches(asked: &Input, about: Option<&BTreeSet<String>>, held: &Held) -> bool {
     let record = &held.record;
-    (asked.account.as_ref()).is_none_or(|account| *account == record.account)
+    (asked.account.as_ref()).is_none_or(|account| record.account.person.as_ref() == Some(account))
         && about.is_none_or(|paths| {
             paths.contains(&held.path)
                 || (asked.subject.as_ref()).is_some_and(|subject| record.subject.contains(subject))

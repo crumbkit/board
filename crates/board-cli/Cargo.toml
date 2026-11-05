@@ -10,7 +10,7 @@ name = "board"
 path = "src/main.rs"
 
 [features]
-default = ["artifacts", "boundary", "changes", "controls", "evals", "github", "jira", "notes", "plans", "prompts", "requests", "review", "runs", "share", "tasks"]
+default = ["artifacts", "boundary", "changes", "controls", "evals", "github", "jira", "notes", "plans", "prompts", "requests", "review", "runs", "share", "tasks", "topics"]
 artifacts = ["board-plugins/artifacts"]
 boundary = ["board-plugins/boundary"]
 changes = ["board-plugins/changes"]
@@ -26,6 +26,7 @@ review = ["board-plugins/review"]
 runs = ["board-plugins/runs"]
 share = ["board-plugins/share"]
 tasks = ["board-plugins/tasks"]
+topics = ["board-plugins/topics"]
 
 [dependencies]
 board-model.workspace = true

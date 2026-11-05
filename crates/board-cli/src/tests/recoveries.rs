@@ -928,7 +928,7 @@ fn effects(starts: &mut Starts) {
     // The owner refused the plugin's comment on /r in this board.
     let root = board.workdir().canonicalize().unwrap();
     let (refused, _) = effect(&root.display().to_string(), "tasks", "review.comment", "/r");
-    let seen = json!({"$type": "board/seen/v1", "effect": format!("/effects/pending/{refused}"), "answer": "refuse"});
+    let seen = json!({"$type": "board/seen/v1", "effect": format!("sha256:{refused}"), "answer": "refuse"});
     personal.write(
         &format!("effects/seen/{refused}.json"),
         Item::File(&seen.to_string()),

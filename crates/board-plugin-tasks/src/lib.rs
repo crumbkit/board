@@ -5,6 +5,7 @@
 //! board-repos'.
 
 mod available;
+mod claim;
 mod dates;
 mod lines;
 mod listing;
@@ -102,7 +103,7 @@ impl Plugin for Tasks {
             "available" => available::available(host, &input),
             "tree" => trees::tree(host, &input),
             "add" => write::add(host, &input),
-            "claim" => write::claim(host, &input),
+            "claim" => claim::claim(host, &input),
             "done" => write::done(host, &input),
             "defer" => write::defer(host, &input),
             "drop" => write::drop(host, &input),
@@ -185,7 +186,7 @@ fn manifest() -> Value {
             schema_of::<trees::Output>(output()),
         ),
         (schema_of::<write::AddInput>(input()), written()),
-        (schema_of::<write::ClaimInput>(input()), written()),
+        (schema_of::<claim::ClaimInput>(input()), written()),
         (schema_of::<write::TaskPath>(input()), written()),
         (schema_of::<write::DeferInput>(input()), written()),
         (schema_of::<write::TaskPath>(input()), written()),

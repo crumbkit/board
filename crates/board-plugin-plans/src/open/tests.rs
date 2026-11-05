@@ -150,7 +150,7 @@ pub(crate) fn body(asked: &str, fields: &Value) -> Value {
     let mut record = json!({
         "$type": "plans/question/v1",
         "question": "Which way?",
-        "session": "local_0a1b",
+        "by": {"session": "local_0a1b"},
         "asked": asked,
         "status": "open",
     });
@@ -343,7 +343,10 @@ fn twins() -> Vec<(Value, Value)> {
             json!({"asked": "2026-10-01T09:00:00.123456789Z"}),
         ),
         (json!({"question": 1}), json!({"question": ""})),
-        (json!({"session": null}), json!({"session": "local_0a1b"})),
+        (
+            json!({"by": {"program": "codex"}}),
+            json!({"by": {"session": "local_0a1b"}}),
+        ),
         (
             json!({"recommendation": 1}),
             json!({"recommendation": null}),

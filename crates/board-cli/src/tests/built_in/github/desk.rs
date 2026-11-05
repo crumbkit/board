@@ -418,7 +418,7 @@ impl Desk {
 /// it.
 pub(super) fn digest(action: &str, parts: &Value) -> String {
     let content = json!({"action": action, "parts": parts, "to": TO});
-    board_model::Digest::of(content.to_string().as_bytes()).hex()
+    board_model::Digest::of(content.to_string().as_bytes()).to_string()
 }
 
 /// Writes `text` to the file at `path`, anywhere at the desk.

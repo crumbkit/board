@@ -1,8 +1,9 @@
 # Updating a plugin
 
 This file holds detail for docs/plugins.md, Installing and enabling. It says
-what happens when an installed plugin stops shipping a type, and how the
-plugin moves its records to the types it ships now.
+what happens when an installed plugin stops shipping a type, how the
+plugin moves its records to the types it ships now, and how a board moves
+to the shared shapes.
 
 ## The update
 
@@ -48,3 +49,45 @@ Each step leaves a valid board in its own commit.
   own put ([architecture/writes/effects.md](../../architecture/writes/effects.md)).
 - Board's wire format has no migration concept. What is owed is the plugin's
   own output.
+
+## The shared shapes migration
+
+Before 0.1.0, Board moved actors, hashes and subjects onto shared shapes in place,
+keeping each type's version. `cargo xtask migrate-shapes <board>` rewrites
+one board's own tree to them. A board's records and its stored schemas move
+together, so update a board in this order:
+
+1. Install the new Board.
+2. Run `cargo xtask migrate-shapes <board>`, read what it could not map
+   and the topics it would create, and write a `--map <file>`. The map
+   maps an old string to an actor object, a subject, or a
+   `topics/topic/v1` record, and it refuses a value outside those shapes.
+   An actor name it cannot parse becomes the actor's `agent`, so it drops
+   no attribution, and a suite's own name leaves its subjects.
+   A subject that is neither a repository nor a board path, and that no
+   mount resolves, becomes a topic at `/topics/<slug>`, which the subject
+   then names. Names with the same slug, and names the map sends to
+   `/topics/<slug>`, become one topic whose other names are its aliases. A
+   topic the board already holds, as JSON or Markdown, is left as it is,
+   and the run lists the names it would have added under `topics_existing`.
+3. Run it again with `--write` and the map. A second run changes nothing.
+4. Run `board plugin enable` for each enabled plugin, and for `topics` if
+   the migration created any topic, so the stored schemas are the new ones,
+   then `board check`.
+
+It reads only the board's own tree, so each mounted board and each mounted
+notes repository is migrated on its own, with
+`cargo xtask migrate-shapes <its checkout>`. Until it is, a task there whose
+`owner` is still a string is unreadable and drops out of `tasks.available`,
+and a question there whose `session` is still a string drops out of
+`plans.open`. A crossing with a bare hash is degraded until its board is
+migrated.
+
+The migration leaves seen records and Board.app alone. A seen record keeps
+naming its effect by `/effects/answered/<id>`, which Board.app reads, and a
+reply may still name its effect by the bare id, which Board.app's relay
+writes. The migration gives a bare reply effect its `sha256:` prefix, and
+both forms stay valid, so Board.app as it is today keeps working before and
+after Board updates. A Board.app that writes `sha256:` reply effects needs
+this Board first, because a released Board's reply schema admits only the
+bare id.

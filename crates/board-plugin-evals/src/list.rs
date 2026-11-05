@@ -1,6 +1,8 @@
 //! `about` and `open`: the evals this board and its mounted boards hold,
 //! by path.
 
+use std::collections::{BTreeMap, BTreeSet};
+
 use board_model::parse_json;
 use board_ops::{Host, Limit, PluginError};
 use board_plugin::shape::{TREE_CODES, whole};
@@ -16,6 +18,17 @@ use crate::records::{Status, Verdict};
 pub(crate) const EVALS: &str = "SELECT logical, code, body FROM records \
      WHERE type = 'evals/eval/v1' AND logical IS NOT NULL ORDER BY logical";
 
+/// Every JSON topic, by the board that holds it and its path in that
+/// board, which `about` reads to find the evals that name a topic whose
+/// title or alias is the subject. The topics plugin ships the type.
+pub(crate) const TOPICS: &str = "SELECT source, '/' || substr(path, 1, length(path) - 5), code, body \
+     FROM records WHERE type = 'topics/topic/v1' AND path LIKE '%.json' ORDER BY source, path";
+
+/// The board that holds each eval, so `about` matches a topic only in the
+/// eval's own board.
+pub(crate) const SOURCES: &str = "SELECT logical, source FROM records \
+     WHERE type = 'evals/eval/v1' AND logical IS NOT NULL ORDER BY logical";
+
 /// The evals that name this `subject` or this `mount`, at most `limit` of them.
 ///
 /// A subject matches ignoring case for ASCII letters. A mount is a path such as `/repos/crumbkit`. It matches
@@ -24,7 +37,7 @@ pub(crate) const EVALS: &str = "SELECT logical, code, body FROM records \
 #[serde(deny_unknown_fields)]
 #[schemars(extend("oneOf" = [{"required": ["subject"]}, {"required": ["mount"]}]))]
 pub(crate) struct AboutInput {
-    /// The name of what is tested, such as crumbkit or clap, matched ignoring ASCII case; give subject or mount, not both.
+    /// What is tested, as an eval's subjects name it, such as clap-rs/clap or clap alone, or as a topic's title or alias names it, such as seatbelt for an eval naming /topics/seatbelt, matched ignoring ASCII case; give subject or mount, not both.
     #[schemars(length(min = 1))]
     subject: Option<String>,
     /// A repository's mount, such as /repos/crumbkit, to list the evals that name it or live in it; give subject or mount, not both.
@@ -109,11 +122,76 @@ pub(crate) fn about(host: &dyn Host, input: &Value) -> Result<Value, PluginError
         }
         (None, subject) => {
             let subject = subject.unwrap_or_default();
-            listed(host, limit, |_, eval| {
-                (eval.subjects.iter()).any(|named| named.eq_ignore_ascii_case(&subject))
+            let topics = topics(host, &subject)?;
+            let sources = if topics.is_empty() {
+                BTreeMap::new()
+            } else {
+                sources(host)?
+            };
+            listed(host, limit, |path, eval| {
+                let source = sources.get(path);
+                (eval.subjects.iter()).any(|named| {
+                    named.eq_ignore_ascii_case(&subject)
+                        || repository_named(named, &subject)
+                        || source
+                            .is_some_and(|source| topics.contains(&(source.clone(), named.clone())))
+                })
             })
         }
     }
+}
+
+/// The topics whose title or one of whose aliases is `subject`, ignoring
+/// ASCII case, each as the source of the board that holds it, as JSON
+/// text, and its path
+/// in that board. A topic Board marks degraded for anything but the tree
+/// is left out, as is one this plugin cannot read.
+fn topics(host: &dyn Host, subject: &str) -> Result<BTreeSet<(String, String)>, PluginError> {
+    /// A topic as far as `about` reads it; any other field is ignored.
+    #[derive(Deserialize)]
+    struct Topic {
+        title: String,
+        aliases: Option<Vec<String>>,
+    }
+    let report = (host.query(TOPICS, Limit::ALL))
+        .map_err(|error| PluginError::board_refused("evals", "query", &error.refusal()))?;
+    let found = (report.rows.iter()).filter_map(|row| {
+        let [source, Value::String(path), code, Value::String(body)] = &row[..] else {
+            return None;
+        };
+        let tree = code.is_null() || TREE_CODES.iter().any(|tree| code == *tree);
+        let topic = Topic::deserialize(parse_json(body.as_bytes()).ok()?).ok()?;
+        let mut named = std::iter::once(&topic.title).chain(topic.aliases.iter().flatten());
+        (tree && named.any(|name| name.eq_ignore_ascii_case(subject)))
+            .then(|| (source.to_string(), path.clone()))
+    });
+    Ok(found.collect())
+}
+
+/// Whether the `owner/name` subject `named` is the repository `subject`
+/// names by its name alone, such as `clap` for `clap-rs/clap`, ignoring
+/// ASCII case. A board path never matches by its last part.
+fn repository_named(named: &str, subject: &str) -> bool {
+    !named.starts_with('/')
+        && !subject.contains('/')
+        && named
+            .split_once('/')
+            .is_some_and(|(_, name)| name.eq_ignore_ascii_case(subject))
+}
+
+/// The source of the board that holds each eval, as JSON text, by the
+/// eval's path.
+fn sources(host: &dyn Host) -> Result<BTreeMap<String, String>, PluginError> {
+    let report = (host.query(SOURCES, Limit::ALL))
+        .map_err(|error| PluginError::board_refused("evals", "query", &error.refusal()))?;
+    Ok((report.rows.into_iter())
+        .filter_map(|row| {
+            let [Value::String(path), source] = &row[..] else {
+                return None;
+            };
+            Some((path.clone(), source.to_string()))
+        })
+        .collect())
 }
 
 pub(crate) fn open(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {

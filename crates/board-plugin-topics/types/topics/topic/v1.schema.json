@@ -1,0 +1,67 @@
+{
+  "additionalProperties": false,
+  "description": "`topics/topic/v1`: a concept, tool, model or design that several records\nconcern, such as a library several evals test. Those records name it by\nits path, `/topics/<slug>`, so they link to one place instead of each\nrepeating its name.",
+  "properties": {
+    "$type": {
+      "const": "topics/topic/v1",
+      "description": "The record's type.",
+      "type": "string"
+    },
+    "aliases": {
+      "description": "Other ways people write its name, such as `sandbox-exec` for\n`seatbelt`. `evals.about --subject` finds the topic by its title or\nany alias.",
+      "items": {
+        "type": "string",
+        "x-board-prose": true
+      },
+      "minItems": 1,
+      "type": "array"
+    },
+    "description": {
+      "description": "What the topic is, in words.",
+      "minLength": 1,
+      "type": "string",
+      "x-board-prose": true
+    },
+    "refs": {
+      "description": "Other board records about it.",
+      "items": {
+        "format": "board-ref",
+        "type": "string"
+      },
+      "minItems": 1,
+      "type": "array"
+    },
+    "repos": {
+      "description": "The repositories that hold it, as `owner/name`.",
+      "items": {
+        "pattern": "^[A-Za-z0-9-]+/[A-Za-z0-9._-]+$",
+        "type": "string"
+      },
+      "minItems": 1,
+      "type": "array"
+    },
+    "title": {
+      "description": "The topic's name as people write it, such as `Raycast Workspaces`.",
+      "minLength": 1,
+      "type": "string",
+      "x-board-prose": true
+    },
+    "urls": {
+      "description": "Pages about the topic.",
+      "items": {
+        "format": "uri",
+        "pattern": "^https?://([^/?#@]*@)?[^/?#@:][^/?#@]*([/?#]|$)",
+        "type": "string"
+      },
+      "minItems": 1,
+      "type": "array"
+    }
+  },
+  "required": [
+    "$type",
+    "title"
+  ],
+  "title": "TopicRecord",
+  "type": "object",
+  "x-board-folder": "/topics/"
+}

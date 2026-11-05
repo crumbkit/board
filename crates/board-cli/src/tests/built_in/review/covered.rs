@@ -36,7 +36,7 @@ fn report(repo: &Repo, name: &str, base: &str, head: &str, fields: &Value) -> St
             "patch_ids": [],
             "findings": [],
             "verdict": "approve",
-            "by": "a person",
+            "by": {"person": "a-person"},
         }),
         fields,
     );
@@ -264,7 +264,7 @@ fn a_report_reached_through_a_mount_is_ignored_and_the_same_one_in_the_own_tree_
     let head = repo.commit("src/a.txt", "one\n");
     let text = json!({
         "$type": "review/report/v1", "range": format!("{base}..{head}"), "patch_ids": [],
-        "findings": [], "verdict": "approve", "by": "a person",
+        "findings": [], "verdict": "approve", "by": {"person": "a-person"},
     })
     .to_string();
     let (_library, mount) = library(&[("report.json", &text)]);
@@ -446,7 +446,7 @@ fn a_report_changed_on_disk_is_ignored_and_the_committed_one_counts() {
     let committed = std::fs::read_to_string(repo.root().join(file)).unwrap();
     let changed = record(
         serde_json::from_str(&committed).unwrap(),
-        &json!({"by": "someone else"}),
+        &json!({"by": {"person": "someone-else"}}),
     );
     repo.write(file, &changed);
     assert_eq!(uncovered(&repo, &[])["uncovered"], json!([head]));
@@ -513,7 +513,7 @@ fn attached(repo: &Repo, name: &str, base: &str, head: &str, fields: &Value) -> 
     let record = record(
         json!({
             "$type": "review/report/v1", "range": format!("{base}..{head}"), "patch_ids": [],
-            "findings": [], "verdict": "approve", "by": "a person",
+            "findings": [], "verdict": "approve", "by": {"person": "a-person"},
         }),
         fields,
     );
@@ -662,7 +662,7 @@ fn a_project_commit_adding_only_a_report_is_checked_with_a_change_and_covered_on
     let mounted = Mounted::new(&repo);
     let text = json!({
         "$type": "review/report/v1", "range": format!("{}..{}", mounted.base, mounted.head), "patch_ids": [],
-        "findings": [], "verdict": "approve", "by": "a person",
+        "findings": [], "verdict": "approve", "by": {"person": "a-person"},
     })
     .to_string();
     let added = mounted.commit("reviews/x/report.json", &text);

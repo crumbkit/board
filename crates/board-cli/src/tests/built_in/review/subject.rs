@@ -32,7 +32,7 @@ fn brief(repo: &Repo, name: &str, fields: &Value) -> String {
 /// Commits a person's approving report at /reviews/<name>/report holding
 /// `fields`, and returns its path.
 fn report(repo: &Repo, name: &str, fields: &Value) -> String {
-    let base = json!({"$type": "review/report/v1", "findings": [], "verdict": "approve", "by": "a person"});
+    let base = json!({"$type": "review/report/v1", "findings": [], "verdict": "approve", "by": {"person": "a-person"}});
     repo.commit(
         &format!("reviews/{name}/report.json"),
         &record(base, fields),

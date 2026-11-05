@@ -1,5 +1,33 @@
 {
   "$defs": {
+    "Actor": {
+      "additionalProperties": false,
+      "description": "Who wrote a record or acted: the session, the program, the person and\nthe agent's name, each when known, and at least one. Every record type that names who\nacted holds one.",
+      "minProperties": 1,
+      "properties": {
+        "agent": {
+          "description": "The name the agent was given, such as `soundcheck scheduler`, as\nfree text.",
+          "type": "string",
+          "x-board-prose": true
+        },
+        "person": {
+          "description": "The person who acted, such as `luke`, or their email address.",
+          "pattern": "^([a-z0-9]+(-[a-z0-9]+)*|[^@\\s]+@[^@\\s]+)$",
+          "type": "string"
+        },
+        "program": {
+          "description": "The program that acted, such as `claude-code` or `codex`.",
+          "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+          "type": "string"
+        },
+        "session": {
+          "description": "The Claude Code session's `local_` id.",
+          "pattern": "^local_[0-9a-f-]+$",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
     "Evidence": {
       "additionalProperties": false,
       "description": "Where the owner gave an answer. Nothing checks it yet; it is written so\nthat a later check can.",
@@ -39,8 +67,8 @@
       "type": "string"
     },
     "by": {
-      "description": "The session that wrote the record, which may differ from the session\nthat asked.",
-      "type": "string"
+      "$ref": "#/$defs/Actor",
+      "description": "Who wrote the record, which may differ from who asked."
     },
     "choice": {
       "description": "The `id` of the option the owner chose, or `none` when the owner's\nwords choose no option.",

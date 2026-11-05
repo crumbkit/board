@@ -16,7 +16,7 @@ personal board. Each schema's descriptions hold the meaning of every field.
 {
   "$type": "artifacts/artifact/v1",
   "url": "https://claude.ai/artifact/AbCdEf0123456789xyzQ",
-  "account": "owner@example.com",
+  "account": {"person": "owner@example.com"},
   "first_seen": "2026-10-31T18:20:00Z",
   "subject": ["/changes/flows-editor"],
   "shows": "The step list that replaces the flow graph.",
@@ -27,6 +27,8 @@ personal board. Each schema's descriptions hold the meaning of every field.
 ```
 
 - `url`, `account`, `first_seen` and `state` are required.
+- `account` is the `Actor` `{"person": <email>}`, the email of the claude.ai
+  account that published the artifact.
 - `first_seen` is the first publish or read the mod saw, or for an import
   the listing row's `updatedAt`, or the import time when the row has none.
 - `subject` references the change or task the artifact belongs to: a
@@ -50,17 +52,20 @@ by `at`, is the artifact's current version.
   "version": "1793473476-1c42",
   "title": "Release plan",
   "description": "The plan for the next release.",
-  "sha256": "9f2c…",
+  "sha256": "sha256:9f2c…",
   "source": "/tmp/scratch/plan.html",
-  "session": "0b8a7c6e-1f2d-4c3b-9a8e-7d6c5b4a3f21",
+  "by": {"program": "claude-code", "session": "local_0b8a7c6e-1f2d-4c3b-9a8e-7d6c5b4a3f21"},
   "at": "2026-10-31T18:20:00Z"
 }
 ```
 
-- `session` and `at` are required: the Claude Code session that published
-  or read the version, and when.
+- `by` and `at` are required: the `Actor` that published or read the
+  version, and when. The mod writes `{"program": "claude-code"}` and adds the
+  session's `local_` id in the desktop app. Outside it, the session's own id
+  names no `local_` session, so the mod adds it as the `agent`.
 - `<key>` is `version`, the version id the Artifact tool returned, or, when
-  it returned none, the first 16 hex digits of `sha256`, and the record
+  it returned none, the first 16 hex digits after `sha256:` in `sha256`, a
+  `Digest` of the page, and the record
   leaves `version` out.
 - `description` is recorded only when the publish passed one. `source` is
   the local file a publish sent; a version recorded from a read has none.

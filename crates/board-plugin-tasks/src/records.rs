@@ -6,7 +6,7 @@
 //! writes fields of its own, such as `id` and `pinned`, and a task must not
 //! degrade for them.
 
-use board_plugin::shape::{Record, Tag};
+use board_plugin::shape::{Actor, Record, Tag};
 use schemars::{JsonSchema, Schema, SchemaGenerator, json_schema};
 
 /// The pattern of `repeat`: `daily`, `weekdays`, `weekly-<day>`,
@@ -52,8 +52,8 @@ pub struct TaskRecord {
     #[schemars(title = "Reviewed", schema_with = "date")]
     pub reviewed: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(title = "Owner", schema_with = "owner")]
-    pub owner: Option<String>,
+    #[schemars(title = "Owner")]
+    pub owner: Option<Actor>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(title = "Parent", schema_with = "task_ref")]
     pub parent: Option<String>,
@@ -111,10 +111,6 @@ fn hour(_: &mut SchemaGenerator) -> Schema {
 
 fn contexts(_: &mut SchemaGenerator) -> Schema {
     json_schema!({"type": "array", "items": {"type": "string", "pattern": "^[a-z0-9-]+$"}})
-}
-
-fn owner(_: &mut SchemaGenerator) -> Schema {
-    json_schema!({"type": "string", "minLength": 1})
 }
 
 fn kind(_: &mut SchemaGenerator) -> Schema {

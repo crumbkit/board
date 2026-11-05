@@ -16,6 +16,7 @@ const USAGE: &str = "usage: cargo xtask lint
        cargo xtask bench [--board <dir>] [--records <n>] [--against <board> [--runs <n>]]
        cargo xtask profile [--save <file>] -- <board arguments>
        cargo xtask migrate-questions <board directory> [--dry-run]
+       cargo xtask migrate-shapes <board> [--write] [--map <file>]
 ";
 
 #[derive(Debug)]
@@ -165,6 +166,7 @@ pub(crate) enum Output<'a> {
     Bench(&'a [Timed]),
     Against(&'a [Compared]),
     Migrated(&'a Migrated),
+    MigratedShapes(&'a serde_json::Value),
     Failure {
         code: &'static str,
         error: &'a dyn Error,
@@ -187,6 +189,7 @@ pub(crate) fn emit(output: &Output<'_>) {
             serde_json::to_string_pretty(migrated)
                 .expect("the report holds only strings and counts")
         ),
+        Output::MigratedShapes(migrated) => println!("{migrated:#}"),
         Output::Failure { code, error } => eprint!("{}", render_failure(code, *error)),
         Output::Usage => eprint!("{USAGE}"),
     }

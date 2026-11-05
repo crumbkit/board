@@ -94,7 +94,7 @@ fn an_approved_override_passes_that_exact_content_and_records_the_effect() {
     let result = output(&document);
     assert_eq!(
         (&result["crossing"], &result["override"]),
-        (&json!(crossing), &json!(effect))
+        (&json!(crossing), &json!(format!("sha256:{effect}")))
     );
     let statuses: Vec<(&Value, &Value)> = (result["verdicts"].as_array().unwrap().iter())
         .map(|verdict| (&verdict["part"], &verdict["status"]))
@@ -109,7 +109,7 @@ fn an_approved_override_passes_that_exact_content_and_records_the_effect() {
     let record = personal.record(crossing).unwrap();
     assert_eq!(
         (&record["passed"], &record["override"]),
-        (&json!(true), &json!(effect))
+        (&json!(true), &json!(format!("sha256:{effect}")))
     );
     let digest = result["digest"].as_str().unwrap();
     let verified = json(&personal.run(&["--json", "call", "boundary.verify", "--digest", digest]));

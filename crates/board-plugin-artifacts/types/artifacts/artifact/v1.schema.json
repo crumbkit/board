@@ -1,4 +1,34 @@
 {
+  "$defs": {
+    "Actor": {
+      "additionalProperties": false,
+      "description": "Who wrote a record or acted: the session, the program, the person and\nthe agent's name, each when known, and at least one. Every record type that names who\nacted holds one.",
+      "minProperties": 1,
+      "properties": {
+        "agent": {
+          "description": "The name the agent was given, such as `soundcheck scheduler`, as\nfree text.",
+          "type": "string",
+          "x-board-prose": true
+        },
+        "person": {
+          "description": "The person who acted, such as `luke`, or their email address.",
+          "pattern": "^([a-z0-9]+(-[a-z0-9]+)*|[^@\\s]+@[^@\\s]+)$",
+          "type": "string"
+        },
+        "program": {
+          "description": "The program that acted, such as `claude-code` or `codex`.",
+          "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+          "type": "string"
+        },
+        "session": {
+          "description": "The Claude Code session's `local_` id.",
+          "pattern": "^local_[0-9a-f-]+$",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
   "additionalProperties": false,
   "description": "`artifacts/artifact/v1` at `/artifacts/<id>`: one claude.ai artifact.\n\n`<id>` is the last segment of `url`. `first_seen` is the first publish\nor read the mod saw, or for an import the listing row's `updatedAt`, or\nthe import time when the row has none. The version records under\n`<id>/versions/` hold each version the board saw; the newest is the\nartifact's current version. Only `artifacts.agree` sets `state` to\n`agreed`, naming the owner's decision in `agreed_by`.",
   "if": {
@@ -18,9 +48,8 @@
       "type": "string"
     },
     "account": {
-      "description": "The email address of the claude.ai account that published the artifact.",
-      "minLength": 1,
-      "type": "string"
+      "$ref": "#/$defs/Actor",
+      "description": "The claude.ai account that published the artifact, as a person named\nby the account's email address."
     },
     "agreed_by": {
       "description": "The owner's decision that moved the artifact to agreed.",

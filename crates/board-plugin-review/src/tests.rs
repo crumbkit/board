@@ -111,7 +111,7 @@ fn report(fields: &Value) -> ReportRecord {
         "patch_ids": [],
         "findings": [],
         "verdict": "changes",
-        "by": "claude-opus",
+        "by": {"program": "claude-code"},
     });
     for (name, value) in fields.as_object().unwrap() {
         report[name] = value.clone();
@@ -141,4 +141,24 @@ fn a_report_with_no_findings_says_so_and_names_the_report_it_follows() {
     let text = post::comment("/reviews/r1/report", PR, &report(&fields));
     assert!(text.contains("\nNo findings.\n"), "{text}");
     assert!(text.contains("\nFollows /reviews/r0/report.\n"), "{text}");
+}
+
+/// A report names the agent's program as the reviewer when its file name
+/// is a slug, and names nobody when it is not. The `claude` command is
+/// recorded as `claude-code`.
+#[test]
+fn a_program_whose_name_is_no_slug_names_no_reviewer_and_its_twin_names_the_program() {
+    let program = |name: &str| run::reviewer(name).and_then(|actor| actor.program);
+    for (refused, admitted, recorded) in [
+        ("/opt/My Agent", "/opt/my-agent", "my-agent"),
+        ("bin/Claude", "bin/claude", "claude-code"),
+        ("/", "claude", "claude-code"),
+        ("codex!", "codex", "codex"),
+    ] {
+        assert_eq!((refused, program(refused)), (refused, None));
+        assert_eq!(
+            (admitted, program(admitted)),
+            (admitted, Some(recorded.to_owned()))
+        );
+    }
 }

@@ -6,7 +6,7 @@
 use board_repos::Date;
 use serde_json::{Map, Value};
 
-use board_plugin::shape::Record as _;
+use board_plugin::shape::{Actor, Record as _};
 
 use crate::dates::Defer;
 use crate::records::TaskRecord;
@@ -23,7 +23,7 @@ pub(crate) struct Model {
     pub(crate) from_hour: Option<u8>,
     pub(crate) contexts: Vec<String>,
     pub(crate) reviewed: Option<Date>,
-    pub(crate) owner: Option<String>,
+    pub(crate) owner: Option<Actor>,
     pub(crate) parent: Option<String>,
     pub(crate) kind: Option<String>,
     pub(crate) brief: Option<String>,
@@ -76,10 +76,9 @@ pub(crate) fn model(record: &Value, offset: i32) -> Result<Model, usize> {
         Date::parse(value.as_str()?)
     });
     let owner = optional(fields, "owner", &mut count, |value| {
-        value
-            .as_str()
-            .filter(|owner| !owner.is_empty())
-            .map(str::to_owned)
+        serde_json::from_value::<Actor>(value.clone())
+            .ok()
+            .filter(|owner| *owner != Actor::default())
     });
     let text = |value: &Value| value.as_str().map(str::to_owned);
     let parent = optional(fields, "parent", &mut count, text);

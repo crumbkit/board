@@ -7,6 +7,7 @@ use std::time::{Duration, SystemTime};
 
 use board_model::Code;
 use board_ops::{Elsewhere, Host, PluginError};
+use board_plugin::shape::{Actor, Person, Prose, SessionId, Slug};
 use board_repos::{Date, Repo, Through, day_start, scope, today};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -40,10 +41,32 @@ pub(crate) struct Input {
     pub(crate) context: Option<String>,
     #[schemars(
         length(min = 1),
-        description = "Only tasks this owner, such as a session id, holds or nobody holds, and \
-                       list in held the ones it holds that are not available."
+        description = "The owner as one text in place of session, program, person and agent, \
+                       read as tasks.claim reads its owner."
     )]
     pub(crate) owner: Option<String>,
+    #[schemars(
+        with = "Option<SessionId>",
+        description = "With program, person and agent, the owner: only tasks it holds or nobody holds, \
+                       and in held the ones it holds that are not available. The owner's \
+                       session, by its local_ id."
+    )]
+    pub(crate) session: Option<String>,
+    #[schemars(
+        with = "Option<Slug>",
+        description = "The owner's program, such as claude-code."
+    )]
+    pub(crate) program: Option<String>,
+    #[schemars(
+        with = "Option<Person>",
+        description = "The owner's person, such as luke."
+    )]
+    pub(crate) person: Option<String>,
+    #[schemars(
+        with = "Option<Prose>",
+        description = "The name the owning agent was given, such as inbox foundation builder."
+    )]
+    pub(crate) agent: Option<String>,
     #[schemars(
         regex(pattern = r"^/"),
         description = "One repo's tasks: / for the board's own tree, or a notes repo's mount path \
@@ -75,7 +98,7 @@ pub(crate) struct SweptTask {
     pub(crate) defer: Option<String>,
     pub(crate) reviewed: Option<String>,
     pub(crate) contexts: Vec<String>,
-    pub(crate) owner: Option<String>,
+    pub(crate) owner: Option<Actor>,
     pub(crate) blocked_by: Vec<String>,
     pub(crate) waiting: usize,
     pub(crate) parent: Option<String>,
@@ -202,8 +225,9 @@ pub(crate) fn available(host: &dyn Host, input: &Value) -> Result<Value, PluginE
         tree: &tree,
         nodes: &nodes,
     };
-    let [available, due_soon, stale, held] =
-        sweep(&open, &blocked, places, &clock, given.owner.as_deref());
+    let parts = [given.session, given.program, given.person, given.agent];
+    let owner = crate::claim::owner(given.owner, parts)?;
+    let [available, due_soon, stale, held] = sweep(&open, &blocked, places, &clock, owner.as_ref());
     Ok(json!(Output {
         available,
         due_soon,
@@ -264,7 +288,7 @@ pub(crate) fn sweep(
     blocked: &BTreeMap<String, Vec<String>>,
     places: Places<'_>,
     clock: &Clock,
-    owner: Option<&str>,
+    owner: Option<&Actor>,
 ) -> [Section; 4] {
     let mut waiting: BTreeMap<&str, usize> = BTreeMap::new();
     for target in blocked.values().flatten() {
@@ -277,7 +301,9 @@ pub(crate) fn sweep(
     });
     let day = clock.day;
     for task in sorted {
-        if owner.is_some() && task.owner.is_some() && task.owner.as_deref() != owner {
+        if let (Some(owner), Some(held)) = (owner, &task.owner)
+            && !held.same(owner)
+        {
             continue;
         }
         let waits = blocked.get(&task.path).cloned().unwrap_or_default();
@@ -303,7 +329,8 @@ pub(crate) fn sweep(
             tree_path: tree_path(places.tree, &task.path),
         };
         let due = task.due.is_some_and(|due| due <= day.plus(DUE_SOON));
-        let held = !free && owner.is_some() && task.owner.as_deref() == owner;
+        let held =
+            !free && matches!((owner, &task.owner), (Some(owner), Some(held)) if held.same(owner));
         for (keep, section) in [free, due, !free && old, held].into_iter().zip(&mut shown) {
             if keep {
                 section.push(item.clone());

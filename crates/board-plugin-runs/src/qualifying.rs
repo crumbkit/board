@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 
 use board_model::parse_json;
 use board_ops::{Host, Limit, PluginError, QueryReport, literal};
-use board_plugin::shape::{Record, TREE_CODES};
+use board_plugin::shape::{Actor, Record, TREE_CODES};
 use serde::Deserialize;
 use serde_json::{Map, Number, Value};
 
@@ -46,8 +46,8 @@ pub(crate) struct Run {
 struct StoredRun {
     #[serde(rename = "suite")]
     _suite: String,
-    #[serde(rename = "by")]
-    _by: String,
+    #[serde(default, rename = "by")]
+    _by: Option<Actor>,
     started: String,
     scope: Scope,
     results: Vec<Stored>,

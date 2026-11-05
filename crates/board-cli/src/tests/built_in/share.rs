@@ -41,7 +41,7 @@ fn eval() -> Value {
     json!({
         "$type": "evals/eval/v1",
         "question": "Does gix resolve a ref faster than git2?",
-        "subjects": ["gix", "git2"],
+        "subjects": ["o/gix", "o/git2"],
         "suites": ["/suites/x"],
         "runs": ["/suites/x/runs/1"],
         "status": "concluded",
@@ -53,7 +53,7 @@ fn run_record() -> Value {
     json!({
         "$type": "runs/run/v1",
         "suite": "/suites/x",
-        "by": "claude",
+        "by": {"program": "claude-code"},
         "started": "2026-10-01T09:00:00Z",
         "scope": "full",
         "results": [{"case": "cold", "outcome": "pass", "evidence": ["/evals/x/evidence/log.txt"]}],
@@ -85,7 +85,7 @@ impl Boards {
     fn experiment(&self, cases_file: &str, fields: &Value) -> &Self {
         let suite = json!({
             "$type": "runs/suite/v1",
-            "subjects": ["gix", "git2"],
+            "subjects": ["o/gix", "o/git2"],
             "method": "Resolve 1,000 refs and compare wall time.",
             "cases_file": cases_file,
         });
@@ -244,7 +244,7 @@ fn a_path_the_team_holds_differently_refuses_the_share_and_writes_nothing_and_on
  {
     let boards = boards();
     boards.standard();
-    let other = record(run_record(), &json!({"by": "someone else"}));
+    let other = record(run_record(), &json!({"by": {"person": "someone-else"}}));
     let before = boards.publish(&[("suites/x/runs/1.json", &other)]);
     let refused = boards.refused(&["--path", "/evals/x"]);
     assert_eq!(refused["code"], "share::target::differs");

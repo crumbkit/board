@@ -94,13 +94,13 @@ fn the_shipped_schemas_refuse_a_misshapen_record_and_admit_its_twin() {
     };
     let a_suite = |fields| {
         with(
-            json!({"$type": "runs/suite/v1", "subjects": ["board"], "method": "Run it."}),
+            json!({"$type": "runs/suite/v1", "subjects": ["crumbkit/board"], "method": "Run it."}),
             fields,
         )
     };
     let a_run = |fields| {
         let record = json!({
-            "$type": "runs/run/v1", "suite": "/suites/a", "by": "claude",
+            "$type": "runs/run/v1", "suite": "/suites/a", "by": {"program": "claude-code"},
             "started": "2026-10-01T09:00:00Z", "scope": "full", "results": [],
         });
         with(record, fields)
@@ -123,7 +123,7 @@ fn the_shipped_schemas_refuse_a_misshapen_record_and_admit_its_twin() {
         (
             &suite,
             a_suite(json!({"subjects": []})),
-            a_suite(json!({"subjects": ["a"]})),
+            a_suite(json!({"subjects": ["a/b"]})),
         ),
         (
             &suite,
@@ -166,6 +166,50 @@ fn the_shipped_schemas_refuse_a_misshapen_record_and_admit_its_twin() {
             &run,
             a_run(json!({"dirty": null})),
             a_run(json!({"dirty": false})),
+        ),
+    ] {
+        assert_eq!(
+            schema.validate(&refused).unwrap_err().code(),
+            Code::RecordInvalid,
+            "{refused}"
+        );
+        schema.validate(&admitted).unwrap();
+    }
+}
+
+#[test]
+fn subjects_and_by_take_the_shared_subject_and_actor_shapes() {
+    let schemas = Runs.schemas();
+    let compiled = |n: usize| board_validate::Schema::compile(schemas[n].1.clone()).unwrap();
+    let (suite, run) = (compiled(0), compiled(1));
+    let a_suite =
+        |subjects| json!({"$type": "runs/suite/v1", "subjects": subjects, "method": "Run it."});
+    let a_run = |by: Option<Value>| {
+        let mut record = json!({
+            "$type": "runs/run/v1", "suite": "/suites/a",
+            "started": "2026-10-01T09:00:00Z", "scope": "full", "results": [],
+        });
+        if let Some(by) = by {
+            record["by"] = by;
+        }
+        record
+    };
+    for (schema, refused, admitted) in [
+        (
+            &suite,
+            a_suite(json!(["board"])),
+            a_suite(json!(["/repos/board"])),
+        ),
+        (
+            &run,
+            a_run(Some(json!("claude"))),
+            a_run(Some(json!({"session": "local_0a1b"}))),
+        ),
+        (&run, a_run(Some(json!({}))), a_run(None)),
+        (
+            &suite,
+            a_suite(json!([])),
+            json!({"$type": "runs/suite/v1", "method": "Run it."}),
         ),
     ] {
         assert_eq!(

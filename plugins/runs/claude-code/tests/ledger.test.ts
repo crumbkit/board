@@ -15,7 +15,11 @@ const URL = 'https://github.com/acme/widgets/pull/42'
 type Put = { argv: readonly string[]; record: Record<string, unknown> | undefined }
 
 /** Stands in for `board` and `gh`: each `board put` answers `answer(path)`, and `gh pr view` prints a title. */
-function host(on: On, answer: (path: string) => { exitCode: number; stdout: string } = () => ({ exitCode: 0, stdout: '{}' })) {
+function host(
+  on: On,
+  answer: (path: string) => { exitCode: number; stdout: string } = () => ({ exitCode: 0, stdout: '{}' }),
+  env: Record<string, string> = { CLAUDE_CODE_HOST_SESSION_ID: 'local_cd34' },
+) {
   const puts: Put[] = []
   const logs: { text: string; to: string }[] = []
   const statuses: (string | undefined)[] = []
@@ -36,12 +40,13 @@ function host(on: On, answer: (path: string) => { exitCode: number; stdout: stri
     return { value: undefined }
   })
   on('session.id', () => ({ value: 'session-1' }))
+  mock.env(on, env)
   const session = mock.session(on)
   const appended = () => session.appended().map(row => row.message.content)
   return { puts, logs, statuses, appended }
 }
 
-test('a subagent that stops is recorded as a run with its duration and final line', async ($, on) => {
+test('a subagent that stops is recorded as a run by Claude Code in its session, with its duration and final line', async ($, on) => {
   const clock = mock.clock(on, { now: NOW })
   const { puts, logs, statuses } = host(on)
   on('classic.SubagentStart', () => ({}))
@@ -65,7 +70,7 @@ test('a subagent that stops is recorded as a run with its duration and final lin
   expect(puts[1]?.record).toEqual({
     $type: 'runs/run/v1',
     suite: '/suites/claude-code',
-    by: 'Explore',
+    by: { program: 'claude-code', session: 'local_cd34', agent: 'Explore' },
     started: '2026-10-25T09:30:00Z',
     finished: '2026-10-25T09:31:30Z',
     scope: 'full',
@@ -86,9 +91,9 @@ test('a subagent that a stop hook keeps running is not recorded until it stops',
   expect(puts).toEqual([])
 })
 
-test('a completed task is recorded under the configured board and suite, with its subject as the summary', { options: { board: '/boards/work', suite: '/suites/agents' } }, async ($, on) => {
+test('a completed task is recorded under the configured board and suite, with its subject as the summary and no session outside the desktop app', { options: { board: '/boards/work', suite: '/suites/agents' } }, async ($, on) => {
   const clock = mock.clock(on, { now: NOW })
-  const { puts } = host(on)
+  const { puts } = host(on, undefined, {})
   on('classic.TaskCreated', () => ({}))
   on('classic.TaskCompleted', () => ({}))
   await $.classic.TaskCreated({ task_id: '7', task_subject: 'Write the parser' })
@@ -96,11 +101,19 @@ test('a completed task is recorded under the configured board and suite, with it
   await $.classic.TaskCompleted({ task_id: '7', task_subject: 'Write the parser', teammate_name: 'builder' })
   expect(puts[1]?.argv).toEqual(['board', '-C', '/boards/work', '--json', 'put', '/suites/agents/runs/20261025T093000Z-7'])
   expect(puts[1]?.record).toMatchObject({
-    by: 'builder',
+    by: { program: 'claude-code', agent: 'builder' },
     measures: { duration_s: 5 },
     summary: 'Write the parser',
     written_by: 'runs/task-completed',
   })
+})
+
+test('outside the desktop app a decision stub keeps the session id as its agent', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  const { puts } = host(on, undefined, {})
+  on('tool.call', () => ({ result: { stdout: `Creating pull request\n${URL}\n`, stderr: '', interrupted: false } }))
+  await $.tool.call({ tool: 'Bash', command: 'gh pr create --fill' })
+  expect(puts[0]?.record?.by).toEqual({ program: 'claude-code', agent: 'session-1' })
 })
 
 test('gh pr create writes a decision stub and asks the agent for its why and alternatives', async ($, on) => {
@@ -115,7 +128,7 @@ test('gh pr create writes a decision stub and asks the agent for its why and alt
     $type: 'plans/decision/v1',
     decision: 'Widgets ship in blue',
     why: '',
-    session: 'session-1',
+    by: { program: 'claude-code', session: 'local_cd34' },
     decided: '2026-10-25T09:30:00Z',
     urls: [URL],
     review: 'wanted',

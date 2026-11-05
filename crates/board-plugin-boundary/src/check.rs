@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use board_model::{Code, LogicalPath};
 use board_ops::{Host, PluginError, Shown};
 use board_plugin::Target;
-use board_plugin::shape::{Ref, Sha256, Tag};
+use board_plugin::shape::{Digest, Ref, Tag};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
@@ -58,7 +58,7 @@ pub(crate) struct Input {
 #[schemars(rename = "CheckOutput")]
 pub(crate) struct Output {
     /// The SHA-256 of the content's action, destination and parts.
-    #[schemars(with = "Sha256")]
+    #[schemars(with = "Digest")]
     digest: String,
     /// The crossing's path in the personal board.
     crossing: String,
@@ -74,7 +74,7 @@ pub(crate) struct Output {
     /// The id of the owner's approved effect that let this content through
     /// its failed checks, or null.
     #[serde(rename = "override")]
-    #[schemars(with = "Option<Sha256>")]
+    #[schemars(with = "Option<Digest>")]
     overridden: Option<String>,
 }
 
@@ -125,7 +125,7 @@ pub(crate) fn check(host: &dyn Host, input: &Value) -> Result<Value, PluginError
         Some(ask(personal, &crossing::path(&digest), &content)?)
     };
     let overridden = match &answer {
-        Some(Answer::Approved(effect)) => Some(effect.clone()),
+        Some(Answer::Approved(effect)) => Some(format!("sha256:{effect}")),
         _ => None,
     };
     let passed = failed.is_empty() || overridden.is_some();
