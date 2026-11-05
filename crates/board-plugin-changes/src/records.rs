@@ -21,6 +21,7 @@ const URL: &str = "^https?://([^/?#@]*@)?[^/?#@:][^/?#@]*([/?#]|$)";
 /// Where a change stands. `dropped` ends a change outside the order.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
+#[schemars(inline)]
 pub(crate) enum Phase {
     Plan,
     Build,
@@ -65,6 +66,7 @@ impl Phase {
 /// Who must agree to the change before it is built.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
+#[schemars(inline)]
 pub(crate) enum Route {
     Owner,
     AskFirst,
@@ -75,6 +77,7 @@ pub(crate) enum Route {
 /// question on its own branch and never lands.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
+#[schemars(inline)]
 pub(crate) enum Kind {
     #[default]
     Build,
@@ -93,6 +96,7 @@ impl Kind {
 /// Where a prototype stands: exploring until its verdict.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
+#[schemars(inline)]
 pub(crate) enum State {
     Exploring,
     Settled,

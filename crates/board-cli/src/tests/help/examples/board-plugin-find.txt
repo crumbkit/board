@@ -7,6 +7,20 @@ boundary.check disabled Check content against every boundary that matches where 
 boundary.covers disabled Name the boundaries that cover an action to a destination from a checkout, checking nothing and writing nothing.
 boundary.verify disabled Whether a passing crossing exists for a digest, or for given content.
 boundary.record disabled Add what the destination returned, such as a URL, to a passing crossing.
+changes.start disabled Create a change, its plan to fill in and, unless one is named, its task, set its route from CODEOWNERS, and return the repository's owners, contributing docs and check suite.
+changes.next disabled The change's phase, each check of its gate as pass or missing, and what to do now.
+changes.attach disabled Add a reference to a record the change produced, or set its task, route, head commit or pull request.
+changes.advance disabled Move the change to its next phase when its gate passes; otherwise refuse and say what is missing. Into build, refuse while three active changes of its kind are in build for its mount, unless over_limit gives a reason, which the change records and the output warns about.
+changes.open disabled The changes that are not done or dropped, with their phase, route, task and kind; by kind, every prototype with its question, state, verdict and branch; and the day of the last sync.
+changes.pr disabled Write pr.md in the change's directory, a pull request body that says what changes, why, what the tests prove and do not prove, and the evidence, and return the gh command that would use it.
+changes.plan disabled Write a plan for the change, the records it uses and the paths it will edit, refusing a build change's plan without paths, a path outside the change's mount, a reference that reaches nothing, a plan over 3,000 words and used documents over 3,000 words in all; the newest plan is the change's plan.
+changes.brief disabled What an agent needs to start: the newest plan, a one-line summary of each control on its paths, one line per record it uses, the next step and the command that lists the repository's controls, in at most 600 words.
+changes.prototype disabled Start a prototype that answers one question: add its task under a parent, write its change in build on branch proto/<name>, and return its brief. It never lands. Refused while three active prototypes explore for its mount, unless over_limit gives a reason.
+changes.verdict disabled Record what a prototype found in one sentence, and the artifact version it means, which ends it and its task: done when settled, dropped when abandoned.
+changes.pause disabled Move a change in build to paused, which frees its place under the WIP limit.
+changes.resume disabled Move a paused change back to build, refused while three active changes of its kind are in build for its mount, unless over_limit gives a reason.
+changes.sync disabled Read each open change's GitHub pull request with gh and end the change when it closed: done, with its merge commit, when it merged and no attached task is open, else dropped with the reason. List the changes with no pull request and what to do with each. dry_run writes nothing; otherwise every move and the day of the sync are written in one commit, or nothing when gh fails.
+changes.drop disabled End a change that is not done or dropped in dropped, recording the reason, and name its task.
 controls.for-path disabled The controls that apply to a path.
 controls.for-paths disabled The controls that apply to any of several files and SQLite GLOB patterns, each once with its summary and the paths that reached it.
 controls.check disabled Check the controls under a path, `/` when left out. Fails naming each control over budget, behind its version or degraded.

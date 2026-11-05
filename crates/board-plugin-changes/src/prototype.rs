@@ -80,6 +80,7 @@ pub(crate) struct Output {
 /// How a verdict ends a prototype.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
+#[schemars(inline)]
 pub(crate) enum Ended {
     Settled,
     Abandoned,

@@ -7,7 +7,7 @@ use super::*;
 /// The changes plugin's `changes/change/v1` schema, which the board holds
 /// so a change reads as valid without enabling the changes plugin.
 const CHANGE_SCHEMA: &str =
-    include_str!("../../../../../../plugins/changes/types/changes/change/v1.schema.json");
+    include_str!("../../../../../board-plugin-changes/types/changes/change/v1.schema.json");
 
 /// Two commits on a branch, reviewed: the base, the head and the report,
 /// which `board put` commits.

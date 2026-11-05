@@ -38,7 +38,13 @@ def test_a_call_past_its_stdout_limit_leaves_no_python_running_under_uv(tmp_path
 
     def board(*arguments: str) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
-            [str(binary), *arguments], cwd=root, env=environment, input="{}", capture_output=True, text=True, check=False
+            [str(binary), *arguments],
+            cwd=root,
+            env=environment,
+            input="{}",
+            capture_output=True,
+            text=True,
+            check=False,
         )
 
     enabled = board("plugin", "enable", "sleeper")

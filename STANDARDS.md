@@ -1,7 +1,7 @@
 # Standards
 
 Rules 1 to 29 cover the Rust workspace, built-in plugins included; P1 to P5
-cover the plugins still in Python. Each rule says what enforces
+cover the shared Python library. Each rule says what enforces
 it. A rule without a gate is still a rule.
 
 ## Types

@@ -337,7 +337,7 @@ fn brief_stays_within_600_words_with_100_rules_names_20_it_left_out_and_counts_t
     board.call_stdin("plan", &planned(&[], &PATHS));
     let brief = brief(&board);
     let shown = named(&brief["rules"]);
-    assert!(0 < shown.len() && shown.len() < count, "{}", shown.len());
+    assert!(!shown.is_empty() && shown.len() < count, "{}", shown.len());
     let every: Vec<String> = (0..count)
         .map(|number| format!("/controls/c{number:03}"))
         .collect();
@@ -474,7 +474,7 @@ fn many_rules_leave_room_for_the_lines_of_the_records_the_plan_uses() {
         .map(|used| used["ref"].as_str().unwrap())
         .collect();
     assert_eq!(refs, uses);
-    assert!(!brief["rules"].as_array().unwrap().is_empty());
+    assert_ne!(brief["rules"].as_array().unwrap().as_slice(), &[] as &[Value]);
     assert!(spent(&brief) <= BRIEF_WORDS, "{}", spent(&brief));
 }
 
