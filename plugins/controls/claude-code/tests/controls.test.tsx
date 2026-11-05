@@ -14,7 +14,7 @@ const README = { control: '/controls/example/readme', requirement: 'Keep the usa
 const PARSER = { control: '/controls/crumbkit/rust-10', requirement: 'A hand-written parser says what it misses.', purpose: 'p', rule: null }
 const report = (output: object) => JSON.stringify({ schema: 'board/call-report/v2', data: { plugin: 'controls', output } })
 const RUST = { control: '/controls/toolchains/rust', requirement: 'Pin the latest Rust.', at_least: '1.99.1', files: [], behind: [] }
-const CHECK = report({ measured: [DOCS], versions: [RUST], stated: [README] })
+const CHECK = report({ measured: [DOCS], stated: [README] })
 const BAND = {
   plugin: 'board-controls',
   component: 'AbovePrompt',
@@ -70,7 +70,7 @@ const edit = ($: Engine, file: string) =>
   $.tool.call({ tool: 'Edit', file_path: `${ROOT}/${file}`, old_string: 'a', new_string: 'b', replace_all: false })
 
 test('the context block lists each control with its requirement, a budget with its usage and a version rule with its floor', () => {
-  const checked = parseCheck(ROOT, 0, CHECK, '')
+  const checked = parseCheck(ROOT, 0, report({ measured: [DOCS], versions: [RUST], stated: [README] }), '')
   expect(checked === null ? null : contextText(checked)).toBe(
     `The board's controls state requirements on files in ${ROOT}. Follow each one that applies to a file you ` +
       'change. `board get <control>` shows which files a control names.\n\n' +
