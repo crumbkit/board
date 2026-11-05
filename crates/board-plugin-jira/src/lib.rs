@@ -76,6 +76,7 @@ fn manifest() -> Value {
             "outputSchema": schema_of::<issue::Output>(SchemaSettings::draft2020_12().for_serialize()),
             "annotations": {
                 "readOnlyHint": false,
+                "destructiveHint": false,
                 "idempotentHint": true,
                 "openWorldHint": true,
             },

@@ -108,19 +108,45 @@ const PRE_PUSH_ENV: [&str; 9] = [
 const SEND_TIMEOUT: u64 = 2400;
 
 /// One capability: its name, what it does, the function that runs it, its
-/// input and output schemas, whether it only reads, whether it reaches
-/// beyond the checkout and the boards, the variables it is given and how
-/// long it may run.
+/// input and output schemas, what it does to what is there, whether it
+/// reaches beyond the checkout and the boards, the variables it is given
+/// and how long it may run.
 struct Capability {
     name: &'static str,
     description: &'static str,
     run: fn(&dyn Host, &Value) -> Result<Value, PluginError>,
     input: fn() -> Value,
     output: fn() -> Value,
-    read_only: bool,
+    effect: Effect,
     open_world: bool,
     env: &'static [&'static str],
     timeout: Option<u64>,
+}
+
+/// What a capability does to what is there, as MCP's read-only,
+/// destructive and idempotent hints say it.
+#[derive(Clone, Copy)]
+enum Effect {
+    /// It writes nothing.
+    Reads,
+    /// It only adds, and a repeat adds again.
+    Adds,
+    /// It only adds, and a repeat adds nothing more.
+    AddsOnce,
+    /// It may overwrite what is there, and a repeat changes nothing more.
+    Overwrites,
+}
+
+impl Effect {
+    /// The MCP annotations it stands for, with `openWorldHint`.
+    fn annotations(self, open_world: bool) -> Value {
+        json!({
+            "readOnlyHint": matches!(self, Self::Reads),
+            "destructiveHint": matches!(self, Self::Overwrites),
+            "idempotentHint": !matches!(self, Self::Adds),
+            "openWorldHint": open_world,
+        })
+    }
 }
 
 fn input<T: JsonSchema>() -> Value {
@@ -140,7 +166,7 @@ const CAPABILITIES: [Capability; 9] = [
         run: reference::reference,
         input: input::<reference::Input>,
         output: output::<reference::Output>,
-        read_only: false,
+        effect: Effect::AddsOnce,
         open_world: true,
         env: &gh::ENV,
         timeout: None,
@@ -152,7 +178,7 @@ const CAPABILITIES: [Capability; 9] = [
         run: send::push,
         input: input::<send::PushInput>,
         output: output::<send::Pushed>,
-        read_only: false,
+        effect: Effect::AddsOnce,
         open_world: true,
         env: &SEND_ENV,
         timeout: Some(SEND_TIMEOUT),
@@ -165,7 +191,7 @@ const CAPABILITIES: [Capability; 9] = [
         run: send::pr_create,
         input: input::<send::PrCreateInput>,
         output: output::<send::Opened>,
-        read_only: false,
+        effect: Effect::Adds,
         open_world: true,
         env: &SEND_ENV,
         timeout: Some(SEND_TIMEOUT),
@@ -176,7 +202,7 @@ const CAPABILITIES: [Capability; 9] = [
         run: send::pr_edit,
         input: input::<send::PrEditInput>,
         output: output::<send::Delivered>,
-        read_only: false,
+        effect: Effect::Overwrites,
         open_world: true,
         env: &SEND_ENV,
         timeout: Some(SEND_TIMEOUT),
@@ -187,7 +213,7 @@ const CAPABILITIES: [Capability; 9] = [
         run: send::comment,
         input: input::<send::CommentInput>,
         output: output::<send::Delivered>,
-        read_only: false,
+        effect: Effect::Adds,
         open_world: true,
         env: &SEND_ENV,
         timeout: Some(SEND_TIMEOUT),
@@ -199,7 +225,7 @@ const CAPABILITIES: [Capability; 9] = [
         run: send::issue_create,
         input: input::<send::IssueCreateInput>,
         output: output::<send::Filed>,
-        read_only: false,
+        effect: Effect::Adds,
         open_world: true,
         env: &SEND_ENV,
         timeout: Some(SEND_TIMEOUT),
@@ -212,7 +238,7 @@ const CAPABILITIES: [Capability; 9] = [
         run: hook::install_hook,
         input: input::<hook::InstallHookInput>,
         output: output::<hook::InstallHookOutput>,
-        read_only: true,
+        effect: Effect::Reads,
         open_world: false,
         env: &[],
         timeout: None,
@@ -224,7 +250,7 @@ const CAPABILITIES: [Capability; 9] = [
         run: hook::pre_push,
         input: input::<hook::PrePushInput>,
         output: output::<hook::PrePushOutput>,
-        read_only: false,
+        effect: Effect::Adds,
         open_world: true,
         env: &PRE_PUSH_ENV,
         timeout: Some(SEND_TIMEOUT),
@@ -236,7 +262,7 @@ const CAPABILITIES: [Capability; 9] = [
         run: hook::covers,
         input: input::<hook::CoversInput>,
         output: output::<hook::CoversOutput>,
-        read_only: true,
+        effect: Effect::Reads,
         open_world: false,
         env: &remote::SSH_VARIABLES,
         timeout: None,
@@ -251,10 +277,7 @@ fn manifest() -> Value {
                 "description": offered.description,
                 "inputSchema": (offered.input)(),
                 "outputSchema": (offered.output)(),
-                "annotations": {
-                    "readOnlyHint": offered.read_only,
-                    "openWorldHint": offered.open_world,
-                },
+                "annotations": offered.effect.annotations(offered.open_world),
                 "_meta": {},
             });
             if !offered.env.is_empty() {

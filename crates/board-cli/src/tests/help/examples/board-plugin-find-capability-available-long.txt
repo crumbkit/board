@@ -1,2 +1,2 @@
 PLUGIN  CAPABILITY  ENABLED  DESCRIPTION                                                                                                                                                   VERSION  ANNOTATIONS
-tasks   available   false    Sync the repos the caller's remote chooses, then list their open tasks available now, those due within seven days, the stale ones, and those an owner holds.  0.4.0    {"openWorldHint":true,"readOnlyHint":false}
+tasks   available   false    Sync the repos the caller's remote chooses, then list their open tasks available now, those due within seven days, the stale ones, and those an owner holds.  0.4.0    {"destructiveHint":false,"idempotentHint":true,"openWorldHint":true,"readOnlyHint":false}
