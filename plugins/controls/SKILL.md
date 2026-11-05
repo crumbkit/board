@@ -23,15 +23,16 @@ To run a command in a board other than the one you are in, add `-C <path>`.
        board -C <board> call controls.check --path /<directory>
 
    `measured` lists the controls with a budget, with `used`, `max` and every
-   file the budget counts. A budget with `per: "file"` limits each file on
+   file the budget counts under the path. A budget with `per: "file"` limits each file on
    its own: `used` is its `largest` file's, and `over` lists each file over
    `max`. `versions` lists the controls with a version rule, and `behind`
    names each file and line that pins a version older than `at_least`.
    `stated` lists the written requirements, with
    their `paths` patterns and how many of their files are under the path;
-   `board get <control>` shows which files a control names. The call exits
-   1 when a budget is exceeded, a pin is behind or a control is degraded,
-   and the error names each control.
+   `board get <control>` shows which files a control names. `passed` is
+   false when a budget is exceeded, a pin is behind or a measured control
+   lists a file in `unreadable`; the call still exits 0. It exits 1 when a
+   control is degraded, and the error names each control.
 2. Before you edit a file, ask which controls apply to it:
 
        board -C <board> call controls.for-path --path /<file>

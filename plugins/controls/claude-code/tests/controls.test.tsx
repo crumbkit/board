@@ -80,11 +80,21 @@ test('the context block lists each control with its requirement, a budget with i
   )
 })
 
+test('a version control with pins behind and a budget with an unreadable file say so in the block', () => {
+  const behind = { ...RUST, behind: [{ file: '/r/rust-toolchain.toml', line: 2, found: '1.98.0' }] }
+  const unread = { ...DOCS, unreadable: [{ file: '/r/AGENTS.md', code: 'board::path::shadowed' }] }
+  const checked = parseCheck(ROOT, 0, report({ passed: false, measured: [unread], versions: [behind], stated: [] }), '')
+  expect(checked === null ? null : contextText(checked)).toContain(
+    '- /controls/crumbkit/docs-1: AGENTS.md has at most 200 words. (now 196 of 200 words, 1 unreadable)\n' +
+      '- /controls/toolchains/rust: Pin the latest Rust. (now 1 older than 1.99.1)',
+  )
+})
+
 test('a repository no board holds has no controls, and a check that fails is said plainly', () => {
   const missing = JSON.stringify({ schema: 'board/failure/v1', code: 'board::config::not_found', message: 'no board' })
   expect(parseCheck(ROOT, 1, missing, '')).toBeNull()
-  const over = JSON.stringify({ schema: 'board/failure/v1', code: 'controls::budget::exceeded', message: 'docs-1 is over' })
-  expect(parseCheck(ROOT, 1, over, '')).toEqual({ kind: 'failed', root: ROOT, code: 'controls::budget::exceeded', message: 'docs-1 is over' })
+  const over = JSON.stringify({ schema: 'board/failure/v1', code: 'controls::control::degraded', message: 'docs-1 is degraded' })
+  expect(parseCheck(ROOT, 1, over, '')).toEqual({ kind: 'failed', root: ROOT, code: 'controls::control::degraded', message: 'docs-1 is degraded' })
 })
 
 test('session start checks the repository root once, and the first message carries its controls as one block', async ($, on) => {

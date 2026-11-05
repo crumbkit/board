@@ -37,8 +37,19 @@ function failure(exitCode: number, stdout: string, stderr: string): { code: stri
 }
 
 type Stated = { control: string; requirement: string }
-type Measured = Stated & { budget: string; used: number; max: number }
-type Pinned = Stated & { at_least: string }
+type Measured = Stated & { budget: string; used: number; max: number; unreadable?: unknown[] }
+type Pinned = Stated & { at_least: string; behind?: unknown[]; unreadable?: unknown[] }
+
+/** `, N unreadable` when a measured control could not read N of its files. */
+function unread(list: unknown[] | undefined): string {
+  return Array.isArray(list) && list.length > 0 ? `, ${list.length} unreadable` : ''
+}
+
+/** How a version control's files stand against its floor. */
+function pins(v: Pinned): string {
+  const behind = Array.isArray(v.behind) ? v.behind.length : 0
+  return behind > 0 ? `${behind} older than ${v.at_least}` : `every pin at least ${v.at_least}`
+}
 
 /**
  * Reads `board --json call controls.check --path .` run at `root`. `null`
@@ -50,12 +61,12 @@ export function parseCheck(root: string, exitCode: number, stdout: string, stder
     const measured = (found.measured as Measured[]).map(m => ({
       control: m.control,
       requirement: m.requirement,
-      usage: `${m.used} of ${m.max} ${m.budget}`,
+      usage: `${m.used} of ${m.max} ${m.budget}${unread(m.unreadable)}`,
     }))
     const versions = (Array.isArray(found.versions) ? (found.versions as Pinned[]) : []).map(v => ({
       control: v.control,
       requirement: v.requirement,
-      usage: `every pin at least ${v.at_least}`,
+      usage: `${pins(v)}${unread(v.unreadable)}`,
     }))
     const stated = (found.stated as Stated[]).map(s => ({ control: s.control, requirement: s.requirement }))
     return { kind: 'read', root, controls: [...measured, ...versions, ...stated] }

@@ -412,7 +412,7 @@ fn check_and_for_path_give_each_control_its_kind_and_the_show_it_defaults_to_or_
 }
 
 #[test]
-fn a_budget_failure_carries_the_report_check_would_have_returned_and_a_pass_returns_it() {
+fn a_budget_over_its_max_returns_the_same_report_as_a_pass_with_passed_false() {
     let budget = |max: u64| control(&json!({"paths": ["docs/*"], "rule": words(max)}));
     let start = control(&json!({"paths": ["docs/*"], "show": "start"}));
     let files = |budget: &str| {
@@ -423,9 +423,8 @@ fn a_budget_failure_carries_the_report_check_would_have_returned_and_a_pass_retu
         ])
     };
     let (_scenario, host) = files(&budget(1));
-    let refused = check(&host, &json!({})).unwrap_err();
-    assert_eq!(refused.code, "controls::budget::exceeded");
-    let report = &refused.fields["report"];
+    let report = &check(&host, &json!({})).unwrap();
+    assert_eq!(report["passed"], false, "{report}");
     assert_eq!(report["measured"][0]["used"], 2);
     assert_eq!(
         kinds(&report["stated"]),
@@ -433,6 +432,7 @@ fn a_budget_failure_carries_the_report_check_would_have_returned_and_a_pass_retu
     );
     let (_scenario, host) = files(&budget(2));
     let output = check(&host, &json!({})).unwrap();
+    assert_eq!(output["passed"], true, "{output}");
     assert_eq!(output["measured"][0]["used"], 2);
     assert_eq!(output["stated"], report["stated"]);
 }

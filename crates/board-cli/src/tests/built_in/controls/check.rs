@@ -1,12 +1,10 @@
 //! `controls.check` through the binary: what each budget measures, which
-//! controls a path reports, and when the check fails.
+//! controls a path reports, and when the check does not pass.
 
 use super::*;
 
 const WORDS: u64 = 3;
 const BOTH: u64 = 5;
-const EXCEEDED: &str = "controls::budget::exceeded";
-const UNREADABLE: &str = "controls::file::unreadable";
 
 /// A budget of `max` words.
 fn words(max: u64) -> Value {
@@ -21,6 +19,13 @@ fn budget(requirement: &str, paths: &[&str], rule: &Value) -> String {
 /// The output of `controls.check` with `flags`.
 fn check(board: &Fixture, flags: &[&str]) -> Value {
     board.call("controls.check", flags)
+}
+
+/// The output of `controls.check` with `flags`, which must not pass.
+fn failing(board: &Fixture, flags: &[&str]) -> Value {
+    let output = check(board, flags);
+    assert_eq!(output["passed"], false, "{output}");
+    output
 }
 
 /// The output of `controls.check` at `path`.
@@ -97,6 +102,7 @@ fn check_measures_each_budget_control_over_its_files() {
                 "max": 3,
                 "used": 3,
                 "files": ["/AGENTS.md"],
+                "unreadable": [],
                 "kind": "standing",
                 "show": "failing",
             },
@@ -107,6 +113,7 @@ fn check_measures_each_budget_control_over_its_files() {
                 "max": 12,
                 "used": 12,
                 "files": ["/docs/a.md", "/docs/b.md"],
+                "unreadable": [],
                 "kind": "standing",
                 "show": "failing",
             },
@@ -126,18 +133,21 @@ fn over(board: &Fixture, max: u64) {
 }
 
 #[test]
-fn a_control_over_its_budget_fails_the_check_and_one_at_it_passes() {
+fn a_control_over_its_budget_does_not_pass_and_one_at_it_passes() {
     let board = board();
     over(&board, 2);
-    let refused = board.refusal("controls.check", &[]);
-    assert_eq!(refused["code"], EXCEEDED, "{refused}");
-    assert!(
-        (refused["message"].as_str().unwrap()).contains("/controls/context (3 of 2 words)"),
-        "{refused}"
+    let output = failing(&board, &[]);
+    assert_eq!(
+        (
+            &output["measured"][0]["used"],
+            &output["measured"][0]["max"]
+        ),
+        (&json!(WORDS), &json!(2))
     );
-    assert_eq!(refused["fields"]["controls"][0]["used"], WORDS);
     over(&board, WORDS);
-    assert_eq!(each(&check(&board, &[]), "used"), [json!(WORDS)]);
+    let output = check(&board, &[]);
+    assert_eq!(output["passed"], true, "{output}");
+    assert_eq!(each(&output, "used"), [json!(WORDS)]);
 }
 
 #[test]
@@ -227,7 +237,7 @@ fn a_malformed_path_in_a_mount_matches_nothing_and_a_well_formed_one_beside_it_c
 }
 
 #[test]
-fn a_pattern_matching_a_degraded_file_fails_the_check_and_one_matching_a_whole_file_passes() {
+fn a_pattern_matching_a_degraded_file_does_not_pass_and_one_matching_a_whole_file_passes() {
     let board = board();
     board
         .write("docs/a", "one")
@@ -236,33 +246,36 @@ fn a_pattern_matching_a_degraded_file_fails_the_check_and_one_matching_a_whole_f
             "controls/docs.json",
             &budget("Small.", &["docs/*"], &words(WORDS)),
         );
-    let refused = board.refusal("controls.check", &[]);
-    assert_eq!(refused["code"], UNREADABLE, "{refused}");
-    assert_eq!(refused["fields"]["control"], "/controls/docs");
-    assert_eq!(refused["fields"]["code"], "board::path::shadowed");
+    let output = failing(&board, &[]);
+    assert_eq!(output["measured"][0]["control"], "/controls/docs");
+    assert_eq!(
+        output["measured"][0]["unreadable"],
+        json!([{"file": "/docs/a", "code": "board::path::shadowed"}])
+    );
     board.delete("docs/a.json");
     assert_eq!(each(&check(&board, &[]), "used"), [json!(1)]);
 }
 
 #[test]
-fn a_pattern_matching_a_file_with_no_logical_path_fails_naming_its_path_and_one_with_a_logical_path_passes()
+fn a_pattern_matching_a_file_with_no_logical_path_does_not_pass_naming_its_path_and_one_with_a_logical_path_passes()
  {
     let board = board();
     board.write("docs/\u{1}.md", "one").write(
         "controls/docs.json",
         &budget("Small.", &["docs/*"], &words(WORDS)),
     );
-    let refused = board.refusal("controls.check", &[]);
-    assert_eq!(refused["code"], UNREADABLE, "{refused}");
-    assert_eq!(refused["fields"]["file"], "docs/\u{1}.md");
-    assert_eq!(refused["fields"]["code"], "board::path::malformed");
+    let output = failing(&board, &[]);
+    assert_eq!(
+        output["measured"][0]["unreadable"],
+        json!([{"file": "docs/\u{1}.md", "code": "board::path::malformed"}])
+    );
     board.delete("docs/\u{1}.md");
     board.write("docs/a.md", "one");
     assert_eq!(each(&check(&board, &[]), "files"), [json!(["/docs/a.md"])]);
 }
 
 #[test]
-fn a_reference_to_a_directory_fails_the_check_and_one_to_a_file_passes() {
+fn a_reference_to_a_directory_does_not_pass_and_one_to_a_file_passes() {
     let board = board();
     let referring = |file: &str| {
         control(
@@ -273,22 +286,15 @@ fn a_reference_to_a_directory_fails_the_check_and_one_to_a_file_passes() {
     board
         .write("docs/a.md", "one")
         .write("controls/docs.json", &referring("/docs"));
-    let refused = board.refusal("controls.check", &[]);
-    assert_eq!(refused["code"], UNREADABLE, "{refused}");
-    assert_eq!(refused["fields"]["file"], "/docs");
-    assert!(
-        !refused["message"]
-            .as_str()
-            .unwrap()
-            .contains("first on PATH"),
-        "{refused}"
-    );
+    let output = failing(&board, &[]);
+    assert_eq!(output["measured"][0]["unreadable"][0]["file"], "/docs");
     board.write("controls/docs.json", &referring("/docs/a.md"));
     assert_eq!(each(&check(&board, &[]), "used"), [json!(1)]);
 }
 
 #[test]
-fn a_control_naming_a_directory_fails_naming_it_and_boards_code_and_one_naming_a_file_passes() {
+fn a_control_naming_a_directory_does_not_pass_naming_it_and_boards_code_and_one_naming_a_file_passes()
+ {
     let board = board();
     let referring = |file: &str| {
         control(
@@ -301,16 +307,14 @@ fn a_control_naming_a_directory_fails_naming_it_and_boards_code_and_one_naming_a
         .write("zdir/z.md", "one")
         .write("controls/a.json", &referring("/zdir"))
         .write("controls/b.json", &referring("/adir/a.md"));
-    let refused = board.refusal("controls.check", &[]);
-    assert_eq!(refused["code"], UNREADABLE, "{refused}");
-    let fields = &refused["fields"];
+    let output = failing(&board, &[]);
     assert_eq!(
-        (&fields["control"], &fields["file"], &fields["code"]),
-        (
-            &json!("/controls/a"),
-            &json!("/zdir"),
-            &json!("board::record::not_a_record")
-        )
+        of(&output, "measured", "/controls/a", &["unreadable", "used"]),
+        [json!([[{"file": "/zdir", "code": "board::record::not_a_record"}], 0])]
+    );
+    assert_eq!(
+        of(&output, "measured", "/controls/b", &["unreadable"]),
+        [json!([[]])]
     );
     board.write("controls/a.json", &referring("/zdir/z.md"));
     assert_eq!(each(&check(&board, &[]), "used"), [json!(1), json!(1)]);
@@ -429,18 +433,18 @@ fn a_path_with_nothing_there_is_refused_and_one_with_a_file_there_is_admitted() 
 }
 
 #[test]
-fn a_budget_over_its_max_fails_a_path_it_applies_under_and_not_one_it_does_not() {
+fn a_budget_over_its_max_does_not_pass_a_path_it_applies_under_and_passes_one_it_does_not() {
     let (board, _library) = scoped();
     board.write("src/b.rs", "five six seven");
-    let ran = board.run(&["--json", "call", "controls.check", "--path", "/src"]);
-    let refused = json(&ran);
-    assert_eq!(ran.code, 1, "{refused}");
-    assert_eq!(refused["code"], EXCEEDED, "{refused}");
-    let failing: Vec<&Value> = (refused["fields"]["controls"].as_array().unwrap().iter())
+    let output = failing(&board, &["--path", "/src"]);
+    let over: Vec<&Value> = (output["measured"].as_array().unwrap().iter())
+        .filter(|item| item["used"].as_u64() > item["max"].as_u64())
         .map(|item| &item["control"])
         .collect();
-    assert_eq!(failing, [&json!("/controls/src-budget")]);
-    assert_eq!(names(&at(&board, "/docs")), docs());
+    assert_eq!(over, [&json!("/controls/src-budget")]);
+    let docs_output = at(&board, "/docs");
+    assert_eq!(docs_output["passed"], true, "{docs_output}");
+    assert_eq!(names(&docs_output), docs());
 }
 
 #[test]
@@ -461,7 +465,7 @@ fn a_degraded_control_fails_a_path_it_does_not_reach_and_the_same_control_whole_
 }
 
 #[test]
-fn a_stated_control_reaching_an_unreadable_file_passes_and_a_budget_reaching_it_fails() {
+fn a_stated_control_reaching_an_unreadable_file_passes_and_a_budget_reaching_it_does_not() {
     let board = board();
     board
         .write("docs/a", "one")
@@ -470,17 +474,18 @@ fn a_stated_control_reaching_an_unreadable_file_passes_and_a_budget_reaching_it_
             "controls/style.json",
             &control("Plain.", &json!({"paths": ["docs/*"]})),
         );
-    assert_eq!(
-        names(&at(&board, "/docs")),
-        named(&[], &["/controls/style"])
-    );
+    let output = at(&board, "/docs");
+    assert_eq!(output["passed"], true, "{output}");
+    assert_eq!(names(&output), named(&[], &["/controls/style"]));
     board.write(
         "controls/budget.json",
         &budget("Small.", &["docs/*"], &words(WORDS)),
     );
-    let refused = board.refusal("controls.check", &["--path", "/docs"]);
-    assert_eq!(refused["code"], UNREADABLE, "{refused}");
-    assert_eq!(refused["fields"]["control"], "/controls/budget");
+    let output = failing(&board, &["--path", "/docs"]);
+    assert_eq!(
+        of(&output, "measured", "/controls/budget", &["unreadable"]),
+        [json!([[{"file": "/docs/a", "code": "board::path::shadowed"}]])]
+    );
 }
 
 /// The `fields` of the item of `output`'s `list` that is `control`.
@@ -492,7 +497,7 @@ fn of(output: &Value, list: &str, control: &str, fields: &[&str]) -> Vec<Value> 
 }
 
 #[test]
-fn a_budget_lists_its_files_outside_the_path_and_a_stated_control_counts_only_those_inside() {
+fn a_budget_measures_only_its_files_inside_the_path_as_a_stated_control_counts_them() {
     let (board, _library) = scoped();
     board
         .write(
@@ -506,6 +511,15 @@ fn a_budget_lists_its_files_outside_the_path_and_a_stated_control_counts_only_th
     let output = at(&board, "/docs");
     assert_eq!(
         of(&output, "measured", "/controls/both", &["files", "used"]),
+        [json!([["/docs/a.md"], 2])]
+    );
+    assert_eq!(
+        of(
+            &check(&board, &[]),
+            "measured",
+            "/controls/both",
+            &["files", "used"]
+        ),
         [json!([["/docs/a.md", "/src/a.rs"], WORDS])]
     );
     assert_eq!(
@@ -596,6 +610,7 @@ fn a_per_file_control_passes_when_each_file_is_within_it_and_a_total_one_sums_th
             "max": WORDS,
             "used": WORDS,
             "files": ["/docs/a.md", "/docs/b.md"],
+            "unreadable": [],
             "kind": "standing",
             "show": "failing",
             "per": "file",
@@ -611,32 +626,28 @@ fn a_per_file_control_passes_when_each_file_is_within_it_and_a_total_one_sums_th
         [json!(["/docs/a.md", "/docs/b.md"])]
     );
     per(&board, Some("total"), WORDS);
-    assert_eq!(board.refusal("controls.check", &[])["code"], EXCEEDED);
+    assert_eq!(each(&failing(&board, &[]), "used"), [json!(BOTH)]);
 }
 
 #[test]
-fn a_per_file_control_fails_naming_each_file_over_it_and_passes_once_that_file_is_within_it() {
+fn a_per_file_control_names_each_file_over_it_and_passes_once_that_file_is_within_it() {
     let board = board();
     per(&board, Some("file"), 2);
-    let refused = board.refusal("controls.check", &[]);
-    assert_eq!(refused["code"], EXCEEDED, "{refused}");
-    assert!(
-        (refused["message"].as_str().unwrap())
-            .contains("/controls/docs (each file at most 2 words: /docs/a.md has 3)"),
-        "{refused}"
-    );
-    let failing = &refused["fields"]["controls"];
-    assert_eq!(failing.as_array().unwrap().len(), 1, "{failing}");
+    let output = failing(&board, &[]);
+    let measured = &output["measured"];
+    assert_eq!(measured.as_array().unwrap().len(), 1, "{measured}");
     assert_eq!(
-        (&failing[0]["used"], &failing[0]["largest"]),
+        (&measured[0]["used"], &measured[0]["largest"]),
         (&json!(WORDS), &json!("/docs/a.md"))
     );
     assert_eq!(
-        failing[0]["over"],
+        measured[0]["over"],
         json!([{"file": "/docs/a.md", "used": WORDS}])
     );
     board.write("docs/a.md", "one two");
-    assert_eq!(each(&check(&board, &[]), "over"), [json!([])]);
+    let output = check(&board, &[]);
+    assert_eq!(output["passed"], true, "{output}");
+    assert_eq!(each(&output, "over"), [json!([])]);
 }
 
 #[test]
@@ -644,22 +655,15 @@ fn a_per_file_control_names_the_first_of_equal_files_as_largest_and_lists_every_
     let board = board();
     per(&board, Some("file"), 2);
     board.write("docs/b.md", "four five six");
-    let refused = board.refusal("controls.check", &[]);
-    assert_eq!(refused["code"], EXCEEDED, "{refused}");
-    assert!(
-        (refused["message"].as_str().unwrap()).contains(
-            "/controls/docs (each file at most 2 words: /docs/a.md has 3, /docs/b.md has 3)"
-        ),
-        "{refused}"
-    );
-    let failing = &refused["fields"]["controls"];
-    assert_eq!(failing.as_array().unwrap().len(), 1, "{failing}");
+    let output = failing(&board, &[]);
+    let measured = &output["measured"];
+    assert_eq!(measured.as_array().unwrap().len(), 1, "{measured}");
     assert_eq!(
-        (&failing[0]["used"], &failing[0]["largest"]),
+        (&measured[0]["used"], &measured[0]["largest"]),
         (&json!(WORDS), &json!("/docs/a.md"))
     );
     assert_eq!(
-        failing[0]["over"],
+        measured[0]["over"],
         json!([
             {"file": "/docs/a.md", "used": WORDS},
             {"file": "/docs/b.md", "used": WORDS},
@@ -688,6 +692,7 @@ fn a_control_naming_per_total_measures_exactly_as_one_naming_no_per() {
             "max",
             "requirement",
             "show",
+            "unreadable",
             "used"
         ]
     );

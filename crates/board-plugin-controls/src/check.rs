@@ -23,19 +23,22 @@ pub(crate) struct Input {
     path: Option<String>,
 }
 
-/// The controls that apply under the path, by the control's path; each
-/// budget is met and no file pins a version older than a version rule's.
+/// The controls that apply under the path, by the control's path, each
+/// budget and version rule measured over the files under the path.
+/// `passed` is false when a budget is over its max, a file pins a version
+/// older than a rule's, or a file is unreadable.
 #[derive(Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 #[schemars(rename = "CheckOutput")]
 pub(crate) struct Output {
+    passed: bool,
     measured: Vec<Checked>,
     versions: Vec<Pinned>,
     stated: Vec<Stated>,
 }
 
-/// A version control, the files it reads, and each version they pin that
-/// is older than `at_least`.
+/// A version control, the files it reads under the path, each version
+/// they pin that is older than `at_least`, and each file it could not read.
 #[derive(Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Pinned {
@@ -44,6 +47,7 @@ pub(crate) struct Pinned {
     at_least: String,
     files: Vec<String>,
     behind: Vec<FileBehind>,
+    unreadable: Vec<Unreadable>,
     kind: Kind,
     show: ShowAt,
 }
@@ -57,9 +61,10 @@ struct FileBehind {
     found: String,
 }
 
-/// A budget control and what its files use: all of them summed, or its
-/// largest file when `per` is `file`, which only then carries `per`,
-/// `largest` and `over`.
+/// A budget control and what its files under the path use: all of them
+/// summed, or its largest file when `per` is `file`, which only then
+/// carries `per`, `largest` and `over`. `unreadable` lists each file it
+/// could not read, which counts nothing toward `used`.
 #[derive(Serialize, JsonSchema)]
 pub(crate) struct Checked {
     control: String,
@@ -68,10 +73,27 @@ pub(crate) struct Checked {
     max: u64,
     used: u64,
     files: Vec<String>,
+    unreadable: Vec<Unreadable>,
     kind: Kind,
     show: ShowAt,
     #[serde(flatten)]
     each: Option<EachFile>,
+}
+
+/// A file a measured control reaches that Board cannot read, with Board's
+/// code for why, null when it gives none.
+#[derive(Clone, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct Unreadable {
+    file: String,
+    code: Option<String>,
+}
+
+impl Checked {
+    /// Whether the budget is met and every file was read.
+    fn passed(&self) -> bool {
+        self.used <= self.max && self.unreadable.is_empty()
+    }
 }
 
 /// What a per-file budget adds: the file it measured as `used`, null when
@@ -124,15 +146,17 @@ fn path_or_null(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
 ///
 /// Under `/`, every control applies, even one that reaches no file. Under
 /// another path, only those reaching a file there do. A control with a
-/// budget is measured over all its files, wherever they are, and must be
-/// within it; any other, such as one with a pattern or judged rule, is
-/// stated, with its patterns and the number of its files under the path. A path that names a link or mount is
-/// checked where it leads. A control Board marks degraded is
-/// `controls::control::degraded` under any path, since what it applies to
-/// is unknown; a measured control over its budget is
-/// `controls::budget::exceeded`. Each error names every control it applies
-/// to. A file reached by a reference and a pattern, or through a link,
-/// counts once, and each file is read once, however many controls reach it.
+/// budget or version rule is measured over its files under the path alone,
+/// so another repository's files never decide one repository's check; any
+/// other, such as one with a pattern or judged rule, is stated, with its
+/// patterns and the number of its files under the path. A path that names
+/// a link or mount is checked where it leads. A budget over its max, a pin
+/// older than a version rule's and a file Board cannot read are reported in
+/// the output, and `passed` is false; none fails the call. A control Board
+/// marks degraded is `controls::control::degraded` under any path, since
+/// what it applies to is unknown. A file reached by a reference and a
+/// pattern, or through a link, counts once, and each file is read once,
+/// however many controls reach it.
 pub(crate) fn check(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
     let Input { path } = PluginError::read_input("controls", "check", input)?;
     let broken = index::degraded(host)?;
@@ -140,6 +164,7 @@ pub(crate) fn check(host: &dyn Host, input: &Value) -> Result<Value, PluginError
         return Err(degraded(&broken));
     }
     let scope = scope(host, path.as_deref().unwrap_or("/"))?;
+    let root = scope == LogicalPath::root();
     let controls = index::controls(host)?;
     let named: Vec<&str> = (controls.iter())
         .filter(|(_, control)| control.applies_to.as_ref().is_some_and(|to| !to.is_empty()))
@@ -149,32 +174,36 @@ pub(crate) fn check(host: &dyn Host, input: &Value) -> Result<Value, PluginError
     for logical in controls.keys() {
         files.entry(logical.clone()).or_default();
     }
-    let mut unreadable: BTreeMap<String, (String, Option<String>)> = BTreeMap::new();
+    // The files Board's index marks degraded, by control, under the path.
+    let mut unreadable: BTreeMap<String, Vec<Unreadable>> = BTreeMap::new();
     // Files with no display path, by control. They lie under no path but `/`.
     let mut unnamed: BTreeMap<String, usize> = BTreeMap::new();
     for found in index::matched(host)? {
         let Some(reached) = files.get_mut(&found.control) else {
             continue;
         };
-        let shown = match found.file {
+        let (shown, inside) = match found.file {
             File::Named(path) => {
+                let inside = under(&path, &scope);
                 let shown = path.to_string();
                 reached.insert(path);
-                shown
+                (shown, inside)
             }
             File::Unnamed(path) => {
                 *unnamed.entry(found.control.clone()).or_default() += 1;
-                path
+                (path, root)
             }
         };
-        if let Health::Degraded(code) = found.health {
-            unreadable.entry(found.control).or_insert((shown, code));
+        if let (Health::Degraded(code), true) = (found.health, inside) {
+            (unreadable.entry(found.control).or_default()).push(Unreadable { file: shown, code });
         }
     }
-    let root = scope == LogicalPath::root();
+    for reached in files.values_mut() {
+        reached.retain(|path| under(path, &scope));
+    }
     // Under the root every control is listed, so one whose pattern reaches nothing shows with no files.
     let applying: Vec<&String> = (controls.keys())
-        .filter(|logical| root || files[*logical].iter().any(|path| under(path, &scope)))
+        .filter(|logical| root || !files[*logical].is_empty())
         .collect();
     let (measured_controls, versions) =
         measure_files(host, &applying, &controls, &files, &unreadable)?;
@@ -189,10 +218,7 @@ pub(crate) fn check(host: &dyn Host, input: &Value) -> Result<Value, PluginError
                 kind: control.kind,
                 show: control.show(),
                 paths: control.paths.clone().unwrap_or_default(),
-                files: files[logical]
-                    .iter()
-                    .filter(|path| under(path, &scope))
-                    .count()
+                files: files[logical].len()
                     + if root {
                         unnamed.get(logical).copied().unwrap_or(0)
                     } else {
@@ -201,62 +227,84 @@ pub(crate) fn check(host: &dyn Host, input: &Value) -> Result<Value, PluginError
             }
         })
         .collect();
+    let passed = (measured_controls.iter()).all(Checked::passed)
+        && (versions.iter()).all(|item| item.behind.is_empty() && item.unreadable.is_empty());
     let output = Output {
+        passed,
         measured: measured_controls,
         versions,
         stated,
     };
-    let failing: Vec<&Checked> = (output.measured.iter())
-        .filter(|item| item.used > item.max)
-        .collect();
-    if !failing.is_empty() {
-        return Err(exceeded(&failing, &output));
-    }
-    let lagging: Vec<&Pinned> = (output.versions.iter())
-        .filter(|item| !item.behind.is_empty())
-        .collect();
-    if !lagging.is_empty() {
-        return Err(behind(&lagging, &output));
-    }
     Ok(serde_json::to_value(output).expect("Output holds only strings, numbers and lists"))
 }
 
 /// Each budget control and each version control among `applying`,
-/// measured over its files, which are each read once. A file Board cannot
-/// read is `controls::file::unreadable`.
+/// measured over its files under the path, which are each read once. A
+/// file the index marks degraded is not read; it and each file Board
+/// cannot read go in the control's `unreadable`.
 fn measure_files(
     host: &dyn Host,
     applying: &[&String],
     controls: &BTreeMap<String, Control>,
     files: &BTreeMap<String, BTreeSet<LogicalPath>>,
-    unreadable: &BTreeMap<String, (String, Option<String>)>,
+    unreadable: &BTreeMap<String, Vec<Unreadable>>,
 ) -> Result<(Vec<Checked>, Vec<Pinned>), PluginError> {
     let read_by: Vec<&String> = (applying.iter().copied())
         .filter(|logical| measured(&controls[*logical]))
         .collect();
-    if let Some((logical, (file, code))) =
-        (read_by.iter()).find_map(|logical| unreadable.get(*logical).map(|found| (*logical, found)))
-    {
-        return Err(unreadable_file(logical, file, code.as_deref()));
-    }
+    // A degraded file is degraded for every control that reaches it.
+    let skipped: BTreeMap<&str, &Unreadable> = (read_by.iter())
+        .filter_map(|logical| unreadable.get(*logical))
+        .flatten()
+        .map(|item| (item.file.as_str(), item))
+        .collect();
     let distinct: BTreeSet<&LogicalPath> = (read_by.iter())
         .flat_map(|logical| &files[*logical])
+        .filter(|path| !skipped.contains_key(path.as_str()))
         .collect();
     let reads = read(host, distinct)?;
     let (mut budgets, mut versions) = (Vec::new(), Vec::new());
     for logical in read_by {
         let (control, reached) = (&controls[logical], &files[logical]);
+        let marked = unreadable.get(logical).map_or(&[][..], Vec::as_slice);
+        let (texts, failed) = texts(reached, marked, &skipped, &reads);
         match &control.rule {
             Some(Rule::Budget(budget)) => {
-                budgets.push(checked(logical, control, budget, reached, &reads)?);
+                budgets.push(checked(logical, control, budget, &texts, failed));
             }
             Some(Rule::Version(rule)) => {
-                versions.push(pinned(logical, control, rule, reached, &reads)?);
+                versions.push(pinned(logical, control, rule, &texts, failed)?);
             }
             _ => {}
         }
     }
     Ok((budgets, versions))
+}
+
+/// The bytes of each of `reached` that was read, and each file that was
+/// not: those `marked` degraded for this control, those `skipped` as
+/// degraded for any, and those whose read failed, by file.
+fn texts<'a>(
+    reached: &'a BTreeSet<LogicalPath>,
+    marked: &[Unreadable],
+    skipped: &BTreeMap<&str, &Unreadable>,
+    reads: &'a BTreeMap<LogicalPath, Result<Vec<u8>, String>>,
+) -> (Vec<(&'a LogicalPath, &'a [u8])>, Vec<Unreadable>) {
+    let mut failed = marked.to_vec();
+    let mut texts = Vec::new();
+    for path in reached {
+        match reads.get(path) {
+            Some(Ok(data)) => texts.push((path, data.as_slice())),
+            Some(Err(code)) => failed.push(Unreadable {
+                file: path.to_string(),
+                code: Some(code.clone()),
+            }),
+            None => failed.extend(skipped.get(path.as_str()).map(|item| (*item).clone())),
+        }
+    }
+    failed.sort_by(|a, b| a.file.cmp(&b.file));
+    failed.dedup_by(|a, b| a.file == b.file);
+    (texts, failed)
 }
 
 /// Whether `check` measures the control's files: it has a budget or a
@@ -364,29 +412,26 @@ fn checked(
     logical: &str,
     control: &Control,
     &Budget { budget, max, per }: &Budget,
-    files: &BTreeSet<LogicalPath>,
-    reads: &BTreeMap<LogicalPath, Result<Vec<u8>, String>>,
-) -> Result<Checked, PluginError> {
-    let mut usage = Vec::new();
-    for path in files {
-        match &reads[path] {
-            Ok(data) => usage.push((path.to_string(), measure(data, budget))),
-            Err(code) => return Err(unreadable_file(logical, path.as_str(), Some(code))),
-        }
-    }
+    texts: &[(&LogicalPath, &[u8])],
+    unreadable: Vec<Unreadable>,
+) -> Checked {
+    let usage: Vec<(String, u64)> = (texts.iter())
+        .map(|(path, data)| (path.to_string(), measure(data, budget)))
+        .collect();
     let mut checked = Checked {
         control: logical.to_owned(),
         requirement: control.requirement.clone(),
         budget,
         max,
         used: usage.iter().map(|(_, used)| used).sum(),
-        files: files.iter().map(ToString::to_string).collect(),
+        files: listed(texts, &unreadable),
+        unreadable,
         kind: control.kind,
         show: control.show(),
         each: None,
     };
     if per.unwrap_or(Per::Total) == Per::Total {
-        return Ok(checked);
+        return checked;
     }
     // The first of the sorted files with the most usage, so ties name the same file every run.
     let most = usage.iter().map(|(_, used)| *used).max();
@@ -406,7 +451,17 @@ fn checked(
         largest,
         over,
     });
-    Ok(checked)
+    checked
+}
+
+/// The display paths of the files a control reaches under the path, read
+/// or not, sorted; a degraded file with no display path is listed by its
+/// path in the tree.
+fn listed(texts: &[(&LogicalPath, &[u8])], unreadable: &[Unreadable]) -> Vec<String> {
+    let all: BTreeSet<String> = (texts.iter().map(|(path, _)| path.to_string()))
+        .chain(unreadable.iter().map(|item| item.file.clone()))
+        .collect();
+    all.into_iter().collect()
 }
 
 /// A version control's verdict on its files: each version they pin that is
@@ -415,16 +470,12 @@ fn pinned(
     logical: &str,
     control: &Control,
     rule: &Version,
-    files: &BTreeSet<LogicalPath>,
-    reads: &BTreeMap<LogicalPath, Result<Vec<u8>, String>>,
+    texts: &[(&LogicalPath, &[u8])],
+    unreadable: Vec<Unreadable>,
 ) -> Result<Pinned, PluginError> {
     let expression = version::compile(logical, rule)?;
     let mut behind = Vec::new();
-    for path in files {
-        let data = match &reads[path] {
-            Ok(data) => data,
-            Err(code) => return Err(unreadable_file(logical, path.as_str(), Some(code))),
-        };
+    for (path, data) in texts {
         let text = String::from_utf8_lossy(data);
         let found = version::behind(&expression, &rule.at_least, &text);
         behind.extend(found.into_iter().map(|old| FileBehind {
@@ -437,44 +488,12 @@ fn pinned(
         control: logical.to_owned(),
         requirement: control.requirement.clone(),
         at_least: rule.at_least.clone(),
-        files: files.iter().map(ToString::to_string).collect(),
+        files: listed(texts, &unreadable),
         behind,
+        unreadable,
         kind: control.kind,
         show: control.show(),
     })
-}
-
-/// The controls whose files pin an older version, and in `report` the
-/// output `check` would otherwise have returned.
-fn behind(lagging: &[&Pinned], report: &Output) -> PluginError {
-    let names: Vec<String> = (lagging.iter())
-        .map(|item| {
-            let files: Vec<String> = (item.behind.iter())
-                .map(|old| format!("{}:{} pins {}", old.file, old.line, old.found))
-                .collect();
-            format!(
-                "{} (at least {}: {})",
-                item.control,
-                item.at_least,
-                files.join(", ")
-            )
-        })
-        .collect();
-    let controls = serde_json::to_value(lagging).expect("Pinned holds only strings and numbers");
-    let report =
-        serde_json::to_value(report).expect("Output holds only strings, numbers and lists");
-    PluginError {
-        code: "controls::version::behind".to_owned(),
-        message: format!(
-            "older than the control allows: {}; raise each pin to at least the control's version",
-            names.join("; ")
-        ),
-        fields: Map::from_iter([
-            ("controls".to_owned(), controls),
-            ("report".to_owned(), report),
-        ]),
-        hint: None,
-    }
 }
 
 fn degraded(broken: &[(String, Value)]) -> PluginError {
@@ -491,65 +510,6 @@ fn degraded(broken: &[(String, Value)]) -> PluginError {
             names.join(", ")
         ),
         fields: Map::from_iter([("controls".to_owned(), Value::from(controls))]),
-        hint: None,
-    }
-}
-
-/// How a failing control is over its budget, naming each file when it
-/// limits files one by one.
-fn over(item: &Checked) -> String {
-    let budget = serde_json::to_value(item.budget).expect("a measure is a string");
-    let budget = budget.as_str().unwrap_or_default();
-    match &item.each {
-        None => format!("{} ({} of {} {budget})", item.control, item.used, item.max),
-        Some(each) => {
-            let files: Vec<String> = (each.over.iter())
-                .map(|over| format!("{} has {}", over.file, over.used))
-                .collect();
-            format!(
-                "{} (each file at most {} {budget}: {})",
-                item.control,
-                item.max,
-                files.join(", ")
-            )
-        }
-    }
-}
-
-/// The failing controls, and in `report` the output `check` would
-/// otherwise have returned, so a reader can still show the other controls.
-fn exceeded(failing: &[&Checked], report: &Output) -> PluginError {
-    let names: Vec<String> = failing.iter().map(|item| over(item)).collect();
-    let controls = serde_json::to_value(failing).expect("Checked holds only strings and numbers");
-    let report =
-        serde_json::to_value(report).expect("Output holds only strings, numbers and lists");
-    PluginError {
-        code: "controls::budget::exceeded".to_owned(),
-        message: format!(
-            "over budget: {}; shorten the files, or raise the control's max in a change that says why",
-            names.join(", ")
-        ),
-        fields: Map::from_iter([
-            ("controls".to_owned(), controls),
-            ("report".to_owned(), report),
-        ]),
-        hint: None,
-    }
-}
-
-fn unreadable_file(control: &str, path: &str, code: Option<&str>) -> PluginError {
-    let shown = code.unwrap_or("None");
-    PluginError {
-        code: "controls::file::unreadable".to_owned(),
-        message: format!(
-            "{control} applies to {path}, which Board cannot read as a file ({shown}); run `board check` \
-             for why, or change the control to name only files"
-        ),
-        fields: Map::from_iter([
-            ("control".to_owned(), Value::from(control)),
-            ("file".to_owned(), Value::from(path)),
-            ("code".to_owned(), Value::from(code)),
-        ]),
         hint: None,
     }
 }

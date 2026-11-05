@@ -4,8 +4,6 @@
 
 use super::*;
 
-const BEHIND: &str = "controls::version::behind";
-
 /// A control that every `channel` its files pin is at least `at_least`.
 fn floor(at_least: &str, paths: &[&str]) -> String {
     control(
@@ -22,7 +20,7 @@ fn toolchain(channel: &str) -> String {
 }
 
 #[test]
-fn a_pin_older_than_the_rule_fails_the_check_and_one_at_the_rule_passes() {
+fn a_pin_older_than_the_rule_does_not_pass_and_one_at_the_rule_passes() {
     let board = board();
     board
         .write("app/rust-toolchain.toml", &toolchain("1.97.1"))
@@ -30,26 +28,24 @@ fn a_pin_older_than_the_rule_fails_the_check_and_one_at_the_rule_passes() {
             "controls/rust.json",
             &floor("1.99.1", &["*rust-toolchain.toml"]),
         );
-    let refused = board.refusal("controls.check", &[]);
-    assert_eq!(refused["code"], BEHIND, "{refused}");
-    assert!(
-        (refused["message"].as_str().unwrap())
-            .contains("/controls/rust (at least 1.99.1: /app/rust-toolchain.toml:2 pins 1.97.1)"),
-        "{refused}"
-    );
+    let output = board.call("controls.check", &[]);
+    assert_eq!(output["passed"], false, "{output}");
     assert_eq!(
-        refused["fields"]["report"]["versions"][0]["behind"],
+        output["versions"][0]["behind"],
         json!([{"file": "/app/rust-toolchain.toml", "line": 2, "found": "1.97.1"}])
     );
     board.write("app/rust-toolchain.toml", &toolchain("1.99.1"));
+    let output = board.call("controls.check", &[]);
+    assert_eq!(output["passed"], true, "{output}");
     assert_eq!(
-        board.call("controls.check", &[])["versions"],
+        output["versions"],
         json!([{
             "control": "/controls/rust",
             "requirement": "Pin the latest Rust.",
             "at_least": "1.99.1",
             "files": ["/app/rust-toolchain.toml"],
             "behind": [],
+            "unreadable": [],
             "kind": "standing",
             "show": "failing",
         }])
@@ -57,7 +53,7 @@ fn a_pin_older_than_the_rule_fails_the_check_and_one_at_the_rule_passes() {
 }
 
 #[test]
-fn a_mounted_repository_that_pins_an_older_version_fails_and_one_at_the_rule_passes() {
+fn a_mounted_repository_that_pins_an_older_version_does_not_pass_and_one_at_the_rule_passes() {
     let board = board();
     board.write(
         "controls/rust.json",
@@ -78,10 +74,10 @@ fn a_mounted_repository_that_pins_an_older_version_fails_and_one_at_the_rule_pas
         "repos/old.json",
         &[("rust-toolchain.toml", &toolchain("1.98.0"))],
     );
-    let refused = board.refusal("controls.check", &["--path", "/repos/old"]);
-    assert_eq!(refused["code"], BEHIND, "{refused}");
+    let output = board.call("controls.check", &["--path", "/repos/old"]);
+    assert_eq!(output["passed"], false, "{output}");
     assert_eq!(
-        refused["fields"]["controls"][0]["behind"],
+        output["versions"][0]["behind"],
         json!([{"file": "/repos/old/rust-toolchain.toml", "line": 2, "found": "1.98.0"}])
     );
 }
