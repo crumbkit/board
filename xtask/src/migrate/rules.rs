@@ -61,26 +61,11 @@ pub(crate) fn record(
             context,
             &mut outcomes,
         ),
-        "artifacts/version/v1" => {
-            let field = "artifacts/version/v1.session";
-            renamed(record, "session", field, context, &mut outcomes);
-            digest(
-                record,
-                "sha256",
-                "artifacts/version/v1.sha256",
-                &mut outcomes,
-            );
-        }
+        "artifacts/version/v1" => version(record, context, &mut outcomes),
         "plans/answer/v1" => optional(record, "by", "plans/answer/v1.by", context, &mut outcomes),
         "runs/run/v1" => optional(record, "by", "runs/run/v1.by", context, &mut outcomes),
         "review/report/v1" => optional(record, "by", "review/report/v1.by", context, &mut outcomes),
-        "tasks/task/v2" => optional(
-            record,
-            "owner",
-            "tasks/task/v2.owner",
-            context,
-            &mut outcomes,
-        ),
+        "tasks/task/v2" => owner(record, context, &mut outcomes),
         "artifacts/artifact/v1" => {
             if let Some(Value::String(email)) = record.get("account") {
                 let person = json!({"person": email});
@@ -102,14 +87,7 @@ pub(crate) fn record(
             mount,
             &mut outcomes,
         ),
-        "board/seen/v1" => {
-            let id = (record.get("effect").and_then(Value::as_str))
-                .map(|effect| effect.rsplit('/').next().unwrap_or(effect).to_owned());
-            if let Some(id) = id.filter(|id| hex(id)) {
-                record.insert("effect".into(), Value::String(format!("sha256:{id}")));
-                outcomes.push(Outcome::Changed("board/seen/v1.effect"));
-            }
-        }
+        "board/seen/v1" => seen(record, &mut outcomes),
         "requests/reply/v1" => digest(record, "effect", "requests/reply/v1.effect", &mut outcomes),
         "boundary/crossing/v1" => {
             digest(
@@ -128,6 +106,50 @@ pub(crate) fn record(
         _ => {}
     }
     outcomes
+}
+
+/// A task's owner, which becomes an actor. An owner holds a claim, so one
+/// that names nobody is left for a person to map rather than dropped, which
+/// would free the task.
+fn owner(record: &mut Map<String, Value>, context: &Context, outcomes: &mut Vec<Outcome>) {
+    let Some(Value::String(owner)) = record.get("owner") else {
+        return;
+    };
+    match actor(owner, context) {
+        Some(by) => {
+            record.insert("owner".into(), by);
+            outcomes.push(Outcome::Changed("tasks/task/v2.owner"));
+        }
+        None => outcomes.push(Outcome::Unmapped("tasks/task/v2.owner", owner.clone())),
+    }
+}
+
+/// A version's `session`, which becomes `by`, and its hash.
+fn version(record: &mut Map<String, Value>, context: &Context, outcomes: &mut Vec<Outcome>) {
+    // The released artifacts mod wrote the session's bare uuid, which
+    // names no `local_` session; the mod is the program that wrote it.
+    if let Some(Value::String(session)) = record.remove("session") {
+        let by = actor(&session, context).unwrap_or_else(|| json!({"program": "claude-code"}));
+        record.insert("by".into(), by);
+        outcomes.push(Outcome::Changed("artifacts/version/v1.session"));
+    }
+    digest(record, "sha256", "artifacts/version/v1.sha256", outcomes);
+}
+
+/// A seen record's effect, a path or a bare id, which becomes a digest.
+fn seen(record: &mut Map<String, Value>, outcomes: &mut Vec<Outcome>) {
+    let id = (record.get("effect").and_then(Value::as_str))
+        .map(|effect| effect.rsplit('/').next().unwrap_or(effect).to_owned());
+    let field = "board/seen/v1.effect";
+    match (record.get("effect").and_then(Value::as_str), id) {
+        (Some(effect), _) if effect.starts_with("sha256:") => {}
+        (_, Some(id)) if hex(&id) => {
+            record.insert("effect".into(), Value::String(format!("sha256:{id}")));
+            outcomes.push(Outcome::Changed(field));
+        }
+        (Some(effect), _) => outcomes.push(Outcome::Unmapped(field, effect.to_owned())),
+        (None, _) => {}
+    }
 }
 
 /// A required actor stored as the string `old`, which becomes `by`.
@@ -205,16 +227,25 @@ fn subjects(
     }
 }
 
-/// A hash in `key` that is bare hex, which gains its `sha256:` prefix.
+/// A hash in `key` that is bare hex, which gains its `sha256:` prefix. A
+/// value that is neither is reported.
 fn digest(
     record: &mut Map<String, Value>,
     key: &str,
     field: &'static str,
     outcomes: &mut Vec<Outcome>,
 ) {
-    let Some(bare) = (record.get(key).and_then(Value::as_str)).filter(|text| hex(text)) else {
+    let Some(text) = record.get(key).and_then(Value::as_str) else {
         return;
     };
+    if text.starts_with("sha256:") {
+        return;
+    }
+    if !hex(text) {
+        outcomes.push(Outcome::Unmapped(field, text.to_owned()));
+        return;
+    }
+    let bare = text.to_owned();
     let prefixed = format!("sha256:{bare}");
     record.insert(key.into(), Value::String(prefixed));
     outcomes.push(Outcome::Changed(field));
@@ -313,12 +344,13 @@ pub(crate) fn markdown(text: &str, context: &Context) -> Option<(String, Vec<Out
             continue;
         }
         let owner = serde_json::from_str::<String>(owner).unwrap_or_else(|_| owner.to_owned());
-        match actor(&owner, context) {
-            Some(by) => {
-                let _ = writeln!(lines, "owner: {by}");
-                outcomes.push(Outcome::Changed(field));
-            }
-            None => outcomes.push(Outcome::Dropped(field, owner)),
+        if let Some(by) = actor(&owner, context) {
+            let _ = writeln!(lines, "owner: {by}");
+            outcomes.push(Outcome::Changed(field));
+        } else {
+            lines.push_str(line);
+            lines.push('\n');
+            outcomes.push(Outcome::Unmapped(field, owner));
         }
     }
     (!outcomes.is_empty()).then(|| (format!("---\n{lines}{rest}"), outcomes))

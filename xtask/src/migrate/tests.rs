@@ -168,6 +168,48 @@ fn subjects_keep_valid_ones_and_map_or_resolve_the_rest() {
 }
 
 #[test]
+fn a_task_owner_that_names_nobody_is_kept_and_reported_and_its_twin_is_mapped() {
+    let before = json!({"$type": "tasks/task/v2", "owner": "lead-7f3a"});
+    let (record, outcomes) = migrated(before.clone());
+    assert_eq!(record, before);
+    assert_eq!(
+        outcomes,
+        [Outcome::Unmapped("tasks/task/v2.owner", "lead-7f3a".into())]
+    );
+    let (record, _) = migrated(json!({"$type": "tasks/task/v2", "owner": "codex lead"}));
+    assert_eq!(record["owner"], json!({"program": "codex"}));
+}
+
+#[test]
+fn a_version_session_the_released_mod_wrote_becomes_the_mods_program() {
+    let (record, _) =
+        migrated(json!({"$type": "artifacts/version/v1", "session": "0b8a7c6e-1f2d"}));
+    assert_eq!(
+        record,
+        json!({"$type": "artifacts/version/v1", "by": {"program": "claude-code"}})
+    );
+}
+
+#[test]
+fn a_hash_that_is_neither_bare_hex_nor_a_digest_is_reported_and_its_twin_is_prefixed() {
+    let (record, outcomes) = migrated(json!({"$type": "requests/reply/v1", "effect": "ab"}));
+    assert_eq!(record["effect"], json!("ab"));
+    assert_eq!(
+        outcomes,
+        [Outcome::Unmapped("requests/reply/v1.effect", "ab".into())]
+    );
+    let (seen, outcomes) = migrated(json!({"$type": "board/seen/v1", "effect": "/effects/x"}));
+    assert_eq!(seen["effect"], json!("/effects/x"));
+    assert_eq!(
+        outcomes,
+        [Outcome::Unmapped(
+            "board/seen/v1.effect",
+            "/effects/x".into()
+        )]
+    );
+}
+
+#[test]
 fn a_subject_grammar_matches_the_shape() {
     for valid in [
         "crumbkit/board",
@@ -199,7 +241,7 @@ fn a_github_remote_names_its_repository() {
 }
 
 #[test]
-fn a_task_owner_line_in_frontmatter_becomes_an_actor_or_goes() {
+fn a_task_owner_line_in_frontmatter_becomes_an_actor_or_is_kept_and_reported() {
     let text = "---\n$type: \"tasks/task/v2\"\nowner: Codex integrator\ntitle: t\n---\nbody\n";
     let (migrated, outcomes) = rules::markdown(text, &context()).unwrap();
     assert_eq!(
@@ -208,11 +250,11 @@ fn a_task_owner_line_in_frontmatter_becomes_an_actor_or_goes() {
     );
     assert_eq!(outcomes, [Outcome::Changed("tasks/task/v2.owner")]);
     let text = "---\n$type: tasks/task/v2\nowner: \"c2_b_builder\"\n---\n";
-    let (migrated, outcomes) = rules::markdown(text, &context()).unwrap();
-    assert_eq!(migrated, "---\n$type: tasks/task/v2\n---\n");
+    let (kept, outcomes) = rules::markdown(text, &context()).unwrap();
+    assert_eq!(kept, text);
     assert_eq!(
         outcomes,
-        [Outcome::Dropped(
+        [Outcome::Unmapped(
             "tasks/task/v2.owner",
             "c2_b_builder".into()
         )]

@@ -101,7 +101,7 @@ impl Record for Decision {
 ///
 /// The page is beside it as `<key>.html` or `<key>.md`. `<key>` is
 /// `version`, the version id the Artifact tool returned, or, when it
-/// returned none, the first 16 hex digits of `sha256`, and the record leaves
+/// returned none, the first 16 hex digits after `sha256:` in `sha256`, and the record leaves
 /// `version` out. `title` and `description` are the artifact's at this
 /// version. A version with no local page, such as one an Artifact type
 /// wrote, has no copy and says `copy: "none"`, and then has no `sha256`.
@@ -128,7 +128,7 @@ pub struct VersionRecord {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "Option<Prose>")]
     pub description: Option<String>,
-    /// The SHA-256 of the page copied beside this record, in hex.
+    /// The digest of the page copied beside this record.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "Option<Digest>")]
     pub sha256: Option<String>,

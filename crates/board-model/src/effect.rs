@@ -252,8 +252,8 @@ pub struct Seen {
 }
 
 impl Seen {
-    /// The seen record `value` holds, refused when its `effect` is not
-    /// `sha256:` and an effect id.
+    /// The seen record `value` holds, refused when its `effect` names no
+    /// effect id.
     pub fn from_value(value: &Value) -> Result<Self, serde_json::Error> {
         let seen = Self::deserialize(value)?;
         if seen.effect_id().is_none() {
@@ -265,9 +265,15 @@ impl Seen {
         Ok(seen)
     }
 
-    /// The id of the effect it answers, without the `sha256:` prefix.
+    /// The id of the effect it answers, without the `sha256:` prefix. A
+    /// seen record a released Board wrote names the effect by its path,
+    /// `/effects/answered/<id>` or `/effects/pending/<id>`, and is read
+    /// too, so its answer keeps counting until the board is migrated.
     pub fn effect_id(&self) -> Option<&str> {
-        (self.effect.strip_prefix("sha256:")).filter(|id| is_effect_id(id))
+        let id = (self.effect.strip_prefix("sha256:"))
+            .or_else(|| self.effect.strip_prefix("/effects/answered/"))
+            .or_else(|| self.effect.strip_prefix("/effects/pending/"))?;
+        is_effect_id(id).then_some(id)
     }
 
     /// The answer to the effect whose id is `id`.

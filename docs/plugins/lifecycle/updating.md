@@ -1,8 +1,9 @@
 # Updating a plugin
 
 This file holds detail for docs/plugins.md, Installing and enabling. It says
-what happens when an installed plugin stops shipping a type, and how the
-plugin moves its records to the types it ships now.
+what happens when an installed plugin stops shipping a type, how the
+plugin moves its records to the types it ships now, and how a board moves
+to the shared shapes.
 
 ## The update
 
@@ -48,3 +49,23 @@ Each step leaves a valid board in its own commit.
   own put ([architecture/writes/effects.md](../../architecture/writes/effects.md)).
 - Board's wire format has no migration concept. What is owed is the plugin's
   own output.
+
+## The shared shapes migration
+
+Before 0.1.0, Board moved actors, hashes and subjects onto shared shapes in place,
+keeping each type's version. `cargo xtask migrate-shapes <board>` rewrites
+one board's own tree to them. A board's records and its stored schemas move
+together, so update a board in this order:
+
+1. Install the new Board.
+2. Run `cargo xtask migrate-shapes <board>`, read what it could not map,
+   and write a `--map <file>` that maps each such old string to an actor
+   object or a subject.
+3. Run it again with `--write` and the map. A second run changes nothing.
+4. Run `board plugin enable` for each enabled plugin, so the stored schemas
+   are the new ones, then `board check`.
+
+It reads only the board's own tree, so each mounted board is migrated on
+its own. Until a board is migrated, Board still reads a seen record that
+names its effect by path, but replies and crossings with a bare hash are
+degraded.

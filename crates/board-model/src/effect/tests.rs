@@ -55,21 +55,29 @@ fn an_effect_and_a_seen_record_read_back_as_written_and_refuse_an_extra_field() 
     assert!(effect_record("lr/task/v1", &extra).is_none());
 }
 
-/// A seen record names its effect as a digest, `sha256:<id>`; a path to
-/// the effect and a bare id are refused.
+/// A seen record names its effect as a digest, `sha256:<id>`, and one a
+/// released Board wrote, by the effect's path, is read too. A bare id and
+/// a path elsewhere are refused.
 #[test]
-fn a_seen_record_naming_its_effect_by_path_or_bare_id_is_refused_and_its_digest_twin_is_read() {
+fn a_seen_record_naming_its_effect_by_bare_id_or_another_path_is_refused_and_its_twins_are_read() {
     let id = "ab".repeat(32);
     let seen = |effect: &str| json!({"$type": SEEN_TYPE, "effect": effect, "answer": "refuse"});
-    for refused in [format!("/effects/answered/{id}"), id.clone()] {
+    for refused in [id.clone(), format!("/notes/{id}"), format!("sha256:{id}0")] {
         assert!(
             effect_record(SEEN_TYPE, &seen(&refused)).unwrap().is_err(),
             "{refused}"
         );
     }
-    let read = Seen::from_value(&seen(&format!("sha256:{id}"))).unwrap();
-    assert_eq!(read.effect_id(), Some(id.as_str()));
-    assert_eq!(Seen::new(&id, Answer::Refuse, None), read);
+    for read in [
+        format!("sha256:{id}"),
+        format!("/effects/answered/{id}"),
+        format!("/effects/pending/{id}"),
+    ] {
+        let read = Seen::from_value(&seen(&read)).unwrap();
+        assert_eq!(read.effect_id(), Some(id.as_str()));
+    }
+    let written = serde_json::to_value(Seen::new(&id, Answer::Refuse, None)).unwrap();
+    assert_eq!(written["effect"], json!(format!("sha256:{id}")));
 }
 
 #[test]

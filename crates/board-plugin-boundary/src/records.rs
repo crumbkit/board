@@ -59,14 +59,15 @@ impl Record for Control {
 }
 
 /// `boundary/crossing/v1`: the verdicts on one content, at
-/// `/crossings/<digest>` in the personal board.
+/// `/crossings/<hex>` in the personal board, where `<hex>` is its digest
+/// without `sha256:`.
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct CrossingRecord {
     /// The record's type.
     #[serde(rename = "$type")]
     pub tag: Tag<Self>,
-    /// The SHA-256 of the content's action, destination and parts.
+    /// The digest of the content's action, destination and parts.
     #[schemars(with = "Digest")]
     pub digest: String,
     /// The capability that sends the parts, such as github.pr-create.
