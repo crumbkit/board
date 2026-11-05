@@ -131,7 +131,7 @@ impl Repository<'_> {
                 ));
             }
         };
-        if exited.code == Some(0) && !(quiet && !exited.stderr.is_empty()) {
+        if exited.code == Some(0) && (!quiet || exited.stderr.is_empty()) {
             return Ok(exited.stdout);
         }
         let stderr = String::from_utf8_lossy(&exited.stderr);
