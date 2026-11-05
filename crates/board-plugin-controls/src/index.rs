@@ -71,8 +71,8 @@ pub(crate) struct Control {
 impl Control {
     /// When the mod shows this control, its default applied.
     pub(crate) fn show(&self) -> ShowAt {
-        let budget = matches!(self.rule, Some(Rule::Budget(_)));
-        ShowAt::effective(self.show, self.kind, budget)
+        let measured = matches!(self.rule, Some(Rule::Budget(_) | Rule::Version(_)));
+        ShowAt::effective(self.show, self.kind, measured)
     }
 }
 

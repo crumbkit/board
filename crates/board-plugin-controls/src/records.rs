@@ -106,10 +106,10 @@ pub enum ShowAt {
 
 impl ShowAt {
     /// `show` as the record sets it, or, left out, `start` for an
-    /// obligation, `failing` for a control with a budget, and `edit` for
-    /// any other.
-    pub fn effective(show: Option<Self>, kind: Kind, budget: bool) -> Self {
-        match (show, kind, budget) {
+    /// obligation, `failing` for a control `check` measures (one with a
+    /// budget or a version rule), and `edit` for any other.
+    pub fn effective(show: Option<Self>, kind: Kind, measured: bool) -> Self {
+        match (show, kind, measured) {
             (Some(show), _, _) => show,
             (None, Kind::Obligation, _) => Self::Start,
             (None, Kind::Standing, true) => Self::Failing,
@@ -125,6 +125,7 @@ pub enum Rule {
     Budget(Budget),
     Pattern(Pattern),
     Judged(Judged),
+    Version(Version),
 }
 
 /// A limit on the words or bytes of the files the control applies to, or
@@ -156,6 +157,15 @@ pub struct Judged {
     pub judged: String,
 }
 
+/// The oldest version a file may pin: every version `capture`'s first group
+/// finds must be at least `at_least`.
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct Version {
+    pub at_least: String,
+    pub capture: String,
+}
+
 /// The fields of every kind of rule, as one object, so that Board checks
 /// `pattern` and `judged` as references: it searches no reference under
 /// `anyOf` or `oneOf`. [`rule_schema`] adds the `oneOf` that picks the kind.
@@ -165,7 +175,7 @@ pub struct Judged {
 #[schemars(
     rename = "Rule",
     title = "Rule",
-    description = "What a program checks: a budget, a pattern file or a judged rubric, told apart by their fields.\n\nA budget, `budget` and `max`, limits the words or bytes of the files or\ntext; with `per` `total`, the default, the files' usage is summed, and\nwith `file` each file on its own must be within `max`. Words are\nseparated by any whitespace. A pattern, `pattern` and `show`, names a file\nof regular expressions, one per line, that text must not match; with\n`show` `match-only`, a finding quotes what matched and never the\nexpression. A judged rule, `judged`, names a rubric that a clean-context\nmodel reads text against."
+    description = "What a program checks: a budget, a pattern file, a judged rubric or a version floor, told apart by their fields.\n\nA budget, `budget` and `max`, limits the words or bytes of the files or\ntext; with `per` `total`, the default, the files' usage is summed, and\nwith `file` each file on its own must be within `max`. Words are\nseparated by any whitespace. A pattern, `pattern` and `show`, names a file\nof regular expressions, one per line, that text must not match; with\n`show` `match-only`, a finding quotes what matched and never the\nexpression. A judged rule, `judged`, names a rubric that a clean-context\nmodel reads text against. A version rule, `at_least` and `capture`, says\nthat every version the first group of the regular expression `capture`\nfinds is at least `at_least`, compared over the numbers the version names."
 )]
 pub(crate) struct RuleFields {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -186,13 +196,29 @@ pub(crate) struct RuleFields {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[schemars(title = "Judged")]
     judged: Option<Ref>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schemars(title = "At Least", regex(pattern = r"^[0-9]+(\.[0-9]+)*$"))]
+    at_least: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schemars(title = "Capture", length(min = 1))]
+    capture: Option<String>,
 }
 
 /// The fields of each kind of rule, in the order `oneOf` lists them.
-const KINDS: [&[&str]; 3] = [&["budget", "max", "per"], &["pattern", "show"], &["judged"]];
+const KINDS: [&[&str]; 4] = [
+    &["budget", "max", "per"],
+    &["pattern", "show"],
+    &["judged"],
+    &["at_least", "capture"],
+];
 
 /// The fields each kind of rule must hold.
-const REQUIRED: [&[&str]; 3] = [&["budget", "max"], &["pattern", "show"], &["judged"]];
+const REQUIRED: [&[&str]; 4] = [
+    &["budget", "max"],
+    &["pattern", "show"],
+    &["judged"],
+    &["at_least", "capture"],
+];
 
 /// A rule's schema is `RuleFields`, and a `oneOf` whose branches each
 /// require one kind's fields and refuse every other kind's. No branch holds

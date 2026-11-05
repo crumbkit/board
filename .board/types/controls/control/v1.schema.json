@@ -2,14 +2,24 @@
   "$defs": {
     "Rule": {
       "additionalProperties": false,
-      "description": "What a program checks: a budget, a pattern file or a judged rubric, told apart by their fields.\n\nA budget, `budget` and `max`, limits the words or bytes of the files or\ntext; with `per` `total`, the default, the files' usage is summed, and\nwith `file` each file on its own must be within `max`. Words are\nseparated by any whitespace. A pattern, `pattern` and `show`, names a file\nof regular expressions, one per line, that text must not match; with\n`show` `match-only`, a finding quotes what matched and never the\nexpression. A judged rule, `judged`, names a rubric that a clean-context\nmodel reads text against.",
+      "description": "What a program checks: a budget, a pattern file, a judged rubric or a version floor, told apart by their fields.\n\nA budget, `budget` and `max`, limits the words or bytes of the files or\ntext; with `per` `total`, the default, the files' usage is summed, and\nwith `file` each file on its own must be within `max`. Words are\nseparated by any whitespace. A pattern, `pattern` and `show`, names a file\nof regular expressions, one per line, that text must not match; with\n`show` `match-only`, a finding quotes what matched and never the\nexpression. A judged rule, `judged`, names a rubric that a clean-context\nmodel reads text against. A version rule, `at_least` and `capture`, says\nthat every version the first group of the regular expression `capture`\nfinds is at least `at_least`, compared over the numbers the version names.",
       "properties": {
+        "at_least": {
+          "pattern": "^[0-9]+(\\.[0-9]+)*$",
+          "title": "At Least",
+          "type": "string"
+        },
         "budget": {
           "enum": [
             "words",
             "bytes"
           ],
           "title": "Budget",
+          "type": "string"
+        },
+        "capture": {
+          "minLength": 1,
+          "title": "Capture",
           "type": "string"
         },
         "judged": {
@@ -111,6 +121,16 @@
                 "required": [
                   "judged"
                 ]
+              },
+              {
+                "required": [
+                  "at_least"
+                ]
+              },
+              {
+                "required": [
+                  "capture"
+                ]
               }
             ]
           },
@@ -140,6 +160,16 @@
               {
                 "required": [
                   "judged"
+                ]
+              },
+              {
+                "required": [
+                  "at_least"
+                ]
+              },
+              {
+                "required": [
+                  "capture"
                 ]
               }
             ]
@@ -176,11 +206,61 @@
                 "required": [
                   "show"
                 ]
+              },
+              {
+                "required": [
+                  "at_least"
+                ]
+              },
+              {
+                "required": [
+                  "capture"
+                ]
               }
             ]
           },
           "required": [
             "judged"
+          ]
+        },
+        {
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "budget"
+                ]
+              },
+              {
+                "required": [
+                  "max"
+                ]
+              },
+              {
+                "required": [
+                  "per"
+                ]
+              },
+              {
+                "required": [
+                  "pattern"
+                ]
+              },
+              {
+                "required": [
+                  "show"
+                ]
+              },
+              {
+                "required": [
+                  "judged"
+                ]
+              }
+            ]
+          },
+          "required": [
+            "at_least",
+            "capture"
           ]
         }
       ]

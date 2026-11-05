@@ -9,8 +9,8 @@ boundary.verify disabled Whether a passing crossing exists for a digest, or for 
 boundary.record disabled Add what the destination returned, such as a URL, to a passing crossing.
 controls.for-path disabled The controls that apply to a path.
 controls.for-paths disabled The controls that apply to any of several files and SQLite GLOB patterns, each once with its summary and the paths that reached it.
-controls.check disabled Check the controls under a path, `/` when left out. Fails naming each control over budget or degraded.
-controls.evaluate disabled Check named parts of text against controls' budget, pattern and judged rules, and return each control's verdict on each part with its findings.
+controls.check disabled Check the controls under a path, `/` when left out. Fails naming each control over budget, behind its version or degraded.
+controls.evaluate disabled Check named parts of text against controls' budget, pattern, version and judged rules, and return each control's verdict on each part with its findings.
 controls.from-standards disabled The controls a standards repository's rule tables give a repository that adopts its profiles, as `board put --batch` lines that make a directory hold exactly them.
 evals.about disabled The evals that name a subject, or that name a repository's mount or live in it, whatever their status, here and in mounted boards.
 evals.open disabled The evals still planned or running, here and in mounted boards.

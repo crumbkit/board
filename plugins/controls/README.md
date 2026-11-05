@@ -42,7 +42,7 @@ such as a pull request body, instead of files.
   `controls::file::unreadable`; in a mounted board it matches nothing, and
   that board's own `board check` reports it.
 - `rule` is optional. Without it, the control is a written requirement.
-  There are three kinds of rule:
+  There are four kinds of rule:
   - A budget limits the `words` (separated by any whitespace) or `bytes` of
     the files the control applies to. Its optional `per` says how: `total`,
     the default, limits the sum over every file, and `file` limits each file
@@ -60,21 +60,30 @@ such as a pull request body, instead of files.
     with `pattern`, it names the expression too.
   - A judged rule, such as `{"judged": "/rubrics/plain.md"}`, names a
     rubric that a clean-context model reads text against.
+  - A version rule, such as
+    `{"at_least": "1.99.1", "capture": "channel = \"([0-9.]+)\""}`, says
+    that every version the first group of `capture` finds is at least
+    `at_least`. `capture` uses the same regular expressions, with `^` and
+    `$` matching at each line. Versions compare number by number, over only
+    the numbers the found version names, so a pin of `26` passes
+    `26.13.0` and `24.16.0` does not. A capture that is not numbers
+    separated by dots, such as `stable`, is skipped. The rule holds the
+    version as data: raise `at_least` when a newer release ships.
 
   A rule holds the fields of exactly one kind, and is never null. A pattern
   file and a rubric are references, so `board check` marks the control
   `board::ref::dangling` when one is missing, and `controls.check` then
   fails with `controls::control::degraded`. `check` measures budgets over
-  files; it lists a pattern or judged control as stated, and only
-  `evaluate` applies those rules.
+  files and version rules over the versions files pin; it lists a pattern
+  or judged control as stated, and only `evaluate` applies those rules.
 - `kind` is `standing`, the default, for a rule that stays until it is
   changed, or `obligation` for work a landed change left owed. The work that
   discharges an obligation deletes it.
 - `show` says when to show the control: `start` at session start, `edit`
   before the first edit of a file it covers, or `failing` only when `check`
   reports it failing. Left out, an obligation shows at `start`, a control
-  with a budget when `failing`, and any other control at `edit`. `check`
-  fails only a control with a budget, so a control without one that says
+  with a budget or a version rule when `failing`, and any other control at
+  `edit`. `check` fails only a control with a budget or a version rule, so a control without one that says
   `failing` is never shown. It is unrelated to a pattern rule's `show`, which says what a finding quotes.
 - `sources` holds references to what justifies the control, such as a
   source note or an eval. Board checks them as it checks `applies_to`, so a
@@ -141,14 +150,19 @@ The plugin ships both schemas. `board plugin enable controls` writes them to
   sum over its files. A `file` control also carries `per: "file"`,
   `largest`, the file with the most usage (`null` when it has no files),
   `used`, that file's usage, and `over`, each file over `max` with its
-  usage, so the error names the files to shorten. `stated` holds the rest,
+  usage, so the error names the files to shorten. `versions` holds the
+  version controls, with `at_least`, `files`, and `behind`: each `file`,
+  `line` and version `found` that is older than `at_least`. `stated` holds the rest,
   with their `paths` patterns and `files`, the number of their files under
   the path, so the output stays short; `board get <control>` shows its
   `applies_to`, `paths` and `sources`. Every item carries `kind` and the
   effective `show`. A stated control never fails the call. It
   fails, exiting 1, with `controls::budget::exceeded` when a measured
   control is over budget, whose fields carry `report`, the output the call
-  would otherwise have returned;
+  would otherwise have returned; `controls::version::behind`, carrying
+  `report` too, when a file pins a version older than a version rule's;
+  `controls::capture::invalid` when a version rule's `capture` does not
+  compile or has no group;
   `controls::control::degraded` when Board marks any control degraded, under
   any path; and `controls::file::unreadable` when a measured control reaches
   something that is not a readable file, such as a directory. Each error names
@@ -170,7 +184,7 @@ The plugin ships both schemas. `board plugin enable controls` writes them to
   part, and a control named twice is checked once. The output is `passed`,
   false when any result failed, and `results`, one per control and part,
   ordered by control as given and then by part name. Each result holds
-  `control`, `part`, `rule` (`budget`, `pattern`, `judged`, or null),
+  `control`, `part`, `rule` (`budget`, `pattern`, `judged`, `version`, or null),
   `status` and `findings`:
   - `status` is `passed` or `failed`; `stated` for a control without a rule;
     `skipped` for a judged rule when the part failed a budget or pattern

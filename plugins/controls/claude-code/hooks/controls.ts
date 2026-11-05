@@ -38,6 +38,7 @@ function failure(exitCode: number, stdout: string, stderr: string): { code: stri
 
 type Stated = { control: string; requirement: string }
 type Measured = Stated & { budget: string; used: number; max: number }
+type Pinned = Stated & { at_least: string }
 
 /**
  * Reads `board --json call controls.check --path .` run at `root`. `null`
@@ -51,8 +52,13 @@ export function parseCheck(root: string, exitCode: number, stdout: string, stder
       requirement: m.requirement,
       usage: `${m.used} of ${m.max} ${m.budget}`,
     }))
+    const versions = (Array.isArray(found.versions) ? (found.versions as Pinned[]) : []).map(v => ({
+      control: v.control,
+      requirement: v.requirement,
+      usage: `every pin at least ${v.at_least}`,
+    }))
     const stated = (found.stated as Stated[]).map(s => ({ control: s.control, requirement: s.requirement }))
-    return { kind: 'read', root, controls: [...measured, ...stated] }
+    return { kind: 'read', root, controls: [...measured, ...versions, ...stated] }
   }
   const failed = failure(exitCode, stdout, stderr)
   if (failed.code === NO_BOARD) return null

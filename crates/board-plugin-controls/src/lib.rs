@@ -10,6 +10,7 @@ mod overlap;
 pub mod records;
 mod standards;
 mod summary;
+mod version;
 
 use board_model::{CapabilityName, Code, Fields, LogicalPath, RecordType, Refusal};
 use board_ops::{Host, Plugin, PluginError};
@@ -119,7 +120,7 @@ fn manifest() -> Value {
         }, {
             "name": "check",
             "description": "Check the controls under a path, `/` when left out. Fails naming each \
-                control over budget or degraded.",
+                control over budget, behind its version or degraded.",
             "inputSchema": schema_of::<check::Input>(SchemaSettings::draft2020_12()),
             "outputSchema": schema_of::<check::Output>(settings()),
             "annotations": {
@@ -131,8 +132,8 @@ fn manifest() -> Value {
             "_meta": {},
         }, {
             "name": "evaluate",
-            "description": "Check named parts of text against controls' budget, pattern and judged \
-                rules, and return each control's verdict on each part with its findings.",
+            "description": "Check named parts of text against controls' budget, pattern, version and \
+                judged rules, and return each control's verdict on each part with its findings.",
             "inputSchema": schema_of::<evaluate::Input>(SchemaSettings::draft2020_12()),
             "outputSchema": schema_of::<evaluate::Output>(settings()),
             "annotations": {

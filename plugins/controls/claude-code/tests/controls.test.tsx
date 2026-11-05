@@ -13,7 +13,8 @@ const DOCS = { control: '/controls/crumbkit/docs-1', requirement: 'AGENTS.md has
 const README = { control: '/controls/example/readme', requirement: 'Keep the usage section of the README current.', files: 3, paths: [], purpose: 'p' }
 const PARSER = { control: '/controls/crumbkit/rust-10', requirement: 'A hand-written parser says what it misses.', purpose: 'p', rule: null }
 const report = (output: object) => JSON.stringify({ schema: 'board/call-report/v2', data: { plugin: 'controls', output } })
-const CHECK = report({ measured: [DOCS], stated: [README] })
+const RUST = { control: '/controls/toolchains/rust', requirement: 'Pin the latest Rust.', at_least: '1.99.1', files: [], behind: [] }
+const CHECK = report({ measured: [DOCS], versions: [RUST], stated: [README] })
 const BAND = {
   plugin: 'board-controls',
   component: 'AbovePrompt',
@@ -68,12 +69,13 @@ const start = ($: Engine) => $.session.start({ cwd: `${ROOT}/src`, surface: 'ter
 const edit = ($: Engine, file: string) =>
   $.tool.call({ tool: 'Edit', file_path: `${ROOT}/${file}`, old_string: 'a', new_string: 'b', replace_all: false })
 
-test('the context block lists each control with its requirement, and a budget with its usage', () => {
+test('the context block lists each control with its requirement, a budget with its usage and a version rule with its floor', () => {
   const checked = parseCheck(ROOT, 0, CHECK, '')
   expect(checked === null ? null : contextText(checked)).toBe(
     `The board's controls state requirements on files in ${ROOT}. Follow each one that applies to a file you ` +
       'change. `board get <control>` shows which files a control names.\n\n' +
       '- /controls/crumbkit/docs-1: AGENTS.md has at most 200 words. (now 196 of 200 words)\n' +
+      '- /controls/toolchains/rust: Pin the latest Rust. (now every pin at least 1.99.1)\n' +
       '- /controls/example/readme: Keep the usage section of the README current.',
   )
 })

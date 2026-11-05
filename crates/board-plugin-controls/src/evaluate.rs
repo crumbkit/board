@@ -1,5 +1,5 @@
-//! `evaluate`: check named parts of text against controls' budget, pattern
-//! and judged rules.
+//! `evaluate`: check named parts of text against controls' budget, pattern,
+//! version and judged rules.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -14,7 +14,8 @@ use crate::check::measure;
 use crate::index;
 use crate::judged::Judge;
 use crate::logical;
-use crate::records::{Budget, Measure, Pattern, Rule, Show};
+use crate::records::{Budget, Measure, Pattern, Rule, Show, Version};
+use crate::version;
 
 /// The findings a result shows; the rest are counted in `omitted`, so
 /// output stays bounded.
@@ -97,6 +98,7 @@ enum Kind {
     Budget,
     Pattern,
     Judged,
+    Version,
 }
 
 /// How a part fared against one control.
@@ -149,6 +151,10 @@ pub(crate) fn evaluate(host: &dyn Host, input: &Value) -> Result<Value, PluginEr
             Some(Rule::Pattern(pattern)) => expressions(control, pattern, &sources)?,
             _ => Vec::new(),
         };
+        let floor = match rule {
+            Some(Rule::Version(rule)) => Some((version::compile(control, rule)?, rule)),
+            _ => None,
+        };
         for (part, text) in &parts {
             let result = match rule {
                 None => Some(stated(control, part)),
@@ -165,6 +171,9 @@ pub(crate) fn evaluate(host: &dyn Host, input: &Value) -> Result<Value, PluginEr
                         total,
                     ))
                 }
+                Some(Rule::Version(_)) => floor
+                    .as_ref()
+                    .map(|(expression, rule)| floored(control, part, text, expression, rule)),
                 Some(Rule::Judged(_)) => None,
             };
             if let Some(result) = result {
@@ -313,6 +322,28 @@ fn budgeted(
             total,
         )
     }
+}
+
+/// The verdict of a version rule on `text`: a finding for each version it
+/// pins that is older than the rule's.
+fn floored(control: &str, part: &str, text: &str, expression: &Regex, rule: &Version) -> Evaluated {
+    let findings: Vec<Finding> = (version::behind(expression, &rule.at_least, text).into_iter())
+        .map(|old| Finding {
+            text: format!("{}, older than {}", old.found, rule.at_least),
+            line: Some(old.line),
+            pattern: None,
+            rewrite: None,
+        })
+        .collect();
+    let total = findings.len();
+    result(
+        control,
+        part,
+        Some(Kind::Version),
+        failed_if(total > 0),
+        findings,
+        total,
+    )
 }
 
 /// The expressions in a pattern rule's file, one per line, blank lines
