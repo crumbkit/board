@@ -197,6 +197,7 @@ fn answers_input_names_the_question_and_option_and_admits_no_null() {
     assert_eq!(
         names,
         [
+            "agent",
             "option",
             "path",
             "person",
