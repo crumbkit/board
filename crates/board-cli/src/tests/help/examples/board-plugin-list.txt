@@ -6,7 +6,7 @@ ok evals 0.1.0 disabled offers about, open
 ok github 0.1.0 disabled offers ref, push, pr-create, pr-edit, comment, issue-create, install-hook, pre-push, covers
 ok jira 0.1.0 disabled offers ref
 ok notes 0.1.0 disabled offers add, daily
-ok plans 0.1.0 disabled offers open, answer
+ok plans 0.1.0 disabled offers open, answer, withdraw
 ok prompts 0.1.0 disabled offers get, list
 ok requests 0.1.0 disabled offers thread
 ok review 0.2.0 disabled offers run, post, covered

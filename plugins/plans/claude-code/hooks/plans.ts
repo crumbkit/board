@@ -44,14 +44,28 @@ export function parseRows(stdout: string): { rows: Record<string, unknown>[]; tr
 const quoted = (text: string) => `'${text.replaceAll("'", "''")}'`
 
 /**
- * The query for the question's blob and body, which the answer's batch
- * rewrites with its status answered, and for every answer already naming the
- * question, at its own id or another.
+ * The query for the question's blob and body, which the answer's batch puts
+ * back unchanged, and for every answer already naming the question, at its
+ * own id or another.
  */
 export const questionSql = (path: string) =>
-  `SELECT 'question' AS kind, logical AS path, blob, body FROM records WHERE logical = ${quoted(path)} ` +
-  `UNION ALL SELECT 'answer', logical, blob, NULL FROM records ` +
-  `WHERE type = 'plans/answer/v1' AND json_extract(body, '$.question') = ${quoted(path)}`
+  `SELECT 'question' AS kind, logical AS path, blob, body, ${OWN} AS own FROM records q WHERE logical = ${quoted(path)} ` +
+  `UNION ALL SELECT 'answer', a.logical, a.blob, NULL, NULL FROM records a, records q ` +
+  `WHERE q.logical = ${quoted(path)} AND a.type = 'plans/answer/v1' AND ${NAMES}`
+
+/** The question `q`'s path in its own board, which a reference from that board names it by. */
+const OWN = "'/' || CASE WHEN q.path LIKE '%.json' THEN substr(q.path, 1, length(q.path) - 5) ELSE q.path END"
+
+/**
+ * True when the answer `a` names the question `q`: by its path in the board
+ * both are in, since a mounted board's reference is read from that board's
+ * root, or by its logical path from an answer in the root board or in the
+ * question's own board. plans.open
+ * and plans.answer use the same rule (question::NAMES in the plugin's crate).
+ */
+export const NAMES =
+  "(((a.source = 'worktree' OR a.source = q.source) AND json_extract(a.body, '$.question') = q.logical) " +
+  `OR (a.source = q.source AND json_extract(a.body, '$.question') = ${OWN}))`
 
 /**
  * Why the owner's answer to `path` must not be recorded, or null when it may:
@@ -76,24 +90,26 @@ export const iso = (ms: number) => new Date(ms).toISOString().replace(/\.\d{3}Z$
 
 /**
  * The `board put --batch` lines that record an answer: the answer, which must
- * be new, and the question with its status answered, which must still hold
- * `blob`. Board writes both or neither. `by` is left out when the pane cannot
- * name its own session's `local_` id.
+ * be new, and the question unchanged, which must still hold `blob`, so a
+ * question withdrawn or edited since the read refuses the batch. The answer
+ * is what marks the question answered; its status stays open. `by` is left
+ * out when the pane cannot name its own session's `local_` id. `own` is the
+ * question's path in its own board, which the answer names it by.
  */
-export function answerBatch(question: string, blob: string, body: string, choice: string, words: string, by: string | undefined, now: number): string {
+export function answerBatch(question: string, own: string, blob: string, body: string, choice: string, words: string, by: string | undefined, now: number): string {
+  // The answer lands in the question's board, where a reference is read from that board's root.
   const answer = {
     $type: 'plans/answer/v1',
-    question,
+    question: own,
     choice,
     words,
     answered: iso(now),
     ...(by === undefined ? {} : { by }),
     written_by: WRITTEN_BY,
   }
-  const asked = { ...(JSON.parse(body) as object), status: 'answered' }
   return [
     JSON.stringify({ path: answerPath(question), expect: 'none', record: answer }),
-    JSON.stringify({ path: question, expect: blob, record: asked }),
+    JSON.stringify({ path: question, expect: blob, record: JSON.parse(body) as object }),
   ].join('\n')
 }
 
@@ -122,11 +138,14 @@ export const REPORT_SQL = [
   "SELECT 'since' AS kind, NULL AS path, datetime(w.since, 'localtime') AS at, NULL AS title, NULL AS detail FROM w",
   `UNION ALL SELECT 'decision', r.logical, ${field('r', 'decided')}, ${field('r', 'decision')}, ${field('r', 'review')}`,
   `FROM w, records r WHERE r.type = 'plans/decision/v1' AND ${within('r', 'decided')}`,
-  `UNION ALL SELECT 'asked', r.logical, ${field('r', 'asked')}, ${field('r', 'question')}, ${field('r', 'status')}`,
+  `UNION ALL SELECT 'asked', r.logical, ${field('r', 'asked')}, ${field('r', 'question')},`,
+  // A question is answered when an answer names it; its status says only open or withdrawn.
+  `CASE WHEN EXISTS (SELECT 1 FROM records a, records q WHERE q.logical = r.logical AND a.type = 'plans/answer/v1' AND ${NAMES})`,
+  `THEN 'answered' ELSE ${field('r', 'status')} END`,
   `FROM w, records r WHERE r.type = 'plans/question/v1' AND ${within('r', 'asked')}`,
   `UNION ALL SELECT 'answered', a.logical, ${field('a', 'answered')},`,
   `coalesce(${field('q', 'question')}, ${field('a', 'question')}), ${field('a', 'words')}`,
-  `FROM w, records a LEFT JOIN records q ON q.logical = ${field('a', 'question')}`,
+  `FROM w, records a LEFT JOIN records q ON q.type = 'plans/question/v1' AND ${NAMES}`,
   `WHERE a.type = 'plans/answer/v1' AND ${within('a', 'answered')}`,
   `UNION ALL SELECT 'run', r.logical, ${field('r', 'finished')}, coalesce(${field('r', 'summary')}, ${field('r', 'by')}), ${field('r', 'by')}`,
   `FROM w, records r WHERE r.type = 'runs/run/v1' AND ${within('r', 'finished')}`,

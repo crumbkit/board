@@ -7,6 +7,7 @@ use std::time::Duration;
 use crate::bench::against::{Arm, Compared, Verdict};
 use crate::bench::{Timed, Took};
 use crate::controls::Divergence;
+use crate::questions::Migrated;
 
 /// How many parts a report line names before summarising the rest.
 const SHOWN_PARTS: usize = 5;
@@ -14,6 +15,7 @@ const SHOWN_PARTS: usize = 5;
 const USAGE: &str = "usage: cargo xtask lint
        cargo xtask bench [--board <dir>] [--records <n>] [--against <board> [--runs <n>]]
        cargo xtask profile [--save <file>] -- <board arguments>
+       cargo xtask migrate-questions <board directory> [--dry-run]
 ";
 
 #[derive(Debug)]
@@ -162,6 +164,7 @@ pub(crate) enum Output<'a> {
     Report(&'a Report),
     Bench(&'a [Timed]),
     Against(&'a [Compared]),
+    Migrated(&'a Migrated),
     Failure {
         code: &'static str,
         error: &'a dyn Error,
@@ -179,6 +182,11 @@ pub(crate) fn emit(output: &Output<'_>) {
         Output::Report(report) => print!("{}", render(report)),
         Output::Bench(timed) => print!("{}", render_bench(timed)),
         Output::Against(compared) => print!("{}", render_against(compared)),
+        Output::Migrated(migrated) => println!(
+            "{}",
+            serde_json::to_string_pretty(migrated)
+                .expect("the report holds only strings and counts")
+        ),
         Output::Failure { code, error } => eprint!("{}", render_failure(code, *error)),
         Output::Usage => eprint!("{USAGE}"),
     }

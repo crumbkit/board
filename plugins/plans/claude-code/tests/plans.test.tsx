@@ -2,7 +2,7 @@ import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 import type { Engine } from 'claude-code/testing'
 
-import { questionSql, report, REPORT_SQL } from '../hooks/plans'
+import { NAMES, questionSql, report, REPORT_SQL } from '../hooks/plans'
 
 // These prove what the band and the panes draw, which `board` commands the
 // mod runs, the batch it hands `board put`, and what the asking session is
@@ -43,6 +43,7 @@ type Answers = {
   delivered?: boolean
   report?: string
   host?: string | null
+  own?: string
 }
 
 /** Stands in for `board` and the engine: what each command answers, and what the mod ran, opened, sent and toasted. */
@@ -67,8 +68,8 @@ function engine(on: On, answers: Answers = {}) {
       return { value: { ...(answers.put ?? { exitCode: 0, stdout: '{}' }), ...whole } }
     }
     if (args[1]?.startsWith("SELECT 'question'")) {
-      const found = [['question', MERGE.path, 'b10b', answers.body ?? BODY], ...answered.map(path => ['answer', path, 'a5a5', null])]
-      return { value: { exitCode: 0, stdout: rows(['kind', 'path', 'blob', 'body'], found), ...whole } }
+      const found = [['question', MERGE.path, 'b10b', answers.body ?? BODY, answers.own ?? MERGE.path], ...answered.map(path => ['answer', path, 'a5a5', null, null])]
+      return { value: { exitCode: 0, stdout: rows(['kind', 'path', 'blob', 'body', 'own'], found), ...whole } }
     }
     return { value: { exitCode: 0, stdout: answers.report ?? rows(['kind', 'path', 'at', 'title', 'detail'], [['since', null, '2026-10-24 07:00:00', null, null]]), ...whole } }
   })
@@ -188,7 +189,7 @@ test('the pane lists each question with its options, and an option answers it in
         written_by: 'plans/pane-answer',
       },
     },
-    { path: MERGE.path, expect: 'b10b', record: { ...JSON.parse(BODY), status: 'answered' } },
+    { path: MERGE.path, expect: 'b10b', record: JSON.parse(BODY) },
   ])
   expect(sent).toEqual([
     {
@@ -217,6 +218,18 @@ test('the owner answers in words where the surface has a field, and none of the 
   const record = JSON.parse(stdins[0]?.split('\n')[0] ?? '{}').record
   expect(record).toMatchObject({ choice: 'none', words: 'About 40; ask Kechen for the exact figure.' })
   expect('by' in record).toBe(false)
+})
+
+test("an answer to a mounted question names it by its path in its own board, where the answer lands", async ($, on) => {
+  mock.clock(on, { now: NOW })
+  const { stdins } = engine(on, { own: '/projects/home/questions/20261024T1830Z-k3-in-its-board' })
+  await start($)
+  const ui = await $.ui.mount({ ...pane('questions'), surface: 'terminal' })
+  await ui.press({ key: `${MERGE.path}#a` })
+  const [answer, question] = (stdins[0] ?? '').split('\n').map(line => JSON.parse(line))
+  expect(answer.path).toBe('/projects/home/answers/20261024T1830Z-k3')
+  expect(answer.record.question).toBe('/projects/home/questions/20261024T1830Z-k3-in-its-board')
+  expect(question.path).toBe(MERGE.path)
 })
 
 test('a send the asking session cannot take still records the answer, and says the message was not delivered', async ($, on) => {
@@ -298,6 +311,14 @@ test('/yesterday reads the day from 07:00 in one query, opens the report pane an
   expect(result.text).toBe('board: 1 decision, 0 questions asked, 0 answered, 1 run and 0 decision stubs that want a why, since 2026-10-24 07:00.')
   const ui = await $.ui.mount({ ...pane('yesterday'), surface: 'desktop' })
   expect((await ui.find({ type: 'Markdown' }))?.text).toContain('- Keep the types at v1. `/projects/board/decisions/d1`, review wanted')
+})
+
+test("a question's detail in the report is answered when an answer names it, and its status otherwise", () => {
+  expect(REPORT_SQL).toContain(
+    "CASE WHEN EXISTS (SELECT 1 FROM records a, records q WHERE q.logical = r.logical AND a.type = 'plans/answer/v1' AND " + NAMES + ')',
+  )
+  expect(REPORT_SQL).toContain("THEN 'answered' ELSE json_extract(r.body, '$.status') END")
+  expect(REPORT_SQL).toContain(`LEFT JOIN records q ON q.type = 'plans/question/v1' AND ${NAMES}`)
 })
 
 test("a stub's detail in the report is the first of its urls, where the runs mod writes the pull request", () => {

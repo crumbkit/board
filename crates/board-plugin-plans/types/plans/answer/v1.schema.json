@@ -63,7 +63,7 @@
       "type": "string"
     },
     "written_by": {
-      "description": "The plugin and hook that wrote this record, such as\n`plans/pane-answer`, when the owner answered through a mod rather than\nto an agent; absent when an agent or a person wrote it.",
+      "description": "The plugin and hook, or the client and surface, that wrote this\nrecord, such as `plans/pane-answer` or `board-app/phone`, when the\nowner answered through it rather than to an agent; absent when an\nagent or a person wrote it.",
       "pattern": "^[a-z0-9-]+/[a-z0-9-]+$",
       "type": "string"
     }

@@ -1,10 +1,10 @@
-//! `answer` records what the pane mod records: the answer and the question
-//! marked answered, in one put, or a refusal that says why not.
+//! `answer` records what the pane mod records: the answer, with the question
+//! put back unchanged in the same put, or a refusal that says why not.
 
 use std::rc::Rc;
 use std::time::{Duration, SystemTime};
 
-use board_ops::Plugins;
+use board_ops::{Limit, Plugins};
 use board_plugin::Target;
 use board_scenario::Item;
 use serde_json::json;
@@ -68,7 +68,7 @@ fn at_now(rows: Vec<Vec<Value>>) -> Answering {
 }
 
 #[test]
-fn an_answer_is_one_put_of_the_new_answer_and_the_question_marked_answered() {
+fn an_answer_is_one_put_of_the_new_answer_and_the_question_unchanged() {
     let host = at_now(rows("plans/question/v1", &json!({}), &[]));
     let input =
         json!({"path": QUESTION, "option": "b", "by": "local_0c", "written_by": "board-app/phone"});
@@ -84,8 +84,7 @@ fn an_answer_is_one_put_of_the_new_answer_and_the_question_marked_answered() {
         })
     );
     assert_eq!(host.asked.take(), [(question_sql(QUESTION), Limit::ALL)]);
-    let mut marked: Value = serde_json::from_str(question(&json!({})).as_str().unwrap()).unwrap();
-    marked["status"] = json!("answered");
+    let unchanged: Value = serde_json::from_str(question(&json!({})).as_str().unwrap()).unwrap();
     assert_eq!(
         host.puts.take(),
         [vec![
@@ -98,7 +97,7 @@ fn an_answer_is_one_put_of_the_new_answer_and_the_question_marked_answered() {
                 "by": "local_0c",
                 "written_by": "board-app/phone",
             }}),
-            json!({"path": QUESTION, "expect": BLOB, "record": marked}),
+            json!({"path": QUESTION, "expect": BLOB, "record": unchanged}),
         ]]
     );
 }
@@ -127,11 +126,15 @@ fn a_question_quoted_in_sql_is_read_by_its_own_path() {
     let path = "/projects/o'brien/questions/q";
     assert_eq!(
         question_sql(path),
-        "SELECT 'question' AS kind, logical, type, blob, body FROM records \
-         WHERE logical = '/projects/o''brien/questions/q' \
-         UNION ALL SELECT 'answer', logical, type, blob, NULL FROM records \
-         WHERE type = 'plans/answer/v1' \
-         AND json_extract(body, '$.question') = '/projects/o''brien/questions/q'"
+        format!(
+            "SELECT 'question' AS kind, logical, type, blob, body, '/' || CASE WHEN q.path LIKE \
+             '%.json' THEN substr(q.path, 1, length(q.path) - 5) ELSE q.path END FROM records q \
+             WHERE logical = '/projects/o''brien/questions/q' \
+             UNION ALL SELECT 'answer', a.logical, a.type, a.blob, NULL, NULL FROM records a, records q \
+             WHERE q.logical = '/projects/o''brien/questions/q' AND a.type = 'plans/answer/v1' \
+             AND {}",
+            crate::question::NAMES
+        )
     );
 }
 
@@ -164,6 +167,23 @@ fn cases() -> Vec<Case> {
             ),
             admitted: (input(QUESTION, "a"), question, json!({}), &[]),
             names: "/projects/a/questions/",
+        },
+        Case {
+            code: "plans::answer::not_a_question_path",
+            refused: (input("/questions/q", "a"), question, json!({}), &[]),
+            admitted: (input(QUESTION, "a"), question, json!({}), &[]),
+            names: "/questions/q",
+        },
+        Case {
+            code: "plans::answer::not_a_question_path",
+            refused: (
+                input("/projects//questions/q", "a"),
+                question,
+                json!({}),
+                &[],
+            ),
+            admitted: (input(QUESTION, "a"), question, json!({}), &[]),
+            names: "/projects//questions/q",
         },
         Case {
             code: "plans::answer::no_question",
@@ -215,6 +235,17 @@ fn cases() -> Vec<Case> {
             ),
             names: "none",
         },
+        Case {
+            code: "plans::answer::words_needed",
+            refused: (input(QUESTION, "none"), question, json!({}), &[]),
+            admitted: (
+                input(QUESTION, "none"),
+                question,
+                json!({"options": [{"id": "none", "text": "Neither; drop it."}]}),
+                &[],
+            ),
+            names: "none",
+        },
     ]
 }
 
@@ -248,6 +279,47 @@ fn each_refusal_has_its_own_code_and_says_what_was_wrong_and_its_twin_is_recorde
 }
 
 #[test]
+fn an_option_whose_id_is_none_is_chosen_with_its_text() {
+    let fields = json!({"options": [{"id": "none", "text": "Neither; drop it."}]});
+    let host = at_now(rows("plans/question/v1", &fields, &[]));
+    let output = answer(&host, &json!({"path": QUESTION, "option": "none"})).unwrap();
+    assert_eq!(
+        (&output["choice"], &output["words"]),
+        (&json!("none"), &json!("Neither; drop it."))
+    );
+}
+
+#[test]
+fn a_question_body_that_is_not_an_object_is_no_question_and_an_object_is_answered() {
+    for (body, admitted) in [
+        (json!("[\"Which way?\"]"), false),
+        (Value::Null, false),
+        (question(&json!({})), true),
+    ] {
+        let rows = vec![vec![
+            json!("question"),
+            json!(QUESTION),
+            json!("plans/question/v1"),
+            json!(BLOB),
+            body.clone(),
+        ]];
+        let result = answer(&at_now(rows), &json!({"path": QUESTION, "option": "a"}));
+        match result {
+            Ok(_) => assert!(admitted, "{body}"),
+            Err(error) => {
+                assert!(!admitted, "{body}: {}", error.message);
+                assert_eq!(error.code, "plans::answer::no_question");
+                assert!(
+                    error
+                        .message
+                        .contains("does not read as a plans/question/v1")
+                );
+            }
+        }
+    }
+}
+
+#[test]
 fn no_row_at_the_path_is_no_question_and_a_row_there_is_answered() {
     let refused = answer(
         &at_now(Vec::new()),
@@ -270,7 +342,7 @@ fn on_board(fields: &Value) -> (board_scenario::Scenario, Answering) {
 }
 
 #[test]
-fn the_board_holds_the_answer_and_the_answered_question_after_the_call() {
+fn the_board_holds_the_answer_and_the_question_unchanged_after_the_call() {
     let (scenario, host) = on_board(&json!({"note": "Nobody wrote down the deadline."}));
     answer(&host, &json!({"path": QUESTION, "option": "a"})).unwrap();
     let read = |path: &str| -> Value {
@@ -287,14 +359,17 @@ fn the_board_holds_the_answer_and_the_answered_question_after_the_call() {
             "answered": "2026-11-04T22:50:00Z",
         })
     );
-    let mut expected: Value = serde_json::from_str(
+    let expected: Value = serde_json::from_str(
         question(&json!({"note": "Nobody wrote down the deadline."}))
             .as_str()
             .unwrap(),
     )
     .unwrap();
-    expected["status"] = json!("answered");
     assert_eq!(read("projects/a/questions/q.json"), expected);
+    assert_eq!(
+        expected["status"], "open",
+        "an answer leaves the status open"
+    );
 }
 
 #[test]

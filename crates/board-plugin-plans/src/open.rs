@@ -1,4 +1,5 @@
-//! `plans.open`: the questions still waiting for the owner, oldest first.
+//! `plans.open`: the questions still waiting for the owner, oldest first. A
+//! question waits while its status is open and no answer names it.
 
 mod asked;
 
@@ -10,12 +11,19 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
 use self::asked::{Instant, instant};
+use crate::question::NAMES;
 use crate::records::Choice;
 
-/// Every open question. The path's prefix is matched in Rust: `starts_with`
-/// compares as `substr` and `length` would in `SQLite`.
-pub(crate) const QUESTIONS: &str = "SELECT logical, code, body FROM records \
-     WHERE type = 'plans/question/v1' AND json_extract(body, '$.status') = 'open'";
+/// Every question whose status is open and that no answer names. The path's
+/// prefix is matched in Rust: `starts_with` compares as `substr` and `length`
+/// would in `SQLite`.
+pub(crate) fn questions() -> String {
+    format!(
+        "SELECT q.logical, q.code, q.body FROM records q \
+         WHERE q.type = 'plans/question/v1' AND json_extract(q.body, '$.status') = 'open' \
+         AND NOT EXISTS (SELECT 1 FROM records a WHERE a.type = 'plans/answer/v1' AND {NAMES})"
+    )
+}
 
 /// The open questions under `path`, oldest first.
 #[derive(Deserialize, JsonSchema)]
@@ -96,7 +104,7 @@ pub(crate) fn open(host: &dyn Host, input: &Value) -> Result<Value, PluginError>
     let Input { path, limit } = PluginError::read_input("plans", "open", input)?;
     let prefix = format!("{}/", path.trim_end_matches('/'));
     let limit = usize::from(limit);
-    let report = (host.query(QUESTIONS, Limit::ALL))
+    let report = (host.query(&questions(), Limit::ALL))
         .map_err(|error| PluginError::board_refused("plans", "query", &error.refusal()))?;
     let mut found: Vec<(Instant, Waiting)> = Vec::new();
     let mut unreadable = 0;

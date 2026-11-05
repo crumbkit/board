@@ -116,13 +116,10 @@ fn the_manifest_parses_as_board_reads_a_built_in_one_and_names_no_program_to_run
         types,
         ["plans/question/v1", "plans/answer/v1", "plans/decision/v1"]
     );
-    let [open, answer] = &manifest.capabilities[..] else {
-        panic!("{:?}", manifest.capabilities)
-    };
-    assert_eq!(
-        (open.name.as_str(), answer.name.as_str()),
-        ("open", "answer")
-    );
+    let names: Vec<&str> = (manifest.capabilities.iter())
+        .map(|capability| capability.name.as_str())
+        .collect();
+    assert_eq!(names, ["open", "answer", "withdraw"]);
     assert!(
         manifest
             .description
@@ -209,6 +206,83 @@ fn answers_input_names_the_question_and_option_and_admits_no_null() {
         input["properties"]["written_by"]["pattern"],
         "^[a-z0-9-]+/[a-z0-9-]+$"
     );
+}
+
+#[test]
+fn withdraws_input_names_the_question_and_reason_and_needs_both() {
+    let input = schema_of::<withdraw::Input>(SchemaSettings::draft2020_12());
+    let properties = input["properties"].as_object().unwrap();
+    let names: Vec<&str> = properties.keys().map(String::as_str).collect();
+    assert_eq!(names, ["path", "reason"]);
+    for (name, property) in properties {
+        let description = property["description"].as_str().unwrap();
+        assert!(description.ends_with('.'), "{name}: {description}");
+    }
+    assert_eq!(input["additionalProperties"], false);
+    assert_eq!(input["required"], json!(["path", "reason"]));
+    assert_eq!(input["properties"]["reason"]["minLength"], 1);
+}
+
+/// Every capability states all four effect hints; withdraw overwrites a
+/// question's status, so it is destructive, and a repeat writes nothing.
+#[test]
+fn each_capability_states_every_effect_hint_and_withdraw_is_destructive_and_idempotent() {
+    let manifest = manifest();
+    for capability in manifest["capabilities"].as_array().unwrap() {
+        let hints = capability["annotations"].as_object().unwrap();
+        let names: Vec<&str> = hints.keys().map(String::as_str).collect();
+        assert_eq!(
+            names,
+            [
+                "destructiveHint",
+                "idempotentHint",
+                "openWorldHint",
+                "readOnlyHint"
+            ],
+            "{}",
+            capability["name"]
+        );
+    }
+    let withdraw = &manifest["capabilities"][2];
+    assert_eq!(
+        (
+            &withdraw["name"],
+            &withdraw["annotations"]["destructiveHint"],
+            &withdraw["annotations"]["idempotentHint"],
+            &withdraw["annotations"]["readOnlyHint"],
+        ),
+        (
+            &json!("withdraw"),
+            &json!(true),
+            &json!(true),
+            &json!(false)
+        )
+    );
+}
+
+/// A question's status is open or withdrawn; answered is refused with the
+/// exact code, and the same record open is admitted.
+#[test]
+fn a_question_stored_as_answered_is_refused_and_its_open_twin_is_admitted() {
+    let schema = board_validate::Schema::compile(Plans.schemas()[0].1.clone()).unwrap();
+    let question = |status: &str| {
+        json!({
+            "$type": "plans/question/v1",
+            "question": "Which way?",
+            "session": "local_0a1b",
+            "asked": "2026-10-01T09:00:00Z",
+            "status": status,
+        })
+    };
+    let refused = schema.validate(&question("answered")).unwrap_err();
+    assert_eq!(refused.code(), board_model::Code::RecordInvalid);
+    assert!(schema.validate(&question("open")).is_ok());
+    let mut withdrawn = question("withdrawn");
+    withdrawn["withdrawn_reason"] = json!("Stale.");
+    assert!(schema.validate(&withdrawn).is_ok());
+    withdrawn["withdrawn_reason"] = json!("");
+    let refused = schema.validate(&withdrawn).unwrap_err();
+    assert_eq!(refused.code(), board_model::Code::RecordInvalid);
 }
 
 #[test]
@@ -429,7 +503,7 @@ fn open_reads_fields_the_question_struct_declares() {
     ] {
         assert!(question["properties"].get(field).is_some(), "{field}");
     }
-    assert!(open::QUESTIONS.contains(&format!("type = '{}'", QuestionRecord::TYPE)));
+    assert!(open::questions().contains(&format!("type = '{}'", QuestionRecord::TYPE)));
 }
 
 #[test]
@@ -440,7 +514,7 @@ fn a_capability_the_plugin_does_not_offer_is_refused_and_open_is_answered() {
     assert_eq!(refused.code, "plans::call::unknown_capability");
     assert_eq!(
         refused.message,
-        "plans offers no capability closed; it offers open and answer"
+        "plans offers no capability closed; it offers open, answer and withdraw"
     );
     let answered = call("open").unwrap();
     assert_eq!(answered["total"], 0);

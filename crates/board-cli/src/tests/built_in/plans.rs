@@ -1,5 +1,6 @@
 //! The plans plugin through the binary: what `plans.open` lists, what
-//! `plans.answer` records, and what the shipped schemas admit. Most were the
+//! `plans.answer` and `plans.withdraw` record, and what the shipped schemas
+//! admit. Most were the
 //! plugin's pytest parity suite.
 
 use super::*;
@@ -64,7 +65,11 @@ fn open_lists_open_questions_oldest_first_and_leaves_out_answered_and_withdrawn_
         .write("projects/a/questions/early.json", &open(&json!({})))
         .write(
             "projects/a/questions/done.json",
-            &question("answered", "2026-10-01T09:00:00Z", &json!({})),
+            &question("open", "2026-10-01T09:00:00Z", &json!({})),
+        )
+        .write(
+            "projects/a/answers/done.json",
+            &answer("/projects/a/questions/done", &json!({})),
         )
         .write(
             "projects/a/questions/gone.json",
@@ -140,7 +145,10 @@ fn answer_records_the_owners_choice_and_open_no_longer_lists_the_question() {
     assert_eq!(recorded["written_by"], "board-app/phone");
     assert_eq!(recorded["answered"], output["answered"]);
     let asked: Value = serde_json::from_str(&board.read("projects/a/questions/q.json")).unwrap();
-    assert_eq!(asked["status"], "answered");
+    assert_eq!(
+        asked["status"], "open",
+        "the answer, not the status, says it is answered"
+    );
     assert_eq!(listed(&board, &[]).0, Vec::<String>::new());
     assert_eq!(
         board.checked("/projects/a/"),
@@ -149,6 +157,30 @@ fn answer_records_the_owners_choice_and_open_no_longer_lists_the_question() {
             ("/projects/a/questions/q", None),
         ])
     );
+}
+
+#[test]
+fn withdraw_records_the_reason_and_open_no_longer_lists_the_question() {
+    let board = board();
+    board.write("projects/a/questions/q.json", &open(&json!({})));
+    let flags = ["--path", "/projects/a/questions/q", "--reason", "Stale."];
+    let output = board.call("plans.withdraw", &flags);
+    assert_eq!(
+        output,
+        json!({"question": "/projects/a/questions/q", "reason": "Stale."})
+    );
+    let asked: Value = serde_json::from_str(&board.read("projects/a/questions/q.json")).unwrap();
+    assert_eq!(
+        (&asked["status"], &asked["withdrawn_reason"]),
+        (&json!("withdrawn"), &json!("Stale."))
+    );
+    assert_eq!(listed(&board, &[]).0, Vec::<String>::new());
+    assert_eq!(
+        board.checked("/projects/a/"),
+        codes(&[("/projects/a/questions/q", None)])
+    );
+    let refused = board.refusal("plans.withdraw", &flags);
+    assert_eq!(refused["code"], "plans::withdraw::not_open", "{refused}");
 }
 
 #[test]
@@ -284,6 +316,124 @@ fn a_mounted_question_of_another_shape_is_unreadable_and_a_mounted_question_of_t
     assert_eq!(output["unreadable"], misshapen.len());
 }
 
+/// A mounted board's answer names its question by the question's path in
+/// that board, so the question is answered: `open` leaves it out and
+/// `answer` and `withdraw` refuse it, while its unanswered twin is listed.
+#[test]
+fn a_mounted_answer_naming_its_question_in_its_own_board_answers_it() {
+    let board = board();
+    // The mounted board's schemas admit any object.
+    let files = [
+        (
+            ".board/types/plans/question/v1.schema.json",
+            r#"{"type": "object"}"#.to_owned(),
+        ),
+        (
+            ".board/types/plans/answer/v1.schema.json",
+            r#"{"type": "object"}"#.to_owned(),
+        ),
+        ("projects/m/questions/done.json", open(&json!({}))),
+        (
+            "projects/m/answers/done.json",
+            answer("/projects/m/questions/done", &json!({})),
+        ),
+        ("projects/m/questions/waiting.json", open(&json!({}))),
+    ];
+    let (library, commit) = repository(&[], &files);
+    mount(&board, "lib.json", &library, commit);
+    // The root board's question at the same path as the mounted one is not
+    // the one the mounted answer names.
+    board.write("projects/m/questions/done.json", &open(&json!({})));
+    let (paths, _) = listed(&board, &[]);
+    assert_eq!(
+        paths,
+        [
+            "/lib/projects/m/questions/waiting",
+            "/projects/m/questions/done"
+        ]
+    );
+    for (capability, flag, value) in [
+        ("plans.answer", "--option", "none"),
+        ("plans.withdraw", "--reason", "Stale."),
+    ] {
+        let flags = [
+            "--path",
+            "/lib/projects/m/questions/done",
+            flag,
+            value,
+            "--words",
+            "Neither.",
+        ];
+        let flags = if capability == "plans.answer" {
+            &flags[..]
+        } else {
+            &flags[..4]
+        };
+        let refused = board.refusal(capability, flags);
+        let code = format!("{}::already_answered", capability.replace('.', "::"));
+        assert_eq!(refused["code"], json!(code), "{refused}");
+        assert!(
+            refused["message"]
+                .as_str()
+                .unwrap()
+                .contains("/lib/projects/m/answers/done"),
+            "{refused}"
+        );
+    }
+}
+
+/// `plans.answer` writes through a mount into the question's own board, so
+/// the answer names the question by its path there, which is how a
+/// reference in that board is read; `open` then leaves the question out.
+#[test]
+fn an_answer_written_through_a_mount_names_its_question_in_that_board() {
+    let board = board();
+    // The mounted board commits its puts, its schemas admit any object, and
+    // its working tree holds the commit, as a checkout would.
+    let config = r#"{"$type": "board/config/v1", "commit_on_put": true}"#.to_owned();
+    let any = r#"{"type": "object"}"#.to_owned();
+    let files = [
+        (".board/board.json", config),
+        (".board/types/plans/question/v1.schema.json", any.clone()),
+        (".board/types/plans/answer/v1.schema.json", any),
+        ("projects/m/questions/q.json", open(&json!({}))),
+        ("projects/m/questions/waiting.json", open(&json!({}))),
+    ];
+    let library = Scenario::new();
+    for (path, text) in &files {
+        library.write(path, Item::File(text));
+    }
+    let tree: Vec<(&str, &str)> = files.iter().map(|(p, t)| (*p, t.as_str())).collect();
+    let commit = library.commit(&tree);
+    library
+        .track(commit)
+        .write(".git/config", Item::Appended(IDENTITY));
+    mount(&board, "lib.json", &library, commit);
+    let flags = [
+        "--path",
+        "/lib/projects/m/questions/q",
+        "--option",
+        "none",
+        "--words",
+        "Neither.",
+    ];
+    let output = board.call("plans.answer", &flags);
+    assert_eq!(output["answer"], "/lib/projects/m/answers/q");
+    let text = std::fs::read_to_string(library.workdir().join("projects/m/answers/q.json"));
+    let recorded: Value = serde_json::from_str(&text.unwrap()).unwrap();
+    assert_eq!(recorded["question"], "/projects/m/questions/q");
+    let (paths, _) = listed(&board, &[]);
+    assert_eq!(paths, ["/lib/projects/m/questions/waiting"]);
+    let refused = board.refusal(
+        "plans.withdraw",
+        &[flags[0], flags[1], "--reason", "Stale."],
+    );
+    assert_eq!(
+        refused["code"], "plans::withdraw::already_answered",
+        "{refused}"
+    );
+}
+
 #[test]
 fn board_lists_plans_as_enabled_and_enabling_wrote_the_schemas_it_ships() {
     let board = board();
@@ -380,10 +530,7 @@ fn a_decision_keeps_the_fields_it_had_and_refuses_others() {
 fn a_decision_refers_to_board_entries_in_refs_and_to_web_pages_in_urls() {
     let board = board();
     board
-        .write(
-            "projects/a/questions/q.json",
-            &question("answered", "2026-10-01T09:00:00Z", &json!({})),
-        )
+        .write("projects/a/questions/q.json", &open(&json!({})))
         .write(
             "decisions/ref.json",
             &decision(&json!({"refs": ["/projects/a/questions/q"]})),
@@ -417,7 +564,7 @@ fn a_decision_refers_to_board_entries_in_refs_and_to_web_pages_in_urls() {
 }
 
 #[test]
-fn a_question_has_one_of_three_statuses_and_an_asking_session() {
+fn a_question_is_open_or_withdrawn_and_names_an_asking_session() {
     let board = board();
     let asked = "2026-10-01T09:00:00Z";
     board
@@ -431,6 +578,10 @@ fn a_question_has_one_of_three_statuses_and_an_asking_session() {
             &question("closed", asked, &json!({})),
         )
         .write(
+            "projects/a/questions/answered.json",
+            &question("answered", asked, &json!({})),
+        )
+        .write(
             "projects/a/questions/nameless.json",
             &open(&json!({"session": "someone"})),
         );
@@ -440,6 +591,7 @@ fn a_question_has_one_of_three_statuses_and_an_asking_session() {
             ("/projects/a/questions/open", None),
             ("/projects/a/questions/withdrawn", None),
             ("/projects/a/questions/closed", INVALID),
+            ("/projects/a/questions/answered", INVALID),
             ("/projects/a/questions/nameless", INVALID),
         ])
     );
@@ -463,10 +615,7 @@ fn answer(question: &str, fields: &Value) -> String {
 fn an_answer_references_a_question() {
     let board = board();
     board
-        .write(
-            "projects/a/questions/q.json",
-            &question("answered", "2026-10-01T09:00:00Z", &json!({})),
-        )
+        .write("projects/a/questions/q.json", &open(&json!({})))
         .write("projects/a/questions/notes.md", "background")
         .write(
             "projects/a/answers/q.json",
@@ -495,10 +644,7 @@ fn an_answer_a_hook_wrote_names_the_plugin_and_hook() {
         )
     };
     board
-        .write(
-            "projects/a/questions/q.json",
-            &question("answered", "2026-10-01T09:00:00Z", &json!({})),
-        )
+        .write("projects/a/questions/q.json", &open(&json!({})))
         .write("projects/a/answers/hooked.json", &by("plans/pane-answer"))
         .write("projects/a/answers/prose.json", &by("the pane"));
     assert_eq!(

@@ -41,8 +41,9 @@ github.covers disabled Name the boundaries that cover a git push or gh write fro
 jira.ref disabled Write the issue at /jira/<site>/<key> with its title, read once through acli, unless a record is already there.
 notes.add disabled Sync the notes repo, append text under a `## HH:MM` heading to today's daily note or a topic's note, commit it and push it.
 notes.daily disabled Sync the notes repo and print a day's daily note, unless the note is private.
-plans.open disabled The questions under a path whose status is open, oldest first.
-plans.answer disabled Record the owner's answer to an open question and mark the question answered, in one commit.
+plans.open disabled The questions under a path whose status is open and that no answer names, oldest first.
+plans.answer disabled Record the owner's answer to an open question. The answer is what marks the question answered; the question's content is left unchanged.
+plans.withdraw disabled Withdraw an open question that no answer names, with the reason, so that plans.open stops listing it.
 prompts.get disabled Read one prompt at its pin and render its body and runs_in with the input values given on stdin.
 prompts.list disabled List the prompts in the board's own tree and the marked repos the caller's remote chooses, at their pins, by repo then title.
 requests.thread disabled Every version of the effect's request, oldest first, with its answer, and the owner's replies to them, oldest first.

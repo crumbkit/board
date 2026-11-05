@@ -57,7 +57,7 @@ async function held($: EngineInterface, options: PluginOptions, path: string) {
 }
 
 /**
- * Records the owner's answer and the question's new status in one batch, then
+ * Records the owner's answer, with the question put back unchanged, in one batch, then
  * tries to send the answer to the session that asked. A question that is no
  * longer open, or that already has an answer at any id, is refused before the
  * put; one that changes between the read and the put is refused by the put's
@@ -76,7 +76,7 @@ async function answer($: EngineInterface, options: PluginOptions, q: Question, c
     // The desktop app names this session's `local_` id, the form questions use.
     const host = await $.env.get('CLAUDE_CODE_HOST_SESSION_ID')
     const by = host?.startsWith('local_') ? host : undefined
-    const batch = answerBatch(q.path, String(row.blob), String(row.body), choice, words, by, await $.clock.now())
+    const batch = answerBatch(q.path, String(row.own ?? q.path), String(row.blob), String(row.body), choice, words, by, await $.clock.now())
     const put = await board($, options, ['put', '--batch', '--wait', LOCK_WAIT], batch)
     if (put.exitCode !== 0) {
       const why = failure(put.exitCode, put.stdout, put.stderr)

@@ -640,7 +640,7 @@ const DYNAMIC: &[(&str, &[&str])] = &[
         ],
     ),
     (
-        "plans::answer::{reason}",
+        "plans::{call}::{reason}",
         &[
             "plans::answer::already_answered",
             "plans::answer::no_question",
@@ -648,6 +648,10 @@ const DYNAMIC: &[(&str, &[&str])] = &[
             "plans::answer::not_open",
             "plans::answer::unknown_option",
             "plans::answer::words_needed",
+            "plans::withdraw::already_answered",
+            "plans::withdraw::no_question",
+            "plans::withdraw::not_a_question_path",
+            "plans::withdraw::not_open",
         ],
     ),
     (
