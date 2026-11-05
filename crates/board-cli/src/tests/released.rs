@@ -423,6 +423,9 @@ fn declared(
             entered(root, property, &path, seen, into);
         }
     }
+    if let Some(values @ Value::Object(_)) = schema.get("additionalProperties") {
+        entered(root, values, &format!("{prefix}.*"), seen, into);
+    }
     if let Some(items) = schema.get("items") {
         entered(root, items, &format!("{prefix}[]"), seen, into);
     }
@@ -466,7 +469,8 @@ fn entered(
 
 /// The sets of fields a value of `node` must hold, one for each way to
 /// satisfy it: its `required` with those of its `$ref` and every `allOf`
-/// variant, and with those of one `oneOf` or `anyOf` variant.
+/// variant, and with those of one `oneOf` or `anyOf` variant that can be an
+/// object, since a value such as `null` holds no fields.
 fn requirements(root: &Value, node: &Value, seen: &BTreeSet<&str>) -> Vec<BTreeSet<String>> {
     let Value::Object(schema) = node else {
         return vec![BTreeSet::new()];
@@ -498,10 +502,17 @@ fn requirements(root: &Value, node: &Value, seen: &BTreeSet<&str>) -> Vec<BTreeS
     }
     for key in ["oneOf", "anyOf"] {
         if let Some(Value::Array(variants)) = schema.get(key) {
-            let any = variants
-                .iter()
-                .flat_map(|variant| requirements(root, variant, seen));
-            ways = both(ways, any.collect());
+            let objects = variants.iter().filter(|variant| match variant.get("type") {
+                Some(Value::String(kind)) => kind == "object",
+                Some(Value::Array(kinds)) => kinds.contains(&json!("object")),
+                _ => true,
+            });
+            let any: Vec<_> = objects
+                .flat_map(|variant| requirements(root, variant, seen))
+                .collect();
+            if !any.is_empty() {
+                ways = both(ways, any);
+            }
         }
     }
     ways
@@ -826,8 +837,10 @@ fn documents() -> BTreeMap<String, BTreeSet<String>> {
             &BTreeSet::new(),
             &mut fields,
         );
-        // A report lists fields; an array's elements are not one.
-        let fields = (fields.into_keys()).filter(|path| !path.ends_with("[]"));
+        // A report lists fields; an array's elements and a map's values
+        // are not one.
+        let field = |path: &String| !path.ends_with("[]") && !path.contains('*');
+        let fields = fields.into_keys().filter(field);
         documents.insert(row["id"].as_str().unwrap().to_owned(), fields.collect());
     }
     assert_eq!(documents.len(), ids.len(), "schemas show left out an id");
@@ -1763,4 +1776,40 @@ fn an_enum_a_ref_reaches_from_under_if_not_or_one_of_stays_in_the_shape_and_one_
             "{under}"
         );
     }
+}
+
+#[test]
+fn a_nullable_output_object_keeps_what_it_requires_and_a_child_made_optional_is_refused() {
+    // As schemars writes an `Option` of a struct.
+    let output = |required: &[&str]| {
+        json!({
+            "properties": {"run": {"anyOf": [{"$ref": "#/$defs/Run"}, {"type": "null"}]}},
+            "$defs": {"Run": {"type": "object", "properties": {"outcome": {}}, "required": required}},
+        })
+    };
+    let released = declaring(&json!({}), &output(&["outcome"]));
+    assert_eq!(
+        violations(&released, &declaring(&json!({}), &output(&["outcome"]))),
+        Vec::<String>::new()
+    );
+    assert_eq!(
+        violations(&released, &declaring(&json!({}), &output(&[]))),
+        ["x.y no longer always holds output.run.outcome; a reader relies on it"]
+    );
+}
+
+#[test]
+fn a_map_whose_value_type_changes_is_refused_and_one_whose_value_type_stays_is_admitted() {
+    let input = |kind: &str| json!({"properties": {"parts": {"type": "object", "additionalProperties": {"type": kind}}}});
+    let released = declaring(&input("string"), &json!({}));
+    assert_eq!(
+        violations(&released, &declaring(&input("string"), &json!({}))),
+        Vec::<String>::new()
+    );
+    assert_eq!(
+        violations(&released, &declaring(&input("integer"), &json!({}))),
+        [
+            "x.y changed the type of input.parts.* from string to integer; a changed type is a new version"
+        ]
+    );
 }
