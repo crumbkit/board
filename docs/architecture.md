@@ -32,7 +32,8 @@ listed under several spellings counts once. A mount
 matches when its repository has the same git common directory as the
 directory's repository, so a linked worktree matches too. Failing that,
 a mount matches when its repository has the same origin, so a separate clone
-matches; of several, those whose commit the clone holds. With exactly one
+matches, ranked below a mount of the directory's own repository; of several,
+those whose commit the clone holds rank first. With exactly one
 match, Board runs as that board, as git runs from a subdirectory. The prefix
 is the mount's path joined with the directory's path beneath the
 repository's root, such as `/repos/crumbkit/docs`, and the timing log
@@ -43,7 +44,7 @@ matches nothing. No match is `board::config::not_found`. When the file lists
 boards, the message says they were read and none has a mount or repo record
 for the repository, and the hint says to add a repo record; otherwise the
 hint says to list a board. More
-than one match, counting every mount of every known board, is
+than one match of the best kind, counting every known board, is
 `board::config::ambiguous`; `-C` then picks a board. A known board that
 cannot be opened or refreshed is passed over, and a `not_found` message
 names it. `-C` into a mounted repository finds its board the same way.

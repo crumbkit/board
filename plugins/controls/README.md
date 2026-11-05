@@ -38,8 +38,8 @@ such as a pull request body, instead of files.
   the one display path Board's index gives it: through the shortest mount
   when a commit is mounted more than once, whichever path `for-path` was
   asked. A file with a malformed path has no such name. In the
-  board's own tree it is matched by its path, so `check` lists it as
-  unreadable; in a mounted board it matches nothing, and
+  board's own tree it is matched by its path, so `check` under `/` lists it
+  as unreadable; in a mounted board it matches nothing, and
   that board's own `board check` reports it.
 - `rule` is optional. Without it, the control is a written requirement.
   There are four kinds of rule:

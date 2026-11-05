@@ -178,3 +178,30 @@ fn a_degraded_file_in_another_mount_leaves_the_first_mount_passing_and_the_root_
         "{root}"
     );
 }
+
+#[test]
+fn a_path_measures_its_own_mount_and_not_a_sibling_whose_name_it_begins() {
+    let board = board();
+    board.write(
+        "controls/readme.json",
+        &control(
+            "Short READMEs.",
+            &json!({"paths": ["repos/*/README.md"], "rule": {"budget": "words", "max": 3}}),
+        ),
+    );
+    let _new = library(&board, "repos/new.json", &[("README.md", "one two")]);
+    let _newer = library(
+        &board,
+        "repos/newer.json",
+        &[("README.md", "one two three four five")],
+    );
+    let new = board.call("controls.check", &["--path", "/repos/new"]);
+    assert_eq!(new["passed"], true, "{new}");
+    assert_eq!(new["measured"][0]["files"], json!(["/repos/new/README.md"]));
+    let newer = board.call("controls.check", &["--path", "/repos/newer"]);
+    assert_eq!(newer["passed"], false, "{newer}");
+    assert_eq!(
+        newer["measured"][0]["files"],
+        json!(["/repos/newer/README.md"])
+    );
+}
