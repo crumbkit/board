@@ -40,9 +40,11 @@ Each is a Board type, checked by its Rust type, with no schema file.
   - Board never sets `prior` yet.
 - `board/seen/v1`: the owner's answer at `/effects/seen/<id>`: `approve` or
   `refuse`, with an optional `reason`. An approval holds the owner's
-  `signature`. Its `effect` is the effect's id as a `Digest`,
-  `sha256:<id>`, as in `requests/reply/v1` and `boundary/crossing/v1`.
-  The answered effect moves, unchanged, to `/effects/answered/<id>`.
+  `signature`. Its `effect` names `/effects/answered/<id>`, where the
+  answered effect moves, unchanged, and which Board.app's list of answered
+  requests reads. Board also reads a seen record that names the effect as
+  `sha256:<id>`, or by `/effects/pending/<id>` as Board wrote before it
+  kept answered effects.
 - The id is the 64 hex digits of the SHA-256 of the canonical JSON of the
   board root, plugin, op, path, digest and prior blob. Paths and commands
   name an effect by these digits alone; records add `sha256:`.

@@ -108,6 +108,14 @@ test('a completed task is recorded under the configured board and suite, with it
   })
 })
 
+test('outside the desktop app a decision stub keeps the session id as its agent', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  const { puts } = host(on, undefined, {})
+  on('tool.call', () => ({ result: { stdout: `Creating pull request\n${URL}\n`, stderr: '', interrupted: false } }))
+  await $.tool.call({ tool: 'Bash', command: 'gh pr create --fill' })
+  expect(puts[0]?.record?.by).toEqual({ program: 'claude-code', agent: 'session-1' })
+})
+
 test('gh pr create writes a decision stub and asks the agent for its why and alternatives', async ($, on) => {
   mock.clock(on, { now: NOW })
   const { puts, statuses, appended } = host(on)

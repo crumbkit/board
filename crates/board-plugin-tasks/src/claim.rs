@@ -21,6 +21,13 @@ pub(crate) struct ClaimInput {
     )]
     pub(crate) path: String,
     #[schemars(
+        length(min = 1),
+        description = "Who holds the task, as one text in place of session, program, person and \
+                       agent: a session's local_ id, a person's handle such as luke, or else an \
+                       agent's name."
+    )]
+    pub(crate) owner: Option<String>,
+    #[schemars(
         with = "Option<SessionId>",
         description = "The session that holds the task, by its local_ id."
     )]
@@ -47,10 +54,10 @@ pub(crate) struct ClaimInput {
 /// with the same session as the one that holds it is the same owner.
 pub(crate) fn claim(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
     let given: ClaimInput = PluginError::read_input(PLUGIN, "claim", input)?;
-    let owner = Actor::of(given.session, given.program, given.person, given.agent);
-    let Some(owner) = owner else {
+    let parts = [given.session, given.program, given.person, given.agent];
+    let Some(owner) = owner(given.owner, parts)? else {
         let why = format!(
-            "claiming {} names nobody; give --session, --program, --person or --agent",
+            "claiming {} names nobody; give --owner, --session, --program, --person or --agent",
             given.path
         );
         return Err(refusal(
@@ -87,4 +94,59 @@ pub(crate) fn claim(host: &dyn Host, input: &Value) -> Result<Value, PluginError
         Ok(vec![("owner", Some(owner.clone()))])
     };
     stamped(host, &given.path, &change, false)
+}
+
+/// The owner that `owner` or the parts `[session, program, person, agent]`
+/// name, or none when they name nobody. `owner` is the one text a released
+/// Board took: a session by its `local_` id, a person by a handle or an
+/// email address, and otherwise an agent by its name. It is refused beside
+/// any part, since the two would name the owner twice.
+pub(crate) fn owner(
+    owner: Option<String>,
+    parts: [Option<String>; 4],
+) -> Result<Option<Actor>, PluginError> {
+    let [session, program, person, agent] = parts;
+    let Some(text) = owner else {
+        return Ok(Actor::of(session, program, person, agent));
+    };
+    if [&session, &program, &person, &agent]
+        .iter()
+        .any(|part| part.is_some())
+    {
+        let why = format!(
+            "--owner {text:?} names the owner and so do --session, --program, --person or \
+             --agent; give --owner alone, or the parts alone"
+        );
+        return Err(refusal(
+            "tasks::owner::twice",
+            why,
+            [("owner", json!(text))],
+        ));
+    }
+    let session = (text.strip_prefix("local_")).is_some_and(|id| {
+        !id.is_empty()
+            && id
+                .bytes()
+                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b) || b == b'-')
+    });
+    let slug = !text.is_empty()
+        && (text.split('-')).all(|word| {
+            !word.is_empty()
+                && word
+                    .bytes()
+                    .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit())
+        });
+    let email = matches!(text.split_once('@'), Some((name, host)) if !name.is_empty() && !host.is_empty() && !host.contains('@'))
+        && !text.contains(char::is_whitespace);
+    Ok(Some(match (session, slug || email) {
+        (true, _) => Actor {
+            session: Some(text),
+            ..Actor::default()
+        },
+        (false, true) => Actor {
+            person: Some(text),
+            ..Actor::default()
+        },
+        (false, false) => return Ok(Actor::of(None, None, None, Some(text))),
+    }))
 }

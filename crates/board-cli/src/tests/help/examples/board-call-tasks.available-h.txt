@@ -5,6 +5,7 @@ Usage: board call tasks.available [OPTIONS]
 Options:
       --agent <agent>      The name the owning agent was given, such as inbox foundation builder.
       --context <context>  Only tasks tagged with this context, such as errands.
+      --owner <owner>      The owner as one text in place of session, program, person and agent: a session's local_ id, a person's handle such as luke, or else an agent's name.
       --person <person>    The owner's person, such as luke.
       --program <program>  The owner's program, such as claude-code.
       --remote <remote>    A git remote, or owner/name, to choose the repos by in place of the origin of the directory board was started in.

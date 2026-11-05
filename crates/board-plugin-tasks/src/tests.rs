@@ -114,6 +114,7 @@ fn every_input_property_carries_a_sentence_that_says_what_it_means() {
     let mut expected = vec![
         "available.agent",
         "available.context",
+        "available.owner",
         "available.person",
         "available.program",
         "available.remote",
@@ -138,6 +139,7 @@ fn every_input_property_carries_a_sentence_that_says_what_it_means() {
         "add.text",
         "add.title",
         "claim.agent",
+        "claim.owner",
         "claim.path",
         "claim.person",
         "claim.program",

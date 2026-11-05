@@ -139,11 +139,14 @@ async function put($: EngineInterface, path: string, body: { record: object } | 
 
 /**
  * Who acts in this session, as the shared actor shape: Claude Code, and the
- * session by the `local_` id the desktop app names, when it names one.
+ * session by the `local_` id the desktop app names. Outside the desktop app
+ * the session's own id names no `local_` session, so it is kept as the
+ * agent, as the shapes migration keeps it for older records.
  */
-async function actor($: EngineInterface): Promise<{ program: string; session?: string }> {
+async function actor($: EngineInterface): Promise<{ program: string; session?: string; agent?: string }> {
   const host = await $.env.get('CLAUDE_CODE_HOST_SESSION_ID')
-  return { program: 'claude-code', ...(host?.startsWith('local_') ? { session: host } : {}) }
+  if (host?.startsWith('local_')) return { program: 'claude-code', session: host }
+  return { program: 'claude-code', agent: await $.session.id() }
 }
 
 /** The account the session is signed in to, from `oauthAccount.emailAddress` in `.claude.json`. */

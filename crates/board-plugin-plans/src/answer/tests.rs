@@ -428,3 +428,30 @@ fn board_calls_plans_answer_in_its_own_process_and_a_second_answer_is_refused() 
         .refusal();
     assert_eq!(refused.code.as_str(), "plans::answer::already_answered");
 }
+
+/// Each actor input reaches the answer's `by`, and a blank agent name
+/// names nobody.
+#[test]
+fn every_actor_input_reaches_the_answers_by_and_a_blank_agent_is_left_out() {
+    let cases = [
+        (
+            json!({"program": "codex", "person": "luke", "agent": "Inbox builder"}),
+            json!({"program": "codex", "person": "luke", "agent": "Inbox builder"}),
+        ),
+        (
+            json!({"person": "luke", "agent": " "}),
+            json!({"person": "luke"}),
+        ),
+    ];
+    for (given, expected) in cases {
+        let host = at_now(rows("plans/question/v1", &json!({}), &[]));
+        let mut input = json!({"path": QUESTION, "option": "b"});
+        input
+            .as_object_mut()
+            .unwrap()
+            .extend(given.as_object().unwrap().clone());
+        answer(&host, &input).unwrap();
+        let puts = host.puts.take();
+        assert_eq!(puts[0][0]["record"]["by"], expected, "{given}");
+    }
+}

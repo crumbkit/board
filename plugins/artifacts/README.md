@@ -61,7 +61,8 @@ by `at`, is the artifact's current version.
 
 - `by` and `at` are required: the `Actor` that published or read the
   version, and when. The mod writes `{"program": "claude-code"}` and adds the
-  session's `local_` id in the desktop app.
+  session's `local_` id in the desktop app. Outside it, the session's own id
+  names no `local_` session, so the mod adds it as the `agent`.
 - `<key>` is `version`, the version id the Artifact tool returned, or, when
   it returned none, the first 16 hex digits after `sha256:` in `sha256`, a
   `Digest` of the page, and the record

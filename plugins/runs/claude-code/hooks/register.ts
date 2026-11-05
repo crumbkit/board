@@ -26,11 +26,14 @@ type Actor = { session?: string; program?: string; person?: string; agent?: stri
 
 /**
  * Who acts in this session: Claude Code, and the session by the `local_` id
- * the desktop app names, when it names one.
+ * the desktop app names. Outside the desktop app the session's own id names
+ * no `local_` session, so it is kept as the agent, as the shapes migration
+ * keeps it for older records.
  */
 async function actor($: EngineInterface): Promise<Actor> {
   const host = await $.env.get('CLAUDE_CODE_HOST_SESSION_ID')
-  return { program: 'claude-code', ...(host?.startsWith('local_') ? { session: host } : {}) }
+  if (host?.startsWith('local_')) return { program: 'claude-code', session: host }
+  return { program: 'claude-code', agent: await $.session.id() }
 }
 
 /** The last line of `text` that holds anything but spaces, trimmed. */

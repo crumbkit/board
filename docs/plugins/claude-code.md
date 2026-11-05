@@ -75,8 +75,9 @@ When a subagent stops, or a task is completed, the mod writes a
 `runs/run/v1` at `<suite>/runs/<started>-<id>`, where `<id>` is the agent or
 task id. Its `by` is the actor `{"program": "claude-code"}`, with the
 session's `local_` id in the desktop app and the subagent type or teammate
-as `agent`, `measures.duration_s` the
-seconds since it started, and `summary` the subagent's last line of text or
+as `agent`. Outside the desktop app a decision stub's `by` keeps the
+session's own id as `agent`, since that id names no `local_` session. A run's
+`measures.duration_s` is the seconds since it started, and `summary` the subagent's last line of text or
 the task's subject. A stop that another hook blocks writes nothing, because
 the subagent goes on. When the mod did not see the unit start, as when it
 loaded after the unit started or the session was resumed, the run has no

@@ -235,8 +235,9 @@ pub fn utc(time: SystemTime) -> String {
 }
 
 /// A `board/seen/v1` record: the owner's answer to an effect. `effect` is
-/// the effect's id as a digest, `sha256:<id>`, and `/effects/answered/<id>`
-/// keeps the effect. An approval carries `signature`, the owner's SSH signature
+/// `/effects/answered/<id>`, the path that keeps the answered effect, which
+/// Board.app's list of answered requests reads. An approval carries
+/// `signature`, the owner's SSH signature
 /// over [`Effect::approval`].
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -258,17 +259,17 @@ impl Seen {
         let seen = Self::deserialize(value)?;
         if seen.effect_id().is_none() {
             return Err(serde::de::Error::custom(format!(
-                "effect {:?} is not sha256: and an effect id of 64 lowercase hex digits",
+                "effect {:?} is not /effects/answered/ and an effect id of 64 lowercase hex digits",
                 seen.effect
             )));
         }
         Ok(seen)
     }
 
-    /// The id of the effect it answers, without the `sha256:` prefix. A
-    /// seen record a released Board wrote names the effect by its path,
-    /// `/effects/answered/<id>` or `/effects/pending/<id>`, and is read
-    /// too, so its answer keeps counting until the board is migrated.
+    /// The id of the effect it answers. Board writes the effect's answered
+    /// path, `/effects/answered/<id>`. A seen record that names it as a
+    /// digest, `sha256:<id>`, or by its pending path, as Board wrote before
+    /// it kept answered effects, is read too.
     pub fn effect_id(&self) -> Option<&str> {
         let id = (self.effect.strip_prefix("sha256:"))
             .or_else(|| self.effect.strip_prefix("/effects/answered/"))
@@ -280,7 +281,7 @@ impl Seen {
     pub fn new(id: &str, answer: Answer, reason: Option<String>) -> Self {
         Self {
             record_type: SEEN_TYPE.to_owned(),
-            effect: format!("sha256:{id}"),
+            effect: format!("/effects/answered/{id}"),
             answer,
             reason,
             signature: None,

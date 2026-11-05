@@ -40,6 +40,12 @@ pub(crate) struct Input {
     )]
     pub(crate) context: Option<String>,
     #[schemars(
+        length(min = 1),
+        description = "The owner as one text in place of session, program, person and agent: a \
+                       session's local_ id, a person's handle such as luke, or else an agent's name."
+    )]
+    pub(crate) owner: Option<String>,
+    #[schemars(
         with = "Option<SessionId>",
         description = "With program, person and agent, the owner: only tasks it holds or nobody holds, \
                        and in held the ones it holds that are not available. The owner's \
@@ -219,7 +225,8 @@ pub(crate) fn available(host: &dyn Host, input: &Value) -> Result<Value, PluginE
         tree: &tree,
         nodes: &nodes,
     };
-    let owner = Actor::of(given.session, given.program, given.person, given.agent);
+    let parts = [given.session, given.program, given.person, given.agent];
+    let owner = crate::claim::owner(given.owner, parts)?;
     let [available, due_soon, stale, held] = sweep(&open, &blocked, places, &clock, owner.as_ref());
     Ok(json!(Output {
         available,

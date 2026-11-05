@@ -117,7 +117,6 @@ pub(crate) fn record(
             mount,
             &mut outcomes,
         ),
-        "board/seen/v1" => seen(record, &mut outcomes),
         "requests/reply/v1" => digest(record, "effect", "requests/reply/v1.effect", &mut outcomes),
         "boundary/crossing/v1" => {
             digest(
@@ -166,22 +165,6 @@ fn version(record: &mut Map<String, Value>, context: &Context, outcomes: &mut Ve
         outcomes.push(Outcome::Changed("artifacts/version/v1.session"));
     }
     digest(record, "sha256", "artifacts/version/v1.sha256", outcomes);
-}
-
-/// A seen record's effect, a path or a bare id, which becomes a digest.
-fn seen(record: &mut Map<String, Value>, outcomes: &mut Vec<Outcome>) {
-    let id = (record.get("effect").and_then(Value::as_str))
-        .map(|effect| effect.rsplit('/').next().unwrap_or(effect).to_owned());
-    let field = "board/seen/v1.effect";
-    match (record.get("effect").and_then(Value::as_str), id) {
-        (Some(effect), _) if effect.strip_prefix("sha256:").is_some_and(hex) => {}
-        (_, Some(id)) if hex(&id) => {
-            record.insert("effect".into(), Value::String(format!("sha256:{id}")));
-            outcomes.push(Outcome::Changed(field));
-        }
-        (Some(effect), _) => outcomes.push(Outcome::Unmapped(field, effect.to_owned())),
-        (None, _) => {}
-    }
 }
 
 /// A required actor stored as the string `session`, which becomes `by`.

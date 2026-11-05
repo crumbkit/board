@@ -283,3 +283,26 @@ fn a_reply_outside_its_effects_replies_directory_is_left_out_and_its_twin_inside
         }])
     );
 }
+
+/// Board.app's relay writes a reply's effect as the bare id, and the thread
+/// reads it beside one that names the effect as a digest.
+#[test]
+fn a_reply_naming_its_effect_by_bare_id_is_read_beside_one_naming_it_as_a_digest() {
+    let scenario = personal();
+    let id = held(&scenario, "pending", &effect("/x", "one\n", None));
+    let bare = json!({"$type": "requests/reply/v1", "effect": id, "text": "Why?"});
+    let path = format!("requests/replies/{id}/20261030T083000Z.json");
+    scenario.write(&path, Item::File(&bare.to_string()));
+    reply(&scenario, &id, "20261030T093000Z", "Shorter.");
+    let replies = &thread(&scenario, &id).unwrap()["replies"];
+    let shown: Vec<(&Value, &Value)> = (replies.as_array().unwrap().iter())
+        .map(|reply| (&reply["effect"], &reply["text"]))
+        .collect();
+    assert_eq!(
+        shown,
+        [
+            (&json!(id), &json!("Why?")),
+            (&json!(id), &json!("Shorter."))
+        ]
+    );
+}

@@ -87,8 +87,7 @@ returns four sections of their `open` tasks:
   or were reviewed more than 14 days ago. A deferred task, `someday` included,
   is left out until its deferral ends;
 - `held`: with an owner, given by `--session`, `--program`, `--person` and
-  `--agent`,
-  the tasks that owner holds that are not available, because they are
+  `--agent`, or by `--owner` alone (see `claim`), the tasks that owner holds that are not available, because they are
   blocked, deferred or before their `from_hour`. It is empty without one.
 
 Each section lists at most 100 tasks by repo, title and path, with `total`
@@ -207,7 +206,11 @@ ends, counted from today. `drop` sets `status: dropped`. `claim`, `done`,
 `defer` and `drop` refuse a task that is not open with
 `tasks::task::finished`; `reviewed` marks any task. `claim` with `--session`,
 `--program`, `--person` or `--agent` sets `owner` to the actor they name,
-refusing `tasks::claim::no_owner` when they name nobody. It claims an open
+refusing `tasks::claim::no_owner` when they name nobody. `--owner`, the
+one flag a released Board took, names the owner in a single text: a
+`local_` id is the session, a handle such as `luke` or an email address is
+the person, and any other text is the agent's name. `--owner` beside any of
+the other four is refused with `tasks::owner::twice`. It claims an open
 task that nobody or the same owner holds, where two owners that both name a
 session are the same when their sessions match, and refuses one another owner holds with `tasks::task::held`, whose `owner` field names
 the holder. `done`, `defer`, `drop` and `reviewed` leave `owner` as it is, so

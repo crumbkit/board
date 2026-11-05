@@ -128,7 +128,8 @@ fn an_actor_already_in_the_new_shape_is_left_alone() {
         json!({"$type": "runs/run/v1", "by": {"program": "codex"}}),
         json!({"$type": "plans/question/v1", "by": {"session": "local_ab"}}),
         json!({"$type": "artifacts/artifact/v1", "account": {"person": "a@b.c"}}),
-        json!({"$type": "board/seen/v1", "effect": format!("sha256:{}", "ab".repeat(32))}),
+        json!({"$type": "board/seen/v1", "effect": format!("/effects/answered/{}", "ab".repeat(32))}),
+        json!({"$type": "board/seen/v1", "effect": format!("/effects/pending/{}", "ab".repeat(32))}),
         json!({"$type": "requests/reply/v1", "effect": format!("sha256:{}", "ab".repeat(32))}),
         json!({"$type": "evals/eval/v1", "subjects": ["crumbkit/board", "/repos/board"]}),
     ] {
@@ -148,7 +149,7 @@ fn an_artifact_account_becomes_a_person_and_a_version_session_its_by() {
 }
 
 #[test]
-fn bare_hashes_gain_their_prefix_and_a_seen_effect_path_becomes_its_digest() {
+fn bare_hashes_gain_their_prefix_and_a_seen_effect_keeps_the_path_board_app_reads() {
     let hex = "ab".repeat(32);
     let prefixed = json!(format!("sha256:{hex}"));
     for (kind, key) in [
@@ -159,11 +160,6 @@ fn bare_hashes_gain_their_prefix_and_a_seen_effect_path_becomes_its_digest() {
     ] {
         let (record, _) = migrated(json!({"$type": kind, key: hex}));
         assert_eq!(record[key], prefixed, "{kind}.{key}");
-    }
-    for effect in [format!("/effects/answered/{hex}"), hex.clone()] {
-        let (seen, outcomes) = migrated(json!({"$type": "board/seen/v1", "effect": effect}));
-        assert_eq!(seen["effect"], prefixed);
-        assert_eq!(outcomes, [Outcome::Changed("board/seen/v1.effect")]);
     }
     let effect = json!({"$type": "board/effect/v1", "digest": format!("sha256:{hex}")});
     assert_eq!(migrated(effect.clone()), (effect, vec![]));
@@ -300,24 +296,6 @@ fn a_hash_that_is_neither_bare_hex_nor_a_digest_is_reported_and_its_twin_is_pref
             [Outcome::Unmapped("requests/reply/v1.effect", effect.into())]
         );
     }
-    let (seen, outcomes) = migrated(json!({"$type": "board/seen/v1", "effect": "sha256:ab"}));
-    assert_eq!(seen["effect"], json!("sha256:ab"));
-    assert_eq!(
-        outcomes,
-        [Outcome::Unmapped(
-            "board/seen/v1.effect",
-            "sha256:ab".into()
-        )]
-    );
-    let (seen, outcomes) = migrated(json!({"$type": "board/seen/v1", "effect": "/effects/x"}));
-    assert_eq!(seen["effect"], json!("/effects/x"));
-    assert_eq!(
-        outcomes,
-        [Outcome::Unmapped(
-            "board/seen/v1.effect",
-            "/effects/x".into()
-        )]
-    );
 }
 
 #[test]
@@ -608,7 +586,9 @@ fn owner(text: &str) -> Option<Value> {
 
 /// Migrates a copy of the board `MIGRATE_BOARD` names, when it is set, and
 /// checks that every record it changed passes its type's committed schema,
-/// except those it reported unmapped, and that a second run changes nothing.
+/// that each one it reported unmapped passes once those values are
+/// replaced, and that a second run changes nothing. A record the schemas
+/// refuse that the run left byte for byte as it was is not the migration's.
 /// It never writes the board itself.
 #[test]
 fn a_copy_of_a_real_board_migrates_and_a_second_run_changes_nothing() {
@@ -629,7 +609,14 @@ fn a_copy_of_a_real_board_migrates_and_a_second_run_changes_nothing() {
     let map = crate::process::var("MIGRATE_MAP").map(std::path::PathBuf::from);
     let options = Options { write: true, map };
     let schemas = schemas();
-    let before = refused(&board, &schemas);
+    let read = |path: &String| fs::read(board.join(&path[1..])).ok();
+    let before: std::collections::BTreeMap<String, Option<Vec<u8>>> = (refused(&board, &schemas)
+        .into_iter())
+    .map(|path| {
+        let bytes = read(&path);
+        (path, bytes)
+    })
+    .collect();
     let first = run(&board, &options).unwrap();
     assert_ne!(first["files"]["read"], json!(0));
     let unmapped: std::collections::BTreeSet<String> = (first["unmapped"].as_array().unwrap())
@@ -637,17 +624,17 @@ fn a_copy_of_a_real_board_migrates_and_a_second_run_changes_nothing() {
         .filter_map(|entry| entry["path"].as_str().map(str::to_owned))
         .collect();
     let after = refused(&board, &schemas);
-    let new: Vec<&String> = after
-        .difference(&before)
+    let changed: Vec<&String> = (after.iter())
         .filter(|path| !unmapped.contains(*path))
+        .filter(|path| before.get(*path) != Some(&read(path)))
         .collect();
-    assert_eq!(new, Vec::<&String>::new());
+    assert_eq!(changed, Vec::<&String>::new());
     // A record excused for an unmapped subject passes once that subject is
     // a valid one, so no other field it holds is refused.
     let values: Vec<(&str, &Value)> = (first["unmapped"].as_array().unwrap().iter())
         .map(|entry| (entry["path"].as_str().unwrap(), &entry["value"]))
         .collect();
-    for path in after.difference(&before).filter(|path| {
+    for path in after.intersection(&unmapped).filter(|path| {
         Path::new(path.as_str())
             .extension()
             .is_some_and(|extension| extension == "json")

@@ -67,7 +67,17 @@ together, so update a board in this order:
 4. Run `board plugin enable` for each enabled plugin, so the stored schemas
    are the new ones, then `board check`.
 
-It reads only the board's own tree, so each mounted board is migrated on
-its own. Until a board is migrated, Board still reads a seen record that
-names its effect by path, but replies and crossings with a bare hash are
-degraded.
+It reads only the board's own tree, so each mounted board and each mounted
+notes repository is migrated on its own, with
+`cargo xtask migrate-shapes <its checkout>`. Until it is, a task there whose
+`owner` is still a string is unreadable and drops out of `tasks.available`,
+and a question there whose `session` is still a string drops out of
+`plans.open`. A crossing with a bare hash is degraded until its board is
+migrated.
+
+The migration leaves seen records and Board.app alone. A seen record keeps
+naming its effect by `/effects/answered/<id>`, which Board.app reads, and a
+reply may still name its effect by the bare id, which Board.app's relay
+writes. The migration gives a bare reply effect its `sha256:` prefix, and
+both forms stay valid, so Board.app and Board can be updated in either
+order.

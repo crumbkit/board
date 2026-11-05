@@ -55,9 +55,9 @@ fn an_effect_and_a_seen_record_read_back_as_written_and_refuse_an_extra_field() 
     assert!(effect_record("lr/task/v1", &extra).is_none());
 }
 
-/// A seen record names its effect as a digest, `sha256:<id>`, and one a
-/// released Board wrote, by the effect's path, is read too. A bare id and
-/// a path elsewhere are refused.
+/// A seen record names its effect by the answered effect's path, which
+/// Board.app reads, and one naming it as a digest, `sha256:<id>`, or by its
+/// pending path is read too. A bare id and a path elsewhere are refused.
 #[test]
 fn a_seen_record_naming_its_effect_by_bare_id_or_another_path_is_refused_and_its_twins_are_read() {
     let id = "ab".repeat(32);
@@ -77,7 +77,7 @@ fn a_seen_record_naming_its_effect_by_bare_id_or_another_path_is_refused_and_its
         assert_eq!(read.effect_id(), Some(id.as_str()));
     }
     let written = serde_json::to_value(Seen::new(&id, Answer::Refuse, None)).unwrap();
-    assert_eq!(written["effect"], json!(format!("sha256:{id}")));
+    assert_eq!(written["effect"], json!(format!("/effects/answered/{id}")));
 }
 
 #[test]
