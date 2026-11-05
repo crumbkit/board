@@ -223,6 +223,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "board-plugin-changes"
+version = "0.0.0"
+dependencies = [
+ "board-model",
+ "board-ops",
+ "board-plugin",
+ "board-repos",
+ "board-validate",
+ "regex",
+ "schemars",
+ "serde",
+ "serde_json",
+ "sha2",
+]
+
+[[package]]
 name = "board-plugin-controls"
 version = "0.0.0"
 dependencies = [
@@ -352,6 +368,7 @@ dependencies = [
  "board-model",
  "board-ops",
  "board-plugin",
+ "board-plugin-changes",
  "schemars",
  "serde",
  "serde_json",
@@ -405,6 +422,7 @@ dependencies = [
  "board-ops",
  "board-plugin-artifacts",
  "board-plugin-boundary",
+ "board-plugin-changes",
  "board-plugin-controls",
  "board-plugin-evals",
  "board-plugin-github",

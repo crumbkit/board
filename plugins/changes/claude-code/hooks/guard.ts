@@ -10,7 +10,7 @@ export type Mount = { board: string; mount: string; repo: string | null; record:
 
 /** What `board get` answered for the change a brief names. */
 export type Change =
-  | { kind: 'found'; mount: string; phase: string; changeKind: string }
+  | { kind: 'found'; mount: string; phase: string }
   | { kind: 'missing' }
   | { kind: 'failed'; why: string }
 
@@ -108,19 +108,56 @@ export function parseMounts(board: string, stdout: string): Mount[] | null {
 export function parseChange(stdout: string): Change {
   const report = parseJson(stdout) as
     | {
-        data?: { record?: { mount?: unknown; phase?: unknown; kind?: unknown } }[]
+        data?: { record?: { mount?: unknown; phase?: unknown } }[]
         failures?: { code?: unknown; message?: unknown }[]
       }
     | undefined
   const record = report?.data?.[0]?.record
   if (typeof record?.mount === 'string' && typeof record.phase === 'string') {
-    const changeKind = typeof record.kind === 'string' ? record.kind : 'build'
-    return { kind: 'found', mount: record.mount, phase: record.phase, changeKind }
+    return { kind: 'found', mount: record.mount, phase: record.phase }
   }
   const failure = report?.failures?.[0]
   if (failure?.code === 'board::path::not_found') return { kind: 'missing' }
   if (typeof failure?.code === 'string') return { kind: 'failed', why: `${failure.code}: ${String(failure.message)}` }
   return { kind: 'failed', why: 'it printed no change record' }
+}
+
+/** What `board get` answered for a change's `<change>/prototype`. */
+export type Kind = { kind: 'prototype' } | { kind: 'build' } | { kind: 'failed'; why: string }
+
+/**
+ * The change's kind from a `board --json get` report of `<change>/prototype`:
+ * a prototype when a prototype record is there and a build change when
+ * nothing is. Anything else fails, so a prototype record Board does not read
+ * never lets a prototype's builder off its branch.
+ */
+export function parseKind(stdout: string): Kind {
+  const report = parseJson(stdout) as
+    | { data?: { record?: { $type?: unknown } }[]; failures?: { code?: unknown; message?: unknown }[] }
+    | undefined
+  const found = report?.data?.[0]?.record?.$type
+  if (found === 'changes/prototype/v1') return { kind: 'prototype' }
+  if (found !== undefined) return { kind: 'failed', why: `it holds a ${String(found)}, not a changes/prototype/v1` }
+  const failure = report?.failures?.[0]
+  if (failure?.code === 'board::path::not_found') return { kind: 'build' }
+  if (typeof failure?.code === 'string') return { kind: 'failed', why: `${failure.code}: ${String(failure.message)}` }
+  return { kind: 'failed', why: 'it printed no prototype record' }
+}
+
+/**
+ * Whether a `board --json check --healthy` report of one record says Board
+ * reads it, or the code and reason that say why not. `board get` prints a
+ * degraded record as it prints a valid one, so the guard asks `check`.
+ */
+export function parseHealth(stdout: string): { kind: 'ok' } | { kind: 'failed'; why: string } {
+  const report = parseJson(stdout) as
+    | { schema?: unknown; data?: { status?: unknown; code?: unknown; reason?: unknown }[]; code?: unknown; message?: unknown }
+    | undefined
+  const entry = report?.data?.[0]
+  if (report?.schema === 'board/check-report/v2' && entry?.status === 'ok') return { kind: 'ok' }
+  if (typeof entry?.code === 'string') return { kind: 'failed', why: `${entry.code}: ${String(entry.reason)}` }
+  if (typeof report?.code === 'string') return { kind: 'failed', why: `${report.code}: ${String(report.message)}` }
+  return { kind: 'failed', why: 'it printed no check of the record' }
 }
 
 /** The refusal of an edit of the board config. */
@@ -140,8 +177,13 @@ export const mountRecord = (file: string, at: Mount) =>
   `which changes only through board commands. Use \`board -C ${at.board} mount update ${at.mount}\` to ` +
   'follow its repository, or `board put` to change the mount.'
 
-/** Whether `relative`, a path inside a board, is a change record: `changes/<name>.json`. */
-export const isChangeRecord = (relative: string) => /^changes\/[^/]+\.json$/.test(relative)
+/**
+ * Whether `relative`, a path inside a board, is a record only board commands change: a change at
+ * `changes/<name>.json`, its prototype at `changes/<name>/prototype.json`, or a plan, which lists the records
+ * attached, at `changes/<name>/plans/<stamp>.json`. A plan's Markdown text stays writable.
+ */
+export const isChangeRecord = (relative: string) =>
+  /^changes\/[^/]+(\/prototype|\/plans\/[^/]+)?\.json$/.test(relative)
 
 /** The refusal of an edit the guard cannot check. */
 export const unknown = (file: string, why: string) =>
@@ -166,13 +208,15 @@ export const prototypeBranch = (name: string) => `proto/${name.replace(/\/+$/, '
 
 /**
  * The refusal for a change, or null when its builder may edit `file`, which
- * is checked out on `branch` ('' when detached).
+ * is checked out on `branch` ('' when detached). `prototype` says whether a
+ * prototype record sits at `<name>/prototype`.
  */
 export function judge(
   file: string,
   at: Mount,
   name: string,
-  change: { mount: string; phase: string; changeKind: string },
+  change: { mount: string; phase: string },
+  prototype: boolean,
   branch: string,
 ): string | null {
   if (change.phase === 'paused') {
@@ -194,7 +238,7 @@ export function judge(
     )
   }
   const only = prototypeBranch(name)
-  if (change.changeKind === 'prototype' && branch !== only) {
+  if (prototype && branch !== only) {
     const on = branch === '' ? 'a detached HEAD' : `branch ${branch}`
     return (
       `changes::guard::wrong_branch: ${name} is a prototype, and its builder may edit ${file} only on branch ` +

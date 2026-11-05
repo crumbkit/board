@@ -26,9 +26,8 @@ use records::{BriefRecord, ReportRecord};
 const PLUGIN: &str = "review";
 /// The record type of a change, which the changes plugin owns, and the
 /// severities that shut its review gate, so an attached report with one
-/// never covers. A test checks that these copies agree with its own.
-pub const CHANGE_TYPE: &str = "changes/change/v1";
-pub const BLOCKING: [&str; 2] = ["critical", "high"];
+/// never covers.
+use board_plugin_changes::{BLOCKING, CHANGE_TYPE};
 
 #[derive(Clone, Copy, Debug)]
 pub struct Review;

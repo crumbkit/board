@@ -385,11 +385,27 @@ pub enum Origin {
 /// git's config without starting git. A repository git would refuse, for
 /// its owner or a config that does not parse, is unread.
 pub fn origin(directory: &Path) -> Origin {
+    read_origin(directory, false)
+}
+
+/// The `origin` remote of the repository at `directory` itself, as git
+/// reads it with `GIT_CEILING_DIRECTORIES` set to the directory's parent:
+/// a directory that is not a repository is outside, even inside another
+/// repository's working tree.
+pub fn own_origin(directory: &Path) -> Origin {
+    read_origin(directory, true)
+}
+
+/// [`origin`], or with `own` [`own_origin`].
+fn read_origin(directory: &Path, own: bool) -> Origin {
     // Finding the repository reads no config, so only a directory in no
     // repository, or one that cannot be read, is outside.
     let Ok((found, trust)) = gix::discover::upwards(directory) else {
         return Origin::Outside;
     };
+    if own && !is_root(&found, directory) {
+        return Origin::Outside;
+    }
     if trust != gix::sec::Trust::Full {
         // git refuses a repository another user owns; gix would read it
         // with reduced trust.
@@ -399,8 +415,8 @@ pub fn origin(directory: &Path) -> Origin {
             git_dir.display()
         ));
     }
-    let git = match gix::discover(directory) {
-        Ok(git) => git,
+    let git = match gix::ThreadSafeRepository::discover(directory) {
+        Ok(git) => git.to_thread_local(),
         Err(error) => return Origin::Unread(format!("error: {error}")),
     };
     match git.try_find_remote("origin") {
@@ -411,6 +427,19 @@ pub fn origin(directory: &Path) -> Origin {
             None => Origin::Unread("error: the remote origin has no url".to_owned()),
         },
     }
+}
+
+/// Whether `found` is the repository at `directory` itself: its working
+/// tree, or its git directory when it has none. Both sides are canonical,
+/// since a temporary directory under /var is /private/var on macOS.
+fn is_root(found: &gix::discover::repository::Path, directory: &Path) -> bool {
+    use gix::discover::repository::Path as Found;
+    let root = match found {
+        Found::WorkTree(work_dir) | Found::LinkedWorkTree { work_dir, .. } => work_dir,
+        Found::Repository(git_dir) => git_dir,
+    };
+    let canonical = |path: &Path| path.canonicalize().ok();
+    canonical(root).is_some_and(|root| Some(root) == canonical(directory))
 }
 
 /// `directory`'s path beneath the working tree of the repository holding

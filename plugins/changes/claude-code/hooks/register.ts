@@ -13,6 +13,8 @@ import {
   originOf,
   parseBoards,
   parseChange,
+  parseHealth,
+  parseKind,
   parseMounts,
   parseOrigins,
   repositoryOf,
@@ -49,6 +51,7 @@ const LOCATE =
 const ORIGINS = 'for r; do printf \'%s\\t%s\\n\' "$r" "$(git -C "$r" config --get remote.origin.url 2>/dev/null)"; done'
 const MOUNTS = `PATH=${PATH} exec board -C "$1" --json query --all "$2"`
 const GET = `PATH=${PATH} exec board -C "$1" --json get "$2"`
+const CHECK = `PATH=${PATH} exec board -C "$1" --json check --healthy "$2"`
 
 // A slow or hung git or board holds the edit no longer than this, then refuses it.
 const TIMEOUT_MS = 5000
@@ -221,7 +224,22 @@ async function refusal($: EngineInterface, file: string, agentId: string | undef
         const why = ran.exitCode !== 0 && ran.stdout.trim() === '' ? said(ran) : change.why
         return unknown(file, `\`board -C ${at.board} get ${named}\` failed with ${why}`)
       }
-      return judge(file, at, named, change, change.changeKind === 'prototype' ? await branchOf($, file) : '')
+      const held = await sh($, GET, [at.board, `${named}/prototype`])
+      const kind = parseKind(held.stdout)
+      if (kind.kind === 'failed') {
+        const why = held.exitCode !== 0 && held.stdout.trim() === '' ? said(held) : kind.why
+        return unknown(file, `\`board -C ${at.board} get ${named}/prototype\` failed with ${why}`)
+      }
+      if (kind.kind === 'prototype') {
+        const checked = await sh($, CHECK, [at.board, `${named}/prototype`])
+        const health = parseHealth(checked.stdout)
+        if (health.kind === 'failed') {
+          const why = checked.stdout.trim() === '' ? said(checked) : health.why
+          return unknown(file, `\`board -C ${at.board} check --healthy ${named}/prototype\` failed with ${why}`)
+        }
+      }
+      const prototype = kind.kind === 'prototype'
+      return judge(file, at, named, change, prototype, prototype ? await branchOf($, file) : '')
     }
     return noBrief(file, mounts[0]!, named)
   } catch (error) {

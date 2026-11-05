@@ -1,16 +1,15 @@
 # changes
 
-This plugin is still a Python program (docs/plugins/python.md). A new plugin
-is a crate built into Board (docs/plugins/built-in/writing.md).
-
-A Board plugin that walks an agent through one change to a mounted
+A Board plugin, built into Board as `crates/board-plugin-changes`, that walks an agent through one change to a mounted
 repository, from its plan to its pull request, and gathers every record the
 change produces. SKILL.md holds the procedure for each phase.
 
 ## Records
 
-`changes/change/v1` at `/changes/<name>.json`. Its plan and other files
-sit in `/changes/<name>/`. Git history holds earlier phases.
+`changes/change/v1` at `/changes/<name>.json` holds the change and its
+phase. The records it owns sit in `/changes/<name>/`: its plans, a
+prototype's record and its understanding checks. Git history holds earlier
+phases.
 
 ```json
 {
@@ -19,79 +18,123 @@ sit in `/changes/<name>/`. Git history holds earlier phases.
   "mount": "/repos/board",
   "phase": "build",
   "route": "owner",
-  "plan": "/changes/suite-timeout/plan.md",
+  "plan": "/changes/suite-timeout/plans/20261101T120000000000Z",
   "task": "/repos/notes-personal/tasks/suite-timeout.md",
   "head": "a3f9c0d",
   "tickets": ["/jira/acme/ACME-123"],
-  "pulls": ["/gh/octo/widgets/pulls/7"],
-  "records": ["/tasks/suite-timeout-schema", "/suites/board-tests/runs/20261025T101500Z-a3f9"]
+  "pulls": ["/gh/octo/widgets/pulls/7"]
 }
 ```
 
 - `title`, `mount` and `phase` are required.
 - `phase`: `plan`, `build`, `review`, `land`, `done`, or `dropped` to end a
   change early. `paused` holds a change the keeper took out of `build`.
-- `sync` sets `merge_commit_url`, the merge commit's GitHub URL, when it ends a
-  change whose pull request merged. `sync` and `drop` set `dropped_reason`.
-- `over_limit` is the reason given for the latest move into `build` past
-  the WIP limit.
-- `touched` is the UTC day, `YYYY-MM-DD`, on which `start`, `attach`,
-  `advance`, `plan`, `resume` or `prototype` last wrote the change. `sync`,
-  `drop`, `pause` and `verdict` leave it as it is.
-- `route`: `owner` (nobody else owns a CODEOWNERS pattern), `ask-first`
-  (someone else does) or `unowned` (no CODEOWNERS pattern names anyone).
-- `mount`, `plan` and each of `records` are references, so `board check`
-  reports one that reaches nothing.
+- `mount` references the repository's `board/mount/v1` record, and `plan`
+  the change's current `changes/plan/v1`, which `changes.plan` sets to
+  the plan it writes. `board check` reports a reference
+  that reaches nothing (`board::ref::dangling`) or a record of another type
+  (`board::ref::wrong_type`).
 - `tickets` references the `jira/issue/v1` or `github/issue/v1` records the
   change works on, and `pulls` its `github/pull/v1` records. The jira and
-  github plugins write those records. `board check` reports a ticket or pull
-  that reaches nothing (`board::ref::dangling`) or a record of another type
-  (`board::ref::wrong_type`). `board refs <ticket>` lists the changes that
-  reference a ticket.
-- `issue` and `pull_request` are URLs. `head` is the commit under test and
-  review.
+  github plugins write those records; `board call github.ref --ref
+  owner/repo#number` writes a GitHub one. `board refs <ticket>` lists the
+  changes that reference a ticket.
 - `task` references the `tasks/task/v2` the change does. `start` always
   sets it; a change without one cannot leave `plan`.
-- `kind` is `build`, as when it is left out, or `prototype`. A prototype
-  answers `question` on branch `proto/<name>` and never lands. Its `state`
-  is `exploring` until `verdict`, one sentence, ends it as `settled` or
-  `abandoned`; `verdict_artifact` is the URL of the artifact version the
-  verdict means.
+- `head` is the commit under test and review.
+- `touched` is the UTC day, `YYYY-MM-DD`, on which `start`, `attach`,
+  `advance`, `plan`, `resume` or `prototype` last wrote the change. The WIP
+  limit reads it. `sync`, `drop`, `pause` and `verdict` leave it as it is.
+- `over_limit` is the reason given for the latest move into `build` past
+  the WIP limit, which `pr` puts in the pull request body.
+- `merge_commit_url` is the merge commit's GitHub page, which `sync` sets
+  when the pull request merged. `dropped_reason` is why the change was
+  dropped, which `sync` and `drop` set. `next` shows both.
+- `route`: `owner` (nobody else owns a CODEOWNERS pattern), `ask-first`
+  (someone else does) or `unowned` (no CODEOWNERS pattern names anyone).
 
 `changes/plan/v1` at `/changes/<name>/plans/<stamp>.json`, beside its text
-at `<stamp>.md`. The newest stamp is the change's current plan.
+at `<stamp>.md`. The plan the change's `plan` names is its current plan,
+and every reader of the plan, the gates and `brief` among them, reads
+that one record.
 
 ```json
 {
   "$type": "changes/plan/v1",
   "text": "/changes/suite-timeout/plans/20261101T120000000000Z.md",
   "uses": ["/repos/board/STANDARDS.md", "/controls/rules/pair-refusals", "/evals/board-standards-selection"],
-  "paths": ["/repos/board/plugins/changes/**", "/repos/board/docs/plugins.md"]
+  "paths": ["/repos/board/plugins/changes/**", "/repos/board/docs/plugins.md"],
+  "records": ["/suites/board-tests/runs/20261025T101500Z-a3f9"]
 }
 ```
 
-- `text` and each of `uses` are references. `uses` names the standards
-  documents, controls, decisions, evals and other changes the plan relies
-  on.
+- `text`, each of `uses` and each of `records` are references. `uses`
+  names the standards documents, controls, decisions, evals and other
+  changes the plan relies on.
 - `paths` holds the files and SQLite `GLOB` patterns, by logical path, that
   the change will edit, in which `*` also matches `/`. A build change's plan
   always has them; a prototype's plan has none.
+- `records` lists the runs, reviews, decisions and other records `attach
+  --ref` attached while this plan was the change's plan. The records a change owns
+  are those every one of its plans lists.
 
-`changes/sync/v1` at `/changes/sync.json` holds `synced`, the UTC day the
-last sync that wrote ran.
+`changes/prototype/v1` at `/changes/<name>/prototype.json` makes the change
+a prototype, and its path names the change. A prototype answers
+`question` on branch `proto/<name>` and never lands. `verdict`, one
+sentence, ends it in `done` when settled or in `dropped` when abandoned;
+`verdict_artifact` is the URL of the artifact version the verdict means.
+The change's phase gives the prototype's state, which `open` reports:
+`settled` when done, `abandoned` when dropped and `exploring` otherwise.
+A change with nothing at `<path>/prototype` is a build change. When
+something is there that Board does not read as a prototype record,
+whether the change is a prototype is not known: `next`, `advance`, `plan`
+and `pr` refuse with `changes::change::degraded`, `open` counts the
+change as unreadable, the WIP limit counts it with the prototypes, and
+the write guard refuses the builder's edits.
 
 ```json
-{"$type": "changes/sync/v1", "synced": "2026-11-04"}
+{
+  "$type": "changes/prototype/v1",
+  "question": "Does a step list read better than a graph?"
+}
 ```
 
-`changes/understanding/v1`, by convention at
-`/changes/<name>/understanding/<subject>`, records how the owner showed he
-understands a change's `data` or `ux`: the play-back and his corrections,
-each question with its round, kind (`predict`, `choose`, `explain` or
-`edge`), his answer and whether it matched the plan, each mismatch and
-whether the plan or his expectation changed to settle it, what was parked,
-and the questions asked again before review. The `understanding-check`
-skill in `claude-code/skills/` runs the check.
+`changes/understanding/v1` at `/changes/<name>/understanding/<subject>`
+records how the owner showed he understands a change's `data` or `ux`.
+Each of `questions` holds the `question`, the owner's `answer` in his own
+words, and the `design`'s answer, and may say its `kind` (`predict`,
+`choose`, `explain` or `edge`) and whether the answers `matches`.
+`rechecks` holds the questions asked again before review. The
+`understanding-check` skill in `claude-code/skills/` runs the check.
+
+The day of the last sync lives in Board's cache, keyed by the path of the
+board's checkout, so the stale warning is per checkout: another clone or
+worktree of the board, or a cleared cache, reports `changes::sync::stale`
+until a sync runs there. When the cache does not take the day, `sync` and
+`migrate` say why in `unrecorded`.
+
+`migrate [--apply true]` rewrites change records of the shape before this
+split: it moves `records` to the plan the change names, a prototype's fields to its
+prototype record and a `/changes/sync` day to the cache, and records each
+GitHub `pull_request` or `issue` URL through `github.ref`, which needs the
+github plugin enabled. Without `--apply` it writes nothing and says what
+it would. Both check each rewritten record against its schema. `left`
+lists each change and understanding check it leaves as it is, with why:
+
+- a field no shape has;
+- a rewritten record that fails its schema;
+- a prototype record already at `<change>/prototype` that Board does not
+  read, or whose question or verdict differs from the old change's;
+- with `page`, a GitHub page that `github.ref` refused, such as one GitHub
+  answers with 404. `recorded` lists the github records already written for
+  the change's earlier pages; they stay, and the next run uses them.
+
+The rest migrate. A failure of gh itself, such as gh being signed out or
+offline, says nothing about the page, so migrate stops with
+`changes::migrate::gh_failed` and says to check `gh auth status`. A
+refusal from Board itself, such as the github plugin not being enabled,
+also stops it. Either stops it before it writes the changes, and the next
+run keeps the github records already written.
 
 ## Capabilities
 
@@ -113,13 +156,15 @@ skill in `claude-code/skills/` runs the check.
 - `next --path /changes/<name>`: read-only. The phase, each gate check as
   `pass` or `missing` with a detail, the instruction, and `sync`.
 - `sync` in the output of `open` and `next` is `{synced, stale, code,
-  command}`: the day in `/changes/sync.json`, or null; `stale` when that is
+  command}`: the day of the last sync, or null; `stale` when that is
   before today in UTC or null, with `code` `changes::sync::stale`; and
   `command`, `board call changes.sync`. Neither runs gh, so both stay
   read-only and work offline.
-- `attach --path /changes/<name> [--ref <path>] [--ticket <path>] [--pull <path>] [--task <path>] [--route <route>] [--head <sha>] [--issue <url>] [--pull-request <url>]`
+- `attach --path /changes/<name> [--ref <path>] [--ticket <path>] [--pull <path>] [--task <path>] [--route <route>] [--head <sha>]`
   adds a reference once or sets the fields. `--task` sets `task`, and must
-  be a `tasks/task/v2`. `--ref` adds to `records`,
+  be a `tasks/task/v2`. `--ref` adds to the `records` of the plan the change names, and
+  refuses a change whose `plan` names no plan record
+  (`changes::attach::no_plan`).
   `--ticket` to `tickets` and `--pull` to `pulls`. Refuses a reference that
   reaches nothing (`changes::ref::dangling`), and a ticket or pull that is
   not a record of a type its list accepts (`changes::ref::wrong_type`).
@@ -157,15 +202,14 @@ skill in `claude-code/skills/` runs the check.
   | `status` | When | What sync does | `code` |
   | --- | --- | --- | --- |
   | `merged` | GitHub says it merged | `to` is `done`, and `merge_commit_url` is set; `detail` says when the change left `build` or `review`, whose gates it did not pass | none |
-  | `owed` | It merged, but a `tasks/task/v2` that `records` reaches, through any link, is not done or dropped | Leaves it; `detail` names the tasks | `changes::sync::owed` |
+  | `owed` | It merged, but a `tasks/task/v2` that its plans' `records` reach, through any link, is not done or dropped | Leaves it; `detail` names the tasks | `changes::sync::owed` |
   | `closed` | It closed without merging | `to` is `dropped`, and `dropped_reason` says so with the day it closed | none |
   | `open` | It is open | Leaves it | none |
   | `not_found` | GitHub answers 404, which it also answers when gh's account cannot see the repository | Leaves it; `detail` says to check `gh auth status`, and `command` drops it | `changes::sync::pull_not_found` |
-  | `not_github` | `pull_request` is not a github.com pull request URL | Leaves it; `command` records another URL | `changes::sync::not_github` |
+  | `pull_unreadable` | The newest of `pulls` is not a `github/pull/v1` record Board reads | Leaves it; `command` attaches another | `changes::sync::pull_unreadable` |
   | `no_pull_request` | The change records no pull request | Leaves it; `command` resumes it when it has a `head`, else drops it | `changes::sync::no_pull_request` |
 
-  Every move, and `/changes/sync.json` with today's day, is written in one
-  commit. With `--dry_run true` nothing is written. When gh fails in any
+  Every move is written in one commit, and today's day goes to the cache. With `--dry_run true` nothing is written. When gh fails in any
   other way, cannot run, runs past 20 seconds, or the gh calls together run
   past 540 seconds, sync refuses with
   `changes::sync::gh_failed` and writes nothing. A merged change moves to `done`
@@ -177,14 +221,14 @@ skill in `claude-code/skills/` runs the check.
 - `open [--kind build|prototype] [--limit <n>]`: read-only. Changes not
   `done` or `dropped`, by path, at most 100 by default, with `total`,
   `truncated`, `unreadable` and `sync`. Each names its `task` and `kind`, and a
-  prototype also its `question`, `state`, `verdict`, `verdict_artifact` and
-  `branch`. `--kind` keeps one kind; `--kind prototype` also lists the
+  prototype also its `question`, `state` (from its phase), `verdict`,
+  `verdict_artifact` and `branch`. `--kind` keeps one kind; `--kind prototype` also lists the
   settled and abandoned prototypes, since their verdicts are what is looked
   for.
 - `prototype --mount /repos/<name> --question '<question>' --parent <task> [--title '<title>'] [--name <name>]`
   adds the prototype's task under `--parent` through `board call tasks.add
-  --parent`, in the parent's repo. It writes a `kind: prototype` change in
-  `build`, `state: exploring`, whose plan is the question, and returns
+  --parent`, in the parent's repo. It writes a change in `build`, its prototype
+  record with its question, and a plan whose text is the question, and returns
   `path`, `task`, `branch` and the `brief` its one builder starts from. The
   owner then iterates with that builder for as many rounds as he likes.
   The task is added before the change is written, so a refused write leaves
@@ -223,7 +267,7 @@ skill in `claude-code/skills/` runs the check.
   standards from each directory's `index.md` stayed within it.
 - `brief --path /changes/<name>`: read-only. `brief_line`,
   `board-brief: /changes/<name>`, which comes first; a builder's first
-  message starts with it (see "The write guard"). The newest plan's text path,
+  message starts with it (see "The write guard"). The text path of the plan the change names,
   even once a reference in it breaks,
   `rules`, each control that applies to the plan's `paths`, once, from
   `controls.for-paths`: its `control`, its `summary` and at most three of
@@ -260,7 +304,10 @@ path or `file://` URL, is followed to that clone's origin, through at most
 three clones. Two mounts of one repository count together, even from two
 clones. A clone whose origin git cannot read is keyed by its path, a chain
 of local clones that runs out by its last clone, and a mount Board cannot
-resolve by the mount. Each git read has 10 s. A prototype in `build` is always `exploring`,
+resolve by the mount. Origins are read from each clone's git config, and
+never from a repository around a directory that is not one. Each `git log`
+has 10 s, and all of them 20 s; past that the move is refused with
+`changes::wip::timeout`. A prototype in `build` is always `exploring`,
 because `verdict` moves it out of `build` in the same write that sets its
 state. A paused change holds no place. Only the board's own changes, under
 `/changes/`, count. A change is active when the newest of these days is
@@ -270,7 +317,7 @@ one of the last N days, in UTC, today included; with N at 3 on
 - `touched`;
 - the day its `head` was committed, by `git log -1` on that head in the
   repository its mount names, so git resolves an abbreviated head;
-- the day a `runs/run/v1` that its `records` reach, through any link,
+- the day a `runs/run/v1` that its plans' `records` reach, through any link,
   `finished`.
 
 A review report has no day of its own, so a review keeps a change active
@@ -309,9 +356,9 @@ Board marks degraded satisfies nothing.
 | Leaving | Gate |
 | --- | --- |
 | plan | Each plan section has text, `task` is set, and `route` is set. On `ask-first`, also a `plans/decision/v1` whose `refs` name the plan or the change. Any such decision passes, including a rejection. Then `ux`, `neighbours` and `data`, below. |
-| build | Every attached `tasks/task/v2` is `done` or `dropped`. A repeating task never reaches `done`, so drop it to release the gate. An attached `runs/run/v1` under `<suite>/runs/` of the check suite is full, clean, has no `fail` or `error`, and names `head` in `versions`. Each attached `changes/understanding/v1` of this change holds at least two `rechecks`, and every one of them matched. |
+| build | Every attached `tasks/task/v2` is `done` or `dropped`. A repeating task never reaches `done`, so drop it to release the gate. An attached `runs/run/v1` under `<suite>/runs/` of the check suite is full, clean, has no `fail` or `error`, and names `head` in `versions`. Each attached `changes/understanding/v1` of this change holds at least two `rechecks`, and every one of them matched; an attached understanding check that Board does not read fails the check. |
 | review | An attached `review/report/v1` whose `range` ends at `head`, whose `verdict` is not `changes`, and which has no `critical` or `high` finding. Then `paths`, below. |
-| land | `pull_request` is set. Advancing enters `done`. |
+| land | The newest of `pulls` reads as a `github/pull/v1` record. Advancing enters `done`. |
 | build, for a prototype | Never passes: `verdict` ends a prototype instead. |
 
 The plan gate's last three checks:
@@ -345,7 +392,7 @@ the change. The check fails, saying why, when the change has no head,
 when nothing is at its mount, when its mount is a plain directory ("<mount>
 is not a mount"), and when git cannot give the diff. A rename counts as
 deleting one path and adding another. Each file it lists, by its path under the mount, must match one of
-the newest plan's `paths` with SQLite's `GLOB`. Otherwise `advance` refuses
+the `paths` of the plan the change names with SQLite's `GLOB`. Otherwise `advance` refuses
 with `changes::paths::outside_plan` and names the files, because their
 rules were not in the brief. Update the plan's paths with `plan`, or revert
 the edit. A plan with no paths, no report on `head`, or a diff git cannot
@@ -368,7 +415,8 @@ digits.
   quoted for a POSIX shell. Run it from a checkout of the repository on the
   change's `head`. The title is the change's `title` with its whitespace
   collapsed to single spaces.
-- `pull_request`: when the change records one, its URL. `command` is then
+- `pull_request`: when the newest of `pulls` is a `github/pull/v1`, its
+  `url`. `command` is then
   `null` and `pr.md` is not written.
 - `unreadable`: the references that reach nothing or that Board marks
   degraded.
@@ -385,7 +433,8 @@ broken reference of its own is still read.
 | What the tests do not prove | The plan's section of that name, then each run's limits: targeted, not clean, not on `head`, and each case that failed, errored or was skipped. Says so when no run is attached. |
 | Review | Each attached `review/report/v1`: verdict, author, range, findings by severity. |
 | Evidence | The change, the plan, and every reference with its type (`file` for a file that is not a record, `directory` for a directory), or the code that hid it. |
-| `Closes <issue>` | The change's `issue`, when set. |
+| Work in progress | The change's `over_limit`, when set. |
+| `Closes <issue>` | The `url` of each `github/issue/v1` in `tickets`. |
 
 Plan headings match without case. A plan section holds its subsections, and
 a `#` line inside a code fence is not a heading. An empty plan section
@@ -394,8 +443,8 @@ Text from a referenced record is put on one line, so it cannot add a heading
 or a list item. Paths and free text (a run's suite and summary, a case and
 its note, a report's author) go in inline code; empty text shows as
 `(empty)`. Each run names at most 20 failed, errored or skipped cases and
-counts the rest. `Closes` is left out when the
-issue holds whitespace. Evidence is listed by logical path, since a board path
+counts the rest. `Closes` is left out for a
+`url` that holds whitespace. Evidence is listed by logical path, since a board path
 has no URL.
 
 ## The write guard
@@ -430,13 +479,19 @@ every Edit, Write and NotebookEdit. Install it with
 4. It reads that change from each board that mounts the repository. It
    admits the call when the change's `phase` is `build` and its `mount` is the
    mount that holds the file; a paused change is refused and told to
-   resume. For a prototype, the file's checkout must also
-   be on branch `proto/<name>`.
+   resume. It then reads `<change>/prototype` with `board get`, and when a
+   prototype record is there it asks `board check --healthy` whether Board
+   reads it, because `board get` prints a degraded record as it prints a
+   valid one. When a readable prototype record is there, the file's
+   checkout must also be on branch `proto/<name>`. When the record there is
+   degraded or of another type, the edit is refused with
+   `changes::guard::unknown`.
 
 Before any of that, the guard refuses three kinds of file to every agent,
 brief or not, because they change only through board commands: the board
-config, each known board's change records (`changes/<name>.json`) and its
-mount records. A change's plan, `changes/<name>/plan.md`, stays writable.
+config, each known board's change records (`changes/<name>.json`, its
+`prototype.json` and its `plans/<stamp>.json`) and its mount records. A
+plan's text, `changes/<name>/plans/<stamp>.md`, stays writable.
 
 Each refusal names one code and what fixes it:
 
@@ -489,23 +544,20 @@ capabilities instead.
 
 ## Installing
 
-    uv sync --frozen --no-dev
-    ln -s "$PWD" "${XDG_DATA_HOME:-$HOME/.local/share}/board/plugins/changes"
-    board plugin enable changes
-
-Enabling writes the schema to `.board/types/changes/` and names the
-plugin in `.board/board.json`. The type stays at v1 and changes in place while
-the plugin has one user; after such a change, enable it again.
-
-## Developing
-
-The gates, which CI runs: `uv run ruff format --check .`, `uv run ruff check .`,
-`uv run pyright` and `uv run pytest`. The tests drive `$BOARD_BIN`, by default
-the workspace's `target/debug/board`, so build it first with
-`cargo build -p board-cli`. `plugin.json` and the shipped schema are generated
-from `src/board_changes/models.py` by `board_changes.manifest`, and
-a test checks that the committed files match.
+Run `board plugin enable changes` in a board. Enabling writes the schemas to
+`.board/types/changes/` and names the plugin in `.board/board.json`. The type
+stays at v1 and changes in place while the plugin has one user; after such a
+change, enable it again.
 
 `start`, `prototype` and `verdict` call the tasks plugin through a nested
 `board call`, which syncs and pushes a notes repo, so each may run for 120
 seconds instead of Board's default limit.
+
+## Tests
+
+`crates/board-cli/src/tests/built_in/changes.rs` and its modules run the
+`board` binary in process against real git repositories mounted beside the
+board and a stand-in gh. They are the former pytest suite. The crate's own
+tests cover the gates, the WIP limit's window and origin forms, the pull
+request body, the brief's fitting of rules, and the manifest and its
+committed schemas.

@@ -1,0 +1,96 @@
+{
+  "$defs": {
+    "Asked": {
+      "additionalProperties": false,
+      "description": "One question of an understanding check, the owner's answer and the\ndesign's.",
+      "properties": {
+        "answer": {
+          "description": "The owner's answer, in his own words.",
+          "minLength": 1,
+          "type": "string",
+          "x-board-prose": true
+        },
+        "design": {
+          "description": "What the design says the answer is.",
+          "minLength": 1,
+          "type": "string",
+          "x-board-prose": true
+        },
+        "kind": {
+          "description": "The kind of question.",
+          "enum": [
+            "predict",
+            "choose",
+            "explain",
+            "edge"
+          ],
+          "type": "string"
+        },
+        "matches": {
+          "description": "Whether the owner's answer matches the design.",
+          "type": "boolean"
+        },
+        "question": {
+          "description": "The question, as asked.",
+          "minLength": 1,
+          "type": "string",
+          "x-board-prose": true
+        }
+      },
+      "required": [
+        "question",
+        "answer",
+        "design"
+      ],
+      "title": "Asked",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "`changes/understanding/v1`: the owner's answers to a check that he\nunderstands a change's data or UX.\n\nIt lives at `/changes/<name>/understanding/<subject>`. The owner's\nsign-off decision references it in its `refs`.",
+  "properties": {
+    "$type": {
+      "const": "changes/understanding/v1",
+      "description": "The record's type.",
+      "type": "string"
+    },
+    "change": {
+      "description": "The change whose design was checked.",
+      "format": "board-ref",
+      "type": "string",
+      "x-board-type": "changes/change/v1"
+    },
+    "questions": {
+      "description": "Each question asked, in order.",
+      "items": {
+        "$ref": "#/$defs/Asked"
+      },
+      "minItems": 1,
+      "type": "array"
+    },
+    "rechecks": {
+      "description": "Predict or edge questions asked again, worded differently, before\nreview; the build gate wants two that match.",
+      "items": {
+        "$ref": "#/$defs/Asked"
+      },
+      "type": "array"
+    },
+    "subject": {
+      "description": "What was checked: the design's data or its UX.",
+      "enum": [
+        "data",
+        "ux"
+      ],
+      "type": "string"
+    }
+  },
+  "required": [
+    "$type",
+    "change",
+    "subject",
+    "questions"
+  ],
+  "title": "UnderstandingRecord",
+  "type": "object",
+  "x-board-folder": "/changes/{change}/understanding/"
+}

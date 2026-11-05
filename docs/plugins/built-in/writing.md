@@ -1,7 +1,7 @@
 # Writing a built-in plugin
 
 This file holds detail for docs/plugins/built-in.md. `artifacts`, `boundary`,
-`controls`, `evals`, `github`, `jira`, `notes`, `plans`, `prompts`, `requests`, `review`, `runs`,
+`changes`, `controls`, `evals`, `github`, `jira`, `notes`, `plans`, `prompts`, `requests`, `review`, `runs`,
 `share` and `tasks` are built-in crates; `controls` (#48) shows a Python plugin ported
 with its output, messages and codes unchanged.
 

@@ -32,6 +32,36 @@ const MISSING = JSON.stringify({
   data: [],
   failures: [{ key: '/changes/fix-it', code: 'board::path::not_found', message: 'nothing is at /changes/fix-it' }],
 })
+const notFound = (key: string) =>
+  JSON.stringify({
+    schema: 'board/get-report/v2',
+    data: [],
+    failures: [{ key, code: 'board::path::not_found', message: `nothing is at ${key}` }],
+  })
+const PROTOTYPE = report('board/get-report/v2', [
+  { record: { $type: 'changes/prototype/v1', question: 'Does a step list read better?' } },
+])
+// What Board prints for a prototype record that fails its schema: `get`
+// prints it as it prints a valid one and exits 0, and `check --healthy`
+// reports it degraded and exits 1.
+const DEGRADED_PROTOTYPE = report('board/get-report/v2', [
+  { record: { $type: 'changes/prototype/v1', question: 'Does a step list read better?', unknown: true } },
+])
+const checked = (entry: object) =>
+  JSON.stringify({
+    schema: 'board/check-report/v2',
+    data: [{ kind: 'record', logical: '/changes/fix-it/prototype', path: 'changes/fix-it/prototype.json', source: 'worktree', ...entry }],
+    total: 1,
+    truncated: false,
+  })
+const HEALTHY = checked({ status: 'ok' })
+const DEGRADED_CHECK = checked({
+  status: 'degraded',
+  code: 'board::record::invalid',
+  reason: "fails its schema at its root: Additional properties are not allowed ('unknown' was unexpected)",
+})
+// A record of another type at <change>/prototype.
+const OTHER_TYPE = report('board/get-report/v2', [{ record: { $type: 'tasks/task/v2', title: 'x' } }])
 const DEGRADED = JSON.stringify({
   schema: 'board/get-report/v2',
   data: [],
@@ -58,7 +88,10 @@ const FILES = new Set([
   CONFIG,
   `${HOME}/.config/board/notes.txt`,
   `${BOARD}/changes/fix-it.json`,
-  `${BOARD}/changes/fix-it/plan.md`,
+  `${BOARD}/changes/new.json`,
+  `${BOARD}/changes/fix-it/prototype.json`,
+  `${BOARD}/changes/fix-it/plans/20261105T120000Z.json`,
+  `${BOARD}/changes/fix-it/plans/20261105T120000Z.md`,
   `${BOARD}/repos/widgets.json`,
   `${BOARD}/repos/README.md`,
 ])
@@ -97,6 +130,10 @@ type Answers = {
   first?: Record<string, string>
   /** How many entries each conversation's window holds; 2 when left out. */
   entries?: number
+  /** What `board get` prints for the change's `<change>/prototype`; nothing there when left out. */
+  prototype?: string
+  /** What `board check --healthy` prints for `<change>/prototype`; HEALTHY when left out. */
+  checked?: string
   /** What `board get` prints for the change, by board; BUILDING when left out. */
   change?: string
   changes?: Record<string, string>
@@ -157,7 +194,16 @@ function engine(on: On, answers: Answers) {
       ran.push(`query ${args[0]}`)
       return answers.queryFails ? run(2, '', 'board: the index could not be built') : run(0, MOUNTS)
     }
+    if (script.includes('check --healthy')) {
+      ran.push(`check ${args[0]} ${args[1]}`)
+      const health = answers.checked ?? HEALTHY
+      return run(health === HEALTHY ? 0 : 1, health)
+    }
     ran.push(`get ${args[0]} ${args[1]}`)
+    if (args[1]?.endsWith('/prototype')) {
+      const held = answers.prototype ?? notFound(args[1])
+      return run(answers.prototype === undefined ? 1 : 0, held)
+    }
     const printed = answers.changes?.[args[0] ?? ''] ?? answers.change ?? BUILDING
     return run(printed === MISSING || printed === DEGRADED ? 1 : 0, printed)
   })
@@ -191,7 +237,13 @@ test('a subagent started from the brief of a change in build edits its repositor
   const done = await edit($, FILE, 'a1')
   expect(done.deny).toBeUndefined()
   expect(edits).toEqual(['Edit'])
-  expect(ran).toEqual(['git', 'config', `query ${BOARD}`, `get ${BOARD} /changes/fix-it`])
+  expect(ran).toEqual([
+    'git',
+    'config',
+    `query ${BOARD}`,
+    `get ${BOARD} /changes/fix-it`,
+    `get ${BOARD} /changes/fix-it/prototype`,
+  ])
 })
 
 test('a main session without a brief is refused an edit of a mounted repository', async ($, on) => {
@@ -251,8 +303,8 @@ test('a brief for a change to another repository is refused, and one for this re
 })
 
 test('a prototype builder is refused off its proto branch and admitted on it', async ($, on) => {
-  const prototype = change({ mount: '/repos/widgets', phase: 'build', kind: 'prototype' })
-  const answers: Answers = { first: { a1: BRIEF }, change: prototype, branch: 'main' }
+  // A change is a prototype when a prototype record sits at <change>/prototype.
+  const answers: Answers = { first: { a1: BRIEF }, prototype: PROTOTYPE, branch: 'main' }
   const { edits } = engine(on, answers)
   expect((await edit($, FILE, 'a1')).deny).toBe(
     `changes::guard::wrong_branch: /changes/fix-it is a prototype, and its builder may edit ${FILE} only on ` +
@@ -264,6 +316,31 @@ test('a prototype builder is refused off its proto branch and admitted on it', a
   answers.branch = 'proto/fix-it'
   expect((await edit($, FILE, 'a1')).deny).toBeUndefined()
   expect(edits).toEqual(['Edit'])
+})
+
+test('a prototype record Board does not read refuses the edit, and with none there the change builds', async ($, on) => {
+  const answers: Answers = {
+    first: { a1: BRIEF },
+    prototype: DEGRADED_PROTOTYPE,
+    checked: DEGRADED_CHECK,
+    branch: 'proto/fix-it',
+  }
+  const { ran, edits } = engine(on, answers)
+  expect((await edit($, FILE, 'a1')).deny).toMatch(
+    /`board -C \/home\/me\/board check --healthy \/changes\/fix-it\/prototype` failed with board::record::invalid: fails its schema/,
+  )
+  expect(ran).toContain(`check ${BOARD} /changes/fix-it/prototype`)
+  // The same record when Board reads it admits the builder on its branch.
+  delete answers.checked
+  answers.prototype = PROTOTYPE
+  expect((await edit($, FILE, 'a1')).deny).toBeUndefined()
+  // A record of another type there is refused too.
+  answers.prototype = OTHER_TYPE
+  expect((await edit($, FILE, 'a1')).deny).toMatch(/failed with it holds a tasks\/task\/v2, not a changes\/prototype\/v1/)
+  answers.branch = 'proto/other'
+  delete answers.prototype
+  expect((await edit($, FILE, 'a1')).deny).toBeUndefined()
+  expect(edits).toEqual(['Edit', 'Edit'])
 })
 
 test('a build change is admitted on any branch', async ($, on) => {
@@ -449,7 +526,11 @@ test('with two boards the change is read from the one that holds it', async ($, 
   const { ran, edits } = engine(on, { first: { a1: BRIEF }, config, changes: { [BOARD]: MISSING, [BOARD2]: BUILDING } })
   expect((await edit($, FILE, 'a1')).deny).toBeUndefined()
   expect(edits).toEqual(['Edit'])
-  expect(ran.filter(r => r.startsWith('get'))).toEqual([`get ${BOARD} /changes/fix-it`, `get ${BOARD2} /changes/fix-it`])
+  expect(ran.filter(r => r.startsWith('get'))).toEqual([
+    `get ${BOARD} /changes/fix-it`,
+    `get ${BOARD2} /changes/fix-it`,
+    `get ${BOARD2} /changes/fix-it/prototype`,
+  ])
 })
 
 test('a brief kept for the main conversation does not outlive /clear or /resume', async ($, on) => {
@@ -484,7 +565,7 @@ test('the board config is refused to every agent, and another file beside it is 
   expect(edits).toEqual(['Write'])
 })
 
-test('a change record is refused to every agent, and its plan is admitted', async ($, on) => {
+test("a change's records are refused to every agent, and its plan's text is admitted", async ($, on) => {
   const { edits } = engine(on, { first: { a1: BRIEF } })
   for (const agent of [undefined, 'a1']) {
     expect((await edit($, `${BOARD}/changes/fix-it.json`, agent)).deny).toBe(
@@ -493,8 +574,10 @@ test('a change record is refused to every agent, and its plan is admitted', asyn
         'or `changes.advance`, or `board put` to drop a change.',
     )
   }
-  expect((await edit($, `${BOARD}/changes/new.json`)).deny).toMatch(/^changes::guard::board_record: /)
-  expect((await edit($, `${BOARD}/changes/fix-it/plan.md`)).deny).toBeUndefined()
+  for (const record of ['new.json', 'fix-it/prototype.json', 'fix-it/plans/20261105T120000Z.json']) {
+    expect((await edit($, `${BOARD}/changes/${record}`)).deny).toMatch(/^changes::guard::board_record: /)
+  }
+  expect((await edit($, `${BOARD}/changes/fix-it/plans/20261105T120000Z.md`)).deny).toBeUndefined()
   expect(edits).toEqual(['Edit'])
 })
 

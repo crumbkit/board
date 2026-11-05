@@ -1588,3 +1588,31 @@ fn a_board_whose_configuration_is_a_dangling_symlink_names_the_symlink_and_one_t
     dangling.write(".board/config.json", Item::File(CONFIG));
     assert!(Board::open(dangling.workdir(), None).is_ok());
 }
+
+/// A reference typed to `board/mount/v1` names a repository by its mount,
+/// so reaching a mounted board's root satisfies it and reaching a plain
+/// directory does not.
+#[test]
+fn a_reference_to_a_mounted_boards_root_is_of_its_mounts_type_and_one_to_a_directory_is_not() {
+    let scenario = board();
+    let mounted = Scenario::new();
+    let commit = mounted.commit(&[(".board/board.json", CONFIG)]);
+    let schema = r#"{"type": "object", "properties": {"mount": {"type": "string", "format": "board-ref", "x-board-type": "board/mount/v1"}}}"#;
+    scenario
+        .write(".board/types/lr/edit/v1.schema.json", Item::File(schema))
+        .write("repos/x.json", Item::File(&mount_of(&mounted, commit)))
+        .write("plain/README.md", Item::File("x"))
+        .write(
+            "mounted.json",
+            Item::File(r#"{"$type": "lr/edit/v1", "mount": "/repos/x"}"#),
+        )
+        .write(
+            "plain.json",
+            Item::File(r#"{"$type": "lr/edit/v1", "mount": "/plain"}"#),
+        );
+    assert_eq!(status(&scenario, "mounted.json"), Status::Ok);
+    assert_eq!(
+        status(&scenario, "plain.json"),
+        Status::Degraded(Code::RefWrongType)
+    );
+}

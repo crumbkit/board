@@ -41,9 +41,10 @@ knows what the plan does, and records what he showed.
    has changed it. Name anything out of scope and park it.
 7. **Record it.** Write one `changes/understanding/v1` at
    `/changes/<name>/understanding/<subject>` with `board put`: the change,
-   the subject (`data` or `ux`), the play-back, his corrections, each
-   question with its round, kind, his answer and whether it matched, each
-   mismatch and how it was settled, and what was parked. Attach it with
+   the subject (`data` or `ux`), and in `questions` each question with his
+   `answer` in his own words and the `design`'s answer, its `kind`, and
+   whether they `matches`. Settle each mismatch in the plan or in his
+   expectation before you write it. Attach it with
    `board call changes.attach --path /changes/<name> --ref <record>`.
 8. **Ask for the sign-off.** The owner signs a `plans/decision/v1` whose
    `refs` name the record. Attach that decision too. The plan gate refuses
@@ -51,8 +52,8 @@ knows what the plan does, and records what he showed.
 9. **Check again before review.** An answer given minutes after reading the
    plan can be short-term recall. Before the change moves to `review`, ask
    two of the predict or edge questions again, worded differently, and add
-   them to `rechecks`, each with its `kind`, his answer and whether it
-   matched. The build gate refuses with `changes::gate::unmet` until the
+   them to `rechecks`, each with its question, his answer, the design's
+   answer, its `kind` and whether it `matches`. The build gate refuses with `changes::gate::unmet` until the
    record holds two rechecks and every one matched. A wrong answer reopens
    the check for that part.
 

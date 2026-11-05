@@ -940,6 +940,25 @@ fn a_caller_repository_without_origin_says_why_as_git_would_and_its_twin_with_on
 }
 
 #[test]
+fn a_clones_origin_is_read_at_the_clone_itself_and_a_directory_inside_another_repository_has_none()
+{
+    let repository = Scenario::new();
+    let config = "[remote \"origin\"]\n\turl = https://github.com/acme/x\n";
+    repository.write(".git/config", Item::Appended(config));
+    repository.write("inner/a.txt", Item::File("a"));
+    let origin = |directory: &std::path::Path| Caller::at(None).clone_origin(directory);
+    assert_eq!(
+        origin(repository.workdir()),
+        Origin::Url("https://github.com/acme/x".to_owned())
+    );
+    assert_eq!(origin(&repository.workdir().join("inner")), Origin::Outside);
+    assert_eq!(
+        Caller::at(Some(&repository.workdir().join("inner"))).caller_remote(),
+        Origin::Url("https://github.com/acme/x".to_owned())
+    );
+}
+
+#[test]
 fn a_cache_place_is_plain_names_under_the_cache_home_and_none_without_one() {
     let mut settings = Settings {
         now: UNIX_EPOCH,

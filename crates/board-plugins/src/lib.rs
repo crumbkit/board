@@ -9,6 +9,8 @@ pub const BUILT_IN: BuiltIn = BuiltIn(&[
     &board_plugin_artifacts::Artifacts,
     #[cfg(feature = "boundary")]
     &board_plugin_boundary::Boundary,
+    #[cfg(feature = "changes")]
+    &board_plugin_changes::Changes,
     #[cfg(feature = "controls")]
     &board_plugin_controls::Controls,
     #[cfg(feature = "evals")]

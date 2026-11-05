@@ -28,7 +28,7 @@ Each step leaves a valid board in its own commit.
 
 - It is an ordinary capability, conventionally `migrate`, whose input has
   `apply`, false by default.
-- For a plugin still in Python, the `board_plugin.migrate` module in
+- For a Python plugin, the `board_plugin.migrate` module in
   `python/board-plugin/` does the work:
   - `olds(board, types)` reads the records of `types` in the board's own
     tree that parse, each as an `Old` with its logical `path`, `blob` and

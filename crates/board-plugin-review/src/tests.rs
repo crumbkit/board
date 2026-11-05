@@ -142,24 +142,3 @@ fn a_report_with_no_findings_says_so_and_names_the_report_it_follows() {
     assert!(text.contains("\nNo findings.\n"), "{text}");
     assert!(text.contains("\nFollows /reviews/r0/report.\n"), "{text}");
 }
-
-/// The value of `name = <value>` in `source`, a Python module.
-fn constant<'a>(source: &'a str, name: &str) -> &'a str {
-    (source.lines())
-        .find_map(|line| line.strip_prefix(&format!("{name} = ")))
-        .unwrap()
-}
-
-#[test]
-fn the_changes_plugins_constants_that_covered_copies_agree_with_its_own() {
-    let gates = include_str!("../../../plugins/changes/src/board_changes/gates.py");
-    let change = include_str!("../../../plugins/changes/src/board_changes/change.py");
-    let blocking = BLOCKING
-        .map(|severity| format!("\"{severity}\""))
-        .join(", ");
-    assert_eq!(constant(gates, "BLOCKING"), format!("({blocking})"));
-    assert_eq!(
-        constant(change, "CHANGE_TYPE"),
-        format!("\"{CHANGE_TYPE}\"")
-    );
-}
