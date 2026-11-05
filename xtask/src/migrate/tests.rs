@@ -3,7 +3,7 @@ use std::path::Path;
 
 use serde_json::{Value, json};
 
-use super::rules::{self, Context, Outcome};
+use super::rules::{self, Context, MapError, Outcome};
 use super::{Options, run};
 
 fn context() -> Context {
@@ -39,7 +39,16 @@ fn old_actor_text_becomes_an_actor_with_the_parts_it_names() {
         ("claude", json!({"program": "claude-code"})),
         (
             "Luke, relayed by the session local_7455.",
-            json!({"session": "local_7455", "person": "luke"}),
+            json!({
+                "session": "local_7455",
+                "person": "luke",
+                "agent": "Luke, relayed by the session local_7455."
+            }),
+        ),
+        ("Luke", json!({"person": "luke"})),
+        (
+            "Codex in local_7455",
+            json!({"session": "local_7455", "program": "codex", "agent": "Codex in local_7455"}),
         ),
         ("odd one", json!({"person": "luke"})),
     ];
@@ -233,12 +242,13 @@ fn a_map_entry_outside_the_shapes_is_refused_by_its_key_and_its_twin_is_admitted
         (json!("pipecat"), json!("octo/pipecat")),
     ] {
         let error = Context::new(json!({"old": refused})).err();
-        assert_eq!(error.as_deref(), Some("old"), "{refused}");
+        assert_eq!(error, Some(MapError::Entry("old".into())), "{refused}");
         assert!(Context::new(json!({"old": admitted})).is_ok(), "{admitted}");
     }
 }
 
-/// A map file that is not a JSON object is refused before anything is
+/// A map file that is not a JSON object, or whose entry with an empty key
+/// maps to neither shape, is refused with its own code before anything is
 /// written, and an object map is admitted.
 #[test]
 fn a_map_file_that_is_not_an_object_is_refused_and_its_twin_is_admitted() {
@@ -249,8 +259,11 @@ fn a_map_file_that_is_not_an_object_is_refused_and_its_twin_is_admitted() {
         map: Some(board.path().join(format!("maps/{name}.json"))),
         ..Options::default()
     };
+    write(board.path(), "maps/blank.json", r#"{"": 5}"#);
     let refused = run(board.path(), &options("array")).unwrap_err();
     assert_eq!(refused.code(), "xtask::migrate::map_invalid");
+    let refused = run(board.path(), &options("blank")).unwrap_err();
+    assert_eq!(refused.code(), "xtask::migrate::map_entry_invalid");
     assert!(run(board.path(), &options("object")).is_ok());
 }
 
@@ -629,6 +642,28 @@ fn a_copy_of_a_real_board_migrates_and_a_second_run_changes_nothing() {
         .filter(|path| !unmapped.contains(*path))
         .collect();
     assert_eq!(new, Vec::<&String>::new());
+    // A record excused for an unmapped subject passes once that subject is
+    // a valid one, so no other field it holds is refused.
+    let values: Vec<(&str, &Value)> = (first["unmapped"].as_array().unwrap().iter())
+        .map(|entry| (entry["path"].as_str().unwrap(), &entry["value"]))
+        .collect();
+    for path in after
+        .difference(&before)
+        .filter(|path| path.ends_with(".json"))
+    {
+        let mut record: Value =
+            serde_json::from_str(&fs::read_to_string(board.join(&path[1..])).unwrap()).unwrap();
+        if let Some(Value::Array(subjects)) = record.get_mut("subjects") {
+            for subject in subjects {
+                if values.contains(&(path.as_str(), &*subject)) {
+                    *subject = json!("/unmapped");
+                }
+            }
+        }
+        let kind = record["$type"].as_str().unwrap_or_default().to_owned();
+        let refused = schemas[&kind].validate(&record).err();
+        assert!(refused.is_none(), "{path}: {refused:?}");
+    }
     let second = run(&board, &options).unwrap();
     assert_eq!(second["files"]["changed"], json!(0));
 }

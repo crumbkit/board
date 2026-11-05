@@ -16,6 +16,17 @@ pub(crate) enum Outcome {
     Unmapped(&'static str, String),
 }
 
+/// Why a `--map` file cannot be used.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum MapError {
+    /// The file is not a JSON object.
+    NotObject,
+    /// The entry with this key maps to neither an `Actor` nor a `Subject`.
+    Entry(String),
+    /// The shared shapes' schemas did not compile, so nothing can be checked.
+    Shapes,
+}
+
 /// The `--map` file: an old string to the value that replaces it, an actor
 /// object or a subject string.
 #[derive(Default)]
@@ -24,12 +35,11 @@ pub(crate) struct Context {
 }
 
 impl Context {
-    /// The map `map`, or the first key whose value is neither an `Actor` nor
-    /// a `Subject`, so a bad entry is refused before anything is written. A
-    /// map that is not a JSON object is refused with an empty key.
-    pub(crate) fn new(map: Value) -> Result<Self, String> {
+    /// The map `map`, refused before anything is written when it is not a
+    /// JSON object or an entry's value is neither an `Actor` nor a `Subject`.
+    pub(crate) fn new(map: Value) -> Result<Self, MapError> {
         let Value::Object(map) = map else {
-            return Err(String::new());
+            return Err(MapError::NotObject);
         };
         let shapes = board_plugin::shape::registry();
         let compiled = |name: &str| {
@@ -37,12 +47,12 @@ impl Context {
             board_validate::Schema::compile(schema).ok()
         };
         let (Some(actor), Some(subject)) = (compiled("Actor"), compiled("Subject")) else {
-            return Err(String::new());
+            return Err(MapError::Shapes);
         };
         for (key, value) in &map {
             let shape = if value.is_object() { &actor } else { &subject };
             if shape.validate(value).is_err() {
-                return Err(key.clone());
+                return Err(MapError::Entry(key.clone()));
             }
         }
         Ok(Self { map })
@@ -302,9 +312,9 @@ fn digest(
 
 /// The actor the old text names: its `local_` session, the program its
 /// words name (Codex, or Claude and its subagents), and Luke. The whole
-/// text is the agent's name when it names a program and is more than the
-/// program's name, or when it names no part at all. The map's entry for
-/// the text wins, and blank text names nobody.
+/// text is also the agent's name unless it is only a program's name, Luke's
+/// name or the session id, so no words are lost. The map's entry for the
+/// text wins, and blank text names nobody.
 pub(crate) fn actor(text: &str, context: &Context) -> Option<Value> {
     if let Some(mapped) = context.map.get(text).filter(|value| value.is_object()) {
         return Some(mapped.clone());
@@ -337,10 +347,14 @@ pub(crate) fn actor(text: &str, context: &Context) -> Option<Value> {
     if named("luke") {
         actor.insert("person".into(), json!("luke"));
     }
-    let bare = ["codex", "claude", "claude-code", "claude code"]
-        .contains(&text.trim().to_ascii_lowercase().as_str());
-    if (actor.contains_key("program") && !bare) || actor.is_empty() {
-        actor.insert("agent".into(), json!(text.trim()));
+    // The text is kept whole unless it is only the part it names, so no
+    // words of an old actor are lost.
+    let trimmed = text.trim();
+    let bare = ["codex", "claude", "claude-code", "claude code", "luke"]
+        .contains(&trimmed.to_ascii_lowercase().as_str())
+        || session.is_some_and(|session| trimmed == session.trim_end_matches('-'));
+    if !bare {
+        actor.insert("agent".into(), json!(trimmed));
     }
     Some(Value::Object(actor))
 }

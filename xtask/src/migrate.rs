@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 
 use serde_json::{Value, json};
 
-use self::rules::{Context, Outcome};
+use self::rules::{Context, MapError, Outcome};
 
 #[derive(Debug, Default)]
 pub(crate) struct Options {
@@ -59,6 +59,8 @@ pub(crate) enum MigrateError {
     MapEntry { path: PathBuf, key: String },
     #[error("the map {path} is not a JSON object of old strings to new values")]
     NotObject { path: PathBuf },
+    #[error("the shared shapes' schemas did not compile, so the map cannot be checked")]
+    Shapes,
 }
 
 impl MigrateError {
@@ -67,6 +69,7 @@ impl MigrateError {
             Self::Read { .. } => "xtask::migrate::unreadable",
             Self::Write { .. } => "xtask::migrate::unwritable",
             Self::Map { .. } | Self::NotObject { .. } => "xtask::migrate::map_invalid",
+            Self::Shapes => "xtask::migrate::shapes_invalid",
             Self::MapEntry { .. } => "xtask::migrate::map_entry_invalid",
         }
     }
@@ -83,12 +86,13 @@ pub(crate) fn run(board: &Path, options: &Options) -> Result<Value, MigrateError
                 path: path.clone(),
                 source,
             })?;
-            Context::new(map).map_err(|key| match key.as_str() {
-                "" => MigrateError::NotObject { path: path.clone() },
-                _ => MigrateError::MapEntry {
+            Context::new(map).map_err(|error| match error {
+                MapError::NotObject => MigrateError::NotObject { path: path.clone() },
+                MapError::Entry(key) => MigrateError::MapEntry {
                     path: path.clone(),
                     key,
                 },
+                MapError::Shapes => MigrateError::Shapes,
             })?
         }
         None => Context::default(),
