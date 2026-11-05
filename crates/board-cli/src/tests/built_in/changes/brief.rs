@@ -474,7 +474,10 @@ fn many_rules_leave_room_for_the_lines_of_the_records_the_plan_uses() {
         .map(|used| used["ref"].as_str().unwrap())
         .collect();
     assert_eq!(refs, uses);
-    assert_ne!(brief["rules"].as_array().unwrap().as_slice(), &[] as &[Value]);
+    assert_ne!(
+        brief["rules"].as_array().unwrap().as_slice(),
+        &[] as &[Value]
+    );
     assert!(spent(&brief) <= BRIEF_WORDS, "{}", spent(&brief));
 }
 

@@ -430,14 +430,14 @@ impl Changes {
     /// The code `board check <path>` gives the entry at `path`, or `None`
     /// when it is valid.
     fn code(&self, path: &str) -> Option<String> {
-        let report = self.json(&["check", path]);
+        let report = self.json(&["check", path, "--healthy"]);
         report["data"][0]["code"].as_str().map(str::to_owned)
     }
 
-    /// Each entry's code from `board check --all` whose path starts with
+    /// Each entry's code from `board check --healthy --all` whose path starts with
     /// `prefix`; `None` when it is valid.
     fn checked(&self, prefix: &str) -> BTreeMap<String, Option<String>> {
-        let report = self.json(&["check", "--all"]);
+        let report = self.json(&["check", "--healthy", "--all"]);
         (report["data"].as_array().unwrap().iter())
             .filter_map(|entry| {
                 let logical = entry["logical"].as_str()?;
