@@ -5,8 +5,10 @@
 
 use std::ffi::OsString;
 use std::path::PathBuf;
+use std::time::Instant;
 
-use board_model::Refusal;
+use board_model::{Code, Refusal, RefusalCode};
+use board_ops::Trace;
 use clap::Subcommand;
 use crumbkit::Sink;
 use crumbkit::commands::{self, COMMANDS_LIST, CommandsList};
@@ -67,20 +69,38 @@ Examples:
 /// with `call <plugin>.<capability>` for each capability of each plugin that
 /// the board at `start` enables, and a note for each enabled plugin it
 /// cannot read. Only `board commands` and `board schemas` read plugin
-/// manifests for it; outside a board they describe no capability, and
-/// their view stays `view`.
+/// manifests for it, and `trace` times the reading as `plugin.list`.
+/// Outside a board they describe no capability, and their view stays
+/// `view`; a board that does not open gets a note with the code why.
 pub(crate) fn grafted(
     arguments: &[OsString],
     context: &Context,
     start: Result<PathBuf, Box<Refusal>>,
     view: crumbkit::Output,
+    trace: &mut Trace,
 ) -> (Guide, Vec<String>, crumbkit::Output) {
+    let opening = Instant::now();
     let opened = start.and_then(|start| crate::run::open(context, &start));
-    let Ok((mut board, _)) = opened else {
-        return (GUIDE, Vec::new(), view);
+    trace.add("open", opening);
+    let mut board = match opened {
+        Ok((board, _)) => board,
+        Err(refusal) if refusal.code == RefusalCode::Board(Code::ConfigNotFound) => {
+            return (GUIDE, Vec::new(), view);
+        }
+        Err(refusal) => {
+            let note = format!(
+                "{}: the board cannot be opened, so no plugin capability is listed: {}",
+                refusal.code.as_str(),
+                refusal.message
+            );
+            return (GUIDE, vec![note], view);
+        }
     };
     board.build_in(context.built_in.0);
+    let listing = Instant::now();
     let (grafted, notes) = graft::enabled(&board, context.plugins.as_deref());
+    trace.add("plugin.list", listing);
+    trace.count("capabilities", grafted.len());
     let guide = graft::guide(&grafted);
     let (mut stdout, mut stderr) = (Vec::new(), Vec::new());
     let sink = &mut Sink::new(&mut stdout, &mut stderr);

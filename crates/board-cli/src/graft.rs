@@ -195,13 +195,21 @@ fn graft(name: &str, offered: &Capability) -> Grafted {
         [] => NO_STDIN.to_owned(),
         rest => format!("{STDIN} These properties go on stdin: {}.", rest.join(", ")),
     };
-    // A capability changes what it likes unless its hints say less, as
-    // the `call` leaf declares.
+    // MCP's hints, with MCP's defaults: a capability that declares none
+    // is destructive and open-world, as the `call` leaf declares.
     let hints = offered.annotations.clone().unwrap_or_default();
     let effects = match (hints.read_only_hint, hints.destructive_hint) {
         (Some(true), _) => Effects::read_only(),
-        (_, Some(false)) => Effects::additive().open_world(),
-        _ => Effects::destructive().open_world(),
+        (_, Some(false)) => Effects::additive(),
+        _ => Effects::destructive(),
+    };
+    let effects = match hints.idempotent_hint {
+        Some(true) => effects.idempotent(),
+        _ => effects,
+    };
+    let effects = match hints.open_world_hint {
+        Some(false) => effects,
+        _ => effects.open_world(),
     };
     Grafted {
         name: name.to_owned(),

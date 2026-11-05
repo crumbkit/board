@@ -456,7 +456,7 @@ pub(crate) fn run(
     let words = arguments.get(1..).unwrap_or_default();
     ran.command = Some(crumbkit::command_path(&Cli::command(), &GUIDE, words).join(" "));
     if let Command::Commands(_) | Command::Schemas(_) = cli.command {
-        return describe(&arguments, context, &cli, view);
+        return describe(&arguments, context, &cli, view, ran);
     }
     let printer = Printer { view };
     if cli.command.owner_only()
@@ -525,11 +525,13 @@ fn describe(
     context: &Context,
     cli: &Cli,
     view: crumbkit::Output,
+    ran: &mut Ran,
 ) -> Output {
     let base = cli.personal.then(|| context.personal());
     let base = base.unwrap_or_else(|| Ok(context.start.clone()));
     let start = base.and_then(|base| entered(&base, &cli.directories));
-    let (guide, notes, view) = crate::describe::grafted(arguments, context, start, view);
+    let (guide, notes, view) =
+        crate::describe::grafted(arguments, context, start, view, &mut ran.trace);
     let printer = Printer { view };
     match &cli.command {
         Command::Commands(command) => crate::describe::commands(printer, &guide, command, notes),
