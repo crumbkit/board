@@ -538,10 +538,16 @@ class Idle(Strict):
 
 
 class Limit(Strict):
-    """The WIP limit a move into build went past: the active changes holding places, the idle ones, the override."""
+    """The WIP limit a move into build went past: the active changes holding places, the idle ones, the override.
+
+    `repository` is the repository counted, by its origin's stored form, or by its clone or mount when there is
+    none; `unread` maps each mount whose origin git could not read to why.
+    """
 
     code: Literal["changes::wip::over_limit"]
     mount: str
+    repository: str
+    unread: dict[str, str]
     kind: Kind
     limit: int
     active_days: int

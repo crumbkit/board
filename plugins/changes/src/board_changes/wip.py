@@ -1,4 +1,9 @@
-"""The soft limit on work in progress: three active changes of a kind in build, per mount.
+"""The soft limit on work in progress: three active changes of a kind in build, per repository.
+
+A change's repository is the clone Board says its mount reads, keyed by that
+clone's origin in its stored form, so two mounts of one repository count
+together. A clone whose origin git cannot read is keyed by its path, and a
+mount Board cannot resolve by the mount itself.
 
 Build changes and prototypes are counted apart. A change counts while it is
 active: within the last `BOARD_CHANGES_ACTIVE_DAYS` days, 3 by default, a
@@ -11,13 +16,15 @@ warning.
 
 import json
 import os
+import re
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
-from typing import TypedDict, cast
+from typing import NamedTuple, TypedDict, cast
 
 from board_plugin.board import Board, literal
 from board_plugin.git import Failed, git
 from board_plugin.protocol import PluginError
+from board_plugin.repos import shown_remote
 
 from board_changes.change import CHANGE_TYPE, OWN, TREE_CODES, Change, kind_of, referenced
 
@@ -29,6 +36,13 @@ ACTIVE_DAYS_VARIABLE = "BOARD_CHANGES_ACTIVE_DAYS"
 RUN_TYPE = "runs/run/v1"
 # The warning a move past the limit carries.
 OVER_LIMIT = "changes::wip::over_limit"
+# A GitHub origin in a form `shown_remote` does not reduce, with any scheme, case, www or port; its path.
+GITHUB_URL = re.compile(r"^[a-z][a-z0-9+.-]*://(?:[^@/]+@)?(?:www\.)?github\.com(?::\d+)?/(.+)$", re.IGNORECASE)
+GITHUB_SCP = re.compile(r"^[^@/:]+@(?:www\.)?github\.com:(.+)$", re.IGNORECASE)
+# How many local clones an origin is followed through to the origin they follow.
+HOPS = 3
+# Seconds each git read the limit makes may take, well inside the plugin's 30 s.
+GIT_TIMEOUT = 10
 
 
 class Idle(TypedDict):
@@ -44,12 +58,59 @@ class Limit(TypedDict):
 
     code: str
     mount: str
+    repository: str
+    unread: dict[str, str]
     kind: str
     limit: int
     active_days: int
     active: list[str]
     idle: list[Idle]
     override: str
+
+
+class Repository(NamedTuple):
+    """Where a change's mount reads: the repository's key, and why git gave no origin for its clone."""
+
+    key: str
+    unread: str | None
+
+
+def stored(origin: str) -> str:
+    """`origin` as a repository is keyed by, in lower case: `owner/name` for GitHub, else as written."""
+    matched = GITHUB_URL.match(origin) or GITHUB_SCP.match(origin)
+    return shown_remote(f"https://github.com/{matched[1]}" if matched else origin).casefold()
+
+
+def local(origin: str) -> str | None:
+    """The clone a local origin names, as an absolute path or a file:// URL; else None."""
+    path = origin.removeprefix("file://")
+    return path if path.startswith("/") else None
+
+
+def followed(clone: str) -> Repository:
+    """The repository `clone` follows: its origin's stored form, through up to HOPS local clones."""
+    for hop in range(HOPS + 1):
+        url = git(clone, "remote", "get-url", "origin", timeout=GIT_TIMEOUT)
+        if isinstance(url, Failed) or not url.strip():
+            return Repository(clone, url.why if isinstance(url, Failed) else f"git gave {clone} an empty origin")
+        nearer = local(url.strip())
+        if nearer is None:
+            return Repository(stored(url.strip()), None)
+        if hop == HOPS:
+            return Repository(nearer, f"followed {HOPS} local clones to {nearer}, whose origin was not read")
+        clone = nearer
+    raise AssertionError  # the loop returns on its last hop
+
+
+def repositories(board: Board, mounts: list[str]) -> dict[str, Repository]:
+    """The repository each of `mounts` reads, by mount."""
+    # Each mount's location is all that is read, so one row of what reaches it is enough.
+    answers = board.refs(mounts, limit=1)
+    found: dict[str, Repository] = {}
+    for mount, answer in zip(mounts, answers, strict=True):
+        clone = (answer or {}).get("location", {}).get("repository")
+        found[mount] = followed(clone) if isinstance(clone, str) else Repository(mount, None)
+    return found
 
 
 def building(changes: list[Change], kind: str) -> list[Change]:
@@ -111,7 +172,7 @@ def committed(board: Board, changes: dict[str, Change]) -> dict[str, date]:
         repository = repositories.get(change["mount"])
         if "head" not in change or not isinstance(repository, str):
             continue
-        out = git(repository, "log", "-1", "--format=%ct", "--end-of-options", change["head"])
+        out = git(repository, "log", "-1", "--format=%ct", "--end-of-options", change["head"], timeout=GIT_TIMEOUT)
         if not isinstance(out, Failed) and out.strip().isdigit():
             found[path] = datetime.fromtimestamp(int(out.strip()), UTC).date()
     return found
@@ -179,11 +240,12 @@ def admit(board: Board, path: str, change: Change, move: Move) -> Limit | None:
     and the returned limit is the warning to show.
     """
     kind, mount = kind_of(change), change["mount"]
-    others = {
-        other: held
-        for other, held in in_build(board).items()
-        if other != path and held["mount"] == mount and building([held], kind)
-    }
+    candidates = {other: held for other, held in in_build(board).items() if other != path and building([held], kind)}
+    if len(candidates) < WIP_LIMIT:
+        return None
+    read = repositories(board, sorted({mount, *(held["mount"] for held in candidates.values())}))
+    key = read[mount].key
+    others = {other: held for other, held in candidates.items() if read[held["mount"]].key == key}
     if len(others) < WIP_LIMIT:
         return None
     days = move.days
@@ -193,6 +255,8 @@ def admit(board: Board, path: str, change: Change, move: Move) -> Limit | None:
     limit = Limit(
         code=OVER_LIMIT,
         mount=mount,
+        repository=key,
+        unread={each: repository.unread for each, repository in read.items() if repository.unread is not None},
         kind=kind,
         limit=WIP_LIMIT,
         active_days=days,
@@ -207,7 +271,7 @@ def admit(board: Board, path: str, change: Change, move: Move) -> Limit | None:
     fields = {key: value for key, value in limit.items() if key != "code"}
     raise PluginError(
         "changes::wip::full",
-        f"{len(active)} {what} active in the last {days} days are in build for {mount}, the limit of {WIP_LIMIT} "
+        f"{len(active)} {what} active in the last {days} days are in build for {key}, the limit of {WIP_LIMIT} "
         f"({', '.join(active)}), so {path} waits; finish, pause or drop one, deal with the idle ones in `idle`, "
         f"or go ahead and record why with `{move.override}`",
         {"path": path, **fields},

@@ -4,9 +4,10 @@ import dataclasses
 from datetime import date
 from typing import TYPE_CHECKING, Any
 
-from conftest import PLAN, TODAY, Board, change, commit, days_ago, mount_repo, record
+import pytest
+from conftest import PLAN, TODAY, Board, change, commit, days_ago, git, mount_repo, record
 
-from board_changes.wip import WIP_LIMIT, building, split
+from board_changes.wip import WIP_LIMIT, building, split, stored
 
 if TYPE_CHECKING:
     from board_changes.change import Change
@@ -203,3 +204,144 @@ def test_attach_touches_a_change_so_it_counts_as_active_again(board: Board) -> N
     board.write("changes/t.json", change("build", touched=days_ago(10)))
     board.call("attach", {"path": PATH, "head": "a3f9c0d"})
     assert board.read("changes/t.json")["touched"] == TODAY
+
+
+def repository(board: Board, at: str, origin: str | None) -> str:
+    """A clone mounted at `/<at>` whose origin is `origin`, or a clone with no origin; its mount."""
+    mount = mount_repo(board, {"README.md": "x\n"}, at=at)
+    if origin is not None:
+        git(board.root.parent / at.replace("/", "-"), "remote", "add", "origin", origin)
+    return mount
+
+
+def building_in(board: Board, mount: str, count: int, prefix: str) -> list[str]:
+    """`count` active changes in build for the repository at `mount`, named `<prefix>-<n>`; their paths."""
+    for number in range(count):
+        board.write(f"changes/{prefix}-{number}.json", change("build", mount=mount))
+    return [f"/changes/{prefix}-{number}" for number in range(count)]
+
+
+def ready_in(board: Board, mount: str) -> None:
+    """A change in plan for the repository at `mount` whose gate passes."""
+    board.write("changes/t.json", change(plan="/changes/t/plan.md", route="owner", mount=mount))
+    board.write("changes/t/plan.md", PLAN)
+
+
+def test_mounts_of_one_repository_count_together_however_its_origin_is_written(board: Board) -> None:
+    first = repository(board, "repos/a", "https://github.com/crumbkit/a.git")
+    second = repository(board, "repos/a-again", "git@github.com:crumbkit/a.git")
+    third = repository(board, "repos/a-www", "https://www.github.com/Crumbkit/A")
+    fourth = repository(board, "repos/a-port", "ssh://git@github.com:22/crumbkit/a.git")
+    other = repository(board, "repos/c", "git@github.com:crumbkit/c.git")
+    holding = building_in(board, first, 1, "a") + building_in(board, second, 1, "b") + building_in(board, third, 1, "c")
+    ready_in(board, fourth)
+    refused = board.refusal("advance", {"path": PATH})
+    assert refused["code"] == "changes::wip::full"
+    assert (refused["fields"]["repository"], refused["fields"]["mount"]) == ("crumbkit/a", fourth)
+    assert refused["fields"]["active"] == holding
+    assert refused["fields"]["unread"] == {}
+    ready_in(board, other)
+    assert board.call("advance", {"path": PATH})["to"] == "build"
+
+
+def test_a_clone_whose_origin_git_cannot_read_counts_by_its_clone_and_the_refusal_says_why(board: Board) -> None:
+    a = repository(board, "repos/a", None)
+    building_in(board, a, WIP_LIMIT, "a")
+    ready_in(board, a)
+    refused = board.refusal("advance", {"path": PATH})
+    assert refused["code"] == "changes::wip::full"
+    assert refused["fields"]["repository"] == str(board.root.parent / "repos-a")
+    assert list(refused["fields"]["unread"]) == ["/repos/a"]
+    assert "origin" in refused["fields"]["unread"]["/repos/a"]
+    ready_in(board, repository(board, "repos/b", None))
+    assert board.call("advance", {"path": PATH})["to"] == "build"
+
+
+def test_the_over_limit_warning_names_the_repository_it_counted(board: Board) -> None:
+    a = repository(board, "repos/a", "https://github.com/crumbkit/a.git")
+    again = repository(board, "repos/a-again", "git@github.com:crumbkit/a.git")
+    building_in(board, a, WIP_LIMIT, "a")
+    ready_in(board, again)
+    warning = board.call("advance", {"path": PATH, "over_limit": "The owner asked for it."})["warning"]
+    assert (warning["code"], warning["repository"], warning["mount"]) == (
+        "changes::wip::over_limit",
+        "crumbkit/a",
+        again,
+    )
+
+
+def test_prototypes_of_one_repository_count_together_apart_from_build_changes(board: Board) -> None:
+    a = repository(board, "repos/a", "https://github.com/crumbkit/a.git")
+    again = repository(board, "repos/a-again", "git@github.com:crumbkit/a.git")
+    building_in(board, a, WIP_LIMIT, "a")
+    for number in range(WIP_LIMIT):
+        board.write(f"changes/p-{number}.json", change("build", mount=a, kind="prototype", state="exploring"))
+    board.write("changes/t.json", change("paused", mount=again, kind="prototype", state="exploring"))
+    refused = board.refusal("resume", {"path": PATH})
+    assert (refused["code"], refused["fields"]["kind"]) == ("changes::wip::full", "prototype")
+    assert refused["fields"]["active"] == [f"/changes/p-{number}" for number in range(WIP_LIMIT)]
+    board.write("changes/t.json", change("paused", mount=repository(board, "repos/b", None), kind="prototype"))
+    assert board.call("resume", {"path": PATH})["to"] == "build"
+
+
+@pytest.mark.parametrize(
+    "origin",
+    [
+        "https://github.com/o/r.git",
+        "git@github.com:o/r.git",
+        "git@GitHub.com:o/r.git",
+        "git@www.github.com:o/r",
+        "HTTPS://github.com/o/r",
+        "https://www.github.com/O/R",
+        "ssh://git@github.com:22/o/r.git",
+        "git+ssh://git@github.com/o/r",
+        "SSH://git@GITHUB.COM/o/r.git",
+    ],
+)
+def test_each_way_of_writing_a_github_origin_has_one_stored_form(origin: str) -> None:
+    assert stored(origin) == "o/r"
+
+
+def test_an_origin_off_github_keeps_its_written_form() -> None:
+    assert stored("https://gitlab.com/o/r.git") == "https://gitlab.com/o/r.git"
+
+
+def clone_of(board: Board, at: str, origin: str) -> str:
+    """A plain git repository at `at` beside the board, whose origin is `origin`; its path."""
+    root = board.root.parent / at
+    root.mkdir()
+    git(root, "init", "-q")
+    git(root, "remote", "add", "origin", origin)
+    return str(root)
+
+
+@pytest.mark.parametrize("prefix", ["", "file://"])
+def test_a_clone_of_a_local_clone_counts_with_the_repository_that_clone_follows(board: Board, prefix: str) -> None:
+    a = repository(board, "repos/a", "https://github.com/crumbkit/a.git")
+    candidate = repository(board, "repos/a-candidate", prefix + str(board.root.parent / "repos-a"))
+    holding = building_in(board, a, WIP_LIMIT, "a")
+    ready_in(board, candidate)
+    refused = board.refusal("advance", {"path": PATH})
+    assert refused["code"] == "changes::wip::full"
+    assert (refused["fields"]["repository"], refused["fields"]["active"]) == ("crumbkit/a", holding)
+    assert refused["fields"]["unread"] == {}
+    other = repository(board, "repos/b-candidate", prefix + clone_of(board, "b", "https://github.com/crumbkit/b.git"))
+    ready_in(board, other)
+    assert board.call("advance", {"path": PATH})["to"] == "build"
+
+
+def test_a_chain_of_local_clones_past_three_hops_counts_by_the_last_and_says_so(board: Board) -> None:
+    end = clone_of(board, "end", "https://github.com/crumbkit/a.git")
+    third = clone_of(board, "third", end)
+    second = clone_of(board, "second", third)
+    first = clone_of(board, "first", second)
+    long = repository(board, "repos/long", first)
+    building_in(board, long, WIP_LIMIT, "l")
+    ready_in(board, long)
+    refused = board.refusal("advance", {"path": PATH})
+    assert refused["code"] == "changes::wip::full"
+    assert refused["fields"]["repository"] == end
+    assert "3" in refused["fields"]["unread"]["/repos/long"]
+    short = repository(board, "repos/short", second)
+    ready_in(board, short)
+    assert board.call("advance", {"path": PATH})["to"] == "build"

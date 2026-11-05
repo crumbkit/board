@@ -163,7 +163,7 @@ def test_a_refs_report_without_one_dict_answer_per_path_is_a_failure_keeping_std
     assert DEMO.refs(["/a", "/b"]) == [answer, answer]
 
 
-def test_refs_of_no_paths_starts_no_run_and_of_one_path_starts_one_that_reads_it_after_dashes(
+def test_refs_of_no_paths_starts_no_run_and_of_one_path_starts_one_that_reads_it_after_dashes_with_its_limit(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     runs: list[tuple[str, ...]] = []
@@ -179,6 +179,8 @@ def test_refs_of_no_paths_starts_no_run_and_of_one_path_starts_one_that_reads_it
     assert runs == []
     assert DEMO.refs(["-a"], missing=True) == [answer]
     assert runs == [("--json", "refs", "--all", "--missing", "--", "-a")]
+    assert DEMO.refs(["-a"], limit=1) == [answer]
+    assert runs[-1] == ("--json", "refs", "--limit", "1", "--", "-a")
 
 
 def answering_each_path(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, ...]]:
