@@ -69,14 +69,14 @@ fn manifest() -> Value {
                 whatever their status, here and in mounted boards.",
             "inputSchema": schema_of::<list::AboutInput>(SchemaSettings::draft2020_12()),
             "outputSchema": output(),
-            "annotations": {"readOnlyHint": true},
+            "annotations": {"readOnlyHint": true, "openWorldHint": false},
             "_meta": {},
         }, {
             "name": "open",
             "description": "The evals still planned or running, here and in mounted boards.",
             "inputSchema": schema_of::<list::OpenInput>(SchemaSettings::draft2020_12()),
             "outputSchema": output(),
-            "annotations": {"readOnlyHint": true},
+            "annotations": {"readOnlyHint": true, "openWorldHint": false},
             "_meta": {},
         }],
     })

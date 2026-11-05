@@ -66,7 +66,7 @@ fn manifest() -> Value {
             "description": "The questions under a path whose status is open, oldest first.",
             "inputSchema": schema_of::<open::Input>(SchemaSettings::draft2020_12()),
             "outputSchema": schema_of::<open::Output>(SchemaSettings::draft2020_12().for_serialize()),
-            "annotations": {"readOnlyHint": true},
+            "annotations": {"readOnlyHint": true, "openWorldHint": false},
             "_meta": {},
         }],
     })

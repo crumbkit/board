@@ -65,23 +65,21 @@ impl Plugin for Artifacts {
     }
 }
 
-/// One capability's manifest entry.
+/// One capability's manifest entry. Every capability reads and writes only
+/// the board, so each is closed-world.
 fn capability<I: JsonSchema, O: JsonSchema>(
     name: &str,
     description: &str,
     read_only: bool,
 ) -> Value {
-    let mut entry = json!({
+    json!({
         "name": name,
         "description": description,
         "inputSchema": schema_of::<I>(SchemaSettings::draft2020_12()),
         "outputSchema": schema_of::<O>(SchemaSettings::draft2020_12().for_serialize()),
+        "annotations": {"readOnlyHint": read_only, "openWorldHint": false},
         "_meta": {},
-    });
-    if read_only {
-        entry["annotations"] = json!({"readOnlyHint": true});
-    }
-    entry
+    })
 }
 
 fn manifest() -> Value {

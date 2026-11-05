@@ -150,6 +150,7 @@ fn manifest() -> Value {
                 "description": description,
                 "inputSchema": input,
                 "outputSchema": output,
+                "annotations": {"readOnlyHint": false, "openWorldHint": true},
                 "_meta": {},
             })
         })
