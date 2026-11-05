@@ -7,22 +7,29 @@ must read the records and reports of a later one, so:
 
 - a changed type is a new version, `<namespace>/<kind>/v<n+1>`, and the old
   version's schema stays where it was and stays readable;
+- an `enum` may gain a value in place but never loses one, and a reader
+  treats a value it does not know as unknown;
 - a `--json` report keeps every field it had; a field may be added;
 - a code is never renamed or removed; a code may be added;
 - `plugin enable` reports each schema it replaced, in `replaced`.
 
-The index is rebuilt from the tree, so its format may change freely.
+The `changes/*` types change in place until a later release, while the
+changes plugin is ported. The index may change freely.
 
 ## released.json
 
-`released.json` at the repository root lists what the last release shipped:
-each schema file by its path and the git blob id of its bytes, each report by
-its `schema` with the paths of the fields its `data` holds (`[]` standing for
-every element of an array), and the codes. The `released` test in `board-cli`
-reads the file and refuses a listed schema whose bytes changed, a listed field
-that is gone and a listed code that is gone; a new version, a new field or a
-new code is admitted. The `data` of `query` is the statement's rows and the
-`data` of `call` is the plugin's output, so neither is listed.
+`released.json` at the repository root lists what the last release shipped.
+Each schema under `plugins/<name>/types/` or `crates/board-plugin-<name>/types/`
+is listed with the blob id of its canonical JSON with every `enum` emptied, and
+each `enum`'s values by JSON pointer. Each document `board schemas list` names
+is listed with its field paths (`[]` for every array element): those its JSON
+Schema declares and those a sample run prints in `data`. The codes are Board's
+and each built-in plugin's. `.board/types/` holds the repository board's own
+copies and is not listed.
+
+The `released` test in `board-cli` refuses a listed schema whose shape changed,
+and a listed enum value, field or code that is gone. The `data` of `query` and
+`call` is not Board's, so only their envelopes are listed.
 
 A release writes the file by running that test with `SNAPSHOTS=overwrite`,
 which lists everything the checkout ships, and then runs it with
