@@ -57,7 +57,9 @@ fn private_names(board: &Personal) {
         .write("private/names.txt", &format!("{PRIVATE}\n"))
         .write(
             "controls/names.json",
-            &control(&json!({"pattern": "/private/names.txt", "show": "match-only"})),
+            &control(
+                &json!({"check": "pattern", "file": "/private/names.txt", "quote": "match-only"}),
+            ),
         );
 }
 
@@ -89,6 +91,17 @@ fn printed(ran: &Output) -> String {
     text(&ran.stdout) + &text(&ran.stderr)
 }
 
+/// The crossing at `path` in the personal board, which stores no `passed`,
+/// and the `passed` that `boundary.verify` derives for it.
+fn crossing(personal: &Personal, path: &str) -> (Value, Value) {
+    let record = personal.record(path).unwrap();
+    assert_eq!(record.get("passed"), None, "{record}");
+    let digest = format!("sha256:{}", path.trim_start_matches("/crossings/"));
+    let ran = personal.run(&["--json", "call", "boundary.verify", "--digest", &digest]);
+    assert_eq!(ran.code, 0, "{}", printed(&ran));
+    (record, output(&json(&ran))["passed"].clone())
+}
+
 #[test]
 fn content_that_no_boundary_covers_passes_unchecked_and_its_crossing_says_so() {
     let personal = Personal::new();
@@ -103,11 +116,9 @@ fn content_that_no_boundary_covers_passes_unchecked_and_its_crossing_says_so() {
         result["note"],
         "no boundary matches github.pr-create to github:octo/board from /repos/board; nothing was checked"
     );
-    let crossing = personal
-        .record(result["crossing"].as_str().unwrap())
-        .unwrap();
+    let (crossing, passed) = crossing(&personal, result["crossing"].as_str().unwrap());
     assert_eq!(
-        (&crossing["passed"], &crossing["boundaries"]),
+        (&passed, &crossing["boundaries"]),
         (&json!(true), &json!([]))
     );
 }
@@ -142,10 +153,8 @@ fn a_private_match_refuses_naming_control_part_and_line_and_never_the_pattern() 
     );
     assert!(!message.contains("Next:"), "{message}");
     assert!(!printed(&ran).contains(PRIVATE));
-    let crossing = personal
-        .record(fields["crossing"].as_str().unwrap())
-        .unwrap();
-    assert_eq!(crossing["passed"], false);
+    let (_, passed) = crossing(&personal, fields["crossing"].as_str().unwrap());
+    assert_eq!(passed, false);
 }
 
 #[test]
@@ -169,10 +178,8 @@ fn the_same_content_without_the_match_passes_and_its_crossing_holds_every_verdic
             (&json!("pr.title"), &json!("passed"))
         ]
     );
-    let crossing = personal
-        .record(result["crossing"].as_str().unwrap())
-        .unwrap();
-    assert_eq!(crossing["passed"], true);
+    let (crossing, passed) = crossing(&personal, result["crossing"].as_str().unwrap());
+    assert_eq!(passed, true);
     assert_eq!(crossing["verdicts"], result["verdicts"]);
     assert_eq!(crossing["from"], "/repos/board");
 }
@@ -197,7 +204,7 @@ fn a_check_applies_only_to_the_parts_its_globs_name() {
     let personal = Personal::new();
     personal.write(
         "controls/short.json",
-        &control(&json!({"budget": "words", "max": 2})),
+        &control(&json!({"check": "budget", "unit": "words", "max": 2})),
     );
     let checks = json!([{"control": "/controls/short", "parts": ["pr.title"]}]);
     personal.write(
@@ -289,7 +296,7 @@ fn judged(personal: &Personal) {
         .write("rubrics/plain.md", "Write plainly.\n")
         .write(
             "controls/plain.json",
-            &control(&json!({"judged": "/rubrics/plain.md"})),
+            &control(&json!({"check": "judged", "rubric": "/rubrics/plain.md"})),
         );
     let checks = json!([{"control": "/controls/plain", "parts": ["pr.body"]}]);
     personal.write(
@@ -500,25 +507,38 @@ fn a_boundary_naming_a_missing_control_refuses_with_the_controls_code() {
     assert_eq!(ran.code, 0, "{}", printed(&ran));
 }
 
-/// A crossing records each verdict's rule, and boundary records no version
-/// rule yet, so a boundary naming a version-rule control refuses the check
-/// as unreadable, and its twin naming a pattern-rule control passes.
+/// A crossing records a version rule's verdict like any other: content
+/// that names a version older than the rule's floor fails, and its twin that
+/// names a newer one passes. Each writes its crossing.
 #[test]
-fn a_boundary_naming_a_version_rule_control_refuses_as_unreadable_and_a_pattern_twin_passes() {
+fn a_boundary_naming_a_version_rule_control_writes_its_crossing_and_fails_only_an_old_version() {
     let personal = Personal::new();
-    private_names(&personal);
     names_boundary(&personal, &json!({}));
-    let (ran, _) = personal.call("check", &pr(&json!({"pr.body": "Fine."})));
-    assert_eq!(ran.code, 0, "{}", printed(&ran));
-    let version = json!({"at_least": "1.2.0", "capture": r"v(\d+\.\d+\.\d+)"});
+    let version = json!({"check": "version", "at_least": "1.2.0", "capture": r"v(\d+\.\d+\.\d+)"});
     personal.write("controls/names.json", &control(&version));
-    let (ran, document) = personal.call("check", &pr(&json!({"pr.body": "Fine."})));
-    assert_eq!(ran.code, 1, "{}", printed(&ran));
+    let (ran, document) = personal.call("check", &pr(&json!({"pr.body": "Uses v1.3.0."})));
+    assert_eq!(ran.code, 0, "{}", printed(&ran));
+    let (record, passed) = crossing(&personal, output(&document)["crossing"].as_str().unwrap());
+    assert_eq!(passed, true);
     assert_eq!(
-        document["code"], "boundary::evaluate::unreadable",
-        "{document}"
+        (
+            &record["verdicts"][0]["rule"],
+            &record["verdicts"][0]["status"]
+        ),
+        (&json!("version"), &json!("passed"))
     );
-    assert_eq!(personal.pending(), Vec::<String>::new());
+    let (ran, document) = personal.call("check", &pr(&json!({"pr.body": "Uses v1.1.0."})));
+    assert_eq!(ran.code, 1, "{}", printed(&ran));
+    assert_eq!(document["code"], "boundary::check::failed", "{document}");
+    let (record, passed) = crossing(&personal, document["fields"]["crossing"].as_str().unwrap());
+    assert_eq!(passed, false);
+    assert_eq!(
+        (
+            &record["verdicts"][0]["rule"],
+            &record["verdicts"][0]["status"]
+        ),
+        (&json!("version"), &json!("failed"))
+    );
 }
 
 #[test]

@@ -515,7 +515,7 @@ fn written_by_names_a_plugin_and_a_hook_and_nothing_else() {
 #[test]
 fn a_decision_keeps_the_fields_it_had_and_refuses_others() {
     let board = board();
-    let full = json!({"alternatives": ["Wait."], "urls": ["https://example.com/pull/1"], "review": "none"});
+    let full = json!({"alternatives": ["Wait."], "urls": ["https://example.com/pull/1"], "review": "wanted"});
     board.write("decisions/full.json", &decision(&full)).write(
         "decisions/extra.json",
         &decision(&json!({"owner": "someone"})),
@@ -603,7 +603,6 @@ fn answer(question: &str, fields: &Value) -> String {
         json!({
             "$type": "plans/answer/v1",
             "question": question,
-            "choice": "none",
             "words": "Neither.",
             "answered": "2026-10-02T09:00:00Z",
         }),

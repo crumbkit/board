@@ -17,7 +17,7 @@ fn spanning() -> (Fixture, [(Scenario, ObjectId); 2]) {
                 "Pin the latest Rust.",
                 &json!({
                     "paths": ["repos/*/rust-toolchain.toml"],
-                    "rule": {"at_least": "1.99.1", "capture": r#"channel = "([0-9.]+)""#},
+                    "rule": {"check": "version", "at_least": "1.99.1", "capture": r#"channel = "([0-9.]+)""#},
                 }),
             ),
         )
@@ -27,7 +27,7 @@ fn spanning() -> (Fixture, [(Scenario, ObjectId); 2]) {
                 "Short READMEs.",
                 &json!({
                     "paths": ["repos/*/README.md"],
-                    "rule": {"budget": "words", "max": 3},
+                    "rule": {"check": "budget", "unit": "words", "max": 3},
                 }),
             ),
         );
@@ -129,7 +129,7 @@ fn a_file_missing_from_another_mount_leaves_the_first_mount_passing_and_the_root
         "controls/readme.json",
         &control(
             "Short READMEs.",
-            &json!({"paths": ["repos/*/README.md"], "rule": {"budget": "words", "max": 9}}),
+            &json!({"paths": ["repos/*/README.md"], "rule": {"check": "budget", "unit": "words", "max": 9}}),
         ),
     );
     assert_eq!(
@@ -159,7 +159,7 @@ fn a_degraded_file_in_another_mount_leaves_the_first_mount_passing_and_the_root_
         "controls/docs.json",
         &control(
             "Short docs.",
-            &json!({"paths": ["repos/*/docs/*"], "rule": {"budget": "words", "max": 9}}),
+            &json!({"paths": ["repos/*/docs/*"], "rule": {"check": "budget", "unit": "words", "max": 9}}),
         ),
     );
     let _new = library(&board, "repos/new.json", &[("docs/a", "one")]);
@@ -186,7 +186,7 @@ fn a_path_measures_its_own_mount_and_not_a_sibling_whose_name_it_begins() {
         "controls/readme.json",
         &control(
             "Short READMEs.",
-            &json!({"paths": ["repos/*/README.md"], "rule": {"budget": "words", "max": 3}}),
+            &json!({"paths": ["repos/*/README.md"], "rule": {"check": "budget", "unit": "words", "max": 3}}),
         ),
     );
     let _new = library(&board, "repos/new.json", &[("README.md", "one two")]);

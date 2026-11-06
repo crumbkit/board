@@ -143,13 +143,13 @@ fn a_control_that_carries_a_rule_diverges_and_its_twin_without_one_agrees() {
     let fixture = controls_with(
         PLAN,
         Some(
-            r#"{"applies_to": ["/PLAN.md"], "requirement": "At most 6 words.", "rule": {"budget": "words", "max": 6}}"#,
+            r#"{"applies_to": ["/PLAN.md"], "requirement": "At most 6 words.", "rule": {"check": "budget", "unit": "words", "max": 6}}"#,
         ),
     );
     assert_eq!(
         messages(&fixture),
         [
-            r#"controls/budgets/plan.json: rule = {"budget":"words","max":6}, but lint.toml [plan] enforces this budget; remove rule, because a budget control only records lint.toml"#
+            r#"controls/budgets/plan.json: rule = {"check":"budget","max":6,"unit":"words"}, but lint.toml [plan] enforces this budget; remove rule, because a budget control only records lint.toml"#
         ]
     );
     let twin = controls_with(

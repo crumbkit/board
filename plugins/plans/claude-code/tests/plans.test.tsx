@@ -216,7 +216,9 @@ test('the owner answers in words where the surface has a field, and none of the 
   const ui = await $.ui.mount({ ...pane('questions'), surface: 'terminal' })
   await ui.input({ key: `${COUNT.path}#words`, text: 'About 40; ask Kechen for the exact figure.' })
   const record = JSON.parse(stdins[0]?.split('\n')[0] ?? '{}').record
-  expect(record).toMatchObject({ choice: 'none', words: 'About 40; ask Kechen for the exact figure.' })
+  expect(record).toMatchObject({ words: 'About 40; ask Kechen for the exact figure.' })
+  // Words that choose no option leave `choice` out.
+  expect('choice' in record).toBe(false)
   expect('by' in record).toBe(false)
 })
 

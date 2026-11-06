@@ -12,9 +12,11 @@ fn control(rule: &Value) -> String {
 
 #[test]
 fn evaluate_reads_every_rule_file_once_in_one_get_each_call_and_none_without_one() {
-    let names = control(&json!({"pattern": "/private/names.txt", "show": "match-only"}));
-    let again = control(&json!({"pattern": "/private/names.txt", "show": "pattern"}));
-    let short = control(&json!({"budget": "words", "max": 3}));
+    let names =
+        control(&json!({"check": "pattern", "file": "/private/names.txt", "quote": "match-only"}));
+    let again =
+        control(&json!({"check": "pattern", "file": "/private/names.txt", "quote": "pattern"}));
+    let short = control(&json!({"check": "budget", "unit": "words", "max": 3}));
     let (_scenario, host) = recording(&[
         ("controls/names.json", &names),
         ("controls/again.json", &again),
@@ -36,9 +38,9 @@ fn evaluate_reads_every_rule_file_once_in_one_get_each_call_and_none_without_one
 
 #[test]
 fn a_parser_message_never_reaches_a_match_only_error_and_a_shown_one_quotes_the_line() {
-    let rule = |show: Show| Pattern {
-        pattern: "/private/names.txt".to_owned(),
-        show: Open::Known(show),
+    let rule = |quote: Quote| Pattern {
+        file: "/private/names.txt".to_owned(),
+        quote: Open::Known(quote),
     };
     for line in [
         "(?P=acmename)",
@@ -52,7 +54,7 @@ fn a_parser_message_never_reaches_a_match_only_error_and_a_shown_one_quotes_the_
             "/private/names.txt".to_owned(),
             format!("ok\n{line}\n").into_bytes(),
         )]);
-        let hidden = expressions("/controls/names", &rule(Show::MatchOnly), &sources).unwrap_err();
+        let hidden = expressions("/controls/names", &rule(Quote::MatchOnly), &sources).unwrap_err();
         assert_eq!(hidden.code, "controls::pattern::invalid", "{line}");
         assert!(!hidden.message.contains("acme"), "{}", hidden.message);
         assert!(!hidden.message.contains(line), "{}", hidden.message);
@@ -62,7 +64,7 @@ fn a_parser_message_never_reaches_a_match_only_error_and_a_shown_one_quotes_the_
             hidden.message
         );
         assert_eq!(hidden.fields["line"], json!(2));
-        let shown = expressions("/controls/names", &rule(Show::Pattern), &sources).unwrap_err();
+        let shown = expressions("/controls/names", &rule(Quote::Pattern), &sources).unwrap_err();
         assert!(
             shown.message.contains(&format!("{line:?}")),
             "{}",
@@ -73,7 +75,7 @@ fn a_parser_message_never_reaches_a_match_only_error_and_a_shown_one_quotes_the_
         "/private/names.txt".to_owned(),
         b"(?P<acmename>acme)\n\n".to_vec(),
     )]);
-    let admitted = expressions("/controls/names", &rule(Show::MatchOnly), &sources).unwrap();
+    let admitted = expressions("/controls/names", &rule(Quote::MatchOnly), &sources).unwrap();
     assert_eq!(admitted.len(), 1);
 }
 

@@ -51,7 +51,7 @@ fn checked(document: &Value) -> Vec<Value> {
 fn names(show: &str) -> String {
     control(
         "No names.",
-        &json!({"rule": {"pattern": "/private/names.txt", "show": show}}),
+        &json!({"rule": {"check": "pattern", "file": "/private/names.txt", "quote": show}}),
     )
 }
 
@@ -60,7 +60,10 @@ fn a_part_over_a_budget_fails_and_one_within_it_passes() {
     let board = board();
     board.write(
         "controls/short.json",
-        &control("Short.", &json!({"rule": {"budget": "words", "max": 3}})),
+        &control(
+            "Short.",
+            &json!({"rule": {"check": "budget", "unit": "words", "max": 3}}),
+        ),
     );
     let (ran, document) = evaluate(
         &board,
@@ -95,7 +98,10 @@ fn a_bytes_budget_counts_the_bytes_of_the_text() {
     let board = board();
     board.write(
         "controls/small.json",
-        &control("Small.", &json!({"rule": {"budget": "bytes", "max": 4}})),
+        &control(
+            "Small.",
+            &json!({"rule": {"check": "budget", "unit": "bytes", "max": 4}}),
+        ),
     );
     let (_, document) = evaluate(
         &board,
@@ -123,7 +129,10 @@ fn a_control_named_twice_is_checked_once_and_two_controls_twice() {
     board
         .write(
             "controls/short.json",
-            &control("Short.", &json!({"rule": {"budget": "words", "max": 3}})),
+            &control(
+                "Short.",
+                &json!({"rule": {"check": "budget", "unit": "words", "max": 3}}),
+            ),
         )
         .write("controls/kind.json", &control("Be kind.", &json!({})));
     let parts = json!({"pr.body": "Text."});
@@ -325,7 +334,7 @@ fn judged() -> Fixture {
             "controls/plain.json",
             &control(
                 "Plain prose.",
-                &json!({"rule": {"judged": "/rubrics/plain.md"}}),
+                &json!({"rule": {"check": "judged", "rubric": "/rubrics/plain.md"}}),
             ),
         );
     board
@@ -431,7 +440,10 @@ fn a_judged_rule_skips_a_part_that_failed_a_free_rule_whatever_order_the_control
     let (board, agent) = (judged(), Agent::new());
     board.write(
         "controls/short.json",
-        &control("Short.", &json!({"rule": {"budget": "words", "max": 3}})),
+        &control(
+            "Short.",
+            &json!({"rule": {"check": "budget", "unit": "words", "max": 3}}),
+        ),
     );
     let parts = json!({"pr.title": "Short title.", "pr.body": "A body that is far too long."});
     let (ran, document) = judging(
@@ -462,7 +474,10 @@ fn free_rules_run_without_an_agent_and_a_judged_rule_with_a_part_to_read_needs_o
     let (board, agent) = (judged(), Agent::new());
     board.write(
         "controls/short.json",
-        &control("Short.", &json!({"rule": {"budget": "words", "max": 1}})),
+        &control(
+            "Short.",
+            &json!({"rule": {"check": "budget", "unit": "words", "max": 1}}),
+        ),
     );
     let both = ["/controls/short", "/controls/plain"];
     let (ran, document) = evaluate(&board, &both, &json!({"pr.body": "Too long."}));
@@ -505,7 +520,10 @@ fn a_control_that_is_not_there_is_refused_and_one_that_is_is_admitted() {
     assert_eq!(document["code"], "controls::control::not_found");
     board.write(
         "controls/short.json",
-        &control("Short.", &json!({"rule": {"budget": "words", "max": 3}})),
+        &control(
+            "Short.",
+            &json!({"rule": {"check": "budget", "unit": "words", "max": 3}}),
+        ),
     );
     let (ran, _) = evaluate(&board, &["/controls/short"], &parts);
     assert_eq!(ran.code, 0, "{}", text(&ran.stderr));
@@ -533,12 +551,15 @@ fn a_rubric_that_is_missing_is_refused_before_any_part_is_judged() {
             "controls/plain.json",
             &control(
                 "Plain prose.",
-                &json!({"rule": {"judged": "/rubrics/plain.md"}}),
+                &json!({"rule": {"check": "judged", "rubric": "/rubrics/plain.md"}}),
             ),
         )
         .write(
             "controls/short.json",
-            &control("Short.", &json!({"rule": {"budget": "words", "max": 1}})),
+            &control(
+                "Short.",
+                &json!({"rule": {"check": "budget", "unit": "words", "max": 1}}),
+            ),
         );
     let both = ["/controls/plain", "/controls/short"];
     let parts = json!({"pr.body": "Too long."});

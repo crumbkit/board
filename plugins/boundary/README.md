@@ -64,8 +64,7 @@ code. A judged rule with a part to read is refused that way with
 `controls::agent::not_set` when `BOARD_CONTROLS_AGENT` names no agent.
 Results that the plugin cannot read refuse the check with
 `boundary::evaluate::unreadable`. That happens when the boundary and
-controls plugins come from different Board builds, and for a version rule,
-which a crossing cannot record until boundary records version rules.
+controls plugins come from different Board builds.
 
 Any entry under `/boundaries/` that is not a valid boundary, because it does
 not parse, has another type or fails its schema, a boundary elsewhere that
@@ -87,8 +86,8 @@ of them. Its fields hold `digest`, `crossing` and every failure in
 `failures` (`control`, `part`, `text`, and `line` and `rewrite` when
 known). Its hint starts `Next:`, says what to change, including giving a
 control without a rule a rule, and names `board call <action>` and
-`board --personal call boundary.check` to run again. A pattern control
-shown `match-only` never reveals its expression here either.
+`board --personal call boundary.check` to run again. A pattern rule whose
+`quote` is `match-only` never reveals its expression here either.
 
 `boundary.covers --action <action> --to <destination> [--from <checkout>]`
 returns `boundaries`, the sorted paths of the boundaries a check of that
@@ -110,8 +109,7 @@ changing a rule. Only a failed check asks; a passing check writes no effect.
   `board answer <effect> approve`, which Board signs with Touch ID.
   Checking the same content again asks nothing new.
 - Once the owner approves, the same check passes. The crossing records
-  `passed: true`, every verdict as it was, and `override`, the approved
-  effect's id. The output's `override` holds the same id; it is null for a
+  every verdict as it was, and `override`, the approved effect's id. The output's `override` holds the same id; it is null for a
   check that passed on its own. `boundary.verify` reports the crossing as
   passed, and `boundary.record` accepts it.
 - The digest covers the action, destination and every part, so an approval
@@ -154,14 +152,20 @@ not exist is `boundary::crossing::not_found`, and one that failed is
 and characters unescaped, as Python's
 `json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)`
 writes it. The record holds the `digest`, `action`, `to`, `from` when
-given, `passed`, the matching `boundaries`, each verdict in `verdicts` as
+given, the matching `boundaries`, each verdict in `verdicts` as
 `controls.evaluate` gave it with its nulls left out, `override` when the
-owner's approval let it through, and `result` once recorded. It holds no
-part's text, but it keeps each finding's quoted text. `from`, `boundaries`
-and each verdict's `control` are references, so deleting a boundary or
-control leaves an old crossing degraded but still read. Checking the same
-content again replaces the crossing; a re-check that passes keeps its
-`result`, and one that fails drops it.
+owner's approval let it through, and `result` once recorded. A verdict's
+`rule` is `budget`, `pattern`, `judged` or `version`, as the control's rule
+names it in `check`. The record stores no `passed`: `verify` and `record`
+derive it. A crossing passes when no verdict failed, or when it holds an
+`override`. A verdict passes when its status is `passed` or `skipped`. A
+verdict whose status is `failed`, `stated` or one this Board does not know
+fails. The crossing holds no part's text, but it keeps each finding's
+quoted text. `from`, `boundaries` and each verdict's `control` are
+references, so deleting a boundary or control leaves an old crossing
+degraded but still read. Checking the same content again replaces the
+crossing; a re-check that passes keeps its `result`, and one that fails
+drops it.
 
 ## Developing
 

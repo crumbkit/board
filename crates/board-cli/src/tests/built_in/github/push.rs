@@ -76,9 +76,11 @@ fn a_push_checks_each_new_commit_by_name_then_pushes_and_records_the_crossing() 
     );
     assert_eq!(desk.remote_head("main"), Some(second.clone()));
     let crossing = desk.record(result["crossing"].as_str().unwrap()).unwrap();
+    // A crossing stores no `passed`; `boundary.record` sets `result` only on
+    // one that passed.
     assert_eq!(
-        (&crossing["passed"], &crossing["to"], &crossing["from"]),
-        (&json!(true), &json!(TO), &json!("/repos/widgets"))
+        (crossing.get("passed"), &crossing["to"], &crossing["from"]),
+        (None, &json!(TO), &json!("/repos/widgets"))
     );
     assert_eq!(crossing["result"], result["sent"]);
     let sent = result["sent"].as_str().unwrap();

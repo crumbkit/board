@@ -10,7 +10,7 @@ fn floor(at_least: &str, paths: &[&str]) -> String {
         "Pin the latest Rust.",
         &json!({
             "paths": paths,
-            "rule": {"at_least": at_least, "capture": r#"channel = "([0-9.]+)""#},
+            "rule": {"check": "version", "at_least": at_least, "capture": r#"channel = "([0-9.]+)""#},
         }),
     )
 }
@@ -100,7 +100,7 @@ fn a_capture_without_a_group_fails_the_check_and_one_with_a_group_passes() {
     let rule = |capture: &str| {
         control(
             "Pin the latest Rust.",
-            &json!({"paths": ["*.toml"], "rule": {"at_least": "1.99.1", "capture": capture}}),
+            &json!({"paths": ["*.toml"], "rule": {"check": "version", "at_least": "1.99.1", "capture": capture}}),
         )
     };
     board
@@ -121,7 +121,7 @@ fn the_schema_refuses_an_at_least_that_is_not_a_dotted_number_and_admits_one_tha
     let rule = |at_least: &str| {
         control(
             "Pin the latest Rust.",
-            &json!({"rule": {"at_least": at_least, "capture": "(.*)"}}),
+            &json!({"rule": {"check": "version", "at_least": at_least, "capture": "(.*)"}}),
         )
     };
     board

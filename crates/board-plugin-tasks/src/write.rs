@@ -9,7 +9,7 @@ use std::path::Path;
 
 use board_model::Source;
 use board_ops::{Host, PluginError};
-use board_plugin::shape::{Actor, Record as _};
+use board_plugin::shape::{Actor, Record as _, Slug};
 use board_repos::{
     ATTEMPTS, Date, EDITED, Listed, MOVED, Repo, Through, Writer, covering, create, day_start,
     landed, listed, push, refused, root, slug, today, trimmed,
@@ -120,7 +120,7 @@ pub(crate) struct AddInput {
     pub(crate) from_hour: Option<u8>,
     #[serde(default)]
     #[schemars(
-        schema_with = "contexts",
+        with = "Option<Vec<Slug>>",
         description = "Tags of where it can be done, such as errands."
     )]
     pub(crate) contexts: Option<Vec<String>>,
@@ -154,10 +154,6 @@ pub(crate) struct AddInput {
                        of the directory board was started in."
     )]
     pub(crate) remote: Option<String>,
-}
-
-fn contexts(_: &mut SchemaGenerator) -> Schema {
-    json_schema!({"type": "array", "items": {"type": "string", "pattern": "^[a-z0-9-]+$"}})
 }
 
 fn kind(_: &mut SchemaGenerator) -> Schema {

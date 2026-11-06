@@ -35,8 +35,12 @@ needs to know.
    allowed when it holds no reference.
 9. Nested structs go in `$defs`.
 10. Every record and nested object has `additionalProperties: false`, except a
-    map whose values share one schema, and `tasks/task/v2`, which another
-    tool co-writes.
+    map whose values share one schema. A type another tool co-writes, such
+    as `tasks/task/v2`, names that tool's fields too. An object of several kinds names its kind in a field,
+    such as a control rule's `check`, and gathers each kind's `$defs` entry
+    through `allOf`, where references are searched (rule 5). Each entry
+    requires its fields when the kind field names it and refuses them
+    otherwise, and the object has `unevaluatedProperties: false`.
 11. Every property has a `description`. No property has a `title`.
 12. No `$schema` key. Draft 2020-12, committed in canonical form.
 13. A type whose records live in one folder may say so at the schema's top
@@ -124,8 +128,9 @@ Built-in plugins generate schemas from structs with schemars, through
   git prints them. `shape::registry()` lists every
   shared shape by name, and `crates/board-plugin/shapes.json` is its golden.
 - A reader wraps a stored enum field in `Open<E>`: `Known(E)` for a value
-  `E` reads, or `Other` holding a value a newer Board added, as written. It
-  writes back what it read and has `E`'s schema.
+  `E` reads, or `Other` holding a value this Board does not know, such as
+  one an edited copy of the schema admits, as written. It writes back what
+  it read and has `E`'s schema.
 - `Tag<R>` writes `R::TYPE` and reads only that string, so a record struct
   can derive `Serialize` and `Deserialize`.
 - `schema_of` removes null from every optional field and drops an integer's

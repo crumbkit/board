@@ -8,7 +8,7 @@ const BOTH: u64 = 5;
 
 /// A budget of `max` words.
 fn words(max: u64) -> Value {
-    json!({"budget": "words", "max": max})
+    json!({"check": "budget", "unit": "words", "max": max})
 }
 
 /// A control with `requirement` on the files `paths` match, under `rule`.
@@ -84,7 +84,7 @@ fn check_measures_each_budget_control_over_its_files() {
                 &json!({
                     "applies_to": ["/docs/a.md"],
                     "paths": ["docs/*.md"],
-                    "rule": {"budget": "bytes", "max": 12},
+                    "rule": {"check": "budget", "unit": "bytes", "max": 12},
                 }),
             ),
         )
@@ -157,7 +157,7 @@ fn a_control_whose_file_is_missing_fails_the_check_and_one_whose_file_exists_pas
         "controls/context.json",
         &control(
             "Short.",
-            &json!({"applies_to": ["/AGENTS.md"], "rule": {"budget": "bytes", "max": 9}}),
+            &json!({"applies_to": ["/AGENTS.md"], "rule": {"check": "budget", "unit": "bytes", "max": 9}}),
         ),
     );
     let refused = board.refusal("controls.check", &[]);
@@ -706,7 +706,7 @@ fn a_per_file_control_with_no_files_measures_nothing_as_its_largest() {
         &budget(
             "Small.",
             &["docs/*.md"],
-            &json!({"budget": "words", "max": 1, "per": "file"}),
+            &json!({"check": "budget", "unit": "words", "max": 1, "per": "file"}),
         ),
     );
     let output = check(&board, &[]);
@@ -754,7 +754,7 @@ fn a_pattern_or_judged_control_is_stated_and_a_budget_beside_it_is_measured() {
             &budget(
                 "No names.",
                 &["docs/*.md"],
-                &json!({"pattern": "/private/names.txt", "show": "match-only"}),
+                &json!({"check": "pattern", "file": "/private/names.txt", "quote": "match-only"}),
             ),
         )
         .write(
@@ -762,7 +762,7 @@ fn a_pattern_or_judged_control_is_stated_and_a_budget_beside_it_is_measured() {
             &budget(
                 "Plain.",
                 &["docs/*.md"],
-                &json!({"judged": "/rubrics/plain.md"}),
+                &json!({"check": "judged", "rubric": "/rubrics/plain.md"}),
             ),
         )
         .write(

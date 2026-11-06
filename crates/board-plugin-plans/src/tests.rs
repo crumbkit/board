@@ -429,6 +429,48 @@ fn sample_records_validate_and_their_references_are_the_ones_the_structs_declare
     assert!(compile("plans/decision/v1").validate(&empty).is_ok());
 }
 
+/// An answer that chooses no option leaves `choice` out, and a decision
+/// that wants no review leaves `review` out. An empty choice and the
+/// review `none` are refused; the twin without the field, or with an
+/// option's id or `wanted`, is admitted. An answer may still choose an
+/// option whose id is `none`.
+#[test]
+fn an_answer_and_a_decision_leave_out_choice_and_review_instead_of_storing_none() {
+    let schemas = Plans.schemas();
+    let compile = |name: &str| {
+        let (_, schema) = (schemas.iter())
+            .find(|(record_type, _)| record_type.as_str() == name)
+            .unwrap();
+        board_validate::Schema::compile(schema.clone()).unwrap()
+    };
+    let answer = json!({
+        "$type": "plans/answer/v1",
+        "question": "/projects/a/questions/q",
+        "words": "Neither.",
+        "answered": "2026-10-01T10:00:00Z",
+    });
+    let decision = json!({
+        "$type": "plans/decision/v1",
+        "decision": "A",
+        "why": "It is simpler.",
+        "by": {"session": "local_0a1b"},
+        "decided": "2026-10-01T10:00:00Z",
+    });
+    for (name, record, field, refused, admitted) in [
+        ("plans/answer/v1", &answer, "choice", "", "none"),
+        ("plans/decision/v1", &decision, "review", "none", "wanted"),
+    ] {
+        let schema = compile(name);
+        assert!(schema.validate(record).is_ok(), "{name} without {field}");
+        let mut with = record.clone();
+        with[field] = json!(refused);
+        let error = schema.validate(&with).unwrap_err();
+        assert_eq!(error.code(), board_model::Code::RecordInvalid, "{name}");
+        with[field] = json!(admitted);
+        assert!(schema.validate(&with).is_ok(), "{name} with {admitted}");
+    }
+}
+
 /// A web address belongs in a decision's `urls`, and a board path in its
 /// `refs`; each is refused in the other's field with its exact code.
 #[test]

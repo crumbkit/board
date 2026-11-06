@@ -134,7 +134,7 @@ pub(crate) fn verify(host: &dyn Host, input: &Value) -> Result<Value, PluginErro
         .collect();
     Ok(output(&VerifyOutput {
         crossing: Some(path(&digest)),
-        passed: record.passed && matching == record.boundaries,
+        passed: record.passed() && matching == record.boundaries,
         result: record.result,
         boundaries: record.boundaries,
         digest,
@@ -218,7 +218,7 @@ pub(crate) fn record(host: &dyn Host, input: &Value) -> Result<Value, PluginErro
             "run `board --personal call boundary.check` on the content first",
         ));
     };
-    if !record.passed {
+    if !record.passed() {
         return Err(refusal(
             "failed",
             format!("the crossing at {crossing} failed its checks, so nothing was sent to record"),

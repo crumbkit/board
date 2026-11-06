@@ -29,38 +29,39 @@
       "type": "object"
     }
   },
+  "additionalProperties": false,
   "dependentRequired": {
     "ephemeral": [
       "repeat"
     ]
   },
-  "description": "`tasks/task/v2`: the frontmatter of a Markdown task under `tasks/`, whose body holds its prose.\n\n`defer` hides the task until a date, a date-time or a horizon after `reviewed`.\n`after` references the tasks in the same repo that it waits on. `repeat`\nnames when a repeating task comes back, and `ephemeral` that a missed day\nis not kept. `from_hour` is the hour of the person's day it is available\nfrom. `contexts` tags where it can be done. `reviewed` is the day it was\nlast looked at. `owner` names the agent or person who holds it, such as a\nsession id or a handle. `parent` references the task in the same repo that\nthis one is part of, and `kind` says whether it is a `task`, as when it is\nleft out, or a `project`, whose `brief` may reference a brief such as a\nREADME.md. Any other field, such as Reflect's `id` and `pinned`, is\nadmitted and ignored.",
+  "description": "`tasks/task/v2`: the frontmatter of a Markdown task under `tasks/`, whose\nbody holds its prose.",
   "properties": {
     "$type": {
       "const": "tasks/task/v2",
-      "title": "$Type",
+      "description": "The record's type.",
       "type": "string"
     },
     "after": {
+      "description": "The tasks in the same repo this task waits on, by path.",
       "items": {
         "format": "board-ref",
         "type": "string",
         "x-board-type": "tasks/task/v2"
       },
-      "title": "After",
       "type": "array"
     },
     "brief": {
+      "description": "A project's brief, such as a README.md, by path.",
       "format": "board-ref",
-      "title": "Brief",
       "type": "string"
     },
     "contexts": {
+      "description": "Tags for where the task can be done, such as `errands`.",
       "items": {
-        "pattern": "^[a-z0-9-]+$",
+        "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
         "type": "string"
       },
-      "title": "Contexts",
       "type": "array"
     },
     "defer": {
@@ -83,63 +84,81 @@
           "type": "string"
         }
       ],
-      "title": "Defer"
+      "description": "What hides the task until it ends: a date, a date and time, or a\nhorizon counted from `reviewed`."
     },
     "due": {
+      "description": "The day the task is due.",
       "format": "date",
-      "title": "Due",
       "type": "string"
     },
     "ephemeral": {
-      "title": "Ephemeral",
+      "description": "Whether a repeating task's missed days roll forward to one instance\ntoday, with no backlog.",
       "type": "boolean"
     },
     "from_hour": {
+      "description": "The hour of the person's day from which the task is available.",
       "maximum": 23,
       "minimum": 0,
-      "title": "From Hour",
       "type": "integer"
     },
+    "id": {
+      "description": "The note's id, which Reflect writes; the plugin ignores it.",
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+      "type": "string"
+    },
     "kind": {
+      "description": "Whether this is a `task`, as when it is left out, or a `project`.",
       "enum": [
         "task",
         "project"
       ],
-      "title": "Kind",
       "type": "string"
     },
     "owner": {
       "$ref": "#/$defs/Actor",
-      "title": "Owner"
+      "description": "The agent or person who holds the task."
     },
     "parent": {
+      "description": "The task in the same repo this one is part of, by path.",
       "format": "board-ref",
-      "title": "Parent",
       "type": "string",
       "x-board-type": "tasks/task/v2"
     },
+    "pinned": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "minimum": 0,
+          "type": "integer"
+        }
+      ],
+      "description": "Whether, or in what place, Reflect pins the note to its sidebar,\nwhich Reflect writes; the plugin ignores it."
+    },
     "repeat": {
+      "description": "When a repeating task comes back.",
       "pattern": "^(daily|weekdays|weekly-(mon|tue|wed|thu|fri|sat|sun)|monthly-([1-9]|[12][0-9]|3[01])|annually-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01]))$",
-      "title": "Repeat",
       "type": "string"
     },
     "reviewed": {
+      "description": "The day the task was last looked at.",
       "format": "date",
-      "title": "Reviewed",
       "type": "string"
     },
     "status": {
+      "description": "Whether the task is open, done or dropped.",
       "enum": [
         "open",
         "done",
         "dropped"
       ],
-      "title": "Status",
       "type": "string"
     },
     "title": {
-      "title": "Title",
-      "type": "string"
+      "description": "What the task is, in a line.",
+      "type": "string",
+      "x-board-prose": true
     }
   },
   "required": [

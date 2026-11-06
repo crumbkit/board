@@ -141,6 +141,17 @@ fn titles_of(names: &[&str]) -> Vec<String> {
 }
 
 #[test]
+fn a_context_that_is_not_a_slug_is_refused_and_its_slug_twin_is_admitted() {
+    let tasks = Tasks::new();
+    let tagged = reviewed(json!({"contexts": ["a-b"]}));
+    tasks.write("tasks/tagged.md", &open("Tagged", tagged));
+    let refused = tasks.refused("available", &["--context", "a--b"]);
+    assert_eq!(refused["code"], "board::plugin::bad_input", "{refused}");
+    let output = tasks.call("available", &["--context", "a-b"]).unwrap();
+    assert_eq!(shown(&output), titles_of(&["Tagged"]));
+}
+
+#[test]
 fn context_narrows_every_section_to_tasks_with_that_tag() {
     let tasks = Tasks::new();
     let milk = reviewed(json!({"contexts": ["errands"], "due": day(3)}));
