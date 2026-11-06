@@ -59,8 +59,8 @@ fn manifest() -> Value {
         "description": "Record every test of a library, tool, model or agent as an eval and its runs in the \
             board, and check what was already tested before testing. Use it before you start a test and \
             when you conclude one. Start with `board -C <board> call evals.about --subject <name>`, which \
-            lists the evals of what you will test. `board -C <board> call evals.open` lists those still \
-            planned or running. SKILL.md and README.md in the plugin's directory say more.",
+            lists the evals of what you will test. `board -C <board> call evals.open` lists those not \
+            concluded or abandoned. SKILL.md and README.md in the plugin's directory say more.",
         "metadata": {"area": "testing"},
         "types": [EvalRecord::TYPE],
         "capabilities": [{
@@ -78,7 +78,7 @@ fn manifest() -> Value {
             "_meta": {},
         }, {
             "name": "open",
-            "description": "The evals still planned or running, here and in mounted boards.",
+            "description": "The evals not concluded or abandoned, here and in mounted boards.",
             "inputSchema": schema_of::<list::OpenInput>(SchemaSettings::draft2020_12()),
             "outputSchema": output(),
             "annotations": {
