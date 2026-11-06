@@ -500,6 +500,27 @@ fn a_boundary_naming_a_missing_control_refuses_with_the_controls_code() {
     assert_eq!(ran.code, 0, "{}", printed(&ran));
 }
 
+/// A crossing records each verdict's rule, and boundary records no version
+/// rule yet, so a boundary naming a version-rule control refuses the check
+/// as unreadable, and its twin naming a pattern-rule control passes.
+#[test]
+fn a_boundary_naming_a_version_rule_control_refuses_as_unreadable_and_a_pattern_twin_passes() {
+    let personal = Personal::new();
+    private_names(&personal);
+    names_boundary(&personal, &json!({}));
+    let (ran, _) = personal.call("check", &pr(&json!({"pr.body": "Fine."})));
+    assert_eq!(ran.code, 0, "{}", printed(&ran));
+    let version = json!({"at_least": "1.2.0", "capture": r"v(\d+\.\d+\.\d+)"});
+    personal.write("controls/names.json", &control(&version));
+    let (ran, document) = personal.call("check", &pr(&json!({"pr.body": "Fine."})));
+    assert_eq!(ran.code, 1, "{}", printed(&ran));
+    assert_eq!(
+        document["code"], "boundary::evaluate::unreadable",
+        "{document}"
+    );
+    assert_eq!(personal.pending(), Vec::<String>::new());
+}
+
 #[test]
 fn a_check_called_in_another_board_records_the_crossing_in_the_personal_board() {
     let personal = Personal::new();

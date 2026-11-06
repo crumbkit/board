@@ -222,15 +222,25 @@ fn evaluate(
         let input = json!({"controls": controls, "parts": texts});
         let report = (host.call(&target, &input)).map_err(|refusal| refused("call", &refusal))?;
         // `Verdict` repeats controls' result type, so a field added there
-        // refuses the check instead of letting the content through.
-        let results = Vec::<Verdict>::deserialize(&report.output["results"]).map_err(|error| {
-            PluginError {
-                code: "boundary::evaluate::unreadable".to_owned(),
-                message: format!("controls.evaluate gave results this plugin cannot read: {error}"),
-                fields: Map::new(),
-                hint: Some("update Board so its boundary and controls plugins agree".to_owned()),
-            }
-        })?;
+        // refuses the check instead of letting the content through. A rule
+        // or status boundary does not know, such as a version rule, which
+        // a crossing cannot record yet, refuses it the same way.
+        let unreadable = |error: String| PluginError {
+            code: "boundary::evaluate::unreadable".to_owned(),
+            message: format!("controls.evaluate gave results this plugin cannot read: {error}"),
+            fields: Map::new(),
+            hint: Some("update Board so its boundary and controls plugins agree".to_owned()),
+        };
+        let results = Vec::<Verdict>::deserialize(&report.output["results"])
+            .map_err(|error| unreadable(error.to_string()))?;
+        if let Some(verdict) = (results.iter()).find(|verdict| {
+            matches!(verdict.rule, Some(Open::Other(_))) || matches!(verdict.status, Open::Other(_))
+        }) {
+            return Err(unreadable(format!(
+                "{} gave a rule or status this plugin does not know",
+                verdict.control
+            )));
+        }
         verdicts.extend(results);
     }
     verdicts.sort_by(|a, b| (&a.control, &a.part).cmp(&(&b.control, &b.part)));
