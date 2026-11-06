@@ -120,3 +120,33 @@ fn a_source_whose_listed_pointer_cannot_be_read_has_no_key_and_its_readable_twin
         assert_eq!(reached.sources[0].key.is_some(), keyed, "{blob}");
     }
 }
+
+#[test]
+fn a_walk_reaches_a_mount_read_at_a_checkout_at_that_commit_and_its_twin_at_its_pin() {
+    let (board, library) = mounting();
+    let pinned = library.head().unwrap().id;
+    let head = library.commit(&[("p.json", "{}"), ("q.json", "{}")]);
+    let entries = board.open().walk(&Source::WorkingTree).unwrap();
+    let facts = Facts::from(["m.json".to_owned()]);
+    for (checkout, reached) in [(Some(head), head), (None, pinned)] {
+        let mut repositories = board.repositories();
+        if let Some(head) = checkout {
+            repositories.read_at(&path("/m"), head);
+        }
+        let walked = (repositories.walk_mounts(
+            &entries,
+            &facts,
+            &mut Memory::default(),
+            ("test", false),
+            None,
+        ))
+        .unwrap();
+        let commits: Vec<ObjectId> = walked
+            .sources
+            .iter()
+            .map(|mounted| mounted.commit)
+            .collect();
+        assert_eq!(commits, [reached], "{checkout:?}");
+        assert_eq!(walked.points[0].target, Ok(reached));
+    }
+}

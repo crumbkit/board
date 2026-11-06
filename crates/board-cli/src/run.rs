@@ -2,7 +2,6 @@
 
 use std::ffi::OsString;
 use std::io::Read;
-use std::path::Path;
 use std::time::{Duration, Instant};
 
 use board_model::{
@@ -88,6 +87,11 @@ pub(crate) struct Cli {
     /// `personal` in `$XDG_CONFIG_HOME/board/config.json` names the personal board's directory. The run starts at its root, and any -C is taken from there.
     #[arg(long)]
     personal: bool,
+    /// Read the mount holding this directory at its checkout's HEAD commit, not the commit it pins.
+    ///
+    /// Board then reads, for this run, the branch committed in the checkout of a repository a known board mounts, a linked worktree included, while the pointer keeps its pin. Uncommitted edits are not read. Refused from the board's own tree, from another clone, and with put or rm, which compare against the pin. Off by default.
+    #[arg(long, conflicts_with = "personal", hide_short_help = true)]
+    checkout: bool,
     #[command(flatten)]
     view: crumbkit::ViewFlags,
     /// Fail instead of asking. Only `answer approve` asks, for Touch ID.
@@ -492,14 +496,14 @@ pub(crate) fn run(
         return effects::answer(context, printer, answering, no_input, stdin);
     }
     let opening = Instant::now();
-    let opened = open(context, &start);
+    let opened = context.open(&start, cli.checkout);
     ran.trace.add("open", opening);
     let (mut board, prefix) = match opened {
         Ok(opened) => opened,
         Err(refusal) => return render::refused(printer, *refusal),
     };
     board.build_in(context.built_in.0);
-    if let Err(refusal) = ask(&mut board, context, &cli.command) {
+    if let Err(refusal) = ask(&mut board, context, &cli) {
         return render::refused(printer, *refusal);
     }
     ran.root = Some(board.repository().path().to_path_buf());
@@ -568,10 +572,17 @@ fn reread(
     })
 }
 
-/// Lets `board` ask the owner to admit what `command` writes. Only a
-/// plugin's decide writes in the personal board.
-fn ask(board: &mut Board, context: &Context, command: &Command) -> Result<(), Box<Refusal>> {
-    let personal = match command {
+/// Lets `board` ask the owner to admit what `cli`'s command writes. Only a
+/// plugin's decide writes in the personal board. A put or rm is refused
+/// under `--checkout`, since it writes against the mount's pin.
+fn ask(board: &mut Board, context: &Context, cli: &Cli) -> Result<(), Box<Refusal>> {
+    if cli.checkout && matches!(cli.command, Command::Put(_) | Command::Rm { .. }) {
+        let message =
+            "--checkout reads a mount at its checkout's HEAD; put and rm write at its pin";
+        let refusal = Refusal::new(Code::CliUsage, message, &Fields::default());
+        return Err(Box::new(refusal.with_hint("leave out --checkout to write")));
+    }
+    let personal = match &cli.command {
         Command::Put(_) | Command::Rm { .. } => false,
         Command::Decide(_) => context.environment.plugin.is_some(),
         _ => return Ok(()),
@@ -781,17 +792,4 @@ fn refs(
         Err(error) => render::refused(printer, error.refusal()),
         Ok(answers) => render::refs(printer, paths, answers, limit),
     }
-}
-
-/// The board holding `start`, or else the one known board with a mount
-/// whose repository holds `start`, and `start`'s logical path in that board,
-/// opened as this build.
-pub(crate) fn open(
-    context: &Context,
-    start: &Path,
-) -> Result<(Board, Option<Prefix>), Box<Refusal>> {
-    let (home, cache) = (context.home.as_deref(), context.cache.as_deref());
-    let (mut board, prefix) = board_ops::open(start, home, cache, || context.known())?;
-    board.built_by(crate::timing::DECIDER);
-    Ok((board, prefix))
 }

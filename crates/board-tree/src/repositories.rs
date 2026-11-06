@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
-use board_model::{Board, Location, Mount, ObjectId, Source};
+use board_model::{Board, Location, LogicalPath, Mount, ObjectId, Source};
 
 use crate::git::{Contents, GitError, ObjectReads, Repository};
 use crate::worktree::Reader;
@@ -26,6 +26,9 @@ pub struct Repositories {
     open: Mutex<HashMap<PathBuf, Opened>>,
     /// How many repositories the cache has opened from disk.
     opened: AtomicUsize,
+    /// The working tree's mount pointer read at another commit for this
+    /// run, by the pointer's physical path: see [`Repositories::read_at`].
+    checkout: Option<(String, ObjectId)>,
 }
 
 /// A repository in the cache, and the path [`Repository::path`] gives it.
@@ -77,11 +80,31 @@ impl Repositories {
             home,
             open: Mutex::new(open),
             opened: AtomicUsize::new(0),
+            checkout: None,
         })
     }
 
     pub fn root(&self) -> &Repository {
         &self.root
+    }
+
+    /// Reads the mount pointer at `mount` in the working tree at `commit`,
+    /// instead of the commit it pins, until this is dropped. The pointer
+    /// file is not changed, and a pointer in a commit keeps its pin.
+    pub fn read_at(&mut self, mount: &LogicalPath, commit: ObjectId) {
+        let pointer = format!("{}.json", mount.as_str().trim_start_matches('/'));
+        self.checkout = Some((pointer, commit));
+    }
+
+    /// `mount`, a pointer at the physical `path` in `source`, with the
+    /// commit this run reads it at.
+    pub(crate) fn read_as(&self, source: &Source, path: &str, mut mount: Mount) -> Mount {
+        if let (Source::WorkingTree, Some((pointer, commit))) = (source, &self.checkout)
+            && pointer == path
+        {
+            mount.commit = *commit;
+        }
+        mount
     }
 
     /// What a mount's `~/` means.

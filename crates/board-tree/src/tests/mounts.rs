@@ -703,3 +703,47 @@ fn two_mounts_of_one_repository_at_different_commits_each_resolve_in_their_own_c
     assert_eq!(n.object, Object::Blob(inner.blob("2")));
     assert_eq!(n.board.source, Source::Commit(second));
 }
+
+#[test]
+fn a_mount_read_at_a_checkout_resolves_in_that_commit_and_its_twin_at_its_pin() {
+    let inner = Scenario::new();
+    let pinned = inner.commit(&[("x.json", "1")]);
+    let head = inner.commit(&[("x.json", "2")]);
+    let outer = Scenario::new();
+    outer.write("m.json", Item::File(&mount(&inner.path(), pinned)));
+    let resolved = |checkout: Option<ObjectId>| {
+        let mut repositories = outer.repositories();
+        if let Some(head) = checkout {
+            repositories.read_at(&path("/m"), head);
+        }
+        let location = (repositories.resolve(&Source::WorkingTree, &path("/m/x"))).unwrap();
+        (location.board.source, location.object)
+    };
+    assert_eq!(
+        resolved(Some(head)),
+        (Source::Commit(head), Object::Blob(inner.blob("2")))
+    );
+    assert_eq!(
+        resolved(None),
+        (Source::Commit(pinned), Object::Blob(inner.blob("1")))
+    );
+}
+
+#[test]
+fn a_checkout_is_read_only_through_the_working_trees_pointer_and_a_committed_one_keeps_its_pin() {
+    let inner = Scenario::new();
+    let pinned = inner.commit(&[("x.json", "1")]);
+    let head = inner.commit(&[("x.json", "2")]);
+    let outer = Scenario::new();
+    let commit = outer.commit(&[("m.json", &mount(&inner.path(), pinned))]);
+    outer.write("m.json", Item::File(&mount(&inner.path(), pinned)));
+    let mut repositories = outer.repositories();
+    repositories.read_at(&path("/m"), head);
+    for (source, read) in [
+        (Source::Commit(commit), pinned),
+        (Source::WorkingTree, head),
+    ] {
+        let location = repositories.resolve(&source, &path("/m/x")).unwrap();
+        assert_eq!(location.board.source, Source::Commit(read), "{source:?}");
+    }
+}

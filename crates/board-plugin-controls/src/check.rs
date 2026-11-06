@@ -5,6 +5,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use board_model::LogicalPath;
 use board_ops::{Absent, Host, PluginError, RefsError};
+use board_plugin::shape::ObjectId;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
@@ -35,6 +36,20 @@ pub(crate) struct Output {
     measured: Vec<Checked>,
     versions: Vec<Pinned>,
     stated: Vec<Stated>,
+    read: Vec<Read>,
+}
+
+/// A source the measured and stated files came from: the board's own tree,
+/// `/` with no commit, or a mount by its display path and the commit read,
+/// which under `board --checkout` is the checkout's HEAD and otherwise the
+/// commit the mount pins.
+#[derive(Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct Read {
+    #[schemars(regex(pattern = "^/"), extend("format" = "board-path"))]
+    mount: String,
+    #[schemars(with = "Option<ObjectId>")]
+    commit: Option<String>,
 }
 
 /// A version control, the files it reads under the path, each version
@@ -207,6 +222,12 @@ pub(crate) fn check(host: &dyn Host, input: &Value) -> Result<Value, PluginError
         .collect();
     let (measured_controls, versions) =
         measure_files(host, &applying, &controls, &files, &unreadable)?;
+    let own = root && (applying.iter()).any(|logical| unnamed.contains_key(*logical));
+    let read = sources(
+        host,
+        applying.iter().flat_map(|logical| &files[*logical]),
+        own,
+    )?;
     let stated = (applying.into_iter())
         .filter(|logical| !controls[*logical].measured())
         .map(|logical| {
@@ -234,6 +255,7 @@ pub(crate) fn check(host: &dyn Host, input: &Value) -> Result<Value, PluginError
         measured: measured_controls,
         versions,
         stated,
+        read,
     };
     Ok(serde_json::to_value(output).expect("Output holds only strings, numbers and lists"))
 }
@@ -379,6 +401,40 @@ fn read(
                 .map_err(|error| error.code().as_str().to_owned());
             (path, read)
         })
+        .collect())
+}
+
+/// Each mount in the board by its display path, and the commit read there.
+const MOUNTS: &str = "SELECT e.logical, m.target FROM mounts m \
+    JOIN entries e ON e.source = m.source AND e.path = m.path \
+    WHERE m.target IS NOT NULL AND e.logical IS NOT NULL";
+
+/// The sources `files` came from: for each, the deepest mount it lies
+/// beneath, or the board's own tree, which `own` also adds.
+fn sources<'a>(
+    host: &dyn Host,
+    files: impl Iterator<Item = &'a LogicalPath>,
+    own: bool,
+) -> Result<Vec<Read>, PluginError> {
+    let mounts: Vec<(String, String)> = index::string_pairs(host, MOUNTS)?;
+    let mounts: Vec<(LogicalPath, String)> = (mounts.into_iter())
+        .filter_map(|(path, commit)| Some((path.parse().ok()?, commit)))
+        .collect();
+    let mut read: BTreeMap<String, Option<String>> = BTreeMap::new();
+    if own {
+        read.insert("/".to_owned(), None);
+    }
+    for file in files {
+        let deepest = (mounts.iter())
+            .filter(|(mount, _)| under(file, mount))
+            .max_by_key(|(mount, _)| mount.segments().count());
+        match deepest {
+            Some((mount, commit)) => read.insert(mount.to_string(), Some(commit.clone())),
+            None => read.insert("/".to_owned(), None),
+        };
+    }
+    Ok((read.into_iter())
+        .map(|(mount, commit)| Read { mount, commit })
         .collect())
 }
 

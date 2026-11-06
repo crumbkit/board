@@ -175,6 +175,11 @@ The plugin ships both schemas. `board plugin enable controls` writes them to
   patterns, links or mounts reach it, and a link's own file counts nothing.
   The call reads each file once, and resolves every control's `applies_to`
   in one pass.
+  `read` lists each source the measured and stated files came from:
+  `{"mount": "/", "commit": null}` for the board's own tree, and each mount
+  by its display path with the commit read. A mount is read at its pin. On
+  a branch, commit and run `board --checkout call controls.check --path .`
+  from the checkout, and the mount is read at the checkout's HEAD.
 
 - `controls.evaluate` checks named parts of text, such as a pull request's
   title and body, against controls' rules. It reads its input on stdin:

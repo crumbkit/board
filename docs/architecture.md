@@ -58,6 +58,14 @@ that names no personal board, or names a directory that is not a board's
 root, refuses `--personal` with `board::config::not_found`, and the hint
 names the file.
 
+`--checkout` reads the mount matched as the directory's own repository,
+linked worktrees included, at the commit HEAD names in the directory's
+working tree, instead of the commit its pointer pins. It lasts one run and
+rewrites no pointer, so the next run reads the pin again. Board reads that
+commit, never uncommitted edits. Run from the board's own tree, from a clone
+matched only by origin or a repo record, or with `put`, `rm` or
+`--personal`, it is refused with `board::cli::usage`.
+
 A path given to `get`, `ls`, `refs`, `check` or `put` that does not start
 with `/` is relative to the prefix. In a board, the prefix is the directory's
 path beneath the board's root, such as `/controls`, and the timing log

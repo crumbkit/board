@@ -495,6 +495,15 @@ pub fn within(directory: &Path) -> Option<Result<LogicalPath, PathError>> {
     holding(directory).map(|(_, within)| within)
 }
 
+/// The commit HEAD names in the working tree holding `directory`, which in
+/// a linked worktree is that worktree's own, or `None` when `directory` is
+/// in no repository or HEAD names no commit yet.
+pub fn head_of(directory: &Path) -> Option<ObjectId> {
+    let git = gix::discover(directory).ok()?;
+    let id = git.head_id().ok()?.detach();
+    Some(crate::git::model_id(&id))
+}
+
 /// The canonical git directory of the repository whose working tree holds
 /// `directory`, the one its linked worktrees share, and `directory`'s path
 /// beneath that working tree, or its refusal when that is not a logical
@@ -574,6 +583,9 @@ impl<F> Reached<F> {
         found: Vec<(LogicalPath, String, Mount)>,
         candidates: &mut Vec<Candidate>,
     ) {
+        let found: Vec<_> = (found.into_iter())
+            .map(|(at, path, mount)| (at, path.clone(), repositories.read_as(source, &path, mount)))
+            .collect();
         let wanted: Vec<_> = (found.iter())
             .filter(|(at, _, _)| route.beneath(at).is_ok())
             .filter_map(|(_, _, mount)| Some((repositories.named(from, mount)?, mount.commit)))

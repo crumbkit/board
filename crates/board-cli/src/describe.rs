@@ -80,7 +80,7 @@ pub(crate) fn grafted(
     trace: &mut Trace,
 ) -> (Guide, Vec<String>, crumbkit::Output) {
     let opening = Instant::now();
-    let opened = start.and_then(|start| crate::run::open(context, &start));
+    let opened = start.and_then(|start| context.open(&start, false));
     trace.add("open", opening);
     let mut board = match opened {
         Ok((board, _)) => board,

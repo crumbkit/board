@@ -14,7 +14,7 @@ use clap::error::ErrorKind;
 use clap::{Command, CommandFactory as _};
 
 use crate::config::Context;
-use crate::run::{Cli, entered, open};
+use crate::run::{Cli, entered};
 
 /// The word crumbkit answers with help, which no alias may take.
 const HELP: &str = "help";
@@ -190,7 +190,7 @@ fn aliases(
         Some(context.start.clone())
     };
     let start = base.and_then(|base| entered(&base, directories).ok());
-    let Some((mut board, _)) = start.and_then(|start| open(context, &start).ok()) else {
+    let Some((mut board, _)) = start.and_then(|start| context.open(&start, false).ok()) else {
         return Vec::new();
     };
     board.build_in(context.built_in.0);

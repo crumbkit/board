@@ -10,7 +10,7 @@ use std::io::{self, ErrorKind};
 use std::path::{Path, PathBuf};
 
 use board_model::{Code, Fields, LogicalPath, PathError, PluginName, Refusal};
-use board_tree::Place;
+use board_tree::{Matched, Place};
 use serde::Deserialize;
 
 use crate::{Asker, Board, OpenError, Signing};
@@ -161,7 +161,37 @@ pub fn open(
     cache: Option<&Path>,
     known: impl FnOnce() -> Result<KnownBoards, Box<Refusal>>,
 ) -> Result<(Board, Option<Prefix>), Box<Refusal>> {
+    opening(start, home, cache, known, false)
+}
+
+/// [`open`] for `board --checkout`: the known board with a mount of the
+/// repository holding `start`, linked worktrees included, which this run
+/// reads at the commit HEAD names in `start`'s working tree instead of its
+/// pin. A board holding `start` itself, a mount only of another clone or a
+/// repo record, and a HEAD with no commit are refused with
+/// `board::cli::usage`.
+pub fn open_checkout(
+    start: &Path,
+    home: Option<&Path>,
+    cache: Option<&Path>,
+    known: impl FnOnce() -> Result<KnownBoards, Box<Refusal>>,
+) -> Result<(Board, Option<Prefix>), Box<Refusal>> {
+    opening(start, home, cache, known, true)
+}
+
+/// [`open`], or with `checkout` [`open_checkout`].
+fn opening(
+    start: &Path,
+    home: Option<&Path>,
+    cache: Option<&Path>,
+    known: impl FnOnce() -> Result<KnownBoards, Box<Refusal>>,
+    checkout: bool,
+) -> Result<(Board, Option<Prefix>), Box<Refusal>> {
     let error = match Board::open(start, home.map(Path::to_path_buf)) {
+        Ok(_) if checkout => {
+            let reason = "is in the board's own tree, which Board reads from the working tree";
+            return Err(not_a_checkout(start, reason));
+        }
         Ok(board) => return Ok((board, board_tree::within(start))),
         Err(error) => error,
     };
@@ -170,7 +200,35 @@ pub fn open(
     if !matches!(error, OpenError::NotFound { .. }) {
         return Err(Box::new(refusal));
     }
-    find(&known()?, start, home, cache, refusal).map(|(board, prefix)| (board, Some(prefix)))
+    let (mut board, place) = find(&known()?, start, home, cache, refusal)?;
+    if checkout {
+        if place.matched != Matched::Mount {
+            let reason = "is in a repository no known board mounts; a mount of another \
+                          clone, or a repo record, is read at its pin";
+            return Err(not_a_checkout(start, reason));
+        }
+        let Some(head) = board_tree::head_of(start) else {
+            return Err(not_a_checkout(
+                start,
+                "is in a repository with no commit yet",
+            ));
+        };
+        board.read_checkout(&place.mount, head);
+    }
+    Ok((board, Some(place.prefix())))
+}
+
+/// The refusal of `board --checkout` run from `start`, which `reason` says
+/// is not in a checkout of a mounted repository.
+fn not_a_checkout(start: &Path, reason: &str) -> Box<Refusal> {
+    let message = format!(
+        "--checkout reads a mounted repository at its checkout's HEAD, but {} {reason}",
+        start.display()
+    );
+    let hint = "run `board --checkout` from a checkout of a repository a known board mounts, \
+                or leave out --checkout to read each mount at its pin";
+    let refusal = Refusal::new(Code::CliUsage, message, &Fields::default());
+    Box::new(refusal.with_hint(hint))
 }
 
 /// The refusal when a board cannot be opened or made. `outside` a git
@@ -238,7 +296,7 @@ fn shown(file: Option<&Path>) -> String {
 }
 
 /// The one known board with a mount whose repository holds `start`, or
-/// else a repo record for it, and `start`'s logical path in it. Otherwise `lost`, the refusal when no board
+/// else a repo record for it, and where `start` is in it. Otherwise `lost`, the refusal when no board
 /// holds `start`, says which known boards were read and which were passed
 /// over because they could not be opened or refreshed. A board listed under
 /// several spellings counts once.
@@ -248,7 +306,7 @@ fn find(
     home: Option<&Path>,
     cache: Option<&Path>,
     lost: Refusal,
-) -> Result<(Board, Prefix), Box<Refusal>> {
+) -> Result<(Board, Place), Box<Refusal>> {
     let file = known.file.as_deref();
     let listed = &known.known.boards;
     let shown = shown(file);
@@ -285,7 +343,7 @@ fn find(
             Err(error) => format!("{} at a mount where {error}", root.display()),
         }));
         if let Some(place) = places.first() {
-            chosen = Some((board, place.prefix()));
+            chosen = Some((board, place.clone()));
         }
     }
     if named.len() > 1 {

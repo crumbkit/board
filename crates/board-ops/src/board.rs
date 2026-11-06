@@ -134,6 +134,12 @@ impl Board {
         &self.repositories
     }
 
+    /// Reads the mount at `mount` in the working tree at `commit` for the
+    /// rest of this run, instead of the commit its pointer pins.
+    pub(crate) fn read_checkout(&mut self, mount: &LogicalPath, commit: ObjectId) {
+        self.repositories.read_at(mount, commit);
+    }
+
     pub fn config(&self) -> &Config {
         &self.config
     }
