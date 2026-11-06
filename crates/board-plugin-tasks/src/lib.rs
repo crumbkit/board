@@ -236,7 +236,8 @@ fn manifest() -> Value {
         "version": "0.4.0",
         // SKILL.md's description, the callout an agent sees first.
         "description": "Before you fix a bug or build a feature, use it to check whether an open \
-            task already covers the work, and claim or close that task instead of adding a new one. \
+            task already covers the work, and claim that task and finish it with tasks.done \
+            instead of adding a new one. \
             Also use it to sweep the person's tasks one at a time, marking each done, deferring, \
             dropping or editing it, when the person asks to sweep, review or go through their \
             tasks or to-do list, and to add a task to their own list. Start with `board -C \

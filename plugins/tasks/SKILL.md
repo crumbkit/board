@@ -1,6 +1,6 @@
 ---
 name: tasks
-description: 'Before you fix a bug or build a feature, use it to check whether an open task already covers the work, and claim or close that task instead of adding a new one. Also use it to sweep the person''s tasks one at a time, marking each done, deferring, dropping or editing it, when the person asks to sweep, review or go through their tasks or to-do list, and to add a task to their own list. Start with `board -C <board> call tasks.available`, run in the repository you work in, which syncs the notes repos that repository''s git remote routes to and lists the tasks to sweep. SKILL.md and README.md in the plugin''s directory say more.'
+description: 'Before you fix a bug or build a feature, use it to check whether an open task already covers the work, and claim that task and finish it with tasks.done instead of adding a new one. Also use it to sweep the person''s tasks one at a time, marking each done, deferring, dropping or editing it, when the person asks to sweep, review or go through their tasks or to-do list, and to add a task to their own list. Start with `board -C <board> call tasks.available`, run in the repository you work in, which syncs the notes repos that repository''s git remote routes to and lists the tasks to sweep. SKILL.md and README.md in the plugin''s directory say more.'
 ---
 
 # tasks
@@ -13,17 +13,20 @@ may be on a phone, so keep each message short.
 ## Before you start work
 
 1. Run `board -C <board> call tasks.available` from the repository you work
-   in. It leaves out deferred tasks, which only `due_soon` and `held` can
-   show, so also run `board -C <board> call tasks.tree --root true`, which
-   lists every task in every status under its top-level task. Look for an open
-   task that covers the work.
-2. When one does, claim it with `tasks.claim --path <path> --session <your id>`
-   and finish it with `tasks.done --path <path>`. On `tasks::task::held`,
+   in. It syncs the notes repos and shows only the tasks that are ready, so
+   it can miss a deferred or blocked task that covers the work. Then run
+   `board -C <board> call tasks.tree --root true`, which lists every task in
+   every status at the synced pins. Run them in that order, because
+   `tasks.tree` does not sync. Look for an open task that covers the work.
+2. When one does, claim it with
+   `tasks.claim --path <path> --session <your session's local_ id>` and
+   finish it with `tasks.done --path <path>`. On `tasks::task::held`,
    another session holds the task: stop and tell the person.
-3. Add a task with `tasks.add` only when none covers the work.
-4. When the work goes through the changes plugin, pass the existing task to
-   `changes.start --task <path>`. When you added no task, leave out `--task`
-   and do not run `tasks.add` yourself: `changes.start` adds a task of its own.
+3. When none covers the work, add one. If the work goes through the changes
+   plugin, run `changes.start` without `--task`, which adds the task.
+   Otherwise run `tasks.add`.
+4. When the work goes through the changes plugin and you claimed a task, pass
+   it with `changes.start --task <path>`.
 
 ## Sweep
 
