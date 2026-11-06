@@ -174,14 +174,14 @@ fn record_refuses_a_failed_crossing_and_one_never_checked() {
 /// still reads that crossing, as it reads its twin holding known values.
 #[test]
 fn a_crossing_whose_verdict_holds_a_rule_and_status_a_newer_board_added_verifies_like_its_twin() {
-    for (rule, status) in [("pattern", "passed"), ("version", "waived")] {
+    for (rule, status) in [("pattern", "passed"), ("rubric", "waived")] {
         let personal = Personal::new();
         let work = uncommitted();
         personal.enable(work.workdir(), &["boundary"]);
         let digest = checked(&personal, "Fine.", None);
         let held = "/.board/types/boundary/crossing/v1.schema";
         let mut schema = personal.record(held).unwrap();
-        for (property, value) in [("rule", "version"), ("status", "waived")] {
+        for (property, value) in [("rule", "rubric"), ("status", "waived")] {
             let values = &mut schema["$defs"]["Verdict"]["properties"][property]["enum"];
             values.as_array_mut().unwrap().push(json!(value));
         }

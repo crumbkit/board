@@ -162,3 +162,26 @@ fn a_program_whose_name_is_no_slug_names_no_reviewer_and_its_twin_names_the_prog
         );
     }
 }
+
+/// A report from a newer Board may hold a verdict or a severity this one
+/// does not know. `post` reads it as its twin with known values, and the
+/// comment carries each value as written.
+#[test]
+fn a_report_holding_a_verdict_and_severity_a_newer_board_added_posts_them_as_written_like_its_twin()
+{
+    for (verdict, severity) in [("changes", "high"), ("defer", "critical")] {
+        let fields = json!({
+            "verdict": verdict,
+            "findings": [{"severity": severity, "file": "a.rs", "text": "t"}],
+        });
+        let text = post::comment("/reviews/r1/report", PR, &report(&fields));
+        assert!(
+            text.starts_with(&format!("**Review: {verdict}** by claude-code\n")),
+            "{text}"
+        );
+        assert!(
+            text.contains(&format!("\n- **{severity}** `a.rs` t\n")),
+            "{text}"
+        );
+    }
+}

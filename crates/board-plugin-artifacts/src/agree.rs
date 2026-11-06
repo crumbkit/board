@@ -48,20 +48,7 @@ pub(crate) struct Output {
 pub(crate) fn agree(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
     let Input { path, decision } = PluginError::read_input("artifacts", "agree", input)?;
     let (mut record, blob) = held::artifact(host, &path)?;
-    if record.state == Open::Known(State::Superseded) {
-        return Err(refusal(
-            "artifacts::state::settled",
-            format!(
-                "{path} is superseded, so it cannot be agreed; agree the artifact that replaced it, \
-                 {}",
-                record
-                    .superseded_by
-                    .as_deref()
-                    .unwrap_or("which its record does not name")
-            ),
-            &[("path", &path), ("state", "superseded")],
-        ));
-    }
+    agreeable(&path, &record)?;
     is_decision(host, &decision)?;
     record.state = Open::Known(State::Agreed);
     record.agreed_by = Some(decision.clone());
@@ -76,6 +63,25 @@ pub(crate) fn agree(host: &dyn Host, input: &Value) -> Result<Value, PluginError
         agreed_by: decision,
     };
     Ok(serde_json::to_value(output).expect("the output is plain strings"))
+}
+
+/// Refuses to agree a superseded artifact. Any other state, including one
+/// a newer Board added, can be agreed.
+fn agreeable(path: &str, record: &ArtifactRecord) -> Result<(), PluginError> {
+    if record.state != Open::Known(State::Superseded) {
+        return Ok(());
+    }
+    Err(refusal(
+        "artifacts::state::settled",
+        format!(
+            "{path} is superseded, so it cannot be agreed; agree the artifact that replaced it, {}",
+            record
+                .superseded_by
+                .as_deref()
+                .unwrap_or("which its record does not name")
+        ),
+        &[("path", path), ("state", "superseded")],
+    ))
 }
 
 /// Refuses with `artifacts::agree::no_decision` unless `decision` holds a
@@ -133,3 +139,6 @@ fn approved(host: &dyn Host, path: &str, record: &ArtifactRecord) -> Result<(), 
         _ => Err(refused("decide", &refusal)),
     }
 }
+
+#[cfg(test)]
+mod tests;

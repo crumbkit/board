@@ -301,12 +301,6 @@ fn a_run_the_python_model_refused_is_unreadable_and_its_twin_is_read() {
             result(json!({"case": "a", "outcome": "skipped"})),
             result(json!({"case": "a", "outcome": "skipped", "note": "n"})),
         ),
-        // An outcome this Board does not know is not a pass, so it needs a
-        // note.
-        (
-            result(json!({"case": "a", "outcome": "partial"})),
-            result(json!({"case": "a", "outcome": "partial", "note": "n"})),
-        ),
         (
             result(json!({"case": "a", "outcome": "pass", "trial": 0})),
             result(json!({"case": "a", "outcome": "pass", "trial": 1.0})),

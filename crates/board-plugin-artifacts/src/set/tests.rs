@@ -5,7 +5,7 @@ use serde_json::json;
 use super::*;
 
 /// An artifact record in `state`.
-fn held(state: &str) -> ArtifactRecord {
+pub(crate) fn held(state: &str) -> ArtifactRecord {
     let record = json!({
         "$type": "artifacts/artifact/v1",
         "url": "https://claude.ai/artifact/A",

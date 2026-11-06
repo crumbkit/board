@@ -107,14 +107,18 @@ fn latest_says_no_run_qualifies_with_null_and_counts_what_it_left_out() {
 }
 
 /// A case whose outcome a newer Board added did not pass, so `latest`
-/// lists it as failed, as it lists its twin that failed.
+/// lists it as failed, as it lists its twin that failed. The board's schema
+/// decides whether such a case needs a note, so one without a note is read.
 #[test]
 fn a_case_with_an_outcome_a_newer_board_added_is_listed_as_failed_like_one_that_failed() {
-    for outcome in ["fail", "flaky"] {
-        let results = json!([
-            {"case": "warm", "outcome": "pass"},
-            {"case": "cold", "outcome": outcome, "note": "twice in five"},
-        ]);
+    for (outcome, cold) in [
+        (
+            "fail",
+            json!({"case": "cold", "outcome": "fail", "note": "twice in five"}),
+        ),
+        ("flaky", json!({"case": "cold", "outcome": "flaky"})),
+    ] {
+        let results = json!([{"case": "warm", "outcome": "pass"}, cold]);
         let files = [
             ("suites/a.json", suite()),
             (

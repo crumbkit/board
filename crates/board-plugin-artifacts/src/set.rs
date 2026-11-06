@@ -150,4 +150,4 @@ fn settable(path: &str, record: &ArtifactRecord) -> Result<(), PluginError> {
 }
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;

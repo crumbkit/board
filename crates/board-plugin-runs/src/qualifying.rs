@@ -184,8 +184,12 @@ fn readable(body: &str) -> Option<(Run, bool)> {
             .all(|value| matches!(value, Value::Number(_) | Value::String(_) | Value::Bool(_)))
     };
     let results = (run.results.iter()).all(|result| {
-        let passed = matches!(result.outcome, None | Some(Open::Known(Outcome::Pass)));
-        let noted = passed || result.note.is_some();
+        // The board's schema decides whether an outcome a newer Board added
+        // needs a note.
+        let noted = matches!(
+            result.outcome,
+            None | Some(Open::Known(Outcome::Pass) | Open::Other(_))
+        ) || result.note.is_some();
         (result.outcome.is_some() || result.measures.is_some())
             && noted
             && result.trial.as_ref().is_none_or(whole)

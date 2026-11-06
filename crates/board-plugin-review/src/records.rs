@@ -4,7 +4,7 @@
 //! property as pydantic wrote it, so a board that enabled review before the
 //! port needs no `plugin enable`.
 
-use board_plugin::shape::{Actor, Pinned, Record, Tag};
+use board_plugin::shape::{Actor, Open, Pinned, Record, Tag};
 use schemars::{JsonSchema, Schema, SchemaGenerator, json_schema};
 use serde::{Deserialize, Serialize};
 
@@ -67,7 +67,7 @@ pub struct ReportRecord {
     #[schemars(title = "Findings")]
     pub findings: Vec<Finding>,
     #[schemars(schema_with = "verdict")]
-    pub verdict: Verdict,
+    pub verdict: Open<Verdict>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub by: Option<Actor>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -92,7 +92,7 @@ impl Record for ReportRecord {
 )]
 pub struct Finding {
     #[schemars(schema_with = "severity")]
-    pub severity: Severity,
+    pub severity: Open<Severity>,
     #[schemars(schema_with = "text")]
     pub text: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
