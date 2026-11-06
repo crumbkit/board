@@ -32,9 +32,11 @@ suggestion. `put` given a second argument, such as `board put /notes/a.md
 a.md`, says that put reads what it writes from stdin. Its hint gives the line
 with the argument redirected to stdin, `board put /notes/a.md --file < a.md`,
 and the same line without `--file` for a JSON record; when the line already
-has `--file`, `--new` or `--batch`, it gives that line alone. A first word
-that is a common mistake, which is only `cat` now, names the command meant,
-`get`, and the hint runs it with the same words. An enabled plugin's alias of
+has `--file`, `--new` or `--batch`, it gives that line alone. Each word is
+quoted for a shell. A line that is still refused without that argument, such
+as one with a second stray word, keeps clap's refusal. A first word that is a
+common mistake, which is only `cat` now, names the command meant, `get`, and
+the hint runs it with the same words, or `board get -h` when none follow. An enabled plugin's alias of
 that word still runs, because Board reads aliases first. Both keep the code
 `board::cli::usage`, and `fields.value` holds the word at fault.
 

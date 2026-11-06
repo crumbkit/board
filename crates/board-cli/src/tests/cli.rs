@@ -1321,7 +1321,10 @@ fn put_given_its_input_as_an_argument_hints_stdin_and_the_hinted_puts_write() {
     assert_eq!(text(&got.stdout), "plan");
 
     let refused = board_in(scenario.workdir(), &["put", "/projects/q", "q.json"]);
-    assert_eq!(refused.code, 2);
+    assert_eq!(
+        (refused.code, refused.error.as_deref()),
+        (2, Some("board::cli::usage"))
+    );
     let hints = hinted(&refused);
     assert_eq!(
         hints[1],
@@ -1342,9 +1345,16 @@ fn put_given_its_input_as_an_argument_hints_stdin_and_the_hinted_puts_write() {
         &["put", "/notes/b.md", "--file", "b.md"],
     );
     assert_eq!(
+        (refused.code, refused.error.as_deref()),
+        (2, Some("board::cli::usage"))
+    );
+    assert_eq!(
         hint_of(&refused),
         "pipe b.md to put: run `board put /notes/b.md --file < b.md`"
     );
+    let hints = hinted(&refused);
+    let file = run_hinted(scenario.workdir(), &hints[0].0, b"b");
+    assert_eq!(file.code, 0, "{}", text(&file.stderr));
     let document = json(&board_in(
         scenario.workdir(),
         &["--json", "put", "/notes/b.md", "b.md"],
@@ -1400,4 +1410,82 @@ fn cat_is_refused_naming_get_and_the_hinted_get_runs() {
         "run `board --json get /projects/p`"
     );
     assert_eq!(document["fields"]["value"], "cat");
+}
+
+#[test]
+fn put_hints_quote_each_word_and_a_second_stray_word_keeps_claps_refusal() {
+    let scenario = board();
+    let refused = board_in(
+        scenario.workdir(),
+        &["put", "/notes/my plan.md", "my plan.md"],
+    );
+    assert_eq!(
+        (refused.code, refused.error.as_deref()),
+        (2, Some("board::cli::usage"))
+    );
+    let hints = hinted(&refused);
+    assert_eq!(
+        hints[0],
+        (
+            "board put '/notes/my plan.md' --file".to_owned(),
+            Some("'my plan.md'".to_owned())
+        )
+    );
+    let file = run_hinted(scenario.workdir(), &hints[0].0, b"plan");
+    assert_eq!(file.code, 0, "{}", text(&file.stderr));
+
+    let refused = board_in(scenario.workdir(), &["put", "/notes/c.md", "c.md", "d.md"]);
+    assert_eq!(
+        (refused.code, refused.error.as_deref()),
+        (2, Some("board::cli::usage"))
+    );
+    assert!(
+        text(&refused.stderr).starts_with("error: unexpected argument 'c.md' found"),
+        "{}",
+        text(&refused.stderr)
+    );
+    assert_eq!(hint_of(&refused), "run `board put -h`");
+}
+
+#[test]
+fn cat_after_a_directory_named_cat_hints_get_in_its_place_and_bare_cat_hints_get_help() {
+    let scenario = board();
+    scenario.write("cat/README.md", Item::File("a directory named cat"));
+    let refused = board_in(scenario.workdir(), &["-C", "cat", "cat", "/projects/p"]);
+    assert_eq!(
+        (refused.code, refused.error.as_deref()),
+        (2, Some("board::cli::usage"))
+    );
+    assert_eq!(hint_of(&refused), "run `board -C cat get /projects/p`");
+    let refused = board_in(scenario.workdir(), &["cat"]);
+    assert_eq!(
+        (refused.code, refused.error.as_deref()),
+        (2, Some("board::cli::usage"))
+    );
+    assert_eq!(hint_of(&refused), "run `board get -h`");
+    let help = run_hinted(scenario.workdir(), "board get -h", b"");
+    assert_eq!(help.code, 0, "{}", text(&help.stderr));
+}
+
+#[test]
+fn put_new_refuses_a_folder_ending_in_two_slashes_and_admits_one() {
+    let scenario = board();
+    let record = br#"{"$type": "lr/project/v1"}"#;
+    for (folder, said) in [("/projects//", "/projects//"), ("projects//", "projects//")] {
+        let refused = board_with(scenario.workdir(), None, &["put", "--new", folder], record);
+        assert_eq!(
+            (refused.code, refused.error.as_deref()),
+            (2, Some("board::cli::usage")),
+            "{folder}"
+        );
+        let reason = format!("path {said:?}, read from /, is refused: it has an empty segment");
+        assert!(
+            text(&refused.stderr).contains(&reason),
+            "{}",
+            text(&refused.stderr)
+        );
+        let once = &folder[..folder.len() - 1];
+        let admitted = board_with(scenario.workdir(), None, &["put", "--new", once], record);
+        assert_eq!(admitted.code, 0, "{once}: {}", text(&admitted.stderr));
+    }
 }

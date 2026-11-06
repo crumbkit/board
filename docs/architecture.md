@@ -72,7 +72,7 @@ names the path as typed, and for a `..` that stays at or below `/` its hint
 gives the absolute path. Board reads the prefix only for a relative path.
 A directory whose name is not a logical path, such as one holding a tab,
 refuses a relative path with `board::path::malformed`.
-`mount update` takes only an absolute path, and keeps a trailing `/`. A run
+`mount update` takes only an absolute path, and refuses one ending in `/`. A run
 from a mounted repository reads the mount's commit, never the files on disk.
 
 Every file git sees

@@ -721,13 +721,12 @@ pub(crate) fn read(
 }
 
 /// The folder `--new` names, read from `prefix` without its trailing `/`,
-/// or a refusal when it has none.
+/// or a refusal when it has none or two.
 pub(crate) fn read_folder(
     prefix: Option<&Prefix>,
     given: &Given,
 ) -> Result<LogicalPath, Box<Refusal>> {
-    let text = board_ops::folder_text(&given.0);
-    let folder = read(prefix, &Given(text.to_owned()), "put")?;
+    let folder = read(prefix, given, "put")?;
     if given.0.ends_with('/') {
         Ok(folder)
     } else {
