@@ -5,7 +5,7 @@ use std::time::Duration;
 use serde_json::json;
 
 use super::*;
-use crate::qualifying::tests::{board, called, run, suite};
+use crate::qualifying::tests::{board, called, latest_in_newer, run, suite};
 
 /// `seconds` after 1970-01-01T00:00:00Z.
 fn at(seconds: u64) -> std::time::SystemTime {
@@ -104,6 +104,31 @@ fn latest_says_no_run_qualifies_with_null_and_counts_what_it_left_out() {
         output,
         json!({"run": null, "not_counted": 1, "unreadable": 1})
     );
+}
+
+/// A case whose outcome a newer Board added did not pass, so `latest`
+/// lists it as failed, as it lists its twin that failed.
+#[test]
+fn a_case_with_an_outcome_a_newer_board_added_is_listed_as_failed_like_one_that_failed() {
+    for outcome in ["fail", "flaky"] {
+        let results = json!([
+            {"case": "warm", "outcome": "pass"},
+            {"case": "cold", "outcome": outcome, "note": "twice in five"},
+        ]);
+        let files = [
+            ("suites/a.json", suite()),
+            (
+                "suites/a/runs/1.json",
+                run("2026-10-01T09:00:00Z", &json!({"results": results})),
+            ),
+        ];
+        let newer = [("/$defs/Result/properties/outcome", "flaky")];
+        let output = latest_in_newer(&files, &newer);
+        assert_eq!(output["unreadable"], 0, "{outcome}: {output}");
+        assert_eq!(output["run"]["path"], "/vendor/suites/a/runs/1");
+        assert_eq!(output["run"]["outcome"], "fail");
+        assert_eq!(output["run"]["failed"], json!(["cold"]));
+    }
 }
 
 #[test]

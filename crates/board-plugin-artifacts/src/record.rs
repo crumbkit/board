@@ -11,7 +11,7 @@ use serde_json::{Value, json};
 use crate::held::{self, timestamp};
 use crate::import::{ARTIFACT_URL, artifact_id};
 use crate::list::about;
-use board_plugin::shape::{Actor, Person, Tag};
+use board_plugin::shape::{Actor, Open, Person, Tag};
 
 use crate::records::{ArtifactRecord, State};
 
@@ -48,7 +48,10 @@ pub(crate) struct Output {
     created: bool,
     subject: Vec<String>,
     shows: Option<String>,
-    state: State,
+    /// draft, shown, agreed or superseded, or a value a newer Board added,
+    /// as written.
+    #[schemars(with = "String")]
+    state: Open<State>,
     may_replace: Vec<String>,
 }
 
@@ -73,7 +76,7 @@ pub(crate) fn record(host: &dyn Host, input: &Value) -> Result<Value, PluginErro
                 first_seen: timestamp(host.settings().now),
                 subject,
                 shows: None,
-                state: State::Draft,
+                state: Open::Known(State::Draft),
                 agreed_by: None,
                 superseded_by: None,
                 area: Vec::new(),
@@ -129,7 +132,7 @@ fn replaced(host: &dyn Host, path: &str, subject: &[String]) -> Result<Vec<Strin
     Ok((held.held.into_iter())
         .filter(|held| {
             sharing.contains(&held.path)
-                && matches!(held.record.state, State::Shown | State::Agreed)
+                && matches!(held.record.state, Open::Known(State::Shown | State::Agreed))
         })
         .map(|held| held.path)
         .collect())

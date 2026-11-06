@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use board_model::parse_json;
 use board_ops::{Host, Limit, PluginError};
-use board_plugin::shape::{TREE_CODES, whole};
+use board_plugin::shape::{Open, TREE_CODES, whole};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -81,8 +81,14 @@ struct Listed {
     path: String,
     question: String,
     subjects: Vec<String>,
-    status: Status,
-    verdict: Option<Verdict>,
+    /// planned, running, concluded or abandoned, or a value a newer Board
+    /// added, as written.
+    #[schemars(with = "String")]
+    status: Open<Status>,
+    /// supported, refuted or inconclusive, or a value a newer Board added,
+    /// as written.
+    #[schemars(with = "Option<String>")]
+    verdict: Option<Open<Verdict>>,
     decision: Option<String>,
 }
 
@@ -93,8 +99,8 @@ struct Listed {
 struct Stored {
     question: String,
     subjects: Vec<String>,
-    status: Status,
-    verdict: Option<Verdict>,
+    status: Open<Status>,
+    verdict: Option<Open<Verdict>>,
     decision: Option<String>,
     written_by: Option<String>,
     mounts: Option<Vec<String>>,
@@ -197,7 +203,10 @@ fn sources(host: &dyn Host) -> Result<BTreeMap<String, String>, PluginError> {
 pub(crate) fn open(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
     let OpenInput { limit } = PluginError::read_input("evals", "open", input)?;
     listed(host, limit, |_, eval| {
-        matches!(eval.status, Status::Planned | Status::Running)
+        !matches!(
+            eval.status,
+            Open::Known(Status::Concluded | Status::Abandoned)
+        )
     })
 }
 
@@ -250,7 +259,7 @@ fn listed(
 fn readable(body: &Value) -> Option<Stored> {
     let record = parse_json(body.as_str()?.as_bytes()).ok()?;
     let eval = Stored::deserialize(&record).ok()?;
-    let concluded = eval.status == Status::Concluded && eval.verdict.is_none();
+    let concluded = eval.status == Open::Known(Status::Concluded) && eval.verdict.is_none();
     let hook = |name: &str| {
         !name.is_empty()
             && (name.bytes()).all(|byte| matches!(byte, b'a'..=b'z' | b'0'..=b'9' | b'-'))

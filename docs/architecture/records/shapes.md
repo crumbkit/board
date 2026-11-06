@@ -121,6 +121,9 @@ Built-in plugins generate schemas from structs with schemars, through
   without a new type version. Git's own ids, such as commit ids, stay as
   git prints them. `shape::registry()` lists every
   shared shape by name, and `crates/board-plugin/shapes.json` is its golden.
+- A reader wraps a stored enum field in `Open<E>`: `Known(E)` for a value
+  `E` reads, or `Other` holding a value a newer Board added, as written. It
+  writes back what it read and has `E`'s schema.
 - `Tag<R>` writes `R::TYPE` and reads only that string, so a record struct
   can derive `Serialize` and `Deserialize`.
 - `schema_of` removes null from every optional field and drops an integer's

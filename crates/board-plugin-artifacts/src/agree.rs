@@ -3,7 +3,7 @@
 
 use board_model::Code;
 use board_ops::{Host, PluginError, Shown};
-use board_plugin::shape::Record;
+use board_plugin::shape::{Open, Record};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -48,7 +48,7 @@ pub(crate) struct Output {
 pub(crate) fn agree(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
     let Input { path, decision } = PluginError::read_input("artifacts", "agree", input)?;
     let (mut record, blob) = held::artifact(host, &path)?;
-    if record.state == State::Superseded {
+    if record.state == Open::Known(State::Superseded) {
         return Err(refusal(
             "artifacts::state::settled",
             format!(
@@ -63,7 +63,7 @@ pub(crate) fn agree(host: &dyn Host, input: &Value) -> Result<Value, PluginError
         ));
     }
     is_decision(host, &decision)?;
-    record.state = State::Agreed;
+    record.state = Open::Known(State::Agreed);
     record.agreed_by = Some(decision.clone());
     approved(host, &path, &record)?;
     held::put(

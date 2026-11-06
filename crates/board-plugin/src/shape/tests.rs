@@ -556,7 +556,10 @@ fn an_open_value_refuses_a_non_string_and_reads_its_string_twin() {
         (json!(["sunny"]), json!("sunny")),
         (json!({"sunny": null}), json!("sunny")),
     ] {
-        assert!(serde_json::from_value::<Open<Weather>>(refused.clone()).is_err(), "{refused}");
+        assert!(
+            serde_json::from_value::<Open<Weather>>(refused.clone()).is_err(),
+            "{refused}"
+        );
         assert!(serde_json::from_value::<Open<Weather>>(admitted).is_ok());
     }
 }

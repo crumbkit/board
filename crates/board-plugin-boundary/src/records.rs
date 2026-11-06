@@ -2,7 +2,7 @@
 //! Their schemas are generated from these structs; the files under `types/`
 //! are those schemas, committed.
 
-use board_plugin::shape::{Digest, Glob, Prose, Record, Ref, Tag};
+use board_plugin::shape::{Digest, Glob, Open, Prose, Record, Ref, Tag};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -113,9 +113,9 @@ pub struct Verdict {
     pub part: String,
     /// The kind of the control's rule; left out for a written requirement.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub rule: Option<Kind>,
+    pub rule: Option<Open<Kind>>,
     /// passed, failed, skipped after a free rule failed, or stated.
-    pub status: Status,
+    pub status: Open<Status>,
     /// What the control found wrong, at most 20.
     pub findings: Vec<Finding>,
     /// What a budget counted.

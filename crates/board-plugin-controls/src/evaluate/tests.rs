@@ -38,7 +38,7 @@ fn evaluate_reads_every_rule_file_once_in_one_get_each_call_and_none_without_one
 fn a_parser_message_never_reaches_a_match_only_error_and_a_shown_one_quotes_the_line() {
     let rule = |show: Show| Pattern {
         pattern: "/private/names.txt".to_owned(),
-        show,
+        show: Open::Known(show),
     };
     for line in [
         "(?P=acmename)",

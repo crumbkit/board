@@ -885,3 +885,52 @@ fn agree_refuses_a_superseded_artifact_without_asking_the_owner_and_asks_for_a_s
     let (_, asked) = agree(&personal, "/projects/a/decisions/steps");
     assert_eq!(asked["code"], "artifacts::agree::asked", "{asked}");
 }
+
+/// A mounted board a newer Board wrote can hold an artifact whose state,
+/// and a version whose copy, this Board does not know. `list` lists both,
+/// the state as written, as it lists their twin holding known values.
+#[test]
+fn list_lists_an_artifact_and_a_version_holding_values_a_newer_board_added_like_their_twin() {
+    for (state, copy) in [("shown", "none"), ("parked", "remote")] {
+        let board = board();
+        let mut tree = vec![(
+            ".board/board.json".to_owned(),
+            json!({"$type": "board/config/v1", "plugins": ["artifacts"]}).to_string(),
+        )];
+        for (path, text) in shipped("artifacts") {
+            let mut schema: Value = serde_json::from_str(&text).unwrap();
+            for (property, value) in [("state", "parked"), ("copy", "remote")] {
+                let pointer = format!("/properties/{property}/enum");
+                if let Some(values) = schema.pointer_mut(&pointer).and_then(Value::as_array_mut) {
+                    values.push(json!(value));
+                }
+            }
+            tree.push((path, schema.to_string()));
+        }
+        let mut kept: Value =
+            serde_json::from_str(&version("2026-10-31T18:20:00Z", &json!({"version": "1"})))
+                .unwrap();
+        kept.as_object_mut().unwrap().remove("sha256");
+        kept["copy"] = json!(copy);
+        tree.push((
+            "artifacts/A.json".to_owned(),
+            artifact(A, &json!({"state": state})),
+        ));
+        tree.push(("artifacts/A/versions/1.json".to_owned(), kept.to_string()));
+        let repository = Scenario::new();
+        let files: Vec<(&str, &str)> = (tree.iter())
+            .map(|(path, text)| (path.as_str(), text.as_str()))
+            .collect();
+        let commit = repository.commit(&files);
+        mount(&board, "boards/other.json", &repository, commit);
+        let output = board.call("artifacts.list", &[]);
+        assert_eq!(output["unreadable"], 0, "{state} {copy}: {output}");
+        let entry = &output["artifacts"][0];
+        assert_eq!(entry["path"], "/boards/other/artifacts/A");
+        assert_eq!(entry["state"], state);
+        assert_eq!(
+            entry["versions"][0]["path"],
+            "/boards/other/artifacts/A/versions/1"
+        );
+    }
+}
