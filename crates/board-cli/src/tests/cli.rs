@@ -1583,3 +1583,24 @@ fn put_and_rm_refuse_a_path_ending_in_a_slash_and_admit_it_without_the_slash() {
     let admitted = board_in(scenario.workdir(), &["rm", "/newdir"]);
     assert_eq!(admitted.code, 0, "{}", text(&admitted.stderr));
 }
+
+#[test]
+fn rm_r_removes_a_folder_named_with_a_trailing_slash_and_rm_alone_refuses_it() {
+    for folder in ["/projects/", "projects/"] {
+        let scenario = uncommitted();
+        let refused = board_in(scenario.workdir(), &["rm", folder]);
+        assert_eq!(
+            (refused.code, refused.error.as_deref()),
+            (2, Some("board::cli::usage")),
+            "{folder}"
+        );
+        let removed = board_in(scenario.workdir(), &["rm", "-r", folder]);
+        assert_eq!(removed.code, 0, "{folder}: {}", text(&removed.stderr));
+        let gone = board_in(scenario.workdir(), &["get", "/projects/p"]);
+        assert_eq!(
+            gone.error.as_deref(),
+            Some("board::path::not_found"),
+            "{folder}"
+        );
+    }
+}

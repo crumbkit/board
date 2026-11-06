@@ -638,7 +638,7 @@ fn command(
             wait,
             ..
         } => {
-            let path = or_refuse!(crate::mistaken::file_path(prefix, &path, "rm"));
+            let path = or_refuse!(crate::mistaken::file_path(prefix, &path, "rm", recursive));
             let (removing, unmatched) = removal(recursive, expect, ignore_unmatch);
             match board.remove_waiting(&path, removing, unmatched, wait) {
                 Ok(report) => render::put(printer, &report, None),

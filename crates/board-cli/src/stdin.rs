@@ -64,7 +64,9 @@ pub(crate) fn put(
     let at = match (path, new) {
         _ if batch => Ok(At::Batch),
         (Some(folder), true) => read_folder(prefix, &folder).map(At::New),
-        (Some(path), false) => crate::mistaken::file_path(prefix, &path, "put").map(At::Path),
+        (Some(path), false) => {
+            crate::mistaken::file_path(prefix, &path, "put", false).map(At::Path)
+        }
         (None, true) => Ok(At::Declared),
         (None, false) => unreachable!("clap requires a path, --new or --batch"),
     };

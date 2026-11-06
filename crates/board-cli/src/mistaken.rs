@@ -93,13 +93,15 @@ fn put_input(arguments: &[OsString], value: &str) -> Option<Refusal> {
 }
 
 /// The file `given` names for `name`, put or rm, read from `prefix`, or a
-/// refusal when it ends in `/`, which names a folder.
+/// refusal when it ends in `/`, which names a folder. `rm -r` removes a
+/// folder, so with `recursive` a trailing `/` is read as any path's is.
 pub(crate) fn file_path(
     prefix: Option<&Prefix>,
     given: &Given,
     name: &str,
+    recursive: bool,
 ) -> Result<LogicalPath, Box<Refusal>> {
-    let Some(folder) = given.0.strip_suffix('/') else {
+    let Some(folder) = given.0.strip_suffix('/').filter(|_| !recursive) else {
         return read(prefix, given, name);
     };
     let message = format!("{name}'s path {} ends in /, which names a folder", given.0);
