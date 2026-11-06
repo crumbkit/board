@@ -2,6 +2,7 @@
 //! mark the artifact it replaces superseded.
 
 use board_ops::{Host, PluginError};
+use board_plugin::shape::Open;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -52,7 +53,10 @@ pub(crate) struct Output {
     path: String,
     subject: Vec<String>,
     shows: Option<String>,
-    state: State,
+    /// draft, shown, agreed or superseded, or a value a newer Board added,
+    /// as written.
+    #[schemars(with = "String")]
+    state: Open<State>,
     area: Vec<String>,
     superseded: Option<String>,
 }
@@ -89,10 +93,10 @@ pub(crate) fn set(host: &dyn Host, input: &Value) -> Result<Value, PluginError> 
     let (mut record, blob) = held::artifact(host, path)?;
     if let Some(state) = asked.state {
         settable(path, &record)?;
-        record.state = match state {
+        record.state = Open::Known(match state {
             Settable::Draft => State::Draft,
             Settable::Shown => State::Shown,
-        };
+        });
     }
     if let Some(subject) = asked.subject
         && !record.subject.contains(&subject)
@@ -110,7 +114,7 @@ pub(crate) fn set(host: &dyn Host, input: &Value) -> Result<Value, PluginError> 
     let mut lines = vec![json!({"path": path, "expect": blob, "record": record})];
     if let Some(old) = &asked.supersedes {
         let (mut replaced, blob) = held::artifact(host, old)?;
-        replaced.state = State::Superseded;
+        replaced.state = Open::Known(State::Superseded);
         replaced.superseded_by = Some(path.to_owned());
         lines.push(json!({"path": old, "expect": blob, "record": replaced}));
     }
@@ -129,10 +133,11 @@ pub(crate) fn set(host: &dyn Host, input: &Value) -> Result<Value, PluginError> 
 /// Refuses a state change on an artifact that is agreed or superseded,
 /// whose state only a decision or a newer artifact gives.
 fn settable(path: &str, record: &ArtifactRecord) -> Result<(), PluginError> {
+    // A state a newer Board added is not known to be settled.
     let state = match record.state {
-        State::Draft | State::Shown => return Ok(()),
-        State::Agreed => "agreed",
-        State::Superseded => "superseded",
+        Open::Known(State::Draft | State::Shown) | Open::Other(_) => return Ok(()),
+        Open::Known(State::Agreed) => "agreed",
+        Open::Known(State::Superseded) => "superseded",
     };
     Err(refusal(
         "artifacts::state::settled",
@@ -143,3 +148,6 @@ fn settable(path: &str, record: &ArtifactRecord) -> Result<(), PluginError> {
         &[("path", path), ("state", state)],
     ))
 }
+
+#[cfg(test)]
+mod tests;

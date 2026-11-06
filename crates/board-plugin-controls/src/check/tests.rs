@@ -436,3 +436,128 @@ fn a_budget_over_its_max_returns_the_same_report_as_a_pass_with_passed_false() {
     assert_eq!(output["measured"][0]["used"], 2);
     assert_eq!(output["stated"], report["stated"]);
 }
+
+/// A board whose control schema a newer Board replaced, so it admits each
+/// `(pointer, value)` of `newer` beside the values at that pointer's
+/// `enum`, holding `files` by path.
+fn newer(files: &[(&str, &str)], newer: &[(&str, &str)]) -> (Scenario, Recording) {
+    let mut schema: Value =
+        serde_json::from_str(include_str!("../../types/controls/control/v1.schema.json")).unwrap();
+    for (pointer, value) in newer {
+        let values = schema.pointer_mut(&format!("{pointer}/enum")).unwrap();
+        values.as_array_mut().unwrap().push(json!(value));
+    }
+    let schema = schema.to_string();
+    let mut files = files.to_vec();
+    files.push((".board/types/controls/control/v1.schema.json", &schema));
+    recording(&files)
+}
+
+/// A control whose kind a newer Board added reads as standing, as its
+/// standing twin does, in `check` and `for-path`.
+#[test]
+fn a_kind_a_newer_board_added_reads_as_standing_like_its_standing_twin() {
+    for kind in ["standing", "reminder"] {
+        let fields = json!({"paths": ["docs/*"], "kind": kind});
+        let (_scenario, host) = newer(
+            &[("docs/a.md", "one"), ("controls/a.json", &control(&fields))],
+            &[("/properties/kind", "reminder")],
+        );
+        let output = check(&host, &json!({})).unwrap();
+        assert_eq!(
+            kinds(&output["stated"]),
+            [row("a", "standing", "edit")],
+            "{kind}"
+        );
+        let output = for_path(&host, &json!({"path": "/docs/a.md"})).unwrap();
+        assert_eq!(
+            kinds(&output["controls"]),
+            [row("a", "standing", "edit")],
+            "{kind}"
+        );
+    }
+}
+
+/// A control whose show a newer Board added is shown at the start, the
+/// first point, as its twin that says `start` is.
+#[test]
+fn a_show_a_newer_board_added_reads_as_start_like_its_start_twin() {
+    for show in ["start", "hourly"] {
+        let fields = json!({"paths": ["docs/*"], "show": show});
+        let (_scenario, host) = newer(
+            &[("docs/a.md", "one"), ("controls/a.json", &control(&fields))],
+            &[("/properties/show", "hourly")],
+        );
+        let output = check(&host, &json!({})).unwrap();
+        assert_eq!(
+            kinds(&output["stated"]),
+            [row("a", "standing", "start")],
+            "{show}"
+        );
+    }
+}
+
+/// A rule whose budget, `per` or pattern `show` a newer Board added is not
+/// applied: `check` states its control with its requirement and measures
+/// nothing, and `evaluate` gives it `stated`. Its twin with known values is
+/// measured and evaluated.
+#[test]
+fn a_rule_holding_a_value_a_newer_board_added_is_stated_and_its_twin_is_applied() {
+    let pattern = |show: &str| json!({"pattern": "/names.txt", "show": show});
+    let newer_values = [
+        ("/$defs/Rule/properties/budget", "pages"),
+        ("/$defs/Rule/properties/per", "line"),
+        ("/$defs/Rule/properties/show", "redacted"),
+    ];
+    for (known, unknown, verdict) in [
+        (words(9), json!({"budget": "pages", "max": 9}), "budget"),
+        (
+            json!({"budget": "words", "max": 9, "per": "file"}),
+            json!({"budget": "words", "max": 9, "per": "line"}),
+            "budget",
+        ),
+        (pattern("match-only"), pattern("redacted"), "pattern"),
+    ] {
+        let on_docs = |rule: &Value| control(&json!({"paths": ["docs/*"], "rule": rule}));
+        let (_scenario, host) = newer(
+            &[
+                ("docs/a.md", "one"),
+                ("names.txt", "acme\n"),
+                ("controls/known.json", &on_docs(&known)),
+                ("controls/unknown.json", &on_docs(&unknown)),
+            ],
+            &newer_values,
+        );
+        let output = check(&host, &json!({})).unwrap();
+        let stated: Vec<&Value> = (output["stated"].as_array().unwrap().iter())
+            .filter(|item| item["control"] == "/controls/unknown")
+            .collect();
+        assert_eq!(stated.len(), 1, "{unknown}: {output}");
+        assert_eq!(stated[0]["requirement"], "R.");
+        let measured = |items: &Value, control: &str| {
+            (items.as_array().unwrap().iter()).any(|item| item["control"] == control)
+        };
+        assert!(
+            !measured(&output["measured"], "/controls/unknown"),
+            "{unknown}"
+        );
+        assert_eq!(
+            measured(&output["measured"], "/controls/known"),
+            verdict == "budget"
+        );
+        let input =
+            json!({"controls": ["/controls/known", "/controls/unknown"], "parts": {"body": "one"}});
+        let output = crate::evaluate::evaluate(&host, &input).unwrap();
+        let results = &output["results"];
+        assert_eq!(
+            (&results[0]["rule"], &results[0]["status"]),
+            (&json!(verdict), &json!("passed")),
+            "{known}"
+        );
+        assert_eq!(
+            (&results[1]["rule"], &results[1]["status"]),
+            (&Value::Null, &json!("stated")),
+            "{unknown}"
+        );
+    }
+}

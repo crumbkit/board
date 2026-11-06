@@ -5,7 +5,7 @@ use std::collections::BTreeSet;
 
 use board_model::{Code, Refusal};
 use board_ops::{Absent, Host, PluginError};
-use board_plugin::shape::{Actor, whole};
+use board_plugin::shape::{Actor, Open, whole};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -83,7 +83,10 @@ pub(crate) struct Listed {
     first_seen: String,
     subject: Vec<String>,
     shows: Option<String>,
-    state: State,
+    /// draft, shown, agreed or superseded, or a value a newer Board added,
+    /// as written.
+    #[schemars(with = "String")]
+    state: Open<State>,
     agreed_by: Option<String>,
     superseded_by: Option<String>,
     area: Vec<String>,
@@ -167,7 +170,9 @@ fn matches(asked: &Input, about: Option<&BTreeSet<String>>, held: &Held) -> bool
             paths.contains(&held.path)
                 || (asked.subject.as_ref()).is_some_and(|subject| record.subject.contains(subject))
         })
-        && asked.state.is_none_or(|state| state == record.state)
+        && asked
+            .state
+            .is_none_or(|state| Open::Known(state) == record.state)
         && (asked.area.as_ref()).is_none_or(|area| record.area.contains(area))
         && (!asked.unfiled || record.subject.is_empty() || record.shows.is_none())
 }

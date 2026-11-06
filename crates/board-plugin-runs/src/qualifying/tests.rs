@@ -117,6 +117,62 @@ pub(crate) fn built(files: &[(&str, String)]) -> (Scenario, Board) {
     (scenario, board)
 }
 
+/// The output of `board call runs.latest` for `/vendor/suites/a` on a board
+/// that mounts at `/vendor` a library holding `files`, whose schema for
+/// runs admits, as a newer Board's would, each `(pointer, value)` of
+/// `newer` beside the values at that pointer's `enum`.
+pub(crate) fn latest_in_newer(files: &[(&str, String)], newer: &[(&str, &str)]) -> Value {
+    let (scenario, _) = built(&[]);
+    let held = ".board/types/runs/run/v1.schema.json";
+    let mut schema: Value =
+        serde_json::from_str(&std::fs::read_to_string(scenario.workdir().join(held)).unwrap())
+            .unwrap();
+    for (pointer, value) in newer {
+        let values = schema.pointer_mut(&format!("{pointer}/enum")).unwrap();
+        values.as_array_mut().unwrap().push(json!(value));
+    }
+    let suite_schema = ".board/types/runs/suite/v1.schema.json";
+    let suite_text = std::fs::read_to_string(scenario.workdir().join(suite_schema)).unwrap();
+    let schema = schema.to_string();
+    let config = r#"{"$type": "board/config/v1", "plugins": ["runs"]}"#.to_owned();
+    let mut committed = vec![
+        (".board/board.json", config.as_str()),
+        (held, schema.as_str()),
+        (suite_schema, suite_text.as_str()),
+    ];
+    committed.extend(files.iter().map(|(path, text)| (*path, text.as_str())));
+    let library = Scenario::new();
+    let pinned = library.commit(&committed);
+    let mount = json!({"$type": "board/mount/v1", "repo": library.path(), "follow": "main", "commit": pinned.to_string()});
+    scenario.write("vendor.json", Item::File(&mount.to_string()));
+    let mut board = Board::open(scenario.workdir(), None).unwrap();
+    board.build_in(&[&Runs]);
+    let target: Target = "runs.latest".parse().unwrap();
+    let input = br#"{"suite": "/vendor/suites/a"}"#;
+    (board.call(&target, input, &Plugins::default()).unwrap()).output
+}
+
+/// A run whose scope a newer Board added is read but is not full, so it
+/// does not qualify, as its targeted twin does not.
+#[test]
+fn a_run_with_a_scope_a_newer_board_added_is_counted_as_not_full_like_a_targeted_one() {
+    for scope in ["targeted", "partial"] {
+        let files = [
+            ("suites/a.json", suite()),
+            (
+                "suites/a/runs/1.json",
+                run("2026-10-01T09:00:00Z", &json!({"scope": scope})),
+            ),
+        ];
+        let output = latest_in_newer(&files, &[("/properties/scope", "partial")]);
+        assert_eq!(
+            output,
+            json!({"run": null, "not_counted": 1, "unreadable": 0}),
+            "{scope}"
+        );
+    }
+}
+
 /// The output of `board call runs.<capability>` with `input` on a board
 /// holding `files`, which Board checks against the capability's schemas, and
 /// whether the call started a process.
@@ -188,7 +244,7 @@ fn a_run_the_python_model_refused_is_unreadable_and_its_twin_is_read() {
             json!({"finished": "2026-10-01"}),
             json!({"finished": "2026-10-01T09:05:00Z"}),
         ),
-        (json!({"scope": "partial"}), json!({"scope": "targeted"})),
+        (json!({"scope": 5}), json!({"scope": "targeted"})),
         (
             json!({"by": "claude"}),
             json!({"by": {"program": "claude-code"}}),
@@ -245,9 +301,11 @@ fn a_run_the_python_model_refused_is_unreadable_and_its_twin_is_read() {
             result(json!({"case": "a", "outcome": "skipped"})),
             result(json!({"case": "a", "outcome": "skipped", "note": "n"})),
         ),
+        // An outcome this Board does not know is not a pass, so it needs a
+        // note.
         (
             result(json!({"case": "a", "outcome": "partial"})),
-            result(json!({"case": "a", "outcome": "error", "note": "n"})),
+            result(json!({"case": "a", "outcome": "partial", "note": "n"})),
         ),
         (
             result(json!({"case": "a", "outcome": "pass", "trial": 0})),

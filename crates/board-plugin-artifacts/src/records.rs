@@ -1,7 +1,7 @@
 //! The record types the plugin ships. Their schemas are generated from
 //! these structs; the files under `types/` are those schemas, committed.
 
-use board_plugin::shape::{Accepts, Actor, Digest, Prose, Record, Ref, Tag};
+use board_plugin::shape::{Accepts, Actor, Digest, Open, Prose, Record, Ref, Tag};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -49,7 +49,7 @@ pub struct ArtifactRecord {
     /// Where the owner's review stands: draft until it is shown, shown once
     /// the owner has seen it, agreed once the owner's decision accepts it,
     /// and superseded once a newer artifact replaces it.
-    pub state: State,
+    pub state: Open<State>,
     /// The owner's decision that moved the artifact to agreed.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "Option<Ref<Decision>>")]
@@ -143,7 +143,7 @@ pub struct VersionRecord {
     pub at: String,
     /// none when the version has no local page, so nothing was copied.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub copy: Option<NoCopy>,
+    pub copy: Option<Open<NoCopy>>,
 }
 
 impl Record for VersionRecord {

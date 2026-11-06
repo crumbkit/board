@@ -8,7 +8,7 @@ use serde_json::{Value, json};
 
 use crate::held::{self, logical, refused, timestamp};
 use crate::list::LIST_LIMIT;
-use board_plugin::shape::{Actor, Person, Tag};
+use board_plugin::shape::{Actor, Open, Person, Tag};
 
 use crate::records::{ArtifactRecord, State};
 
@@ -133,7 +133,7 @@ pub(crate) fn import(host: &dyn Host, input: &Value) -> Result<Value, PluginErro
             first_seen: row.updated_at.clone().unwrap_or_else(|| now.clone()),
             subject: Vec::new(),
             shows: None,
-            state: State::Draft,
+            state: Open::Known(State::Draft),
             agreed_by: None,
             superseded_by: None,
             area: Vec::new(),

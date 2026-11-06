@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use board_model::{Code, LogicalPath};
 use board_ops::{Host, PluginError, Shown};
 use board_plugin::Target;
-use board_plugin::shape::{Digest, Ref, Tag};
+use board_plugin::shape::{Digest, Open, Ref, Tag};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
@@ -110,7 +110,13 @@ pub(crate) fn check(host: &dyn Host, input: &Value) -> Result<Value, PluginError
         .collect();
     let (verdicts, unchecked) = evaluate(personal, &matched, &globs, &parts)?;
     let failed: Vec<&Verdict> = (verdicts.iter())
-        .filter(|verdict| matches!(verdict.status, Status::Failed | Status::Stated))
+        // A status a newer Board added is not known to pass.
+        .filter(|verdict| {
+            !matches!(
+                verdict.status,
+                Open::Known(Status::Passed | Status::Skipped)
+            )
+        })
         .collect();
     let content = Content {
         action: &action,
@@ -307,12 +313,12 @@ fn refusal(action: &str, digest: &str, failed: &[&Verdict], answer: &Answer) -> 
     let mut steps = Vec::new();
     if failed
         .iter()
-        .any(|verdict| verdict.status == Status::Stated)
+        .any(|verdict| verdict.status == Open::Known(Status::Stated))
     {
         steps.push(GIVE_RULE.to_owned());
     }
     let parts: BTreeSet<&str> = (failed.iter())
-        .filter(|verdict| verdict.status == Status::Failed)
+        .filter(|verdict| verdict.status != Open::Known(Status::Stated))
         .map(|verdict| verdict.part.as_str())
         .collect();
     if !parts.is_empty() {
