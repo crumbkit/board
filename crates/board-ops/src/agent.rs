@@ -10,6 +10,10 @@ use serde_json::{Map, Value};
 
 use crate::host::{Host, PluginError, Run};
 
+/// The variable that holds the argv of the agent that runs a change, as a
+/// JSON array of strings. `agent` in the known boards file gives it a
+/// default, which the variable overrides.
+pub const AGENT_VARIABLE: &str = "BOARD_AGENT";
 /// How much of the agent's stdout or stderr an error carries.
 pub const TAIL: usize = 4096;
 
@@ -159,6 +163,21 @@ impl Agent {
         }
         Ok(stdout)
     }
+}
+
+/// The file name of `program`, an agent's `argv[0]`, when it is a slug
+/// such as `claude`, so a record can name the program without its path or
+/// arguments; else none.
+pub fn program_name(program: &str) -> Option<String> {
+    let name = std::path::Path::new(program).file_name()?.to_str()?;
+    let slug = !name.is_empty()
+        && (name.split('-')).all(|word| {
+            !word.is_empty()
+                && word
+                    .bytes()
+                    .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit())
+        });
+    slug.then(|| name.to_owned())
 }
 
 /// The agent's answer, from `claude -p --output-format json`'s envelope when

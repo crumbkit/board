@@ -12,7 +12,7 @@ use serde_json::{Value, json};
 use crate::board::{self};
 use crate::change::{Referenced, kind_of, line, read, referenced, touch};
 use crate::phases::final_phase;
-use crate::records::{Kind, PlanRecord};
+use crate::records::{Kind, PlanRecord, is_final};
 use crate::{PLUGIN, refusal, to_value};
 
 /// The most words a plan's text holds, and the most words the documents it
@@ -37,16 +37,17 @@ pub(crate) struct Input {
         description = "The plan in Markdown, at most 3,000 words."
     )]
     text: String,
+    #[serde(default)]
     #[schemars(
         with = "Vec<BoardPath>",
-        description = "The records and documents the plan relies on; the documents hold at most \
-                       3,000 words in all."
+        description = "The records and documents the plan relies on, a list given on stdin; the \
+                       documents hold at most 3,000 words in all, and none when left out."
     )]
     uses: Vec<String>,
     #[schemars(
         with = "Option<Vec<LogicalGlob>>",
-        description = "The files and SQLite GLOB patterns the change will edit, by logical path \
-                       under the change's mount, such as /repos/inbox/crates/inbox-store/**, \
+        description = "The files and SQLite GLOB patterns the change will edit, a list given on \
+                       stdin, by logical path under the change's mount, such as /repos/inbox/crates/inbox-store/**, \
                        where `*` also matches `/`; a build change needs one."
     )]
     paths: Option<Vec<String>>,
@@ -129,14 +130,14 @@ pub(crate) fn plan(host: &dyn Host, input: &Value) -> Result<Value, PluginError>
     let uses = once(uses);
     let paths = once(paths.unwrap_or_default());
     let (mut change, blob) = read(host, &path)?;
-    if change.phase.is_final() {
+    if is_final(&change.phase) {
         return Err(final_phase(
             &path,
-            change.phase,
+            &change.phase,
             format!(
                 "the change at {path} is {}, so it takes no new plan; list open changes with \
                  `board call changes.open`, or start a new one",
-                change.phase.as_str()
+                change.phase
             ),
         ));
     }
@@ -266,22 +267,41 @@ fn check_paths(path: &str, mount: &str, paths: &[String], kind: Kind) -> Result<
 /// The stamp a plan written at `now` is named by, `%Y%m%dT%H%M%S%fZ` in
 /// UTC, such as 20261105T115534421737Z.
 pub(crate) fn stamp(now: SystemTime) -> String {
-    let since = now
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .unwrap_or_default();
-    let seconds = i64::try_from(since.as_secs()).unwrap_or(i64::MAX);
-    let day = board_repos::Date::from_days(seconds.div_euclid(86_400));
-    let time = seconds.rem_euclid(86_400);
+    let (day, time, micros) = parts(now);
     format!(
-        "{:04}{:02}{:02}T{:02}{:02}{:02}{:06}Z",
+        "{:04}{:02}{:02}T{:02}{:02}{:02}{micros:06}Z",
         day.year,
         day.month,
         day.day,
         time / 3600,
         time / 60 % 60,
         time % 60,
-        since.subsec_micros()
     )
+}
+
+/// `now` as an RFC 3339 date-time in UTC to the second, such as
+/// 2026-11-05T11:55:34Z.
+pub(crate) fn time_of(now: SystemTime) -> String {
+    let (day, time, _) = parts(now);
+    format!(
+        "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z",
+        day.year,
+        day.month,
+        day.day,
+        time / 3600,
+        time / 60 % 60,
+        time % 60,
+    )
+}
+
+/// The UTC day of `now`, its seconds into that day and its microseconds.
+fn parts(now: SystemTime) -> (board_repos::Date, i64, u32) {
+    let since = now
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap_or_default();
+    let seconds = i64::try_from(since.as_secs()).unwrap_or(i64::MAX);
+    let day = board_repos::Date::from_days(seconds.div_euclid(86_400));
+    (day, seconds.rem_euclid(86_400), since.subsec_micros())
 }
 
 /// A new plan record for the change at `path`, and the `put` lines that

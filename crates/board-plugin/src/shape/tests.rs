@@ -241,11 +241,14 @@ fn the_registry_holds_each_shared_shape_by_name_as_a_field_using_it_sees_it() {
         registry.keys().map(String::as_str).collect::<Vec<_>>(),
         [
             "Actor",
+            "CommitName",
             "Date",
             "Digest",
             "Glob",
             "LogicalGlob",
             "ObjectId",
+            "PathTemplate",
+            "Pattern",
             "Person",
             "Pinned",
             "Prose",
@@ -254,6 +257,8 @@ fn the_registry_holds_each_shared_shape_by_name_as_a_field_using_it_sees_it() {
             "Slug",
             "Subject",
             "Summary",
+            "Timestamp",
+            "TypeName",
             "Url"
         ]
     );
@@ -595,4 +600,82 @@ fn an_open_fields_schema_is_its_enums() {
         schema_of::<Opened>(SchemaSettings::draft2020_12())["properties"]["weather"],
         json!({"description": "The weather.", "type": "string", "enum": ["sunny", "light-rain"]})
     );
+}
+
+/// A type name is a namespace, a kind and a version from 1, as a record's
+/// `$type` names it.
+#[test]
+fn a_type_name_without_three_parts_or_a_version_is_refused_and_its_twin_is_admitted() {
+    let code = refusal_of::<TypeName>();
+    let invalid = Some(board_model::Code::RecordInvalid);
+    for (refused, admitted) in [
+        ("changes/flow", "changes/flow/v1"),
+        ("changes/flow/v0", "changes/flow/v10"),
+        ("Changes/flow/v1", "review/report/v1"),
+        ("/changes/flow/v1", "jira/issue/v1"),
+    ] {
+        assert_eq!((refused, code(json!(refused))), (refused, invalid));
+        assert_eq!((admitted, code(json!(admitted))), (admitted, None));
+    }
+}
+
+/// A timestamp is a date and a time in UTC, as RFC 3339 writes it.
+#[test]
+fn a_timestamp_without_a_time_or_outside_utc_is_refused_and_its_twin_is_admitted() {
+    let code = refusal_of::<Timestamp>();
+    let invalid = Some(board_model::Code::RecordInvalid);
+    for (refused, admitted) in [
+        ("2026-11-06", "2026-11-06T10:15:00Z"),
+        ("2026-11-06T10:15:00", "2026-11-06T10:15:00Z"),
+        ("2026-11-06T10:15:00+01:00", "2026-11-06T09:15:00.5Z"),
+    ] {
+        assert_eq!((refused, code(json!(refused))), (refused, invalid));
+        assert_eq!((admitted, code(json!(admitted))), (admitted, None));
+    }
+}
+
+/// A path template is a logical path, placeholders and all, on one line.
+#[test]
+fn a_path_template_without_a_leading_slash_or_with_a_space_is_refused_and_its_twin_is_admitted() {
+    let code = refusal_of::<PathTemplate>();
+    let invalid = Some(board_model::Code::RecordInvalid);
+    for (refused, admitted) in [
+        ("controls/{repo}/ui-paths", "/controls/{repo}/ui-paths"),
+        ("/flows/{draft} .json", "/flows/{draft}.json"),
+    ] {
+        assert_eq!((refused, code(json!(refused))), (refused, invalid));
+        assert_eq!((admitted, code(json!(admitted))), (admitted, None));
+    }
+}
+
+/// A pattern is marked as a regular expression and is never empty.
+#[test]
+fn an_empty_pattern_is_refused_and_its_twin_is_admitted() {
+    let code = refusal_of::<Pattern>();
+    assert_eq!(code(json!("")), Some(board_model::Code::RecordInvalid));
+    assert_eq!(code(json!("^none\\b")), None);
+    let schema = schema_of::<Pattern>(SchemaSettings::draft2020_12());
+    assert_eq!(schema["x-board-regex"], true);
+}
+
+#[test]
+fn a_commit_name_of_7_to_40_hex_digits_is_admitted_and_a_shorter_or_upper_case_one_is_refused() {
+    let schema = json!({
+        "type": "object",
+        "properties": {"head": registry()["CommitName"].clone()},
+    });
+    let schema = board_validate::Schema::compile(schema).unwrap();
+    let head = |text: &str| json!({ "head": text });
+    for (refused, admitted) in [
+        ("abc123", "abc1234"),
+        ("ABC1234", "abc1234"),
+        (&"a".repeat(41), &"a".repeat(40)),
+    ] {
+        assert_eq!(
+            schema.validate(&head(refused)).unwrap_err().code(),
+            board_model::Code::RecordInvalid,
+            "{refused:?}"
+        );
+        schema.validate(&head(admitted)).unwrap();
+    }
 }

@@ -11,18 +11,19 @@ use std::time::{Duration, Instant};
 use board_model::parse_json;
 use board_ops::{Host, PluginError, Run, literal};
 use board_plugin::child::ProcessError;
-use board_plugin::shape::{Prose, Record};
+use board_plugin::shape::Prose;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 
 use crate::board::{self, readable, rows, text};
 use crate::change::{
-    OWN, Pull, SYNC_COMMAND, attached, parsed, pull_of, read, record_sync, referenced, today, write,
+    OWN, Pull, SYNC_COMMAND, attached, change_types, parsed, pull_of, read, record_sync,
+    referenced, today, write,
 };
 use crate::gates::open_task;
 use crate::phases::final_phase;
-use crate::records::{ChangeRecord, Phase, TASK_TYPE};
+use crate::records::{ChangeRecord, DONE, DROPPED, TASK_TYPE, is_final};
 use crate::wip::idle_action;
 use crate::{PLUGIN, refusal, to_value};
 
@@ -80,8 +81,8 @@ pub(crate) struct DropInput {
 #[derive(Debug, Serialize, JsonSchema)]
 pub(crate) struct DropOutput {
     path: String,
-    from: Phase,
-    to: Phase,
+    from: String,
+    to: String,
     task: Option<String>,
 }
 
@@ -90,8 +91,8 @@ pub(crate) struct DropOutput {
 #[derive(Debug, Serialize, JsonSchema)]
 struct Entry {
     path: String,
-    phase: Phase,
-    to: Option<Phase>,
+    phase: String,
+    to: Option<String>,
     status: &'static str,
     code: Option<&'static str>,
     pull_request: Option<String>,
@@ -126,7 +127,7 @@ fn entry(
 ) -> Entry {
     Entry {
         path: path.to_owned(),
-        phase: change.phase,
+        phase: change.phase.clone(),
         to: None,
         status,
         code: None,
@@ -204,10 +205,10 @@ fn pull_state(
 /// its blob, by path.
 fn open_changes(host: &dyn Host) -> Result<Vec<(String, ChangeRecord, String)>, PluginError> {
     let sql = format!(
-        "SELECT logical, blob, code, body FROM records WHERE type = {} AND json_extract(body, \
-         '$.phase') IN ('build', 'review', 'land', 'paused') AND substr(logical, 1, {}) = {} \
+        "SELECT logical, blob, code, body FROM records WHERE type IN ({}) AND json_extract(body, \
+         '$.phase') NOT IN ('plan', 'done', 'dropped') AND substr(logical, 1, {}) = {} \
          ORDER BY logical",
-        literal(ChangeRecord::TYPE),
+        change_types(),
         OWN.len(),
         literal(OWN)
     );
@@ -275,7 +276,7 @@ fn merged(
         return Ok((owing, None));
     }
     let mut ended = change.clone();
-    ended.phase = Phase::Done;
+    DONE.clone_into(&mut ended.phase);
     let mut detail = format!("its pull request {url} merged");
     let sha = answer.get("merge_commit_sha").and_then(Value::as_str);
     match sha.filter(|sha| {
@@ -292,20 +293,20 @@ fn merged(
         }
         None => detail.push_str(", and GitHub gave no merge commit, so none is recorded"),
     }
-    let skipped = match change.phase {
-        Phase::Build => Some("build and review"),
-        Phase::Review => Some("review"),
+    let skipped = match change.phase.as_str() {
+        "build" => Some("build and review"),
+        "review" => Some("review"),
         _ => None,
     };
     if let Some(skipped) = skipped {
         let _ = write!(
             detail,
             "; it left {} without passing the {skipped} gates",
-            change.phase.as_str()
+            change.phase
         );
     }
     let done = Entry {
-        to: Some(Phase::Done),
+        to: Some(DONE.to_owned()),
         ..entry(path, change, Some(url), "merged", detail)
     };
     Ok((done, Some(ended)))
@@ -364,10 +365,10 @@ fn synced(
         };
         let reason = format!("its pull request {url} was closed without merging{on}");
         let mut ended = change.clone();
-        ended.phase = Phase::Dropped;
+        DROPPED.clone_into(&mut ended.phase);
         ended.dropped_reason = Some(reason.clone());
         let dropped = Entry {
-            to: Some(Phase::Dropped),
+            to: Some(DROPPED.to_owned()),
             ..entry(path, change, Some(&url), "closed", reason)
         };
         return Ok((dropped, Some(ended)));
@@ -426,25 +427,24 @@ pub(crate) fn sync(host: &dyn Host, input: &Value) -> Result<Value, PluginError>
 pub(crate) fn drop(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
     let DropInput { path, reason } = PluginError::read_input(PLUGIN, "drop", input)?;
     let (mut change, blob) = read(host, &path)?;
-    let phase = change.phase;
-    if phase.is_final() {
+    let phase = change.phase.clone();
+    if is_final(&phase) {
         return Err(final_phase(
             &path,
-            phase,
+            &phase,
             format!(
-                "the change at {path} is already {}, so it cannot be dropped; list the open \
-                 changes with `board call changes.open`",
-                phase.as_str()
+                "the change at {path} is already {phase}, so it cannot be dropped; list the open \
+                 changes with `board call changes.open`"
             ),
         ));
     }
-    change.phase = Phase::Dropped;
+    DROPPED.clone_into(&mut change.phase);
     change.dropped_reason = Some(reason);
     write(host, &path, &blob, &change)?;
     Ok(to_value(DropOutput {
         path,
         from: phase,
-        to: Phase::Dropped,
+        to: DROPPED.to_owned(),
         task: change.task,
     }))
 }

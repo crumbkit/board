@@ -117,6 +117,14 @@ impl FromIterator<(OsString, OsString)> for Inherited {
     }
 }
 
+impl Inherited {
+    /// Sets `name` to `value` unless Board inherited a value for it, so a
+    /// default from the known boards file yields to the variable.
+    pub fn or_insert(&mut self, name: &str, value: OsString) {
+        self.0.entry(name.to_owned()).or_insert(value);
+    }
+}
+
 impl fmt::Debug for Inherited {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.debug_set().entries(self.0.keys()).finish()

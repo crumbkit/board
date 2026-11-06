@@ -7,58 +7,43 @@ which records exist, so no field goes stale when a session stops partway.
 The owner's board holds no change records yet, so `changes/change/v1`
 changes in place, as its README allows.
 
-## Workflows
+## Flows
 
-A workflow is a `changes/workflow/v1` record at `/workflows/<name>` listing
-its steps in order. Each step has a name, an actor (`agent`, `reviewer` or
-`owner`) and the kind of record that completes it.
-
-```json
-{
-  "$type": "changes/workflow/v1",
-  "steps": [
-    {"name": "plan", "actor": "agent", "done_by": "plan"},
-    {"name": "approve", "actor": "owner", "done_by": "answer"},
-    {"name": "build", "actor": "agent", "done_by": "check"},
-    {"name": "review", "actor": "reviewer", "done_by": "review"},
-    {"name": "land", "actor": "owner", "done_by": "landed"}
-  ]
-}
-```
+A change follows a `changes/flow/v1` (plugins/changes/README.md), whose
+phases list the checks that end them, each with an actor (`agent`,
+`reviewer` or `owner`). This milestone adds five check kinds and derives a
+change's place in its flow from which records exist.
 
 A change's head is the commit that its newest check names: a
 `checks/<stamp>` record holding `run`, a reference to a `runs/run/v1` in its
 suite's `runs/`, which names the commit in `versions` under the repo
 record's name. The agent writes it with `changes.check --path <c> --run <r>`
-after the suite runs. `done_by` is one of five kinds, each with one rule:
+after the suite runs. Each new kind has one rule:
 
-| Kind | The step is done when |
+| Kind | The check passes when |
 | --- | --- |
 | `plan` | a plan exists and every reference in its `uses` resolves. |
 | `answer` | an answer whose `choice` is `approve` exists to a question whose `for` names the change. |
 | `check` | the newest check's run is a full run of the change's `suite`, on a clean revision, with no `fail` or `error`. |
-| `review` | an approving report with no high finding answers a brief whose `for` names the change, whose `step` is this step's name, and whose `range` ends at the head. |
+| `review` | an approving report with no high finding answers a brief whose `for` names the change, whose `step` is the check's phase, and whose `range` ends at the head. |
 | `landed` | `/changes/<name>/landed` exists. |
 
-A new check names a new head, so the review step is not done again until a
-review covers it. A commit pushed with no new run leaves the steps done
+A new check names a new head, so the review check fails again until a
+review covers it. A commit pushed with no new run leaves the checks passing
 until the next run. Any other choice leaves the change at approve;
 the agent plans and asks again, or drops it.
 
-`board call changes.seed` writes `/workflows/personal` (plan, build, review,
-land) and `/workflows/work` (approve added after plan) when they are
-missing. `start` picks a change's workflow from a link (`board/mount/v1`
-with `path`): `/workflows/repos/<name>` for one repository, else
-`/workflows/owners/<owner>` for the remote's owner, such as its GitHub
-organisation. With neither, `start` refuses with
-`changes::workflow::unchosen`, naming both. `--workflow` overrides
-both.
+`start` picks the flow as plugins/changes/README.md describes, and also
+reads `/flows/owners/<owner>` for the remote's owner, such as its GitHub
+organisation, when no repository link names one. `board call changes.seed`
+writes the `work` flow, development with an `approve` phase after plan, at
+`/flows/work` when it is missing.
 
-A step that a control adds (plan/control-scope.md), such as
-`security-review`, comes after the last step whose actor is `reviewer` and
-uses the `review` kind. A change whose route is `ask-first` gains the
-`approve` step if its workflow lacks one, and so does a change whose route is
-`unread` unless its workflow is `/workflows/personal`.
+A check that a control adds (plan/control-scope.md), such as
+`security-review`, joins the phase its `adds_check` names, or the last
+phase when the flow lacks that one. A change whose route is `ask-first` gains the `approve` phase if
+its flow lacks one, and so does a change whose route is `unread` unless its
+flow is `development`.
 
 ## Records of a change
 
@@ -67,7 +52,7 @@ All live under `/changes/<name>/`, except the change itself at
 
 | Record | Holds |
 | --- | --- |
-| change | `title`, `repo` (a repo record), `branch`, `issue`, and the `workflow` (the link's resolved target), `suite` and `route` resolved at start |
+| change | `title`, `repo` (a repo record), `branch`, `issue`, and the `flow` copied at start, `suite` and `route` resolved at start |
 | `plans/<stamp>` + `.md` | Built: `changes/plan/v1` (plugins/changes/README.md). The newest plan is the current one. |
 | `claims/<stamp>` | `session`, and `worktree`: the root of the caller's clone. The newest claim names the holder and where the work is. |
 | `checks/<stamp>` | `run`: the check run at a head |
@@ -92,15 +77,15 @@ refuses with `changes::suite::unknown`.
 
 ## What is derived
 
-- **Steps**: the workflow's steps, plus each step that a matching control
+- **Checks**: the flow's checks, plus each check that a matching control
   adds.
-- **Next step**: the first step that is not done, and its actor.
+- **Next step**: the first phase with a failing check, and its actor.
 - **Done**: `landed` or `dropped` exists.
 
-Files touched decide which controls add steps. The agent records them once
+Files touched decide which controls add checks. The agent records them once
 per head with `changes.files`, from the same `git diff --name-only` it
 passes to `controls.check`, so every reader, `inflight.now` included,
-derives the same steps. Until a files record exists at the head, the steps
+derives the same checks. Until a files record exists at the head, the checks
 every control on the repository could add are listed, marked `if touched`.
 
 ## Capabilities
@@ -112,19 +97,19 @@ with `changes::branch::default`, so a change always names its work branch.
 Every call these plans add runs as `board --personal call`, because in a checkout of a repository that is itself a
 board, Board finds its `.board/board.json` first and runs as that board.
 
-- `start --title '<title>' --session <s> [--name <n>] [--handle @<you>] [--issue <url>] [--suite <s>] [--workflow <w>] [--repo-name <r>]`
+- `start --title '<title>' --session <s> [--name <n>] [--handle @<you>] [--issue <url>] [--suite <s>] [--flow <f>] [--repo-name <r>]`
   creates the caller's repo record at `/repos/<name>`, the remote's last
   path segment, unless one has its remote, then the change and a claim.
   Another remote's record there is `changes::repo::name_taken`, suggesting
   `--repo-name`.
 - `plan` and `brief` are built (plugins/changes/README.md). This milestone
-  moves `brief`'s next step to the derived steps.
+  moves `brief`'s next step to the derived checks.
 - `claim --session <s>` writes a claim, reading `worktree` from
   `BOARD_CALLER_DIR`.
 - `files` writes the files record from `{path, head, files}` on stdin, and
   `check --run <r>` writes a check.
-- `next`: read-only. Steps, each done or not with the record that did it,
-  the next step and its actor.
+- `next`: read-only. Checks, each passing or not with the record that
+  passed it, the next step and its actor.
 - `landed --commit <sha>` and `drop --why '<text>'` end the change.
 - `open [--limit <n>]`: read-only. Unended changes.
 - `pr` still drafts the pull request body; `pr.md` stays a draft file.
@@ -146,12 +131,12 @@ Work across two repositories is two changes, each plan naming the other in
 One pull request in the changes, review and runs plugins. The tests:
 
 - Each kind's rule, with a twin record set that does not satisfy it.
-- A new head undoes the review step.
+- A new head fails the review check again.
 - A claim from a subdirectory records its worktree's root.
 - `start` in an unmounted clone creates the repo record once, and a second
   start reuses it.
-- A control's added step appears only when the files record at the head
+- A control's added check appears only when the files record at the head
   includes a match.
 
 Done when a change in the owner's board goes from `start` to `landed` with
-`next` reporting each step correctly.
+`next` reporting each check correctly.

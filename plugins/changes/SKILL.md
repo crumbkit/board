@@ -5,24 +5,35 @@ description: 'Walk one change to a repository from its plan to its pull request,
 
 # changes
 
-The gate is the contract. `next` says what the current phase still lacks;
-`advance` moves on only when nothing is missing.
+The gate is the contract. A change follows a flow, a list of phases, each
+with an instruction and the checks that gate leaving it. `next` says what
+the current phase still lacks; `advance` moves on only when no check that
+blocks is missing.
 
 ## Steps
 
 1. Every change does a task. Run
    `board -C <board> call changes.start --mount /repos/<name> --title '<title>' --task <task>`,
    or leave out `--task` to add one titled as the change.
-   Add `--handle @<you>` so the route reflects who owns what. Read every path
-   in `docs`. Treat each `ask_first` pattern as a file to ask about before
-   changing.
+   Add `--handle @<you>` so the route reflects who owns what. Add
+   `--flow <name>` to follow another flow than the board's choice, such as
+   `small`. Read every path in `docs` and in `surfaced`, and note each
+   `obligations` entry. Treat each `ask_first` pattern as a file to ask
+   about before changing.
 2. Run `board -C <board> call changes.next --path /changes/<name>`
    whenever you start a phase or lose context. Do what `instruction` says
-   and fix each check whose `status` is `missing`.
+   and fix each check whose `status` is `missing`, following its `remedy`.
+   When `ask` is set, only the owner or a reviewer can pass the checks
+   left: put `ask` to them. Stop where the change's `stop` says, or the
+   flow's when it has none, unless told otherwise; once `next` returns
+   `stop` with `reached` true, `advance` refuses. With the `board-changes` mod installed, only a builder started
+   from `changes.brief` can Edit, Write or NotebookEdit the repository; it
+   cannot see writes made through Bash.
 3. Attach every record you make with
    `board -C <board> call changes.attach --path /changes/<name> --ref <path>`.
    The records go on the plan the change names, so write the plan first.
-   Set the commit under test with `--head <sha>` after each push. Record a
+   Set the commit under test with `--head <sha>` after each push, and the
+   check suite with `--suite <path>` when the change names none. Record a
    GitHub issue or pull request with
    `board -C <board> call github.ref --ref <owner>/<repo>#<number>`, then
    attach the path it returns with `--ticket <path>` or `--pull <path>`.
@@ -68,53 +79,67 @@ has had no new round for three days. Record
 `abandoned` only when the owner says so. `changes.open --kind prototype`
 lists every prototype with its verdict.
 
-## Each phase
+## Runs
 
-- **plan**: interview the owner. Use your own planning skill where one is
-  configured. Write the plan's Problem, Outcome, Out of scope, UX and Data
-  sections. UX starts with "No UI change" and a reason, or lists each
-  mockup by URL or board path under a `### Mockups` heading, and holds a
-  `### Neighbours` list of the open changes and
-  artifacts in the same area and the components the design reuses. Attach
-  the owner's decision that names each mockup in its `urls` or `refs`; a
-  decision an agent wrote, with `written_by` set, does not count.
-  Data starts with "None", or holds the data shapes, where each is stored,
-  who reads and writes it and what users see; then run the
-  `understanding-check` skill and attach its record and the owner's
-  decision that references it. Write the plan with `changes.plan`, whose
-  `paths` lists every file and pattern the change will edit, by mounted
-  path; the brief lists the rules for those paths.
-  On the `ask-first` route, attach the owner's `plans/decision/v1` whose
-  `refs` name the plan.
-- **build**: start each builder in a fresh agent whose first message
-  begins with `brief_line` from `changes.brief`, then the brief. With the
-  `board-changes` mod installed, no other agent can Edit, Write or
-  NotebookEdit the repository; it cannot see writes made through Bash.
-  Build test-first. Attach each `tasks/task/v2`. Run the check
-  suite that `start` reported on the head commit, record the run, and attach
-  it. Before advancing, ask the owner two of each understanding check's
-  predict or edge questions again, worded differently, and add them to the
-  record's `rechecks`. The build gate refuses until each record holds two
-  rechecks that matched.
-- **review**: review the head commit with clean context and attach the
-  report. The gate refuses a diff that edits a file outside the plan's
-  paths; add the file to the paths with `changes.plan`, or revert the
-  edit. When the plan says "No UI change" or "None", list the
-  repository's UI-path and data-path controls with `controls.check`, and
-  report a diff that touches a path they name as a high finding. Fix
-  every critical or high finding, record the new head, and review again.
-- **land**: add `## What the tests prove` and `## What the tests do not
-  prove` sections to the plan with what the runs cannot show on their own.
-  Run `board -C <board> call changes.pr --path /changes/<name>`, read
-  `/changes/<name>/pr.md` and edit it if it is wrong. Fix each path in
-  `unreadable` and run `pr` again, or say why in the body. Run `command`
-  yourself, in a POSIX shell, from a checkout of the repository on the
-  change's `head`, then record the pull request's URL. Merging happens
-  outside Board. Advancing from `land` ends the change in `done`.
+To run a change to a stop, run
+`board -C <board> call changes.run --path /changes/<name> [--through <phase> | --until <phase>] --inline true`,
+or start one with `--mount` and `--title` in place of `--path`. It records
+the stop and returns the run brief; follow its `steps` and `stopping`.
+Without `--inline`, it starts the agent `BOARD_AGENT` or `agent` in
+`~/.config/board/config.json` names, in a worktree for the change, and
+records the run. An agent running unattended ends with
+`changes.stop --path /changes/<name> --reason <reason> --summary '<line>'`:
+`reached` at the stop; `waiting` after writing the `ask` as a
+`plans/question/v1` whose `blocks` names the change, passed as
+`--question`; `refused`, `budget` or `error` otherwise. Then it exits 0.
+
+## Flows
+
+The plugin ships `development`, `small` and `flow-authoring`; a board's
+own flow at `/flows/<name>` wins over a shipped one. The links
+`/flows/repos/<name>` and `/flows/default` choose a repository's flow and
+every repository's. Each change keeps a copy, so editing a flow moves no
+change in flight. Run
+`board -C <board> call changes.reflow --path /changes/<name> --flow <name>`
+to move a change to another flow, or to take up an edit. To write a flow,
+start a change with `--flow flow-authoring --mount /` (or the mount the
+flow is for) and follow it: it drafts the flow, checks it with
+`flow-valid`, dry-runs it with `changes.run --sandbox true`, which runs an
+agent in a throwaway copy of the board, and adopts it at `/flows/<name>`.
+Run
+`changes.migrate --apply true` once to move every `changes/change/v1` onto
+the development flow.
 
 ## Refusals
 
-- `changes::gate::unmet`: `missing` names the failed checks. Run `next`.
+- `changes::gate::unmet`: `missing` names the failed checks and `remedies`
+  what to do for each. Run `next`.
+- `changes::flow::not_found`: name a flow the board holds at
+  `/flows/<name>` or a shipped one, or fix the link that chose it.
+- `changes::flow::invalid`: fix each of the flow's `problems`, or name
+  another flow.
+- `changes::mount::needs_repository`: name the repository's mount, or a
+  flow without `paths`, `run` or `controlled-paths` checks.
+- `changes::sandbox::no_change`, `changes::sandbox::inline`,
+  `changes::sandbox::resume`, `changes::sandbox::setup`: a sandboxed run
+  starts a new change, with `--for` naming the change that asked for it.
+- `changes::flow::unreadable`: fix the flow file named, or restore a
+  change's copy with `reflow`.
+- `changes::reflow::no_phase`: choose a flow that has the change's phase.
+- `changes::run::stop_reached`: the change is at its stop. Record
+  `changes.stop --reason reached` and end the run. The person who started
+  the run moves the stop by starting a later run with `--through` or
+  `--until`.
+- `changes::run::no_phase`, `changes::run::two_stops`,
+  `changes::run::which_change`, `changes::run::no_flow`: give one stop
+  among the flow's phases or `done`, and name one change with a flow.
+- `changes::agent::not_set`, `changes::agent::invalid`,
+  `changes::agent::not_started`: set `BOARD_AGENT` or `agent` in
+  `~/.config/board/config.json` to an argv that starts, or pass
+  `--inline true`.
+- `changes::run::worktree`: fix the clone the mount reads, or pass
+  `--inline true`.
+- `changes::change::not_migrated`: run `changes.migrate --apply true`.
 - `changes::ux::not_agreed`: a mockup has no owner decision naming it, or
   UX lists none and does not say "No UI change".
 - `changes::ux::no_neighbours`: add a Neighbours list under UX.

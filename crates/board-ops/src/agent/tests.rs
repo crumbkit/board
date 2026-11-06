@@ -213,3 +213,20 @@ fn a_tail_starts_on_a_character_and_a_short_text_is_whole() {
     // `é` is two bytes, so a cut inside it moves to the next character.
     assert_eq!(tail("aéb", 2), "b");
 }
+
+/// A record names an agent by its program's file name, never its path or
+/// arguments, and only when that name is a slug.
+#[test]
+fn a_program_whose_file_name_is_no_slug_has_no_name_and_its_twin_has_its_file_name() {
+    for (refused, admitted, named) in [
+        ("/opt/My Agent", "/opt/my-agent", "my-agent"),
+        ("bin/stand_in.sh", "bin/stand-in", "stand-in"),
+        ("/", "claude", "claude"),
+    ] {
+        assert_eq!((refused, program_name(refused)), (refused, None));
+        assert_eq!(
+            (admitted, program_name(admitted)),
+            (admitted, Some(named.to_owned()))
+        );
+    }
+}

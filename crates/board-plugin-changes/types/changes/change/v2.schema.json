@@ -1,0 +1,166 @@
+{
+  "$defs": {
+    "Stop": {
+      "description": "Where a run stops: `through` a phase does its work and stops before\nleaving it; `until` a phase moves into it and stops before its work.",
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "through": {
+              "description": "The phase to stop in, after its work.",
+              "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "through"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "until": {
+              "description": "The phase to stop at, before its work.",
+              "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "until"
+          ],
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "description": "`changes/change/v2`: one change to a repository, the flow it follows\nand where it stands in it.\n\nA change lives at `/changes/<name>`, and the records it owns sit under\n`/changes/<name>/`: its copy of its flow, its plans, a prototype's\nrecord and its understanding checks. Git history holds its earlier\nphases.",
+  "properties": {
+    "$type": {
+      "const": "changes/change/v2",
+      "description": "The record's type.",
+      "type": "string"
+    },
+    "dropped_reason": {
+      "description": "Why the change was dropped, which `sync` and `drop` record and `next`\nshows.",
+      "minLength": 1,
+      "type": "string",
+      "x-board-prose": true
+    },
+    "flow": {
+      "description": "The change's copy of the flow it follows, at `/changes/<name>/flow`,\ntaken when it started; a prototype follows no flow.",
+      "format": "board-ref",
+      "type": "string",
+      "x-board-type": "changes/flow/v1"
+    },
+    "head": {
+      "description": "The commit under test and review.",
+      "pattern": "^[0-9a-f]{7,40}$",
+      "type": "string"
+    },
+    "merge_commit_url": {
+      "description": "The merge commit's GitHub page, which `sync` records when the pull\nrequest merged and `next` shows.",
+      "format": "uri",
+      "pattern": "^https?://([^/?#@]*@)?[^/?#@:][^/?#@]*([/?#]|$)",
+      "type": "string"
+    },
+    "mount": {
+      "description": "The mount of the repository the change edits, such as `/repos/board`;\nleft out for a change that edits only the board's own records, such\nas one on the flow-authoring flow, which `start` takes as `--mount /`.",
+      "format": "board-ref",
+      "type": "string",
+      "x-board-type": "board/mount/v1"
+    },
+    "over_limit": {
+      "description": "The reason given for the latest move into build past the WIP limit,\nwhich `pr` puts in the pull request body.",
+      "minLength": 1,
+      "type": "string",
+      "x-board-prose": true
+    },
+    "phase": {
+      "description": "Where the change stands: a phase of its flow, or `done`, `dropped`\nor `paused`.",
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+      "type": "string"
+    },
+    "plan": {
+      "description": "The change's current plan, a `changes/plan/v1` under\n`/changes/<name>/plans/`.",
+      "format": "board-ref",
+      "type": "string",
+      "x-board-type": "changes/plan/v1"
+    },
+    "pulls": {
+      "description": "The change's GitHub pull requests; `sync` reads the newest.",
+      "items": {
+        "format": "board-ref",
+        "type": "string",
+        "x-board-type": "github/pull/v1"
+      },
+      "type": "array"
+    },
+    "route": {
+      "description": "Who must agree to the change before it is built.",
+      "enum": [
+        "owner",
+        "ask-first",
+        "unowned"
+      ],
+      "type": "string"
+    },
+    "stop": {
+      "$ref": "#/$defs/Stop",
+      "description": "Where the active run of the change stops."
+    },
+    "suite": {
+      "description": "The check suite the change's runs belong to, which `start` resolved\nfrom the repository's contributing docs or was given.",
+      "format": "board-ref",
+      "type": "string",
+      "x-board-type": "runs/suite/v1"
+    },
+    "surfaced": {
+      "default": [],
+      "description": "The open tasks, decisions and evals on the mount that `start`\nreported, which the plan cites or dismisses.",
+      "items": {
+        "format": "board-ref",
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "task": {
+      "description": "The task the change does.",
+      "format": "board-ref",
+      "type": "string",
+      "x-board-type": "tasks/task/v2"
+    },
+    "tickets": {
+      "description": "The Jira or GitHub issues the change works on.",
+      "items": {
+        "format": "board-ref",
+        "type": "string",
+        "x-board-type": [
+          "jira/issue/v1",
+          "github/issue/v1"
+        ]
+      },
+      "type": "array"
+    },
+    "title": {
+      "description": "What the change does, in a few words.",
+      "minLength": 1,
+      "type": "string",
+      "x-board-prose": true
+    },
+    "touched": {
+      "description": "The UTC day a changes capability last touched the change, which keeps\nit active under the WIP limit.",
+      "format": "date",
+      "type": "string"
+    }
+  },
+  "required": [
+    "$type",
+    "title",
+    "phase"
+  ],
+  "title": "ChangeRecord",
+  "type": "object",
+  "x-board-folder": "/changes/"
+}

@@ -103,18 +103,24 @@ Built-in plugins generate schemas from structs with schemars, through
 - `Tag<Self>` is the `$type` field; `Ref<T>` is a reference to a record type
   `T`, to a marker that lists several types, or to any entry when `T` is left
   out. Both are always inlined.
-- `Prose`, `Date`, `Url`, `Digest`, `Glob`, `LogicalGlob`, `Summary`,
-  `SessionId`, `Slug`, `Person`, `ObjectId`, `Repository` and `Subject` are shared string
+- `Prose`, `Date`, `Timestamp`, `Url`, `Digest`, `Glob`, `LogicalGlob`, `Summary`,
+  `SessionId`, `Slug`, `Person`, `ObjectId`, `CommitName`, `Repository`, `Subject`, `TypeName`,
+  `PathTemplate` and `Pattern` are shared string
   shapes, and `Actor` and `Pinned` are shared object shapes. A `String` field takes one with
   `#[schemars(with = "Prose")]`, and a `urls` field with `#[schemars(with = "Vec<Url>")]`. `Digest` is `sha256:` and 64
   lowercase hex digits, such as an effect's id in a record. `Glob` is an SQLite GLOB pattern, which a
   plugin matches with GLOB in a query. `LogicalGlob` is a `Glob` that
   starts with `/`, such as a change's planned path. `Summary` is one line
-  of at most `SUMMARY_WORDS`, 25, words. `SessionId` is `local_` and a
+  of at most `SUMMARY_WORDS`, 25, words. `Timestamp` is an RFC 3339
+  date-time in UTC, ending in `Z`, such as a run's start. `SessionId` is `local_` and a
   lowercase uuid, `Slug` is lowercase words joined by `-`, `Person` is a
   slug or an email address, and `ObjectId` is a git object id of 40 or 64
-  lowercase hex digits. `Subject` is what a test or study concerns: an
-  `owner/name` repository or a board path that starts with `/`.
+  lowercase hex digits. `CommitName` is a commit named by 7 to 40 of
+  its leading hex digits, such as a change's head. `Subject` is what a test or study concerns: an
+  `owner/name` repository or a board path that starts with `/`. `TypeName` is a record type
+  as `$type` names it, such as `changes/flow/v1`. `PathTemplate` is a logical path that
+  may hold `{name}` placeholders, which its reader fills in. `Pattern` is a regular
+  expression in the syntax of Rust's regex crate, which only its reader compiles.
 - `Actor` is who wrote or acted: `{session, program, person, agent}`, each part
   optional and at least one present. `agent` is the name the agent was
   given, as free text. Every field that names who acted is an `Actor`. `Pinned` is `{record, blob}`, a reference and the `ObjectId`

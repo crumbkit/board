@@ -27,7 +27,7 @@ const PLUGIN: &str = "review";
 /// The record type of a change, which the changes plugin owns, and the
 /// severities that shut its review gate, so an attached report with one
 /// never covers.
-use board_plugin_changes::{BLOCKING, CHANGE_TYPE};
+use board_plugin_changes::{BLOCKING, CHANGE_TYPES};
 
 #[derive(Clone, Copy, Debug)]
 pub struct Review;

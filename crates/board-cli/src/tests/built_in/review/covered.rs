@@ -8,6 +8,8 @@ use super::*;
 /// change and the plan that attaches its reports read as valid without
 /// enabling the changes plugin.
 const CHANGE_SCHEMA: &str =
+    include_str!("../../../../../board-plugin-changes/types/changes/change/v2.schema.json");
+const CHANGE_V1_SCHEMA: &str =
     include_str!("../../../../../board-plugin-changes/types/changes/change/v1.schema.json");
 const PLAN_SCHEMA: &str =
     include_str!("../../../../../board-plugin-changes/types/changes/plan/v1.schema.json");
@@ -466,7 +468,11 @@ impl Mounted {
     /// The project's commits are only in its own clone, so `covered` finds
     /// them only through the mount.
     fn new(repo: &Repo) -> Self {
-        repo.write(".board/types/changes/change/v1.schema.json", CHANGE_SCHEMA);
+        repo.write(".board/types/changes/change/v2.schema.json", CHANGE_SCHEMA);
+        repo.write(
+            ".board/types/changes/change/v1.schema.json",
+            CHANGE_V1_SCHEMA,
+        );
         repo.write(".board/types/changes/plan/v1.schema.json", PLAN_SCHEMA);
         let (project, mount) = library(&[("README.md", "A project.\n")]);
         repo.commit("project.json", &mount.to_string());
@@ -491,7 +497,7 @@ impl Mounted {
 /// with a plan that attaches `records`, and returns its path.
 fn change(repo: &Repo, head: Option<&str>, records: &[&str], mount: &str) -> String {
     let mut record = json!({
-        "$type": "changes/change/v1", "title": "Work", "mount": mount, "phase": "review",
+        "$type": "changes/change/v2", "title": "Work", "mount": mount, "phase": "review",
         "plan": "/changes/work/plans/1",
     });
     if let Some(head) = head {
@@ -593,6 +599,31 @@ fn a_change_whose_mount_names_no_clone_is_refused_and_one_on_a_mount_admitted() 
     }
     change(&repo, Some(&mounted.head), &[&path], "/project");
     assert_eq!(of_change(&repo, &mounted.base, &[]).0, 0);
+}
+
+#[test]
+fn a_change_written_before_flows_is_read_as_a_change_and_a_record_of_another_type_is_not() {
+    let repo = Repo::new();
+    let mounted = Mounted::new(&repo);
+    let path = attached(&repo, "one", &mounted.base, &mounted.head, &json!({}));
+    change(&repo, Some(&mounted.head), &[&path], "/project");
+    let as_type = |type_name: &str| {
+        let record = json!({
+            "$type": type_name, "title": "Work", "mount": "/project", "phase": "review",
+            "plan": "/changes/work/plans/1", "head": mounted.head,
+        });
+        repo.write("changes/work.json", &record.to_string());
+    };
+    as_type("changes/plan/v1");
+    let (code, document) = of_change(&repo, &mounted.base, &[]);
+    assert_eq!(
+        (code, &document["code"]),
+        (1, &json!("review::change::not_found")),
+        "{document}"
+    );
+    as_type("changes/change/v1");
+    let (code, output) = of_change(&repo, &mounted.base, &[]);
+    assert_eq!((code, &output["reports"]), (0, &json!([path])), "{output}");
 }
 
 #[test]

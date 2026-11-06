@@ -176,7 +176,8 @@ subagent, and commit it.
 - Without `--change`, only reports committed at HEAD in the board's own tree
   count. A report changed on disk, or reached through a mount, is ignored.
 - With `--change`, such as `--change /changes/fix-sync`, the call checks the
-  `changes/change/v1` there, as a personal board checks a mounted repository.
+  `changes/change/v1` or `changes/change/v2` there, as a personal board
+  checks a mounted repository.
   - Only the reports the change's plans attach in `records` count, read as Board
     reads them, committed or not. A report attached twice counts once. A
     report need not be at `/reviews/<id>/report`. The call shares two parts of the changes

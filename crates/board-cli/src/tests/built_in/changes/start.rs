@@ -14,7 +14,8 @@ fn suite() -> String {
 }
 
 #[test]
-fn start_creates_the_change_in_plan_with_a_plan_whose_sections_are_left_to_fill_in() {
+fn start_creates_the_change_in_plan_of_the_development_flow_with_a_plan_whose_sections_are_left_to_fill_in()
+ {
     let board = Changes::new();
     let mount = board.mount_x(&[("README.md", "x")]);
     let output = board.call(
@@ -29,15 +30,26 @@ fn start_creates_the_change_in_plan_with_a_plan_whose_sections_are_left_to_fill_
     assert_eq!(
         board.read("changes/let-a-suite-declare-a-timeout.json"),
         json!({
-            "$type": "changes/change/v1",
+            "$type": "changes/change/v2",
             "title": "Let a suite declare a timeout!",
             "mount": "/repos/x",
+            "flow": format!("{at}/flow"),
             "phase": "plan",
+            "surfaced": [],
             "plan": record,
             "route": "unowned",
             "task": TASK,
             "touched": today(),
         })
+    );
+    assert_eq!(
+        output["flow"],
+        json!({"name": "development", "phases": ["plan", "build", "review", "land"]})
+    );
+    let copy = board.read("changes/let-a-suite-declare-a-timeout/flow.json");
+    assert_eq!(
+        (&copy["$type"], &copy["name"]),
+        (&json!("changes/flow/v1"), &json!("development"))
     );
     assert_eq!(
         board.read(&format!("{}.json", record.trim_start_matches('/'))),

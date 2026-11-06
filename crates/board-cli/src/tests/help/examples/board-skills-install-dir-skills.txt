@@ -4,6 +4,7 @@ written  boundary             skills/boundary
 written  changes              skills/changes
 written  controls             skills/controls
 written  evals                skills/evals
+written  flow                 skills/flow
 written  github               skills/github
 written  jira                 skills/jira
 written  notes                skills/notes

@@ -85,7 +85,8 @@ pub enum State {
 pub enum Work {}
 
 impl Accepts for Work {
-    const TYPES: &'static [&'static str] = &["changes/change/v1", "tasks/task/v2"];
+    const TYPES: &'static [&'static str] =
+        &["changes/change/v1", "changes/change/v2", "tasks/task/v2"];
 }
 
 /// The plans plugin's decision record, which `agreed_by` names.

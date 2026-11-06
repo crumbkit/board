@@ -64,7 +64,7 @@ this order.
 ## Out of scope
 
 Each of these waits until a real need has its own plan: effects beyond the
-first slice in plan/board-ui.md; triggers and scheduling;
+first slice in plan/board-ui.md; scheduling;
 pinned or relative references (a review's `subject` pins only its own
 field); remote mounts (a mount names a local clone);
 any query language beyond SQL; daemons and watchers other than `board serve`;

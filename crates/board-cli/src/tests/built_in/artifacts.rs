@@ -230,6 +230,29 @@ fn list_keeps_one_state_one_area_or_the_unfiled_artifacts() {
 }
 
 #[test]
+fn a_subject_naming_a_change_of_either_version_is_valid_and_one_naming_a_plan_is_not() {
+    let board = board();
+    board
+        .write("changes/a.json", r#"{"$type": "changes/change/v1"}"#)
+        .write("changes/b.json", r#"{"$type": "changes/change/v2"}"#)
+        .write("changes/c.json", r#"{"$type": "changes/plan/v1"}"#);
+    for (subject, code) in [
+        ("/changes/a", None),
+        ("/changes/b", None),
+        ("/changes/c", Some("board::ref::wrong_type")),
+    ] {
+        let fields = json!({"subject": [subject]});
+        board.write("artifacts/A.json", &artifact(A, &fields));
+        let report = board.json(&["check", "/artifacts/A", "--healthy"]);
+        assert_eq!(
+            report["data"][0]["code"].as_str(),
+            code,
+            "{subject}: {report}"
+        );
+    }
+}
+
+#[test]
 fn list_keeps_the_artifacts_whose_subject_reaches_the_path_through_a_link() {
     let board = board();
     board

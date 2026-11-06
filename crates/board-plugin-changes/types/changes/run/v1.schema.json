@@ -1,0 +1,138 @@
+{
+  "$defs": {
+    "Stop": {
+      "description": "Where a run stops: `through` a phase does its work and stops before\nleaving it; `until` a phase moves into it and stops before its work.",
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "through": {
+              "description": "The phase to stop in, after its work.",
+              "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "through"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "until": {
+              "description": "The phase to stop at, before its work.",
+              "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "until"
+          ],
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "description": "`changes/run/v1`: one run of an agent on a change that `changes.run`\nstarted, which lets the cost of each flow be measured.\n\nIt lives at `/changes/<name>/runs/<stamp>`, stamped when the run\nstarted.",
+  "properties": {
+    "$type": {
+      "const": "changes/run/v1",
+      "description": "The record's type.",
+      "type": "string"
+    },
+    "budget_usd": {
+      "description": "The budget the run's brief gave the agent, in US dollars.",
+      "format": "double",
+      "minimum": 0,
+      "type": "number"
+    },
+    "change": {
+      "description": "For a sandboxed run, the name of the change it started in the\nthrowaway board, where it lived at `/changes/<change>`.",
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+      "type": "string"
+    },
+    "cost_usd": {
+      "description": "What the agent reported it cost, in US dollars.",
+      "format": "double",
+      "minimum": 0,
+      "type": "number"
+    },
+    "duration_ms": {
+      "description": "How long the agent reported it ran, in milliseconds.",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "ended": {
+      "description": "When the agent exited or was stopped.",
+      "format": "date-time",
+      "pattern": "Z$",
+      "type": "string"
+    },
+    "exit": {
+      "description": "The agent's exit status; left out when it was stopped or ended on a\nsignal.",
+      "type": "integer"
+    },
+    "flow": {
+      "description": "The name of the flow the change followed.",
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+      "type": "string"
+    },
+    "phase": {
+      "description": "The phase the change stood in when the run ended.",
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+      "type": "string"
+    },
+    "program": {
+      "description": "The file name of the program the run started, its `argv[0]` without\nits path, when that name is a slug; never its arguments.",
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+      "type": "string"
+    },
+    "reason": {
+      "description": "Why the run stopped, as its stop record says.",
+      "enum": [
+        "reached",
+        "waiting",
+        "refused",
+        "budget",
+        "error"
+      ],
+      "type": "string"
+    },
+    "sandbox": {
+      "description": "Whether the agent ran in a sandbox: a throwaway copy of the board\nand the repository, whose run and stop records were copied here.",
+      "type": "boolean"
+    },
+    "started": {
+      "description": "When the agent started.",
+      "format": "date-time",
+      "pattern": "Z$",
+      "type": "string"
+    },
+    "stop": {
+      "$ref": "#/$defs/Stop",
+      "description": "Where the run was told to stop."
+    },
+    "stopped": {
+      "description": "The stop record that says why the run stopped.",
+      "format": "board-ref",
+      "type": "string",
+      "x-board-type": "changes/stop/v1"
+    }
+  },
+  "required": [
+    "$type",
+    "flow",
+    "stop",
+    "started",
+    "ended",
+    "sandbox",
+    "phase",
+    "reason",
+    "stopped"
+  ],
+  "title": "RunRecord",
+  "type": "object",
+  "x-board-folder": "/changes/{change}/runs/"
+}

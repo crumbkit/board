@@ -223,6 +223,26 @@ impl JsonSchema for Date {
     }
 }
 
+/// A moment in UTC, as RFC 3339 writes it with the offset `Z`, such as
+/// `2026-11-06T10:15:00Z`. A `String` field takes it with
+/// `#[schemars(with = "Timestamp")]`.
+#[derive(Debug)]
+pub enum Timestamp {}
+
+impl JsonSchema for Timestamp {
+    fn inline_schema() -> bool {
+        true
+    }
+
+    fn schema_name() -> Cow<'static, str> {
+        "Timestamp".into()
+    }
+
+    fn json_schema(_: &mut SchemaGenerator) -> Schema {
+        json_schema!({"type": "string", "format": "date-time", "pattern": "Z$"})
+    }
+}
+
 /// A web address: an absolute `http` or `https` URI with a host, such as
 /// `https://example.com/pull/1`. A `urls` field takes it with
 /// `#[schemars(with = "Vec<Url>")]`. Board's validator is the only check.
@@ -391,6 +411,12 @@ patterned! {
 }
 
 patterned! {
+    /// A git commit named by its id or by at least 7 of its leading
+    /// lowercase hex digits, as `git rev-parse --short` abbreviates it.
+    CommitName = "^[0-9a-f]{7,40}$"
+}
+
+patterned! {
     /// A repository as GitHub names it, `owner/name`, such as
     /// `crumbkit/board`.
     Repository = "^[A-Za-z0-9-]+/[A-Za-z0-9._-]+$"
@@ -400,6 +426,39 @@ patterned! {
     /// What an eval or a suite tests: a repository as `owner/name`, such as
     /// `crumbkit/board`, or a board path, such as `/repos/board/crates`.
     Subject = "^([A-Za-z0-9-]+/[A-Za-z0-9._-]+|/\\S+)$"
+}
+
+patterned! {
+    /// A record type as a record's `$type` names it: a namespace, a kind
+    /// and a version, such as `changes/flow/v1`.
+    TypeName = "^[a-z0-9-]+/[a-z0-9-]+/v[1-9][0-9]*$"
+}
+
+patterned! {
+    /// A logical path that may hold `{name}` placeholders, such as
+    /// `/controls/{repo}/ui-paths`, which its reader fills in before it
+    /// resolves the path.
+    PathTemplate = "^/\\S*$"
+}
+
+/// A regular expression in the syntax of Rust's regex crate, which only
+/// the program that reads the field compiles. A `String` field takes it
+/// with `#[schemars(with = "Pattern")]`.
+#[derive(Debug)]
+pub enum Pattern {}
+
+impl JsonSchema for Pattern {
+    fn inline_schema() -> bool {
+        true
+    }
+
+    fn schema_name() -> Cow<'static, str> {
+        "Pattern".into()
+    }
+
+    fn json_schema(_: &mut SchemaGenerator) -> Schema {
+        json_schema!({"type": "string", "minLength": 1, "x-board-regex": true})
+    }
 }
 
 /// Who wrote a record or acted: the session, the program, the person and
@@ -534,10 +593,13 @@ pub fn registry() -> Map<String, Value> {
     let mut generator = SchemaGenerator::default();
     Map::from_iter([
         object::<Actor>(),
+        entry::<CommitName>(&mut generator),
         entry::<Date>(&mut generator),
         entry::<Glob>(&mut generator),
         entry::<LogicalGlob>(&mut generator),
         entry::<ObjectId>(&mut generator),
+        entry::<PathTemplate>(&mut generator),
+        entry::<Pattern>(&mut generator),
         entry::<Person>(&mut generator),
         object::<Pinned>(),
         entry::<Prose>(&mut generator),
@@ -547,6 +609,8 @@ pub fn registry() -> Map<String, Value> {
         entry::<Slug>(&mut generator),
         entry::<Subject>(&mut generator),
         entry::<Summary>(&mut generator),
+        entry::<Timestamp>(&mut generator),
+        entry::<TypeName>(&mut generator),
         entry::<Url>(&mut generator),
     ])
 }

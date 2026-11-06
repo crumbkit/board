@@ -34,8 +34,12 @@ fn the_manifest_parses_as_a_built_in_one_with_each_capabilitys_variables_and_tim
         types,
         [
             "changes/change/v1",
+            "changes/change/v2",
+            "changes/flow/v1",
             "changes/plan/v1",
             "changes/prototype/v1",
+            "changes/run/v1",
+            "changes/stop/v1",
             "changes/understanding/v1"
         ]
     );
@@ -64,6 +68,7 @@ fn the_manifest_parses_as_a_built_in_one_with_each_capabilitys_variables_and_tim
             ("verdict", vec![], Some(120)),
             ("pause", vec![], None),
             ("resume", days, None),
+            ("reflow", vec![], None),
             (
                 "sync",
                 vec!["GH_TOKEN", "GITHUB_TOKEN", "GH_CONFIG_DIR"],
@@ -71,6 +76,18 @@ fn the_manifest_parses_as_a_built_in_one_with_each_capabilitys_variables_and_tim
             ),
             ("drop", vec![], None),
             ("migrate", vec![], Some(600)),
+            (
+                "run",
+                vec![
+                    "BOARD_AGENT",
+                    "ANTHROPIC_API_KEY",
+                    "CLAUDE_CODE_OAUTH_TOKEN",
+                    "BOARD_CHANGES_ACTIVE_DAYS",
+                    "TMPDIR"
+                ],
+                Some(3600)
+            ),
+            ("stop", vec![], None),
         ]
     );
 }
@@ -94,6 +111,9 @@ fn every_input_property_carries_a_sentence_that_says_what_it_means() {
         "start.handle",
         "start.task",
         "start.task_repo",
+        "start.flow",
+        "start.suite",
+        "start.over_limit",
         "next.path",
         "attach.path",
         "attach.ref",
@@ -102,6 +122,7 @@ fn every_input_property_carries_a_sentence_that_says_what_it_means() {
         "attach.task",
         "attach.route",
         "attach.head",
+        "attach.suite",
         "advance.path",
         "advance.over_limit",
         "open.kind",
@@ -125,10 +146,29 @@ fn every_input_property_carries_a_sentence_that_says_what_it_means() {
         "pause.path",
         "resume.path",
         "resume.over_limit",
+        "reflow.path",
+        "reflow.flow",
         "sync.dry_run",
         "sync.limit",
         "drop.path",
         "drop.reason",
+        "run.path",
+        "run.mount",
+        "run.title",
+        "run.name",
+        "run.task",
+        "run.flow",
+        "run.over_limit",
+        "run.through",
+        "run.until",
+        "run.inline",
+        "run.budget",
+        "run.sandbox",
+        "run.for",
+        "stop.path",
+        "stop.reason",
+        "stop.question",
+        "stop.summary",
         "migrate.apply",
     ];
     expected.sort_unstable();
@@ -141,7 +181,7 @@ fn attach_takes_at_least_one_thing_to_change() {
     let attach = &manifest["capabilities"][2];
     assert_eq!(attach["name"], "attach");
     let branches = attach["inputSchema"]["anyOf"].as_array().unwrap();
-    assert_eq!(branches.len(), 6);
+    assert_eq!(branches.len(), 7);
     assert_eq!(branches[0], json!({"required": ["ref"]}));
 }
 
@@ -169,4 +209,30 @@ fn the_committed_schemas_are_what_their_structs_generate() {
             String::from_utf8_lossy(generated.as_bytes())
         );
     }
+}
+
+/// This repository's own board holds a copy of the committed
+/// `changes/flow/v1` schema, byte for byte, so `board check` in a Board
+/// checkout validates the flow files the crate ships. `SNAPSHOTS=overwrite`
+/// rewrites the copy from the committed schema.
+#[expect(
+    clippy::disallowed_methods,
+    reason = "the board's copy is a golden, selected and written as crumbkit-test's are"
+)]
+#[test]
+fn the_boards_own_flow_schema_is_the_committed_one() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let name = format!("{}.schema.json", flow::Flow::TYPE);
+    let committed = std::fs::read(crate_root.join("types").join(&name)).unwrap();
+    let copy = crate_root.join("../../.board/types").join(&name);
+    if std::env::var("SNAPSHOTS").as_deref() == Ok("overwrite") {
+        std::fs::create_dir_all(copy.parent().unwrap()).unwrap();
+        std::fs::write(&copy, &committed).unwrap();
+    }
+    let board = std::fs::read(&copy).unwrap();
+    assert!(
+        board == committed,
+        "{} differs from the committed {name}; run this test with SNAPSHOTS=overwrite",
+        copy.display()
+    );
 }

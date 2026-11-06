@@ -8,7 +8,9 @@
 mod board;
 mod brief;
 mod change;
+mod controls;
 mod diff;
+mod flow;
 mod gates;
 mod migrate;
 mod open;
@@ -18,7 +20,10 @@ mod pr;
 mod prototype;
 mod records;
 mod repo;
+mod run;
 mod start;
+mod stop;
+mod surfaced;
 mod sync;
 mod tasks;
 mod wip;
@@ -33,7 +38,9 @@ use schemars::JsonSchema;
 use schemars::generate::SchemaSettings;
 use serde_json::{Map, Value, json};
 
-use records::{ChangeRecord, PlanRecord, PrototypeRecord, UnderstandingRecord};
+use records::{
+    ChangeRecord, ChangeV1, PlanRecord, PrototypeRecord, RunRecord, StopRecord, UnderstandingRecord,
+};
 
 /// The plugin's name, which its codes start with.
 const PLUGIN: &str = "changes";
@@ -41,7 +48,12 @@ const PLUGIN: &str = "changes";
 /// too.
 pub const BLOCKING: [&str; 2] = ["critical", "high"];
 /// The record type of a change, which the review plugin reads too.
-pub const CHANGE_TYPE: &str = "changes/change/v1";
+pub const CHANGE_TYPE: &str = "changes/change/v2";
+/// The record type of a change written before flows, which every reader of
+/// a change still reads and `migrate` rewrites as a v2.
+pub const CHANGE_V1: &str = "changes/change/v1";
+/// Both record types of a change.
+pub const CHANGE_TYPES: [&str; 2] = [CHANGE_V1, CHANGE_TYPE];
 
 #[derive(Clone, Copy, Debug)]
 pub struct Changes;
@@ -84,12 +96,13 @@ fn output<T: JsonSchema>() -> Value {
 /// Every capability, in the order the manifest lists them. A capability
 /// that rewrites a field of a change, or ends it, is destructive; one that
 /// adds a task or reads GitHub reaches the open world.
-const CAPABILITIES: [Capability; 15] = [
+const CAPABILITIES: [Capability; 18] = [
     Capability {
         name: "start",
-        description: "Create a change, its plan to fill in and, unless one is named, its task, set \
-            its route from CODEOWNERS, and return the repository's owners, contributing docs and \
-            check suite.",
+        description: "Create a change in the first phase of its flow, its copy of the flow, its \
+            plan to fill in and, unless one is named, its task; set its route from CODEOWNERS and \
+            its check suite; record the open tasks, decisions and evals on the mount; and return \
+            them with the repository's owners, contributing docs and obligations.",
         run: start::start,
         input: input::<start::Input>,
         output: output::<start::Output>,
@@ -101,8 +114,8 @@ const CAPABILITIES: [Capability; 15] = [
     },
     Capability {
         name: "next",
-        description: "The change's phase, each check of its gate as pass or missing, and what to \
-            do now.",
+        description: "The change's flow and phase, each check of its gate as pass or missing with \
+            who can pass it and the remedy, whom it waits on, and what to do now.",
         run: phases::next,
         input: input::<phases::PathInput>,
         output: output::<phases::NextOutput>,
@@ -113,7 +126,8 @@ const CAPABILITIES: [Capability; 15] = [
     Capability {
         name: "attach",
         description: "Add a reference to a record the change produced, which the plan the \
-            change names keeps, or set its task, route, head commit, ticket or pull request.",
+            change names keeps, or set its task, route, head commit, check suite, ticket or pull \
+            request.",
         run: phases::attach,
         input: input::<phases::AttachInput>,
         output: output::<phases::AttachOutput>,
@@ -123,8 +137,8 @@ const CAPABILITIES: [Capability; 15] = [
     },
     Capability {
         name: "advance",
-        description: "Move the change to its next phase when its gate passes; otherwise refuse \
-            and say what is missing. Into build, refuse while three active changes of its kind \
+        description: "Move the change to the next phase of its flow when every check of its gate \
+            that blocks passes; otherwise refuse and say what is missing and the remedy. Into build, refuse while three active changes of its kind \
             are in build for its mount, unless over_limit gives a reason, which the change \
             records and the output warns about.",
         run: phases::advance,
@@ -136,8 +150,8 @@ const CAPABILITIES: [Capability; 15] = [
     },
     Capability {
         name: "open",
-        description: "The changes that are not done or dropped, with their phase, route, task and \
-            kind; by kind, every prototype with its question, state, verdict and branch; and the \
+        description: "The changes that are not done or dropped, with their flow, phase, route, task \
+            and kind; by kind, every prototype with its question, state, verdict and branch; and the \
             day of the last sync.",
         run: open::open,
         input: input::<open::Input>,
@@ -161,7 +175,7 @@ const CAPABILITIES: [Capability; 15] = [
     Capability {
         name: "plan",
         description: "Write a plan for the change, the records it uses and the paths it will \
-            edit, refusing a build change's plan without paths, a path outside the change's \
+            edit, given as JSON on stdin since uses and paths are lists, refusing a build change's plan without paths, a path outside the change's \
             mount, a reference that reaches nothing, a plan over 3,000 words and used documents \
             over 3,000 words in all; the new plan becomes the change's plan.",
         run: plan::plan,
@@ -231,6 +245,17 @@ const CAPABILITIES: [Capability; 15] = [
         timeout: None,
     },
     Capability {
+        name: "reflow",
+        description: "Replace the change's copy of its flow with a copy of the flow named, \
+            refused when that flow has no phase where the change stands.",
+        run: phases::reflow,
+        input: input::<phases::ReflowInput>,
+        output: output::<phases::Reflowed>,
+        hints: [false, true, true, false],
+        env: &[],
+        timeout: None,
+    },
+    Capability {
         name: "sync",
         description: "Read each open change's GitHub pull request with gh and end the change when \
             it closed: done, with its merge commit, when it merged and no attached task is open, \
@@ -258,8 +283,9 @@ const CAPABILITIES: [Capability; 15] = [
     },
     Capability {
         name: "migrate",
-        description: "Rewrite the board's change records written before the split of \
-            changes/change/v1: a prototype's fields move to changes/prototype/v1, the records a \
+        description: "Rewrite each changes/change/v1 as a changes/change/v2 with a copy of the \
+            development flow, a prototype's with none; for one written before the split of \
+            changes/change/v1, a prototype's fields move to changes/prototype/v1, the records a \
             change lists move to the plan it names, a pull request's URL becomes a github/pull/v1 \
             record through github.ref, and the sync stamp moves to Board's cache. apply writes \
             every line in one commit; without it nothing is written.",
@@ -271,6 +297,36 @@ const CAPABILITIES: [Capability; 15] = [
         hints: [false, true, true, true],
         env: &[],
         timeout: Some(SYNC_TIMEOUT),
+    },
+    Capability {
+        name: "run",
+        description: "Start a change, or resume one, set where its run stops (the flow's stop, \
+            or through or until a phase) and build its run brief: each phase's instruction up to \
+            the stop, the stop's rule, the surfaced records and the rules on its paths. inline \
+            returns the brief and starts nothing; otherwise the agent BOARD_AGENT names, else \
+            agent in the known boards file, runs on it in a worktree for the change, and run \
+            records the run and why it stopped. sandbox starts the change in a throwaway copy \
+            of the board and its repository, runs the agent there with its own home, and copies \
+            the run and stop records back under the change it is a dry run for.",
+        run: run::run,
+        input: input::<run::Input>,
+        output: output::<run::Output>,
+        hints: [false, true, false, true],
+        env: &run::ENV,
+        timeout: Some(run::TIMEOUT),
+    },
+    Capability {
+        name: "stop",
+        description: "Record why a run of the change stopped: reached, waiting, refused, budget \
+            or error, with the phase, the blocking checks missing there, the question it left \
+            for the owner and a one-line summary.",
+        run: stop::stop,
+        input: input::<stop::Input>,
+        output: output::<stop::Output>,
+        // Each stop is a new record.
+        hints: [false, false, false, false],
+        env: &[],
+        timeout: None,
     },
 ];
 
@@ -292,6 +348,7 @@ impl Plugin for Changes {
         };
         vec![
             typed(ChangeRecord::TYPE, schema_of::<ChangeRecord>(settings())),
+            typed(ChangeV1::TYPE, schema_of::<ChangeV1>(settings())),
             typed(PlanRecord::TYPE, schema_of::<PlanRecord>(settings())),
             typed(
                 UnderstandingRecord::TYPE,
@@ -301,6 +358,9 @@ impl Plugin for Changes {
                 PrototypeRecord::TYPE,
                 schema_of::<PrototypeRecord>(settings()),
             ),
+            typed(flow::Flow::TYPE, schema_of::<flow::Flow>(settings())),
+            typed(RunRecord::TYPE, schema_of::<RunRecord>(settings())),
+            typed(StopRecord::TYPE, schema_of::<StopRecord>(settings())),
         ]
     }
 
@@ -365,9 +425,13 @@ fn manifest() -> Value {
             directory say more.",
         "metadata": {"area": "delivery"},
         "types": [
+            ChangeV1::TYPE,
             ChangeRecord::TYPE,
+            flow::Flow::TYPE,
             PlanRecord::TYPE,
             PrototypeRecord::TYPE,
+            RunRecord::TYPE,
+            StopRecord::TYPE,
             UnderstandingRecord::TYPE,
         ],
         "capabilities": capabilities,

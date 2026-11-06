@@ -32,7 +32,7 @@ personal board. Each schema's descriptions hold the meaning of every field.
 - `first_seen` is the first publish or read the mod saw, or for an import
   the listing row's `updatedAt`, or the import time when the row has none.
 - `subject` references the change or task the artifact belongs to: a
-  `changes/change/v1` or a `tasks/task/v2`.
+  `changes/change/v1`, a `changes/change/v2` or a `tasks/task/v2`.
 - `state` is `draft`, `shown`, `agreed` or `superseded`. A new artifact is
   `draft`. The schema requires `agreed_by`, a `plans/decision/v1`, on an
   agreed one. `superseded_by` names the artifact that replaced a superseded

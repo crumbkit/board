@@ -1,5 +1,6 @@
-//! `changes.migrate`, which rewrites change records of the shape the Python
-//! plugin wrote into the split shape.
+//! `changes.migrate`, which rewrites each `changes/change/v1` as a
+//! `changes/change/v2`, and change records of the shape the Python plugin
+//! wrote into the split shape first.
 
 use super::*;
 
@@ -122,6 +123,21 @@ fn applying_splits_each_old_change_into_records_board_reads_as_valid_and_a_secon
         (&old["pulls"], &old["tickets"]),
         (&json!(["/gh/o/r/pulls/1"]), &json!(["/gh/o/r/issues/2"]))
     );
+    assert_eq!(
+        (&old["$type"], &old["flow"], &old["surfaced"]),
+        (
+            &json!("changes/change/v2"),
+            &json!("/changes/old/flow"),
+            &json!([])
+        )
+    );
+    assert_eq!(board.read("changes/old/flow.json")["name"], "development");
+    let proto = board.read("changes/proto.json");
+    assert_eq!(
+        (&proto["$type"], &proto["flow"]),
+        (&json!("changes/change/v2"), &Value::Null)
+    );
+    assert!(!board.exists("changes/proto/flow.json"));
     let plan = old["plan"].as_str().unwrap();
     assert!(plan.starts_with("/changes/old/plans/"), "{old}");
     assert_eq!(
@@ -305,4 +321,178 @@ fn a_prototype_record_already_there_that_agrees_is_kept_and_one_that_differs_or_
             }
         }
     }
+}
+
+#[test]
+fn applying_rewrites_a_v1_change_in_each_phase_as_a_v2_on_the_development_flow_and_a_second_run_finds_none()
+ {
+    let board = Changes::new();
+    board.mount_x(&[("README.md", "x\n")]);
+    let phases = [
+        "plan", "build", "review", "land", "done", "dropped", "paused",
+    ];
+    for phase in phases {
+        board.change_at(
+            &format!("changes/{phase}.json"),
+            phase,
+            &json!({"route": "owner"}),
+        );
+    }
+    board.change_at(
+        "changes/proto.json",
+        "build",
+        &json!({"kind": "prototype", "question": "Does it read better?"}),
+    );
+    let output = board.call("migrate", &json!({"apply": true}));
+    assert_eq!(output["total"], json!(phases.len() + 1));
+    for phase in phases {
+        let change = board.read(&format!("changes/{phase}.json"));
+        assert_eq!(
+            (&change["$type"], &change["phase"], &change["route"]),
+            (&json!("changes/change/v2"), &json!(phase), &json!("owner")),
+            "{phase}"
+        );
+        assert_eq!(change["flow"], format!("/changes/{phase}/flow"));
+        assert_eq!(change["surfaced"], json!([]));
+        let copy = board.read(&format!("changes/{phase}/flow.json"));
+        assert_eq!(copy["name"], "development", "{phase}");
+    }
+    let proto = board.read("changes/proto.json");
+    assert_eq!(
+        (&proto["$type"], &proto["phase"], &proto["flow"]),
+        (&json!("changes/change/v2"), &json!("build"), &Value::Null)
+    );
+    assert!(!board.exists("changes/proto/flow.json"));
+    let degraded: Vec<(String, Option<String>)> = (board.checked("/changes/").into_iter())
+        .filter(|(_, code)| code.is_some())
+        .collect();
+    assert_eq!(degraded, []);
+    let next = board.call("next", &json!({"path": "/changes/plan"}));
+    assert_eq!(next["flow"]["name"], "development");
+    let paused = board.refusal("advance", &json!({"path": "/changes/paused"}));
+    assert_eq!(paused["code"], "changes::phase::paused");
+    let again = board.call("migrate", &json!({"apply": true}));
+    assert_eq!(again["total"], json!(0));
+}
+
+#[test]
+fn a_v2_change_is_left_as_it_is_and_a_v1_beside_it_is_rewritten() {
+    let board = Changes::new();
+    let mount = board.mount_x(&[("README.md", "x\n")]);
+    let started = board.call(
+        "start",
+        &json!({"mount": mount, "task": TASK, "title": "New"}),
+    );
+    let path = started["path"]
+        .as_str()
+        .unwrap()
+        .trim_start_matches('/')
+        .to_owned();
+    let before = board.text(&format!("{path}.json"));
+    board.change_at("changes/t.json", "build", &json!({}));
+    let output = board.call("migrate", &json!({"apply": true}));
+    assert_eq!(output["changes"], json!(["/changes/t"]));
+    assert_eq!(board.text(&format!("{path}.json")), before);
+}
+
+/// A v1 build change whose mount's contributing docs name `/suites/checks`,
+/// with a passing run of that suite on its head attached, as a v1 change
+/// passed `suite-run` before flows.
+fn v1_build_change_with_a_passing_run(board: &Changes, docs: &str) {
+    board.mount_x(&[("CONTRIBUTING.md", docs)]);
+    board.write("suites/checks.json", &typed("runs/suite/v1", &json!({})));
+    let run = json!({
+        "suite": "/suites/checks",
+        "scope": "full",
+        "dirty": false,
+        "versions": {"x": HEAD},
+        "results": [],
+    });
+    board.write("suites/checks/runs/1.json", &typed("runs/run/v1", &run));
+    board.change_at(
+        "changes/t.json",
+        "build",
+        &json!({"head": HEAD, "plan": "/changes/t/plan.md", "records": ["/suites/checks/runs/1"]}),
+    );
+    board.write("changes/t/plan.md", PLAN);
+}
+
+#[test]
+fn a_migrated_build_change_keeps_the_suite_its_docs_name_and_its_passing_run_passes_suite_run() {
+    let board = Changes::new();
+    v1_build_change_with_a_passing_run(&board, "Checks: `/suites/checks`.\n");
+    board.call("migrate", &json!({"apply": true}));
+    let change = board.read("changes/t.json");
+    assert_eq!(
+        (&change["$type"], &change["suite"]),
+        (&json!("changes/change/v2"), &json!("/suites/checks"))
+    );
+    let moved = board.call("advance", &json!({"path": "/changes/t"}));
+    assert_eq!(moved["to"], "review");
+}
+
+#[test]
+fn a_migrated_build_change_whose_docs_name_no_suite_has_none_and_misses_suite_run() {
+    let board = Changes::new();
+    v1_build_change_with_a_passing_run(&board, "Run the checks.\n");
+    board.call("migrate", &json!({"apply": true}));
+    let change = board.read("changes/t.json");
+    assert_eq!(change["suite"], Value::Null);
+    let refused = board.refusal("advance", &json!({"path": "/changes/t"}));
+    assert_eq!(refused["code"], "changes::gate::unmet");
+    assert_eq!(refused["fields"]["missing"], json!(["suite-run"]));
+}
+
+#[test]
+fn a_migrated_change_in_each_phase_faces_the_blocking_checks_of_the_development_flow() {
+    let board = Changes::new();
+    board.mount_x(&[("README.md", "x\n")]);
+    let phases = ["plan", "build", "review", "land"];
+    for phase in phases {
+        board.change_at(
+            &format!("changes/{phase}.json"),
+            phase,
+            &json!({"route": "owner", "plan": format!("/changes/{phase}/plan.md")}),
+        );
+        board.write(&format!("changes/{phase}/plan.md"), PLAN);
+    }
+    board.call("migrate", &json!({"apply": true}));
+    let blocking: Vec<(&str, Vec<String>)> = (phases.iter())
+        .map(|phase| {
+            let next = board.call("next", &json!({"path": format!("/changes/{phase}")}));
+            let ids = (next["gate"].as_array().unwrap().iter())
+                .filter(|check| check["blocks"] == json!(true))
+                .map(|check| check["check"].as_str().unwrap().to_owned())
+                .collect();
+            (*phase, ids)
+        })
+        .collect();
+    let expected: Vec<(&str, Vec<String>)> = [
+        (
+            "plan",
+            vec![
+                "plan-sections",
+                "considered",
+                "task",
+                "route",
+                "owner-approval",
+            ],
+        ),
+        ("build", vec!["head", "suite-run", "tasks"]),
+        (
+            "review",
+            vec![
+                "review",
+                "paths",
+                "ui-paths",
+                "data-paths",
+                "obligations-settled",
+            ],
+        ),
+        ("land", vec!["test-sections", "pull-request"]),
+    ]
+    .into_iter()
+    .map(|(phase, ids)| (phase, ids.into_iter().map(str::to_owned).collect()))
+    .collect();
+    assert_eq!(blocking, expected);
 }

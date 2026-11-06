@@ -54,7 +54,7 @@ fn next_reads_the_gate_from_the_plan_file_and_says_what_to_do() {
     board.change_at(
         "changes/t.json",
         "plan",
-        &json!({"plan": "/changes/t/plan.md", "route": "owner"}),
+        &json!({"plan": "/changes/t/plan.md", "route": "owner", "records": [board.approved()]}),
     );
     board.write(
         "changes/t/plan.md",
@@ -76,17 +76,23 @@ fn next_reads_the_gate_from_the_plan_file_and_says_what_to_do() {
     assert_eq!(
         statuses,
         BTreeMap::from([
-            ("plan", "missing"),
+            ("plan-sections", "missing"),
+            ("considered", "pass"),
             ("task", "pass"),
             ("route", "pass"),
-            ("ux", "missing"),
-            ("neighbours", "pass"),
-            ("data", "missing"),
+            ("owner-approval", "pass"),
+            ("mockups", "missing"),
+            ("data-signed", "missing"),
+            ("obligations", "pass"),
         ])
+    );
+    assert_eq!(
+        output["flow"],
+        json!({"name": "development", "phases": ["plan", "build", "review", "land"]})
     );
     let instruction = output["instruction"].as_str().unwrap();
     assert!(
-        instruction.starts_with("Interview the owner"),
+        instruction.starts_with("Read each record the change surfaced"),
         "{instruction}"
     );
     board.write("changes/t/plan.md", PLAN);
@@ -108,7 +114,24 @@ fn advance_refuses_an_unmet_gate_naming_what_is_missing_and_moves_on_once_it_is_
     board.write("changes/t/plan.md", "# T\n");
     let refused = board.refusal("advance", &path());
     assert_eq!(refused["code"], "changes::gate::unmet");
-    assert_eq!(refused["fields"]["missing"], json!(["plan", "ux", "data"]));
+    assert_eq!(
+        refused["fields"]["missing"],
+        json!(["plan-sections", "owner-approval", "mockups", "data-signed"])
+    );
+    let remedies = refused["fields"]["remedies"].as_array().unwrap();
+    assert_eq!(remedies.len(), 4);
+    assert!(
+        remedies[1]
+            .as_str()
+            .unwrap()
+            .starts_with("Only the owner can provide this"),
+        "{remedies:?}"
+    );
+    board.change_at(
+        "changes/t.json",
+        "plan",
+        &json!({"plan": "/changes/t/plan.md", "route": "owner", "records": [board.approved()]}),
+    );
     assert_eq!(board.read("changes/t.json")["phase"], "plan");
     board.write("changes/t/plan.md", PLAN);
     assert_eq!(
@@ -124,7 +147,7 @@ fn a_plan_with_no_route_blocks_the_plan_gate_and_setting_one_clears_it() {
     board.change_at(
         "changes/t.json",
         "plan",
-        &json!({"plan": "/changes/t/plan.md"}),
+        &json!({"plan": "/changes/t/plan.md", "records": [board.approved()]}),
     );
     board.write("changes/t/plan.md", PLAN);
     assert_eq!(missing(&board), json!(["route"]));
@@ -262,8 +285,9 @@ fn the_build_gate_finds_the_check_suite_in_the_repositorys_contributing_docs() {
     board.change_at(
         "changes/t.json",
         "build",
-        &json!({"head": HEAD, "records": ["/suites/checks/runs/1"]}),
+        &json!({"head": HEAD, "plan": "/changes/t/plan.md", "records": ["/suites/checks/runs/1"]}),
     );
+    board.write("changes/t/plan.md", PLAN);
     assert_eq!(advanced(&board), "review");
 }
 
@@ -293,9 +317,10 @@ fn the_build_gate_counts_a_run_of_a_suite_in_the_repositorys_own_board_by_where_
     board.change_at(
         "changes/t.json",
         "build",
-        &json!({"head": HEAD, "records": ["/repos/x/suites/other/runs/1"]}),
+        &json!({"head": HEAD, "plan": "/changes/t/plan.md", "records": ["/repos/x/suites/other/runs/1"]}),
     );
-    assert_eq!(missing(&board), json!(["check-run"]));
+    board.write("changes/t/plan.md", PLAN);
+    assert_eq!(missing(&board), json!(["suite-run"]));
     board.call(
         "attach",
         &at(&json!({"ref": "/repos/x/suites/checks/runs/1"})),
@@ -320,7 +345,13 @@ fn advance_runs_from_land_to_done_and_refuses_to_leave_done() {
     board.change_at(
         "changes/t.json",
         "land",
-        &json!({"pull_request": "https://github.com/o/r/pull/1"}),
+        &json!({"pull_request": "https://github.com/o/r/pull/1", "plan": "/changes/t/plan.md"}),
+    );
+    board.write("changes/t/plan.md", "# T\n");
+    assert_eq!(missing(&board), json!(["test-sections"]));
+    board.write(
+        "changes/t/plan.md",
+        "# T\n\n## What the tests prove\n\nIt lands.\n\n## What the tests do not prove\n\nRetries.\n",
     );
     assert_eq!(advanced(&board), "done");
     let refused = board.refusal("advance", &path());
@@ -562,7 +593,7 @@ fn a_change_with_no_task_blocks_the_plan_gate_and_attaching_one_clears_it() {
         "changes/t/plans/1.json",
         &typed(
             "changes/plan/v1",
-            &json!({"text": "/changes/t/plan.md", "uses": []}),
+            &json!({"text": "/changes/t/plan.md", "uses": [], "records": [board.approved()]}),
         ),
     );
     board.write(
@@ -603,7 +634,7 @@ fn planned_change(board: &Changes, plan: &str) {
     board.change_at(
         "changes/t.json",
         "plan",
-        &json!({"plan": "/changes/t/plan.md", "route": "owner"}),
+        &json!({"plan": "/changes/t/plan.md", "route": "owner", "records": [board.approved()]}),
     );
     board.write("changes/t/plan.md", plan);
 }
@@ -831,5 +862,36 @@ fn review_refuses_a_head_the_mounted_repository_lacks_until_the_head_is_one_it_h
         &json!({"head": head, "records": ["/r/1"]}),
     );
     board.write("r/1.json", &approving(&head, &base));
+    assert_eq!(advanced(&board), "land");
+}
+
+/// A change in review that passes every other review check, with an
+/// obligation control on its planned paths.
+fn reviewing_with_an_obligation(board: &Changes) {
+    let (base, head) = reviewing(board, &["/r/1"]);
+    board.write("r/1.json", &approving(&head, &base));
+    let owed = json!({
+        "$type": "controls/control/v1",
+        "kind": "obligation",
+        "requirement": "Sweep the docs.",
+        "purpose": "p",
+        "paths": ["repos/x/**"],
+    });
+    board.write("controls/x/docs.json", &owed.to_string());
+}
+
+#[test]
+fn review_refuses_an_obligation_on_the_planned_paths_while_the_controls_plugin_is_enabled() {
+    let board = Changes::new();
+    reviewing_with_an_obligation(&board);
+    let refused = board.refusal("advance", &path());
+    assert_eq!(refused["code"], "changes::gate::unmet");
+    assert_eq!(refused["fields"]["missing"], json!(["obligations-settled"]));
+}
+
+#[test]
+fn review_finds_no_obligations_while_the_controls_plugin_is_not_enabled() {
+    let board = Changes::enabling(&["changes"]);
+    reviewing_with_an_obligation(&board);
     assert_eq!(advanced(&board), "land");
 }

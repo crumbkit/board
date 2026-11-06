@@ -37,7 +37,7 @@ fn ready(board: &Changes) {
     board.change_at(
         "changes/t.json",
         "plan",
-        &json!({"plan": "/changes/t/plan.md", "route": "owner"}),
+        &json!({"plan": "/changes/t/plan.md", "route": "owner", "records": [board.approved()]}),
     );
     board.write("changes/t/plan.md", PLAN);
 }
@@ -56,6 +56,32 @@ fn advance_into_build_refuses_when_the_cap_is_full_and_moves_on_below_it() {
     assert_eq!(refused["fields"]["active"], busy(WIP_LIMIT));
     board.call("pause", &json!({"path": "/changes/busy-0"}));
     assert_eq!(advanced(&board), "build");
+}
+
+#[test]
+fn start_on_a_flow_that_begins_in_build_refuses_a_full_cap_and_goes_past_it_with_a_reason() {
+    let board = Changes::new();
+    board.mount_x(&[("README.md", "x\n")]);
+    fill(&board, WIP_LIMIT, &json!({}));
+    let input = json!({"mount": "/repos/x", "task": TASK, "title": "Quick", "flow": "small"});
+    let refused = board.refusal("start", &input);
+    let override_command = format!(
+        "board call changes.start --mount /repos/x --title Quick --task {TASK} --flow small \
+         --over_limit '<why>'"
+    );
+    assert_eq!(
+        (&refused["code"], &refused["fields"]["override"]),
+        (&json!("changes::wip::full"), &json!(override_command))
+    );
+    assert!(!board.exists("changes/quick.json"));
+    let reason = "The owner wants it now.";
+    let given = serde_json::from_str(&record(input, &json!({"over_limit": reason}))).unwrap();
+    let output = board.call("start", &given);
+    assert_eq!(
+        (&output["phase"], &output["warning"]["code"]),
+        (&json!("build"), &json!("changes::wip::over_limit"))
+    );
+    assert_eq!(board.read("changes/quick.json")["over_limit"], reason);
 }
 
 #[test]
@@ -208,7 +234,7 @@ fn idle_changes_do_not_count_and_the_refusal_lists_each_with_its_action() {
     board.change_at(
         "changes/t.json",
         "plan",
-        &json!({"plan": "/changes/t/plan.md", "route": "owner"}),
+        &json!({"plan": "/changes/t/plan.md", "route": "owner", "records": [board.approved()]}),
     );
     fill(&board, WIP_LIMIT, &json!({}));
     let refused = board.refusal("advance", &path());
@@ -370,7 +396,10 @@ impl Changes {
         self.change_at(
             "changes/t.json",
             "plan",
-            &json!({"plan": "/changes/t/plan.md", "route": "owner", "mount": mount}),
+            &json!({
+                "plan": "/changes/t/plan.md", "route": "owner", "mount": mount,
+                "records": [self.approved()],
+            }),
         );
         self.write("changes/t/plan.md", PLAN);
     }

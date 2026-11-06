@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use crate::records::{ReportRecord, Severity, Verdict};
-use crate::{BLOCKING, CHANGE_TYPE, PLUGIN, git, readable, refusal, refused, root, rows};
+use crate::{BLOCKING, CHANGE_TYPES, PLUGIN, git, readable, refusal, refused, root, rows};
 
 /// How many uncovered commits a refusal names.
 const SHOWN: usize = 20;
@@ -304,9 +304,9 @@ fn own(host: &dyn Host, repository: &git::Repository<'_>) -> Result<Vec<Covering
 /// a broken reference counts as not there.
 fn change(host: &dyn Host, path: &str) -> Result<Value, PluginError> {
     let sql = format!(
-        "SELECT body FROM records WHERE logical = {} AND type = {} AND {}",
+        "SELECT body FROM records WHERE logical = {} AND type IN ({}) AND {}",
         literal(path),
-        literal(CHANGE_TYPE),
+        CHANGE_TYPES.map(literal).join(", "),
         readable()
     );
     let found = (rows(host, &sql)?.into_iter().next())
@@ -315,7 +315,7 @@ fn change(host: &dyn Host, path: &str) -> Result<Value, PluginError> {
         refusal(
             "review::change::not_found",
             format!(
-                "no readable {CHANGE_TYPE} is at {path}; name a change `board call changes.open` \
+                "no readable change is at {path}; name a change `board call changes.open` \
                  lists, or run `board check {path}` to see why Board cannot read it"
             ),
             [("change", json!(path))],

@@ -1,5 +1,8 @@
-//! The `next`, `attach`, `advance`, `pause` and `resume` capabilities:
-//! where a change stands, what it cites, and moving it on.
+//! The `next`, `attach`, `advance`, `pause`, `resume` and `reflow`
+//! capabilities: where a change stands, what it cites, moving it on, and
+//! moving it to another flow.
+
+use std::fmt::Write as _;
 
 use board_ops::{Host, PluginError, literal};
 use board_plugin::shape::Prose;
@@ -13,10 +16,22 @@ use crate::change::{
     LastSync, attached, branch_of, current, kind_of, last_sync, line, plan_at, pull_of, read,
     referenced, touch,
 };
+use crate::controls::{listed_by, obligations};
 use crate::diff::{edited, outside};
-use crate::gates::{Check, Observed, Status, code_of, gate};
-use crate::records::{ChangeRecord, Kind, PULL_TYPES, Phase, Route, TASK_TYPE, TICKET_TYPES};
+use crate::flow::Kind as CheckKind;
+use crate::flow::{
+    Actor, FlowSummary, asked_for, blob_at, copy_line, of_change, refuse_invalid,
+    refuse_without_repository,
+};
+use crate::gates::kinds::named_controls;
+use crate::gates::remedy::{fill, unfilled, values};
+use crate::gates::{Check, Observed, Read, gate, reads};
+use crate::records::{
+    BOARD_ITSELF, BUILD, ChangeRecord, DONE, DROPPED, Kind, PAUSED, PULL_TYPES, Route, SUITE_TYPE,
+    TASK_TYPE, TICKET_TYPES, is_final,
+};
 use crate::repo::check_suite;
+use crate::stop::{Shown, holds, reached, stop_reached};
 use crate::wip::{Limit, Move, active_days, admit};
 use crate::{PLUGIN, refusal, to_value};
 
@@ -59,6 +74,7 @@ pub(crate) struct AdvanceInput {
 #[schemars(extend("anyOf" = [
     {"required": ["ref"]}, {"required": ["ticket"]}, {"required": ["pull"]},
     {"required": ["task"]}, {"required": ["route"]}, {"required": ["head"]},
+    {"required": ["suite"]},
 ]))]
 pub(crate) struct AttachInput {
     #[schemars(
@@ -102,16 +118,40 @@ pub(crate) struct AttachInput {
         description = "The commit under test and review."
     )]
     head: Option<String>,
+    #[schemars(
+        regex(pattern = "^/"),
+        extend("format" = "board-path"),
+        description = "The check suite the change's runs belong to, a runs/suite/v1 record, \
+                       such as /suites/board-gates."
+    )]
+    suite: Option<String>,
 }
 
-/// Where the change stands: its phase, route, the gate's checks, what to do
-/// now and the last sync.
+/// Where the change stands: its flow and phase, route, the gate's checks,
+/// what to do now and the last sync.
+///
+/// `flow` names the flow the change follows and its phases, null for a
+/// prototype. Each check says who can make it pass (`actor`), whether it
+/// refuses `advance` (`blocks`), and when missing what to do (`remedy`).
+/// When every missing check that blocks waits on the owner or a reviewer,
+/// `waiting_on` names them and `ask` is a question body built from their
+/// remedies, which a session running without the owner records as a
+/// plans/question/v1 whose `blocks` names the change. `stop` is where the
+/// change's run stops, which `changes.run` set, and whether the change has
+/// reached it; it is left out when no run set one.
 #[derive(Debug, Serialize, JsonSchema)]
 pub(crate) struct NextOutput {
     pub(crate) path: String,
-    pub(crate) phase: Phase,
+    pub(crate) flow: Option<FlowSummary>,
+    pub(crate) phase: String,
     pub(crate) route: Option<Route>,
     pub(crate) gate: Vec<Check>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub(crate) waiting_on: Vec<Actor>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) ask: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) stop: Option<Shown>,
     pub(crate) instruction: String,
     pub(crate) sync: LastSync,
 }
@@ -128,48 +168,26 @@ pub(crate) struct AttachOutput {
 #[derive(Debug, Serialize, JsonSchema)]
 pub(crate) struct Moved {
     path: String,
-    from: Phase,
-    to: Phase,
+    from: String,
+    to: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     warning: Option<Limit>,
 }
 
-/// What the builder of each phase does next.
-fn instruction(phase: Phase) -> &'static str {
-    match phase {
-        Phase::Plan => {
-            "Interview the owner and fill in the plan's Problem, Outcome, Out of scope, UX and \
-             Data sections. UX says No UI change with a reason, or lists the mockups and a \
-             Neighbours list; attach the owner's decision naming each mockup. Data says None, \
-             or run the understanding-check skill and attach its record and the owner's \
-             decision that references it. On the ask-first route, attach the owner's \
-             plans/decision/v1 whose refs name the plan."
-        }
-        Phase::Build => {
-            "Build test-first. Attach each task, record the head commit with --head, run the \
-             check suite on it and attach the run. Before advancing, ask the owner two of each \
-             attached understanding check's predict or edge questions again, worded \
-             differently, and add them to its rechecks."
-        }
-        Phase::Review => {
-            "Review the head commit with clean context and attach the review/report/v1. When \
-             the plan's UX says No UI change or its Data says None, list the repository's \
-             UI-path and data-path controls, /controls/<repo>/ui-paths and \
-             /controls/<repo>/data-paths, with `board call controls.check`, and report a diff \
-             that touches a path they name as a high finding. Fix blocking findings, record the \
-             new head and review again."
-        }
-        Phase::Land => {
-            "Draft the pull request with `board call changes.pr` and open it with the command \
-             it returns. Record it with `board call github.ref --ref <owner>/<repo>#<number>` \
-             and attach that record with --pull. Merging happens outside Board."
-        }
-        Phase::Done | Phase::Dropped => "Nothing is left to do.",
-        Phase::Paused => {
-            "The keeper paused this change to keep the work in progress small. Resume it with \
-             `board call changes.resume` when the owner's queue and the cap allow."
-        }
+/// What to do in the change's phase: its flow's instruction for it, with
+/// the placeholders filled, or a fixed one for a phase outside the flow.
+fn instruction(observed: &Observed) -> String {
+    let phase = observed.change.phase.as_str();
+    let found = (observed.flow.as_ref()).and_then(|flow| flow.phase(phase));
+    if let Some(found) = found {
+        return fill(&found.instruction, &values(observed));
     }
+    if phase == PAUSED {
+        return "The keeper paused this change to keep the work in progress small. Resume it with \
+                `board call changes.resume` when the owner's queue and the cap allow."
+            .to_owned();
+    }
+    "Nothing is left to do.".to_owned()
 }
 
 /// The text of the change's plan, or none when it names none or nothing is
@@ -196,38 +214,83 @@ pub(crate) fn plan_file(
     Ok(plan_at(host, plan)?.map(|(record, _)| record.text))
 }
 
-/// What the change's gate reads: references where the gate uses them, the
-/// plan in `plan`, the docs in `build`, and the diff in `review`.
+/// What the change's gate reads: its flow, and what the checks of its
+/// phase need, by their kinds (`gates::reads`).
 pub(crate) fn observe(
     host: &dyn Host,
     path: &str,
     change: &ChangeRecord,
 ) -> Result<Observed, PluginError> {
-    let phase = change.phase;
-    let reads = matches!(phase, Phase::Plan | Phase::Build | Phase::Review);
-    let cited = if reads {
+    let flow = of_change(host, path, change)?;
+    let wanted = reads(
+        (flow.as_ref())
+            .and_then(|flow| flow.phase(&change.phase))
+            .map_or(&[], |phase| phase.checks.as_slice()),
+    );
+    let cited = if wanted.contains(&Read::References) {
         attached(host, path)?
     } else {
         Vec::new()
     };
     let records = referenced(host, &cited)?;
     let mut found = Observed::new(path, change.clone(), kind_of(host, path)?, records);
+    found.flow = flow;
     found.cited = cited;
-    match phase {
-        Phase::Plan => {
-            found.plan_file = plan_file(host, change)?;
-            found.plan = match &found.plan_file {
-                Some(file) => get_text(host, file)?,
-                None => None,
-            };
+    found.board = board::resolve(host, "/")?
+        .map(|report| report.location.board.repository.display().to_string());
+    if wanted.contains(&Read::Plan) {
+        found.plan_file = plan_file(host, change)?;
+        found.plan = match &found.plan_file {
+            Some(file) => get_text(host, file)?,
+            None => None,
+        };
+        found.uses = current(host, change)?.1;
+    }
+    if wanted.contains(&Read::Suite) {
+        found.suite = if change.v1 {
+            check_suite(host, &change.mount)?
+        } else {
+            change.suite.clone()
+        };
+    }
+    if wanted.contains(&Read::Diff) {
+        reviewed(host, &mut found)?;
+    }
+    if wanted.contains(&Read::Pull) {
+        let newest = change.pulls().last().map_or("", String::as_str);
+        found.pull_read = pull_of(host, newest)?.is_some();
+    }
+    if wanted.contains(&Read::Obligations) {
+        found.obligations = obligations(host, &current(host, change)?.2)?;
+    }
+    if wanted.contains(&Read::Controlled) {
+        let filled = values(&found);
+        let named: Vec<String> = (found.checks().iter())
+            .flat_map(|each| named_controls(each, &filled))
+            .collect();
+        for control in named {
+            let listed = listed_by(host, &control, &found.edited)?;
+            found.controlled.insert(control, listed);
         }
-        Phase::Build => found.suite = check_suite(host, &change.mount)?,
-        Phase::Review => reviewed(host, &mut found)?,
-        Phase::Land => {
-            let newest = change.pulls().last().map_or("", String::as_str);
-            found.pull_read = pull_of(host, newest)?.is_some();
+    }
+    if wanted.contains(&Read::Tickets) {
+        let tickets = change.tickets.clone().unwrap_or_default();
+        found.ticket_types = (referenced(host, &tickets)?.records.into_iter())
+            .map(|(_, (kind, _))| kind)
+            .collect();
+    }
+    if wanted.contains(&Read::Exists) {
+        let filled = values(&found);
+        let paths: Vec<String> = (found.checks().iter())
+            .filter(|each| each.kind.known() == Some(&CheckKind::Exists))
+            .filter_map(|each| each.path.as_deref())
+            .filter(|template| unfilled(template, &filled).is_empty())
+            .map(|template| fill(template, &filled))
+            .collect();
+        for path in paths {
+            let held = board::resolve(host, &path)?.is_some();
+            found.existing.insert(path, held);
         }
-        _ => {}
     }
     Ok(found)
 }
@@ -245,21 +308,24 @@ fn reviewed(host: &dyn Host, found: &mut Observed) -> Result<(), PluginError> {
         return Ok(());
     };
     match edited(host, &found.change.mount, &head)? {
-        Ok(files) if !found.planned.is_empty() => {
-            found.outside = outside(host, &files, &found.planned)?;
+        Ok(files) => {
+            if !found.planned.is_empty() {
+                found.outside = outside(host, &files, &found.planned)?;
+            }
+            found.edited = files;
         }
-        Ok(_) => {}
         Err(unread) => found.diff_unread = Some(unread),
     }
     Ok(())
 }
 
 /// What to do now: the prototype's loop, the advance command once the gate
-/// passes, or the phase's instruction.
-fn instruction_for(observed: &Observed, checks: &[Check]) -> String {
+/// passes, what to do while it waits on the owner or a reviewer, or the
+/// phase's instruction.
+fn instruction_for(observed: &Observed, checks: &[Check], waiting: bool) -> String {
     let (path, change) = (observed.path.as_str(), &observed.change);
-    let phase = change.phase;
-    if observed.kind == Kind::Prototype && phase == Phase::Build {
+    let phase = change.phase.as_str();
+    if observed.kind == Kind::Prototype && phase == BUILD {
         return format!(
             "Iterate with the owner on branch {}, committing and pushing after every round. When \
              the owner has his answer, ask for the verdict in one sentence and record it with \
@@ -267,32 +333,90 @@ fn instruction_for(observed: &Observed, checks: &[Check]) -> String {
             branch_of(path)
         );
     }
-    let open = !phase.is_final() && phase != Phase::Paused;
-    if open && checks.iter().all(|found| found.status == Status::Pass) {
+    let open = !is_final(phase) && phase != PAUSED;
+    if open && !checks.iter().any(Check::blocking) {
         return format!("The gate passes: run `board call changes.advance --path {path}`.");
     }
-    let said = instruction(phase);
+    let said = instruction(observed);
+    if open && waiting {
+        return format!(
+            "{said} Only the owner or a reviewer can pass the checks left: ask them now with \
+             `ask`, or, running without them, record `ask` as a plans/question/v1 with `board \
+             put`, its blocks naming {path} and its mount {}, and stop here.",
+            change.mount
+        );
+    }
     match (phase, &change.merge_commit_url, &change.dropped_reason) {
-        (Phase::Done, Some(merged), _) => format!("{said} It merged as {merged}."),
-        (Phase::Dropped, _, Some(reason)) => format!("{said} It was dropped: {reason}"),
-        _ => said.to_owned(),
+        (DONE, Some(merged), _) => format!("{said} It merged as {merged}."),
+        (DROPPED, _, Some(reason)) => format!("{said} It was dropped: {reason}"),
+        _ => said,
     }
 }
 
-/// The change's phase and route, its gate's checks, and the next
-/// instruction.
+/// Whom the change waits on: the actors of its missing checks that block,
+/// when every one is the owner or a reviewer, and the question to ask
+/// them, built from those checks' remedies.
+fn waiting(observed: &Observed, checks: &[Check]) -> (Vec<Actor>, Option<String>) {
+    let blocking: Vec<&Check> = checks.iter().filter(|each| each.blocking()).collect();
+    if blocking.is_empty() || blocking.iter().any(|each| each.actor == Actor::Agent) {
+        return (Vec::new(), None);
+    }
+    let mut actors: Vec<Actor> = blocking.iter().map(|each| each.actor).collect();
+    actors.sort_by_key(|actor| *actor == Actor::Reviewer);
+    actors.dedup();
+    let mut ask = format!(
+        "The change {} ({}) waits in its {} phase on these checks:",
+        observed.path, observed.change.title, observed.change.phase
+    );
+    for each in blocking {
+        let remedy = each.remedy.as_deref().unwrap_or_default();
+        let _ = write!(ask, "\n- {}: {} {remedy}", each.check, each.detail);
+    }
+    (actors, Some(ask))
+}
+
+/// The change's flow and phase, route, its gate's checks, whom it waits
+/// on, and the next instruction.
 pub(crate) fn next_of(host: &dyn Host, path: &str) -> Result<NextOutput, PluginError> {
+    Ok(step_of(host, path)?.0)
+}
+
+/// What `next` says of the change at `path`, and what its gate read.
+pub(crate) fn step_of(host: &dyn Host, path: &str) -> Result<(NextOutput, Observed), PluginError> {
     let (change, _) = read(host, path)?;
     let observed = observe(host, path, &change)?;
     let checks = gate(&observed);
-    Ok(NextOutput {
+    let (waiting_on, ask) = waiting(&observed, &checks);
+    let passes = !checks.iter().any(Check::blocking);
+    let stop = match (&change.stop, &observed.flow) {
+        (Some(stop), Some(flow)) => Some(Shown {
+            reached: reached(flow, &change.phase, stop, passes),
+            stop: stop.clone(),
+        }),
+        _ => None,
+    };
+    let instruction = match &stop {
+        Some(shown) if shown.reached => format!(
+            "The change has reached the stop of its run, {}: stop here. Running unattended, \
+             record it with `board call changes.stop --path {path} --reason reached --summary \
+             '<one line>'` and exit.",
+            shown.stop
+        ),
+        _ => instruction_for(&observed, &checks, ask.is_some()),
+    };
+    let next = NextOutput {
         path: path.to_owned(),
-        phase: change.phase,
+        flow: observed.flow.as_ref().map(FlowSummary::from),
+        phase: change.phase.clone(),
         route: change.route,
-        instruction: instruction_for(&observed, &checks),
+        instruction,
         gate: checks,
+        waiting_on,
+        ask,
+        stop,
         sync: last_sync(host)?,
-    })
+    };
+    Ok((next, observed))
 }
 
 pub(crate) fn next(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
@@ -330,6 +454,11 @@ pub(crate) fn attach(host: &dyn Host, input: &Value) -> Result<Value, PluginErro
     if let Some(task) = asked.task {
         check_target(host, &task, &[TASK_TYPE])?;
         change.task = Some(task);
+    }
+    if let Some(suite) = asked.suite {
+        refuse_v1(&path, &change, "a suite")?;
+        check_target(host, &suite, &[SUITE_TYPE])?;
+        change.suite = Some(suite);
     }
     change.route = asked.route.or(change.route);
     change.head = asked.head.or(change.head);
@@ -412,8 +541,25 @@ pub(crate) fn check_target(
     ))
 }
 
+/// `changes::change::not_migrated` for a v1 change, which holds no `what`.
+pub(crate) fn refuse_v1(path: &str, change: &ChangeRecord, what: &str) -> Result<(), PluginError> {
+    if !change.v1 {
+        return Ok(());
+    }
+    Err(refusal(
+        "changes::change::not_migrated",
+        format!(
+            "the change at {path} is a {}, which holds no {what}; rewrite it as a {} with `board \
+             call changes.migrate --apply true`, then try again",
+            crate::CHANGE_V1,
+            crate::CHANGE_TYPE
+        ),
+        [("path", json!(path))],
+    ))
+}
+
 /// `changes::phase::final` for a change in `phase`, saying `why`.
-pub(crate) fn final_phase(path: &str, phase: Phase, why: String) -> PluginError {
+pub(crate) fn final_phase(path: &str, phase: &str, why: String) -> PluginError {
     refusal(
         "changes::phase::final",
         why,
@@ -424,19 +570,18 @@ pub(crate) fn final_phase(path: &str, phase: Phase, why: String) -> PluginError 
 pub(crate) fn advance(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
     let AdvanceInput { path, over_limit } = PluginError::read_input(PLUGIN, "advance", input)?;
     let (mut change, blob) = read(host, &path)?;
-    let phase = change.phase;
-    if phase.is_final() {
+    let phase = change.phase.clone();
+    if is_final(&phase) {
         return Err(final_phase(
             &path,
-            phase,
+            &phase,
             format!(
-                "the change at {path} is {}, which has no next phase; list the open changes with \
-                 `board call changes.open`, or start one with `board call changes.start`",
-                phase.as_str()
+                "the change at {path} is {phase}, which has no next phase; list the open changes \
+                 with `board call changes.open`, or start one with `board call changes.start`"
             ),
         ));
     }
-    if phase == Phase::Paused {
+    if phase == PAUSED {
         return Err(refusal(
             "changes::phase::paused",
             format!(
@@ -446,39 +591,54 @@ pub(crate) fn advance(host: &dyn Host, input: &Value) -> Result<Value, PluginErr
             [("path", json!(path)), ("phase", json!(phase))],
         ));
     }
-    let missing: Vec<Check> = (gate(&observe(host, &path, &change)?).into_iter())
-        .filter(|found| found.status == Status::Missing)
+    let observed = observe(host, &path, &change)?;
+    if let (Some(stop), Some(flow)) = (&change.stop, &observed.flow)
+        && holds(flow, &phase, stop)
+    {
+        return Err(stop_reached(&path, &phase, stop));
+    }
+    let missing: Vec<Check> = (gate(&observed).into_iter())
+        .filter(Check::blocking)
         .collect();
     if let Some(first) = missing.first() {
         let said: Vec<String> = (missing.iter())
-            .map(|found| format!("{}: {}", found.check, found.detail))
+            .map(|found| {
+                let remedy = found.remedy.as_deref().unwrap_or_default();
+                format!("{}: {} ({remedy})", found.check, found.detail)
+            })
             .collect();
-        let names: Vec<&str> = missing.iter().map(|found| found.check).collect();
+        let names: Vec<&str> = missing.iter().map(|found| found.check.as_str()).collect();
+        let remedies: Vec<&str> = (missing.iter())
+            .map(|found| found.remedy.as_deref().unwrap_or_default())
+            .collect();
         return Err(refusal(
-            code_of(first.check),
+            first.code,
             format!(
-                "the {} gate of {path} is unmet: {}; run `board call changes.next --path {path}` \
-                 for the next step",
-                phase.as_str(),
+                "the {phase} gate of {path} is unmet: {}; run `board call changes.next --path \
+                 {path}` for the next step",
                 said.join("; ")
             ),
             [
                 ("path", json!(path)),
                 ("phase", json!(phase)),
                 ("missing", json!(names)),
+                ("remedies", json!(remedies)),
             ],
         ));
     }
-    let Some(to) = phase.next() else {
+    let to = (observed.flow.as_ref())
+        .and_then(|flow| flow.after(&phase))
+        .map(str::to_owned);
+    let Some(to) = to else {
         return Err(final_phase(
             &path,
-            phase,
+            &phase,
             format!("the change at {path} has no next phase"),
         ));
     };
-    change.phase = to;
+    change.phase.clone_from(&to);
     let mut limit = None;
-    if to == Phase::Build {
+    if to == BUILD {
         let moving = Move {
             over: over_command("advance", &path),
             reason: over_limit.as_deref(),
@@ -499,23 +659,23 @@ pub(crate) fn advance(host: &dyn Host, input: &Value) -> Result<Value, PluginErr
 pub(crate) fn pause(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
     let PathInput { path } = PluginError::read_input(PLUGIN, "pause", input)?;
     let (mut change, blob) = read(host, &path)?;
-    if change.phase != Phase::Build {
+    if change.phase != BUILD {
         return Err(refusal(
             "changes::pause::not_building",
             format!(
                 "the change at {path} is in {}, and only a change in build is paused; list the \
                  changes in build with `board call changes.open`",
-                change.phase.as_str()
+                change.phase
             ),
             [("path", json!(path)), ("phase", json!(change.phase))],
         ));
     }
-    change.phase = Phase::Paused;
+    PAUSED.clone_into(&mut change.phase);
     write(host, &path, &blob, &change)?;
     Ok(to_value(Moved {
         path,
-        from: Phase::Build,
-        to: Phase::Paused,
+        from: BUILD.to_owned(),
+        to: PAUSED.to_owned(),
         warning: None,
     }))
 }
@@ -523,18 +683,18 @@ pub(crate) fn pause(host: &dyn Host, input: &Value) -> Result<Value, PluginError
 pub(crate) fn resume(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
     let AdvanceInput { path, over_limit } = PluginError::read_input(PLUGIN, "resume", input)?;
     let (mut change, blob) = read(host, &path)?;
-    if change.phase != Phase::Paused {
+    if change.phase != PAUSED {
         return Err(refusal(
             "changes::resume::not_paused",
             format!(
                 "the change at {path} is in {}, and only a paused change is resumed; run `board \
                  call changes.next --path {path}` for its next step",
-                change.phase.as_str()
+                change.phase
             ),
             [("path", json!(path)), ("phase", json!(change.phase))],
         ));
     }
-    change.phase = Phase::Build;
+    BUILD.clone_into(&mut change.phase);
     let moving = Move {
         over: over_command("resume", &path),
         reason: over_limit.as_deref(),
@@ -545,9 +705,91 @@ pub(crate) fn resume(host: &dyn Host, input: &Value) -> Result<Value, PluginErro
     write(host, &path, &blob, &change)?;
     Ok(to_value(Moved {
         path,
-        from: Phase::Paused,
-        to: Phase::Build,
+        from: PAUSED.to_owned(),
+        to: BUILD.to_owned(),
         warning: limit,
+    }))
+}
+
+/// A change and the flow to move it to.
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct ReflowInput {
+    #[schemars(
+        regex(pattern = "^/"),
+        extend("format" = "board-path"),
+        description = "The change's logical path, such as /changes/suite-timeout."
+    )]
+    path: String,
+    #[schemars(
+        regex(pattern = "^[a-z0-9]+(-[a-z0-9]+)*$"),
+        description = "The flow to follow from now on: the board's own at /flows/<name>, or a \
+                       shipped one, development or small."
+    )]
+    flow: String,
+}
+
+/// The change, the flow it follows now and the phase it stands in.
+#[derive(Debug, Serialize, JsonSchema)]
+pub(crate) struct Reflowed {
+    path: String,
+    flow: FlowSummary,
+    phase: String,
+}
+
+/// Replaces the change's copy of its flow with a copy of the flow named,
+/// which must hold the phase the change stands in; a paused change stands
+/// in build.
+pub(crate) fn reflow(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
+    let ReflowInput { path, flow } = PluginError::read_input(PLUGIN, "reflow", input)?;
+    let (mut change, blob) = read(host, &path)?;
+    refuse_v1(&path, &change, "copy of a flow")?;
+    if is_final(&change.phase) {
+        return Err(final_phase(
+            &path,
+            &change.phase,
+            format!(
+                "the change at {path} is {}, so it follows no flow any more; list the open changes \
+                 with `board call changes.open`",
+                change.phase
+            ),
+        ));
+    }
+    let chosen = asked_for(host, &flow)?;
+    refuse_invalid(&chosen, "reflow")?;
+    if change.mount == BOARD_ITSELF {
+        refuse_without_repository(&chosen, &change.mount)?;
+    }
+    let standing = if change.phase == PAUSED {
+        BUILD
+    } else {
+        change.phase.as_str()
+    };
+    if chosen.phase(standing).is_none() {
+        return Err(refusal(
+            "changes::reflow::no_phase",
+            format!(
+                "the flow {flow} has no phase {standing}, where the change at {path} stands, so \
+                 the change would have nowhere to be; choose a flow with a {standing} phase, \
+                 whose phases `board call changes.next` lists"
+            ),
+            [
+                ("path", json!(path)),
+                ("flow", json!(flow)),
+                ("phase", json!(standing)),
+                ("phases", json!(chosen.names())),
+            ],
+        ));
+    }
+    let copy = format!("{path}/flow");
+    let (at, copied) = copy_line(&path, &blob_at(host, &copy)?, &chosen);
+    change.flow = Some(at);
+    let change = touch(host, change);
+    board::put(host, &[copied, line(&path, &blob, &change)])?;
+    Ok(to_value(Reflowed {
+        path,
+        flow: FlowSummary::from(&chosen),
+        phase: change.phase,
     }))
 }
 

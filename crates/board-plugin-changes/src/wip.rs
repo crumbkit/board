@@ -20,7 +20,6 @@ use std::sync::LazyLock;
 use std::time::{Duration, Instant};
 
 use board_ops::{Host, Origin, PluginError, literal};
-use board_plugin::shape::Record;
 use board_repos::Date;
 use regex::Regex;
 use schemars::JsonSchema;
@@ -28,10 +27,10 @@ use serde::Serialize;
 use serde_json::{Value, json};
 
 use crate::board::{self, rows, text};
-use crate::change::{OWN, attached, kind_in, parsed, prototypes, referenced, today};
+use crate::change::{OWN, attached, change_types, kind_in, parsed, prototypes, referenced, today};
 use crate::diff::git;
 use crate::gates::RUN_TYPE;
-use crate::records::{ChangeRecord, Kind, Phase};
+use crate::records::{BUILD, ChangeRecord, Kind};
 use crate::{refusal, to_value};
 
 /// The most active changes of a kind in build per repository before a move
@@ -216,9 +215,9 @@ fn repositories(
 /// degraded, by path, in path order.
 fn in_build(host: &dyn Host) -> Result<Vec<(String, ChangeRecord)>, PluginError> {
     let sql = format!(
-        "SELECT logical, code, body FROM records WHERE type = {} AND json_extract(body, \
+        "SELECT logical, code, body FROM records WHERE type IN ({}) AND json_extract(body, \
          '$.phase') = 'build' AND substr(logical, 1, {}) = {} ORDER BY logical",
-        literal(ChangeRecord::TYPE),
+        change_types(),
         OWN.len(),
         literal(OWN)
     );
@@ -483,7 +482,7 @@ pub(crate) fn admit(
     let prototypes = prototypes(host)?;
     let candidates: Vec<(String, ChangeRecord)> = (in_build(host)?.into_iter())
         .filter(|(other, held)| {
-            other != path && held.phase == Phase::Build && kind_in(&prototypes, other) == kind
+            other != path && held.phase == BUILD && kind_in(&prototypes, other) == kind
         })
         .collect();
     if candidates.len() < WIP_LIMIT {
