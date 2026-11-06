@@ -1136,13 +1136,36 @@ fn a_query_with_a_syntax_error_has_a_hint_that_says_to_fix_it_and_a_valid_one_ru
 }
 
 #[test]
-fn version_prints_the_binary_name_and_version() {
+fn version_prints_the_binary_name_and_the_build_the_timing_log_records() {
     let output = board_in(Path::new("."), &["--version"]);
     assert_eq!(output.code, 0);
     assert_eq!(
         text(&output.stdout),
-        format!("{BINARY_NAME} {}\n", env!("CARGO_PKG_VERSION"))
+        format!("{BINARY_NAME} {}\n", crate::timing::BUILD)
     );
+    // A build in a git checkout names its commit after a `+`, and the hash of
+    // its changes after `.dirty.`; one outside a checkout, such as a mutants
+    // copy without `.git`, prints the version alone.
+    let hex = |text: &str, len: usize| {
+        text.len() == len
+            && text
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    };
+    let build = crate::timing::BUILD.strip_prefix(env!("CARGO_PKG_VERSION"));
+    if let Some(build) = build.unwrap().strip_prefix('+') {
+        let (commit, changes) = build
+            .split_once(".dirty.")
+            .map_or((build, None), |(commit, changes)| (commit, Some(changes)));
+        assert!(hex(commit, 12), "{build}");
+        assert!(changes.is_none_or(|changes| hex(changes, 16)), "{build}");
+    } else {
+        let git = concat!(env!("CARGO_MANIFEST_DIR"), "/../../.git");
+        assert!(
+            !Path::new(git).exists(),
+            "{git} exists, but the build names no commit"
+        );
+    }
 }
 
 #[test]
