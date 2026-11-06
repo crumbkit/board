@@ -70,8 +70,11 @@ Examples:
     Install {
         #[command(flatten)]
         at: At,
-        /// Move a folder or symlink at a skill's name that is not Board's to <dir>/.board-backups/<name>-<time>, which agents do not load.
-        #[arg(long)]
+        /// Move a folder at a skill's name that is not Board's to a backup.
+        #[arg(
+            long,
+            help = "Move a folder or symlink at a skill's name that is not Board's to <dir>/.board-backups/<name>-<time>, which agents do not load"
+        )]
         force: bool,
         #[command(flatten)]
         page: Page,
