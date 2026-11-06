@@ -1,17 +1,19 @@
 //! Each phase's gate, computed only from the change and the records it
-//! references.
+//! references. The gate interprets the checks the change's flow lists for
+//! its phase (`flow.rs`), each by its kind.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::LazyLock;
 
+use board_plugin::shape::Open;
 use regex::Regex;
 use schemars::JsonSchema;
 use serde::Serialize;
 use serde_json::{Map, Value};
 
-use crate::BLOCKING;
 use crate::change::Referenced;
-use crate::records::{ChangeRecord, Kind, Phase, Route, TASK_TYPE};
+use crate::flow::{self, Field, Kind as CheckKind, Part, Scope};
+use crate::records::{ChangeRecord, Kind, Phase, Subject, TASK_TYPE};
 
 pub(crate) const RUN_TYPE: &str = "runs/run/v1";
 pub(crate) const DECISION_TYPE: &str = "plans/decision/v1";
@@ -20,9 +22,8 @@ pub(crate) const UNDERSTANDING_TYPE: &str = "changes/understanding/v1";
 /// The plan's sections the plan gate requires, by heading, compared
 /// without case.
 pub(crate) const SECTIONS: [&str; 5] = ["Problem", "Outcome", "Out of scope", "UX", "Data"];
-/// The fewest rechecks matching the plan that each understanding check
-/// holds before review.
-const RECHECKS: usize = 2;
+/// What a check that needs a head commit says when the change has none.
+const NO_HEAD: &str = "the change records no head commit; attach one with --head";
 /// The fewest hex digits a commit is named by when compared with another.
 const SHORT_COMMIT: usize = 7;
 /// Lines that open or close a Markdown code fence.
@@ -181,75 +182,198 @@ fn check(name: &'static str, missing: Option<String>) -> Check {
     }
 }
 
-/// The checks for leaving the change's phase. `done`, `dropped` and
-/// `paused` have none.
+/// Something the gate of a phase reads beyond the change: the records the
+/// change references, the plan's text, the repository's check suite, the
+/// change's diff, or whether its newest pull request reads.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) enum Read {
+    References,
+    Plan,
+    Suite,
+    Diff,
+    Pull,
+}
+
+/// What the checks of `phase` in the development flow read, by their
+/// kinds. A phase outside the flow reads nothing.
+pub(crate) fn reads(phase: Phase) -> BTreeSet<Read> {
+    let mut reads = BTreeSet::new();
+    let checks = flow::development()
+        .phase(phase.as_str())
+        .map(|found| &found.checks);
+    for each in checks.into_iter().flatten() {
+        if (each.when.as_ref())
+            .is_some_and(|when| when.section.is_some() || when.section_not.is_some())
+        {
+            reads.insert(Read::Plan);
+        }
+        let Some(kind) = each.kind.known() else {
+            continue;
+        };
+        let refs = (each.conditions.as_ref()).is_some_and(|rules| rules.refs.is_some());
+        let needs: &[Read] = match kind {
+            CheckKind::Sections => &[Read::Plan],
+            CheckKind::Mockups => &[Read::Plan, Read::References],
+            CheckKind::Understood if each.rechecks.is_none() => &[Read::Plan, Read::References],
+            CheckKind::Records if refs => &[Read::Plan, Read::References],
+            CheckKind::Understood | CheckKind::Records | CheckKind::Tasks => &[Read::References],
+            CheckKind::Run => &[Read::Suite, Read::References],
+            CheckKind::Paths => &[Read::Diff],
+            CheckKind::Field if each.field == Some(Field::Pulls) => &[Read::Pull],
+            _ => &[],
+        };
+        reads.extend(needs.iter().copied());
+    }
+    reads
+}
+
+/// The checks for leaving the change's phase: those the development flow
+/// lists for it whose `when` holds, in its order. `done`, `dropped` and
+/// `paused` are no phase of the flow and have none. A prototype in build
+/// has only its verdict check.
 pub(crate) fn gate(observed: &Observed) -> Vec<Check> {
     let phase = observed.change.phase;
     if observed.kind == Kind::Prototype && phase == Phase::Build {
         return vec![check("verdict", Some(verdict_missing(observed)))];
     }
-    match phase {
-        Phase::Plan => {
-            let mut checks = vec![
-                check("plan", plan_missing(observed)),
-                check("task", task_missing(observed)),
-                check("route", route_missing(observed)),
-            ];
-            if observed.change.route == Some(Route::AskFirst) {
-                checks.push(check("owner-approval", approval_missing(observed)));
-            }
-            let found = sections(observed.plan.as_deref().unwrap_or_default());
-            checks.push(check("ux", ux_missing(observed, &found)));
-            checks.push(check("neighbours", neighbours_missing(&found)));
-            checks.push(check("data", data_missing(observed, &found)));
-            checks
+    let Some(found) = flow::development().phase(phase.as_str()) else {
+        return Vec::new();
+    };
+    interpret(observed, &found.checks)
+}
+
+/// Each of `checks` whose `when` holds, evaluated by its kind, in order.
+pub(crate) fn interpret(observed: &Observed, checks: &'static [flow::Check]) -> Vec<Check> {
+    let plan = sections(observed.plan.as_deref().unwrap_or_default());
+    (checks.iter())
+        .filter_map(|each| match applies(observed, &plan, each) {
+            Ok(false) => None,
+            Ok(true) => Some(check(&each.id, evaluate(observed, &plan, each))),
+            Err(detail) => Some(check(&each.id, Some(detail))),
+        })
+        .collect()
+}
+
+/// Whether every condition of the check's `when` holds, or why a pattern
+/// in it cannot be read.
+fn applies(
+    observed: &Observed,
+    plan: &BTreeMap<String, String>,
+    each: &flow::Check,
+) -> Result<bool, String> {
+    let Some(when) = &each.when else {
+        return Ok(true);
+    };
+    if let Some(routes) = &when.route
+        && !(observed.change.route).is_some_and(|route| routes.contains(&route))
+    {
+        return Ok(false);
+    }
+    for (heading, text) in when.section.iter().flatten() {
+        if !matches_section(plan, heading, text)? {
+            return Ok(false);
         }
-        Phase::Build => vec![
-            check("tasks", tasks_missing(observed)),
-            check("check-run", run_missing(observed)),
-            check("recheck", recheck_missing(observed)),
-        ],
-        Phase::Review => vec![
-            check("review", review_missing(observed)),
-            check("paths", paths_missing(observed)),
-        ],
-        Phase::Land => {
-            let missing = match observed.change.pulls().last() {
-                None => Some(
-                    "the change references no github/pull/v1 record; record the pull request \
-                     with `board call github.ref` and attach it with --pull"
-                        .to_owned(),
-                ),
-                Some(pull) if !observed.pull_read => Some(format!(
-                    "the change's newest pull request {pull} does not read as a github/pull/v1 \
-                     record; run `board check {pull}`, or record the pull request with `board \
-                     call github.ref` and attach it with --pull"
-                )),
-                Some(_) => None,
-            };
-            vec![check("pull-request", missing)]
+    }
+    for (heading, text) in when.section_not.iter().flatten() {
+        if matches_section(plan, heading, text)? {
+            return Ok(false);
         }
-        Phase::Done | Phase::Dropped | Phase::Paused => Vec::new(),
+    }
+    Ok(true)
+}
+
+/// Whether the text under the plan's `heading` matches `text`, a pattern,
+/// without case.
+fn matches_section(
+    plan: &BTreeMap<String, String>,
+    heading: &str,
+    text: &str,
+) -> Result<bool, String> {
+    let compiled = Regex::new(&format!("(?i){text}")).map_err(|error| {
+        format!(
+            "the flow's pattern {text} for the {heading} section is not a regular expression \
+             ({error}); correct the pattern in the flow"
+        )
+    })?;
+    Ok(compiled.is_match(plan.get(&heading.to_lowercase()).map_or("", String::as_str)))
+}
+
+/// What is missing for the check, by its kind, or none when it passes.
+///
+/// A kind this Board does not evaluate yet, and a kind it does not know,
+/// stay missing, so they refuse `advance` rather than let it pass unread.
+fn evaluate(
+    observed: &Observed,
+    plan: &BTreeMap<String, String>,
+    each: &flow::Check,
+) -> Option<String> {
+    let kind = match &each.kind {
+        Open::Known(kind) => *kind,
+        Open::Other(kind) => {
+            return Some(format!(
+                "the flow's check {} has the kind {kind}, which this Board does not know, so it \
+                 cannot pass; update Board or change the check in the flow",
+                each.id
+            ));
+        }
+    };
+    match kind {
+        CheckKind::Sections => sections_missing(observed, plan, each),
+        CheckKind::Field => kinds::field_missing(observed, each),
+        CheckKind::Records => kinds::records_missing(observed, each),
+        CheckKind::Run => run_missing(observed, each.scope.unwrap_or(Scope::Full)),
+        CheckKind::Paths => paths_missing(observed),
+        CheckKind::Tasks => tasks_missing(observed),
+        CheckKind::Understood => understood_missing(observed, plan, each),
+        CheckKind::Mockups => match each.part {
+            Some(Part::Agreed) => ux_missing(observed, plan),
+            Some(Part::Neighbours) => neighbours_missing(plan),
+            None => ux_missing(observed, plan).or_else(|| neighbours_missing(plan)),
+        },
+        CheckKind::Considered
+        | CheckKind::Obligations
+        | CheckKind::ControlledPaths
+        | CheckKind::FlowValid
+        | CheckKind::Exists => Some(format!(
+            "this Board does not evaluate {} checks yet, so the flow's check {} cannot pass; ask \
+             the owner whether to take it out of the flow",
+            kind.as_str(),
+            each.id
+        )),
     }
 }
 
-fn plan_missing(observed: &Observed) -> Option<String> {
-    let Some(plan) = &observed.change.plan else {
+/// What a check says when the flow leaves out a parameter its kind needs.
+fn unset(each: &flow::Check, parameter: &str) -> String {
+    format!(
+        "the flow's check {} names no {parameter}, so it cannot pass; add {parameter} to the \
+         check in the flow",
+        each.id
+    )
+}
+
+fn sections_missing(
+    observed: &Observed,
+    plan: &BTreeMap<String, String>,
+    each: &flow::Check,
+) -> Option<String> {
+    let Some(wanted) = &each.sections else {
+        return Some(unset(each, "sections"));
+    };
+    let Some(path) = &observed.change.plan else {
         return Some("the change names no plan record".to_owned());
     };
-    let Some(text) = &observed.plan else {
-        return Some(format!("no plan record and its text are at {plan}"));
-    };
-    let found = sections(text);
-    let empty: Vec<&str> = (SECTIONS.iter().copied())
+    if observed.plan.is_none() {
+        return Some(format!("no plan record and its text are at {path}"));
+    }
+    let empty: Vec<&str> = (wanted.iter().map(String::as_str))
         .filter(|section| {
-            found
-                .get(&section.to_lowercase())
+            plan.get(&section.to_lowercase())
                 .is_none_or(String::is_empty)
         })
         .collect();
     (!empty.is_empty())
-        .then(|| format!("the plan at {plan} has no text under: {}", empty.join(", ")))
+        .then(|| format!("the plan at {path} has no text under: {}", empty.join(", ")))
 }
 
 fn task_missing(observed: &Observed) -> Option<String> {
@@ -391,34 +515,75 @@ fn neighbours_missing(found: &BTreeMap<String, String>) -> Option<String> {
     )
 }
 
-/// Whether an understanding check at `body` is of this change's `subject`.
-fn understands(observed: &Observed, body: &Map<String, Value>) -> bool {
+/// Whether an understanding check at `body` is of this change, and of
+/// `subject` when one is given.
+fn understands(observed: &Observed, body: &Map<String, Value>, subject: Option<Subject>) -> bool {
     body.get("change").and_then(Value::as_str) == Some(observed.path.as_str())
+        && subject.is_none_or(|subject| {
+            body.get("subject").and_then(Value::as_str) == Some(subject_word(subject))
+        })
 }
 
-fn data_missing(observed: &Observed, found: &BTreeMap<String, String>) -> Option<String> {
-    if NO_DATA.is_match(found.get("data").map_or("", String::as_str)) {
+fn subject_word(subject: Subject) -> &'static str {
+    match subject {
+        Subject::Data => "data",
+        Subject::Ux => "ux",
+    }
+}
+
+/// A count as a word, for the small counts a flow sets.
+fn count_word(count: usize) -> String {
+    match count {
+        1 => "one".to_owned(),
+        2 => "two".to_owned(),
+        3 => "three".to_owned(),
+        _ => count.to_string(),
+    }
+}
+
+/// With `rechecks`, each attached understanding check of the change holds
+/// that many matching rechecks; without, the plan's section for the
+/// subject says it changes nothing, or the owner signed a decision that
+/// references an attached understanding check of it.
+fn understood_missing(
+    observed: &Observed,
+    plan: &BTreeMap<String, String>,
+    each: &flow::Check,
+) -> Option<String> {
+    if let Some(wanted) = each.rechecks {
+        return recheck_missing(observed, each.subject, wanted as usize);
+    }
+    let Some(subject) = each.subject else {
+        return Some(unset(each, "subject"));
+    };
+    let (heading, nothing, said, noun) = match subject {
+        Subject::Data => ("data", &NO_DATA, "the Data section is not None", "data"),
+        Subject::Ux => (
+            "ux",
+            &NO_UI,
+            "the UX section does not say No UI change",
+            "UX",
+        ),
+    };
+    if nothing.is_match(plan.get(heading).map_or("", String::as_str)) {
         return None;
     }
     let understood: BTreeSet<&str> = (observed.records.of_type(UNDERSTANDING_TYPE))
-        .filter(|(_, body)| {
-            understands(observed, body)
-                && body.get("subject").and_then(Value::as_str) == Some("data")
-        })
+        .filter(|(_, body)| understands(observed, body, Some(subject)))
         .map(|(path, _)| path)
         .collect();
     let signed = (signed_decisions(observed))
         .any(|body| strings(body, "refs").any(|each| understood.contains(each)));
     (!signed).then(|| {
         format!(
-            "the Data section is not None, and no attached plans/decision/v1 references an \
-             attached {UNDERSTANDING_TYPE} of this change's data; run the understanding-check \
-             skill, then have the owner sign a decision whose refs name its record"
+            "{said}, and no attached plans/decision/v1 references an attached \
+             {UNDERSTANDING_TYPE} of this change's {noun}; run the understanding-check skill, \
+             then have the owner sign a decision whose refs name its record"
         )
     })
 }
 
-fn recheck_missing(observed: &Observed) -> Option<String> {
+fn recheck_missing(observed: &Observed, subject: Option<Subject>, wanted: usize) -> Option<String> {
     // An understanding check Board does not read holds no rechecks it can
     // count, so it fails the check rather than drop out of it.
     for (path, code) in &observed.records.unreadable {
@@ -443,11 +608,12 @@ fn recheck_missing(observed: &Observed) -> Option<String> {
             .flatten())
         .filter(|recheck| recheck.get("matches") == Some(&Value::Bool(true)))
         .count();
-        if understands(observed, body) && matching < RECHECKS {
+        if understands(observed, body, subject) && matching < wanted {
+            let wanted = count_word(wanted);
             return Some(format!(
-                "the understanding check at {path} holds fewer than two rechecks that match the \
-                 plan; before review, ask two of its predict or edge questions again, worded \
-                 differently, and add them to its rechecks"
+                "the understanding check at {path} holds fewer than {wanted} rechecks that match \
+                 the plan; before review, ask {wanted} of its predict or edge questions again, \
+                 worded differently, and add them to its rechecks"
             ));
         }
     }
@@ -461,18 +627,6 @@ fn route_missing(observed: &Observed) -> Option<String> {
              --route <route>`",
             observed.path
         )
-    })
-}
-
-fn approval_missing(observed: &Observed) -> Option<String> {
-    let plan = observed.change.plan.as_deref();
-    let file = observed.plan_file.as_deref();
-    let names_the_plan =
-        |each: &str| each == observed.path || Some(each) == plan || Some(each) == file;
-    let approved = (observed.records.of_type(DECISION_TYPE))
-        .any(|(_, body)| strings(body, "refs").any(names_the_plan));
-    (!approved).then(|| {
-        "no plans/decision/v1 whose refs name the plan or the change is attached".to_owned()
     })
 }
 
@@ -524,7 +678,7 @@ pub(crate) fn objects<'a>(
     .filter_map(Value::as_object)
 }
 
-fn run_missing(observed: &Observed) -> Option<String> {
+fn run_missing(observed: &Observed, scope: Scope) -> Option<String> {
     let Some(suite) = &observed.suite else {
         return Some(format!(
             "no contributing doc in {} names a runs/suite/v1 path as its check suite",
@@ -532,12 +686,12 @@ fn run_missing(observed: &Observed) -> Option<String> {
         ));
     };
     let Some(head) = &observed.change.head else {
-        return Some("the change records no head commit; attach one with --head".to_owned());
+        return Some(NO_HEAD.to_owned());
     };
     let runs = format!("{suite}/runs/");
     let passed = (observed.records.of_type(RUN_TYPE)).any(|(path, body)| {
         path.starts_with(&runs)
-            && body.get("scope").and_then(Value::as_str) == Some("full")
+            && body.get("scope").and_then(Value::as_str) == Some(scope.as_str())
             && body.get("dirty") == Some(&Value::Bool(false))
             && ran_on(body, head)
             && !objects(body, "results").any(|result| {
@@ -579,25 +733,7 @@ fn reviewed_head(report: &Map<String, Value>) -> Option<Value> {
     Some(Value::from(head.trim_start_matches('.')))
 }
 
-fn review_missing(observed: &Observed) -> Option<String> {
-    let Some(head) = &observed.change.head else {
-        return Some("the change records no head commit; attach one with --head".to_owned());
-    };
-    let covered = (observed.records.of_type(REPORT_TYPE)).any(|(_, body)| {
-        same_commit(reviewed_head(body).as_ref(), head)
-            && body.get("verdict").and_then(Value::as_str) != Some("changes")
-            && !objects(body, "findings").any(|finding| {
-                (finding.get("severity").and_then(Value::as_str))
-                    .is_some_and(|severity| BLOCKING.contains(&severity))
-            })
-    });
-    (!covered).then(|| {
-        format!(
-            "no attached review/report/v1 covers {head} with a verdict of approve or comment and \
-             no critical or high finding"
-        )
-    })
-}
+mod kinds;
 
 #[cfg(test)]
 mod tests;

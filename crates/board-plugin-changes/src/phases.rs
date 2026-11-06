@@ -14,7 +14,7 @@ use crate::change::{
     referenced, touch,
 };
 use crate::diff::{edited, outside};
-use crate::gates::{Check, Observed, Status, code_of, gate};
+use crate::gates::{Check, Observed, Read, Status, code_of, gate, reads};
 use crate::records::{ChangeRecord, Kind, PULL_TYPES, Phase, Route, TASK_TYPE, TICKET_TYPES};
 use crate::repo::check_suite;
 use crate::wip::{Limit, Move, active_days, admit};
@@ -134,41 +134,18 @@ pub(crate) struct Moved {
     warning: Option<Limit>,
 }
 
-/// What the builder of each phase does next.
+/// What the builder of each phase does next: the instruction of the
+/// development flow's phase, or a fixed one for a phase outside the flow.
 fn instruction(phase: Phase) -> &'static str {
+    if let Some(found) = crate::flow::development().phase(phase.as_str()) {
+        return &found.instruction;
+    }
     match phase {
-        Phase::Plan => {
-            "Interview the owner and fill in the plan's Problem, Outcome, Out of scope, UX and \
-             Data sections. UX says No UI change with a reason, or lists the mockups and a \
-             Neighbours list; attach the owner's decision naming each mockup. Data says None, \
-             or run the understanding-check skill and attach its record and the owner's \
-             decision that references it. On the ask-first route, attach the owner's \
-             plans/decision/v1 whose refs name the plan."
-        }
-        Phase::Build => {
-            "Build test-first. Attach each task, record the head commit with --head, run the \
-             check suite on it and attach the run. Before advancing, ask the owner two of each \
-             attached understanding check's predict or edge questions again, worded \
-             differently, and add them to its rechecks."
-        }
-        Phase::Review => {
-            "Review the head commit with clean context and attach the review/report/v1. When \
-             the plan's UX says No UI change or its Data says None, list the repository's \
-             UI-path and data-path controls, /controls/<repo>/ui-paths and \
-             /controls/<repo>/data-paths, with `board call controls.check`, and report a diff \
-             that touches a path they name as a high finding. Fix blocking findings, record the \
-             new head and review again."
-        }
-        Phase::Land => {
-            "Draft the pull request with `board call changes.pr` and open it with the command \
-             it returns. Record it with `board call github.ref --ref <owner>/<repo>#<number>` \
-             and attach that record with --pull. Merging happens outside Board."
-        }
-        Phase::Done | Phase::Dropped => "Nothing is left to do.",
         Phase::Paused => {
             "The keeper paused this change to keep the work in progress small. Resume it with \
              `board call changes.resume` when the owner's queue and the cap allow."
         }
+        _ => "Nothing is left to do.",
     }
 }
 
@@ -196,16 +173,15 @@ pub(crate) fn plan_file(
     Ok(plan_at(host, plan)?.map(|(record, _)| record.text))
 }
 
-/// What the change's gate reads: references where the gate uses them, the
-/// plan in `plan`, the docs in `build`, and the diff in `review`.
+/// What the change's gate reads: what the checks of its phase need, by
+/// their kinds (`gates::reads`).
 pub(crate) fn observe(
     host: &dyn Host,
     path: &str,
     change: &ChangeRecord,
 ) -> Result<Observed, PluginError> {
-    let phase = change.phase;
-    let reads = matches!(phase, Phase::Plan | Phase::Build | Phase::Review);
-    let cited = if reads {
+    let wanted = reads(change.phase);
+    let cited = if wanted.contains(&Read::References) {
         attached(host, path)?
     } else {
         Vec::new()
@@ -213,21 +189,22 @@ pub(crate) fn observe(
     let records = referenced(host, &cited)?;
     let mut found = Observed::new(path, change.clone(), kind_of(host, path)?, records);
     found.cited = cited;
-    match phase {
-        Phase::Plan => {
-            found.plan_file = plan_file(host, change)?;
-            found.plan = match &found.plan_file {
-                Some(file) => get_text(host, file)?,
-                None => None,
-            };
-        }
-        Phase::Build => found.suite = check_suite(host, &change.mount)?,
-        Phase::Review => reviewed(host, &mut found)?,
-        Phase::Land => {
-            let newest = change.pulls().last().map_or("", String::as_str);
-            found.pull_read = pull_of(host, newest)?.is_some();
-        }
-        _ => {}
+    if wanted.contains(&Read::Plan) {
+        found.plan_file = plan_file(host, change)?;
+        found.plan = match &found.plan_file {
+            Some(file) => get_text(host, file)?,
+            None => None,
+        };
+    }
+    if wanted.contains(&Read::Suite) {
+        found.suite = check_suite(host, &change.mount)?;
+    }
+    if wanted.contains(&Read::Diff) {
+        reviewed(host, &mut found)?;
+    }
+    if wanted.contains(&Read::Pull) {
+        let newest = change.pulls().last().map_or("", String::as_str);
+        found.pull_read = pull_of(host, newest)?.is_some();
     }
     Ok(found)
 }

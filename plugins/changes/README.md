@@ -348,6 +348,44 @@ appears in a gate.
 A path that holds no change is `changes::change::not_found`; a degraded
 change is `changes::change::degraded`.
 
+### Flows
+
+A `changes/flow/v1` record describes the process a change follows: its
+`name`, a one-sentence `summary`, the default `stop` of an agent that runs
+it (`{"through": "<phase>"}` or `{"until": "<phase>"}`), and its `phases` in
+order. Each phase has a `name`, the `instruction` that `next` returns, the
+`agent` that does its work (`lead` or `builder`), the `skills` the
+instruction relies on, and its `checks`. A check has an `id`, a `kind`, and
+optionally an `actor` (`agent`, `owner` or `reviewer`), `blocks`, a `when`
+(`route`, and `section` or `section_not`, each mapping a plan heading to a
+pattern matched without case), a `remedy`, `waivable`, and the parameters
+of its kind. The committed schema is
+`crates/board-plugin-changes/types/changes/flow/v1.schema.json`.
+
+The plugin compiles in one flow, `development`
+(`crates/board-plugin-changes/flows/development.json`), and every change
+follows it. Its phases are plan, build, review and land, and `advance`
+moves a change through them in that order and then to `done`. Each gate
+below is the list of that phase's checks whose `when` holds, evaluated by
+kind:
+
+| Kind | Passes when |
+| --- | --- |
+| `sections` | the plan has text under each heading in `sections` |
+| `field` | the change sets `field` (`task`, `route`, `head`, `plan`, `tickets` or `pulls`), with at least `min` references; for `pulls` with `types`, the newest reads as a `github/pull/v1` |
+| `records` | at least `min` attached records of `type` meet `where` (`at_head`, `values`, `no_findings`, `owner_signed`, and `refs`, each of which a record's refs must name: `plan` is the plan, its text or the change), from different actors when `distinct` names a part of `by` |
+| `run` | an attached run of the check suite with `scope` is clean, passing and on `head` |
+| `paths` | the diff edits only the plan's paths |
+| `tasks` | every attached task is done or dropped |
+| `understood` | with `rechecks`, each attached understanding check holds that many matching rechecks; without, the plan's section for `subject` says it changes nothing, or a signed decision references an understanding check of it |
+| `mockups` | the `agreed` part: each mockup under UX is named by a signed decision; the `neighbours` part: UX lists its neighbours; both when `part` is left out |
+
+A flow may name the kinds `considered`, `obligations`, `controlled-paths`,
+`flow-valid` and `exists`, and a kind Board does not know reads too. Board
+does not evaluate them yet, so such a check is always missing. A board's
+own flows under `/flows/`, `actor`, `blocks`, `remedy`, `waivable`,
+`stop` and placeholders in the text are read but not acted on yet.
+
 Each gate reads only the change, the records it references, its plan file,
 in `build` the repository's contributing docs, and in `review` the newest
 plan's paths and the change's diff. A referenced record
@@ -577,6 +615,8 @@ seconds instead of Board's default limit.
 `crates/board-cli/src/tests/built_in/changes.rs` and its modules run the
 `board` binary in process against real git repositories mounted beside the
 board and a stand-in gh. They are the former pytest suite. The crate's own
-tests cover the gates, the WIP limit's window and origin forms, the pull
+tests cover the gates, the check kinds and `when` conditions the gates
+interpret, the four flows of the configurable-flows design read and checked
+against the flow schema, the WIP limit's window and origin forms, the pull
 request body, the brief's fitting of rules, and the manifest and its
 committed schemas.

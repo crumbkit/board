@@ -1,0 +1,49 @@
+{
+  "$type": "changes/flow/v1",
+  "name": "flow-authoring",
+  "summary": "Interview the owner about a process, draft it as a flow, validate it, dry-run an agent through it in a sandbox, record the eval, and adopt it.",
+  "stop": {"until": "adopt"},
+  "phases": [
+    {
+      "name": "interview",
+      "agent": "lead",
+      "instruction": "Interview the owner about the process in rounds of at most three questions. Write Process (the phases in order), Roles (who acts in each), Gates (what must exist before each phase ends, and who provides it), Stops (where an unattended agent must stop) and Rule map (one line per rule the owner stated, naming the check that will enforce it, or saying no check kind can and why). Play the summary back and ask the owner to sign a decision whose refs name the plan.",
+      "checks": [
+        {"id": "interview-sections", "kind": "sections",
+         "sections": ["Process", "Roles", "Gates", "Stops", "Rule map"]},
+        {"id": "owner-confirms", "kind": "records", "actor": "owner",
+         "type": "plans/decision/v1", "where": {"owner_signed": true, "refs": ["plan"]}}
+      ]
+    },
+    {
+      "name": "draft",
+      "agent": "lead",
+      "instruction": "Write the flow as a changes/flow/v1 at /changes/{name}/draft.json, one check per line of the Rule map, each non-agent check with a remedy that tells an unattended agent how to ask. Attach it.",
+      "checks": [
+        {"id": "draft", "kind": "records", "type": "changes/flow/v1"},
+        {"id": "valid", "kind": "flow-valid"}
+      ]
+    },
+    {
+      "name": "dry-run",
+      "agent": "lead",
+      "instruction": "Start an eval with the evals skill, naming the draft as its subject. Run `board call changes.run --flow /changes/{name}/draft.json --sandbox --title '<a small sample task>'`, which runs an agent through the draft in a throwaway board and checkout. Check that it stopped where the Stops section says, that each gate refused what it should, and that each remedy was enough to act on. Record the run and conclude the eval.",
+      "checks": [
+        {"id": "dry-run", "kind": "records", "type": "changes/run/v1",
+         "where": {"values": {"sandbox": [true], "reason": ["reached", "waiting"]}}},
+        {"id": "eval", "kind": "records", "type": "evals/eval/v1",
+         "where": {"values": {"status": ["concluded"], "verdict": ["supported"]}}}
+      ]
+    },
+    {
+      "name": "adopt",
+      "agent": "lead",
+      "instruction": "Ask the owner to sign a decision whose refs name the draft and the eval. Then copy the draft to /flows/<flow name>.json, and point /flows/repos/<repo> or /flows/default at it if the owner chose that.",
+      "checks": [
+        {"id": "adopted-by-owner", "kind": "records", "actor": "owner", "type": "plans/decision/v1",
+         "where": {"owner_signed": true, "refs": ["changes/flow/v1", "evals/eval/v1"]}},
+        {"id": "installed", "kind": "exists", "path": "/flows/{draft}.json"}
+      ]
+    }
+  ]
+}

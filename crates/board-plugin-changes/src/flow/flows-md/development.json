@@ -1,0 +1,67 @@
+{
+  "$type": "changes/flow/v1",
+  "name": "development",
+  "summary": "Plan with the owner, build test-first, review with clean context, land through a pull request.",
+  "stop": {"through": "plan"},
+  "phases": [
+    {
+      "name": "plan",
+      "agent": "lead",
+      "skills": ["understanding-check"],
+      "instruction": "Read every record in the change's surfaced list first; cite each one you build on in the plan's uses and list the rest under ### Considered with one line on why it does not apply. Interview the owner and fill in Problem, Outcome, Out of scope, UX and Data. Write the plan with `board call changes.plan`, giving uses and the paths you will edit.",
+      "checks": [
+        {"id": "plan-sections", "kind": "sections",
+         "sections": ["Problem", "Outcome", "Out of scope", "UX", "Data"]},
+        {"id": "considered", "kind": "considered"},
+        {"id": "task", "kind": "field", "field": "task"},
+        {"id": "route", "kind": "field", "field": "route"},
+        {"id": "owner-approval", "kind": "records", "actor": "owner",
+         "type": "plans/decision/v1", "where": {"owner_signed": true, "refs": ["plan", "change"]}},
+        {"id": "mockups", "kind": "mockups", "actor": "owner",
+         "when": {"section_not": {"UX": "^no ui change\\b"}}},
+        {"id": "data-signed", "kind": "understood", "actor": "owner", "subject": "data",
+         "when": {"section_not": {"Data": "^none\\b"}},
+         "remedy": "Run the understanding-check skill with the owner on the plan's Data section, attach its record with `board call changes.attach --path {change} --ref <record>`, and ask the owner to sign a plans/decision/v1 whose refs name it."},
+        {"id": "obligations", "kind": "obligations", "blocks": false}
+      ]
+    },
+    {
+      "name": "build",
+      "agent": "builder",
+      "instruction": "Start one builder from `board call changes.brief --path {change}`; its first message begins with brief_line. Build test-first, commit, record the head with `changes.attach --head`, run {suite} on it and attach the run.",
+      "checks": [
+        {"id": "head", "kind": "field", "field": "head"},
+        {"id": "suite-run", "kind": "run", "scope": "full", "waivable": true,
+         "remedy": "When {suite} is empty, the repository names no check suite: name one with `board call changes.attach --path {change} --suite /suites/<name>`, define one with `board call runs.define`, or ask the owner to waive this check. Otherwise run {suite} on {head} with `board call runs.run` and attach the run."},
+        {"id": "tasks", "kind": "tasks"},
+        {"id": "rechecks", "kind": "understood", "actor": "owner", "subject": "data", "rechecks": 2,
+         "when": {"section_not": {"Data": "^none\\b"}}}
+      ]
+    },
+    {
+      "name": "review",
+      "agent": "lead",
+      "instruction": "Review {head} with clean context: run `board call review.run` on a brief whose subject is the change, so the reviewer reads the plan as the spec and the controls on the plan's paths. Fix every critical or high finding, record the new head and review again.",
+      "checks": [
+        {"id": "review", "kind": "records", "actor": "reviewer", "type": "review/report/v1",
+         "where": {"at_head": "range", "values": {"verdict": ["approve", "comment"]}, "no_findings": ["critical", "high"]}},
+        {"id": "paths", "kind": "paths"},
+        {"id": "ui-paths", "kind": "controlled-paths", "controls": ["/controls/{repo}/ui-paths"],
+         "when": {"section": {"UX": "^no ui change\\b"}}},
+        {"id": "data-paths", "kind": "controlled-paths", "controls": ["/controls/{repo}/data-paths"],
+         "when": {"section": {"Data": "^none\\b"}}},
+        {"id": "obligations-settled", "kind": "obligations", "escape_section": "Obligations left owed"}
+      ]
+    },
+    {
+      "name": "land",
+      "agent": "lead",
+      "instruction": "Add What the tests prove and What the tests do not prove to the plan. Draft the pull request with `board call changes.pr --path {change}`, open it with the command it returns, record it with `board call github.ref` and attach it with --pull. Merging happens outside Board.",
+      "checks": [
+        {"id": "test-sections", "kind": "sections",
+         "sections": ["What the tests prove", "What the tests do not prove"]},
+        {"id": "pull-request", "kind": "field", "field": "pulls", "types": ["github/pull/v1"]}
+      ]
+    }
+  ]
+}

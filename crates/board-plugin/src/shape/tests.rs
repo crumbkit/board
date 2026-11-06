@@ -246,6 +246,8 @@ fn the_registry_holds_each_shared_shape_by_name_as_a_field_using_it_sees_it() {
             "Glob",
             "LogicalGlob",
             "ObjectId",
+            "PathTemplate",
+            "Pattern",
             "Person",
             "Pinned",
             "Prose",
@@ -254,6 +256,7 @@ fn the_registry_holds_each_shared_shape_by_name_as_a_field_using_it_sees_it() {
             "Slug",
             "Subject",
             "Summary",
+            "TypeName",
             "Url"
         ]
     );
@@ -595,4 +598,45 @@ fn an_open_fields_schema_is_its_enums() {
         schema_of::<Opened>(SchemaSettings::draft2020_12())["properties"]["weather"],
         json!({"description": "The weather.", "type": "string", "enum": ["sunny", "light-rain"]})
     );
+}
+
+/// A type name is a namespace, a kind and a version from 1, as a record's
+/// `$type` names it.
+#[test]
+fn a_type_name_without_three_parts_or_a_version_is_refused_and_its_twin_is_admitted() {
+    let code = refusal_of::<TypeName>();
+    let invalid = Some(board_model::Code::RecordInvalid);
+    for (refused, admitted) in [
+        ("changes/flow", "changes/flow/v1"),
+        ("changes/flow/v0", "changes/flow/v10"),
+        ("Changes/flow/v1", "review/report/v1"),
+        ("/changes/flow/v1", "jira/issue/v1"),
+    ] {
+        assert_eq!((refused, code(json!(refused))), (refused, invalid));
+        assert_eq!((admitted, code(json!(admitted))), (admitted, None));
+    }
+}
+
+/// A path template is a logical path, placeholders and all, on one line.
+#[test]
+fn a_path_template_without_a_leading_slash_or_with_a_space_is_refused_and_its_twin_is_admitted() {
+    let code = refusal_of::<PathTemplate>();
+    let invalid = Some(board_model::Code::RecordInvalid);
+    for (refused, admitted) in [
+        ("controls/{repo}/ui-paths", "/controls/{repo}/ui-paths"),
+        ("/flows/{draft} .json", "/flows/{draft}.json"),
+    ] {
+        assert_eq!((refused, code(json!(refused))), (refused, invalid));
+        assert_eq!((admitted, code(json!(admitted))), (admitted, None));
+    }
+}
+
+/// A pattern is marked as a regular expression and is never empty.
+#[test]
+fn an_empty_pattern_is_refused_and_its_twin_is_admitted() {
+    let code = refusal_of::<Pattern>();
+    assert_eq!(code(json!("")), Some(board_model::Code::RecordInvalid));
+    assert_eq!(code(json!("^none\\b")), None);
+    let schema = schema_of::<Pattern>(SchemaSettings::draft2020_12());
+    assert_eq!(schema["x-board-regex"], true);
 }

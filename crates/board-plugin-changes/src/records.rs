@@ -64,16 +64,15 @@ pub(crate) enum Phase {
 }
 
 impl Phase {
-    /// The phase after this one, in the order plan, build, review, land,
-    /// done; none for a phase outside it.
+    /// The phase after this one in the development flow's phase list,
+    /// followed by done; none for a phase outside it.
     pub(crate) fn next(self) -> Option<Self> {
-        match self {
-            Self::Plan => Some(Self::Build),
-            Self::Build => Some(Self::Review),
-            Self::Review => Some(Self::Land),
-            Self::Land => Some(Self::Done),
-            Self::Done | Self::Dropped | Self::Paused => None,
-        }
+        Self::named(crate::flow::development().after(self.as_str())?)
+    }
+
+    /// The phase called `name`, or none when no phase is.
+    pub(crate) fn named(name: &str) -> Option<Self> {
+        serde_json::from_value(serde_json::Value::from(name)).ok()
     }
 
     /// Whether the change has ended: done or dropped.
@@ -356,10 +355,10 @@ impl Record for UnderstandingRecord {
 }
 
 /// What an understanding check covers.
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 #[schemars(inline)]
-enum Subject {
+pub(crate) enum Subject {
     Data,
     Ux,
 }

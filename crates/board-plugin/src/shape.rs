@@ -402,6 +402,39 @@ patterned! {
     Subject = "^([A-Za-z0-9-]+/[A-Za-z0-9._-]+|/\\S+)$"
 }
 
+patterned! {
+    /// A record type as a record's `$type` names it: a namespace, a kind
+    /// and a version, such as `changes/flow/v1`.
+    TypeName = "^[a-z0-9-]+/[a-z0-9-]+/v[1-9][0-9]*$"
+}
+
+patterned! {
+    /// A logical path that may hold `{name}` placeholders, such as
+    /// `/controls/{repo}/ui-paths`, which its reader fills in before it
+    /// resolves the path.
+    PathTemplate = "^/\\S*$"
+}
+
+/// A regular expression in the syntax of Rust's regex crate, which only
+/// the program that reads the field compiles. A `String` field takes it
+/// with `#[schemars(with = "Pattern")]`.
+#[derive(Debug)]
+pub enum Pattern {}
+
+impl JsonSchema for Pattern {
+    fn inline_schema() -> bool {
+        true
+    }
+
+    fn schema_name() -> Cow<'static, str> {
+        "Pattern".into()
+    }
+
+    fn json_schema(_: &mut SchemaGenerator) -> Schema {
+        json_schema!({"type": "string", "minLength": 1, "x-board-regex": true})
+    }
+}
+
 /// Who wrote a record or acted: the session, the program, the person and
 /// the agent's name, each when known, and at least one. Every record type that names who
 /// acted holds one.
@@ -538,6 +571,8 @@ pub fn registry() -> Map<String, Value> {
         entry::<Glob>(&mut generator),
         entry::<LogicalGlob>(&mut generator),
         entry::<ObjectId>(&mut generator),
+        entry::<PathTemplate>(&mut generator),
+        entry::<Pattern>(&mut generator),
         entry::<Person>(&mut generator),
         object::<Pinned>(),
         entry::<Prose>(&mut generator),
@@ -547,6 +582,7 @@ pub fn registry() -> Map<String, Value> {
         entry::<Slug>(&mut generator),
         entry::<Subject>(&mut generator),
         entry::<Summary>(&mut generator),
+        entry::<TypeName>(&mut generator),
         entry::<Url>(&mut generator),
     ])
 }

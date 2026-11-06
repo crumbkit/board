@@ -50,6 +50,15 @@
     "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$",
     "type": "string"
   },
+  "PathTemplate": {
+    "pattern": "^/\\S*$",
+    "type": "string"
+  },
+  "Pattern": {
+    "minLength": 1,
+    "type": "string",
+    "x-board-regex": true
+  },
   "Person": {
     "pattern": "^([a-z0-9]+(-[a-z0-9]+)*|[^@\\s]+@[^@\\s]+)$",
     "type": "string"
@@ -97,6 +106,10 @@
   },
   "Summary": {
     "pattern": "^\\S+( \\S+){0,24}$",
+    "type": "string"
+  },
+  "TypeName": {
+    "pattern": "^[a-z0-9-]+/[a-z0-9-]+/v[1-9][0-9]*$",
     "type": "string"
   },
   "Url": {

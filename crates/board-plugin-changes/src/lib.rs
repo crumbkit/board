@@ -9,6 +9,7 @@ mod board;
 mod brief;
 mod change;
 mod diff;
+mod flow;
 mod gates;
 mod migrate;
 mod open;
@@ -301,6 +302,7 @@ impl Plugin for Changes {
                 PrototypeRecord::TYPE,
                 schema_of::<PrototypeRecord>(settings()),
             ),
+            typed(flow::Flow::TYPE, schema_of::<flow::Flow>(settings())),
         ]
     }
 

@@ -1,0 +1,52 @@
+{
+  "$type": "changes/flow/v1",
+  "name": "development",
+  "summary": "Plan with the owner, build test-first, review with clean context, land through a pull request.",
+  "stop": {"through": "plan"},
+  "phases": [
+    {
+      "name": "plan",
+      "agent": "lead",
+      "skills": ["understanding-check"],
+      "instruction": "Interview the owner and fill in the plan's Problem, Outcome, Out of scope, UX and Data sections. UX says No UI change with a reason, or lists the mockups and a Neighbours list; attach the owner's decision naming each mockup. Data says None, or run the understanding-check skill and attach its record and the owner's decision that references it. On the ask-first route, attach the owner's plans/decision/v1 whose refs name the plan.",
+      "checks": [
+        {"id": "plan", "kind": "sections", "sections": ["Problem", "Outcome", "Out of scope", "UX", "Data"]},
+        {"id": "task", "kind": "field", "field": "task"},
+        {"id": "route", "kind": "field", "field": "route"},
+        {"id": "owner-approval", "kind": "records", "actor": "owner", "type": "plans/decision/v1",
+         "where": {"refs": ["plan"]}, "when": {"route": ["ask-first"]}},
+        {"id": "ux", "kind": "mockups", "actor": "owner", "part": "agreed"},
+        {"id": "neighbours", "kind": "mockups", "part": "neighbours"},
+        {"id": "data", "kind": "understood", "actor": "owner", "subject": "data"}
+      ]
+    },
+    {
+      "name": "build",
+      "agent": "builder",
+      "instruction": "Build test-first. Attach each task, record the head commit with --head, run the check suite on it and attach the run. Before advancing, ask the owner two of each attached understanding check's predict or edge questions again, worded differently, and add them to its rechecks.",
+      "checks": [
+        {"id": "tasks", "kind": "tasks"},
+        {"id": "check-run", "kind": "run", "scope": "full"},
+        {"id": "recheck", "kind": "understood", "actor": "owner", "rechecks": 2}
+      ]
+    },
+    {
+      "name": "review",
+      "agent": "lead",
+      "instruction": "Review the head commit with clean context and attach the review/report/v1. When the plan's UX says No UI change or its Data says None, list the repository's UI-path and data-path controls, /controls/<repo>/ui-paths and /controls/<repo>/data-paths, with `board call controls.check`, and report a diff that touches a path they name as a high finding. Fix blocking findings, record the new head and review again.",
+      "checks": [
+        {"id": "review", "kind": "records", "actor": "reviewer", "type": "review/report/v1",
+         "where": {"at_head": "range", "values": {"verdict": ["approve", "comment"]}, "no_findings": ["critical", "high"]}},
+        {"id": "paths", "kind": "paths"}
+      ]
+    },
+    {
+      "name": "land",
+      "agent": "lead",
+      "instruction": "Draft the pull request with `board call changes.pr` and open it with the command it returns. Record it with `board call github.ref --ref <owner>/<repo>#<number>` and attach that record with --pull. Merging happens outside Board.",
+      "checks": [
+        {"id": "pull-request", "kind": "field", "field": "pulls", "types": ["github/pull/v1"]}
+      ]
+    }
+  ]
+}
