@@ -86,13 +86,12 @@ export function parseBoards(stdout: string): string[] | { why: string } {
 const trimmed = (dir: string) => dir.replace(/(.)\/+$/, '$1')
 
 /**
- * Whether `repo`, a repository's directory, is one of `boards`, the known
- * boards' directories. Both sides are compared whole, with trailing slashes
- * trimmed, so a board inside a larger repository does not exempt that
+ * Whether two directories are the same: equal whole, with trailing slashes
+ * trimmed. So a board inside a larger repository does not exempt that
  * repository. The caller follows symbolic links on both sides first.
  */
-export function isKnownBoard(repo: string, boards: string[]): boolean {
-  return boards.some(board => trimmed(board) === trimmed(repo))
+export function sameDirectory(a: string, b: string): boolean {
+  return trimmed(a) === trimmed(b)
 }
 
 /** The SQL that lists a board's own mounts with the directory of each repository. */

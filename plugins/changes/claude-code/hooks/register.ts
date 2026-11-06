@@ -6,7 +6,6 @@ import {
   changeRecord,
   configRecord,
   isChangeRecord,
-  isKnownBoard,
   mountRecord,
   judge,
   localOrigin,
@@ -19,6 +18,7 @@ import {
   parseMounts,
   parseOrigins,
   repositoryOf,
+  sameDirectory,
   unknown,
 } from './guard'
 import type { Mount } from './guard'
@@ -151,28 +151,44 @@ async function knownBoards($: EngineInterface): Promise<string[]> {
   return boards
 }
 
+/** A board's own mounts, from `board -C <dir> query`; throws when it lists none. */
+async function mountsIn($: EngineInterface, dir: string): Promise<Mount[]> {
+  const ran = await sh($, MOUNTS, [dir, MOUNTS_SQL])
+  const mounts = ran.exitCode === 0 ? parseMounts(dir, ran.stdout) : null
+  if (mounts === null) throw new Unknown(`\`board -C ${dir} query\` did not list its mounts: ${said(ran)}`)
+  return mounts
+}
+
 /**
  * The refusal of a board record in a checkout of `own`, a known board's
  * repository, or null. The checkout may be the board's directory or a
  * linked worktree of it, so the path is taken from the checkout's top level
  * that git prints, and compared without regard to letter case, since a
  * file system that ignores case can place one file under either spelling.
+ * A linked worktree's branch can hold mount records the board's directory
+ * does not, so its mount records come from a query in the worktree, and the
+ * refusal names the worktree, where `board mount update` changes them.
  */
 async function ownRecord(
   $: EngineInterface,
   file: string,
   real: string,
   found: Located,
-  own: { board: string; mounts: Mount[] },
+  own: { board: string; real: string; mounts: Mount[] },
 ): Promise<string | null> {
-  if (found.top === '') throw new Unknown(`git printed no checkout for ${file} in the board at ${own.board}`)
-  const top = `${(await realOf($, found.top)).replace(/\/$/, '')}/`.toLowerCase()
-  if (!real.toLowerCase().startsWith(top)) {
+  if (found.top === '') {
+    throw new Unknown(`${file} is inside the git directory of the board at ${own.board}, which agents do not edit`)
+  }
+  const checkout = await realOf($, found.top)
+  const top = `${checkout.replace(/\/$/, '')}/`.toLowerCase()
+  const lower = real.toLowerCase()
+  if (!lower.startsWith(top)) {
     throw new Unknown(`${file} is not inside its checkout ${found.top} of the board at ${own.board}`)
   }
-  const relative = real.slice(top.length).toLowerCase()
+  const relative = lower.slice(top.length)
   if (isChangeRecord(relative)) return changeRecord(file, own.board)
-  const record = own.mounts.find(m => m.record.toLowerCase() === relative)
+  const mounts = sameDirectory(checkout, own.real) ? own.mounts : await mountsIn($, found.top)
+  const record = mounts.find(m => m.record.toLowerCase() === relative)
   return record === undefined ? null : mountRecord(file, record)
 }
 
@@ -195,9 +211,7 @@ async function mountsOf($: EngineInterface, file: string): Promise<Mount[] | str
   const all: Mount[] = []
   const boards: { board: string; real: string; mounts: Mount[] }[] = []
   for (const board of await knownBoards($)) {
-    const ran = await sh($, MOUNTS, [board, MOUNTS_SQL])
-    const mounts = ran.exitCode === 0 ? parseMounts(board, ran.stdout) : null
-    if (mounts === null) throw new Unknown(`\`board -C ${board} query\` did not list its mounts: ${said(ran)}`)
+    const mounts = await mountsIn($, board)
     const real = await realOf($, board)
     boards.push({ board, real, mounts })
     const root = `${real.replace(/\/$/, '')}/`
@@ -211,7 +225,7 @@ async function mountsOf($: EngineInterface, file: string): Promise<Mount[] | str
   }
   // A known board's repository holds records, which ownRecord guards, and no code.
   const repoReal = await realOf($, found.repo)
-  const own = boards.find(b => isKnownBoard(repoReal, [b.real]))
+  const own = boards.find(b => sameDirectory(repoReal, b.real))
   if (own !== undefined) return (await ownRecord($, file, placed.real, found, own)) ?? []
   const worktreeOf = (repo: string) => all.filter(m => m.repo === repo)
   if (worktreeOf(found.repo).length > 0 || all.length === 0) return worktreeOf(found.repo)

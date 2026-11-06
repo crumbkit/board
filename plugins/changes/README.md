@@ -475,9 +475,14 @@ every Edit, Write and NotebookEdit. Install it with
    one, is admitted even when another known board mounts it, because a
    board holds records and no code. Its board records, in the listed
    directory and in each linked worktree, are still refused with
-   `changes::guard::board_record`. Both directories are compared with
-   symbolic links followed, and they must be equal: a board inside a
-   larger repository does not exempt that repository. The listed directory
+   `changes::guard::board_record`. In a linked worktree the guard reads
+   the mount records from the worktree's own branch, and the refusal names
+   the worktree. A file inside the board repository's git directory is
+   refused with `changes::guard::unknown`, and the refusal says the file is
+   in the git directory. The guard compares the repository's directory
+   with each listed directory, with symbolic links followed, and they must
+   be equal: a board inside a larger repository does not exempt that
+   repository. The listed directory
    must be the repository's main checkout. A listed directory that is
    itself a linked worktree exempts nothing, so its repository stays
    guarded. The guard reads this from the config. It does not test for a

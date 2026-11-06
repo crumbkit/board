@@ -2,7 +2,7 @@ import { expect, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 import type { Engine } from 'claude-code/testing'
 
-import { briefOf, isKnownBoard, localOrigin, originOf } from '../hooks/guard'
+import { briefOf, localOrigin, originOf, sameDirectory } from '../hooks/guard'
 
 // These prove which edits the write guard lets through and the exact refusal
 // for each that it stops. git and `board` are stood in by a process.run hook,
@@ -112,6 +112,9 @@ const FILES = new Set([
   `${BOARD_WORKTREE}/changes/fix-it.json`,
   `${BOARD_WORKTREE}/changes/fix-it/plans/20261105T120000Z.json`,
   `${BOARD_WORKTREE}/repos/widgets.json`,
+  `${BOARD_WORKTREE}/repos/extra.json`,
+  `${BOARD}/repos/extra.json`,
+  `${BOARD}/.git/description`,
 ])
 const DIRS = new Set([...FILES].flatMap(f => f.split('/').slice(1, -1).map((_, i, parts) => `/${parts.slice(0, i + 1).join('/')}`)))
 DIRS.add('/')
@@ -132,6 +135,8 @@ const resolve = (path: string) => {
 // What `git rev-parse --git-common-dir` and the origin print in each repository's directory; the
 // harness puts the checkout's top level (the entry's directory) and the branch line between them.
 const REPOSITORIES: [string, string][] = [
+  // Inside a repository's git directory, git prints no top level.
+  [`${BOARD}/.git`, `${BOARD}/.git\n`],
   ['/work/widgets.worktrees/x', `${REPO}/.git\ngit@github.com:acme/widgets.git\n`],
   [REPO, `${REPO}/.git\ngit@github.com:acme/widgets.git\n`],
   ['/work/gadgets', '/work/gadgets/.git\n'],
@@ -164,6 +169,8 @@ type Answers = {
   mounts?: Record<string, string>
   /** Whether `board query` fails. */
   queryFails?: boolean
+  /** The one directory where `board query` fails. */
+  queryFailsIn?: string
   /** The session's id; s1 when left out. */
   session?: string
   /** The branch every checkout is on; '' for a detached HEAD, 'main' when left out. */
@@ -206,7 +213,7 @@ function engine(on: On, answers: Answers) {
       const found = REPOSITORIES.find(([root]) => dir === root || dir.startsWith(`${root}/`))
       return found === undefined
         ? run(128, '', 'fatal: not a git repository (or any of the parent directories): .git\n')
-        : run(0, found[1].replace('\n', `\n${found[0]}\n${answers.branch ?? 'main'}\n`))
+        : run(0, found[1].replace('\n', `\n${found[0].endsWith('/.git') ? '' : found[0]}\n${answers.branch ?? 'main'}\n`))
     }
     if (script.includes('for r')) {
       ran.push(`origins ${args.join(' ')}`)
@@ -215,7 +222,7 @@ function engine(on: On, answers: Answers) {
     }
     if (script.includes('query')) {
       ran.push(`query ${args[0]}`)
-      if (answers.queryFails) return run(2, '', 'board: the index could not be built')
+      if (answers.queryFails || answers.queryFailsIn === args[0]) return run(2, '', 'board: the index could not be built')
       return run(0, answers.mounts?.[args[0] ?? ''] ?? MOUNTS)
     }
     if (script.includes('check --healthy')) {
@@ -619,14 +626,15 @@ test('a mount record is refused to every agent, and another file beside it is ad
   expect(edits).toEqual(['Edit'])
 })
 
-test('a known board is matched by its whole directory, ignoring trailing slashes', () => {
-  expect(isKnownBoard(BOARD, [BOARD])).toBe(true)
-  expect(isKnownBoard(BOARD, [`${BOARD}/`, SECOND])).toBe(true)
-  expect(isKnownBoard(`${BOARD}/`, [BOARD])).toBe(true)
+test('two directories are the same when they are equal whole, ignoring trailing slashes', () => {
+  expect(sameDirectory(BOARD, BOARD)).toBe(true)
+  expect(sameDirectory(BOARD, `${BOARD}/`)).toBe(true)
+  expect(sameDirectory(`${BOARD}//`, BOARD)).toBe(true)
+  expect(sameDirectory('/', '/')).toBe(true)
   // A board inside a repository does not exempt the repository, nor a board the repository is inside.
-  expect(isKnownBoard(BOARD, [SECOND])).toBe(false)
-  expect(isKnownBoard(SECOND, [BOARD])).toBe(false)
-  expect(isKnownBoard(REPO, [])).toBe(false)
+  expect(sameDirectory(BOARD, SECOND)).toBe(false)
+  expect(sameDirectory(SECOND, BOARD)).toBe(false)
+  expect(sameDirectory(REPO, BOARD)).toBe(false)
 })
 
 test('a known board that another known board mounts is admitted without a brief, and guarded when not listed', async ($, on) => {
@@ -723,8 +731,8 @@ test("a linked worktree of a known board still refuses its change and mount reco
     )
     expect((await edit($, `${BOARD_WORKTREE}/repos/widgets.json`, agent)).deny).toBe(
       `changes::guard::board_record: ${BOARD_WORKTREE}/repos/widgets.json is the mount record of /repos/widgets ` +
-        `in the board at ${BOARD}, which changes only through board commands. Use \`board -C ${BOARD} mount ` +
-        'update /repos/widgets` to follow its repository, or `board put` to change the mount.',
+        `in the board at ${BOARD_WORKTREE}, which changes only through board commands. Use \`board -C ` +
+        `${BOARD_WORKTREE} mount update /repos/widgets\` to follow its repository, or \`board put\` to change the mount.`,
     )
   }
   expect((await edit($, `${BOARD_WORKTREE}/changes/fix-it/plans/20261105T120000Z.json`)).deny).toMatch(
@@ -752,4 +760,74 @@ test('a known board listed through a symbolic link is exempt, and its records ar
   answers.config = JSON.stringify({ boards: [SECOND] })
   expect((await edit($, `${link}/projects/handoff.md`)).deny).toMatch(/^changes::guard::no_brief: .* is in \/personal, /)
   expect(edits).toEqual(['Edit', 'Edit'])
+})
+
+// The worktree's branch holds a mount record the main checkout does not.
+const WORKTREE_MOUNTS = report('board/query-report/v2', [
+  ['/repos/widgets', REPO, 'repos/widgets.json'],
+  ['/repos/extra', '/work/extra', 'repos/extra.json'],
+])
+
+test("a mount record only a linked worktree's branch holds is refused there, and the same path in the main checkout is admitted", async ($, on) => {
+  const { ran, edits } = engine(on, {
+    first: { '': 'Coordinate the work.' },
+    config: JSON.stringify({ boards: [BOARD, SECOND] }),
+    mounts: { [SECOND]: SECOND_MOUNTS, [BOARD_WORKTREE]: WORKTREE_MOUNTS },
+  })
+  expect((await edit($, `${BOARD_WORKTREE}/repos/extra.json`)).deny).toBe(
+    `changes::guard::board_record: ${BOARD_WORKTREE}/repos/extra.json is the mount record of /repos/extra in the ` +
+      `board at ${BOARD_WORKTREE}, which changes only through board commands. Use \`board -C ${BOARD_WORKTREE} mount ` +
+      'update /repos/extra` to follow its repository, or `board put` to change the mount.',
+  )
+  expect(ran).toContain(`query ${BOARD_WORKTREE}`)
+  expect((await edit($, `${BOARD}/repos/extra.json`)).deny).toBeUndefined()
+  expect(edits).toEqual(['Edit'])
+})
+
+test("a linked worktree's mount query that fails refuses with unknown", async ($, on) => {
+  const answers: Answers = { first: { '': 'Coordinate the work.' }, config: JSON.stringify({ boards: [BOARD] }) }
+  engine(on, answers)
+  answers.queryFailsIn = BOARD_WORKTREE
+  expect((await edit($, `${BOARD_WORKTREE}/projects/handoff.md`)).deny).toMatch(
+    /^changes::guard::unknown: .*`board -C \/home\/me\/board.worktrees\/x query` did not list its mounts/,
+  )
+  delete answers.queryFailsIn
+  expect((await edit($, `${BOARD_WORKTREE}/projects/handoff.md`)).deny).toBeUndefined()
+})
+
+test("a file in a known board's git directory is refused and says so, and a file in its checkout is admitted", async ($, on) => {
+  const { edits } = engine(on, { first: { '': 'Coordinate the work.' }, config: JSON.stringify({ boards: [BOARD] }) })
+  expect((await edit($, `${BOARD}/.git/description`)).deny).toBe(
+    `changes::guard::unknown: the guard could not tell whether this agent may edit ${BOARD}/.git/description: ` +
+      `${BOARD}/.git/description is inside the git directory of the board at ${BOARD}, which agents do not edit. ` +
+      'The guard refuses every edit of a mounted repository it cannot check; fix what failed and try again.',
+  )
+  expect((await edit($, HANDOFF)).deny).toBeUndefined()
+  expect(edits).toEqual(['Edit'])
+})
+
+test('records in a known board are matched without regard to letter case', async ($, on) => {
+  const { edits } = engine(on, { first: { '': 'Coordinate the work.' }, config: JSON.stringify({ boards: [BOARD] }) })
+  expect((await edit($, `${BOARD_WORKTREE}/Changes/fix-it.json`)).deny).toMatch(
+    /^changes::guard::board_record: .*\/Changes\/fix-it.json is a change record of the board at \/home\/me\/board,/,
+  )
+  expect((await edit($, `${BOARD_WORKTREE}/Repos/Widgets.json`)).deny).toMatch(
+    /^changes::guard::board_record: .* is the mount record of \/repos\/widgets /,
+  )
+  expect((await edit($, `${BOARD_WORKTREE}/Projects/handoff.md`)).deny).toBeUndefined()
+  expect(edits).toEqual(['Edit'])
+})
+
+test('a listed directory that is a linked worktree exempts nothing, and listing the main checkout does', async ($, on) => {
+  const file = `${BOARD_WORKTREE}/projects/handoff.md`
+  const answers: Answers = {
+    first: { '': 'Coordinate the work.' },
+    config: JSON.stringify({ boards: [BOARD_WORKTREE, SECOND] }),
+    mounts: { [SECOND]: SECOND_MOUNTS },
+  }
+  const { edits } = engine(on, answers)
+  expect((await edit($, file)).deny).toMatch(/^changes::guard::no_brief: .* is in \/personal, which the board at \/home\/me\/board\/second mounts\./)
+  answers.config = JSON.stringify({ boards: [BOARD, SECOND] })
+  expect((await edit($, file)).deny).toBeUndefined()
+  expect(edits).toEqual(['Edit'])
 })
