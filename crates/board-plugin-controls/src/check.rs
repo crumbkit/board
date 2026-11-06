@@ -426,7 +426,10 @@ const MOUNTS: &str = "SELECT e.logical, m.target FROM mounts m \
     WHERE m.target IS NOT NULL AND e.logical IS NOT NULL";
 
 /// The sources `files` came from: for each, the deepest mount it lies
-/// beneath, or the board's own tree, which `own` also adds.
+/// beneath, or the board's own tree, which `own` also adds. A file reached
+/// through several paths, such as a commit mounted in two places, is
+/// listed at its shortest path, so `read` names only the mount on that
+/// path.
 fn sources<'a>(
     host: &dyn Host,
     files: impl Iterator<Item = &'a LogicalPath>,

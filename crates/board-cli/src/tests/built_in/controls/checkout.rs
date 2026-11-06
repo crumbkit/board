@@ -19,6 +19,8 @@ struct Checkout {
     board: Fixture,
     xdg: Scenario,
     library: Scenario,
+    /// A plugins directory, empty until a test installs one.
+    data: Scenario,
     linked: std::path::PathBuf,
     pinned: ObjectId,
     head: ObjectId,
@@ -64,6 +66,7 @@ impl Checkout {
             board,
             xdg,
             library,
+            data: Scenario::new(),
             linked: linked.into(),
             pinned,
             head,
@@ -82,7 +85,7 @@ impl Checkout {
             start: directory.to_path_buf(),
             home: None,
             cache: (!cold).then(|| self.board.cache.path().to_path_buf()),
-            plugins: None,
+            plugins: Some(self.data.workdir().join("plugins")),
             boards: Some(self.xdg.workdir().join("board/config.json")),
             signer: None,
             allowed_signers: None,
@@ -255,4 +258,66 @@ fn checkout_whose_head_names_no_commit_is_refused_and_one_at_a_commit_is_admitte
     assert_eq!(refused_code(&unborn), "board::cli::usage");
     let message = json(&unborn)["message"].to_string();
     assert!(message.contains("HEAD that names no commit"), "{message}");
+}
+
+#[test]
+fn checkout_with_a_process_plugin_is_refused_and_the_same_call_without_it_is_admitted() {
+    let checkout = Checkout::new();
+    crate::tests::plugins::install(
+        &checkout.data,
+        "errands",
+        &crate::tests::plugins::answering(crate::tests::plugins::RESULT, 0),
+    );
+    let mut config: Value =
+        serde_json::from_str(&checkout.board.read(".board/board.json")).unwrap();
+    config["plugins"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!("errands"));
+    checkout
+        .board
+        .write(".board/board.json", &config.to_string());
+    let call = |flags: &[&str]| {
+        let arguments: Vec<&str> = (flags.iter().copied())
+            .chain(["call", "errands.due"])
+            .collect();
+        checkout.fed(&checkout.linked, &arguments, false, "{}")
+    };
+    let admitted = call(&[]);
+    assert_eq!(admitted.code, 0, "{}", text(&admitted.stdout));
+    let refused = call(&["--checkout"]);
+    assert_eq!(refused_code(&refused), "board::cli::usage");
+    let hint = json(&refused)["recovery"]["text"].to_string();
+    assert!(hint.contains("built-in"), "{hint}");
+    let admitted = call(&[]);
+    assert_eq!(admitted.code, 0, "{}", text(&admitted.stdout));
+}
+
+#[test]
+fn checkout_with_init_answer_serve_or_ui_is_refused_and_each_without_it_is_admitted() {
+    let checkout = Checkout::new();
+    let id = "0".repeat(64);
+    let refused: [&[&str]; 4] = [
+        &["init"],
+        &["answer", &id, "refuse"],
+        &["serve"],
+        &["ui", "kinds"],
+    ];
+    for command in refused {
+        let arguments: Vec<&str> = std::iter::once("--checkout")
+            .chain(command.iter().copied())
+            .collect();
+        let output = checkout.run_in(&checkout.linked, &arguments, false);
+        assert_eq!(refused_code(&output), "board::cli::usage", "{command:?}");
+        let hint = json(&output)["recovery"]["text"].to_string();
+        assert!(hint.contains("without --checkout"), "{command:?}: {hint}");
+    }
+    let kinds = checkout.run_in(&checkout.linked, &["ui", "kinds"], false);
+    assert_eq!(kinds.code, 0, "{}", text(&kinds.stdout));
+    let fresh = Scenario::new();
+    fresh.commit(&[("README.md", "x")]);
+    let init = checkout.run_in(fresh.workdir(), &["init"], false);
+    assert_eq!(init.code, 0, "{}", text(&init.stdout));
+    let alone = checkout.run_in(&checkout.linked, &["--checkout", "ls", "."], false);
+    assert_eq!(alone.code, 0, "{}", text(&alone.stdout));
 }

@@ -36,7 +36,7 @@ Board: a fast, validated view of a git tree.
   `personal` in `$XDG_CONFIG_HOME/board/config.json` names the personal board's directory. The run starts at its root, and any -C is taken from there.
 - `--checkout`: Read the mount holding this directory at its checkout's HEAD commit, not the commit it pins.
 
-  Board then reads, for this run, the branch committed in the checkout of a repository a known board mounts, a linked worktree included, while the pointer keeps its pin. Uncommitted edits are not read. Refused from the board's own tree, from another clone, and for any write, which compares against the pin. Off by default.
+  Board then reads, for this run, the branch committed in the checkout of a repository a known board mounts, a linked worktree included, while the pointer keeps its pin. Uncommitted edits are not read. Refused from the board's own tree, from another clone, for any write, which compares against the pin, and for init, answer, serve, ui and process plugins. Off by default.
 - `--json`: Print the result as a JSON document. The default prints text. Works after every subcommand.
 - `--fields <FIELD>`: Print only these comma-separated fields, in this order. The default prints the compact columns. Takes more than one value. Works after every subcommand.
 - `--long`: Add the long columns after the compact ones. The default prints only the compact columns. Works after every subcommand.

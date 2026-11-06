@@ -11,6 +11,8 @@ use std::path::{Path, PathBuf};
 
 use board_model::{Code, Fields, LogicalPath, PathError, PluginName, Refusal};
 use board_tree::{Checkout, Matched, Place};
+
+use crate::checkout::Refused;
 use serde::Deserialize;
 
 use crate::{Asker, Board, OpenError, Signing};
@@ -188,10 +190,7 @@ pub fn open_at(
 ) -> Result<(Board, Option<Prefix>), Box<Refusal>> {
     let checkout = at == MountsAt::Checkout;
     let error = match Board::open(start, home.map(Path::to_path_buf)) {
-        Ok(_) if checkout => {
-            let reason = "is in the board's own tree, which Board reads from the working tree";
-            return Err(not_a_checkout(start, reason));
-        }
+        Ok(_) if checkout => return Err(Refused::OwnTree(start).refusal()),
         Ok(board) => return Ok((board, board_tree::within(start))),
         Err(error) => error,
     };
@@ -203,33 +202,15 @@ pub fn open_at(
     let (mut board, place) = find(&known()?, start, home, cache, refusal)?;
     if checkout {
         if place.matched != Matched::Mount {
-            let reason = "is in a repository no known board mounts; a mount of another \
-                          clone, or a repo record, is read at its pin";
-            return Err(not_a_checkout(start, reason));
+            return Err(Refused::NotMounted(start).refusal());
         }
         let Some(commit) = board_tree::head_of(start) else {
-            return Err(not_a_checkout(
-                start,
-                "has a HEAD that names no commit, such as an unborn branch",
-            ));
+            return Err(Refused::NoCommit(start).refusal());
         };
         let pointer = place.pointer.clone();
         board.read_checkout(Checkout { pointer, commit });
     }
     Ok((board, Some(place.prefix())))
-}
-
-/// The refusal of `board --checkout` run from `start`, which `reason` says
-/// is not in a checkout of a mounted repository.
-fn not_a_checkout(start: &Path, reason: &str) -> Box<Refusal> {
-    let message = format!(
-        "--checkout reads a mounted repository at its checkout's HEAD, but {} {reason}",
-        start.display()
-    );
-    let hint = "run `board --checkout` from a checkout of a repository a known board mounts, \
-                or leave out --checkout to read each mount at its pin";
-    let refusal = Refusal::new(Code::CliUsage, message, &Fields::default());
-    Box::new(refusal.with_hint(hint))
 }
 
 /// The refusal when a board cannot be opened or made. `outside` a git

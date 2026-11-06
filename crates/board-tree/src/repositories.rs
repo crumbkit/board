@@ -130,11 +130,19 @@ impl Repositories {
     /// against the commit the mount pins, so it is refused with
     /// `board::cli::usage`.
     pub fn lock(&self, wait: Duration) -> Result<Lock, WriteError> {
-        if let Some(checkout) = &self.checkout {
-            let pointer = checkout.pointer.clone();
-            return Err(WriteError::AtCheckout { pointer });
-        }
+        self.writable()?;
         self.root.lock(wait)
+    }
+
+    /// Whether this run may write: it may not while a mount is read at a
+    /// checkout.
+    pub fn writable(&self) -> Result<(), WriteError> {
+        match &self.checkout {
+            Some(checkout) => Err(WriteError::AtCheckout {
+                pointer: checkout.pointer.clone(),
+            }),
+            None => Ok(()),
+        }
     }
 
     /// What a mount's `~/` means.

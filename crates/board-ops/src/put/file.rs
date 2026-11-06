@@ -34,6 +34,8 @@ impl Board {
         bytes: &[u8],
         wait: Duration,
     ) -> Result<PutReport, PutError> {
+        // Under --checkout the put is refused before its bytes reach the store.
+        self.repositories().writable()?;
         if let Some((record, upload)) = self.attach(path, bytes)? {
             if self.asker.plugin.is_some() {
                 self.check_attachment(path, &record, wait)?;

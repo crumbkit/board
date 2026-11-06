@@ -322,3 +322,20 @@ fn a_plugins_file_put_where_only_the_owner_writes_uploads_nothing_and_its_twin_u
         &format!("store/{}", Digest::of(bytes).hex())
     ));
 }
+
+#[test]
+fn a_file_put_while_a_mount_is_read_at_a_checkout_uploads_nothing_and_without_one_uploads() {
+    let store = tempfile::tempdir().unwrap();
+    let scenario = stored(store.path());
+    let mut board = open(&scenario);
+    let commit = board_model::ObjectId::from_hex(&"0".repeat(40)).unwrap();
+    board.read_checkout(board_tree::Checkout {
+        pointer: "m.json".to_owned(),
+        commit,
+    });
+    let refused = board.put_file(&path("/files/big.bin"), Expect::Any, &big());
+    assert_eq!(refused.unwrap_err().code(), Code::CliUsage);
+    assert_eq!(std::fs::read_dir(store.path()).unwrap().count(), 0);
+    put_file(&scenario, "/files/big.bin", &big()).unwrap();
+    assert_eq!(std::fs::read_dir(store.path()).unwrap().count(), 1);
+}

@@ -9,8 +9,10 @@ use board_model::{
     Refusal,
 };
 pub(crate) use board_ops::entered;
-use board_ops::{Absent, Board, DEFAULT_LIMIT, Expect, MAX_LIMIT, MountsAt, Plugins, PutError};
+use board_ops::{Absent, Board, DEFAULT_LIMIT, Expect, MAX_LIMIT, Plugins, PutError};
 use board_plugin::{Limits, Target};
+
+mod checkout;
 
 /// What a plugin run gets from this command line's context.
 pub(crate) fn plugins(context: &Context) -> Plugins<'_> {
@@ -89,7 +91,7 @@ pub(crate) struct Cli {
     personal: bool,
     /// Read the mount holding this directory at its checkout's HEAD commit, not the commit it pins.
     ///
-    /// Board then reads, for this run, the branch committed in the checkout of a repository a known board mounts, a linked worktree included, while the pointer keeps its pin. Uncommitted edits are not read. Refused from the board's own tree, from another clone, and for any write, which compares against the pin. Off by default.
+    /// Board then reads, for this run, the branch committed in the checkout of a repository a known board mounts, a linked worktree included, while the pointer keeps its pin. Uncommitted edits are not read. Refused from the board's own tree, from another clone, for any write, which compares against the pin, and for init, answer, serve, ui and process plugins. Off by default.
     #[arg(long, conflicts_with = "personal", hide_short_help = true)]
     checkout: bool,
     #[command(flatten)]
@@ -99,17 +101,6 @@ pub(crate) struct Cli {
     no_input: crumbkit::NoInput,
     #[command(subcommand)]
     command: Command,
-}
-
-impl Cli {
-    /// Which commit this run reads the mount holding its directory at.
-    fn mounts_at(&self) -> MountsAt {
-        if self.checkout {
-            MountsAt::Checkout
-        } else {
-            MountsAt::Pins
-        }
-    }
 }
 
 /// How many entries a listing shows (STANDARDS.md 23).
@@ -486,8 +477,9 @@ pub(crate) fn run(
     }
     let base = cli.personal.then(|| context.personal());
     let base = base.unwrap_or_else(|| Ok(context.start.clone()));
-    let start = match base.and_then(|base| entered(&base, &cli.directories)) {
-        Ok(start) => start,
+    let start = base.and_then(|base| entered(&base, &cli.directories));
+    let (start, at) = match start.and_then(|start| Ok((start, cli.mounts_at()?))) {
+        Ok(started) => started,
         Err(refusal) => return render::refused(printer, *refusal),
     };
     if let Command::Init = cli.command {
@@ -507,7 +499,7 @@ pub(crate) fn run(
         return effects::answer(context, printer, answering, no_input, stdin);
     }
     let opening = Instant::now();
-    let opened = context.open(&start, cli.mounts_at());
+    let opened = context.open(&start, at);
     ran.trace.add("open", opening);
     let (mut board, prefix) = match opened {
         Ok(opened) => opened,
