@@ -546,7 +546,7 @@ fn describe(
 }
 
 /// The output of a refused command line that Board reads again: one that
-/// gives more paths than a run answers, or whose first word is an alias.
+/// gives too many paths, starts with an alias, or makes a known mistake.
 fn reread(
     arguments: &[OsString],
     context: &Context,
@@ -557,7 +557,10 @@ fn reread(
     if let Some(output) = render::too_many_paths(refused) {
         return Some(output);
     }
-    Some(match crate::alias::after(arguments, context, refused)? {
+    let Some(resolved) = crate::alias::after(arguments, context, refused) else {
+        return crate::mistaken::hinted(arguments, refused);
+    };
+    Some(match resolved {
         Ok(called) => run(called, context, stdin, ran),
         Err(refusal) => {
             let printer = Printer {

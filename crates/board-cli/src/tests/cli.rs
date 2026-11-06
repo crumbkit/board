@@ -1274,3 +1274,130 @@ fn wait_reads_milliseconds_seconds_minutes_and_hours() {
         );
     }
 }
+
+/// The commands in backticks in the hint of `output`, without their redirect.
+fn hinted(output: &Output) -> Vec<(String, Option<String>)> {
+    let hint = hint_of(output);
+    let quoted = hint.split('`').skip(1).step_by(2);
+    quoted
+        .map(|command| match command.split_once(" < ") {
+            Some((command, input)) => (command.to_owned(), Some(input.to_owned())),
+            None => (command.to_owned(), None),
+        })
+        .collect()
+}
+
+/// Runs a hinted `command`, with `stdin` as its input, in `directory`.
+fn run_hinted(directory: &Path, command: &str, stdin: &[u8]) -> Output {
+    let words = words(command);
+    let words: Vec<&str> = words.iter().skip(1).map(String::as_str).collect();
+    board_with(directory, None, &words, stdin)
+}
+
+#[test]
+fn put_given_its_input_as_an_argument_hints_stdin_and_the_hinted_puts_write() {
+    let scenario = board();
+    let refused = board_in(scenario.workdir(), &["put", "/notes/a.md", "a.md"]);
+    assert_eq!(
+        (refused.code, refused.error.as_deref()),
+        (2, Some("board::cli::usage"))
+    );
+    assert!(
+        text(&refused.stderr).starts_with(
+            "error: put was given a.md after its path, but reads what it writes from stdin\n"
+        ),
+        "{}",
+        text(&refused.stderr)
+    );
+    assert_eq!(
+        hint_of(&refused),
+        "pipe a.md to put: run `board put /notes/a.md --file < a.md` to write it as a file, \
+         or `board put /notes/a.md < a.md` if it holds a JSON record"
+    );
+    let hints = hinted(&refused);
+    let file = run_hinted(scenario.workdir(), &hints[0].0, b"plan");
+    assert_eq!(file.code, 0, "{}", text(&file.stderr));
+    let got = board_in(scenario.workdir(), &["get", "/notes/a.md"]);
+    assert_eq!(text(&got.stdout), "plan");
+
+    let refused = board_in(scenario.workdir(), &["put", "/projects/q", "q.json"]);
+    assert_eq!(refused.code, 2);
+    let hints = hinted(&refused);
+    assert_eq!(
+        hints[1],
+        (
+            "board put /projects/q".to_owned(),
+            Some("q.json".to_owned())
+        )
+    );
+    let record = run_hinted(
+        scenario.workdir(),
+        &hints[1].0,
+        br#"{"$type": "lr/project/v1"}"#,
+    );
+    assert_eq!(record.code, 0, "{}", text(&record.stderr));
+
+    let refused = board_in(
+        scenario.workdir(),
+        &["put", "/notes/b.md", "--file", "b.md"],
+    );
+    assert_eq!(
+        hint_of(&refused),
+        "pipe b.md to put: run `board put /notes/b.md --file < b.md`"
+    );
+    let document = json(&board_in(
+        scenario.workdir(),
+        &["--json", "put", "/notes/b.md", "b.md"],
+    ));
+    assert_eq!(document["code"], "board::cli::usage");
+    assert_eq!(document["fields"]["value"], "b.md");
+}
+
+#[test]
+fn an_unknown_flag_on_put_keeps_claps_refusal_and_the_flag_it_suggests_runs() {
+    let scenario = board();
+    let refused = board_in(scenario.workdir(), &["put", "/notes/a.md", "--fil"]);
+    assert_eq!(refused.code, 2);
+    assert!(
+        text(&refused.stderr).starts_with("error: unexpected argument '--fil' found"),
+        "{}",
+        text(&refused.stderr)
+    );
+    assert_eq!(hint_of(&refused), "run `board put -h`");
+    let admitted = board_with(
+        scenario.workdir(),
+        None,
+        &["put", "/notes/a.md", "--file"],
+        b"plan",
+    );
+    assert_eq!(admitted.code, 0, "{}", text(&admitted.stderr));
+}
+
+#[test]
+fn cat_is_refused_naming_get_and_the_hinted_get_runs() {
+    let scenario = board();
+    let refused = board_in(scenario.workdir(), &["cat", "/projects/p"]);
+    assert_eq!(
+        (refused.code, refused.error.as_deref()),
+        (2, Some("board::cli::usage"))
+    );
+    assert_eq!(
+        text(&refused.stderr),
+        "error: board has no command cat; get prints the file at a path\n\
+         \x20 help:  run `board get /projects/p`\n\
+         \x20 code:  board::cli::usage\n"
+    );
+    let hints = hinted(&refused);
+    let got = run_hinted(scenario.workdir(), &hints[0].0, b"");
+    assert_eq!(got.code, 0, "{}", text(&got.stderr));
+    let document = json(&board_in(
+        scenario.workdir(),
+        &["--json", "cat", "/projects/p"],
+    ));
+    assert_eq!(document["code"], "board::cli::usage");
+    assert_eq!(
+        document["recovery"]["text"],
+        "run `board --json get /projects/p`"
+    );
+    assert_eq!(document["fields"]["value"], "cat");
+}

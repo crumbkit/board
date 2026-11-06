@@ -315,6 +315,38 @@ fn one_trailing_slash_on_a_relative_path_is_dropped_and_two_are_refused() {
 }
 
 #[test]
+fn one_trailing_slash_on_an_absolute_path_is_dropped_and_two_are_refused() {
+    let library = library();
+    let fixture = mounting(&library);
+    let root = library.workdir();
+    same(
+        root,
+        &fixture,
+        &["ls", "/repos/lib/docs/"],
+        &["ls", "/repos/lib/docs"],
+    );
+    same(
+        root,
+        &fixture,
+        &["get", "/repos/lib/README.md/"],
+        &["get", "/repos/lib/README.md"],
+    );
+    same(root, &fixture, &["ls", "/"], &["ls"]);
+    for twice in ["/repos/lib/docs//", "//"] {
+        let refused = relative(root, &fixture, None, &["ls", twice], "");
+        assert_eq!(refused.code, 2, "{twice}");
+        assert_eq!(code(&refused), "board::cli::usage", "{twice}");
+        let said = text(&refused.stderr);
+        let reason = format!("path {twice:?}, read from /, is refused: it has an empty segment");
+        assert!(said.contains(&reason), "{said}");
+    }
+    let flags = ["call", "tasks.due", "--path", "/repos/lib/docs/"];
+    let called = relative(root, &fixture, None, &flags, "");
+    assert_eq!(called.code, 0, "{}", text(&called.stderr));
+    assert_eq!(sent(&fixture.1), json!({"path": "/repos/lib/docs"}));
+}
+
+#[test]
 fn a_board_path_flags_help_says_a_relative_path_is_read_and_a_plain_flags_does_not() {
     let fixture = mounting(&library());
     let help = relative(

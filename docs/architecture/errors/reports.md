@@ -27,6 +27,17 @@ for `board <command> -h`. This holds for an optional path, such as `check`'s, to
 A path whose corrected line still does not parse, and a refused `--field`
 pointer, get the recovery `board <command> -h` and no `alternatives`.
 
+Two refused command lines name the command meant in place of clap's
+suggestion. `put` given a second argument, such as `board put /notes/a.md
+a.md`, says that put reads what it writes from stdin. Its hint gives the line
+with the argument redirected to stdin, `board put /notes/a.md --file < a.md`,
+and the same line without `--file` for a JSON record; when the line already
+has `--file`, `--new` or `--batch`, it gives that line alone. A first word
+that is a common mistake, which is only `cat` now, names the command meant,
+`get`, and the hint runs it with the same words. An enabled plugin's alias of
+that word still runs, because Board reads aliases first. Both keep the code
+`board::cli::usage`, and `fields.value` holds the word at fault.
+
 Text prints the same failure as `error: <message>`, then a `key:` line when it
 has one, a `help:` line holding the call or the hint text, a `help:` line for
 each alternative, and a `code:` line.
