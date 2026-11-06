@@ -97,14 +97,14 @@ pub(crate) fn holds(flow: &Flow, phase: &str, stop: &Stop) -> bool {
 
 /// `changes::run::stop_reached`: the change at `path`, standing in
 /// `phase`, is at or past `stop`.
-pub(crate) fn stop_reached(path: &str, phase: &str, stop: &Stop, flow: &Flow) -> PluginError {
-    let later = flow.after(phase).unwrap_or(DONE);
+pub(crate) fn stop_reached(path: &str, phase: &str, stop: &Stop) -> PluginError {
     refusal(
         "changes::run::stop_reached",
         format!(
             "the run of {path} stops {stop}, and the change stands in {phase}, so it does not move \
-             on; to go further, move the stop with `board call changes.run --path {path} --until \
-             {later} --inline true`"
+             on; record why the run ended with `board call changes.stop --path {path} --reason \
+             reached --summary '<one line>'` and end the run. Only the person who started the run \
+             moves its stop"
         ),
         [
             ("path", json!(path)),

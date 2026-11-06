@@ -475,9 +475,11 @@ no blocking check missing, or stands later. An `until X` stop is reached
 as soon as the change stands in X or later. `next` returns `stop` with
 `reached`, and when it is reached its instruction says to stop and record
 `stop --reason reached`. `advance` refuses to move a change that stands in
-the stop's phase, or later, with `changes::run::stop_reached`; its message
-gives the `run --until <next phase> --inline true` command that moves the
-stop.
+the stop's phase, or later, with `changes::run::stop_reached`, before it
+reads the gate, so the refusal is the same whether or not the phase's
+checks pass. Its message tells the agent to record `stop --reason
+reached` and end, and says that only the person who started the run moves
+the stop, which `run` with a later `--through` or `--until` does.
 
 The run brief holds `brief_line`, the change, its board and flow, the stop
 and its rule in plain words, `steps` (each phase from the current one up

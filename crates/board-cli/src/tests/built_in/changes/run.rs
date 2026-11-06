@@ -23,11 +23,17 @@ exit "$2"
 /// The fixture board with /repos/x mounted and the flow `quick`: draft,
 /// then land, neither with a check.
 fn quick() -> Changes {
+    quick_checking(&json!([]))
+}
+
+/// [`quick`], with `checks` on its land phase.
+fn quick_checking(checks: &Value) -> Changes {
     let board = Changes::new();
     board.mount_x(&[("README.md", "x\n")]);
     let phases: Vec<Value> = (["draft", "land"].iter())
         .map(|phase| {
-            json!({"name": phase, "agent": "lead", "instruction": format!("Do {phase}."), "checks": []})
+            let checks = if *phase == "land" { checks.clone() } else { json!([]) };
+            json!({"name": phase, "agent": "lead", "instruction": format!("Do {phase}."), "checks": checks})
         })
         .collect();
     let flow = json!({
@@ -161,7 +167,7 @@ fn a_run_that_names_no_one_change_or_two_stops_is_refused_and_its_twin_is_admitt
 }
 
 #[test]
-fn advance_is_refused_past_the_stop_with_how_to_move_it_and_admitted_once_it_moves() {
+fn advance_is_refused_past_the_stop_with_how_to_record_it_and_admitted_once_the_stop_moves() {
     let board = quick();
     board.call("run", &starting(&json!({"inline": true})));
     assert_eq!(
@@ -180,16 +186,37 @@ fn advance_is_refused_past_the_stop_with_how_to_move_it_and_admitted_once_it_mov
     );
     let refused = board.refusal("advance", &json!({"path": CHANGE}));
     assert_eq!(refused["code"], "changes::run::stop_reached");
+    let message = refused["message"].as_str().unwrap();
     assert!(
-        refused["message"].as_str().unwrap().contains(
-            "board call changes.run --path /changes/quick-fix --until done --inline true"
-        )
+        message.contains("board call changes.stop --path /changes/quick-fix --reason reached"),
+        "{message}"
     );
+    assert!(!message.contains("--until"), "{message}");
     board.call("run", &resuming(&json!({"inline": true, "until": "done"})));
     assert_eq!(
         board.call("advance", &json!({"path": CHANGE}))["to"],
         "done"
     );
+}
+
+#[test]
+fn advance_at_an_until_stop_whose_phase_has_an_unmet_check_is_refused_as_stop_reached() {
+    let board = quick_checking(&json!([{"id": "head", "kind": "field", "field": "head"}]));
+    board.call("run", &starting(&json!({"inline": true})));
+    board.call("advance", &json!({"path": CHANGE}));
+    let refused = board.refusal("advance", &json!({"path": CHANGE}));
+    assert_eq!(refused["code"], "changes::run::stop_reached");
+}
+
+#[test]
+fn advance_with_the_stop_moved_past_a_phase_with_an_unmet_check_is_refused_as_unmet() {
+    let board = quick_checking(&json!([{"id": "head", "kind": "field", "field": "head"}]));
+    board.call("run", &starting(&json!({"inline": true})));
+    board.call("advance", &json!({"path": CHANGE}));
+    board.call("run", &resuming(&json!({"inline": true, "until": "done"})));
+    let refused = board.refusal("advance", &json!({"path": CHANGE}));
+    assert_eq!(refused["code"], "changes::gate::unmet");
+    assert_eq!(refused["fields"]["missing"], json!(["head"]));
 }
 
 #[test]

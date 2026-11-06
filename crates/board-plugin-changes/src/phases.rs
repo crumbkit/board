@@ -592,6 +592,12 @@ pub(crate) fn advance(host: &dyn Host, input: &Value) -> Result<Value, PluginErr
         ));
     }
     let observed = observe(host, &path, &change)?;
+    // The stop holds whatever the gate says, so it is checked first.
+    if let (Some(stop), Some(flow)) = (&change.stop, &observed.flow)
+        && holds(flow, &phase, stop)
+    {
+        return Err(stop_reached(&path, &phase, stop));
+    }
     let missing: Vec<Check> = (gate(&observed).into_iter())
         .filter(Check::blocking)
         .collect();
@@ -620,11 +626,6 @@ pub(crate) fn advance(host: &dyn Host, input: &Value) -> Result<Value, PluginErr
                 ("remedies", json!(remedies)),
             ],
         ));
-    }
-    if let (Some(stop), Some(flow)) = (&change.stop, &observed.flow)
-        && holds(flow, &phase, stop)
-    {
-        return Err(stop_reached(&path, &phase, stop, flow));
     }
     let to = (observed.flow.as_ref())
         .and_then(|flow| flow.after(&phase))
