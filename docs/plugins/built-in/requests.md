@@ -8,9 +8,8 @@ Board.app's request screen. It only reads.
 
 - `requests/reply/v1`: the owner's reply to a pending effect.
   - `effect`: the id of the version it answers, as a `Digest`:
-    `sha256:` and 64 lowercase hex digits. The 64 digits alone, which
-    Board.app's relay writes, are admitted and read too until it writes
-    the digest.
+    `sha256:` and 64 lowercase hex digits. Board.app writes it in this
+    form.
     It is an id, not a reference: the effect moves from
     `/effects/pending/` to `/effects/answered/` when answered.
   - `text`: what the owner says, not empty.

@@ -47,8 +47,8 @@ Each is a Board type, checked by its Rust type, with no schema file.
   kept answered effects.
 - The id is the 64 hex digits of the SHA-256 of the canonical JSON of the
   board root, plugin, op, path, digest and prior blob. Paths and commands
-  name an effect by these digits alone. A reply names it as `sha256:<id>`
-  or by the bare id, and a seen record by its answered path.
+  name an effect by these digits alone. A reply names it as `sha256:<id>`,
+  and a seen record by its answered path.
 
 ## What only the owner writes
 

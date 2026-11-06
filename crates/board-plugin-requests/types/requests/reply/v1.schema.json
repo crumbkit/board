@@ -8,17 +8,9 @@
       "type": "string"
     },
     "effect": {
-      "anyOf": [
-        {
-          "pattern": "^sha256:[0-9a-f]{64}$",
-          "type": "string"
-        },
-        {
-          "pattern": "^[0-9a-f]{64}$",
-          "type": "string"
-        }
-      ],
-      "description": "The id of the effect the reply answers, as a digest: `sha256:` and 64\nlowercase hex digits. The 64 digits alone, which Board.app's relay\nwrites, are admitted too until it writes the digest."
+      "description": "The id of the effect the reply answers, as a digest: `sha256:` and 64\nlowercase hex digits.",
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "type": "string"
     },
     "text": {
       "description": "What the owner says.",
