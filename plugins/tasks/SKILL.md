@@ -1,12 +1,23 @@
 ---
 name: tasks
-description: 'Sweep the person''s tasks one at a time, marking each done, deferring, dropping or editing it, and add a task. Use it when the person asks to sweep, review or go through their tasks or to-do list, or to add a task to their own list. Start with `board -C <board> call tasks.available`, run in the repository you work in, which syncs the notes repos that repository''s git remote routes to and lists the tasks to sweep. SKILL.md and README.md in the plugin''s directory say more.'
+description: 'Sweep the person''s tasks one at a time, marking each done, deferring, dropping or editing it, and add a task. Use it when the person asks to sweep, review or go through their tasks or to-do list, or to add a task to their own list. Also use it before you start work, to check whether an open task already covers the work, and claim or close that task instead of adding a new one. Start with `board -C <board> call tasks.available`, run in the repository you work in, which syncs the notes repos that repository''s git remote routes to and lists the tasks to sweep. SKILL.md and README.md in the plugin''s directory say more.'
 ---
 
 # tasks
 
 Walk the person through their tasks, one task per message, and act on each
 answer. The person may be on a phone, so keep each message short.
+
+## Before you start work
+
+1. Run `board -C <board> call tasks.available` from the repository you work
+   in, and look for an open task that covers the work.
+2. When one does, claim it with `tasks.claim --path <path> --session <your id>`
+   and finish it with `tasks.done --path <path>`. Do not add a second task for
+   the same work.
+3. Add a task with `tasks.add` only when none covers the work.
+4. When the work goes through the changes plugin, pass the task to
+   `changes.start --task <path>`.
 
 ## Sweep
 
