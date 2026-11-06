@@ -1294,9 +1294,19 @@ fn run_hinted(directory: &Path, command: &str, stdin: &[u8]) -> Output {
     board_with(directory, None, &words, stdin)
 }
 
+/// A board whose puts are not committed, so they need no git identity.
+fn uncommitted() -> Scenario {
+    let scenario = board();
+    scenario.write(
+        ".board/board.json",
+        Item::File(r#"{"$type": "board/config/v1", "commit_on_put": false}"#),
+    );
+    scenario
+}
+
 #[test]
 fn put_given_its_input_as_an_argument_hints_stdin_and_the_hinted_puts_write() {
-    let scenario = board();
+    let scenario = uncommitted();
     let refused = board_in(scenario.workdir(), &["put", "/notes/a.md", "a.md"]);
     assert_eq!(
         (refused.code, refused.error.as_deref()),
@@ -1365,7 +1375,7 @@ fn put_given_its_input_as_an_argument_hints_stdin_and_the_hinted_puts_write() {
 
 #[test]
 fn an_unknown_flag_on_put_keeps_claps_refusal_and_the_flag_it_suggests_runs() {
-    let scenario = board();
+    let scenario = uncommitted();
     let refused = board_in(scenario.workdir(), &["put", "/notes/a.md", "--fil"]);
     assert_eq!(refused.code, 2);
     assert!(
@@ -1414,7 +1424,7 @@ fn cat_is_refused_naming_get_and_the_hinted_get_runs() {
 
 #[test]
 fn put_hints_quote_each_word_and_a_second_stray_word_keeps_claps_refusal() {
-    let scenario = board();
+    let scenario = uncommitted();
     let refused = board_in(
         scenario.workdir(),
         &["put", "/notes/my plan.md", "my plan.md"],
@@ -1469,7 +1479,7 @@ fn cat_after_a_directory_named_cat_hints_get_in_its_place_and_bare_cat_hints_get
 
 #[test]
 fn put_new_refuses_a_folder_ending_in_two_slashes_and_admits_one() {
-    let scenario = board();
+    let scenario = uncommitted();
     let record = br#"{"$type": "lr/project/v1"}"#;
     for (folder, said) in [("/projects//", "/projects//"), ("projects//", "projects//")] {
         let refused = board_with(scenario.workdir(), None, &["put", "--new", folder], record);
