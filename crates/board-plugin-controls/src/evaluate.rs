@@ -131,7 +131,7 @@ pub(crate) fn evaluate(host: &dyn Host, input: &Value) -> Result<Value, PluginEr
     }
     let rules: Vec<(String, Option<Rule>)> = (named.into_iter())
         .map(|path| {
-            // A rule holding a value a newer Board added is stated.
+            // A rule holding a value this Board does not know is stated.
             let rule = (known.remove(&path).and_then(|control| control.rule)).filter(Rule::applies);
             (path, rule)
         })

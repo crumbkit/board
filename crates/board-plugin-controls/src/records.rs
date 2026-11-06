@@ -145,7 +145,8 @@ impl Check {
 }
 
 /// What a program checks, of the kind its `check` names. A rule whose
-/// `check` a newer Board added is `Other`, held as the record holds it, so
+/// `check` names a kind this Board does not know, such as one an edited
+/// copy of the schema admits, is `Other`, held as the record holds it, so
 /// its control is stated and not measured.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Rule {
@@ -158,8 +159,8 @@ pub enum Rule {
 
 impl Rule {
     /// Whether this Board can apply the rule: not when its `check` or one
-    /// of its values is one a newer Board added, so its control is stated
-    /// and not measured.
+    /// of its values is one this Board does not know, so its control is
+    /// stated and not measured.
     pub fn applies(&self) -> bool {
         match self {
             Self::Budget(budget) => budget.known().is_some(),
@@ -185,9 +186,16 @@ impl<'de> Deserialize<'de> for Rule {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         use serde::de::Error;
         let fields = Map::<String, Value>::deserialize(deserializer)?;
-        let check = (fields.get("check").and_then(Value::as_str))
-            .ok_or_else(|| D::Error::missing_field("check"))?;
-        if !Check::ALL.iter().any(|known| known.name() == check) {
+        // A `check` that is not a string reads as serde reads any string
+        // field, so its error says invalid type, not missing field.
+        let check = match fields.get("check") {
+            None => return Err(D::Error::missing_field("check")),
+            Some(check) => String::deserialize(check).map_err(D::Error::custom)?,
+        };
+        if !Check::ALL
+            .iter()
+            .any(|known| known.name() == check.as_str())
+        {
             return Ok(Self::Other(fields));
         }
         let tagged = Tagged::<Budget, Pattern, Judged, Version>::deserialize(Value::Object(fields))

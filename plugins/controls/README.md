@@ -81,7 +81,8 @@ such as a pull request body, instead of files.
   or judged control as stated, and only `evaluate` applies those rules.
   It also lists as stated, unmeasured, a control whose `check`, budget
   `unit`, `per` or pattern `quote` holds a value this Board does not know,
-  and `evaluate` gives such a control the verdict `stated`.
+  such as one an edited copy of the schema admits, and `evaluate` gives
+  such a control the verdict `stated`.
 - `kind` is `standing`, the default, for a rule that stays until it is
   changed, or `obligation` for work a landed change left owed. The work that
   discharges an obligation deletes it.

@@ -449,3 +449,27 @@ fn the_for_path_output_schema_admits_each_kind_of_rule_or_null_and_refuses_it_le
     let untagged = json!({"budget": "words", "max": 1});
     assert!(output.validate(&applying(Some(untagged))).is_err());
 }
+
+#[test]
+fn a_rule_whose_check_is_not_a_string_is_an_invalid_type_and_one_left_out_is_missing() {
+    use records::Rule;
+    let read =
+        |rule: Value| serde_json::from_value::<Rule>(rule).map_err(|error| error.to_string());
+    let number = read(json!({"check": 5})).unwrap_err();
+    assert!(
+        number.starts_with("invalid type: integer `5`, expected a string"),
+        "{number}"
+    );
+    let missing = read(json!({"quote": "verbatim"})).unwrap_err();
+    assert_eq!(missing, "missing field `check`");
+    let unknown = read(json!({"check": "later", "at": 5})).unwrap();
+    assert_eq!(
+        unknown,
+        Rule::Other(
+            json!({"check": "later", "at": 5})
+                .as_object()
+                .unwrap()
+                .clone()
+        )
+    );
+}
