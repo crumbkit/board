@@ -54,7 +54,7 @@ The plan covers ...
   backlog. `done` acts on both, as Writing tasks says.
 - `from_hour`, from 0 to 23, is the hour of the person's day from which the
   task is available. An hour before `BOARD_DAY_START` falls on the next date.
-- `contexts` are lowercase tags, `[a-z0-9-]+`.
+- `contexts` are slugs: lowercase letters and digits in words joined by `-`.
 - `owner` is the `Actor` who holds the task: an object of `session` (a
   `local_` id), `program` (a slug such as `claude-code`), `person` (a
   slug or an email) and `agent` (the name the agent was given), each
@@ -66,10 +66,14 @@ The plan covers ...
 - `kind` is `task`, as when it is left out, or `project`. A project may name
   its brief, such as `/projects/flows/README.md`, in `brief`, a reference to
   any file in the repo. Any task or project may be the parent of either.
+- `id` and `pinned` are fields Reflect writes, and the plugin ignores them.
+  `id` is the note's id, a slug. `pinned` is `true` or `false`, or the
+  note's place in Reflect's sidebar, a whole number.
 
-A task may hold other fields, such as the `id` and `pinned` that Reflect
-writes; the plugin ignores them. So a misspelt field, such as `defr`, is
-admitted and has no effect. Its scope is the repo that holds it.
+A task holds no other field. `board check` reports a task with a field the
+schema does not name, such as a misspelt `defr`, as `board::record::invalid`,
+and `put` refuses to write one with that code, naming the field. Keep notes
+that no field names in the body. Its scope is the repo that holds it.
 
 A task's file name is its slug, set from the title when `add` writes it. It
 never changes: a new title leaves the file where it is, so every reference to

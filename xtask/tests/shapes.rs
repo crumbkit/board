@@ -19,12 +19,10 @@ use exempt::{Kind, UNSHARED};
 /// The rules a schema may break today, by record type, until the plugin
 /// that ships it is ported. Each entry must still be broken, so a fix
 /// removes its entry.
-const EXEMPT: [(&str, &str); 21] = [
+const EXEMPT: [(&str, &str); 14] = [
     // Ported plugins that ship the schema files the former Python plugins
     // generated with pydantic, unchanged: pydantic titles every
     // property and keeps field meanings in the class docstring.
-    ("controls/control/v1", "described"),
-    ("controls/control/v1", "untitled"),
     ("notes/repo/v1", "described"),
     ("notes/repo/v1", "untitled"),
     ("prompts/prompt/v1", "described"),
@@ -39,13 +37,6 @@ const EXEMPT: [(&str, &str); 21] = [
     ("runs/run/v1", "untitled"),
     ("runs/suite/v1", "described"),
     ("runs/suite/v1", "untitled"),
-    ("tasks/task/v2", "described"),
-    ("tasks/task/v2", "untitled"),
-    // Another tool co-writes tasks, so a task keeps fields it does not know.
-    ("tasks/task/v2", "closed"),
-    // This repository's board's copy of the controls schema.
-    (".board/controls/control/v1", "described"),
-    (".board/controls/control/v1", "untitled"),
 ];
 
 /// The repository's root.
@@ -148,7 +139,11 @@ fn object(
         && keywords
             .get("additionalProperties")
             .is_some_and(Value::is_object);
-    if !map && keywords.get("additionalProperties") != Some(&Value::Bool(false)) {
+    // `unevaluatedProperties` closes an object whose fields `allOf` gathers.
+    let closed = ["additionalProperties", "unevaluatedProperties"]
+        .iter()
+        .any(|keyword| keywords.get(*keyword) == Some(&Value::Bool(false)));
+    if !map && !closed {
         broken.push(("closed", at.to_owned()));
     }
     let required: BTreeSet<&str> = (keywords
@@ -250,6 +245,12 @@ fn each_rule_the_test_checks_is_found_broken_in_a_schema_and_kept_in_its_twin() 
         let rules: Vec<&str> = broken(&schema).into_iter().map(|(rule, _)| rule).collect();
         assert_eq!(rules, [rule]);
     }
+    let unevaluated = edited(&kept, "/additionalProperties", Value::Null);
+    let closed = edited(&unevaluated, "/unevaluatedProperties", json!(false));
+    assert_eq!(broken(&closed), []);
+    let open = edited(&unevaluated, "/unevaluatedProperties", json!(true));
+    let rules: Vec<&str> = broken(&open).into_iter().map(|(rule, _)| rule).collect();
+    assert_eq!(rules, ["closed"]);
 }
 
 /// `schema` with the value at `pointer` set to `value`, or removed when

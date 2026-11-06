@@ -71,7 +71,7 @@
       "description": "Who wrote the record, which may differ from who asked."
     },
     "choice": {
-      "description": "The `id` of the option the owner chose, or `none` when the owner's\nwords choose no option.",
+      "description": "The `id` of the option the owner chose; absent when the owner's words\nchoose no option.",
       "minLength": 1,
       "type": "string"
     },
@@ -99,7 +99,6 @@
   "required": [
     "$type",
     "question",
-    "choice",
     "words",
     "answered"
   ],

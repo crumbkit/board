@@ -35,7 +35,7 @@ impl Checkout {
                 "Short usage.",
                 &json!({
                     "paths": ["repos/lib/docs/usage.md"],
-                    "rule": {"budget": "words", "max": 300},
+                    "rule": {"check": "budget", "unit": "words", "max": 300},
                 }),
             ),
         );

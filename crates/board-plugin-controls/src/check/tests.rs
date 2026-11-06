@@ -162,7 +162,7 @@ fn control(fields: &Value) -> String {
 }
 
 fn words(max: u64) -> Value {
-    json!({"budget": "words", "max": max})
+    json!({"check": "budget", "unit": "words", "max": max})
 }
 
 #[test]
@@ -214,7 +214,7 @@ fn check_reads_each_file_once_in_one_get_each_call_however_many_controls_reach_i
         &json!({"applies_to": ["/alias/a.md", "/docs/b.md"], "paths": ["docs/*"], "rule": words(9)}),
     );
     let bytes_control = control(
-        &json!({"applies_to": ["/docs/a.md", "/docs/c.md"], "rule": {"budget": "bytes", "max": 99}}),
+        &json!({"applies_to": ["/docs/a.md", "/docs/c.md"], "rule": {"check": "budget", "unit": "bytes", "max": 99}}),
     );
     let (_scenario, host) = recording(&[
         docs[0],
@@ -437,7 +437,7 @@ fn a_budget_over_its_max_returns_the_same_report_as_a_pass_with_passed_false() {
     assert_eq!(output["stated"], report["stated"]);
 }
 
-/// A board whose control schema a newer Board replaced, so it admits each
+/// A board whose copy of the control schema was edited, so it admits each
 /// `(pointer, value)` of `newer` beside the values at that pointer's
 /// `enum`, holding `files` by path.
 fn newer(files: &[(&str, &str)], newer: &[(&str, &str)]) -> (Scenario, Recording) {
@@ -453,7 +453,7 @@ fn newer(files: &[(&str, &str)], newer: &[(&str, &str)]) -> (Scenario, Recording
     recording(&files)
 }
 
-/// A control whose kind a newer Board added reads as standing, as its
+/// A control whose kind this Board does not know reads as standing, as its
 /// standing twin does, in `check` and `for-path`.
 #[test]
 fn a_kind_a_newer_board_added_reads_as_standing_like_its_standing_twin() {
@@ -478,7 +478,7 @@ fn a_kind_a_newer_board_added_reads_as_standing_like_its_standing_twin() {
     }
 }
 
-/// A control whose show a newer Board added is shown at the start, the
+/// A control whose show this Board does not know is shown at the start, the
 /// first point, as its twin that says `start` is.
 #[test]
 fn a_show_a_newer_board_added_reads_as_start_like_its_start_twin() {
@@ -497,25 +497,25 @@ fn a_show_a_newer_board_added_reads_as_start_like_its_start_twin() {
     }
 }
 
-/// A rule whose budget, `per` or pattern `show` a newer Board added is not
-/// applied: `check` states its control with its requirement and measures
-/// nothing, and `evaluate` gives it `stated`. Its twin with known values is
-/// measured and evaluated.
+/// A rule whose `check`, budget unit, `per` or pattern `quote` a newer
+/// Board added is not applied: `check` states its control with its
+/// requirement and measures nothing, and `evaluate` gives it `stated`. Its
+/// twin with known values is measured and evaluated.
 #[test]
 fn a_rule_holding_a_value_a_newer_board_added_is_stated_and_its_twin_is_applied() {
-    let pattern = |show: &str| json!({"pattern": "/names.txt", "show": show});
+    let pattern = |quote: &str| json!({"check": "pattern", "file": "/names.txt", "quote": quote});
+    let budget =
+        |unit: &str, per: &str| json!({"check": "budget", "unit": unit, "max": 9, "per": per});
     let newer_values = [
-        ("/$defs/Rule/properties/budget", "pages"),
-        ("/$defs/Rule/properties/per", "line"),
-        ("/$defs/Rule/properties/show", "redacted"),
+        ("/$defs/Rule/properties/check", "count"),
+        ("/$defs/BudgetRule/properties/unit", "pages"),
+        ("/$defs/BudgetRule/properties/per", "line"),
+        ("/$defs/PatternRule/properties/quote", "redacted"),
     ];
     for (known, unknown, verdict) in [
-        (words(9), json!({"budget": "pages", "max": 9}), "budget"),
-        (
-            json!({"budget": "words", "max": 9, "per": "file"}),
-            json!({"budget": "words", "max": 9, "per": "line"}),
-            "budget",
-        ),
+        (words(9), json!({"check": "count"}), "budget"),
+        (words(9), budget("pages", "total"), "budget"),
+        (budget("words", "file"), budget("words", "line"), "budget"),
         (pattern("match-only"), pattern("redacted"), "pattern"),
     ] {
         let on_docs = |rule: &Value| control(&json!({"paths": ["docs/*"], "rule": rule}));
@@ -558,6 +558,15 @@ fn a_rule_holding_a_value_a_newer_board_added_is_stated_and_its_twin_is_applied(
             (&results[1]["rule"], &results[1]["status"]),
             (&Value::Null, &json!("stated")),
             "{unknown}"
+        );
+        let output = for_path(&host, &json!({"path": "/docs/a.md"})).unwrap();
+        let rules: Vec<&Value> = (output["controls"].as_array().unwrap().iter())
+            .map(|item| &item["rule"])
+            .collect();
+        assert_eq!(
+            rules,
+            [&known, &unknown],
+            "for-path repeats each rule as held"
         );
     }
 }

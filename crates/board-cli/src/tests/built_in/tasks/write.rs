@@ -60,6 +60,30 @@ fn add_writes_an_open_task_named_by_its_title_reviewed_today_and_a_second_one_be
 }
 
 #[test]
+fn add_refuses_a_context_that_is_not_a_slug_before_it_writes_and_admits_its_slug_twin() {
+    let tasks = Tasks::new();
+    let given = |contexts: Value| {
+        let stdin = json!({"title": "Tagged", "contexts": contexts}).to_string();
+        tasks.call_with("add", &[], 0, tasks.outside.path(), &stdin)
+    };
+    for bad in ["a--b", "-x", "x-"] {
+        let refused = given(json!([bad])).unwrap_err();
+        assert_eq!(
+            refused["code"], "board::plugin::bad_input",
+            "{bad}: {refused}"
+        );
+    }
+    assert!(!tasks.board.workdir().join("tasks/tagged.md").exists());
+    let admitted = given(json!(["a-b"])).unwrap();
+    assert_eq!(admitted["path"], "/tasks/tagged.md");
+    assert!(
+        tasks
+            .read("tasks/tagged.md")
+            .contains("contexts: [\"a-b\"]\n")
+    );
+}
+
+#[test]
 fn add_goes_to_the_repo_covering_the_remote_and_pushes_and_outside_one_to_the_personal_repo() {
     let tasks = Tasks::new();
     let work = tasks.mounted();

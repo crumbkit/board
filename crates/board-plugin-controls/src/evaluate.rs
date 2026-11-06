@@ -15,7 +15,7 @@ use crate::check::measure;
 use crate::index;
 use crate::judged::Judge;
 use crate::logical;
-use crate::records::{Measure, Pattern, Rule, Show, Version};
+use crate::records::{Check, Measure, Pattern, Quote, Rule, Version};
 use crate::version;
 
 /// The findings a result shows; the rest are counted in `omitted`, so
@@ -55,7 +55,7 @@ pub(crate) struct Output {
 struct Evaluated {
     control: String,
     part: String,
-    rule: Option<Kind>,
+    rule: Option<Check>,
     status: Status,
     findings: Vec<Finding>,
     used: Option<u64>,
@@ -67,7 +67,7 @@ struct Evaluated {
 /// null when it has none.
 ///
 /// A pattern finding quotes what matched, and names the expression as
-/// `pattern` only when the rule's `show` is `pattern`; otherwise `pattern`
+/// `pattern` only when the rule's `quote` is `pattern`; otherwise `pattern`
 /// is null. A judged finding carries `rewrite`, the model's instruction for
 /// fixing the text, which is null in every other finding.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
@@ -90,16 +90,6 @@ impl Finding {
             rewrite: Some(rewrite.to_owned()),
         }
     }
-}
-
-/// The kind of rule a result comes from.
-#[derive(Clone, Copy, Serialize, JsonSchema)]
-#[serde(rename_all = "lowercase")]
-enum Kind {
-    Budget,
-    Pattern,
-    Judged,
-    Version,
 }
 
 /// How a part fared against one control.
@@ -141,7 +131,7 @@ pub(crate) fn evaluate(host: &dyn Host, input: &Value) -> Result<Value, PluginEr
     }
     let rules: Vec<(String, Option<Rule>)> = (named.into_iter())
         .map(|path| {
-            // A rule holding a value a newer Board added is stated.
+            // A rule holding a value this Board does not know is stated.
             let rule = (known.remove(&path).and_then(|control| control.rule)).filter(Rule::applies);
             (path, rule)
         })
@@ -165,14 +155,14 @@ pub(crate) fn evaluate(host: &dyn Host, input: &Value) -> Result<Value, PluginEr
                 Some(Rule::Pattern(pattern)) => {
                     let (found, total) = matches(
                         &expressions,
-                        pattern.show == Open::Known(Show::Pattern),
+                        pattern.quote == Open::Known(Quote::Pattern),
                         text,
                     );
                     let status = failed_if(total > 0);
                     Some(result(
                         control,
                         part,
-                        Some(Kind::Pattern),
+                        Some(Check::Pattern),
                         status,
                         found,
                         total,
@@ -181,7 +171,7 @@ pub(crate) fn evaluate(host: &dyn Host, input: &Value) -> Result<Value, PluginEr
                 Some(Rule::Version(_)) => floor
                     .as_ref()
                     .map(|(expression, rule)| floored(control, part, text, expression, rule)),
-                Some(Rule::Judged(_)) => None,
+                Some(Rule::Judged(_) | Rule::Other(_)) => None,
             };
             if let Some(result) = result {
                 results.insert((control, part), result);
@@ -197,11 +187,11 @@ pub(crate) fn evaluate(host: &dyn Host, input: &Value) -> Result<Value, PluginEr
             continue;
         };
         for (part, text) in &parts {
-            let kind = Some(Kind::Judged);
+            let kind = Some(Check::Judged);
             let result = if failed.contains(part.as_str()) {
                 result(control, part, kind, Status::Skipped, Vec::new(), 0)
             } else {
-                let findings = judge.findings(text, &sources[&judged.judged])?;
+                let findings = judge.findings(text, &sources[&judged.rubric])?;
                 let total = findings.len();
                 result(control, part, kind, failed_if(total > 0), findings, total)
             };
@@ -232,8 +222,8 @@ fn sources(
     let mut named: BTreeMap<&str, &str> = BTreeMap::new();
     for (control, rule) in rules {
         let file = match rule {
-            Some(Rule::Pattern(pattern)) => &pattern.pattern,
-            Some(Rule::Judged(judged)) => &judged.judged,
+            Some(Rule::Pattern(pattern)) => &pattern.file,
+            Some(Rule::Judged(judged)) => &judged.rubric,
             _ => continue,
         };
         named.entry(file).or_insert(control);
@@ -263,7 +253,7 @@ fn sources(
 fn result(
     control: &str,
     part: &str,
-    rule: Option<Kind>,
+    rule: Option<Check>,
     status: Status,
     mut findings: Vec<Finding>,
     total: usize,
@@ -318,7 +308,7 @@ fn budgeted(control: &str, part: &str, text: &str, budget: Measure, max: u64) ->
         ..result(
             control,
             part,
-            Some(Kind::Budget),
+            Some(Check::Budget),
             failed_if(total > 0),
             over,
             total,
@@ -341,7 +331,7 @@ fn floored(control: &str, part: &str, text: &str, expression: &Regex, rule: &Ver
     result(
         control,
         part,
-        Some(Kind::Version),
+        Some(Check::Version),
         failed_if(total > 0),
         findings,
         total,
@@ -352,7 +342,7 @@ fn floored(control: &str, part: &str, text: &str, expression: &Regex, rule: &Ver
 /// skipped, compiled once for every part with `^` and `$` matching at each
 /// line.
 ///
-/// An invalid one is `controls::pattern::invalid`. With `show` `match-only`
+/// An invalid one is `controls::pattern::invalid`. With `quote` `match-only`
 /// the error names the line and, for a syntax error, the column of the
 /// fault, and nothing the expression holds, since the parser's own message
 /// can quote part of it.
@@ -361,7 +351,7 @@ fn expressions(
     rule: &Pattern,
     sources: &BTreeMap<String, Vec<u8>>,
 ) -> Result<Expressions, PluginError> {
-    let file = &rule.pattern;
+    let file = &rule.file;
     let text = String::from_utf8_lossy(&sources[file]);
     let mut expressions = Vec::new();
     for (number, line) in (1..).zip(text.lines()) {
@@ -383,7 +373,7 @@ fn expressions(
             },
             Err(error) => syntax(&error),
         };
-        let quoted = rule.show == Open::Known(Show::Pattern);
+        let quoted = rule.quote == Open::Known(Quote::Pattern);
         return Err(invalid(control, file, number, quoted, line, fault));
     }
     Ok(expressions)
@@ -539,7 +529,7 @@ fn unreadable(control: &str, file: &str, code: &str) -> PluginError {
 }
 
 /// `controls::pattern::invalid` for line `number` of `file`. Only with
-/// `show` `pattern` does it quote the line and the parser's message.
+/// `quote` `pattern` does it quote the line and the parser's message.
 fn invalid(
     control: &str,
     file: &str,

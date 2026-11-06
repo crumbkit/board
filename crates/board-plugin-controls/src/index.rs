@@ -69,14 +69,16 @@ pub(crate) struct Control {
 }
 
 impl Control {
-    /// The control's kind, `standing` when left out or when a newer Board
-    /// added the value.
+    /// The control's kind, `standing` when left out or when it holds a
+    /// value this Board does not know, such as one an edited copy of the
+    /// schema admits.
     pub(crate) fn kind(&self) -> Kind {
         (self.kind.as_ref().and_then(Open::known).copied()).unwrap_or_default()
     }
 
-    /// When the mod shows this control, its default applied. A value a
-    /// newer Board added reads as `start`, the first point it is shown.
+    /// When the mod shows this control, its default applied. A value this
+    /// Board does not know, such as one an edited copy of the schema
+    /// admits, reads as `start`, the first point it is shown.
     pub(crate) fn show(&self) -> ShowAt {
         let show = (self.show.as_ref()).map(|show| show.known().copied().unwrap_or(ShowAt::Start));
         ShowAt::effective(show, self.kind(), self.measured())

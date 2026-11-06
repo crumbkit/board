@@ -113,14 +113,14 @@ fn a_budget_measured_per_directory_is_invalid_and_one_measured_per_file_is_not()
             "controls/file.json",
             &control(
                 "R.",
-                &json!({"rule": {"budget": "words", "max": 1, "per": "file"}}),
+                &json!({"rule": {"check": "budget", "unit": "words", "max": 1, "per": "file"}}),
             ),
         )
         .write(
             "controls/directory.json",
             &control(
                 "R.",
-                &json!({"rule": {"budget": "words", "max": 1, "per": "directory"}}),
+                &json!({"rule": {"check": "budget", "unit": "words", "max": 1, "per": "directory"}}),
             ),
         );
     assert_eq!(
@@ -130,12 +130,12 @@ fn a_budget_measured_per_directory_is_invalid_and_one_measured_per_file_is_not()
 }
 
 #[test]
-fn a_pattern_rule_with_an_unknown_show_is_invalid_and_one_with_a_known_show_is_not() {
+fn a_pattern_rule_with_an_unknown_quote_is_invalid_and_one_with_a_known_quote_is_not() {
     let board = board();
-    let rule = |show: &str| {
+    let rule = |quote: &str| {
         control(
             "R.",
-            &json!({"rule": {"pattern": "/private/names.txt", "show": show}}),
+            &json!({"rule": {"check": "pattern", "file": "/private/names.txt", "quote": quote}}),
         )
     };
     board
@@ -155,11 +155,17 @@ fn a_rule_file_board_cannot_find_dangles_and_one_it_finds_does_not() {
         .write("rubrics/plain.md", "Write plainly.\n")
         .write(
             "controls/found.json",
-            &control("R.", &json!({"rule": {"judged": "/rubrics/plain.md"}})),
+            &control(
+                "R.",
+                &json!({"rule": {"check": "judged", "rubric": "/rubrics/plain.md"}}),
+            ),
         )
         .write(
             "controls/lost.json",
-            &control("R.", &json!({"rule": {"judged": "/rubrics/lost.md"}})),
+            &control(
+                "R.",
+                &json!({"rule": {"check": "judged", "rubric": "/rubrics/lost.md"}}),
+            ),
         );
     assert_eq!(
         board.checked("/controls"),
@@ -178,15 +184,15 @@ fn a_rule_mixing_two_kinds_is_invalid_and_each_kind_alone_is_not() {
         .write("rubrics/plain.md", "Write plainly.\n")
         .write(
             "controls/budget.json",
-            &rule(json!({"budget": "words", "max": 1})),
+            &rule(json!({"check": "budget", "unit": "words", "max": 1})),
         )
         .write(
             "controls/mixed.json",
-            &rule(json!({"budget": "words", "max": 1, "judged": "/rubrics/plain.md"})),
+            &rule(json!({"check": "budget", "unit": "words", "max": 1, "rubric": "/rubrics/plain.md"})),
         )
         .write(
             "controls/stray.json",
-            &rule(json!({"judged": "/rubrics/plain.md", "show": "pattern"})),
+            &rule(json!({"check": "judged", "rubric": "/rubrics/plain.md", "quote": "pattern"})),
         )
         .write("controls/null.json", &rule(Value::Null));
     assert_eq!(
@@ -229,7 +235,7 @@ fn the_output_carries_the_requirement_purpose_and_rule_and_null_for_a_missing_ru
             "controls/agents.json",
             &control(
                 "Stay short.",
-                &json!({"applies_to": ["/AGENTS.md"], "rule": {"budget": "words", "max": 10}}),
+                &json!({"applies_to": ["/AGENTS.md"], "rule": {"check": "budget", "unit": "words", "max": 10}}),
             ),
         )
         .write(
@@ -244,7 +250,7 @@ fn the_output_carries_the_requirement_purpose_and_rule_and_null_for_a_missing_ru
                 "control": "/controls/agents",
                 "requirement": "Stay short.",
                 "purpose": "A test.",
-                "rule": {"budget": "words", "max": 10},
+                "rule": {"check": "budget", "unit": "words", "max": 10},
                 "kind": "standing",
                 "show": "failing",
             },
@@ -398,7 +404,7 @@ fn a_file_in_a_commit_mounted_twice_is_matched_by_the_path_check_counts_it_under
     let board = board();
     let (library, commit) = library(&board, "aa/lib.json", &[("docs/a.md", "one")]);
     mount(&board, "zz/long/lib.json", &library, commit);
-    let rule = json!({"budget": "words", "max": 9});
+    let rule = json!({"check": "budget", "unit": "words", "max": 9});
     board
         .write(
             "controls/short.json",

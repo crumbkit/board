@@ -16,9 +16,8 @@ pub(super) enum Kind {
 use Kind::{Local, UntilAdopted};
 
 #[rustfmt::skip]
-pub(super) const UNSHARED: [(&str, &str, Kind, &str); 91] = [
+pub(super) const UNSHARED: [(&str, &str, Kind, &str); 87] = [
     // This repository's board's copy of the controls schema.
-    (".board/controls/control/v1", "/paths/-", UntilAdopted, "BoardGlob (audit row 3)"),
     (".board/controls/control/v1", "/rule/at_least", Local, "a version floor of dotted numbers, which only a version rule compares"),
     (".board/controls/control/v1", "/rule/capture", Local, "a regular expression in the syntax of Rust's regex crate, which only a version rule compiles"),
     // The schemas the plugins ship.
@@ -32,7 +31,6 @@ pub(super) const UNSHARED: [(&str, &str, Kind, &str); 91] = [
     ("boundary/crossing/v1", "/to", Local, "a destination is named by the action that sends to it, and only boundaries match it"),
     ("boundary/crossing/v1", "/verdicts/-/part", Local, "a part is named by the action that sends it, and only boundaries match it"),
     ("changes/change/v1", "/head", UntilAdopted, "ObjectId (audit row 2)"),
-    ("controls/control/v1", "/paths/-", UntilAdopted, "BoardGlob (audit row 3)"),
     ("controls/control/v1", "/rule/at_least", Local, "a version floor of dotted numbers, which only a version rule compares"),
     ("controls/control/v1", "/rule/capture", Local, "a regular expression in the syntax of Rust's regex crate, which only a version rule compiles"),
     ("evals/eval/v1", "/conclusion", UntilAdopted, "Prose"),
@@ -51,7 +49,7 @@ pub(super) const UNSHARED: [(&str, &str, Kind, &str); 91] = [
     ("jira/issue/v1", "/url", UntilAdopted, "Url, when that shape lands"),
     ("notes/repo/v1", "/covers/-", UntilAdopted, "RemotePattern (audit row 43)"),
     ("plans/answer/v1", "/answered", UntilAdopted, "Timestamp (audit row 38)"),
-    ("plans/answer/v1", "/choice", UntilAdopted, "Slug, with none reserved (audit row 34)"),
+    ("plans/answer/v1", "/choice", UntilAdopted, "Slug, when option ids are (audit row 34)"),
     ("plans/answer/v1", "/evidence/entry", UntilAdopted, "Uuid (audit row 17)"),
     ("plans/answer/v1", "/evidence/quote", UntilAdopted, "Prose"),
     ("plans/answer/v1", "/evidence/session", UntilAdopted, "Uuid (audit row 16)"),
@@ -106,8 +104,6 @@ pub(super) const UNSHARED: [(&str, &str, Kind, &str); 91] = [
     ("runs/suite/v1", "/measures/-/name", UntilAdopted, "Slug, an identifier the audit did not list"),
     ("runs/suite/v1", "/measures/-/unit", UntilAdopted, "an inline enum of units (audit row 52)"),
     ("runs/suite/v1", "/method", UntilAdopted, "Prose"),
-    ("tasks/task/v2", "/contexts/-", UntilAdopted, "Slug (audit row 57)"),
     ("tasks/task/v2", "/defer", Local, "another tool co-writes tasks, and its date-time may carry an offset, which Timestamp refuses"),
     ("tasks/task/v2", "/repeat", Local, "the repeat grammar is the tasks plugin's own"),
-    ("tasks/task/v2", "/title", UntilAdopted, "Prose"),
 ];

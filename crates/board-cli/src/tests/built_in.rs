@@ -387,7 +387,7 @@ fn docs_budget(max: u64) -> String {
         "requirement": "Short docs.",
         "purpose": "A test.",
         "paths": ["docs/*.md"],
-        "rule": {"budget": "words", "max": max},
+        "rule": {"check": "budget", "unit": "words", "max": max},
     });
     control.to_string()
 }

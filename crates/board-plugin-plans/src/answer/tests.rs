@@ -277,6 +277,27 @@ fn each_refusal_has_its_own_code_and_says_what_was_wrong_and_its_twin_is_recorde
     }
 }
 
+/// `none` that chooses no option stores no `choice`, and its twin, an
+/// option whose id is `none`, stores it. Both report `none` as the choice.
+#[test]
+fn none_that_chooses_no_option_stores_no_choice_and_an_option_named_none_stores_it() {
+    for (options, stored) in [
+        (json!({}), None),
+        (
+            json!({"options": [{"id": "none", "text": "Neither; drop it."}]}),
+            Some(json!("none")),
+        ),
+    ] {
+        let host = at_now(rows("plans/question/v1", &options, &[]));
+        let input = json!({"path": QUESTION, "option": "none", "words": "Neither."});
+        let output = answer(&host, &input).unwrap();
+        assert_eq!(output["choice"], "none", "{options}");
+        let puts = host.puts.take();
+        let record = puts[0][0]["record"].as_object().unwrap();
+        assert_eq!(record.get("choice").cloned(), stored, "{options}");
+    }
+}
+
 #[test]
 fn an_option_whose_id_is_none_is_chosen_with_its_text() {
     let fields = json!({"options": [{"id": "none", "text": "Neither; drop it."}]});

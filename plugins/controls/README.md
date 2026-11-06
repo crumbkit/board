@@ -15,7 +15,7 @@ such as a pull request body, instead of files.
   "purpose": "Every agent loads it, so every word costs every session.",
   "applies_to": ["/AGENTS.md", "/CLAUDE.md"],
   "paths": ["docs/*.md"],
-  "rule": {"budget": "words", "max": 1000},
+  "rule": {"check": "budget", "unit": "words", "max": 1000},
   "kind": "standing",
   "show": "failing",
   "sources": ["/controls/sources/context-cost"]
@@ -42,26 +42,28 @@ such as a pull request body, instead of files.
   as unreadable; in a mounted board it matches nothing, and
   that board's own `board check` reports it.
 - `rule` is optional. Without it, the control is a written requirement.
-  There are four kinds of rule:
-  - A budget limits the `words` (separated by any whitespace) or `bytes` of
-    the files the control applies to. Its optional `per` says how: `total`,
-    the default, limits the sum over every file, and `file` limits each file
-    on its own, such as `{"budget": "words", "max": 500, "per": "file"}` on
+  A rule's `check` names its kind, which decides its other fields. There
+  are four kinds of rule:
+  - A budget, `check` `budget`, limits the `unit` of the files the control
+    applies to: `words` (separated by any whitespace) or `bytes`, at most
+    `max`. Its optional `per` says how: `total`, the default, limits the
+    sum over every file, and `file` limits each file on its own, such as
+    `{"check": "budget", "unit": "words", "max": 500, "per": "file"}` on
     `changes/*/plan.md`.
   - A pattern, such as
-    `{"pattern": "/private/names.txt", "show": "match-only"}`, names a file
-    of regular expressions, one per line, that text must not match. The
+    `{"check": "pattern", "file": "/private/names.txt", "quote": "match-only"}`,
+    names a file of regular expressions, one per line, that text must not match. The
     expressions use the syntax of Rust's `regex` crate, in which `^` and `$`
     match at each line. That syntax has no look-around and no
     back-references, so a line such as `(?=acme)` or `(a)\1` is invalid.
     Blank lines are skipped, and a match of no characters, such as `\b`
-    finds, is never a finding. With `show` `match-only`, a finding quotes
+    finds, is never a finding. With `quote` `match-only`, a finding quotes
     what matched and never the expression, so the file can stay private;
     with `pattern`, it names the expression too.
-  - A judged rule, such as `{"judged": "/rubrics/plain.md"}`, names a
-    rubric that a clean-context model reads text against.
+  - A judged rule, such as `{"check": "judged", "rubric": "/rubrics/plain.md"}`,
+    names a rubric that a clean-context model reads text against.
   - A version rule, such as
-    `{"at_least": "1.99.1", "capture": "channel = \"([0-9.]+)\""}`, says
+    `{"check": "version", "at_least": "1.99.1", "capture": "channel = \"([0-9.]+)\""}`, says
     that every version the first group of `capture` finds is at least
     `at_least`. `capture` uses the same regular expressions, with `^` and
     `$` matching at each line. Versions compare number by number, over only
@@ -70,14 +72,17 @@ such as a pull request body, instead of files.
     separated by dots, such as `stable`, is skipped. The rule holds the
     version as data: raise `at_least` when a newer release ships.
 
-  A rule holds the fields of exactly one kind, and is never null. A pattern
-  file and a rubric are references, so `board check` marks the control
+  A rule holds `check` and the fields of its kind alone, and is never null.
+  A pattern rule's `file` and a judged rule's `rubric` are references, so
+  `board check` marks the control
   `board::ref::dangling` when one is missing, and `controls.check` then
   fails with `controls::control::degraded`. `check` measures budgets over
   files and version rules over the versions files pin; it lists a pattern
   or judged control as stated, and only `evaluate` applies those rules.
-  It also lists as stated, unmeasured, a control whose budget, `per` or
-  pattern `show` holds a value this Board does not know.
+  It also lists as stated, unmeasured, a control whose `check`, budget
+  `unit`, `per` or pattern `quote` holds a value this Board does not know,
+  such as one an edited copy of the schema admits, and `evaluate` gives
+  such a control the verdict `stated`.
 - `kind` is `standing`, the default, for a rule that stays until it is
   changed, or `obligation` for work a landed change left owed. The work that
   discharges an obligation deletes it.
@@ -86,7 +91,7 @@ such as a pull request body, instead of files.
   reports it failing. Left out, an obligation shows at `start`, a control
   with a budget or a version rule when `failing`, and any other control at
   `edit`. `check` reports failing only a control with a budget or a version rule, so a control without one that says
-  `failing` is never shown. It is unrelated to a pattern rule's `show`, which says what a finding quotes.
+  `failing` is never shown.
 - `sources` holds references to what justifies the control, such as a
   source note or an eval. Board checks them as it checks `applies_to`, so a
   dangling source makes `check` fail with `controls::control::degraded`.
@@ -115,7 +120,8 @@ The plugin ships both schemas. `board plugin enable controls` writes them to
 
 - `board call controls.for-path --path /AGENTS.md` returns
   each control that applies to that path, by reference or by pattern, with
-  its requirement, purpose and rule, which is null when it has none, its
+  its requirement, purpose and rule as the record holds it, `check`
+  included, which is null when it has none, its
   `kind`, and its effective `show`, with the default applied. A
   control with a dangling reference still applies to the paths it does
   reach; an invalid control applies to nothing. An agent can ask before it edits a file. Patterns match the file
@@ -194,17 +200,18 @@ The plugin ships both schemas. `board plugin enable controls` writes them to
   part, and a control named twice is checked once. The output is `passed`,
   false when any result failed, and `results`, one per control and part,
   ordered by control as given and then by part name. Each result holds
-  `control`, `part`, `rule` (`budget`, `pattern`, `judged`, `version`, or null),
+  `control`, `part`, `rule` (the rule's `check`: `budget`, `pattern`,
+  `judged` or `version`, or null),
   `status` and `findings`:
   - `status` is `passed` or `failed`; `stated` for a control without a rule
-    or whose budget, `per` or pattern `show` holds a value this Board does
-    not know;
+    or whose `check`, budget `unit`, `per` or pattern `quote` holds a value
+    this Board does not know;
     `skipped` for a judged rule when the part failed a budget or pattern
     rule. Budget and pattern rules always run first, whatever the order of
     `controls`.
   - A finding holds `text`, the words at fault, `line`, `pattern` and
     `rewrite`. A pattern finding quotes the match and gives its line, and
-    names the expression in `pattern` only with `show` `pattern`. A judged
+    names the expression in `pattern` only with `quote` `pattern`. A judged
     finding gives `rewrite`, the model's instruction for fixing the
     sentence, and its line when the model named one. A failed budget has one
     finding with a null `line`. Every key is present, and null means none.
@@ -217,7 +224,7 @@ The plugin ships both schemas. `board plugin enable controls` writes them to
   control in the board's own tree, `controls::rule::unreadable` when a
   pattern file or rubric cannot be read, and `controls::pattern::invalid`
   when a line of a pattern file is not a valid expression. That error names
-  the line by its number. With `show` `match-only` it adds only the column
+  the line by its number. With `quote` `match-only` it adds only the column
   of a syntax error, because the parser's own message can quote part of the
   expression; with `pattern` it quotes the line and the parser's message.
   The call reads every pattern file and rubric once, and compiles each

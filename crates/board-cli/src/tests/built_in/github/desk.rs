@@ -332,7 +332,7 @@ impl Desk {
             "$type": "controls/control/v1",
             "requirement": "A test.",
             "purpose": "A test.",
-            "rule": {"pattern": "/private/names.txt", "show": "match-only"},
+            "rule": {"check": "pattern", "file": "/private/names.txt", "quote": "match-only"},
         });
         self.write(&format!("{NAMES}.json"), &control.to_string());
         let boundary = json!({
@@ -354,7 +354,7 @@ impl Desk {
             "$type": "controls/control/v1",
             "requirement": "A test.",
             "purpose": "A test.",
-            "rule": {"judged": "/rubrics/plain.md"},
+            "rule": {"check": "judged", "rubric": "/rubrics/plain.md"},
         });
         self.write("controls/plain.json", &control.to_string());
         let boundary = json!({

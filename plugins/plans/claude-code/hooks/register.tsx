@@ -67,7 +67,7 @@ async function held($: EngineInterface, options: PluginOptions, path: string) {
  * names the asking session's `local_` id as a string, the SendMessage tool's
  * spelling of a recipient, because `{ sessionId }` refuses a `local_` id.
  */
-async function answer($: EngineInterface, options: PluginOptions, q: Question, choice: string, words: string) {
+async function answer($: EngineInterface, options: PluginOptions, q: Question, choice: string | undefined, words: string) {
   try {
     const rows = await held($, options, q.path)
     const refused = refusal(q.path, rows)
@@ -164,7 +164,7 @@ export const register: Register = (on, options) => {
             </Box>
             {Input === undefined ? null : (
               <Input key={`${q.path}#words`} placeholder="Answer in your own words" submitLabel="answer" onSubmit={words => {
-                if (words.trim() !== '') void answer($, options, q, 'none', words)
+                if (words.trim() !== '') void answer($, options, q, undefined, words)
               }} />
             )}
           </Box>

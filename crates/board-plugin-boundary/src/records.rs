@@ -79,8 +79,6 @@ pub struct CrossingRecord {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[schemars(with = "Option<Ref>")]
     pub from: Option<String>,
-    /// Whether every check passed, or the owner approved an override.
-    pub passed: bool,
     /// The boundaries that matched, by their paths.
     #[schemars(with = "Vec<Ref<BoundaryRecord>>")]
     pub boundaries: Vec<String>,
@@ -99,6 +97,14 @@ pub struct CrossingRecord {
 
 impl Record for CrossingRecord {
     const TYPE: &'static str = "boundary/crossing/v1";
+}
+
+impl CrossingRecord {
+    /// Whether the content may cross: no verdict failed, or the owner
+    /// approved an override.
+    pub fn passed(&self) -> bool {
+        self.overridden.is_some() || !self.verdicts.iter().any(Verdict::failed)
+    }
 }
 
 /// One control's verdict on one part, as `controls.evaluate` gave it, with
@@ -129,7 +135,16 @@ pub struct Verdict {
     pub omitted: Option<u64>,
 }
 
-/// The kind of rule a verdict comes from.
+impl Verdict {
+    /// Whether the part failed the control. A status a newer Board added is
+    /// not known to pass, so it fails.
+    pub fn failed(&self) -> bool {
+        !matches!(self.status, Open::Known(Status::Passed | Status::Skipped))
+    }
+}
+
+/// The kind of rule a verdict comes from, as a control's rule names it in
+/// its `check`.
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 #[schemars(inline)]
@@ -137,6 +152,7 @@ pub enum Kind {
     Budget,
     Pattern,
     Judged,
+    Version,
 }
 
 /// How a part fared against one control.

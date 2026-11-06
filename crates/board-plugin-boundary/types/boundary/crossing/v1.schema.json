@@ -66,7 +66,8 @@
           "enum": [
             "budget",
             "pattern",
-            "judged"
+            "judged",
+            "version"
           ],
           "type": "string"
         },
@@ -131,10 +132,6 @@
       "pattern": "^sha256:[0-9a-f]{64}$",
       "type": "string"
     },
-    "passed": {
-      "description": "Whether every check passed, or the owner approved an override.",
-      "type": "boolean"
-    },
     "result": {
       "description": "What the destination returned, such as a URL.",
       "type": "string",
@@ -157,7 +154,6 @@
     "digest",
     "action",
     "to",
-    "passed",
     "boundaries",
     "verdicts"
   ],

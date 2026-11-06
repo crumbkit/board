@@ -127,11 +127,8 @@ fn record_adds_the_result_to_a_passing_crossing_and_verify_reports_it() {
     assert_eq!(ran.code, 0, "{}", printed(&ran));
     let path = format!("/crossings/{}", &digest[7..]);
     assert_eq!(output(&document), &json!({"crossing": path, "result": URL}));
-    let crossing = personal.record(&path).unwrap();
-    assert_eq!(
-        (&crossing["result"], &crossing["passed"]),
-        (&json!(URL), &json!(true))
-    );
+    let (crossing, passed) = crossing(&personal, &path);
+    assert_eq!((&crossing["result"], &passed), (&json!(URL), &json!(true)));
     assert_eq!(verify(&personal, &["--digest", &digest])["result"], URL);
 }
 
@@ -171,10 +168,16 @@ fn record_refuses_a_failed_crossing_and_one_never_checked() {
 /// A crossing a newer Board wrote can hold a verdict whose rule and status
 /// this Board does not know. `verify`, called from another board so that
 /// the personal board's newer schema is not compared with this Board's,
-/// still reads that crossing, as it reads its twin holding known values.
+/// still reads that crossing. A rule it does not know passes as its twin
+/// with a known rule does, and a status it does not know is not known to
+/// pass, so the crossing fails.
 #[test]
-fn a_crossing_whose_verdict_holds_a_rule_and_status_a_newer_board_added_verifies_like_its_twin() {
-    for (rule, status) in [("pattern", "passed"), ("rubric", "waived")] {
+fn a_crossing_whose_verdict_holds_a_rule_or_status_a_newer_board_added_verifies_like_its_twin() {
+    for (rule, status, passed) in [
+        ("pattern", "passed", true),
+        ("rubric", "passed", true),
+        ("pattern", "waived", false),
+    ] {
         let personal = Personal::new();
         let work = uncommitted();
         personal.enable(work.workdir(), &["boundary"]);
@@ -199,6 +202,6 @@ fn a_crossing_whose_verdict_holds_a_rule_and_status_a_newer_board_added_verifies
         assert_eq!(ran.code, 0, "{}", printed(&ran));
         let verified = output(&json(&ran)).clone();
         assert_eq!(verified["crossing"], json!(path), "{rule} {status}");
-        assert_eq!(verified["passed"], true, "{rule} {status}");
+        assert_eq!(verified["passed"], passed, "{rule} {status}");
     }
 }

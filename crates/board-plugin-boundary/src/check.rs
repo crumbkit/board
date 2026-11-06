@@ -109,15 +109,7 @@ pub(crate) fn check(host: &dyn Host, input: &Value) -> Result<Value, PluginError
         .filter(|boundary| boundary.covers(&globs, &action, &to, from.as_deref()))
         .collect();
     let (verdicts, unchecked) = evaluate(personal, &matched, &globs, &parts)?;
-    let failed: Vec<&Verdict> = (verdicts.iter())
-        // A status a newer Board added is not known to pass.
-        .filter(|verdict| {
-            !matches!(
-                verdict.status,
-                Open::Known(Status::Passed | Status::Skipped)
-            )
-        })
-        .collect();
+    let failed: Vec<&Verdict> = verdicts.iter().filter(|verdict| verdict.failed()).collect();
     let content = Content {
         action: &action,
         to: &to,
@@ -134,27 +126,27 @@ pub(crate) fn check(host: &dyn Host, input: &Value) -> Result<Value, PluginError
         Some(Answer::Approved(effect)) => Some(format!("sha256:{effect}")),
         _ => None,
     };
-    let passed = failed.is_empty() || overridden.is_some();
     let paths: Vec<String> = matched
         .iter()
         .map(|boundary| boundary.path.clone())
         .collect();
     let prior = crossing::find(personal, &digest)?;
-    let crossing = CrossingRecord {
+    let mut crossing = CrossingRecord {
         tag: Tag::default(),
         digest: digest.clone(),
         action: action.clone(),
         to: to.clone(),
         from: from.clone(),
-        passed,
         boundaries: paths.clone(),
         verdicts: verdicts.clone(),
-        // A re-check that still passes keeps what the destination returned.
-        result: (prior.as_ref())
-            .filter(|_| passed)
-            .and_then(|(prior, _)| prior.result.clone()),
+        result: None,
         overridden: overridden.clone(),
     };
+    let passed = crossing.passed();
+    // A re-check that still passes keeps what the destination returned.
+    crossing.result = (prior.as_ref())
+        .filter(|_| passed)
+        .and_then(|(prior, _)| prior.result.clone());
     crossing::write(
         personal,
         &crossing,
@@ -223,8 +215,7 @@ fn evaluate(
         let report = (host.call(&target, &input)).map_err(|refusal| refused("call", &refusal))?;
         // `Verdict` repeats controls' result type, so a field added there
         // refuses the check instead of letting the content through. A rule
-        // or status boundary does not know, such as a version rule, which
-        // a crossing cannot record yet, refuses it the same way.
+        // or status boundary does not know refuses it the same way.
         let unreadable = |error: String| PluginError {
             code: "boundary::evaluate::unreadable".to_owned(),
             message: format!("controls.evaluate gave results this plugin cannot read: {error}"),

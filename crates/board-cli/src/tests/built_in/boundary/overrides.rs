@@ -106,9 +106,9 @@ fn an_approved_override_passes_that_exact_content_and_records_the_effect() {
             (&json!("pr.title"), &json!("passed"))
         ]
     );
-    let record = personal.record(crossing).unwrap();
+    let (record, passed) = super::crossing(&personal, crossing);
     assert_eq!(
-        (&record["passed"], &record["override"]),
+        (&passed, &record["override"]),
         (&json!(true), &json!(format!("sha256:{effect}")))
     );
     let digest = result["digest"].as_str().unwrap();
@@ -166,10 +166,8 @@ fn an_override_the_owner_refused_stays_refused_and_does_not_offer_approval() {
     let hint = document["recovery"]["text"].as_str().unwrap();
     assert!(hint.ends_with(&refused), "{hint}");
     assert!(!printed(&ran).contains("board answer"));
-    let record = personal
-        .record(document["fields"]["crossing"].as_str().unwrap())
-        .unwrap();
-    assert_eq!(record["passed"], false);
+    let (record, passed) = crossing(&personal, document["fields"]["crossing"].as_str().unwrap());
+    assert_eq!(passed, false);
     assert_eq!(record.get("override"), None);
 }
 
@@ -192,8 +190,6 @@ fn failing_content_too_large_to_show_the_owner_still_fails_with_its_findings_and
     assert!(hint.starts_with("Next: change pr.body:"), "{hint}");
     assert!(hint.ends_with(ending), "{hint}");
     assert_eq!(personal.pending(), Vec::<String>::new());
-    let record = personal
-        .record(fields["crossing"].as_str().unwrap())
-        .unwrap();
-    assert_eq!(record["passed"], false);
+    let (_, passed) = crossing(&personal, fields["crossing"].as_str().unwrap());
+    assert_eq!(passed, false);
 }
