@@ -50,9 +50,12 @@ import type { Mount } from './guard'
 
 const PATH = '"$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"'
 // Run in a directory, it prints the repository's common directory, the
-// checkout's branch (an empty line when HEAD is detached), then its origin URL, if any.
+// checkout's top level (an empty line when it has none, as in a bare
+// repository), the checkout's branch (an empty line when HEAD is detached),
+// then its origin URL, if any.
 const LOCATE =
   'cd "$1" && git rev-parse --path-format=absolute --git-common-dir && ' +
+  '{ git rev-parse --path-format=absolute --show-toplevel 2>/dev/null || echo; } && ' +
   '{ git symbolic-ref --short -q HEAD || echo; } && { git config --get remote.origin.url || true; }'
 // Each mounted repository's origin URL, `<repo>\t<url>` per line; empty when it has none.
 const ORIGINS = 'for r; do printf \'%s\\t%s\\n\' "$r" "$(git -C "$r" config --get remote.origin.url 2>/dev/null)"; done'
@@ -122,15 +125,17 @@ async function place($: EngineInterface, file: string): Promise<{ real: string; 
 const realOf = async ($: EngineInterface, path: string) =>
   (await $.fs.stat(path, { resolve: true }).catch(() => undefined))?.realPath ?? path
 
-/** The repository's own directory, checkout branch and origin URL, from `dir`; null outside a repository. */
-async function locate($: EngineInterface, dir: string): Promise<{ repo: string; branch: string; url: string } | null> {
+type Located = { repo: string; top: string; branch: string; url: string }
+
+/** The repository's own directory, checkout top level, branch and origin URL, from `dir`; null outside a repository. */
+async function locate($: EngineInterface, dir: string): Promise<Located | null> {
   const ran = await sh($, LOCATE, [dir])
   if (ran.exitCode !== 0) {
     if (/not a git repository/i.test(ran.stderr)) return null
     throw new Unknown(`git could not find the repository in ${dir}: ${said(ran)}`)
   }
-  const [commonDir = '', branch = '', url = ''] = ran.stdout.split('\n')
-  return { repo: repositoryOf(commonDir), branch, url }
+  const [commonDir = '', top = '', branch = '', url = ''] = ran.stdout.split('\n')
+  return { repo: repositoryOf(commonDir), top, branch, url }
 }
 
 /** The board config's path. */
@@ -147,13 +152,39 @@ async function knownBoards($: EngineInterface): Promise<string[]> {
 }
 
 /**
+ * The refusal of a board record in a checkout of `own`, a known board's
+ * repository, or null. The checkout may be the board's directory or a
+ * linked worktree of it, so the path is taken from the checkout's top level
+ * that git prints, and compared without regard to letter case, since a
+ * file system that ignores case can place one file under either spelling.
+ */
+async function ownRecord(
+  $: EngineInterface,
+  file: string,
+  real: string,
+  found: Located,
+  own: { board: string; mounts: Mount[] },
+): Promise<string | null> {
+  if (found.top === '') throw new Unknown(`git printed no checkout for ${file} in the board at ${own.board}`)
+  const top = `${(await realOf($, found.top)).replace(/\/$/, '')}/`.toLowerCase()
+  if (!real.toLowerCase().startsWith(top)) {
+    throw new Unknown(`${file} is not inside its checkout ${found.top} of the board at ${own.board}`)
+  }
+  const relative = real.slice(top.length).toLowerCase()
+  if (isChangeRecord(relative)) return changeRecord(file, own.board)
+  const record = own.mounts.find(m => m.record.toLowerCase() === relative)
+  return record === undefined ? null : mountRecord(file, record)
+}
+
+/**
  * The mounts that hold `file`, across every known board, or the refusal of a
- * board record. A file in a known board's own repository, or a worktree of
- * it, is held by no mount once its board records are checked. A mount holds the file when the file's repository is a
- * worktree of the mount's `repo`; else when its origin is a local path or
- * `file://` URL of a worktree of it; else when both repositories' origins name
- * one repository. So a separate clone is guarded too. A repository with no
- * origin that is no worktree of a mount stays outside the guard.
+ * board record. A file in a checkout of a known board's own repository, the
+ * board's directory or a linked worktree of it, is admitted once its board
+ * records are checked. A mount holds the file when the file's repository is
+ * a worktree of the mount's `repo`; else when its origin is a local path or
+ * `file://` URL of a worktree of it; else when both repositories' origins
+ * name one repository. So a separate clone is guarded too. A repository with
+ * no origin that is no worktree of a mount stays outside the guard.
  */
 async function mountsOf($: EngineInterface, file: string): Promise<Mount[] | string> {
   const placed = await place($, file)
@@ -162,13 +193,13 @@ async function mountsOf($: EngineInterface, file: string): Promise<Mount[] | str
   const found = await locate($, placed.dir)
   if (found === null) return []
   const all: Mount[] = []
-  const roots: string[] = []
+  const boards: { board: string; real: string; mounts: Mount[] }[] = []
   for (const board of await knownBoards($)) {
     const ran = await sh($, MOUNTS, [board, MOUNTS_SQL])
     const mounts = ran.exitCode === 0 ? parseMounts(board, ran.stdout) : null
     if (mounts === null) throw new Unknown(`\`board -C ${board} query\` did not list its mounts: ${said(ran)}`)
     const real = await realOf($, board)
-    roots.push(real)
+    boards.push({ board, real, mounts })
     const root = `${real.replace(/\/$/, '')}/`
     if (placed.real.startsWith(root)) {
       const relative = placed.real.slice(root.length)
@@ -178,8 +209,10 @@ async function mountsOf($: EngineInterface, file: string): Promise<Mount[] | str
     }
     all.push(...mounts)
   }
-  // A known board's repository holds records, which the loop above guards, and no code.
-  if (isKnownBoard(await realOf($, found.repo), roots)) return []
+  // A known board's repository holds records, which ownRecord guards, and no code.
+  const repoReal = await realOf($, found.repo)
+  const own = boards.find(b => isKnownBoard(repoReal, [b.real]))
+  if (own !== undefined) return (await ownRecord($, file, placed.real, found, own)) ?? []
   const worktreeOf = (repo: string) => all.filter(m => m.repo === repo)
   if (worktreeOf(found.repo).length > 0 || all.length === 0) return worktreeOf(found.repo)
   const local = localOrigin(found.url, found.repo)

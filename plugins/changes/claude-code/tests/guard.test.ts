@@ -109,6 +109,9 @@ const FILES = new Set([
   HANDOFF,
   `${SECOND}/notes.md`,
   `${BOARD_WORKTREE}/projects/handoff.md`,
+  `${BOARD_WORKTREE}/changes/fix-it.json`,
+  `${BOARD_WORKTREE}/changes/fix-it/plans/20261105T120000Z.json`,
+  `${BOARD_WORKTREE}/repos/widgets.json`,
 ])
 const DIRS = new Set([...FILES].flatMap(f => f.split('/').slice(1, -1).map((_, i, parts) => `/${parts.slice(0, i + 1).join('/')}`)))
 DIRS.add('/')
@@ -117,6 +120,7 @@ const LINKS: Record<string, string> = {
   '/home/me/widgets': REPO,
   '/tmp/x/link.md': `${REPO}/README.md`,
   '/tmp/x/dangling.md': '/nowhere/x.md',
+  '/home/me/board-link': BOARD,
 }
 const resolve = (path: string) => {
   for (const [link, target] of Object.entries(LINKS)) {
@@ -126,7 +130,7 @@ const resolve = (path: string) => {
 }
 
 // What `git rev-parse --git-common-dir` and the origin print in each repository's directory; the
-// harness puts the branch line between them.
+// harness puts the checkout's top level (the entry's directory) and the branch line between them.
 const REPOSITORIES: [string, string][] = [
   ['/work/widgets.worktrees/x', `${REPO}/.git\ngit@github.com:acme/widgets.git\n`],
   [REPO, `${REPO}/.git\ngit@github.com:acme/widgets.git\n`],
@@ -202,7 +206,7 @@ function engine(on: On, answers: Answers) {
       const found = REPOSITORIES.find(([root]) => dir === root || dir.startsWith(`${root}/`))
       return found === undefined
         ? run(128, '', 'fatal: not a git repository (or any of the parent directories): .git\n')
-        : run(0, found[1].replace('\n', `\n${answers.branch ?? 'main'}\n`))
+        : run(0, found[1].replace('\n', `\n${found[0]}\n${answers.branch ?? 'main'}\n`))
     }
     if (script.includes('for r')) {
       ran.push(`origins ${args.join(' ')}`)
@@ -703,4 +707,49 @@ test('a worktree of a known board is admitted like the board, and guarded when t
   answers.config = JSON.stringify({ boards: [SECOND] })
   expect((await edit($, file)).deny).toMatch(/^changes::guard::no_brief: .* is in \/personal, which the board at \/home\/me\/board\/second mounts\./)
   expect(edits).toEqual(['Edit'])
+})
+
+test("a linked worktree of a known board still refuses its change and mount records, and admits its other files", async ($, on) => {
+  const { edits } = engine(on, {
+    first: { '': 'Coordinate the work.', a1: BRIEF },
+    config: JSON.stringify({ boards: [BOARD, SECOND] }),
+    mounts: { [SECOND]: SECOND_MOUNTS },
+  })
+  for (const agent of [undefined, 'a1']) {
+    expect((await edit($, `${BOARD_WORKTREE}/changes/fix-it.json`, agent)).deny).toBe(
+      `changes::guard::board_record: ${BOARD_WORKTREE}/changes/fix-it.json is a change record of the board at ` +
+        `${BOARD}, which changes only through board commands. Use \`board -C ${BOARD} call changes.start\`, ` +
+        '`changes.attach` or `changes.advance`, or `board put` to drop a change.',
+    )
+    expect((await edit($, `${BOARD_WORKTREE}/repos/widgets.json`, agent)).deny).toBe(
+      `changes::guard::board_record: ${BOARD_WORKTREE}/repos/widgets.json is the mount record of /repos/widgets ` +
+        `in the board at ${BOARD}, which changes only through board commands. Use \`board -C ${BOARD} mount ` +
+        'update /repos/widgets` to follow its repository, or `board put` to change the mount.',
+    )
+  }
+  expect((await edit($, `${BOARD_WORKTREE}/changes/fix-it/plans/20261105T120000Z.json`)).deny).toMatch(
+    /^changes::guard::board_record: .* is a change record of the board at \/home\/me\/board,/,
+  )
+  expect((await edit($, `${BOARD_WORKTREE}/projects/handoff.md`)).deny).toBeUndefined()
+  expect(edits).toEqual(['Edit'])
+})
+
+test('a known board listed through a symbolic link is exempt, and its records are still refused', async ($, on) => {
+  const link = '/home/me/board-link'
+  const answers: Answers = {
+    first: { '': 'Coordinate the work.' },
+    config: JSON.stringify({ boards: [link, SECOND] }),
+    mounts: { [SECOND]: SECOND_MOUNTS },
+  }
+  const { edits } = engine(on, answers)
+  expect((await edit($, HANDOFF)).deny).toBeUndefined()
+  expect((await edit($, `${link}/projects/handoff.md`)).deny).toBeUndefined()
+  expect((await edit($, `${link}/changes/fix-it.json`)).deny).toBe(
+    `changes::guard::board_record: ${link}/changes/fix-it.json is a change record of the board at ${link}, ` +
+      `which changes only through board commands. Use \`board -C ${link} call changes.start\`, \`changes.attach\` ` +
+      'or `changes.advance`, or `board put` to drop a change.',
+  )
+  answers.config = JSON.stringify({ boards: [SECOND] })
+  expect((await edit($, `${link}/projects/handoff.md`)).deny).toMatch(/^changes::guard::no_brief: .* is in \/personal, /)
+  expect(edits).toEqual(['Edit', 'Edit'])
 })

@@ -473,13 +473,18 @@ every Edit, Write and NotebookEdit. Install it with
    repository with no `origin` that is no worktree of a mount is admitted.
    A repository whose directory is listed in `boards`, or a worktree of
    one, is admitted even when another known board mounts it, because a
-   board holds records and no code. Its board records are still refused,
-   as the next paragraph says. Both directories are compared with symbolic
-   links followed, and they must be equal: a board inside a larger
-   repository does not exempt that repository. The guard reads this from
-   the config. It does not test for a board root marker such as
-   `.board/board.json`, because a code repository can commit a board of its
-   own, as Board's own source does.
+   board holds records and no code. Its board records, in the listed
+   directory and in each linked worktree, are still refused with
+   `changes::guard::board_record`. Both directories are compared with
+   symbolic links followed, and they must be equal: a board inside a
+   larger repository does not exempt that repository. The listed directory
+   must be the repository's main checkout. A listed directory that is
+   itself a linked worktree exempts nothing, so its repository stays
+   guarded. The guard reads this from the config. It does not test for a
+   board root marker such as `.board/board.json`, because a code
+   repository can commit a board of its own, as Board's own source does.
+   Listing a code repository in `boards` exempts it and all its worktrees
+   from the guard, so list only boards there.
 3. Otherwise it reads the acting agent's first user message: a subagent's
    own, or the main conversation's. The first line that holds text must be
    `board-brief: /changes/<name>`. The guard checks that line, and does not
@@ -546,9 +551,8 @@ There is no bypass flag. The guard cannot see:
 
 The guard refuses an edit of every mounted repository that is not itself a
 known board, including the notes repositories a personal board mounts, such
-as `/repos/notes-personal`. An
-agent without a brief writes notes and tasks through the `tasks` and `notes`
-capabilities instead.
+as `/repos/notes-personal`. An agent without a brief writes notes and tasks
+through the `tasks` and `notes` capabilities instead.
 
 `claude plugin test plugins/changes/claude-code` runs the mod's tests.
 
