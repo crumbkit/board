@@ -86,6 +86,13 @@ pub(crate) struct Cli {
     command: Command,
 }
 
+impl Cli {
+    /// Whether `-C` or `--personal` chose a board, which `skills` refuses.
+    fn chooses_board(&self) -> bool {
+        self.personal || !self.directories.is_empty()
+    }
+}
+
 /// How many entries a listing shows (STANDARDS.md 23).
 pub(crate) type Page = crumbkit::Page<DEFAULT_LIMIT, MAX_LIMIT>;
 
@@ -462,8 +469,8 @@ pub(crate) fn run(
     {
         return render::refused(printer, *refusal);
     }
-    if let Command::Skills(command) = cli.command {
-        return crate::skills::skills(&command, context, printer);
+    if let Command::Skills(command) = &cli.command {
+        return crate::skills::skills(command, context, printer, cli.chooses_board());
     }
     let base = cli.personal.then(|| context.personal());
     let base = base.unwrap_or_else(|| Ok(context.start.clone()));

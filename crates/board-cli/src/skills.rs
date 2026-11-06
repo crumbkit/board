@@ -131,8 +131,21 @@ pub(crate) enum Installed {
 enum SkillsError {
     /// Folders at skills' names that are not Board's, without `--force`.
     NotBoard { folders: Vec<String> },
-    /// A read or write of `path` failed.
-    WriteFailed { path: PathBuf, source: io::Error },
+    /// A read, write or move of `path` failed.
+    WriteFailed {
+        path: PathBuf,
+        act: Act,
+        source: io::Error,
+    },
+}
+
+/// What failed on a path.
+#[derive(Debug)]
+enum Act {
+    Read,
+    Write,
+    /// A move to the path this names.
+    Move(PathBuf),
 }
 
 impl SkillsError {
@@ -147,15 +160,23 @@ impl SkillsError {
                     if folders.len() == 1 { "it" } else { "them" },
                 );
                 let hint = format!(
-                    "move each folder out of {dir}, or replace them with `board skills install --dir {dir} --force`"
+                    "move each folder out of {dir}, or replace them with `board skills install --dir {} --force`",
+                    quote(shown)
                 );
                 let refusal = Refusal::new(Code::SkillsNotBoard, message, &Fields::default());
                 let mut refusal = refusal.with_hint(hint);
                 refusal.fields.insert("folders".to_owned(), json!(folders));
                 refusal
             }
-            Self::WriteFailed { path, source } => {
-                let message = format!("cannot write {}: {source}", path.display());
+            Self::WriteFailed { path, act, source } => {
+                let path_shown = path.display();
+                let message = match act {
+                    Act::Read => format!("cannot read {path_shown}: {source}"),
+                    Act::Write => format!("cannot write {path_shown}: {source}"),
+                    Act::Move(to) => {
+                        format!("cannot move {path_shown} to {}: {source}", to.display())
+                    }
+                };
                 let mut refusal =
                     Refusal::new(Code::SkillsWriteFailed, message, &Fields::default());
                 let file = path.display().to_string();
@@ -168,16 +189,54 @@ impl SkillsError {
     }
 }
 
-/// `path`'s failure as a [`SkillsError`].
-fn failed(path: &Path) -> impl FnOnce(io::Error) -> SkillsError + '_ {
+/// A failed read of `path` as a [`SkillsError`].
+fn unread(path: &Path) -> impl FnOnce(io::Error) -> SkillsError + '_ {
+    failed(path, Act::Read)
+}
+
+/// A failed write of `path` as a [`SkillsError`].
+fn unwritten(path: &Path) -> impl FnOnce(io::Error) -> SkillsError + '_ {
+    failed(path, Act::Write)
+}
+
+/// A failed `act` on `path` as a [`SkillsError`].
+fn failed(path: &Path, act: Act) -> impl FnOnce(io::Error) -> SkillsError + '_ {
     move |source| SkillsError::WriteFailed {
         path: path.to_path_buf(),
+        act,
         source,
     }
 }
 
+/// `path` as one POSIX shell word: as it is when no character needs
+/// quoting, else in single quotes.
+fn quote(path: &Path) -> String {
+    let text = path.display().to_string();
+    let safe =
+        |character: char| character.is_ascii_alphanumeric() || "@%+=:,./-_~".contains(character);
+    if !text.is_empty() && text.chars().all(safe) {
+        return text;
+    }
+    format!("'{}'", text.replace('\'', r"'\''"))
+}
+
 /// `board skills <command>`.
-pub(crate) fn skills(command: &SkillsCommand, context: &Context, printer: Printer) -> Output {
+/// `elsewhere` is set when `-C` or `--personal` names a board, which a
+/// skills directory is not, so the command line is refused.
+pub(crate) fn skills(
+    command: &SkillsCommand,
+    context: &Context,
+    printer: Printer,
+    chose: bool,
+) -> Output {
+    if chose {
+        let message = "board skills takes no -C or --personal, which choose a board";
+        let refusal = plain(Code::CliUsage, &message);
+        return render::refused(
+            printer,
+            refusal.with_hint("name the skills directory with `--dir`"),
+        );
+    }
     let (SkillsCommand::Install { at, page, .. } | SkillsCommand::List { at, page }) = command;
     let Some(shown) = at
         .dir
@@ -192,7 +251,7 @@ pub(crate) fn skills(command: &SkillsCommand, context: &Context, printer: Printe
         return render::refused(printer, refusal);
     };
     let dir = context.start.join(&shown);
-    let held = match read(&dir) {
+    let held = match read(&dir).map(|held| keyed(held, SKILLS)) {
         Ok(held) => held,
         Err(error) => return render::refused(printer, error.refusal(&shown)),
     };
@@ -279,8 +338,8 @@ fn install(
             Some(Listed::Stale) => Installed::Updated,
             _ => Installed::Written,
         };
-        if installed != Installed::Unchanged {
-            put(dir, skill)?;
+        if let Some((_, state)) = state.filter(|_| installed != Installed::Unchanged) {
+            put(dir, skill, *state)?;
         }
         done.push((skill.name.to_owned(), installed));
     }
@@ -292,19 +351,22 @@ fn install(
 fn read(dir: &Path) -> Result<BTreeMap<String, Held>, SkillsError> {
     let entries = match std::fs::read_dir(dir) {
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(BTreeMap::new()),
-        entries => entries.map_err(failed(dir))?,
+        entries => entries.map_err(unread(dir))?,
     };
     let mut held = BTreeMap::new();
     for entry in entries {
-        let entry = entry.map_err(failed(dir))?;
+        let entry = entry.map_err(unread(dir))?;
         let Ok(name) = entry.file_name().into_string() else {
             continue;
         };
+        let scratch = [".board-new", ".board-old"]
+            .iter()
+            .any(|end| name.ends_with(end));
+        if name.starts_with('.') && scratch {
+            continue;
+        }
         let path = entry.path();
-        let kind = std::fs::symlink_metadata(&path).map_err(failed(&path))?;
-        let marked =
-            std::fs::symlink_metadata(path.join(MARKER)).is_ok_and(|marker| marker.is_file());
-        let found = if kind.is_dir() && marked {
+        let found = if marked(&path) {
             let mut files = BTreeMap::new();
             folder(&path, "", &mut files)?;
             Held::Board(files)
@@ -316,6 +378,34 @@ fn read(dir: &Path) -> Result<BTreeMap<String, Held>, SkillsError> {
     Ok(held)
 }
 
+/// `raw` with each entry named as a skill in other letter case, such as
+/// `Changes`, keyed by that skill's name when no entry has its exact name,
+/// so a case-insensitive file system's folder is never taken for a missing
+/// one.
+fn keyed(raw: BTreeMap<String, Held>, skills: &[Skill]) -> BTreeMap<String, Held> {
+    let names: Vec<&str> = skills.iter().map(|skill| skill.name).collect();
+    let mut held = BTreeMap::new();
+    for (name, found) in raw {
+        let lower = name.to_lowercase();
+        let skill = names.iter().find(|skill| **skill == lower);
+        match skill {
+            Some(skill) if **skill != name && !held.contains_key(*skill) => {
+                held.insert((*skill).to_owned(), found);
+            }
+            _ => {
+                held.insert(name, found);
+            }
+        }
+    }
+    held
+}
+
+/// Whether `path` is a directory, never a symlink, holding the marker.
+fn marked(path: &Path) -> bool {
+    let directory = std::fs::symlink_metadata(path).is_ok_and(|kind| kind.is_dir());
+    directory && std::fs::symlink_metadata(path.join(MARKER)).is_ok_and(|marker| marker.is_file())
+}
+
 /// Each entry beneath `directory`, whose path within the folder starts
 /// with `within`, into `files`, but the marker at the folder's top.
 fn folder(
@@ -323,19 +413,19 @@ fn folder(
     within: &str,
     files: &mut BTreeMap<String, Option<Vec<u8>>>,
 ) -> Result<(), SkillsError> {
-    for entry in std::fs::read_dir(directory).map_err(failed(directory))? {
-        let entry = entry.map_err(failed(directory))?;
+    for entry in std::fs::read_dir(directory).map_err(unread(directory))? {
+        let entry = entry.map_err(unread(directory))?;
         let path = entry.path();
         let name = entry.file_name().to_string_lossy().into_owned();
         let relative = format!("{within}{name}");
-        let kind = std::fs::symlink_metadata(&path).map_err(failed(&path))?;
+        let kind = std::fs::symlink_metadata(&path).map_err(unread(&path))?;
         if relative == MARKER {
             continue;
         }
         if kind.is_dir() {
             folder(&path, &format!("{relative}/"), files)?;
         } else if kind.is_file() {
-            let bytes = std::fs::read(&path).map_err(failed(&path))?;
+            let bytes = std::fs::read(&path).map_err(unread(&path))?;
             files.insert(relative, Some(bytes));
         } else {
             files.insert(relative, None);
@@ -349,7 +439,7 @@ fn folder(
     reason = "this module owns the writes to a skills directory, which is no board's tree"
 )]
 fn create(dir: &Path) -> Result<(), SkillsError> {
-    std::fs::create_dir_all(dir).map_err(failed(dir))
+    std::fs::create_dir_all(dir).map_err(unwritten(dir))
 }
 
 /// Removes the folder or symlink at `path`; a symlink is removed itself,
@@ -359,42 +449,84 @@ fn create(dir: &Path) -> Result<(), SkillsError> {
     reason = "this module owns the writes to a skills directory, which is no board's tree"
 )]
 fn remove(path: &Path) -> Result<(), SkillsError> {
-    let kind = std::fs::symlink_metadata(path).map_err(failed(path))?;
+    let kind = std::fs::symlink_metadata(path).map_err(unread(path))?;
     if kind.is_dir() {
-        std::fs::remove_dir_all(path).map_err(failed(path))
+        std::fs::remove_dir_all(path).map_err(unwritten(path))
     } else {
-        std::fs::remove_file(path).map_err(failed(path))
+        std::fs::remove_file(path).map_err(unwritten(path))
     }
 }
 
 /// Writes `skill` into a new folder beside its place in `dir`, marker
 /// first, then swaps it into place, so a reader never sees half a skill.
+/// A leftover at either scratch name is removed first. The folder install
+/// found in `state` is checked again just before the swap: a missing
+/// folder must still be missing, and a stale one must still be Board's.
 /// Whatever stood there is moved aside and removed: a symlink itself,
 /// never what it points to.
+fn put(dir: &Path, skill: &Skill, state: Listed) -> Result<(), SkillsError> {
+    let new = dir.join(format!(".{}.board-new", skill.name));
+    let old = dir.join(format!(".{}.board-old", skill.name));
+    for scratch in [&new, &old] {
+        if std::fs::symlink_metadata(scratch).is_ok() {
+            remove(scratch)?;
+        }
+    }
+    let written = fill(&new, skill).and_then(|()| swap(dir, skill.name, &new, &old, state));
+    if written.is_err() && std::fs::symlink_metadata(&new).is_ok() {
+        // Best effort: the error that stopped the write is the one to report.
+        let _ = remove(&new);
+    }
+    written
+}
+
+/// Writes the marker and then `skill`'s files into the new folder `new`.
 #[expect(
     clippy::disallowed_methods,
     reason = "this module owns the writes to a skills directory, which is no board's tree"
 )]
-fn put(dir: &Path, skill: &Skill) -> Result<(), SkillsError> {
-    let target = dir.join(skill.name);
-    let new = dir.join(format!(".{}.board-new", skill.name));
-    std::fs::create_dir(&new).map_err(failed(&new))?;
+fn fill(new: &Path, skill: &Skill) -> Result<(), SkillsError> {
+    std::fs::create_dir(new).map_err(unwritten(new))?;
     let marker = format!("{BINARY_NAME} {}\n", crate::timing::BUILD);
     let files = std::iter::once((MARKER, marker.as_bytes())).chain(skill.files.iter().copied());
     for (path, bytes) in files {
         let path = new.join(path);
         if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent).map_err(failed(parent))?;
+            std::fs::create_dir_all(parent).map_err(unwritten(parent))?;
         }
-        std::fs::write(&path, bytes).map_err(failed(&path))?;
+        std::fs::write(&path, bytes).map_err(unwritten(&path))?;
     }
-    if std::fs::symlink_metadata(&target).is_err() {
-        return std::fs::rename(&new, &target).map_err(failed(&target));
+    Ok(())
+}
+
+/// Moves `new` to `name` in `dir`, moving what stands there to `old` and
+/// removing it, unless that is no longer what `state` found.
+#[expect(
+    clippy::disallowed_methods,
+    reason = "this module owns the writes to a skills directory, which is no board's tree"
+)]
+fn swap(dir: &Path, name: &str, new: &Path, old: &Path, state: Listed) -> Result<(), SkillsError> {
+    let target = dir.join(name);
+    let present = std::fs::symlink_metadata(&target).is_ok();
+    let changed = match state {
+        Listed::Missing => present,
+        Listed::Stale => !marked(&target),
+        Listed::Current | Listed::NotBoard | Listed::Retired => false,
+    };
+    if changed {
+        let folders = vec![name.to_owned()];
+        return Err(SkillsError::NotBoard { folders });
     }
-    let old = dir.join(format!(".{}.board-old", skill.name));
-    std::fs::rename(&target, &old).map_err(failed(&target))?;
-    std::fs::rename(&new, &target).map_err(failed(&target))?;
-    remove(&old)
+    let into = |from: &Path, to: &Path| {
+        std::fs::rename(from, to).map_err(failed(from, Act::Move(to.to_path_buf())))
+    };
+    if present {
+        into(&target, old)?;
+        into(new, &target)?;
+        remove(old)
+    } else {
+        into(new, &target)
+    }
 }
 
 /// A skill or Board folder as `skills list` and `skills install` print it.

@@ -231,3 +231,60 @@ fn without_dir_install_writes_into_the_claude_skills_directory_in_home() {
     assert_eq!(code, 0);
     assert!(path(&home, ".claude/skills/changes/.board-skill").is_file());
 }
+
+#[test]
+fn a_folder_named_as_a_skill_in_other_case_is_refused_and_keeps_its_files_and_force_installs() {
+    let home = Scenario::new();
+    home.write("skills/Changes/notes.md", Item::File("mine\n"));
+    let (code, refused) = skills(&home, "install", &[]);
+    assert_eq!(code, 1);
+    assert_eq!(refused["code"], "board::skills::not_board");
+    assert_eq!(text(&path(&home, "skills/Changes/notes.md")), "mine\n");
+    assert!(!path(&home, "skills/evals").exists());
+
+    let (code, admitted) = skills(&home, "install", &["--force"]);
+    assert_eq!(code, 0);
+    assert_eq!(state_of(&admitted, "changes"), "written");
+    assert!(path(&home, "skills/changes/.board-skill").is_file());
+}
+
+#[test]
+fn a_leftover_scratch_folder_without_a_marker_is_cleared_and_never_listed() {
+    for scratch in [".changes.board-new", ".changes.board-old"] {
+        let home = Scenario::new();
+        home.write(&format!("skills/{scratch}/notes.md"), Item::File("left\n"));
+        let (_, listed) = skills(&home, "list", &[]);
+        assert!(!states(&listed).iter().any(|(name, _)| name == scratch));
+        let (code, installed) = skills(&home, "install", &[]);
+        assert_eq!(code, 0, "{installed}");
+        assert_eq!(state_of(&installed, "changes"), "written");
+        assert!(!path(&home, &format!("skills/{scratch}")).exists());
+        assert!(path(&home, "skills/changes/.board-skill").is_file());
+    }
+}
+
+#[test]
+fn skills_refuses_c_and_personal_and_admits_the_same_line_without_them() {
+    let home = Scenario::new();
+    for refused in [
+        &["-C", ".", "skills", "list", "--dir", "skills"][..],
+        &["--personal", "skills", "list", "--dir", "skills"],
+    ] {
+        let (code, document) = board(&home, refused);
+        assert_eq!(code, 2, "{document}");
+        assert_eq!(document["code"], "board::cli::usage");
+        assert!(document["recovery"].to_string().contains("--dir"));
+    }
+    let (code, _) = board(&home, &["skills", "list", "--dir", "skills"]);
+    assert_eq!(code, 0);
+}
+
+#[test]
+fn a_failed_read_says_it_could_not_read() {
+    let home = Scenario::new();
+    home.write("file", Item::File("not a directory\n"));
+    let (_, refused) = board(&home, &["skills", "list", "--dir", "file"]);
+    assert_eq!(refused["code"], "board::skills::write_failed");
+    let message = refused["message"].as_str().unwrap();
+    assert!(message.starts_with("cannot read "), "{message}");
+}

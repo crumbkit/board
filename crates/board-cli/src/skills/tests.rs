@@ -143,3 +143,31 @@ fn a_board_folder_with_an_extra_file_or_an_entry_that_is_no_file_is_stale() {
         assert_eq!(listed(&[ONE], &held), [("one".to_owned(), Listed::Stale)]);
     }
 }
+
+#[test]
+fn a_folder_named_as_a_skill_in_other_case_is_read_as_that_skills_folder() {
+    let raw = BTreeMap::from([
+        ("Changes".to_owned(), Held::Foreign),
+        ("Mine".to_owned(), Held::Foreign),
+    ]);
+    let changes = Skill {
+        name: "changes",
+        files: &[("SKILL.md", b"x")],
+    };
+    let held = keyed(raw, &[changes, ONE]);
+    assert_eq!(held.get("changes"), Some(&Held::Foreign));
+    assert!(held.contains_key("Mine") && !held.contains_key("Changes"));
+    let exact = BTreeMap::from([
+        ("one".to_owned(), board(&[("SKILL.md", b"one")])),
+        ("ONE".to_owned(), Held::Foreign),
+    ]);
+    let held = keyed(exact, &[ONE]);
+    assert_eq!(held.get("one"), Some(&board(&[("SKILL.md", b"one")])));
+}
+
+#[test]
+fn a_hint_quotes_a_directory_a_shell_would_split() {
+    assert_eq!(quote(Path::new("skills")), "skills");
+    assert_eq!(quote(Path::new("my skills")), "'my skills'");
+    assert_eq!(quote(Path::new("it's")), r"'it'\''s'");
+}
