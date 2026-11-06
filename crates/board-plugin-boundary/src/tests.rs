@@ -135,7 +135,6 @@ fn the_crossing_schema_refuses_a_bad_digest_null_or_unknown_field_and_admits_its
         "digest": digest,
         "action": "github.pr-create",
         "to": "github:octo/board",
-        "passed": false,
         "boundaries": ["/boundaries/octo"],
         "verdicts": [{
             "control": "/controls/names",
@@ -160,7 +159,11 @@ fn the_crossing_schema_refuses_a_bad_digest_null_or_unknown_field_and_admits_its
             json!({"from": null, "via": "/repos/board"}),
             json!({"from": "/repos/board"}),
         ),
-        (json!({"passed": "no"}), json!({"passed": true})),
+        (json!({"passed": true}), json!({})),
+        (
+            json!({"verdicts": [{"control": "/controls/names", "part": "p", "rule": "rubric", "status": "passed", "findings": []}]}),
+            json!({"verdicts": [{"control": "/controls/names", "part": "p", "rule": "version", "status": "passed", "findings": []}]}),
+        ),
     ] {
         let (refused, admitted) = (
             with(crossing.clone(), &refused),

@@ -127,10 +127,19 @@ fn the_hook_checks_the_parts_github_push_would_send_for_each_ref_git_pushes() {
     );
     let path = format!("/crossings/{}", &digest("github.push", &parts)[7..]);
     let crossing = desk.record(&path).unwrap();
+    // A crossing stores no `passed`; one with no override passed when every
+    // verdict did.
     assert_eq!(
-        (&crossing["passed"], &crossing["from"]),
-        (&json!(true), &json!("/repos/widgets"))
+        (
+            crossing.get("passed"),
+            crossing.get("override"),
+            &crossing["from"]
+        ),
+        (None, None, &json!("/repos/widgets"))
     );
+    for verdict in crossing["verdicts"].as_array().unwrap() {
+        assert_eq!(verdict["status"], "passed", "{verdict}");
+    }
 }
 
 #[test]
