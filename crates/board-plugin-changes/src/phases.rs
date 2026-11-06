@@ -18,13 +18,17 @@ use crate::change::{
 };
 use crate::controls::{listed_by, obligations};
 use crate::diff::{edited, outside};
-use crate::flow::{Actor, FlowSummary, asked_for, blob_at, copy_line, of_change};
+use crate::flow::Kind as CheckKind;
+use crate::flow::{
+    Actor, FlowSummary, asked_for, blob_at, copy_line, of_change, refuse_invalid,
+    refuse_without_repository,
+};
 use crate::gates::kinds::named_controls;
-use crate::gates::remedy::{fill, values};
+use crate::gates::remedy::{fill, unfilled, values};
 use crate::gates::{Check, Observed, Read, gate, reads};
 use crate::records::{
-    BUILD, ChangeRecord, DONE, DROPPED, Kind, PAUSED, PULL_TYPES, Route, SUITE_TYPE, TASK_TYPE,
-    TICKET_TYPES, is_final,
+    BOARD_ITSELF, BUILD, ChangeRecord, DONE, DROPPED, Kind, PAUSED, PULL_TYPES, Route, SUITE_TYPE,
+    TASK_TYPE, TICKET_TYPES, is_final,
 };
 use crate::repo::check_suite;
 use crate::stop::{Shown, holds, reached, stop_reached};
@@ -274,6 +278,19 @@ pub(crate) fn observe(
         found.ticket_types = (referenced(host, &tickets)?.records.into_iter())
             .map(|(_, (kind, _))| kind)
             .collect();
+    }
+    if wanted.contains(&Read::Exists) {
+        let filled = values(&found);
+        let paths: Vec<String> = (found.checks().iter())
+            .filter(|each| each.kind.known() == Some(&CheckKind::Exists))
+            .filter_map(|each| each.path.as_deref())
+            .filter(|template| unfilled(template, &filled).is_empty())
+            .map(|template| fill(template, &filled))
+            .collect();
+        for path in paths {
+            let held = board::resolve(host, &path)?.is_some();
+            found.existing.insert(path, held);
+        }
     }
     Ok(found)
 }
@@ -739,6 +756,10 @@ pub(crate) fn reflow(host: &dyn Host, input: &Value) -> Result<Value, PluginErro
         ));
     }
     let chosen = asked_for(host, &flow)?;
+    refuse_invalid(&chosen, "reflow")?;
+    if change.mount == BOARD_ITSELF {
+        refuse_without_repository(&chosen, &change.mount)?;
+    }
     let standing = if change.phase == PAUSED {
         BUILD
     } else {

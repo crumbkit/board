@@ -2,8 +2,8 @@
 //! instruction `next` gives in each, and the checks that gate leaving it.
 //! The gates in `gates.rs` interpret a flow's checks by their kind.
 //!
-//! The plugin ships two flows, `development` and `small`, compiled in from
-//! `flows/`. A board's own flows, at `/flows/<name>`, win over a shipped
+//! The plugin ships three flows, `development`, `small` and
+//! `flow-authoring`, compiled in from `flows/`. A board's own flows, at `/flows/<name>`, win over a shipped
 //! flow of the same name; `read.rs` chooses a change's flow and reads the
 //! copy it keeps.
 
@@ -16,11 +16,16 @@ use serde::{Deserialize, Serialize};
 use crate::records::{Route, Subject};
 
 pub(crate) use read::{FlowSummary, asked_for, blob_at, chosen, copy_line, of_change};
+pub(crate) use valid::{problems, refuse_invalid, refuse_without_repository};
 
 /// The flows the plugin ships, by name.
-const SHIPPED: [(&str, &str); 2] = [
+const SHIPPED: [(&str, &str); 3] = [
     ("development", include_str!("../flows/development.json")),
     ("small", include_str!("../flows/small.json")),
+    (
+        "flow-authoring",
+        include_str!("../flows/flow-authoring.json"),
+    ),
 ];
 /// The flow a change follows when nothing chooses another.
 pub(crate) const DEFAULT: &str = "development";
@@ -449,6 +454,7 @@ pub(crate) enum Part {
 }
 
 mod read;
+mod valid;
 
 #[cfg(test)]
 mod tests;

@@ -27,6 +27,26 @@ static BEFORE_PUNCTUATION: LazyLock<Regex> = LazyLock::new(|| pattern(r" ([.,;:)
 
 /// Each placeholder and its value, none when it has none.
 pub(crate) type Values = [(&'static str, Option<String>); 9];
+/// The placeholders Board fills, in the order `values` gives them.
+pub(crate) const PLACEHOLDERS: [&str; 9] = [
+    "change", "name", "mount", "repo", "plan", "head", "suite", "draft", "board",
+];
+
+/// The words `text` names in braces as placeholders, known or not.
+pub(crate) fn placeholders(text: &str) -> impl Iterator<Item = String> + '_ {
+    (PLACEHOLDER.captures_iter(text)).map(|captures| captures[1].to_owned())
+}
+
+/// The known placeholders `text` names that have no value in `values`.
+pub(crate) fn unfilled(text: &str, values: &Values) -> Vec<String> {
+    (placeholders(text))
+        .filter(|word| {
+            values
+                .iter()
+                .any(|(name, value)| name == word && value.is_none())
+        })
+        .collect()
+}
 
 /// The placeholders' values for the change `observed` reads.
 ///
@@ -36,19 +56,20 @@ pub(crate) fn values(observed: &Observed) -> Values {
     let change = &observed.change;
     let draft = (observed.records.of_type(flow::Flow::TYPE))
         .find_map(|(_, body)| Some(body.get("name")?.as_str()?.to_owned()));
+    let [change_, name, mount, repo, plan, head, suite, draft_, board] = PLACEHOLDERS;
     [
-        ("change", Some(observed.path.clone())),
-        ("name", Some(name_in(&observed.path).to_owned())),
-        ("mount", Some(change.mount.clone())),
+        (change_, Some(observed.path.clone())),
+        (name, Some(name_in(&observed.path).to_owned())),
+        (mount, Some(change.mount.clone())),
         (
-            "repo",
+            repo,
             Some(name_in(&change.mount).to_owned()).filter(|repo| !repo.is_empty()),
         ),
-        ("plan", change.plan.clone()),
-        ("head", change.head.clone()),
-        ("suite", observed.suite.clone()),
-        ("draft", draft),
-        ("board", observed.board.clone()),
+        (plan, change.plan.clone()),
+        (head, change.head.clone()),
+        (suite, observed.suite.clone()),
+        (draft_, draft),
+        (board, observed.board.clone()),
     ]
 }
 
@@ -164,11 +185,16 @@ fn default(each: &flow::Check) -> String {
              them with `board call changes.reflow --path {change} --flow <flow>`."
                 .to_owned()
         }
-        Kind::FlowValid | Kind::Exists => {
-            "This Board does not evaluate the check yet; ask the owner whether to take it out of \
-             the flow."
+        Kind::FlowValid => {
+            "Fix each problem the detail names in the drafted flow, write it again with `board \
+             put`, and keep it attached with `board call changes.attach --path {change} --ref \
+             <draft>`."
                 .to_owned()
         }
+        Kind::Exists => format!(
+            "{ask}write the record at {} with `board put`.",
+            each.path.as_deref().unwrap_or("the path the check names")
+        ),
     };
     capitalised(&said)
 }

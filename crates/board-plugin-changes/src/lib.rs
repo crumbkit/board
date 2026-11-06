@@ -305,7 +305,9 @@ const CAPABILITIES: [Capability; 18] = [
             the stop, the stop's rule, the surfaced records and the rules on its paths. inline \
             returns the brief and starts nothing; otherwise the agent BOARD_AGENT names, else \
             agent in the known boards file, runs on it in a worktree for the change, and run \
-            records the run and why it stopped.",
+            records the run and why it stopped. sandbox starts the change in a throwaway copy \
+            of the board and its repository, runs the agent there with its own home, and copies \
+            the run and stop records back under the change it is a dry run for.",
         run: run::run,
         input: input::<run::Input>,
         output: output::<run::Output>,

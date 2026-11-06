@@ -95,13 +95,18 @@ records the run. An agent running unattended ends with
 
 ## Flows
 
-The plugin ships `development` and `small`; a board's own flow at
-`/flows/<name>.json` wins over a shipped one. The links
+The plugin ships `development`, `small` and `flow-authoring`; a board's
+own flow at `/flows/<name>` wins over a shipped one. The links
 `/flows/repos/<name>` and `/flows/default` choose a repository's flow and
 every repository's. Each change keeps a copy, so editing a flow moves no
 change in flight. Run
 `board -C <board> call changes.reflow --path /changes/<name> --flow <name>`
-to move a change to another flow, or to take up an edit. Run
+to move a change to another flow, or to take up an edit. To write a flow,
+start a change with `--flow flow-authoring --mount /` (or the mount the
+flow is for) and follow it: it drafts the flow, checks it with
+`flow-valid`, dry-runs it with `changes.run --sandbox true`, which runs an
+agent in a throwaway copy of the board, and adopts it at `/flows/<name>`.
+Run
 `changes.migrate --apply true` once to move every `changes/change/v1` onto
 the development flow.
 
@@ -110,7 +115,14 @@ the development flow.
 - `changes::gate::unmet`: `missing` names the failed checks and `remedies`
   what to do for each. Run `next`.
 - `changes::flow::not_found`: name a flow the board holds at
-  `/flows/<name>.json` or a shipped one, or fix the link that chose it.
+  `/flows/<name>` or a shipped one, or fix the link that chose it.
+- `changes::flow::invalid`: fix each of the flow's `problems`, or name
+  another flow.
+- `changes::mount::needs_repository`: name the repository's mount, or a
+  flow without `paths`, `run` or `controlled-paths` checks.
+- `changes::sandbox::no_change`, `changes::sandbox::inline`,
+  `changes::sandbox::resume`, `changes::sandbox::setup`: a sandboxed run
+  starts a new change, with `--for` naming the change that asked for it.
 - `changes::flow::unreadable`: fix the flow file named, or restore a
   change's copy with `reflow`.
 - `changes::reflow::no_phase`: choose a flow that has the change's phase.

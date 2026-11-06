@@ -7,10 +7,14 @@
 //! the known boards file, which board-cli passes on as that variable. It
 //! runs in `<clone>.worktrees/<name>` on branch `<name>`, made from the
 //! branch the mount follows and reused on resume, with the brief on stdin
-//! and `BOARD_CHANGE` set to the change's path. When it exits without
-//! writing a `changes/stop/v1`, `run` writes one from the change's state.
+//! and `BOARD_CHANGE` set to the change's path. A change on `/`, the board
+//! itself, has no repository, so its agent runs in the board's root. When
+//! the agent exits without writing a `changes/stop/v1`, `run` writes one
+//! from the change's state, and the run record says why it stopped. With
+//! `sandbox`, `sandbox.rs` starts the change and runs the agent in a
+//! throwaway copy of the board and the repository.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::time::{Duration, SystemTime};
 
 use board_ops::agent::{AGENT_VARIABLE, Agent, program_name};
@@ -23,8 +27,7 @@ use serde_json::{Value, json};
 
 use crate::board::{self, rows, text};
 use crate::brief::{Rule, RulesCommand, brief_of};
-use crate::change::{line, name_in, read, touch};
-use crate::diff::git;
+use crate::change::{line, read, touch};
 use crate::flow::{Agent as Doer, Flow, Stop, of_change};
 use crate::gates::remedy::{fill, values};
 use crate::phases::{final_phase, refuse_v1, step_of};
@@ -39,19 +42,17 @@ pub(crate) const TIMEOUT: u64 = 3600;
 const AGENT_DEADLINE: Duration = Duration::from_secs(TIMEOUT - 60);
 /// What `run` reads besides what Board passes every plugin: the agent, what
 /// the agent may read, and the WIP limit's window for a change it starts.
-pub(crate) const ENV: [&str; 4] = [
+pub(crate) const ENV: [&str; 5] = [
     AGENT_VARIABLE,
     "ANTHROPIC_API_KEY",
     "CLAUDE_CODE_OAUTH_TOKEN",
     crate::wip::ACTIVE_DAYS_VARIABLE,
+    sandbox::TEMPORARY,
 ];
 /// The variable that names the change to the agent.
 const CHANGE_VARIABLE: &str = "BOARD_CHANGE";
 /// The most surfaced records the brief lists; it counts the rest.
 const SURFACED_SHOWN: usize = 20;
-/// How long each git command that makes the worktree may take.
-const GIT_DEADLINE: Duration = Duration::from_secs(30);
-
 /// Start a change, or resume one, and run it to a stop.
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -87,9 +88,10 @@ pub(crate) struct Input {
     )]
     task: Option<String>,
     #[schemars(
-        regex(pattern = "^[a-z0-9]+(-[a-z0-9]+)*$"),
-        description = "The flow a new change follows, such as small; chosen as start chooses it \
-                       when left out."
+        regex(pattern = "^(/|[a-z0-9]+(-[a-z0-9]+)*$)"),
+        description = "The flow a new change follows, such as small, or the path of a flow \
+                       record, such as a draft at /changes/<name>/draft; chosen as start chooses \
+                       it when left out."
     )]
     flow: Option<String>,
     #[schemars(
@@ -122,6 +124,22 @@ pub(crate) struct Input {
                        run record carry; none when left out."
     )]
     budget: Option<f64>,
+    #[serde(default)]
+    #[schemars(
+        description = "true to start the new change in a throwaway copy of the board and its \
+                       repository and run the agent there, copying its run and stop records back \
+                       under the change that asked; false when left out."
+    )]
+    sandbox: bool,
+    #[serde(rename = "for")]
+    #[schemars(
+        rename = "for",
+        regex(pattern = "^/"),
+        extend("format" = "board-path"),
+        description = "The change a sandboxed run is a dry run for, which receives its run and \
+                       stop records; the change whose directory holds --flow when left out."
+    )]
+    asker: Option<String>,
 }
 
 /// One phase the run works through: its name, who does its work, and the
@@ -166,8 +184,11 @@ pub(crate) struct RunBrief {
 
 /// The change, its stop and whether it is reached; with `inline`, the
 /// brief; otherwise the run record, the stop record, why it stopped, the
-/// agent's exit status and the worktree it ran in. A stop already reached
-/// starts no agent, so those are left out.
+/// agent's exit status and the worktree it ran in, the board's root for a
+/// change on `/`. A stop already reached starts no agent, so those are
+/// left out. For a sandboxed run, `path` names the change in the
+/// throwaway board, `sandbox` is the temporary directory that holds it,
+/// and `run` and `stopped` are the copies under the change that asked.
 #[derive(Debug, Serialize, JsonSchema)]
 #[schemars(rename = "RunOutput")]
 pub(crate) struct Output {
@@ -185,29 +206,25 @@ pub(crate) struct Output {
     exit: Option<i32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     worktree: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    sandbox: Option<String>,
 }
 
 pub(crate) fn run(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
     let given: Input = PluginError::read_input(PLUGIN, "run", input)?;
+    if given.sandbox {
+        return sandbox::run(host, &given);
+    }
     let argv = if given.inline {
         None
     } else {
         Some(agent_argv(host)?)
     };
     let asked = asked_stop(&given)?;
-    let path = change_of(host, &given)?;
+    let path = change_of(host, &given, None)?;
     let (flow, stop) = set_stop(host, &path, asked)?;
     let (brief, shown, mount) = brief_for(host, &path, &flow, &stop, given.budget)?;
-    let mut output = Output {
-        path: path.clone(),
-        stop: shown,
-        brief: None,
-        run: None,
-        stopped: None,
-        reason: None,
-        exit: None,
-        worktree: None,
-    };
+    let mut output = Output::of(&path, shown);
     let Some(argv) = argv else {
         output.brief = Some(brief);
         return Ok(to_value(output));
@@ -215,18 +232,56 @@ pub(crate) fn run(host: &dyn Host, input: &Value) -> Result<Value, PluginError> 
     if output.stop.reached {
         return Ok(to_value(output));
     }
-    let directory = worktree(host, &path, &mount)?;
-    let ran = spawn(host, &path, &argv, &directory, &brief)?;
-    let written = recorded(host, &path, &flow.name, &stop, &argv, &ran, given.budget)?;
-    if let Some(now) = step_of(host, &path)?.0.stop {
-        output.stop = now;
-    }
-    output.run = Some(written.run);
-    output.reason = Some(written.reason);
-    output.stopped = Some(written.stopped);
-    output.exit = ran.exit;
-    output.worktree = Some(directory.display().to_string());
+    let directory = directory_for(host, &path, &mount)?;
+    let ran = spawn(host, &path, &argv, &directory, &brief, &[])?;
+    let told = Told {
+        flow: &flow.name,
+        stop: &stop,
+        argv: &argv,
+        budget: given.budget,
+        sandbox: false,
+    };
+    let written = recorded(host, &path, &told, &ran)?;
+    output.finish(host, &path, &written, &ran, &directory)?;
     Ok(to_value(output))
+}
+
+impl Output {
+    /// The output for the change at `path`, whose stop `shown` is.
+    fn of(path: &str, shown: Shown) -> Self {
+        Self {
+            path: path.to_owned(),
+            stop: shown,
+            brief: None,
+            run: None,
+            stopped: None,
+            reason: None,
+            exit: None,
+            worktree: None,
+            sandbox: None,
+        }
+    }
+
+    /// Fills in what the agent's run left: the change's stop now, as
+    /// `host` reads it, the records `written`, and where the agent ran.
+    fn finish(
+        &mut self,
+        host: &dyn Host,
+        path: &str,
+        written: &Recorded,
+        ran: &Ran,
+        directory: &Path,
+    ) -> Result<(), PluginError> {
+        if let Some(now) = step_of(host, path)?.0.stop {
+            self.stop = now;
+        }
+        self.run = Some(written.run.clone());
+        self.reason = Some(written.reason);
+        self.stopped = Some(written.stopped.clone());
+        self.exit = ran.exit;
+        self.worktree = Some(directory.display().to_string());
+        Ok(())
+    }
 }
 
 /// Records `asked`, else the change's stop, else its flow's, as the stop
@@ -368,8 +423,13 @@ fn asked_stop(given: &Input) -> Result<Option<Stop>, PluginError> {
 }
 
 /// The change to run: the one `path` names, or a new one `start` writes
-/// from `mount` and `title`, else `changes::run::which_change`.
-fn change_of(host: &dyn Host, given: &Input) -> Result<String, PluginError> {
+/// from `mount` and `title`, its task added to `task_repo` when it names
+/// none, else `changes::run::which_change`.
+fn change_of(
+    host: &dyn Host,
+    given: &Input,
+    task_repo: Option<&str>,
+) -> Result<String, PluginError> {
     let starting = given.mount.is_some() || given.title.is_some();
     match (&given.path, &given.mount, &given.title) {
         (Some(path), _, _) if !starting => Ok(path.clone()),
@@ -386,21 +446,29 @@ fn change_of(host: &dyn Host, given: &Input) -> Result<String, PluginError> {
                     input[key] = json!(value);
                 }
             }
+            if let (None, Some(repo)) = (&given.task, task_repo) {
+                input["task_repo"] = json!(repo);
+            }
             let started = crate::start::start(host, &input)?;
             Ok(text(started.get("path")).unwrap_or_default().to_owned())
         }
-        _ => Err(refusal(
-            "changes::run::which_change",
-            "the run names no one change: give --path to resume a change, or --mount and --title \
-             to start one, and not both"
-                .to_owned(),
-            [
-                ("path", json!(given.path)),
-                ("mount", json!(given.mount)),
-                ("title", json!(given.title)),
-            ],
-        )),
+        _ => Err(which_change(given)),
     }
+}
+
+/// `changes::run::which_change`: the run names no one change.
+fn which_change(given: &Input) -> PluginError {
+    refusal(
+        "changes::run::which_change",
+        "the run names no one change: give --path to resume a change, or --mount and --title to \
+         start one, and not both"
+            .to_owned(),
+        [
+            ("path", json!(given.path)),
+            ("mount", json!(given.mount)),
+            ("title", json!(given.title)),
+        ],
+    )
 }
 
 /// How an unattended agent stops, for the brief.
@@ -443,51 +511,6 @@ fn agent_argv(host: &dyn Host) -> Result<Vec<String>, PluginError> {
     Ok(Agent::named(PLUGIN, AGENT_VARIABLE, value)?.argv)
 }
 
-/// The worktree the change's agent works in: `<clone>.worktrees/<name>` of
-/// the clone the mount reads, on branch `<name>`, made from the branch the
-/// mount follows when it is not there yet; the mount's own directory in
-/// it. Else `changes::run::worktree`.
-fn worktree(host: &dyn Host, path: &str, mount: &str) -> Result<PathBuf, PluginError> {
-    let name = name_in(path);
-    let failed = |why: String| {
-        refusal(
-            "changes::run::worktree",
-            format!(
-                "the worktree for {path} cannot be made: {why}; fix the clone of {mount}, or run \
-                 with --inline true"
-            ),
-            [("path", json!(path)), ("mount", json!(mount))],
-        )
-    };
-    let Some(answer) = board::resolve(host, mount)? else {
-        return Err(failed(format!("nothing is at {mount}")));
-    };
-    let location = &answer.location;
-    let clone = &location.board.repository;
-    let follow = (location.pointers.last())
-        .and_then(|pointer| pointer.follow.as_deref())
-        .unwrap_or("HEAD");
-    let directory = PathBuf::from(format!("{}.worktrees/{name}", clone.display()));
-    if !directory.is_dir() {
-        let shown = directory.display().to_string();
-        let branch = format!("refs/heads/{name}");
-        let held = git(
-            host,
-            clone,
-            &["rev-parse", "--verify", "--quiet", &branch],
-            GIT_DEADLINE,
-        )
-        .is_ok();
-        let arguments: Vec<&str> = if held {
-            vec!["worktree", "add", &shown, name]
-        } else {
-            vec!["worktree", "add", "-b", name, &shown, follow]
-        };
-        git(host, clone, &arguments, GIT_DEADLINE).map_err(|failure| failed(failure.why))?;
-    }
-    Ok(directory.join(&location.path))
-}
-
 /// What the agent did: when it started and ended, its exit status, what it
 /// printed last, and why it was stopped, if it was.
 struct Ran {
@@ -498,22 +521,24 @@ struct Ran {
     stopped: Option<String>,
 }
 
-/// Starts `argv` in `directory` with the brief on stdin and `BOARD_CHANGE`
-/// set, and waits for it; `changes::agent::not_started` when it cannot
-/// start.
+/// Starts `argv` in `directory` with the brief on stdin, `BOARD_CHANGE`
+/// and the variables `extra` set, and waits for it;
+/// `changes::agent::not_started` when it cannot start.
 fn spawn(
     host: &dyn Host,
     path: &str,
     argv: &[String],
     directory: &Path,
     brief: &RunBrief,
+    extra: &[(&str, &str)],
 ) -> Result<Ran, PluginError> {
     let text = format!(
         "{}\n\n{}\n",
         brief.brief_line,
         serde_json::to_string_pretty(brief).unwrap_or_default()
     );
-    let added = [(CHANGE_VARIABLE, path)];
+    let mut added = vec![(CHANGE_VARIABLE, path)];
+    added.extend_from_slice(extra);
     let program = &argv[0];
     let run = Run {
         program,
@@ -609,17 +634,25 @@ struct Recorded {
     reason: Reason,
 }
 
+/// What the run was told: its flow's name, its stop, the agent's argv, its
+/// budget and whether it ran in a sandbox.
+struct Told<'a> {
+    flow: &'a str,
+    stop: &'a Stop,
+    argv: &'a [String],
+    budget: Option<f64>,
+    sandbox: bool,
+}
+
 /// Writes the run record of `ran`, and a stop record when the agent wrote
 /// none since it started.
 fn recorded(
     host: &dyn Host,
     path: &str,
-    flow: &str,
-    stop: &Stop,
-    argv: &[String],
+    told: &Told<'_>,
     ran: &Ran,
-    budget: Option<f64>,
 ) -> Result<Recorded, PluginError> {
+    let budget = told.budget;
     let since = stamp(ran.started);
     let (cost_usd, duration_ms) = reported(&ran.stdout);
     let (stopped, reason) = if let Some(found) = written_since(host, path, &since)? {
@@ -636,17 +669,19 @@ fn recorded(
     let run = format!("{path}/runs/{since}");
     let record = RunRecord {
         tag: Tag::default(),
-        flow: flow.to_owned(),
-        stop: stop.clone(),
-        program: program_name(&argv[0]),
+        flow: told.flow.to_owned(),
+        stop: told.stop.clone(),
+        program: program_name(&told.argv[0]),
         started: time_of(ran.started),
         ended: time_of(ran.ended),
         exit: ran.exit,
         cost_usd,
         duration_ms,
         budget_usd: budget,
-        sandbox: false,
+        sandbox: told.sandbox,
+        change: None,
         phase: change.phase,
+        reason,
         stopped: stopped.clone(),
     };
     board::put(
@@ -700,6 +735,11 @@ fn unrecorded(
         ),
     })
 }
+
+mod directory;
+mod sandbox;
+
+use directory::directory_for;
 
 #[cfg(test)]
 mod tests;

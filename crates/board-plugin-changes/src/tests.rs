@@ -82,7 +82,8 @@ fn the_manifest_parses_as_a_built_in_one_with_each_capabilitys_variables_and_tim
                     "BOARD_AGENT",
                     "ANTHROPIC_API_KEY",
                     "CLAUDE_CODE_OAUTH_TOKEN",
-                    "BOARD_CHANGES_ACTIVE_DAYS"
+                    "BOARD_CHANGES_ACTIVE_DAYS",
+                    "TMPDIR"
                 ],
                 Some(3600)
             ),
@@ -162,6 +163,8 @@ fn every_input_property_carries_a_sentence_that_says_what_it_means() {
         "run.until",
         "run.inline",
         "run.budget",
+        "run.sandbox",
+        "run.for",
         "stop.path",
         "stop.reason",
         "stop.question",

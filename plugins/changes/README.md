@@ -9,7 +9,7 @@ their own instructions, which `next` returns.
 
 `changes/change/v2` at `/changes/<name>.json` holds the change, the flow it
 follows and its phase. The records it owns sit in `/changes/<name>/`: its
-copy of its flow at `flow.json`, its plans, a prototype's record and its
+copy of its flow at `flow`, its plans, a prototype's record and its
 understanding checks. Git history holds earlier phases.
 
 ```json
@@ -30,7 +30,8 @@ understanding checks. Git history holds earlier phases.
 }
 ```
 
-- `title`, `mount` and `phase` are required.
+- `title` and `phase` are required. `mount` is left out for a change on
+  the board itself, which `start --mount /` starts.
 - `flow` references the change's copy of the `changes/flow/v1` it follows,
   which `start` writes. A prototype follows no flow and has none.
 - `phase` is a phase of the flow, `done`, or `dropped` to end a change
@@ -124,8 +125,9 @@ agent that `run` started: the `flow`, the `stop` it was given, the
 `program` (the file name of argv[0] when it is a slug, never the
 arguments), `started` and `ended` in UTC, the `exit` status, the
 `cost_usd` and `duration_ms` the agent reported, the `budget_usd` its brief
-gave, `sandbox` (always false for now), the `phase` the change ended in,
-and `stopped`, the stop record that says why it stopped.
+gave, `sandbox`, whether it ran in a throwaway copy, with `change`, the
+name of the change it started there, the `phase` the change ended in, the
+`reason` it stopped, and `stopped`, the stop record that says why.
 
 `changes/stop/v1` at `/changes/<name>/stops/<stamp>` records why a run
 stopped: its `reason` (`reached`, `waiting`, `refused`, `budget` or
@@ -178,7 +180,7 @@ run keeps the github records already written.
 
 ## Capabilities
 
-- `start --mount /repos/<name> --title '<title>' [--task <path> | --task-repo <repo>] [--name <name>] [--handle @<you>] [--flow <name>] [--suite <path>]`
+- `start --mount (/repos/<name> | /) --title '<title>' [--task <path> | --task-repo <repo>] [--name <name>] [--handle @<you>] [--flow <name or path>] [--suite <path>]`
   creates the change in the first phase of its flow, its copy of the flow,
   and a plan with empty Problem, Outcome, Out of scope, UX and Data
   sections. "Flows" below says how the flow is chosen; `flow` in the output
@@ -207,8 +209,17 @@ run keeps the github records already written.
   neither the board holds nor the plugin ships (`changes::flow::not_found`).
   A flow whose first phase is `build`, such as `small`, starts the change
   there, and `start` checks the WIP limit as `advance` into `build` does;
-  `--over_limit '<why>'` goes past it.
-- `run (--path /changes/<name> | --mount /repos/<name> --title '<title>' [--task <path>] [--name <name>] [--flow <name>] [--over_limit '<why>']) [--through <phase> | --until <phase>] [--inline true] [--budget <usd>]`
+  `--over_limit '<why>'` goes past it. A flow that cannot run, as "Flows"
+  below says, is `changes::flow::invalid`, with each of its `problems`.
+  `--mount /` starts a change on the board itself, which edits only the
+  board's own records, such as a flow-authoring change. It has no
+  repository, so `start` reads no CODEOWNERS, contributing docs, suite or
+  obligations on a mount, its route is `unowned`, and `note` says so. Its
+  agent runs in the board's root, with no worktree. A flow with a `paths`,
+  `run` or `controlled-paths` check reads a repository, so `--mount /`
+  refuses it with `changes::mount::needs_repository`, naming those checks;
+  `reflow` refuses moving such a change to one too.
+- `run (--path /changes/<name> | --mount (/repos/<name> | /) --title '<title>' [--task <path>] [--name <name>] [--flow <name or path>] [--over_limit '<why>']) [--through <phase> | --until <phase>] [--inline true] [--budget <usd>] [--sandbox true [--for /changes/<name>]]`
   starts a change as `start` does, or resumes the one at `--path`, sets its
   `stop`, and builds its run brief. "Runs" below says what it does.
 - `stop --path /changes/<name> --reason <reason> --summary '<one line>' [--question <path>]`
@@ -482,6 +493,36 @@ reviewer. Failing those, it is `budget` when the reported cost is over
 `--budget` reaches the agent only through the brief; `run` passes no flag
 of any agent program.
 
+`--sandbox true` dry-runs a flow, as the flow-authoring flow's dry-run
+phase does. It needs a new change, so `--path` is
+`changes::sandbox::resume` and `--inline true` is
+`changes::sandbox::inline`. `run` makes a fresh directory
+`board-sandbox.<random>` under `TMPDIR` and copies into it, as new git
+repositories with no remote, the board's files that git tracks or would
+track, uncommitted edits included, and for a change on a repository every
+ref of the clone its mount reads, pointing the copy's mount record at it.
+Ignored files and nested repositories are left out, and a mount that is
+not a record of the board's own tree, or a copy git cannot make, is
+`changes::sandbox::setup`. `run` starts the change in the copy, adding its
+task to the copy's own `/tasks/` when `--task` is left out, and runs the
+agent there as above, with `HOME`, `XDG_CONFIG_HOME`, `XDG_CACHE_HOME` and
+`XDG_DATA_HOME` inside the directory and a known boards file that lists
+only the copy. So the agent's `board` calls, its commits and any user-level
+settings it would read stay off the real board, repository and home. This
+is not an operating-system sandbox: the agent still runs as the person and
+can write any path it names, the copy's other mounts read the real clones
+at their pins, and the agent must authenticate through the variables `run`
+passes on, since its home holds no credentials.
+
+The run record and its stop record are then copied, at the same stamps,
+under the change the run is for: `--for`, else the change whose directory
+holds the flow `--flow` names by path, else `changes::sandbox::no_change`.
+The copy of the run says `sandbox: true` and names the throwaway change in
+`change`; the copied stop drops its `question`, which only the copy holds.
+`run` attaches the run to that change, and returns the copy's paths, the
+throwaway change's `path` and the `sandbox` directory, which it leaves for
+inspection.
+
 ### Flows
 
 A `changes/flow/v1` record describes the process a change follows: its
@@ -496,11 +537,24 @@ pattern matched without case), a `remedy`, `waivable`, and the parameters
 of its kind. The committed schema is
 `crates/board-plugin-changes/types/changes/flow/v1.schema.json`.
 
-The plugin ships two flows, compiled in from
+The plugin ships three flows, compiled in from
 `crates/board-plugin-changes/flows/`. `development` has the phases plan,
 build, review and land, and stops through plan. `small` has build, review
-and land, and stops through review. A board's own flow at
-`/flows/<name>.json` wins over a shipped flow of the same name.
+and land, and stops through review. `flow-authoring` writes a flow, on
+`--mount /` or the mount it is for: interview the owner, draft the flow at
+`<change>/draft`, dry-run it with `run --sandbox`, and adopt it at
+`/flows/<name>` once the owner signs a decision naming the draft and the
+eval; it stops until adopt. A board's own flow at `/flows/<name>` wins
+over a shipped flow of the same name. `--flow` also takes the path of a
+flow record, such as a draft.
+
+A flow can run when every check's kind is one Board knows and has the
+parameter its kind needs (`sections`, `field`, `type` for `records`,
+`subject`, `controls`, `path` for `exists`), every check id is unique in
+the flow, the stop names one of its phases or `done`, and its
+instructions, remedies and templated paths name only the placeholders
+below. `start` and `reflow` refuse any other with
+`changes::flow::invalid`.
 
 `start` chooses a change's flow: the one `--flow` names; else the flow the
 link `/flows/repos/<mount name>` points to; else the one `/flows/default`
@@ -508,7 +562,7 @@ points to; else `development`. A link is a `board/mount/v1` with a `path`,
 and Board follows it, so it must point at a flow the board holds. A flow
 that is not there is `changes::flow::not_found`, and a file there that is
 not a flow Board reads is `changes::flow::unreadable`. `start` writes a
-copy of the flow at `<change>/flow.json`, and every gate reads that copy,
+copy of the flow at `<change>/flow`, and every gate reads that copy,
 so editing a board's flow never moves a change in flight; `reflow` takes
 up the edit. A change whose copy is missing or does not read is refused
 with `changes::flow::unreadable`, and `reflow` restores it.
@@ -530,10 +584,12 @@ evaluated by kind:
 | `considered` | each path in the change's `surfaced` is in the plan's `uses` or named under a `### Considered` heading |
 | `obligations` | no obligation control applies to the plan's paths, except those named under the `escape_section` heading |
 | `controlled-paths` | the diff edits no file that the controls in `controls` list in their `paths` or `applies_to` |
+| `flow-valid` | at least one `changes/flow/v1` is attached, and each can run and gives a `remedy` to every check whose actor is the owner or a reviewer; the detail lists each problem with its phase and check id |
+| `exists` | something is at `path`, its placeholders filled; a placeholder with no value yet leaves it missing |
 
 A `controlled-paths` check whose controls the board does not hold passes,
-and its detail says that no such control exists. `flow-valid` and
-`exists`, and a kind Board does not know, read but are always missing.
+and its detail says that no such control exists. A kind Board does not
+know reads but is always missing.
 
 A check's `actor` (`agent`, the default, `owner` or `reviewer`) says who
 can make it pass. A check with `blocks: false` is reported but never
@@ -554,8 +610,9 @@ braces stays.
 
 Each gate reads only what its checks need: the change, the records it
 references, its plan file, its suite, the diff, the controls plugin's
-obligations on the plan's paths, the controls a check names, and its
-tickets' types. A referenced record Board marks degraded satisfies nothing.
+obligations on the plan's paths, the controls a check names, its
+tickets' types, and whether something is at each path an `exists` check
+names. A referenced record Board marks degraded satisfies nothing.
 
 The development flow's gates:
 

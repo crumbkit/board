@@ -76,9 +76,16 @@ pub(crate) fn named(host: &dyn Host, name: &str) -> Result<Option<Flow>, PluginE
     Ok(at_path(host, &format!("{FLOWS}{name}"))?.or_else(|| shipped(name)))
 }
 
-/// The flow `--flow` names, or `changes::flow::not_found`.
+/// The flow `--flow` names: by name, or, for a name that starts with `/`,
+/// the flow record at that path, such as a draft; else
+/// `changes::flow::not_found`.
 pub(crate) fn asked_for(host: &dyn Host, name: &str) -> Result<Flow, PluginError> {
-    named(host, name)?.ok_or_else(|| not_found(name, "--flow"))
+    let found = if name.starts_with('/') {
+        at_path(host, name)?
+    } else {
+        named(host, name)?
+    };
+    found.ok_or_else(|| not_found(name, "--flow"))
 }
 
 /// The blob of the file at the logical `path`, or `none` when nothing is
@@ -145,8 +152,9 @@ fn not_found(named: &str, by: &str) -> PluginError {
     refusal(
         "changes::flow::not_found",
         format!(
-            "{by} names the flow {named}, which neither the board holds at {FLOWS}<name> nor the \
-             plugin ships; name development or small, or write the flow at {FLOWS}<name>.json"
+            "{by} names the flow {named}, which neither the board holds at {FLOWS}<name> or at \
+             that path nor the plugin ships; name development, small or flow-authoring, or write \
+             the flow at {FLOWS}<name>"
         ),
         [("flow", json!(named))],
     )

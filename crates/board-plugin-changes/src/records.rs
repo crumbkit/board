@@ -17,6 +17,17 @@ pub(crate) const TASK_TYPE: &str = "tasks/task/v2";
 /// The record type of a repository's mount.
 const MOUNT_TYPE: &str = "board/mount/v1";
 
+/// The mount a change on the board itself names: the board's root.
+pub(crate) const BOARD_ITSELF: &str = "/";
+
+fn board_itself() -> String {
+    BOARD_ITSELF.to_owned()
+}
+
+fn is_board_itself(mount: &str) -> bool {
+    mount == BOARD_ITSELF
+}
+
 /// A repository's mount.
 #[derive(Debug)]
 pub(crate) enum Mount {}
@@ -150,8 +161,11 @@ pub(crate) struct ChangeRecord {
     /// What the change does, in a few words.
     #[schemars(with = "Prose", extend("minLength" = 1))]
     pub(crate) title: String,
-    /// The mount of the repository the change edits, such as `/repos/board`.
-    #[schemars(with = "Ref<Mount>")]
+    /// The mount of the repository the change edits, such as `/repos/board`;
+    /// left out for a change that edits only the board's own records, such
+    /// as one on the flow-authoring flow, which `start` takes as `--mount /`.
+    #[serde(default = "board_itself", skip_serializing_if = "is_board_itself")]
+    #[schemars(with = "Option<Ref<Mount>>")]
     pub(crate) mount: String,
     /// The change's copy of the flow it follows, at `/changes/<name>/flow`,
     /// taken when it started; a prototype follows no flow.
@@ -671,12 +685,20 @@ pub(crate) struct RunRecord {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(range(min = 0))]
     pub(crate) budget_usd: Option<f64>,
-    /// Whether the agent ran in a sandbox.
+    /// Whether the agent ran in a sandbox: a throwaway copy of the board
+    /// and the repository, whose run and stop records were copied here.
     pub(crate) sandbox: bool,
+    /// For a sandboxed run, the name of the change it started in the
+    /// throwaway board, where it lived at `/changes/<change>`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "Option<Slug>")]
+    pub(crate) change: Option<String>,
     /// The phase the change stood in when the run ended.
     #[schemars(with = "Slug")]
     pub(crate) phase: String,
-    /// Why the run stopped.
+    /// Why the run stopped, as its stop record says.
+    pub(crate) reason: Reason,
+    /// The stop record that says why the run stopped.
     #[schemars(with = "Ref<StopRecord>")]
     pub(crate) stopped: String,
 }

@@ -10,6 +10,7 @@ use std::path::PathBuf;
 
 use super::*;
 
+mod authoring;
 mod brief;
 mod flows;
 mod migrate;

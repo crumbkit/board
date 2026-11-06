@@ -92,3 +92,113 @@ fn a_check_of_an_unknown_kind_reads_and_the_schema_refuses_it() {
     );
     schema().validate(&with("tasks")).unwrap();
 }
+
+/// Each shipped flow can run, and the flow-authoring flow passes even the
+/// check a drafted flow must: a remedy on every check the owner passes.
+#[test]
+fn each_shipped_flow_has_no_problem_and_the_flow_authoring_flow_passes_as_a_draft() {
+    for (name, _) in SHIPPED {
+        let flow = shipped(name).unwrap();
+        assert_eq!(problems(&flow, false), [], "{name}");
+        let value: serde_json::Value =
+            serde_json::from_str(SHIPPED.iter().find(|each| each.0 == name).unwrap().1).unwrap();
+        schema().validate(&value).unwrap();
+    }
+    assert_eq!(problems(&shipped("flow-authoring").unwrap(), true), []);
+}
+
+/// A flow with one check, `check`, in its one phase `build`, stopping at
+/// `stop`.
+fn one(check: &serde_json::Value, stop: &str, instruction: &str) -> Flow {
+    serde_json::from_value(json!({
+        "$type": "changes/flow/v1", "name": "one", "summary": "One phase.",
+        "stop": {"until": stop},
+        "phases": [{"name": "build", "agent": "lead", "instruction": instruction,
+                    "checks": [check]}]
+    }))
+    .unwrap()
+}
+
+fn said(flow: &Flow, drafted: bool) -> Vec<String> {
+    problems(flow, drafted)
+        .iter()
+        .map(ToString::to_string)
+        .collect()
+}
+
+#[test]
+fn a_flow_with_each_problem_says_where_and_its_twin_without_it_has_none() {
+    let fine = json!({"id": "x", "kind": "tasks"});
+    assert_eq!(
+        said(&one(&fine, "build", "Build {change}."), true),
+        Vec::<String>::new()
+    );
+    assert_eq!(
+        said(&one(&fine, "done", "Build."), true),
+        Vec::<String>::new()
+    );
+    assert_eq!(
+        said(&one(&fine, "review", "Build."), false),
+        ["the stop names the phase review, which the flow lacks; name one of build or done"]
+    );
+    assert_eq!(
+        said(&one(&fine, "build", "Build {branch}."), false),
+        ["phase build, the instruction names the unknown placeholder {branch}"]
+    );
+    assert_eq!(
+        said(
+            &one(&json!({"id": "x", "kind": "scripted"}), "build", "Build."),
+            false
+        ),
+        ["phase build, check x: the kind scripted is not one this Board knows"]
+    );
+    assert_eq!(
+        said(
+            &one(&json!({"id": "x", "kind": "exists"}), "build", "Build."),
+            false
+        ),
+        ["phase build, check x: a check of kind exists needs path"]
+    );
+    assert_eq!(
+        said(
+            &one(
+                &json!({"id": "x", "kind": "exists", "path": "/flows/{draft}"}),
+                "build",
+                "B."
+            ),
+            false
+        ),
+        Vec::<String>::new()
+    );
+    assert_eq!(
+        said(
+            &one(
+                &json!({"id": "x", "kind": "tasks", "remedy": "Ask {who}."}),
+                "build",
+                "Build."
+            ),
+            false
+        ),
+        ["phase build, check x: it names the unknown placeholder {who}"]
+    );
+    let asks = json!({"id": "x", "kind": "tasks", "actor": "owner"});
+    assert_eq!(
+        said(&one(&asks, "build", "Build."), false),
+        Vec::<String>::new()
+    );
+    assert_eq!(
+        said(&one(&asks, "build", "Build."), true),
+        [
+            "phase build, check x: only the owner or a reviewer can pass it, and it has no remedy \
+          that tells an unattended agent how to ask"
+        ]
+    );
+    let mut twice = one(&fine, "build", "Build.");
+    twice.phases[0]
+        .checks
+        .push(serde_json::from_value(fine).unwrap());
+    assert_eq!(
+        said(&twice, false),
+        ["phase build, check x: another check of the flow has this id"]
+    );
+}

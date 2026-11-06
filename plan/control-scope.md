@@ -1,7 +1,7 @@
 # Control scope
 
 A control can name the repositories it governs by reference, carry the
-decision it comes from, add a step to the work on the files it covers, and
+decision it comes from, add a check to a phase of the work on the files it covers, and
 live in the repository it governs. An agent runs one command,
 `controls.check`, and sees every control that applies to its work, from the
 personal board and from the repository's own board.
@@ -16,7 +16,7 @@ personal board and from the repository's own board.
   "summary": "Secrets module: adds a security review.",
   "repos": ["/repos/app"],
   "paths": ["src/secrets/*"],
-  "adds_step": "security-review",
+  "adds_check": {"phase": "review", "id": "security-review", "kind": "records", "actor": "reviewer", "type": "review/report/v1"},
   "basis": ["/projects/app/decisions/20261031T1200Z-sec"]
 }
 ```
@@ -29,9 +29,10 @@ personal board and from the repository's own board.
   listed repository, and the control reaches nothing outside them. A
   repository the board does not mount still matches, through files the
   caller names (below).
-- `adds_step` names a workflow step, which the work records step builds. A
-  change gains the step when a file in its files record matches the control.
-  Until then the field is stored and shown, and adds nothing.
+- `adds_check` is a check, as a `changes/flow/v1` phase holds one, and the
+  `phase` it joins. A change gains the check when a file in its files record
+  matches the control (plan/work-records.md). Until then the field is stored
+  and shown, and adds nothing.
 - `basis` lists the decisions and other records the control rests on. The
   decisions pull request already added it (plan/decisions.md); this step
   reads it.
@@ -103,7 +104,7 @@ with the new command once this is built.
 
 ## Output
 
-Each control in `stated` and `measured` gains `board`, `adds_step`,
+Each control in `stated` and `measured` gains `board`, `adds_check`,
 `basis` and, when it applies, `basis_superseded`. Budget controls keep their measurement.
 
 Today `check` returns every applying control with no limit, and adding a

@@ -13,12 +13,12 @@ use serde_json::{Value, json};
 use crate::board::{self, get};
 use crate::change::{line, touch};
 use crate::controls::on_mount;
-use crate::flow::{FlowSummary, chosen, copy_line};
+use crate::flow::{FlowSummary, chosen, copy_line, refuse_invalid, refuse_without_repository};
 use crate::gates::SECTIONS;
 use crate::phases::check_target;
 use crate::plan::plan_lines;
 use crate::pr::quote;
-use crate::records::{BUILD, ChangeRecord, Kind, Route, SUITE_TYPE, TASK_TYPE};
+use crate::records::{BOARD_ITSELF, BUILD, ChangeRecord, Kind, Route, SUITE_TYPE, TASK_TYPE};
 use crate::repo::{CODEOWNERS, DOCS, Rule, ask_first, exists, files, owners, route, suite_in};
 use crate::surfaced::{Surfaced, surfaced};
 use crate::tasks::{add_task, routing};
@@ -36,7 +36,8 @@ pub(crate) struct Input {
     #[schemars(
         regex(pattern = "^/"),
         extend("format" = "board-path"),
-        description = "The repository's mount, such as /repos/board."
+        description = "The repository's mount, such as /repos/board, or / for a change that \
+                       edits only the board's own records, such as a flow-authoring change."
     )]
     mount: String,
     #[schemars(
@@ -72,9 +73,10 @@ pub(crate) struct Input {
     )]
     task_repo: Option<String>,
     #[schemars(
-        regex(pattern = "^[a-z0-9]+(-[a-z0-9]+)*$"),
+        regex(pattern = "^(/|[a-z0-9]+(-[a-z0-9]+)*$)"),
         description = "The flow the change follows, such as small: the board's own at \
-                       /flows/<name>, or a shipped one; when left out, the flow \
+                       /flows/<name>, a shipped one, or the path of a flow record, such as a \
+                       draft at /changes/<name>/draft; when left out, the flow \
                        /flows/repos/<mount name> or /flows/default links to, else development."
     )]
     flow: Option<String>,
@@ -112,7 +114,9 @@ struct Owed {
 /// none. `surfaced` lists the open tasks, decisions and evals on the mount,
 /// which the change records and its plan cites or dismisses, and
 /// `obligations` each obligation control on the mount. `warning` is set
-/// when a change that starts in build went past the WIP limit.
+/// when a change that starts in build went past the WIP limit. `note` says
+/// what a change on `/`, the board itself, leaves out because it has no
+/// repository.
 #[derive(Debug, Serialize, JsonSchema)]
 #[schemars(rename = "StartOutput")]
 pub(crate) struct Output {
@@ -131,7 +135,14 @@ pub(crate) struct Output {
     obligations: Vec<Owed>,
     #[serde(skip_serializing_if = "Option::is_none")]
     warning: Option<Limit>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    note: Option<String>,
 }
+
+/// What `start` says of a change on the board itself.
+const BOARD_NOTE: &str = "The change edits the board itself, so it has no repository: no \
+    CODEOWNERS, contributing docs, check suite, diff, worktree or obligations on a mount are read, \
+    and its route is unowned.";
 
 /// A change's name from its title: lowercase words joined by hyphens.
 pub(crate) fn name_of(title: &str) -> String {
@@ -185,7 +196,11 @@ fn task_for(host: &dyn Host, asked: &Input, title: &str) -> Result<String, Plugi
 /// and, unless one is named, its task, and returns the brief.
 pub(crate) fn start(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
     let asked: Input = PluginError::read_input(PLUGIN, "start", input)?;
-    let mount = asked.mount.trim_end_matches('/').to_owned();
+    let mount = match asked.mount.trim_end_matches('/') {
+        "" => BOARD_ITSELF.to_owned(),
+        trimmed => trimmed.to_owned(),
+    };
+    let itself = mount == BOARD_ITSELF;
     let title = asked.title.clone();
     let name = (asked.name.clone())
         .filter(|name| !name.is_empty())
@@ -194,13 +209,23 @@ pub(crate) fn start(host: &dyn Host, input: &Value) -> Result<Value, PluginError
     exists(host, &mount)?;
     refuse_existing(host, &path)?;
     let flow = chosen(host, &mount, asked.flow.as_deref())?;
+    refuse_invalid(&flow, "start")?;
+    if itself {
+        refuse_without_repository(&flow, &mount)?;
+    }
     if let Some(suite) = &asked.suite {
         check_target(host, suite, &[SUITE_TYPE])?;
     }
-    let codeowners = files(host, &mount, &CODEOWNERS)?;
+    let (codeowners, docs) = if itself {
+        (Vec::new(), Vec::new())
+    } else {
+        (
+            files(host, &mount, &CODEOWNERS)?,
+            files(host, &mount, &DOCS)?,
+        )
+    };
     let rules = owners(codeowners.first().map_or("", |(_, text)| text.as_str()));
     let asking = ask_first(&rules, asked.handle.as_deref());
-    let docs = files(host, &mount, &DOCS)?;
     let suite = match &asked.suite {
         Some(suite) => Some(suite.clone()),
         None => suite_in(host, &mount, &docs)?,
@@ -241,7 +266,12 @@ pub(crate) fn start(host: &dyn Host, input: &Value) -> Result<Value, PluginError
     change.surfaced = found.paths();
     lines.push(line(&path, "none", &touch(host, change)));
     board::put(host, &lines)?;
-    let obligations = (on_mount(host, &mount)?.into_iter())
+    let owed = if itself {
+        Vec::new()
+    } else {
+        on_mount(host, &mount)?
+    };
+    let obligations = (owed.into_iter())
         .map(|(control, summary)| Owed { control, summary })
         .collect();
     Ok(to_value(Output {
@@ -259,6 +289,7 @@ pub(crate) fn start(host: &dyn Host, input: &Value) -> Result<Value, PluginError
         surfaced: found,
         obligations,
         warning,
+        note: itself.then(|| BOARD_NOTE.to_owned()),
     }))
 }
 

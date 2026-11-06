@@ -94,7 +94,9 @@ pub(crate) enum Status {
 /// paths, or why they could not be read; `controlled` maps each control a
 /// `controlled-paths` check names to the edited files it lists, or none
 /// when no such control exists. `ticket_types` holds the type of each of
-/// the change's tickets Board reads, and `board` the board's root.
+/// the change's tickets Board reads, `board` the board's root, and
+/// `existing` whether something is at each path an `exists` check names,
+/// with its placeholders filled.
 #[derive(Debug)]
 pub(crate) struct Observed {
     pub(crate) path: String,
@@ -120,6 +122,7 @@ pub(crate) struct Observed {
     pub(crate) controlled: BTreeMap<String, Option<Vec<String>>>,
     pub(crate) ticket_types: Vec<String>,
     pub(crate) board: Option<String>,
+    pub(crate) existing: BTreeMap<String, bool>,
 }
 
 impl Observed {
@@ -144,6 +147,7 @@ impl Observed {
             controlled: BTreeMap::new(),
             ticket_types: Vec::new(),
             board: None,
+            existing: BTreeMap::new(),
         }
     }
 
@@ -224,7 +228,8 @@ pub(crate) fn sections(text: &str) -> BTreeMap<String, String> {
 /// Something the gate of a phase reads beyond the change: the records the
 /// change references, the plan, the change's check suite, the change's
 /// diff, whether its newest pull request reads, the obligation controls on
-/// its paths, the controls a check names, or its tickets' types.
+/// its paths, the controls a check names, its tickets' types, or the paths
+/// an `exists` check names.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) enum Read {
     References,
@@ -235,6 +240,7 @@ pub(crate) enum Read {
     Obligations,
     Controlled,
     Tickets,
+    Exists,
 }
 
 /// What `checks` read, by their kinds. A waivable check reads the
@@ -258,7 +264,11 @@ pub(crate) fn reads(checks: &[flow::Check]) -> BTreeSet<Read> {
             CheckKind::Sections | CheckKind::Considered => &[Read::Plan],
             CheckKind::Mockups => &[Read::Plan, Read::References],
             CheckKind::Records if refs => &[Read::Plan, Read::References],
-            CheckKind::Understood | CheckKind::Records | CheckKind::Tasks => &[Read::References],
+            CheckKind::Understood
+            | CheckKind::Records
+            | CheckKind::Tasks
+            | CheckKind::FlowValid => &[Read::References],
+            CheckKind::Exists => &[Read::References, Read::Exists],
             CheckKind::Run => &[Read::Suite, Read::References],
             CheckKind::Paths => &[Read::Diff],
             CheckKind::Obligations => &[Read::Plan, Read::Obligations],
@@ -267,7 +277,7 @@ pub(crate) fn reads(checks: &[flow::Check]) -> BTreeSet<Read> {
             CheckKind::Field if each.field == Some(Field::Tickets) && each.types.is_some() => {
                 &[Read::Tickets]
             }
-            _ => &[],
+            CheckKind::Field => &[],
         };
         reads.extend(needs.iter().copied());
     }
@@ -385,8 +395,8 @@ fn matches_section(
 
 /// What is missing for the check, by its kind, or none when it passes.
 ///
-/// A kind this Board does not evaluate yet, and a kind it does not know,
-/// stay missing, so they refuse `advance` rather than let it pass unread.
+/// A kind this Board does not know stays missing, so it refuses `advance`
+/// rather than let it pass unread.
 fn evaluate(
     observed: &Observed,
     plan: &BTreeMap<String, String>,
@@ -418,12 +428,8 @@ fn evaluate(
         CheckKind::Considered => kinds::considered_missing(observed, plan),
         CheckKind::Obligations => kinds::obligations_missing(observed, plan, each),
         CheckKind::ControlledPaths => kinds::controlled_missing(observed, each),
-        CheckKind::FlowValid | CheckKind::Exists => Some(format!(
-            "this Board does not evaluate {} checks yet, so the flow's check {} cannot pass; ask \
-             the owner whether to take it out of the flow",
-            kind.as_str(),
-            each.id
-        )),
+        CheckKind::FlowValid => kinds::flow_valid_missing(observed),
+        CheckKind::Exists => kinds::exists_missing(observed, each),
     }
 }
 

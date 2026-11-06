@@ -48,6 +48,11 @@
       "minimum": 0,
       "type": "number"
     },
+    "change": {
+      "description": "For a sandboxed run, the name of the change it started in the\nthrowaway board, where it lived at `/changes/<change>`.",
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+      "type": "string"
+    },
     "cost_usd": {
       "description": "What the agent reported it cost, in US dollars.",
       "format": "double",
@@ -84,8 +89,19 @@
       "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
       "type": "string"
     },
+    "reason": {
+      "description": "Why the run stopped, as its stop record says.",
+      "enum": [
+        "reached",
+        "waiting",
+        "refused",
+        "budget",
+        "error"
+      ],
+      "type": "string"
+    },
     "sandbox": {
-      "description": "Whether the agent ran in a sandbox.",
+      "description": "Whether the agent ran in a sandbox: a throwaway copy of the board\nand the repository, whose run and stop records were copied here.",
       "type": "boolean"
     },
     "started": {
@@ -99,7 +115,7 @@
       "description": "Where the run was told to stop."
     },
     "stopped": {
-      "description": "Why the run stopped.",
+      "description": "The stop record that says why the run stopped.",
       "format": "board-ref",
       "type": "string",
       "x-board-type": "changes/stop/v1"
@@ -113,6 +129,7 @@
     "ended",
     "sandbox",
     "phase",
+    "reason",
     "stopped"
   ],
   "title": "RunRecord",

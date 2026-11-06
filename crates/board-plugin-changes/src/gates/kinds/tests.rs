@@ -84,18 +84,14 @@ fn a_pattern_that_does_not_compile_makes_its_check_missing_and_names_the_pattern
 }
 
 #[test]
-fn a_kind_board_does_not_evaluate_or_know_stays_missing_and_a_known_one_passes() {
+fn a_kind_board_does_not_know_stays_missing_and_a_known_one_passes() {
     let list = json!([
         {"id": "c", "kind": "flow-valid"},
         {"id": "s", "kind": "scripted"},
         {"id": "t", "kind": "tasks"},
     ]);
     let found = run(&observed(&json!({}), &[]), list);
-    assert_eq!(
-        found[0].2,
-        "this Board does not evaluate flow-valid checks yet, so the flow's check c cannot pass; \
-         ask the owner whether to take it out of the flow"
-    );
+    assert_eq!(found[0].2, "no changes/flow/v1 draft is attached");
     assert_eq!(
         found[1].2,
         "the flow's check s has the kind scripted, which this Board does not know, so it cannot \

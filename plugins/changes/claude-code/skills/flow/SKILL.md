@@ -12,6 +12,8 @@ Make one `changes.run` call with `--inline true`, then follow its brief.
    - "plan this and stop": `--through plan`.
    - "up to review", "until review": `--until review`.
    - "small: <title>": `--flow small`, with the flow's own stop.
+   - "write a flow for <process>": `--flow flow-authoring --mount /`, or the
+     mount of the repository the flow is for.
    - No phase named: leave the stop out; the flow's or the change's holds.
 3. A new piece of work starts a change:
    `board call changes.run --mount /repos/<name> --title '<title>' [--flow <name>] [--through <phase> | --until <phase>] --inline true`.

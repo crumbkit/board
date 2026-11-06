@@ -1,5 +1,5 @@
-//! The `field`, `records`, `understood`, `considered`, `obligations` and
-//! `controlled-paths` check kinds.
+//! The `field`, `records`, `understood`, `considered`, `obligations`,
+//! `controlled-paths`, `flow-valid` and `exists` check kinds.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::LazyLock;
@@ -7,12 +7,14 @@ use std::sync::LazyLock;
 use regex::Regex;
 use serde_json::{Map, Value};
 
-use super::remedy::{Values, fill};
+use super::remedy::{Values, fill, unfilled};
 use super::{
     NO_HEAD, Observed, UNDERSTANDING_TYPE, objects, pattern, reviewed_head, route_missing,
     same_commit, signed_decisions, strings, task_missing, truthy, unset,
 };
-use crate::flow::{self, Field, Kind, Named, Target, Where};
+use board_plugin::shape::Record;
+
+use crate::flow::{self, Field, Flow, Kind, Named, Target, Where, problems};
 use crate::records::Subject;
 
 /// A board path in prose: a `/` and the characters up to a space, a quote,
@@ -418,6 +420,63 @@ pub(super) fn understood_missing(observed: &Observed, each: &flow::Check) -> Opt
         }
     }
     None
+}
+
+/// Something is at the path the check names, with its placeholders
+/// filled; a placeholder with no value yet leaves the path unknown.
+pub(super) fn exists_missing(observed: &Observed, each: &flow::Check) -> Option<String> {
+    let Some(template) = &each.path else {
+        return Some(unset(each, "path"));
+    };
+    let values = super::remedy::values(observed);
+    let empty = unfilled(template, &values);
+    if !empty.is_empty() {
+        return Some(format!(
+            "the path {template} names {}, which has no value yet, so where the record belongs \
+             is not known",
+            empty
+                .iter()
+                .map(|word| format!("{{{word}}}"))
+                .collect::<Vec<_>>()
+                .join(" and ")
+        ));
+    }
+    let path = fill(template, &values);
+    (observed.existing.get(&path) != Some(&true)).then(|| format!("nothing is at {path}"))
+}
+
+/// Each attached `changes/flow/v1` reads as a flow and has no problem a
+/// drafted flow may not have; at least one is attached.
+pub(super) fn flow_valid_missing(observed: &Observed) -> Option<String> {
+    for (path, code) in &observed.records.unreadable {
+        if observed
+            .records
+            .unreadable_types
+            .get(path)
+            .map(String::as_str)
+            == Some(Flow::TYPE)
+        {
+            return Some(format!(
+                "the drafted flow at {path} is degraded with {code}, so it cannot be read; run \
+                 `board check {path}` and fix it"
+            ));
+        }
+    }
+    let mut said = Vec::new();
+    let mut drafts = 0;
+    for (path, body) in observed.records.of_type(Flow::TYPE) {
+        drafts += 1;
+        match serde_json::from_value::<Flow>(Value::Object(body.clone())) {
+            Err(error) => said.push(format!("{path} does not read as a flow: {error}")),
+            Ok(draft) => said.extend(
+                (problems(&draft, true).iter()).map(|problem| format!("{path}: {problem}")),
+            ),
+        }
+    }
+    if drafts == 0 {
+        return Some(format!("no {} draft is attached", Flow::TYPE));
+    }
+    (!said.is_empty()).then(|| said.join("; "))
 }
 
 #[cfg(test)]
