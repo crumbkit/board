@@ -141,13 +141,10 @@ jobs:
       - uses: taiki-e/install-action@e407f7bafb71fd004bc5c2da3032e5470cbb6ef0 # v2.87.24
         with:
           tool: cargo-nextest@0.9.146
-      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
-        with:
-          version: "0.13.0"
       # The ui part runs in a Docker container, and macOS runners have no
       # Docker, so this job skips it. ci.yml runs it on Linux.
-      - run: bin/lint rust && bin/lint python
-      - run: bin/test rust && bin/test doc && bin/test python
+      - run: bin/lint rust
+      - run: bin/test rust && bin/test doc
 
   # Fuzzing is randomised, so it runs every night, even on an unchanged main.
   fuzz:

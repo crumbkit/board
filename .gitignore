@@ -3,5 +3,3 @@
 __fuzz__/
 # cargo-mutants output.
 mutants.out*/
-# Python bytecode.
-__pycache__/

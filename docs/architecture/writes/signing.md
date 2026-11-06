@@ -77,8 +77,8 @@ records it.
 - `cargo xtask lint` fails with `xtask::signing::outside_owner`, naming the
   file, line and literal, when source code outside `signing.owners` in
   `lint.toml` names a namespace, `ssh-keygen`, `attention-sign`, the allowed
-  signers path or the signature armor. It reads `.rs`, `.py`, `.sh`, `.ts`
-  and `.tsx` files, and scripts without an extension under `bin/` and
+  signers path or the signature armor. It reads `.rs`, `.sh`, `.ts` and
+  `.tsx` files, and scripts without an extension under `bin/` and
   `plugins/`.
 - `deny.toml` bans `ssh-key`, `ssh-encoding`, `p256`, `ecdsa` and
   `openssl`, so no crate signs or verifies in process.
@@ -99,9 +99,8 @@ records it.
 
 - `vectors/signing/v1/` holds the statements, signatures, a test key and an
   allowed signers file; its README says how each file was made and which
-  repository owns each layout. The `board-plugin` Python package ships them
-  in a checkout, so board-attention can read the version its pin names.
-  Plugin archives leave them out.
+  repository owns each layout. board-app and board-attention read the
+  version they test against from a crumbkit/board commit.
 - `crates/board-ops/tests/signing_vectors.rs` checks that Board builds both
   statements byte for byte, maps each to its namespace, admits the owner's
   signatures and refuses those in another namespace or by another key.

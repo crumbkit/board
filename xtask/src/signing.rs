@@ -32,7 +32,7 @@ impl SigningConfig {
 }
 
 /// The extensions of the source files this check reads anywhere.
-const EXTENSIONS: [&str; 5] = ["rs", "py", "sh", "ts", "tsx"];
+const EXTENSIONS: [&str; 4] = ["rs", "sh", "ts", "tsx"];
 
 /// The directories whose files without an extension are scripts this check
 /// reads.

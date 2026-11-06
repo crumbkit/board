@@ -1,5 +1,5 @@
-//! The person's day starts at `day_start`, or at midnight. These were
-//! `python/board-plugin/tests/test_day.py`.
+//! The person's day starts at `day_start`, or at midnight. These were the
+//! former Python library's `test_day.py`.
 
 use std::time::{Duration, SystemTime};
 

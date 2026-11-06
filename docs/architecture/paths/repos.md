@@ -25,9 +25,8 @@ so `board check` reports a reference to a repository the board does not know.
   its user and password. Two clones of one repository give the same value.
   A `remote` that is not its own stored form, such as
   `git@github.com:crumbkit/board.git`, is `board::mount::invalid`.
-  `board_model::shown_remote` and `board_plugin.repos.shown_remote` compute
-  the stored form, and both read the table in
-  `python/board-plugin/tests/remotes.json` in their tests.
+  `board_model::shown_remote` computes the stored form, and its tests read
+  the table in `crates/board-model/src/repo/remotes.json`.
 - `remote` is unique within a board's tree. `check` degrades every repo
   record whose `remote` another repo record in the same tree also holds with
   `board::repo::duplicate_remote`, naming the others, even when its scope

@@ -62,9 +62,8 @@ impl Repo {
 
 /// `remote`, a git origin URL, as it may be shown and stored: `owner/name`
 /// for GitHub, and otherwise the URL without its user and password. Two
-/// clones of one repository give the same value. A port of
-/// `board_plugin.repos.shown_remote`; both read the table in
-/// python/board-plugin/tests/remotes.json in their tests.
+/// clones of one repository give the same value. Its tests read the table in
+/// `repo/remotes.json`.
 ///
 /// The form is reapplied until it holds still, so the stored form of a
 /// stored form is itself: `owner/name.git.git` and `user@owner/name.git`

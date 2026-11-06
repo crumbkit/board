@@ -1,29 +1,17 @@
 #!/usr/bin/env bash
 # Every lint gate, in the order CI runs them. STANDARDS.md 21.
-# With no argument it runs every part; CI runs `bin/lint rust`,
-# `bin/lint python` and `bin/lint ui` in separate jobs.
+# With no argument it runs every part; CI runs `bin/lint rust` and
+# `bin/lint ui` in separate jobs.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 part=${1:-all}
-case $part in all | rust | python | ui) ;; *) echo "usage: bin/lint [rust|python|ui]" >&2; exit 2 ;; esac
+case $part in all | rust | ui) ;; *) echo "usage: bin/lint [rust|ui]" >&2; exit 2 ;; esac
 
 if [ "$part" = all ] || [ "$part" = rust ]; then
   cargo fmt --all --check
   cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
   RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --document-private-items --locked
   cargo xtask lint
-fi
-
-# The Python gates, STANDARDS.md P2. uv syncs each project from its lockfile.
-if [ "$part" = all ] || [ "$part" = python ]; then
-  for project in python/board-plugin; do
-    (
-      cd "$project"
-      uv run --locked ruff format --check .
-      uv run --locked ruff check .
-      uv run --locked pyright
-    )
-  done
 fi
 
 # board-ui type-checks and builds in the pinned container. The board binary

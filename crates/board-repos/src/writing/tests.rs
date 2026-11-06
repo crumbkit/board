@@ -1,6 +1,6 @@
 //! A new file takes the first free name, a write whose HEAD moved is the
 //! write, and a write lands by a push and then a pin. notes and tasks
-//! relied on python/board-plugin's `writing.py` this way; their pytest
+//! relied on the former Python library's `writing.py` this way; their pytest
 //! suites tested it through the plugins.
 
 use board_model::{Code, Fields, Lined, Refusal};
