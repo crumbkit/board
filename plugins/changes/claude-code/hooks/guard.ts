@@ -83,6 +83,17 @@ export function parseBoards(stdout: string): string[] | { why: string } {
   return { why: 'the board config is not JSON with a `boards` list of directories' }
 }
 
+const trimmed = (dir: string) => dir.replace(/(.)\/+$/, '$1')
+
+/**
+ * Whether two directories are the same: equal whole, with trailing slashes
+ * trimmed. So a board inside a larger repository does not exempt that
+ * repository. The caller follows symbolic links on both sides first.
+ */
+export function sameDirectory(a: string, b: string): boolean {
+  return trimmed(a) === trimmed(b)
+}
+
 /** The SQL that lists a board's own mounts with the directory of each repository. */
 export const MOUNTS_SQL =
   'SELECT e.logical, CASE WHEN m.code IS NULL THEN s.repository END, m.path FROM mounts m ' +
