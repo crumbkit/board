@@ -382,6 +382,10 @@ fn a_sandboxed_run_mounts_no_other_repository_so_a_write_through_put_never_reach
         &json!({"$type": "board/mount/v1", "path": "/changes/author/draft"}).to_string(),
     );
     let y = board.repo_root("repos/y");
+    // The put commits in /repos/y, so its repository names who commits,
+    // and the machine's own git identity never answers for it.
+    git(&y, &["config", "user.name", "t"]);
+    git(&y, &["config", "user.email", "t@t"]);
     // The twin: the real board writes through into /repos/y.
     let real = board.run(
         &["put", "/repos/y/notes/real"],
