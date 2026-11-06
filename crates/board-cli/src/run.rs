@@ -480,16 +480,7 @@ pub(crate) fn run(
         Err(refusal) => return render::refused(printer, *refusal),
     };
     if let Command::Init = cli.command {
-        return match board_ops::init(&start) {
-            Ok(report) => render::init(printer, &report),
-            Err(error) => {
-                let outside = matches!(error, board_ops::InitError::NotARepository { .. });
-                render::refused(
-                    printer,
-                    board_ops::unopened(error.code(), &error, &Fields::default(), outside),
-                )
-            }
-        };
+        return init(printer, &start);
     }
     if let Command::Answer(answering) = cli.command {
         let no_input = cli.no_input != crumbkit::NoInput::default();
@@ -525,6 +516,21 @@ pub(crate) fn run(
     };
     ran.trace.extend(board.take_trace());
     output
+}
+
+/// `board init`, which makes the directory at `start` a board without
+/// opening one.
+fn init(printer: Printer, start: &std::path::Path) -> Output {
+    match board_ops::init(start) {
+        Ok(report) => render::init(printer, &report),
+        Err(error) => {
+            let outside = matches!(error, board_ops::InitError::NotARepository { .. });
+            render::refused(
+                printer,
+                board_ops::unopened(error.code(), &error, &Fields::default(), outside),
+            )
+        }
+    }
 }
 
 /// `board commands` and `board schemas`, which in a board also describe
