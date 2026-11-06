@@ -1,15 +1,17 @@
 //! The `open` capability: the changes that are not done or dropped, and,
 //! by kind, every prototype.
 
-use board_ops::{Host, PluginError, literal};
-use board_plugin::shape::Record;
+use board_ops::{Host, PluginError};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::board::{readable, rows, text};
-use crate::change::{LastSync, branch_of, kind_in, last_sync, parsed, prototypes, state_of};
-use crate::records::{ChangeRecord, Kind, Phase, PrototypeRecord, Route, State};
+use crate::change::{
+    LastSync, branch_of, change_types, kind_in, last_sync, parsed, prototypes, state_of,
+};
+use crate::flow::{FlowSummary, of_change};
+use crate::records::{ChangeRecord, Kind, PrototypeRecord, Route, State};
 use crate::{PLUGIN, to_value};
 
 /// The default `limit` (STANDARDS 23).
@@ -47,14 +49,18 @@ struct Prototype {
     branch: String,
 }
 
-/// A change that is not done or dropped, its task and kind, and, for a
-/// prototype, what it asks and found.
+/// A change that is not done or dropped, its task and kind, the name and
+/// phases of the flow it follows, and, for a prototype, what it asks and
+/// found. `flow` is left out for a change that follows no flow, such as a
+/// prototype, and for one whose flow copy Board does not read.
 #[derive(Debug, Serialize, JsonSchema)]
 struct Listed {
     path: String,
     title: String,
     mount: String,
-    phase: Phase,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    flow: Option<FlowSummary>,
+    phase: String,
     route: Option<Route>,
     task: Option<String>,
     kind: Kind,
@@ -76,7 +82,12 @@ pub(crate) struct Output {
     sync: LastSync,
 }
 
-fn listed(path: &str, change: ChangeRecord, prototype: Option<&PrototypeRecord>) -> Listed {
+fn listed(
+    path: &str,
+    change: ChangeRecord,
+    flow: Option<FlowSummary>,
+    prototype: Option<&PrototypeRecord>,
+) -> Listed {
     let kind = if prototype.is_some() {
         Kind::Prototype
     } else {
@@ -84,7 +95,7 @@ fn listed(path: &str, change: ChangeRecord, prototype: Option<&PrototypeRecord>)
     };
     let prototype = prototype.map(|found| Prototype {
         question: Some(found.question.clone()),
-        state: Some(state_of(change.phase)),
+        state: Some(state_of(&change.phase)),
         verdict: found.verdict.clone(),
         verdict_artifact: found.verdict_artifact.clone(),
         branch: branch_of(path),
@@ -93,6 +104,7 @@ fn listed(path: &str, change: ChangeRecord, prototype: Option<&PrototypeRecord>)
         path: path.to_owned(),
         title: change.title,
         mount: change.mount,
+        flow,
         phase: change.phase,
         route: change.route,
         task: change.task,
@@ -113,8 +125,8 @@ pub(crate) fn open(host: &dyn Host, input: &Value) -> Result<Value, PluginError>
         " AND json_extract(body, '$.phase') NOT IN ('done', 'dropped')".to_owned()
     };
     let sql = format!(
-        "SELECT logical, code, body FROM records WHERE type = {}{unfinished} ORDER BY logical",
-        literal(ChangeRecord::TYPE)
+        "SELECT logical, code, body FROM records WHERE type IN ({}){unfinished} ORDER BY logical",
+        change_types()
     );
     let prototypes = prototypes(host)?;
     let mut found = Vec::new();
@@ -136,7 +148,10 @@ pub(crate) fn open(host: &dyn Host, input: &Value) -> Result<Value, PluginError>
             None => None,
         };
         if kind.is_none_or(|kind| kind_in(&prototypes, path) == kind) {
-            found.push(listed(path, change, prototype));
+            let flow = (of_change(host, path, &change).ok().flatten())
+                .filter(|_| prototype.is_none())
+                .map(|flow| FlowSummary::from(&flow));
+            found.push(listed(path, change, flow, prototype));
         }
     }
     let total = found.len();

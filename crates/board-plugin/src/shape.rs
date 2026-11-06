@@ -391,6 +391,12 @@ patterned! {
 }
 
 patterned! {
+    /// A git commit named by its id or by at least 7 of its leading
+    /// lowercase hex digits, as `git rev-parse --short` abbreviates it.
+    CommitName = "^[0-9a-f]{7,40}$"
+}
+
+patterned! {
     /// A repository as GitHub names it, `owner/name`, such as
     /// `crumbkit/board`.
     Repository = "^[A-Za-z0-9-]+/[A-Za-z0-9._-]+$"
@@ -567,6 +573,7 @@ pub fn registry() -> Map<String, Value> {
     let mut generator = SchemaGenerator::default();
     Map::from_iter([
         object::<Actor>(),
+        entry::<CommitName>(&mut generator),
         entry::<Date>(&mut generator),
         entry::<Glob>(&mut generator),
         entry::<LogicalGlob>(&mut generator),

@@ -241,6 +241,7 @@ fn the_registry_holds_each_shared_shape_by_name_as_a_field_using_it_sees_it() {
         registry.keys().map(String::as_str).collect::<Vec<_>>(),
         [
             "Actor",
+            "CommitName",
             "Date",
             "Digest",
             "Glob",
@@ -639,4 +640,26 @@ fn an_empty_pattern_is_refused_and_its_twin_is_admitted() {
     assert_eq!(code(json!("^none\\b")), None);
     let schema = schema_of::<Pattern>(SchemaSettings::draft2020_12());
     assert_eq!(schema["x-board-regex"], true);
+}
+
+#[test]
+fn a_commit_name_of_7_to_40_hex_digits_is_admitted_and_a_shorter_or_upper_case_one_is_refused() {
+    let schema = json!({
+        "type": "object",
+        "properties": {"head": registry()["CommitName"].clone()},
+    });
+    let schema = board_validate::Schema::compile(schema).unwrap();
+    let head = |text: &str| json!({ "head": text });
+    for (refused, admitted) in [
+        ("abc123", "abc1234"),
+        ("ABC1234", "abc1234"),
+        (&"a".repeat(41), &"a".repeat(40)),
+    ] {
+        assert_eq!(
+            schema.validate(&head(refused)).unwrap_err().code(),
+            board_model::Code::RecordInvalid,
+            "{refused:?}"
+        );
+        schema.validate(&head(admitted)).unwrap();
+    }
 }

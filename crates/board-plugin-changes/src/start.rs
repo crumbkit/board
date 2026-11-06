@@ -1,5 +1,6 @@
-//! The `start` capability: a new change in `plan`, its plan to fill in, its
-//! route and the repository's brief.
+//! The `start` capability: a new change in the first phase of the flow it
+//! follows, its copy of that flow, its plan to fill in, its route, its
+//! check suite, the records it surfaces and the repository's brief.
 
 use std::fmt::Write as _;
 
@@ -10,18 +11,21 @@ use serde_json::{Value, json};
 
 use crate::board::{self, get};
 use crate::change::{line, touch};
+use crate::controls::on_mount;
+use crate::flow::{FlowSummary, chosen, copy_line};
 use crate::gates::SECTIONS;
 use crate::phases::check_target;
 use crate::plan::plan_lines;
-use crate::records::{ChangeRecord, Phase, Route, TASK_TYPE};
+use crate::records::{ChangeRecord, Route, SUITE_TYPE, TASK_TYPE};
 use crate::repo::{CODEOWNERS, DOCS, Rule, ask_first, exists, files, owners, route, suite_in};
+use crate::surfaced::{Surfaced, surfaced};
 use crate::tasks::{add_task, routing};
 use crate::{PLUGIN, refusal, to_value};
 
 /// The longest name a title is shortened to.
 const NAME_MAX: usize = 60;
 
-/// Create a change in `plan` for a mounted repository.
+/// Create a change for a mounted repository.
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 #[schemars(rename = "StartInput")]
@@ -64,18 +68,46 @@ pub(crate) struct Input {
                        /repos/notes-personal; the caller's git remote chooses it when left out."
     )]
     task_repo: Option<String>,
+    #[schemars(
+        regex(pattern = "^[a-z0-9]+(-[a-z0-9]+)*$"),
+        description = "The flow the change follows, such as small: the board's own at \
+                       /flows/<name>, or a shipped one; when left out, the flow \
+                       /flows/repos/<mount name> or /flows/default links to, else development."
+    )]
+    flow: Option<String>,
+    #[schemars(
+        regex(pattern = "^/"),
+        extend("format" = "board-path"),
+        description = "The check suite the change's runs belong to, a runs/suite/v1 record; the \
+                       one the repository's contributing docs name when left out."
+    )]
+    suite: Option<String>,
+}
+
+/// An obligation on the mount: the control and its summary.
+#[derive(Debug, Serialize, JsonSchema)]
+struct Owed {
+    control: String,
+    summary: String,
 }
 
 /// The new change and the repository's brief.
 ///
-/// `owners` lists the CODEOWNERS rules from `codeowners`, the file read,
-/// and `ask_first` the patterns someone other than `handle` owns. `docs`
-/// lists the contributing docs found, to read before designing. `suite` is
-/// the check suite they name as a `runs/suite/v1` path, or null.
+/// `flow` names the flow the change follows and its phases, and `phase`
+/// the first, where the change starts. `owners` lists the CODEOWNERS rules
+/// from `codeowners`, the file read, and `ask_first` the patterns someone
+/// other than `handle` owns. `docs` lists the contributing docs found, to
+/// read before designing. `suite` is the change's check suite as a
+/// `runs/suite/v1` path, or null when none is given and the docs name
+/// none. `surfaced` lists the open tasks, decisions and evals on the mount,
+/// which the change records and its plan cites or dismisses, and
+/// `obligations` each obligation control on the mount.
 #[derive(Debug, Serialize, JsonSchema)]
 #[schemars(rename = "StartOutput")]
 pub(crate) struct Output {
     path: String,
+    flow: FlowSummary,
+    phase: String,
     plan: String,
     task: String,
     route: Route,
@@ -84,6 +116,8 @@ pub(crate) struct Output {
     codeowners: Option<String>,
     docs: Vec<String>,
     suite: Option<String>,
+    surfaced: Surfaced,
+    obligations: Vec<Owed>,
 }
 
 /// A change's name from its title: lowercase words joined by hyphens.
@@ -134,8 +168,8 @@ fn task_for(host: &dyn Host, asked: &Input, title: &str) -> Result<String, Plugi
     add_task(host, title, route, None)
 }
 
-/// Creates the change at `/changes/<name>`, its plan and, unless one is
-/// named, its task, and returns the brief.
+/// Creates the change at `/changes/<name>`, its copy of its flow, its plan
+/// and, unless one is named, its task, and returns the brief.
 pub(crate) fn start(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
     let asked: Input = PluginError::read_input(PLUGIN, "start", input)?;
     let mount = asked.mount.trim_end_matches('/').to_owned();
@@ -146,10 +180,18 @@ pub(crate) fn start(host: &dyn Host, input: &Value) -> Result<Value, PluginError
     let path = format!("/changes/{name}");
     exists(host, &mount)?;
     refuse_existing(host, &path)?;
+    let flow = chosen(host, &mount, asked.flow.as_deref())?;
+    if let Some(suite) = &asked.suite {
+        check_target(host, suite, &[SUITE_TYPE])?;
+    }
     let codeowners = files(host, &mount, &CODEOWNERS)?;
     let rules = owners(codeowners.first().map_or("", |(_, text)| text.as_str()));
     let asking = ask_first(&rules, asked.handle.as_deref());
     let docs = files(host, &mount, &DOCS)?;
+    let suite = match &asked.suite {
+        Some(suite) => Some(suite.clone()),
+        None => suite_in(host, &mount, &docs)?,
+    };
     let mut skeleton = format!("# {title}\n");
     for section in SECTIONS {
         let _ = write!(skeleton, "\n## {section}\n");
@@ -162,24 +204,38 @@ pub(crate) fn start(host: &dyn Host, input: &Value) -> Result<Value, PluginError
         Vec::new(),
     );
     let plan = format!("{record}.md");
-    let mut change = ChangeRecord::new(title.clone(), mount.clone(), Phase::Plan);
+    let first = flow.phases.first().map_or("", |phase| phase.name.as_str());
+    let mut change = ChangeRecord::new(title.clone(), mount.clone(), first);
+    let (copy, copied) = copy_line(&path, "none", &flow);
+    lines.push(copied);
+    change.flow = Some(copy);
     change.plan = Some(record);
+    change.suite.clone_from(&suite);
     let routed = route(&rules, &asking);
     change.route = Some(routed);
     let task = task_for(host, &asked, &title)?;
     change.task = Some(task.clone());
+    let found = surfaced(host, &mount, &task)?;
+    change.surfaced = found.paths();
     lines.push(line(&path, "none", &touch(host, change)));
     board::put(host, &lines)?;
+    let obligations = (on_mount(host, &mount)?.into_iter())
+        .map(|(control, summary)| Owed { control, summary })
+        .collect();
     Ok(to_value(Output {
         path,
+        phase: first.to_owned(),
+        flow: FlowSummary::from(&flow),
         plan,
         task,
         route: routed,
         owners: rules,
         ask_first: asking,
         codeowners: codeowners.first().map(|(path, _)| path.clone()),
-        suite: suite_in(host, &mount, &docs)?,
+        suite,
         docs: docs.into_iter().map(|(path, _)| path).collect(),
+        surfaced: found,
+        obligations,
     }))
 }
 

@@ -100,7 +100,7 @@ Built-in plugins generate schemas from structs with schemars, through
   `T`, to a marker that lists several types, or to any entry when `T` is left
   out. Both are always inlined.
 - `Prose`, `Date`, `Url`, `Digest`, `Glob`, `LogicalGlob`, `Summary`,
-  `SessionId`, `Slug`, `Person`, `ObjectId`, `Repository` and `Subject` are shared string
+  `SessionId`, `Slug`, `Person`, `ObjectId`, `CommitName`, `Repository` and `Subject` are shared string
   shapes, and `Actor` and `Pinned` are shared object shapes. A `String` field takes one with
   `#[schemars(with = "Prose")]`, and a `urls` field with `#[schemars(with = "Vec<Url>")]`. `Digest` is `sha256:` and 64
   lowercase hex digits, such as an effect's id in a record. `Glob` is an SQLite GLOB pattern, which a
@@ -109,7 +109,8 @@ Built-in plugins generate schemas from structs with schemars, through
   of at most `SUMMARY_WORDS`, 25, words. `SessionId` is `local_` and a
   lowercase uuid, `Slug` is lowercase words joined by `-`, `Person` is a
   slug or an email address, and `ObjectId` is a git object id of 40 or 64
-  lowercase hex digits. `Subject` is what a test or study concerns: an
+  lowercase hex digits. `CommitName` is a commit named by 7 to 40 of
+  its leading hex digits, such as a change's head. `Subject` is what a test or study concerns: an
   `owner/name` repository or a board path that starts with `/`.
 - `Actor` is who wrote or acted: `{session, program, person, agent}`, each part
   optional and at least one present. `agent` is the name the agent was

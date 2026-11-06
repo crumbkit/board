@@ -8,10 +8,10 @@ use serde_json::{Map, Value, json};
 
 use crate::board::{call_or_refusal, refused};
 use crate::change::{current, read, referenced};
+use crate::controls::CONTROLS_UNAVAILABLE;
 use crate::gates::HEADING;
 use crate::phases::{PathInput, next_of};
 use crate::plan::{documents, words};
-use crate::records::Phase;
 use crate::{PLUGIN, refusal, to_value};
 
 /// The most words `brief` returns.
@@ -27,8 +27,6 @@ const LEFT_OUT_NAMED: usize = 20;
 const USES_SHARE: usize = 4;
 /// The codes Board refuses a call with when the controls plugin or its
 /// capability is missing.
-const CONTROLS_UNAVAILABLE: [&str; 2] =
-    ["board::plugin::not_installed", "board::plugin::not_enabled"];
 const CONTROL_TYPE: &str = "controls/control/v1";
 const DECISION_TYPE: &str = "plans/decision/v1";
 const EVAL_TYPE: &str = "evals/eval/v1";
@@ -97,7 +95,7 @@ pub(crate) struct Output {
     rules_command: Option<RulesCommand>,
     uses: Vec<Use>,
     left_out: usize,
-    phase: Phase,
+    phase: String,
     instruction: String,
     controls: String,
 }

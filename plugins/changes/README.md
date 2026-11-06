@@ -2,21 +2,25 @@
 
 A Board plugin, built into Board as `crates/board-plugin-changes`, that walks an agent through one change to a mounted
 repository, from its plan to its pull request, and gathers every record the
-change produces. SKILL.md holds the procedure for each phase.
+change produces. SKILL.md holds the procedure; each flow's phases hold
+their own instructions, which `next` returns.
 
 ## Records
 
-`changes/change/v1` at `/changes/<name>.json` holds the change and its
-phase. The records it owns sit in `/changes/<name>/`: its plans, a
-prototype's record and its understanding checks. Git history holds earlier
-phases.
+`changes/change/v2` at `/changes/<name>.json` holds the change, the flow it
+follows and its phase. The records it owns sit in `/changes/<name>/`: its
+copy of its flow at `flow.json`, its plans, a prototype's record and its
+understanding checks. Git history holds earlier phases.
 
 ```json
 {
-  "$type": "changes/change/v1",
+  "$type": "changes/change/v2",
   "title": "Let a suite declare a timeout",
   "mount": "/repos/board",
+  "flow": "/changes/suite-timeout/flow",
   "phase": "build",
+  "suite": "/suites/board-gates",
+  "surfaced": ["/repos/notes-personal/tasks/retry.md"],
   "route": "owner",
   "plan": "/changes/suite-timeout/plans/20261101T120000000000Z",
   "task": "/repos/notes-personal/tasks/suite-timeout.md",
@@ -27,8 +31,17 @@ phases.
 ```
 
 - `title`, `mount` and `phase` are required.
-- `phase`: `plan`, `build`, `review`, `land`, `done`, or `dropped` to end a
-  change early. `paused` holds a change the keeper took out of `build`.
+- `flow` references the change's copy of the `changes/flow/v1` it follows,
+  which `start` writes. A prototype follows no flow and has none.
+- `phase` is a phase of the flow, `done`, or `dropped` to end a change
+  early. `paused` holds a change the keeper took out of `build`.
+- `suite` references the `runs/suite/v1` whose runs the `run` check
+  counts. `start --suite` or the repository's contributing docs set it, and
+  `attach --suite` changes it.
+- `surfaced` lists the open tasks, decisions and evals on the mount when
+  the change started, which the `considered` check reads.
+- `stop`, when set, says where an agent running the change stops, in
+  place of the flow's `stop`. No capability sets it yet.
 - `mount` references the repository's `board/mount/v1` record, and `plan`
   the change's current `changes/plan/v1`, which `changes.plan` sets to
   the plan it writes. `board check` reports a reference
@@ -40,7 +53,7 @@ phases.
   owner/repo#number` writes a GitHub one. `board refs <ticket>` lists the
   changes that reference a ticket.
 - `task` references the `tasks/task/v2` the change does. `start` always
-  sets it; a change without one cannot leave `plan`.
+  sets it; the development flow's `task` check needs it.
 - `head` is the commit under test and review.
 - `touched` is the UTC day, `YYYY-MM-DD`, on which `start`, `attach`,
   `advance`, `plan`, `resume` or `prototype` last wrote the change. The WIP
@@ -99,6 +112,13 @@ the write guard refuses the builder's edits.
 }
 ```
 
+`changes/change/v1` is the shape before flows: it has no `flow`, `suite`,
+`surfaced` or `stop`, and its phase is one of the development flow's.
+Every capability reads it as a change on the shipped development flow,
+whose suite the repository's contributing docs name, and writes it back as
+v1. `reflow` and `attach --suite` refuse it with
+`changes::change::not_migrated`; `migrate --apply true` rewrites it as v2.
+
 `changes/understanding/v1` at `/changes/<name>/understanding/<subject>`
 records how the owner showed he understands a change's `data` or `ux`.
 Each of `questions` holds the `question`, the owner's `answer` in his own
@@ -113,8 +133,13 @@ worktree of the board, or a cleared cache, reports `changes::sync::stale`
 until a sync runs there. When the cache does not take the day, `sync` and
 `migrate` say why in `unrecorded`.
 
-`migrate [--apply true]` rewrites change records of the shape before this
-split: it moves `records` to the plan the change names, a prototype's fields to its
+`migrate [--apply true]` rewrites each `changes/change/v1` of the board's
+own as a `changes/change/v2`. It keeps the phase, `paused` included, sets
+`surfaced` to `[]`, and writes a copy of the shipped development flow at
+`<path>/flow`, whose phases are v1's; a prototype gets no flow. A v2 change
+is left as it is, so a second run finds nothing. A change of the shape
+before the split of `changes/change/v1` is rewritten from that shape first:
+it moves `records` to the plan the change names, a prototype's fields to its
 prototype record and a `/changes/sync` day to the cache, and records each
 GitHub `pull_request` or `issue` URL through `github.ref`, which needs the
 github plugin enabled. Without `--apply` it writes nothing and says what
@@ -138,9 +163,11 @@ run keeps the github records already written.
 
 ## Capabilities
 
-- `start --mount /repos/<name> --title '<title>' [--task <path> | --task-repo <repo>] [--name <name>] [--handle @<you>]`
-  creates the change in `plan` and a plan with empty Problem, Outcome,
-  Out of scope, UX and Data sections. `--task` names the task the change
+- `start --mount /repos/<name> --title '<title>' [--task <path> | --task-repo <repo>] [--name <name>] [--handle @<you>] [--flow <name>] [--suite <path>]`
+  creates the change in the first phase of its flow, its copy of the flow,
+  and a plan with empty Problem, Outcome, Out of scope, UX and Data
+  sections. "Flows" below says how the flow is chosen; `flow` in the output
+  names it and its phases. `--task` names the task the change
   does, and must be a `tasks/task/v2` (`changes::ref::wrong_type`). Without
   it, `start` adds a task titled as the change through `board call
   tasks.add`, in `--task-repo` or, when that is left out, in the repo the
@@ -149,36 +176,64 @@ run keeps the github records already written.
   (`.github/`, root, `docs/`, the first found) to set the route and list
   `ask_first` patterns. `docs` lists the contributing docs found
   (`CONTRIBUTING.md` at the root, in `.github/` or in `docs/`, and
-  `AGENTS.md`). `suite` is the first inline-code path in them that holds a
-  `runs/suite/v1`, looked up in the repository's own board first. Refuses an
-  existing name (`changes::change::exists`) and a repository path holding
-  nothing (`changes::mount::not_found`).
-- `next --path /changes/<name>`: read-only. The phase, each gate check as
-  `pass` or `missing` with a detail, the instruction, and `sync`.
+  `AGENTS.md`). `suite` is `--suite`, a `runs/suite/v1`, or else the first
+  inline-code path in the docs that holds one, looked up in the
+  repository's own board first; the change stores it. `surfaced` lists, at
+  most ten of each with `total` and `left_out`: the open tasks of the notes
+  repo that holds the change's task and under `/projects/<mount name>/`,
+  the change's own task left out; the decisions under that project or
+  whose `refs` name the mount or a path under it, newest first; and the
+  evals whose `mounts` name the mount or that sit under the project. The
+  change records their paths. `obligations` lists each obligation control
+  on the mount, `<mount>/**`, by `control` and `summary`, from
+  `controls.for-paths`, and is empty when the controls plugin is not
+  enabled. Refuses an existing name (`changes::change::exists`), a
+  repository path holding nothing (`changes::mount::not_found`) and a flow
+  neither the board holds nor the plugin ships (`changes::flow::not_found`).
+  A flow whose first phase is `build`, such as `small`, starts the change
+  there without the WIP limit's check.
+- `next --path /changes/<name>`: read-only. The change's `flow` (its name
+  and phases), its phase, each gate check as `pass` or `missing` with a
+  `detail`, its `actor`, whether it `blocks`, and when missing its
+  `remedy`; the instruction, with its placeholders filled; and `sync`. When
+  every missing check that blocks is the owner's or a reviewer's,
+  `waiting_on` names them and `ask` holds the question to put to them,
+  built from those checks' details and remedies.
 - `sync` in the output of `open` and `next` is `{synced, stale, code,
   command}`: the day of the last sync, or null; `stale` when that is
   before today in UTC or null, with `code` `changes::sync::stale`; and
   `command`, `board call changes.sync`. Neither runs gh, so both stay
   read-only and work offline.
-- `attach --path /changes/<name> [--ref <path>] [--ticket <path>] [--pull <path>] [--task <path>] [--route <route>] [--head <sha>]`
+- `attach --path /changes/<name> [--ref <path>] [--ticket <path>] [--pull <path>] [--task <path>] [--route <route>] [--head <sha>] [--suite <path>]`
   adds a reference once or sets the fields. `--task` sets `task`, and must
-  be a `tasks/task/v2`. `--ref` adds to the `records` of the plan the change names, and
+  be a `tasks/task/v2`. `--suite` sets `suite`, and must be a
+  `runs/suite/v1`. `--ref` adds to the `records` of the plan the change names, and
   refuses a change whose `plan` names no plan record
   (`changes::attach::no_plan`).
   `--ticket` to `tickets` and `--pull` to `pulls`. Refuses a reference that
   reaches nothing (`changes::ref::dangling`), and a ticket or pull that is
   not a record of a type its list accepts (`changes::ref::wrong_type`).
-- `advance --path /changes/<name>` moves to the next phase when the gate
-  passes. Otherwise it refuses, and `missing` lists the failed checks. The
-  code is that of the first failed check: `changes::ux::not_agreed`,
-  `changes::ux::no_neighbours`, `changes::data::not_signed`,
-  `changes::paths::outside_plan` for the review gate's `paths` check,
-  `changes::prototype::never_lands` for a prototype's `verdict` check, else
-  `changes::gate::unmet`. Moving into `build` is also subject to the WIP
+- `advance --path /changes/<name>` moves to the next phase of the change's
+  flow, and from its last phase to `done`, when every check that blocks
+  passes. Otherwise it refuses, `missing` lists the failed checks that
+  block and `remedies` what to do for each, in order. The code is that of
+  the first: `changes::ux::not_agreed` or `changes::ux::no_neighbours` for
+  a `mockups` check, `changes::data::not_signed` for an `understood` check
+  of the data without rechecks, `changes::paths::outside_plan` for a
+  `paths` check, `changes::prototype::never_lands` for a prototype's
+  `verdict` check, else `changes::gate::unmet`. Moving into `build` is also subject to the WIP
   limit, below; `--over_limit '<why>'` goes past it. A paused change is
   refused with
   `changes::phase::paused`. Leaving `done` or `dropped` is
   `changes::phase::final`, which points to `open` and `start`.
+- `reflow --path /changes/<name> --flow <name>` replaces the change's copy
+  of its flow with a copy of the flow named, the board's own or a shipped
+  one, and returns `path`, `flow` and `phase`. It refuses a flow without
+  the phase the change stands in, `build` for a paused change
+  (`changes::reflow::no_phase`, whose `phases` lists the flow's), a flow
+  that is not there (`changes::flow::not_found`), a v1 change
+  (`changes::change::not_migrated`) and a done or dropped one
+  (`changes::phase::final`). It also restores a copy that went missing.
 - `pause --path /changes/<name>` moves a change in `build` to `paused`,
   which frees its place. A prototype can be paused too, and `verdict`
   still ends a paused prototype. It refuses any other phase
@@ -192,8 +247,8 @@ run keeps the github records already written.
   open; close it with `tasks.drop` or `tasks.done`. A change already ended
   is refused with `changes::phase::final`.
 - `sync [--dry_run true] [--limit <n>]` reads the pull request of each
-  change of the board's own, under `/changes/`, in `build`, `review`,
-  `land` or `paused`, with `gh api repos/<owner>/<repo>/pulls/<number>`,
+  change of the board's own, under `/changes/`, in any phase but `plan`,
+  `done` and `dropped`, with `gh api repos/<owner>/<repo>/pulls/<number>`,
   once each, for up to 20 seconds each. It returns `changes`, one entry for
   each such change by path, at most 100 by default, with `total`, `moved`
   and `truncated`. Each entry has `path`, `phase`, `to`, `status`, `code`,
@@ -220,7 +275,9 @@ run keeps the github records already written.
   may run for 600 seconds.
 - `open [--kind build|prototype] [--limit <n>]`: read-only. Changes not
   `done` or `dropped`, by path, at most 100 by default, with `total`,
-  `truncated`, `unreadable` and `sync`. Each names its `task` and `kind`, and a
+  `truncated`, `unreadable` and `sync`. Each names its `task`, `kind` and
+  `flow`, the flow's name and phases, left out for a prototype and for a
+  change whose flow copy Board does not read; and a
   prototype also its `question`, `state` (from its phase), `verdict`,
   `verdict_artifact` and `branch`. `--kind` keeps one kind; `--kind prototype` also lists the
   settled and abandoned prototypes, since their verdicts are what is looked
@@ -250,8 +307,9 @@ run keeps the github records already written.
   `command`, `pull_request` and `unreadable`. It never opens the pull request, never runs
   `gh` or git, and makes no model calls. See "The pull request body".
 
-- `plan` takes `{path, text, uses, paths}` on stdin, since `uses` and
-  `paths` are arrays. It keeps each path once. It refuses a build change's
+- `plan` takes `{path, text, uses, paths}` as JSON on stdin, since `uses`
+  and `paths` are lists: `board call changes.plan` with the JSON piped in.
+  A missing `uses` is an empty list. It keeps each path once. It refuses a build change's
   plan with no paths (`changes::plan::no_paths`) and a path that does not
   start with the change's mount and `/` (`changes::plan::outside_mount`,
   whose `paths` lists them). It writes the plan record and its text and points the change's `plan` at the
@@ -362,62 +420,88 @@ pattern matched without case), a `remedy`, `waivable`, and the parameters
 of its kind. The committed schema is
 `crates/board-plugin-changes/types/changes/flow/v1.schema.json`.
 
-The plugin compiles in one flow, `development`
-(`crates/board-plugin-changes/flows/development.json`), and every change
-follows it. Its phases are plan, build, review and land, and `advance`
-moves a change through them in that order and then to `done`. Each gate
-below is the list of that phase's checks whose `when` holds, evaluated by
-kind:
+The plugin ships two flows, compiled in from
+`crates/board-plugin-changes/flows/`. `development` has the phases plan,
+build, review and land, and stops through plan. `small` has build, review
+and land, and stops through review. A board's own flow at
+`/flows/<name>.json` wins over a shipped flow of the same name.
+
+`start` chooses a change's flow: the one `--flow` names; else the flow the
+link `/flows/repos/<mount name>` points to; else the one `/flows/default`
+points to; else `development`. A link is a `board/mount/v1` with a `path`,
+and Board follows it, so it must point at a flow the board holds. A flow
+that is not there is `changes::flow::not_found`, and a file there that is
+not a flow Board reads is `changes::flow::unreadable`. `start` writes a
+copy of the flow at `<change>/flow.json`, and every gate reads that copy,
+so editing a board's flow never moves a change in flight; `reflow` takes
+up the edit. A change whose copy is missing or does not read is refused
+with `changes::flow::unreadable`, and `reflow` restores it.
+
+`advance` moves a change through its flow's phases in order and then to
+`done`. Each gate is the list of the phase's checks whose `when` holds,
+evaluated by kind:
 
 | Kind | Passes when |
 | --- | --- |
 | `sections` | the plan has text under each heading in `sections` |
-| `field` | the change sets `field` (`task`, `route`, `head`, `plan`, `tickets` or `pulls`), with at least `min` references; for `pulls` with `types`, the newest reads as a `github/pull/v1` |
+| `field` | the change sets `field` (`task`, `route`, `head`, `plan`, `tickets` or `pulls`), with at least `min` references; for `tickets` with `types`, at least `min` tickets Board reads as one of them; for `pulls` with `types`, the newest reads as a `github/pull/v1` |
 | `records` | at least `min` attached records of `type` meet `where` (`at_head`, `values`, `no_findings`, `owner_signed`, and `refs`, each of which a record's refs must name: `plan` is the plan, its text or the change), from different actors when `distinct` names a part of `by` |
-| `run` | an attached run of the check suite with `scope` is clean, passing and on `head` |
+| `run` | an attached run of the change's suite with `scope` is clean, passing and on `head` |
 | `paths` | the diff edits only the plan's paths |
-| `tasks` | every attached task is done or dropped |
-| `understood` | with `rechecks`, each attached understanding check holds that many matching rechecks; without, the plan's section for `subject` says it changes nothing, or a signed decision references an understanding check of it |
+| `tasks` | every attached task but the change's own is done or dropped |
+| `understood` | a decision the owner signed references an attached understanding check of this change's `subject`; with `rechecks`, each such check also holds that many matching rechecks |
 | `mockups` | the `agreed` part: each mockup under UX is named by a signed decision; the `neighbours` part: UX lists its neighbours; both when `part` is left out |
+| `considered` | each path in the change's `surfaced` is in the plan's `uses` or named under a `### Considered` heading |
+| `obligations` | no obligation control applies to the plan's paths, except those named under the `escape_section` heading |
+| `controlled-paths` | the diff edits no file that the controls in `controls` list in their `paths` or `applies_to` |
 
-A flow may name the kinds `considered`, `obligations`, `controlled-paths`,
-`flow-valid` and `exists`, and a kind Board does not know reads too. Board
-does not evaluate them yet, so such a check is always missing. A board's
-own flows under `/flows/`, `actor`, `blocks`, `remedy`, `waivable`,
-`stop` and placeholders in the text are read but not acted on yet.
+A `controlled-paths` check whose controls the board does not hold passes,
+and its detail says that no such control exists. `flow-valid` and
+`exists`, and a kind Board does not know, read but are always missing.
 
-Each gate reads only the change, the records it references, its plan file,
-in `build` the repository's contributing docs, and in `review` the newest
-plan's paths and the change's diff. A referenced record
-Board marks degraded satisfies nothing.
+A check's `actor` (`agent`, the default, `owner` or `reviewer`) says who
+can make it pass. A check with `blocks: false` is reported but never
+refuses `advance`. A missing check carries a `remedy`: the flow's, or else
+its kind's own. A `waivable` check passes when an attached
+`plans/decision/v1` that the owner signed names `<change>#<id>` in its
+`refs`, and its detail names the decision; its remedy says so. A decision
+with `written_by` set is an agent's stub and signs nothing, here and in
+every check.
 
-| Leaving | Gate |
+Instructions, remedies and a `controlled-paths` check's controls may name
+`{change}`, `{name}`, `{mount}`, `{repo}`, `{plan}`, `{head}`, `{suite}`,
+`{draft}` (the name of the first attached `changes/flow/v1`) and `{board}`
+(the board's root). A placeholder with no value is left out cleanly: the
+text loses it, an inline code span it leaves empty goes too, runs of
+spaces become one, and no space is left before punctuation. Other text in
+braces stays.
+
+Each gate reads only what its checks need: the change, the records it
+references, its plan file, its suite, the diff, the controls plugin's
+obligations on the plan's paths, the controls a check names, and its
+tickets' types. A referenced record Board marks degraded satisfies nothing.
+
+The development flow's gates:
+
+| Leaving | Checks |
 | --- | --- |
-| plan | Each plan section has text, `task` is set, and `route` is set. On `ask-first`, also a `plans/decision/v1` whose `refs` name the plan or the change. Any such decision passes, including a rejection. Then `ux`, `neighbours` and `data`, below. |
-| build | Every attached `tasks/task/v2` is `done` or `dropped`. A repeating task never reaches `done`, so drop it to release the gate. An attached `runs/run/v1` under `<suite>/runs/` of the check suite is full, clean, has no `fail` or `error`, and names `head` in `versions`. Each attached `changes/understanding/v1` of this change holds at least two `rechecks`, and every one of them matched; an attached understanding check that Board does not read fails the check. |
-| review | An attached `review/report/v1` whose `range` ends at `head`, whose `verdict` is not `changes`, and which has no `critical` or `high` finding. Then `paths`, below. |
-| land | The newest of `pulls` reads as a `github/pull/v1` record. Advancing enters `done`. |
+| plan | `plan-sections`; `considered`; `task`; `route`; `owner-approval`, a `plans/decision/v1` the owner signed whose `refs` name the plan or the change, on every route; `mockups`, unless UX starts with "No UI change" and a reason; `data-signed`, an `understood` check of the data, unless Data starts with "None"; `obligations`, which does not block |
+| build | `head`; `suite-run`, waivable; `tasks`; `rechecks`, two matching rechecks, unless Data starts with "None" |
+| review | `review`, a report on `head` with no critical or high finding; `paths`; `ui-paths` and `data-paths`, `controlled-paths` checks of `/controls/{repo}/ui-paths` when UX says "No UI change" and `/controls/{repo}/data-paths` when Data says "None"; `obligations-settled`, with the escape heading `Obligations left owed` |
+| land | `test-sections`, What the tests prove and What the tests do not prove; `pull-request` |
 | build, for a prototype | Never passes: `verdict` ends a prototype instead. |
 
-The plan gate's last three checks:
-
-- `ux`: the UX section starts with "No UI change" followed by a reason,
-  or holds a `### Mockups` heading with a list under it. Each item of
-  that list names one mockup, by its first URL or, without one, by its
-  first board path in inline code. Other links in the section are not
-  mockups. Each mockup is named in the `urls` or `refs` of an attached
-  `plans/decision/v1` that the owner signed: a decision with
-  `written_by` set is an agent's stub and does not count.
-- `neighbours`: a UX section that lists mockups holds a `### Neighbours`
-  heading with a list under it: the open changes and artifacts in the same area,
-  and the components and flows the design reuses. The gate checks that the
-  list exists; the reviewer judges what it says.
-- `data`: the Data section starts with "None" as a word of its own,
-  followed by a full stop, a colon or nothing, or an attached
-  `plans/decision/v1` names in its `refs` an attached
-  `changes/understanding/v1` whose `change` is this change and whose
-  `subject` is `data`. As for mockups, a decision with `written_by` set
-  does not count.
+"No UI change" counts only when a reason follows it, and "None" only as a
+word of its own followed by a full stop, a colon or nothing. Each item of
+the `### Mockups` list names one mockup, by its first URL or, without one,
+by its first board path in inline code; other links are not mockups. The
+`### Neighbours` list names the open changes and artifacts in the same
+area and the components the design reuses; the gate checks that it
+exists, and the reviewer judges what it says. An attached understanding
+check Board does not read fails an `understood` check. A repeating task
+never reaches `done`, so drop it to release the `tasks` check. A run counts
+toward `run` when it sits under `<suite>/runs/`, has no `fail` or `error`,
+and names `head` in `versions`.
 
 The review gate's `paths` check reads the whole change's diff, whatever
 range a review report covers: `git diff --name-only --no-renames
@@ -435,12 +519,6 @@ with `changes::paths::outside_plan` and names the files, because their
 rules were not in the brief. Update the plan's paths with `plan`, or revert
 the edit. A plan with no paths, no report on `head`, or a diff git cannot
 list also fails the check.
-
-Beyond the planned paths, the gate does not read the diff. At review, when the plan says "No UI change"
-or "None", the reviewer lists the repository's UI-path and data-path
-controls, `/controls/<repo>/ui-paths` and `/controls/<repo>/data-paths`,
-with `controls.check`, and reports a diff that touches a path they name as
-a high finding.
 
 Commits match when one is a prefix of the other and both have at least 7
 digits.

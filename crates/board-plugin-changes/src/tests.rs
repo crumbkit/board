@@ -34,6 +34,8 @@ fn the_manifest_parses_as_a_built_in_one_with_each_capabilitys_variables_and_tim
         types,
         [
             "changes/change/v1",
+            "changes/change/v2",
+            "changes/flow/v1",
             "changes/plan/v1",
             "changes/prototype/v1",
             "changes/understanding/v1"
@@ -64,6 +66,7 @@ fn the_manifest_parses_as_a_built_in_one_with_each_capabilitys_variables_and_tim
             ("verdict", vec![], Some(120)),
             ("pause", vec![], None),
             ("resume", days, None),
+            ("reflow", vec![], None),
             (
                 "sync",
                 vec!["GH_TOKEN", "GITHUB_TOKEN", "GH_CONFIG_DIR"],
@@ -94,6 +97,8 @@ fn every_input_property_carries_a_sentence_that_says_what_it_means() {
         "start.handle",
         "start.task",
         "start.task_repo",
+        "start.flow",
+        "start.suite",
         "next.path",
         "attach.path",
         "attach.ref",
@@ -102,6 +107,7 @@ fn every_input_property_carries_a_sentence_that_says_what_it_means() {
         "attach.task",
         "attach.route",
         "attach.head",
+        "attach.suite",
         "advance.path",
         "advance.over_limit",
         "open.kind",
@@ -125,6 +131,8 @@ fn every_input_property_carries_a_sentence_that_says_what_it_means() {
         "pause.path",
         "resume.path",
         "resume.over_limit",
+        "reflow.path",
+        "reflow.flow",
         "sync.dry_run",
         "sync.limit",
         "drop.path",
@@ -141,7 +149,7 @@ fn attach_takes_at_least_one_thing_to_change() {
     let attach = &manifest["capabilities"][2];
     assert_eq!(attach["name"], "attach");
     let branches = attach["inputSchema"]["anyOf"].as_array().unwrap();
-    assert_eq!(branches.len(), 6);
+    assert_eq!(branches.len(), 7);
     assert_eq!(branches[0], json!({"required": ["ref"]}));
 }
 

@@ -15,7 +15,9 @@ use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
 
 use crate::board::{self, body, readable, rows, text, tree_codes};
-use crate::records::{ChangeRecord, Kind, PULL_TYPES, Phase, PlanRecord, PrototypeRecord, State};
+use crate::records::{
+    ChangeRecord, ChangeV1, DONE, DROPPED, Kind, PULL_TYPES, PlanRecord, PrototypeRecord, State,
+};
 use crate::refusal;
 
 /// Where in Board's cache `sync` keeps the day it last ran, by board.
@@ -67,9 +69,9 @@ impl Referenced {
 /// `changes::change::degraded`, since its fields cannot be trusted.
 pub(crate) fn read(host: &dyn Host, path: &str) -> Result<(ChangeRecord, String), PluginError> {
     let sql = format!(
-        "SELECT blob, code, body FROM records WHERE logical = {} AND type = {}",
+        "SELECT blob, code, body FROM records WHERE logical = {} AND type IN ({})",
         literal(path),
-        literal(ChangeRecord::TYPE)
+        change_types()
     );
     let found = rows(host, &sql)?;
     let Some(row) = found.first() else {
@@ -102,8 +104,26 @@ pub(crate) fn read(host: &dyn Host, path: &str) -> Result<(ChangeRecord, String)
 
 /// The change a `body` column holds, or none when it does not read as one.
 pub(crate) fn parsed(value: Option<&Value>) -> Option<ChangeRecord> {
-    let value = parse_json(text(value)?.as_bytes()).ok()?;
+    from_value(parse_json(text(value)?.as_bytes()).ok()?)
+}
+
+/// The change `value` holds, as a v2 or a v1, or none when it reads as
+/// neither.
+pub(crate) fn from_value(value: Value) -> Option<ChangeRecord> {
+    if value.get("$type").and_then(Value::as_str) == Some(ChangeV1::TYPE) {
+        return serde_json::from_value::<ChangeV1>(value)
+            .ok()
+            .map(Into::into);
+    }
     serde_json::from_value(value).ok()
+}
+
+/// The SQL list of both record types of a change, for `type IN (...)`.
+pub(crate) fn change_types() -> String {
+    let types: Vec<String> = (crate::CHANGE_TYPES.iter())
+        .map(|each| literal(each))
+        .collect();
+    types.join(", ")
 }
 
 /// What sits at a change's `<path>/prototype`, the one fact that makes the
@@ -215,10 +235,10 @@ pub(crate) fn kind_in(prototypes: &BTreeMap<String, Option<PrototypeRecord>>, pa
 
 /// Where a prototype stands, which its change's phase says: settled when
 /// done, abandoned when dropped, and exploring otherwise.
-pub(crate) fn state_of(phase: Phase) -> State {
+pub(crate) fn state_of(phase: &str) -> State {
     match phase {
-        Phase::Done => State::Settled,
-        Phase::Dropped => State::Abandoned,
+        DONE => State::Settled,
+        DROPPED => State::Abandoned,
         _ => State::Exploring,
     }
 }
@@ -331,9 +351,14 @@ pub(crate) fn branch_of(path: &str) -> String {
 }
 
 /// The `put` line that writes `change` at `path` over the blob `expect`,
-/// or as a new file with `none`.
+/// or as a new file with `none`. A change Board read as a v1 is written as
+/// one, so only `migrate` changes its type.
 pub(crate) fn line(path: &str, expect: &str, change: &ChangeRecord) -> Value {
-    json!({"path": path, "expect": expect, "record": change})
+    let record = match change.as_v1().filter(|_| change.v1) {
+        Some(old) => json!(old),
+        None => json!(change),
+    };
+    json!({"path": path, "expect": expect, "record": record})
 }
 
 /// Writes `change` at `path` over the blob `expect`.

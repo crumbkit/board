@@ -13,7 +13,7 @@ use crate::change::{branch_of, line, prototype_of, read, touch};
 use crate::phases::final_phase;
 use crate::plan::plan_lines;
 use crate::pr::quote;
-use crate::records::{ChangeRecord, Kind, Phase, PrototypeRecord};
+use crate::records::{BUILD, ChangeRecord, DONE, DROPPED, Kind, PrototypeRecord, is_final};
 use crate::repo::exists;
 use crate::start::{name_of, refuse_existing};
 use crate::tasks::{add_task, close_task};
@@ -118,7 +118,7 @@ pub(crate) struct VerdictInput {
 pub(crate) struct VerdictOutput {
     path: String,
     state: Ended,
-    phase: Phase,
+    phase: String,
 }
 
 /// A prototype's plan: its question, which is all of it.
@@ -142,7 +142,7 @@ pub(crate) fn prototype(host: &dyn Host, input: &Value) -> Result<Value, PluginE
     let path = format!("/changes/{name}");
     exists(host, &mount)?;
     refuse_existing(host, &path)?;
-    let mut change = ChangeRecord::new(title.clone(), mount, Phase::Build);
+    let mut change = ChangeRecord::new(title.clone(), mount, BUILD);
     let prototype = PrototypeRecord {
         tag: Tag::default(),
         question: asked.question.clone(),
@@ -205,20 +205,20 @@ pub(crate) fn verdict(host: &dyn Host, input: &Value) -> Result<Value, PluginErr
             [("path", json!(path)), ("kind", json!(Kind::Build))],
         ));
     };
-    if change.phase.is_final() {
+    if is_final(&change.phase) {
         return Err(final_phase(
             &path,
-            change.phase,
+            &change.phase,
             format!(
                 "the prototype at {path} is {}, so its verdict is already recorded; start another \
                  with `board call changes.prototype`",
-                change.phase.as_str()
+                change.phase
             ),
         ));
     }
     let settled = state == Ended::Settled;
     prototype.verdict = Some(verdict);
-    change.phase = if settled { Phase::Done } else { Phase::Dropped };
+    (if settled { DONE } else { DROPPED }).clone_into(&mut change.phase);
     if artifact.is_some() {
         prototype.verdict_artifact = artifact;
     }

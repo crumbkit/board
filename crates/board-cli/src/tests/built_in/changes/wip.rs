@@ -37,7 +37,7 @@ fn ready(board: &Changes) {
     board.change_at(
         "changes/t.json",
         "plan",
-        &json!({"plan": "/changes/t/plan.md", "route": "owner"}),
+        &json!({"plan": "/changes/t/plan.md", "route": "owner", "records": [board.approved()]}),
     );
     board.write("changes/t/plan.md", PLAN);
 }
@@ -208,7 +208,7 @@ fn idle_changes_do_not_count_and_the_refusal_lists_each_with_its_action() {
     board.change_at(
         "changes/t.json",
         "plan",
-        &json!({"plan": "/changes/t/plan.md", "route": "owner"}),
+        &json!({"plan": "/changes/t/plan.md", "route": "owner", "records": [board.approved()]}),
     );
     fill(&board, WIP_LIMIT, &json!({}));
     let refused = board.refusal("advance", &path());
@@ -370,7 +370,10 @@ impl Changes {
         self.change_at(
             "changes/t.json",
             "plan",
-            &json!({"plan": "/changes/t/plan.md", "route": "owner", "mount": mount}),
+            &json!({
+                "plan": "/changes/t/plan.md", "route": "owner", "mount": mount,
+                "records": [self.approved()],
+            }),
         );
         self.write("changes/t/plan.md", PLAN);
     }

@@ -1,7 +1,13 @@
-//! The `migrate` capability: rewrites change records written before the
-//! split of `changes/change/v1` (docs/plugins/lifecycle/updating.md).
+//! The `migrate` capability: rewrites each `changes/change/v1` as a
+//! `changes/change/v2` (docs/plugins/lifecycle/updating.md).
 //!
-//! A change of the old shape keeps its entity fields. A prototype's fields
+//! A v2 change follows a flow, so each change gets a copy of the shipped
+//! development flow at `<path>/flow`, whose phase names are v1's, and an
+//! empty `surfaced`; a prototype follows no flow and gets none. Its phase,
+//! paused included, carries over.
+//!
+//! A change written before the split of `changes/change/v1` is rewritten
+//! from that older shape first. It keeps its entity fields. A prototype's fields
 //! move to a `changes/prototype/v1` beside it, the records it lists move to
 //! the plan it names, and a GitHub pull request or issue URL becomes the
 //! github plugin's record of it, which `github.ref` writes. The old
@@ -24,8 +30,9 @@ use serde_json::{Map, Value, json};
 
 use crate::board::{self, rows, text};
 use crate::change::{OWN, prototypes, record_sync};
+use crate::flow::{copy_line, development};
 use crate::plan::stamp;
-use crate::records::{ChangeRecord, PlanRecord, PrototypeRecord, UnderstandingRecord};
+use crate::records::{ChangeRecord, ChangeV1, PlanRecord, PrototypeRecord, UnderstandingRecord};
 use crate::{PLUGIN, to_value};
 
 /// A GitHub pull request or issue page, as the Python plugin stored it:
@@ -118,13 +125,12 @@ struct Old {
     body: Map<String, Value>,
 }
 
-/// The change records of the board's own whose body still holds a field of
-/// the old shape.
+/// The `changes/change/v1` records of the board's own.
 fn olds(host: &dyn Host) -> Result<Vec<Old>, PluginError> {
     let sql = format!(
         "SELECT logical, blob, body FROM records WHERE type = {} AND substr(logical, 1, {}) = {} \
          ORDER BY logical",
-        literal(ChangeRecord::TYPE),
+        literal(ChangeV1::TYPE),
         OWN.len(),
         literal(OWN)
     );
@@ -136,15 +142,19 @@ fn olds(host: &dyn Host) -> Result<Vec<Old>, PluginError> {
         else {
             continue;
         };
-        if body.keys().any(|key| !KEPT.contains(&key.as_str())) || old_plan(&body) {
-            found.push(Old {
-                path: path.to_owned(),
-                blob: blob.to_owned(),
-                body,
-            });
-        }
+        found.push(Old {
+            path: path.to_owned(),
+            blob: blob.to_owned(),
+            body,
+        });
     }
     Ok(found)
+}
+
+/// Whether `body` is of the shape written before the split: it holds a
+/// field v1 no longer has, or its `plan` names Markdown.
+fn split_before(body: &Map<String, Value>) -> bool {
+    body.keys().any(|key| !KEPT.contains(&key.as_str())) || old_plan(body)
 }
 
 /// Whether `body`'s `plan` names Markdown, as the old shape did.
@@ -155,12 +165,14 @@ fn old_plan(body: &Map<String, Value>) -> bool {
 
 /// What the migration reads once for the whole board: every plan record
 /// under `/changes/`, by its change and then by path, with its blob, which
-/// of the Markdown plans the old changes name are there, and the changes
-/// that already have something at `<path>/prototype`.
+/// of the Markdown plans the old changes name are there, the changes that
+/// already have something at `<path>/prototype`, and the blob of each file
+/// already at a change's `<path>/flow`.
 struct Known {
     plans: BTreeMap<String, BTreeMap<String, (PlanRecord, String)>>,
     files: BTreeSet<String>,
     prototypes: BTreeMap<String, Option<PrototypeRecord>>,
+    flows: BTreeMap<String, String>,
 }
 
 fn known(host: &dyn Host, olds: &[Old]) -> Result<Known, PluginError> {
@@ -201,10 +213,20 @@ fn known(host: &dyn Host, olds: &[Old]) -> Result<Known, PluginError> {
         }
     }
     let prototypes = prototypes(host)?;
+    let sql = format!(
+        "SELECT logical, blob FROM entries WHERE substr(logical, 1, {}) = {} AND logical LIKE \
+         '%/flow'",
+        OWN.len(),
+        literal(OWN)
+    );
+    let flows = (rows(host, &sql)?.iter())
+        .filter_map(|row| Some((text(row.first())?.to_owned(), text(row.get(1))?.to_owned())))
+        .collect();
     Ok(Known {
         plans,
         files,
         prototypes,
+        flows,
     })
 }
 
@@ -283,6 +305,15 @@ struct Plan {
 /// cannot be rewritten.
 fn rewrite(known: &Known, old: &Old, record: &str) -> Result<Plan, String> {
     let body = &old.body;
+    if !split_before(body) {
+        let mut plan = Plan::default();
+        let mut change = body.clone();
+        let prototype = known.prototypes.contains_key(&old.path);
+        upgrade(known, &old.path, &mut change, prototype, &mut plan.lines);
+        plan.lines
+            .push(json!({"path": old.path, "expect": old.blob, "change": change}));
+        return Ok(plan);
+    }
     let moved = [
         "records",
         "issue",
@@ -346,7 +377,15 @@ fn rewrite(known: &Known, old: &Old, record: &str) -> Result<Plan, String> {
     change.insert("plan".to_owned(), json!(target));
     // A prototype's state is its change's phase, so only the question and
     // the verdict move.
-    if string(body, "kind").as_deref() == Some("prototype") {
+    let prototype = string(body, "kind").as_deref() == Some("prototype");
+    upgrade(
+        known,
+        path,
+        &mut change,
+        prototype || known.prototypes.contains_key(path),
+        &mut plan.lines,
+    );
+    if prototype {
         let prototype = PrototypeRecord {
             tag: Tag::default(),
             question: string(body, "question")
@@ -365,6 +404,28 @@ fn rewrite(known: &Known, old: &Old, record: &str) -> Result<Plan, String> {
     plan.lines
         .push(json!({"path": path, "expect": old.blob, "change": change}));
     Ok(plan)
+}
+
+/// Makes `change`, the body of the v1 change at `path`, a v2: it follows a
+/// copy of the shipped development flow, which a line of `lines` writes,
+/// unless it is a prototype, and surfaced nothing.
+fn upgrade(
+    known: &Known,
+    path: &str,
+    change: &mut Map<String, Value>,
+    prototype: bool,
+    lines: &mut Vec<Value>,
+) {
+    change.insert("$type".to_owned(), json!(ChangeRecord::TYPE));
+    change.insert("surfaced".to_owned(), json!([]));
+    if prototype {
+        return;
+    }
+    let at = format!("{path}/flow");
+    let expect = known.flows.get(&at).map_or("none", String::as_str);
+    let (at, line) = copy_line(path, expect, &development());
+    change.insert("flow".to_owned(), json!(at));
+    lines.push(line);
 }
 
 /// Whether the old change's prototype fields still need a record: true

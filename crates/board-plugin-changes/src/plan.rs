@@ -12,7 +12,7 @@ use serde_json::{Value, json};
 use crate::board::{self};
 use crate::change::{Referenced, kind_of, line, read, referenced, touch};
 use crate::phases::final_phase;
-use crate::records::{Kind, PlanRecord};
+use crate::records::{Kind, PlanRecord, is_final};
 use crate::{PLUGIN, refusal, to_value};
 
 /// The most words a plan's text holds, and the most words the documents it
@@ -37,16 +37,17 @@ pub(crate) struct Input {
         description = "The plan in Markdown, at most 3,000 words."
     )]
     text: String,
+    #[serde(default)]
     #[schemars(
         with = "Vec<BoardPath>",
-        description = "The records and documents the plan relies on; the documents hold at most \
-                       3,000 words in all."
+        description = "The records and documents the plan relies on, a list given on stdin; the \
+                       documents hold at most 3,000 words in all, and none when left out."
     )]
     uses: Vec<String>,
     #[schemars(
         with = "Option<Vec<LogicalGlob>>",
-        description = "The files and SQLite GLOB patterns the change will edit, by logical path \
-                       under the change's mount, such as /repos/inbox/crates/inbox-store/**, \
+        description = "The files and SQLite GLOB patterns the change will edit, a list given on \
+                       stdin, by logical path under the change's mount, such as /repos/inbox/crates/inbox-store/**, \
                        where `*` also matches `/`; a build change needs one."
     )]
     paths: Option<Vec<String>>,
@@ -129,14 +130,14 @@ pub(crate) fn plan(host: &dyn Host, input: &Value) -> Result<Value, PluginError>
     let uses = once(uses);
     let paths = once(paths.unwrap_or_default());
     let (mut change, blob) = read(host, &path)?;
-    if change.phase.is_final() {
+    if is_final(&change.phase) {
         return Err(final_phase(
             &path,
-            change.phase,
+            &change.phase,
             format!(
                 "the change at {path} is {}, so it takes no new plan; list open changes with \
                  `board call changes.open`, or start a new one",
-                change.phase.as_str()
+                change.phase
             ),
         ));
     }

@@ -11,6 +11,7 @@ use std::path::PathBuf;
 use super::*;
 
 mod brief;
+mod flows;
 mod migrate;
 mod phases;
 mod plan;
@@ -23,6 +24,10 @@ mod wip;
 /// The schemas the changes plugin ships, which enabling it writes.
 const CHANGE_SCHEMA: &str =
     include_str!("../../../../board-plugin-changes/types/changes/change/v1.schema.json");
+const CHANGE_V2_SCHEMA: &str =
+    include_str!("../../../../board-plugin-changes/types/changes/change/v2.schema.json");
+const FLOW_SCHEMA: &str =
+    include_str!("../../../../board-plugin-changes/types/changes/flow/v1.schema.json");
 const PLAN_SCHEMA: &str =
     include_str!("../../../../board-plugin-changes/types/changes/plan/v1.schema.json");
 const UNDERSTANDING_SCHEMA: &str =
@@ -50,6 +55,9 @@ const PLAN: &str = "# Timeout\n\n## Problem\n\nSuites hang.\n\n## Outcome\n\nA s
 /// The paths a fixture plan declares: everything under the fixture
 /// change's mount.
 const PATHS: [&str; 1] = ["/repos/x/**"];
+/// The owner's decision approving /changes/t's plan, which [`Changes::approved`]
+/// writes.
+const APPROVED: &str = "/changes/t/approved";
 
 /// A review report as the review plugin's design defines it.
 fn review_schema() -> Value {
@@ -381,6 +389,17 @@ impl Changes {
         self.write(file, &change(phase, &Value::Object(kept)));
     }
 
+    /// Writes the owner's decision whose refs name /changes/t, which the
+    /// plan gate's owner-approval check needs, and returns its path for a
+    /// plan record to attach.
+    fn approved(&self) -> &'static str {
+        self.write(
+            "changes/t/approved.json",
+            &typed("plans/decision/v1", &json!({"refs": ["/changes/t"]})),
+        );
+        APPROVED
+    }
+
     /// The board's root.
     fn root(&self) -> &Path {
         self.board.workdir()
@@ -686,18 +705,21 @@ fn board_lists_the_plugin_as_enabled_and_enabling_wrote_the_schema_it_ships() {
             "verdict",
             "pause",
             "resume",
+            "reflow",
             "sync",
             "drop",
             "migrate"
         ])
     );
     for (kind, schema) in [
-        ("change", CHANGE_SCHEMA),
-        ("plan", PLAN_SCHEMA),
-        ("understanding", UNDERSTANDING_SCHEMA),
-        ("prototype", PROTOTYPE_SCHEMA),
+        ("change/v1", CHANGE_SCHEMA),
+        ("change/v2", CHANGE_V2_SCHEMA),
+        ("flow/v1", FLOW_SCHEMA),
+        ("plan/v1", PLAN_SCHEMA),
+        ("understanding/v1", UNDERSTANDING_SCHEMA),
+        ("prototype/v1", PROTOTYPE_SCHEMA),
     ] {
-        let written = board.read(&format!(".board/types/changes/{kind}/v1.schema.json"));
+        let written = board.read(&format!(".board/types/changes/{kind}.schema.json"));
         let shipped: Value = serde_json::from_str(schema).unwrap();
         assert_eq!(written, shipped, "{kind}");
     }
@@ -720,6 +742,7 @@ fn open_lists_changes_that_are_not_done_or_dropped_by_path() {
                 "path": "/changes/a",
                 "title": "Let a suite declare a timeout",
                 "mount": "/repos/x",
+                "flow": {"name": "development", "phases": ["plan", "build", "review", "land"]},
                 "phase": "plan",
                 "route": null,
                 "task": TASK,
@@ -730,6 +753,7 @@ fn open_lists_changes_that_are_not_done_or_dropped_by_path() {
                 "path": "/changes/b",
                 "title": "Let a suite declare a timeout",
                 "mount": "/repos/x",
+                "flow": {"name": "development", "phases": ["plan", "build", "review", "land"]},
                 "phase": "build",
                 "route": "owner",
                 "task": TASK,

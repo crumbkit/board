@@ -8,7 +8,7 @@ use super::*;
 /// change and the plan that attaches its reports read as valid without
 /// enabling the changes plugin.
 const CHANGE_SCHEMA: &str =
-    include_str!("../../../../../board-plugin-changes/types/changes/change/v1.schema.json");
+    include_str!("../../../../../board-plugin-changes/types/changes/change/v2.schema.json");
 const PLAN_SCHEMA: &str =
     include_str!("../../../../../board-plugin-changes/types/changes/plan/v1.schema.json");
 
@@ -466,7 +466,7 @@ impl Mounted {
     /// The project's commits are only in its own clone, so `covered` finds
     /// them only through the mount.
     fn new(repo: &Repo) -> Self {
-        repo.write(".board/types/changes/change/v1.schema.json", CHANGE_SCHEMA);
+        repo.write(".board/types/changes/change/v2.schema.json", CHANGE_SCHEMA);
         repo.write(".board/types/changes/plan/v1.schema.json", PLAN_SCHEMA);
         let (project, mount) = library(&[("README.md", "A project.\n")]);
         repo.commit("project.json", &mount.to_string());
@@ -491,7 +491,7 @@ impl Mounted {
 /// with a plan that attaches `records`, and returns its path.
 fn change(repo: &Repo, head: Option<&str>, records: &[&str], mount: &str) -> String {
     let mut record = json!({
-        "$type": "changes/change/v1", "title": "Work", "mount": mount, "phase": "review",
+        "$type": "changes/change/v2", "title": "Work", "mount": mount, "phase": "review",
         "plan": "/changes/work/plans/1",
     });
     if let Some(head) = head {

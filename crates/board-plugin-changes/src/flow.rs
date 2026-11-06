@@ -2,13 +2,12 @@
 //! instruction `next` gives in each, and the checks that gate leaving it.
 //! The gates in `gates.rs` interpret a flow's checks by their kind.
 //!
-//! The plugin ships one flow, `development`, compiled in from
-//! `flows/development.json`. It reproduces the gates Board had before flows
-//! existed. A board's own flows, flow selection and placeholders in the
-//! text are not read yet.
+//! The plugin ships two flows, `development` and `small`, compiled in from
+//! `flows/`. A board's own flows, at `/flows/<name>`, win over a shipped
+//! flow of the same name; `read.rs` chooses a change's flow and reads the
+//! copy it keeps.
 
 use std::collections::BTreeMap;
-use std::sync::LazyLock;
 
 use board_plugin::shape::{Open, PathTemplate, Pattern, Prose, Record, Slug, Tag, TypeName};
 use schemars::JsonSchema;
@@ -16,15 +15,28 @@ use serde::{Deserialize, Serialize};
 
 use crate::records::{Route, Subject};
 
-/// The development flow, as the plugin ships it.
-static DEVELOPMENT: LazyLock<Flow> = LazyLock::new(|| {
-    serde_json::from_str(include_str!("../flows/development.json"))
-        .expect("flows/development.json is a changes/flow/v1; a test parses it")
-});
+pub(crate) use read::{FlowSummary, asked_for, blob_at, chosen, copy_line, of_change};
 
-/// The flow every change follows.
-pub(crate) fn development() -> &'static Flow {
-    &DEVELOPMENT
+/// The flows the plugin ships, by name.
+const SHIPPED: [(&str, &str); 2] = [
+    ("development", include_str!("../flows/development.json")),
+    ("small", include_str!("../flows/small.json")),
+];
+/// The flow a change follows when nothing chooses another.
+pub(crate) const DEFAULT: &str = "development";
+
+/// The shipped flow called `name`, or none when the plugin ships none.
+pub(crate) fn shipped(name: &str) -> Option<Flow> {
+    let (_, text) = SHIPPED.iter().find(|(shipped, _)| *shipped == name)?;
+    Some(
+        serde_json::from_str(text)
+            .expect("each shipped flow is a changes/flow/v1; a test parses it"),
+    )
+}
+
+/// The shipped development flow.
+pub(crate) fn development() -> Flow {
+    shipped(DEFAULT).expect("the plugin ships the development flow")
 }
 
 /// `changes/flow/v1`: a process a change follows from its first phase to
@@ -62,6 +74,11 @@ impl Flow {
         self.phases.iter().find(|phase| phase.name == name)
     }
 
+    /// The names of its phases, in order.
+    pub(crate) fn names(&self) -> Vec<String> {
+        self.phases.iter().map(|phase| phase.name.clone()).collect()
+    }
+
     /// The name of the phase after `name`: the next in the list, `done`
     /// after the last, or none when the flow has no phase `name`.
     pub(crate) fn after(&self, name: &str) -> Option<&str> {
@@ -72,7 +89,7 @@ impl Flow {
 
 /// Where a run stops: `through` a phase does its work and stops before
 /// leaving it; `until` a phase moves into it and stops before its work.
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub(crate) enum Stop {
     Through(
@@ -430,6 +447,8 @@ pub(crate) enum Part {
     Agreed,
     Neighbours,
 }
+
+mod read;
 
 #[cfg(test)]
 mod tests;

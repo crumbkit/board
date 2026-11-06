@@ -58,7 +58,10 @@
       "description": "The change whose design was checked.",
       "format": "board-ref",
       "type": "string",
-      "x-board-type": "changes/change/v1"
+      "x-board-type": [
+        "changes/change/v1",
+        "changes/change/v2"
+      ]
     },
     "questions": {
       "description": "Each question asked, in order.",

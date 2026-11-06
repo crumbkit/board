@@ -1,14 +1,133 @@
-//! The `field` and `records` check kinds.
+//! The `field`, `records`, `understood`, `considered`, `obligations` and
+//! `controlled-paths` check kinds.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
+use std::sync::LazyLock;
 
+use regex::Regex;
 use serde_json::{Map, Value};
 
+use super::remedy::{Values, fill};
 use super::{
-    NO_HEAD, Observed, objects, reviewed_head, route_missing, same_commit, strings, task_missing,
-    truthy, unset,
+    NO_HEAD, Observed, UNDERSTANDING_TYPE, objects, pattern, reviewed_head, route_missing,
+    same_commit, signed_decisions, strings, task_missing, truthy, unset,
 };
-use crate::flow::{self, Field, Named, Target, Where};
+use crate::flow::{self, Field, Kind, Named, Target, Where};
+use crate::records::Subject;
+
+/// A board path in prose: a `/` and the characters up to a space, a quote,
+/// a bracket or a list's punctuation.
+static BOARD_PATH: LazyLock<Regex> = LazyLock::new(|| pattern(r#"/[^\s`'")>\],;]+"#));
+
+/// The board paths `text` names, each without a trailing full stop or
+/// colon.
+pub(super) fn paths_in(text: &str) -> BTreeSet<&str> {
+    (BOARD_PATH.find_iter(text))
+        .map(|found| found.as_str().trim_end_matches(['.', ':']))
+        .collect()
+}
+
+/// What a passing check says: for a `controlled-paths` check whose
+/// controls the board does not hold, that none exists, and otherwise
+/// nothing.
+pub(super) fn passed(observed: &Observed, each: &flow::Check, values: &Values) -> String {
+    if each.kind.known().copied() != Some(Kind::ControlledPaths) {
+        return String::new();
+    }
+    let named = named_controls(each, values);
+    if named.is_empty()
+        || named.iter().any(|control| {
+            observed
+                .controlled
+                .get(control)
+                .is_some_and(Option::is_some)
+        })
+    {
+        return String::new();
+    }
+    format!(
+        "no control {} exists, so the board names no such paths and the check passes",
+        named.join(" or ")
+    )
+}
+
+/// The controls a `controlled-paths` check names, with their placeholders
+/// filled.
+pub(crate) fn named_controls(each: &flow::Check, values: &Values) -> Vec<String> {
+    (each.controls.iter().flatten())
+        .map(|control| fill(control, values))
+        .collect()
+}
+
+/// Every record the change's `surfaced` lists is in the plan's `uses` or
+/// named under a `Considered` heading.
+pub(super) fn considered_missing(
+    observed: &Observed,
+    plan: &BTreeMap<String, String>,
+) -> Option<String> {
+    let listed = paths_in(plan.get("considered").map_or("", String::as_str));
+    let left: Vec<&str> = (observed.change.surfaced.iter().map(String::as_str))
+        .filter(|each| !observed.uses.iter().any(|used| used == each) && !listed.contains(each))
+        .collect();
+    (!left.is_empty()).then(|| {
+        format!(
+            "the plan neither uses nor lists under ### Considered these records that start \
+             surfaced: {}",
+            left.join(", ")
+        )
+    })
+}
+
+/// No obligation control applies to the plan's paths, except those named
+/// under the plan's `escape_section` heading.
+pub(super) fn obligations_missing(
+    observed: &Observed,
+    plan: &BTreeMap<String, String>,
+    each: &flow::Check,
+) -> Option<String> {
+    let owed = match &observed.obligations {
+        Ok(owed) => owed,
+        Err(why) => return Some(why.clone()),
+    };
+    let escaped = (each.escape_section.as_ref())
+        .map(|heading| paths_in(plan.get(&heading.to_lowercase()).map_or("", String::as_str)))
+        .unwrap_or_default();
+    let left: Vec<&str> = (owed.iter().map(String::as_str))
+        .filter(|control| !escaped.contains(control))
+        .collect();
+    (!left.is_empty()).then(|| {
+        format!(
+            "these obligations apply to the plan's paths: {}",
+            left.join(", ")
+        )
+    })
+}
+
+/// The change's diff touches no path the named controls list. A control
+/// the board does not hold lists nothing.
+pub(super) fn controlled_missing(observed: &Observed, each: &flow::Check) -> Option<String> {
+    if each.controls.is_none() {
+        return Some(unset(each, "controls"));
+    }
+    let named = named_controls(each, &super::remedy::values(observed));
+    let held: Vec<&Vec<String>> = (named.iter())
+        .filter_map(|control| observed.controlled.get(control)?.as_ref())
+        .collect();
+    if held.is_empty() {
+        return None;
+    }
+    if let Some(unread) = &observed.diff_unread {
+        return Some(unread.clone());
+    }
+    let touched: BTreeSet<&str> = held.into_iter().flatten().map(String::as_str).collect();
+    (!touched.is_empty()).then(|| {
+        format!(
+            "the change's diff edits files that {} list: {}",
+            named.join(" or "),
+            touched.into_iter().collect::<Vec<_>>().join(", ")
+        )
+    })
+}
 
 pub(super) fn field_missing(observed: &Observed, each: &flow::Check) -> Option<String> {
     let Some(field) = each.field else {
@@ -34,10 +153,15 @@ pub(super) fn field_missing(observed: &Observed, each: &flow::Check) -> Option<S
                     each.id, observed.path
                 ));
             }
-            each.types.as_ref().map(|_| {
+            let wanted = each.types.as_ref()?;
+            let typed = (observed.ticket_types.iter())
+                .filter(|found| wanted.contains(found))
+                .count();
+            (typed < min).then(|| {
                 format!(
-                    "this Board does not check the types of a change's tickets yet, so the flow's \
-                     check {} cannot pass; ask the owner whether to drop its types",
+                    "the change references {typed} tickets of type {}, and the flow's check {} \
+                     needs {min}",
+                    either(wanted),
                     each.id
                 )
             })
@@ -215,6 +339,85 @@ fn records_detail(
             format!("fewer than {min} {kind} records{distinct}{signed}{whose}{with} are attached")
         }
     }
+}
+
+/// Whether an understanding check at `body` is of this change's
+/// `subject`.
+fn understands(observed: &Observed, body: &Map<String, Value>, subject: Subject) -> bool {
+    body.get("change").and_then(Value::as_str) == Some(observed.path.as_str())
+        && body.get("subject").and_then(Value::as_str) == Some(subject_word(subject))
+}
+
+fn subject_word(subject: Subject) -> &'static str {
+    match subject {
+        Subject::Data => "data",
+        Subject::Ux => "ux",
+    }
+}
+
+/// A count as a word, for the small counts a flow sets.
+fn count_word(count: usize) -> String {
+    match count {
+        1 => "one".to_owned(),
+        2 => "two".to_owned(),
+        3 => "three".to_owned(),
+        _ => count.to_string(),
+    }
+}
+
+/// An attached understanding check of the change's `subject` that the
+/// owner signed off in a decision referencing it, and with `rechecks`, that
+/// many matching rechecks on each attached understanding check of it.
+pub(super) fn understood_missing(observed: &Observed, each: &flow::Check) -> Option<String> {
+    let Some(subject) = each.subject else {
+        return Some(unset(each, "subject"));
+    };
+    // An understanding check Board does not read can be neither signed off
+    // nor counted, so it fails the check rather than drop out of it.
+    for (path, code) in &observed.records.unreadable {
+        if observed
+            .records
+            .unreadable_types
+            .get(path)
+            .map(String::as_str)
+            == Some(UNDERSTANDING_TYPE)
+        {
+            return Some(format!(
+                "the understanding check at {path} is degraded with {code}, so it cannot be \
+                 read; run `board check {path}` and fix it"
+            ));
+        }
+    }
+    let understood: Vec<(&str, &Map<String, Value>)> =
+        (observed.records.of_type(UNDERSTANDING_TYPE))
+            .filter(|(_, body)| understands(observed, body, subject))
+            .collect();
+    let signed = (signed_decisions(observed)).any(|body| {
+        strings(body, "refs").any(|named| understood.iter().any(|(path, _)| *path == named))
+    });
+    if !signed {
+        return Some(format!(
+            "no attached plans/decision/v1 the owner signed references an attached \
+             {UNDERSTANDING_TYPE} of this change's {}; run the understanding-check skill, then \
+             have the owner sign a decision whose refs name its record",
+            subject_word(subject)
+        ));
+    }
+    let wanted = each.rechecks? as usize;
+    for (path, body) in understood {
+        let matching = objects(body, "rechecks")
+            .filter(|recheck| recheck.get("matches") == Some(&Value::Bool(true)))
+            .count();
+        if matching < wanted {
+            let wanted = count_word(wanted);
+            return Some(format!(
+                "the understanding check at {path} holds fewer than {wanted} rechecks that match \
+                 the plan; before review, ask {wanted} of its predict or edge questions again, \
+                 worded differently, and add them to its rechecks"
+            ));
+        }
+    }
+    None
 }
 
 #[cfg(test)]

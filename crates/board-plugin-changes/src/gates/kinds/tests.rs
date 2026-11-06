@@ -9,7 +9,7 @@ use serde_json::{Value, json};
 use crate::change::Referenced;
 use crate::flow;
 use crate::gates::{Observed, Status, interpret};
-use crate::records::{ChangeRecord, Kind};
+use crate::records::Kind;
 
 const PATH: &str = "/changes/t";
 const HEAD: &str = "a3f9c0de1234567890abcdef1234567890abcdef";
@@ -24,7 +24,7 @@ fn observed(fields: &Value, records: &[(&str, &str, Value)]) -> Observed {
     for (key, value) in fields.as_object().unwrap() {
         change[key] = value.clone();
     }
-    let change: ChangeRecord = serde_json::from_value(change).unwrap();
+    let change = crate::change::from_value(change).unwrap();
     let records = Referenced {
         records: (records.iter())
             .map(|(path, kind, body)| {
@@ -48,7 +48,7 @@ fn checks(checks: Value) -> &'static [flow::Check] {
 }
 
 /// Each applying check's id, status and detail.
-fn run(observed: &Observed, list: Value) -> Vec<(&'static str, Status, String)> {
+fn run(observed: &Observed, list: Value) -> Vec<(String, Status, String)> {
     (interpret(observed, checks(list)).into_iter())
         .map(|found| (found.check, found.status, found.detail))
         .collect()
@@ -61,7 +61,7 @@ fn a_check_whose_route_or_section_condition_fails_is_left_out_and_its_twin_appli
         {"id": "ui", "kind": "field", "field": "head", "when": {"section": {"UX": "^no ui change\\b"}}},
         {"id": "not-ui", "kind": "field", "field": "head", "when": {"section_not": {"UX": "^no ui change\\b"}}},
     ]);
-    let ids = |fields: Value| -> Vec<&'static str> {
+    let ids = |fields: Value| -> Vec<String> {
         (run(&observed(&fields, &[]), list.clone()).into_iter())
             .map(|(id, _, _)| id)
             .collect()
@@ -86,14 +86,14 @@ fn a_pattern_that_does_not_compile_makes_its_check_missing_and_names_the_pattern
 #[test]
 fn a_kind_board_does_not_evaluate_or_know_stays_missing_and_a_known_one_passes() {
     let list = json!([
-        {"id": "c", "kind": "considered"},
+        {"id": "c", "kind": "flow-valid"},
         {"id": "s", "kind": "scripted"},
         {"id": "t", "kind": "tasks"},
     ]);
     let found = run(&observed(&json!({}), &[]), list);
     assert_eq!(
         found[0].2,
-        "this Board does not evaluate considered checks yet, so the flow's check c cannot pass; \
+        "this Board does not evaluate flow-valid checks yet, so the flow's check c cannot pass; \
          ask the owner whether to take it out of the flow"
     );
     assert_eq!(
@@ -178,4 +178,174 @@ fn records_whose_refs_must_name_an_attached_type_and_be_owner_signed() {
         run(&observed(&json!({}), &[eval, signed]), list)[0].1,
         Status::Pass
     );
+}
+
+/// The first check `list` gives for `observed`, whole.
+fn first(observed: &Observed, list: Value) -> crate::gates::Check {
+    interpret(observed, checks(list)).remove(0)
+}
+
+#[test]
+fn a_surfaced_record_neither_used_nor_considered_is_missing_and_one_listed_under_considered_passes()
+{
+    let list = json!([{"id": "considered", "kind": "considered"}]);
+    let mut found = observed(&json!({}), &[]);
+    found.change.surfaced = vec!["/tasks/a".to_owned(), "/plans/d1".to_owned()];
+    found.uses = vec!["/tasks/a".to_owned()];
+    let check = first(&found, list.clone());
+    assert_eq!(check.status, Status::Missing);
+    assert_eq!(
+        check.detail,
+        "the plan neither uses nor lists under ### Considered these records that start surfaced: \
+         /plans/d1"
+    );
+    found.plan = Some(
+        "# T\n\n## UX\n\nNo UI change: it is headless.\n\n### Considered\n\n- /plans/d1: it is \
+         about the old flow.\n"
+            .to_owned(),
+    );
+    assert_eq!(first(&found, list).status, Status::Pass);
+}
+
+#[test]
+fn an_obligation_on_the_plans_paths_is_missing_and_one_named_under_the_escape_heading_passes() {
+    let list = json!([{"id": "settled", "kind": "obligations", "escape_section": "Obligations left owed"}]);
+    let mut found = observed(&json!({}), &[]);
+    found.obligations = Ok(vec!["/controls/x/docs-owed".to_owned()]);
+    let check = first(&found, list.clone());
+    assert_eq!(check.status, Status::Missing);
+    assert_eq!(
+        check.detail,
+        "these obligations apply to the plan's paths: /controls/x/docs-owed"
+    );
+    assert!(check.remedy.unwrap().contains("`board rm <path>`"));
+    found.plan = Some(
+        "# T\n\n## Obligations left owed\n\n- /controls/x/docs-owed, owed to the next step.\n"
+            .to_owned(),
+    );
+    assert_eq!(first(&found, list.clone()).status, Status::Pass);
+    found.obligations = Err("the controls plugin is not enabled".to_owned());
+    assert_eq!(
+        first(&found, list).detail,
+        "the controls plugin is not enabled"
+    );
+}
+
+#[test]
+fn a_missing_check_with_blocks_false_never_blocks_and_its_blocking_twin_does() {
+    let mut found = observed(&json!({}), &[]);
+    found.obligations = Ok(vec!["/controls/x/docs-owed".to_owned()]);
+    let quiet = first(
+        &found,
+        json!([{"id": "o", "kind": "obligations", "blocks": false}]),
+    );
+    assert_eq!(
+        (quiet.status, quiet.blocks, quiet.blocking()),
+        (Status::Missing, false, false)
+    );
+    let loud = first(&found, json!([{"id": "o", "kind": "obligations"}]));
+    assert_eq!(
+        (loud.status, loud.blocks, loud.blocking()),
+        (Status::Missing, true, true)
+    );
+}
+
+#[test]
+fn a_check_reports_its_actor_and_an_agent_one_by_default() {
+    let found = observed(&json!({}), &[]);
+    let owned = first(
+        &found,
+        json!([{"id": "t", "kind": "tasks", "actor": "owner"}]),
+    );
+    assert_eq!(owned.actor, flow::Actor::Owner);
+    let plain = first(&found, json!([{"id": "t", "kind": "tasks"}]));
+    assert_eq!(plain.actor, flow::Actor::Agent);
+}
+
+#[test]
+fn controlled_paths_pass_when_no_named_control_exists_and_say_so_and_miss_an_edit_a_control_lists()
+{
+    let list = json!([{"id": "ui-paths", "kind": "controlled-paths", "controls": ["/controls/{repo}/ui-paths"]}]);
+    let mut found = observed(&json!({}), &[]);
+    found.edited = vec!["/repos/x/ui/a.rs".to_owned()];
+    let none = first(&found, list.clone());
+    assert_eq!(none.status, Status::Pass);
+    assert_eq!(
+        none.detail,
+        "no control /controls/x/ui-paths exists, so the board names no such paths and the check \
+         passes"
+    );
+    found.controlled.insert(
+        "/controls/x/ui-paths".to_owned(),
+        Some(vec!["/repos/x/ui/a.rs".to_owned()]),
+    );
+    let touched = first(&found, list.clone());
+    assert_eq!(touched.status, Status::Missing);
+    assert_eq!(
+        touched.detail,
+        "the change's diff edits files that /controls/x/ui-paths list: /repos/x/ui/a.rs"
+    );
+    found
+        .controlled
+        .insert("/controls/x/ui-paths".to_owned(), Some(Vec::new()));
+    let clear = first(&found, list);
+    assert_eq!((clear.status, clear.detail), (Status::Pass, String::new()));
+}
+
+#[test]
+fn a_tickets_check_with_types_needs_a_ticket_of_one_of_them() {
+    let list =
+        json!([{"id": "ticket", "kind": "field", "field": "tickets", "types": ["jira/issue/v1"]}]);
+    let mut found = observed(&json!({"tickets": ["/jira/T-1"]}), &[]);
+    found.ticket_types = vec!["github/issue/v1".to_owned()];
+    let check = first(&found, list.clone());
+    assert_eq!(check.status, Status::Missing);
+    assert_eq!(
+        check.detail,
+        "the change references 0 tickets of type jira/issue/v1, and the flow's check ticket \
+         needs 1"
+    );
+    found.ticket_types = vec!["jira/issue/v1".to_owned()];
+    assert_eq!(first(&found, list).status, Status::Pass);
+}
+
+#[test]
+fn a_waivable_check_passes_on_a_decision_the_owner_signed_naming_it_and_not_on_a_hooks_stub() {
+    let list = json!([{"id": "suite-run", "kind": "run", "scope": "full", "waivable": true}]);
+    let stub = (
+        "/d/w",
+        "plans/decision/v1",
+        json!({"refs": ["/changes/t#suite-run"], "written_by": "hook"}),
+    );
+    let missing = first(&observed(&json!({"head": HEAD}), &[stub]), list.clone());
+    assert_eq!(missing.status, Status::Missing);
+    assert!(
+        missing
+            .remedy
+            .unwrap()
+            .contains("whose refs name /changes/t#suite-run"),
+        "the remedy says how to waive the check"
+    );
+    let signed = (
+        "/d/w",
+        "plans/decision/v1",
+        json!({"refs": ["/changes/t#suite-run"]}),
+    );
+    let waived = first(&observed(&json!({"head": HEAD}), &[signed]), list);
+    assert_eq!(
+        (waived.status, waived.detail),
+        (Status::Pass, "the owner waived it in /d/w".to_owned())
+    );
+}
+
+#[test]
+fn a_check_that_is_not_waivable_ignores_a_decision_naming_it() {
+    let list = json!([{"id": "suite-run", "kind": "run", "scope": "full"}]);
+    let signed = (
+        "/d/w",
+        "plans/decision/v1",
+        json!({"refs": ["/changes/t#suite-run"]}),
+    );
+    let found = first(&observed(&json!({"head": HEAD}), &[signed]), list);
+    assert_eq!(found.status, Status::Missing);
 }

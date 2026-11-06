@@ -1,13 +1,15 @@
-//! Each phase's gate, as a pure function of the change and the records it
-//! references. These were the Python plugin's `test_gates.py`.
+//! Each phase's gate in the shipped development flow, as a pure function
+//! of the change and the records it references. These were the Python
+//! plugin's `test_gates.py`; the check ids follow the flow.
 
 use std::collections::BTreeMap;
 
 use serde_json::{Map, Value, json};
 
-use super::{Observed, Status, code_of, gate, mockups, sections};
+use super::{Observed, Status, gate, mockups, sections};
 use crate::change::Referenced;
-use crate::records::{ChangeRecord, Kind, Phase};
+use crate::flow::development;
+use crate::records::Kind;
 
 const PATH: &str = "/changes/t";
 const SUITE: &str = "/suites/checks";
@@ -19,6 +21,8 @@ const PLAN: &str = "# Timeout\n\n## Problem\n\nSuites hang.\n\n## Outcome\n\nA s
 const MOCKUP: &str = "https://claude.ai/artifact/m1";
 const NEIGHBOURS: &str = "### Neighbours\n\n- /changes/flows-list, the same area.\n";
 const UNDERSTOOD: &str = "/changes/t/understanding/data";
+const TESTS: &str =
+    "\n## What the tests prove\n\nIt stops.\n\n## What the tests do not prove\n\nRetries.\n";
 
 type Records = Vec<(&'static str, (&'static str, Value))>;
 
@@ -88,7 +92,7 @@ impl Given {
         for (key, value) in self.fields.as_object().unwrap() {
             change[key] = value.clone();
         }
-        let change: ChangeRecord = serde_json::from_value(change).unwrap();
+        let change = crate::change::from_value(change).unwrap();
         let records = Referenced {
             records: (self.records.iter())
                 .map(|(path, (found, body))| {
@@ -104,6 +108,7 @@ impl Given {
                 .collect(),
         };
         let mut observed = Observed::new(PATH, change, Kind::Build, records);
+        observed.flow = Some(development());
         observed.plan.clone_from(&self.plan);
         observed.plan_file = self
             .plan
@@ -118,7 +123,7 @@ impl Given {
     }
 
     /// Each check's status, by name.
-    fn statuses(&self) -> BTreeMap<&'static str, &'static str> {
+    fn statuses(&self) -> BTreeMap<String, &'static str> {
         (gate(&self.observed()).into_iter())
             .map(|found| {
                 let status = if found.status == Status::Pass {
@@ -129,6 +134,14 @@ impl Given {
                 (found.check, status)
             })
             .collect()
+    }
+
+    /// The code `advance` would refuse with for the check `name`.
+    fn code(&self, name: &str) -> &'static str {
+        (gate(&self.observed()).into_iter())
+            .find(|found| found.check == name)
+            .unwrap()
+            .code
     }
 
     /// The status and detail of the check `name`.
@@ -145,8 +158,18 @@ impl Given {
     }
 }
 
-fn statuses(pairs: &[(&'static str, &'static str)]) -> BTreeMap<&'static str, &'static str> {
-    pairs.iter().copied().collect()
+fn statuses(pairs: &[(&str, &'static str)]) -> BTreeMap<String, &'static str> {
+    (pairs.iter())
+        .map(|(name, status)| ((*name).to_owned(), *status))
+        .collect()
+}
+
+/// A decision the owner signed whose refs name the change's plan.
+fn approval() -> (&'static str, (&'static str, Value)) {
+    (
+        "/d/plan",
+        ("plans/decision/v1", json!({"refs": ["/changes/t/plans/1"]})),
+    )
 }
 
 /// A full run of a clean tree of the check suite on the head commit, which
@@ -176,12 +199,12 @@ fn report(fields: &Value) -> (&'static str, Value) {
 
 #[test]
 fn the_plan_gate_passes_when_each_plan_section_has_text_and_misses_when_one_is_empty() {
-    let owned = given("plan").with(json!({"route": "owner"}));
+    let owned = (given("plan").with(json!({"route": "owner"}))).records(vec![approval()]);
     assert!(owned.statuses().values().all(|status| *status == "pass"));
     let thin = "# T\n\n## Problem\n\nX.\n\n## Outcome\n\n## out of scope\nY.\n";
     let owned = owned.plan(Some(thin));
     assert_eq!(
-        owned.check("plan"),
+        owned.check("plan-sections"),
         (
             "missing",
             "the plan at /changes/t/plans/1 has no text under: Outcome, UX, Data".to_owned()
@@ -193,13 +216,13 @@ fn the_plan_gate_passes_when_each_plan_section_has_text_and_misses_when_one_is_e
 fn the_plan_gate_misses_a_plan_that_is_not_there_and_passes_one_with_text() {
     let owned = || given("plan").with(json!({"route": "owner"}));
     assert_eq!(
-        owned().plan(None).check("plan"),
+        owned().plan(None).check("plan-sections"),
         (
             "missing",
             "no plan record and its text are at /changes/t/plans/1".to_owned()
         )
     );
-    assert_eq!(owned().statuses()["plan"], "pass");
+    assert_eq!(owned().statuses()["plan-sections"], "pass");
 }
 
 #[test]
@@ -220,23 +243,36 @@ fn the_plan_gate_misses_a_change_with_no_route_and_passes_each_route() {
 }
 
 #[test]
-fn on_the_ask_first_route_the_plan_gate_needs_a_decision_whose_refs_name_the_plan_or_the_change() {
-    let asking = || given("plan").with(json!({"route": "ask-first"}));
-    let unrelated = vec![(
-        "/d",
-        ("plans/decision/v1", json!({"refs": ["/changes/other"]})),
-    )];
-    assert_eq!(
-        asking().records(unrelated).statuses()["owner-approval"],
-        "missing"
-    );
-    for named in ["/changes/t/plans/1", "/changes/t/plans/1.md", PATH] {
-        let approved = vec![("/d", ("plans/decision/v1", json!({"refs": [named]})))];
+fn on_every_route_the_plan_gate_needs_a_signed_decision_whose_refs_name_the_plan_or_the_change() {
+    for route in ["owner", "ask-first", "unowned"] {
+        let asking = || given("plan").with(json!({"route": route}));
+        let unrelated = vec![(
+            "/d",
+            ("plans/decision/v1", json!({"refs": ["/changes/other"]})),
+        )];
         assert_eq!(
-            asking().records(approved).statuses()["owner-approval"],
-            "pass",
-            "{named}"
+            asking().records(unrelated).statuses()["owner-approval"],
+            "missing"
         );
+        let stub = vec![(
+            "/d",
+            (
+                "plans/decision/v1",
+                json!({"refs": [PATH], "written_by": "hook"}),
+            ),
+        )];
+        assert_eq!(
+            asking().records(stub).statuses()["owner-approval"],
+            "missing"
+        );
+        for named in ["/changes/t/plans/1", "/changes/t/plans/1.md", PATH] {
+            let approved = vec![("/d", ("plans/decision/v1", json!({"refs": [named]})))];
+            assert_eq!(
+                asking().records(approved).statuses()["owner-approval"],
+                "pass",
+                "{route} {named}"
+            );
+        }
     }
 }
 
@@ -250,11 +286,7 @@ fn the_build_gate_passes_with_tasks_done_or_dropped_and_a_passing_run_on_the_hea
     let found = given("build").records(records).with(json!({"head": HEAD}));
     assert_eq!(
         found.statuses(),
-        statuses(&[
-            ("tasks", "pass"),
-            ("check-run", "pass"),
-            ("recheck", "pass")
-        ])
+        statuses(&[("head", "pass"), ("suite-run", "pass"), ("tasks", "pass")])
     );
 }
 
@@ -270,6 +302,12 @@ fn the_build_gate_misses_each_task_still_open() {
         found.check("tasks").1,
         "these tasks are not done or dropped: /t/a.md, /t/b.md"
     );
+    let own = vec![
+        (TASK, ("tasks/task/v2", json!({"status": "open"}))),
+        (RUN, run(&json!({}))),
+    ];
+    let found = given("build").records(own).with(json!({"head": HEAD}));
+    assert_eq!(found.statuses()["tasks"], "pass");
 }
 
 #[test]
@@ -285,13 +323,13 @@ fn the_build_gate_misses_a_run_that_failed_or_is_dirty_targeted_of_another_suite
         json!({"versions": {"repo": "0000000"}}),
     ] {
         let found = (given("build").records(vec![(RUN, run(&wrong))])).with(json!({"head": HEAD}));
-        assert_eq!(found.statuses()["check-run"], "missing", "{wrong}");
+        assert_eq!(found.statuses()["suite-run"], "missing", "{wrong}");
     }
     let skipped = json!({"results": [{"case": "a", "outcome": "skipped", "note": "x"}]});
     let found = given("build")
         .records(vec![(RUN, run(&skipped))])
         .with(json!({"head": HEAD}));
-    assert_eq!(found.statuses()["check-run"], "pass");
+    assert_eq!(found.statuses()["suite-run"], "pass");
 }
 
 #[test]
@@ -304,11 +342,11 @@ fn a_run_belongs_to_the_suite_whose_runs_directory_holds_it_whatever_its_suite_f
     ] {
         let found = (given("build").records(vec![(elsewhere, run(&json!({"suite": SUITE})))]))
             .with(json!({"head": HEAD}));
-        assert_eq!(found.statuses()["check-run"], "missing", "{elsewhere}");
+        assert_eq!(found.statuses()["suite-run"], "missing", "{elsewhere}");
     }
     let found = (given("build").records(vec![(RUN, run(&json!({"suite": "/suites/other"})))]))
         .with(json!({"head": HEAD}));
-    assert_eq!(found.statuses()["check-run"], "pass");
+    assert_eq!(found.statuses()["suite-run"], "pass");
 }
 
 #[test]
@@ -318,24 +356,33 @@ fn the_build_gate_says_when_no_suite_is_named_or_no_head_is_recorded() {
         .with(json!({"head": HEAD}));
     no_suite.suite = None;
     assert_eq!(
-        no_suite.check("check-run").1,
+        no_suite.check("suite-run").1,
         "no contributing doc in /repos/x names a runs/suite/v1 path as its check suite"
     );
     let no_head = given("build").records(vec![(RUN, run(&json!({})))]);
     assert_eq!(
-        no_head.check("check-run").1,
+        no_head.check("suite-run").1,
         "the change records no head commit; attach one with --head"
     );
+}
+
+/// The review gate's checks for the fixture plan, whose UX and Data say
+/// there is nothing to show or store, with the review's status.
+fn review_statuses(review: &'static str) -> BTreeMap<String, &'static str> {
+    statuses(&[
+        ("review", review),
+        ("paths", "pass"),
+        ("ui-paths", "pass"),
+        ("data-paths", "pass"),
+        ("obligations-settled", "pass"),
+    ])
 }
 
 #[test]
 fn the_review_gate_passes_a_report_on_the_head_without_a_blocking_finding() {
     let found = (given("review").records(vec![("/r", report(&json!({})))]))
         .with(json!({"head": &HEAD[..12]}));
-    assert_eq!(
-        found.statuses(),
-        statuses(&[("review", "pass"), ("paths", "pass")])
-    );
+    assert_eq!(found.statuses(), review_statuses("pass"));
     for wrong in [
         json!({"range": format!("{BASE}..{}", "b".repeat(40))}),
         json!({"range": HEAD}),
@@ -345,11 +392,7 @@ fn the_review_gate_passes_a_report_on_the_head_without_a_blocking_finding() {
     ] {
         let found =
             (given("review").records(vec![("/r", report(&wrong))])).with(json!({"head": HEAD}));
-        assert_eq!(
-            found.statuses(),
-            statuses(&[("review", "missing"), ("paths", "pass")]),
-            "{wrong}"
-        );
+        assert_eq!(found.statuses(), review_statuses("missing"), "{wrong}");
     }
 }
 
@@ -359,10 +402,7 @@ fn the_review_gate_reads_the_head_from_the_right_side_of_a_three_dot_range() {
     let found = given("review")
         .records(vec![("/r", three)])
         .with(json!({"head": HEAD}));
-    assert_eq!(
-        found.statuses(),
-        statuses(&[("review", "pass"), ("paths", "pass")])
-    );
+    assert_eq!(found.statuses(), review_statuses("pass"));
 }
 
 #[test]
@@ -382,7 +422,7 @@ fn the_review_gate_refuses_a_diff_outside_the_planned_paths_and_passes_one_insid
                 .to_owned()
         )
     );
-    assert_eq!(code_of("paths"), "changes::paths::outside_plan");
+    assert_eq!(outside.code("paths"), "changes::paths::outside_plan");
     let mut unplanned = reviewed();
     unplanned.planned = Vec::new();
     assert_eq!(
@@ -400,11 +440,12 @@ fn the_review_gate_refuses_a_diff_outside_the_planned_paths_and_passes_one_insid
 }
 
 #[test]
-fn the_land_gate_needs_a_pull_request_record_and_done_has_no_gate() {
+fn the_land_gate_needs_the_test_sections_and_a_pull_request_record_and_done_has_no_gate() {
     assert_eq!(
         given("land").statuses(),
-        statuses(&[("pull-request", "missing")])
+        statuses(&[("test-sections", "missing"), ("pull-request", "missing")])
     );
+    let tested = format!("{PLAN}{TESTS}");
     let mut unread = given("land").with(json!({"pulls": ["/runs/1"]}));
     unread.pull_read = false;
     assert_eq!(
@@ -413,8 +454,11 @@ fn the_land_gate_needs_a_pull_request_record_and_done_has_no_gate() {
          `board check /runs/1`, or record the pull request with `board call github.ref` and \
          attach it with --pull"
     );
-    let landed = given("land").with(json!({"pulls": ["/gh/o/r/pulls/1"]}));
-    assert_eq!(landed.statuses(), statuses(&[("pull-request", "pass")]));
+    let landed = (given("land").plan(Some(&tested))).with(json!({"pulls": ["/gh/o/r/pulls/1"]}));
+    assert_eq!(
+        landed.statuses(),
+        statuses(&[("test-sections", "pass"), ("pull-request", "pass")])
+    );
     assert!(gate(&given("done").observed()).is_empty());
 }
 
@@ -428,7 +472,7 @@ fn planned_ux(ux: &str) -> String {
     planned(ux, "None.")
 }
 
-fn plan_checks(plan: &str, records: Records) -> BTreeMap<&'static str, &'static str> {
+fn plan_checks(plan: &str, records: Records) -> BTreeMap<String, &'static str> {
     (given("plan").plan(Some(plan)).records(records))
         .with(json!({"route": "owner"}))
         .statuses()
@@ -475,45 +519,46 @@ fn both() -> Records {
 fn the_plan_gate_needs_text_under_ux_and_data() {
     let bare = format!("{}## UX\n\n## Data\n", PLAN.split("## UX").next().unwrap());
     assert_eq!(
-        detail(&bare, "plan", Vec::new()),
+        detail(&bare, "plan-sections", Vec::new()),
         "the plan at /changes/t/plans/1 has no text under: UX, Data"
     );
     let plan = planned_ux("No UI change: it is headless.");
-    assert_eq!(plan_checks(&plan, Vec::new())["plan"], "pass");
+    assert_eq!(plan_checks(&plan, Vec::new())["plan-sections"], "pass");
 }
 
 #[test]
-fn a_plan_with_no_ui_change_and_no_data_passes_the_ux_neighbours_and_data_checks() {
+fn a_plan_with_no_ui_change_and_no_data_leaves_out_the_mockups_and_data_checks() {
     let checks = plan_checks(&planned_ux("No UI change: it is headless."), Vec::new());
-    assert_eq!(
-        (checks["ux"], checks["neighbours"], checks["data"]),
-        ("pass", "pass", "pass")
-    );
+    assert!(!checks.contains_key("mockups") && !checks.contains_key("data-signed"));
+    let changed = plan_checks(&planned("A new list view.", "A new table."), Vec::new());
+    assert!(changed.contains_key("mockups") && changed.contains_key("data-signed"));
 }
 
 #[test]
 fn ux_that_says_no_ui_change_needs_a_reason() {
     assert_eq!(
-        plan_checks(&planned_ux("No UI change."), Vec::new())["ux"],
+        plan_checks(&planned_ux("No UI change."), Vec::new())["mockups"],
         "missing"
     );
     let reasoned = planned_ux("No UI change: it runs headless.");
-    assert_eq!(plan_checks(&reasoned, Vec::new())["ux"], "pass");
+    assert!(!plan_checks(&reasoned, Vec::new()).contains_key("mockups"));
 }
 
 #[test]
 fn ux_with_no_mockups_list_is_missing_and_one_listing_agreed_mockups_passes() {
     let vague = planned_ux(&format!("A new list view.\n\n{NEIGHBOURS}"));
     assert_eq!(
-        detail(&vague, "ux", Vec::new()),
+        detail(&vague, "mockups", Vec::new()),
         "the UX section neither starts with No UI change and a reason nor lists mockups under a \
          ### Mockups heading"
     );
+    let routed = (given("plan").plan(Some(&vague))).with(json!({"route": "owner"}));
+    assert_eq!(routed.code("mockups"), "changes::ux::not_agreed");
     let listed = planned_ux(&format!(
         "A new list view.\n\n{}\n{NEIGHBOURS}",
         mockups_list()
     ));
-    assert_eq!(plan_checks(&listed, both())["ux"], "pass");
+    assert_eq!(plan_checks(&listed, both())["mockups"], "pass");
 }
 
 #[test]
@@ -522,7 +567,7 @@ fn only_the_mockups_list_names_mockups_so_a_route_or_an_issue_link_in_the_prose_
         "The list opens at `/flows/:id`, as https://github.com/acme/widgets/issues/12 asks.";
     let plan = planned_ux(&format!("{prose}\n\n{}\n{NEIGHBOURS}", mockups_list()));
     assert_eq!(mockups(&sections(&plan)), vec![MOCKUP, "/artifacts/m2"]);
-    assert_eq!(plan_checks(&plan, both())["ux"], "pass");
+    assert_eq!(plan_checks(&plan, both())["mockups"], "pass");
 }
 
 #[test]
@@ -531,23 +576,23 @@ fn a_mockups_item_that_names_no_artifact_is_missing_and_one_that_names_one_passe
         "### Mockups\n\n- the list view, still to draw\n\n{NEIGHBOURS}"
     ));
     assert_eq!(
-        detail(&plan, "ux", Vec::new()),
+        detail(&plan, "mockups", Vec::new()),
         "this item of the Mockups list names no artifact by URL or board path: the list view, \
          still to draw"
     );
     let named = planned_ux(&format!("{}\n{NEIGHBOURS}", mockups_list()));
-    assert_eq!(plan_checks(&named, both())["ux"], "pass");
+    assert_eq!(plan_checks(&named, both())["mockups"], "pass");
 }
 
 #[test]
 fn a_mockup_with_no_decision_naming_it_is_not_agreed_and_one_named_in_urls_or_refs_is() {
     let plan = planned_ux(&format!("{}\n{NEIGHBOURS}", mockups_list()));
     assert_eq!(
-        detail(&plan, "ux", agreed(&[MOCKUP])),
+        detail(&plan, "mockups", agreed(&[MOCKUP])),
         "these mockups have no attached plans/decision/v1 that names them in its urls or refs: \
          /artifacts/m2"
     );
-    assert_eq!(plan_checks(&plan, both())["ux"], "pass");
+    assert_eq!(plan_checks(&plan, both())["mockups"], "pass");
 }
 
 #[test]
@@ -555,43 +600,44 @@ fn a_decision_a_hook_wrote_agrees_nothing_and_one_an_agent_wrote_does() {
     let plan = planned_ux(&format!("{}\n{NEIGHBOURS}", mockups_list()));
     let mut stub = both();
     stub[0].1.1["written_by"] = json!("runs/pr-create");
-    assert_eq!(plan_checks(&plan, stub)["ux"], "missing");
-    assert_eq!(plan_checks(&plan, both())["ux"], "pass");
+    assert_eq!(plan_checks(&plan, stub)["mockups"], "missing");
+    assert_eq!(plan_checks(&plan, both())["mockups"], "pass");
 }
 
 #[test]
 fn ux_with_mockups_needs_a_neighbours_list_under_it_and_passes_with_one() {
     let bare = planned_ux(&mockups_list());
     assert_eq!(
-        detail(&bare, "neighbours", both()),
+        detail(&bare, "mockups", both()),
         "the UX section lists mockups but has no ### Neighbours heading under it with a list: \
          name the open changes and artifacts in the same area, and the components and flows the \
          design reuses"
     );
+    let routed = (given("plan").plan(Some(&bare)).records(both())).with(json!({"route": "owner"}));
+    assert_eq!(routed.code("mockups"), "changes::ux::no_neighbours");
     let headed = planned_ux(&format!(
         "{}\n### Neighbours\n\nNone found.\n",
         mockups_list()
     ));
-    assert_eq!(plan_checks(&headed, both())["neighbours"], "missing");
+    assert_eq!(plan_checks(&headed, both())["mockups"], "missing");
     let sibling = (planned_ux(&mockups_list()))
         .replace("## Data", "## Neighbours\n\n- /changes/other\n\n## Data");
-    assert_eq!(plan_checks(&sibling, both())["neighbours"], "missing");
+    assert_eq!(plan_checks(&sibling, both())["mockups"], "missing");
     let listed = planned_ux(&format!("{}\n{NEIGHBOURS}", mockups_list()));
-    assert_eq!(plan_checks(&listed, both())["neighbours"], "pass");
+    assert_eq!(plan_checks(&listed, both())["mockups"], "pass");
 }
 
 #[test]
-fn data_that_says_none_alone_passes_and_none_of_followed_by_a_change_does_not() {
+fn data_that_says_none_alone_leaves_out_the_data_check_and_none_of_followed_by_a_change_does_not() {
     let ux = "No UI change: it is headless.";
     for none in ["None", "None.", "None: it stores nothing."] {
-        assert_eq!(
-            plan_checks(&planned(ux, none), Vec::new())["data"],
-            "pass",
+        assert!(
+            !plan_checks(&planned(ux, none), Vec::new()).contains_key("data-signed"),
             "{none}"
         );
     }
     let changed = planned(ux, "None of the tables change; we add a column.");
-    assert_eq!(plan_checks(&changed, Vec::new())["data"], "missing");
+    assert_eq!(plan_checks(&changed, Vec::new())["data-signed"], "missing");
 }
 
 /// An understanding check of this change's data, with `fields` over it.
@@ -618,13 +664,15 @@ fn data_that_is_not_none_needs_a_decision_referencing_this_changes_understanding
         "One record per call, in the calls table.",
     );
     assert_eq!(
-        detail(&plan, "data", Vec::new()),
-        "the Data section is not None, and no attached plans/decision/v1 references an attached \
+        detail(&plan, "data-signed", Vec::new()),
+        "no attached plans/decision/v1 the owner signed references an attached \
          changes/understanding/v1 of this change's data; run the understanding-check skill, then \
          have the owner sign a decision whose refs name its record"
     );
+    let routed = (given("plan").plan(Some(&plan))).with(json!({"route": "owner"}));
+    assert_eq!(routed.code("data-signed"), "changes::data::not_signed");
     let unsigned = vec![(UNDERSTOOD, understanding(&json!({})))];
-    assert_eq!(plan_checks(&plan, unsigned)["data"], "missing");
+    assert_eq!(plan_checks(&plan, unsigned)["data-signed"], "missing");
     let other = vec![
         (
             UNDERSTOOD,
@@ -632,17 +680,17 @@ fn data_that_is_not_none_needs_a_decision_referencing_this_changes_understanding
         ),
         ("/d/s", signed(&[UNDERSTOOD])),
     ];
-    assert_eq!(plan_checks(&plan, other)["data"], "missing");
+    assert_eq!(plan_checks(&plan, other)["data-signed"], "missing");
     let ux = vec![
         (UNDERSTOOD, understanding(&json!({"subject": "ux"}))),
         ("/d/s", signed(&[UNDERSTOOD])),
     ];
-    assert_eq!(plan_checks(&plan, ux)["data"], "missing");
+    assert_eq!(plan_checks(&plan, ux)["data-signed"], "missing");
     let signed_off = vec![
         (UNDERSTOOD, understanding(&json!({}))),
         ("/d/s", signed(&[UNDERSTOOD])),
     ];
-    assert_eq!(plan_checks(&plan, signed_off)["data"], "pass");
+    assert_eq!(plan_checks(&plan, signed_off)["data-signed"], "pass");
 }
 
 #[test]
@@ -657,12 +705,12 @@ fn a_data_decision_a_hook_wrote_signs_nothing_and_one_the_owner_signed_does() {
         (UNDERSTOOD, understanding(&json!({}))),
         ("/d/s", (kind, body)),
     ];
-    assert_eq!(plan_checks(&plan, stub)["data"], "missing");
+    assert_eq!(plan_checks(&plan, stub)["data-signed"], "missing");
     let owned = vec![
         (UNDERSTOOD, understanding(&json!({}))),
         ("/d/s", signed(&[UNDERSTOOD])),
     ];
-    assert_eq!(plan_checks(&plan, owned)["data"], "pass");
+    assert_eq!(plan_checks(&plan, owned)["data-signed"], "pass");
 }
 
 /// Rechecks, one per entry, each matching the plan or not.
@@ -676,9 +724,14 @@ fn rechecked(matches: &[bool]) -> Value {
 
 #[test]
 fn the_build_gate_needs_two_matching_rechecks_on_each_attached_understanding_check() {
+    let stored = planned("No UI change: it is headless.", "One record per call.");
     let built = |understood: (&'static str, Value)| {
-        (given("build").records(vec![(RUN, run(&json!({}))), (UNDERSTOOD, understood)]))
-            .with(json!({"head": HEAD}))
+        (given("build").plan(Some(&stored)).records(vec![
+            (RUN, run(&json!({}))),
+            (UNDERSTOOD, understood),
+            ("/d/s", signed(&[UNDERSTOOD])),
+        ]))
+        .with(json!({"head": HEAD}))
     };
     for rechecks in [
         rechecked(&[]),
@@ -686,10 +739,10 @@ fn the_build_gate_needs_two_matching_rechecks_on_each_attached_understanding_che
         rechecked(&[true, false]),
     ] {
         let found = built(understanding(&json!({"rechecks": rechecks.clone()})));
-        assert_eq!(found.statuses()["recheck"], "missing", "{rechecks}");
+        assert_eq!(found.statuses()["rechecks"], "missing", "{rechecks}");
     }
     assert_eq!(
-        built(understanding(&json!({}))).check("recheck").1,
+        built(understanding(&json!({}))).check("rechecks").1,
         "the understanding check at /changes/t/understanding/data holds fewer than two rechecks \
          that match the plan; before review, ask two of its predict or edge questions again, \
          worded differently, and add them to its rechecks"
@@ -700,9 +753,10 @@ fn the_build_gate_needs_two_matching_rechecks_on_each_attached_understanding_che
     assert_eq!(
         passed.statuses(),
         statuses(&[
+            ("head", "pass"),
+            ("suite-run", "pass"),
             ("tasks", "pass"),
-            ("check-run", "pass"),
-            ("recheck", "pass")
+            ("rechecks", "pass")
         ])
     );
 }
@@ -710,22 +764,31 @@ fn the_build_gate_needs_two_matching_rechecks_on_each_attached_understanding_che
 #[test]
 fn an_attached_understanding_check_board_does_not_read_fails_the_recheck_and_another_record_does_not()
  {
+    let stored = planned("No UI change: it is headless.", "One record per call.");
     let built = |kind: &'static str| {
-        (given("build").records(vec![(RUN, run(&json!({})))]))
-            .with(json!({"head": HEAD}))
-            .unreadable(vec![(UNDERSTOOD, kind, "board::record::invalid")])
+        let other = "/changes/t/understanding/other";
+        (given("build").plan(Some(&stored)).records(vec![
+            (RUN, run(&json!({}))),
+            (
+                other,
+                understanding(&json!({"rechecks": rechecked(&[true, true])})),
+            ),
+            ("/d/s", signed(&[other])),
+        ]))
+        .with(json!({"head": HEAD}))
+        .unreadable(vec![(UNDERSTOOD, kind, "board::record::invalid")])
     };
     assert_eq!(
-        built("changes/understanding/v1").check("recheck"),
+        built("changes/understanding/v1").check("rechecks"),
         (
             "missing",
             "the understanding check at /changes/t/understanding/data is degraded with \
-             board::record::invalid, so its rechecks cannot be counted; run `board check \
+             board::record::invalid, so it cannot be read; run `board check \
              /changes/t/understanding/data` and fix it"
                 .to_owned()
         )
     );
-    assert_eq!(built("tasks/task/v2").statuses()["recheck"], "pass");
+    assert_eq!(built("tasks/task/v2").statuses()["rechecks"], "pass");
 }
 
 #[test]
@@ -733,5 +796,4 @@ fn a_heading_inside_a_code_fence_starts_no_section() {
     let found = sections("# T\n\n## Problem\n\n```\n## Outcome\n```\n");
     assert_eq!(found["problem"], "```\n## Outcome\n```");
     assert!(!found.contains_key("outcome"));
-    assert_eq!(Phase::Plan.next(), Some(Phase::Build));
 }
