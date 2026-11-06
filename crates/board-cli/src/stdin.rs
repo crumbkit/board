@@ -12,7 +12,7 @@ use serde_json::{Map, Value};
 use crate::config::Context;
 use crate::render::{self, Printer};
 use crate::report::Output;
-use crate::run::{Prefix, Putting, plain, plugins, read, read_folder};
+use crate::run::{Prefix, Putting, plain, plugins, read_folder};
 
 #[derive(Debug, Subcommand)]
 pub(crate) enum TypeCommand {
@@ -64,7 +64,7 @@ pub(crate) fn put(
     let at = match (path, new) {
         _ if batch => Ok(At::Batch),
         (Some(folder), true) => read_folder(prefix, &folder).map(At::New),
-        (Some(path), false) => read(prefix, &path, "put").map(At::Path),
+        (Some(path), false) => crate::mistaken::file_path(prefix, &path, "put").map(At::Path),
         (None, true) => Ok(At::Declared),
         (None, false) => unreachable!("clap requires a path, --new or --batch"),
     };

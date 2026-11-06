@@ -66,7 +66,9 @@ lists `/`. A run with no prefix reads from `/`. `.` and `./` are the prefix
 itself, and `x` and `./x` are `x` beneath it. One trailing `/` on a relative
 or an absolute path, which a shell adds to a directory, is dropped, so
 `board ls /tasks/` lists `/tasks`. `/` stays the root, and a path ending in
-two is refused. The result must be a logical path, so any
+two is refused. `put` and `rm` name a file, so they refuse a path ending in
+`/` with `board::cli::usage`; the hint names `put --new` for a folder and
+`rm -r` for a directory. The result must be a logical path, so any
 other `.` or `..` segment is refused with `board::cli::usage`. The refusal
 names the path as typed, and for a `..` that stays at or below `/` its hint
 gives the absolute path. Board reads the prefix only for a relative path.

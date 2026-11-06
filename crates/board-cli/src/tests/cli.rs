@@ -1377,7 +1377,10 @@ fn put_given_its_input_as_an_argument_hints_stdin_and_the_hinted_puts_write() {
 fn an_unknown_flag_on_put_keeps_claps_refusal_and_the_flag_it_suggests_runs() {
     let scenario = uncommitted();
     let refused = board_in(scenario.workdir(), &["put", "/notes/a.md", "--fil"]);
-    assert_eq!(refused.code, 2);
+    assert_eq!(
+        (refused.code, refused.error.as_deref()),
+        (2, Some("board::cli::usage"))
+    );
     assert!(
         text(&refused.stderr).starts_with("error: unexpected argument '--fil' found"),
         "{}",
@@ -1498,4 +1501,85 @@ fn put_new_refuses_a_folder_ending_in_two_slashes_and_admits_one() {
         let admitted = board_with(scenario.workdir(), None, &["put", "--new", once], record);
         assert_eq!(admitted.code, 0, "{once}: {}", text(&admitted.stderr));
     }
+}
+
+#[test]
+fn a_put_hint_names_file_before_a_double_dash_and_the_hinted_put_writes() {
+    let scenario = uncommitted();
+    let refused = board_in(scenario.workdir(), &["put", "/notes/b.md", "--", "b.md"]);
+    assert_eq!(
+        (refused.code, refused.error.as_deref()),
+        (2, Some("board::cli::usage"))
+    );
+    let hints = hinted(&refused);
+    assert_eq!(
+        hints[0],
+        (
+            "board put /notes/b.md --file --".to_owned(),
+            Some("b.md".to_owned())
+        )
+    );
+    let file = run_hinted(scenario.workdir(), &hints[0].0, b"b");
+    assert_eq!(file.code, 0, "{}", text(&file.stderr));
+}
+
+#[test]
+fn a_stray_word_beside_new_and_a_path_keeps_claps_refusal_and_one_beside_file_is_hinted() {
+    let scenario = uncommitted();
+    let refused = board_in(scenario.workdir(), &["put", "/notes/a.md", "a.md", "--new"]);
+    assert_eq!(
+        (refused.code, refused.error.as_deref()),
+        (2, Some("board::cli::usage"))
+    );
+    assert_eq!(hint_of(&refused), "run `board put -h`");
+    let hinted_line = board_in(
+        scenario.workdir(),
+        &["put", "/notes/a.md", "a.md", "--file"],
+    );
+    assert_eq!(
+        hint_of(&hinted_line),
+        "pipe a.md to put: run `board put /notes/a.md --file < a.md`"
+    );
+}
+
+#[test]
+fn put_and_rm_refuse_a_path_ending_in_a_slash_and_admit_it_without_the_slash() {
+    let scenario = uncommitted();
+    let refused = board_with(
+        scenario.workdir(),
+        None,
+        &["put", "/newdir/", "--file"],
+        b"hello",
+    );
+    assert_eq!(
+        (refused.code, refused.error.as_deref()),
+        (2, Some("board::cli::usage"))
+    );
+    assert_eq!(
+        text(&refused.stderr),
+        "error: put's path /newdir/ ends in /, which names a folder\n\
+         \x20 help:  use `--new /newdir/` to add a record in it, or leave out the slash to write a file\n\
+         \x20 code:  board::cli::usage\n"
+    );
+    let admitted = board_with(
+        scenario.workdir(),
+        None,
+        &["put", "/newdir", "--file"],
+        b"hello",
+    );
+    assert_eq!(admitted.code, 0, "{}", text(&admitted.stderr));
+
+    let refused = board_in(scenario.workdir(), &["rm", "/newdir/"]);
+    assert_eq!(
+        (refused.code, refused.error.as_deref()),
+        (2, Some("board::cli::usage"))
+    );
+    assert_eq!(
+        text(&refused.stderr),
+        "error: rm's path /newdir/ ends in /, which names a folder\n\
+         \x20 help:  leave out the slash to remove a file, or run `board rm -r /newdir` to remove a folder\n\
+         \x20 code:  board::cli::usage\n"
+    );
+    let admitted = board_in(scenario.workdir(), &["rm", "/newdir"]);
+    assert_eq!(admitted.code, 0, "{}", text(&admitted.stderr));
 }
