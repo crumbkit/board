@@ -1,78 +1,251 @@
 {
   "$defs": {
-    "Rule": {
-      "additionalProperties": false,
-      "description": "What a program checks: a budget, a pattern file, a judged rubric or a version floor, told apart by their fields.\n\nA budget, `budget` and `max`, limits the words or bytes of the files or\ntext; with `per` `total`, the default, the files' usage is summed, and\nwith `file` each file on its own must be within `max`. Words are\nseparated by any whitespace. A pattern, `pattern` and `show`, names a file\nof regular expressions, one per line, that text must not match; with\n`show` `match-only`, a finding quotes what matched and never the\nexpression. A judged rule, `judged`, names a rubric that a clean-context\nmodel reads text against. A version rule, `at_least` and `capture`, says\nthat every version the first group of the regular expression `capture`\nfinds is at least `at_least`, compared over the numbers the version names.",
+    "BudgetRule": {
+      "description": "A budget rule: a limit on the words or bytes of the files the control\napplies to, or of the text `evaluate` is given.",
+      "else": {
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "max"
+              ]
+            },
+            {
+              "required": [
+                "per"
+              ]
+            },
+            {
+              "required": [
+                "unit"
+              ]
+            }
+          ]
+        }
+      },
+      "if": {
+        "properties": {
+          "check": {
+            "const": "budget"
+          }
+        },
+        "required": [
+          "check"
+        ]
+      },
       "properties": {
-        "at_least": {
-          "pattern": "^[0-9]+(\\.[0-9]+)*$",
-          "title": "At Least",
-          "type": "string"
-        },
-        "budget": {
-          "enum": [
-            "words",
-            "bytes"
-          ],
-          "title": "Budget",
-          "type": "string"
-        },
-        "capture": {
-          "minLength": 1,
-          "title": "Capture",
-          "type": "string"
-        },
-        "judged": {
-          "format": "board-ref",
-          "title": "Judged",
-          "type": "string"
-        },
         "max": {
+          "description": "The most words or bytes allowed.",
           "minimum": 0,
-          "title": "Max",
           "type": "integer"
-        },
-        "pattern": {
-          "format": "board-ref",
-          "title": "Pattern",
-          "type": "string"
         },
         "per": {
           "default": "total",
+          "description": "`total`, the default, to sum the files' usage, or `file` to hold\neach file on its own within `max`.",
           "enum": [
             "total",
             "file"
           ],
-          "title": "Per",
           "type": "string"
         },
-        "show": {
+        "unit": {
+          "description": "What the budget counts: `words`, separated by any whitespace, or\n`bytes`.",
+          "enum": [
+            "words",
+            "bytes"
+          ],
+          "type": "string"
+        }
+      },
+      "then": {
+        "required": [
+          "unit",
+          "max"
+        ]
+      }
+    },
+    "JudgedRule": {
+      "description": "A judged rule: a rubric that a clean-context model reads text against.",
+      "else": {
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "rubric"
+              ]
+            }
+          ]
+        }
+      },
+      "if": {
+        "properties": {
+          "check": {
+            "const": "judged"
+          }
+        },
+        "required": [
+          "check"
+        ]
+      },
+      "properties": {
+        "rubric": {
+          "description": "The rubric the model reads.",
+          "format": "board-ref",
+          "type": "string"
+        }
+      },
+      "then": {
+        "required": [
+          "rubric"
+        ]
+      }
+    },
+    "PatternRule": {
+      "description": "A pattern rule: a file of regular expressions, one per line, that text\nmust not match.",
+      "else": {
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "file"
+              ]
+            },
+            {
+              "required": [
+                "quote"
+              ]
+            }
+          ]
+        }
+      },
+      "if": {
+        "properties": {
+          "check": {
+            "const": "pattern"
+          }
+        },
+        "required": [
+          "check"
+        ]
+      },
+      "properties": {
+        "file": {
+          "description": "The file of regular expressions.",
+          "format": "board-ref",
+          "type": "string"
+        },
+        "quote": {
+          "description": "What a finding quotes: `match-only` quotes what matched and never\nthe expression, and `pattern` names the expression too.",
           "enum": [
             "match-only",
             "pattern"
           ],
-          "title": "Show",
           "type": "string"
         }
       },
-      "title": "Rule",
-      "type": "object"
+      "then": {
+        "required": [
+          "file",
+          "quote"
+        ]
+      }
+    },
+    "Rule": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/BudgetRule"
+        },
+        {
+          "$ref": "#/$defs/PatternRule"
+        },
+        {
+          "$ref": "#/$defs/JudgedRule"
+        },
+        {
+          "$ref": "#/$defs/VersionRule"
+        }
+      ],
+      "description": "What a program checks: a budget, a pattern file, a judged rubric or a version floor, named by `check`.",
+      "properties": {
+        "check": {
+          "description": "The kind of rule, which decides its other fields.",
+          "enum": [
+            "budget",
+            "pattern",
+            "judged",
+            "version"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "check"
+      ],
+      "type": "object",
+      "unevaluatedProperties": false
+    },
+    "VersionRule": {
+      "description": "A version rule: every version the first group of `capture` finds is at\nleast `at_least`, compared over the numbers the version names.",
+      "else": {
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "at_least"
+              ]
+            },
+            {
+              "required": [
+                "capture"
+              ]
+            }
+          ]
+        }
+      },
+      "if": {
+        "properties": {
+          "check": {
+            "const": "version"
+          }
+        },
+        "required": [
+          "check"
+        ]
+      },
+      "properties": {
+        "at_least": {
+          "description": "The oldest version a file may pin, as numbers separated by dots,\nsuch as `1.99.1`.",
+          "pattern": "^[0-9]+(\\.[0-9]+)*$",
+          "type": "string"
+        },
+        "capture": {
+          "description": "A regular expression in the syntax of Rust's regex crate, whose\nfirst group finds each version a file pins.",
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "then": {
+        "required": [
+          "at_least",
+          "capture"
+        ]
+      }
     }
   },
   "additionalProperties": false,
-  "description": "`controls/control/v1`: a requirement on files, why it exists, and optionally a rule a program checks.\n\nIt applies to the entries `applies_to` references and to every entry of\nthe board whose path matches one of `paths`, SQLite GLOB patterns such as\n`docs/*.md`.",
+  "description": "`controls/control/v1`: a requirement on files, why it exists, and\noptionally a rule a program checks.\n\nIt applies to the entries `applies_to` references and to every entry of\nthe board whose path matches one of `paths`.",
   "properties": {
     "$type": {
       "const": "controls/control/v1",
-      "title": "$Type",
+      "description": "The record's type.",
       "type": "string"
     },
     "applies_to": {
+      "description": "The entries the control applies to, by reference.",
       "items": {
         "format": "board-ref",
         "type": "string"
       },
-      "title": "Applies To",
       "type": "array"
     },
     "kind": {
@@ -81,189 +254,30 @@
         "standing",
         "obligation"
       ],
-      "title": "Kind",
       "type": "string"
     },
     "paths": {
+      "description": "The paths the control applies to, as `SQLite` GLOB patterns from the\nboard's root, such as `docs/*.md`, where `*` also matches `/`.",
       "items": {
-        "type": "string"
+        "minLength": 1,
+        "type": "string",
+        "x-board-glob": true
       },
-      "title": "Paths",
       "type": "array"
     },
     "purpose": {
-      "title": "Purpose",
+      "description": "Why the requirement exists.",
       "type": "string",
       "x-board-prose": true
     },
     "requirement": {
-      "title": "Requirement",
+      "description": "What the files must do, in sentences a person reads.",
       "type": "string",
       "x-board-prose": true
     },
     "rule": {
       "$ref": "#/$defs/Rule",
-      "oneOf": [
-        {
-          "not": {
-            "anyOf": [
-              {
-                "required": [
-                  "pattern"
-                ]
-              },
-              {
-                "required": [
-                  "show"
-                ]
-              },
-              {
-                "required": [
-                  "judged"
-                ]
-              },
-              {
-                "required": [
-                  "at_least"
-                ]
-              },
-              {
-                "required": [
-                  "capture"
-                ]
-              }
-            ]
-          },
-          "required": [
-            "budget",
-            "max"
-          ]
-        },
-        {
-          "not": {
-            "anyOf": [
-              {
-                "required": [
-                  "budget"
-                ]
-              },
-              {
-                "required": [
-                  "max"
-                ]
-              },
-              {
-                "required": [
-                  "per"
-                ]
-              },
-              {
-                "required": [
-                  "judged"
-                ]
-              },
-              {
-                "required": [
-                  "at_least"
-                ]
-              },
-              {
-                "required": [
-                  "capture"
-                ]
-              }
-            ]
-          },
-          "required": [
-            "pattern",
-            "show"
-          ]
-        },
-        {
-          "not": {
-            "anyOf": [
-              {
-                "required": [
-                  "budget"
-                ]
-              },
-              {
-                "required": [
-                  "max"
-                ]
-              },
-              {
-                "required": [
-                  "per"
-                ]
-              },
-              {
-                "required": [
-                  "pattern"
-                ]
-              },
-              {
-                "required": [
-                  "show"
-                ]
-              },
-              {
-                "required": [
-                  "at_least"
-                ]
-              },
-              {
-                "required": [
-                  "capture"
-                ]
-              }
-            ]
-          },
-          "required": [
-            "judged"
-          ]
-        },
-        {
-          "not": {
-            "anyOf": [
-              {
-                "required": [
-                  "budget"
-                ]
-              },
-              {
-                "required": [
-                  "max"
-                ]
-              },
-              {
-                "required": [
-                  "per"
-                ]
-              },
-              {
-                "required": [
-                  "pattern"
-                ]
-              },
-              {
-                "required": [
-                  "show"
-                ]
-              },
-              {
-                "required": [
-                  "judged"
-                ]
-              }
-            ]
-          },
-          "required": [
-            "at_least",
-            "capture"
-          ]
-        }
-      ]
+      "description": "What a program checks of the files; left out for a requirement only\na reader can judge."
     },
     "show": {
       "description": "When to show the control: `start` at session start, `edit` before\nthe first edit of a file it covers, or `failing` only when `check`\nreports it failing. Left out, an obligation shows at `start`, a\ncontrol with a budget when `failing`, and any other at `edit`.",
@@ -272,7 +286,6 @@
         "edit",
         "failing"
       ],
-      "title": "Show",
       "type": "string"
     },
     "sources": {
@@ -281,13 +294,11 @@
         "format": "board-ref",
         "type": "string"
       },
-      "title": "Sources",
       "type": "array"
     },
     "summary": {
       "description": "The requirement in one line of at most 25 words, which a change's\nbrief shows in its place.",
       "pattern": "^\\S+( \\S+){0,24}$",
-      "title": "Summary",
       "type": "string"
     }
   },

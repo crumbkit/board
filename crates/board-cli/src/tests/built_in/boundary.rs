@@ -57,7 +57,9 @@ fn private_names(board: &Personal) {
         .write("private/names.txt", &format!("{PRIVATE}\n"))
         .write(
             "controls/names.json",
-            &control(&json!({"pattern": "/private/names.txt", "show": "match-only"})),
+            &control(
+                &json!({"check": "pattern", "file": "/private/names.txt", "quote": "match-only"}),
+            ),
         );
 }
 
@@ -197,7 +199,7 @@ fn a_check_applies_only_to_the_parts_its_globs_name() {
     let personal = Personal::new();
     personal.write(
         "controls/short.json",
-        &control(&json!({"budget": "words", "max": 2})),
+        &control(&json!({"check": "budget", "unit": "words", "max": 2})),
     );
     let checks = json!([{"control": "/controls/short", "parts": ["pr.title"]}]);
     personal.write(
@@ -289,7 +291,7 @@ fn judged(personal: &Personal) {
         .write("rubrics/plain.md", "Write plainly.\n")
         .write(
             "controls/plain.json",
-            &control(&json!({"judged": "/rubrics/plain.md"})),
+            &control(&json!({"check": "judged", "rubric": "/rubrics/plain.md"})),
         );
     let checks = json!([{"control": "/controls/plain", "parts": ["pr.body"]}]);
     personal.write(
@@ -510,7 +512,7 @@ fn a_boundary_naming_a_version_rule_control_refuses_as_unreadable_and_a_pattern_
     names_boundary(&personal, &json!({}));
     let (ran, _) = personal.call("check", &pr(&json!({"pr.body": "Fine."})));
     assert_eq!(ran.code, 0, "{}", printed(&ran));
-    let version = json!({"at_least": "1.2.0", "capture": r"v(\d+\.\d+\.\d+)"});
+    let version = json!({"check": "version", "at_least": "1.2.0", "capture": r"v(\d+\.\d+\.\d+)"});
     personal.write("controls/names.json", &control(&version));
     let (ran, document) = personal.call("check", &pr(&json!({"pr.body": "Fine."})));
     assert_eq!(ran.code, 1, "{}", printed(&ran));

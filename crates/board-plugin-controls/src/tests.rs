@@ -258,31 +258,68 @@ fn the_source_schema_refuses_a_bad_url_or_date_or_a_missing_field_and_admits_the
 #[test]
 fn the_shipped_schema_refuses_a_bad_rule_or_purpose_and_admits_its_twin() {
     let schema = shipped(ControlRecord::TYPE);
-    let control = |fields: Value| {
-        let mut record = json!({
+    let control = |rule: Value| {
+        json!({
             "$type": "controls/control/v1",
             "requirement": "R.",
             "purpose": "P.",
             "applies_to": ["/AGENTS.md"],
-        });
-        for (name, value) in fields.as_object().unwrap() {
-            record[name] = value.clone();
-        }
-        record
+            "rule": rule,
+        })
     };
-    let rule = |per: &str| json!({"rule": {"budget": "words", "max": 1, "per": per}});
-    let judged = json!({"rule": {"judged": "/rubrics/plain.md"}});
-    let pattern = |show: &str| json!({"rule": {"pattern": "/private/names.txt", "show": show}});
-    let mixed = json!({"rule": {"budget": "words", "max": 1, "judged": "/rubrics/plain.md"}});
-    let stray = json!({"rule": {"judged": "/rubrics/plain.md", "show": "pattern"}});
+    let budget = |per: &str| json!({"check": "budget", "unit": "words", "max": 1, "per": per});
+    let judged = json!({"check": "judged", "rubric": "/rubrics/plain.md"});
+    let pattern =
+        |quote: &str| json!({"check": "pattern", "file": "/private/names.txt", "quote": quote});
+    let version = json!({"check": "version", "at_least": "1.2", "capture": "v(\\d+)"});
     for (refused, admitted) in [
-        (control(rule("directory")), control(rule("file"))),
-        (control(json!({"purpose": null})), control(json!({}))),
+        (control(budget("directory")), control(budget("file"))),
+        (
+            json!({"$type": "controls/control/v1", "requirement": "R.", "purpose": null}),
+            json!({"$type": "controls/control/v1", "requirement": "R.", "purpose": "P."}),
+        ),
         (control(pattern("all")), control(pattern("match-only"))),
-        (control(mixed), control(rule("total"))),
-        (control(stray), control(judged.clone())),
-        (control(json!({"rule": null})), control(judged)),
-        (control(json!({"rule": {}})), control(pattern("pattern"))),
+        // A field of another kind, though its kind's own fields are all there.
+        (
+            control(json!({"check": "budget", "unit": "words", "max": 1, "rubric": "/r.md"})),
+            control(budget("total")),
+        ),
+        (
+            control(json!({"check": "judged", "rubric": "/r.md", "quote": "pattern"})),
+            control(judged.clone()),
+        ),
+        // A field no kind names.
+        (
+            control(json!({"check": "judged", "rubric": "/r.md", "note": "x"})),
+            control(judged.clone()),
+        ),
+        // A kind's fields without the check that names it, or under another's.
+        (
+            control(json!({"unit": "words", "max": 1})),
+            control(json!({"check": "budget", "unit": "words", "max": 1})),
+        ),
+        (
+            control(json!({"check": "version", "unit": "words", "max": 1})),
+            control(json!({"check": "budget", "unit": "words", "max": 1})),
+        ),
+        // A check this Board does not know.
+        (control(json!({"check": "count"})), control(version.clone())),
+        // A kind without a field it requires.
+        (
+            control(json!({"check": "pattern", "file": "/private/names.txt"})),
+            control(pattern("pattern")),
+        ),
+        (
+            control(json!({"check": "version", "at_least": "1.2"})),
+            control(version),
+        ),
+        // The fields as the rule held them before it named its kind.
+        (
+            control(json!({"budget": "words", "max": 1})),
+            control(budget("total")),
+        ),
+        (control(Value::Null), control(judged)),
+        (control(json!({})), control(pattern("pattern"))),
     ] {
         assert_eq!(
             schema.validate(&refused).unwrap_err().code(),
@@ -291,6 +328,29 @@ fn the_shipped_schema_refuses_a_bad_rule_or_purpose_and_admits_its_twin() {
         );
         schema.validate(&admitted).unwrap();
     }
+}
+
+#[test]
+fn a_rules_pattern_file_and_rubric_are_references_and_its_other_strings_are_not() {
+    let schema = shipped(ControlRecord::TYPE);
+    let control = |rule: Value| json!({"$type": "controls/control/v1", "requirement": "R.", "purpose": "P.", "rule": rule});
+    let pointers = |rule: Value| -> Vec<String> {
+        (schema.references(&control(rule)).into_iter())
+            .map(|reference| reference.pointer)
+            .collect()
+    };
+    assert_eq!(
+        pointers(json!({"check": "pattern", "file": "/names.txt", "quote": "pattern"})),
+        ["/rule/file"]
+    );
+    assert_eq!(
+        pointers(json!({"check": "judged", "rubric": "/rubrics/plain.md"})),
+        ["/rule/rubric"]
+    );
+    assert_eq!(
+        pointers(json!({"check": "version", "at_least": "1", "capture": "/v(1)"})),
+        Vec::<String>::new()
+    );
 }
 
 #[test]
@@ -374,10 +434,11 @@ fn the_for_path_output_schema_admits_each_kind_of_rule_or_null_and_refuses_it_le
     };
     for rule in [
         Value::Null,
-        json!({"budget": "words", "max": 1}),
-        json!({"budget": "bytes", "max": 1, "per": "file"}),
-        json!({"pattern": "/private/names.txt", "show": "match-only"}),
-        json!({"judged": "/rubrics/plain.md"}),
+        json!({"check": "budget", "unit": "words", "max": 1}),
+        json!({"check": "budget", "unit": "bytes", "max": 1, "per": "file"}),
+        json!({"check": "pattern", "file": "/private/names.txt", "quote": "match-only"}),
+        json!({"check": "judged", "rubric": "/rubrics/plain.md"}),
+        json!({"check": "version", "at_least": "1.2", "capture": "v([0-9.]+)"}),
     ] {
         output
             .validate(&applying(Some(rule.clone())))
@@ -385,4 +446,6 @@ fn the_for_path_output_schema_admits_each_kind_of_rule_or_null_and_refuses_it_le
     }
     assert!(output.validate(&applying(None)).is_err());
     assert!(output.validate(&applying(Some(json!(1)))).is_err());
+    let untagged = json!({"budget": "words", "max": 1});
+    assert!(output.validate(&applying(Some(untagged))).is_err());
 }

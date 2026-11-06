@@ -1,55 +1,57 @@
 //! The record types the plugin ships, and the rule its outputs repeat. The
 //! schemas are generated from these structs; the files under `types/` are
-//! those schemas, committed. Every property of a control has a title, as the
-//! Python plugin's pydantic shapes generated it.
+//! those schemas, committed.
 
 use std::borrow::Cow;
 
-use board_plugin::shape::{Date, Open, Prose, Record, Ref, Summary, Tag, Url};
-use schemars::{JsonSchema, Schema, SchemaGenerator};
-use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
+use board_plugin::shape::{Date, Glob, Open, Prose, Record, Ref, Summary, Tag, Url};
+use schemars::{JsonSchema, Schema, SchemaGenerator, json_schema};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde_json::{Map, Value, json};
 
 /// `controls/control/v1`: a requirement on files, why it exists, and
 /// optionally a rule a program checks.
+///
+/// It applies to the entries `applies_to` references and to every entry of
+/// the board whose path matches one of `paths`.
 #[derive(Debug, JsonSchema)]
 #[serde(deny_unknown_fields)]
-#[schemars(
-    title = "ControlRecord",
-    description = "`controls/control/v1`: a requirement on files, why it exists, and optionally a rule a program checks.\n\nIt applies to the entries `applies_to` references and to every entry of\nthe board whose path matches one of `paths`, SQLite GLOB patterns such as\n`docs/*.md`."
-)]
 pub struct ControlRecord {
+    /// The record's type.
     #[serde(rename = "$type")]
-    #[schemars(title = "$Type")]
     pub tag: Tag<Self>,
-    #[schemars(title = "Requirement", with = "Prose")]
+    /// What the files must do, in sentences a person reads.
+    #[schemars(with = "Prose")]
     pub requirement: String,
-    #[schemars(title = "Purpose", with = "Prose")]
+    /// Why the requirement exists.
+    #[schemars(with = "Prose")]
     pub purpose: String,
     /// The requirement in one line of at most 25 words, which a change's
     /// brief shows in its place.
-    #[schemars(title = "Summary", with = "Option<Summary>")]
+    #[schemars(with = "Option<Summary>")]
     pub summary: Option<String>,
+    /// The entries the control applies to, by reference.
     // A field left out admits no null: `type` replaces Option's `["array", "null"]`.
-    #[schemars(title = "Applies To", extend("type" = "array"))]
+    #[schemars(extend("type" = "array"))]
     pub applies_to: Option<Vec<Ref>>,
-    #[schemars(title = "Paths", extend("type" = "array"))]
+    /// The paths the control applies to, as `SQLite` GLOB patterns from the
+    /// board's root, such as `docs/*.md`, where `*` also matches `/`.
+    #[schemars(with = "Option<Vec<Glob>>", extend("type" = "array"))]
     pub paths: Option<Vec<String>>,
+    /// What a program checks of the files; left out for a requirement only
+    /// a reader can judge.
     pub rule: Option<Rule>,
     /// `standing`, the default, for a rule that stays until it is changed,
     /// or `obligation` for work a landed change left owed, which the work
     /// that discharges it deletes.
-    #[schemars(title = "Kind")]
     pub kind: Option<Kind>,
     /// When to show the control: `start` at session start, `edit` before
     /// the first edit of a file it covers, or `failing` only when `check`
     /// reports it failing. Left out, an obligation shows at `start`, a
     /// control with a budget when `failing`, and any other at `edit`.
-    #[schemars(title = "Show")]
     pub show: Option<ShowAt>,
     /// What justifies the control, such as a source note
     /// (`controls/source/v1`) or an eval.
-    #[schemars(title = "Sources")]
     pub sources: Option<Vec<Ref>>,
 }
 
@@ -118,38 +120,117 @@ impl ShowAt {
     }
 }
 
-/// What a program checks, told apart by the fields it holds.
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
-#[serde(untagged)]
+// The kind of a rule, which its `check` names.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+#[schemars(inline)]
+pub enum Check {
+    Budget,
+    Pattern,
+    Judged,
+    Version,
+}
+
+impl Check {
+    const ALL: [Self; 4] = [Self::Budget, Self::Pattern, Self::Judged, Self::Version];
+
+    fn name(self) -> &'static str {
+        match self {
+            Self::Budget => "budget",
+            Self::Pattern => "pattern",
+            Self::Judged => "judged",
+            Self::Version => "version",
+        }
+    }
+}
+
+/// What a program checks, of the kind its `check` names. A rule whose
+/// `check` a newer Board added is `Other`, held as the record holds it, so
+/// its control is stated and not measured.
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Rule {
     Budget(Budget),
     Pattern(Pattern),
     Judged(Judged),
     Version(Version),
+    Other(Map<String, Value>),
 }
 
 impl Rule {
-    /// Whether this Board can apply the rule: not when it holds a value a
-    /// newer Board added, so its control is stated and not measured.
+    /// Whether this Board can apply the rule: not when its `check` or one
+    /// of its values is one a newer Board added, so its control is stated
+    /// and not measured.
     pub fn applies(&self) -> bool {
         match self {
             Self::Budget(budget) => budget.known().is_some(),
-            Self::Pattern(pattern) => pattern.show.known().is_some(),
+            Self::Pattern(pattern) => pattern.quote.known().is_some(),
             Self::Judged(_) | Self::Version(_) => true,
+            Self::Other(_) => false,
         }
     }
 }
 
-/// A limit on the words or bytes of the files the control applies to, or
-/// of the text `evaluate` is given.
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+/// A rule of a kind this Board knows, as the record writes it: its fields
+/// beside `check`.
+#[derive(Deserialize, Serialize)]
+#[serde(tag = "check", rename_all = "lowercase")]
+enum Tagged<B, P, J, V> {
+    Budget(B),
+    Pattern(P),
+    Judged(J),
+    Version(V),
+}
+
+impl<'de> Deserialize<'de> for Rule {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        use serde::de::Error;
+        let fields = Map::<String, Value>::deserialize(deserializer)?;
+        let check = (fields.get("check").and_then(Value::as_str))
+            .ok_or_else(|| D::Error::missing_field("check"))?;
+        if !Check::ALL.iter().any(|known| known.name() == check) {
+            return Ok(Self::Other(fields));
+        }
+        let tagged = Tagged::<Budget, Pattern, Judged, Version>::deserialize(Value::Object(fields))
+            .map_err(D::Error::custom)?;
+        Ok(match tagged {
+            Tagged::Budget(rule) => Self::Budget(rule),
+            Tagged::Pattern(rule) => Self::Pattern(rule),
+            Tagged::Judged(rule) => Self::Judged(rule),
+            Tagged::Version(rule) => Self::Version(rule),
+        })
+    }
+}
+
+impl Serialize for Rule {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let tagged: Tagged<&Budget, &Pattern, &Judged, &Version> = match self {
+            Self::Budget(rule) => Tagged::Budget(rule),
+            Self::Pattern(rule) => Tagged::Pattern(rule),
+            Self::Judged(rule) => Tagged::Judged(rule),
+            Self::Version(rule) => Tagged::Version(rule),
+            Self::Other(fields) => return fields.serialize(serializer),
+        };
+        tagged.serialize(serializer)
+    }
+}
+
+/// A budget rule: a limit on the words or bytes of the files the control
+/// applies to, or of the text `evaluate` is given.
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
+#[schemars(rename = "BudgetRule")]
 pub struct Budget {
-    pub budget: Open<Measure>,
+    /// What the budget counts: `words`, separated by any whitespace, or
+    /// `bytes`.
+    pub unit: Open<Measure>,
+    /// The most words or bytes allowed.
     pub max: u64,
+    /// `total`, the default, to sum the files' usage, or `file` to hold
+    /// each file on its own within `max`.
     // Left out when the record leaves it out, so an output repeats the rule
     // as the record holds it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(extend("default" = "total"))]
     pub per: Option<Open<Per>>,
 }
 
@@ -161,128 +242,112 @@ impl Budget {
             Some(per) => *per.known()?,
             None => Per::Total,
         };
-        Some((*self.budget.known()?, per))
+        Some((*self.unit.known()?, per))
     }
 }
 
-/// A file of regular expressions that text must not match, and what a
-/// finding shows of them.
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+/// A pattern rule: a file of regular expressions, one per line, that text
+/// must not match.
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
+#[schemars(rename = "PatternRule")]
 pub struct Pattern {
-    pub pattern: String,
-    pub show: Open<Show>,
+    /// The file of regular expressions.
+    #[schemars(with = "Ref")]
+    pub file: String,
+    /// What a finding quotes: `match-only` quotes what matched and never
+    /// the expression, and `pattern` names the expression too.
+    pub quote: Open<Quote>,
 }
 
-/// A rubric that a clean-context model reads text against.
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+/// A judged rule: a rubric that a clean-context model reads text against.
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
+#[schemars(rename = "JudgedRule")]
 pub struct Judged {
-    pub judged: String,
+    /// The rubric the model reads.
+    #[schemars(with = "Ref")]
+    pub rubric: String,
 }
 
-/// The oldest version a file may pin: every version `capture`'s first group
-/// finds must be at least `at_least`.
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+/// A version rule: every version the first group of `capture` finds is at
+/// least `at_least`, compared over the numbers the version names.
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
+#[schemars(rename = "VersionRule")]
 pub struct Version {
+    /// The oldest version a file may pin, as numbers separated by dots,
+    /// such as `1.99.1`.
+    #[schemars(regex(pattern = r"^[0-9]+(\.[0-9]+)*$"))]
     pub at_least: String,
+    /// A regular expression in the syntax of Rust's regex crate, whose
+    /// first group finds each version a file pins.
+    #[schemars(length(min = 1))]
     pub capture: String,
 }
 
-/// The fields of every kind of rule, as one object, so that Board checks
-/// `pattern` and `judged` as references: it searches no reference under
-/// `anyOf` or `oneOf`. [`rule_schema`] adds the `oneOf` that picks the kind.
-#[derive(JsonSchema)]
-#[serde(deny_unknown_fields)]
-#[expect(dead_code, reason = "only its schema is used")]
-#[schemars(
-    rename = "Rule",
-    title = "Rule",
-    description = "What a program checks: a budget, a pattern file, a judged rubric or a version floor, told apart by their fields.\n\nA budget, `budget` and `max`, limits the words or bytes of the files or\ntext; with `per` `total`, the default, the files' usage is summed, and\nwith `file` each file on its own must be within `max`. Words are\nseparated by any whitespace. A pattern, `pattern` and `show`, names a file\nof regular expressions, one per line, that text must not match; with\n`show` `match-only`, a finding quotes what matched and never the\nexpression. A judged rule, `judged`, names a rubric that a clean-context\nmodel reads text against. A version rule, `at_least` and `capture`, says\nthat every version the first group of the regular expression `capture`\nfinds is at least `at_least`, compared over the numbers the version names."
-)]
-pub(crate) struct RuleFields {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[schemars(title = "Budget")]
-    budget: Option<Measure>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[schemars(title = "Max")]
-    max: Option<u64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[schemars(title = "Per", extend("default" = "total"))]
-    per: Option<Per>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[schemars(title = "Pattern")]
-    pattern: Option<Ref>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[schemars(title = "Show")]
-    show: Option<Show>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[schemars(title = "Judged")]
-    judged: Option<Ref>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[schemars(title = "At Least", regex(pattern = r"^[0-9]+(\.[0-9]+)*$"))]
-    at_least: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[schemars(title = "Capture", length(min = 1))]
-    capture: Option<String>,
-}
-
-/// The fields of each kind of rule, in the order `oneOf` lists them.
-const KINDS: [&[&str]; 4] = [
-    &["budget", "max", "per"],
-    &["pattern", "show"],
-    &["judged"],
-    &["at_least", "capture"],
-];
-
-/// The fields each kind of rule must hold.
-const REQUIRED: [&[&str]; 4] = [
-    &["budget", "max"],
-    &["pattern", "show"],
-    &["judged"],
-    &["at_least", "capture"],
-];
-
-/// A rule's schema is `RuleFields`, and a `oneOf` whose branches each
-/// require one kind's fields and refuse every other kind's. No branch holds
-/// a reference, so Board's check for hidden references passes.
+/// A rule's schema: `check` names its kind, and each kind's `$defs` entry
+/// holds that kind's fields, which it requires when `check` names the kind
+/// and refuses otherwise. The kinds are applied through `allOf`, where
+/// Board searches the pattern file and the rubric as references; it
+/// searches none under `oneOf` or `then`. `unevaluatedProperties` refuses a
+/// field no kind names.
 impl JsonSchema for Rule {
-    fn inline_schema() -> bool {
-        true
-    }
-
     fn schema_name() -> Cow<'static, str> {
-        "RuleOfOneKind".into()
+        "Rule".into()
     }
 
     fn json_schema(generator: &mut SchemaGenerator) -> Schema {
-        rule_schema(generator)
+        let kinds = vec![
+            kind::<Budget>(generator, Check::Budget),
+            kind::<Pattern>(generator, Check::Pattern),
+            kind::<Judged>(generator, Check::Judged),
+            kind::<Version>(generator, Check::Version),
+        ];
+        let mut check = generator.subschema_for::<Check>();
+        check.insert(
+            "description".to_owned(),
+            json!("The kind of rule, which decides its other fields."),
+        );
+        json_schema!({
+            "type": "object",
+            "description": "What a program checks: a budget, a pattern file, a judged rubric or a version floor, named by `check`.",
+            "properties": {"check": check},
+            "required": ["check"],
+            "allOf": kinds,
+            "unevaluatedProperties": false,
+        })
     }
 }
 
-fn rule_schema(generator: &mut SchemaGenerator) -> Schema {
-    let kinds: Vec<Value> = (REQUIRED.iter().enumerate())
-        .map(|(kind, required)| {
-            let others: Vec<Value> = (KINDS.iter().enumerate())
-                .filter(|(other, _)| *other != kind)
-                .flat_map(|(_, fields)| fields.iter())
-                .map(|field| json!({"required": [field]}))
-                .collect();
-            json!({"required": required, "not": {"anyOf": others}})
-        })
+/// `T`'s fields as one kind of rule's `$defs` entry, and a reference to it.
+fn kind<T: JsonSchema>(generator: &mut SchemaGenerator, check: Check) -> Value {
+    let mut schema = T::json_schema(generator);
+    let required = schema.remove("required").unwrap_or_else(|| json!([]));
+    schema.remove("type");
+    schema.remove("additionalProperties");
+    let fields: Vec<Value> = (schema.get("properties").and_then(Value::as_object))
+        .into_iter()
+        .flat_map(|properties| properties.keys())
+        .map(|field| json!({"required": [field]}))
         .collect();
-    let mut schema = generator.subschema_for::<RuleFields>();
-    schema.insert("oneOf".to_owned(), Value::from(kinds));
-    schema
+    schema.insert(
+        "if".to_owned(),
+        json!({"properties": {"check": {"const": check.name()}}, "required": ["check"]}),
+    );
+    schema.insert("then".to_owned(), json!({"required": required}));
+    schema.insert("else".to_owned(), json!({"not": {"anyOf": fields}}));
+    let name = T::schema_name().into_owned();
+    let reference = json!({"$ref": format!("#/$defs/{name}")});
+    generator.definitions_mut().insert(name, schema.into());
+    reference
 }
 
-/// A rule as an output repeats it: [`RuleFields`] without the `oneOf`, or
-/// null for a control without one.
+/// A rule as an output repeats it, or null for a control without one.
 pub(crate) fn rule_output_schema(generator: &mut SchemaGenerator) -> Schema {
     // Null widens the object's type. A `oneOf` with null would hide the
     // board-ref fields inside it, and Board checks no reference there.
-    let mut rule = <RuleFields as JsonSchema>::json_schema(generator);
+    let mut rule = <Rule as JsonSchema>::json_schema(generator);
     rule.insert("type".to_owned(), json!(["object", "null"]));
     rule
 }
@@ -297,11 +362,11 @@ pub enum Measure {
     Bytes,
 }
 
-// What a pattern finding shows: the match only, or the expression too.
+// What a pattern finding quotes: the match only, or the expression too.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 #[schemars(inline)]
-pub enum Show {
+pub enum Quote {
     MatchOnly,
     Pattern,
 }
