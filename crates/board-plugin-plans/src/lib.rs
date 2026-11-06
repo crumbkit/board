@@ -63,11 +63,13 @@ fn manifest() -> Value {
         "$type": "board/plugin-manifest/v1",
         "name": "plans",
         "version": "0.1.0",
-        "description": "Questions an agent session asks the owner, the owner's answers, and the decisions \
-            sessions record. `board call plans.open` lists the questions still waiting for an answer, \
-            oldest first, `board call plans.answer` records the owner's answer to one, and \
-            `board call plans.withdraw` withdraws one that no longer matters. \
-            plugins/plans/README.md in Board's repository says where each record lives.",
+        "description": "The plans plugin records the decisions a session makes, the questions only \
+            the owner can answer, and the owner's answers, as records in the board. Use it when \
+            you choose between options that a later session or reviewer needs to know about, and \
+            when work waits on the owner. Write a decision with \
+            `board -C <board> put --new --var project=<project>` and a `plans/decision/v1` on \
+            stdin; `board -C <board> call plans.open` lists the questions still waiting for an \
+            answer. SKILL.md and README.md in the plugin's directory say more.",
         "metadata": {"area": "planning"},
         "types": record_schemas().map(|(name, _)| name),
         "capabilities": [{
