@@ -18,7 +18,8 @@ So the index does not descend into a mount whose repository is the repository
 of a board above it on its route. The root board counts as above every mount.
 Two repositories are one when they share a git common directory, as linked
 worktrees do, or when both have an `origin` with the same stored form, as
-clones do. Board reads both facts from git; no record or `.board/board.json`
+clones do. A relative `origin`, such as `../upstream`, is read against the
+repository's directory first. Board reads both facts from git; no record or `.board/board.json`
 names a board.
 
 Such a mount is degraded with `board::mount::cycle`. `board check` names the

@@ -830,6 +830,32 @@ fn check_reports_a_mount_of_a_board_above_it_as_a_cycle_and_a_board_mounted_twic
     }
 }
 
+/// `scenario` with `url` as its `origin`.
+fn originating(scenario: &Scenario, url: &str) {
+    let remote = format!("[remote \"origin\"]\n\turl = {url}\n");
+    scenario.write(".git/config", Item::Appended(&remote));
+}
+
+#[test]
+fn a_warm_index_reports_a_mount_cycle_that_begins_between_runs_as_a_cold_one_does() {
+    let clone = Scenario::new();
+    originating(&clone, "https://github.com/example-org/r.git");
+    let cloned = clone.commit(&[("k.json", "{}")]);
+    let library = Scenario::new();
+    let peer = mount_of(clone.workdir().to_str().unwrap(), cloned);
+    let scenario = mounting_peer(&library, &peer, None);
+    let cache = tempfile::tempdir().unwrap();
+    let arguments = ["check", "--json", "--all"];
+    let run = |cache: Option<&Path>| json(&board_cached(scenario.workdir(), cache, &arguments));
+    assert_eq!(run(Some(cache.path()))["data"], json!([]));
+    // The root now has the clone's origin, so the clone repeats it.
+    originating(&scenario, "git@github.com:example-org/r");
+    let warm = run(Some(cache.path()));
+    assert_eq!(warm["data"], run(None)["data"]);
+    assert_eq!(warm["data"][0]["logical"], "/lib/peer");
+    assert_eq!(warm["data"][0]["code"], "board::mount::cycle");
+}
+
 #[test]
 fn query_prints_its_columns_then_one_json_row_per_line() {
     let scenario = board();

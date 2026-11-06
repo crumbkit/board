@@ -63,6 +63,30 @@ pub(crate) fn remote_url(git: &gix::Repository) -> Result<String, String> {
     }
 }
 
+/// `url` with a relative local path read against `base`, the repository's
+/// directory, as git reads it, so that two repositories whose `../upstream`
+/// names different directories differ. A URL, an scp-like `host:path`, an
+/// absolute path and a `~` path are kept as given.
+fn absolute(base: &Path, url: &str) -> String {
+    let scp = url
+        .find(':')
+        .is_some_and(|colon| !url[..colon].contains('/'));
+    if url.contains("://") || scp || url.starts_with('~') || Path::new(url).is_absolute() {
+        return url.to_owned();
+    }
+    let mut path = base.to_path_buf();
+    for part in Path::new(url).components() {
+        match part {
+            std::path::Component::ParentDir => {
+                path.pop();
+            }
+            std::path::Component::Normal(name) => path.push(name),
+            _ => {}
+        }
+    }
+    path.to_string_lossy().into_owned()
+}
+
 /// A git repository opened for reading.
 #[derive(Debug)]
 pub struct Repository {
@@ -194,7 +218,8 @@ impl Repository {
     pub(crate) fn identity(&self) -> Identity {
         Identity {
             common: self.git.common_dir().canonicalize().ok(),
-            origin: (remote_url(&self.git).ok()).map(|url| board_model::shown_remote(&url)),
+            origin: (remote_url(&self.git).ok())
+                .map(|url| board_model::shown_remote(&absolute(&self.path, &url))),
         }
     }
 

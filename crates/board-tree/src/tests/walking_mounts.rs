@@ -305,3 +305,20 @@ fn two_boards_that_mount_each_other_at_successive_commits_are_each_walked_once()
     assert_eq!(routes(&reached), [("/peer".to_owned(), b2)]);
     assert_eq!(peer(&reached, b2), Err(Code::MountCycle));
 }
+
+#[test]
+fn repositories_whose_relative_origins_name_different_directories_are_two_and_the_same_one_is_one()
+{
+    let (first, second) = (Scenario::new(), Scenario::new());
+    let (a, b, c) = (
+        Scenario::within(&first),
+        Scenario::within(&first),
+        Scenario::within(&second),
+    );
+    for scenario in [&a, &b, &c] {
+        originating(scenario, "../upstream");
+    }
+    let identity = |scenario: &Scenario| scenario.open().identity();
+    assert!(identity(&a).same(&identity(&b)), "both name first/upstream");
+    assert!(!identity(&a).same(&identity(&c)), "c names second/upstream");
+}
