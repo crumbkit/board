@@ -437,7 +437,7 @@ fn a_budget_over_its_max_returns_the_same_report_as_a_pass_with_passed_false() {
     assert_eq!(output["stated"], report["stated"]);
 }
 
-/// A board whose control schema a newer Board replaced, so it admits each
+/// A board whose copy of the control schema was edited, so it admits each
 /// `(pointer, value)` of `newer` beside the values at that pointer's
 /// `enum`, holding `files` by path.
 fn newer(files: &[(&str, &str)], newer: &[(&str, &str)]) -> (Scenario, Recording) {
@@ -453,7 +453,7 @@ fn newer(files: &[(&str, &str)], newer: &[(&str, &str)]) -> (Scenario, Recording
     recording(&files)
 }
 
-/// A control whose kind a newer Board added reads as standing, as its
+/// A control whose kind this Board does not know reads as standing, as its
 /// standing twin does, in `check` and `for-path`.
 #[test]
 fn a_kind_a_newer_board_added_reads_as_standing_like_its_standing_twin() {
@@ -478,7 +478,7 @@ fn a_kind_a_newer_board_added_reads_as_standing_like_its_standing_twin() {
     }
 }
 
-/// A control whose show a newer Board added is shown at the start, the
+/// A control whose show this Board does not know is shown at the start, the
 /// first point, as its twin that says `start` is.
 #[test]
 fn a_show_a_newer_board_added_reads_as_start_like_its_start_twin() {
