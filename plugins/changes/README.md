@@ -180,6 +180,25 @@ refusal from Board itself, such as the github plugin not being enabled,
 also stops it. Either stops it before it writes the changes, and the next
 run keeps the github records already written.
 
+A v1 change and a migrated one both meet the development flow's gates,
+below, which block on more than the gates before flows did:
+
+- leaving plan, `owner-approval` needs a `plans/decision/v1` that the owner
+  signed, whose `refs` name the plan or the change, on every route. Before
+  flows only an `ask-first` change needed a decision, and any decision
+  passed, a rejection or an agent's stub included. `considered` is new, and
+  passes for a migrated change, whose `surfaced` is empty;
+- leaving review, `ui-paths`, `data-paths` and `obligations-settled` are
+  new. Before flows the reviewer read the UI-path and data-path controls,
+  and no gate read obligations;
+- leaving land, `test-sections` is new: the plan needs text under What the
+  tests prove and What the tests do not prove.
+
+The build gate's checks were there before flows, under other ids:
+`check-run` is now `suite-run` and `recheck` is now `rechecks`, which
+reads understanding checks only when Data is not "None". A review verdict
+of `changes` still fails `review`.
+
 ## Capabilities
 
 - `start --mount (/repos/<name> | /) --title '<title>' [--task <path> | --task-repo <repo>] [--name <name>] [--handle @<you>] [--flow <name or path>] [--suite <path>]`

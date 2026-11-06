@@ -442,3 +442,45 @@ fn a_migrated_build_change_whose_docs_name_no_suite_has_none_and_misses_suite_ru
     assert_eq!(refused["code"], "changes::gate::unmet");
     assert_eq!(refused["fields"]["missing"], json!(["suite-run"]));
 }
+
+#[test]
+fn a_migrated_change_in_each_phase_faces_the_blocking_checks_of_the_development_flow() {
+    let board = Changes::new();
+    board.mount_x(&[("README.md", "x\n")]);
+    let phases = ["plan", "build", "review", "land"];
+    for phase in phases {
+        board.change_at(
+            &format!("changes/{phase}.json"),
+            phase,
+            &json!({"route": "owner", "plan": format!("/changes/{phase}/plan.md")}),
+        );
+        board.write(&format!("changes/{phase}/plan.md"), PLAN);
+    }
+    board.call("migrate", &json!({"apply": true}));
+    let blocking: Vec<(&str, Vec<String>)> = (phases.iter())
+        .map(|phase| {
+            let next = board.call("next", &json!({"path": format!("/changes/{phase}")}));
+            let ids = (next["gate"].as_array().unwrap().iter())
+                .filter(|check| check["blocks"] == json!(true))
+                .map(|check| check["check"].as_str().unwrap().to_owned())
+                .collect();
+            (*phase, ids)
+        })
+        .collect();
+    let expected: Vec<(&str, Vec<String>)> = [
+        (
+            "plan",
+            vec!["plan-sections", "considered", "task", "route", "owner-approval"],
+        ),
+        ("build", vec!["head", "suite-run", "tasks"]),
+        (
+            "review",
+            vec!["review", "paths", "ui-paths", "data-paths", "obligations-settled"],
+        ),
+        ("land", vec!["test-sections", "pull-request"]),
+    ]
+    .into_iter()
+    .map(|(phase, ids)| (phase, ids.into_iter().map(str::to_owned).collect()))
+    .collect();
+    assert_eq!(blocking, expected);
+}
