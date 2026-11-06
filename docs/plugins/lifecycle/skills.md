@@ -21,11 +21,15 @@ left alone.
 
 Another folder at a skill's name, in any letter case, including one whose
 marker names another skill or none, is refused with `board::skills::not_board`,
-whose `folders` names it. With `--force`, install moves that folder aside
-to `<name>.board-backup-<time>` in the same directory, with the UTC time
-such as `20261106T101500Z` and `-2`, `-3` and on added when that name is
-taken, and reports it as `backed_up` with its path. A symlink there is
-moved itself, never followed. List and install pass over backups. A failed read or write is
-`board::skills::write_failed`. `board skills list` shows each skill's state.
+whose `folders` names it. With `--force`, install moves that folder to
+`<dir>/.board-backups/<name>-<time>`, with the UTC time such as
+`20261106T101500Z` and `-2`, `-3` and on added when that name is taken,
+and reports it as `backed_up` with its path. Agents load only the folders
+one level down in a skills directory, so they do not load a backup. A
+symlink there is moved itself, never followed. List and install pass over
+`.board-backups`. When the new copy cannot take the folder's place, install
+moves the folder back, and if that fails too, the refusal names the backup.
+A failed read or write is `board::skills::write_failed`. `board skills
+list` shows each skill's state.
 
 Claude Code mods ship no skills.

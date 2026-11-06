@@ -30,10 +30,11 @@ pub(crate) struct Skill {
 /// which the build script finds and embeds.
 pub(crate) const SKILLS: &[Skill] = include!(concat!(env!("OUT_DIR"), "/skills.rs"));
 
-/// What a backup's name holds between the skill's name and its time:
-/// `--force` moves a folder that is not Board's to
-/// `<name>.board-backup-<time>`, and list and install pass over it.
-const BACKUP: &str = ".board-backup-";
+/// The hidden folder in a skills directory to which `--force` moves a
+/// folder that is not Board's, as `<name>-<time>`. Agents load the folders
+/// one level down in a skills directory, so they never load a backup, and
+/// list and install pass over this folder.
+const BACKUPS: &str = ".board-backups";
 
 /// The file whose presence marks a folder in a skills directory as Board's.
 /// It holds one line, `board <version> <skill>`, naming the version that
@@ -57,10 +58,10 @@ pub(crate) enum SkillsCommand {
     /// Write the skills built into this binary into a skills directory.
     #[command(after_help = "\
 Each skill goes in <dir>/<name>/ with a .board-skill marker naming it.
-Install replaces a Board folder that differs, removes one whose marker
-names a retired skill of its name, and keeps the rest. It refuses a
-folder at a skill's name that is not Board's with board::skills::not_board
-and writes nothing, unless --force. Exits 1 on a refusal or failed write.
+Install replaces a Board folder that differs, removes a retired one, and
+keeps the rest. It refuses a folder at a skill's name that is not Board's
+with board::skills::not_board and writes nothing, unless --force. Exits 1
+on a refusal or failed write.
 
 Examples:
   board skills install --dir skills
@@ -69,7 +70,7 @@ Examples:
     Install {
         #[command(flatten)]
         at: At,
-        /// Move a folder or symlink at a skill's name that is not Board's to <name>.board-backup-<UTC time>.
+        /// Move a folder or symlink at a skill's name that is not Board's to <dir>/.board-backups/<name>-<time>, which agents do not load.
         #[arg(long)]
         force: bool,
         #[command(flatten)]
@@ -148,11 +149,13 @@ pub(crate) enum Installed {
 enum SkillsError {
     /// Folders at skills' names that are not Board's, without `--force`.
     NotBoard { folders: Vec<String> },
-    /// A read, write or move of `path` failed.
+    /// A read, write or move of `path` failed. `stranded` is the backup
+    /// that holds a folder `--force` moved aside and could not move back.
     WriteFailed {
         path: PathBuf,
         act: Act,
         source: io::Error,
+        stranded: Option<PathBuf>,
     },
 }
 
@@ -185,19 +188,32 @@ impl SkillsError {
                 refusal.fields.insert("folders".to_owned(), json!(folders));
                 refusal
             }
-            Self::WriteFailed { path, act, source } => {
+            Self::WriteFailed {
+                path,
+                act,
+                source,
+                stranded,
+            } => {
                 let path_shown = path.display();
-                let message = match act {
+                let mut message = match act {
                     Act::Read => format!("cannot read {path_shown}: {source}"),
                     Act::Write => format!("cannot write {path_shown}: {source}"),
                     Act::Move(to) => {
                         format!("cannot move {path_shown} to {}: {source}", to.display())
                     }
                 };
+                if let Some(backup) = stranded {
+                    let backup = backup.display();
+                    message = format!("{message}, and the folder that stood there is at {backup}");
+                }
                 let mut refusal =
                     Refusal::new(Code::SkillsWriteFailed, message, &Fields::default());
                 let file = path.display().to_string();
                 refusal.fields.insert("file".to_owned(), json!(file));
+                if let Some(backup) = stranded {
+                    let backup = backup.display().to_string();
+                    refusal.fields.insert("backup".to_owned(), json!(backup));
+                }
                 refusal
             }
         };
@@ -222,6 +238,7 @@ fn failed(path: &Path, act: Act) -> impl FnOnce(io::Error) -> SkillsError + '_ {
         path: path.to_path_buf(),
         act,
         source,
+        stranded: None,
     }
 }
 
@@ -372,9 +389,8 @@ fn install(
         if let Some((_, state)) = state.filter(|_| installed != Installed::Unchanged)
             && let Some(backup) = put(dir, skill, *state)?
         {
-            let name = backup.file_name().unwrap_or_default();
-            let name = name.to_string_lossy().into_owned();
-            done.push((name, Installed::BackedUp));
+            let name = backup.file_name().unwrap_or_default().to_string_lossy();
+            done.push((format!("{BACKUPS}/{name}"), Installed::BackedUp));
         }
         done.push((skill.name.to_owned(), installed));
     }
@@ -397,7 +413,7 @@ fn read(dir: &Path) -> Result<BTreeMap<String, Held>, SkillsError> {
         let scratch = [".board-new", ".board-old"]
             .iter()
             .any(|end| name.ends_with(end));
-        if (name.starts_with('.') && scratch) || name.contains(BACKUP) {
+        if (name.starts_with('.') && scratch) || name == BACKUPS {
             continue;
         }
         let path = entry.path();
@@ -521,8 +537,8 @@ fn remove(path: &Path) -> Result<(), SkillsError> {
 /// folder must still be missing, and a stale one must still be Board's,
 /// with a marker that names this skill.
 /// A stale folder that stood there is moved aside and removed; a folder
-/// or symlink that is not Board's is moved to a backup, whose path this
-/// returns. A symlink is moved itself, never followed.
+/// or symlink that is not Board's is moved to a backup in [`BACKUPS`],
+/// whose path this returns. A symlink is moved itself, never followed.
 fn put(dir: &Path, skill: &Skill, state: Listed) -> Result<Option<PathBuf>, SkillsError> {
     let new = dir.join(format!(".{}.board-new", skill.name));
     let old = dir.join(format!(".{}.board-old", skill.name));
@@ -560,8 +576,8 @@ fn fill(new: &Path, skill: &Skill) -> Result<(), SkillsError> {
 
 /// Moves `new` to `name` in `dir`, unless what stands there is no longer
 /// what `state` found. What stands there is moved to a backup when it is
-/// not Board's, whose path this returns, and otherwise to `old` and
-/// removed.
+/// not Board's, whose path this returns, and moved back when `new` cannot
+/// take its place; otherwise it is moved to `old` and removed.
 #[expect(
     clippy::disallowed_methods,
     reason = "this module owns the writes to a skills directory, which is no board's tree"
@@ -596,33 +612,48 @@ fn swap(
         let stamp = jiff::Timestamp::now()
             .strftime("%Y%m%dT%H%M%SZ")
             .to_string();
+        create(&dir.join(BACKUPS))?;
         let backup = backup(dir, name, &stamp);
         into(&target, &backup)?;
-        return into(new, &target).map(|()| Some(backup));
+        return match into(new, &target) {
+            Ok(()) => Ok(Some(backup)),
+            Err(error) if std::fs::rename(&backup, &target).is_ok() => Err(error),
+            Err(SkillsError::WriteFailed {
+                path, act, source, ..
+            }) => Err(SkillsError::WriteFailed {
+                path,
+                act,
+                source,
+                stranded: Some(backup),
+            }),
+            Err(error) => Err(error),
+        };
     }
     into(&target, old)?;
     into(new, &target)?;
     remove(old).map(|()| None)
 }
 
-/// Where `--force` moves the folder at `name` in `dir`: the backup name
-/// `stamp` gives, or the first of it with `-2`, `-3` and on after it that
+/// Where `--force` moves the folder at `name` in `dir`: `<name>-<stamp>`
+/// in [`BACKUPS`], or the first of it with `-2`, `-3` and on after it that
 /// nothing holds.
 fn backup(dir: &Path, name: &str, stamp: &str) -> PathBuf {
-    let base = format!("{name}{BACKUP}{stamp}");
+    let backups = dir.join(BACKUPS);
+    let base = format!("{name}-{stamp}");
     let free = |path: &PathBuf| std::fs::symlink_metadata(path).is_err();
-    let first = dir.join(&base);
+    let first = backups.join(&base);
     if free(&first) {
         return first;
     }
-    let mut later = (2_u64..).map(|next| dir.join(format!("{base}-{next}")));
+    let mut later = (2_u64..).map(|next| backups.join(format!("{base}-{next}")));
     later.find(free).unwrap_or(first)
 }
 
 /// A skill or Board folder as `skills list` and `skills install` print it.
 #[derive(Serialize, JsonSchema)]
 pub(crate) struct Skilled<S> {
-    /// The skill's name, which names its folder.
+    /// The skill's name, which names its folder, or a backup's path within
+    /// the skills directory.
     name: String,
     /// The folder's state.
     state: S,

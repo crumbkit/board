@@ -188,19 +188,36 @@ fn a_folder_that_is_not_boards_is_refused_before_any_write_and_moved_aside_with_
     assert!(!path(&home, "skills/changes/notes.md").exists());
     assert!(path(&home, "skills/changes/.board-skill").is_file());
     let (name, shown) = backed_up(&admitted);
-    let stamp = name.strip_prefix("changes.board-backup-").unwrap();
+    let stamp = name.strip_prefix(".board-backups/changes-").unwrap();
     assert!(stamp.len() == 16 && stamp.ends_with('Z'), "{name}");
     assert_eq!(shown, format!("skills/{name}"));
+    let top: Vec<String> = std::fs::read_dir(path(&home, "skills"))
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().into_string().unwrap())
+        .filter(|entry| !entry.starts_with('.'))
+        .collect();
+    assert!(
+        top.iter().all(|entry| !entry.contains("changes-")),
+        "a backup sits where agents load skills: {top:?}"
+    );
     assert_eq!(
         text(&path(&home, &format!("skills/{name}/notes.md"))),
         "mine\n"
     );
 
     let (_, listed) = skills(&home, "list", &[]);
-    assert!(!states(&listed).iter().any(|(row, _)| *row == name));
+    assert!(
+        !states(&listed)
+            .iter()
+            .any(|(row, _)| row.starts_with(".board-backups"))
+    );
     let (code, again) = skills(&home, "install", &[]);
     assert_eq!(code, 0);
-    assert!(!states(&again).iter().any(|(row, _)| *row == name));
+    assert!(
+        !states(&again)
+            .iter()
+            .any(|(row, _)| row.starts_with(".board-backups"))
+    );
     assert_eq!(
         text(&path(&home, &format!("skills/{name}/notes.md"))),
         "mine\n"
@@ -400,10 +417,23 @@ fn a_folder_named_as_a_skill_in_other_case_is_refused_and_keeps_its_files_and_fo
     assert_eq!(text(&path(&home, "skills/Changes/notes.md")), "mine\n");
     assert!(!path(&home, "skills/evals").exists());
 
+    // A case-insensitive file system finds the user's folder at the skill's
+    // own name, so --force moves it to a backup; a case-sensitive one
+    // leaves it beside Board's.
+    let insensitive = path(&home, "skills/changes").exists();
     let (code, admitted) = skills(&home, "install", &["--force"]);
     assert_eq!(code, 0);
     assert_eq!(state_of(&admitted, "changes"), "written");
     assert!(path(&home, "skills/changes/.board-skill").is_file());
+    if insensitive {
+        let (name, _) = backed_up(&admitted);
+        assert_eq!(
+            text(&path(&home, &format!("skills/{name}/notes.md"))),
+            "mine\n"
+        );
+    } else {
+        assert_eq!(text(&path(&home, "skills/Changes/notes.md")), "mine\n");
+    }
 }
 
 #[test]

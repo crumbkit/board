@@ -414,14 +414,14 @@ Write the skills built into this binary into a skills directory
 ### Arguments
 
 - `--dir <DIR>`: The skills directory, such as \~/.agents/skills; \~/.claude/skills when left out
-- `--force`: Move a folder or symlink at a skill's name that is not Board's to \<name\>.board-backup-\<UTC time\>
+- `--force`: Move a folder or symlink at a skill's name that is not Board's to \<dir\>/.board-backups/\<name\>-\<time\>, which agents do not load
 - `--limit <N>`: Print at most this many rows, up to 10000. Default: `100`.
 - `--all`: Print every row
 
 ### Columns
 
 - `state`: The folder's state.
-- `name`: The skill's name, which names its folder.
+- `name`: The skill's name, which names its folder, or a backup's path within the skills directory.
 - `path`: The folder, in the skills directory as given.
 
 Effects: destructive, idempotent, closed-world.
@@ -439,7 +439,7 @@ List each skill this binary ships and each Board folder in a skills directory
 ### Columns
 
 - `state`: The folder's state.
-- `name`: The skill's name, which names its folder.
+- `name`: The skill's name, which names its folder, or a backup's path within the skills directory.
 - `path`: The folder, in the skills directory as given.
 
 Effects: read-only, closed-world.

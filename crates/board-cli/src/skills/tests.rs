@@ -225,24 +225,51 @@ fn a_folder_named_as_a_skill_in_other_case_is_read_as_that_skills_folder() {
 }
 
 #[test]
-fn a_backup_takes_the_stamped_name_or_the_first_free_one_after_it() {
+fn a_backup_takes_the_stamped_name_in_the_hidden_backups_folder_or_the_first_free_one_after_it() {
     let home = board_scenario::Scenario::new();
     let dir = home.workdir();
     let stamp = "20261106T101500Z";
     let first = backup(dir, "changes", stamp);
-    assert_eq!(first, dir.join("changes.board-backup-20261106T101500Z"));
+    assert_eq!(first, dir.join(".board-backups/changes-20261106T101500Z"));
     home.write(
-        "changes.board-backup-20261106T101500Z/notes.md",
+        ".board-backups/changes-20261106T101500Z/notes.md",
         board_scenario::Item::File("x\n"),
     )
     .write(
-        "changes.board-backup-20261106T101500Z-2",
+        ".board-backups/changes-20261106T101500Z-2",
         board_scenario::Item::File("x\n"),
     );
     assert_eq!(
         backup(dir, "changes", stamp),
-        dir.join("changes.board-backup-20261106T101500Z-3")
+        dir.join(".board-backups/changes-20261106T101500Z-3")
     );
+}
+
+#[test]
+fn a_failed_move_names_the_backup_it_could_not_move_back_and_one_moved_back_names_none() {
+    let failure = |stranded: Option<PathBuf>| SkillsError::WriteFailed {
+        path: PathBuf::from("skills/.changes.board-new"),
+        act: Act::Move(PathBuf::from("skills/changes")),
+        source: io::Error::other("disk full"),
+        stranded,
+    };
+    let backup = PathBuf::from("skills/.board-backups/changes-20261106T101500Z");
+    let refusal = failure(Some(backup)).refusal(Path::new("skills"));
+    assert_eq!(refusal.code.as_str(), "board::skills::write_failed");
+    assert!(
+        refusal
+            .message
+            .ends_with("is at skills/.board-backups/changes-20261106T101500Z"),
+        "{}",
+        refusal.message
+    );
+    assert_eq!(
+        refusal.fields["backup"],
+        "skills/.board-backups/changes-20261106T101500Z"
+    );
+    let refusal = failure(None).refusal(Path::new("skills"));
+    assert!(!refusal.message.contains("board-backups"));
+    assert!(!refusal.fields.contains_key("backup"));
 }
 
 #[test]
