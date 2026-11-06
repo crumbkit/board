@@ -31,6 +31,9 @@ pub(crate) struct Skill {
 pub(crate) const SKILLS: &[Skill] = include!(concat!(env!("OUT_DIR"), "/skills.rs"));
 
 /// The file whose presence marks a folder in a skills directory as Board's.
+/// It holds one line, `board <version> <skill>`, naming the version that
+/// wrote it and the skill it holds; a marker written before markers named
+/// their skill holds `board <version>` alone.
 pub(crate) const MARKER: &str = ".board-skill";
 
 /// `board skills -h`'s examples.
@@ -49,11 +52,11 @@ const DEFAULT: &str = ".claude/skills";
 pub(crate) enum SkillsCommand {
     /// Write the skills built into this binary into a skills directory.
     #[command(after_help = "\
-Each skill goes in <dir>/<name>/ with a .board-skill marker. Install
-replaces a marked folder that differs and removes one for a retired skill.
-A folder without the marker at a skill's name is refused with
-board::skills::not_board, and nothing is written, unless --force replaces
-it. Exits 1 only on a refusal or a failed write.
+Each skill goes in <dir>/<name>/ with a .board-skill marker naming it.
+Install replaces a Board folder that differs, removes one whose marker
+names a retired skill of its name, and keeps the rest. It refuses a
+folder at a skill's name that is not Board's with board::skills::not_board
+and writes nothing, unless --force. Exits 1 on a refusal or failed write.
 
 Examples:
   board skills install --dir skills
@@ -72,9 +75,12 @@ Examples:
     #[command(after_help = "\
 Each one's state is current (its files equal this binary's), stale (a
 Board folder whose files differ), missing, not_board (a folder without the
-.board-skill marker) or retired (a Board folder for a skill this binary no
-longer ships). `board skills install` makes every one current. List changes
-nothing and exits 0 unless the directory cannot be read.
+.board-skill marker, or whose marker names another skill), retired (a
+Board folder whose marker names a skill this binary no longer ships, of
+its folder's name) or copy (a marked folder whose marker names another
+skill or none, which install keeps). `board skills install` makes each
+shipped skill current. List changes nothing and exits 0 unless the
+directory cannot be read.
 
 Examples:
   board skills list --dir skills
@@ -98,9 +104,13 @@ pub(crate) struct At {
 /// What a skills directory holds at one name.
 #[derive(Debug, PartialEq, Eq)]
 enum Held {
-    /// A directory holding the marker, with each other file's bytes by its
-    /// path within the folder; `None` for an entry that is not a file.
-    Board(BTreeMap<String, Option<Vec<u8>>>),
+    /// A directory holding the marker: the skill the marker names, if it
+    /// names one, and each other file's bytes by its path within the
+    /// folder, `None` for an entry that is not a file.
+    Board {
+        skill: Option<String>,
+        files: BTreeMap<String, Option<Vec<u8>>>,
+    },
     /// A file, a symlink, or a directory without the marker.
     Foreign,
 }
@@ -114,6 +124,7 @@ pub(crate) enum Listed {
     Missing,
     NotBoard,
     Retired,
+    Copy,
 }
 
 /// What `skills install` did with a skill.
@@ -124,6 +135,7 @@ pub(crate) enum Installed {
     Updated,
     Unchanged,
     Removed,
+    Kept,
 }
 
 /// What `skills install` and `list` refuse.
@@ -287,19 +299,31 @@ fn files(skill: &Skill) -> BTreeMap<String, Option<Vec<u8>>> {
 }
 
 /// Each skill in `skills` and each Board folder in `held` for no skill,
-/// with its state, in name order.
+/// with its state, in name order. A Board folder for no skill is retired
+/// only when its marker names the skill its folder is named for; one whose
+/// marker names another skill, or none, is a copy. At a skill's name, a
+/// folder whose marker names another skill is not Board's, and one whose
+/// marker names none is.
 fn listed(skills: &[Skill], held: &BTreeMap<String, Held>) -> Vec<(String, Listed)> {
     let mut listed: BTreeMap<String, Listed> = held
         .iter()
-        .filter(|(_, held)| matches!(held, Held::Board(_)))
-        .map(|(name, _)| (name.clone(), Listed::Retired))
+        .filter_map(|(name, held)| match held {
+            Held::Board {
+                skill: Some(skill), ..
+            } if skill == name => Some((name.clone(), Listed::Retired)),
+            Held::Board { .. } => Some((name.clone(), Listed::Copy)),
+            Held::Foreign => None,
+        })
         .collect();
     for skill in skills {
         let state = match held.get(skill.name) {
             None => Listed::Missing,
             Some(Held::Foreign) => Listed::NotBoard,
-            Some(Held::Board(found)) if *found == files(skill) => Listed::Current,
-            Some(Held::Board(_)) => Listed::Stale,
+            Some(Held::Board {
+                skill: Some(other), ..
+            }) if other != skill.name => Listed::NotBoard,
+            Some(Held::Board { files: found, .. }) if *found == files(skill) => Listed::Current,
+            Some(Held::Board { .. }) => Listed::Stale,
         };
         listed.insert(skill.name.to_owned(), state);
     }
@@ -308,7 +332,8 @@ fn listed(skills: &[Skill], held: &BTreeMap<String, Held>) -> Vec<(String, Liste
 
 /// Installs `skills` into `dir`, which held `held`: refuses every folder
 /// at a skill's name that is not Board's unless `force`, then removes each
-/// retired Board folder and writes each skill whose folder differs.
+/// retired Board folder, keeps each copy, and writes each skill whose
+/// folder differs.
 fn install(
     dir: &Path,
     skills: &[Skill],
@@ -329,6 +354,8 @@ fn install(
         if *state == Listed::Retired {
             remove(&dir.join(name))?;
             done.push((name.clone(), Installed::Removed));
+        } else if *state == Listed::Copy {
+            done.push((name.clone(), Installed::Kept));
         }
     }
     for skill in skills {
@@ -366,10 +393,11 @@ fn read(dir: &Path) -> Result<BTreeMap<String, Held>, SkillsError> {
             continue;
         }
         let path = entry.path();
-        let found = if marked(&path) {
+        let found = if let Some(marker) = marker(&path) {
             let mut files = BTreeMap::new();
             folder(&path, "", &mut files)?;
-            Held::Board(files)
+            let skill = named(&marker);
+            Held::Board { skill, files }
         } else {
             Held::Foreign
         };
@@ -400,10 +428,20 @@ fn keyed(raw: BTreeMap<String, Held>, skills: &[Skill]) -> BTreeMap<String, Held
     held
 }
 
-/// Whether `path` is a directory, never a symlink, holding the marker.
-fn marked(path: &Path) -> bool {
+/// The text of the marker in `path`, when `path` is a directory, never a
+/// symlink, holding a marker that can be read.
+fn marker(path: &Path) -> Option<String> {
     let directory = std::fs::symlink_metadata(path).is_ok_and(|kind| kind.is_dir());
-    directory && std::fs::symlink_metadata(path.join(MARKER)).is_ok_and(|marker| marker.is_file())
+    let marker = path.join(MARKER);
+    let file = std::fs::symlink_metadata(&marker).is_ok_and(|marker| marker.is_file());
+    let bytes = std::fs::read(&marker).ok().filter(|_| directory && file)?;
+    Some(String::from_utf8_lossy(&bytes).into_owned())
+}
+
+/// The skill a marker's text names, its third word, or `None` for a
+/// marker that names none.
+fn named(marker: &str) -> Option<String> {
+    marker.split_whitespace().nth(2).map(str::to_owned)
 }
 
 /// Each entry beneath `directory`, whose path within the folder starts
@@ -461,7 +499,8 @@ fn remove(path: &Path) -> Result<(), SkillsError> {
 /// first, then swaps it into place, so a reader never sees half a skill.
 /// A leftover at either scratch name is removed first. The folder install
 /// found in `state` is checked again just before the swap: a missing
-/// folder must still be missing, and a stale one must still be Board's.
+/// folder must still be missing, and a stale one must still be Board's,
+/// with a marker that names this skill or none.
 /// Whatever stood there is moved aside and removed: a symlink itself,
 /// never what it points to.
 fn put(dir: &Path, skill: &Skill, state: Listed) -> Result<(), SkillsError> {
@@ -487,7 +526,7 @@ fn put(dir: &Path, skill: &Skill, state: Listed) -> Result<(), SkillsError> {
 )]
 fn fill(new: &Path, skill: &Skill) -> Result<(), SkillsError> {
     std::fs::create_dir(new).map_err(unwritten(new))?;
-    let marker = format!("{BINARY_NAME} {}\n", crate::timing::BUILD);
+    let marker = format!("{BINARY_NAME} {} {}\n", crate::timing::BUILD, skill.name);
     let files = std::iter::once((MARKER, marker.as_bytes())).chain(skill.files.iter().copied());
     for (path, bytes) in files {
         let path = new.join(path);
@@ -510,8 +549,10 @@ fn swap(dir: &Path, name: &str, new: &Path, old: &Path, state: Listed) -> Result
     let present = std::fs::symlink_metadata(&target).is_ok();
     let changed = match state {
         Listed::Missing => present,
-        Listed::Stale => !marked(&target),
-        Listed::Current | Listed::NotBoard | Listed::Retired => false,
+        Listed::Stale => {
+            marker(&target).is_none_or(|marker| named(&marker).is_some_and(|skill| skill != name))
+        }
+        Listed::Current | Listed::NotBoard | Listed::Retired | Listed::Copy => false,
     };
     if changed {
         let folders = vec![name.to_owned()];

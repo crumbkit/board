@@ -99,13 +99,20 @@ const THREE: Skill = Skill {
     files: &[("SKILL.md", b"three")],
 };
 
-fn board(files: &[(&str, &[u8])]) -> Held {
+/// A Board folder whose marker names `skill`, holding `files`.
+fn marked(skill: Option<&str>, files: &[(&str, &[u8])]) -> Held {
     let files = files.iter();
-    Held::Board(
-        files
+    Held::Board {
+        skill: skill.map(str::to_owned),
+        files: files
             .map(|(path, bytes)| ((*path).to_owned(), Some(bytes.to_vec())))
             .collect(),
-    )
+    }
+}
+
+/// A Board folder whose marker names no skill, holding `files`.
+fn board(files: &[(&str, &[u8])]) -> Held {
+    marked(None, files)
 }
 
 #[test]
@@ -114,7 +121,10 @@ fn a_folder_is_current_stale_missing_not_boards_or_retired_by_what_it_holds() {
         ("one".to_owned(), board(&[("SKILL.md", b"one")])),
         ("two".to_owned(), board(&[("SKILL.md", b"old")])),
         ("three".to_owned(), Held::Foreign),
-        ("gone".to_owned(), board(&[("SKILL.md", b"gone")])),
+        (
+            "gone".to_owned(),
+            marked(Some("gone"), &[("SKILL.md", b"gone")]),
+        ),
         ("mine".to_owned(), Held::Foreign),
     ]);
     let four = Skill {
@@ -134,11 +144,53 @@ fn a_folder_is_current_stale_missing_not_boards_or_retired_by_what_it_holds() {
 }
 
 #[test]
+fn only_a_marker_naming_its_own_folder_retires_it_and_a_marker_naming_another_skill_is_not_boards()
+{
+    let held = BTreeMap::from([
+        (
+            "copy".to_owned(),
+            marked(Some("one"), &[("SKILL.md", b"x")]),
+        ),
+        ("older".to_owned(), board(&[("SKILL.md", b"x")])),
+        (
+            "one".to_owned(),
+            marked(Some("two"), &[("SKILL.md", b"one")]),
+        ),
+        (
+            "two".to_owned(),
+            marked(Some("two"), &[("SKILL.md", b"two")]),
+        ),
+    ]);
+    assert_eq!(
+        listed(&[ONE, TWO], &held),
+        [
+            ("copy".to_owned(), Listed::Copy),
+            ("older".to_owned(), Listed::Copy),
+            ("one".to_owned(), Listed::NotBoard),
+            ("two".to_owned(), Listed::Current),
+        ]
+    );
+}
+
+#[test]
+fn a_markers_skill_is_its_third_word() {
+    assert_eq!(
+        named("board 1.2.3+abc changes\n").as_deref(),
+        Some("changes")
+    );
+    assert_eq!(named("board 1.2.3\n"), None);
+}
+
+#[test]
 fn a_board_folder_with_an_extra_file_or_an_entry_that_is_no_file_is_stale() {
     let extra = board(&[("SKILL.md", b"one"), ("notes.md", b"mine")]);
     let mut odd = BTreeMap::from([("SKILL.md".to_owned(), Some(b"one".to_vec()))]);
     odd.insert("link".to_owned(), None);
-    for held in [extra, Held::Board(odd)] {
+    let odd = Held::Board {
+        skill: None,
+        files: odd,
+    };
+    for held in [extra, odd] {
         let held = BTreeMap::from([("one".to_owned(), held)]);
         assert_eq!(listed(&[ONE], &held), [("one".to_owned(), Listed::Stale)]);
     }

@@ -89,8 +89,9 @@ fn a_fresh_install_writes_every_skill_with_its_marker_and_a_second_changes_nothi
     );
     for name in &names {
         let marker = text(&path(&home, &format!("skills/{name}/.board-skill")));
+        let words: Vec<&str> = marker.split_whitespace().collect();
         assert!(
-            marker.starts_with("board ") && marker.ends_with('\n'),
+            words.len() == 3 && words[0] == "board" && words[2] == name && marker.ends_with('\n'),
             "{marker}"
         );
         assert!(path(&home, &format!("skills/{name}/SKILL.md")).is_file());
@@ -133,7 +134,7 @@ fn list_names_each_state_and_changes_nothing() {
     home.write("skills/changes/notes.md", Item::File("mine\n"))
         .write("skills/evals/.board-skill", Item::File("board 0.0.0\n"))
         .write("skills/evals/SKILL.md", Item::File("old\n"))
-        .write("skills/old/.board-skill", Item::File("board 0.0.0\n"))
+        .write("skills/old/.board-skill", Item::File("board 0.0.0 old\n"))
         .write("skills/old/SKILL.md", Item::File("old\n"))
         .write("skills/unrelated/SKILL.md", Item::File("mine\n"));
     let (code, listed) = skills(&home, "list", &[]);
@@ -199,7 +200,7 @@ fn a_symlink_at_a_skills_name_is_refused_and_with_force_the_link_alone_is_replac
 #[test]
 fn install_removes_a_board_folder_for_a_skill_it_does_not_ship_and_leaves_others_alone() {
     let home = Scenario::new();
-    home.write("skills/gone/.board-skill", Item::File("board 0.0.0\n"))
+    home.write("skills/gone/.board-skill", Item::File("board 0.0.0 gone\n"))
         .write("skills/gone/SKILL.md", Item::File("gone\n"))
         .write("skills/mine/SKILL.md", Item::File("mine\n"))
         .write("skills/stray.md", Item::File("mine\n"));
@@ -209,6 +210,56 @@ fn install_removes_a_board_folder_for_a_skill_it_does_not_ship_and_leaves_others
     assert!(!path(&home, "skills/gone").exists());
     assert_eq!(text(&path(&home, "skills/mine/SKILL.md")), "mine\n");
     assert_eq!(text(&path(&home, "skills/stray.md")), "mine\n");
+}
+
+#[test]
+fn a_copy_of_a_skill_under_another_name_or_a_folder_with_an_unnamed_marker_is_listed_and_kept() {
+    let home = Scenario::new();
+    skills(&home, "install", &[]);
+    let shipped = text(&path(&home, "skills/changes/.board-skill"));
+    home.write("skills/my-changes/.board-skill", Item::File(&shipped))
+        .write("skills/my-changes/SKILL.md", Item::File("edited\n"))
+        .write("skills/older/.board-skill", Item::File("board 0.0.0\n"))
+        .write("skills/older/SKILL.md", Item::File("older\n"));
+    let (code, listed) = skills(&home, "list", &[]);
+    assert_eq!(code, 0);
+    assert_eq!(state_of(&listed, "my-changes"), "copy");
+    assert_eq!(state_of(&listed, "older"), "copy");
+
+    let (code, installed) = skills(&home, "install", &[]);
+    assert_eq!(code, 0);
+    assert_eq!(state_of(&installed, "my-changes"), "kept");
+    assert_eq!(state_of(&installed, "older"), "kept");
+    assert_eq!(text(&path(&home, "skills/my-changes/SKILL.md")), "edited\n");
+    assert_eq!(text(&path(&home, "skills/older/SKILL.md")), "older\n");
+}
+
+#[test]
+fn a_folder_with_an_unnamed_marker_at_a_skills_name_is_boards_and_updated() {
+    let home = Scenario::new();
+    home.write("skills/changes/.board-skill", Item::File("board 0.0.0\n"))
+        .write("skills/changes/SKILL.md", Item::File("old\n"));
+    let (code, installed) = skills(&home, "install", &[]);
+    assert_eq!(code, 0, "{installed}");
+    assert_eq!(state_of(&installed, "changes"), "updated");
+    let marker = text(&path(&home, "skills/changes/.board-skill"));
+    assert!(marker.trim_end().ends_with(" changes"), "{marker}");
+}
+
+#[test]
+fn a_folder_whose_marker_names_another_skill_at_a_skills_name_is_not_boards() {
+    let home = Scenario::new();
+    home.write(
+        "skills/changes/.board-skill",
+        Item::File("board 0.0.0 evals\n"),
+    )
+    .write("skills/changes/SKILL.md", Item::File("mine\n"));
+    let (_, listed) = skills(&home, "list", &[]);
+    assert_eq!(state_of(&listed, "changes"), "not_board");
+    let (code, refused) = skills(&home, "install", &[]);
+    assert_eq!(code, 1);
+    assert_eq!(refused["code"], "board::skills::not_board");
+    assert_eq!(text(&path(&home, "skills/changes/SKILL.md")), "mine\n");
 }
 
 #[test]

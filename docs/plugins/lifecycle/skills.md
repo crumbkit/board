@@ -10,11 +10,19 @@ a `SKILL.md`. The build script embeds every file of each skill whose
 plugin's cargo feature the build enables, so a new skill needs no code.
 
 `board skills install` writes each skill into `<dir>/<name>/`, with a
-`.board-skill` file naming the version. `<dir>` is `~/.claude/skills` unless
-`--dir` names another. A Board folder is replaced when it differs and
-removed when its skill is retired. Another folder at a skill's name, in
-any letter case, is refused with `board::skills::not_board`, whose
-`folders` names it, unless `--force` replaces it. A symlink there is
+`.board-skill` marker holding one line, `board <version> <skill>`, which
+names the version that wrote it and the skill. `<dir>` is `~/.claude/skills`
+unless `--dir` names another. A Board folder is replaced when it differs.
+A folder for a skill Board no longer ships is removed only when its marker
+names that skill under the folder's own name. A marked folder whose marker
+names another skill, such as an edited copy of `changes` at `my-changes`,
+or names none, as markers written before they named their skill do, is
+listed as `copy`, reported by install as `kept`, and left alone. At a
+shipped skill's name, a marker that names no skill counts as Board's.
+
+Another folder at a skill's name, in any letter case, including one whose
+marker names another skill, is refused with `board::skills::not_board`,
+whose `folders` names it, unless `--force` replaces it. A symlink there is
 removed, never followed. A failed read or write is
 `board::skills::write_failed`. `board skills list` shows each skill's state.
 
