@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 use board_model::{Code, LogicalPath};
 use board_ops::agent::{self, Agent};
 use board_ops::{Absent, Host, PluginError, literal};
-use board_plugin::shape::{Actor, Pinned, Record, Tag};
+use board_plugin::shape::{Actor, Open, Pinned, Record, Tag};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
@@ -163,7 +163,7 @@ pub(crate) fn run(host: &dyn Host, input: &Value) -> Result<Value, PluginError> 
         patch_ids,
         subject: brief.subject,
         findings,
-        verdict,
+        verdict: Open::Known(verdict),
         by,
         cost: Some(Cost {
             seconds,
@@ -366,7 +366,7 @@ fn checked(found: &Map<String, Value>) -> Option<(Verdict, Vec<Finding>)> {
                 .map(str::to_owned);
             let line = (item.get("line").and_then(Value::as_u64)).filter(|line| *line >= 1);
             Some(Finding {
-                severity,
+                severity: Open::Known(severity),
                 text: text.to_owned(),
                 file,
                 line,

@@ -5,7 +5,7 @@
 
 use std::borrow::Cow;
 
-use board_plugin::shape::{Date, Prose, Record, Ref, Summary, Tag, Url};
+use board_plugin::shape::{Date, Open, Prose, Record, Ref, Summary, Tag, Url};
 use schemars::{JsonSchema, Schema, SchemaGenerator};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -128,17 +128,41 @@ pub enum Rule {
     Version(Version),
 }
 
+impl Rule {
+    /// Whether this Board can apply the rule: not when it holds a value a
+    /// newer Board added, so its control is stated and not measured.
+    pub fn applies(&self) -> bool {
+        match self {
+            Self::Budget(budget) => budget.known().is_some(),
+            Self::Pattern(pattern) => pattern.show.known().is_some(),
+            Self::Judged(_) | Self::Version(_) => true,
+        }
+    }
+}
+
 /// A limit on the words or bytes of the files the control applies to, or
 /// of the text `evaluate` is given.
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Budget {
-    pub budget: Measure,
+    pub budget: Open<Measure>,
     pub max: u64,
     // Left out when the record leaves it out, so an output repeats the rule
     // as the record holds it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub per: Option<Per>,
+    pub per: Option<Open<Per>>,
+}
+
+impl Budget {
+    /// What the budget counts and over what, `per` defaulting to `total`,
+    /// when this Board knows both.
+    pub fn known(&self) -> Option<(Measure, Per)> {
+        let per = match &self.per {
+            Some(per) => *per.known()?,
+            None => Per::Total,
+        };
+        Some((*self.budget.known()?, per))
+    }
 }
 
 /// A file of regular expressions that text must not match, and what a
@@ -147,7 +171,7 @@ pub struct Budget {
 #[serde(deny_unknown_fields)]
 pub struct Pattern {
     pub pattern: String,
-    pub show: Show,
+    pub show: Open<Show>,
 }
 
 /// A rubric that a clean-context model reads text against.

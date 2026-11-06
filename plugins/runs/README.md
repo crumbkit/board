@@ -63,7 +63,8 @@ names a new run there.
   `suite` must reach a `runs/suite/v1` record, or `check` reports
   `board::ref::dangling` or `board::ref::wrong_type`.
 - `started` and `finished` carry a time zone.
-- `scope` is `full` when every case ran and `targeted` when some did.
+- `scope` is `full` when every case ran and `targeted` when some did. A
+  scope a newer Board added is counted in `not_counted`.
   `dirty` says whether the tree under test had uncommitted changes. A run
   that leaves it out is never counted as clean.
 - `versions` maps what was used, such as a commit, a model or a library, to
@@ -96,7 +97,8 @@ no suite with `runs::suite::not_found`.
 `board call runs.latest --suite /suites/board-tests` returns the newest such
 run by `started`, a tie going to the run whose path sorts last. It gives the run's `path`, `started`,
 `finished`, `measures`, the cases that failed or erred in `failed`, each once, and
-`outcome`: `fail` when any result failed or erred, else `pass`. `age_s` is the
+`outcome`: `fail` when any result failed or erred, else `pass`. A result
+whose outcome a newer Board added counts as failed and needs no note. `age_s` is the
 whole seconds since the run finished, or since it started when it records no
 finish. With no run that counts, `run` is `null`.
 

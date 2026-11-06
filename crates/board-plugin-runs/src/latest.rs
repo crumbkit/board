@@ -4,12 +4,13 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use board_ops::{Host, PluginError};
+use board_plugin::shape::Open;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
 use crate::qualifying::qualifying;
-use crate::records::{MeasureValue, Outcome};
+use crate::records::MeasureValue;
 
 /// The latest full run of a clean revision of `suite`.
 #[derive(Deserialize, JsonSchema)]
@@ -75,7 +76,11 @@ pub(crate) fn latest(host: &dyn Host, input: &Value) -> Result<Value, PluginErro
         // A case that failed in several trials is listed once.
         let mut listed = BTreeSet::new();
         let failed: Vec<String> = (run.results.iter())
-            .filter(|result| result.outcome.is_some_and(Outcome::failed))
+            .filter(|result| match &result.outcome {
+                Some(Open::Known(outcome)) => outcome.failed(),
+                Some(Open::Other(_)) => true,
+                None => false,
+            })
             .filter(|result| listed.insert(result.case.as_str()))
             .map(|result| result.case.clone())
             .collect();

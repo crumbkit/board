@@ -6,6 +6,9 @@ use std::path::Path;
 
 use board_model::canonical_json;
 use board_plugin::VariableName;
+use board_plugin::shape::Open;
+
+use crate::records::{Severity, Verdict};
 
 use super::*;
 
@@ -159,6 +162,48 @@ fn a_program_whose_name_is_no_slug_names_no_reviewer_and_its_twin_names_the_prog
         assert_eq!(
             (admitted, program(admitted)),
             (admitted, Some(recorded.to_owned()))
+        );
+    }
+}
+
+/// A report from a newer Board may hold a verdict or a severity this one
+/// does not know. `post` reads it as its twin with known values, and the
+/// comment carries each value as written.
+#[test]
+fn a_report_holding_a_verdict_and_severity_a_newer_board_added_posts_them_as_written_like_its_twin()
+{
+    for (verdict, severity, read) in [
+        (
+            "changes",
+            "high",
+            (Open::Known(Verdict::Changes), Open::Known(Severity::High)),
+        ),
+        (
+            "defer",
+            "critical",
+            (
+                Open::Other("defer".to_owned()),
+                Open::Other("critical".to_owned()),
+            ),
+        ),
+    ] {
+        let fields = json!({
+            "verdict": verdict,
+            "findings": [{"severity": severity, "file": "a.rs", "text": "t"}],
+        });
+        let report = report(&fields);
+        assert_eq!(
+            (&report.verdict, &report.findings[0].severity),
+            (&read.0, &read.1)
+        );
+        let text = post::comment("/reviews/r1/report", PR, &report);
+        assert!(
+            text.starts_with(&format!("**Review: {verdict}** by claude-code\n")),
+            "{text}"
+        );
+        assert!(
+            text.contains(&format!("\n- **{severity}** `a.rs` t\n")),
+            "{text}"
         );
     }
 }

@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 
 use board_model::parse_json;
 use board_ops::{Host, Limit, PluginError, QueryReport, literal};
-use board_plugin::shape::{Actor, Record, TREE_CODES};
+use board_plugin::shape::{Actor, Open, Record, TREE_CODES};
 use serde::Deserialize;
 use serde_json::{Map, Number, Value};
 
@@ -49,7 +49,7 @@ struct StoredRun {
     #[serde(default, rename = "by")]
     _by: Option<Actor>,
     started: String,
-    scope: Scope,
+    scope: Open<Scope>,
     results: Vec<Stored>,
     dirty: Option<bool>,
     finished: Option<String>,
@@ -73,11 +73,12 @@ struct StoredHost {
     logical_cpus: Number,
 }
 
-/// What one case gave in a run.
+/// What one case gave in a run. An outcome a newer Board added is kept as
+/// written and counts as not passed.
 #[derive(Deserialize)]
 pub(crate) struct Stored {
     pub(crate) case: String,
-    pub(crate) outcome: Option<Outcome>,
+    pub(crate) outcome: Option<Open<Outcome>>,
     pub(crate) measures: Option<Map<String, Value>>,
     note: Option<String>,
     trial: Option<Number>,
@@ -183,7 +184,12 @@ fn readable(body: &str) -> Option<(Run, bool)> {
             .all(|value| matches!(value, Value::Number(_) | Value::String(_) | Value::Bool(_)))
     };
     let results = (run.results.iter()).all(|result| {
-        let noted = !result.outcome.is_some_and(|o| o != Outcome::Pass) || result.note.is_some();
+        // The board's schema decides whether an outcome a newer Board added
+        // needs a note.
+        let noted = matches!(
+            result.outcome,
+            None | Some(Open::Known(Outcome::Pass) | Open::Other(_))
+        ) || result.note.is_some();
         (result.outcome.is_some() || result.measures.is_some())
             && noted
             && result.trial.as_ref().is_none_or(whole)
@@ -192,7 +198,8 @@ fn readable(body: &str) -> Option<(Run, bool)> {
     if !(written && host && results && measured(&run.measures)) {
         return None;
     }
-    let clean = run.scope == Scope::Full && run.dirty == Some(false);
+    // A scope a newer Board added is not known to be full.
+    let clean = run.scope == Open::Known(Scope::Full) && run.dirty == Some(false);
     let run = Run {
         started,
         finished,

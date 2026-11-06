@@ -1,6 +1,6 @@
 ---
 name: evals
-description: 'Record every test of a library, tool, model or agent as an eval and its runs in the board, and check what was already tested before testing. Use it before you start a test and when you conclude one. Start with `board -C <board> call evals.about --subject <name>`, which lists the evals of what you will test. `board -C <board> call evals.open` lists those still planned or running. SKILL.md and README.md in the plugin''s directory say more.'
+description: 'Record every test of a library, tool, model or agent as an eval and its runs in the board, and check what was already tested before testing. Use it before you start a test and when you conclude one. Start with `board -C <board> call evals.about --subject <name>`, which lists the evals of what you will test. `board -C <board> call evals.open` lists those not concluded or abandoned. SKILL.md and README.md in the plugin''s directory say more.'
 ---
 
 # evals
@@ -62,8 +62,8 @@ of the repository you are in before you test.
    `origin/main`, such as ones on your branch, are not seen this way.
 
    Ask the personal board and any board the owner named for sharing.
-   `board call evals.open` lists the evals still planned or
-   running.
+   `board call evals.open` lists the evals not concluded or
+   abandoned.
 2. Run the remaining steps in the board you chose. Before gathering
    evidence, write `evals/eval/v1` with `board put /evals/<name> < eval.json`.
    Give the question, the subjects and `status: planned`. The subjects are

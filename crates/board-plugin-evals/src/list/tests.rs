@@ -293,8 +293,8 @@ fn twins() -> Vec<(Value, Value)> {
             json!({"subjects": ["o/gix", "5"]}),
         ),
         (json!({"subjects": "o/gix"}), json!({"subjects": ["o/gix"]})),
-        (json!({"status": "someday"}), json!({"status": "running"})),
-        (json!({"verdict": "maybe"}), json!({"verdict": "refuted"})),
+        (json!({"status": 5}), json!({"status": "running"})),
+        (json!({"verdict": 5}), json!({"verdict": "refuted"})),
         (
             json!({"status": "concluded"}),
             json!({"status": "concluded", "verdict": "supported"}),
@@ -368,6 +368,18 @@ fn an_unknown_field_and_a_null_optional_field_are_listed_and_a_missing_question_
 /// A board that enables evals, built in, holding `evals` and a mount of a
 /// library at `/vendor` that holds one eval.
 fn evals_board(evals: &[(&str, Value)]) -> (Scenario, Scenario, Board) {
+    let library = record(&json!({"subjects": ["o/clap"]}));
+    evals_board_with(evals, &library, &[])
+}
+
+/// As [`evals_board`], with `library` as the library's eval, and the
+/// library's schema admitting each `(property, value)` of `newer` as well,
+/// as a newer Board's schema would.
+fn evals_board_with(
+    evals: &[(&str, Value)],
+    library_eval: &Value,
+    newer: &[(&str, &str)],
+) -> (Scenario, Scenario, Board) {
     let scenario = Scenario::new();
     scenario.write(
         ".board/board.json",
@@ -384,15 +396,22 @@ fn evals_board(evals: &[(&str, Value)]) -> (Scenario, Scenario, Board) {
             .join(".board/types/evals/eval/v1.schema.json"),
     )
     .unwrap();
+    let mut schema: Value = serde_json::from_str(&schema).unwrap();
+    for (property, value) in newer {
+        let values = schema["properties"][property]["enum"]
+            .as_array_mut()
+            .unwrap();
+        values.push(json!(value));
+    }
     let config = r#"{"$type": "board/config/v1", "plugins": ["evals"]}"#;
     let library = Scenario::new();
     let pinned = library.commit(&[
         (".board/board.json", config),
-        (".board/types/evals/eval/v1.schema.json", &schema),
         (
-            "evals/l.json",
-            &record(&json!({"subjects": ["o/clap"]})).to_string(),
+            ".board/types/evals/eval/v1.schema.json",
+            &schema.to_string(),
         ),
+        ("evals/l.json", &library_eval.to_string()),
     ]);
     let mount = json!({"$type": "board/mount/v1", "repo": library.path(), "follow": "main", "commit": pinned.to_string()});
     scenario.write("vendor.json", Item::File(&mount.to_string()));
@@ -448,6 +467,32 @@ fn board_calls_evals_in_its_own_process_over_this_board_and_its_mounted_ones() {
     assert_eq!(trace.work.get("started"), Some(&0));
     let phases: Vec<&str> = trace.phases.iter().map(|phase| phase.name).collect();
     assert!(!phases.contains(&"plugin.reply"), "{phases:?}");
+}
+
+/// A mounted board a newer Board wrote can hold a status and a verdict this
+/// Board does not know. `about` and `open` list that eval with both as
+/// written, as they list its twin holding known values; `open` lists it
+/// because it is not known to be concluded or abandoned.
+#[test]
+fn an_eval_holding_a_status_and_verdict_a_newer_board_added_is_listed_as_written_like_its_twin() {
+    for (status, verdict) in [("running", "refuted"), ("paused", "mixed")] {
+        let library =
+            record(&json!({"subjects": ["o/clap"], "status": status, "verdict": verdict}));
+        let newer = [("status", "paused"), ("verdict", "mixed")];
+        let (_scenario, _library, board) = evals_board_with(&[], &library, &newer);
+        for (name, input) in [
+            ("evals.about", r#"{"mount": "/vendor"}"#),
+            ("evals.open", "{}"),
+        ] {
+            let target: Target = name.parse().unwrap();
+            let report = (board.call(&target, input.as_bytes(), &Plugins::default())).unwrap();
+            let listed = &report.output["evals"];
+            assert_eq!(listed.as_array().unwrap().len(), 1, "{name}: {listed}");
+            assert_eq!(listed[0]["path"], "/vendor/evals/l");
+            assert_eq!(listed[0]["status"], status);
+            assert_eq!(listed[0]["verdict"], verdict);
+        }
+    }
 }
 
 /// Any string without NUL, which neither an argument nor a logical path can

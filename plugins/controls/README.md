@@ -76,6 +76,8 @@ such as a pull request body, instead of files.
   fails with `controls::control::degraded`. `check` measures budgets over
   files and version rules over the versions files pin; it lists a pattern
   or judged control as stated, and only `evaluate` applies those rules.
+  It also lists as stated, unmeasured, a control whose budget, `per` or
+  pattern `show` holds a value this Board does not know.
 - `kind` is `standing`, the default, for a rule that stays until it is
   changed, or `obligation` for work a landed change left owed. The work that
   discharges an obligation deletes it.
@@ -189,7 +191,9 @@ The plugin ships both schemas. `board plugin enable controls` writes them to
   ordered by control as given and then by part name. Each result holds
   `control`, `part`, `rule` (`budget`, `pattern`, `judged`, `version`, or null),
   `status` and `findings`:
-  - `status` is `passed` or `failed`; `stated` for a control without a rule;
+  - `status` is `passed` or `failed`; `stated` for a control without a rule
+    or whose budget, `per` or pattern `show` holds a value this Board does
+    not know;
     `skipped` for a judged rule when the part failed a budget or pattern
     rule. Budget and pattern rules always run first, whatever the order of
     `controls`.

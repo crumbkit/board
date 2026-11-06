@@ -8,8 +8,8 @@ must read the records and reports of a later one, so:
 - a changed type is a new version, `<namespace>/<kind>/v<n+1>`, and the old
   version's schema stays readable;
 - an `enum` that `if`, `not` or `oneOf` cannot reach may gain a value, never
-  lose one;
-  an older Board may treat a record holding a newer value as invalid;
+  lose one; a plugin reads a record holding a value it does not know, and
+  decides conservatively;
 - a report or capability keeps every field, and a capability field its type;
   no input becomes required; a field may be added;
 - a code is never renamed or removed; a code may be added;
@@ -36,6 +36,5 @@ only the envelopes are listed: a call's output is listed under
 its capability.
 
 A release writes the file by running that test with `SNAPSHOTS=overwrite`,
-which lists everything the checkout ships, and then runs it with
-`RELEASED=all`, which fails unless the file lists exactly that. Until the
-first release the file lists nothing.
+then checks it with `RELEASED=all`, which fails unless the file lists
+everything the checkout ships. Before the first release it lists nothing.

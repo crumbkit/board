@@ -5,6 +5,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use board_model::LogicalPath;
 use board_ops::{Host, PluginError};
+use board_plugin::shape::Open;
 use regex::{Regex, RegexBuilder};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -14,7 +15,7 @@ use crate::check::measure;
 use crate::index;
 use crate::judged::Judge;
 use crate::logical;
-use crate::records::{Budget, Measure, Pattern, Rule, Show, Version};
+use crate::records::{Measure, Pattern, Rule, Show, Version};
 use crate::version;
 
 /// The findings a result shows; the rest are counted in `omitted`, so
@@ -140,7 +141,8 @@ pub(crate) fn evaluate(host: &dyn Host, input: &Value) -> Result<Value, PluginEr
     }
     let rules: Vec<(String, Option<Rule>)> = (named.into_iter())
         .map(|path| {
-            let rule = known.remove(&path).and_then(|control| control.rule);
+            // A rule holding a value a newer Board added is stated.
+            let rule = (known.remove(&path).and_then(|control| control.rule)).filter(Rule::applies);
             (path, rule)
         })
         .collect();
@@ -158,9 +160,14 @@ pub(crate) fn evaluate(host: &dyn Host, input: &Value) -> Result<Value, PluginEr
         for (part, text) in &parts {
             let result = match rule {
                 None => Some(stated(control, part)),
-                Some(Rule::Budget(budget)) => Some(budgeted(control, part, text, budget)),
+                Some(Rule::Budget(budget)) => (budget.known())
+                    .map(|(measure, _)| budgeted(control, part, text, measure, budget.max)),
                 Some(Rule::Pattern(pattern)) => {
-                    let (found, total) = matches(&expressions, pattern.show == Show::Pattern, text);
+                    let (found, total) = matches(
+                        &expressions,
+                        pattern.show == Open::Known(Show::Pattern),
+                        text,
+                    );
                     let status = failed_if(total > 0);
                     Some(result(
                         control,
@@ -289,12 +296,7 @@ fn stated(control: &str, part: &str) -> Evaluated {
 }
 
 /// The verdict of a budget on `text`, with what it used.
-fn budgeted(
-    control: &str,
-    part: &str,
-    text: &str,
-    &Budget { budget, max, .. }: &Budget,
-) -> Evaluated {
+fn budgeted(control: &str, part: &str, text: &str, budget: Measure, max: u64) -> Evaluated {
     let used = measure(text.as_bytes(), budget);
     let unit = match budget {
         Measure::Words => "words",
@@ -381,7 +383,8 @@ fn expressions(
             },
             Err(error) => syntax(&error),
         };
-        return Err(invalid(control, file, number, rule.show, line, fault));
+        let quoted = rule.show == Open::Known(Show::Pattern);
+        return Err(invalid(control, file, number, quoted, line, fault));
     }
     Ok(expressions)
 }
@@ -541,14 +544,14 @@ fn invalid(
     control: &str,
     file: &str,
     number: usize,
-    show: Show,
+    quoted: bool,
     line: &str,
     (column, why): (Option<usize>, String),
 ) -> PluginError {
-    let detail = match (show, column) {
-        (Show::Pattern, _) => format!(" ({line:?}): {why}"),
-        (Show::MatchOnly, Some(column)) => format!(" at column {column}"),
-        (Show::MatchOnly, None) => String::new(),
+    let detail = match (quoted, column) {
+        (true, _) => format!(" ({line:?}): {why}"),
+        (false, Some(column)) => format!(" at column {column}"),
+        (false, None) => String::new(),
     };
     PluginError {
         code: "controls::pattern::invalid".to_owned(),

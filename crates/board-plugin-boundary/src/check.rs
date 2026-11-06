@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use board_model::{Code, LogicalPath};
 use board_ops::{Host, PluginError, Shown};
 use board_plugin::Target;
-use board_plugin::shape::{Digest, Ref, Tag};
+use board_plugin::shape::{Digest, Open, Ref, Tag};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
@@ -110,7 +110,13 @@ pub(crate) fn check(host: &dyn Host, input: &Value) -> Result<Value, PluginError
         .collect();
     let (verdicts, unchecked) = evaluate(personal, &matched, &globs, &parts)?;
     let failed: Vec<&Verdict> = (verdicts.iter())
-        .filter(|verdict| matches!(verdict.status, Status::Failed | Status::Stated))
+        // A status a newer Board added is not known to pass.
+        .filter(|verdict| {
+            !matches!(
+                verdict.status,
+                Open::Known(Status::Passed | Status::Skipped)
+            )
+        })
         .collect();
     let content = Content {
         action: &action,
@@ -216,15 +222,25 @@ fn evaluate(
         let input = json!({"controls": controls, "parts": texts});
         let report = (host.call(&target, &input)).map_err(|refusal| refused("call", &refusal))?;
         // `Verdict` repeats controls' result type, so a field added there
-        // refuses the check instead of letting the content through.
-        let results = Vec::<Verdict>::deserialize(&report.output["results"]).map_err(|error| {
-            PluginError {
-                code: "boundary::evaluate::unreadable".to_owned(),
-                message: format!("controls.evaluate gave results this plugin cannot read: {error}"),
-                fields: Map::new(),
-                hint: Some("update Board so its boundary and controls plugins agree".to_owned()),
-            }
-        })?;
+        // refuses the check instead of letting the content through. A rule
+        // or status boundary does not know, such as a version rule, which
+        // a crossing cannot record yet, refuses it the same way.
+        let unreadable = |error: String| PluginError {
+            code: "boundary::evaluate::unreadable".to_owned(),
+            message: format!("controls.evaluate gave results this plugin cannot read: {error}"),
+            fields: Map::new(),
+            hint: Some("update Board so its boundary and controls plugins agree".to_owned()),
+        };
+        let results = Vec::<Verdict>::deserialize(&report.output["results"])
+            .map_err(|error| unreadable(error.to_string()))?;
+        if let Some(verdict) = (results.iter()).find(|verdict| {
+            matches!(verdict.rule, Some(Open::Other(_))) || matches!(verdict.status, Open::Other(_))
+        }) {
+            return Err(unreadable(format!(
+                "{} gave a rule or status this plugin does not know",
+                verdict.control
+            )));
+        }
         verdicts.extend(results);
     }
     verdicts.sort_by(|a, b| (&a.control, &a.part).cmp(&(&b.control, &b.part)));
@@ -307,12 +323,12 @@ fn refusal(action: &str, digest: &str, failed: &[&Verdict], answer: &Answer) -> 
     let mut steps = Vec::new();
     if failed
         .iter()
-        .any(|verdict| verdict.status == Status::Stated)
+        .any(|verdict| verdict.status == Open::Known(Status::Stated))
     {
         steps.push(GIVE_RULE.to_owned());
     }
     let parts: BTreeSet<&str> = (failed.iter())
-        .filter(|verdict| verdict.status == Status::Failed)
+        .filter(|verdict| verdict.status != Open::Known(Status::Stated))
         .map(|verdict| verdict.part.as_str())
         .collect();
     if !parts.is_empty() {

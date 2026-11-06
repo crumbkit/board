@@ -129,6 +129,62 @@ impl<T: Accepts> JsonSchema for Ref<T> {
     }
 }
 
+/// A stored enum value that a later Board may have added: `Known` when `E`
+/// reads it, else `Other`, holding it as written. It writes back what it
+/// read, and its schema is `E`'s, so a record schema stays unchanged.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Open<E> {
+    Known(E),
+    Other(String),
+}
+
+impl<E> Open<E> {
+    /// The value, when `E` knows it.
+    pub fn known(&self) -> Option<&E> {
+        match self {
+            Self::Known(known) => Some(known),
+            Self::Other(_) => None,
+        }
+    }
+}
+
+impl<E: Serialize> Serialize for Open<E> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match self {
+            Self::Known(known) => known.serialize(serializer),
+            Self::Other(text) => serializer.serialize_str(text),
+        }
+    }
+}
+
+impl<'de, E: serde::de::DeserializeOwned> Deserialize<'de> for Open<E> {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        use serde::de::IntoDeserializer;
+        let text = String::deserialize(deserializer)?;
+        let read: Result<E, serde::de::value::Error> =
+            E::deserialize(text.as_str().into_deserializer());
+        Ok(read.map_or(Self::Other(text), Self::Known))
+    }
+}
+
+impl<E: JsonSchema> JsonSchema for Open<E> {
+    fn inline_schema() -> bool {
+        E::inline_schema()
+    }
+
+    fn schema_name() -> Cow<'static, str> {
+        E::schema_name()
+    }
+
+    fn schema_id() -> Cow<'static, str> {
+        E::schema_id()
+    }
+
+    fn json_schema(generator: &mut SchemaGenerator) -> Schema {
+        E::json_schema(generator)
+    }
+}
+
 /// Free text that a person reads and no program parses. A `String` field
 /// takes it with `#[schemars(with = "Prose")]`.
 #[derive(Debug)]
@@ -365,7 +421,7 @@ pub struct Actor {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "Option<Person>")]
     pub person: Option<String>,
-    /// The name the agent was given, such as `soundcheck scheduler`, as
+    /// The name the agent was given, such as `nightly scheduler`, as
     /// free text.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "Option<Prose>")]

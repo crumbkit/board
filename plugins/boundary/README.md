@@ -62,9 +62,10 @@ free one. A refusal from `controls.evaluate`, such as
 `controls::control::not_found`, is `boundary::board::refused` carrying that
 code. A judged rule with a part to read is refused that way with
 `controls::agent::not_set` when `BOARD_CONTROLS_AGENT` names no agent.
-Results that the plugin cannot read, which happens only when the boundary
-and controls plugins come from different Board builds, refuse the check
-with `boundary::evaluate::unreadable`.
+Results that the plugin cannot read refuse the check with
+`boundary::evaluate::unreadable`. That happens when the boundary and
+controls plugins come from different Board builds, and for a version rule,
+which a crossing cannot record until boundary records version rules.
 
 Any entry under `/boundaries/` that is not a valid boundary, because it does
 not parse, has another type or fails its schema, a boundary elsewhere that

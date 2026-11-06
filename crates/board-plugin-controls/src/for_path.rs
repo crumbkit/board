@@ -60,7 +60,7 @@ pub(crate) fn for_path(host: &dyn Host, input: &Value) -> Result<Value, PluginEr
             let control = controls.remove(&logical)?;
             Some(Applying {
                 show: control.show(),
-                kind: control.kind,
+                kind: control.kind(),
                 control: logical,
                 requirement: control.requirement,
                 purpose: control.purpose,

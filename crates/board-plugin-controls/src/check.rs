@@ -11,7 +11,7 @@ use serde_json::{Map, Value, json};
 
 use crate::index::{self, Control, File, Health};
 use crate::logical;
-use crate::records::{Budget, Kind, Measure, Per, Rule, ShowAt, Version};
+use crate::records::{Kind, Measure, Per, Rule, ShowAt, Version};
 use crate::version;
 
 /// Check the controls that apply to a file at or under `path`, `/` when left out.
@@ -208,14 +208,14 @@ pub(crate) fn check(host: &dyn Host, input: &Value) -> Result<Value, PluginError
     let (measured_controls, versions) =
         measure_files(host, &applying, &controls, &files, &unreadable)?;
     let stated = (applying.into_iter())
-        .filter(|logical| !measured(&controls[*logical]))
+        .filter(|logical| !controls[*logical].measured())
         .map(|logical| {
             let control = &controls[logical];
             Stated {
                 control: logical.clone(),
                 requirement: control.requirement.clone(),
                 purpose: control.purpose.clone(),
-                kind: control.kind,
+                kind: control.kind(),
                 show: control.show(),
                 paths: control.paths.clone().unwrap_or_default(),
                 files: files[logical].len()
@@ -250,7 +250,7 @@ fn measure_files(
     unreadable: &BTreeMap<String, Vec<Unreadable>>,
 ) -> Result<(Vec<Checked>, Vec<Pinned>), PluginError> {
     let read_by: Vec<&String> = (applying.iter().copied())
-        .filter(|logical| measured(&controls[*logical]))
+        .filter(|logical| controls[*logical].measured())
         .collect();
     // A degraded file is degraded for every control that reaches it.
     let skipped: BTreeMap<&str, &Unreadable> = (read_by.iter())
@@ -270,7 +270,9 @@ fn measure_files(
         let (texts, failed) = texts(reached, marked, &skipped, &reads);
         match &control.rule {
             Some(Rule::Budget(budget)) => {
-                budgets.push(checked(logical, control, budget, &texts, failed));
+                if let Some(known) = budget.known() {
+                    budgets.push(checked(logical, control, known, budget.max, &texts, failed));
+                }
             }
             Some(Rule::Version(rule)) => {
                 versions.push(pinned(logical, control, rule, &texts, failed)?);
@@ -305,12 +307,6 @@ fn texts<'a>(
     failed.sort_by(|a, b| a.file.cmp(&b.file));
     failed.dedup_by(|a, b| a.file == b.file);
     (texts, failed)
-}
-
-/// Whether `check` measures the control's files: it has a budget or a
-/// version rule.
-fn measured(control: &Control) -> bool {
-    matches!(control.rule, Some(Rule::Budget(_) | Rule::Version(_)))
 }
 
 /// The display path `path` resolves to, through any link or mount.
@@ -411,7 +407,8 @@ pub(crate) fn measure(data: &[u8], budget: Measure) -> u64 {
 fn checked(
     logical: &str,
     control: &Control,
-    &Budget { budget, max, per }: &Budget,
+    (budget, per): (Measure, Per),
+    max: u64,
     texts: &[(&LogicalPath, &[u8])],
     unreadable: Vec<Unreadable>,
 ) -> Checked {
@@ -426,11 +423,11 @@ fn checked(
         used: usage.iter().map(|(_, used)| used).sum(),
         files: listed(texts, &unreadable),
         unreadable,
-        kind: control.kind,
+        kind: control.kind(),
         show: control.show(),
         each: None,
     };
-    if per.unwrap_or(Per::Total) == Per::Total {
+    if per == Per::Total {
         return checked;
     }
     // The first of the sorted files with the most usage, so ties name the same file every run.
@@ -491,7 +488,7 @@ fn pinned(
         files: listed(texts, &unreadable),
         behind,
         unreadable,
-        kind: control.kind,
+        kind: control.kind(),
         show: control.show(),
     })
 }

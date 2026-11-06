@@ -5,6 +5,7 @@ use std::collections::BTreeMap;
 
 use board_model::{LogicalPath, parse_json};
 use board_ops::{Host, Limit, PluginError, QueryReport, literal};
+use board_plugin::shape::Open;
 use serde::Deserialize;
 use serde_json::Value;
 
@@ -63,16 +64,30 @@ pub(crate) struct Control {
     pub(crate) applies_to: Option<Vec<String>>,
     pub(crate) paths: Option<Vec<String>>,
     pub(crate) rule: Option<Rule>,
-    #[serde(default)]
-    pub(crate) kind: Kind,
-    pub(crate) show: Option<ShowAt>,
+    kind: Option<Open<Kind>>,
+    show: Option<Open<ShowAt>>,
 }
 
 impl Control {
-    /// When the mod shows this control, its default applied.
+    /// The control's kind, `standing` when left out or when a newer Board
+    /// added the value.
+    pub(crate) fn kind(&self) -> Kind {
+        (self.kind.as_ref().and_then(Open::known).copied()).unwrap_or_default()
+    }
+
+    /// When the mod shows this control, its default applied. A value a
+    /// newer Board added reads as `start`, the first point it is shown.
     pub(crate) fn show(&self) -> ShowAt {
-        let measured = matches!(self.rule, Some(Rule::Budget(_) | Rule::Version(_)));
-        ShowAt::effective(self.show, self.kind, measured)
+        let show = (self.show.as_ref()).map(|show| show.known().copied().unwrap_or(ShowAt::Start));
+        ShowAt::effective(show, self.kind(), self.measured())
+    }
+
+    /// Whether `check` measures the control's files: it has a budget or a
+    /// version rule this Board can apply.
+    pub(crate) fn measured(&self) -> bool {
+        (self.rule.as_ref()).is_some_and(|rule| {
+            matches!(rule, Rule::Budget(_) | Rule::Version(_)) && rule.applies()
+        })
     }
 }
 

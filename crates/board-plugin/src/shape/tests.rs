@@ -520,3 +520,79 @@ fn the_registry_holds_each_object_shape_as_a_record_schemas_defs_holds_it() {
     assert_eq!(schema["$defs"]["Pinned"], registry["Pinned"]);
     assert!(!registry["Actor"].to_string().contains("null"));
 }
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+#[schemars(inline)]
+enum Weather {
+    Sunny,
+    LightRain,
+}
+
+/// An open value reads a value its enum knows as `Known`, keeps one it does
+/// not know as `Other`, and writes each back as it was read.
+#[test]
+fn an_open_value_reads_a_known_value_keeps_an_unknown_one_and_writes_both_back() {
+    for (text, read) in [
+        ("light-rain", Open::Known(Weather::LightRain)),
+        ("hail", Open::Other("hail".to_owned())),
+        ("LightRain", Open::Other("LightRain".to_owned())),
+    ] {
+        let value: Open<Weather> = serde_json::from_value(json!(text)).unwrap();
+        assert_eq!(value, read, "{text}");
+        assert_eq!(serde_json::to_value(&value).unwrap(), json!(text));
+    }
+    assert_eq!(Open::Known(Weather::Sunny).known(), Some(&Weather::Sunny));
+    assert_eq!(Open::<Weather>::Other("hail".to_owned()).known(), None);
+}
+
+/// An open value refuses what is not a string, as its enum does, and
+/// reads the string twin.
+#[test]
+fn an_open_value_refuses_a_non_string_and_reads_its_string_twin() {
+    for (refused, admitted) in [
+        (json!(1), json!("1")),
+        (json!(null), json!("null")),
+        (json!(["sunny"]), json!("sunny")),
+        (json!({"sunny": null}), json!("sunny")),
+    ] {
+        assert!(
+            serde_json::from_value::<Open<Weather>>(refused.clone()).is_err(),
+            "{refused}"
+        );
+        assert!(serde_json::from_value::<Open<Weather>>(admitted).is_ok());
+    }
+}
+
+/// An open field's schema is its enum's, so wrapping a stored field
+/// changes no committed schema.
+#[test]
+fn an_open_fields_schema_is_its_enums() {
+    #[derive(JsonSchema)]
+    struct Closed {
+        /// The weather.
+        weather: Weather,
+        /// Yesterday's.
+        before: Option<Weather>,
+        /// A forecast.
+        ahead: Vec<Weather>,
+    }
+    #[derive(JsonSchema)]
+    #[schemars(rename = "Closed")]
+    struct Opened {
+        /// The weather.
+        weather: Open<Weather>,
+        /// Yesterday's.
+        before: Option<Open<Weather>>,
+        /// A forecast.
+        ahead: Vec<Open<Weather>>,
+    }
+    assert_eq!(
+        schema_of::<Opened>(SchemaSettings::draft2020_12()),
+        schema_of::<Closed>(SchemaSettings::draft2020_12())
+    );
+    assert_eq!(
+        schema_of::<Opened>(SchemaSettings::draft2020_12())["properties"]["weather"],
+        json!({"description": "The weather.", "type": "string", "enum": ["sunny", "light-rain"]})
+    );
+}

@@ -6,12 +6,12 @@ use std::time::Duration;
 use board_model::LogicalPath;
 use board_ops::{Host, PluginError, Run, Shown};
 use board_plugin::child::ProcessError;
-use board_plugin::shape::Record;
+use board_plugin::shape::{Open, Record};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-use crate::records::ReportRecord;
+use crate::records::{ReportRecord, Severity, Verdict};
 use crate::{PLUGIN, read_record, refusal, refused};
 
 /// What `post` passes gh: its token, or the directory that holds its login.
@@ -92,6 +92,14 @@ pub(crate) fn post(host: &dyn Host, input: &Value) -> Result<Value, PluginError>
     Ok(output(url, true))
 }
 
+/// `value` as the report holds it, including a value a newer Board added.
+fn shown<E: Copy>(value: &Open<E>, name: fn(E) -> &'static str) -> &str {
+    match value {
+        Open::Known(known) => name(*known),
+        Open::Other(other) => other,
+    }
+}
+
 /// The comment for `report`: verdict, author, range or subject, findings
 /// and the report it follows, then its target.
 ///
@@ -104,8 +112,11 @@ pub(crate) fn comment(path: &str, pr: &str, report: &ReportRecord) -> String {
     };
     let mut lines = vec![
         match &report.by {
-            Some(by) => format!("**Review: {}** by {by}", report.verdict.as_str()),
-            None => format!("**Review: {}**", report.verdict.as_str()),
+            Some(by) => format!(
+                "**Review: {}** by {by}",
+                shown(&report.verdict, Verdict::as_str)
+            ),
+            None => format!("**Review: {}**", shown(&report.verdict, Verdict::as_str)),
         },
         String::new(),
         reviewed,
@@ -124,7 +135,7 @@ pub(crate) fn comment(path: &str, pr: &str, report: &ReportRecord) -> String {
         };
         lines.push(format!(
             "- **{}** {place}{}",
-            finding.severity.as_str(),
+            shown(&finding.severity, Severity::as_str),
             finding.text
         ));
     }
