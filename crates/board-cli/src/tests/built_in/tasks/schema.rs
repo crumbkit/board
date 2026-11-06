@@ -183,22 +183,50 @@ fn after_references_v2_tasks_by_their_path_with_md() {
 }
 
 #[test]
-fn a_task_admits_fields_another_tool_writes_and_still_checks_its_own() {
+fn a_task_admits_the_id_and_pinned_reflect_writes_and_refuses_a_field_it_does_not_name() {
     let tasks = Tasks::new();
-    let reflect = json!({"id": "0f3c9a", "pinned": true});
+    let reflect = json!({"id": "01m5smm1qj4ye2dw87ne3b9fst", "pinned": true});
     tasks.write("tasks/reflect.md", &open("Reflect", reflect));
-    let bad = json!({"id": "0f3c9b", "pinned": true});
-    tasks.write(
-        "tasks/reflect-bad.md",
-        &task("Reflect bad", "waiting", &bad, ""),
-    );
+    let ordered = json!({"id": "tips-and-tricks", "pinned": 3});
+    tasks.write("tasks/ordered.md", &open("Ordered", ordered));
+    let shouting = json!({"id": "Tips", "pinned": true});
+    tasks.write("tasks/shouting.md", &open("Shouting", shouting));
+    let negative = json!({"id": "tips", "pinned": -1});
+    tasks.write("tasks/negative.md", &open("Negative", negative));
+    let foreign = json!({"programme_id": "ABC-1"});
+    tasks.write("tasks/foreign.md", &open("Foreign", foreign));
+    let misspelt = json!({"defr": "soon"});
+    tasks.write("tasks/misspelt.md", &open("Misspelt", misspelt));
+    tasks.write("tasks/spelt.md", &open("Spelt", json!({"defer": "soon"})));
     assert_eq!(
         checked(&tasks),
         expected(&[
             ("/tasks/reflect.md", None),
-            ("/tasks/reflect-bad.md", INVALID)
+            ("/tasks/ordered.md", None),
+            ("/tasks/shouting.md", INVALID),
+            ("/tasks/negative.md", INVALID),
+            ("/tasks/foreign.md", INVALID),
+            ("/tasks/misspelt.md", INVALID),
+            ("/tasks/spelt.md", None),
         ])
     );
+}
+
+#[test]
+fn put_refuses_a_task_with_a_field_it_does_not_name_naming_the_field_and_writes_its_twin() {
+    let tasks = Tasks::new();
+    let put = |path: &str, text: &str| {
+        let ran = tasks.run(&["--json", "put", path, "--file"], 0, None, text);
+        (ran.code, json(&ran))
+    };
+    let foreign = open("Foreign", json!({"programme_id": "ABC-1"}));
+    let (code, document) = put("/tasks/foreign.md", &foreign);
+    assert_eq!(code, 1, "{document}");
+    assert_eq!(document["code"], "board::record::invalid", "{document}");
+    let message = document["message"].as_str().unwrap();
+    assert!(message.contains("'programme_id'"), "{message}");
+    let (code, document) = put("/tasks/foreign.md", &open("Foreign", json!({})));
+    assert_eq!(code, 0, "{document}");
 }
 
 #[test]

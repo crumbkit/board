@@ -16,7 +16,7 @@ pub(super) enum Kind {
 use Kind::{Local, UntilAdopted};
 
 #[rustfmt::skip]
-pub(super) const UNSHARED: [(&str, &str, Kind, &str); 89] = [
+pub(super) const UNSHARED: [(&str, &str, Kind, &str); 87] = [
     // This repository's board's copy of the controls schema.
     (".board/controls/control/v1", "/rule/at_least", Local, "a version floor of dotted numbers, which only a version rule compares"),
     (".board/controls/control/v1", "/rule/capture", Local, "a regular expression in the syntax of Rust's regex crate, which only a version rule compiles"),
@@ -104,8 +104,6 @@ pub(super) const UNSHARED: [(&str, &str, Kind, &str); 89] = [
     ("runs/suite/v1", "/measures/-/name", UntilAdopted, "Slug, an identifier the audit did not list"),
     ("runs/suite/v1", "/measures/-/unit", UntilAdopted, "an inline enum of units (audit row 52)"),
     ("runs/suite/v1", "/method", UntilAdopted, "Prose"),
-    ("tasks/task/v2", "/contexts/-", UntilAdopted, "Slug (audit row 57)"),
     ("tasks/task/v2", "/defer", Local, "another tool co-writes tasks, and its date-time may carry an offset, which Timestamp refuses"),
     ("tasks/task/v2", "/repeat", Local, "the repeat grammar is the tasks plugin's own"),
-    ("tasks/task/v2", "/title", UntilAdopted, "Prose"),
 ];

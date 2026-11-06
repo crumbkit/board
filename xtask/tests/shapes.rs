@@ -19,7 +19,7 @@ use exempt::{Kind, UNSHARED};
 /// The rules a schema may break today, by record type, until the plugin
 /// that ships it is ported. Each entry must still be broken, so a fix
 /// removes its entry.
-const EXEMPT: [(&str, &str); 17] = [
+const EXEMPT: [(&str, &str); 14] = [
     // Ported plugins that ship the schema files the former Python plugins
     // generated with pydantic, unchanged: pydantic titles every
     // property and keeps field meanings in the class docstring.
@@ -37,10 +37,6 @@ const EXEMPT: [(&str, &str); 17] = [
     ("runs/run/v1", "untitled"),
     ("runs/suite/v1", "described"),
     ("runs/suite/v1", "untitled"),
-    ("tasks/task/v2", "described"),
-    ("tasks/task/v2", "untitled"),
-    // Another tool co-writes tasks, so a task keeps fields it does not know.
-    ("tasks/task/v2", "closed"),
 ];
 
 /// The repository's root.

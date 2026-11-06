@@ -35,8 +35,8 @@ needs to know.
    allowed when it holds no reference.
 9. Nested structs go in `$defs`.
 10. Every record and nested object has `additionalProperties: false`, except a
-    map whose values share one schema, and `tasks/task/v2`, which another
-    tool co-writes. An object of several kinds names its kind in a field,
+    map whose values share one schema. A type another tool co-writes, such
+    as `tasks/task/v2`, names that tool's fields too. An object of several kinds names its kind in a field,
     such as a control rule's `check`, and gathers each kind's `$defs` entry
     through `allOf`, where references are searched (rule 5). Each entry
     requires its fields when the kind field names it and refuses them
