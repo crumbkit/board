@@ -33,8 +33,7 @@ Each step leaves a valid board in its own commit.
   `board put --batch` lines. Each line expects the blob it read, so a file
   changed since the read refuses the batch with `board::put::stale`.
   Without `apply` it writes nothing. With it, one batch writes every line in
-  one commit. `changes.migrate` (`crates/board-plugin-changes/src/migrate.rs`)
-  is one.
+  one commit.
 - `board call` sets `BOARD_PLUGIN`, so the batch is checked as the plugin's
   own put ([architecture/writes/effects.md](../../architecture/writes/effects.md)).
 - Board's wire format has no migration concept. What is owed is the plugin's

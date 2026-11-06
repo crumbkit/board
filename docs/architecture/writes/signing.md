@@ -77,8 +77,8 @@ records it.
 - `cargo xtask lint` fails with `xtask::signing::outside_owner`, naming the
   file, line and literal, when source code outside `signing.owners` in
   `lint.toml` names a namespace, `ssh-keygen`, `attention-sign`, the allowed
-  signers path or the signature armor. It reads `.rs`, `.sh`, `.ts` and
-  `.tsx` files, and scripts without an extension under `bin/` and
+  signers path or the signature armor. It reads `.rs`, `.py`, `.sh`, `.ts`
+  and `.tsx` files, and scripts without an extension under `bin/` and
   `plugins/`.
 - `deny.toml` bans `ssh-key`, `ssh-encoding`, `p256`, `ecdsa` and
   `openssl`, so no crate signs or verifies in process.

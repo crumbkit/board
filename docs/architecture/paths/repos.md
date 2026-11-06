@@ -62,5 +62,5 @@ no controls.
 A checkout of a repository that is itself a board runs as that board,
 because Board finds `.board/board.json` first. A plugin that needs the
 caller's repository reads the raw origin of `BOARD_CALLER_DIR`, which a
-built-in gets from `Host::caller_remote`, and looks up the repo record whose `remote` equals
-`shown_remote(caller_remote())`.
+built-in gets from `Host::caller_remote`, and looks up the repo record
+whose `remote` equals that origin's `board_model::shown_remote`.
