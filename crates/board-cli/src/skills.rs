@@ -438,13 +438,24 @@ fn keyed(raw: BTreeMap<String, Held>, skills: &[Skill]) -> BTreeMap<String, Held
     held
 }
 
+/// The longest marker read: one line is far shorter.
+const MARKER_BYTES: u64 = 1024;
+
 /// The text of the marker in `path`, when `path` is a directory, never a
-/// symlink, holding a marker that can be read.
+/// symlink, holding a marker that is a regular file, never a symlink, a
+/// FIFO or a device, which can be read. Only its first [`MARKER_BYTES`]
+/// are read.
 fn marker(path: &Path) -> Option<String> {
+    use std::io::Read as _;
     let directory = std::fs::symlink_metadata(path).is_ok_and(|kind| kind.is_dir());
     let marker = path.join(MARKER);
-    let file = std::fs::symlink_metadata(&marker).is_ok_and(|marker| marker.is_file());
-    let bytes = std::fs::read(&marker).ok().filter(|_| directory && file)?;
+    let file = directory && std::fs::symlink_metadata(&marker).is_ok_and(|kind| kind.is_file());
+    if !file {
+        return None;
+    }
+    let mut bytes = Vec::new();
+    let opened = std::fs::File::open(&marker).ok()?;
+    opened.take(MARKER_BYTES).read_to_end(&mut bytes).ok()?;
     Some(String::from_utf8_lossy(&bytes).into_owned())
 }
 

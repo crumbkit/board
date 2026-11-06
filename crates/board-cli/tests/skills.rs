@@ -304,6 +304,56 @@ fn a_folder_whose_marker_names_another_skill_at_a_skills_name_is_not_boards() {
     assert_eq!(text(&path(&home, "skills/changes/SKILL.md")), "mine\n");
 }
 
+/// `skills list --dir skills` in `home`, which must exit within ten
+/// seconds, and its state for `name`.
+fn listed_in_time(home: &Scenario, name: &str) -> String {
+    let mut child = Command::new(env!("CARGO_BIN_EXE_board"))
+        .args(["--json", "skills", "list", "--dir", "skills"])
+        .current_dir(home.workdir())
+        .env_clear()
+        .env("HOME", home.workdir())
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    while child.try_wait().unwrap().is_none() {
+        if std::time::Instant::now() > deadline {
+            child.kill().unwrap();
+            panic!("skills list did not exit within ten seconds");
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    let output = child.wait_with_output().unwrap();
+    let document: Value = serde_json::from_slice(&output.stdout).unwrap();
+    state_of(&document, name)
+}
+
+#[cfg(unix)]
+#[test]
+fn a_marker_that_is_a_fifo_or_a_symlink_is_not_boards_and_a_regular_marker_is() {
+    let home = Scenario::new();
+    home.write("skills/changes/SKILL.md", Item::File("mine\n"));
+    let marker = path(&home, "skills/changes/.board-skill");
+    let made = Command::new("mkfifo").arg(&marker).status().unwrap();
+    assert!(made.success());
+    assert_eq!(listed_in_time(&home, "changes"), "not_board");
+
+    home.write("skills/changes/.board-skill", Item::Deleted)
+        .write("elsewhere", Item::File("board 0.0.0 changes\n"))
+        .write(
+            "skills/changes/.board-skill",
+            Item::Symlink("../../elsewhere"),
+        );
+    assert_eq!(listed_in_time(&home, "changes"), "not_board");
+
+    home.write("skills/changes/.board-skill", Item::Deleted)
+        .write(
+            "skills/changes/.board-skill",
+            Item::File("board 0.0.0 changes\n"),
+        );
+    assert_eq!(listed_in_time(&home, "changes"), "stale");
+}
+
 #[test]
 fn a_directory_that_cannot_be_read_is_refused_and_one_that_can_is_admitted() {
     let home = Scenario::new();
