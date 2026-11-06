@@ -33,6 +33,9 @@ disallowed-methods = [
     { path = "board_plugin::sign::verify", reason = "signing is called only by board-ops's effects module (STANDARDS.md 29)" },
     { path = "board_model::effect::Effect::approval", reason = "a statement is built only where board-ops's effects module signs or verifies it (STANDARDS.md 29)" },
     { path = "board_model::effect::Effect::owner_write", reason = "a statement is built only where board-ops's effects module signs or verifies it (STANDARDS.md 29)" },
+    { path = "board_model::effect::order::Order::statement", reason = "a statement is built only where board-ops's effects module signs or verifies it (STANDARDS.md 29)" },
+    { path = "board_ops::effects::order::sign_order", reason = "an order is signed only through Hosted::sign_order, Host's one implementation that signs (STANDARDS.md 29)" },
+    { path = "board_ops::effects::order::verify_order", reason = "an order is verified only through Hosted::verify_order and sign_order, the effects module's own check (STANDARDS.md 29)" },
     { path = "std::io::stdout", reason = "stdout is owned by the report module of each binary" },
     { path = "std::io::stderr", reason = "stderr is owned by the report module of each binary" },
 ]

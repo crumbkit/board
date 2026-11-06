@@ -1,13 +1,14 @@
 //! The signing vectors in vectors/signing/v1 (docs/architecture/writes/signing.md):
-//! Board builds the approval and owner-write statements byte for byte, signs
-//! each in its namespace, and its verifier admits each good signature and
-//! refuses each one made in another namespace or by another key.
+//! Board builds the approval, owner-write and order statements byte for
+//! byte, signs each in its namespace, and its verifier admits each good
+//! signature and refuses each one made in another namespace or by another
+//! key.
 #![cfg(test)]
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use board_model::{Effect, parse_json, signature_namespace};
+use board_model::{Effect, Expiry, ORDER_TYPE, Order, Pinned, parse_json, signature_namespace};
 use board_plugin::SignError;
 use serde::Deserialize;
 
@@ -57,6 +58,28 @@ fn effect() -> Effect {
     Effect::from_value(&parse_json(read("approval.effect.json").as_bytes()).unwrap()).unwrap()
 }
 
+/// The order in `order.record`, with the text of `order.context.md`, read
+/// as the attention plugin reads a stored order.
+fn order() -> Order {
+    let record = parse_json(read("order.record").as_bytes()).unwrap();
+    assert_eq!(record["$type"], ORDER_TYPE);
+    let text = |field: &str| record[field].as_str().unwrap().to_owned();
+    let expires = text("expires");
+    let mut parts = expires.split('-').map(|part| part.parse::<u16>().unwrap());
+    let mut part = || parts.next().unwrap();
+    Order {
+        order: text("order"),
+        context_path: text("context"),
+        expires: Expiry {
+            year: part(),
+            month: u8::try_from(part()).unwrap(),
+            day: u8::try_from(part()).unwrap(),
+        },
+        pinned: Pinned::from(record["pinned"].as_bool().unwrap_or(false)),
+        context_text: read("order.context.md"),
+    }
+}
+
 #[test]
 #[expect(
     clippy::disallowed_methods,
@@ -90,9 +113,21 @@ fn board_builds_the_approval_and_owner_write_statements_byte_for_byte() {
 }
 
 #[test]
+#[expect(
+    clippy::disallowed_methods,
+    reason = "it builds the order statement as the effects module does"
+)]
+fn board_builds_the_order_statement_byte_for_byte() {
+    let manifest = manifest();
+    assert_eq!(order().statement(), read("order.statement"));
+    // v1 is frozen, so it names the repository that built orders before Board.
+    assert_eq!(manifest.layouts["order.statement"].owner, "board-attention");
+}
+
+#[test]
 fn each_board_statement_is_signed_in_the_namespace_the_manifest_names() {
     let manifest = manifest();
-    for name in ["approval.statement", "write.statement"] {
+    for name in ["approval.statement", "write.statement", "order.statement"] {
         assert_eq!(
             signature_namespace(&read(name)),
             manifest.layouts[name].namespace,
@@ -120,7 +155,7 @@ fn verified(name: &str, signature: &Signature) -> Result<(), SignError> {
 
 #[test]
 fn the_verifier_admits_the_owners_signature_of_a_board_statement_in_its_namespace() {
-    for name in ["approval.sig", "write.sig"] {
+    for name in ["approval.sig", "write.sig", "order.sig"] {
         let signature = &manifest().signatures[name];
         assert_eq!(signature.signer, OWNER);
         assert_eq!(
@@ -138,7 +173,7 @@ fn the_verifier_refuses_a_signature_in_another_namespace_or_by_another_key() {
         "cross/approval-in-write.sig",
         "cross/write-in-approval.sig",
         "cross/approval-by-other.sig",
-        "order.sig",
+        "cross/order-in-directive.sig",
     ];
     for name in refused {
         let signature = &manifest.signatures[name];

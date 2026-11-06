@@ -1,6 +1,9 @@
 //! A signer for tests: a software key that `ssh-keygen` makes, the allowed
 //! signers file that lists it, and a program with attention-sign's command
-//! line that signs with it in the namespace the statement's header names, so tests check real signatures without Touch ID.
+//! line that signs with it in the namespace the statement's header names, so
+//! tests check real signatures without Touch ID. As attention-sign does, it
+//! signs an approval or an owner's write only under `approve` and an order
+//! only under `sign`.
 
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
@@ -28,7 +31,7 @@ impl Signer {
         );
         let public = std::fs::read_to_string(key.with_extension("pub")).unwrap();
         let script = format!(
-            "#!/bin/sh\n[ \"$1\" = approve ] || exit 1\nstatement=$(mktemp)\ncat \"$2\" > \"$statement\"\nIFS= read -r namespace < \"$statement\"\ncase \"$namespace\" in board/approve/v1|board/write/v1) ;; *) exit 1 ;; esac\nexec /usr/bin/ssh-keygen -Y sign -q -f '{key_text}' -n \"$namespace\" < \"$statement\"\n"
+            "#!/bin/sh\nstatement=$(mktemp)\ncat \"$2\" > \"$statement\"\nIFS= read -r namespace < \"$statement\"\ncase \"$1 $namespace\" in 'approve board/approve/v1'|'approve board/write/v1'|'sign attention/order/v1') ;; *) exit 1 ;; esac\nexec /usr/bin/ssh-keygen -Y sign -q -f '{key_text}' -n \"$namespace\" < \"$statement\"\n"
         );
         scenario
             .write("allowed_signers", Item::File(&format!("owner {public}")))
@@ -36,7 +39,9 @@ impl Signer {
         Self { scenario }
     }
 
-    /// The program that signs as attention-sign does: `<program> approve <file>`.
+    /// The program that signs as attention-sign does: `<program> approve
+    /// <file>` for an approval or an owner's write, `<program> sign <file>`
+    /// for an order.
     pub fn program(&self) -> PathBuf {
         self.directory().join("sign")
     }
@@ -60,9 +65,15 @@ impl Signer {
         self.directory().join("allowed_signers")
     }
 
-    /// The armored signature of `statement`.
+    /// The armored signature of `statement`, asked for as attention-sign
+    /// is: with `sign` for an order, else with `approve`.
     pub fn sign(&self, statement: &str) -> String {
-        run(&self.program(), &["approve", "/dev/stdin"], statement)
+        let verb = if statement.starts_with("attention/order/v1\n") {
+            "sign"
+        } else {
+            "approve"
+        };
+        run(&self.program(), &[verb, "/dev/stdin"], statement)
     }
 
     /// The armored signature of `statement` in `namespace`, whatever its

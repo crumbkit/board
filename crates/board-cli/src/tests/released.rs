@@ -1036,6 +1036,7 @@ fn capabilities() -> BTreeMap<String, BTreeMap<String, Field>> {
         boards: None,
         signer: None,
         allowed_signers: None,
+        attention_allowed_signers: None,
         environment: board_plugin::Environment::default(),
         complete: None,
         terminal: false,

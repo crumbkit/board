@@ -52,6 +52,7 @@ fn cached_with(
         boards: None,
         signer: None,
         allowed_signers: None,
+        attention_allowed_signers: None,
         environment: board_plugin::Environment {
             path: Some(path.into()),
             inherited: (inherited.iter())
@@ -727,6 +728,7 @@ impl Personal {
             boards: Some(self.xdg.workdir().join("board/config.json")),
             signer: Some(self.signer.program().into_os_string()),
             allowed_signers: Some(self.signer.allowed()),
+            attention_allowed_signers: Some(self.signer.allowed()),
             environment: board_plugin::Environment {
                 path: Some("/usr/bin:/bin".into()),
                 ..board_plugin::Environment::default()

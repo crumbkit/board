@@ -55,7 +55,7 @@ fn signing() -> Signing {
         signer: Some(signer().program().into_os_string()),
         allowed: Some(signer().allowed()),
         cache: Some(signer().directory().join("cache")),
-        environment: Vec::new(),
+        ..Signing::default()
     }
 }
 

@@ -217,6 +217,7 @@ impl Repo {
             boards: Some(personal.xdg.workdir().join("board/config.json")),
             signer: Some(personal.signer.program().into_os_string()),
             allowed_signers: Some(personal.signer.allowed()),
+            attention_allowed_signers: Some(personal.signer.allowed()),
             environment: board_plugin::Environment {
                 path: Some(format!("{}:{PATH}", self.bin.workdir().display()).into()),
                 inherited: (inherited.iter())

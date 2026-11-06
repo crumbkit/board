@@ -313,8 +313,13 @@ pub(super) fn signature(signing: &Signing, root: &Path, statement: &str) -> Resu
     let allowed = (signing.allowed.as_deref()).ok_or("no allowed signers file is named")?;
     let file = board_index::write_statement(cache, root, statement.as_bytes())
         .map_err(|error| format!("the statement cannot be written: {error}"))?;
-    let signature = board_plugin::sign(signer, &file, &signing.environment)
-        .map_err(|error| error.to_string())?;
+    let signature = board_plugin::sign(
+        signer,
+        &file,
+        &signing.environment,
+        board_plugin::Verb::Approve,
+    )
+    .map_err(|error| error.to_string())?;
     board_plugin::verify(allowed, statement, &signature).map_err(|error| error.to_string())?;
     Ok(signature)
 }

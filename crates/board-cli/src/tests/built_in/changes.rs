@@ -452,6 +452,7 @@ impl Changes {
             boards: self.boards.clone(),
             signer: None,
             allowed_signers: None,
+            attention_allowed_signers: None,
             environment: board_plugin::Environment {
                 path: Some(format!("{}:{PATH}", self.bin.workdir().display()).into()),
                 home: (inherited.iter())

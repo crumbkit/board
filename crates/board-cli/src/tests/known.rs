@@ -84,6 +84,7 @@ fn inside(
         boards: Some(xdg.workdir().join("board/config.json")),
         signer: None,
         allowed_signers: None,
+        attention_allowed_signers: None,
         environment: board_plugin::Environment {
             plugin,
             ..board_plugin::Environment::default()
@@ -403,6 +404,7 @@ fn answering(xdg: &Scenario, signer: &Signer, arguments: &[&str], stdin: &[u8]) 
         boards: Some(xdg.workdir().join("board/config.json")),
         signer: None,
         allowed_signers: Some(signer.allowed()),
+        attention_allowed_signers: Some(signer.allowed()),
         environment: board_plugin::Environment::default(),
         complete: None,
         terminal: false,

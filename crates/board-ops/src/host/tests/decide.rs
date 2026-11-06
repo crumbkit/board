@@ -59,7 +59,7 @@ impl Owner {
             signer: Some(self.signer.program().into_os_string()),
             allowed: trusted.then(|| self.signer.allowed()),
             cache: Some(self.signer.directory().join("cache")),
-            environment: Vec::new(),
+            ..Signing::default()
         }
     }
 

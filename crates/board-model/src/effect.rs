@@ -28,12 +28,14 @@ pub const APPROVAL_HEADER: &str = "board/approve/v1";
 pub const WRITE_HEADER: &str = "board/write/v1";
 
 /// The SSH signature namespace `statement` is signed in, which is its
-/// header: an owner's write in `board/write/v1`, anything else in
-/// `board/approve/v1`. A key the allowed signers file limits to approvals
-/// therefore cannot change an answer. A directive has its own namespace.
+/// header: an owner's write in `board/write/v1`, an attention order in
+/// `attention/order/v1`, anything else in `board/approve/v1`. A key the
+/// allowed signers file limits to approvals therefore cannot change an
+/// answer or sign an order.
 pub fn signature_namespace(statement: &str) -> &'static str {
     match statement.split_once('\n') {
         Some((WRITE_HEADER, _)) => WRITE_HEADER,
+        Some((ORDER_TYPE, _)) => ORDER_TYPE,
         _ => APPROVAL_HEADER,
     }
 }
@@ -299,6 +301,10 @@ pub fn effect_record(record_type: &str, value: &Value) -> Option<Result<(), Stri
         _ => return None,
     })
 }
+
+mod order;
+
+pub use order::{Expiry, ORDER_TYPE, Order, Pinned};
 
 #[cfg(test)]
 mod tests;

@@ -1,6 +1,7 @@
-//! The two children an approval needs: the signer, which shows the owner a
+//! The two children a signature needs: the signer, which shows the owner a
 //! statement and signs it with Touch ID, and `ssh-keygen`, which checks a
-//! signature against the allowed signers file
+//! signature against an allowed signers file. Approvals, owner's writes and
+//! attention orders all go through them
 //! (docs/architecture/writes/signing.md).
 
 use std::ffi::OsString;
@@ -11,10 +12,14 @@ use board_model::signature_namespace;
 
 use crate::process::{Finished, Limits, Scope, Stopped, run};
 
-/// How long the owner has to read a statement and touch the sensor. With
-/// the 3 s verify and the 5 s lock wait it fits the effects mod's 30 s
-/// limit on `board answer`.
-const SIGN_TIME: Duration = Duration::from_secs(20);
+/// How long the owner has to read an approval or an owner's write and
+/// touch the sensor. With the 3 s verify and the 5 s lock wait it fits the
+/// effects mod's 30 s limit on `board answer`.
+const APPROVE_TIME: Duration = Duration::from_secs(20);
+
+/// How long the owner has to read an order, whose context may be 64 KiB,
+/// and touch the sensor.
+const ORDER_TIME: Duration = Duration::from_secs(600);
 
 /// How long `ssh-keygen` has to check a signature, which takes
 /// milliseconds.
@@ -24,8 +29,41 @@ const VERIFY_TIME: Duration = Duration::from_secs(3);
 /// changes instead of signing.
 const DECLINED: i32 = 3;
 
-/// The principal an approval is signed as, in the allowed signers file.
-const PRINCIPAL: &str = "owner";
+/// The line attention-sign prints on stderr, before it exits 1, when the
+/// owner cancels. Every other failure also exits 1.
+pub const CANCELLED: &str = "attention-sign: the owner cancelled, so nothing was signed";
+
+/// The principal a statement is signed as, in the allowed signers file.
+pub const PRINCIPAL: &str = "owner";
+
+/// The command the signer is given, which says what it signs.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Verb {
+    /// `approve`: an approval or an owner's write. attention-sign signs it
+    /// in the namespace its first line names, and refuses an order.
+    Approve,
+    /// `sign`: an attention order. attention-sign signs it in the order's
+    /// namespace, and refuses an approval or an owner's write.
+    Sign,
+}
+
+impl Verb {
+    const fn word(self) -> &'static str {
+        match self {
+            Self::Approve => "approve",
+            Self::Sign => "sign",
+        }
+    }
+
+    /// How long the signer may run: 20 seconds for an approval, 10 minutes
+    /// for an order.
+    pub const fn time(self) -> Duration {
+        match self {
+            Self::Approve => APPROVE_TIME,
+            Self::Sign => ORDER_TIME,
+        }
+    }
+}
 
 /// `ssh-keygen` reads a signature only from a file, and the statement comes
 /// on stdin, so the signature reaches it on descriptor 3 through a here
@@ -46,6 +84,8 @@ pub enum SignError {
     Timeout { program: OsString, time: Duration },
     #[error("the owner did not sign and asked for changes: {feedback}")]
     Declined { feedback: String },
+    #[error("the owner cancelled, so {} signed nothing", program.display())]
+    Cancelled { program: OsString },
     #[error("{} exited with {status}: {stderr}", program.display())]
     Failed {
         program: OsString,
@@ -68,19 +108,21 @@ pub enum SignError {
     },
 }
 
-/// Runs `program approve <statement>`, the signer's command line, and
-/// returns the armored signature it prints. `environment` is all the
-/// signer sees. The program must be a regular file that this user or
-/// root owns and that neither its group nor others may write.
+/// Runs `program <verb> <statement>`, the signer's command line, and
+/// returns the armored signature it prints, within the verb's time.
+/// `environment` is all the signer sees. The program must be a regular file
+/// that this user or root owns and that neither its group nor others may
+/// write.
 pub fn sign(
     program: &OsString,
     statement: &Path,
     environment: &[(&str, OsString)],
+    verb: Verb,
 ) -> Result<String, SignError> {
     trusted(Path::new(program))?;
-    let arguments = ["approve".to_owned(), statement.display().to_string()];
+    let arguments = [verb.word().to_owned(), statement.display().to_string()];
     let limits = Limits {
-        time: SIGN_TIME,
+        time: verb.time(),
         ..Limits::default()
     };
     let (_, finished) = run(
@@ -92,8 +134,9 @@ pub fn sign(
         limits,
         Scope::Group,
     );
-    let finished = finished_or(program, SIGN_TIME, finished)?;
+    let finished = finished_or(program, verb.time(), finished)?;
     let stdout = String::from_utf8_lossy(&finished.stdout).into_owned();
+    let stderr = String::from_utf8_lossy(&finished.stderr);
     match finished.code {
         Some(0) if stdout.starts_with("-----BEGIN SSH SIGNATURE-----") => Ok(stdout),
         Some(0) => Err(SignError::NotASignature {
@@ -101,6 +144,9 @@ pub fn sign(
         }),
         Some(DECLINED) => Err(SignError::Declined {
             feedback: stdout.trim().to_owned(),
+        }),
+        Some(1) if stderr.trim() == CANCELLED => Err(SignError::Cancelled {
+            program: program.clone(),
         }),
         _ => Err(failed(program, &finished)),
     }

@@ -325,6 +325,7 @@ impl Tasks {
             boards: Some(self.config.workdir().join("board/config.json")),
             signer: None,
             allowed_signers: None,
+            attention_allowed_signers: None,
             environment: board_plugin::Environment {
                 path: Some(PATH.into()),
                 caller: Some(start.into_os_string()),
