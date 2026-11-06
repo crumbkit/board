@@ -763,6 +763,99 @@ fn check_names_a_mounted_entry_by_its_logical_path_and_its_source() {
     assert_eq!(entry["logical"], "/vendor/lib/notes/a.md");
 }
 
+/// A board that mounts a library at `/lib`, whose mounted commit holds the
+/// pointer `peer`, and `beside` at `/beside` when it is given.
+fn mounting_peer(library: &Scenario, peer: &str, beside: Option<&str>) -> Scenario {
+    let commit = library.commit(&[("a.json", "{}"), ("peer.json", peer)]);
+    let scenario = board();
+    let repo = library.workdir().to_str().unwrap();
+    scenario.write("lib.json", Item::File(&mount_of(repo, commit)));
+    if let Some(beside) = beside {
+        scenario.write("beside.json", Item::File(beside));
+    }
+    scenario
+}
+
+/// The degraded entries of `check --json --all` in `scenario`, as their
+/// logical path, code and reason.
+fn degraded_entries(scenario: &Scenario) -> Vec<(Value, Value, Value)> {
+    let report = json(&board_in(scenario.workdir(), &["check", "--json", "--all"]));
+    (report["data"].as_array().unwrap().iter())
+        .map(|entry| {
+            let field = |name: &str| entry[name].clone();
+            (field("logical"), field("code"), field("reason"))
+        })
+        .collect()
+}
+
+#[test]
+fn check_reports_a_mount_of_a_board_above_it_as_a_cycle_and_a_board_mounted_twice_beside_it_as_ok()
+{
+    let library = Scenario::new();
+    let repo = library.workdir().to_str().unwrap();
+    let earlier = library.commit(&[("earlier.json", "{}")]);
+    let refused = mounting_peer(&library, &mount_of(repo, earlier), None);
+    assert_eq!(
+        degraded_entries(&refused),
+        [(
+            Value::from("/lib/peer"),
+            Value::from("board::mount::cycle"),
+            Value::from(
+                "mounts the repository of the board at /lib, which already holds this mount, \
+                 so the board is not walked again"
+            ),
+        )]
+    );
+    let other = Scenario::new();
+    let (first, second) = (
+        other.commit(&[("o.json", "{}")]),
+        other.commit(&[("o2.json", "{}")]),
+    );
+    let other_repo = other.workdir().to_str().unwrap();
+    let admitted = mounting_peer(
+        &library,
+        &mount_of(other_repo, first),
+        Some(&mount_of(other_repo, second)),
+    );
+    assert_eq!(degraded_entries(&admitted), []);
+    let report = json(&board_in(
+        admitted.workdir(),
+        &["check", "--json", "--healthy"],
+    ));
+    let logical: Vec<&str> = (report["data"].as_array().unwrap().iter())
+        .filter_map(|entry| entry["logical"].as_str())
+        .collect();
+    for walked in ["/lib/peer/o", "/beside/o2"] {
+        assert!(logical.contains(&walked), "{walked}: {logical:?}");
+    }
+}
+
+/// `scenario` with `url` as its `origin`.
+fn originating(scenario: &Scenario, url: &str) {
+    let remote = format!("[remote \"origin\"]\n\turl = {url}\n");
+    scenario.write(".git/config", Item::Appended(&remote));
+}
+
+#[test]
+fn a_warm_index_reports_a_mount_cycle_that_begins_between_runs_as_a_cold_one_does() {
+    let clone = Scenario::new();
+    originating(&clone, "https://github.com/example-org/r.git");
+    let cloned = clone.commit(&[("k.json", "{}")]);
+    let library = Scenario::new();
+    let peer = mount_of(clone.workdir().to_str().unwrap(), cloned);
+    let scenario = mounting_peer(&library, &peer, None);
+    let cache = tempfile::tempdir().unwrap();
+    let arguments = ["check", "--json", "--all"];
+    let run = |cache: Option<&Path>| json(&board_cached(scenario.workdir(), cache, &arguments));
+    assert_eq!(run(Some(cache.path()))["data"], json!([]));
+    // The root now has the clone's origin, so the clone repeats it.
+    originating(&scenario, "git@github.com:example-org/r");
+    let warm = run(Some(cache.path()));
+    assert_eq!(warm["data"], run(None)["data"]);
+    assert_eq!(warm["data"][0]["logical"], "/lib/peer");
+    assert_eq!(warm["data"][0]["code"], "board::mount::cycle");
+}
+
 #[test]
 fn query_prints_its_columns_then_one_json_row_per_line() {
     let scenario = board();

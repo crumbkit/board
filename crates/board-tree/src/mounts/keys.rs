@@ -78,7 +78,8 @@ impl<F> Reached<F> {
 
     /// What deciding the source of `commit` reads, hashed: its root tree,
     /// the repository it was read from, and for each of its mounts what
-    /// the pointer names and what it reached. `None` when one of its
+    /// the pointer names and what it reached, or why not and, for a cycle,
+    /// the route of the board it repeats. `None` when one of its
     /// pointers could not be read, when one of its mounts is not walked, or
     /// when one reaches a commit through a repository other than the one
     /// that commit was walked in.
@@ -119,7 +120,13 @@ impl<F> Reached<F> {
             fields.push(probe.commit.to_string().into_bytes());
             match &probe.landed {
                 Err(Code::PathMalformed) => return None,
-                Err(code) => fields.extend([b"refused".to_vec(), code.as_str().into()]),
+                Err(code) => {
+                    fields.extend([b"refused".to_vec(), code.as_str().into()]);
+                    let at = (from.clone(), probe.path.clone());
+                    if let Some(repeats) = self.cycles.get(&at) {
+                        fields.push(repeats.as_str().into());
+                    }
+                }
                 Ok(opened) => {
                     let child = self
                         .sources

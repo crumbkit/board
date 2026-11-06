@@ -10,7 +10,7 @@ use board_model::{
     Repo, Source,
 };
 
-use crate::git::{Contents, GitError, Repository, latest};
+use crate::git::{Contents, GitError, Identity, Repository, latest, remote_url};
 use crate::repositories::Repositories;
 use crate::tree::Tree;
 use crate::trees::{TreeRow, TreeRows, walk_stored};
@@ -129,6 +129,10 @@ pub struct Reached<F> {
     unread: Vec<Source>,
     /// What remains of the scope at each source's root.
     pub scopes: Scopes,
+    /// Each mount pointer, by its source and physical path, whose repository
+    /// is one a board above it on its route is in, with that board's route.
+    /// It is degraded with `board::mount::cycle` and not walked.
+    pub cycles: HashMap<(Source, String), LogicalPath>,
 }
 
 /// A mount found but not yet walked.
@@ -137,7 +141,12 @@ struct Candidate {
     commit: ObjectId,
     root: ObjectId,
     repository: Repository,
+    chain: Chain,
 }
+
+/// The repository of each board on a route, from the root's down, with
+/// the board's route.
+type Chain = Vec<(Identity, LogicalPath)>;
 
 impl Repositories {
     /// Every board reachable through mounts from the board's working tree,
@@ -165,6 +174,7 @@ impl Repositories {
             probes: Vec::new(),
             unread: Vec::new(),
             scopes: HashMap::new(),
+            cycles: HashMap::new(),
         };
         let keeping = !build.is_empty();
         let mut candidates = Vec::new();
@@ -173,14 +183,9 @@ impl Repositories {
         let found = pointers(root, &Source::WorkingTree, entries, &is_pointer);
         let from = root.path();
         let route = LogicalPath::root();
-        reached.add(
-            self,
-            from,
-            &Source::WorkingTree,
-            &route,
-            found,
-            &mut candidates,
-        );
+        let chain = vec![(root.identity(), route.clone())];
+        let at = (&Source::WorkingTree, &route, chain.as_slice());
+        reached.add(self, from, at, found, &mut candidates);
         let mut seen: HashSet<ObjectId> = HashSet::new();
         while let Some(at) = first(&candidates) {
             let candidate = candidates.swap_remove(at);
@@ -192,6 +197,7 @@ impl Repositories {
                 commit,
                 root,
                 repository,
+                chain,
             } = candidate;
             let source = Source::Commit(commit);
             let scan = scan(build, root);
@@ -211,7 +217,13 @@ impl Repositories {
                 reached.unread.push(source.clone());
             }
             let from = repository.path();
-            reached.add(self, from, &source, &route, found, &mut candidates);
+            reached.add(
+                self,
+                from,
+                (&source, &route, &chain),
+                found,
+                &mut candidates,
+            );
             reached.sources.push(Mounted {
                 commit,
                 root,
@@ -467,19 +479,6 @@ fn read_origin(directory: &Path, own: bool) -> Origin {
     }
 }
 
-/// The fetch URL of `git`'s `origin` remote, or why it has none, as git
-/// says it.
-fn remote_url(git: &gix::Repository) -> Result<String, String> {
-    match git.try_find_remote("origin") {
-        None => Err("error: No such remote 'origin'".to_owned()),
-        Some(Err(error)) => Err(format!("error: {error}")),
-        Some(Ok(remote)) => match remote.url(gix::remote::Direction::Fetch) {
-            Some(url) => Ok(url.to_bstring().to_string()),
-            None => Err("error: the remote origin has no url".to_owned()),
-        },
-    }
-}
-
 /// Whether `found` is the repository at `directory` itself: its working
 /// tree, or its git directory when it has none. Both sides are canonical,
 /// since a temporary directory under /var is /private/var on macOS.
@@ -577,14 +576,14 @@ impl PinError {
 
 impl<F> Reached<F> {
     /// Records the mounts `found` in `source` of the repository at `from`,
-    /// whose route is `route`, and adds each one that can be read, and whose
-    /// route is a logical path, as a candidate.
+    /// whose route is `route` and whose `chain` ends with its own board, and
+    /// adds each one that can be read, whose route is a logical path and
+    /// whose repository is on no board of `chain`, as a candidate.
     fn add(
         &mut self,
         repositories: &Repositories,
         from: &Path,
-        source: &Source,
-        route: &LogicalPath,
+        (source, route, chain): (&Source, &LogicalPath, &[(Identity, LogicalPath)]),
         found: Vec<(LogicalPath, String, Mount)>,
         candidates: &mut Vec<Candidate>,
     ) {
@@ -604,6 +603,18 @@ impl<F> Reached<F> {
                 let root = tree.map_err(|_| Code::MountCommitMissing)?.root();
                 Ok((route, mounted, root))
             });
+            let identity = (mounted.as_ref().ok()).map(|(_, mounted, _)| mounted.identity());
+            let repeats = identity.as_ref().and_then(|identity| {
+                let above = chain.iter().find(|(above, _)| above.same(identity));
+                above.map(|(_, repeats)| repeats.clone())
+            });
+            let mounted = match repeats {
+                Some(repeats) => {
+                    self.cycles.insert((source.clone(), path.clone()), repeats);
+                    Err(Code::MountCycle)
+                }
+                None => mounted,
+            };
             self.probes.push(Probe {
                 from: source.clone(),
                 path: path.clone(),
@@ -618,14 +629,17 @@ impl<F> Reached<F> {
                 path,
                 target: mounted.as_ref().map(|_| mount.commit).map_err(|code| *code),
             });
-            let Ok((route, mounted, root)) = mounted else {
+            let (Ok((route, mounted, root)), Some(identity)) = (mounted, identity) else {
                 continue;
             };
+            let mut below = chain.to_vec();
+            below.push((identity, route.clone()));
             candidates.push(Candidate {
                 route,
                 commit: mount.commit,
                 root,
                 repository: mounted,
+                chain: below,
             });
             self.edges.push(Edge {
                 from: source.clone(),

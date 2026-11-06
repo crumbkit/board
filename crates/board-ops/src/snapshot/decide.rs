@@ -201,6 +201,10 @@ pub(super) struct Decide<'a> {
     /// The `remote` of each valid repo record of the source, by physical
     /// path, with its path from the root; read once, when first needed.
     pub(super) remotes: OnceCell<HashMap<String, (String, String)>>,
+    /// Each mount pointer the walk did not descend into because it would
+    /// repeat a board above it, by source and physical path, with that
+    /// board's route.
+    pub(super) cycles: &'a HashMap<(Source, String), LogicalPath>,
 }
 
 impl Decide<'_> {
@@ -236,6 +240,17 @@ impl Decide<'_> {
         }
         if let Some(failure) = self.duplicate(entry, fact) {
             return Ok(Ok(Some(failure)));
+        }
+        if let Some(repeats) = self.cycles.get(&(self.source(), entry.path.clone())) {
+            let detail = Detail {
+                reason: format!(
+                    "mounts the repository of the board at {repeats}, which already holds \
+                     this mount, so the board is not walked again"
+                ),
+                failures: 1,
+                ..Detail::default()
+            };
+            return Ok(Ok(Some((Code::MountCycle, Some(detail)))));
         }
         match fact.fact.kind {
             Kind::Pointer => Ok(Ok(entry
@@ -482,6 +497,13 @@ impl Decide<'_> {
     /// The mount point of the source, from the root; `None` for the root.
     fn route(&self) -> Option<LogicalPath> {
         Some(self.mounted?.route.clone())
+    }
+
+    /// The source being decided.
+    fn source(&self) -> Source {
+        self.mounted.map_or(Source::WorkingTree, |mounted| {
+            Source::Commit(mounted.commit)
+        })
     }
 
     /// `path`, a path in the source, from the root.
