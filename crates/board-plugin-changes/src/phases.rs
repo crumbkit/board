@@ -592,7 +592,6 @@ pub(crate) fn advance(host: &dyn Host, input: &Value) -> Result<Value, PluginErr
         ));
     }
     let observed = observe(host, &path, &change)?;
-    // The stop holds whatever the gate says, so it is checked first.
     if let (Some(stop), Some(flow)) = (&change.stop, &observed.flow)
         && holds(flow, &phase, stop)
     {

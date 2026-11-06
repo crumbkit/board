@@ -285,10 +285,13 @@ fn controlled_paths_pass_when_no_named_control_exists_and_say_so_and_miss_an_edi
 
 #[test]
 fn a_controlled_paths_detail_names_ten_touched_files_and_counts_the_rest() {
-    let list = json!([{"id": "ui-paths", "kind": "controlled-paths", "controls": ["/controls/x/ui"]}]);
+    let list =
+        json!([{"id": "ui-paths", "kind": "controlled-paths", "controls": ["/controls/x/ui"]}]);
     let mut found = observed(&json!({}), &[]);
     let files = |count: usize| -> Vec<String> {
-        (0..count).map(|at| format!("/repos/x/ui/{at:02}.rs")).collect()
+        (0..count)
+            .map(|at| format!("/repos/x/ui/{at:02}.rs"))
+            .collect()
     };
     found
         .controlled

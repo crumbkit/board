@@ -241,7 +241,12 @@ fn run_reports_a_skill_its_phases_rely_on_that_the_home_lacks() {
     let (board, home) = quick_with_a_skill(&[]);
     let home = home.path().to_str().unwrap();
     let output = board
-        .invoke("run", &starting(&json!({"inline": true})), false, &[("HOME", home)])
+        .invoke(
+            "run",
+            &starting(&json!({"inline": true})),
+            false,
+            &[("HOME", home)],
+        )
         .unwrap();
     assert_eq!(output["skills_missing"]["names"], json!(["drafting"]));
     assert_eq!(
@@ -255,7 +260,12 @@ fn run_reports_no_skill_when_the_home_holds_every_one_its_phases_rely_on() {
     let (board, home) = quick_with_a_skill(&["drafting"]);
     let home = home.path().to_str().unwrap();
     let output = board
-        .invoke("run", &starting(&json!({"inline": true})), false, &[("HOME", home)])
+        .invoke(
+            "run",
+            &starting(&json!({"inline": true})),
+            false,
+            &[("HOME", home)],
+        )
         .unwrap();
     assert_eq!(output.get("skills_missing"), None, "{output}");
 }

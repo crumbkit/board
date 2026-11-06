@@ -437,13 +437,19 @@ fn start_lists_ten_obligations_on_the_mount_and_counts_the_rest() {
     owe(10);
     let ten = board.call("start", &starting("A", &json!({})));
     assert_eq!(
-        (ten["obligations"].as_array().unwrap().len(), &ten["obligations_left_out"]),
+        (
+            ten["obligations"].as_array().unwrap().len(),
+            &ten["obligations_left_out"]
+        ),
         (10, &json!(0))
     );
     owe(12);
     let twelve = board.call("start", &starting("B", &json!({})));
     assert_eq!(
-        (twelve["obligations"].as_array().unwrap().len(), &twelve["obligations_left_out"]),
+        (
+            twelve["obligations"].as_array().unwrap().len(),
+            &twelve["obligations_left_out"]
+        ),
         (10, &json!(2))
     );
 }

@@ -139,25 +139,33 @@ fn a_flow_with_each_problem_says_where_and_its_twin_without_it_has_none() {
     );
     assert_eq!(
         said(&one(&fine, "review", "Build."), false),
-        ["the stop names the phase review, which the flow lacks; name one of build or done (changes::flow::stop_not_a_phase)"]
+        [
+            "the stop names the phase review, which the flow lacks; name one of build or done (changes::flow::stop_not_a_phase)"
+        ]
     );
     assert_eq!(
         said(&one(&fine, "build", "Build {branch}."), false),
-        ["phase build, the instruction names the unknown placeholder {branch} (changes::flow::unknown_placeholder)"]
+        [
+            "phase build, the instruction names the unknown placeholder {branch} (changes::flow::unknown_placeholder)"
+        ]
     );
     assert_eq!(
         said(
             &one(&json!({"id": "x", "kind": "scripted"}), "build", "Build."),
             false
         ),
-        ["phase build, check x: the kind scripted is not one this Board knows (changes::flow::unknown_kind)"]
+        [
+            "phase build, check x: the kind scripted is not one this Board knows (changes::flow::unknown_kind)"
+        ]
     );
     assert_eq!(
         said(
             &one(&json!({"id": "x", "kind": "exists"}), "build", "Build."),
             false
         ),
-        ["phase build, check x: a check of kind exists needs path (changes::flow::missing_parameter)"]
+        [
+            "phase build, check x: a check of kind exists needs path (changes::flow::missing_parameter)"
+        ]
     );
     assert_eq!(
         said(
@@ -179,7 +187,9 @@ fn a_flow_with_each_problem_says_where_and_its_twin_without_it_has_none() {
             ),
             false
         ),
-        ["phase build, check x: it names the unknown placeholder {who} (changes::flow::unknown_placeholder)"]
+        [
+            "phase build, check x: it names the unknown placeholder {who} (changes::flow::unknown_placeholder)"
+        ]
     );
     let asks = json!({"id": "x", "kind": "tasks", "actor": "owner"});
     assert_eq!(
@@ -199,7 +209,9 @@ fn a_flow_with_each_problem_says_where_and_its_twin_without_it_has_none() {
         .push(serde_json::from_value(fine).unwrap());
     assert_eq!(
         said(&twice, false),
-        ["phase build, check x: another check of the flow has this id (changes::flow::duplicate_check)"]
+        [
+            "phase build, check x: another check of the flow has this id (changes::flow::duplicate_check)"
+        ]
     );
 }
 
@@ -235,7 +247,10 @@ fn a_flow_naming_two_phases_alike_is_refused_and_one_naming_them_apart_is_admitt
         codes_of(&["build", "build"], &json!({})),
         ["changes::flow::duplicate_phase"]
     );
-    assert_eq!(codes_of(&["build", "review"], &json!({})), Vec::<&str>::new());
+    assert_eq!(
+        codes_of(&["build", "review"], &json!({})),
+        Vec::<&str>::new()
+    );
 }
 
 #[test]

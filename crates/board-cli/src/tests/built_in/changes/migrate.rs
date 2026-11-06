@@ -470,12 +470,24 @@ fn a_migrated_change_in_each_phase_faces_the_blocking_checks_of_the_development_
     let expected: Vec<(&str, Vec<String>)> = [
         (
             "plan",
-            vec!["plan-sections", "considered", "task", "route", "owner-approval"],
+            vec![
+                "plan-sections",
+                "considered",
+                "task",
+                "route",
+                "owner-approval",
+            ],
         ),
         ("build", vec!["head", "suite-run", "tasks"]),
         (
             "review",
-            vec!["review", "paths", "ui-paths", "data-paths", "obligations-settled"],
+            vec![
+                "review",
+                "paths",
+                "ui-paths",
+                "data-paths",
+                "obligations-settled",
+            ],
         ),
         ("land", vec!["test-sections", "pull-request"]),
     ]

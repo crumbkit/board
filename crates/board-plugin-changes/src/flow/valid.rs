@@ -138,53 +138,71 @@ pub(crate) fn problems(flow: &Flow, drafted: bool) -> Vec<Problem> {
             )
         }));
         for each in &phase.checks {
-            let id = Some(each.id.as_str());
-            if !ids.insert(each.id.as_str()) {
+            found.extend(check_problems(&phase.name, each, drafted, &mut ids));
+        }
+    }
+    found
+}
+
+/// The problems of the check `each` in the phase `phase`, whose id joins
+/// `ids`, the ids seen so far.
+fn check_problems<'a>(
+    phase: &str,
+    each: &'a Check,
+    drafted: bool,
+    ids: &mut BTreeSet<&'a str>,
+) -> Vec<Problem> {
+    let mut found = Vec::new();
+    let at = |code: &'static str, check: Option<&str>, what: String| Problem {
+        code,
+        phase: Some(phase.to_owned()),
+        check: check.map(str::to_owned),
+        what,
+    };
+    let id = Some(each.id.as_str());
+    if !ids.insert(each.id.as_str()) {
+        found.push(at(
+            "changes::flow::duplicate_check",
+            id,
+            "another check of the flow has this id".to_owned(),
+        ));
+    }
+    match &each.kind {
+        Open::Other(kind) => found.push(at(
+            "changes::flow::unknown_kind",
+            id,
+            format!("the kind {kind} is not one this Board knows"),
+        )),
+        Open::Known(kind) => {
+            if let Some(parameter) = required(each, *kind) {
                 found.push(at(
-                    "changes::flow::duplicate_check",
+                    "changes::flow::missing_parameter",
                     id,
-                    "another check of the flow has this id".to_owned(),
-                ));
-            }
-            match &each.kind {
-                Open::Other(kind) => found.push(at(
-                    "changes::flow::unknown_kind",
-                    id,
-                    format!("the kind {kind} is not one this Board knows"),
-                )),
-                Open::Known(kind) => {
-                    if let Some(parameter) = required(each, *kind) {
-                        found.push(at(
-                            "changes::flow::missing_parameter",
-                            id,
-                            format!("a check of kind {} needs {parameter}", kind.as_str()),
-                        ));
-                    }
-                }
-            }
-            for why in bad_patterns(each) {
-                found.push(at("changes::flow::bad_pattern", id, why));
-            }
-            let texts =
-                (each.remedy.iter().chain(each.path.iter())).chain(each.controls.iter().flatten());
-            for word in texts.flat_map(|text| unknown_placeholders(text)) {
-                found.push(at(
-                    "changes::flow::unknown_placeholder",
-                    id,
-                    format!("it names the unknown placeholder {{{word}}}"),
-                ));
-            }
-            let asks = each.actor.is_some_and(|actor| actor != Actor::Agent);
-            if drafted && asks && each.remedy.is_none() {
-                found.push(at(
-                    "changes::flow::no_remedy",
-                    id,
-                    "only the owner or a reviewer can pass it, and it has no remedy that tells \
-                     an unattended agent how to ask"
-                        .to_owned(),
+                    format!("a check of kind {} needs {parameter}", kind.as_str()),
                 ));
             }
         }
+    }
+    for why in bad_patterns(each) {
+        found.push(at("changes::flow::bad_pattern", id, why));
+    }
+    let texts = (each.remedy.iter().chain(each.path.iter())).chain(each.controls.iter().flatten());
+    for word in texts.flat_map(|text| unknown_placeholders(text)) {
+        found.push(at(
+            "changes::flow::unknown_placeholder",
+            id,
+            format!("it names the unknown placeholder {{{word}}}"),
+        ));
+    }
+    let asks = each.actor.is_some_and(|actor| actor != Actor::Agent);
+    if drafted && asks && each.remedy.is_none() {
+        found.push(at(
+            "changes::flow::no_remedy",
+            id,
+            "only the owner or a reviewer can pass it, and it has no remedy that tells \
+             an unattended agent how to ask"
+                .to_owned(),
+        ));
     }
     found
 }

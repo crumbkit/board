@@ -372,7 +372,10 @@ fn a_sandboxed_run_mounts_no_other_repository_so_a_write_through_put_never_reach
     // /repos/y is a board that commits its puts, checked out on the branch
     // its mount follows, so a put writes through into it.
     let config = r#"{"$type": "board/config/v1", "commit_on_put": true}"#;
-    let schema = (".board/types/notes/note/v1.schema.json", r#"{"type": "object"}"#);
+    let schema = (
+        ".board/types/notes/note/v1.schema.json",
+        r#"{"type": "object"}"#,
+    );
     board.mount_repo(&[(".board/board.json", config), schema], "repos/y", "main");
     board.write(
         "flows/repos/x.json",
@@ -380,7 +383,10 @@ fn a_sandboxed_run_mounts_no_other_repository_so_a_write_through_put_never_reach
     );
     let y = board.repo_root("repos/y");
     // The twin: the real board writes through into /repos/y.
-    let real = board.run(&["put", "/repos/y/notes/real"], r#"{"$type": "notes/note/v1"}"#);
+    let real = board.run(
+        &["put", "/repos/y/notes/real"],
+        r#"{"$type": "notes/note/v1"}"#,
+    );
     assert!(
         y.join("notes/real.json").exists(),
         "{} {}",
@@ -393,7 +399,12 @@ fn a_sandboxed_run_mounts_no_other_repository_so_a_write_through_put_never_reach
     let out = tempfile::tempdir().unwrap();
     let argv = json!(["/bin/sh", script, out.path(), binary()]).to_string();
     let output = board
-        .invoke("run", &dry_run(&json!({})), false, &[("BOARD_AGENT", argv.as_str())])
+        .invoke(
+            "run",
+            &dry_run(&json!({})),
+            false,
+            &[("BOARD_AGENT", argv.as_str())],
+        )
         .unwrap();
     let sandbox = PathBuf::from(output["sandbox"].as_str().unwrap());
     let put = std::fs::read_to_string(out.path().join("put")).unwrap();
