@@ -80,10 +80,10 @@ Examples:
     #[command(after_help = "\
 Each one's state is current (its files equal this binary's), stale (a
 Board folder whose files differ), missing, not_board (a folder without the
-.board-skill marker, or whose marker does not name it), retired (a
-Board folder whose marker names a skill this binary no longer ships, of
-its folder's name) or copy (a marked folder whose marker names another
-skill or none, which install keeps). `board skills install` makes each
+.board-skill marker, or whose marker does not name it), retired (a Board
+folder, named in its own marker, for a skill this binary no longer ships)
+or copy (a marked folder whose marker names another skill or none, which
+install keeps). `board skills install` makes each
 shipped skill current. List changes nothing and exits 0 unless the
 directory cannot be read.
 
@@ -684,7 +684,7 @@ const INSTALL_REPORT: Document<Listing<Skilled<Installed>>> = Document::new(
     "board",
     "skills-install-report",
     2,
-    "What install wrote, updated, left unchanged or removed in a skills directory.",
+    "What install wrote, updated, left unchanged, removed, kept or backed up in a skills directory.",
 )
 .when_empty("this binary ships no skills and the directory held no Board folder");
 
