@@ -8,8 +8,8 @@ must read the records and reports of a later one, so:
 - a changed type is a new version, `<namespace>/<kind>/v<n+1>`, and the old
   version's schema stays readable;
 - an `enum` that `if`, `not` or `oneOf` cannot reach may gain a value, never
-  lose one; a plugin lists a value it does not know as written and treats
-  it conservatively in a decision;
+  lose one; a plugin reads a record holding a value it does not know, and
+  decides conservatively;
 - a report or capability keeps every field, and a capability field its type;
   no input becomes required; a field may be added;
 - a code is never renamed or removed; a code may be added;

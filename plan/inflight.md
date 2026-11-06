@@ -88,7 +88,7 @@ It returns, each part bounded and saying what it left out:
   agents come last.
 - **Questions** waiting on the owner, from `plans.open`. A decision awaiting
   review appears here once, through its question.
-- **Evals** planned or running, from `evals.open`.
+- **Evals** not concluded or abandoned, from `evals.open`.
 
 `--holder` keeps only the changes that session holds and their agents. The
 query makes no network call, so it cannot say that a pull request merged. A
