@@ -350,6 +350,52 @@ fn a_sandboxed_run_leaves_the_real_board_and_repository_unchanged_and_copies_its
     );
 }
 
+/// The stand-in agent: it tries a write-through put into the mount
+/// /repos/y with the `board` its second argument names, keeping what
+/// `board` said in the directory its first argument names.
+const WRITING_THROUGH: &str = r#"out="$1"; board="$2"
+echo '{"$type": "notes/note/v1"}' | "$board" put /repos/y/notes/escape > "$out/put" 2>&1
+exit 0
+"#;
+
+#[test]
+fn a_sandboxed_run_mounts_no_other_repository_so_a_write_through_put_never_reaches_it() {
+    let board = authoring();
+    // /repos/y is a board that commits its puts, checked out on the branch
+    // its mount follows, so a put writes through into it.
+    let config = r#"{"$type": "board/config/v1", "commit_on_put": true}"#;
+    let schema = (".board/types/notes/note/v1.schema.json", r#"{"type": "object"}"#);
+    board.mount_repo(&[(".board/board.json", config), schema], "repos/y", "main");
+    board.write(
+        "flows/repos/x.json",
+        &json!({"$type": "board/mount/v1", "path": "/changes/author/draft"}).to_string(),
+    );
+    let y = board.repo_root("repos/y");
+    // The twin: the real board writes through into /repos/y.
+    let real = board.run(&["put", "/repos/y/notes/real"], r#"{"$type": "notes/note/v1"}"#);
+    assert!(
+        y.join("notes/real.json").exists(),
+        "{} {}",
+        text(&real.stdout),
+        text(&real.stderr)
+    );
+    let before = git(&y, &["rev-parse", "HEAD"]);
+    let script = board.root().join("writing.sh");
+    write_file(&script, WRITING_THROUGH);
+    let out = tempfile::tempdir().unwrap();
+    let argv = json!(["/bin/sh", script, out.path(), binary()]).to_string();
+    let output = board
+        .invoke("run", &dry_run(&json!({})), false, &[("BOARD_AGENT", argv.as_str())])
+        .unwrap();
+    let sandbox = PathBuf::from(output["sandbox"].as_str().unwrap());
+    let put = std::fs::read_to_string(out.path().join("put")).unwrap();
+    assert!(!y.join("notes/escape.json").exists(), "{put}");
+    assert_eq!(git(&y, &["rev-parse", "HEAD"]), before);
+    assert!(!sandbox.join("board/repos/y.json").exists());
+    assert!(sandbox.join("board/repos/x.json").exists());
+    assert!(sandbox.join("board/flows/repos/x.json").exists());
+}
+
 #[test]
 fn a_sandboxed_run_is_refused_inline_or_resuming_and_admitted_without_either() {
     let board = authoring();

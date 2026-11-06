@@ -524,18 +524,24 @@ phase does. It needs a new change, so `--path` is
 repositories with no remote, the board's files that git tracks or would
 track, uncommitted edits included, and for a change on a repository every
 ref of the clone its mount reads, pointing the copy's mount record at it.
-Ignored files and nested repositories are left out, and a mount that is
-not a record of the board's own tree, or a copy git cannot make, is
-`changes::sandbox::setup`. `run` starts the change in the copy, adding its
-task to the copy's own `/tasks/` when `--task` is left out, and runs the
-agent there as above, with `HOME`, `XDG_CONFIG_HOME`, `XDG_CACHE_HOME` and
-`XDG_DATA_HOME` inside the directory and a known boards file that lists
-only the copy. So the agent's `board` calls, its commits and any user-level
-settings it would read stay off the real board, repository and home. This
-is not an operating-system sandbox: the agent still runs as the person and
-can write any path it names, the copy's other mounts read the real clones
-at their pins, and the agent must authenticate through the variables `run`
-passes on, since its home holds no credentials.
+It removes every other mount record from the copy, each `board/mount/v1`
+with a `repo`, so the copy mounts no other repository; links, which have a
+`path`, stay. Ignored files and nested repositories are left out, and a
+mount that is not a record of the board's own tree, or a copy git cannot
+make, is `changes::sandbox::setup`. `run` starts the change in the copy,
+adding its task to the copy's own `/tasks/` when `--task` is left out, and
+runs the agent there as above, with `HOME`, `XDG_CONFIG_HOME`,
+`XDG_CACHE_HOME` and `XDG_DATA_HOME` inside the directory and a known
+boards file that lists only the copy.
+
+The sandbox isolates what the agent does through `board` and git in its
+worktree: its puts, including write-through puts, its commits and its
+user-level settings land in the copy, never in the real board, the real
+repositories or the person's home. It is not an operating-system sandbox.
+The agent runs as the person, with the person's permissions, and can read
+and write any path it names, the real board and repositories included. It
+must authenticate through the variables `run` passes on, since its home
+holds no credentials. Nothing removes the directory afterwards.
 
 The run record and its stop record are then copied, at the same stamps,
 under the change the run is for: `--for`, else the change whose directory

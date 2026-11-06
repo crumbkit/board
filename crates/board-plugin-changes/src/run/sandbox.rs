@@ -7,26 +7,30 @@
 //! and no remote. Nested repositories and ignored files are left out. For a
 //! change on a repository it fetches every ref of the clone the mount
 //! reads into a new repository with no remote, and points the copy's mount
-//! record at it; a change on `/` has none. Both copies commit as the board
-//! does, with its git identity in their own config. `run` starts the change
+//! record at it; a change on `/` has none. Every other mount record, each
+//! `board/mount/v1` with a `repo`, is removed from the copy, so the agent's
+//! board reads and writes no other repository, and a write-through put
+//! cannot commit into a real clone. Links stay. Both copies commit as the
+//! board does, with its git identity in their own config. `run` starts the change
 //! in the copy, its task added to the copy's own tasks when none is named,
 //! and runs the agent there with `HOME` and the XDG directories inside the
 //! temporary directory, whose known boards file lists only the copy.
 //!
-//! That keeps the agent's `board` calls, its git commits and any program
-//! that reads user-level configuration, such as Claude Code's settings, off
-//! the real board, the real repository and the person's home. It is not an
-//! operating-system sandbox: the agent runs as the person and can still
-//! reach any path it names, the copy's other mounts still read the real
-//! clones at their pins, and the agent authenticates with the variables run
-//! passes on, as its home holds no credentials.
+//! That keeps the agent's `board` calls, its git commits in its worktree
+//! and any program that reads user-level configuration, such as Claude
+//! Code's settings, off the real board, the real repositories and the
+//! person's home. It is not an operating-system sandbox: the agent runs as
+//! the person, with the person's permissions, and can read and write any
+//! path it names, the real board and repositories included. It
+//! authenticates with the variables run passes on, as its home holds no
+//! credentials. Nothing removes the temporary directory.
 //!
 //! The run's record and its stop record are copied back under the change
 //! that asked, `--for` or the change whose directory holds `--flow`, at the
 //! same stamps; the run record names the throwaway change in `change`, and
 //! the copied stop drops its question, which only the copy holds. The run
 //! record is attached to that change. The temporary directory is left for
-//! inspection.
+//! inspection, and is never cleaned up.
 
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -53,8 +57,9 @@ const SETUP_DEADLINE: Duration = Duration::from_secs(300);
 /// Makes `$1/board` a copy of the board at `$2` as a new repository, and,
 /// with `$3`, `$1/repo` a repository holding every ref of the clone at
 /// `$3`, checked out at the commit `$4`, and the copy's mount record at
-/// `$5` holding `$6`. `$7` is the known boards file of the home at
-/// `$1/home`.
+/// `$5` holding `$6`. It removes every other mount record from the copy,
+/// each `board/mount/v1` file with a `repo`; links, which have a `path`
+/// instead, stay. `$7` is the known boards file of the home at `$1/home`.
 const SETUP: &str = r#"set -eu
 to=$1 board=$2 clone=$3 commit=$4 file=$5 mount=$6 known=$7
 name=$(git -C "$board" config user.name || echo Board)
@@ -76,6 +81,12 @@ if [ -n "$clone" ]; then
   fi
   printf '%s\n' "$mount" > "$file"
 fi
+find . -type f -name '*.json' ! -path './.git/*' \
+  -exec grep -lE '"\$type"[[:space:]]*:[[:space:]]*"board/mount/v1"' {} + |
+  while IFS= read -r each; do
+    each=${each#./}
+    if [ "$each" != "$file" ] && grep -qE '"repo"[[:space:]]*:' "$each"; then rm -f "$each"; fi
+  done
 git add -A
 git commit -qm 'A sandbox copy of the board'
 if [ -n "$clone" ]; then
