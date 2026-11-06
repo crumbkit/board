@@ -8,6 +8,7 @@ mod attachment;
 mod board;
 mod call;
 mod check;
+mod checkout;
 mod effects;
 mod enable;
 mod host;
@@ -32,6 +33,7 @@ pub use board_index::{Budget, Fallback, append_timing, source_name};
 pub use crate::attachment::{FetchError, MAX_INLINE_BYTES};
 pub use crate::board::{Backend, Board, Config, OpenError, Store};
 pub use crate::check::{CheckError, CheckReport, Checked, Detail};
+pub use crate::checkout::Refused as CheckoutRefused;
 pub use crate::effects::{AnswerReport, Asker, DecideReport, EffectError, Shown, Signing, answer};
 pub use crate::enable::{EnableError, EnableReport, Kept};
 pub use crate::host::{
@@ -39,7 +41,7 @@ pub use crate::host::{
 };
 pub use crate::index::{RefreshError, Refreshed};
 pub use crate::init::{InitError, InitReport, init};
-pub use crate::known::{KnownBoards, Prefix, asker, entered, open, unopened};
+pub use crate::known::{KnownBoards, MountsAt, Prefix, asker, entered, open, open_at, unopened};
 pub use crate::mount::{MountError, MountUpdateReport};
 pub use crate::plugins::{
     CallFailed, Found, PluginEntry, PluginFindReport, PluginListReport, PluginState, Plugins,

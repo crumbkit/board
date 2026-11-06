@@ -34,9 +34,11 @@ fn places(board: &Scenario, directory: &Path) -> Vec<Place> {
         .places(&entries, &every, &every, directory)
 }
 
+/// The place at the pointer `<mount>.json`, as each fixture names its file.
 fn place(mount: &str, within: &str) -> Place {
     Place {
         mount: path(mount),
+        pointer: format!("{}.json", &mount[1..]),
         within: path(within),
         matched: crate::Matched::Mount,
     }
@@ -345,4 +347,29 @@ fn a_clone_is_placed_at_the_mounts_with_its_origin_and_only_at_those_whose_commi
     );
     let (stranger, _) = originated("git@github.com:example-org/other.git", &[("a.json", "2")]);
     assert_eq!(places(&board, stranger.workdir()), []);
+}
+
+#[test]
+fn the_head_of_a_linked_worktree_is_its_own_commit_and_a_directory_in_no_repository_has_none() {
+    let repository = Scenario::new();
+    let side = repository.commit(&[("x.json", "1")]);
+    let main = repository.commit(&[("x.json", "2")]);
+    let linked = format!("{}/linked", repository.path());
+    let git_dir = format!("{}/.git/worktrees/linked", repository.path());
+    repository
+        .write(
+            ".git/worktrees/linked/HEAD",
+            Item::File(&format!("{side}\n")),
+        )
+        .write(".git/worktrees/linked/commondir", Item::File("../..\n"))
+        .write(
+            ".git/worktrees/linked/gitdir",
+            Item::File(&format!("{linked}/.git\n")),
+        )
+        .write("linked/.git", Item::File(&format!("gitdir: {git_dir}\n")))
+        .write("linked/docs/a.md", Item::File("a"));
+    assert_eq!(crate::head_of(&Path::new(&linked).join("docs")), Some(side));
+    assert_eq!(crate::head_of(repository.workdir()), Some(main));
+    let outside = tempfile::tempdir().unwrap();
+    assert_eq!(crate::head_of(outside.path()), None);
 }

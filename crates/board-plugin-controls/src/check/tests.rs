@@ -182,8 +182,8 @@ fn check_resolves_every_controls_references_in_one_refs_call_and_makes_none_when
     check(&host, &json!({})).unwrap();
     assert_eq!(
         host.queries(),
-        3,
-        "degraded controls, controls and matched files"
+        4,
+        "degraded controls, controls, matched files and mounts"
     );
     let refs: Vec<Call> = (host.resolved().into_iter())
         .filter(|call| matches!(call, Call::Refs(_)))
@@ -560,4 +560,30 @@ fn a_rule_holding_a_value_a_newer_board_added_is_stated_and_its_twin_is_applied(
             "{unknown}"
         );
     }
+}
+
+#[test]
+fn read_names_the_own_tree_and_each_mount_the_files_came_from_and_a_scoped_check_only_its_mount() {
+    let library = Scenario::new();
+    let commit = library.commit(&[("a.md", "one two")]);
+    let pointer = board_scenario::seed::mount_of(&library.path(), commit);
+    let pattern = control(&json!({"paths": ["docs/*", "repos/lib/*"], "rule": words(9)}));
+    let (_scenario, host) = recording(&[
+        ("docs/a.md", "three"),
+        ("repos/lib.json", &pointer),
+        ("controls/pattern.json", &pattern),
+    ]);
+    let whole = check(&host, &json!({})).unwrap();
+    assert_eq!(
+        whole["read"],
+        json!([
+            {"mount": "/", "commit": null},
+            {"mount": "/repos/lib", "commit": commit.to_string()},
+        ])
+    );
+    let scoped = check(&host, &json!({"path": "/repos/lib"})).unwrap();
+    assert_eq!(
+        scoped["read"],
+        json!([{"mount": "/repos/lib", "commit": commit.to_string()}])
+    );
 }

@@ -58,6 +58,9 @@ that names no personal board, or names a directory that is not a board's
 root, refuses `--personal` with `board::config::not_found`, and the hint
 names the file.
 
+`--checkout` reads the mount holding the directory at its checkout's HEAD
+for one run ([architecture/paths/checkout.md](architecture/paths/checkout.md)).
+
 A path given to `get`, `ls`, `refs`, `check` or `put` that does not start
 with `/` is relative to the prefix. In a board, the prefix is the directory's
 path beneath the board's root, such as `/controls`, and the timing log

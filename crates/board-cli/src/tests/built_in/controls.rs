@@ -6,6 +6,7 @@
 use super::*;
 
 mod check;
+mod checkout;
 mod evaluate;
 mod for_paths;
 mod from_standards;

@@ -45,6 +45,8 @@ pub enum CallFailed {
         shipped: Option<PathBuf>,
         problem: SchemaProblem,
     },
+    #[error("{}", crate::checkout::Refused::ProcessPlugin(.plugin).refusal().message)]
+    AtCheckout { plugin: PluginName },
     #[error(transparent)]
     Call {
         #[from]
@@ -69,6 +71,9 @@ impl CallFailed {
                     ..Fields::default()
                 },
             ),
+            Self::AtCheckout { plugin } => {
+                *crate::checkout::Refused::ProcessPlugin(plugin).refusal()
+            }
             Self::Call { source } => source.refusal(),
         }
     }

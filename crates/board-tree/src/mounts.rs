@@ -299,6 +299,9 @@ impl Repositories {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Place {
     pub mount: LogicalPath,
+    /// The physical path of the file in the working tree that holds the
+    /// mount or repo record, such as `repos/lib.json`.
+    pub pointer: String,
     pub within: LogicalPath,
     pub matched: Matched,
 }
@@ -352,14 +355,15 @@ impl Repositories {
                 == Some(common.clone())
         };
         let mounts = pointers(root, &Source::WorkingTree, entries, is_pointer);
-        let place = |mount: &LogicalPath| Place {
+        let place = |mount: &LogicalPath, pointer: &String| Place {
             mount: mount.clone(),
+            pointer: pointer.clone(),
             within: within.clone(),
             matched: Matched::Mount,
         };
         let mounted: Vec<Place> = (mounts.iter())
             .filter(|(_, _, mount)| shares(mount))
-            .map(|(mount, _, _)| place(mount))
+            .map(|(mount, pointer, _)| place(mount, pointer))
             .collect();
         if !mounted.is_empty() {
             return mounted;
@@ -380,13 +384,13 @@ impl Repositories {
         };
         let cloned: Vec<Place> = (mounts.iter())
             .filter(|(_, _, mount)| same_origin(mount))
-            .map(|(path, _, mount)| Place {
+            .map(|(path, pointer, mount)| Place {
                 matched: if holds(mount) {
                     Matched::OriginWithCommit
                 } else {
                     Matched::Origin
                 },
-                ..place(path)
+                ..place(path, pointer)
             })
             .collect();
         if !cloned.is_empty() {
@@ -409,6 +413,7 @@ impl Repositories {
             (Repo::from_value(&value).ok()?.remote == remote).then_some(())?;
             Some(Place {
                 mount: entry.logical.clone()?,
+                pointer: entry.path.clone(),
                 within: LogicalPath::root(),
                 matched: Matched::Remote,
             })
@@ -494,6 +499,15 @@ pub fn within(directory: &Path) -> Option<Result<LogicalPath, PathError>> {
     holding(directory).map(|(_, within)| within)
 }
 
+/// The commit HEAD names in the working tree holding `directory`, which in
+/// a linked worktree is that worktree's own, or `None` when `directory` is
+/// in no repository or HEAD names no commit yet.
+pub fn head_of(directory: &Path) -> Option<ObjectId> {
+    let git = gix::discover(directory).ok()?;
+    let id = git.head_id().ok()?.detach();
+    Some(crate::git::model_id(&id))
+}
+
 /// The canonical git directory of the repository whose working tree holds
 /// `directory`, the one its linked worktrees share, and `directory`'s path
 /// beneath that working tree, or its refusal when that is not a logical
@@ -573,6 +587,9 @@ impl<F> Reached<F> {
         found: Vec<(LogicalPath, String, Mount)>,
         candidates: &mut Vec<Candidate>,
     ) {
+        let found: Vec<_> = (found.into_iter())
+            .map(|(at, path, mount)| (at, path.clone(), repositories.read_as(source, &path, mount)))
+            .collect();
         let wanted: Vec<_> = (found.iter())
             .filter(|(at, _, _)| route.beneath(at).is_ok())
             .filter_map(|(_, _, mount)| Some((repositories.named(from, mount)?, mount.commit)))

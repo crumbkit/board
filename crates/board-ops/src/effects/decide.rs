@@ -329,7 +329,7 @@ impl Board {
         pending: &Removal,
         message: &str,
     ) -> Result<PutReport, PutError> {
-        let lock = self.repository().lock(LOCK_WAIT)?;
+        let lock = self.repositories().lock(LOCK_WAIT)?;
         let mut view = self.repositories().snapshot().map_err(WriteError::from)?;
         let mut schemas = Schemas::default();
         let mut prepared = Vec::with_capacity(records.len());

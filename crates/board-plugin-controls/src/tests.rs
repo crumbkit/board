@@ -92,6 +92,7 @@ fn the_check_output_schema_admits_a_null_or_string_largest_and_refuses_a_number(
             }],
             "versions": [],
             "stated": [],
+            "read": [],
         })
     };
     assert!(output.validate(&measured(Value::Null)).is_ok());
@@ -306,7 +307,7 @@ fn a_capability_the_plugin_does_not_offer_is_refused_and_check_is_answered() {
     let answered = Controls.call(&host, &check, json!({})).unwrap();
     assert_eq!(
         answered,
-        json!({"passed": true, "measured": [], "versions": [], "stated": []})
+        json!({"passed": true, "measured": [], "versions": [], "stated": [], "read": []})
     );
 }
 

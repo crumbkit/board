@@ -241,6 +241,7 @@ fn a_place_too_long_to_be_a_logical_path_is_refused_and_its_shorter_twin_is_name
     };
     let place = |within: LogicalPath| Place {
         mount: long(10),
+        pointer: String::new(),
         within,
         matched: Matched::Mount,
     };

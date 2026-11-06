@@ -233,6 +233,7 @@ impl Repositories {
                             object = Object::Directory;
                         }
                         Pointer::Mount(mount) => {
+                            let mount = self.read_as(&board.source, &physical.join("/"), mount);
                             let from = &board.repository;
                             return self.enter(from, &mount, remaining, from_link, trail, pointers);
                         }

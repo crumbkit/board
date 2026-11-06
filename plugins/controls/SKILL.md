@@ -34,6 +34,14 @@ To run a command in a board other than the one you are in, add `-C <path>`.
    lists a file in `unreadable`; the call still exits 0. It exits 1 when a
    control is degraded or a version rule's capture is invalid, and the error
    names each control.
+
+   A mount is read at the commit its pointer pins, which follows the
+   repository's main branch. On a branch, commit your edits and run the
+   check from your checkout with `--checkout`, so it reads your HEAD:
+
+       board --checkout call controls.check --path .
+
+   `read` names each mount the files came from and the commit it read.
 2. Before you edit a file, ask which controls apply to it:
 
        board -C <board> call controls.for-path --path /<file>

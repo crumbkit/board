@@ -10,7 +10,9 @@ use std::io::{self, ErrorKind};
 use std::path::{Path, PathBuf};
 
 use board_model::{Code, Fields, LogicalPath, PathError, PluginName, Refusal};
-use board_tree::Place;
+use board_tree::{Checkout, Matched, Place};
+
+use crate::checkout::Refused;
 use serde::Deserialize;
 
 use crate::{Asker, Board, OpenError, Signing};
@@ -149,6 +151,15 @@ pub fn asker(
     })
 }
 
+/// Which commit a run reads the mount holding its directory at.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MountsAt {
+    /// The commit each pointer pins.
+    Pins,
+    /// The commit HEAD names in the directory's checkout (`board --checkout`).
+    Checkout,
+}
+
 /// The board holding `start`, or else the one known board with a mount
 /// whose repository holds `start`, or with a repo record whose `remote` is
 /// that repository's origin, and `start`'s logical path in that board, if
@@ -161,7 +172,25 @@ pub fn open(
     cache: Option<&Path>,
     known: impl FnOnce() -> Result<KnownBoards, Box<Refusal>>,
 ) -> Result<(Board, Option<Prefix>), Box<Refusal>> {
+    open_at(start, home, cache, known, MountsAt::Pins)
+}
+
+/// [`open`], reading the mount holding `start` at `at`. At
+/// [`MountsAt::Checkout`], the known board must mount the repository
+/// holding `start`, linked worktrees included, and the run reads that mount
+/// at the commit HEAD names in `start`'s working tree and writes nothing. A
+/// board holding `start` itself, a mount only of another clone or a repo
+/// record, and a HEAD with no commit are refused with `board::cli::usage`.
+pub fn open_at(
+    start: &Path,
+    home: Option<&Path>,
+    cache: Option<&Path>,
+    known: impl FnOnce() -> Result<KnownBoards, Box<Refusal>>,
+    at: MountsAt,
+) -> Result<(Board, Option<Prefix>), Box<Refusal>> {
+    let checkout = at == MountsAt::Checkout;
     let error = match Board::open(start, home.map(Path::to_path_buf)) {
+        Ok(_) if checkout => return Err(Refused::OwnTree(start).refusal()),
         Ok(board) => return Ok((board, board_tree::within(start))),
         Err(error) => error,
     };
@@ -170,7 +199,18 @@ pub fn open(
     if !matches!(error, OpenError::NotFound { .. }) {
         return Err(Box::new(refusal));
     }
-    find(&known()?, start, home, cache, refusal).map(|(board, prefix)| (board, Some(prefix)))
+    let (mut board, place) = find(&known()?, start, home, cache, refusal)?;
+    if checkout {
+        if place.matched != Matched::Mount {
+            return Err(Refused::NotMounted(start).refusal());
+        }
+        let Some(commit) = board_tree::head_of(start) else {
+            return Err(Refused::NoCommit(start).refusal());
+        };
+        let pointer = place.pointer.clone();
+        board.read_checkout(Checkout { pointer, commit });
+    }
+    Ok((board, Some(place.prefix())))
 }
 
 /// The refusal when a board cannot be opened or made. `outside` a git
@@ -238,7 +278,7 @@ fn shown(file: Option<&Path>) -> String {
 }
 
 /// The one known board with a mount whose repository holds `start`, or
-/// else a repo record for it, and `start`'s logical path in it. Otherwise `lost`, the refusal when no board
+/// else a repo record for it, and where `start` is in it. Otherwise `lost`, the refusal when no board
 /// holds `start`, says which known boards were read and which were passed
 /// over because they could not be opened or refreshed. A board listed under
 /// several spellings counts once.
@@ -248,7 +288,7 @@ fn find(
     home: Option<&Path>,
     cache: Option<&Path>,
     lost: Refusal,
-) -> Result<(Board, Prefix), Box<Refusal>> {
+) -> Result<(Board, Place), Box<Refusal>> {
     let file = known.file.as_deref();
     let listed = &known.known.boards;
     let shown = shown(file);
@@ -285,7 +325,7 @@ fn find(
             Err(error) => format!("{} at a mount where {error}", root.display()),
         }));
         if let Some(place) = places.first() {
-            chosen = Some((board, place.prefix()));
+            chosen = Some((board, place.clone()));
         }
     }
     if named.len() > 1 {

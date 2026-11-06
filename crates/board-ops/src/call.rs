@@ -62,6 +62,11 @@ impl Board {
         let _timed = self.timed("plugin.call");
         let input = board_plugin::input(&chosen, input);
         match &chosen.origin {
+            Origin::Directory(_) if self.repositories().checkout().is_some() => {
+                Err(CallFailed::AtCheckout {
+                    plugin: chosen.manifest.name.clone(),
+                })
+            }
             Origin::Directory(directory) => {
                 let spawned = RefCell::default();
                 let report = input.and_then(|input| {

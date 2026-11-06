@@ -71,7 +71,10 @@ pub trait Host {
     /// it.
     fn call(&self, target: &Target, input: &Value) -> Result<CallReport, Box<Refusal>>;
     /// The board that `board --personal` or `board -C <directory>` opens
-    /// when the plugin runs it, as the same plugin at the same depth.
+    /// when the plugin runs it, as the same plugin at the same depth. It
+    /// reads each of its mounts at its pin and may write, even when this
+    /// run reads a mount at a checkout, because `--checkout` names a mount
+    /// of the board this run opened and no other.
     fn board(&self, elsewhere: &Elsewhere) -> Result<Box<dyn Host + '_>, Box<Refusal>>;
     /// Whether the plugin may run `op`, `<plugin>.<capability>`, at `path`,
     /// showing `shown`, as `board decide` answers under `BOARD_PLUGIN`: the
@@ -379,13 +382,17 @@ impl Deref for HostBoard<'_> {
 
 impl Hosted<'_> {
     /// The board opened again, with the same built-in plugins and build,
-    /// as the plugin's own `board` opens it. Its timings stay in the board
-    /// it opens, outside the call's trace.
+    /// and the same mount read at a checkout, as the plugin's own `board`
+    /// opens it. Its timings stay in the board it opens, outside the call's
+    /// trace.
     fn again(&self) -> Result<Board, OpenError> {
         let home = self.board.repositories().home().map(Into::into);
         let mut board = Board::open(self.board.repository().path(), home)?;
         board.build_in(self.board.built_in.0);
         board.built_by(self.board.build);
+        if let Some(checkout) = self.board.repositories().checkout() {
+            board.read_checkout(checkout.clone());
+        }
         Ok(board)
     }
 

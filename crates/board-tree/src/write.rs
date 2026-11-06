@@ -687,6 +687,12 @@ pub enum WriteError {
     Symlink { path: LogicalPath, symlink: String },
     #[error("{lock:?} is held; if no board process is running, remove it")]
     Locked { lock: PathBuf },
+    /// A write in a run that reads the mount at `pointer` at its checkout's
+    /// HEAD.
+    #[error(
+        "this run reads the mount at {pointer} at its checkout's HEAD (--checkout), so it writes nothing; run the write again without --checkout"
+    )]
+    AtCheckout { pointer: String },
     #[error("{path:?} could not be written")]
     Io {
         path: PathBuf,
@@ -744,6 +750,7 @@ impl WriteError {
             Self::Beneath { beneath, .. } => beneath.code,
             Self::Symlink { .. } => Code::PutSymlink,
             Self::Locked { .. } | Self::InProgress { .. } => Code::PutLocked,
+            Self::AtCheckout { .. } => Code::CliUsage,
             Self::Io { .. }
             | Self::Unsynced { .. }
             | Self::Commit { .. }

@@ -2,7 +2,6 @@
 
 use std::ffi::OsString;
 use std::io::Read;
-use std::path::Path;
 use std::time::{Duration, Instant};
 
 use board_model::{
@@ -12,6 +11,8 @@ use board_model::{
 pub(crate) use board_ops::entered;
 use board_ops::{Absent, Board, DEFAULT_LIMIT, Expect, MAX_LIMIT, Plugins, PutError};
 use board_plugin::{Limits, Target};
+
+mod checkout;
 
 /// What a plugin run gets from this command line's context.
 pub(crate) fn plugins(context: &Context) -> Plugins<'_> {
@@ -88,6 +89,11 @@ pub(crate) struct Cli {
     /// `personal` in `$XDG_CONFIG_HOME/board/config.json` names the personal board's directory. The run starts at its root, and any -C is taken from there.
     #[arg(long)]
     personal: bool,
+    /// Read the mount holding this directory at its checkout's HEAD commit, not the commit it pins.
+    ///
+    /// Board then reads, for this run, the branch committed in the checkout of a repository a known board mounts, a linked worktree included, while the pointer keeps its pin. Uncommitted edits are not read. Refused from the board's own tree, from another clone, for any write, which compares against the pin, and for init, answer, serve, ui and process plugins. Off by default.
+    #[arg(long, conflicts_with = "personal", hide_short_help = true)]
+    checkout: bool,
     #[command(flatten)]
     view: crumbkit::ViewFlags,
     /// Fail instead of asking. Only `answer approve` asks, for Touch ID.
@@ -471,8 +477,9 @@ pub(crate) fn run(
     }
     let base = cli.personal.then(|| context.personal());
     let base = base.unwrap_or_else(|| Ok(context.start.clone()));
-    let start = match base.and_then(|base| entered(&base, &cli.directories)) {
-        Ok(start) => start,
+    let start = base.and_then(|base| entered(&base, &cli.directories));
+    let (start, at) = match start.and_then(|start| Ok((start, cli.mounts_at()?))) {
+        Ok(started) => started,
         Err(refusal) => return render::refused(printer, *refusal),
     };
     if let Command::Init = cli.command {
@@ -492,7 +499,7 @@ pub(crate) fn run(
         return effects::answer(context, printer, answering, no_input, stdin);
     }
     let opening = Instant::now();
-    let opened = open(context, &start);
+    let opened = context.open(&start, at);
     ran.trace.add("open", opening);
     let (mut board, prefix) = match opened {
         Ok(opened) => opened,
@@ -783,17 +790,4 @@ fn refs(
         Err(error) => render::refused(printer, error.refusal()),
         Ok(answers) => render::refs(printer, paths, answers, limit),
     }
-}
-
-/// The board holding `start`, or else the one known board with a mount
-/// whose repository holds `start`, and `start`'s logical path in that board,
-/// opened as this build.
-pub(crate) fn open(
-    context: &Context,
-    start: &Path,
-) -> Result<(Board, Option<Prefix>), Box<Refusal>> {
-    let (home, cache) = (context.home.as_deref(), context.cache.as_deref());
-    let (mut board, prefix) = board_ops::open(start, home, cache, || context.known())?;
-    board.built_by(crate::timing::DECIDER);
-    Ok((board, prefix))
 }

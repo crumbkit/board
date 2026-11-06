@@ -184,7 +184,7 @@ impl Board {
 
     /// Writes `lines` as [`Board::put_batch_waiting`] says.
     fn write_lines(&self, lines: Vec<ReadLine>, wait: Duration) -> Result<PutReport, PutError> {
-        let lock = self.repository().lock(wait)?;
+        let lock = self.repositories().lock(wait)?;
         let mut view = self.repositories().snapshot().map_err(WriteError::from)?;
         let (prepared, removals, absent, numbers) =
             match self.check_lines(&lock, &mut view, lines, &mut Schemas::default())? {

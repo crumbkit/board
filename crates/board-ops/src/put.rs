@@ -189,7 +189,7 @@ impl Board {
         bytes: &[u8],
         wait: Duration,
     ) -> Result<PutReport, PutError> {
-        let lock = self.repository().lock(wait)?;
+        let lock = self.repositories().lock(wait)?;
         let mut view = self.repositories().snapshot().map_err(WriteError::from)?;
         let prepared = self.prepare(
             &lock,

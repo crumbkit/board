@@ -132,7 +132,7 @@ impl Board {
         if !self.config().commit_on_put {
             return Err(refuse(&first.path, Through::Uncommitted));
         }
-        let lock = self.repository().lock(wait)?;
+        let lock = self.repositories().lock(wait)?;
         let head = self
             .repository()
             .writable_head(follow, first.inside.commit)

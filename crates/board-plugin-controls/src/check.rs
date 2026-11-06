@@ -5,6 +5,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use board_model::LogicalPath;
 use board_ops::{Absent, Host, PluginError, RefsError};
+use board_plugin::shape;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
@@ -35,6 +36,36 @@ pub(crate) struct Output {
     measured: Vec<Checked>,
     versions: Vec<Pinned>,
     stated: Vec<Stated>,
+    read: Vec<Read>,
+}
+
+/// A source the measured and stated files came from: the board's own tree,
+/// `/` with no commit, or a mount by its display path and the commit read,
+/// which under `board --checkout` is the checkout's HEAD and otherwise the
+/// commit the mount pins.
+#[derive(Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct Read {
+    #[schemars(with = "String", regex(pattern = "^/"), extend("format" = "board-path"))]
+    mount: LogicalPath,
+    #[serde(serialize_with = "hex")]
+    #[schemars(with = "Option<shape::ObjectId>")]
+    commit: Option<board_model::ObjectId>,
+}
+
+/// `commit` as git writes it, in lowercase hex, or null.
+#[expect(
+    clippy::ref_option,
+    reason = "serde's serialize_with passes the field by reference"
+)]
+fn hex<S: serde::Serializer>(
+    commit: &Option<board_model::ObjectId>,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    match commit {
+        Some(commit) => serializer.collect_str(commit),
+        None => serializer.serialize_none(),
+    }
 }
 
 /// A version control, the files it reads under the path, each version
@@ -207,6 +238,12 @@ pub(crate) fn check(host: &dyn Host, input: &Value) -> Result<Value, PluginError
         .collect();
     let (measured_controls, versions) =
         measure_files(host, &applying, &controls, &files, &unreadable)?;
+    let own = root && (applying.iter()).any(|logical| unnamed.contains_key(*logical));
+    let read = sources(
+        host,
+        applying.iter().flat_map(|logical| &files[*logical]),
+        own,
+    )?;
     let stated = (applying.into_iter())
         .filter(|logical| !controls[*logical].measured())
         .map(|logical| {
@@ -234,6 +271,7 @@ pub(crate) fn check(host: &dyn Host, input: &Value) -> Result<Value, PluginError
         measured: measured_controls,
         versions,
         stated,
+        read,
     };
     Ok(serde_json::to_value(output).expect("Output holds only strings, numbers and lists"))
 }
@@ -379,6 +417,48 @@ fn read(
                 .map_err(|error| error.code().as_str().to_owned());
             (path, read)
         })
+        .collect())
+}
+
+/// Each mount in the board by its display path, and the commit read there.
+const MOUNTS: &str = "SELECT e.logical, m.target FROM mounts m \
+    JOIN entries e ON e.source = m.source AND e.path = m.path \
+    WHERE m.target IS NOT NULL AND e.logical IS NOT NULL";
+
+/// The sources `files` came from: for each, the deepest mount it lies
+/// beneath, or the board's own tree, which `own` also adds. A file reached
+/// through several paths, such as a commit mounted in two places, is
+/// listed at its shortest path, so `read` names only the mount on that
+/// path.
+fn sources<'a>(
+    host: &dyn Host,
+    files: impl Iterator<Item = &'a LogicalPath>,
+    own: bool,
+) -> Result<Vec<Read>, PluginError> {
+    let mounts: Vec<(String, String)> = index::string_pairs(host, MOUNTS)?;
+    let mounts: Vec<(LogicalPath, board_model::ObjectId)> = (mounts.into_iter())
+        .filter_map(|(path, commit)| {
+            Some((
+                path.parse().ok()?,
+                board_model::ObjectId::from_hex(&commit)?,
+            ))
+        })
+        .collect();
+    let mut read: BTreeMap<LogicalPath, Option<board_model::ObjectId>> = BTreeMap::new();
+    if own {
+        read.insert(LogicalPath::root(), None);
+    }
+    for file in files {
+        let deepest = (mounts.iter())
+            .filter(|(mount, _)| under(file, mount))
+            .max_by_key(|(mount, _)| mount.segments().count());
+        match deepest {
+            Some((mount, commit)) => read.insert(mount.clone(), Some(*commit)),
+            None => read.insert(LogicalPath::root(), None),
+        };
+    }
+    Ok((read.into_iter())
+        .map(|(mount, commit)| Read { mount, commit })
         .collect())
 }
 

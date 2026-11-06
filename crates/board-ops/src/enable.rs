@@ -81,7 +81,7 @@ impl Board {
         if let Ok(manifest) = &found.manifest {
             self.alias_free(name, manifest, &found.origin, commands, others)?;
         }
-        let lock = self.repository().lock(LOCK_WAIT)?;
+        let lock = self.repositories().lock(LOCK_WAIT)?;
         let mut view = self.repositories().snapshot().map_err(WriteError::from)?;
         let (mut prepared, mut replaced) = (Vec::new(), Vec::new());
         let reader = &mut self.repository().reader();

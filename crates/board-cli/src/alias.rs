@@ -9,12 +9,13 @@
 use std::ffi::OsString;
 
 use board_model::{Code, Fields, Refusal};
+use board_ops::MountsAt;
 use board_plugin::Manifest;
 use clap::error::ErrorKind;
 use clap::{ArgMatches, Command, CommandFactory as _};
 
 use crate::config::Context;
-use crate::run::{Cli, entered, open};
+use crate::run::{Cli, entered};
 
 /// The word crumbkit answers with help, which no alias may take.
 const HELP: &str = "help";
@@ -213,7 +214,8 @@ fn aliases(
         Some(context.start.clone())
     };
     let start = base.and_then(|base| entered(&base, directories).ok());
-    let Some((mut board, _)) = start.and_then(|start| open(context, &start).ok()) else {
+    let Some((mut board, _)) = start.and_then(|start| context.open(&start, MountsAt::Pins).ok())
+    else {
         return Vec::new();
     };
     board.build_in(context.built_in.0);

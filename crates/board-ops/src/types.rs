@@ -23,7 +23,7 @@ impl Board {
     /// validity; any other difference is refused, since a changed type is a
     /// new version.
     pub fn type_add(&self, record_type: &RecordType, bytes: &[u8]) -> Result<PutReport, TypeError> {
-        let lock = self.repository().lock(LOCK_WAIT)?;
+        let lock = self.repositories().lock(LOCK_WAIT)?;
         let mut view = self.repositories().snapshot().map_err(WriteError::from)?;
         let reader = &mut self.repository().reader();
         let (Some(prepared), _) =
