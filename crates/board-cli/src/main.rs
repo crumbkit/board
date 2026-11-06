@@ -13,6 +13,7 @@ mod plugin;
 mod render;
 mod report;
 mod run;
+mod skills;
 mod stdin;
 mod timing;
 mod ui;

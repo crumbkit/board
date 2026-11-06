@@ -868,6 +868,15 @@ board sync
   run board sync --no-push
     exits 0
 
+board skills install --dir skills
+  fails with board::skills::not_board
+  run board skills install --dir skills --force
+    exits 0
+
+board skills install --dir file
+  fails with board::skills::write_failed
+  hint
+
 codes that no start provokes:
   board::attachment::missing: the store must lose an object between the put and the fetch; board-ops/src/attachment/tests.rs removes one
   board::attachment::mismatch: the store must hold other bytes under the digest between the put and the fetch; board-ops/src/attachment/tests.rs alters one

@@ -4,8 +4,9 @@ This file holds detail for docs/plugins.md. It says what a plugin's Claude
 Code mod is and what `board-runs` writes.
 
 A plugin may ship a mod in `plugins/<name>/claude-code/`. A mod is a Claude
-Code plugin of function hooks: `.claude-plugin/plugin.json`,
-`hooks/hooks.json` naming one TypeScript module, and the module itself. It
+Code plugin of function hooks, and ships no skill:
+`.claude-plugin/plugin.json`, `hooks/hooks.json` naming one TypeScript
+module, and the module itself. It
 runs inside a Claude Code session and writes records only through the `board`
 command, as an agent would. Board itself never runs a mod, and a mod has no
 process of its own, so mods add no trigger or daemon to Board. Mods share data

@@ -994,6 +994,34 @@ fn effects(starts: &mut Starts) {
         .extend([personal, xdg, broken].map(|kept| Box::new(kept) as Box<dyn std::any::Any>));
 }
 
+/// `skills install` into a directory with a folder that is not Board's at a
+/// skill's name, and into a file, each in a home of its own, since the
+/// admitted twin writes there.
+fn installing_skills(starts: &mut Starts) {
+    let lines = [
+        (
+            Code::SkillsNotBoard,
+            "skills/changes/notes.md",
+            "skills",
+            "--force",
+        ),
+        (Code::SkillsWriteFailed, "file", "file", ""),
+    ];
+    for (code, file, dir, admitted) in lines {
+        let home = Scenario::new();
+        home.write(file, Item::File("mine\n"));
+        let place = starts.keep(home);
+        let line = format!("skills install --dir {dir}");
+        starts.add(&place, code, &line);
+        let admitted = if admitted.is_empty() {
+            "skills install --dir fresh".to_owned()
+        } else {
+            format!("{line} {admitted}")
+        };
+        starts.pair(&place, code, &line, &admitted);
+    }
+}
+
 /// Every start, or every twin, whose code `ENV` provokes.
 fn starts(twins: bool) -> Starts {
     let mut starts = Starts::new(twins);
@@ -1008,6 +1036,7 @@ fn starts(twins: bool) -> Starts {
     known_boards(&mut starts);
     effects(&mut starts);
     syncing(&mut starts);
+    installing_skills(&mut starts);
     starts
 }
 

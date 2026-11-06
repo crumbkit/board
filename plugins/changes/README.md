@@ -105,7 +105,7 @@ Each of `questions` holds the `question`, the owner's `answer` in his own
 words, and the `design`'s answer, and may say its `kind` (`predict`,
 `choose`, `explain` or `edge`) and whether the answers `matches`.
 `rechecks` holds the questions asked again before review. The
-`understanding-check` skill in `claude-code/skills/` runs the check.
+`understanding-check` skill in `skills/understanding-check/` runs the check.
 
 The day of the last sync lives in Board's cache, keyed by the path of the
 board's checkout, so the stale warning is per checkout: another clone or
