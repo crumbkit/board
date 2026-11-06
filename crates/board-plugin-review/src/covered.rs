@@ -10,12 +10,12 @@ use std::path::PathBuf;
 
 use board_model::{Code, LogicalPath, Source};
 use board_ops::{Absent, Host, PluginError, literal};
-use board_plugin::shape::Record;
+use board_plugin::shape::{Open, Record};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-use crate::records::ReportRecord;
+use crate::records::{ReportRecord, Severity, Verdict};
 use crate::{BLOCKING, CHANGE_TYPE, PLUGIN, git, readable, refusal, refused, root, rows};
 
 /// How many uncovered commits a refusal names.
@@ -80,10 +80,20 @@ fn covering(path: String, body: &str) -> Option<Covering> {
     let findings = report.get("findings").and_then(Value::as_array);
     Some(Covering {
         path,
-        changes: report.get("verdict").and_then(Value::as_str) == Some("changes"),
+        // Only a verdict that approves or comments covers, so one a newer
+        // Board added does not, and a severity a newer Board added blocks.
+        changes: !matches!(
+            report.get("verdict").map(Open::<Verdict>::deserialize),
+            Some(Ok(Open::Known(Verdict::Approve | Verdict::Comment)))
+        ),
         blocking: (findings.into_iter().flatten())
-            .filter_map(|finding| finding.get("severity").and_then(Value::as_str))
-            .any(|severity| BLOCKING.contains(&severity)),
+            .filter_map(|finding| finding.get("severity"))
+            .any(|severity| {
+                severity
+                    .as_str()
+                    .is_some_and(|text| BLOCKING.contains(&text))
+                    || !matches!(Open::<Severity>::deserialize(severity), Ok(Open::Known(_)))
+            }),
         range,
         patch_ids: (report
             .get("patch_ids")
@@ -378,3 +388,6 @@ fn attached(host: &dyn Host, refs: &[String]) -> Result<Vec<Covering>, PluginErr
         .filter_map(|path| covering(path.clone(), body(path)?))
         .collect())
 }
+
+#[cfg(test)]
+mod tests;
