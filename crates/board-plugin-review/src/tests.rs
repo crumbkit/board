@@ -14,8 +14,19 @@ use super::*;
 
 const PR: &str = "https://github.com/o/r/pull/7";
 
+/// The `description` of SKILL.md's frontmatter, a single-quoted YAML
+/// scalar on one line.
+fn skill_description() -> String {
+    let skill = include_str!("../../../plugins/review/SKILL.md");
+    let line = (skill.lines())
+        .find_map(|line| line.strip_prefix("description: "))
+        .unwrap();
+    let quoted = line.strip_prefix('\'').unwrap().strip_suffix('\'').unwrap();
+    quoted.replace("''", "'")
+}
+
 #[test]
-fn the_manifest_parses_as_a_built_in_one_with_each_capabilitys_variables_and_time() {
+fn the_manifest_parses_as_a_built_in_one_with_its_capabilitys_variables_and_skill_description() {
     let manifest = Review.manifest();
     assert_eq!(
         (manifest.name.as_str(), manifest.version.as_str()),
@@ -45,6 +56,7 @@ fn the_manifest_parses_as_a_built_in_one_with_each_capabilitys_variables_and_tim
             ("covered", vec![], None),
         ]
     );
+    assert_eq!(manifest.description, skill_description());
 }
 
 #[test]

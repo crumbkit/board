@@ -7,7 +7,9 @@ missing  evals                skills/evals
 missing  github               skills/github
 missing  jira                 skills/jira
 missing  notes                skills/notes
+missing  plans                skills/plans
 missing  prompts              skills/prompts
+missing  review               skills/review
 missing  share                skills/share
 missing  tasks                skills/tasks
 missing  understanding-check  skills/understanding-check

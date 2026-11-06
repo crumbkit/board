@@ -103,8 +103,19 @@ fn empty() -> Empty {
     })
 }
 
+/// The `description` of SKILL.md's frontmatter, a single-quoted YAML
+/// scalar on one line.
+fn skill_description() -> String {
+    let skill = include_str!("../../../plugins/plans/SKILL.md");
+    let line = (skill.lines())
+        .find_map(|line| line.strip_prefix("description: "))
+        .unwrap();
+    let quoted = line.strip_prefix('\'').unwrap().strip_suffix('\'').unwrap();
+    quoted.replace("''", "'")
+}
+
 #[test]
-fn the_manifest_parses_as_board_reads_a_built_in_one_and_names_no_program_to_run() {
+fn the_manifest_parses_as_a_built_in_one_and_describes_the_plugin_with_the_skills_description() {
     let manifest = Plans.manifest();
     assert_eq!(
         (manifest.name.as_str(), manifest.version.as_str()),
@@ -120,11 +131,7 @@ fn the_manifest_parses_as_board_reads_a_built_in_one_and_names_no_program_to_run
         .map(|capability| capability.name.as_str())
         .collect();
     assert_eq!(names, ["open", "answer", "withdraw"]);
-    assert!(
-        manifest
-            .description
-            .ends_with("in Board's repository says where each record lives.")
-    );
+    assert_eq!(manifest.description, skill_description());
 }
 
 #[test]

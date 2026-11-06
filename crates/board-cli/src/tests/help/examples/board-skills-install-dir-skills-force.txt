@@ -7,7 +7,9 @@ written  evals                skills/evals
 written  github               skills/github
 written  jira                 skills/jira
 written  notes                skills/notes
+written  plans                skills/plans
 written  prompts              skills/prompts
+written  review               skills/review
 written  share                skills/share
 written  tasks                skills/tasks
 written  understanding-check  skills/understanding-check
