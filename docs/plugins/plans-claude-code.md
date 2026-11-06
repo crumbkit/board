@@ -33,7 +33,7 @@ age and what it blocks, and each option as a button; the recommended option is
 drawn as the primary one. Where the surface draws a text field, which mobile
 does not, the owner may answer in words instead. Pressing an option records
 that option's `id` as `choice` and its text as `words`. Words typed in the
-field record `choice: "none"` and the words verbatim.
+field record the words verbatim and no `choice`.
 
 Before it writes, the mod reads the question and every `plans/answer/v1`
 whose `question` names it, at any id. If an answer exists, the mod writes

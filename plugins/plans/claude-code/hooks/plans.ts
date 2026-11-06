@@ -95,14 +95,15 @@ export const iso = (ms: number) => new Date(ms).toISOString().replace(/\.\d{3}Z$
  * is what marks the question answered; its status stays open. `by` names the
  * pane's own session by its `local_` id, and is left out when the pane
  * cannot name it. `own` is the question's path in its own board, which the
- * answer names it by.
+ * answer names it by. `choice` is undefined when the owner's words choose no
+ * option, and the answer then leaves it out.
  */
-export function answerBatch(question: string, own: string, blob: string, body: string, choice: string, words: string, by: string | undefined, now: number): string {
+export function answerBatch(question: string, own: string, blob: string, body: string, choice: string | undefined, words: string, by: string | undefined, now: number): string {
   // The answer lands in the question's board, where a reference is read from that board's root.
   const answer = {
     $type: 'plans/answer/v1',
     question: own,
-    choice,
+    ...(choice === undefined ? {} : { choice }),
     words,
     answered: iso(now),
     ...(by === undefined ? {} : { by: { session: by } }),
@@ -115,8 +116,8 @@ export function answerBatch(question: string, own: string, blob: string, body: s
 }
 
 /** What the asking session is sent. */
-export const answerText = (question: string, choice: string, words: string) =>
-  `The owner answered ${question}: choice ${choice}, in these words: ${words}\n` +
+export const answerText = (question: string, choice: string | undefined, words: string) =>
+  `The owner answered ${question}: choice ${choice ?? 'none'}, in these words: ${words}\n` +
   `The answer is recorded at ${answerPath(question)}.`
 
 /** The band's line. */

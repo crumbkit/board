@@ -98,10 +98,10 @@ pub struct AnswerRecord {
     pub tag: Tag<Self>,
     /// The question this answers.
     pub question: Ref<QuestionRecord>,
-    /// The `id` of the option the owner chose, or `none` when the owner's
-    /// words choose no option.
+    /// The `id` of the option the owner chose; absent when the owner's words
+    /// choose no option.
     #[schemars(length(min = 1))]
-    pub choice: String,
+    pub choice: Option<String>,
     /// The owner's words, verbatim.
     #[schemars(length(min = 1))]
     pub words: String,
@@ -171,7 +171,8 @@ pub struct DecisionRecord {
     #[serde(default)]
     #[schemars(with = "Vec<Url>")]
     pub urls: Vec<String>,
-    /// `wanted` when the owner should look at the decision.
+    /// `wanted` when the owner should look at the decision; absent when no
+    /// review is wanted.
     pub review: Option<Review>,
     /// The plugin and hook that wrote this stub without an agent, such as
     /// `runs/pr-create`; absent when an agent or a person wrote it.
@@ -189,5 +190,4 @@ impl Record for DecisionRecord {
 #[schemars(inline)]
 pub enum Review {
     Wanted,
-    None,
 }

@@ -49,7 +49,7 @@ pub(super) const UNSHARED: [(&str, &str, Kind, &str); 87] = [
     ("jira/issue/v1", "/url", UntilAdopted, "Url, when that shape lands"),
     ("notes/repo/v1", "/covers/-", UntilAdopted, "RemotePattern (audit row 43)"),
     ("plans/answer/v1", "/answered", UntilAdopted, "Timestamp (audit row 38)"),
-    ("plans/answer/v1", "/choice", UntilAdopted, "Slug, with none reserved (audit row 34)"),
+    ("plans/answer/v1", "/choice", UntilAdopted, "Slug, when option ids are (audit row 34)"),
     ("plans/answer/v1", "/evidence/entry", UntilAdopted, "Uuid (audit row 17)"),
     ("plans/answer/v1", "/evidence/quote", UntilAdopted, "Prose"),
     ("plans/answer/v1", "/evidence/session", UntilAdopted, "Uuid (audit row 16)"),

@@ -528,7 +528,6 @@ fn board_calls_plans_open_in_its_own_process_and_leaves_out_answered_and_withdra
                 json!({
                     "$type": "plans/answer/v1",
                     "question": "/projects/a/questions/done",
-                    "choice": "none",
                     "words": "Done already.",
                     "answered": "2026-09-02T09:00:00Z",
                 })

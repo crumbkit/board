@@ -74,10 +74,9 @@
       "type": "array"
     },
     "review": {
-      "description": "`wanted` when the owner should look at the decision.",
+      "description": "`wanted` when the owner should look at the decision; absent when no\nreview is wanted.",
       "enum": [
-        "wanted",
-        "none"
+        "wanted"
       ],
       "type": "string"
     },

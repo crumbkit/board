@@ -114,7 +114,10 @@ pub(crate) fn answer(host: &dyn Host, input: &Value) -> Result<Value, PluginErro
     // A reference is read from the root of the board it is in, and the
     // answer lands in the question's board.
     record.insert("question".to_owned(), json!(asked.own));
-    record.insert("choice".to_owned(), json!(option));
+    // `none` that chooses no option leaves `choice` out.
+    if chosen.is_some() {
+        record.insert("choice".to_owned(), json!(option));
+    }
     record.insert("words".to_owned(), json!(words));
     record.insert("answered".to_owned(), json!(answered));
     if let Some(by) = by {
