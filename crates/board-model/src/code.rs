@@ -132,6 +132,8 @@ codes! {
     ServeCodeExpired => "board::serve::code_expired",
     ServeUnknownRoute => "board::serve::unknown_route",
     ServeFailed => "board::serve::failed",
+    SkillsNotBoard => "board::skills::not_board",
+    SkillsWriteFailed => "board::skills::write_failed",
     CliUsage => "board::cli::usage",
 }
 

@@ -1,0 +1,233 @@
+//! `board skills install` and `list` run against a skills directory in a
+//! temporary directory, outside any board (docs/plugins.md, Skills).
+#![cfg(test)]
+#![expect(
+    clippy::disallowed_methods,
+    reason = "the tests run the built board as a child process"
+)]
+
+use std::path::{Path, PathBuf};
+use std::process::Command;
+
+use board_scenario::{Item, Scenario};
+use serde_json::Value;
+
+/// One run of `board` in `home`, its exit code and its JSON document.
+fn board(home: &Scenario, arguments: &[&str]) -> (i32, Value) {
+    let output = Command::new(env!("CARGO_BIN_EXE_board"))
+        .arg("--json")
+        .args(arguments)
+        .current_dir(home.workdir())
+        .env_clear()
+        .env("HOME", home.workdir())
+        .env("XDG_CACHE_HOME", home.workdir().join(".cache"))
+        .env("XDG_CONFIG_HOME", home.workdir().join(".config"))
+        .output()
+        .unwrap();
+    let document = serde_json::from_slice(&output.stdout).unwrap_or_else(|error| {
+        panic!(
+            "{error}: {}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        )
+    });
+    (output.status.code().unwrap(), document)
+}
+
+/// `skills <command> --dir skills`, with `more` after it.
+fn skills(home: &Scenario, command: &str, more: &[&str]) -> (i32, Value) {
+    let arguments = [&["skills", command, "--dir", "skills"], more].concat();
+    board(home, &arguments)
+}
+
+/// Each row's name and state.
+fn states(document: &Value) -> Vec<(String, String)> {
+    let rows = document["data"].as_array().unwrap();
+    rows.iter()
+        .map(|row| {
+            let field = |name: &str| row[name].as_str().unwrap().to_owned();
+            (field("name"), field("state"))
+        })
+        .collect()
+}
+
+/// The state of `name` in `document`.
+fn state_of(document: &Value, name: &str) -> String {
+    let states = states(document);
+    let found = states.into_iter().find(|(row, _)| row == name);
+    found.unwrap_or_else(|| panic!("no row {name}")).1
+}
+
+fn path(home: &Scenario, relative: &str) -> PathBuf {
+    home.workdir().join(relative)
+}
+
+fn text(path: &Path) -> String {
+    std::fs::read_to_string(path).unwrap()
+}
+
+#[test]
+fn a_fresh_install_writes_every_skill_with_its_marker_and_a_second_changes_nothing() {
+    let home = Scenario::new();
+    let (code, listed) = skills(&home, "list", &[]);
+    assert_eq!(code, 0);
+    assert_eq!(listed["schema"], "board/skills-list-report/v2");
+    let names: Vec<String> = states(&listed).into_iter().map(|(name, _)| name).collect();
+    assert!(states(&listed).iter().all(|(_, state)| state == "missing"));
+    assert!(
+        names.contains(&"changes".to_owned()) && names.contains(&"understanding-check".to_owned())
+    );
+
+    let (code, installed) = skills(&home, "install", &[]);
+    assert_eq!(code, 0);
+    assert_eq!(installed["schema"], "board/skills-install-report/v2");
+    assert_eq!(states(&installed).len(), names.len());
+    assert!(
+        states(&installed)
+            .iter()
+            .all(|(_, state)| state == "written")
+    );
+    for name in &names {
+        let marker = text(&path(&home, &format!("skills/{name}/.board-skill")));
+        assert!(
+            marker.starts_with("board ") && marker.ends_with('\n'),
+            "{marker}"
+        );
+        assert!(path(&home, &format!("skills/{name}/SKILL.md")).is_file());
+    }
+    assert!(path(&home, "skills/changes/README.md").is_file());
+
+    let (code, again) = skills(&home, "install", &[]);
+    assert_eq!(code, 0);
+    assert!(states(&again).iter().all(|(_, state)| state == "unchanged"));
+    let (_, listed) = skills(&home, "list", &[]);
+    assert!(states(&listed).iter().all(|(_, state)| state == "current"));
+}
+
+#[test]
+fn an_edited_skill_is_listed_stale_and_install_restores_it() {
+    let home = Scenario::new();
+    skills(&home, "install", &[]);
+    let skill = path(&home, "skills/evals/SKILL.md");
+    let shipped = text(&skill);
+    home.write("skills/evals/SKILL.md", Item::File("edited\n"));
+    let (_, listed) = skills(&home, "list", &[]);
+    assert_eq!(state_of(&listed, "evals"), "stale");
+    assert_eq!(state_of(&listed, "changes"), "current");
+
+    let (code, installed) = skills(&home, "install", &[]);
+    assert_eq!(code, 0);
+    assert_eq!(state_of(&installed, "evals"), "updated");
+    assert_eq!(state_of(&installed, "changes"), "unchanged");
+    assert_eq!(text(&skill), shipped);
+    let leftovers = std::fs::read_dir(path(&home, "skills")).unwrap().flatten();
+    let hidden: Vec<_> = leftovers
+        .filter(|entry| entry.file_name().to_string_lossy().starts_with('.'))
+        .collect();
+    assert!(hidden.is_empty(), "install left {hidden:?}");
+}
+
+#[test]
+fn list_names_each_state_and_changes_nothing() {
+    let home = Scenario::new();
+    home.write("skills/changes/notes.md", Item::File("mine\n"))
+        .write("skills/evals/.board-skill", Item::File("board 0.0.0\n"))
+        .write("skills/evals/SKILL.md", Item::File("old\n"))
+        .write("skills/old/.board-skill", Item::File("board 0.0.0\n"))
+        .write("skills/old/SKILL.md", Item::File("old\n"))
+        .write("skills/unrelated/SKILL.md", Item::File("mine\n"));
+    let (code, listed) = skills(&home, "list", &[]);
+    assert_eq!(code, 0);
+    assert_eq!(state_of(&listed, "changes"), "not_board");
+    assert_eq!(state_of(&listed, "evals"), "stale");
+    assert_eq!(state_of(&listed, "old"), "retired");
+    assert_eq!(state_of(&listed, "tasks"), "missing");
+    assert!(!states(&listed).iter().any(|(name, _)| name == "unrelated"));
+    assert_eq!(text(&path(&home, "skills/evals/SKILL.md")), "old\n");
+    assert!(!path(&home, "skills/tasks").exists());
+
+    skills(&home, "install", &["--force"]);
+    home.write("skills/tasks", Item::Deleted);
+    let (_, listed) = skills(&home, "list", &[]);
+    assert_eq!(state_of(&listed, "changes"), "current");
+    assert_eq!(state_of(&listed, "tasks"), "missing");
+}
+
+#[test]
+fn a_folder_that_is_not_boards_is_refused_before_any_write_and_replaced_with_force() {
+    let home = Scenario::new();
+    home.write("skills/changes/notes.md", Item::File("mine\n"));
+    let (code, refused) = skills(&home, "install", &[]);
+    assert_eq!(code, 1);
+    assert_eq!(refused["code"], "board::skills::not_board");
+    assert_eq!(refused["fields"]["folders"], serde_json::json!(["changes"]));
+    assert_eq!(refused["fields"]["dir"], "skills");
+    assert!(refused["recovery"].to_string().contains("--force"));
+    assert!(!path(&home, "skills/evals").exists());
+    assert!(!path(&home, "skills/changes/SKILL.md").exists());
+
+    let (code, admitted) = skills(&home, "install", &["--force"]);
+    assert_eq!(code, 0);
+    assert_eq!(state_of(&admitted, "changes"), "written");
+    assert!(!path(&home, "skills/changes/notes.md").exists());
+    assert!(path(&home, "skills/changes/.board-skill").is_file());
+}
+
+#[test]
+fn a_symlink_at_a_skills_name_is_refused_and_with_force_the_link_alone_is_replaced() {
+    let home = Scenario::new();
+    let checkout = Scenario::new();
+    checkout.write("SKILL.md", Item::File("from a checkout\n"));
+    home.write("skills/changes", Item::Symlink(&checkout.path()));
+    let (code, refused) = skills(&home, "install", &[]);
+    assert_eq!(code, 1);
+    assert_eq!(refused["code"], "board::skills::not_board");
+
+    let (code, admitted) = skills(&home, "install", &["--force"]);
+    assert_eq!(code, 0);
+    assert_eq!(state_of(&admitted, "changes"), "written");
+    let link = std::fs::symlink_metadata(path(&home, "skills/changes")).unwrap();
+    assert!(link.is_dir() && !link.file_type().is_symlink());
+    assert_eq!(
+        text(&checkout.workdir().join("SKILL.md")),
+        "from a checkout\n"
+    );
+    assert!(!checkout.workdir().join(".board-skill").exists());
+    assert!(!checkout.workdir().join("README.md").exists());
+}
+
+#[test]
+fn install_removes_a_board_folder_for_a_skill_it_does_not_ship_and_leaves_others_alone() {
+    let home = Scenario::new();
+    home.write("skills/gone/.board-skill", Item::File("board 0.0.0\n"))
+        .write("skills/gone/SKILL.md", Item::File("gone\n"))
+        .write("skills/mine/SKILL.md", Item::File("mine\n"))
+        .write("skills/stray.md", Item::File("mine\n"));
+    let (code, installed) = skills(&home, "install", &[]);
+    assert_eq!(code, 0);
+    assert_eq!(state_of(&installed, "gone"), "removed");
+    assert!(!path(&home, "skills/gone").exists());
+    assert_eq!(text(&path(&home, "skills/mine/SKILL.md")), "mine\n");
+    assert_eq!(text(&path(&home, "skills/stray.md")), "mine\n");
+}
+
+#[test]
+fn a_directory_that_cannot_be_read_is_refused_and_one_that_can_is_admitted() {
+    let home = Scenario::new();
+    home.write("file", Item::File("not a directory\n"));
+    let (code, refused) = board(&home, &["skills", "install", "--dir", "file"]);
+    assert_eq!(code, 1);
+    assert_eq!(refused["code"], "board::skills::write_failed");
+    assert_eq!(refused["fields"]["dir"], "file");
+    let (code, _) = board(&home, &["skills", "install", "--dir", "fresh"]);
+    assert_eq!(code, 0);
+    assert!(path(&home, "fresh/changes/SKILL.md").is_file());
+}
+
+#[test]
+fn without_dir_install_writes_into_the_claude_skills_directory_in_home() {
+    let home = Scenario::new();
+    let (code, _) = board(&home, &["skills", "install"]);
+    assert_eq!(code, 0);
+    assert!(path(&home, ".claude/skills/changes/.board-skill").is_file());
+}

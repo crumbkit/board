@@ -25,6 +25,7 @@ Board: a fast, validated view of a git tree.
 - [`board query`](#board-query): Run one read-only SQL statement over the index
 - [`board serve`](#board-serve): Serve this board's pages on 127.0.0.1 until it is idle
 - [`board ui`](#board-ui): List kinds, print a slot, or open a page
+- [`board skills`](#board-skills): Install or list the skills Board ships
 - [`board commands`](#board-commands): Describe Board's commands
 - [`board schemas`](#board-schemas): Describe the JSON documents that Board prints
 
@@ -396,6 +397,52 @@ Open a binding's page in a browser, starting `board serve` if it is not running
 - `<PATH>`: The binding's logical path, such as /bindings/review. Required.
 
 Effects: read-only, open-world.
+
+## `board skills`
+
+Install or list the skills Board ships
+
+### Commands
+
+- [`board skills install`](#board-skills-install): Write the skills built into this binary into a skills directory
+- [`board skills list`](#board-skills-list): List each skill this binary ships and each Board folder in a skills directory
+
+## `board skills install`
+
+Write the skills built into this binary into a skills directory
+
+### Arguments
+
+- `--dir <DIR>`: The skills directory, such as \~/.agents/skills; \~/.claude/skills when left out
+- `--force`: Replace a folder at a skill's name that is not Board's; a symlink there is removed, never followed
+- `--limit <N>`: Print at most this many rows, up to 10000. Default: `100`.
+- `--all`: Print every row
+
+### Columns
+
+- `state`: The folder's state.
+- `name`: The skill's name, which names its folder.
+- `path`: The folder, in the skills directory as given.
+
+Effects: destructive, idempotent, closed-world.
+
+## `board skills list`
+
+List each skill this binary ships and each Board folder in a skills directory
+
+### Arguments
+
+- `--dir <DIR>`: The skills directory, such as \~/.agents/skills; \~/.claude/skills when left out
+- `--limit <N>`: Print at most this many rows, up to 10000. Default: `100`.
+- `--all`: Print every row
+
+### Columns
+
+- `state`: The folder's state.
+- `name`: The skill's name, which names its folder.
+- `path`: The folder, in the skills directory as given.
+
+Effects: read-only, closed-world.
 
 ## `board commands`
 

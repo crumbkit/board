@@ -56,23 +56,6 @@ Tab completion: in fish, add `BOARD_COMPLETE=fish board | source` to
 ~/.config/fish/config.fish; in bash, add `eval \"$(BOARD_COMPLETE=bash board)\"`
 to ~/.bashrc; in zsh, add `eval \"$(BOARD_COMPLETE=zsh board)\"` to ~/.zshrc.";
 
-const QUERY_EXAMPLES: &str = "\
-Tables and views:
-  entries   one row per entry: source, path, logical, blob, size, kind, type,
-            status, code, change, role, schema
-  records   entries of kind record, with body, the record as JSON
-  refs, links, validations, blobs, trees, worktree, mounts, sources,
-  state
-
-Rows stop at 64 MiB of output, even with --all; --json then sets `truncated`
-and `cut.code`, board::output::over_budget, and the text notes it. A first
-row past 64 MiB is refused with that code.
-
-Examples:
-  board query \"SELECT logical, code FROM entries WHERE status = 'degraded'\"
-  board query \"SELECT logical FROM records WHERE type = 'tasks/task/v2'\" --limit 20
-  board query 'SELECT name, sql FROM sqlite_master'";
-
 #[derive(Debug, Parser)]
 #[command(
     name = BINARY_NAME,
@@ -371,7 +354,7 @@ Examples:
   board answer 4b2e0c8a9d1f37b6e5a0c2d84f9b1e7a3c6d0f8b2a5e9c1d4f7a0b3e6c9d2f5a approve --signature phone.sig")]
     Answer(effects::Answering),
     /// Run one read-only SQL statement over the index.
-    #[command(after_help = QUERY_EXAMPLES)]
+    #[command(after_help = render::QUERY_EXAMPLES)]
     Query {
         /// One read-only SQL statement, quoted as one argument.
         sql: String,
@@ -388,6 +371,9 @@ Examples:
     /// List kinds, print a slot, or open a page.
     #[command(subcommand, after_help = crate::ui::UI_HELP)]
     Ui(crate::ui::UiCommand),
+    /// Install or list the skills Board ships.
+    #[command(subcommand, after_help = crate::skills::HELP)]
+    Skills(crate::skills::SkillsCommand),
     /// Describe Board's commands.
     #[command(subcommand, after_help = crate::describe::COMMANDS_HELP)]
     Commands(crate::describe::CommandsCommand),
@@ -417,6 +403,7 @@ impl Command {
             Command::Init
                 | Command::Type(_)
                 | Command::Plugin(crate::plugin::PluginCommand::Enable { .. })
+                | Command::Skills(crate::skills::SkillsCommand::Install { .. })
         )
     }
 }
@@ -474,6 +461,9 @@ pub(crate) fn run(
         && let Some(refusal) = effects::from_plugin(context, ran)
     {
         return render::refused(printer, *refusal);
+    }
+    if let Command::Skills(command) = cli.command {
+        return crate::skills::skills(&command, context, printer);
     }
     let base = cli.personal.then(|| context.personal());
     let base = base.unwrap_or_else(|| Ok(context.start.clone()));
@@ -614,13 +604,14 @@ fn command(
         };
     }
     match command {
-        // `run` takes these before this match: init and answer open no
-        // board, and decide is matched there to keep this function short.
+        // `run` takes these before this match: init, answer and skills open
+        // no board, and decide is matched there to keep this function short.
         Command::Init
         | Command::Answer(_)
         | Command::Decide(_)
         | Command::Commands(_)
-        | Command::Schemas(_) => unreachable!(),
+        | Command::Schemas(_)
+        | Command::Skills(_) => unreachable!(),
         Command::Check {
             path,
             healthy,

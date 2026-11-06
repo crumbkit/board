@@ -273,6 +273,8 @@ fn every_listing_command_takes_limit_and_all() {
         "ui kinds",
         "commands list",
         "schemas list",
+        "skills install",
+        "skills list",
     ];
     let other = [
         "init",
