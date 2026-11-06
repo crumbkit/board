@@ -75,7 +75,7 @@ Examples:
 #[derive(Debug, Parser)]
 #[command(
     name = BINARY_NAME,
-    version,
+    version = crate::timing::BUILD,
     about = format!("{DISPLAY_NAME}: a fast, validated view of a git tree."),
     after_help = ROOT_EXAMPLES,
 )]

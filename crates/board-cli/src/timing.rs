@@ -9,7 +9,8 @@ use serde_json::{Value, json};
 use crate::config::Context;
 use crate::report::Output;
 
-/// Board's version and the build it came from, which the timing log records.
+/// Board's version and the build it came from, which the timing log records
+/// and `board --version` prints.
 pub(crate) const BUILD: &str = concat!(env!("CARGO_PKG_VERSION"), env!("BOARD_BUILD"));
 
 /// What keys the decisions an index keeps: [`BUILD`], or nothing, which

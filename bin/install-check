@@ -17,7 +17,8 @@ export PATH="$home/bin:$PATH" HOME="$home" XDG_DATA_HOME="$home/data" XDG_CACHE_
 
 version=$(board --version)
 echo "$version"
-if [ -n "$expected" ] && [ "$version" != "board $expected" ]; then
+# A build in a git checkout adds `+<commit>` after the version.
+if [ -n "$expected" ] && [ "${version%%+*}" != "board $expected" ]; then
   echo "board --version printed '$version', and the release is $expected" >&2
   exit 1
 fi
