@@ -10,8 +10,8 @@ with its output, messages and codes unchanged.
 A built-in plugin reads and writes the board through `Host` and nothing
 else: `query`, `refs`, `get_each`, `put`, `call`, `board`, `decide`,
 `settings`, `caller_remote` and `run` (docs/plugins/built-in.md). It
-writes records only with `put`, which takes the lines a Python plugin
-gives `board put --batch`, and maps its error with
+writes records only with `put`, which takes the lines that
+`board put --batch` reads, and maps its error with
 `PluginError::board_refused(<name>, "put --batch", &error.refusal())`; a
 refused `call` or `decide` maps the same way, with `"call"` or `"decide"`.
 It starts a process only with `run`, which gives
@@ -138,4 +138,5 @@ in `plugin list` and `plugin find`.
   steps, the timing bench, `xtask/tests/shapes.rs` and STANDARDS.md. When
   this repository's board enables the plugin, run `board plugin enable
   <name>` so `.board/types/` holds the shipped schema.
-- Say the net production lines for Rust and for Python in the pull request.
+- Say the net production lines for Rust and for the removed language in
+  the pull request.

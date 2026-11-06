@@ -76,7 +76,7 @@ fn a_file_whose_name_only_starts_like_an_owner_is_not_an_owner() {
 }
 
 #[test]
-fn a_literal_in_a_python_shell_typescript_or_bin_script_is_refused_and_in_docs_controls_or_data_is_admitted()
+fn a_literal_in_a_rust_shell_typescript_or_bin_script_is_refused_and_in_docs_controls_or_data_is_admitted()
  {
     let config = SigningConfig {
         literals: vec!["ns/a".to_owned()],

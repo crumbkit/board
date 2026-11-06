@@ -20,8 +20,8 @@ use exempt::{Kind, UNSHARED};
 /// that ships it is ported. Each entry must still be broken, so a fix
 /// removes its entry.
 const EXEMPT: [(&str, &str); 21] = [
-    // Python plugins, and controls, prompts and runs, which ship the
-    // pydantic-generated schema files unchanged: pydantic titles every
+    // Ported plugins that ship the schema files the former Python plugins
+    // generated with pydantic, unchanged: pydantic titles every
     // property and keeps field meanings in the class docstring.
     ("controls/control/v1", "described"),
     ("controls/control/v1", "untitled"),

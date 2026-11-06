@@ -99,8 +99,8 @@ records it.
 
 - `vectors/signing/v1/` holds the statements, signatures, a test key and an
   allowed signers file; its README says how each file was made and which
-  repository owns each layout. board-app and board-attention read the
-  version they test against from a crumbkit/board commit.
+  repository owns each layout. board-app and board-attention are to test
+  against them.
 - `crates/board-ops/tests/signing_vectors.rs` checks that Board builds both
   statements byte for byte, maps each to its namespace, admits the owner's
   signatures and refuses those in another namespace or by another key.
