@@ -35,7 +35,7 @@ const SYNC_TIMEOUT: &str = "tasks::repo::sync_timeout";
 #[schemars(rename = "AvailableInput")]
 pub(crate) struct Input {
     #[schemars(
-        regex(pattern = r"^[a-z0-9-]+$"),
+        with = "Option<Slug>",
         description = "Only tasks tagged with this context, such as errands."
     )]
     pub(crate) context: Option<String>,
