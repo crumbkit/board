@@ -62,8 +62,8 @@ their status. `board call evals.about --mount /repos/board`
 returns the evals whose `mounts` include that exact path, and the
 evals stored in that mounted board, whose paths start with `/repos/board/`.
 Board refuses input with both or neither as `board::plugin::bad_input`.
-`board call evals.open` returns the evals whose status is
-`planned` or `running`. A `concluded` eval without a verdict is not valid, so
+`board call evals.open` returns the evals whose status is not
+`concluded` or `abandoned`, including a status a newer Board added. A `concluded` eval without a verdict is not valid, so
 neither lists it.
 
 Both take an optional `limit`, 1 to 100 (default 100), and return
