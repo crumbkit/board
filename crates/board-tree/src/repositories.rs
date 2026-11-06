@@ -5,11 +5,13 @@ use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::time::Duration;
 
-use board_model::{Board, Location, LogicalPath, Mount, ObjectId, Source};
+use board_model::{Board, Location, Mount, ObjectId, Source};
 
 use crate::git::{Contents, GitError, ObjectReads, Repository};
 use crate::worktree::Reader;
+use crate::write::{Lock, WriteError};
 
 /// The repository a board is in, and a cache of every repository its mounts
 /// name, so each is opened from disk once. Each lookup gives a
@@ -27,8 +29,19 @@ pub struct Repositories {
     /// How many repositories the cache has opened from disk.
     opened: AtomicUsize,
     /// The working tree's mount pointer read at another commit for this
-    /// run, by the pointer's physical path: see [`Repositories::read_at`].
-    checkout: Option<(String, ObjectId)>,
+    /// run: see [`Repositories::read_at`].
+    checkout: Option<Checkout>,
+}
+
+/// A mount pointer in the working tree that one run reads at a checkout's
+/// HEAD instead of the commit it pins (`board --checkout`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Checkout {
+    /// The pointer's physical path in the working tree, such as
+    /// `repos/lib.json`.
+    pub pointer: String,
+    /// The commit the run reads the mount at.
+    pub commit: ObjectId,
 }
 
 /// A repository in the cache, and the path [`Repository::path`] gives it.
@@ -88,23 +101,40 @@ impl Repositories {
         &self.root
     }
 
-    /// Reads the mount pointer at `mount` in the working tree at `commit`,
-    /// instead of the commit it pins, until this is dropped. The pointer
-    /// file is not changed, and a pointer in a commit keeps its pin.
-    pub fn read_at(&mut self, mount: &LogicalPath, commit: ObjectId) {
-        let pointer = format!("{}.json", mount.as_str().trim_start_matches('/'));
-        self.checkout = Some((pointer, commit));
+    /// Reads the mount pointer `checkout` names in the working tree at its
+    /// commit, instead of the commit it pins, until this is dropped. The
+    /// pointer file is not changed, a pointer in a commit keeps its pin,
+    /// and [`Repositories::lock`] refuses every write.
+    pub fn read_at(&mut self, checkout: Checkout) {
+        self.checkout = Some(checkout);
+    }
+
+    /// The mount pointer this run reads at a checkout, if any.
+    pub fn checkout(&self) -> Option<&Checkout> {
+        self.checkout.as_ref()
     }
 
     /// `mount`, a pointer at the physical `path` in `source`, with the
     /// commit this run reads it at.
     pub(crate) fn read_as(&self, source: &Source, path: &str, mut mount: Mount) -> Mount {
-        if let (Source::WorkingTree, Some((pointer, commit))) = (source, &self.checkout)
-            && pointer == path
+        if let (Source::WorkingTree, Some(checkout)) = (source, &self.checkout)
+            && checkout.pointer == path
         {
-            mount.commit = *commit;
+            mount.commit = checkout.commit;
         }
         mount
+    }
+
+    /// The board's write lock, waiting up to `wait`. A run that reads a
+    /// mount at a checkout writes nothing, since every write is checked
+    /// against the commit the mount pins, so it is refused with
+    /// `board::cli::usage`.
+    pub fn lock(&self, wait: Duration) -> Result<Lock, WriteError> {
+        if let Some(checkout) = &self.checkout {
+            let pointer = checkout.pointer.clone();
+            return Err(WriteError::AtCheckout { pointer });
+        }
+        self.root.lock(wait)
     }
 
     /// What a mount's `~/` means.
@@ -171,7 +201,7 @@ impl Repositories {
             let path = path.canonicalize().unwrap_or_else(|_| path.clone());
             closed.entry(path).or_default().push(*commit);
         }
-        closed.retain(|path, _| !self.lock().contains_key(path));
+        closed.retain(|path, _| !self.open_map().contains_key(path));
         let (open, opened) = (&self.open, &self.opened);
         std::thread::scope(|scope| {
             for (path, commits) in closed {
@@ -195,7 +225,7 @@ impl Repositories {
     /// The repository at `path`, opened from disk the first time any path
     /// that opens it, or a path that canonicalises to one, names it.
     fn lend(&self, path: &Path) -> Result<Repository, GitError> {
-        let mut open = self.lock();
+        let mut open = self.open_map();
         if let Some(found) = open.get(path) {
             return Ok(found.lend());
         }
@@ -211,7 +241,7 @@ impl Repositories {
 
     /// The cache. A thread that panicked while holding it left it whole:
     /// an insert either happened or did not.
-    fn lock(&self) -> MutexGuard<'_, HashMap<PathBuf, Opened>> {
+    fn open_map(&self) -> MutexGuard<'_, HashMap<PathBuf, Opened>> {
         self.open.lock().unwrap_or_else(PoisonError::into_inner)
     }
 }

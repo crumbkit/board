@@ -41,7 +41,7 @@ impl Board {
             upload()?;
             return self.put_waiting(path, expect, &record, wait);
         }
-        let lock = self.repository().lock(wait)?;
+        let lock = self.repositories().lock(wait)?;
         let mut view = self.repositories().snapshot().map_err(WriteError::from)?;
         let schemas = &mut Schemas::default();
         let prepared = self.prepare_file(&lock, &mut view, schemas, path, expect, bytes)?;
@@ -59,7 +59,7 @@ impl Board {
         record: &[u8],
         wait: Duration,
     ) -> Result<(), PutError> {
-        let lock = self.repository().lock(wait)?;
+        let lock = self.repositories().lock(wait)?;
         let mut view = self.repositories().snapshot().map_err(WriteError::from)?;
         let schemas = &mut Schemas::default();
         match self.prepare(&lock, &mut view, schemas, path, Expect::Any, record) {

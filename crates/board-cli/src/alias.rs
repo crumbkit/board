@@ -9,6 +9,7 @@
 use std::ffi::OsString;
 
 use board_model::{Code, Fields, Refusal};
+use board_ops::MountsAt;
 use board_plugin::Manifest;
 use clap::error::ErrorKind;
 use clap::{Command, CommandFactory as _};
@@ -190,7 +191,8 @@ fn aliases(
         Some(context.start.clone())
     };
     let start = base.and_then(|base| entered(&base, directories).ok());
-    let Some((mut board, _)) = start.and_then(|start| context.open(&start, false).ok()) else {
+    let Some((mut board, _)) = start.and_then(|start| context.open(&start, MountsAt::Pins).ok())
+    else {
         return Vec::new();
     };
     board.build_in(context.built_in.0);

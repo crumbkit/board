@@ -10,7 +10,7 @@ use std::io::{self, ErrorKind};
 use std::path::{Path, PathBuf};
 
 use board_model::{Code, Fields, LogicalPath, PathError, PluginName, Refusal};
-use board_tree::{Matched, Place};
+use board_tree::{Checkout, Matched, Place};
 use serde::Deserialize;
 
 use crate::{Asker, Board, OpenError, Signing};
@@ -149,6 +149,15 @@ pub fn asker(
     })
 }
 
+/// Which commit a run reads the mount holding its directory at.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MountsAt {
+    /// The commit each pointer pins.
+    Pins,
+    /// The commit HEAD names in the directory's checkout (`board --checkout`).
+    Checkout,
+}
+
 /// The board holding `start`, or else the one known board with a mount
 /// whose repository holds `start`, or with a repo record whose `remote` is
 /// that repository's origin, and `start`'s logical path in that board, if
@@ -161,32 +170,23 @@ pub fn open(
     cache: Option<&Path>,
     known: impl FnOnce() -> Result<KnownBoards, Box<Refusal>>,
 ) -> Result<(Board, Option<Prefix>), Box<Refusal>> {
-    opening(start, home, cache, known, false)
+    open_at(start, home, cache, known, MountsAt::Pins)
 }
 
-/// [`open`] for `board --checkout`: the known board with a mount of the
-/// repository holding `start`, linked worktrees included, which this run
-/// reads at the commit HEAD names in `start`'s working tree instead of its
-/// pin. A board holding `start` itself, a mount only of another clone or a
-/// repo record, and a HEAD with no commit are refused with
-/// `board::cli::usage`.
-pub fn open_checkout(
+/// [`open`], reading the mount holding `start` at `at`. At
+/// [`MountsAt::Checkout`], the known board must mount the repository
+/// holding `start`, linked worktrees included, and the run reads that mount
+/// at the commit HEAD names in `start`'s working tree and writes nothing. A
+/// board holding `start` itself, a mount only of another clone or a repo
+/// record, and a HEAD with no commit are refused with `board::cli::usage`.
+pub fn open_at(
     start: &Path,
     home: Option<&Path>,
     cache: Option<&Path>,
     known: impl FnOnce() -> Result<KnownBoards, Box<Refusal>>,
+    at: MountsAt,
 ) -> Result<(Board, Option<Prefix>), Box<Refusal>> {
-    opening(start, home, cache, known, true)
-}
-
-/// [`open`], or with `checkout` [`open_checkout`].
-fn opening(
-    start: &Path,
-    home: Option<&Path>,
-    cache: Option<&Path>,
-    known: impl FnOnce() -> Result<KnownBoards, Box<Refusal>>,
-    checkout: bool,
-) -> Result<(Board, Option<Prefix>), Box<Refusal>> {
+    let checkout = at == MountsAt::Checkout;
     let error = match Board::open(start, home.map(Path::to_path_buf)) {
         Ok(_) if checkout => {
             let reason = "is in the board's own tree, which Board reads from the working tree";
@@ -207,13 +207,14 @@ fn opening(
                           clone, or a repo record, is read at its pin";
             return Err(not_a_checkout(start, reason));
         }
-        let Some(head) = board_tree::head_of(start) else {
+        let Some(commit) = board_tree::head_of(start) else {
             return Err(not_a_checkout(
                 start,
-                "is in a repository with no commit yet",
+                "has a HEAD that names no commit, such as an unborn branch",
             ));
         };
-        board.read_checkout(&place.mount, head);
+        let pointer = place.pointer.clone();
+        board.read_checkout(Checkout { pointer, commit });
     }
     Ok((board, Some(place.prefix())))
 }

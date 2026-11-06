@@ -8,7 +8,7 @@ use std::path::PathBuf;
 use std::time::Instant;
 
 use board_model::{Code, Refusal, RefusalCode};
-use board_ops::Trace;
+use board_ops::{MountsAt, Trace};
 use clap::Subcommand;
 use crumbkit::Sink;
 use crumbkit::commands::{self, COMMANDS_LIST, CommandsList};
@@ -80,7 +80,7 @@ pub(crate) fn grafted(
     trace: &mut Trace,
 ) -> (Guide, Vec<String>, crumbkit::Output) {
     let opening = Instant::now();
-    let opened = start.and_then(|start| context.open(&start, false));
+    let opened = start.and_then(|start| context.open(&start, MountsAt::Pins));
     trace.add("open", opening);
     let mut board = match opened {
         Ok((board, _)) => board,

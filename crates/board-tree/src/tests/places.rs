@@ -34,9 +34,11 @@ fn places(board: &Scenario, directory: &Path) -> Vec<Place> {
         .places(&entries, &every, &every, directory)
 }
 
+/// The place at the pointer `<mount>.json`, as each fixture names its file.
 fn place(mount: &str, within: &str) -> Place {
     Place {
         mount: path(mount),
+        pointer: format!("{}.json", &mount[1..]),
         within: path(within),
         matched: crate::Matched::Mount,
     }

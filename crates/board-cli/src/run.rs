@@ -9,7 +9,7 @@ use board_model::{
     Refusal,
 };
 pub(crate) use board_ops::entered;
-use board_ops::{Absent, Board, DEFAULT_LIMIT, Expect, MAX_LIMIT, Plugins, PutError};
+use board_ops::{Absent, Board, DEFAULT_LIMIT, Expect, MAX_LIMIT, MountsAt, Plugins, PutError};
 use board_plugin::{Limits, Target};
 
 /// What a plugin run gets from this command line's context.
@@ -89,7 +89,7 @@ pub(crate) struct Cli {
     personal: bool,
     /// Read the mount holding this directory at its checkout's HEAD commit, not the commit it pins.
     ///
-    /// Board then reads, for this run, the branch committed in the checkout of a repository a known board mounts, a linked worktree included, while the pointer keeps its pin. Uncommitted edits are not read. Refused from the board's own tree, from another clone, and with put or rm, which compare against the pin. Off by default.
+    /// Board then reads, for this run, the branch committed in the checkout of a repository a known board mounts, a linked worktree included, while the pointer keeps its pin. Uncommitted edits are not read. Refused from the board's own tree, from another clone, and for any write, which compares against the pin. Off by default.
     #[arg(long, conflicts_with = "personal", hide_short_help = true)]
     checkout: bool,
     #[command(flatten)]
@@ -99,6 +99,17 @@ pub(crate) struct Cli {
     no_input: crumbkit::NoInput,
     #[command(subcommand)]
     command: Command,
+}
+
+impl Cli {
+    /// Which commit this run reads the mount holding its directory at.
+    fn mounts_at(&self) -> MountsAt {
+        if self.checkout {
+            MountsAt::Checkout
+        } else {
+            MountsAt::Pins
+        }
+    }
 }
 
 /// How many entries a listing shows (STANDARDS.md 23).
@@ -496,14 +507,14 @@ pub(crate) fn run(
         return effects::answer(context, printer, answering, no_input, stdin);
     }
     let opening = Instant::now();
-    let opened = context.open(&start, cli.checkout);
+    let opened = context.open(&start, cli.mounts_at());
     ran.trace.add("open", opening);
     let (mut board, prefix) = match opened {
         Ok(opened) => opened,
         Err(refusal) => return render::refused(printer, *refusal),
     };
     board.build_in(context.built_in.0);
-    if let Err(refusal) = ask(&mut board, context, &cli) {
+    if let Err(refusal) = ask(&mut board, context, &cli.command) {
         return render::refused(printer, *refusal);
     }
     ran.root = Some(board.repository().path().to_path_buf());
@@ -572,17 +583,10 @@ fn reread(
     })
 }
 
-/// Lets `board` ask the owner to admit what `cli`'s command writes. Only a
-/// plugin's decide writes in the personal board. A put or rm is refused
-/// under `--checkout`, since it writes against the mount's pin.
-fn ask(board: &mut Board, context: &Context, cli: &Cli) -> Result<(), Box<Refusal>> {
-    if cli.checkout && matches!(cli.command, Command::Put(_) | Command::Rm { .. }) {
-        let message =
-            "--checkout reads a mount at its checkout's HEAD; put and rm write at its pin";
-        let refusal = Refusal::new(Code::CliUsage, message, &Fields::default());
-        return Err(Box::new(refusal.with_hint("leave out --checkout to write")));
-    }
-    let personal = match &cli.command {
+/// Lets `board` ask the owner to admit what `command` writes. Only a
+/// plugin's decide writes in the personal board.
+fn ask(board: &mut Board, context: &Context, command: &Command) -> Result<(), Box<Refusal>> {
+    let personal = match command {
         Command::Put(_) | Command::Rm { .. } => false,
         Command::Decide(_) => context.environment.plugin.is_some(),
         _ => return Ok(()),

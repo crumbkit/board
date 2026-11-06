@@ -714,7 +714,10 @@ fn a_mount_read_at_a_checkout_resolves_in_that_commit_and_its_twin_at_its_pin() 
     let resolved = |checkout: Option<ObjectId>| {
         let mut repositories = outer.repositories();
         if let Some(head) = checkout {
-            repositories.read_at(&path("/m"), head);
+            repositories.read_at(crate::Checkout {
+                pointer: "m.json".to_owned(),
+                commit: head,
+            });
         }
         let location = (repositories.resolve(&Source::WorkingTree, &path("/m/x"))).unwrap();
         (location.board.source, location.object)
@@ -738,7 +741,10 @@ fn a_checkout_is_read_only_through_the_working_trees_pointer_and_a_committed_one
     let commit = outer.commit(&[("m.json", &mount(&inner.path(), pinned))]);
     outer.write("m.json", Item::File(&mount(&inner.path(), pinned)));
     let mut repositories = outer.repositories();
-    repositories.read_at(&path("/m"), head);
+    repositories.read_at(crate::Checkout {
+        pointer: "m.json".to_owned(),
+        commit: head,
+    });
     for (source, read) in [
         (Source::Commit(commit), pinned),
         (Source::WorkingTree, head),
@@ -746,4 +752,19 @@ fn a_checkout_is_read_only_through_the_working_trees_pointer_and_a_committed_one
         let location = repositories.resolve(&source, &path("/m/x")).unwrap();
         assert_eq!(location.board.source, Source::Commit(read), "{source:?}");
     }
+}
+
+#[test]
+fn the_write_lock_is_refused_while_a_mount_is_read_at_a_checkout_and_taken_without_one() {
+    let outer = Scenario::new();
+    let pinned = outer.commit(&[("x.json", "1")]);
+    let mut repositories = outer.repositories();
+    let wait = std::time::Duration::ZERO;
+    assert!(repositories.lock(wait).is_ok());
+    repositories.read_at(crate::Checkout {
+        pointer: "m.json".to_owned(),
+        commit: pinned,
+    });
+    let refused = repositories.lock(wait).err().unwrap();
+    assert_eq!(refused.code(), Code::CliUsage);
 }

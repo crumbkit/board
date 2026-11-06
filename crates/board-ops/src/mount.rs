@@ -30,7 +30,7 @@ impl Board {
         wait: Duration,
     ) -> Result<MountUpdateReport, MountError> {
         let lock = self
-            .repository()
+            .repositories()
             .lock(wait.min(LOCK_WAIT))
             .map_err(|error| MountError::Put(error.into()))?;
         let Pin {

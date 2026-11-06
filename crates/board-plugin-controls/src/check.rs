@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use board_model::LogicalPath;
 use board_ops::{Absent, Host, PluginError, RefsError};
-use board_plugin::shape::ObjectId;
+use board_plugin::shape;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
@@ -46,10 +46,26 @@ pub(crate) struct Output {
 #[derive(Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 struct Read {
-    #[schemars(regex(pattern = "^/"), extend("format" = "board-path"))]
-    mount: String,
-    #[schemars(with = "Option<ObjectId>")]
-    commit: Option<String>,
+    #[schemars(with = "String", regex(pattern = "^/"), extend("format" = "board-path"))]
+    mount: LogicalPath,
+    #[serde(serialize_with = "hex")]
+    #[schemars(with = "Option<shape::ObjectId>")]
+    commit: Option<board_model::ObjectId>,
+}
+
+/// `commit` as git writes it, in lowercase hex, or null.
+#[expect(
+    clippy::ref_option,
+    reason = "serde's serialize_with passes the field by reference"
+)]
+fn hex<S: serde::Serializer>(
+    commit: &Option<board_model::ObjectId>,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    match commit {
+        Some(commit) => serializer.collect_str(commit),
+        None => serializer.serialize_none(),
+    }
 }
 
 /// A version control, the files it reads under the path, each version
@@ -417,20 +433,25 @@ fn sources<'a>(
     own: bool,
 ) -> Result<Vec<Read>, PluginError> {
     let mounts: Vec<(String, String)> = index::string_pairs(host, MOUNTS)?;
-    let mounts: Vec<(LogicalPath, String)> = (mounts.into_iter())
-        .filter_map(|(path, commit)| Some((path.parse().ok()?, commit)))
+    let mounts: Vec<(LogicalPath, board_model::ObjectId)> = (mounts.into_iter())
+        .filter_map(|(path, commit)| {
+            Some((
+                path.parse().ok()?,
+                board_model::ObjectId::from_hex(&commit)?,
+            ))
+        })
         .collect();
-    let mut read: BTreeMap<String, Option<String>> = BTreeMap::new();
+    let mut read: BTreeMap<LogicalPath, Option<board_model::ObjectId>> = BTreeMap::new();
     if own {
-        read.insert("/".to_owned(), None);
+        read.insert(LogicalPath::root(), None);
     }
     for file in files {
         let deepest = (mounts.iter())
             .filter(|(mount, _)| under(file, mount))
             .max_by_key(|(mount, _)| mount.segments().count());
         match deepest {
-            Some((mount, commit)) => read.insert(mount.to_string(), Some(commit.clone())),
-            None => read.insert("/".to_owned(), None),
+            Some((mount, commit)) => read.insert(mount.clone(), Some(*commit)),
+            None => read.insert(LogicalPath::root(), None),
         };
     }
     Ok((read.into_iter())

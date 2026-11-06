@@ -19,7 +19,7 @@ impl Board {
     pub fn sync(&self, push: bool, deadline: Duration) -> Result<Synced, SyncError> {
         let deadline = Deadline::after(deadline);
         let repository = self.repository();
-        let lock = repository
+        let lock = (self.repositories())
             .lock(deadline.left().min(LOCK_WAIT))
             .map_err(board_tree::SyncError::from)?;
         Ok(repository.sync(&lock, push, deadline)?)

@@ -224,3 +224,35 @@ fn checkout_with_personal_is_refused_and_checkout_alone_is_admitted() {
     let alone = checkout.run_in(&checkout.linked, &["--checkout", "ls", "."], false);
     assert_eq!(alone.code, 0, "{}", text(&alone.stdout));
 }
+
+#[test]
+fn checkout_with_two_pointers_mounting_the_repository_is_refused_and_with_one_is_admitted() {
+    let checkout = Checkout::new();
+    let arguments = ["--checkout", "ls", "."];
+    let one = checkout.run_in(&checkout.linked, &arguments, false);
+    assert_eq!(one.code, 0, "{}", text(&one.stdout));
+    mount(
+        &checkout.board,
+        "repos/again.json",
+        &checkout.library,
+        checkout.pinned,
+    );
+    let two = checkout.run_in(&checkout.linked, &arguments, false);
+    assert_eq!(refused_code(&two), "board::config::ambiguous");
+}
+
+#[test]
+fn checkout_whose_head_names_no_commit_is_refused_and_one_at_a_commit_is_admitted() {
+    let checkout = Checkout::new();
+    let arguments = ["--checkout", "ls", "."];
+    let at_commit = checkout.run_in(&checkout.linked, &arguments, false);
+    assert_eq!(at_commit.code, 0, "{}", text(&at_commit.stdout));
+    checkout.library.write(
+        ".git/worktrees/linked/HEAD",
+        Item::File("ref: refs/heads/unborn\n"),
+    );
+    let unborn = checkout.run_in(&checkout.linked, &arguments, false);
+    assert_eq!(refused_code(&unborn), "board::cli::usage");
+    let message = json(&unborn)["message"].to_string();
+    assert!(message.contains("HEAD that names no commit"), "{message}");
+}

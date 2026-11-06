@@ -5,7 +5,7 @@ use std::io::IsTerminal as _;
 use std::path::{Path, PathBuf};
 
 use board_model::Refusal;
-use board_ops::{Board, BuiltIn, KnownBoards, Prefix};
+use board_ops::{Board, BuiltIn, KnownBoards, MountsAt, Prefix};
 use board_plugin::Environment;
 
 /// What the binary learns from its environment.
@@ -126,20 +126,15 @@ impl Context {
 
     /// The board holding `start`, or else the one known board with a mount
     /// whose repository holds `start`, and `start`'s logical path in that
-    /// board, opened as this build. With `checkout`, that mount is read at
-    /// the checkout's HEAD (`board --checkout`).
+    /// board, opened as this build, reading that mount `at` its pin or its
+    /// checkout (`board --checkout`).
     pub(crate) fn open(
         &self,
         start: &Path,
-        checkout: bool,
+        at: MountsAt,
     ) -> Result<(Board, Option<Prefix>), Box<Refusal>> {
         let (home, cache) = (self.home.as_deref(), self.cache.as_deref());
-        let known = || self.known();
-        let (mut board, prefix) = if checkout {
-            board_ops::open_checkout(start, home, cache, known)?
-        } else {
-            board_ops::open(start, home, cache, known)?
-        };
+        let (mut board, prefix) = board_ops::open_at(start, home, cache, || self.known(), at)?;
         board.built_by(crate::timing::DECIDER);
         Ok((board, prefix))
     }

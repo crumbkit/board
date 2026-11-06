@@ -7,7 +7,7 @@ use board_model::{
     CONFIG_TYPE, Classified, Code, Content, Fields, LogicalPath, Object, ObjectId, PluginName,
     Source, classify,
 };
-use board_tree::{GitError, Repositories, Repository, ResolveError, latest};
+use board_tree::{Checkout, GitError, Repositories, Repository, ResolveError, latest};
 use serde::Deserialize;
 use serde::de::IgnoredAny;
 use serde_json::Value;
@@ -134,10 +134,11 @@ impl Board {
         &self.repositories
     }
 
-    /// Reads the mount at `mount` in the working tree at `commit` for the
-    /// rest of this run, instead of the commit its pointer pins.
-    pub(crate) fn read_checkout(&mut self, mount: &LogicalPath, commit: ObjectId) {
-        self.repositories.read_at(mount, commit);
+    /// Reads the mount pointer `checkout` names at its commit for the rest
+    /// of this run, instead of the commit the pointer pins, and refuses
+    /// every write.
+    pub(crate) fn read_checkout(&mut self, checkout: Checkout) {
+        self.repositories.read_at(checkout);
     }
 
     pub fn config(&self) -> &Config {

@@ -131,7 +131,10 @@ fn a_walk_reaches_a_mount_read_at_a_checkout_at_that_commit_and_its_twin_at_its_
     for (checkout, reached) in [(Some(head), head), (None, pinned)] {
         let mut repositories = board.repositories();
         if let Some(head) = checkout {
-            repositories.read_at(&path("/m"), head);
+            repositories.read_at(crate::Checkout {
+                pointer: "m.json".to_owned(),
+                commit: head,
+            });
         }
         let walked = (repositories.walk_mounts(
             &entries,

@@ -4,7 +4,7 @@
 use std::ffi::OsString;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use board_model::{Code, PluginName, RefusalCode};
+use board_model::{Code, ObjectId, PluginName, RefusalCode};
 use board_plugin::{CallReport, Environment, Limits, Target};
 use board_scenario::{Item, Scenario};
 use serde_json::json;
@@ -984,3 +984,70 @@ mod decide;
 mod put;
 mod run;
 mod sync;
+
+/// A board enabling `outer` and `inner`, whose puts do not commit, that
+/// mounts at `/m` a library pinned where `x.json` holds 1, and the library
+/// commit after it, where `x.json` holds 2.
+fn checked_out() -> (Scenario, Scenario, ObjectId) {
+    let names = ["outer", "inner"];
+    let scenario = board(&[("outer", true), ("inner", true)], &names, Holds::Same);
+    let config = json!({"$type": "board/config/v1", "plugins": names, "commit_on_put": false});
+    scenario.write(".board/board.json", Item::File(&config.to_string()));
+    let library = Scenario::new();
+    let pinned = library.commit(&[("x.json", "1")]);
+    let head = library.commit(&[("x.json", "2")]);
+    let pointer = board_scenario::seed::mount_of(&library.path(), pinned);
+    scenario.write("m.json", Item::File(&pointer));
+    (scenario, library, head)
+}
+
+/// `outer.due` answering with what `inner.due` answers, which is what
+/// `/m/x` holds and whether a put of `inner`'s item was admitted or the
+/// code of its refusal.
+fn nesting() -> Vec<Fixture> {
+    let outer = answering(
+        "outer",
+        Box::new(|host| {
+            let report = host.call(&target("inner.due"), &json!({"n": 1})).unwrap();
+            Ok(report.output)
+        }),
+    );
+    let inner = answering(
+        "inner",
+        Box::new(|host| {
+            let path: LogicalPath = "/m/x".parse().unwrap();
+            let read = host.get_each(&[path]).unwrap().remove(0).unwrap();
+            let line =
+                json!({"path": "/items/a", "expect": "none", "record": {"$type": "inner/item/v1"}});
+            let put = match host.put(&[line]) {
+                Ok(_) => "admitted".to_owned(),
+                Err(error) => error.code().as_str().to_owned(),
+            };
+            Ok(json!({"count": 0, "x": String::from_utf8(read.bytes).unwrap(), "put": put}))
+        }),
+    );
+    vec![outer, inner]
+}
+
+#[test]
+fn a_nested_call_under_a_checkout_reads_the_checkout_and_refuses_a_write_and_its_twin_reads_the_pin_and_writes()
+ {
+    for (checkout, x, put) in [(true, "2", "board::cli::usage"), (false, "1", "admitted")] {
+        let (scenario, _library, head) = checked_out();
+        let mut board = open(&scenario);
+        board.build_in(built(nesting()));
+        if checkout {
+            board.read_checkout(board_tree::Checkout {
+                pointer: "m.json".to_owned(),
+                commit: head,
+            });
+        }
+        let report = board.call(&target("outer.due"), br#"{"n": 1}"#, &Plugins::default());
+        let output = report.unwrap().output;
+        assert_eq!(
+            (&output["x"], &output["put"]),
+            (&json!(x), &json!(put)),
+            "{checkout}"
+        );
+    }
+}

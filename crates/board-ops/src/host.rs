@@ -379,13 +379,17 @@ impl Deref for HostBoard<'_> {
 
 impl Hosted<'_> {
     /// The board opened again, with the same built-in plugins and build,
-    /// as the plugin's own `board` opens it. Its timings stay in the board
-    /// it opens, outside the call's trace.
+    /// and the same mount read at a checkout, as the plugin's own `board`
+    /// opens it. Its timings stay in the board it opens, outside the call's
+    /// trace.
     fn again(&self) -> Result<Board, OpenError> {
         let home = self.board.repositories().home().map(Into::into);
         let mut board = Board::open(self.board.repository().path(), home)?;
         board.build_in(self.board.built_in.0);
         board.built_by(self.board.build);
+        if let Some(checkout) = self.board.repositories().checkout() {
+            board.read_checkout(checkout.clone());
+        }
         Ok(board)
     }
 
