@@ -144,7 +144,10 @@ fn an_edited_skill_is_listed_stale_and_install_restores_it() {
 fn list_names_each_state_and_changes_nothing() {
     let home = Scenario::new();
     home.write("skills/changes/notes.md", Item::File("mine\n"))
-        .write("skills/evals/.board-skill", Item::File("board 0.0.0\n"))
+        .write(
+            "skills/evals/.board-skill",
+            Item::File("board 0.0.0 evals\n"),
+        )
         .write("skills/evals/SKILL.md", Item::File("old\n"))
         .write("skills/old/.board-skill", Item::File("board 0.0.0 old\n"))
         .write("skills/old/SKILL.md", Item::File("old\n"))
@@ -277,10 +280,22 @@ fn a_copy_of_a_skill_under_another_name_or_a_folder_with_an_unnamed_marker_is_li
 }
 
 #[test]
-fn a_folder_with_an_unnamed_marker_at_a_skills_name_is_boards_and_updated() {
+fn a_folder_with_an_unnamed_marker_at_a_skills_name_is_refused_and_one_naming_the_skill_is_updated()
+{
     let home = Scenario::new();
     home.write("skills/changes/.board-skill", Item::File("board 0.0.0\n"))
-        .write("skills/changes/SKILL.md", Item::File("old\n"));
+        .write("skills/changes/SKILL.md", Item::File("mine\n"));
+    let (_, listed) = skills(&home, "list", &[]);
+    assert_eq!(state_of(&listed, "changes"), "not_board");
+    let (code, refused) = skills(&home, "install", &[]);
+    assert_eq!(code, 1);
+    assert_eq!(refused["code"], "board::skills::not_board");
+    assert_eq!(text(&path(&home, "skills/changes/SKILL.md")), "mine\n");
+
+    home.write(
+        "skills/changes/.board-skill",
+        Item::File("board 0.0.0 changes\n"),
+    );
     let (code, installed) = skills(&home, "install", &[]);
     assert_eq!(code, 0, "{installed}");
     assert_eq!(state_of(&installed, "changes"), "updated");

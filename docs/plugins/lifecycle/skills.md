@@ -16,12 +16,11 @@ unless `--dir` names another. A Board folder is replaced when it differs.
 A folder for a skill Board no longer ships is removed only when its marker
 names that skill under the folder's own name. A marked folder whose marker
 names another skill, such as an edited copy of `changes` at `my-changes`,
-or names none, as markers written before they named their skill do, is
-listed as `copy`, reported by install as `kept`, and left alone. At a
-shipped skill's name, a marker that names no skill counts as Board's.
+or names none, is listed as `copy`, reported by install as `kept`, and
+left alone.
 
 Another folder at a skill's name, in any letter case, including one whose
-marker names another skill, is refused with `board::skills::not_board`,
+marker names another skill or none, is refused with `board::skills::not_board`,
 whose `folders` names it. With `--force`, install moves that folder aside
 to `<name>.board-backup-<time>` in the same directory, with the UTC time
 such as `20261106T101500Z` and `-2`, `-3` and on added when that name is

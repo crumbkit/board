@@ -37,8 +37,7 @@ const BACKUP: &str = ".board-backup-";
 
 /// The file whose presence marks a folder in a skills directory as Board's.
 /// It holds one line, `board <version> <skill>`, naming the version that
-/// wrote it and the skill it holds; a marker written before markers named
-/// their skill holds `board <version>` alone.
+/// wrote it and the skill it holds.
 pub(crate) const MARKER: &str = ".board-skill";
 
 /// `board skills -h`'s examples.
@@ -80,7 +79,7 @@ Examples:
     #[command(after_help = "\
 Each one's state is current (its files equal this binary's), stale (a
 Board folder whose files differ), missing, not_board (a folder without the
-.board-skill marker, or whose marker names another skill), retired (a
+.board-skill marker, or whose marker does not name it), retired (a
 Board folder whose marker names a skill this binary no longer ships, of
 its folder's name) or copy (a marked folder whose marker names another
 skill or none, which install keeps). `board skills install` makes each
@@ -308,8 +307,7 @@ fn files(skill: &Skill) -> BTreeMap<String, Option<Vec<u8>>> {
 /// with its state, in name order. A Board folder for no skill is retired
 /// only when its marker names the skill its folder is named for; one whose
 /// marker names another skill, or none, is a copy. At a skill's name, a
-/// folder whose marker names another skill is not Board's, and one whose
-/// marker names none is.
+/// folder whose marker does not name that skill is not Board's.
 fn listed(skills: &[Skill], held: &BTreeMap<String, Held>) -> Vec<(String, Listed)> {
     let mut listed: BTreeMap<String, Listed> = held
         .iter()
@@ -325,9 +323,9 @@ fn listed(skills: &[Skill], held: &BTreeMap<String, Held>) -> Vec<(String, Liste
         let state = match held.get(skill.name) {
             None => Listed::Missing,
             Some(Held::Foreign) => Listed::NotBoard,
-            Some(Held::Board {
-                skill: Some(other), ..
-            }) if other != skill.name => Listed::NotBoard,
+            Some(Held::Board { skill: holds, .. }) if holds.as_deref() != Some(skill.name) => {
+                Listed::NotBoard
+            }
             Some(Held::Board { files: found, .. }) if *found == files(skill) => Listed::Current,
             Some(Held::Board { .. }) => Listed::Stale,
         };
@@ -521,7 +519,7 @@ fn remove(path: &Path) -> Result<(), SkillsError> {
 /// A leftover at either scratch name is removed first. The folder install
 /// found in `state` is checked again just before the swap: a missing
 /// folder must still be missing, and a stale one must still be Board's,
-/// with a marker that names this skill or none.
+/// with a marker that names this skill.
 /// A stale folder that stood there is moved aside and removed; a folder
 /// or symlink that is not Board's is moved to a backup, whose path this
 /// returns. A symlink is moved itself, never followed.
@@ -580,7 +578,7 @@ fn swap(
     let changed = match state {
         Listed::Missing => present,
         Listed::Stale => {
-            marker(&target).is_none_or(|marker| named(&marker).is_some_and(|skill| skill != name))
+            marker(&target).is_none_or(|marker| named(&marker).as_deref() != Some(name))
         }
         Listed::Current | Listed::NotBoard | Listed::Retired | Listed::Copy => false,
     };

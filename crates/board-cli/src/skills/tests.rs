@@ -118,8 +118,14 @@ fn board(files: &[(&str, &[u8])]) -> Held {
 #[test]
 fn a_folder_is_current_stale_missing_not_boards_or_retired_by_what_it_holds() {
     let held = BTreeMap::from([
-        ("one".to_owned(), board(&[("SKILL.md", b"one")])),
-        ("two".to_owned(), board(&[("SKILL.md", b"old")])),
+        (
+            "one".to_owned(),
+            marked(Some("one"), &[("SKILL.md", b"one")]),
+        ),
+        (
+            "two".to_owned(),
+            marked(Some("two"), &[("SKILL.md", b"old")]),
+        ),
         ("three".to_owned(), Held::Foreign),
         (
             "gone".to_owned(),
@@ -144,8 +150,7 @@ fn a_folder_is_current_stale_missing_not_boards_or_retired_by_what_it_holds() {
 }
 
 #[test]
-fn only_a_marker_naming_its_own_folder_retires_it_and_a_marker_naming_another_skill_is_not_boards()
-{
+fn only_its_own_name_in_a_marker_retires_a_folder_or_makes_one_at_a_skills_name_boards() {
     let held = BTreeMap::from([
         (
             "copy".to_owned(),
@@ -160,13 +165,15 @@ fn only_a_marker_naming_its_own_folder_retires_it_and_a_marker_naming_another_sk
             "two".to_owned(),
             marked(Some("two"), &[("SKILL.md", b"two")]),
         ),
+        ("three".to_owned(), board(&[("SKILL.md", b"three")])),
     ]);
     assert_eq!(
-        listed(&[ONE, TWO], &held),
+        listed(&[ONE, TWO, THREE], &held),
         [
             ("copy".to_owned(), Listed::Copy),
             ("older".to_owned(), Listed::Copy),
             ("one".to_owned(), Listed::NotBoard),
+            ("three".to_owned(), Listed::NotBoard),
             ("two".to_owned(), Listed::Current),
         ]
     );
@@ -183,11 +190,11 @@ fn a_markers_skill_is_its_third_word() {
 
 #[test]
 fn a_board_folder_with_an_extra_file_or_an_entry_that_is_no_file_is_stale() {
-    let extra = board(&[("SKILL.md", b"one"), ("notes.md", b"mine")]);
+    let extra = marked(Some("one"), &[("SKILL.md", b"one"), ("notes.md", b"mine")]);
     let mut odd = BTreeMap::from([("SKILL.md".to_owned(), Some(b"one".to_vec()))]);
     odd.insert("link".to_owned(), None);
     let odd = Held::Board {
-        skill: None,
+        skill: Some("one".to_owned()),
         files: odd,
     };
     for held in [extra, odd] {
