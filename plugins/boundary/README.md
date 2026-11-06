@@ -155,16 +155,17 @@ writes it. The record holds the `digest`, `action`, `to`, `from` when
 given, the matching `boundaries`, each verdict in `verdicts` as
 `controls.evaluate` gave it with its nulls left out, `override` when the
 owner's approval let it through, and `result` once recorded. A verdict's
-`rule` is `budget`, `pattern`, `judged` or `version`, as the control's
-rule names it in `check`. The record stores no `passed`: `verify` and
-`record` derive it. A crossing passes when no verdict failed, or when it
-holds an `override`. A verdict passes when its status is `passed` or
-`skipped`; `failed`, `stated` and a status this Board does not know fail it. It holds no
-part's text, but it keeps each finding's quoted text. `from`, `boundaries`
-and each verdict's `control` are references, so deleting a boundary or
-control leaves an old crossing degraded but still read. Checking the same
-content again replaces the crossing; a re-check that passes keeps its
-`result`, and one that fails drops it.
+`rule` is `budget`, `pattern`, `judged` or `version`, as the control's rule
+names it in `check`. The record stores no `passed`: `verify` and `record`
+derive it. A crossing passes when no verdict failed, or when it holds an
+`override`. A verdict passes when its status is `passed` or `skipped`. A
+verdict whose status is `failed`, `stated` or one this Board does not know
+fails. The crossing holds no part's text, but it keeps each finding's
+quoted text. `from`, `boundaries` and each verdict's `control` are
+references, so deleting a boundary or control leaves an old crossing
+degraded but still read. Checking the same content again replaces the
+crossing; a re-check that passes keeps its `result`, and one that fails
+drops it.
 
 ## Developing
 
