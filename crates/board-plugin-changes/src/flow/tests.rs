@@ -280,3 +280,70 @@ fn a_when_pattern_that_is_not_a_regular_expression_is_refused_and_one_that_is_is
         );
     }
 }
+
+/// A flow document with one check, `check`, in its one phase.
+fn with_check(check: &serde_json::Value) -> serde_json::Value {
+    json!({
+        "$type": "changes/flow/v1", "name": "one", "summary": "One phase.",
+        "stop": {"until": "build"},
+        "phases": [{"name": "build", "agent": "lead", "instruction": "Build.",
+                    "checks": [check]}]
+    })
+}
+
+/// The code the schema refuses `check` with.
+fn refused(check: &serde_json::Value) -> board_model::Code {
+    schema().validate(&with_check(check)).unwrap_err().code()
+}
+
+#[test]
+fn a_check_holding_another_kinds_parameter_is_refused_and_its_twin_without_it_is_admitted() {
+    let exists = json!({"id": "x", "kind": "exists", "path": "/flows/{draft}"});
+    let mut stray = exists.clone();
+    stray["scope"] = json!("full");
+    assert_eq!(refused(&stray), board_model::Code::RecordInvalid);
+    schema().validate(&with_check(&exists)).unwrap();
+}
+
+#[test]
+fn a_check_without_its_kinds_required_parameter_is_refused_and_its_twin_with_it_is_admitted() {
+    let exists = json!({"id": "x", "kind": "exists"});
+    assert_eq!(refused(&exists), board_model::Code::RecordInvalid);
+    let mut named = exists.clone();
+    named["path"] = json!("/flows/{draft}");
+    schema().validate(&with_check(&named)).unwrap();
+}
+
+/// `min` belongs to two kinds, so each of them admits it and every other
+/// kind refuses it.
+#[test]
+fn a_tasks_check_with_min_is_refused_and_field_and_records_checks_with_min_are_admitted() {
+    assert_eq!(
+        refused(&json!({"id": "x", "kind": "tasks", "min": 2})),
+        board_model::Code::RecordInvalid
+    );
+    schema()
+        .validate(&with_check(&json!({"id": "x", "kind": "tasks"})))
+        .unwrap();
+    schema()
+        .validate(&with_check(
+            &json!({"id": "x", "kind": "field", "field": "pulls", "min": 2}),
+        ))
+        .unwrap();
+    schema()
+        .validate(&with_check(
+            &json!({"id": "x", "kind": "records", "type": "changes/plan/v1", "min": 2}),
+        ))
+        .unwrap();
+}
+
+#[test]
+fn a_check_holding_a_field_no_kind_names_is_refused_and_its_twin_without_it_is_admitted() {
+    assert_eq!(
+        refused(&json!({"id": "x", "kind": "tasks", "scripted": true})),
+        board_model::Code::RecordInvalid
+    );
+    schema()
+        .validate(&with_check(&json!({"id": "x", "kind": "tasks"})))
+        .unwrap();
+}

@@ -13,8 +13,36 @@
       "description": "A value a field may hold: a word or a flag."
     },
     "Check": {
-      "additionalProperties": false,
-      "description": "One check of a phase: its kind and the kind's parameters, who can make\nit pass, and when it applies.\n\nEach parameter after `waivable` belongs to the kinds its description\nnames; a kind ignores the parameters of other kinds.",
+      "allOf": [
+        {
+          "$ref": "#/$defs/SectionsCheck"
+        },
+        {
+          "$ref": "#/$defs/FieldCheck"
+        },
+        {
+          "$ref": "#/$defs/RecordsCheck"
+        },
+        {
+          "$ref": "#/$defs/RunCheck"
+        },
+        {
+          "$ref": "#/$defs/UnderstoodCheck"
+        },
+        {
+          "$ref": "#/$defs/MockupsCheck"
+        },
+        {
+          "$ref": "#/$defs/ObligationsCheck"
+        },
+        {
+          "$ref": "#/$defs/ControlledPathsCheck"
+        },
+        {
+          "$ref": "#/$defs/ExistsCheck"
+        }
+      ],
+      "description": "One check of a phase: its kind and the kind's parameters, who can make\nit pass, and when it applies.\n\nEach parameter after `waivable` belongs to the kinds its description\nnames, and a check refuses the parameters of every other kind.",
       "properties": {
         "actor": {
           "description": "Who can make the check pass; `agent` when left out.",
@@ -28,42 +56,6 @@
         "blocks": {
           "description": "Whether a missing check refuses `advance`; true when left out.",
           "type": "boolean"
-        },
-        "controls": {
-          "description": "`controlled-paths`: the controls whose paths the diff must not touch.",
-          "items": {
-            "pattern": "^/\\S*$",
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "distinct": {
-          "description": "`records`: the part of each record's `by` that must differ between\nthe records counted.",
-          "enum": [
-            "by.person",
-            "by.program",
-            "by.session",
-            "by.agent"
-          ],
-          "type": "string"
-        },
-        "escape_section": {
-          "description": "`obligations`: the plan's heading under which obligations left owed\nare listed.",
-          "minLength": 1,
-          "type": "string",
-          "x-board-prose": true
-        },
-        "field": {
-          "description": "`field`: the field of the change that must be set.",
-          "enum": [
-            "task",
-            "route",
-            "head",
-            "plan",
-            "tickets",
-            "pulls"
-          ],
-          "type": "string"
         },
         "id": {
           "description": "The check's name, unique in the flow, which `next` reports.",
@@ -89,71 +81,11 @@
           ],
           "type": "string"
         },
-        "min": {
-          "description": "`field` and `records`: the fewest values or records that pass; one\nwhen left out.",
-          "minimum": 1,
-          "type": "integer"
-        },
-        "part": {
-          "description": "`mockups`: the part of the UX section the check reads; both when\nleft out.",
-          "enum": [
-            "agreed",
-            "neighbours"
-          ],
-          "type": "string"
-        },
-        "path": {
-          "description": "`exists`: where a record must exist.",
-          "pattern": "^/\\S*$",
-          "type": "string"
-        },
-        "rechecks": {
-          "description": "`understood`: the fewest rechecks matching the plan that each\nattached understanding check holds.",
-          "minimum": 1,
-          "type": "integer"
-        },
         "remedy": {
           "description": "What to do when the check is missing, in place of its kind's own.",
           "minLength": 1,
           "type": "string",
           "x-board-prose": true
-        },
-        "scope": {
-          "description": "`run`: the scope the run must have.",
-          "enum": [
-            "full",
-            "targeted"
-          ],
-          "type": "string"
-        },
-        "sections": {
-          "description": "`sections`: the plan's headings that must each have text.",
-          "items": {
-            "type": "string",
-            "x-board-prose": true
-          },
-          "type": "array"
-        },
-        "subject": {
-          "description": "`understood`: what the understanding check covers.",
-          "enum": [
-            "data",
-            "ux"
-          ],
-          "type": "string"
-        },
-        "type": {
-          "description": "`records`: the type of the attached records the check counts.",
-          "pattern": "^[a-z0-9-]+/[a-z0-9-]+/v[1-9][0-9]*$",
-          "type": "string"
-        },
-        "types": {
-          "description": "`field`: the record types the field's references must have.",
-          "items": {
-            "pattern": "^[a-z0-9-]+/[a-z0-9-]+/v[1-9][0-9]*$",
-            "type": "string"
-          },
-          "type": "array"
         },
         "waivable": {
           "description": "Whether a decision the owner signed may waive the check.",
@@ -162,17 +94,233 @@
         "when": {
           "$ref": "#/$defs/When",
           "description": "When the check applies; always when left out."
-        },
-        "where": {
-          "$ref": "#/$defs/Where",
-          "description": "`records`: what each record counted must meet."
         }
       },
       "required": [
         "id",
         "kind"
       ],
-      "type": "object"
+      "type": "object",
+      "unevaluatedProperties": false
+    },
+    "ControlledPathsCheck": {
+      "description": "The parameters of a check of kind `controlled-paths`.",
+      "else": {
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "controls"
+              ]
+            }
+          ]
+        }
+      },
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "controlled-paths"
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "properties": {
+        "controls": {
+          "description": "`controlled-paths`: the controls whose paths the diff must not touch.",
+          "items": {
+            "pattern": "^/\\S*$",
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "then": {
+        "required": [
+          "controls"
+        ]
+      }
+    },
+    "ExistsCheck": {
+      "description": "The parameters of a check of kind `exists`.",
+      "else": {
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "path"
+              ]
+            }
+          ]
+        }
+      },
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "exists"
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "properties": {
+        "path": {
+          "description": "`exists`: where a record must exist.",
+          "pattern": "^/\\S*$",
+          "type": "string"
+        }
+      },
+      "then": {
+        "required": [
+          "path"
+        ]
+      }
+    },
+    "FieldCheck": {
+      "description": "The parameters of a check of kind `field`.",
+      "else": {
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "field"
+              ]
+            },
+            {
+              "required": [
+                "types"
+              ]
+            },
+            {
+              "not": {
+                "properties": {
+                  "kind": {
+                    "enum": [
+                      "records"
+                    ]
+                  }
+                },
+                "required": [
+                  "kind"
+                ]
+              },
+              "required": [
+                "min"
+              ]
+            }
+          ]
+        }
+      },
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "field"
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "properties": {
+        "field": {
+          "description": "`field`: the field of the change that must be set.",
+          "enum": [
+            "task",
+            "route",
+            "head",
+            "plan",
+            "tickets",
+            "pulls"
+          ],
+          "type": "string"
+        },
+        "min": {
+          "description": "`field` and `records`: the fewest values or records that pass; one\nwhen left out.",
+          "minimum": 1,
+          "type": "integer"
+        },
+        "types": {
+          "description": "`field`: the record types the field's references must have.",
+          "items": {
+            "pattern": "^[a-z0-9-]+/[a-z0-9-]+/v[1-9][0-9]*$",
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "then": {
+        "required": [
+          "field"
+        ]
+      }
+    },
+    "MockupsCheck": {
+      "description": "The parameters of a check of kind `mockups`.",
+      "else": {
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "part"
+              ]
+            }
+          ]
+        }
+      },
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "mockups"
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "properties": {
+        "part": {
+          "description": "`mockups`: the part of the UX section the check reads; both when\nleft out.",
+          "enum": [
+            "agreed",
+            "neighbours"
+          ],
+          "type": "string"
+        }
+      }
+    },
+    "ObligationsCheck": {
+      "description": "The parameters of a check of kind `obligations`.",
+      "else": {
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "escape_section"
+              ]
+            }
+          ]
+        }
+      },
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "obligations"
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "properties": {
+        "escape_section": {
+          "description": "`obligations`: the plan's heading under which obligations left owed\nare listed.",
+          "minLength": 1,
+          "type": "string",
+          "x-board-prose": true
+        }
+      }
     },
     "Phase": {
       "additionalProperties": false,
@@ -220,6 +368,161 @@
         "agent"
       ],
       "type": "object"
+    },
+    "RecordsCheck": {
+      "description": "The parameters of a check of kind `records`.",
+      "else": {
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "type"
+              ]
+            },
+            {
+              "not": {
+                "properties": {
+                  "kind": {
+                    "enum": [
+                      "field"
+                    ]
+                  }
+                },
+                "required": [
+                  "kind"
+                ]
+              },
+              "required": [
+                "min"
+              ]
+            },
+            {
+              "required": [
+                "distinct"
+              ]
+            },
+            {
+              "required": [
+                "where"
+              ]
+            }
+          ]
+        }
+      },
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "records"
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "properties": {
+        "distinct": {
+          "description": "`records`: the part of each record's `by` that must differ between\nthe records counted.",
+          "enum": [
+            "by.person",
+            "by.program",
+            "by.session",
+            "by.agent"
+          ],
+          "type": "string"
+        },
+        "min": {
+          "description": "`field` and `records`: the fewest values or records that pass; one\nwhen left out.",
+          "minimum": 1,
+          "type": "integer"
+        },
+        "type": {
+          "description": "`records`: the type of the attached records the check counts.",
+          "pattern": "^[a-z0-9-]+/[a-z0-9-]+/v[1-9][0-9]*$",
+          "type": "string"
+        },
+        "where": {
+          "$ref": "#/$defs/Where",
+          "description": "`records`: what each record counted must meet."
+        }
+      },
+      "then": {
+        "required": [
+          "type"
+        ]
+      }
+    },
+    "RunCheck": {
+      "description": "The parameters of a check of kind `run`.",
+      "else": {
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "scope"
+              ]
+            }
+          ]
+        }
+      },
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "run"
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "properties": {
+        "scope": {
+          "description": "`run`: the scope the run must have.",
+          "enum": [
+            "full",
+            "targeted"
+          ],
+          "type": "string"
+        }
+      }
+    },
+    "SectionsCheck": {
+      "description": "The parameters of a check of kind `sections`.",
+      "else": {
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "sections"
+              ]
+            }
+          ]
+        }
+      },
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "sections"
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "properties": {
+        "sections": {
+          "description": "`sections`: the plan's headings that must each have text.",
+          "items": {
+            "type": "string",
+            "x-board-prose": true
+          },
+          "type": "array"
+        }
+      },
+      "then": {
+        "required": [
+          "sections"
+        ]
+      }
     },
     "Stop": {
       "description": "Where a run stops: `through` a phase does its work and stops before\nleaving it; `until` a phase moves into it and stops before its work.",
@@ -270,6 +573,55 @@
         }
       ],
       "description": "What a record's `refs` must name: the change's `plan` (its plan record,\nthe plan's text or the change), the `change`, or an attached record of\na type."
+    },
+    "UnderstoodCheck": {
+      "description": "The parameters of a check of kind `understood`.",
+      "else": {
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "subject"
+              ]
+            },
+            {
+              "required": [
+                "rechecks"
+              ]
+            }
+          ]
+        }
+      },
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "understood"
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "properties": {
+        "rechecks": {
+          "description": "`understood`: the fewest rechecks matching the plan that each\nattached understanding check holds.",
+          "minimum": 1,
+          "type": "integer"
+        },
+        "subject": {
+          "description": "`understood`: what the understanding check covers.",
+          "enum": [
+            "data",
+            "ux"
+          ],
+          "type": "string"
+        }
+      },
+      "then": {
+        "required": [
+          "subject"
+        ]
+      }
     },
     "When": {
       "additionalProperties": false,

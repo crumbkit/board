@@ -121,6 +121,7 @@ pub(crate) struct Phase {
     pub(crate) instruction: String,
     /// The checks that must pass before the change leaves the phase, in the
     /// order `next` lists them.
+    #[schemars(with = "Vec<schema::Checked>")]
     pub(crate) checks: Vec<Check>,
     /// Who does the phase's work.
     pub(crate) agent: Agent,
@@ -144,7 +145,7 @@ pub(crate) enum Agent {
 /// it pass, and when it applies.
 ///
 /// Each parameter after `waivable` belongs to the kinds its description
-/// names; a kind ignores the parameters of other kinds.
+/// names, and a check refuses the parameters of every other kind.
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Check {
@@ -454,6 +455,7 @@ pub(crate) enum Part {
 }
 
 mod read;
+mod schema;
 mod valid;
 
 #[cfg(test)]

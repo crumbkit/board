@@ -586,7 +586,11 @@ instruction relies on, and its `checks`. A check has an `id`, a `kind`, and
 optionally an `actor` (`agent`, `owner` or `reviewer`), `blocks`, a `when`
 (`route`, and `section` or `section_not`, each mapping a plan heading to a
 pattern matched without case), a `remedy`, `waivable`, and the parameters
-of its kind. The committed schema is
+of its kind. The schema gives each kind's parameters their own `$defs`
+entry, such as `RecordsCheck`. It requires the parameter a kind needs and
+refuses a parameter of another kind, so a `tasks` check that holds `min` is
+`board::record::invalid`; `min` belongs to both `field` and `records`.
+The committed schema is
 `crates/board-plugin-changes/types/changes/flow/v1.schema.json`.
 
 The plugin ships three flows, compiled in from
