@@ -210,3 +210,29 @@ fn the_committed_schemas_are_what_their_structs_generate() {
         );
     }
 }
+
+/// This repository's own board holds a copy of the committed
+/// `changes/flow/v1` schema, byte for byte, so `board check` in a Board
+/// checkout validates the flow files the crate ships. `SNAPSHOTS=overwrite`
+/// rewrites the copy from the committed schema.
+#[expect(
+    clippy::disallowed_methods,
+    reason = "the board's copy is a golden, selected and written as crumbkit-test's are"
+)]
+#[test]
+fn the_boards_own_flow_schema_is_the_committed_one() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let name = format!("{}.schema.json", flow::Flow::TYPE);
+    let committed = std::fs::read(crate_root.join("types").join(&name)).unwrap();
+    let copy = crate_root.join("../../.board/types").join(&name);
+    if std::env::var("SNAPSHOTS").as_deref() == Ok("overwrite") {
+        std::fs::create_dir_all(copy.parent().unwrap()).unwrap();
+        std::fs::write(&copy, &committed).unwrap();
+    }
+    let board = std::fs::read(&copy).unwrap();
+    assert!(
+        board == committed,
+        "{} differs from the committed {name}; run this test with SNAPSHOTS=overwrite",
+        copy.display()
+    );
+}

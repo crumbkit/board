@@ -1,0 +1,404 @@
+{
+  "$defs": {
+    "Allowed": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+          "type": "string"
+        }
+      ],
+      "description": "A value a field may hold: a word or a flag."
+    },
+    "Check": {
+      "additionalProperties": false,
+      "description": "One check of a phase: its kind and the kind's parameters, who can make\nit pass, and when it applies.\n\nEach parameter after `waivable` belongs to the kinds its description\nnames; a kind ignores the parameters of other kinds.",
+      "properties": {
+        "actor": {
+          "description": "Who can make the check pass; `agent` when left out.",
+          "enum": [
+            "agent",
+            "owner",
+            "reviewer"
+          ],
+          "type": "string"
+        },
+        "blocks": {
+          "description": "Whether a missing check refuses `advance`; true when left out.",
+          "type": "boolean"
+        },
+        "controls": {
+          "description": "`controlled-paths`: the controls whose paths the diff must not touch.",
+          "items": {
+            "pattern": "^/\\S*$",
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "distinct": {
+          "description": "`records`: the part of each record's `by` that must differ between\nthe records counted.",
+          "enum": [
+            "by.person",
+            "by.program",
+            "by.session",
+            "by.agent"
+          ],
+          "type": "string"
+        },
+        "escape_section": {
+          "description": "`obligations`: the plan's heading under which obligations left owed\nare listed.",
+          "minLength": 1,
+          "type": "string",
+          "x-board-prose": true
+        },
+        "field": {
+          "description": "`field`: the field of the change that must be set.",
+          "enum": [
+            "task",
+            "route",
+            "head",
+            "plan",
+            "tickets",
+            "pulls"
+          ],
+          "type": "string"
+        },
+        "id": {
+          "description": "The check's name, unique in the flow, which `next` reports.",
+          "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+          "type": "string"
+        },
+        "kind": {
+          "description": "What the check tests.",
+          "enum": [
+            "sections",
+            "field",
+            "records",
+            "run",
+            "paths",
+            "tasks",
+            "understood",
+            "mockups",
+            "considered",
+            "obligations",
+            "controlled-paths",
+            "flow-valid",
+            "exists"
+          ],
+          "type": "string"
+        },
+        "min": {
+          "description": "`field` and `records`: the fewest values or records that pass; one\nwhen left out.",
+          "minimum": 1,
+          "type": "integer"
+        },
+        "part": {
+          "description": "`mockups`: the part of the UX section the check reads; both when\nleft out.",
+          "enum": [
+            "agreed",
+            "neighbours"
+          ],
+          "type": "string"
+        },
+        "path": {
+          "description": "`exists`: where a record must exist.",
+          "pattern": "^/\\S*$",
+          "type": "string"
+        },
+        "rechecks": {
+          "description": "`understood`: the fewest rechecks matching the plan that each\nattached understanding check holds.",
+          "minimum": 1,
+          "type": "integer"
+        },
+        "remedy": {
+          "description": "What to do when the check is missing, in place of its kind's own.",
+          "minLength": 1,
+          "type": "string",
+          "x-board-prose": true
+        },
+        "scope": {
+          "description": "`run`: the scope the run must have.",
+          "enum": [
+            "full",
+            "targeted"
+          ],
+          "type": "string"
+        },
+        "sections": {
+          "description": "`sections`: the plan's headings that must each have text.",
+          "items": {
+            "type": "string",
+            "x-board-prose": true
+          },
+          "type": "array"
+        },
+        "subject": {
+          "description": "`understood`: what the understanding check covers.",
+          "enum": [
+            "data",
+            "ux"
+          ],
+          "type": "string"
+        },
+        "type": {
+          "description": "`records`: the type of the attached records the check counts.",
+          "pattern": "^[a-z0-9-]+/[a-z0-9-]+/v[1-9][0-9]*$",
+          "type": "string"
+        },
+        "types": {
+          "description": "`field`: the record types the field's references must have.",
+          "items": {
+            "pattern": "^[a-z0-9-]+/[a-z0-9-]+/v[1-9][0-9]*$",
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "waivable": {
+          "description": "Whether a decision the owner signed may waive the check.",
+          "type": "boolean"
+        },
+        "when": {
+          "$ref": "#/$defs/When",
+          "description": "When the check applies; always when left out."
+        },
+        "where": {
+          "$ref": "#/$defs/Where",
+          "description": "`records`: what each record counted must meet."
+        }
+      },
+      "required": [
+        "id",
+        "kind"
+      ],
+      "type": "object"
+    },
+    "Phase": {
+      "additionalProperties": false,
+      "description": "One phase of a flow.",
+      "properties": {
+        "agent": {
+          "description": "Who does the phase's work.",
+          "enum": [
+            "lead",
+            "builder"
+          ],
+          "type": "string"
+        },
+        "checks": {
+          "description": "The checks that must pass before the change leaves the phase, in the\norder `next` lists them.",
+          "items": {
+            "$ref": "#/$defs/Check"
+          },
+          "type": "array"
+        },
+        "instruction": {
+          "description": "What to do in this phase, which `next` returns.",
+          "minLength": 1,
+          "type": "string",
+          "x-board-prose": true
+        },
+        "name": {
+          "description": "The phase's name, which a change's `phase` holds while it is here.",
+          "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+          "type": "string"
+        },
+        "skills": {
+          "description": "The skills the instruction relies on.",
+          "items": {
+            "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "name",
+        "instruction",
+        "checks",
+        "agent"
+      ],
+      "type": "object"
+    },
+    "Stop": {
+      "description": "Where a run stops: `through` a phase does its work and stops before\nleaving it; `until` a phase moves into it and stops before its work.",
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "through": {
+              "description": "The phase to stop in, after its work.",
+              "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "through"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "until": {
+              "description": "The phase to stop at, before its work.",
+              "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "until"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "Target": {
+      "anyOf": [
+        {
+          "description": "A target named by a word.",
+          "enum": [
+            "plan",
+            "change"
+          ],
+          "type": "string"
+        },
+        {
+          "pattern": "^[a-z0-9-]+/[a-z0-9-]+/v[1-9][0-9]*$",
+          "type": "string"
+        }
+      ],
+      "description": "What a record's `refs` must name: the change's `plan` (its plan record,\nthe plan's text or the change), the `change`, or an attached record of\na type."
+    },
+    "When": {
+      "additionalProperties": false,
+      "description": "When a check applies: every condition given holds.",
+      "properties": {
+        "route": {
+          "description": "The change's route is one of these.",
+          "items": {
+            "description": "Who must agree to the change before it is built: `owner` when no one\nelse owns its files, `ask-first` when someone else does, and `unowned`\nwhen the repository names no owners.",
+            "enum": [
+              "owner",
+              "ask-first",
+              "unowned"
+            ],
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "section": {
+          "additionalProperties": {
+            "minLength": 1,
+            "type": "string",
+            "x-board-regex": true
+          },
+          "description": "The text under each of these plan headings matches its pattern,\nwithout case.",
+          "type": "object"
+        },
+        "section_not": {
+          "additionalProperties": {
+            "minLength": 1,
+            "type": "string",
+            "x-board-regex": true
+          },
+          "description": "The text under each of these plan headings does not match its\npattern, without case.",
+          "type": "object"
+        }
+      },
+      "type": "object"
+    },
+    "Where": {
+      "additionalProperties": false,
+      "description": "What each record a `records` check counts must meet.",
+      "properties": {
+        "at_head": {
+          "description": "The field whose commit must be the change's head.",
+          "enum": [
+            "range"
+          ],
+          "type": "string"
+        },
+        "no_findings": {
+          "description": "The severities none of the record's findings may have.",
+          "items": {
+            "description": "A finding's severity.",
+            "enum": [
+              "critical",
+              "high",
+              "medium",
+              "low"
+            ],
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "owner_signed": {
+          "description": "Whether the owner wrote the record himself, so its `written_by` is\nempty.",
+          "type": "boolean"
+        },
+        "refs": {
+          "description": "What the record's `refs` must each name.",
+          "items": {
+            "$ref": "#/$defs/Target"
+          },
+          "type": "array"
+        },
+        "values": {
+          "additionalProperties": {
+            "items": {
+              "$ref": "#/$defs/Allowed"
+            },
+            "type": "array"
+          },
+          "description": "For each field, the values it may hold.",
+          "type": "object"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "`changes/flow/v1`: a process a change follows from its first phase to\ndone.\n\nA change moves through `phases` in order and then to `done`. `stop` is\nwhere an agent that runs the flow stops by default.",
+  "properties": {
+    "$type": {
+      "const": "changes/flow/v1",
+      "description": "The record's type.",
+      "type": "string"
+    },
+    "name": {
+      "description": "The flow's name, such as `development`.",
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+      "type": "string"
+    },
+    "phases": {
+      "description": "The phases in order; `done` follows the last.",
+      "items": {
+        "$ref": "#/$defs/Phase"
+      },
+      "minItems": 1,
+      "type": "array"
+    },
+    "stop": {
+      "$ref": "#/$defs/Stop",
+      "description": "Where an agent that runs the flow stops unless told otherwise."
+    },
+    "summary": {
+      "description": "What the flow is for, in a sentence.",
+      "minLength": 1,
+      "type": "string",
+      "x-board-prose": true
+    }
+  },
+  "required": [
+    "$type",
+    "name",
+    "summary",
+    "stop",
+    "phases"
+  ],
+  "title": "Flow",
+  "type": "object",
+  "x-board-folder": "/flows/"
+}
