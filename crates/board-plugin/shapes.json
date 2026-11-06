@@ -5,7 +5,7 @@
     "minProperties": 1,
     "properties": {
       "agent": {
-        "description": "The name the agent was given, such as `soundcheck scheduler`, as\nfree text.",
+        "description": "The name the agent was given, such as `nightly scheduler`, as\nfree text.",
         "type": "string",
         "x-board-prose": true
       },
