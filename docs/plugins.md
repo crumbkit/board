@@ -44,7 +44,7 @@ plugin update proceeds and how a plugin migrates its records.
   "name": "review",
   "version": "0.1.0",
   "description": "Review a brief and record the report.",
-  "run": ["uv", "run", "--frozen", "--no-dev", "python", "-m", "board_review"],
+  "run": ["bin/review"],
   "metadata": { "area": "review" },
   "types": ["review/report/v1"],
   "capabilities": [
