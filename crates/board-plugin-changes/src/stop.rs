@@ -5,7 +5,9 @@
 //! `until` one, where `done` counts as the phase after the last. `advance`
 //! refuses to move a change out of the stop's phase, or out of any later
 //! one, with `changes::run::stop_reached`, so a run stops there even when
-//! its agent ignores its brief. A `through` stop is reached once the change
+//! its agent ignores its brief. Recording the stop, with `stop` or when
+//! `run` writes one for an agent that exited without it, ends the run and
+//! clears the change's stop. A `through` stop is reached once the change
 //! stands in its phase with no blocking check missing, or stands later; an
 //! `until` stop as soon as the change stands in its phase or later.
 
@@ -18,7 +20,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use crate::board;
-use crate::change::read;
+use crate::change::{line, read};
 use crate::flow::{Flow, Stop};
 use crate::gates::Check;
 use crate::phases::{check_target, next_of};
@@ -103,8 +105,9 @@ pub(crate) fn stop_reached(path: &str, phase: &str, stop: &Stop) -> PluginError 
         format!(
             "the run of {path} stops {stop}, and the change stands in {phase}, so it does not move \
              on; record why the run ended with `board call changes.stop --path {path} --reason \
-             reached --summary '<one line>'` and end the run. Only the person who started the run \
-             moves its stop"
+             reached --summary '<one line>'` and end the run. Recording the stop ends the run and \
+             clears its stop, so the person who started the run can then advance the change, or \
+             start another run with a later --through or --until"
         ),
         [
             ("path", json!(path)),
@@ -162,7 +165,8 @@ pub(crate) struct Output {
 
 /// Writes a `changes/stop/v1` for the change at `path` with `reason`,
 /// `question` and `summary`, and the phase and missing checks `next`
-/// reports.
+/// reports, and in the same write clears the change's `stop`, since the
+/// run it held has ended.
 pub(crate) fn record(
     host: &dyn Host,
     path: &str,
@@ -175,6 +179,7 @@ pub(crate) fn record(
         .filter(|each| Check::blocking(each))
         .map(|each| each.check.clone())
         .collect();
+    let (mut change, blob) = read(host, path)?;
     let at = format!("{path}/stops/{}", stamp(std::time::SystemTime::now()));
     let record = StopRecord {
         tag: Tag::default(),
@@ -184,10 +189,12 @@ pub(crate) fn record(
         question,
         summary,
     };
-    board::put(
-        host,
-        &[json!({"path": at, "expect": "none", "record": record})],
-    )?;
+    let mut lines = vec![json!({"path": at, "expect": "none", "record": record})];
+    // The run has ended, so its stop no longer holds the change.
+    if change.stop.take().is_some() {
+        lines.push(line(path, &blob, &change));
+    }
+    board::put(host, &lines)?;
     Ok(Output {
         stop: at,
         phase: step.phase,

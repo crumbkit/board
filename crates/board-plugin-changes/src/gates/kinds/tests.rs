@@ -223,6 +223,23 @@ fn an_obligation_on_the_plans_paths_is_missing_and_one_named_under_the_escape_he
 }
 
 #[test]
+fn an_obligations_detail_names_ten_obligations_and_counts_the_rest() {
+    let list = json!([{"id": "o", "kind": "obligations"}]);
+    let mut found = observed(&json!({}), &[]);
+    let owed = |count: usize| -> Vec<String> {
+        (0..count)
+            .map(|at| format!("/controls/x/o{at:02}"))
+            .collect()
+    };
+    found.obligations = owed(10);
+    let ten = first(&found, list.clone()).detail;
+    assert!(ten.ends_with("/controls/x/o09"), "{ten}");
+    found.obligations = owed(12);
+    let twelve = first(&found, list).detail;
+    assert!(twelve.ends_with("/controls/x/o09, and 2 more"), "{twelve}");
+}
+
+#[test]
 fn a_missing_check_with_blocks_false_never_blocks_and_its_blocking_twin_does() {
     let mut found = observed(&json!({}), &[]);
     found.obligations = vec!["/controls/x/docs-owed".to_owned()];
@@ -303,7 +320,7 @@ fn a_controlled_paths_detail_names_ten_touched_files_and_counts_the_rest() {
         .insert("/controls/x/ui".to_owned(), Some(files(13)));
     let thirteen = first(&found, list).detail;
     assert!(
-        thirteen.ends_with("/repos/x/ui/09.rs, and 3 more files"),
+        thirteen.ends_with("/repos/x/ui/09.rs, and 3 more"),
         "{thirteen}"
     );
     assert!(!thirteen.contains("/repos/x/ui/10.rs"), "{thirteen}");

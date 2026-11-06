@@ -191,12 +191,45 @@ fn advance_is_refused_past_the_stop_with_how_to_record_it_and_admitted_once_the_
         message.contains("board call changes.stop --path /changes/quick-fix --reason reached"),
         "{message}"
     );
-    assert!(!message.contains("--until"), "{message}");
+    assert!(!message.contains("changes.run --path"), "{message}");
+    assert!(
+        message.contains("the person who started the run"),
+        "{message}"
+    );
     board.call("run", &resuming(&json!({"inline": true, "until": "done"})));
     assert_eq!(
         board.call("advance", &json!({"path": CHANGE}))["to"],
         "done"
     );
+}
+
+#[test]
+fn advance_at_the_stop_is_refused_until_the_run_records_its_stop_and_then_admitted() {
+    let board = quick();
+    board.call("run", &starting(&json!({"inline": true})));
+    board.call("advance", &json!({"path": CHANGE}));
+    let refused = board.refusal("advance", &json!({"path": CHANGE}));
+    assert_eq!(refused["code"], "changes::run::stop_reached");
+    let stopped = json!({"path": CHANGE, "reason": "reached", "summary": "Reached land."});
+    let output = board.call("stop", &stopped);
+    let written = output["stop"].as_str().unwrap().trim_start_matches('/');
+    assert_eq!(board.read(&format!("{written}.json"))["phase"], "land");
+    assert_eq!(board.read("changes/quick-fix.json").get("stop"), None);
+    assert_eq!(next(&board).get("stop"), None);
+    assert_eq!(
+        board.call("advance", &json!({"path": CHANGE}))["to"],
+        "done"
+    );
+}
+
+#[test]
+fn a_spawned_run_leaves_the_change_holding_no_stop_once_it_ends() {
+    let board = quick();
+    let out = tempfile::tempdir().unwrap();
+    let argv = agent(&board, out.path(), 0, None);
+    let output = spawned(&board, &starting(&json!({})), &argv).unwrap();
+    assert!(output["run"].is_string(), "{output}");
+    assert_eq!(board.read("changes/quick-fix.json").get("stop"), None);
 }
 
 #[test]

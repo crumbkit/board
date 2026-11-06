@@ -17,9 +17,22 @@ use board_plugin::shape::Record;
 use crate::flow::{self, Field, Flow, Kind, Named, Target, Where, problems};
 use crate::records::Subject;
 
-/// The most touched files a `controlled-paths` detail names (STANDARDS
-/// 23); it counts the rest.
-const TOUCHED_SHOWN: usize = 10;
+/// The most paths a detail names (STANDARDS 23); it counts the rest.
+const SHOWN: usize = 10;
+
+/// At most [`SHOWN`] of `paths`, joined, and how many more there are.
+fn bounded(paths: &[&str]) -> String {
+    let shown = paths
+        .iter()
+        .take(SHOWN)
+        .copied()
+        .collect::<Vec<_>>()
+        .join(", ");
+    match paths.len().saturating_sub(SHOWN) {
+        0 => shown,
+        more => format!("{shown}, and {more} more"),
+    }
+}
 
 /// A board path in prose: a `/` and the characters up to a space, a quote,
 /// a bracket or a list's punctuation.
@@ -100,7 +113,7 @@ pub(super) fn obligations_missing(
     (!left.is_empty()).then(|| {
         format!(
             "these obligations apply to the plan's paths: {}",
-            left.join(", ")
+            bounded(&left)
         )
     })
 }
@@ -123,17 +136,11 @@ pub(super) fn controlled_missing(observed: &Observed, each: &flow::Check) -> Opt
     }
     let touched: BTreeSet<&str> = held.into_iter().flatten().map(String::as_str).collect();
     (!touched.is_empty()).then(|| {
-        let shown: Vec<&str> = touched.iter().copied().take(TOUCHED_SHOWN).collect();
-        let left_out = touched.len() - shown.len();
-        let more = if left_out == 0 {
-            String::new()
-        } else {
-            format!(", and {left_out} more files")
-        };
+        let touched: Vec<&str> = touched.into_iter().collect();
         format!(
-            "the change's diff edits files that {} list: {}{more}",
+            "the change's diff edits files that {} list: {}",
             named.join(" or "),
-            shown.join(", ")
+            bounded(&touched)
         )
     })
 }

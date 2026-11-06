@@ -279,8 +279,11 @@ impl Output {
         ran: &Ran,
         directory: &Path,
     ) -> Result<(), PluginError> {
-        if let Some(now) = step_of(host, path)?.0.stop {
-            self.stop = now;
+        // Recording the stop clears the change's, so a stop that is gone
+        // was reached when the run says it was.
+        match step_of(host, path)?.0.stop {
+            Some(now) => self.stop = now,
+            None => self.stop.reached = written.reason == Reason::Reached,
         }
         self.run = Some(written.run.clone());
         self.reason = Some(written.reason);
@@ -652,7 +655,8 @@ struct Told<'a> {
 }
 
 /// Writes the run record of `ran`, and a stop record when the agent wrote
-/// none since it started.
+/// none since it started, and clears the change's stop, since the run has
+/// ended.
 fn recorded(
     host: &dyn Host,
     path: &str,
@@ -672,7 +676,7 @@ fn recorded(
             reason,
         )
     };
-    let (change, _) = read(host, path)?;
+    let (mut change, blob) = read(host, path)?;
     let run = format!("{path}/runs/{since}");
     let record = RunRecord {
         tag: Tag::default(),
@@ -687,14 +691,16 @@ fn recorded(
         budget_usd: budget,
         sandbox: told.sandbox,
         change: None,
-        phase: change.phase,
+        phase: change.phase.clone(),
         reason,
         stopped: stopped.clone(),
     };
-    board::put(
-        host,
-        &[json!({"path": run, "expect": "none", "record": record})],
-    )?;
+    let mut lines = vec![json!({"path": run, "expect": "none", "record": record})];
+    // The run has ended, so its stop no longer holds the change.
+    if change.stop.take().is_some() {
+        lines.push(line(path, &blob, &change));
+    }
+    board::put(host, &lines)?;
     Ok(Recorded {
         run,
         stopped,
