@@ -2,8 +2,8 @@
 //! orders them by `asked`, attaches answers and replies, and refuses an id
 //! that names no effect.
 
-use board_model::{Answer, Effect, Seen};
-use board_ops::{Board, Plugins};
+use board_model::{Answer, Effect, LogicalPath, Seen};
+use board_ops::{Board, Expect, Plugins};
 use board_plugin::Target;
 use board_scenario::{Item, Scenario};
 use serde_json::json;
@@ -284,25 +284,44 @@ fn a_reply_outside_its_effects_replies_directory_is_left_out_and_its_twin_inside
     );
 }
 
-/// Board.app's relay writes a reply's effect as the bare id, and the thread
-/// reads it beside one that names the effect as a digest.
+/// A reply that names its effect by the bare id is not read into the
+/// thread, and its twin that names it as a digest is.
 #[test]
-fn a_reply_naming_its_effect_by_bare_id_is_read_beside_one_naming_it_as_a_digest() {
+fn a_reply_naming_its_effect_by_bare_id_is_left_out_and_its_digest_twin_is_read() {
     let scenario = personal();
     let id = held(&scenario, "pending", &effect("/x", "one\n", None));
     let bare = json!({"$type": "requests/reply/v1", "effect": id, "text": "Why?"});
-    let path = format!("requests/replies/{id}/20261030T083000Z.json");
+    let path = format!("requests/replies/{id}/20261030T093000Z.json");
     scenario.write(&path, Item::File(&bare.to_string()));
-    reply(&scenario, &id, "20261030T093000Z", "Shorter.");
+    assert_eq!(thread(&scenario, &id).unwrap()["replies"], json!([]));
+    reply(&scenario, &id, "20261030T093000Z", "Why?");
     let replies = &thread(&scenario, &id).unwrap()["replies"];
-    let shown: Vec<(&Value, &Value)> = (replies.as_array().unwrap().iter())
-        .map(|reply| (&reply["effect"], &reply["text"]))
-        .collect();
     assert_eq!(
-        shown,
-        [
-            (&json!(id), &json!("Why?")),
-            (&json!(id), &json!("Shorter."))
-        ]
+        replies,
+        &json!([{
+            "path": format!("/requests/replies/{id}/20261030T093000Z"),
+            "effect": id,
+            "text": "Why?",
+        }])
     );
+}
+
+/// `put` refuses a reply that names its effect by the bare id as it refuses
+/// any record that fails its schema, and admits its digest twin.
+#[test]
+fn put_refuses_a_reply_naming_its_effect_by_bare_id_and_admits_its_digest_twin() {
+    let scenario = personal();
+    let id = held(&scenario, "pending", &effect("/x", "one\n", None));
+    let mut board = Board::open(scenario.workdir(), None).unwrap();
+    board.build_in(&[&Requests]);
+    let path: LogicalPath = format!("/requests/replies/{id}/20261030T093000Z")
+        .parse()
+        .unwrap();
+    let put = |effect: String| {
+        let record = json!({"$type": "requests/reply/v1", "effect": effect, "text": "Why?"});
+        board.put(&path, Expect::Any, record.to_string().as_bytes())
+    };
+    let refused = put(id.clone()).unwrap_err();
+    assert_eq!(refused.code().as_str(), "board::record::invalid");
+    put(format!("sha256:{id}")).unwrap();
 }

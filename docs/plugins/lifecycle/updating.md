@@ -84,10 +84,7 @@ and a question there whose `session` is still a string drops out of
 migrated.
 
 The migration leaves seen records and Board.app alone. A seen record keeps
-naming its effect by `/effects/answered/<id>`, which Board.app reads, and a
-reply may still name its effect by the bare id, which Board.app's relay
-writes. The migration gives a bare reply effect its `sha256:` prefix, and
-both forms stay valid, so Board.app as it is today keeps working before and
-after Board updates. A Board.app that writes `sha256:` reply effects needs
-this Board first, because a released Board's reply schema admits only the
-bare id.
+naming its effect by `/effects/answered/<id>`, which Board.app reads. A
+reply names its effect as `sha256:<id>`, which Board.app writes. The
+migration gives a reply that names its effect by the bare id its `sha256:`
+prefix, because Board refuses the bare id.
