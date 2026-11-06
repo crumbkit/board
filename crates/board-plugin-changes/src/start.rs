@@ -27,6 +27,8 @@ use crate::{PLUGIN, refusal, to_value};
 
 /// The longest name a title is shortened to.
 const NAME_MAX: usize = 60;
+/// The most obligations `start` lists (STANDARDS 23); it counts the rest.
+const OBLIGATIONS_SHOWN: usize = 10;
 
 /// Create a change for a mounted repository.
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -113,7 +115,8 @@ struct Owed {
 /// `runs/suite/v1` path, or null when none is given and the docs name
 /// none. `surfaced` lists the open tasks, decisions and evals on the mount,
 /// which the change records and its plan cites or dismisses, and
-/// `obligations` each obligation control on the mount. `warning` is set
+/// `obligations` at most ten of the obligation controls on the mount, by
+/// path, with `obligations_left_out` counting the rest. `warning` is set
 /// when a change that starts in build went past the WIP limit. `note` says
 /// what a change on `/`, the board itself, leaves out because it has no
 /// repository.
@@ -133,6 +136,7 @@ pub(crate) struct Output {
     suite: Option<String>,
     surfaced: Surfaced,
     obligations: Vec<Owed>,
+    obligations_left_out: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
     warning: Option<Limit>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -271,7 +275,8 @@ pub(crate) fn start(host: &dyn Host, input: &Value) -> Result<Value, PluginError
     } else {
         on_mount(host, &mount)?
     };
-    let obligations = (owed.into_iter())
+    let obligations_left_out = owed.len().saturating_sub(OBLIGATIONS_SHOWN);
+    let obligations = (owed.into_iter().take(OBLIGATIONS_SHOWN))
         .map(|(control, summary)| Owed { control, summary })
         .collect();
     Ok(to_value(Output {
@@ -288,6 +293,7 @@ pub(crate) fn start(host: &dyn Host, input: &Value) -> Result<Value, PluginError
         docs: docs.into_iter().map(|(path, _)| path).collect(),
         surfaced: found,
         obligations,
+        obligations_left_out,
         warning,
         note: itself.then(|| BOARD_NOTE.to_owned()),
     }))

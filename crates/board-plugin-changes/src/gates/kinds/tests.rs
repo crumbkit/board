@@ -284,6 +284,29 @@ fn controlled_paths_pass_when_no_named_control_exists_and_say_so_and_miss_an_edi
 }
 
 #[test]
+fn a_controlled_paths_detail_names_ten_touched_files_and_counts_the_rest() {
+    let list = json!([{"id": "ui-paths", "kind": "controlled-paths", "controls": ["/controls/x/ui"]}]);
+    let mut found = observed(&json!({}), &[]);
+    let files = |count: usize| -> Vec<String> {
+        (0..count).map(|at| format!("/repos/x/ui/{at:02}.rs")).collect()
+    };
+    found
+        .controlled
+        .insert("/controls/x/ui".to_owned(), Some(files(10)));
+    let ten = first(&found, list.clone()).detail;
+    assert!(ten.ends_with("/repos/x/ui/09.rs"), "{ten}");
+    found
+        .controlled
+        .insert("/controls/x/ui".to_owned(), Some(files(13)));
+    let thirteen = first(&found, list).detail;
+    assert!(
+        thirteen.ends_with("/repos/x/ui/09.rs, and 3 more files"),
+        "{thirteen}"
+    );
+    assert!(!thirteen.contains("/repos/x/ui/10.rs"), "{thirteen}");
+}
+
+#[test]
 fn a_tickets_check_with_types_needs_a_ticket_of_one_of_them() {
     let list =
         json!([{"id": "ticket", "kind": "field", "field": "tickets", "types": ["jira/issue/v1"]}]);

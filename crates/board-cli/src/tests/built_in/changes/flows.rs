@@ -328,6 +328,7 @@ fn start_stores_the_suite_and_surfaces_the_open_records_on_the_mount_and_its_obl
         output["obligations"],
         json!([{"control": "/controls/x/docs", "summary": "Sweep the docs."}])
     );
+    assert_eq!(output["obligations_left_out"], 0);
     let change = board.read("changes/a.json");
     assert_eq!(
         (&change["suite"], &change["surfaced"]),
@@ -389,4 +390,60 @@ fn plan_takes_a_plan_with_no_uses_as_one_that_uses_nothing() {
         .trim_start_matches('/')
         .to_owned();
     assert_eq!(board.read(&format!("{plan}.json"))["uses"], json!([]));
+}
+
+#[test]
+fn start_and_reflow_refuse_a_board_flow_with_a_phase_named_twice_or_done_and_admit_its_twin() {
+    let board = mounted();
+    for (phases, code) in [
+        (&["build", "build"][..], "changes::flow::duplicate_phase"),
+        (&["build", "done"][..], "changes::flow::reserved_phase"),
+    ] {
+        board.write("flows/mine.json", &flow("mine", phases));
+        let refused = board.refusal("start", &starting("A", &json!({"flow": "mine"})));
+        assert_eq!(
+            (&refused["code"], &refused["fields"]["codes"]),
+            (&json!("changes::flow::invalid"), &json!([code]))
+        );
+    }
+    board.write("flows/mine.json", &flow("mine", &["build", "land"]));
+    started(&board, "A", &json!({"flow": "mine"}));
+    board.write("flows/other.json", &flow("other", &["build", "build"]));
+    let refused = board.refusal("reflow", &json!({"path": "/changes/a", "flow": "other"}));
+    assert_eq!(
+        refused["fields"]["codes"],
+        json!(["changes::flow::duplicate_phase"])
+    );
+    board.write("flows/other.json", &flow("other", &["build", "review"]));
+    let moved = board.call("reflow", &json!({"path": "/changes/a", "flow": "other"}));
+    assert_eq!(moved["flow"]["name"], "other");
+}
+
+#[test]
+fn start_lists_ten_obligations_on_the_mount_and_counts_the_rest() {
+    let board = mounted();
+    let owe = |count: usize| {
+        for at in 0..count {
+            let owed = json!({
+                "$type": "controls/control/v1",
+                "kind": "obligation",
+                "requirement": "Sweep the docs.",
+                "purpose": "p",
+                "paths": ["repos/x/**"],
+            });
+            board.write(&format!("controls/x/o{at:02}.json"), &owed.to_string());
+        }
+    };
+    owe(10);
+    let ten = board.call("start", &starting("A", &json!({})));
+    assert_eq!(
+        (ten["obligations"].as_array().unwrap().len(), &ten["obligations_left_out"]),
+        (10, &json!(0))
+    );
+    owe(12);
+    let twelve = board.call("start", &starting("B", &json!({})));
+    assert_eq!(
+        (twelve["obligations"].as_array().unwrap().len(), &twelve["obligations_left_out"]),
+        (10, &json!(2))
+    );
 }

@@ -100,7 +100,14 @@ fn start_refuses_a_board_flow_that_cannot_run_and_admits_its_fixed_twin() {
     assert_eq!(refused["code"], "changes::flow::invalid");
     assert_eq!(
         refused["fields"]["problems"],
-        json!(["phase draft, the instruction names the unknown placeholder {branch}"])
+        json!([
+            "phase draft, the instruction names the unknown placeholder {branch} \
+             (changes::flow::unknown_placeholder)"
+        ])
+    );
+    assert_eq!(
+        refused["fields"]["codes"],
+        json!(["changes::flow::unknown_placeholder"])
     );
     board.write("flows/trial.json", &draft().to_string());
     board.call("start", &on_board("A", &json!({"flow": "trial"})));
@@ -187,7 +194,8 @@ fn flow_valid_passes_an_attached_draft_without_problems_and_exists_once_the_flow
     assert_eq!(
         found[0].2,
         "/changes/author/draft: phase draft, check approved: only the owner or a reviewer can \
-         pass it, and it has no remedy that tells an unattended agent how to ask"
+         pass it, and it has no remedy that tells an unattended agent how to ask \
+         (changes::flow::no_remedy)"
     );
     assert_eq!(found[1].2, "nothing is at /flows/trial");
     let remedy = &board.call("next", &json!({"path": AUTHOR}))["gate"][1]["remedy"];

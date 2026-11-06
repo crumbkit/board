@@ -17,6 +17,10 @@ use board_plugin::shape::Record;
 use crate::flow::{self, Field, Flow, Kind, Named, Target, Where, problems};
 use crate::records::Subject;
 
+/// The most touched files a `controlled-paths` detail names (STANDARDS
+/// 23); it counts the rest.
+const TOUCHED_SHOWN: usize = 10;
+
 /// A board path in prose: a `/` and the characters up to a space, a quote,
 /// a bracket or a list's punctuation.
 static BOARD_PATH: LazyLock<Regex> = LazyLock::new(|| pattern(r#"/[^\s`'")>\],;]+"#));
@@ -119,10 +123,17 @@ pub(super) fn controlled_missing(observed: &Observed, each: &flow::Check) -> Opt
     }
     let touched: BTreeSet<&str> = held.into_iter().flatten().map(String::as_str).collect();
     (!touched.is_empty()).then(|| {
+        let shown: Vec<&str> = touched.iter().copied().take(TOUCHED_SHOWN).collect();
+        let left_out = touched.len() - shown.len();
+        let more = if left_out == 0 {
+            String::new()
+        } else {
+            format!(", and {left_out} more files")
+        };
         format!(
-            "the change's diff edits files that {} list: {}",
+            "the change's diff edits files that {} list: {}{more}",
             named.join(" or "),
-            touched.into_iter().collect::<Vec<_>>().join(", ")
+            shown.join(", ")
         )
     })
 }

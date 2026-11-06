@@ -139,25 +139,25 @@ fn a_flow_with_each_problem_says_where_and_its_twin_without_it_has_none() {
     );
     assert_eq!(
         said(&one(&fine, "review", "Build."), false),
-        ["the stop names the phase review, which the flow lacks; name one of build or done"]
+        ["the stop names the phase review, which the flow lacks; name one of build or done (changes::flow::stop_not_a_phase)"]
     );
     assert_eq!(
         said(&one(&fine, "build", "Build {branch}."), false),
-        ["phase build, the instruction names the unknown placeholder {branch}"]
+        ["phase build, the instruction names the unknown placeholder {branch} (changes::flow::unknown_placeholder)"]
     );
     assert_eq!(
         said(
             &one(&json!({"id": "x", "kind": "scripted"}), "build", "Build."),
             false
         ),
-        ["phase build, check x: the kind scripted is not one this Board knows"]
+        ["phase build, check x: the kind scripted is not one this Board knows (changes::flow::unknown_kind)"]
     );
     assert_eq!(
         said(
             &one(&json!({"id": "x", "kind": "exists"}), "build", "Build."),
             false
         ),
-        ["phase build, check x: a check of kind exists needs path"]
+        ["phase build, check x: a check of kind exists needs path (changes::flow::missing_parameter)"]
     );
     assert_eq!(
         said(
@@ -179,7 +179,7 @@ fn a_flow_with_each_problem_says_where_and_its_twin_without_it_has_none() {
             ),
             false
         ),
-        ["phase build, check x: it names the unknown placeholder {who}"]
+        ["phase build, check x: it names the unknown placeholder {who} (changes::flow::unknown_placeholder)"]
     );
     let asks = json!({"id": "x", "kind": "tasks", "actor": "owner"});
     assert_eq!(
@@ -190,7 +190,7 @@ fn a_flow_with_each_problem_says_where_and_its_twin_without_it_has_none() {
         said(&one(&asks, "build", "Build."), true),
         [
             "phase build, check x: only the owner or a reviewer can pass it, and it has no remedy \
-          that tells an unattended agent how to ask"
+          that tells an unattended agent how to ask (changes::flow::no_remedy)"
         ]
     );
     let mut twice = one(&fine, "build", "Build.");
@@ -199,6 +199,69 @@ fn a_flow_with_each_problem_says_where_and_its_twin_without_it_has_none() {
         .push(serde_json::from_value(fine).unwrap());
     assert_eq!(
         said(&twice, false),
-        ["phase build, check x: another check of the flow has this id"]
+        ["phase build, check x: another check of the flow has this id (changes::flow::duplicate_check)"]
     );
+}
+
+/// The codes of the problems of a flow with `phases`, each with one check
+/// of kind tasks and `when`, stopping at done.
+fn codes_of(phases: &[&str], when: &serde_json::Value) -> Vec<&'static str> {
+    let phases: Vec<serde_json::Value> = (phases.iter().enumerate())
+        .map(|(at, name)| {
+            json!({"name": name, "agent": "lead", "instruction": "Do it.",
+                   "checks": [{"id": format!("c{at}"), "kind": "tasks", "when": when}]})
+        })
+        .collect();
+    let flow: Flow = serde_json::from_value(json!({
+        "$type": "changes/flow/v1", "name": "f", "summary": "A flow.",
+        "stop": {"until": "done"}, "phases": phases
+    }))
+    .unwrap();
+    problems(&flow, false)
+        .iter()
+        .map(|problem| problem.code)
+        .collect()
+}
+
+#[test]
+fn a_flow_with_no_phases_is_refused_and_one_with_a_phase_is_admitted() {
+    assert_eq!(codes_of(&[], &json!({})), ["changes::flow::no_phases"]);
+    assert_eq!(codes_of(&["build"], &json!({})), Vec::<&str>::new());
+}
+
+#[test]
+fn a_flow_naming_two_phases_alike_is_refused_and_one_naming_them_apart_is_admitted() {
+    assert_eq!(
+        codes_of(&["build", "build"], &json!({})),
+        ["changes::flow::duplicate_phase"]
+    );
+    assert_eq!(codes_of(&["build", "review"], &json!({})), Vec::<&str>::new());
+}
+
+#[test]
+fn a_phase_named_done_dropped_or_paused_is_refused_and_one_named_otherwise_is_admitted() {
+    for reserved in ["done", "dropped", "paused"] {
+        assert_eq!(
+            codes_of(&["build", reserved], &json!({})),
+            ["changes::flow::reserved_phase"],
+            "{reserved}"
+        );
+    }
+    assert_eq!(codes_of(&["build", "land"], &json!({})), Vec::<&str>::new());
+}
+
+#[test]
+fn a_when_pattern_that_is_not_a_regular_expression_is_refused_and_one_that_is_is_admitted() {
+    for key in ["section", "section_not"] {
+        assert_eq!(
+            codes_of(&["build"], &json!({key: {"Data": "^none("}})),
+            ["changes::flow::bad_pattern"],
+            "{key}"
+        );
+        assert_eq!(
+            codes_of(&["build"], &json!({key: {"Data": "^none\\b"}})),
+            Vec::<&str>::new(),
+            "{key}"
+        );
+    }
 }

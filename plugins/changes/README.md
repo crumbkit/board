@@ -222,10 +222,10 @@ of `changes` still fails `review`.
   the change's own task left out; the decisions under that project or
   whose `refs` name the mount or a path under it, newest first; and the
   evals whose `mounts` name the mount or that sit under the project. The
-  change records their paths. `obligations` lists each obligation control
-  on the mount, `<mount>/**`, by `control` and `summary`, from
-  `controls.for-paths`, and is empty when the controls plugin is not
-  enabled. Refuses an existing name (`changes::change::exists`), a
+  change records their paths. `obligations` lists at most ten obligation
+  controls on the mount, `<mount>/**`, by `control` and `summary`, from
+  `controls.for-paths`, and `obligations_left_out` counts the rest; both
+  are empty when the controls plugin is not enabled. Refuses an existing name (`changes::change::exists`), a
   repository path holding nothing (`changes::mount::not_found`) and a flow
   neither the board holds nor the plugin ships (`changes::flow::not_found`).
   A flow whose first phase is `build`, such as `small`, starts the change
@@ -588,13 +588,23 @@ eval; it stops until adopt. A board's own flow at `/flows/<name>` wins
 over a shipped flow of the same name. `--flow` also takes the path of a
 flow record, such as a draft.
 
-A flow can run when every check's kind is one Board knows and has the
+A flow can run when it has at least one phase (`changes::flow::no_phases`);
+each phase name is used once (`changes::flow::duplicate_phase`) and is not
+`done`, `dropped` or `paused` (`changes::flow::reserved_phase`); every
+check's kind is one Board knows (`changes::flow::unknown_kind`) and has the
 parameter its kind needs (`sections`, `field`, `type` for `records`,
-`subject`, `controls`, `path` for `exists`), every check id is unique in
-the flow, the stop names one of its phases or `done`, and its
+`subject`, `controls`, `path` for `exists`;
+`changes::flow::missing_parameter`); every check id is unique in the flow
+(`changes::flow::duplicate_check`); every `when` pattern is a regular
+expression (`changes::flow::bad_pattern`); the stop names one of its
+phases or `done` (`changes::flow::stop_not_a_phase`); and its
 instructions, remedies and templated paths name only the placeholders
-below. `start` and `reflow` refuse any other with
-`changes::flow::invalid`.
+below (`changes::flow::unknown_placeholder`). `start` and `reflow` refuse
+any other with `changes::flow::invalid`, whose `problems` says each
+problem, ending with its code, and whose `codes` lists the codes in the
+same order. The `flow-valid` check reads a draft the same way, and also
+needs a remedy on each check the owner or a reviewer passes
+(`changes::flow::no_remedy`).
 
 `start` chooses a change's flow: the one `--flow` names; else the flow the
 link `/flows/repos/<mount name>` points to; else the one `/flows/default`
@@ -623,7 +633,7 @@ evaluated by kind:
 | `mockups` | the `agreed` part: each mockup under UX is named by a signed decision; the `neighbours` part: UX lists its neighbours; both when `part` is left out |
 | `considered` | each path in the change's `surfaced` is in the plan's `uses` or named under a `### Considered` heading |
 | `obligations` | no obligation control applies to the plan's paths, except those named under the `escape_section` heading; a board without the controls plugin enabled has none |
-| `controlled-paths` | the diff edits no file that the controls in `controls` list in their `paths` or `applies_to` |
+| `controlled-paths` | the diff edits no file that the controls in `controls` list in their `paths` or `applies_to`; the detail names at most ten such files and counts the rest |
 | `flow-valid` | at least one `changes/flow/v1` is attached, and each can run and gives a `remedy` to every check whose actor is the owner or a reviewer; the detail lists each problem with its phase and check id |
 | `exists` | something is at `path`, its placeholders filled; a placeholder with no value yet leaves it missing |
 
