@@ -11,7 +11,7 @@ use std::ffi::OsString;
 use board_model::{Code, Fields, Refusal};
 use board_plugin::Manifest;
 use clap::error::ErrorKind;
-use clap::{Command, CommandFactory as _};
+use clap::{ArgMatches, Command, CommandFactory as _};
 
 use crate::config::Context;
 use crate::run::{Cli, entered, open};
@@ -85,14 +85,8 @@ struct External {
 /// alias that the board those flags lead to enables. A first word that is a
 /// built-in command reads no manifest.
 fn read(arguments: &[OsString], context: &Context) -> (Option<External>, Vec<Manifest>) {
-    let root = Cli::command();
-    let commands = names(&root);
-    let root = root
-        .allow_external_subcommands(true)
-        .disable_help_flag(true)
-        .disable_help_subcommand(true)
-        .ignore_errors(true);
-    let Ok(matches) = root.try_get_matches_from(arguments) else {
+    let commands = commands();
+    let Some(matches) = loose(arguments) else {
         return (None, Vec::new());
     };
     let directories: Vec<OsString> = (matches
@@ -107,10 +101,7 @@ fn read(arguments: &[OsString], context: &Context) -> (Option<External>, Vec<Man
         return (None, Vec::new());
     }
     let external = first.and_then(|(alias, words)| {
-        let rest: Vec<OsString> = (words.try_get_many::<OsString>("").ok().flatten())
-            .map(|values| values.cloned().collect())
-            .unwrap_or_default();
-        let at = arguments.len().checked_sub(rest.len() + 1)?;
+        let (at, rest) = placed(arguments, words)?;
         let alias = alias.to_owned();
         Some(External { at, alias, rest })
     });
@@ -118,6 +109,38 @@ fn read(arguments: &[OsString], context: &Context) -> (Option<External>, Vec<Man
         external,
         aliases(context, &directories, personal, &commands),
     )
+}
+
+/// `arguments` read by Board's root with any first word admitted, or `None`
+/// when they do not read.
+fn loose(arguments: &[OsString]) -> Option<ArgMatches> {
+    let root = (Cli::command().allow_external_subcommands(true))
+        .disable_help_flag(true)
+        .disable_help_subcommand(true)
+        .ignore_errors(true);
+    root.try_get_matches_from(arguments).ok()
+}
+
+/// Where the first word of `arguments` sits when it is no built-in command,
+/// and the words after it.
+pub(crate) fn first_word(arguments: &[OsString]) -> Option<(usize, Vec<OsString>)> {
+    let matches = loose(arguments)?;
+    let (word, words) = matches.subcommand()?;
+    let built_in = commands().iter().any(|command| command == word);
+    if built_in {
+        None
+    } else {
+        placed(arguments, words)
+    }
+}
+
+/// Where the first word whose own words are `words` sits in `arguments`,
+/// and those words.
+fn placed(arguments: &[OsString], words: &ArgMatches) -> Option<(usize, Vec<OsString>)> {
+    let rest: Vec<OsString> = (words.try_get_many::<OsString>("").ok().flatten())
+        .map(|values| values.cloned().collect())
+        .unwrap_or_default();
+    Some((arguments.len().checked_sub(rest.len() + 1)?, rest))
 }
 
 /// The call that `external`'s alias makes among `manifests`, or why it

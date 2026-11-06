@@ -104,7 +104,7 @@ pub(crate) use board_ops::Prefix;
 
 /// A path argument as typed: absolute, or relative to the run's prefix.
 #[derive(Clone, Debug)]
-pub(crate) struct Given(String);
+pub(crate) struct Given(pub(crate) String);
 
 impl From<String> for Given {
     fn from(text: String) -> Self {
@@ -546,7 +546,7 @@ fn describe(
 }
 
 /// The output of a refused command line that Board reads again: one that
-/// gives more paths than a run answers, or whose first word is an alias.
+/// gives too many paths, starts with an alias, or makes a known mistake.
 fn reread(
     arguments: &[OsString],
     context: &Context,
@@ -557,7 +557,10 @@ fn reread(
     if let Some(output) = render::too_many_paths(refused) {
         return Some(output);
     }
-    Some(match crate::alias::after(arguments, context, refused)? {
+    let Some(resolved) = crate::alias::after(arguments, context, refused) else {
+        return crate::mistaken::hinted(arguments, refused);
+    };
+    Some(match resolved {
         Ok(called) => run(called, context, stdin, ran),
         Err(refusal) => {
             let printer = Printer {
@@ -635,7 +638,7 @@ fn command(
             wait,
             ..
         } => {
-            let path = or_refuse!(read(prefix, &path, "rm"));
+            let path = or_refuse!(crate::mistaken::file_path(prefix, &path, "rm", recursive));
             let (removing, unmatched) = removal(recursive, expect, ignore_unmatch);
             match board.remove_waiting(&path, removing, unmatched, wait) {
                 Ok(report) => render::put(printer, &report, None),
@@ -718,13 +721,12 @@ pub(crate) fn read(
 }
 
 /// The folder `--new` names, read from `prefix` without its trailing `/`,
-/// or a refusal when it has none.
+/// or a refusal when it has none or two.
 pub(crate) fn read_folder(
     prefix: Option<&Prefix>,
     given: &Given,
 ) -> Result<LogicalPath, Box<Refusal>> {
-    let text = board_ops::folder_text(&given.0);
-    let folder = read(prefix, &Given(text.to_owned()), "put")?;
+    let folder = read(prefix, given, "put")?;
     if given.0.ends_with('/') {
         Ok(folder)
     } else {
