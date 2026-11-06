@@ -29,22 +29,11 @@ Each step leaves a valid board in its own commit.
 
 - It is an ordinary capability, conventionally `migrate`, whose input has
   `apply`, false by default.
-- For a Python plugin, the `board_plugin.migrate` module in
-  `python/board-plugin/` does the work:
-  - `olds(board, types)` reads the records of `types` in the board's own
-    tree that parse, each as an `Old` with its logical `path`, `blob` and
-    `record`.
-  - `put(old, record)`, `move(old, to, text)` and `remove(old)` build
-    `board put --batch` lines. Each line expects the blob read, so a file
-    changed since the read refuses the batch with `board::put::stale`. A
-    move writes `text` to a new file and removes the old one.
-  - `migrate(board, lines, owed, apply=...)` returns `applied`, `commit`,
-    the first 100 `lines` with `total` and `truncated`, and `owed`: what the
-    owner must do afterwards, such as re-signing. Without `apply` it writes
-    nothing. With it, one `board put --batch` writes every line in one
-    commit.
-- A built-in plugin cannot migrate until `Host` can write
-  ([built-in/writing.md](../built-in/writing.md)).
+- It reads the records of the old types in the board's own tree and builds
+  `board put --batch` lines. Each line expects the blob it read, so a file
+  changed since the read refuses the batch with `board::put::stale`.
+  Without `apply` it writes nothing. With it, one batch writes every line in
+  one commit.
 - `board call` sets `BOARD_PLUGIN`, so the batch is checked as the plugin's
   own put ([architecture/writes/effects.md](../../architecture/writes/effects.md)).
 - Board's wire format has no migration concept. What is owed is the plugin's

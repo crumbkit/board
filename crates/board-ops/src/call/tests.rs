@@ -928,6 +928,34 @@ fn a_plugin_writing_more_than_the_stdout_limit_is_stopped() {
 }
 
 #[test]
+fn a_plugin_whose_child_writes_past_the_stdout_limit_is_stopped_with_that_child() {
+    let limits = Limits {
+        stdout: 1024,
+        ..Limits::default()
+    };
+    // A wrapper, as `uv run` was, that waits for the child doing the work.
+    // The child writes past the limit and then lingers, so only Board's
+    // signal to the group can end it.
+    let large = "#!/bin/sh\ncat > /dev/null\nsh -c 'echo $$ > child.pid; head -c 4096 /dev/zero; exec sleep 60'\n";
+    let fixture = Fixture::tasks(large);
+    let error = fixture
+        .call_with("tasks.due", r#"{"n": 1}"#, &environment(), limits)
+        .unwrap_err();
+    assert_eq!(error.refusal().code, Board(Code::PluginTooLarge));
+    let pid = written_pid(&fixture, "child.pid");
+    assert!(
+        ends(&pid),
+        "the child of a plugin stopped past its stdout limit"
+    );
+    let small = format!("#!/bin/sh\ncat > /dev/null\nsh -c 'printf \"%s\" \"$0\"' '{RESULT}'\n");
+    assert!(
+        Fixture::tasks(&small)
+            .call_with("tasks.due", r#"{"n": 1}"#, &environment(), limits)
+            .is_ok()
+    );
+}
+
+#[test]
 fn a_call_nested_eight_deep_is_refused() {
     let fixture = Fixture::tasks(RECORDING);
     let at = |depth: &str| {

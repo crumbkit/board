@@ -5,11 +5,9 @@ and board-attention build, sign and verify. crumbkit/board's tests check them; t
 other two repositories are to test against them.
 docs/architecture/writes/signing.md says how they are used.
 
-- The files live in `python/board-plugin/src/board_plugin/vectors/`, so the
-  `board-plugin` package built from a checkout holds them; the root
-  `vectors` is a link to that directory. Python reads them with
-  `importlib.resources.files("board_plugin") / "vectors/signing/v1"`.
-  `bin/package-plugin` leaves them out of plugin archives.
+- The files live in `vectors/signing/` at the root of crumbkit/board.
+  Another repository reads the version it tests against from a pinned
+  commit of crumbkit/board.
 - A version is never edited: `released.json` lists every file, and the
   `released` test refuses a change. A changed layout or namespace is a new
   directory, `v2/`, with a new first line.

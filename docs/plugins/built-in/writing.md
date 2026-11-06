@@ -10,8 +10,8 @@ with its output, messages and codes unchanged.
 A built-in plugin reads and writes the board through `Host` and nothing
 else: `query`, `refs`, `get_each`, `put`, `call`, `board`, `decide`,
 `settings`, `caller_remote` and `run` (docs/plugins/built-in.md). It
-writes records only with `put`, which takes the lines a Python plugin
-gives `board put --batch`, and maps its error with
+writes records only with `put`, which takes the lines that
+`board put --batch` reads, and maps its error with
 `PluginError::board_refused(<name>, "put --batch", &error.refusal())`; a
 refused `call` or `decide` maps the same way, with `"call"` or `"decide"`.
 It starts a process only with `run`, which gives
@@ -131,13 +131,12 @@ in `plugin list` and `plugin find`.
 - Port each Python test into `crates/board-cli/src/tests/built_in/<name>.rs`,
   which runs the same commands in process on a `Fixture` board (split it into
   `<name>/` beside it when it passes the line limit), and delete
-  the plugin's `tests/`, `pyproject.toml` and `uv.lock` with its entries in
-  `bin/lint` and `bin/test`. A plugin that runs a process through
+  the plugin's `tests/`, `pyproject.toml` and `uv.lock`. A plugin that runs a process through
   `Host::run` tests its capability in its crate with a recording `Host`.
-- Delete `plugin.json`, `src/` and `types/`, and take the plugin out of the
-  packaging loop in `.github/workflows/release.yml`.
+- Delete `plugin.json`, `src/` and `types/`.
 - Search the repository for the plugin's name and `plugins/<name>`: CI
   steps, the timing bench, `xtask/tests/shapes.rs` and STANDARDS.md. When
   this repository's board enables the plugin, run `board plugin enable
   <name>` so `.board/types/` holds the shipped schema.
-- Say the net production lines for Rust and for Python in the pull request.
+- Say the net production lines for Rust and for the removed language in
+  the pull request.

@@ -1,6 +1,6 @@
 //! Which GitHub repositories a `notes/repo/v1` record covers, the repo
-//! listing, and the repos a call reads. These were
-//! `python/board-plugin/tests/test_repos.py`; how a remote is shown is
+//! listing, and the repos a call reads. These were the
+//! former Python library's `test_repos.py`; how a remote is shown is
 //! board-model's `shown_remote`, and the caller's origin is the host's.
 
 use serde_json::{Value, json};

@@ -1,12 +1,11 @@
 #!/usr/bin/env bash
 # Every test gate. Nextest does not run doctests, so they run separately.
 # With no argument it runs every part. CI runs one part per job:
-# `bin/test rust [nextest options]`, `bin/test doc`, `bin/test python` and
-# `bin/test ui`.
+# `bin/test rust [nextest options]`, `bin/test doc` and `bin/test ui`.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 part=${1:-all}
-case $part in all | rust | doc | python | ui) ;; *) echo "usage: bin/test [rust [nextest options]|doc|python|ui]" >&2; exit 2 ;; esac
+case $part in all | rust | doc | ui) ;; *) echo "usage: bin/test [rust [nextest options]|doc|ui]" >&2; exit 2 ;; esac
 shift || true
 
 # A test that runs board must give it a cache directory of its own, or its
@@ -15,11 +14,10 @@ shift || true
 # a test let it inherit the cache, and the gate fails. Other tools, such as
 # mise, may write their own directories there.
 inherited=$(mktemp -d)
-# Every test, Rust and Python, runs with an empty config directory, so a
+# Every test runs with an empty config directory, so a
 # board run outside a board never reads the developer's known boards.
 config=$(mktemp -d)
-logs=$(mktemp -d)
-trap 'rm -rf "$inherited" "$config" "$logs"' EXIT
+trap 'rm -rf "$inherited" "$config"' EXIT
 export XDG_CONFIG_HOME="$config"
 
 if [ "$part" = all ] || [ "$part" = rust ]; then
@@ -40,24 +38,3 @@ if [ "$part" = all ] || [ "$part" = ui ]; then
   bin/ui-goldens
 fi
 
-# The Python tests run the workspace's debug build of board. Each project's
-# suite spends most of its time waiting on board and plugin processes, so the
-# suites run at once and each prints its output when it ends.
-if [ "$part" = all ] || [ "$part" = python ]; then
-  cargo build -p board-cli --locked
-  projects=(python/board-plugin)
-  pids=()
-  for project in "${projects[@]}"; do
-    (cd "$project" && uv run --locked pytest) > "$logs/${project//\//-}" 2>&1 &
-    pids+=($!)
-  done
-  failed=0
-  for i in "${!projects[@]}"; do
-    status=0
-    wait "${pids[$i]}" || status=$?
-    echo "== ${projects[$i]}"
-    cat "$logs/${projects[$i]//\//-}"
-    [ "$status" -eq 0 ] || failed=1
-  done
-  exit "$failed"
-fi

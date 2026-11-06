@@ -4,12 +4,11 @@ use crate::location::ObjectId;
 use crate::pointer::{Pointer, pointer, repinned};
 use crate::record::{Content, Kind, Role};
 
-/// The origin URLs and their stored forms that `board_plugin.repos`'s
-/// tests read too.
-const REMOTES: &str = include_str!("../../../../python/board-plugin/tests/remotes.json");
+/// The origin URLs and their stored forms.
+const REMOTES: &str = include_str!("remotes.json");
 
 #[test]
-fn a_remote_takes_the_same_stored_form_as_the_python_function_for_every_row_of_the_shared_table() {
+fn a_remote_takes_the_stored_form_in_every_row_of_the_shared_table() {
     let rows: Vec<serde_json::Map<String, Value>> = serde_json::from_str(REMOTES).unwrap();
     assert!(rows.len() > 20);
     for row in rows {

@@ -47,5 +47,5 @@ stops lets the edit run as it would without the mod.
 ## Testing
 
 `claude plugin test plugins/controls/claude-code` runs the mod's tests, which
-stand in for git and Board. CI does not run them yet. The Python tests prove
-what `controls.check` and `controls.for-path` answer.
+stand in for git and Board. CI does not run them yet. The tests in
+`crates/board-cli/src/tests/built_in/controls.rs` prove what `controls.check` and `controls.for-path` answer.

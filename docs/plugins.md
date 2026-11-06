@@ -14,11 +14,8 @@ the board through `board query`. This file gives the contract both meet.
 A plugin is a directory on this machine, at
 `$XDG_DATA_HOME/board/plugins/<name>/` (by default
 `~/.local/share/board/plugins/<name>/`), holding `plugin.json` and its code. The
-directory may be a symlink, so a plugin can be installed from a checkout. `bin/package-plugin` packs a Python plugin as `<name>-<version>.tar.gz`,
-holding that directory with `board-plugin` vendored under `vendor/` and its
-lockfile; extract it into `$XDG_DATA_HOME/board/plugins/` and run
-`uv sync --frozen --no-dev` in `<name>/`. A release ships no plugin archive;
-`bin/install-check` installs a released `board` and runs init, enable, put and
+directory may be a symlink, so a plugin can be installed from a checkout. A
+release ships no plugin archive; `bin/install-check` installs a released `board` and runs init, enable, put and
 call. A
 board enables plugins by name in `.board/board.json`; a name that is not a
 plugin name, or one listed twice, makes it `board::config::invalid`. Board never
@@ -47,7 +44,7 @@ plugin update proceeds and how a plugin migrates its records.
   "name": "review",
   "version": "0.1.0",
   "description": "Review a brief and record the report.",
-  "run": ["uv", "run", "--frozen", "--no-dev", "python", "-m", "board_review"],
+  "run": ["bin/review"],
   "metadata": { "area": "review" },
   "types": ["review/report/v1"],
   "capabilities": [
@@ -175,8 +172,7 @@ A plugin exits 0 with a result, or 1 with an error whose code is
 code as its own, with the plugin's fields plus `plugin` and `stderr`, the end
 of the plugin's stderr; Board adds no other key. The plugin's `hint`, a
 sentence saying what to try next, becomes the failure's `hint` recovery; an
-empty hint counts as none. Python's `PluginError` and a built-in's take it
-as `hint`. Any
+empty hint counts as none. A built-in's `PluginError` takes it as `hint`. Any
 other answer on stdout is `board::plugin::bad_output`; a non-zero exit without
 an error document, or a signal, is `board::plugin::failed`. A `run` program
 that cannot be started is `board::plugin::not_started`. Stderr is for logs;
@@ -220,9 +216,7 @@ comes right after the alias; a flag in its place is a usage error.
 ## Writing a plugin
 
 A new plugin is a built-in crate, never a Python program
-([plugins/built-in/writing.md](plugins/built-in/writing.md)).
-[plugins/python.md](plugins/python.md) describes the Python library
-that remains. Each `plugins/<name>/` README describes its records and
+([plugins/built-in/writing.md](plugins/built-in/writing.md)). Each `plugins/<name>/` README describes its records and
 capabilities. [plugins/share.md](plugins/share.md) explains `share`, and
 [plugins/claude-code.md](plugins/claude-code.md) covers Claude Code mods,
 with [the controls mod](plugins/controls-claude-code.md) and
