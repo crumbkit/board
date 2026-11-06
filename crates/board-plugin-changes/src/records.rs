@@ -2,7 +2,7 @@
 //! struct; the files under `types/` are those schemas, committed.
 
 use board_plugin::shape::{
-    Accepts, CommitName, Date, LogicalGlob, Prose, Record, Ref, Slug, Tag, Url,
+    Accepts, CommitName, Date, LogicalGlob, Prose, Record, Ref, Slug, Summary, Tag, Timestamp, Url,
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -570,4 +570,117 @@ enum Question {
     Choose,
     Explain,
     Edge,
+}
+
+/// A question for the owner, which the plans plugin owns.
+#[derive(Debug)]
+pub(crate) enum OwnerQuestion {}
+
+impl Accepts for OwnerQuestion {
+    const TYPES: &'static [&'static str] = &["plans/question/v1"];
+}
+
+/// Why a run stopped: `reached` its stop, `waiting` on the owner or a
+/// reviewer, `refused` by a gate it could not pass, over its `budget`, or
+/// an `error`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+#[schemars(inline)]
+pub(crate) enum Reason {
+    Reached,
+    Waiting,
+    Refused,
+    Budget,
+    Error,
+}
+
+/// `changes/stop/v1`: why a run of a change stopped, and where.
+///
+/// It lives at `/changes/<name>/stops/<stamp>`. The agent writes it with
+/// `changes.stop` before it exits, or `changes.run` writes it when the
+/// agent exits without one.
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+#[schemars(extend("x-board-folder" = "/changes/{change}/stops/"))]
+pub(crate) struct StopRecord {
+    /// The record's type.
+    #[serde(rename = "$type")]
+    pub(crate) tag: Tag<Self>,
+    /// Why the run stopped.
+    pub(crate) reason: Reason,
+    /// The phase the change stood in.
+    #[schemars(with = "Slug")]
+    pub(crate) phase: String,
+    /// The ids of the checks of that phase that were missing and block.
+    #[schemars(with = "Vec<Slug>")]
+    pub(crate) missing: Vec<String>,
+    /// The question the run left for the owner, whose `blocks` names the
+    /// change.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "Option<Ref<OwnerQuestion>>")]
+    pub(crate) question: Option<String>,
+    /// What happened, in a line.
+    #[schemars(with = "Summary")]
+    pub(crate) summary: String,
+}
+
+impl Record for StopRecord {
+    const TYPE: &'static str = "changes/stop/v1";
+}
+
+/// `changes/run/v1`: one run of an agent on a change that `changes.run`
+/// started, which lets the cost of each flow be measured.
+///
+/// It lives at `/changes/<name>/runs/<stamp>`, stamped when the run
+/// started.
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+#[schemars(extend("x-board-folder" = "/changes/{change}/runs/"))]
+pub(crate) struct RunRecord {
+    /// The record's type.
+    #[serde(rename = "$type")]
+    pub(crate) tag: Tag<Self>,
+    /// The name of the flow the change followed.
+    #[schemars(with = "Slug")]
+    pub(crate) flow: String,
+    /// Where the run was told to stop.
+    pub(crate) stop: crate::flow::Stop,
+    /// The file name of the program the run started, its `argv[0]` without
+    /// its path, when that name is a slug; never its arguments.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "Option<Slug>")]
+    pub(crate) program: Option<String>,
+    /// When the agent started.
+    #[schemars(with = "Timestamp")]
+    pub(crate) started: String,
+    /// When the agent exited or was stopped.
+    #[schemars(with = "Timestamp")]
+    pub(crate) ended: String,
+    /// The agent's exit status; left out when it was stopped or ended on a
+    /// signal.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) exit: Option<i32>,
+    /// What the agent reported it cost, in US dollars.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(range(min = 0))]
+    pub(crate) cost_usd: Option<f64>,
+    /// How long the agent reported it ran, in milliseconds.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) duration_ms: Option<u64>,
+    /// The budget the run's brief gave the agent, in US dollars.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(range(min = 0))]
+    pub(crate) budget_usd: Option<f64>,
+    /// Whether the agent ran in a sandbox.
+    pub(crate) sandbox: bool,
+    /// The phase the change stood in when the run ended.
+    #[schemars(with = "Slug")]
+    pub(crate) phase: String,
+    /// Why the run stopped.
+    #[schemars(with = "Ref<StopRecord>")]
+    pub(crate) stopped: String,
+}
+
+impl Record for RunRecord {
+    const TYPE: &'static str = "changes/run/v1";
 }

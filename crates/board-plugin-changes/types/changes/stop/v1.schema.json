@@ -1,0 +1,56 @@
+{
+  "additionalProperties": false,
+  "description": "`changes/stop/v1`: why a run of a change stopped, and where.\n\nIt lives at `/changes/<name>/stops/<stamp>`. The agent writes it with\n`changes.stop` before it exits, or `changes.run` writes it when the\nagent exits without one.",
+  "properties": {
+    "$type": {
+      "const": "changes/stop/v1",
+      "description": "The record's type.",
+      "type": "string"
+    },
+    "missing": {
+      "description": "The ids of the checks of that phase that were missing and block.",
+      "items": {
+        "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "phase": {
+      "description": "The phase the change stood in.",
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+      "type": "string"
+    },
+    "question": {
+      "description": "The question the run left for the owner, whose `blocks` names the\nchange.",
+      "format": "board-ref",
+      "type": "string",
+      "x-board-type": "plans/question/v1"
+    },
+    "reason": {
+      "description": "Why the run stopped.",
+      "enum": [
+        "reached",
+        "waiting",
+        "refused",
+        "budget",
+        "error"
+      ],
+      "type": "string"
+    },
+    "summary": {
+      "description": "What happened, in a line.",
+      "pattern": "^\\S+( \\S+){0,24}$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "$type",
+    "reason",
+    "phase",
+    "missing",
+    "summary"
+  ],
+  "title": "StopRecord",
+  "type": "object",
+  "x-board-folder": "/changes/{change}/stops/"
+}

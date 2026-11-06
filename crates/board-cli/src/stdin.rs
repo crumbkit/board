@@ -4,6 +4,7 @@ use std::ffi::OsString;
 use std::io::Read;
 
 use board_model::{Code, LogicalPath, MAX_RECORD_BYTES, RecordType, Refusal};
+use board_ops::agent::AGENT_VARIABLE;
 use board_ops::{Board, Expect};
 use board_plugin::Target;
 use clap::Subcommand;
@@ -127,6 +128,10 @@ pub(crate) fn call(
     };
     let mut plugins = plugins(context);
     plugins.environment.day_start = known.day_start().map(OsString::from);
+    if let Some(agent) = known.agent() {
+        let argv = Value::from(agent.to_vec()).to_string();
+        (plugins.environment.inherited).or_insert(AGENT_VARIABLE, OsString::from(argv));
+    }
     plugins.known = Some(&known);
     match board.call(target, &input, &plugins) {
         Ok(report) => render::call(printer, &report),

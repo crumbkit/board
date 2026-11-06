@@ -267,22 +267,41 @@ fn check_paths(path: &str, mount: &str, paths: &[String], kind: Kind) -> Result<
 /// The stamp a plan written at `now` is named by, `%Y%m%dT%H%M%S%fZ` in
 /// UTC, such as 20261105T115534421737Z.
 pub(crate) fn stamp(now: SystemTime) -> String {
-    let since = now
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .unwrap_or_default();
-    let seconds = i64::try_from(since.as_secs()).unwrap_or(i64::MAX);
-    let day = board_repos::Date::from_days(seconds.div_euclid(86_400));
-    let time = seconds.rem_euclid(86_400);
+    let (day, time, micros) = parts(now);
     format!(
-        "{:04}{:02}{:02}T{:02}{:02}{:02}{:06}Z",
+        "{:04}{:02}{:02}T{:02}{:02}{:02}{micros:06}Z",
         day.year,
         day.month,
         day.day,
         time / 3600,
         time / 60 % 60,
         time % 60,
-        since.subsec_micros()
     )
+}
+
+/// `now` as an RFC 3339 date-time in UTC to the second, such as
+/// 2026-11-05T11:55:34Z.
+pub(crate) fn time_of(now: SystemTime) -> String {
+    let (day, time, _) = parts(now);
+    format!(
+        "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z",
+        day.year,
+        day.month,
+        day.day,
+        time / 3600,
+        time / 60 % 60,
+        time % 60,
+    )
+}
+
+/// The UTC day of `now`, its seconds into that day and its microseconds.
+fn parts(now: SystemTime) -> (board_repos::Date, i64, u32) {
+    let since = now
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap_or_default();
+    let seconds = i64::try_from(since.as_secs()).unwrap_or(i64::MAX);
+    let day = board_repos::Date::from_days(seconds.div_euclid(86_400));
+    (day, seconds.rem_euclid(86_400), since.subsec_micros())
 }
 
 /// A new plan record for the change at `path`, and the `put` lines that

@@ -59,6 +59,32 @@ fn advance_into_build_refuses_when_the_cap_is_full_and_moves_on_below_it() {
 }
 
 #[test]
+fn start_on_a_flow_that_begins_in_build_refuses_a_full_cap_and_goes_past_it_with_a_reason() {
+    let board = Changes::new();
+    board.mount_x(&[("README.md", "x\n")]);
+    fill(&board, WIP_LIMIT, &json!({}));
+    let input = json!({"mount": "/repos/x", "task": TASK, "title": "Quick", "flow": "small"});
+    let refused = board.refusal("start", &input);
+    let override_command = format!(
+        "board call changes.start --mount /repos/x --title Quick --task {TASK} --flow small \
+         --over_limit '<why>'"
+    );
+    assert_eq!(
+        (&refused["code"], &refused["fields"]["override"]),
+        (&json!("changes::wip::full"), &json!(override_command))
+    );
+    assert!(!board.exists("changes/quick.json"));
+    let reason = "The owner wants it now.";
+    let given = serde_json::from_str(&record(input, &json!({"over_limit": reason}))).unwrap();
+    let output = board.call("start", &given);
+    assert_eq!(
+        (&output["phase"], &output["warning"]["code"]),
+        (&json!("build"), &json!("changes::wip::over_limit"))
+    );
+    assert_eq!(board.read("changes/quick.json")["over_limit"], reason);
+}
+
+#[test]
 fn prototypes_exploring_do_not_fill_the_build_cap() {
     let board = Changes::new();
     ready(&board);

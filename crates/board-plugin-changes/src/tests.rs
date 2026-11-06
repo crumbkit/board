@@ -38,6 +38,8 @@ fn the_manifest_parses_as_a_built_in_one_with_each_capabilitys_variables_and_tim
             "changes/flow/v1",
             "changes/plan/v1",
             "changes/prototype/v1",
+            "changes/run/v1",
+            "changes/stop/v1",
             "changes/understanding/v1"
         ]
     );
@@ -74,6 +76,17 @@ fn the_manifest_parses_as_a_built_in_one_with_each_capabilitys_variables_and_tim
             ),
             ("drop", vec![], None),
             ("migrate", vec![], Some(600)),
+            (
+                "run",
+                vec![
+                    "BOARD_AGENT",
+                    "ANTHROPIC_API_KEY",
+                    "CLAUDE_CODE_OAUTH_TOKEN",
+                    "BOARD_CHANGES_ACTIVE_DAYS"
+                ],
+                Some(3600)
+            ),
+            ("stop", vec![], None),
         ]
     );
 }
@@ -99,6 +112,7 @@ fn every_input_property_carries_a_sentence_that_says_what_it_means() {
         "start.task_repo",
         "start.flow",
         "start.suite",
+        "start.over_limit",
         "next.path",
         "attach.path",
         "attach.ref",
@@ -137,6 +151,21 @@ fn every_input_property_carries_a_sentence_that_says_what_it_means() {
         "sync.limit",
         "drop.path",
         "drop.reason",
+        "run.path",
+        "run.mount",
+        "run.title",
+        "run.name",
+        "run.task",
+        "run.flow",
+        "run.over_limit",
+        "run.through",
+        "run.until",
+        "run.inline",
+        "run.budget",
+        "stop.path",
+        "stop.reason",
+        "stop.question",
+        "stop.summary",
         "migrate.apply",
     ];
     expected.sort_unstable();

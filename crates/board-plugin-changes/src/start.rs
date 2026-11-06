@@ -5,6 +5,7 @@
 use std::fmt::Write as _;
 
 use board_ops::{Host, PluginError};
+use board_plugin::shape::Prose;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -16,10 +17,12 @@ use crate::flow::{FlowSummary, chosen, copy_line};
 use crate::gates::SECTIONS;
 use crate::phases::check_target;
 use crate::plan::plan_lines;
-use crate::records::{ChangeRecord, Route, SUITE_TYPE, TASK_TYPE};
+use crate::pr::quote;
+use crate::records::{BUILD, ChangeRecord, Kind, Route, SUITE_TYPE, TASK_TYPE};
 use crate::repo::{CODEOWNERS, DOCS, Rule, ask_first, exists, files, owners, route, suite_in};
 use crate::surfaced::{Surfaced, surfaced};
 use crate::tasks::{add_task, routing};
+use crate::wip::{Limit, Move, active_days, admit};
 use crate::{PLUGIN, refusal, to_value};
 
 /// The longest name a title is shortened to.
@@ -82,6 +85,13 @@ pub(crate) struct Input {
                        one the repository's contributing docs name when left out."
     )]
     suite: Option<String>,
+    #[schemars(
+        with = "Option<Prose>",
+        length(min = 1),
+        description = "Why the change starts in build although the WIP limit is reached, for a \
+                       flow whose first phase is build; recorded on the change."
+    )]
+    over_limit: Option<String>,
 }
 
 /// An obligation on the mount: the control and its summary.
@@ -101,7 +111,8 @@ struct Owed {
 /// `runs/suite/v1` path, or null when none is given and the docs name
 /// none. `surfaced` lists the open tasks, decisions and evals on the mount,
 /// which the change records and its plan cites or dismisses, and
-/// `obligations` each obligation control on the mount.
+/// `obligations` each obligation control on the mount. `warning` is set
+/// when a change that starts in build went past the WIP limit.
 #[derive(Debug, Serialize, JsonSchema)]
 #[schemars(rename = "StartOutput")]
 pub(crate) struct Output {
@@ -118,6 +129,8 @@ pub(crate) struct Output {
     suite: Option<String>,
     surfaced: Surfaced,
     obligations: Vec<Owed>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    warning: Option<Limit>,
 }
 
 /// A change's name from its title: lowercase words joined by hyphens.
@@ -213,6 +226,15 @@ pub(crate) fn start(host: &dyn Host, input: &Value) -> Result<Value, PluginError
     change.suite.clone_from(&suite);
     let routed = route(&rules, &asking);
     change.route = Some(routed);
+    let mut warning = None;
+    if first == BUILD {
+        let moving = Move {
+            over: over_command(&asked),
+            reason: asked.over_limit.as_deref(),
+            days: active_days(host)?,
+        };
+        warning = admit(host, &path, &mut change, Kind::Build, &moving)?;
+    }
     let task = task_for(host, &asked, &title)?;
     change.task = Some(task.clone());
     let found = surfaced(host, &mount, &task)?;
@@ -236,7 +258,30 @@ pub(crate) fn start(host: &dyn Host, input: &Value) -> Result<Value, PluginError
         docs: docs.into_iter().map(|(path, _)| path).collect(),
         surfaced: found,
         obligations,
+        warning,
     }))
+}
+
+/// The `start` command that goes past the WIP limit: the flags given, and
+/// `--over_limit`.
+fn over_command(asked: &Input) -> String {
+    let given = [
+        ("mount", Some(&asked.mount)),
+        ("title", Some(&asked.title)),
+        ("name", asked.name.as_ref()),
+        ("handle", asked.handle.as_ref()),
+        ("task", asked.task.as_ref()),
+        ("task_repo", asked.task_repo.as_ref()),
+        ("flow", asked.flow.as_ref()),
+        ("suite", asked.suite.as_ref()),
+    ];
+    let flags: Vec<String> = (given.iter())
+        .filter_map(|(flag, value)| Some(format!("--{flag} {}", quote(value.as_ref()?))))
+        .collect();
+    format!(
+        "board call changes.start {} --over_limit '<why>'",
+        flags.join(" ")
+    )
 }
 
 #[cfg(test)]

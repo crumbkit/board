@@ -223,6 +223,26 @@ impl JsonSchema for Date {
     }
 }
 
+/// A moment in UTC, as RFC 3339 writes it with the offset `Z`, such as
+/// `2026-11-06T10:15:00Z`. A `String` field takes it with
+/// `#[schemars(with = "Timestamp")]`.
+#[derive(Debug)]
+pub enum Timestamp {}
+
+impl JsonSchema for Timestamp {
+    fn inline_schema() -> bool {
+        true
+    }
+
+    fn schema_name() -> Cow<'static, str> {
+        "Timestamp".into()
+    }
+
+    fn json_schema(_: &mut SchemaGenerator) -> Schema {
+        json_schema!({"type": "string", "format": "date-time", "pattern": "Z$"})
+    }
+}
+
 /// A web address: an absolute `http` or `https` URI with a host, such as
 /// `https://example.com/pull/1`. A `urls` field takes it with
 /// `#[schemars(with = "Vec<Url>")]`. Board's validator is the only check.
@@ -589,6 +609,7 @@ pub fn registry() -> Map<String, Value> {
         entry::<Slug>(&mut generator),
         entry::<Subject>(&mut generator),
         entry::<Summary>(&mut generator),
+        entry::<Timestamp>(&mut generator),
         entry::<TypeName>(&mut generator),
         entry::<Url>(&mut generator),
     ])

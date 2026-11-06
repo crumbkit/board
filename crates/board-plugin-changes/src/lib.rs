@@ -20,7 +20,9 @@ mod pr;
 mod prototype;
 mod records;
 mod repo;
+mod run;
 mod start;
+mod stop;
 mod surfaced;
 mod sync;
 mod tasks;
@@ -36,7 +38,9 @@ use schemars::JsonSchema;
 use schemars::generate::SchemaSettings;
 use serde_json::{Map, Value, json};
 
-use records::{ChangeRecord, ChangeV1, PlanRecord, PrototypeRecord, UnderstandingRecord};
+use records::{
+    ChangeRecord, ChangeV1, PlanRecord, PrototypeRecord, RunRecord, StopRecord, UnderstandingRecord,
+};
 
 /// The plugin's name, which its codes start with.
 const PLUGIN: &str = "changes";
@@ -92,7 +96,7 @@ fn output<T: JsonSchema>() -> Value {
 /// Every capability, in the order the manifest lists them. A capability
 /// that rewrites a field of a change, or ends it, is destructive; one that
 /// adds a task or reads GitHub reaches the open world.
-const CAPABILITIES: [Capability; 16] = [
+const CAPABILITIES: [Capability; 18] = [
     Capability {
         name: "start",
         description: "Create a change in the first phase of its flow, its copy of the flow, its \
@@ -294,6 +298,34 @@ const CAPABILITIES: [Capability; 16] = [
         env: &[],
         timeout: Some(SYNC_TIMEOUT),
     },
+    Capability {
+        name: "run",
+        description: "Start a change, or resume one, set where its run stops (the flow's stop, \
+            or through or until a phase) and build its run brief: each phase's instruction up to \
+            the stop, the stop's rule, the surfaced records and the rules on its paths. inline \
+            returns the brief and starts nothing; otherwise the agent BOARD_AGENT names, else \
+            agent in the known boards file, runs on it in a worktree for the change, and run \
+            records the run and why it stopped.",
+        run: run::run,
+        input: input::<run::Input>,
+        output: output::<run::Output>,
+        hints: [false, true, false, true],
+        env: &run::ENV,
+        timeout: Some(run::TIMEOUT),
+    },
+    Capability {
+        name: "stop",
+        description: "Record why a run of the change stopped: reached, waiting, refused, budget \
+            or error, with the phase, the blocking checks missing there, the question it left \
+            for the owner and a one-line summary.",
+        run: stop::stop,
+        input: input::<stop::Input>,
+        output: output::<stop::Output>,
+        // Each stop is a new record.
+        hints: [false, false, false, false],
+        env: &[],
+        timeout: None,
+    },
 ];
 
 impl Plugin for Changes {
@@ -325,6 +357,8 @@ impl Plugin for Changes {
                 schema_of::<PrototypeRecord>(settings()),
             ),
             typed(flow::Flow::TYPE, schema_of::<flow::Flow>(settings())),
+            typed(RunRecord::TYPE, schema_of::<RunRecord>(settings())),
+            typed(StopRecord::TYPE, schema_of::<StopRecord>(settings())),
         ]
     }
 
@@ -394,6 +428,8 @@ fn manifest() -> Value {
             flow::Flow::TYPE,
             PlanRecord::TYPE,
             PrototypeRecord::TYPE,
+            RunRecord::TYPE,
+            StopRecord::TYPE,
             UnderstandingRecord::TYPE,
         ],
         "capabilities": capabilities,

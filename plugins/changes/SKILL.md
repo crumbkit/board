@@ -24,8 +24,9 @@ blocks is missing.
    whenever you start a phase or lose context. Do what `instruction` says
    and fix each check whose `status` is `missing`, following its `remedy`.
    When `ask` is set, only the owner or a reviewer can pass the checks
-   left: put `ask` to them. Stop where the flow's `stop` says unless told
-   otherwise. With the `board-changes` mod installed, only a builder started
+   left: put `ask` to them. Stop where the change's `stop` says, or the
+   flow's when it has none, unless told otherwise; once `next` returns
+   `stop` with `reached` true, `advance` refuses. With the `board-changes` mod installed, only a builder started
    from `changes.brief` can Edit, Write or NotebookEdit the repository; it
    cannot see writes made through Bash.
 3. Attach every record you make with
@@ -78,6 +79,20 @@ has had no new round for three days. Record
 `abandoned` only when the owner says so. `changes.open --kind prototype`
 lists every prototype with its verdict.
 
+## Runs
+
+To run a change to a stop, run
+`board -C <board> call changes.run --path /changes/<name> [--through <phase> | --until <phase>] --inline true`,
+or start one with `--mount` and `--title` in place of `--path`. It records
+the stop and returns the run brief; follow its `steps` and `stopping`.
+Without `--inline`, it starts the agent `BOARD_AGENT` or `agent` in
+`~/.config/board/config.json` names, in a worktree for the change, and
+records the run. An agent running unattended ends with
+`changes.stop --path /changes/<name> --reason <reason> --summary '<line>'`:
+`reached` at the stop; `waiting` after writing the `ask` as a
+`plans/question/v1` whose `blocks` names the change, passed as
+`--question`; `refused`, `budget` or `error` otherwise. Then it exits 0.
+
 ## Flows
 
 The plugin ships `development` and `small`; a board's own flow at
@@ -99,6 +114,18 @@ the development flow.
 - `changes::flow::unreadable`: fix the flow file named, or restore a
   change's copy with `reflow`.
 - `changes::reflow::no_phase`: choose a flow that has the change's phase.
+- `changes::run::stop_reached`: the change is at its stop. Record
+  `changes.stop --reason reached`, or move the stop with the `run` command
+  in the message.
+- `changes::run::no_phase`, `changes::run::two_stops`,
+  `changes::run::which_change`, `changes::run::no_flow`: give one stop
+  among the flow's phases or `done`, and name one change with a flow.
+- `changes::agent::not_set`, `changes::agent::invalid`,
+  `changes::agent::not_started`: set `BOARD_AGENT` or `agent` in
+  `~/.config/board/config.json` to an argv that starts, or pass
+  `--inline true`.
+- `changes::run::worktree`: fix the clone the mount reads, or pass
+  `--inline true`.
 - `changes::change::not_migrated`: run `changes.migrate --apply true`.
 - `changes::ux::not_agreed`: a mockup has no owner decision naming it, or
   UX lists none and does not say "No UI change".

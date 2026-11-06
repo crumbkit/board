@@ -17,6 +17,7 @@ mod phases;
 mod plan;
 mod pr;
 mod prototype;
+mod run;
 mod start;
 mod sync;
 mod wip;
@@ -34,6 +35,11 @@ const UNDERSTANDING_SCHEMA: &str =
     include_str!("../../../../board-plugin-changes/types/changes/understanding/v1.schema.json");
 const PROTOTYPE_SCHEMA: &str =
     include_str!("../../../../board-plugin-changes/types/changes/prototype/v1.schema.json");
+
+const RUN_SCHEMA: &str =
+    include_str!("../../../../board-plugin-changes/types/changes/run/v1.schema.json");
+const STOP_SCHEMA: &str =
+    include_str!("../../../../board-plugin-changes/types/changes/stop/v1.schema.json");
 
 const HEAD: &str = "a3f9c0de1234567890abcdef1234567890abcdef";
 const BASE: &str = "0123456789abcdef0123456789abcdef01234567";
@@ -234,6 +240,8 @@ struct Changes {
     /// The directory first on the plugins' `PATH`.
     bin: Scenario,
     cache: tempfile::TempDir,
+    /// The known boards file Board reads, when a test gives one.
+    boards: Option<PathBuf>,
 }
 
 impl Changes {
@@ -256,6 +264,7 @@ impl Changes {
             _beside: beside,
             bin: Scenario::new(),
             cache: tempfile::tempdir().unwrap(),
+            boards: None,
         };
         fixture.write(
             ".board/board.json",
@@ -439,7 +448,7 @@ impl Changes {
             home: None,
             cache: Some(self.cache.path().to_path_buf()),
             plugins: None,
-            boards: None,
+            boards: self.boards.clone(),
             signer: None,
             allowed_signers: None,
             environment: board_plugin::Environment {
@@ -708,7 +717,9 @@ fn board_lists_the_plugin_as_enabled_and_enabling_wrote_the_schema_it_ships() {
             "reflow",
             "sync",
             "drop",
-            "migrate"
+            "migrate",
+            "run",
+            "stop"
         ])
     );
     for (kind, schema) in [
@@ -718,6 +729,8 @@ fn board_lists_the_plugin_as_enabled_and_enabling_wrote_the_schema_it_ships() {
         ("plan/v1", PLAN_SCHEMA),
         ("understanding/v1", UNDERSTANDING_SCHEMA),
         ("prototype/v1", PROTOTYPE_SCHEMA),
+        ("run/v1", RUN_SCHEMA),
+        ("stop/v1", STOP_SCHEMA),
     ] {
         let written = board.read(&format!(".board/types/changes/{kind}.schema.json"));
         let shipped: Value = serde_json::from_str(schema).unwrap();

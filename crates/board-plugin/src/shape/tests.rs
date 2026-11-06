@@ -257,6 +257,7 @@ fn the_registry_holds_each_shared_shape_by_name_as_a_field_using_it_sees_it() {
             "Slug",
             "Subject",
             "Summary",
+            "Timestamp",
             "TypeName",
             "Url"
         ]
@@ -612,6 +613,21 @@ fn a_type_name_without_three_parts_or_a_version_is_refused_and_its_twin_is_admit
         ("changes/flow/v0", "changes/flow/v10"),
         ("Changes/flow/v1", "review/report/v1"),
         ("/changes/flow/v1", "jira/issue/v1"),
+    ] {
+        assert_eq!((refused, code(json!(refused))), (refused, invalid));
+        assert_eq!((admitted, code(json!(admitted))), (admitted, None));
+    }
+}
+
+/// A timestamp is a date and a time in UTC, as RFC 3339 writes it.
+#[test]
+fn a_timestamp_without_a_time_or_outside_utc_is_refused_and_its_twin_is_admitted() {
+    let code = refusal_of::<Timestamp>();
+    let invalid = Some(board_model::Code::RecordInvalid);
+    for (refused, admitted) in [
+        ("2026-11-06", "2026-11-06T10:15:00Z"),
+        ("2026-11-06T10:15:00", "2026-11-06T10:15:00Z"),
+        ("2026-11-06T10:15:00+01:00", "2026-11-06T09:15:00.5Z"),
     ] {
         assert_eq!((refused, code(json!(refused))), (refused, invalid));
         assert_eq!((admitted, code(json!(admitted))), (admitted, None));

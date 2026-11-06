@@ -1,7 +1,6 @@
 //! `run`: review the range or record a brief names with the agent
 //! `BOARD_REVIEW_AGENT` names, and record the report.
 
-use std::path::Path;
 use std::time::{Duration, Instant};
 
 use board_model::{Code, LogicalPath};
@@ -277,21 +276,14 @@ fn prompt(path: &str, brief: &BriefRecord, what: &str, shown: &str, body: &str) 
 /// name is a slug; else nobody known. The `claude` command is Claude Code,
 /// so it is recorded as `claude-code`, as every other writer names it.
 pub(crate) fn reviewer(program: &str) -> Option<Actor> {
-    let name = Path::new(program).file_name()?.to_str()?;
-    let slug = !name.is_empty()
-        && (name.split('-')).all(|word| {
-            !word.is_empty()
-                && word
-                    .bytes()
-                    .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit())
-        });
+    let name = agent::program_name(program)?;
     let name = if name == "claude" {
-        "claude-code"
+        "claude-code".to_owned()
     } else {
         name
     };
-    slug.then(|| Actor {
-        program: Some(name.to_owned()),
+    Some(Actor {
+        program: Some(name),
         ..Actor::default()
     })
 }

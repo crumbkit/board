@@ -22,8 +22,8 @@ use crate::{Asker, Board, OpenError, Signing};
 pub type Prefix = Result<LogicalPath, PathError>;
 
 /// The file's shape: `{"boards": ["/Users/me/Code/board"], "personal":
-/// "/Users/me/Code/board"}`. A relative path is read against the file's
-/// directory.
+/// "/Users/me/Code/board", "day_start": "07:00", "agent": ["claude", "-p"]}`,
+/// every key optional. A relative path is read against the file's directory.
 #[derive(Clone, Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RawKnown {
@@ -34,6 +34,10 @@ struct RawKnown {
     /// receives as `BOARD_DAY_START`.
     #[serde(default, deserialize_with = "hh_mm")]
     day_start: Option<String>,
+    /// The argv of the agent `changes.run` starts, such as `["claude",
+    /// "-p"]`, which the `BOARD_AGENT` variable overrides.
+    #[serde(default)]
+    agent: Option<Vec<String>>,
 }
 
 /// What a known boards file names, and the file.
@@ -86,6 +90,11 @@ impl KnownBoards {
     /// When the person's day starts, if the file says.
     pub fn day_start(&self) -> Option<&str> {
         self.known.day_start.as_deref()
+    }
+
+    /// The argv of the agent a plugin starts, if the file names one.
+    pub fn agent(&self) -> Option<&[String]> {
+        self.known.agent.as_deref()
     }
 
     /// The root of the personal board the file names, refused unless a

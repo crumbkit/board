@@ -112,6 +112,11 @@
     "pattern": "^\\S+( \\S+){0,24}$",
     "type": "string"
   },
+  "Timestamp": {
+    "format": "date-time",
+    "pattern": "Z$",
+    "type": "string"
+  },
   "TypeName": {
     "pattern": "^[a-z0-9-]+/[a-z0-9-]+/v[1-9][0-9]*$",
     "type": "string"

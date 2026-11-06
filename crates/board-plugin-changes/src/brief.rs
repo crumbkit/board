@@ -36,7 +36,7 @@ const RULES_ARGV: [&str; 3] = ["board", "call", "controls.for-paths"];
 
 /// One record the plan uses, and one line saying what it holds.
 #[derive(Debug, Serialize, JsonSchema)]
-struct Use {
+pub(crate) struct Use {
     #[serde(rename = "ref")]
     reference: String,
     line: String,
@@ -60,7 +60,7 @@ pub(crate) struct Rule {
 /// A command to run without a shell: `argv` is the program and its
 /// arguments, and `stdin` is its input.
 #[derive(Debug, Serialize, JsonSchema)]
-struct RulesCommand {
+pub(crate) struct RulesCommand {
     argv: [&'static str; 3],
     stdin: String,
 }
@@ -86,18 +86,18 @@ struct RulesCommand {
 #[derive(Debug, Serialize, JsonSchema)]
 #[schemars(rename = "BriefOutput")]
 pub(crate) struct Output {
-    brief_line: String,
-    path: String,
-    plan: Option<String>,
-    rules: Vec<Rule>,
-    rules_left_out: Vec<String>,
-    rules_unnamed: usize,
-    rules_command: Option<RulesCommand>,
-    uses: Vec<Use>,
-    left_out: usize,
-    phase: String,
-    instruction: String,
-    controls: String,
+    pub(crate) brief_line: String,
+    pub(crate) path: String,
+    pub(crate) plan: Option<String>,
+    pub(crate) rules: Vec<Rule>,
+    pub(crate) rules_left_out: Vec<String>,
+    pub(crate) rules_unnamed: usize,
+    pub(crate) rules_command: Option<RulesCommand>,
+    pub(crate) uses: Vec<Use>,
+    pub(crate) left_out: usize,
+    pub(crate) phase: String,
+    pub(crate) instruction: String,
+    pub(crate) controls: String,
 }
 
 /// The input `controls.for-paths` takes for `paths`, as JSON written as

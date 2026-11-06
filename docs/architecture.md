@@ -26,7 +26,9 @@ Board reads the known boards in `$XDG_CONFIG_HOME/board/config.json`
 `{"boards": ["/Users/me/Code/board"]}`. A relative path is read against the
 file's directory. A missing or empty file lists none, and any other file
 that is not this shape is `board::config::invalid`. So is a `day_start`
-that is not `HH:MM`. Board refreshes each
+that is not `HH:MM`, or an `agent` that is not a list of strings. `agent`
+is the argv `changes.run` starts, which a plugin receives as
+`BOARD_AGENT` unless that variable is already set. Board refreshes each
 known board's index and reads the mounts in its working tree. A board
 listed under several spellings counts once. A mount
 matches when its repository has the same git common directory as the

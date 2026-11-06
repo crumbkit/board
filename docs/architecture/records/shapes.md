@@ -99,14 +99,15 @@ Built-in plugins generate schemas from structs with schemars, through
 - `Tag<Self>` is the `$type` field; `Ref<T>` is a reference to a record type
   `T`, to a marker that lists several types, or to any entry when `T` is left
   out. Both are always inlined.
-- `Prose`, `Date`, `Url`, `Digest`, `Glob`, `LogicalGlob`, `Summary`,
+- `Prose`, `Date`, `Timestamp`, `Url`, `Digest`, `Glob`, `LogicalGlob`, `Summary`,
   `SessionId`, `Slug`, `Person`, `ObjectId`, `CommitName`, `Repository` and `Subject` are shared string
   shapes, and `Actor` and `Pinned` are shared object shapes. A `String` field takes one with
   `#[schemars(with = "Prose")]`, and a `urls` field with `#[schemars(with = "Vec<Url>")]`. `Digest` is `sha256:` and 64
   lowercase hex digits, such as an effect's id in a record. `Glob` is an SQLite GLOB pattern, which a
   plugin matches with GLOB in a query. `LogicalGlob` is a `Glob` that
   starts with `/`, such as a change's planned path. `Summary` is one line
-  of at most `SUMMARY_WORDS`, 25, words. `SessionId` is `local_` and a
+  of at most `SUMMARY_WORDS`, 25, words. `Timestamp` is an RFC 3339
+  date-time in UTC, ending in `Z`, such as a run's start. `SessionId` is `local_` and a
   lowercase uuid, `Slug` is lowercase words joined by `-`, `Person` is a
   slug or an email address, and `ObjectId` is a git object id of 40 or 64
   lowercase hex digits. `CommitName` is a commit named by 7 to 40 of

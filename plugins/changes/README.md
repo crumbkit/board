@@ -40,8 +40,8 @@ understanding checks. Git history holds earlier phases.
   `attach --suite` changes it.
 - `surfaced` lists the open tasks, decisions and evals on the mount when
   the change started, which the `considered` check reads.
-- `stop`, when set, says where an agent running the change stops, in
-  place of the flow's `stop`. No capability sets it yet.
+- `stop`, when set, says where a run of the change stops, in place of the
+  flow's `stop`. `run` sets it; "Runs" below says what it holds back.
 - `mount` references the repository's `board/mount/v1` record, and `plan`
   the change's current `changes/plan/v1`, which `changes.plan` sets to
   the plan it writes. `board check` reports a reference
@@ -55,8 +55,8 @@ understanding checks. Git history holds earlier phases.
 - `task` references the `tasks/task/v2` the change does. `start` always
   sets it; the development flow's `task` check needs it.
 - `head` is the commit under test and review.
-- `touched` is the UTC day, `YYYY-MM-DD`, on which `start`, `attach`,
-  `advance`, `plan`, `resume` or `prototype` last wrote the change. The WIP
+- `touched` is the UTC day, `YYYY-MM-DD`, on which `start`, `run`,
+  `attach`, `advance`, `plan`, `resume` or `prototype` last wrote the change. The WIP
   limit reads it. `sync`, `drop`, `pause` and `verdict` leave it as it is.
 - `over_limit` is the reason given for the latest move into `build` past
   the WIP limit, which `pr` puts in the pull request body.
@@ -118,6 +118,21 @@ Every capability reads it as a change on the shipped development flow,
 whose suite the repository's contributing docs name, and writes it back as
 v1. `reflow` and `attach --suite` refuse it with
 `changes::change::not_migrated`; `migrate --apply true` rewrites it as v2.
+
+`changes/run/v1` at `/changes/<name>/runs/<stamp>` records one run of an
+agent that `run` started: the `flow`, the `stop` it was given, the
+`program` (the file name of argv[0] when it is a slug, never the
+arguments), `started` and `ended` in UTC, the `exit` status, the
+`cost_usd` and `duration_ms` the agent reported, the `budget_usd` its brief
+gave, `sandbox` (always false for now), the `phase` the change ended in,
+and `stopped`, the stop record that says why it stopped.
+
+`changes/stop/v1` at `/changes/<name>/stops/<stamp>` records why a run
+stopped: its `reason` (`reached`, `waiting`, `refused`, `budget` or
+`error`), the `phase`, the ids of the blocking checks `missing` there, the
+`plans/question/v1` it left for the owner as `question`, and a one-line
+`summary`. The agent writes it with `stop`; when the agent exits without
+one, `run` writes it.
 
 `changes/understanding/v1` at `/changes/<name>/understanding/<subject>`
 records how the owner showed he understands a change's `data` or `ux`.
@@ -191,7 +206,15 @@ run keeps the github records already written.
   repository path holding nothing (`changes::mount::not_found`) and a flow
   neither the board holds nor the plugin ships (`changes::flow::not_found`).
   A flow whose first phase is `build`, such as `small`, starts the change
-  there without the WIP limit's check.
+  there, and `start` checks the WIP limit as `advance` into `build` does;
+  `--over_limit '<why>'` goes past it.
+- `run (--path /changes/<name> | --mount /repos/<name> --title '<title>' [--task <path>] [--name <name>] [--flow <name>] [--over_limit '<why>']) [--through <phase> | --until <phase>] [--inline true] [--budget <usd>]`
+  starts a change as `start` does, or resumes the one at `--path`, sets its
+  `stop`, and builds its run brief. "Runs" below says what it does.
+- `stop --path /changes/<name> --reason <reason> --summary '<one line>' [--question <path>]`
+  writes a `changes/stop/v1` with the change's phase and the blocking
+  checks missing there. `--question` must be a `plans/question/v1`
+  (`changes::ref::wrong_type`). Each call writes a new record.
 - `next --path /changes/<name>`: read-only. The change's `flow` (its name
   and phases), its phase, each gate check as `pass` or `missing` with a
   `detail`, its `actor`, whether it `blocks`, and when missing its
@@ -405,6 +428,59 @@ appears in a gate.
 
 A path that holds no change is `changes::change::not_found`; a degraded
 change is `changes::change::degraded`.
+
+### Runs
+
+`run` sets the change's `stop` to `--through` or `--until` a phase, else
+keeps the stop the change has, else takes its flow's. The phase must be one
+of the flow's, or `done` (`changes::run::no_phase`). Giving both is
+`changes::run::two_stops`, and naming no change, or both a path and a
+mount, is `changes::run::which_change`. A v1 change, a prototype
+(`changes::run::no_flow`), a paused change and an ended one are refused.
+
+A `through X` stop is reached when the change stands in X and X's gate has
+no blocking check missing, or stands later. An `until X` stop is reached
+as soon as the change stands in X or later. `next` returns `stop` with
+`reached`, and when it is reached its instruction says to stop and record
+`stop --reason reached`. `advance` refuses to move a change that stands in
+the stop's phase, or later, with `changes::run::stop_reached`; its message
+gives the `run --until <next phase> --inline true` command that moves the
+stop.
+
+The run brief holds `brief_line`, the change, its board and flow, the stop
+and its rule in plain words, `steps` (each phase from the current one up
+to the stop, through its phase for `through`, with who does it and its
+instruction), at most 20 `surfaced` records with a count of the rest, the
+rules fields `brief` returns, `stopping`, which says how an unattended
+agent stops, and `budget_usd`. `--inline true` returns the brief and
+starts nothing; inside Claude Code the `flow` skill in
+`claude-code/skills/` uses it.
+
+Without `--inline`, `run` reads the agent's argv from `BOARD_AGENT`, a
+JSON array of strings, or else from `agent` in the known boards file,
+`~/.config/board/config.json`, such as `{"agent": ["claude", "-p",
+"--output-format", "json"]}`. With neither it refuses with
+`changes::agent::not_set`, and an argv that is not a JSON array of strings
+is `changes::agent::invalid`. When the stop is already reached it starts
+nothing. Otherwise it makes the worktree `<clone>.worktrees/<name>` on
+branch `<name>` from the branch the mount follows, or reuses it, and
+starts the argv in the mount's directory there, with the brief line, a
+blank line and the brief as JSON on stdin and `BOARD_CHANGE` set to the
+change's path. A program that cannot start is `changes::agent::not_started`
+and a worktree git cannot make is `changes::run::worktree`; the change is
+already started and its stop set by then.
+
+`run` waits for the agent, for at most 59 minutes, and has no
+`--detach`. When the agent's last line on stdout is a JSON object, as
+Claude Code's `--output-format json` prints, it reads `total_cost_usd` and
+`duration_ms` from it. When the agent wrote no stop record during the run,
+`run` writes one. Its reason is `error` when the agent ran too long or
+printed too much. Otherwise, after an exit 0, it is `reached` when the
+stop is reached and `waiting` when the change waits on the owner or a
+reviewer. Failing those, it is `budget` when the reported cost is over
+`--budget`, and `error` otherwise. It then writes the run record.
+`--budget` reaches the agent only through the brief; `run` passes no flag
+of any agent program.
 
 ### Flows
 

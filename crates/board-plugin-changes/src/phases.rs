@@ -27,6 +27,7 @@ use crate::records::{
     TICKET_TYPES, is_final,
 };
 use crate::repo::check_suite;
+use crate::stop::{Shown, holds, reached, stop_reached};
 use crate::wip::{Limit, Move, active_days, admit};
 use crate::{PLUGIN, refusal, to_value};
 
@@ -131,7 +132,9 @@ pub(crate) struct AttachInput {
 /// When every missing check that blocks waits on the owner or a reviewer,
 /// `waiting_on` names them and `ask` is a question body built from their
 /// remedies, which a session running without the owner records as a
-/// plans/question/v1 whose `blocks` names the change.
+/// plans/question/v1 whose `blocks` names the change. `stop` is where the
+/// change's run stops, which `changes.run` set, and whether the change has
+/// reached it; it is left out when no run set one.
 #[derive(Debug, Serialize, JsonSchema)]
 pub(crate) struct NextOutput {
     pub(crate) path: String,
@@ -143,6 +146,8 @@ pub(crate) struct NextOutput {
     pub(crate) waiting_on: Vec<Actor>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) ask: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) stop: Option<Shown>,
     pub(crate) instruction: String,
     pub(crate) sync: LastSync,
 }
@@ -356,21 +361,45 @@ fn waiting(observed: &Observed, checks: &[Check]) -> (Vec<Actor>, Option<String>
 /// The change's flow and phase, route, its gate's checks, whom it waits
 /// on, and the next instruction.
 pub(crate) fn next_of(host: &dyn Host, path: &str) -> Result<NextOutput, PluginError> {
+    Ok(step_of(host, path)?.0)
+}
+
+/// What `next` says of the change at `path`, and what its gate read.
+pub(crate) fn step_of(host: &dyn Host, path: &str) -> Result<(NextOutput, Observed), PluginError> {
     let (change, _) = read(host, path)?;
     let observed = observe(host, path, &change)?;
     let checks = gate(&observed);
     let (waiting_on, ask) = waiting(&observed, &checks);
-    Ok(NextOutput {
+    let passes = !checks.iter().any(Check::blocking);
+    let stop = match (&change.stop, &observed.flow) {
+        (Some(stop), Some(flow)) => Some(Shown {
+            reached: reached(flow, &change.phase, stop, passes),
+            stop: stop.clone(),
+        }),
+        _ => None,
+    };
+    let instruction = match &stop {
+        Some(shown) if shown.reached => format!(
+            "The change has reached the stop of its run, {}: stop here. Running unattended, \
+             record it with `board call changes.stop --path {path} --reason reached --summary \
+             '<one line>'` and exit.",
+            shown.stop
+        ),
+        _ => instruction_for(&observed, &checks, ask.is_some()),
+    };
+    let next = NextOutput {
         path: path.to_owned(),
         flow: observed.flow.as_ref().map(FlowSummary::from),
         phase: change.phase.clone(),
         route: change.route,
-        instruction: instruction_for(&observed, &checks, ask.is_some()),
+        instruction,
         gate: checks,
         waiting_on,
         ask,
+        stop,
         sync: last_sync(host)?,
-    })
+    };
+    Ok((next, observed))
 }
 
 pub(crate) fn next(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
@@ -574,6 +603,11 @@ pub(crate) fn advance(host: &dyn Host, input: &Value) -> Result<Value, PluginErr
                 ("remedies", json!(remedies)),
             ],
         ));
+    }
+    if let (Some(stop), Some(flow)) = (&change.stop, &observed.flow)
+        && holds(flow, &phase, stop)
+    {
+        return Err(stop_reached(&path, &phase, stop, flow));
     }
     let to = (observed.flow.as_ref())
         .and_then(|flow| flow.after(&phase))
