@@ -864,3 +864,34 @@ fn review_refuses_a_head_the_mounted_repository_lacks_until_the_head_is_one_it_h
     board.write("r/1.json", &approving(&head, &base));
     assert_eq!(advanced(&board), "land");
 }
+
+/// A change in review that passes every other review check, with an
+/// obligation control on its planned paths.
+fn reviewing_with_an_obligation(board: &Changes) {
+    let (base, head) = reviewing(board, &["/r/1"]);
+    board.write("r/1.json", &approving(&head, &base));
+    let owed = json!({
+        "$type": "controls/control/v1",
+        "kind": "obligation",
+        "requirement": "Sweep the docs.",
+        "purpose": "p",
+        "paths": ["repos/x/**"],
+    });
+    board.write("controls/x/docs.json", &owed.to_string());
+}
+
+#[test]
+fn review_refuses_an_obligation_on_the_planned_paths_while_the_controls_plugin_is_enabled() {
+    let board = Changes::new();
+    reviewing_with_an_obligation(&board);
+    let refused = board.refusal("advance", &path());
+    assert_eq!(refused["code"], "changes::gate::unmet");
+    assert_eq!(refused["fields"]["missing"], json!(["obligations-settled"]));
+}
+
+#[test]
+fn review_finds_no_obligations_while_the_controls_plugin_is_not_enabled() {
+    let board = Changes::enabling(&["changes"]);
+    reviewing_with_an_obligation(&board);
+    assert_eq!(advanced(&board), "land");
+}

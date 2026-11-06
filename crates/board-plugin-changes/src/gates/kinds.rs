@@ -87,14 +87,10 @@ pub(super) fn obligations_missing(
     plan: &BTreeMap<String, String>,
     each: &flow::Check,
 ) -> Option<String> {
-    let owed = match &observed.obligations {
-        Ok(owed) => owed,
-        Err(why) => return Some(why.clone()),
-    };
     let escaped = (each.escape_section.as_ref())
         .map(|heading| paths_in(plan.get(&heading.to_lowercase()).map_or("", String::as_str)))
         .unwrap_or_default();
-    let left: Vec<&str> = (owed.iter().map(String::as_str))
+    let left: Vec<&str> = (observed.obligations.iter().map(String::as_str))
         .filter(|control| !escaped.contains(control))
         .collect();
     (!left.is_empty()).then(|| {

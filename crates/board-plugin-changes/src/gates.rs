@@ -91,7 +91,7 @@ pub(crate) enum Status {
 /// plan declares, `edited` each file the change's diff edits, `outside`
 /// those no planned path matches, and `diff_unread` why the diff could not
 /// be read. `obligations` lists the obligation controls on the planned
-/// paths, or why they could not be read; `controlled` maps each control a
+/// paths, none when the controls plugin is not enabled; `controlled` maps each control a
 /// `controlled-paths` check names to the edited files it lists, or none
 /// when no such control exists. `ticket_types` holds the type of each of
 /// the change's tickets Board reads, `board` the board's root, and
@@ -118,7 +118,7 @@ pub(crate) struct Observed {
     /// Whether the change's newest pull request reads as a github/pull/v1
     /// record, which the land gate needs.
     pub(crate) pull_read: bool,
-    pub(crate) obligations: Result<Vec<String>, String>,
+    pub(crate) obligations: Vec<String>,
     pub(crate) controlled: BTreeMap<String, Option<Vec<String>>>,
     pub(crate) ticket_types: Vec<String>,
     pub(crate) board: Option<String>,
@@ -143,7 +143,7 @@ impl Observed {
             outside: Vec::new(),
             diff_unread: None,
             pull_read: false,
-            obligations: Ok(Vec::new()),
+            obligations: Vec::new(),
             controlled: BTreeMap::new(),
             ticket_types: Vec::new(),
             board: None,

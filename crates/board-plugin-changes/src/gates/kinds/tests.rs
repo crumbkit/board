@@ -207,7 +207,7 @@ fn a_surfaced_record_neither_used_nor_considered_is_missing_and_one_listed_under
 fn an_obligation_on_the_plans_paths_is_missing_and_one_named_under_the_escape_heading_passes() {
     let list = json!([{"id": "settled", "kind": "obligations", "escape_section": "Obligations left owed"}]);
     let mut found = observed(&json!({}), &[]);
-    found.obligations = Ok(vec!["/controls/x/docs-owed".to_owned()]);
+    found.obligations = vec!["/controls/x/docs-owed".to_owned()];
     let check = first(&found, list.clone());
     assert_eq!(check.status, Status::Missing);
     assert_eq!(
@@ -219,18 +219,13 @@ fn an_obligation_on_the_plans_paths_is_missing_and_one_named_under_the_escape_he
         "# T\n\n## Obligations left owed\n\n- /controls/x/docs-owed, owed to the next step.\n"
             .to_owned(),
     );
-    assert_eq!(first(&found, list.clone()).status, Status::Pass);
-    found.obligations = Err("the controls plugin is not enabled".to_owned());
-    assert_eq!(
-        first(&found, list).detail,
-        "the controls plugin is not enabled"
-    );
+    assert_eq!(first(&found, list).status, Status::Pass);
 }
 
 #[test]
 fn a_missing_check_with_blocks_false_never_blocks_and_its_blocking_twin_does() {
     let mut found = observed(&json!({}), &[]);
-    found.obligations = Ok(vec!["/controls/x/docs-owed".to_owned()]);
+    found.obligations = vec!["/controls/x/docs-owed".to_owned()];
     let quiet = first(
         &found,
         json!([{"id": "o", "kind": "obligations", "blocks": false}]),

@@ -13,27 +13,21 @@ const CONTROL_TYPE: &str = "controls/control/v1";
 pub(crate) const CONTROLS_UNAVAILABLE: [&str; 2] =
     ["board::plugin::not_installed", "board::plugin::not_enabled"];
 
-/// The controls `controls.for-paths` finds on `paths`, with their summary,
-/// or why the controls plugin could not be asked.
-fn for_paths(
-    host: &dyn Host,
-    paths: &[String],
-) -> Result<Result<Vec<(String, String)>, String>, PluginError> {
+/// The controls `controls.for-paths` finds on `paths`, with their summary;
+/// none when the controls plugin is not installed or not enabled, since a
+/// board without it records no obligations.
+fn for_paths(host: &dyn Host, paths: &[String]) -> Result<Vec<(String, String)>, PluginError> {
     if paths.is_empty() {
-        return Ok(Ok(Vec::new()));
+        return Ok(Vec::new());
     }
     let output = match call_or_refusal(host, "controls.for-paths", &json!({"paths": paths})) {
         Ok(output) => output,
         Err(refusal) if CONTROLS_UNAVAILABLE.contains(&refusal.code.as_str()) => {
-            return Ok(Err(format!(
-                "the obligations on the plan's paths are read with controls.for-paths, which this \
-                 Board refused: {}; enable it with `board plugin enable controls`",
-                refused("call", &refusal).message
-            )));
+            return Ok(Vec::new());
         }
         Err(refusal) => return Err(refused("call", &refusal)),
     };
-    Ok(Ok((output
+    Ok((output
         .get("controls")
         .and_then(Value::as_array)
         .into_iter()
@@ -44,7 +38,7 @@ fn for_paths(
             control.get("summary")?.as_str()?.to_owned(),
         ))
     })
-    .collect()))
+    .collect())
 }
 
 /// Which of `controls` are obligations, by the `kind` their records hold.
@@ -65,26 +59,19 @@ fn obligations_among(host: &dyn Host, controls: &[String]) -> Result<Vec<String>
 }
 
 /// The obligation controls on `paths`, a plan's files and patterns, by
-/// path, or why they could not be read.
-pub(crate) fn obligations(
-    host: &dyn Host,
-    paths: &[String],
-) -> Result<Result<Vec<String>, String>, PluginError> {
-    let found = match for_paths(host, paths)? {
-        Ok(found) => found,
-        Err(why) => return Ok(Err(why)),
-    };
-    let controls: Vec<String> = found.into_iter().map(|(control, _)| control).collect();
-    Ok(Ok(obligations_among(host, &controls)?))
+/// path; none when the controls plugin is not enabled.
+pub(crate) fn obligations(host: &dyn Host, paths: &[String]) -> Result<Vec<String>, PluginError> {
+    let controls: Vec<String> = (for_paths(host, paths)?.into_iter())
+        .map(|(control, _)| control)
+        .collect();
+    obligations_among(host, &controls)
 }
 
 /// The obligation controls on anything under `mount`, by path, with each
 /// one's summary; none when the controls plugin is not enabled.
 pub(crate) fn on_mount(host: &dyn Host, mount: &str) -> Result<Vec<(String, String)>, PluginError> {
     let pattern = format!("{}/**", mount.trim_end_matches('/'));
-    let Ok(found) = for_paths(host, &[pattern])? else {
-        return Ok(Vec::new());
-    };
+    let found = for_paths(host, &[pattern])?;
     let controls: Vec<String> = found.iter().map(|(control, _)| control.clone()).collect();
     let owed = obligations_among(host, &controls)?;
     Ok(found

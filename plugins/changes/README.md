@@ -603,7 +603,7 @@ evaluated by kind:
 | `understood` | a decision the owner signed references an attached understanding check of this change's `subject`; with `rechecks`, each such check also holds that many matching rechecks |
 | `mockups` | the `agreed` part: each mockup under UX is named by a signed decision; the `neighbours` part: UX lists its neighbours; both when `part` is left out |
 | `considered` | each path in the change's `surfaced` is in the plan's `uses` or named under a `### Considered` heading |
-| `obligations` | no obligation control applies to the plan's paths, except those named under the `escape_section` heading |
+| `obligations` | no obligation control applies to the plan's paths, except those named under the `escape_section` heading; a board without the controls plugin enabled has none |
 | `controlled-paths` | the diff edits no file that the controls in `controls` list in their `paths` or `applies_to` |
 | `flow-valid` | at least one `changes/flow/v1` is attached, and each can run and gives a `remedy` to every check whose actor is the owner or a reviewer; the detail lists each problem with its phase and check id |
 | `exists` | something is at `path`, its placeholders filled; a placeholder with no value yet leaves it missing |
