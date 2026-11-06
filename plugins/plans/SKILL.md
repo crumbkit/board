@@ -5,8 +5,8 @@ description: 'The plans plugin records the decisions a session makes, the questi
 
 # plans
 
-Record decisions, questions and answers in the board, so the next session
-finds them.
+The plans plugin keeps decisions, questions and answers in the board, so
+the next session finds them.
 
 ## Which board
 
@@ -16,18 +16,21 @@ in. `<project>` names what the record concerns, such as the repository
 
 ## Decisions
 
-1. Before you decide, read the decisions already recorded:
+1. Before you decide, list the decisions already recorded, and read each
+   one that bears on yours with `board -C <board> get <path>`:
 
        board -C <board> ls /projects/<project>/decisions
+
+   `board::path::not_found` means the project has no decision yet.
 
 2. When you or the owner choose between options, write a
    `plans/decision/v1`. Write it as its own record, even while you write a
    change's plan; the plan can name it.
 
-       echo '{"$type": "plans/decision/v1", "decision": "<what was chosen>", "why": "<the reason>", "alternatives": ["<what was not chosen>"], "by": {"program": "claude-code"}, "decided": "2026-11-06T12:00:00Z"}' | board -C <board> put --new --var project=<project>
+       echo '{"$type": "plans/decision/v1", "decision": "<what was chosen>", "why": "<the reason>", "alternatives": ["<what was not chosen>"], "by": {"program": "claude-code"}, "decided": "<now>"}' | board -C <board> put --new --var project=<project>
 
    It prints the path it wrote, `/projects/<project>/decisions/<id>`.
-   `decided` is the UTC time. `by` names who decided, with any of
+   `decided` is the UTC time, as `date -u +%Y-%m-%dT%H:%M:%SZ` prints it. `by` names who decided, with any of
    `session` (a `local_` id), `program`, `person` and `agent`; the owner's
    decision names the owner as `person`. Add `refs` for the board paths the
    decision concerns, such as a plan or an answer, `urls` for web pages such
@@ -43,10 +46,11 @@ in. `<project>` names what the record concerns, such as the repository
    answer, write a `plans/question/v1` with the options the owner may
    choose:
 
-       echo '{"$type": "plans/question/v1", "question": "<what the owner is asked>", "options": [{"id": "a", "text": "<option a>"}, {"id": "b", "text": "<option b>"}], "recommendation": "a", "why": "<why you recommend it>", "blocks": "<what waits on it>", "by": {"session": "<your local_ id>"}, "asked": "2026-11-06T12:00:00Z", "status": "open"}' | board -C <board> put --new --var project=<project>
+       echo '{"$type": "plans/question/v1", "question": "<what the owner is asked>", "options": [{"id": "a", "text": "<option a>"}, {"id": "b", "text": "<option b>"}], "recommendation": "a", "why": "<why you recommend it>", "blocks": "<what waits on it>", "by": {"session": "<your local_ id>"}, "asked": "<now>", "status": "open"}' | board -C <board> put --new --var project=<project>
 
-   It writes `/projects/<project>/questions/<id>`. `by` must name your
-   session's `local_` id. Never put a secret in a question.
+   It writes `/projects/<project>/questions/<id>`. `asked` is the UTC time.
+   `by` must name your session's `local_` id, so the answer can be sent
+   back to it. Never put a secret in a question.
 2. List the questions still waiting for an answer:
 
        board -C <board> call plans.open --path /projects/<project>

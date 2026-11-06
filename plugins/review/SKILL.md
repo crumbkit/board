@@ -1,6 +1,6 @@
 ---
 name: review
-description: 'The review plugin records a code review as a brief and a report in the board. Use it when you review a change, and when you ask for a review of your own. Write the brief with `board -C <board> put /reviews/<id>/brief`, then run `board -C <board> call review.run --brief /reviews/<id>/brief`, or write the report yourself at `/reviews/<id>/report`. SKILL.md and README.md in the plugin''s directory say more.'
+description: 'The review plugin records a code review as a brief and a report in the board. Use it when you review a change, and when you ask for a review of your own. Write the brief, with its `range` and `focus`, on stdin to `board -C <board> put /reviews/<id>/brief`, then run `board -C <board> call review.run --brief /reviews/<id>/brief`, or write the report yourself at `/reviews/<id>/report`. SKILL.md and README.md in the plugin''s directory say more.'
 ---
 
 # review
@@ -30,10 +30,12 @@ in.
        board -C <board> call review.run --brief /reviews/<id>/brief
 
    It gives the brief and the diff to the agent that `BOARD_REVIEW_AGENT`
-   names and writes the report at `/reviews/<id>/report`. When it fails
-   with `review::agent::not_set` or `review::agent::failed`, have a
-   reviewer that has not seen the change, such as a fresh subagent, review
-   the diff, and write its report in step 3.
+   names and writes the report at `/reviews/<id>/report`. It reads the
+   commits from the git repository that holds the board, so for a change to
+   a mounted repository it fails with `review::range::unknown`. When it
+   fails with that code or a `review::agent::` code, have a reviewer that
+   has not seen the change, such as a fresh subagent, review the diff, and
+   write its report in step 3.
 3. Write the report, a `review/report/v1`, whenever a review ran outside
    `review.run`, including one that found nothing:
 
@@ -51,13 +53,19 @@ in.
 
        board -C <board> call changes.attach --path /changes/<name> --ref /reviews/<id>/report
 
-   The change's review gate passes when an attached report's range ends at
-   the change's head, its verdict is not `changes`, and it has no high
-   finding. After you fix findings, record the new head and review it again
-   under a new id, with `follows` naming the last report.
+   The change's review gate needs an attached report whose range ends at
+   the change's head, whose verdict is not `changes`, and which has no high
+   finding. The gate also refuses a diff that edits files outside the
+   plan's paths. After you fix findings, record the new head with
+   `board -C <board> call changes.attach --path /changes/<name> --head <commit>`
+   and review it again under a new id, with `follows` naming the last
+   report.
 
 `board -C <board> call review.post --report /reviews/<id>/report --pr <url>`
 comments a report on a pull request once the owner approves the comment.
-`board -C <board> call review.covered --base <commit>` checks that committed
-reports cover every commit from the base to HEAD. The plugin's README.md
+`board -C <board> call review.covered --base <commit> --change /changes/<name>`
+checks that the reports the change attaches cover every commit from the
+merge base to the change's head, read from the clone its mount reads.
+Without `--change`, it checks the reports committed in the board's own
+repository against the commits there. The plugin's README.md
 gives every field, and how to review a record instead of commits.
