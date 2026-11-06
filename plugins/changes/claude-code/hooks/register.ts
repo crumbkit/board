@@ -6,6 +6,7 @@ import {
   changeRecord,
   configRecord,
   isChangeRecord,
+  isKnownBoard,
   mountRecord,
   judge,
   localOrigin,
@@ -29,8 +30,14 @@ import type { Mount } from './guard'
 // and, for a prototype, only on its branch `proto/<name>`.
 // Every other file is admitted untouched, except the board config and each
 // known board's change and mount records, which change only through board
-// commands and are refused to every agent. A lookup that fails refuses: a guard
-// that admits what it cannot check would be optional. There is no bypass.
+// commands and are refused to every agent. A repository whose directory is
+// listed in `boards` of the board config is not guarded as a mounted
+// repository, even when another known board mounts it, since a board holds
+// records and no code. The guard learns this from the config. It does not
+// test for a board root marker, because a code repository can commit a board
+// of its own: Board's own source holds `.board/board.json`. A lookup that
+// fails refuses: a guard that admits what it cannot check would be optional.
+// There is no bypass.
 //
 // Soft limit: the guard sees only these three tools. A file written through
 // Bash (`sed -i`, a heredoc, a script) passes it. The review gate covers that
@@ -141,7 +148,8 @@ async function knownBoards($: EngineInterface): Promise<string[]> {
 
 /**
  * The mounts that hold `file`, across every known board, or the refusal of a
- * board record. A mount holds the file when the file's repository is a
+ * board record. A file in a known board's own repository, or a worktree of
+ * it, is held by no mount once its board records are checked. A mount holds the file when the file's repository is a
  * worktree of the mount's `repo`; else when its origin is a local path or
  * `file://` URL of a worktree of it; else when both repositories' origins name
  * one repository. So a separate clone is guarded too. A repository with no
@@ -154,11 +162,14 @@ async function mountsOf($: EngineInterface, file: string): Promise<Mount[] | str
   const found = await locate($, placed.dir)
   if (found === null) return []
   const all: Mount[] = []
+  const roots: string[] = []
   for (const board of await knownBoards($)) {
     const ran = await sh($, MOUNTS, [board, MOUNTS_SQL])
     const mounts = ran.exitCode === 0 ? parseMounts(board, ran.stdout) : null
     if (mounts === null) throw new Unknown(`\`board -C ${board} query\` did not list its mounts: ${said(ran)}`)
-    const root = `${(await realOf($, board)).replace(/\/$/, '')}/`
+    const real = await realOf($, board)
+    roots.push(real)
+    const root = `${real.replace(/\/$/, '')}/`
     if (placed.real.startsWith(root)) {
       const relative = placed.real.slice(root.length)
       if (isChangeRecord(relative)) return changeRecord(file, board)
@@ -167,6 +178,8 @@ async function mountsOf($: EngineInterface, file: string): Promise<Mount[] | str
     }
     all.push(...mounts)
   }
+  // A known board's repository holds records, which the loop above guards, and no code.
+  if (isKnownBoard(await realOf($, found.repo), roots)) return []
   const worktreeOf = (repo: string) => all.filter(m => m.repo === repo)
   if (worktreeOf(found.repo).length > 0 || all.length === 0) return worktreeOf(found.repo)
   const local = localOrigin(found.url, found.repo)

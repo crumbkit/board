@@ -471,6 +471,15 @@ every Edit, Write and NotebookEdit. Install it with
    clone is guarded too. A file that no mount holds is admitted, so plans,
    other board records, memory and scratch directories stay writable. A
    repository with no `origin` that is no worktree of a mount is admitted.
+   A repository whose directory is listed in `boards`, or a worktree of
+   one, is admitted even when another known board mounts it, because a
+   board holds records and no code. Its board records are still refused,
+   as the next paragraph says. Both directories are compared with symbolic
+   links followed, and they must be equal: a board inside a larger
+   repository does not exempt that repository. The guard reads this from
+   the config. It does not test for a board root marker such as
+   `.board/board.json`, because a code repository can commit a board of its
+   own, as Board's own source does.
 3. Otherwise it reads the acting agent's first user message: a subagent's
    own, or the main conversation's. The first line that holds text must be
    `board-brief: /changes/<name>`. The guard checks that line, and does not
@@ -535,8 +544,9 @@ There is no bypass flag. The guard cannot see:
   `changes::guard::unknown`, since the oldest row left may be one another
   agent wrote.
 
-The guard refuses an edit of every mounted repository, including the notes
-repositories a personal board mounts, such as `/repos/notes-personal`. An
+The guard refuses an edit of every mounted repository that is not itself a
+known board, including the notes repositories a personal board mounts, such
+as `/repos/notes-personal`. An
 agent without a brief writes notes and tasks through the `tasks` and `notes`
 capabilities instead.
 

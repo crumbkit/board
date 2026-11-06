@@ -83,6 +83,18 @@ export function parseBoards(stdout: string): string[] | { why: string } {
   return { why: 'the board config is not JSON with a `boards` list of directories' }
 }
 
+const trimmed = (dir: string) => dir.replace(/(.)\/+$/, '$1')
+
+/**
+ * Whether `repo`, a repository's directory, is one of `boards`, the known
+ * boards' directories. Both sides are compared whole, with trailing slashes
+ * trimmed, so a board inside a larger repository does not exempt that
+ * repository. The caller follows symbolic links on both sides first.
+ */
+export function isKnownBoard(repo: string, boards: string[]): boolean {
+  return boards.some(board => trimmed(board) === trimmed(repo))
+}
+
 /** The SQL that lists a board's own mounts with the directory of each repository. */
 export const MOUNTS_SQL =
   'SELECT e.logical, CASE WHEN m.code IS NULL THEN s.repository END, m.path FROM mounts m ' +

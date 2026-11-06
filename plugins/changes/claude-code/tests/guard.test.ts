@@ -2,7 +2,7 @@ import { expect, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 import type { Engine } from 'claude-code/testing'
 
-import { briefOf, localOrigin, originOf } from '../hooks/guard'
+import { briefOf, isKnownBoard, localOrigin, originOf } from '../hooks/guard'
 
 // These prove which edits the write guard lets through and the exact refusal
 // for each that it stops. git and `board` are stood in by a process.run hook,
@@ -14,6 +14,11 @@ import { briefOf, localOrigin, originOf } from '../hooks/guard'
 const HOME = '/home/me'
 const BOARD = '/home/me/board'
 const BOARD2 = '/home/me/team-board'
+// A second board nested in the personal board's directory, as its own git repository.
+const SECOND = '/home/me/board/second'
+// A worktree of the personal board's repository.
+const BOARD_WORKTREE = '/home/me/board.worktrees/x'
+const HANDOFF = `${BOARD}/projects/handoff.md`
 const REPO = '/work/widgets'
 const FILE = `${REPO}/src/lib.rs`
 const BRIEF = 'board-brief: /changes/fix-it\n\nYou are the builder for /changes/fix-it.'
@@ -22,6 +27,13 @@ const MOUNTS = report('board/query-report/v2', [
   ['/repos/widgets', REPO, 'repos/widgets.json'],
   ['/repos/gadgets', '/work/gadgets', 'repos/gadgets.json'],
   ['/repos/broken', null, 'repos/broken.json'],
+])
+// The second board's mounts: it mounts the personal board.
+const SECOND_MOUNTS = report('board/query-report/v2', [['/personal', BOARD, 'personal.json']])
+// The personal board's mounts when it also mounts the second board.
+const MOUNTS_WITH_SECOND = report('board/query-report/v2', [
+  ['/repos/widgets', REPO, 'repos/widgets.json'],
+  ['/repos/second', SECOND, 'repos/second.json'],
 ])
 const CONFIG = `${HOME}/.config/board/config.json`
 const change = (record: object) =>
@@ -94,6 +106,9 @@ const FILES = new Set([
   `${BOARD}/changes/fix-it/plans/20261105T120000Z.md`,
   `${BOARD}/repos/widgets.json`,
   `${BOARD}/repos/README.md`,
+  HANDOFF,
+  `${SECOND}/notes.md`,
+  `${BOARD_WORKTREE}/projects/handoff.md`,
 ])
 const DIRS = new Set([...FILES].flatMap(f => f.split('/').slice(1, -1).map((_, i, parts) => `/${parts.slice(0, i + 1).join('/')}`)))
 DIRS.add('/')
@@ -116,6 +131,8 @@ const REPOSITORIES: [string, string][] = [
   ['/work/widgets.worktrees/x', `${REPO}/.git\ngit@github.com:acme/widgets.git\n`],
   [REPO, `${REPO}/.git\ngit@github.com:acme/widgets.git\n`],
   ['/work/gadgets', '/work/gadgets/.git\n'],
+  [SECOND, `${SECOND}/.git\n`],
+  [BOARD_WORKTREE, `${BOARD}/.git\n`],
   [BOARD, `${BOARD}/.git\n`],
   ['/work/loose', '/work/loose/.git\n'],
   ['/work/clone-ssh', '/work/clone-ssh/.git\ngit@github.com:acme/widgets.git\n'],
@@ -139,6 +156,8 @@ type Answers = {
   changes?: Record<string, string>
   /** The board config's text; null when there is none. */
   config?: string | null
+  /** What `board query` prints for each board's mounts, by board; MOUNTS when left out. */
+  mounts?: Record<string, string>
   /** Whether `board query` fails. */
   queryFails?: boolean
   /** The session's id; s1 when left out. */
@@ -192,7 +211,8 @@ function engine(on: On, answers: Answers) {
     }
     if (script.includes('query')) {
       ran.push(`query ${args[0]}`)
-      return answers.queryFails ? run(2, '', 'board: the index could not be built') : run(0, MOUNTS)
+      if (answers.queryFails) return run(2, '', 'board: the index could not be built')
+      return run(0, answers.mounts?.[args[0] ?? ''] ?? MOUNTS)
     }
     if (script.includes('check --healthy')) {
       ran.push(`check ${args[0]} ${args[1]}`)
@@ -592,5 +612,95 @@ test('a mount record is refused to every agent, and another file beside it is ad
   }
   expect((await edit($, `${BOARD}/repos/broken.json`)).deny).toMatch(/^changes::guard::board_record: .*\/repos\/broken /)
   expect((await edit($, `${BOARD}/repos/README.md`)).deny).toBeUndefined()
+  expect(edits).toEqual(['Edit'])
+})
+
+test('a known board is matched by its whole directory, ignoring trailing slashes', () => {
+  expect(isKnownBoard(BOARD, [BOARD])).toBe(true)
+  expect(isKnownBoard(BOARD, [`${BOARD}/`, SECOND])).toBe(true)
+  expect(isKnownBoard(`${BOARD}/`, [BOARD])).toBe(true)
+  // A board inside a repository does not exempt the repository, nor a board the repository is inside.
+  expect(isKnownBoard(BOARD, [SECOND])).toBe(false)
+  expect(isKnownBoard(SECOND, [BOARD])).toBe(false)
+  expect(isKnownBoard(REPO, [])).toBe(false)
+})
+
+test('a known board that another known board mounts is admitted without a brief, and guarded when not listed', async ($, on) => {
+  const answers: Answers = {
+    first: { '': 'Coordinate the work.' },
+    config: JSON.stringify({ boards: [BOARD, SECOND] }),
+    mounts: { [SECOND]: SECOND_MOUNTS },
+  }
+  const { ran, edits } = engine(on, answers)
+  expect((await edit($, HANDOFF)).deny).toBeUndefined()
+  expect(ran).toEqual(['git', 'config', `query ${BOARD}`, `query ${SECOND}`])
+  answers.config = JSON.stringify({ boards: [SECOND] })
+  expect((await edit($, HANDOFF)).deny).toBe(
+    `changes::guard::no_brief: ${HANDOFF} is in /personal, which the board at ${SECOND} mounts. Only an agent ` +
+      'whose first message starts with `board-brief: /changes/<name>` may edit it, and this agent\'s first message ' +
+      `does not. Start a builder whose first message is the output of \`board -C ${SECOND} call changes.brief ` +
+      '--path /changes/<name>`.',
+  )
+  expect(edits).toEqual(['Edit'])
+})
+
+test('a mounted known board still refuses its change, plan and mount records', async ($, on) => {
+  const { edits } = engine(on, {
+    first: { '': 'Coordinate the work.' },
+    config: JSON.stringify({ boards: [BOARD, SECOND] }),
+    mounts: { [SECOND]: SECOND_MOUNTS },
+  })
+  expect((await edit($, `${BOARD}/changes/fix-it.json`)).deny).toBe(
+    `changes::guard::board_record: ${BOARD}/changes/fix-it.json is a change record of the board at ${BOARD}, ` +
+      `which changes only through board commands. Use \`board -C ${BOARD} call changes.start\`, \`changes.attach\` ` +
+      'or `changes.advance`, or `board put` to drop a change.',
+  )
+  expect((await edit($, `${BOARD}/changes/fix-it/plans/20261105T120000Z.json`)).deny).toMatch(
+    /^changes::guard::board_record: .* is a change record of the board at \/home\/me\/board,/,
+  )
+  expect((await edit($, `${BOARD}/repos/widgets.json`)).deny).toMatch(
+    /^changes::guard::board_record: .* is the mount record of \/repos\/widgets in the board at \/home\/me\/board,/,
+  )
+  expect((await edit($, HANDOFF)).deny).toBeUndefined()
+  expect(edits).toEqual(['Edit'])
+})
+
+test('a nested known board is its own repository, admitted when listed and guarded when only mounted', async ($, on) => {
+  const file = `${SECOND}/notes.md`
+  const answers: Answers = {
+    first: { '': 'Coordinate the work.' },
+    config: JSON.stringify({ boards: [BOARD, SECOND] }),
+    mounts: { [BOARD]: MOUNTS_WITH_SECOND, [SECOND]: SECOND_MOUNTS },
+  }
+  const { edits } = engine(on, answers)
+  expect((await edit($, file)).deny).toBeUndefined()
+  answers.config = JSON.stringify({ boards: [BOARD] })
+  expect((await edit($, file)).deny).toMatch(/^changes::guard::no_brief: \/home\/me\/board\/second\/notes.md is in \/repos\/second, /)
+  expect(edits).toEqual(['Edit'])
+})
+
+test('a code repository a board mounts stays guarded when a known board is mounted too', async ($, on) => {
+  const answers: Answers = {
+    first: { '': 'Coordinate the work.', a1: BRIEF },
+    config: JSON.stringify({ boards: [BOARD, SECOND] }),
+    mounts: { [SECOND]: SECOND_MOUNTS },
+  }
+  const { edits } = engine(on, answers)
+  expect((await edit($)).deny).toMatch(/^changes::guard::no_brief: \/work\/widgets\/src\/lib.rs is in \/repos\/widgets, /)
+  expect((await edit($, FILE, 'a1')).deny).toBeUndefined()
+  expect(edits).toEqual(['Edit'])
+})
+
+test('a worktree of a known board is admitted like the board, and guarded when the board is not listed', async ($, on) => {
+  const file = `${BOARD_WORKTREE}/projects/handoff.md`
+  const answers: Answers = {
+    first: { '': 'Coordinate the work.' },
+    config: JSON.stringify({ boards: [BOARD, SECOND] }),
+    mounts: { [SECOND]: SECOND_MOUNTS },
+  }
+  const { edits } = engine(on, answers)
+  expect((await edit($, file)).deny).toBeUndefined()
+  answers.config = JSON.stringify({ boards: [SECOND] })
+  expect((await edit($, file)).deny).toMatch(/^changes::guard::no_brief: .* is in \/personal, which the board at \/home\/me\/board\/second mounts\./)
   expect(edits).toEqual(['Edit'])
 })
