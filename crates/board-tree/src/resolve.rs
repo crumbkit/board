@@ -309,9 +309,12 @@ impl Repositories {
             repository: mounted.path().to_path_buf(),
             source: tree.source(),
         };
-        // Mounts alone cannot cycle: each pins a commit, and no commit can
-        // hold its own id. A cycle needs a link, and the hop limit bounds
-        // the rest; this key catches a link cycle met through a mount.
+        // One resolution cannot cycle through mounts alone: each pins a
+        // commit, and no commit can hold its own id. A walk across commits
+        // can still repeat a board, as two boards that mount each other at
+        // successive commits do; `walk_mounts` stops there. Here a cycle
+        // needs a link, and the hop limit bounds the rest; this key catches
+        // a link cycle met through a mount.
         let followed = if trail.visited.insert((board, remaining.clone())) {
             let chains = &mut chains;
             self.follow(&mut tree, remaining, from_link, trail, (pointers, chains))

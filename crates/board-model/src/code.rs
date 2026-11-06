@@ -59,6 +59,7 @@ codes! {
     MountFollowMissing => "board::mount::follow_missing",
     MountNotAncestor => "board::mount::not_ancestor",
     MountStale => "board::mount::stale",
+    MountCycle => "board::mount::cycle",
     ResolveCycle => "board::resolve::cycle",
     ResolveTooManyHops => "board::resolve::too_many_hops",
     RepoUnreadable => "board::repo::unreadable",

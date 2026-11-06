@@ -34,6 +34,35 @@ fn default_threads() -> usize {
     })
 }
 
+/// What tells a repository apart from others (see [`Repository::identity`]).
+#[derive(Clone, Debug)]
+pub(crate) struct Identity {
+    common: Option<PathBuf>,
+    origin: Option<String>,
+}
+
+impl Identity {
+    /// Whether both are one repository: they share a common git directory,
+    /// or both have an `origin` and its stored form is the same.
+    pub(crate) fn same(&self, other: &Self) -> bool {
+        let common = self.common.is_some() && self.common == other.common;
+        common || (self.origin.is_some() && self.origin == other.origin)
+    }
+}
+
+/// The fetch URL of `git`'s `origin` remote, or why it has none, as git
+/// says it.
+pub(crate) fn remote_url(git: &gix::Repository) -> Result<String, String> {
+    match git.try_find_remote("origin") {
+        None => Err("error: No such remote 'origin'".to_owned()),
+        Some(Err(error)) => Err(format!("error: {error}")),
+        Some(Ok(remote)) => match remote.url(gix::remote::Direction::Fetch) {
+            Some(url) => Ok(url.to_bstring().to_string()),
+            None => Err("error: the remote origin has no url".to_owned()),
+        },
+    }
+}
+
 /// A git repository opened for reading.
 #[derive(Debug)]
 pub struct Repository {
@@ -157,6 +186,16 @@ impl Repository {
 
     pub(crate) fn git(&self) -> &gix::Repository {
         &self.git
+    }
+
+    /// What tells this repository apart from others: its canonical common
+    /// git directory, which its linked worktrees share, and the stored form
+    /// of its `origin`, which its clones share.
+    pub(crate) fn identity(&self) -> Identity {
+        Identity {
+            common: self.git.common_dir().canonicalize().ok(),
+            origin: (remote_url(&self.git).ok()).map(|url| board_model::shown_remote(&url)),
+        }
     }
 
     /// How many directories this repository's working-tree views have read

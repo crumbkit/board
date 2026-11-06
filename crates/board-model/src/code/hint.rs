@@ -49,6 +49,11 @@ fn mounted(code: Code, fields: &Fields, mount: &LogicalPath) -> Option<String> {
              into the repository the mount names, or update the mount there",
             fields.path.as_ref()?
         ),
+        Code::MountCycle => format!(
+            "the mount at {} is {repository}, which Board cannot write; remove the mount \
+             there, or mount a board that does not mount this one",
+            fields.path.as_ref()?
+        ),
         Code::RecordUnknownType => format!(
             "add the type's schema at `{}` {repository}, or fix `$type` there",
             schema?
@@ -413,6 +418,7 @@ fn generic(code: Code) -> &'static str {
         Code::MountNotAncestor => {
             "run `board mount update <path>` to pin the mount to the mounted HEAD, then put again"
         }
+        Code::MountCycle => "remove the mount, or mount a board that does not mount this one",
         Code::MountStale => {
             "commit or discard the change in the mounted repository, run `board mount update <path>`, then read the record again and reapply your change"
         }
