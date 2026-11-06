@@ -189,6 +189,8 @@ pub(crate) struct RunBrief {
 /// left out. For a sandboxed run, `path` names the change in the
 /// throwaway board, `sandbox` is the temporary directory that holds it,
 /// and `run` and `stopped` are the copies under the change that asked.
+/// `skills_missing`, outside a sandbox, names the skills the phases from
+/// the change's phase to the stop rely on that HOME lacks.
 #[derive(Debug, Serialize, JsonSchema)]
 #[schemars(rename = "RunOutput")]
 pub(crate) struct Output {
@@ -208,6 +210,8 @@ pub(crate) struct Output {
     worktree: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     sandbox: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    skills_missing: Option<MissingSkills>,
 }
 
 pub(crate) fn run(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
@@ -225,6 +229,8 @@ pub(crate) fn run(host: &dyn Host, input: &Value) -> Result<Value, PluginError> 
     let (flow, stop) = set_stop(host, &path, asked)?;
     let (brief, shown, mount) = brief_for(host, &path, &flow, &stop, given.budget)?;
     let mut output = Output::of(&path, shown);
+    let phases: Vec<&str> = brief.steps.iter().map(|step| step.phase.as_str()).collect();
+    output.skills_missing = skills::missing(host, &flow, &phases);
     let Some(argv) = argv else {
         output.brief = Some(brief);
         return Ok(to_value(output));
@@ -259,6 +265,7 @@ impl Output {
             exit: None,
             worktree: None,
             sandbox: None,
+            skills_missing: None,
         }
     }
 
@@ -738,8 +745,10 @@ fn unrecorded(
 
 mod directory;
 mod sandbox;
+mod skills;
 
 use directory::directory_for;
+use skills::MissingSkills;
 
 #[cfg(test)]
 mod tests;

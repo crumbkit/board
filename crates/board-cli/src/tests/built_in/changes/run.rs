@@ -219,6 +219,47 @@ fn advance_with_the_stop_moved_past_a_phase_with_an_unmet_check_is_refused_as_un
     assert_eq!(refused["fields"]["missing"], json!(["head"]));
 }
 
+/// [`quick`], with its draft phase relying on the skill `drafting`, and a
+/// home whose skills directory holds `installed`.
+fn quick_with_a_skill(installed: &[&str]) -> (Changes, tempfile::TempDir) {
+    let board = quick();
+    let mut flow = board.read("flows/quick.json");
+    flow["phases"][0]["skills"] = json!(["drafting"]);
+    board.write("flows/quick.json", &flow.to_string());
+    let home = tempfile::tempdir().unwrap();
+    for skill in installed {
+        write_file(
+            &home.path().join(format!(".claude/skills/{skill}/SKILL.md")),
+            "---\nname: s\n---\n",
+        );
+    }
+    (board, home)
+}
+
+#[test]
+fn run_reports_a_skill_its_phases_rely_on_that_the_home_lacks() {
+    let (board, home) = quick_with_a_skill(&[]);
+    let home = home.path().to_str().unwrap();
+    let output = board
+        .invoke("run", &starting(&json!({"inline": true})), false, &[("HOME", home)])
+        .unwrap();
+    assert_eq!(output["skills_missing"]["names"], json!(["drafting"]));
+    assert_eq!(
+        output["skills_missing"]["directory"],
+        json!(format!("{home}/.claude/skills"))
+    );
+}
+
+#[test]
+fn run_reports_no_skill_when_the_home_holds_every_one_its_phases_rely_on() {
+    let (board, home) = quick_with_a_skill(&["drafting"]);
+    let home = home.path().to_str().unwrap();
+    let output = board
+        .invoke("run", &starting(&json!({"inline": true})), false, &[("HOME", home)])
+        .unwrap();
+    assert_eq!(output.get("skills_missing"), None, "{output}");
+}
+
 #[test]
 fn a_through_stop_is_reached_once_its_phases_gate_passes_and_holds_the_change_there() {
     let board = quick();

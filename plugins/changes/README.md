@@ -490,6 +490,14 @@ agent stops, and `budget_usd`. `--inline true` returns the brief and
 starts nothing; inside Claude Code the `flow` skill in
 `skills/flow/` uses it.
 
+`skills_missing`, when present, names the skills that the phases in
+`steps` list in their `skills` and that are not installed: a skill is
+installed when `$HOME/.claude/skills/<name>/SKILL.md` exists, the
+directory `board skills install` writes to by default. It also gives that
+`directory` and `help` saying how to install them. `run` reports them and
+starts the agent anyway. A sandboxed run does not report them, since its
+agent has a home of its own.
+
 Without `--inline`, `run` reads the agent's argv from `BOARD_AGENT`, a
 JSON array of strings, or else from `agent` in the known boards file,
 `~/.config/board/config.json`, such as `{"agent": ["claude", "-p",
@@ -513,8 +521,11 @@ printed too much. Otherwise, after an exit 0, it is `reached` when the
 stop is reached and `waiting` when the change waits on the owner or a
 reviewer. Failing those, it is `budget` when the reported cost is over
 `--budget`, and `error` otherwise. It then writes the run record.
-`--budget` reaches the agent only through the brief; `run` passes no flag
-of any agent program.
+Board does not enforce `--budget`. The budget reaches the agent only as
+text in the brief, `run` passes no flag of any agent program, and an agent
+that spends past it runs on until it exits or the 59 minutes pass. The run
+record's `budget` reason only says, afterwards, that the reported cost went
+over it.
 
 `--sandbox true` dry-runs a flow, as the flow-authoring flow's dry-run
 phase does. It needs a new change, so `--path` is

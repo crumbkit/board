@@ -436,7 +436,7 @@ impl Changes {
 
     /// Runs `board` in the board's root, which is also the caller's
     /// directory, with only the variables a user's shell would pass it and
-    /// `inherited`.
+    /// `inherited`, which may set `HOME`.
     fn run_inheriting(
         &self,
         arguments: &[&str],
@@ -454,8 +454,12 @@ impl Changes {
             allowed_signers: None,
             environment: board_plugin::Environment {
                 path: Some(format!("{}:{PATH}", self.bin.workdir().display()).into()),
+                home: (inherited.iter())
+                    .find(|(name, _)| *name == "HOME")
+                    .map(|(_, value)| OsString::from(value)),
                 caller: Some(root.into_os_string()),
                 inherited: (inherited.iter())
+                    .filter(|(name, _)| *name != "HOME")
                     .map(|(name, value)| (OsString::from(name), OsString::from(value)))
                     .collect(),
                 ..board_plugin::Environment::default()
