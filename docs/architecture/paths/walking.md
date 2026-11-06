@@ -27,6 +27,12 @@ board it repeats, and nothing beneath the mount is indexed. A mounted commit
 is walked on its shortest route, so its mounts are judged against the boards
 above it on that route.
 
+The rule is deliberate even where nothing would repeat. A mount of an
+archive branch of the board's own repository is refused, though its commit
+holds no mounts, because telling the cases apart would need a full walk of
+the repeated commit on a cold index. Mount such a branch from a separate
+repository with a different `origin` instead.
+
 A mount of the same repository beside another is walked. One repository
 mounted twice at different commits is an example. A clone with no `origin`,
 or a different one, is not seen as the same repository, so its loop is
