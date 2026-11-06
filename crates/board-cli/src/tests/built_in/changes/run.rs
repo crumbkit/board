@@ -204,22 +204,41 @@ fn advance_is_refused_past_the_stop_with_how_to_record_it_and_admitted_once_the_
 }
 
 #[test]
-fn advance_at_the_stop_is_refused_until_the_run_records_its_stop_and_then_admitted() {
+fn recording_the_stop_of_an_inline_run_leaves_advance_refused_until_a_later_run_moves_it() {
     let board = quick();
     board.call("run", &starting(&json!({"inline": true})));
     board.call("advance", &json!({"path": CHANGE}));
-    let refused = board.refusal("advance", &json!({"path": CHANGE}));
-    assert_eq!(refused["code"], "changes::run::stop_reached");
     let stopped = json!({"path": CHANGE, "reason": "reached", "summary": "Reached land."});
     let output = board.call("stop", &stopped);
     let written = output["stop"].as_str().unwrap().trim_start_matches('/');
     assert_eq!(board.read(&format!("{written}.json"))["phase"], "land");
-    assert_eq!(board.read("changes/quick-fix.json").get("stop"), None);
-    assert_eq!(next(&board).get("stop"), None);
+    assert_eq!(
+        board.read("changes/quick-fix.json")["stop"],
+        json!({"until": "land"})
+    );
+    let refused = board.refusal("advance", &json!({"path": CHANGE}));
+    assert_eq!(refused["code"], "changes::run::stop_reached");
+    board.call("run", &resuming(&json!({"inline": true, "until": "done"})));
     assert_eq!(
         board.call("advance", &json!({"path": CHANGE}))["to"],
         "done"
     );
+}
+
+#[test]
+fn a_run_whose_agent_does_not_start_puts_back_the_stop_the_change_held() {
+    let board = quick();
+    board.call("run", &starting(&json!({"inline": true})));
+    let missing = json!(["/nonexistent/agent"]).to_string();
+    let refused = spawned(&board, &resuming(&json!({"until": "done"})), &missing).unwrap_err();
+    assert_eq!(refused["code"], "changes::agent::not_started");
+    assert_eq!(
+        board.read("changes/quick-fix.json")["stop"],
+        json!({"until": "land"})
+    );
+    let out = tempfile::tempdir().unwrap();
+    let argv = agent(&board, out.path(), 0, None);
+    assert!(spawned(&board, &resuming(&json!({"until": "done"})), &argv).is_ok());
 }
 
 #[test]

@@ -127,8 +127,9 @@ the development flow.
   change's copy with `reflow`.
 - `changes::reflow::no_phase`: choose a flow that has the change's phase.
 - `changes::run::stop_reached`: the change is at its stop. Record
-  `changes.stop --reason reached` and end. Recording it clears the stop,
-  so the person who started the run decides what comes next.
+  `changes.stop --reason reached` and end the run. The person who started
+  the run moves the stop by starting a later run with `--through` or
+  `--until`.
 - `changes::run::no_phase`, `changes::run::two_stops`,
   `changes::run::which_change`, `changes::run::no_flow`: give one stop
   among the flow's phases or `done`, and name one change with a flow.

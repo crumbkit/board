@@ -226,7 +226,7 @@ pub(crate) fn run(host: &dyn Host, input: &Value) -> Result<Value, PluginError> 
     };
     let asked = asked_stop(&given)?;
     let path = change_of(host, &given, None)?;
-    let (flow, stop) = set_stop(host, &path, asked)?;
+    let (flow, stop, previous) = set_stop(host, &path, asked)?;
     let (brief, shown, mount) = brief_for(host, &path, &flow, &stop, given.budget)?;
     let mut output = Output::of(&path, shown);
     let phases: Vec<&str> = brief.steps.iter().map(|step| step.phase.as_str()).collect();
@@ -235,11 +235,24 @@ pub(crate) fn run(host: &dyn Host, input: &Value) -> Result<Value, PluginError> 
         output.brief = Some(brief);
         return Ok(to_value(output));
     };
+    // A spawned run that starts no agent leaves the stop as it found it.
     if output.stop.reached {
+        restore_stop(host, &path, previous)?;
         return Ok(to_value(output));
     }
-    let directory = directory_for(host, &path, &mount)?;
-    let ran = spawn(host, &path, &argv, &directory, &brief, &[])?;
+    let started = directory_for(host, &path, &mount).and_then(|directory| {
+        Ok((
+            spawn(host, &path, &argv, &directory, &brief, &[])?,
+            directory,
+        ))
+    });
+    let (ran, directory) = match started {
+        Ok(started) => started,
+        Err(error) => {
+            restore_stop(host, &path, previous)?;
+            return Err(error);
+        }
+    };
     let told = Told {
         flow: &flow.name,
         stop: &stop,
@@ -295,9 +308,14 @@ impl Output {
 }
 
 /// Records `asked`, else the change's stop, else its flow's, as the stop
-/// of the change at `path`, and returns its flow and the stop; refused for a change that
-/// is v1, ended, paused or follows no flow, and for a phase its flow lacks.
-fn set_stop(host: &dyn Host, path: &str, asked: Option<Stop>) -> Result<(Flow, Stop), PluginError> {
+/// of the change at `path`, and returns its flow, the stop and the stop
+/// the change held before; refused for a change that is v1, ended, paused
+/// or follows no flow, and for a phase its flow lacks.
+fn set_stop(
+    host: &dyn Host,
+    path: &str,
+    asked: Option<Stop>,
+) -> Result<(Flow, Stop, Option<Stop>), PluginError> {
     let (mut change, blob) = read(host, path)?;
     refuse_v1(path, &change, "run")?;
     if is_final(&change.phase) {
@@ -350,9 +368,17 @@ fn set_stop(host: &dyn Host, path: &str, asked: Option<Stop>) -> Result<(Flow, S
             ],
         ));
     }
-    change.stop = Some(stop.clone());
+    let previous = change.stop.replace(stop.clone());
     board::put(host, &[line(path, &blob, &touch(host, change))])?;
-    Ok((flow, stop))
+    Ok((flow, stop, previous))
+}
+
+/// Puts back `previous` as the stop of the change at `path`, for a run that
+/// started no agent.
+fn restore_stop(host: &dyn Host, path: &str, previous: Option<Stop>) -> Result<(), PluginError> {
+    let (mut change, blob) = read(host, path)?;
+    change.stop = previous;
+    board::put(host, &[line(path, &blob, &change)])
 }
 
 /// The run brief of the change at `path`, which stops at `stop` in

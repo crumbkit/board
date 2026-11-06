@@ -42,8 +42,8 @@ understanding checks. Git history holds earlier phases.
 - `surfaced` lists the open tasks, decisions and evals on the mount when
   the change started, which the `considered` check reads.
 - `stop`, when set, says where the active run of the change stops, in
-  place of the flow's `stop`. `run` sets it, and recording the run's stop
-  clears it; "Runs" below says what it holds back.
+  place of the flow's `stop`. `run` sets it; "Runs" below says what it
+  holds back and what clears it.
 - `mount` references the repository's `board/mount/v1` record, and `plan`
   the change's current `changes/plan/v1`, which `changes.plan` sets to
   the plan it writes. `board check` reports a reference
@@ -246,8 +246,7 @@ of `changes` still fails `review`.
   `stop`, and builds its run brief. "Runs" below says what it does.
 - `stop --path /changes/<name> --reason <reason> --summary '<one line>' [--question <path>]`
   writes a `changes/stop/v1` with the change's phase and the blocking
-  checks missing there, and clears the change's `stop`, since the run has
-  ended. `--question` must be a `plans/question/v1`
+  checks missing there. It leaves the change's `stop` as it is. `--question` must be a `plans/question/v1`
   (`changes::ref::wrong_type`). Each call writes a new record.
 - `next --path /changes/<name>`: read-only. The change's `flow` (its name
   and phases), its phase, each gate check as `pass` or `missing` with a
@@ -479,16 +478,20 @@ as soon as the change stands in X or later. `next` returns `stop` with
 `stop --reason reached`. `advance` refuses to move a change that stands in
 the stop's phase, or later, with `changes::run::stop_reached`, before it
 reads the gate, so the refusal is the same whether or not the phase's
-checks pass. Its message tells the agent to record `stop --reason
-reached` and end, and gives no command that moves the stop.
+checks pass. Its message tells the agent to record `changes.stop --reason
+reached` and end the run, and tells the person who started the run that
+they move the stop by starting a later run with `--through` or `--until`.
 
-The stop belongs to the run, so the run's end clears it. `stop` clears the
-change's `stop` in the same write as the stop record, and so does `run`
-when it writes the run record of an agent that has exited. After that,
-`next` shows no stop and `advance` reads only the gate, so the person who
-started the run can advance the change by hand or start another run. A
-`run` whose stop is already reached starts no agent and leaves the stop
-set; `stop --reason reached` clears it.
+Recording a stop with `changes.stop` does not clear the change's `stop`,
+so an agent that records its stop and carries on still cannot advance
+past it. For a run that starts an agent, `run` clears the stop in the same
+write as the run record, once the agent has exited; `next` then shows no
+stop and `advance` reads only the gate. The stop of an inline run stays
+until the person starts a later run, whose `--through` or `--until`
+replaces it; `--until done` lets the change advance to `done`. A run
+without `--inline` that starts no agent, because its stop is already
+reached or because it fails with `changes::agent::not_started` or
+`changes::run::worktree`, puts back the stop the change held before.
 
 The run brief holds `brief_line`, the change, its board and flow, the stop
 and its rule in plain words, `steps` (each phase from the current one up
@@ -518,8 +521,8 @@ branch `<name>` from the branch the mount follows, or reuses it, and
 starts the argv in the mount's directory there, with the brief line, a
 blank line and the brief as JSON on stdin and `BOARD_CHANGE` set to the
 change's path. A program that cannot start is `changes::agent::not_started`
-and a worktree git cannot make is `changes::run::worktree`; the change is
-already started and its stop set by then.
+and a worktree git cannot make is `changes::run::worktree`. The change is
+already started by then, and keeps the stop it held before the run.
 
 `run` waits for the agent, for at most 59 minutes, and has no
 `--detach`. When the agent's last line on stdout is a JSON object, as

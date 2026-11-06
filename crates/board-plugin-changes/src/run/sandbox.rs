@@ -305,7 +305,7 @@ pub(super) fn run(host: &dyn Host, given: &Input) -> Result<Value, PluginError> 
         .map_err(|refused| board::refused("-C", &refused))?;
     let inner = inner.as_ref();
     let path = change_of(inner, given, Some(BOARD_ITSELF))?;
-    let (flow, stop) = set_stop(inner, &path, wanted)?;
+    let (flow, stop, _) = set_stop(inner, &path, wanted)?;
     let (brief, shown, mount) = brief_for(inner, &path, &flow, &stop, given.budget)?;
     let mut output = Output::of(&path, shown);
     output.sandbox = Some(made.root.display().to_string());
