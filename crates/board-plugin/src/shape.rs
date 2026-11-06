@@ -421,7 +421,7 @@ pub struct Actor {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "Option<Person>")]
     pub person: Option<String>,
-    /// The name the agent was given, such as `soundcheck scheduler`, as
+    /// The name the agent was given, such as `nightly scheduler`, as
     /// free text.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "Option<Prose>")]
