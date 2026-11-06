@@ -2,9 +2,10 @@
 //! `changes/change/v2` (docs/plugins/lifecycle/updating.md).
 //!
 //! A v2 change follows a flow, so each change gets a copy of the shipped
-//! development flow at `<path>/flow`, whose phase names are v1's, and an
-//! empty `surfaced`; a prototype follows no flow and gets none. Its phase,
-//! paused included, carries over.
+//! development flow at `<path>/flow`, whose phase names are v1's, the
+//! check suite its mount's contributing docs name, which a v1 change read
+//! on every `next`, and an empty `surfaced`; a prototype follows no flow
+//! and gets none. Its phase, paused included, carries over.
 //!
 //! A change written before the split of `changes/change/v1` is rewritten
 //! from that older shape first. It keeps its entity fields. A prototype's fields
@@ -33,6 +34,7 @@ use crate::change::{OWN, prototypes, record_sync};
 use crate::flow::{copy_line, development};
 use crate::plan::stamp;
 use crate::records::{ChangeRecord, ChangeV1, PlanRecord, PrototypeRecord, UnderstandingRecord};
+use crate::repo::check_suite;
 use crate::{PLUGIN, to_value};
 
 /// A GitHub pull request or issue page, as the Python plugin stored it:
@@ -167,12 +169,15 @@ fn old_plan(body: &Map<String, Value>) -> bool {
 /// under `/changes/`, by its change and then by path, with its blob, which
 /// of the Markdown plans the old changes name are there, the changes that
 /// already have something at `<path>/prototype`, and the blob of each file
-/// already at a change's `<path>/flow`.
+/// already at a change's `<path>/flow`, and the check suite the
+/// contributing docs of each old change's mount name, as a v1 change
+/// resolved it on every `next`.
 struct Known {
     plans: BTreeMap<String, BTreeMap<String, (PlanRecord, String)>>,
     files: BTreeSet<String>,
     prototypes: BTreeMap<String, Option<PrototypeRecord>>,
     flows: BTreeMap<String, String>,
+    suites: BTreeMap<String, Option<String>>,
 }
 
 fn known(host: &dyn Host, olds: &[Old]) -> Result<Known, PluginError> {
@@ -222,11 +227,19 @@ fn known(host: &dyn Host, olds: &[Old]) -> Result<Known, PluginError> {
     let flows = (rows(host, &sql)?.iter())
         .filter_map(|row| Some((text(row.first())?.to_owned(), text(row.get(1))?.to_owned())))
         .collect();
+    let mut suites = BTreeMap::new();
+    for mount in olds.iter().filter_map(|old| string(&old.body, "mount")) {
+        if !mount.is_empty() && !suites.contains_key(&mount) {
+            let suite = check_suite(host, &mount)?;
+            suites.insert(mount, suite);
+        }
+    }
     Ok(Known {
         plans,
         files,
         prototypes,
         flows,
+        suites,
     })
 }
 
@@ -408,7 +421,8 @@ fn rewrite(known: &Known, old: &Old, record: &str) -> Result<Plan, String> {
 
 /// Makes `change`, the body of the v1 change at `path`, a v2: it follows a
 /// copy of the shipped development flow, which a line of `lines` writes,
-/// unless it is a prototype, and surfaced nothing.
+/// and stores the suite its mount's contributing docs name, unless it is a
+/// prototype, and surfaced nothing.
 fn upgrade(
     known: &Known,
     path: &str,
@@ -420,6 +434,10 @@ fn upgrade(
     change.insert("surfaced".to_owned(), json!([]));
     if prototype {
         return;
+    }
+    let suite = string(change, "mount").and_then(|mount| known.suites.get(&mount).cloned());
+    if let Some(Some(suite)) = suite {
+        change.insert("suite".to_owned(), json!(suite));
     }
     let at = format!("{path}/flow");
     let expect = known.flows.get(&at).map_or("none", String::as_str);

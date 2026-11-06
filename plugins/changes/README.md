@@ -152,8 +152,10 @@ until a sync runs there. When the cache does not take the day, `sync` and
 
 `migrate [--apply true]` rewrites each `changes/change/v1` of the board's
 own as a `changes/change/v2`. It keeps the phase, `paused` included, sets
-`surfaced` to `[]`, and writes a copy of the shipped development flow at
-`<path>/flow`, whose phases are v1's; a prototype gets no flow. A v2 change
+`surfaced` to `[]`, sets `suite` to the suite the mount's contributing docs
+name, which a v1 change looked up on every `next`, and writes a copy of the
+shipped development flow at `<path>/flow`, whose phases are v1's; a
+prototype gets no flow and no suite. A v2 change
 is left as it is, so a second run finds nothing. A change of the shape
 before the split of `changes/change/v1` is rewritten from that shape first:
 it moves `records` to the plan the change names, a prototype's fields to its

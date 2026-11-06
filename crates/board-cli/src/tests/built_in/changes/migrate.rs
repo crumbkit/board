@@ -394,3 +394,51 @@ fn a_v2_change_is_left_as_it_is_and_a_v1_beside_it_is_rewritten() {
     assert_eq!(output["changes"], json!(["/changes/t"]));
     assert_eq!(board.text(&format!("{path}.json")), before);
 }
+
+/// A v1 build change whose mount's contributing docs name `/suites/checks`,
+/// with a passing run of that suite on its head attached, as a v1 change
+/// passed `suite-run` before flows.
+fn v1_build_change_with_a_passing_run(board: &Changes, docs: &str) {
+    board.mount_x(&[("CONTRIBUTING.md", docs)]);
+    board.write("suites/checks.json", &typed("runs/suite/v1", &json!({})));
+    let run = json!({
+        "suite": "/suites/checks",
+        "scope": "full",
+        "dirty": false,
+        "versions": {"x": HEAD},
+        "results": [],
+    });
+    board.write("suites/checks/runs/1.json", &typed("runs/run/v1", &run));
+    board.change_at(
+        "changes/t.json",
+        "build",
+        &json!({"head": HEAD, "plan": "/changes/t/plan.md", "records": ["/suites/checks/runs/1"]}),
+    );
+    board.write("changes/t/plan.md", PLAN);
+}
+
+#[test]
+fn a_migrated_build_change_keeps_the_suite_its_docs_name_and_its_passing_run_passes_suite_run() {
+    let board = Changes::new();
+    v1_build_change_with_a_passing_run(&board, "Checks: `/suites/checks`.\n");
+    board.call("migrate", &json!({"apply": true}));
+    let change = board.read("changes/t.json");
+    assert_eq!(
+        (&change["$type"], &change["suite"]),
+        (&json!("changes/change/v2"), &json!("/suites/checks"))
+    );
+    let moved = board.call("advance", &json!({"path": "/changes/t"}));
+    assert_eq!(moved["to"], "review");
+}
+
+#[test]
+fn a_migrated_build_change_whose_docs_name_no_suite_has_none_and_misses_suite_run() {
+    let board = Changes::new();
+    v1_build_change_with_a_passing_run(&board, "Run the checks.\n");
+    board.call("migrate", &json!({"apply": true}));
+    let change = board.read("changes/t.json");
+    assert_eq!(change["suite"], Value::Null);
+    let refused = board.refusal("advance", &json!({"path": "/changes/t"}));
+    assert_eq!(refused["code"], "changes::gate::unmet");
+    assert_eq!(refused["fields"]["missing"], json!(["suite-run"]));
+}
