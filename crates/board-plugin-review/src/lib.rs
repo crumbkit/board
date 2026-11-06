@@ -174,14 +174,13 @@ fn manifest() -> Value {
         "$type": "board/plugin-manifest/v1",
         "name": PLUGIN,
         "version": "0.2.0",
-        "description": "Review briefs, the reports a clean-context agent or a person writes for \
-            them, and whether a commit is covered by reports. `board call review.run --brief \
-            /reviews/<id>/brief` reviews the brief's range or pinned record with the agent \
-            BOARD_REVIEW_AGENT names and records the report; `board call review.post --report \
-            /reviews/<id>/report --pr <url>` comments it on a pull request once the owner \
-            approves the comment; `board call review.covered --base <commit> --head <commit>` \
-            checks that committed reports, or those a change attaches, cover a pull request's \
-            commits. plugins/review/README.md in Board's repository says more.",
+        "description": "The review plugin records a code review as a brief and a report in the \
+            board. Use it when you review a change, and when you ask for a review of your own. \
+            Write the brief, with its `range` and `focus`, on stdin to \
+            `board -C <board> put /reviews/<id>/brief`, then run \
+            `board -C <board> call review.run --brief /reviews/<id>/brief`, or write the report \
+            yourself at `/reviews/<id>/report`. SKILL.md and README.md in the plugin's directory \
+            say more.",
         "metadata": {"area": "review"},
         "types": [BriefRecord::TYPE, ReportRecord::TYPE],
         "capabilities": capabilities,

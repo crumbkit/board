@@ -1,0 +1,16 @@
+STATE    NAME                 PATH
+missing  artifacts            skills/artifacts
+missing  boundary             skills/boundary
+missing  changes              skills/changes
+missing  controls             skills/controls
+missing  evals                skills/evals
+missing  flow                 skills/flow
+missing  github               skills/github
+missing  jira                 skills/jira
+missing  notes                skills/notes
+missing  plans                skills/plans
+missing  prompts              skills/prompts
+missing  review               skills/review
+missing  share                skills/share
+missing  tasks                skills/tasks
+missing  understanding-check  skills/understanding-check

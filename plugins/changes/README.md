@@ -142,7 +142,7 @@ Each of `questions` holds the `question`, the owner's `answer` in his own
 words, and the `design`'s answer, and may say its `kind` (`predict`,
 `choose`, `explain` or `edge`) and whether the answers `matches`.
 `rechecks` holds the questions asked again before review. The
-`understanding-check` skill in `claude-code/skills/` runs the check.
+`understanding-check` skill in `skills/understanding-check/` runs the check.
 
 The day of the last sync lives in Board's cache, keyed by the path of the
 board's checkout, so the stale warning is per checkout: another clone or
@@ -465,7 +465,7 @@ instruction), at most 20 `surfaced` records with a count of the rest, the
 rules fields `brief` returns, `stopping`, which says how an unattended
 agent stops, and `budget_usd`. `--inline true` returns the brief and
 starts nothing; inside Claude Code the `flow` skill in
-`claude-code/skills/` uses it.
+`skills/flow/` uses it.
 
 Without `--inline`, `run` reads the agent's argv from `BOARD_AGENT`, a
 JSON array of strings, or else from `agent` in the known boards file,

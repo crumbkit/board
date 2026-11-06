@@ -12,3 +12,8 @@ each holding the `board` binary, and `SHA256SUMS`. Check the sum, extract
 `board` onto `PATH`, and confirm `board --version` prints the version and,
 after a `+`, the commit it was built from. Every plugin Board ships is built
 into the binary.
+
+Then run `board skills install`, which writes the skills built into `board`
+into `~/.claude/skills`. For an agent that reads `~/.agents/skills`, run
+`board skills install --dir ~/.agents/skills` too. Run them again after each
+upgrade, so the skills match the binary.

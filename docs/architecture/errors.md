@@ -27,7 +27,7 @@ The codes, which change as STANDARDS.md 3 and 4 say:
 | `put` | `stale`, `locked`, `through_mount`, `symlink`, `invalid`, `not_a_file` (a `--file` path names a directory or ends `.json`), `nul` (a file's text holds NUL), `no_identity`, `head_moved`, `failed` (the file could not be written), and the `--new` codes in architecture/paths/writes.md |
 | `sync` | `no_remote`, `failed` (git refused the fetch or push), `conflict`, `edited`, `gave_up`, `timeout` (git ran past 60 s); see docs/architecture/writes.md |
 | `attachment` | `missing`: `get --fetch` found nothing at the record's location; `mismatch`: the bytes there hash to another digest |
-| `plugin` | see docs/plugins.md |
+| `plugin`, `skills` | see docs/plugins.md |
 | `settings` | `asked`, `refused`, `from_plugin`, `no_personal`, `not_found`, `unsigned`; see docs/architecture/writes/effects.md |
 | `ui`, `serve` | see docs/architecture/ui/views.md and serve.md |
 | `output` | `over_budget`: the output reached 64 MiB, or `BOARD_OUTPUT_BUDGET` bytes when that variable is smaller. `get` and `refs` leave the paths in `left_out` unanswered and exit 1. `query` stops before the next row, carries this code beside its rows and exits 0; it refuses a first row or one value longer than the budget and exits 1. Any other result that is not a listing that can be cut to fit is refused and exits 1 |

@@ -73,6 +73,8 @@ pub(crate) const LEAVES: &[Leaf] = &[
     ui::LEAVES[1].effects(READS),
     ui::LEAVES[2].effects(READS),
     ui::LEAVES[3].effects(READS.open_world()),
+    crate::skills::INSTALL.effects(CHANGES.idempotent()),
+    crate::skills::LIST.effects(READS),
     Leaf::new(&["commands", "list"])
         .document(COMMANDS_LIST)
         .effects(READS),
@@ -83,6 +85,24 @@ pub(crate) const LEAVES: &[Leaf] = &[
         .document(SCHEMAS_SHOW)
         .effects(READS),
 ];
+
+/// `board query -h`'s tables, budget and examples.
+pub(crate) const QUERY_EXAMPLES: &str = "\
+Tables and views:
+  entries   one row per entry: source, path, logical, blob, size, kind, type,
+            status, code, change, role, schema
+  records   entries of kind record, with body, the record as JSON
+  refs, links, validations, blobs, trees, worktree, mounts, sources,
+  state
+
+Rows stop at 64 MiB of output, even with --all; --json then sets `truncated`
+and `cut.code`, board::output::over_budget, and the text notes it. A first
+row past 64 MiB is refused with that code.
+
+Examples:
+  board query \"SELECT logical, code FROM entries WHERE status = 'degraded'\"
+  board query \"SELECT logical FROM records WHERE type = 'tasks/task/v2'\" --limit 20
+  board query 'SELECT name, sql FROM sqlite_master'";
 
 /// A command that changes nothing.
 const READS: Effects = Effects::read_only();
@@ -109,7 +129,10 @@ pub(crate) const GOALS: Group = Group::new(
             "These commands follow remotes and mounts",
             &["sync", "mount"],
         ),
-        Goal::new("These commands find and run plugins", &["plugin", "call"]),
+        Goal::new(
+            "These commands find and run plugins and install skills",
+            &["plugin", "call", "skills"],
+        ),
         Goal::new(
             "These commands ask the owner and record the answer",
             &["decide", "answer"],

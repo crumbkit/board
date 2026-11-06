@@ -628,6 +628,12 @@ fn generic(code: Code) -> &'static str {
         Code::ServeFailed => {
             "check that the board's cache directory can be written and that 127.0.0.1 accepts a listener, then run `board serve` again"
         }
+        Code::SkillsNotBoard => {
+            "move each folder the message names out of the skills directory, or install again with `--force` to move them to backups in its .board-backups folder, which agents do not load"
+        }
+        Code::SkillsWriteFailed => {
+            "check that the skills directory and the folder the message names can be written, or name another directory with `--dir`"
+        }
         Code::CliUsage => {
             "run `board --help` for the commands, or `board <command> --help` for one command's arguments"
         }

@@ -206,6 +206,14 @@ When two enabled plugins share an alias, running it is refused with the same
 code, and the hint names the `board call` line to run instead. The capability
 comes right after the alias; a flag in its place is a usage error.
 
+## Skills
+
+Board embeds each enabled plugin's skills in its binary, and
+`board skills install` writes them into `~/.claude/skills`.
+[plugins/lifecycle/skills.md](plugins/lifecycle/skills.md) says where a
+skill lives, how the build embeds it, and how install and list treat each
+folder.
+
 ## Codes
 
 `board::plugin::` `not_installed`, `not_enabled`, `bad_manifest`,

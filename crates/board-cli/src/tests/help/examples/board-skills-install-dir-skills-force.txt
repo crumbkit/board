@@ -1,0 +1,16 @@
+STATE    NAME                 PATH
+written  artifacts            skills/artifacts
+written  boundary             skills/boundary
+written  changes              skills/changes
+written  controls             skills/controls
+written  evals                skills/evals
+written  flow                 skills/flow
+written  github               skills/github
+written  jira                 skills/jira
+written  notes                skills/notes
+written  plans                skills/plans
+written  prompts              skills/prompts
+written  review               skills/review
+written  share                skills/share
+written  tasks                skills/tasks
+written  understanding-check  skills/understanding-check
