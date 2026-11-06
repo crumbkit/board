@@ -143,6 +143,28 @@ fn a_built_in_command_wins_over_an_alias_of_the_same_word() {
 }
 
 #[test]
+fn an_alias_named_cat_runs_and_without_it_cat_is_refused_naming_get() {
+    for (enabled, expected) in [(&["tasks"][..], 0), (&[][..], 2)] {
+        let (board, data) = aliased(enabled, "cat");
+        let output = run_in(&board, &data, &["--json", "cat", "due"]);
+        assert_eq!(
+            output.code,
+            expected,
+            "{enabled:?}: {}",
+            text(&output.stderr)
+        );
+        assert_eq!(taken(&data).is_some(), expected == 0, "{enabled:?}");
+        if expected == 2 {
+            assert_eq!(code(&output), "board::cli::usage");
+            assert_eq!(
+                json(&output)["recovery"]["text"],
+                "run `board --json get due`"
+            );
+        }
+    }
+}
+
+#[test]
 fn an_alias_two_enabled_plugins_share_is_refused_and_one_alone_runs() {
     for (enabled, shared) in [(&["tasks", "todo"][..], true), (&["tasks"][..], false)] {
         let (board, data) = aliased(enabled, "tk");

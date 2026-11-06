@@ -308,7 +308,48 @@ fn one_trailing_slash_on_a_relative_path_is_dropped_and_two_are_refused() {
         said.contains("path \"docs//\", read from /repos/lib, is refused: it has an empty segment"),
         "{said}"
     );
+    same(root, &fixture, &["ls", "./"], &["ls", "/repos/lib"]);
+    let refused = relative(root, &fixture, None, &["ls", ".//"], "");
+    assert_eq!(refused.code, 2);
+    assert_eq!(code(&refused), "board::cli::usage");
+    let said = text(&refused.stderr);
+    assert!(
+        said.contains("path \".//\", read from /repos/lib, is refused: it has an empty segment"),
+        "{said}"
+    );
     let flags = ["call", "tasks.due", "--path", "docs/"];
+    let called = relative(root, &fixture, None, &flags, "");
+    assert_eq!(called.code, 0, "{}", text(&called.stderr));
+    assert_eq!(sent(&fixture.1), json!({"path": "/repos/lib/docs"}));
+}
+
+#[test]
+fn one_trailing_slash_on_an_absolute_path_is_dropped_and_two_are_refused() {
+    let library = library();
+    let fixture = mounting(&library);
+    let root = library.workdir();
+    same(
+        root,
+        &fixture,
+        &["ls", "/repos/lib/docs/"],
+        &["ls", "/repos/lib/docs"],
+    );
+    same(
+        root,
+        &fixture,
+        &["get", "/repos/lib/README.md/"],
+        &["get", "/repos/lib/README.md"],
+    );
+    same(root, &fixture, &["ls", "/"], &["ls"]);
+    for twice in ["/repos/lib/docs//", "//"] {
+        let refused = relative(root, &fixture, None, &["ls", twice], "");
+        assert_eq!(refused.code, 2, "{twice}");
+        assert_eq!(code(&refused), "board::cli::usage", "{twice}");
+        let said = text(&refused.stderr);
+        let reason = format!("path {twice:?}, read from /, is refused: it has an empty segment");
+        assert!(said.contains(&reason), "{said}");
+    }
+    let flags = ["call", "tasks.due", "--path", "/repos/lib/docs/"];
     let called = relative(root, &fixture, None, &flags, "");
     assert_eq!(called.code, 0, "{}", text(&called.stderr));
     assert_eq!(sent(&fixture.1), json!({"path": "/repos/lib/docs"}));

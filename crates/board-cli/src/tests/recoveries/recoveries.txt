@@ -520,6 +520,11 @@ board chek
   run board -h
     exits 0
 
+board cat /projects/p
+  fails with board::cli::usage
+  run board get /projects/p --json
+    exits 0
+
 board get projects//p
   fails with board::cli::usage
   run board get -h

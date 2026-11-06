@@ -58,36 +58,28 @@ that names no personal board, or names a directory that is not a board's
 root, refuses `--personal` with `board::config::not_found`, and the hint
 names the file.
 
-`--checkout` reads the mount matched as the directory's own repository,
-linked worktrees included, at the commit HEAD names in the directory's
-working tree, instead of the commit its pointer pins. It lasts one run and
-rewrites no pointer, so the next run reads the pin again. Board reads that
-commit, never uncommitted edits. Run from the board's own tree, from a clone
-matched only by origin or a repo record, from a checkout whose HEAD names no
-commit, or with `--personal`, `init`, `answer`, `serve`, `ui` or a process
-plugin's capability, it is refused with `board::cli::usage`, and the hint
-says what to run instead. Only built-in plugins run under it, because a
-process plugin's own `board` runs would read the pins. Two pointers that
-mount the repository are refused with `board::config::ambiguous`. The run
-writes nothing to the board it opened: every write, including one a
-built-in plugin's call makes, is refused with `board::cli::usage` before it
-takes the board's lock or uploads an attachment, and a nested call reads the
-same checkout. A board a plugin opens elsewhere, such as the personal
-board, is read at its pins.
+`--checkout` reads the mount holding the directory at its checkout's HEAD
+for one run ([architecture/paths/checkout.md](architecture/paths/checkout.md)).
 
 A path given to `get`, `ls`, `refs`, `check` or `put` that does not start
 with `/` is relative to the prefix. In a board, the prefix is the directory's
 path beneath the board's root, such as `/controls`, and the timing log
 records it. `-C` sets the directory, as in git, so `board -C ~/Code/board ls .`
 lists `/`. A run with no prefix reads from `/`. `.` and `./` are the prefix
-itself, and `x` and `./x` are `x` beneath it. One trailing `/`, which a shell
-adds to a directory, is dropped. The result must be a logical path, so any
+itself, and `x` and `./x` are `x` beneath it. One trailing `/` on a relative
+or an absolute path, which a shell adds to a directory, is dropped, so
+`board ls /tasks/` lists `/tasks`. `/` stays the root, and a path ending in
+two is refused, as is `.//`. A plugin's path flag on `call` drops one trailing
+`/` the same way, for every capability, including one that writes. `put`
+and `rm` without `-r` name a file, so they refuse a path ending in `/` with
+`board::cli::usage`; the hint names `put --new` for a folder and `rm -r` for
+a directory. `rm -r` removes a folder, so it reads `docs/` as `docs`. The result must be a logical path, so any
 other `.` or `..` segment is refused with `board::cli::usage`. The refusal
 names the path as typed, and for a `..` that stays at or below `/` its hint
 gives the absolute path. Board reads the prefix only for a relative path.
 A directory whose name is not a logical path, such as one holding a tab,
 refuses a relative path with `board::path::malformed`.
-`mount update` takes only an absolute path. A run
+`mount update` takes only an absolute path, and refuses one ending in `/`. A run
 from a mounted repository reads the mount's commit, never the files on disk.
 
 Every file git sees

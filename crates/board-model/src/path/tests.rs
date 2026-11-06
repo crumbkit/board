@@ -286,8 +286,8 @@ fn a_relative_path_continues_the_path_joined_to_and_an_absolute_one_replaces_it(
         "/repos/lib",
         "/docs",
         "/docs",
-        "/docs/",
-        Malformation::EmptySegment,
+        "/docs/./a",
+        Malformation::DotSegment,
     );
     joined(
         "/repos/lib",
@@ -299,7 +299,7 @@ fn a_relative_path_continues_the_path_joined_to_and_an_absolute_one_replaces_it(
 }
 
 #[test]
-fn one_trailing_slash_on_a_relative_path_is_dropped_and_two_are_an_empty_segment() {
+fn one_trailing_slash_on_a_path_is_dropped_and_two_are_an_empty_segment() {
     joined(
         "/repos",
         "lib/",
@@ -307,7 +307,15 @@ fn one_trailing_slash_on_a_relative_path_is_dropped_and_two_are_an_empty_segment
         "lib//",
         Malformation::EmptySegment,
     );
-    joined("/", "./lib/", "/lib", "/lib/", Malformation::EmptySegment);
+    joined("/", "./lib/", "/lib", "/lib//", Malformation::EmptySegment);
+    joined(
+        "/repos",
+        "/tasks/",
+        "/tasks",
+        "/tasks//",
+        Malformation::EmptySegment,
+    );
+    joined("/repos", "/", "/", "//", Malformation::EmptySegment);
 }
 
 /// A segment that keeps every rule: no `/`, no hidden character, not `.` or

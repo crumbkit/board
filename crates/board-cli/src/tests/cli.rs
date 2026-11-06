@@ -1136,13 +1136,36 @@ fn a_query_with_a_syntax_error_has_a_hint_that_says_to_fix_it_and_a_valid_one_ru
 }
 
 #[test]
-fn version_prints_the_binary_name_and_version() {
+fn version_prints_the_binary_name_and_the_build_the_timing_log_records() {
     let output = board_in(Path::new("."), &["--version"]);
     assert_eq!(output.code, 0);
     assert_eq!(
         text(&output.stdout),
-        format!("{BINARY_NAME} {}\n", env!("CARGO_PKG_VERSION"))
+        format!("{BINARY_NAME} {}\n", crate::timing::BUILD)
     );
+    // A build in a git checkout names its commit after a `+`, and the hash of
+    // its changes after `.dirty.`; one outside a checkout, such as a mutants
+    // copy without `.git`, prints the version alone.
+    let hex = |text: &str, len: usize| {
+        text.len() == len
+            && text
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    };
+    let build = crate::timing::BUILD.strip_prefix(env!("CARGO_PKG_VERSION"));
+    if let Some(build) = build.unwrap().strip_prefix('+') {
+        let (commit, changes) = build
+            .split_once(".dirty.")
+            .map_or((build, None), |(commit, changes)| (commit, Some(changes)));
+        assert!(hex(commit, 12), "{build}");
+        assert!(changes.is_none_or(|changes| hex(changes, 16)), "{build}");
+    } else {
+        let git = concat!(env!("CARGO_MANIFEST_DIR"), "/../../.git");
+        assert!(
+            !Path::new(git).exists(),
+            "{git} exists, but the build names no commit"
+        );
+    }
 }
 
 #[test]
@@ -1248,6 +1271,336 @@ fn wait_reads_milliseconds_seconds_minutes_and_hours() {
         assert!(
             format!("{cli:?}").contains(&format!("wait: {read}")),
             "--wait {given}: {cli:?}"
+        );
+    }
+}
+
+/// The commands in backticks in the hint of `output`, without their redirect.
+fn hinted(output: &Output) -> Vec<(String, Option<String>)> {
+    let hint = hint_of(output);
+    let quoted = hint.split('`').skip(1).step_by(2);
+    quoted
+        .map(|command| match command.split_once(" < ") {
+            Some((command, input)) => (command.to_owned(), Some(input.to_owned())),
+            None => (command.to_owned(), None),
+        })
+        .collect()
+}
+
+/// Runs a hinted `command`, with `stdin` as its input, in `directory`.
+fn run_hinted(directory: &Path, command: &str, stdin: &[u8]) -> Output {
+    let words = words(command);
+    let words: Vec<&str> = words.iter().skip(1).map(String::as_str).collect();
+    board_with(directory, None, &words, stdin)
+}
+
+/// A board whose puts are not committed, so they need no git identity.
+fn uncommitted() -> Scenario {
+    let scenario = board();
+    scenario.write(
+        ".board/board.json",
+        Item::File(r#"{"$type": "board/config/v1", "commit_on_put": false}"#),
+    );
+    scenario
+}
+
+#[test]
+fn put_given_its_input_as_an_argument_hints_stdin_and_the_hinted_puts_write() {
+    let scenario = uncommitted();
+    let refused = board_in(scenario.workdir(), &["put", "/notes/a.md", "a.md"]);
+    assert_eq!(
+        (refused.code, refused.error.as_deref()),
+        (2, Some("board::cli::usage"))
+    );
+    assert!(
+        text(&refused.stderr).starts_with(
+            "error: put was given a.md after its path, but reads what it writes from stdin\n"
+        ),
+        "{}",
+        text(&refused.stderr)
+    );
+    assert_eq!(
+        hint_of(&refused),
+        "pipe a.md to put: run `board put /notes/a.md --file < a.md` to write it as a file, \
+         or `board put /notes/a.md < a.md` if it holds a JSON record"
+    );
+    let hints = hinted(&refused);
+    let file = run_hinted(scenario.workdir(), &hints[0].0, b"plan");
+    assert_eq!(file.code, 0, "{}", text(&file.stderr));
+    let got = board_in(scenario.workdir(), &["get", "/notes/a.md"]);
+    assert_eq!(text(&got.stdout), "plan");
+
+    let refused = board_in(scenario.workdir(), &["put", "/projects/q", "q.json"]);
+    assert_eq!(
+        (refused.code, refused.error.as_deref()),
+        (2, Some("board::cli::usage"))
+    );
+    let hints = hinted(&refused);
+    assert_eq!(
+        hints[1],
+        (
+            "board put /projects/q".to_owned(),
+            Some("q.json".to_owned())
+        )
+    );
+    let record = run_hinted(
+        scenario.workdir(),
+        &hints[1].0,
+        br#"{"$type": "lr/project/v1"}"#,
+    );
+    assert_eq!(record.code, 0, "{}", text(&record.stderr));
+
+    let refused = board_in(
+        scenario.workdir(),
+        &["put", "/notes/b.md", "--file", "b.md"],
+    );
+    assert_eq!(
+        (refused.code, refused.error.as_deref()),
+        (2, Some("board::cli::usage"))
+    );
+    assert_eq!(
+        hint_of(&refused),
+        "pipe b.md to put: run `board put /notes/b.md --file < b.md`"
+    );
+    let hints = hinted(&refused);
+    let file = run_hinted(scenario.workdir(), &hints[0].0, b"b");
+    assert_eq!(file.code, 0, "{}", text(&file.stderr));
+    let document = json(&board_in(
+        scenario.workdir(),
+        &["--json", "put", "/notes/b.md", "b.md"],
+    ));
+    assert_eq!(document["code"], "board::cli::usage");
+    assert_eq!(document["fields"]["value"], "b.md");
+}
+
+#[test]
+fn an_unknown_flag_on_put_keeps_claps_refusal_and_the_flag_it_suggests_runs() {
+    let scenario = uncommitted();
+    let refused = board_in(scenario.workdir(), &["put", "/notes/a.md", "--fil"]);
+    assert_eq!(
+        (refused.code, refused.error.as_deref()),
+        (2, Some("board::cli::usage"))
+    );
+    assert!(
+        text(&refused.stderr).starts_with("error: unexpected argument '--fil' found"),
+        "{}",
+        text(&refused.stderr)
+    );
+    assert_eq!(hint_of(&refused), "run `board put -h`");
+    let admitted = board_with(
+        scenario.workdir(),
+        None,
+        &["put", "/notes/a.md", "--file"],
+        b"plan",
+    );
+    assert_eq!(admitted.code, 0, "{}", text(&admitted.stderr));
+}
+
+#[test]
+fn cat_is_refused_naming_get_and_the_hinted_get_runs() {
+    let scenario = board();
+    let refused = board_in(scenario.workdir(), &["cat", "/projects/p"]);
+    assert_eq!(
+        (refused.code, refused.error.as_deref()),
+        (2, Some("board::cli::usage"))
+    );
+    assert_eq!(
+        text(&refused.stderr),
+        "error: board has no command cat; get prints the file at a path\n\
+         \x20 help:  run `board get /projects/p`\n\
+         \x20 code:  board::cli::usage\n"
+    );
+    let hints = hinted(&refused);
+    let got = run_hinted(scenario.workdir(), &hints[0].0, b"");
+    assert_eq!(got.code, 0, "{}", text(&got.stderr));
+    let document = json(&board_in(
+        scenario.workdir(),
+        &["--json", "cat", "/projects/p"],
+    ));
+    assert_eq!(document["code"], "board::cli::usage");
+    assert_eq!(
+        document["recovery"]["text"],
+        "run `board --json get /projects/p`"
+    );
+    assert_eq!(document["fields"]["value"], "cat");
+}
+
+#[test]
+fn put_hints_quote_each_word_and_a_second_stray_word_keeps_claps_refusal() {
+    let scenario = uncommitted();
+    let refused = board_in(
+        scenario.workdir(),
+        &["put", "/notes/my plan.md", "my plan.md"],
+    );
+    assert_eq!(
+        (refused.code, refused.error.as_deref()),
+        (2, Some("board::cli::usage"))
+    );
+    let hints = hinted(&refused);
+    assert_eq!(
+        hints[0],
+        (
+            "board put '/notes/my plan.md' --file".to_owned(),
+            Some("'my plan.md'".to_owned())
+        )
+    );
+    let file = run_hinted(scenario.workdir(), &hints[0].0, b"plan");
+    assert_eq!(file.code, 0, "{}", text(&file.stderr));
+
+    let refused = board_in(scenario.workdir(), &["put", "/notes/c.md", "c.md", "d.md"]);
+    assert_eq!(
+        (refused.code, refused.error.as_deref()),
+        (2, Some("board::cli::usage"))
+    );
+    assert!(
+        text(&refused.stderr).starts_with("error: unexpected argument 'c.md' found"),
+        "{}",
+        text(&refused.stderr)
+    );
+    assert_eq!(hint_of(&refused), "run `board put -h`");
+}
+
+#[test]
+fn cat_after_a_directory_named_cat_hints_get_in_its_place_and_bare_cat_hints_get_help() {
+    let scenario = board();
+    scenario.write("cat/README.md", Item::File("a directory named cat"));
+    let refused = board_in(scenario.workdir(), &["-C", "cat", "cat", "/projects/p"]);
+    assert_eq!(
+        (refused.code, refused.error.as_deref()),
+        (2, Some("board::cli::usage"))
+    );
+    assert_eq!(hint_of(&refused), "run `board -C cat get /projects/p`");
+    let refused = board_in(scenario.workdir(), &["cat"]);
+    assert_eq!(
+        (refused.code, refused.error.as_deref()),
+        (2, Some("board::cli::usage"))
+    );
+    assert_eq!(hint_of(&refused), "run `board get -h`");
+    let help = run_hinted(scenario.workdir(), "board get -h", b"");
+    assert_eq!(help.code, 0, "{}", text(&help.stderr));
+}
+
+#[test]
+fn put_new_refuses_a_folder_ending_in_two_slashes_and_admits_one() {
+    let scenario = uncommitted();
+    let record = br#"{"$type": "lr/project/v1"}"#;
+    for (folder, said) in [("/projects//", "/projects//"), ("projects//", "projects//")] {
+        let refused = board_with(scenario.workdir(), None, &["put", "--new", folder], record);
+        assert_eq!(
+            (refused.code, refused.error.as_deref()),
+            (2, Some("board::cli::usage")),
+            "{folder}"
+        );
+        let reason = format!("path {said:?}, read from /, is refused: it has an empty segment");
+        assert!(
+            text(&refused.stderr).contains(&reason),
+            "{}",
+            text(&refused.stderr)
+        );
+        let once = &folder[..folder.len() - 1];
+        let admitted = board_with(scenario.workdir(), None, &["put", "--new", once], record);
+        assert_eq!(admitted.code, 0, "{once}: {}", text(&admitted.stderr));
+    }
+}
+
+#[test]
+fn a_put_hint_names_file_before_a_double_dash_and_the_hinted_put_writes() {
+    let scenario = uncommitted();
+    let refused = board_in(scenario.workdir(), &["put", "/notes/b.md", "--", "b.md"]);
+    assert_eq!(
+        (refused.code, refused.error.as_deref()),
+        (2, Some("board::cli::usage"))
+    );
+    let hints = hinted(&refused);
+    assert_eq!(
+        hints[0],
+        (
+            "board put /notes/b.md --file --".to_owned(),
+            Some("b.md".to_owned())
+        )
+    );
+    let file = run_hinted(scenario.workdir(), &hints[0].0, b"b");
+    assert_eq!(file.code, 0, "{}", text(&file.stderr));
+}
+
+#[test]
+fn a_stray_word_beside_new_and_a_path_keeps_claps_refusal_and_one_beside_file_is_hinted() {
+    let scenario = uncommitted();
+    let refused = board_in(scenario.workdir(), &["put", "/notes/a.md", "a.md", "--new"]);
+    assert_eq!(
+        (refused.code, refused.error.as_deref()),
+        (2, Some("board::cli::usage"))
+    );
+    assert_eq!(hint_of(&refused), "run `board put -h`");
+    let hinted_line = board_in(
+        scenario.workdir(),
+        &["put", "/notes/a.md", "a.md", "--file"],
+    );
+    assert_eq!(
+        hint_of(&hinted_line),
+        "pipe a.md to put: run `board put /notes/a.md --file < a.md`"
+    );
+}
+
+#[test]
+fn put_and_rm_refuse_a_path_ending_in_a_slash_and_admit_it_without_the_slash() {
+    let scenario = uncommitted();
+    let refused = board_with(
+        scenario.workdir(),
+        None,
+        &["put", "/newdir/", "--file"],
+        b"hello",
+    );
+    assert_eq!(
+        (refused.code, refused.error.as_deref()),
+        (2, Some("board::cli::usage"))
+    );
+    assert_eq!(
+        text(&refused.stderr),
+        "error: put's path /newdir/ ends in /, which names a folder\n\
+         \x20 help:  use `--new /newdir/` to add a record in it, or leave out the slash to write a file\n\
+         \x20 code:  board::cli::usage\n"
+    );
+    let admitted = board_with(
+        scenario.workdir(),
+        None,
+        &["put", "/newdir", "--file"],
+        b"hello",
+    );
+    assert_eq!(admitted.code, 0, "{}", text(&admitted.stderr));
+
+    let refused = board_in(scenario.workdir(), &["rm", "/newdir/"]);
+    assert_eq!(
+        (refused.code, refused.error.as_deref()),
+        (2, Some("board::cli::usage"))
+    );
+    assert_eq!(
+        text(&refused.stderr),
+        "error: rm's path /newdir/ ends in /, which names a folder\n\
+         \x20 help:  leave out the slash to remove a file, or run `board rm -r /newdir` to remove a folder\n\
+         \x20 code:  board::cli::usage\n"
+    );
+    let admitted = board_in(scenario.workdir(), &["rm", "/newdir"]);
+    assert_eq!(admitted.code, 0, "{}", text(&admitted.stderr));
+}
+
+#[test]
+fn rm_r_removes_a_folder_named_with_a_trailing_slash_and_rm_alone_refuses_it() {
+    for folder in ["/projects/", "projects/"] {
+        let scenario = uncommitted();
+        let refused = board_in(scenario.workdir(), &["rm", folder]);
+        assert_eq!(
+            (refused.code, refused.error.as_deref()),
+            (2, Some("board::cli::usage")),
+            "{folder}"
+        );
+        let removed = board_in(scenario.workdir(), &["rm", "-r", folder]);
+        assert_eq!(removed.code, 0, "{folder}: {}", text(&removed.stderr));
+        let gone = board_in(scenario.workdir(), &["get", "/projects/p"]);
+        assert_eq!(
+            gone.error.as_deref(),
+            Some("board::path::not_found"),
+            "{folder}"
         );
     }
 }

@@ -48,13 +48,17 @@ impl LogicalPath {
 
     /// `text` read from this path, as `Path::join` reads it: an absolute
     /// `text` replaces it, `.`, `./` or `./.` is this path, and `x` or `./x`
-    /// is `x` beneath it. One trailing `/` on a relative `text` is dropped, as
-    /// a shell adds it to a directory. Any other `.` or `..` segment stays
-    /// malformed.
+    /// is `x` beneath it. One trailing `/` is dropped, as a shell adds it to a
+    /// directory, unless it is `/` itself or the second of two. Any other `.`
+    /// or `..` segment stays malformed.
     pub fn join(&self, text: &str) -> Result<Self, PathError> {
         let rest = text.strip_prefix("./").unwrap_or(text);
-        match rest.strip_suffix('/').unwrap_or(rest) {
-            _ if text.is_empty() || text.starts_with('/') => text.parse(),
+        let rest = match rest.strip_suffix('/') {
+            Some(kept) if !kept.is_empty() && !kept.ends_with('/') => kept,
+            _ => rest,
+        };
+        match rest {
+            _ if text.is_empty() || text.starts_with('/') => rest.parse(),
             "." | "" => Ok(self.clone()),
             rest => format!("{}/{rest}", self.0.trim_end_matches('/')).parse(),
         }
