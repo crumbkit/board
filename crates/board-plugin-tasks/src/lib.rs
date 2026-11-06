@@ -235,11 +235,11 @@ fn manifest() -> Value {
         "name": PLUGIN,
         "version": "0.4.0",
         // SKILL.md's description, the callout an agent sees first.
-        "description": "Sweep the person's tasks one at a time, marking each done, deferring, \
-            dropping or editing it, and add a task. Use it when the person asks to sweep, review \
-            or go through their tasks or to-do list, or to add a task to their own list. Also use \
-            it before you start work, to check whether an open task already covers the work, \
-            and claim or close that task instead of adding a new one. Start with `board -C \
+        "description": "Before you fix a bug or build a feature, use it to check whether an open \
+            task already covers the work, and claim or close that task instead of adding a new one. \
+            Also use it to sweep the person's tasks one at a time, marking each done, deferring, \
+            dropping or editing it, when the person asks to sweep, review or go through their \
+            tasks or to-do list, and to add a task to their own list. Start with `board -C \
             <board> call tasks.available`, run in the repository you work in, which syncs the \
             notes repos that repository's git remote routes to and lists the tasks to sweep. \
             SKILL.md and README.md in the plugin's directory say more.",
