@@ -107,12 +107,13 @@ fn found(plugins: &Path) -> Vec<(String, PathBuf, Vec<PathBuf>)> {
             found.push((name.to_owned(), plugin.clone(), files));
         }
         for skill in sorted(&plugin.join("skills")) {
-            let name = skill.file_name().and_then(OsStr::to_str);
-            if let Some(name) = name.filter(|_| skill.join("SKILL.md").is_file()) {
-                let mut files = Vec::new();
-                every_file(&skill, &mut files);
-                found.push((name.to_owned(), skill.clone(), files));
+            if !skill.join("SKILL.md").is_file() {
+                continue;
             }
+            let name = skill.file_name().unwrap_or_default().to_string_lossy();
+            let mut files = Vec::new();
+            every_file(&skill, &mut files);
+            found.push((name.into_owned(), skill.clone(), files));
         }
     }
     found
@@ -146,12 +147,25 @@ fn skills() {
     found.sort_by(|a, b| a.0.cmp(&b.0));
     let mut source = String::from("&[\n");
     for (name, directory, files) in found {
+        let mut characters = name.chars();
+        let lower = |character: char| character.is_ascii_lowercase() || character.is_ascii_digit();
+        let named = characters.next().is_some_and(lower)
+            && characters.all(|character| lower(character) || character == '-');
+        if !named {
+            return fail(&format!(
+                "the skill in {} is named {name:?}; a skill's folder is named with [a-z0-9][a-z0-9-]*",
+                directory.display()
+            ));
+        }
         let _ = writeln!(source, "    Skill {{ name: {name:?}, files: &[");
         for file in files {
             println!("cargo::rerun-if-changed={}", file.display());
             let relative = file.strip_prefix(&directory).unwrap_or(&file);
             let (Some(relative), Some(absolute)) = (relative.to_str(), file.to_str()) else {
-                continue;
+                return fail(&format!(
+                    "the skill file {} has a path that is not UTF-8, which the binary cannot embed",
+                    file.display()
+                ));
             };
             let _ = writeln!(
                 source,
@@ -164,6 +178,13 @@ fn skills() {
     let out = std::env::var_os("OUT_DIR")
         .map(PathBuf::from)
         .unwrap_or_default();
-    // A failed write fails the build when `include!` finds no file.
-    let _ = std::fs::write(out.join("skills.rs"), source);
+    let written = out.join("skills.rs");
+    if let Err(error) = std::fs::write(&written, source) {
+        fail(&format!("cannot write {}: {error}", written.display()));
+    }
+}
+
+/// Fails the build with `message`, which cargo prints as an error.
+fn fail(message: &str) {
+    println!("cargo::error={message}");
 }
