@@ -218,6 +218,27 @@ fn a_folder_named_as_a_skill_in_other_case_is_read_as_that_skills_folder() {
 }
 
 #[test]
+fn a_backup_takes_the_stamped_name_or_the_first_free_one_after_it() {
+    let home = board_scenario::Scenario::new();
+    let dir = home.workdir();
+    let stamp = "20261106T101500Z";
+    let first = backup(dir, "changes", stamp);
+    assert_eq!(first, dir.join("changes.board-backup-20261106T101500Z"));
+    home.write(
+        "changes.board-backup-20261106T101500Z/notes.md",
+        board_scenario::Item::File("x\n"),
+    )
+    .write(
+        "changes.board-backup-20261106T101500Z-2",
+        board_scenario::Item::File("x\n"),
+    );
+    assert_eq!(
+        backup(dir, "changes", stamp),
+        dir.join("changes.board-backup-20261106T101500Z-3")
+    );
+}
+
+#[test]
 fn a_hint_quotes_a_directory_a_shell_would_split() {
     assert_eq!(quote(Path::new("skills")), "skills");
     assert_eq!(quote(Path::new("my skills")), "'my skills'");

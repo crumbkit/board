@@ -22,8 +22,11 @@ shipped skill's name, a marker that names no skill counts as Board's.
 
 Another folder at a skill's name, in any letter case, including one whose
 marker names another skill, is refused with `board::skills::not_board`,
-whose `folders` names it, unless `--force` replaces it. A symlink there is
-removed, never followed. A failed read or write is
+whose `folders` names it. With `--force`, install moves that folder aside
+to `<name>.board-backup-<time>` in the same directory, with the UTC time
+such as `20261106T101500Z` and `-2`, `-3` and on added when that name is
+taken, and reports it as `backed_up` with its path. A symlink there is
+moved itself, never followed. List and install pass over backups. A failed read or write is
 `board::skills::write_failed`. `board skills list` shows each skill's state.
 
 Claude Code mods ship no skills.

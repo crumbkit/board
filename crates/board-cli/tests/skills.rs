@@ -58,6 +58,18 @@ fn state_of(document: &Value, name: &str) -> String {
     found.unwrap_or_else(|| panic!("no row {name}")).1
 }
 
+/// The one row install reported as `backed_up`, its name and its path.
+fn backed_up(document: &Value) -> (String, String) {
+    let rows = document["data"].as_array().unwrap();
+    let mut backups = rows.iter().filter(|row| row["state"] == "backed_up");
+    let row = backups
+        .next()
+        .unwrap_or_else(|| panic!("no backup in {document}"));
+    assert!(backups.next().is_none(), "{document}");
+    let field = |name: &str| row[name].as_str().unwrap().to_owned();
+    (field("name"), field("path"))
+}
+
 fn path(home: &Scenario, relative: &str) -> PathBuf {
     home.workdir().join(relative)
 }
@@ -155,7 +167,7 @@ fn list_names_each_state_and_changes_nothing() {
 }
 
 #[test]
-fn a_folder_that_is_not_boards_is_refused_before_any_write_and_replaced_with_force() {
+fn a_folder_that_is_not_boards_is_refused_before_any_write_and_moved_aside_with_force() {
     let home = Scenario::new();
     home.write("skills/changes/notes.md", Item::File("mine\n"));
     let (code, refused) = skills(&home, "install", &[]);
@@ -172,10 +184,28 @@ fn a_folder_that_is_not_boards_is_refused_before_any_write_and_replaced_with_for
     assert_eq!(state_of(&admitted, "changes"), "written");
     assert!(!path(&home, "skills/changes/notes.md").exists());
     assert!(path(&home, "skills/changes/.board-skill").is_file());
+    let (name, shown) = backed_up(&admitted);
+    let stamp = name.strip_prefix("changes.board-backup-").unwrap();
+    assert!(stamp.len() == 16 && stamp.ends_with('Z'), "{name}");
+    assert_eq!(shown, format!("skills/{name}"));
+    assert_eq!(
+        text(&path(&home, &format!("skills/{name}/notes.md"))),
+        "mine\n"
+    );
+
+    let (_, listed) = skills(&home, "list", &[]);
+    assert!(!states(&listed).iter().any(|(row, _)| *row == name));
+    let (code, again) = skills(&home, "install", &[]);
+    assert_eq!(code, 0);
+    assert!(!states(&again).iter().any(|(row, _)| *row == name));
+    assert_eq!(
+        text(&path(&home, &format!("skills/{name}/notes.md"))),
+        "mine\n"
+    );
 }
 
 #[test]
-fn a_symlink_at_a_skills_name_is_refused_and_with_force_the_link_alone_is_replaced() {
+fn a_symlink_at_a_skills_name_is_refused_and_with_force_the_link_alone_is_moved_aside() {
     let home = Scenario::new();
     let checkout = Scenario::new();
     checkout.write("SKILL.md", Item::File("from a checkout\n"));
@@ -195,6 +225,18 @@ fn a_symlink_at_a_skills_name_is_refused_and_with_force_the_link_alone_is_replac
     );
     assert!(!checkout.workdir().join(".board-skill").exists());
     assert!(!checkout.workdir().join("README.md").exists());
+    let (name, _) = backed_up(&admitted);
+    let backup = path(&home, &format!("skills/{name}"));
+    assert!(
+        std::fs::symlink_metadata(&backup)
+            .unwrap()
+            .file_type()
+            .is_symlink()
+    );
+    assert_eq!(
+        std::fs::read_link(&backup).unwrap(),
+        Path::new(&checkout.path())
+    );
 }
 
 #[test]

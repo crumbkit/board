@@ -414,7 +414,7 @@ Write the skills built into this binary into a skills directory
 ### Arguments
 
 - `--dir <DIR>`: The skills directory, such as \~/.agents/skills; \~/.claude/skills when left out
-- `--force`: Replace a folder at a skill's name that is not Board's; a symlink there is removed, never followed
+- `--force`: Move a folder or symlink at a skill's name that is not Board's to \<name\>.board-backup-\<UTC time\>
 - `--limit <N>`: Print at most this many rows, up to 10000. Default: `100`.
 - `--all`: Print every row
 
