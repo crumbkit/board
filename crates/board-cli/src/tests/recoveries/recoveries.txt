@@ -419,6 +419,15 @@ board check /mount/m/a
   fails with board::path::case_collision
   hint
 
+board check /mount/m/again
+  fails with board::mount::cycle
+  hint
+
+board get /mount/m/again
+  fails with board::record::not_a_record
+  run board ls /mount/m/again
+    exits 0
+
 board check /mount/m/gone
   fails with board::repo::unreadable
   hint

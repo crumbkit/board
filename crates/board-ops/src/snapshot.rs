@@ -11,7 +11,7 @@
 //! different thing, a view of the git working tree for resolving paths.
 
 use std::cell::{Cell, OnceCell, RefCell};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 use board_index::{Decided, Index, IndexError, Storage, View, Writer};
@@ -192,6 +192,7 @@ impl Board {
             reader: RefCell::new(self.repositories().root().reader()),
             failed: Cell::new(false),
             remotes: OnceCell::new(),
+            cycles: &mounts.cycles,
         };
         for entry in &refresh.entries {
             if !in_scope(scopes, &Source::WorkingTree, entry.logical.as_ref()) {
@@ -234,7 +235,7 @@ impl Board {
                 writer.reach(&source, key, &mounted.scan)?;
                 continue;
             };
-            let read = (writer, &plain, scopes);
+            let read = (writer, &plain, scopes, &mounts.cycles);
             work.pointers_read += self.decide_mounted(read, mounted, walked, &mut decided)?;
         }
         record(&mounts, writer, self.repository())?;
@@ -262,7 +263,7 @@ impl Board {
     /// resolver read.
     fn decide_mounted(
         &self,
-        (writer, plain, scopes): (&Writer, &std::collections::HashSet<ObjectId>, &Scopes),
+        (writer, plain, scopes, cycles): (&Writer, &HashSet<ObjectId>, &Scopes, &Cycles),
         mounted: &Mounted<Facts>,
         (entries, facts): &(Vec<Entry>, Facts),
         decided: &mut Decisions,
@@ -280,6 +281,7 @@ impl Board {
             reader: RefCell::new(self.repositories().root().reader()),
             failed: Cell::new(false),
             remotes: OnceCell::new(),
+            cycles,
         };
         let start = decided.resolved.len();
         let checked = decided.checked.len();
@@ -351,6 +353,10 @@ type Facts = HashMap<String, Indexed>;
 
 /// Every mounted source, with what the index holds about its entries.
 type Mounts = board_tree::Reached<Facts>;
+
+/// Each mount pointer that would repeat a board above it, by source and
+/// physical path, with that board's route.
+type Cycles = HashMap<(Source, String), LogicalPath>;
 
 /// The index as the cache a walk through mounts reads and fills.
 struct Indexing<'w> {

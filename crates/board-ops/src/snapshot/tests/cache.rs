@@ -70,6 +70,7 @@ fn a_failed_read_marks_the_decision_unkeepable_and_a_later_read_that_succeeds_do
         reader: std::cell::RefCell::new(board.repository().reader()),
         failed: std::cell::Cell::new(false),
         remotes: std::cell::OnceCell::new(),
+        cycles: &std::collections::HashMap::new(),
     };
     let read = |path: &str, blob| {
         let location = Location {

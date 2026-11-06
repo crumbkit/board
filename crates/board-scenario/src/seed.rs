@@ -319,12 +319,17 @@ pub fn mount_of(repo: &str, commit: ObjectId) -> String {
 impl Seed {
     pub fn new() -> Self {
         let mounted = Scenario::new();
+        // A mount of the mounted board's own repository, at an earlier
+        // commit, repeats a board above it.
+        let earlier = mounted.commit(&[("earlier.json", "{}")]);
+        let again = mount_of(&mounted.path(), earlier);
         // Names a case-insensitive file system cannot hold, and a blob the
         // commit names but does not store, can only be in a commit.
-        let in_mount: [(&str, Item<'_>, Code); 3] = [
+        let in_mount: [(&str, Item<'_>, Code); 4] = [
             ("A.json", Item::File("{}"), Code::PathCaseCollision),
             ("a.json", Item::File("{}"), Code::PathCaseCollision),
             ("gone.json", Item::MissingBlob, Code::RepoUnreadable),
+            ("again.json", Item::File(&again), Code::MountCycle),
         ];
         let items: Vec<(&[u8], Item<'_>)> = in_mount
             .iter()
