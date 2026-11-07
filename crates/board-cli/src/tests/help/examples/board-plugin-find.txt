@@ -3,6 +3,9 @@ artifacts.import disabled Write an artifact record, without a version, for each 
 artifacts.record disabled Write the artifact record a session published or read when it is missing, with the session's subject, and name the shown or agreed artifacts it may replace.
 artifacts.set disabled Add a subject or area to an artifact, set what it shows or whether it was shown, and mark the artifact it replaces superseded.
 artifacts.agree disabled Move an artifact to agreed once the owner approves it with Touch ID, naming the decision that accepts it.
+attention.verify disabled An order and its context, when the owner's key signed it and it has not expired; otherwise the reason it cannot be trusted.
+attention.pinned disabled Every pinned order in the board's own tree that verifies, for an agent session to start with, and the code of each one left out.
+attention.sign disabled Show the owner an order in the signing window and, once they sign it with Touch ID, write their signature into it. Refuses with the owner's requested changes when they ask for some.
 boundary.check disabled Check content against every boundary that matches where it goes, and record the crossing in the personal board. Fails naming each failing control, part and line.
 boundary.covers disabled Name the boundaries that cover an action to a destination from a checkout, checking nothing and writing nothing.
 boundary.verify disabled Whether a passing crossing exists for a digest, or for given content.
