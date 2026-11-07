@@ -14,10 +14,10 @@ keeps a small value between calls.
   still in that group is killed when the program exits, even while one of
   them holds its output open, past its deadline, past 16 MiB of stdout,
   or when Board gets SIGINT, SIGTERM or SIGHUP. On such a signal the group
-  gets the signal and then SIGKILL at once, so its own handlers rarely
-  run. A process that leaves the group with `setsid` is not killed; if it
+  gets the signal and then SIGCONT, its leader up to a second to exit, and
+  then SIGKILL, as a plugin's group does (docs/plugins/processes.md). A process that leaves the group with `setsid` is not killed; if it
   holds the output open, Board drains it for up to a second after the
-  program exits. The temporary directory is left behind if a signal ends
+  program exits, even past the deadline. The temporary directory is left behind if a signal ends
   Board. It returns the exit code, stdout and the
   end of stderr, or why it did not start or was stopped.
 - `run_hiding(process, hidden)` is `run` without the variables `hidden`

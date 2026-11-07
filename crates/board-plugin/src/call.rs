@@ -414,8 +414,9 @@ pub(crate) fn exchange<T: DeserializeOwned, U>(
     );
     context.spawned.borrow_mut().extend(spawned);
     let finished = finished.map_err(|stopped| match stopped {
-        // Soft limit: a failed reap or signal-forwarder setup after the spawn
-        // also lands here, as not_started without the stderr already read.
+        // Soft limit: a signal forwarder that cannot start, and a wait, reap
+        // or read that fails after the spawn, also land here, as not_started
+        // without the stderr already read.
         Stopped::Io(source) => CallError::Start {
             plugin: plugin.clone(),
             source,
