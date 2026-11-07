@@ -1,7 +1,11 @@
 //! Sets `BOARD_BUILD`, the suffix the timing log adds to Board's version:
-//! `+<commit>`, with `.dirty.<hash>` when the source differs from it, or
-//! nothing outside a git checkout, so that a build there keeps no decisions;
-//! `BOARD_BUILD_COMMIT` names the commit in place of git's
+//! `+<commit>`, with `.dirty.<hash>` when the source differs from it.
+//! `BOARD_BUILD_COMMIT` names the commit in place of git's, and asserts that
+//! the source is that commit: a copy whose own repository committed the
+//! snapshot, or a build with no local git to check for edits, reads as clean
+//! and shares decisions with every build that names the same commit. While
+//! the variable is unset or empty, a build outside a git checkout has no
+//! suffix, so that it keeps no decisions
 //! (docs/architecture/performance/timing.md). It also writes `skills.rs`
 //! in `OUT_DIR`, which embeds the skills of the plugins this build enables
 //! (docs/plugins.md, Skills).

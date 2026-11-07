@@ -31,16 +31,33 @@ pub(crate) fn suffix(
 /// The first 12 hex digits of `given`, lowercased, or the message that says
 /// why it is not a commit.
 fn named(given: &OsStr) -> Result<String, String> {
-    let Some(given) = given.to_str() else {
+    let Some(text) = given.to_str() else {
+        let shown = shown(&given.to_string_lossy());
         return Err(format!(
-            "BOARD_BUILD_COMMIT is not Unicode, so it is not a commit; {MUST}"
+            "BOARD_BUILD_COMMIT is \"{shown}\", which is not Unicode, so it is not a commit; {MUST}"
         ));
     };
-    if (7..=40).contains(&given.len()) && given.bytes().all(|byte| byte.is_ascii_hexdigit()) {
-        Ok(given.get(..12).unwrap_or(given).to_ascii_lowercase())
+    if (7..=40).contains(&text.len()) && text.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        Ok(text.get(..12).unwrap_or(text).to_ascii_lowercase())
     } else {
+        let shown = shown(text);
         Err(format!(
-            "BOARD_BUILD_COMMIT is \"{given}\", which is not a commit; {MUST}"
+            "BOARD_BUILD_COMMIT is \"{shown}\", which is not a commit; {MUST}"
         ))
     }
+}
+
+/// `value` with each control character escaped, so that the message stays on
+/// the one `cargo::error=` line.
+fn shown(value: &str) -> String {
+    value
+        .chars()
+        .map(|character| {
+            if character.is_control() {
+                character.escape_default().to_string()
+            } else {
+                character.to_string()
+            }
+        })
+        .collect()
 }

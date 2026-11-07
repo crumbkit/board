@@ -26,16 +26,21 @@ The `version` is board-cli's version, then `+` and the 12-character commit
 it was built from, then `.dirty.` and a hash of the changes when `crates/`,
 `Cargo.toml`, `Cargo.lock` or `rust-toolchain.toml` differed from that
 commit, untracked files included, such as
-`0.0.0+45aafa9e1b2c.dirty.3f0c2a9b8d7e6f15`. A build outside a git checkout
-has no suffix, and keeps no decisions. board-cli's build script asks git, and cargo runs it again
-after each commit, so board-cli recompiles after every commit.
-A build outside the checkout, such as in a copy with its own git repository,
-sets `BOARD_BUILD_COMMIT` to the commit the source was taken from. The build
-script then names that commit in place of git's: the first 12 of its 7 to 40
-hex digits (all of them when fewer), lowercased. It fails on any other value.
-The `.dirty.` part still comes from the local git, so a copy whose own
-repository has committed the snapshot reads as clean. Cargo also reruns the
-build script when `BOARD_BUILD_COMMIT` changes.
+`0.0.0+45aafa9e1b2c.dirty.3f0c2a9b8d7e6f15`. While `BOARD_BUILD_COMMIT` is
+unset, a build outside a git checkout has no suffix, and keeps no decisions.
+board-cli's build script asks git, and cargo runs it again after each commit,
+so board-cli recompiles after every commit.
+A build outside the checkout, such as in a copy with its own git repository
+or from a source tarball, sets `BOARD_BUILD_COMMIT` to the commit the source
+was taken from. An empty value counts as unset. The build script then names
+that commit in place of git's: the first 12 of its 7 to 40 hex digits (all of
+them when fewer), lowercased. It fails on any other value. Setting the
+variable asserts that the source is that commit. The `.dirty.` part still
+comes from the local git. A copy whose own repository committed the snapshot
+reads as clean, and a build with no local git cannot check for edits and also
+reads as clean, so either shares decisions with every build that names the
+same commit. Cargo also reruns the build script when `BOARD_BUILD_COMMIT`
+changes.
 `board --version` prints `board` and this same version.
 
 | Phase | What it times |

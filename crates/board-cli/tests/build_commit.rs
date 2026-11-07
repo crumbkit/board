@@ -124,11 +124,32 @@ fn a_given_value_that_is_not_unicode_fails_and_its_unicode_twin_passes() {
     let bytes = OsStr::from_bytes(b"45aafa9\xff");
     assert_eq!(
         suffix(Some(bytes), no_git(), clean()),
-        Err("BOARD_BUILD_COMMIT is not Unicode, so it is not a commit; set it to the 7 to 40 hex digits of the commit the source was taken from, or unset it".to_owned())
+        Err("BOARD_BUILD_COMMIT is \"45aafa9\u{fffd}\", which is not Unicode, so it is not a commit; set it to the 7 to 40 hex digits of the commit the source was taken from, or unset it".to_owned())
     );
     assert_eq!(
         suffix(Some(OsStr::from_bytes(b"45aafa9f")), no_git(), clean()),
         Ok("+45aafa9f".to_owned())
+    );
+}
+
+#[test]
+fn a_value_with_a_newline_fails_with_a_message_on_one_line_and_its_twin_without_one_passes() {
+    assert_eq!(
+        suffix(Some(os("45aafa9\nf\t")), no_git(), clean()),
+        Err(refusal("45aafa9\\nf\\t"))
+    );
+    assert_eq!(
+        suffix(Some(os("45aafa9f")), no_git(), clean()),
+        Ok("+45aafa9f".to_owned())
+    );
+}
+
+#[test]
+fn a_given_commit_with_no_local_git_names_it_as_clean() {
+    let asked = || -> Option<String> { panic!("git was asked for its commit") };
+    assert_eq!(
+        suffix(Some(os(FULL)), asked, no_git()),
+        Ok("+45aafa9e1b2c".to_owned())
     );
 }
 
@@ -171,7 +192,7 @@ proptest! {
     #[test]
     fn any_value_with_a_character_that_is_not_hex_fails(
         before in "[0-9a-f]{0,20}",
-        bad in "[^0-9a-fA-F]",
+        bad in "[^0-9a-fA-F\\p{Cc}]",
         after in "[0-9a-f]{0,19}",
     ) {
         let value = format!("{before}{bad}{after}");
