@@ -132,11 +132,17 @@ pub(crate) fn reopen(host: &dyn Host, input: &Value) -> Result<Value, PluginErro
     let build = names.iter().position(|name| name == BUILD);
     let standing = names.iter().position(|name| *name == phase);
     if !matches!((build, standing), (Some(build), Some(standing)) if build < standing) {
+        let why = if flow.is_none() {
+            "follows no flow, so it has no build phase to go back to".to_owned()
+        } else if phase == BUILD {
+            "is already in build".to_owned()
+        } else {
+            format!("is in {phase}, and its flow has no build phase before {phase} to go back to")
+        };
         return Err(refusal(
             "changes::reopen::no_build",
             format!(
-                "the change at {path} is in {phase}, and its flow has no build phase before \
-                 {phase} to go back to; run `board call changes.next --path {path}` for its \
+                "the change at {path} {why}; run `board call changes.next --path {path}` for its \
                  next step"
             ),
             [
@@ -149,7 +155,9 @@ pub(crate) fn reopen(host: &dyn Host, input: &Value) -> Result<Value, PluginErro
     BUILD.clone_into(&mut change.phase);
     change.reopened = Some(reason);
     let moving = Move {
-        over: over_command("reopen", &path),
+        over: format!(
+            "board call changes.reopen --path {path} --reason '<reason>' --over_limit '<why>'"
+        ),
         reason: over_limit.as_deref(),
         days: active_days(host)?,
     };

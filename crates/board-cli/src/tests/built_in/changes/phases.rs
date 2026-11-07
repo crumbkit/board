@@ -946,6 +946,8 @@ fn reopen_refuses_a_change_already_in_build_or_in_plan_and_admits_one_in_land() 
         (&refused["fields"]["phase"], &refused["fields"]["phases"]),
         (&json!("build"), &json!(DEVELOPMENT))
     );
+    let message = refused["message"].as_str().unwrap();
+    assert!(message.contains("is already in build"), "{message}");
     move_to(&board, "plan");
     assert_eq!(
         board.refusal("reopen", &reopening())["code"],
@@ -995,16 +997,45 @@ fn reopen_refuses_a_change_whose_flow_has_no_build_and_admits_its_twin_on_a_flow
 }
 
 #[test]
-fn reopen_refuses_a_prototype_which_is_always_in_build_and_admits_a_change_in_review() {
-    let board = migrated(
-        "build",
-        &json!({"kind": "prototype", "question": "Does it read better?"}),
-    );
-    assert_eq!(
-        board.refusal("reopen", &reopening())["code"],
-        "changes::reopen::no_build"
-    );
+fn reopen_refuses_a_change_that_follows_no_flow_and_admits_its_twin_that_follows_one() {
     let board = migrated("review", &json!({}));
+    let kept = board.read("changes/t.json");
+    let mut flowless = kept.clone();
+    flowless.as_object_mut().unwrap().remove("flow");
+    board.write("changes/t.json", &flowless.to_string());
+    let refused = board.refusal("reopen", &reopening());
+    assert_eq!(
+        (&refused["code"], &refused["fields"]["phases"]),
+        (&json!("changes::reopen::no_build"), &json!([]))
+    );
+    let message = refused["message"].as_str().unwrap();
+    assert!(message.contains("follows no flow"), "{message}");
+    board.write("changes/t.json", &kept.to_string());
+    assert_eq!(board.call("reopen", &reopening())["to"], "build");
+}
+
+#[test]
+fn reopen_refuses_a_change_whose_flow_puts_build_after_its_phase_and_admits_one_with_build_before()
+{
+    let board = migrated("review", &json!({}));
+    board.write(
+        "flows/late.json",
+        &bare_flow("late", &["plan", "review", "build"]),
+    );
+    board.call("reflow", &json!({"path": CHANGE, "flow": "late"}));
+    let refused = board.refusal("reopen", &reopening());
+    assert_eq!(
+        (&refused["code"], &refused["fields"]["phases"]),
+        (
+            &json!("changes::reopen::no_build"),
+            &json!(["plan", "review", "build"])
+        )
+    );
+    board.write(
+        "flows/late.json",
+        &bare_flow("late", &["plan", "build", "review"]),
+    );
+    board.call("reflow", &json!({"path": CHANGE, "flow": "late"}));
     assert_eq!(board.call("reopen", &reopening())["to"], "build");
 }
 

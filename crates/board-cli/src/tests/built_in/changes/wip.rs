@@ -582,9 +582,13 @@ fn reopen_refuses_when_the_cap_is_full_and_goes_past_it_with_a_reason() {
     fill(&board, WIP_LIMIT, &json!({}));
     let reason = json!({"reason": "The review asked for a fix."});
     let refused = board.refusal("reopen", &at(&reason));
-    assert_eq!(refused["code"], "changes::wip::full");
-    let message = refused["message"].as_str().unwrap();
-    assert!(message.contains("changes.reopen"), "{message}");
+    let override_command = format!(
+        "board call changes.reopen --path {CHANGE} --reason '<reason>' --over_limit '<why>'"
+    );
+    assert_eq!(
+        (&refused["code"], &refused["fields"]["override"]),
+        (&json!("changes::wip::full"), &json!(override_command))
+    );
     let past =
         json!({"reason": "The review asked for a fix.", "over_limit": "Blocked work elsewhere."});
     let output = board.call("reopen", &at(&past));
@@ -592,6 +596,7 @@ fn reopen_refuses_when_the_cap_is_full_and_goes_past_it_with_a_reason() {
         (&output["to"], &output["warning"]["code"]),
         (&json!("build"), &json!("changes::wip::over_limit"))
     );
+    assert_eq!(output["warning"]["override"], json!(override_command));
     assert_eq!(
         board.read("changes/t.json")["over_limit"],
         "Blocked work elsewhere."
