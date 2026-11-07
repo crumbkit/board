@@ -6,6 +6,9 @@ import type { LeftOut, Order, Pinned } from '../types'
 /** The name of the context block the session's first message carries. */
 export const BLOCK = 'attentionOrders'
 
+/** Board's failure code when there is no personal board, which the mod does not report. */
+export const NO_BOARD = 'board::config::not_found'
+
 /** Reads `board --personal --json call attention.pinned`'s exit status and output. */
 export function parsePinned(board: string, exitCode: number, stdout: string, stderr: string): Pinned {
   const report = parseJson(stdout) ?? parseJson(stderr)
@@ -15,6 +18,7 @@ export function parsePinned(board: string, exitCode: number, stdout: string, std
       return { kind: 'read', board, orders: output.orders, leftOut: output.left_out }
     }
   }
+  if (report?.code === NO_BOARD) return { kind: 'none' }
   if (typeof report?.code === 'string' && typeof report.message === 'string') {
     return { kind: 'failed', board, code: report.code, message: report.message }
   }
@@ -33,6 +37,7 @@ function parseJson(text: string): Record<string, unknown> | null {
 
 /** The context block's text, or `null` when nothing is pinned. */
 export function contextText(pinned: Pinned): string | null {
+  if (pinned.kind === 'none') return null
   if (pinned.kind === 'failed') {
     return (
       `The owner may have pinned orders for this session, but \`board call attention.pinned\` on ` +
@@ -59,6 +64,7 @@ export function contextText(pinned: Pinned): string | null {
 
 /** The band's line, or `null` when it has nothing to say. `problem` is drawn as a warning. */
 export function bandLine(pinned: Pinned): { text: string; problem: string | null } | null {
+  if (pinned.kind === 'none') return null
   if (pinned.kind === 'failed') {
     return { text: '', problem: `Pinned orders could not be read: ${pinned.message}` }
   }

@@ -62,14 +62,12 @@ pub(crate) fn verified(host: &dyn Host, path: &str) -> Result<Output, PluginErro
     };
     let signer =
         (host.verify_order(&held.order, signature)).map_err(|error| unverified(path, &error))?;
-    if expired(held.expires, host.settings().now) {
-        let expires = held.expires.to_string();
-        return Err(refusal(
-            "attention::order::expired",
-            format!("{path} expired on {expires}; ask the owner for a new order"),
-            [("path", json!(path)), ("expires", json!(expires))],
-        ));
-    }
+    in_force(
+        path,
+        held.expires,
+        host.settings().now,
+        "ask the owner for a new order",
+    )?;
     Ok(Output {
         path: path.to_owned(),
         signer: signer.to_owned(),
@@ -78,6 +76,25 @@ pub(crate) fn verified(host: &dyn Host, path: &str) -> Result<Output, PluginErro
         context: held.fields.context,
         context_text: held.order.context_text,
     })
+}
+
+/// Refuses an order whose day has passed at `now` with
+/// `attention::order::expired`, whose message ends with `next`.
+pub(crate) fn in_force(
+    path: &str,
+    expires: Date,
+    now: SystemTime,
+    next: &str,
+) -> Result<(), PluginError> {
+    if !expired(expires, now) {
+        return Ok(());
+    }
+    let expires = expires.to_string();
+    Err(refusal(
+        "attention::order::expired",
+        format!("{path} expired on {expires}; {next}"),
+        [("path", json!(path)), ("expires", json!(expires))],
+    ))
 }
 
 /// Whether an order that binds through `expires` has expired at `now`: its

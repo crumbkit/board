@@ -115,13 +115,53 @@ fn an_order_whose_context_changed_after_signing_is_a_bad_signature_and_the_uncha
     );
 }
 
+/// An order the test signer signed although its day has passed, which
+/// `sign` would refuse: the statement of the same order signed for 2999,
+/// with its expiry line moved to 2000-01-01, signed with the test key.
+fn signed_expired(personal: &Personal, name: &str) {
+    draft(personal, name, &json!({}), CONTEXT);
+    let original = original(personal);
+    let real = personal.signer.directory().join("sign-real");
+    std::fs::copy(personal.signer.program(), &real).unwrap();
+    let statement = personal.signer.directory().join("statement");
+    let script = format!(
+        "#!/bin/sh\ncp \"$2\" '{}'\nexec '{}' \"$@\"\n",
+        statement.display(),
+        real.display()
+    );
+    signer(personal, &script);
+    signed(personal, name);
+    signer(personal, &original);
+    let statement = std::fs::read_to_string(statement).unwrap();
+    let expired = statement.replace("expires: 2999-12-31", "expires: 2000-01-01");
+    assert_ne!(expired, statement, "the statement names its expiry");
+    let path = format!("/orders/{name}");
+    let mut stored = personal.record(&path).unwrap();
+    stored["expires"] = json!("2000-01-01");
+    stored["signature"] = json!(personal.signer.sign(&expired));
+    personal.write(&format!("orders/{name}.json"), &stored.to_string());
+}
+
 #[test]
-fn a_signed_order_whose_day_has_passed_is_expired_and_one_still_in_force_verifies() {
+fn an_order_whose_day_has_passed_is_refused_as_expired_by_sign_and_verify_and_one_still_in_force_is_admitted()
+ {
     let personal = personal();
-    draft(&personal, "old", &json!({"expires": "2000-01-01"}), CONTEXT);
+    draft(
+        &personal,
+        "late",
+        &json!({"expires": "2000-01-01"}),
+        CONTEXT,
+    );
+    let ran = call(&personal, "sign", "/orders/late");
+    assert_eq!(refused(&ran), "attention::order::expired");
+    assert_eq!(
+        personal.record("/orders/late").unwrap().get("signature"),
+        None
+    );
     draft(&personal, "new", &json!({"expires": "2999-12-31"}), CONTEXT);
-    signed(&personal, "old");
     signed(&personal, "new");
+
+    signed_expired(&personal, "old");
     assert_eq!(
         refused(&call(&personal, "verify", "/orders/old")),
         "attention::order::expired"

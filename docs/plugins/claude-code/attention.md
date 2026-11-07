@@ -7,7 +7,7 @@ plugins/attention/README.md describes orders and their codes.
 The mod reads and signs orders in the personal board through `board
 --personal`. When there is no personal board, Board refuses with
 `board::config::not_found`, and the mod shows nothing and adds nothing to
-the session.
+the session. It reads the pinned orders once per session start either way.
 
 ## Pinned orders
 
@@ -35,5 +35,9 @@ the outcome from Board's answer:
 - `attention::sign::declined` sends the agent the owner's requested changes.
 - `attention::sign::cancelled` keeps the request waiting.
 - Any other code sends the agent the failure with its code and message.
+- A sign killed before Board answered, or still running after 10 minutes,
+  keeps the request waiting and tells the owner the outcome is unknown. The
+  owner checks it with `board --personal call attention.verify --path
+  <path>`.
 
 **Dismiss** tells the agent the owner dismissed the request without signing.

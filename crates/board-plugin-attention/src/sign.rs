@@ -6,7 +6,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-use crate::{order, refusal, refused};
+use crate::{order, refusal, refused, verify};
 
 /// The order to sign.
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -25,12 +25,19 @@ pub(crate) struct Output {
     pub(crate) path: String,
 }
 
-/// Signs the order at the input's path. The put expects the blob the order
+/// Signs the order at the input's path. An order whose day has passed is
+/// refused before the owner sees it. The put expects the blob the order
 /// was read from, so an order edited while the owner read it is refused
 /// with Board's `board::put::stale` and keeps its new text unsigned.
 pub(crate) fn sign(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
     let Input { path } = PluginError::read_input("attention", "sign", input)?;
     let mut held = order::read(host, &path)?;
+    verify::in_force(
+        &path,
+        held.expires,
+        host.settings().now,
+        "set a later expires in the draft before asking the owner to sign it",
+    )?;
     let signature = (host.sign_order(&held.order)).map_err(|error| unsigned(&path, &error))?;
     held.record["signature"] = json!(signature);
     let line = json!({"path": path, "expect": held.blob, "record": held.record});

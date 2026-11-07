@@ -14,10 +14,15 @@ export type Order = {
 /** A pinned order `attention.pinned` left out, with the code that says why. */
 export type LeftOut = { path: string; code: string; message: string }
 
-/** What `board call attention.pinned` answered at session start, or why it could not be read. */
+/**
+ * What `board call attention.pinned` answered at session start, or why it
+ * could not be read. `none` means there is no personal board, so nothing is
+ * pinned and the mod shows nothing.
+ */
 export type Pinned =
   | { kind: 'read'; board: string; orders: Order[]; leftOut: LeftOut[] }
   | { kind: 'failed'; board: string; code: string; message: string }
+  | { kind: 'none' }
 
 declare module 'claude-code' {
   interface PluginState {
@@ -26,7 +31,7 @@ declare module 'claude-code' {
       pending: Request[]
       /** The path whose signing window is open now, if any. */
       open: string | null
-      /** The pinned orders read at session start; null when there is no personal board. */
+      /** The pinned orders read at session start; null until they are read. */
       pinned: Pinned | null
     }
   }

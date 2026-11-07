@@ -18,12 +18,10 @@ const BOARD = 'the personal board'
 // reaches board as its own argument through "$@". A call with no flags
 // reads stdin, so /dev/null keeps it from waiting.
 const RUN = 'PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH" exec board "$@" < /dev/null'
-// attention.sign gives the owner 10 minutes, the longest a mod's process
-// may run, so a sign still writing when it ends is reported as a failure.
+// attention.sign gives the owner 10 minutes, the longest a mod's process may
+// run. A sign still running then is killed, and its outcome is unknown.
 const SIGN_MS = 600_000
 const PANE = 'attention-pinned'
-// The failure when there is no personal board, which the mod does not report.
-const NO_BOARD = 'board::config::not_found'
 
 const board = ($: EngineInterface, args: string[], timeoutMs: number) =>
   $.process.run(['/bin/sh', '-c', RUN, 'board', '--personal', '--json', ...args], { timeoutMs })
@@ -33,7 +31,16 @@ export type Outcome =
   | { kind: 'signed'; message: string }
   | { kind: 'changes'; message: string }
   | { kind: 'cancelled' }
+  | { kind: 'unknown'; message: string }
   | { kind: 'failed'; message: string }
+
+/**
+ * The owner's message when the sign process ended without an answer, because
+ * it was killed or ran past the mod's limit. The signature may have been written.
+ */
+export const unknownOutcome = (request: Request) =>
+  `The outcome of signing ${request.path} in ${BOARD} is unknown, because the sign process ended without an ` +
+  `answer. Check it with \`board --personal call attention.verify --path '${request.path}'\`.`
 
 /** Board's failure document on stdout, if it printed one. */
 function failure(stdout: string): { code: string; message: string; fields: Record<string, unknown> } | null {
@@ -67,19 +74,22 @@ export function outcome(request: Request, exitCode: number, stdout: string, stde
     }
   }
   if (failed?.code === 'attention::sign::cancelled') return { kind: 'cancelled' }
+  // Board prints a failure document for every failure under --json, and a
+  // child ended by a signal reads as exit status 1, so exit 1 without one
+  // means the process was killed.
+  if (failed === null && exitCode === 1) return { kind: 'unknown', message: unknownOutcome(request) }
   const why = failed === null ? `exit status ${exitCode}:\n\n${(stderr.trim() || stdout.trim()).slice(0, 2000)}` : `${failed.code}: ${failed.message}`
   return { kind: 'failed', message: `Signing the order ${where} failed with ${why}` }
 }
 
 /** Runs attention.pinned, which verifies each pinned order, and keeps its answer for the session. */
-async function readPinned($: EngineInterface): Promise<Pinned | null> {
-  let answer: Pinned | null
+async function readPinned($: EngineInterface): Promise<Pinned> {
+  let answer: Pinned
   try {
     // pinned checks each signature, so a slow board holds the session start no
     // longer than this.
     const ran = await board($, ['call', 'attention.pinned'], 10000)
     answer = parsePinned(BOARD, ran.exitCode, ran.stdout, ran.stderr)
-    if (answer.kind === 'failed' && answer.code === NO_BOARD) answer = null
   } catch (error) {
     answer = { kind: 'failed', board: BOARD, code: 'not run', message: String(error) }
   }
@@ -128,7 +138,7 @@ export const register: Register = on => {
   on('prompt.context', async ($, e, next) => {
     const context = await next(e)
     const answer = (await read($, pinned)) ?? (await readPinned($))
-    const text = answer === null ? null : contextText(answer)
+    const text = contextText(answer)
     if (text === null) return context
     return { ...context, blocks: [...context.blocks.filter(b => b.name !== BLOCK), { name: BLOCK, text }] }
   })
@@ -157,9 +167,12 @@ export const register: Register = on => {
         const ran = await board($, ['call', 'attention.sign', '--path', first.path], SIGN_MS)
         const decided = outcome(first, ran.exitCode, ran.stdout, ran.stderr)
         if (decided.kind === 'cancelled') $.ui.toast(`Not signed: ${first.path} is still waiting.`)
+        else if (decided.kind === 'unknown') $.ui.toast(decided.message)
         else await done(decided.message)
-      } catch (error) {
-        $.ui.toast(`The signing window did not open: ${String(error)}`)
+      } catch {
+        // process.run rejects when the sign runs past SIGN_MS and is killed.
+        // /bin/sh always starts, so this is the only rejection left.
+        $.ui.toast(unknownOutcome(first))
       } finally {
         await update($, open, () => null)
       }
@@ -203,7 +216,8 @@ export const register: Register = on => {
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const { Box, Text } = $.ui.resolve(e)
     const answer = await read($, pinned)
-    if (answer === null) return <Text dimColor>There is no personal board, so nothing is pinned.</Text>
+    if (answer === null) return <Text dimColor>The pinned orders have not been read yet.</Text>
+    if (answer.kind === 'none') return <Text dimColor>There is no personal board, so nothing is pinned.</Text>
     if (answer.kind === 'failed') {
       return (
         <Box flexDirection="column">

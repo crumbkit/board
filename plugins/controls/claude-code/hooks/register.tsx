@@ -15,7 +15,7 @@ const CHECK = `PATH=${PATH} exec board --json call controls.check --path .`
 const FOR_PATH = `PATH=${PATH} exec board --json call controls.for-path --path "$1"`
 // The tool the attention mod registers. While it is listed, the controls line
 // joins the band that mod draws; otherwise it goes to the status line.
-const ATTENTION = 'mcp__attention-approve__request_signature'
+const ATTENTION = 'mcp__board-attention__request_signature'
 
 const hasAttention = async ($: EngineInterface) => (await $.tool.list()).some(t => t.name === ATTENTION)
 

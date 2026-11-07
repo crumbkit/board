@@ -83,11 +83,11 @@ test('the context block holds each verified order with its expiry, and names eac
 })
 
 test('a board that refuses the call is reported with its code, and an empty answer adds no block', () => {
-  const failure = { schema: 'board/failure/v1', code: 'board::config::not_found', message: 'no board at or above "/x"' }
+  const failure = { schema: 'board/failure/v1', code: 'attention::signers::missing', message: 'there is no allowed_signers file' }
   expect(contextText(parsePinned(BOARD, 1, JSON.stringify(failure), ''))).toBe(
     `The owner may have pinned orders for this session, but \`board call attention.pinned\` on ${BOARD} ` +
-      'failed with board::config::not_found. Its message follows as board printed it.\n\n' +
-      '```\nno board at or above "/x"\n```',
+      'failed with attention::signers::missing. Its message follows as board printed it.\n\n' +
+      '```\nthere is no allowed_signers file\n```',
   )
   const empty = { ...REPORT, data: { ...REPORT.data, output: { orders: [], left_out: [] } } }
   expect(contextText(parsePinned(BOARD, 0, JSON.stringify(empty), ''))).toBeNull()
@@ -146,13 +146,26 @@ test('a board that cannot be read is said plainly in the band', async ($, on) =>
   expect(await band.find({ text: /Pinned orders could not be read: there is no allowed_signers file/ })).toBeDefined()
 })
 
-test('with no personal board the mod shows nothing and adds no block, and a board that answers is shown', async ($, on) => {
+test('with no personal board the mod shows nothing, adds no block and runs board once, and a board that answers is shown', async ($, on) => {
   const failure = { schema: 'board/failure/v1', code: 'board::config::not_found', message: 'no personal board is named' }
-  engine(on, { exitCode: 1, stdout: JSON.stringify(failure) })
+  const answer = { exitCode: 1, stdout: JSON.stringify(failure) }
+  const { ran } = engine(on, answer)
   await start($)
-  const context = await $.prompt.context({ blocks: [{ name: 'claudeMd', text: 'instructions' }] })
-  expect(context.blocks.map(b => b.name)).toEqual(['claudeMd'])
+  for (let i = 0; i < 2; i++) {
+    const context = await $.prompt.context({ blocks: [{ name: 'claudeMd', text: 'instructions' }] })
+    expect(context.blocks.map(b => b.name)).toEqual(['claudeMd'])
+  }
+  expect(ran.length).toBe(1)
   const band = await $.ui.mount({ plugin: 'board-attention', surface: 'terminal', component: 'AbovePrompt', props: BAND_PROPS })
   expect(await band.find({ text: /Pinned orders could not be read/ })).toBeUndefined()
   expect(await band.find({ text: /signed order/ })).toBeUndefined()
+  await band.unmount()
+
+  answer.exitCode = 0
+  answer.stdout = JSON.stringify(REPORT)
+  await start($)
+  const context = await $.prompt.context({ blocks: [{ name: 'claudeMd', text: 'instructions' }] })
+  expect(context.blocks.map(b => b.name)).toEqual(['claudeMd', 'attentionOrders'])
+  const shown = await $.ui.mount({ plugin: 'board-attention', surface: 'terminal', component: 'AbovePrompt', props: BAND_PROPS })
+  expect(await shown.find({ text: /1 signed order binds this session\./ })).toBeDefined()
 })

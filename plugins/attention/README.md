@@ -124,38 +124,44 @@ guarantees only that the owner's key signs nothing without Touch ID.
 
 ## Codes
 
-`verify` and `sign` refuse an order with:
+Each code below names the capabilities that refuse with it. `pinned`
+refuses only with `attention::board::refused` and
+`attention::call::bad_input`. It lists each order it leaves out in
+`left_out`, with the code `verify` would refuse that order with.
 
-- `attention::order::unsigned`: the order has no signature yet (`verify`).
-- `attention::order::bad_signature`: the order, its expiry or its context
-  changed after signing, or a key not in `allowed_signers` signed it.
-- `attention::order::expired`: the order's `expires` date has passed.
-- `attention::order::not_an_order`: the path holds something else.
-- `attention::order::invalid`: the order or its context cannot be read, or
-  breaks a rule of the record above.
-- `attention::order::context_too_large`: the context is over 64 KiB.
-- `attention::signers::missing`: there is no
+- `attention::order::unsigned` (`verify`): the order has no signature yet.
+- `attention::order::bad_signature` (`verify`): the order, its expiry or
+  its context changed after signing, or a key not in `allowed_signers`
+  signed it.
+- `attention::order::expired` (`verify`, `sign`): the order's `expires`
+  date has passed. `sign` refuses before the owner sees the order.
+- `attention::order::not_an_order` (`verify`, `sign`): the path holds
+  something else.
+- `attention::order::invalid` (`verify`, `sign`): the order or its context
+  cannot be read, or breaks a rule of the record above.
+- `attention::order::context_too_large` (`verify`, `sign`): the context is
+  over 64 KiB.
+- `attention::signers::missing` (`verify`): there is no
   `~/.config/attention/allowed_signers`.
-- `attention::signers::untrusted`: the allowed signers file belongs to
-  another user, or others may write it.
-- `attention::verify::failed`: the signature could not be checked.
-- `attention::board::refused`: Board refused a read or the put, with
-  Board's code in the field `code`.
-
-`sign` also refuses with:
-
-- `attention::sign::declined`: the owner asked for changes, given in
-  `feedback`.
-- `attention::sign::cancelled`: the owner closed the window without
-  deciding.
-- `attention::sign::no_signer`: this Board has no signer, as in a debug
-  build.
-- `attention::sign::failed`: the signer did not sign, or its signature did
-  not verify.
-
-`pinned` lists an order it leaves out with its code, and with
-`attention::pinned::over_budget` when the pinned orders before it already
-hold 32 KiB.
+- `attention::signers::untrusted` (`verify`): the allowed signers file
+  belongs to another user, or others may write it.
+- `attention::verify::failed` (`verify`): the signature could not be
+  checked.
+- `attention::sign::declined` (`sign`): the owner asked for changes, given
+  in `feedback`.
+- `attention::sign::cancelled` (`sign`): the owner closed the window
+  without deciding.
+- `attention::sign::no_signer` (`sign`): this Board has no signer, as in a
+  debug build.
+- `attention::sign::failed` (`sign`): the signer did not sign, or its
+  signature did not verify.
+- `attention::pinned::over_budget` (in `pinned`'s `left_out`): the pinned
+  orders before this one already hold 32 KiB.
+- `attention::board::refused` (`verify`, `sign`, `pinned`): Board refused a
+  read, the query or the put, with Board's code in the field `code`.
+- `attention::call::bad_input` (`verify`, `sign`, `pinned`): the input does
+  not match the capability's schema, such as a missing path or an unknown
+  field.
 
 ## Gates
 
