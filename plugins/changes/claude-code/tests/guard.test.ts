@@ -3,13 +3,16 @@ import type { On } from 'claude-code'
 import type { Engine } from 'claude-code/testing'
 
 import { briefOf, localOrigin, originOf, sameDirectory } from '../hooks/guard'
+import PRINTED from './brief.golden'
 
 // These prove which edits the write guard lets through and the exact refusal
 // for each that it stops. git and `board` are stood in by a process.run hook,
 // the file system and the board config by fs hooks, and each agent's
 // conversation by a session.messages hook. They do not run board:
-// tests/test_brief.py proves the line that `changes.brief` starts with, and
-// the plugin's other tests what `get` answers for a change.
+// brief.golden.ts holds what `board call changes.brief` prints, which
+// the_brief_an_agent_runs_is_the_golden_the_write_guard_tests_read in
+// crates/board-cli/src/tests/built_in/changes/brief.rs pins, and the plugin's
+// other tests prove what `get` answers for a change.
 
 const HOME = '/home/me'
 const BOARD = '/home/me/board'
@@ -261,6 +264,43 @@ test('a brief line is the first line of the first message, naming one change', (
   expect(briefOf('Please fix it.\nboard-brief: /changes/fix-it')).toBeNull()
   expect(briefOf('board-brief: /tasks/fix-it')).toBeNull()
   expect(briefOf('')).toBeNull()
+})
+
+// The golden names /changes/t; FIX_IT is the same output naming /changes/fix-it.
+const FIX_IT = PRINTED.replaceAll('/changes/t"', '/changes/fix-it"')
+const withField = (value: unknown) =>
+  JSON.stringify({ ...JSON.parse(PRINTED), brief_line: value }, null, 2)
+
+test('the brief as changes.brief prints it names its change, with prose after it', () => {
+  expect(briefOf(PRINTED)).toBe('/changes/t')
+  expect(briefOf(`${PRINTED}\n\nBuild it.`)).toBe('/changes/t')
+  expect(briefOf(`\n  ${FIX_IT}\nBuild it.`)).toBe('/changes/fix-it')
+})
+
+test('a JSON brief whose brief_line is missing or names no change is refused, and its twin is admitted', () => {
+  const { brief_line: _, ...rest } = JSON.parse(PRINTED) as Record<string, unknown>
+  expect(briefOf(JSON.stringify(rest, null, 2))).toBeNull()
+  expect(briefOf(withField('board-brief: /tasks/x'))).toBeNull()
+  expect(briefOf(withField(['board-brief: /changes/t']))).toBeNull()
+  expect(briefOf(withField('board-brief: /changes/t'))).toBe('/changes/t')
+})
+
+test('a JSON brief that does not parse is refused, and the whole one is admitted', () => {
+  expect(briefOf(PRINTED.replace('"brief_line":', '"brief_line"'))).toBeNull()
+  expect(briefOf(PRINTED.slice(0, PRINTED.lastIndexOf('}')))).toBeNull()
+  expect(briefOf(PRINTED)).toBe('/changes/t')
+})
+
+test('prose before the JSON brief is refused, as prose before the brief line is', () => {
+  expect(briefOf(`Please build this.\n${PRINTED}`)).toBeNull()
+  expect(briefOf(PRINTED)).toBe('/changes/t')
+})
+
+test('a subagent whose first message is the brief changes.brief prints edits its repository', async ($, on) => {
+  const { ran, edits } = engine(on, { first: { '': 'Coordinate the work.', a1: `${FIX_IT}\n\nBuild it.` } })
+  expect((await edit($, FILE, 'a1')).deny).toBeUndefined()
+  expect(edits).toEqual(['Edit'])
+  expect(ran).toContain(`get ${BOARD} /changes/fix-it`)
 })
 
 test('a subagent started from the brief of a change in build edits its repository', async ($, on) => {

@@ -381,7 +381,8 @@ of `changes` still fails `review`.
   standards from each directory's `index.md` stayed within it.
 - `brief --path /changes/<name>`: read-only. `brief_line`,
   `board-brief: /changes/<name>`, which comes first; a builder's first
-  message starts with it (see "The write guard"). The text path of the plan the change names,
+  message is the brief as `brief` prints it, or starts with that line (see
+  "The write guard"). The text path of the plan the change names,
   even once a reference in it breaks,
   `rules`, each control that applies to the plan's `paths`, once, from
   `controls.for-paths`: its `control`, its `summary` and at most three of
@@ -807,7 +808,9 @@ every Edit, Write and NotebookEdit. Install it with
    from the guard, so list only boards there.
 3. Otherwise it reads the acting agent's first user message: a subagent's
    own, or the main conversation's. The first line that holds text must be
-   `board-brief: /changes/<name>`. The guard checks that line, and does not
+   `board-brief: /changes/<name>`, or `{` opening the JSON object
+   `changes.brief` prints, whose `brief_line` field holds that line. Text
+   may follow the object. The guard checks that line, and does not
    check that `changes.brief` produced it, so a parent agent can write the
    line itself.
 4. It reads that change from each board that mounts the repository. It
