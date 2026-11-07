@@ -178,12 +178,11 @@ fn a_program_whose_name_is_no_slug_names_no_reviewer_and_its_twin_names_the_prog
     }
 }
 
-/// A report from a newer Board may hold a verdict or a severity this one
-/// does not know. `post` reads it as its twin with known values, and the
-/// comment carries each value as written.
+/// A report may hold a verdict or a severity this Board does not know.
+/// `post` reads it as its twin with known values, and the comment carries
+/// each value as written.
 #[test]
-fn a_report_holding_a_verdict_and_severity_a_newer_board_added_posts_them_as_written_like_its_twin()
-{
+fn a_report_with_a_verdict_and_severity_this_board_does_not_know_posts_them_like_its_twin() {
     for (verdict, severity, read) in [
         (
             "changes",

@@ -92,7 +92,8 @@ pub(crate) fn post(host: &dyn Host, input: &Value) -> Result<Value, PluginError>
     Ok(output(url, true))
 }
 
-/// `value` as the report holds it, including a value a newer Board added.
+/// `value` as the report holds it, including a value this Board does not
+/// know.
 fn shown<E: Copy>(value: &Open<E>, name: fn(E) -> &'static str) -> &str {
     match value {
         Open::Known(known) => name(*known),

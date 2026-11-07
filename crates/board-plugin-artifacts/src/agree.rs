@@ -66,7 +66,7 @@ pub(crate) fn agree(host: &dyn Host, input: &Value) -> Result<Value, PluginError
 }
 
 /// Refuses to agree a superseded artifact. Any other state, including one
-/// a newer Board added, can be agreed.
+/// this Board does not know, can be agreed.
 fn agreeable(path: &str, record: &ArtifactRecord) -> Result<(), PluginError> {
     if record.state != Open::Known(State::Superseded) {
         return Ok(());
