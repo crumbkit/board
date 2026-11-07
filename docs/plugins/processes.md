@@ -23,22 +23,20 @@ an agent half an hour, and to read the agent command and its API key.
 ## Stopping a plugin
 
 board-plugin's process module runs a plugin through crumbkit-process. On
-Unix, the plugin leads a new process group. Past a limit, Board sends SIGTERM
-to that group, waits up to a second for the plugin to exit, then sends
-SIGKILL to the group. When the plugin exits, Board kills every process still
-in its group. Every process that stays in the group stops with it, including
-a `board` the plugin runs; a process that should outlive the plugin leaves
-the group with `setsid`, and `timeout` leaves it too. A process that left the
-group and holds a pipe keeps Board reading for at most a second after the
-plugin exits. When Board receives SIGINT, SIGTERM or SIGHUP, as on Ctrl-C,
-it sends the signal and then SIGCONT to every group it runs, waits up to a
-second for each group's leader to exit, sends SIGKILL to the groups, and then
-stops. Once Board has started a plugin, it does not respect an inherited
-ignored SIGINT or SIGHUP, so `nohup board call` stops Board and its plugin on
-hangup.
+Unix, the plugin leads a new process group; on Windows, it runs in a job
+object, which Board ends whole and at once. Past a limit, Board sends SIGTERM
+to the group, waits up to a second for the plugin to exit, then sends SIGKILL
+to the group. When the plugin exits, Board kills what is left in its group,
+including a `board` the plugin runs. A process that should outlive the plugin
+leaves the group with `setsid`; `timeout` leaves it too. Such a process that
+holds a pipe keeps Board reading for at most a second after the plugin exits.
+On SIGINT, SIGTERM or SIGHUP, as on Ctrl-C, Board sends the signal and then
+SIGCONT to every group it runs, SIGKILL once each leader exits or a second
+later, and then stops. Once Board has started a plugin, it does not respect
+an inherited ignored SIGINT or SIGHUP, so `nohup board call` stops Board and
+its plugin on hangup.
 
 A nested Board leaves its plugin in the outermost plugin's group, which the
 outermost Board signals. Past its own limit, a nested Board signals only its
 plugin, so a `run` command must `exec` its final program or forward SIGTERM,
-as `uv run` does. On Windows, the plugin runs in a job object, and Board ends
-the whole job at once.
+as `uv run` does.

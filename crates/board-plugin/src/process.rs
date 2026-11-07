@@ -129,7 +129,7 @@ pub(crate) enum Stopped {
 /// `setsid` does, is not killed, and a pipe it holds keeps the run for at
 /// most a second after the child exits, which can end the run up to a
 /// second past its deadline. Every `Scope::Group` caller gets this, the
-/// signer and `ssh-keygen` that the sign module runs included. Beside the
+/// signer and verifier that the sign module runs included. Beside the
 /// result it returns the child it started, if it started one.
 pub(crate) fn run(
     program: &Path,
