@@ -54,9 +54,14 @@ own effects.
 - attention-sign shows the statement in a native window and signs with the
   attention plugin's Secure Enclave key after Touch ID. Exit 3 means the
   owner asked for changes, with their words on stdout. Every other failure
-  exits 1; when the owner cancelled, its stderr says
+  exits 1. When the owner presses Cancel or closes the window, the last line
+  of its stderr is
   `attention-sign: the owner cancelled, so nothing was signed`, which Board
-  reports as a cancel. Under `approve` it signs only a statement whose first
+  reports as a cancel; AppKit may write other lines before it.
+- When the owner cancels at the Touch ID sheet instead, attention-sign
+  exits 1 with the LAError text on stderr and no cancel line, so Board
+  reports a failed signer. This change does not change attention-sign.
+- Under `approve` attention-sign signs only a statement whose first
   line is `board/approve/v1` or `board/write/v1`; under `sign` it refuses
   those and signs in `attention/order/v1`.
 

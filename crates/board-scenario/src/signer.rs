@@ -1,9 +1,12 @@
 //! A signer for tests: a software key that `ssh-keygen` makes, the allowed
 //! signers file that lists it, and a program with attention-sign's command
 //! line that signs with it in the namespace the statement's header names, so
-//! tests check real signatures without Touch ID. As attention-sign does, it
-//! signs an approval or an owner's write only under `approve` and an order
-//! only under `sign`.
+//! tests check real signatures without Touch ID. Under `approve` it signs
+//! only a statement whose first line is `board/approve/v1` or
+//! `board/write/v1`, and under `sign` only one whose first line is exactly
+//! `attention/order/v1`; it exits 1 for anything else. attention-sign's
+//! `sign` is looser: it signs any statement that is not an approval or an
+//! owner's write in the order namespace.
 
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
@@ -39,7 +42,7 @@ impl Signer {
         Self { scenario }
     }
 
-    /// The program that signs as attention-sign does: `<program> approve
+    /// The program with attention-sign's command line: `<program> approve
     /// <file>` for an approval or an owner's write, `<program> sign <file>`
     /// for an order.
     pub fn program(&self) -> PathBuf {
@@ -65,8 +68,8 @@ impl Signer {
         self.directory().join("allowed_signers")
     }
 
-    /// The armored signature of `statement`, asked for as attention-sign
-    /// is: with `sign` for an order, else with `approve`.
+    /// The armored signature of `statement`, asked for with `sign` when its
+    /// first line is `attention/order/v1`, else with `approve`.
     pub fn sign(&self, statement: &str) -> String {
         let verb = if statement.starts_with("attention/order/v1\n") {
             "sign"

@@ -29,8 +29,9 @@ const VERIFY_TIME: Duration = Duration::from_secs(3);
 /// changes instead of signing.
 const DECLINED: i32 = 3;
 
-/// The line attention-sign prints on stderr, before it exits 1, when the
-/// owner cancels. Every other failure also exits 1.
+/// The line attention-sign prints last on stderr, before it exits 1, when
+/// the owner cancels in its window. Every other failure also exits 1, and
+/// `AppKit` may write its own lines to stderr before this one.
 pub const CANCELLED: &str = "attention-sign: the owner cancelled, so nothing was signed";
 
 /// The principal a statement is signed as, in the allowed signers file.
@@ -145,7 +146,7 @@ pub fn sign(
         Some(DECLINED) => Err(SignError::Declined {
             feedback: stdout.trim().to_owned(),
         }),
-        Some(1) if stderr.trim() == CANCELLED => Err(SignError::Cancelled {
+        Some(1) if last_line(&stderr) == Some(CANCELLED) => Err(SignError::Cancelled {
             program: program.clone(),
         }),
         _ => Err(failed(program, &finished)),
@@ -221,6 +222,11 @@ fn trusted(file: &Path) -> Result<(), SignError> {
         return Err(untrusted("its group or others may write it"));
     }
     Ok(())
+}
+
+/// The last line of `text` that holds more than whitespace, trimmed.
+fn last_line(text: &str) -> Option<&str> {
+    text.lines().map(str::trim).rfind(|line| !line.is_empty())
 }
 
 fn finished_or(

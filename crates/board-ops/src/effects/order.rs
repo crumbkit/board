@@ -53,7 +53,7 @@ pub enum VerifyOrderError {
 /// it is returned.
 #[expect(
     clippy::disallowed_methods,
-    reason = "board-ops's effects module builds the order statement it signs and is the one caller of the signer"
+    reason = "board-ops's effects module builds the order statement it signs, is the one caller of the signer, and checks the signature with verify_order"
 )]
 pub(crate) fn sign_order(
     signing: &Signing,

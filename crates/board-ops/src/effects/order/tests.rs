@@ -8,7 +8,7 @@ use std::os::unix::fs::PermissionsExt as _;
 use std::path::Path;
 
 use board_model::{APPROVAL_HEADER, Expiry, ORDER_TYPE, Order, Pinned};
-use board_plugin::CANCELLED;
+use board_plugin::{CANCELLED, SignError};
 use board_scenario::Item;
 use board_scenario::signer::Signer;
 
@@ -39,6 +39,9 @@ fn signing(signer: &Signer) -> Signing {
         ..Signing::default()
     }
 }
+
+/// What the verifier says of a signature made in another namespace.
+const WRONG_NAMESPACE: &str = "namespace does not match";
 
 fn root(signer: &Signer) -> &Path {
     signer.directory()
@@ -118,7 +121,7 @@ fn a_signature_by_a_key_the_attention_file_does_not_list_is_refused() {
     verify_order(&signing, &order(), &owner.sign(&statement)).unwrap();
     let refused = verify_order(&signing, &order(), &stranger.sign(&statement));
     assert!(
-        matches!(refused, Err(VerifyOrderError::Bad { .. })),
+        matches!(&refused, Err(VerifyOrderError::Bad { file, .. }) if *file == owner.allowed()),
         "{refused:?}"
     );
 }
@@ -135,7 +138,8 @@ fn an_order_signed_in_the_approval_namespace_is_refused() {
         &signer.sign_in(APPROVAL_HEADER, &statement),
     );
     assert!(
-        matches!(refused, Err(VerifyOrderError::Bad { .. })),
+        matches!(&refused, Err(VerifyOrderError::Bad { file, stderr })
+            if *file == signer.allowed() && stderr.contains(WRONG_NAMESPACE)),
         "{refused:?}"
     );
 }
@@ -240,7 +244,12 @@ fn an_order_with_no_signer_or_a_failing_signer_is_unsigned() {
     };
     let refused = sign_order(&failing, root(&signer), &order());
     assert!(
-        matches!(refused, Err(SignOrderError::Failed { .. })),
+        matches!(
+            &refused,
+            Err(SignOrderError::Failed {
+                source: SignError::Failed { status, .. }
+            }) if status == "2"
+        ),
         "{refused:?}"
     );
 }
@@ -258,11 +267,35 @@ fn a_signature_the_signer_makes_in_another_namespace_is_not_returned() {
     let refused = sign_order(&wrong, root(&signer), &order());
     assert!(
         matches!(
-            refused,
+            &refused,
             Err(SignOrderError::Unverified {
-                source: VerifyOrderError::Bad { .. }
-            })
+                source: VerifyOrderError::Bad { file, stderr }
+            }) if *file == signer.allowed() && stderr.contains(WRONG_NAMESPACE)
         ),
         "{refused:?}"
     );
+}
+
+/// The statement file is removed whether the owner signs, asks for changes
+/// or the signer fails.
+#[test]
+fn the_statement_file_is_removed_when_the_order_is_not_signed() {
+    let signer = Signer::new();
+    let cache = signer.directory().join("cache");
+    let files = || -> Vec<_> {
+        walk(&cache)
+            .into_iter()
+            .filter(|path| path.is_file())
+            .collect()
+    };
+    sign_order(&signing(&signer), root(&signer), &order()).unwrap();
+    assert!(files().is_empty(), "{:?}", files());
+    for (name, body) in [("changes", "echo 'say why'\nexit 3"), ("fail", "exit 2")] {
+        let refusing = Signing {
+            signer: Some(program(&signer, name, body)),
+            ..signing(&signer)
+        };
+        sign_order(&refusing, root(&signer), &order()).unwrap_err();
+        assert!(files().is_empty(), "{name}: {:?}", files());
+    }
 }

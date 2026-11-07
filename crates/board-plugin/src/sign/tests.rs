@@ -10,7 +10,7 @@ use board_scenario::signer::Signer;
 
 use std::time::Duration;
 
-use super::{SignError, Verb, sign, verify};
+use super::{CANCELLED, SignError, Verb, sign, verify};
 
 const STATEMENT: &str = "board/approve/v1\neffect: 1\n";
 
@@ -347,4 +347,41 @@ fn an_owner_who_cancels_is_told_apart_from_a_signer_that_fails() {
         matches!(&refused, Err(SignError::Failed { status, .. }) if status == "1"),
         "{refused:?}"
     );
+}
+
+/// `AppKit` may write its own warnings to stderr before attention-sign's
+/// cancel line, so the cancel line is the last line, not the only one.
+#[test]
+fn a_cancel_line_after_other_stderr_lines_is_a_cancel_and_one_followed_or_changed_is_a_failure() {
+    let signer = Signer::new();
+    let file = statement_file(&signer, ORDER);
+    let after = program(
+        &signer,
+        "after",
+        &format!(
+            "echo 'AppKit: a warning' >&2\necho 'another' >&2\necho '{CANCELLED}' >&2\necho >&2\nexit 1"
+        ),
+    );
+    let refused = sign(&after, &file, &[], Verb::Sign);
+    assert!(
+        matches!(refused, Err(SignError::Cancelled { .. })),
+        "{refused:?}"
+    );
+    let followed = program(
+        &signer,
+        "followed",
+        &format!("echo '{CANCELLED}' >&2\necho 'AppKit: a warning' >&2\nexit 1"),
+    );
+    let changed = program(
+        &signer,
+        "changed",
+        &format!("echo 'AppKit: a warning' >&2\necho '{CANCELLED}.' >&2\nexit 1"),
+    );
+    for failing in [followed, changed] {
+        let refused = sign(&failing, &file, &[], Verb::Sign);
+        assert!(
+            matches!(&refused, Err(SignError::Failed { status, .. }) if status == "1"),
+            "{refused:?}"
+        );
+    }
 }
