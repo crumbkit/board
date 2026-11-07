@@ -289,6 +289,7 @@ impl Runner {
             boards: Some(self.known.clone()),
             signer: None,
             allowed_signers: None,
+            attention_allowed_signers: None,
             environment: board_plugin::Environment {
                 path: Some(PATH.into()),
                 caller: Some(start.into_os_string()),

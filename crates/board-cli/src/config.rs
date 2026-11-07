@@ -23,14 +23,18 @@ pub(crate) struct Context {
     /// The file naming the user's known boards:
     /// `$XDG_CONFIG_HOME/board/config.json`, or `~/.config/board/config.json`.
     pub(crate) boards: Option<PathBuf>,
-    /// The program that signs an approval: `.local/bin/attention-sign` in
-    /// the home the passwd entry names, which no variable moves. A debug
-    /// build, which every test runs, has none, so no test opens the owner's
-    /// Touch ID window. `cargo install` makes a release build.
+    /// The program that signs an approval or an order:
+    /// `.local/bin/attention-sign` in the home the passwd entry names, which
+    /// no variable moves. A debug build, which every test runs, has none, so
+    /// no test opens the owner's Touch ID window. `cargo install` makes a
+    /// release build.
     pub(crate) signer: Option<OsString>,
     /// The allowed signers file an approval's signature must verify against:
     /// `.config/board/allowed_signers` in the same home.
     pub(crate) allowed_signers: Option<PathBuf>,
+    /// The allowed signers file an order's signature must verify against:
+    /// `.config/attention/allowed_signers` in the same home.
+    pub(crate) attention_allowed_signers: Option<PathBuf>,
     /// What a called plugin inherits.
     pub(crate) environment: Environment,
     /// `BOARD_COMPLETE`, which names a shell to ask for completion.
@@ -69,7 +73,15 @@ impl Context {
         let plugins = base("XDG_DATA_HOME", ".local/share").map(|data| data.join("board/plugins"));
         let config = base("XDG_CONFIG_HOME", ".config").map(|config| config.join("board"));
         let boards = config.map(|config| config.join("config.json"));
-        let (signer, allowed_signers) = owner_home().as_deref().map(trust).unzip();
+        let (signer, allowed_signers, attention_allowed_signers) =
+            match owner_home().as_deref().map(trust) {
+                Some(trusted) => (
+                    Some(trusted.signer),
+                    Some(trusted.allowed),
+                    Some(trusted.attention_allowed),
+                ),
+                None => (None, None, None),
+            };
         let path = std::env::var_os("PATH");
         let current = std::env::current_dir().ok();
         let start = current.clone().unwrap_or_else(|| PathBuf::from("."));
@@ -81,6 +93,7 @@ impl Context {
             boards,
             signer: signer.filter(|_| cfg!(not(debug_assertions))),
             allowed_signers,
+            attention_allowed_signers,
             environment: Environment {
                 path,
                 home: std::env::var_os("HOME"),
@@ -156,13 +169,27 @@ fn owner_home() -> Option<PathBuf> {
     Some(user.dir).filter(|dir| dir.is_absolute())
 }
 
-/// The allowed signers file, relative to the owner's home.
+/// The allowed signers file for approvals, relative to the owner's home.
 pub(crate) const ALLOWED_SIGNERS: &str = ".config/board/allowed_signers";
 
-/// The signer and the allowed signers file in the owner's `home`.
-fn trust(home: &Path) -> (OsString, PathBuf) {
-    let signer = home.join(".local/bin/attention-sign").into_os_string();
-    (signer, home.join(ALLOWED_SIGNERS))
+/// The allowed signers file for orders, relative to the owner's home.
+const ATTENTION_ALLOWED_SIGNERS: &str = ".config/attention/allowed_signers";
+
+/// The signer and the two allowed signers files in the owner's home.
+#[derive(Debug, PartialEq, Eq)]
+struct Trusted {
+    signer: OsString,
+    allowed: PathBuf,
+    attention_allowed: PathBuf,
+}
+
+/// The signer and the allowed signers files in the owner's `home`.
+fn trust(home: &Path) -> Trusted {
+    Trusted {
+        signer: home.join(".local/bin/attention-sign").into_os_string(),
+        allowed: home.join(ALLOWED_SIGNERS),
+        attention_allowed: home.join(ATTENTION_ALLOWED_SIGNERS),
+    }
 }
 
 #[cfg(test)]

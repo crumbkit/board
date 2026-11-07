@@ -107,6 +107,7 @@ fn call_from(
         boards: None,
         signer: None,
         allowed_signers: None,
+        attention_allowed_signers: None,
         environment: board_plugin::Environment {
             path: Some(PATH.into()),
             caller: caller.map(|caller| caller.as_os_str().to_owned()),

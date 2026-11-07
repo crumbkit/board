@@ -250,6 +250,7 @@ fn run_known(start: &Path, data: &Scenario, xdg: &Scenario, arguments: &[&str]) 
         boards: Some(xdg.workdir().join("board/config.json")),
         signer: None,
         allowed_signers: None,
+        attention_allowed_signers: None,
         environment: board_plugin::Environment {
             path: Some("/usr/bin:/bin".into()),
             ..board_plugin::Environment::default()

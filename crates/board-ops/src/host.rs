@@ -7,14 +7,16 @@ use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
-use board_model::{CapabilityName, Code, Fields, LogicalPath, PluginName, RecordType, Refusal};
+use board_model::{
+    CapabilityName, Code, Fields, LogicalPath, Order, PluginName, RecordType, Refusal,
+};
 use board_plugin::child::{Exited, Process, ProcessError};
 use board_plugin::{CallReport, Manifest, Target};
 pub use board_tree::Origin;
 use serde::de::DeserializeOwned;
 use serde_json::{Map, Value};
 
-use crate::effects::{Asker, DecideReport, Shown};
+use crate::effects::{Asker, DecideReport, Shown, SignOrderError, VerifyOrderError};
 use crate::known::{self, KnownBoards};
 use crate::mount::{MountError, MountUpdateReport};
 use crate::plugins::Plugins;
@@ -192,6 +194,27 @@ pub trait Host {
             Some(directory) => board_index::cache(&directory, digest, value),
             None => Ok(()),
         }
+    }
+    /// Shows the owner `order`'s statement through the signer, with 10
+    /// minutes to read it and touch the sensor, and returns their armored
+    /// signature once it verifies against the attention allowed signers
+    /// file. Without one it says why: the owner asked for changes, with
+    /// their words, or cancelled; there is no signer; or the signer failed.
+    /// Only Board's own host signs; any other, such as a test's, refuses
+    /// with [`SignOrderError::NotOffered`].
+    fn sign_order(&self, _order: &Order) -> Result<String, SignOrderError> {
+        Err(SignOrderError::NotOffered)
+    }
+    /// The principal, `owner`, whose key the attention allowed signers file
+    /// lists and whose `signature` of `order`'s statement verifies in the
+    /// order's namespace, or why it does not. Only Board's own host
+    /// verifies; any other refuses with [`VerifyOrderError::NotOffered`].
+    fn verify_order(
+        &self,
+        _order: &Order,
+        _signature: &str,
+    ) -> Result<&'static str, VerifyOrderError> {
+        Err(VerifyOrderError::NotOffered)
     }
 }
 
@@ -545,6 +568,27 @@ impl Host for Hosted<'_> {
 
     fn settings(&self) -> &Settings {
         &self.settings
+    }
+
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "Hosted::sign_order is the one caller of the effects module's order signer"
+    )]
+    fn sign_order(&self, order: &Order) -> Result<String, SignOrderError> {
+        let root = self.board.repository().path();
+        crate::effects::sign_order(&self.plugins.signing, root, order)
+    }
+
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "Hosted::verify_order is the one caller of the effects module's order verifier"
+    )]
+    fn verify_order(
+        &self,
+        order: &Order,
+        signature: &str,
+    ) -> Result<&'static str, VerifyOrderError> {
+        crate::effects::verify_order(&self.plugins.signing, order, signature)
     }
 }
 

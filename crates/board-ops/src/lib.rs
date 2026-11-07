@@ -34,7 +34,10 @@ pub use crate::attachment::{FetchError, MAX_INLINE_BYTES};
 pub use crate::board::{Backend, Board, Config, OpenError, Store};
 pub use crate::check::{CheckError, CheckReport, Checked, Detail};
 pub use crate::checkout::Refused as CheckoutRefused;
-pub use crate::effects::{AnswerReport, Asker, DecideReport, EffectError, Shown, Signing, answer};
+pub use crate::effects::{
+    AnswerReport, Asker, DecideReport, EffectError, Shown, SignOrderError, Signing,
+    VerifyOrderError, answer,
+};
 pub use crate::enable::{EnableError, EnableReport, Kept};
 pub use crate::host::{
     BuiltIn, Elsewhere, Host, Limit, Origin, Plugin, PluginError, Run, Settings, Variables, literal,

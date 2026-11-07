@@ -213,14 +213,16 @@ pub(crate) fn asker(context: &Context, personal: bool) -> Result<Asker, Box<Refu
     )
 }
 
-/// How the owner signs an approval, and the allowed signers file it is
-/// checked against, which a built-in plugin's decide reads too.
+/// How the owner signs an approval or an order, and the allowed signers
+/// files each is checked against, which a built-in plugin's decide, order
+/// signing and order verifying read too.
 pub(crate) fn signing(context: &Context) -> Signing {
     let environment = &context.environment;
     let passed = [("PATH", &environment.path), ("HOME", &environment.home)];
     Signing {
         signer: context.signer.clone(),
         allowed: context.allowed_signers.clone(),
+        attention_allowed: context.attention_allowed_signers.clone(),
         cache: context.cache.clone(),
         environment: (passed.into_iter())
             .filter_map(|(name, value)| Some((name, value.clone()?)))

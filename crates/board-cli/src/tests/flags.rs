@@ -199,6 +199,7 @@ fn a_terminal_on_stdin_is_not_read() {
         boards: None,
         signer: None,
         allowed_signers: None,
+        attention_allowed_signers: None,
         environment: board_plugin::Environment {
             path: Some("/usr/bin:/bin".into()),
             ..board_plugin::Environment::default()

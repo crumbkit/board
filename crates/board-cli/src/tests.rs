@@ -88,6 +88,7 @@ fn board_environment(
         boards: None,
         signer: None,
         allowed_signers: None,
+        attention_allowed_signers: None,
         environment,
         complete: None,
         terminal: false,

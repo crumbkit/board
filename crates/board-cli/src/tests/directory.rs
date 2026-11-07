@@ -210,6 +210,7 @@ fn a_directory_that_is_not_utf8_still_prints_a_groups_help() {
         boards: None,
         signer: None,
         allowed_signers: None,
+        attention_allowed_signers: None,
         environment: board_plugin::Environment::default(),
         complete: None,
         terminal: false,
