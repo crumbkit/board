@@ -1,5 +1,6 @@
 STATE    NAME                 PATH
 missing  artifacts            skills/artifacts
+missing  attention            skills/attention
 missing  boundary             skills/boundary
 missing  changes              skills/changes
 missing  controls             skills/controls

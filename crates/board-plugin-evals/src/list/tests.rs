@@ -374,7 +374,7 @@ fn evals_board(evals: &[(&str, Value)]) -> (Scenario, Scenario, Board) {
 
 /// As [`evals_board`], with `library` as the library's eval, and the
 /// library's schema admitting each `(property, value)` of `newer` as well,
-/// as a newer Board's schema would.
+/// so the library can hold values this Board does not know.
 fn evals_board_with(
     evals: &[(&str, Value)],
     library_eval: &Value,
@@ -469,12 +469,12 @@ fn board_calls_evals_in_its_own_process_over_this_board_and_its_mounted_ones() {
     assert!(!phases.contains(&"plugin.reply"), "{phases:?}");
 }
 
-/// A mounted board a newer Board wrote can hold a status and a verdict this
-/// Board does not know. `about` and `open` list that eval with both as
-/// written, as they list its twin holding known values; `open` lists it
-/// because it is not known to be concluded or abandoned.
+/// A mounted board can hold a status and a verdict this Board does not
+/// know. `about` and `open` list that eval with both as written, as they
+/// list its twin holding known values; `open` lists it because it is not
+/// known to be concluded or abandoned.
 #[test]
-fn an_eval_holding_a_status_and_verdict_a_newer_board_added_is_listed_as_written_like_its_twin() {
+fn an_eval_with_a_status_and_verdict_this_board_does_not_know_is_listed_as_written_like_its_twin() {
     for (status, verdict) in [("running", "refuted"), ("paused", "mixed")] {
         let library =
             record(&json!({"subjects": ["o/clap"], "status": status, "verdict": verdict}));

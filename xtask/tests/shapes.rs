@@ -19,10 +19,14 @@ use exempt::{Kind, UNSHARED};
 /// The rules a schema may break today, by record type, until the plugin
 /// that ships it is ported. Each entry must still be broken, so a fix
 /// removes its entry.
-const EXEMPT: [(&str, &str); 14] = [
+const EXEMPT: [(&str, &str); 16] = [
     // Ported plugins that ship the schema files the former Python plugins
     // generated with pydantic, unchanged: pydantic titles every
-    // property and keeps field meanings in the class docstring.
+    // property and keeps field meanings in the class docstring. The order
+    // type is named through its owner's constant, since only the signing
+    // owners name it (STANDARDS.md 29).
+    (board_model::ORDER_TYPE, "described"),
+    (board_model::ORDER_TYPE, "untitled"),
     ("notes/repo/v1", "described"),
     ("notes/repo/v1", "untitled"),
     ("prompts/prompt/v1", "described"),

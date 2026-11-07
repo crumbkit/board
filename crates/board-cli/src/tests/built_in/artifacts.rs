@@ -909,11 +909,11 @@ fn agree_refuses_a_superseded_artifact_without_asking_the_owner_and_asks_for_a_s
     assert_eq!(asked["code"], "artifacts::agree::asked", "{asked}");
 }
 
-/// A mounted board a newer Board wrote can hold an artifact whose state,
-/// and a version whose copy, this Board does not know. `list` lists both,
+/// A mounted board can hold an artifact whose state, and a version whose
+/// copy, this Board does not know. `list` lists both,
 /// the state as written, as it lists their twin holding known values.
 #[test]
-fn list_lists_an_artifact_and_a_version_holding_values_a_newer_board_added_like_their_twin() {
+fn list_lists_an_artifact_and_a_version_holding_values_this_board_does_not_know_like_their_twin() {
     for (state, copy) in [("shown", "none"), ("parked", "remote")] {
         let board = board();
         let mut tree = vec![(

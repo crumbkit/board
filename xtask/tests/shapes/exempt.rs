@@ -16,7 +16,7 @@ pub(super) enum Kind {
 use Kind::{Local, UntilAdopted};
 
 #[rustfmt::skip]
-pub(super) const UNSHARED: [(&str, &str, Kind, &str); 86] = [
+pub(super) const UNSHARED: [(&str, &str, Kind, &str); 88] = [
     // This repository's board's copy of the controls schema.
     (".board/controls/control/v1", "/rule/at_least", Local, "a version floor of dotted numbers, which only a version rule compares"),
     (".board/controls/control/v1", "/rule/capture", Local, "a regular expression in the syntax of Rust's regex crate, which only a version rule compiles"),
@@ -27,6 +27,9 @@ pub(super) const UNSHARED: [(&str, &str, Kind, &str); 86] = [
     ("artifacts/version/v1", "/at", UntilAdopted, "Timestamp, as plans' (audit rows 37 to 41)"),
     ("artifacts/version/v1", "/source", Local, "a file path on the machine that published, which only artifacts records"),
     ("artifacts/version/v1", "/version", Local, "an Artifact tool version id is the artifacts plugin's own identifier"),
+    // The order type is named through its owner's constant (STANDARDS.md 29).
+    (board_model::ORDER_TYPE, "/order", UntilAdopted, "Prose, which changes the schema's bytes"),
+    (board_model::ORDER_TYPE, "/signature", Local, "SSH signature armor, which only the signing owner names"),
     ("boundary/crossing/v1", "/action", Local, "the action that sends content names itself, and only boundaries match it"),
     ("boundary/crossing/v1", "/to", Local, "a destination is named by the action that sends to it, and only boundaries match it"),
     ("boundary/crossing/v1", "/verdicts/-/part", Local, "a part is named by the action that sends it, and only boundaries match it"),
