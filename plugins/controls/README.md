@@ -199,10 +199,12 @@ The plugin ships both schemas. `board plugin enable controls` writes them to
   `--checkout`, the check read that mount or the path lies under it, and
   the checkout's HEAD is not the commit read or a tracked file there differs
   from HEAD. It holds the mount, the commit `read`, the checkout's `head`,
-  `uncommitted`, the command in `run` that measures the checkout's HEAD,
-  and a `note` that says so in prose. It changes neither `passed` nor the
-  exit status. Uncommitted edits are read by no check, so commit them
-  before the run.
+  the command in `run` that measures the checkout's HEAD, and a `note`
+  that says so in prose. `uncommitted` is true when HEAD is the commit read
+  and a tracked file differs from it; when HEAD differs, the working tree
+  is not scanned and `uncommitted` is left out. The entry changes neither
+  `passed` nor the exit status. Uncommitted edits are read by no check, so
+  commit them before the run.
 
 - `controls.evaluate` checks named parts of text, such as a pull request's
   title and body, against controls' rules. It reads its input on stdin:

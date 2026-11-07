@@ -154,7 +154,8 @@ impl Board {
     /// The checkout of a mounted repository this run started in, when Board
     /// found the board through that mount and reads it at its pin. A run
     /// under `--checkout`, or one started in the board's own tree, has
-    /// none. HEAD and the working tree are read on each call.
+    /// none. HEAD is read on each call, and the working tree only when
+    /// [`StartedIn::uncommitted`] is asked.
     pub fn started_in(&self) -> Option<StartedIn> {
         if self.repositories.checkout().is_some() {
             return None;
@@ -163,7 +164,7 @@ impl Board {
         Some(StartedIn {
             mount: mount.clone(),
             head: board_tree::head_of(directory)?,
-            uncommitted: board_tree::uncommitted(directory)?,
+            directory: directory.clone(),
         })
     }
 
@@ -186,8 +187,18 @@ pub struct StartedIn {
     pub mount: LogicalPath,
     /// The commit HEAD names in the checkout.
     pub head: ObjectId,
-    /// Whether a file git tracks there differs from HEAD.
-    pub uncommitted: bool,
+    /// The directory the run started in.
+    directory: PathBuf,
+}
+
+impl StartedIn {
+    /// Whether a file git tracks in the checkout differs from HEAD, as
+    /// `board_tree::uncommitted` reads it, or `None` when git's files
+    /// cannot be read. It reads every tracked file's metadata, so a caller
+    /// asks only when the answer can change what it reports.
+    pub fn uncommitted(&self) -> Option<bool> {
+        board_tree::uncommitted(&self.directory)
+    }
 }
 
 /// The logical path of the board's configuration.

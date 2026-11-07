@@ -6,7 +6,7 @@ use std::path::Path;
 use std::time::UNIX_EPOCH;
 
 use gix::bstr::BStr;
-use gix::index::entry::{Mode, Stage};
+use gix::index::entry::{Flags, Mode, Stage};
 
 use crate::git::model_id;
 use crate::worktree::settle::hash_stream;
@@ -22,11 +22,18 @@ use crate::worktree::settle::hash_stream;
 /// which was modified before the index was written, is taken as unchanged
 /// without reading it, as git does. Any other file is hashed. A file is
 /// hashed as it is on disk, without git's filters, so a checkout that
-/// converts line endings can count as changed.
+/// converts line endings can count as changed. A file the index marks
+/// skip-worktree, as a sparse checkout leaves it, is compared in the index
+/// alone. A change to a file's executable bit alone is not detected.
+///
+/// A working tree with no index file, as a repository built without a
+/// checkout has, compares HEAD's files with the disk alone. With an index
+/// file, a HEAD file the index does not hold is a staged deletion.
 pub fn uncommitted(directory: &Path) -> Option<bool> {
     let git = gix::discover(directory).ok()?;
     let workdir = git.workdir()?.to_path_buf();
     let committed = git.index_from_tree(&git.head_tree_id().ok()?).ok()?;
+    let indexed = git.index_path().exists();
     let index = git.index_or_empty().ok()?;
     let written = fs::metadata(git.index_path())
         .ok()
@@ -41,11 +48,18 @@ pub fn uncommitted(directory: &Path) -> Option<bool> {
     for entry in committed.entries() {
         let path = entry.path(&committed);
         let staged = staged.get(path).copied();
-        if let Some(staged) = staged {
-            matched += 1;
-            if staged.id != entry.id || staged.mode != entry.mode {
-                return Some(true);
+        match staged {
+            Some(staged) => {
+                matched += 1;
+                if staged.id != entry.id || staged.mode != entry.mode {
+                    return Some(true);
+                }
+                if staged.flags.contains(Flags::SKIP_WORKTREE) {
+                    continue;
+                }
             }
+            None if indexed => return Some(true),
+            None => {}
         }
         if entry.mode == Mode::COMMIT {
             continue;

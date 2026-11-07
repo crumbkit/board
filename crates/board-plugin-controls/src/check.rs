@@ -61,8 +61,11 @@ struct Unmeasured {
     #[serde(serialize_with = "hex_id")]
     #[schemars(with = "shape::ObjectId")]
     head: board_model::ObjectId,
-    /// Whether a file git tracks in the checkout differs from its HEAD.
-    uncommitted: bool,
+    /// Whether a file git tracks in the checkout differs from its HEAD;
+    /// left out when HEAD is not the commit read, because the check then
+    /// measured neither HEAD nor the edits, so it is not looked for.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    uncommitted: Option<bool>,
     /// The command that measures the checkout's HEAD.
     #[schemars(with = "Prose")]
     run: String,
@@ -528,7 +531,7 @@ fn unmeasured(
     path: &str,
 ) -> Option<Unmeasured> {
     let started = host.started_in()?;
-    let mount = started.mount;
+    let mount = started.mount.clone();
     let commit = (read.iter())
         .find(|source| source.mount == mount)
         .and_then(|source| source.commit);
@@ -537,31 +540,32 @@ fn unmeasured(
         None if under(scope, &mount) => pin_of(host, &mount)?,
         None => return None,
     };
-    if pinned == started.head && !started.uncommitted {
-        return None;
-    }
-    let mut note = if pinned == started.head {
+    // The working tree is scanned only when HEAD is the commit read, since
+    // otherwise the entry appears whatever the scan finds.
+    let uncommitted = if pinned == started.head {
+        if !started.uncommitted()? {
+            return None;
+        }
+        Some(true)
+    } else {
+        None
+    };
+    let note = if uncommitted.is_some() {
         format!(
-            "This check read {mount} at {pinned}, the commit its pointer pins, which is the checkout's HEAD."
+            "This check read {mount} at {pinned}, the commit its pointer pins, which is the checkout's HEAD, so it measured the checkout's last commit. The checkout has uncommitted changes to tracked files, which no check reads; commit them, then run the command in `run`."
         )
     } else {
         format!(
-            "This check read {mount} at {pinned}, the commit its pointer pins, but the checkout Board ran from has HEAD at {}, so the checkout's files were not measured.",
+            "This check read {mount} at {pinned}, the commit its pointer pins, but the checkout Board ran from has HEAD at {}, so the checkout's files were not measured. The command in `run` measures the checkout's HEAD; it does not read uncommitted edits.",
             started.head
         )
     };
-    if started.uncommitted {
-        note.push_str(
-            " The checkout has uncommitted changes to tracked files, which no check reads; commit them first.",
-        );
-    }
-    note.push_str(" The command in `run` measures the checkout's HEAD.");
     Some(Unmeasured {
         run: format!("board --checkout call controls.check --path {path}"),
         mount,
         read: pinned,
         head: started.head,
-        uncommitted: started.uncommitted,
+        uncommitted,
         note,
     })
 }
