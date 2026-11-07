@@ -24,7 +24,7 @@ data in a passing answer, and the block says so beside the control, such as
 
 The mod shows one line, such as "2 controls on crumbkit". When the attention
 mod is loaded, which the mod learns from its
-`mcp__attention-approve__request_signature` tool, the
+`mcp__board-attention__request_signature` tool, the
 line joins the band above the prompt that attention draws. Otherwise it goes
 to the status line.
 

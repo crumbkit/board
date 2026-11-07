@@ -1,5 +1,6 @@
 STATE    NAME                 PATH
 written  artifacts            skills/artifacts
+written  attention            skills/attention
 written  boundary             skills/boundary
 written  changes              skills/changes
 written  controls             skills/controls
