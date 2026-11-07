@@ -35,8 +35,8 @@ understanding checks. Git history holds earlier phases.
 - `flow` references the change's copy of the `changes/flow/v1` it follows,
   which `start` writes. A prototype follows no flow and has none.
 - `phase` is a phase of the flow, `done`, or `dropped` to end a change
-  early. `paused` holds a change taken out of `build` to free
-  its place under the WIP limit.
+  early. `paused` holds a change taken out of `build` to free its place
+  under the WIP limit.
 - `suite` references the `runs/suite/v1` whose runs the `run` check
   counts. `start --suite` or the repository's contributing docs set it, and
   `attach --suite` changes it.

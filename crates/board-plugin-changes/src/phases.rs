@@ -181,8 +181,8 @@ fn instruction(observed: &Observed) -> String {
     match (observed.flow.as_ref()).and_then(|flow| flow.phase(phase)) {
         Some(found) => fill(&found.instruction, &values(observed)),
         None if phase == PAUSED => format!(
-            "This change was paused to free its place under the WIP limit on active changes in \
-             `build` per repository. Resume it with `board call changes.resume --path {}` when a \
+            "This change was paused to free its place under the WIP limit on active changes of \
+             its kind per repository. Resume it with `board call changes.resume --path {}` when a \
              place is free and the owner's queue allows.",
             observed.path
         ),
