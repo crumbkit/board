@@ -16,11 +16,11 @@ fn read(verdict: &str, severity: &str) -> Covering {
     covering("/reviews/r1/report".to_owned(), &report.to_string()).unwrap()
 }
 
-/// A verdict a newer Board added does not cover the commits, as `changes`
-/// does not, and a severity a newer Board added blocks, as `high` does.
-/// Their twins `comment` and `low` cover and do not block.
+/// A verdict this Board does not know does not cover the commits, as
+/// `changes` does not, and a severity this Board does not know blocks, as
+/// `high` does. Their twins `comment` and `low` cover and do not block.
 #[test]
-fn a_verdict_and_severity_a_newer_board_added_do_not_cover_and_block_like_changes_and_high() {
+fn a_verdict_and_severity_this_board_does_not_know_do_not_cover_and_block_like_changes_and_high() {
     for (verdict, severity) in [("changes", "high"), ("defer", "severe")] {
         let report = read(verdict, severity);
         assert!(report.changes, "{verdict}");
