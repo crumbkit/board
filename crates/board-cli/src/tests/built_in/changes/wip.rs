@@ -572,3 +572,28 @@ fn a_chain_of_local_clones_past_three_hops_counts_by_the_last_and_says_so() {
     board.ready_in(&short);
     assert_eq!(advanced(&board), "build");
 }
+
+#[test]
+fn reopen_refuses_when_the_cap_is_full_and_goes_past_it_with_a_reason() {
+    let board = Changes::new();
+    board.mount_x(&[("README.md", "x\n")]);
+    board.change_at("changes/t.json", "review", &json!({}));
+    board.call("migrate", &json!({"apply": true}));
+    fill(&board, WIP_LIMIT, &json!({}));
+    let reason = json!({"reason": "The review asked for a fix."});
+    let refused = board.refusal("reopen", &at(&reason));
+    assert_eq!(refused["code"], "changes::wip::full");
+    let message = refused["message"].as_str().unwrap();
+    assert!(message.contains("changes.reopen"), "{message}");
+    let past =
+        json!({"reason": "The review asked for a fix.", "over_limit": "Blocked work elsewhere."});
+    let output = board.call("reopen", &at(&past));
+    assert_eq!(
+        (&output["to"], &output["warning"]["code"]),
+        (&json!("build"), &json!("changes::wip::over_limit"))
+    );
+    assert_eq!(
+        board.read("changes/t.json")["over_limit"],
+        "Blocked work elsewhere."
+    );
+}

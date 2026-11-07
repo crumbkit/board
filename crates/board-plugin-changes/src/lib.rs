@@ -96,7 +96,7 @@ fn output<T: JsonSchema>() -> Value {
 /// Every capability, in the order the manifest lists them. A capability
 /// that rewrites a field of a change, or ends it, is destructive; one that
 /// adds a task or reads GitHub reaches the open world.
-const CAPABILITIES: [Capability; 18] = [
+const CAPABILITIES: [Capability; 19] = [
     Capability {
         name: "start",
         description: "Create a change in the first phase of its flow, its copy of the flow, its \
@@ -239,6 +239,19 @@ const CAPABILITIES: [Capability; 18] = [
             its kind are in build for its mount, unless over_limit gives a reason.",
         run: phases::resume,
         input: input::<phases::AdvanceInput>,
+        output: output::<phases::Moved>,
+        hints: [false, true, false, false],
+        env: &ACTIVE_DAYS_ENV,
+        timeout: None,
+    },
+    Capability {
+        name: "reopen",
+        description: "Move a change back to the build phase of its flow for a fix round, such as \
+            from review, and record why. Refused when its flow has no build phase before where \
+            it stands, and while three active changes of its kind are in build for its mount, \
+            unless over_limit gives a reason.",
+        run: phases::reopen,
+        input: input::<phases::ReopenInput>,
         output: output::<phases::Moved>,
         hints: [false, true, false, false],
         env: &ACTIVE_DAYS_ENV,

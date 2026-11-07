@@ -97,6 +97,12 @@
       },
       "type": "array"
     },
+    "reopened": {
+      "description": "The reason given for the latest move back to build with `reopen`,\nwhich `next` shows while the change is in build.",
+      "minLength": 1,
+      "type": "string",
+      "x-board-prose": true
+    },
     "route": {
       "description": "Who must agree to the change before it is built.",
       "enum": [

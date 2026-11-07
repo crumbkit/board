@@ -1,6 +1,6 @@
-//! The `next`, `attach`, `advance`, `pause`, `resume` and `reflow`
-//! capabilities: where a change stands, what it cites, moving it on, and
-//! moving it to another flow.
+//! The `next`, `attach`, `advance` and `reflow` capabilities: where a
+//! change stands, what it cites, moving it on, and moving it to another
+//! flow. `moves` holds `pause`, `resume` and `reopen`.
 
 use std::fmt::Write as _;
 
@@ -34,6 +34,10 @@ use crate::repo::check_suite;
 use crate::stop::{Shown, holds, reached, stop_reached};
 use crate::wip::{Limit, Move, active_days, admit};
 use crate::{PLUGIN, refusal, to_value};
+
+mod moves;
+
+pub(crate) use moves::{ReopenInput, pause, reopen, resume};
 
 /// One change, by path.
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -353,6 +357,17 @@ fn instruction_for(observed: &Observed, checks: &[Check], waiting: bool) -> Stri
     }
 }
 
+/// `said` with why the change was reopened, while it is in build and
+/// `reopen` recorded a reason.
+fn with_reopened(change: &ChangeRecord, said: String) -> String {
+    match &change.reopened {
+        Some(reason) if change.phase == BUILD => {
+            format!("{said} It was reopened for a fix round: {reason}")
+        }
+        _ => said,
+    }
+}
+
 /// Whom the change waits on: the actors of its missing checks that block,
 /// when every one is the owner or a reviewer, and the question to ask
 /// them, built from those checks' remedies.
@@ -402,7 +417,7 @@ pub(crate) fn step_of(host: &dyn Host, path: &str) -> Result<(NextOutput, Observ
              '<one line>'` and exit.",
             shown.stop
         ),
-        _ => instruction_for(&observed, &checks, ask.is_some()),
+        _ => with_reopened(&change, instruction_for(&observed, &checks, ask.is_some())),
     };
     let next = NextOutput {
         path: path.to_owned(),
@@ -652,61 +667,6 @@ pub(crate) fn advance(host: &dyn Host, input: &Value) -> Result<Value, PluginErr
         path,
         from: phase,
         to,
-        warning: limit,
-    }))
-}
-
-pub(crate) fn pause(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
-    let PathInput { path } = PluginError::read_input(PLUGIN, "pause", input)?;
-    let (mut change, blob) = read(host, &path)?;
-    if change.phase != BUILD {
-        return Err(refusal(
-            "changes::pause::not_building",
-            format!(
-                "the change at {path} is in {}, and only a change in build is paused; list the \
-                 changes in build with `board call changes.open`",
-                change.phase
-            ),
-            [("path", json!(path)), ("phase", json!(change.phase))],
-        ));
-    }
-    PAUSED.clone_into(&mut change.phase);
-    write(host, &path, &blob, &change)?;
-    Ok(to_value(Moved {
-        path,
-        from: BUILD.to_owned(),
-        to: PAUSED.to_owned(),
-        warning: None,
-    }))
-}
-
-pub(crate) fn resume(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
-    let AdvanceInput { path, over_limit } = PluginError::read_input(PLUGIN, "resume", input)?;
-    let (mut change, blob) = read(host, &path)?;
-    if change.phase != PAUSED {
-        return Err(refusal(
-            "changes::resume::not_paused",
-            format!(
-                "the change at {path} is in {}, and only a paused change is resumed; run `board \
-                 call changes.next --path {path}` for its next step",
-                change.phase
-            ),
-            [("path", json!(path)), ("phase", json!(change.phase))],
-        ));
-    }
-    BUILD.clone_into(&mut change.phase);
-    let moving = Move {
-        over: over_command("resume", &path),
-        reason: over_limit.as_deref(),
-        days: active_days(host)?,
-    };
-    let limit = admit(host, &path, &mut change, kind_of(host, &path)?, &moving)?;
-    let change = touch(host, change);
-    write(host, &path, &blob, &change)?;
-    Ok(to_value(Moved {
-        path,
-        from: PAUSED.to_owned(),
-        to: BUILD.to_owned(),
         warning: limit,
     }))
 }

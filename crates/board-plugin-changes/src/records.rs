@@ -233,6 +233,11 @@ pub(crate) struct ChangeRecord {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "Option<Prose>", extend("minLength" = 1))]
     pub(crate) dropped_reason: Option<String>,
+    /// The reason given for the latest move back to build with `reopen`,
+    /// which `next` shows while the change is in build.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "Option<Prose>", extend("minLength" = 1))]
+    pub(crate) reopened: Option<String>,
     /// Whether Board read the change as a `changes/change/v1`, which it
     /// writes back as one until `migrate` rewrites it.
     #[serde(skip)]
@@ -265,6 +270,7 @@ impl Clone for ChangeRecord {
             over_limit: self.over_limit.clone(),
             merge_commit_url: self.merge_commit_url.clone(),
             dropped_reason: self.dropped_reason.clone(),
+            reopened: self.reopened.clone(),
             v1: self.v1,
         }
     }
@@ -292,6 +298,7 @@ impl ChangeRecord {
             over_limit: None,
             merge_commit_url: None,
             dropped_reason: None,
+            reopened: None,
             v1: false,
         }
     }
