@@ -245,6 +245,51 @@ fn brief_starts_with_the_line_the_write_guard_reads() {
     );
 }
 
+/// The golden of what `board call changes.brief` prints, which the write
+/// guard's tests read. A mod's tests import only TypeScript, so the golden
+/// is a module whose default export is the printed text as a JSON string.
+const BRIEF_GOLDEN: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../plugins/changes/claude-code/tests/brief.golden.ts"
+);
+
+/// The committed golden holds what an agent sees when it runs `board call
+/// changes.brief` without `--json`, so the guard's tests read Board's real
+/// output. `SNAPSHOTS=overwrite` rewrites the file.
+#[expect(
+    clippy::disallowed_methods,
+    reason = "brief.golden.ts is a golden, written as the other goldens are"
+)]
+#[test]
+fn the_brief_an_agent_runs_is_the_golden_the_write_guard_tests_read() {
+    let board = with_source();
+    let ran = board.run(&["call", "changes.brief", "--path", CHANGE], "");
+    assert_eq!(ran.code, 0, "{}", text(&ran.stderr));
+    let printed = text(&ran.stdout);
+    // The fixture has no plan record, so the brief names no stamped plan
+    // file and nothing in it depends on the machine or the date.
+    assert!(
+        !printed.contains(&board.root().display().to_string()),
+        "{printed}"
+    );
+    let golden = format!(
+        "// What `board call changes.brief` prints. Written by\n\
+         // the_brief_an_agent_runs_is_the_golden_the_write_guard_tests_read in\n\
+         // crates/board-cli/src/tests/built_in/changes/brief.rs; run it with\n\
+         // SNAPSHOTS=overwrite to rewrite this file.\n\
+         export default {}\n",
+        serde_json::to_string(&printed).unwrap()
+    );
+    if std::env::var("SNAPSHOTS").as_deref() == Ok("overwrite") {
+        std::fs::write(BRIEF_GOLDEN, &golden).unwrap();
+    }
+    let committed = std::fs::read_to_string(BRIEF_GOLDEN).unwrap_or_default();
+    assert!(
+        committed == golden,
+        "{BRIEF_GOLDEN} differs from what changes.brief prints; run this test with SNAPSHOTS=overwrite:\n{printed}"
+    );
+}
+
 #[test]
 fn brief_lists_each_control_on_the_planned_paths_once_matched_ones_first_and_what_they_matched() {
     let board = Changes::new();

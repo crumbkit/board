@@ -414,6 +414,13 @@ test('a brief is read only from the first line of the first message, as the writ
   expect(briefOf('')).toBeNull()
 })
 
+test('a brief that is the JSON changes.brief prints is read from its brief_line, as the write guard reads it', () => {
+  const printed = (line: unknown) => `${JSON.stringify({ brief_line: line, path: '/changes/flows-editor' }, null, 2)}\n\nBuild it.`
+  expect(briefOf(printed('board-brief: /changes/flows-editor'))).toBe('/changes/flows-editor')
+  expect(briefOf(printed('board-brief: /tasks/flows-editor'))).toBeNull()
+  expect(briefOf(`You are the builder.\n${printed('board-brief: /changes/flows-editor')}`)).toBeNull()
+})
+
 test('a brief found once is kept after the conversation passes the window or is compacted', async ($, on) => {
   mock.clock(on, { now: NOW })
   const { recorded, conversation } = host(on, { first: 'board-brief: /changes/flows-editor', session: 'long-builder' })
