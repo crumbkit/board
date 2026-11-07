@@ -1,7 +1,7 @@
 //! Sets `BOARD_BUILD`, the suffix the timing log adds to Board's version:
 //! `+<commit>`, with `.dirty.<hash>` when the source differs from it, or
 //! nothing outside a git checkout, so that a build there keeps no decisions;
-//! `BOARD_BUILD_COMMIT` names the commit in place of git
+//! `BOARD_BUILD_COMMIT` names the commit in place of git's
 //! (docs/architecture/performance/timing.md). It also writes `skills.rs`
 //! in `OUT_DIR`, which embeds the skills of the plugins this build enables
 //! (docs/plugins.md, Skills).
@@ -71,7 +71,7 @@ fn main() {
         &SOURCE[..],
     ]
     .concat();
-    let given = std::env::var("BOARD_BUILD_COMMIT").ok();
+    let given = std::env::var_os("BOARD_BUILD_COMMIT");
     let head = || text(&["rev-parse", "--short=12", "HEAD"]);
     let differs = || {
         let dirty = text(&status).is_some_and(|changes| !changes.is_empty());

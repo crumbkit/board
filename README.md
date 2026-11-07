@@ -11,9 +11,10 @@ for aarch64-apple-darwin, aarch64-unknown-linux-gnu and x86_64-unknown-linux-gnu
 each holding the `board` binary, and `SHA256SUMS`. Check the sum, extract
 `board` onto `PATH`, and confirm `board --version` prints the version and,
 after a `+`, the commit it was built from. A build outside the checkout, such
-as in a copy with its own git repository, names that commit when
-`BOARD_BUILD_COMMIT` holds it at build time. Every plugin Board ships is built
-into the binary.
+as in a copy with its own git repository, sets `BOARD_BUILD_COMMIT` at build
+time to the commit the source was taken from, and the version names it; the
+local git still decides whether `.dirty.` follows. Every plugin Board ships is
+built into the binary.
 
 Then run `board skills install`, which writes the skills built into `board`
 into `~/.claude/skills`. For an agent that reads `~/.agents/skills`, run

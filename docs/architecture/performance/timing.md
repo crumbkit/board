@@ -30,9 +30,12 @@ commit, untracked files included, such as
 has no suffix, and keeps no decisions. board-cli's build script asks git, and cargo runs it again
 after each commit, so board-cli recompiles after every commit.
 A build outside the checkout, such as in a copy with its own git repository,
-sets `BOARD_BUILD_COMMIT` to the commit the source came from: the build script
-then takes the first 12 of its 7 to 40 hex digits (all of them when fewer),
-lowercased, with no `.dirty.` part, and fails on any other value.
+sets `BOARD_BUILD_COMMIT` to the commit the source was taken from. The build
+script then names that commit in place of git's: the first 12 of its 7 to 40
+hex digits (all of them when fewer), lowercased. It fails on any other value.
+The `.dirty.` part still comes from the local git, so a copy whose own
+repository has committed the snapshot reads as clean. Cargo also reruns the
+build script when `BOARD_BUILD_COMMIT` changes.
 `board --version` prints `board` and this same version.
 
 | Phase | What it times |
