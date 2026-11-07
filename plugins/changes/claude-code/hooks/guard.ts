@@ -16,10 +16,27 @@ export type Change =
 
 const BRIEF = /^board-brief:\s*(\/changes\/\S+)$/
 
-/** The change the first line of `text` names as `board-brief: /changes/<name>`, or null. */
+/**
+ * The change `text` names as `board-brief: /changes/<name>`, or null. The
+ * first non-empty line is either that line or `{`, which opens the JSON
+ * object `changes.brief` prints; its `brief_line` field then holds the line.
+ */
 export function briefOf(text: string): string | null {
-  const first = text.split('\n').map(line => line.trim()).find(line => line !== '')
-  return first?.match(BRIEF)?.[1] ?? null
+  const lines = text.split('\n')
+  const at = lines.findIndex(line => line.trim() !== '')
+  const first = lines[at]?.trim()
+  if (first !== '{') return first?.match(BRIEF)?.[1] ?? null
+  // Board prints the object pretty, so it ends at the first line that is `}`
+  // with nothing but a line end after it: every nested brace is indented.
+  const end = lines.findIndex((line, i) => i > at && line.trimEnd() === '}')
+  if (end < 0) return null
+  let line: unknown
+  try {
+    line = (JSON.parse(lines.slice(at, end + 1).join('\n')) as { brief_line?: unknown }).brief_line
+  } catch {
+    return null
+  }
+  return typeof line === 'string' ? (line.match(BRIEF)?.[1] ?? null) : null
 }
 
 /** The repository's own directory from `git rev-parse --git-common-dir`, so a worktree names its repository. */
@@ -209,7 +226,8 @@ export function noBrief(file: string, at: Mount, named: string | null): string {
       : `this agent's first message names ${named}, which the board at ${at.board} does not hold`
   return (
     `changes::guard::no_brief: ${file} is in ${at.mount}, which the board at ${at.board} mounts. Only an agent ` +
-    `whose first message starts with \`board-brief: /changes/<name>\` may edit it, and ${said}. Start a builder ` +
+    'whose first message is the brief `changes.brief` prints, or starts with `board-brief: /changes/<name>`, may ' +
+    `edit it, and ${said}. Start a builder ` +
     `whose first message is the output of \`board -C ${at.board} call changes.brief --path /changes/<name>\`.`
   )
 }

@@ -26,8 +26,10 @@ reads.
 
 ## File an artifact
 
-The mod fills `subject` from the `board-brief: /changes/<name>` line that
-starts your first message, or else from the task you claimed with
+The mod fills `subject` from the change your first message's brief names,
+as the write guard reads it: the `board-brief: /changes/<name>` line that
+starts the message, or the `brief_line` of the `changes.brief` output it
+starts with. Otherwise it uses the task you claimed with
 `tasks.claim`. When it says the artifact has no subject or no `shows`, set
 them in the same turn:
 

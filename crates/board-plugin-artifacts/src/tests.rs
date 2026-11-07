@@ -268,9 +268,7 @@ fn brief_parser(text: &str) -> String {
     let pattern = (text.lines())
         .find(|line| line.starts_with("const BRIEF = "))
         .unwrap();
-    let start = text
-        .find("/** The change the first line of `text` names")
-        .unwrap();
+    let start = text.find("/**\n * The change `text` names as").unwrap();
     let length = text[start..].find("\n}\n").unwrap() + 2;
     format!("{pattern}\n{}", &text[start..start + length])
 }
