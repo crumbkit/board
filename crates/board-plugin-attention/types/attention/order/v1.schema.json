@@ -1,0 +1,42 @@
+{
+  "additionalProperties": false,
+  "description": "`attention/order/v1`: an instruction the owner signed, which agents may act on until it expires.\n\n`order` is the binding instruction. A `pinned` order is shown to every\nagent session as it starts. `context` references a Markdown file\nholding the non-binding context from the conversation that produced it.\n`signature` is the owner's SSH signature, in the `attention/order/v1`\nnamespace, of the order's statement, which holds the order, its expiry,\nwhether it is pinned, and the context's text. An order without one is a draft.",
+  "properties": {
+    "$type": {
+      "const": "attention/order/v1",
+      "title": "$Type",
+      "type": "string"
+    },
+    "context": {
+      "format": "board-ref",
+      "title": "Context",
+      "type": "string"
+    },
+    "expires": {
+      "format": "date",
+      "title": "Expires",
+      "type": "string"
+    },
+    "order": {
+      "minLength": 1,
+      "title": "Order",
+      "type": "string"
+    },
+    "pinned": {
+      "title": "Pinned",
+      "type": "boolean"
+    },
+    "signature": {
+      "title": "Signature",
+      "type": "string"
+    }
+  },
+  "required": [
+    "$type",
+    "order",
+    "context",
+    "expires"
+  ],
+  "title": "OrderRecord",
+  "type": "object"
+}

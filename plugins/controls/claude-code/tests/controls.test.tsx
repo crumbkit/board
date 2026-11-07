@@ -144,7 +144,7 @@ test('an edit of a file whose controls the session was told about appends nothin
 })
 
 test('with the attention mod present the controls join the band, and without it they go to the status line', async ($, on) => {
-  const { statuses } = engine(on, { tools: ['mcp__attention-approve__request_signature'] })
+  const { statuses } = engine(on, { tools: ['mcp__board-attention__request_signature'] })
   await start($)
   for (const surface of ['terminal', 'desktop'] as const) {
     const band = await $.ui.mount({ ...BAND, surface })
