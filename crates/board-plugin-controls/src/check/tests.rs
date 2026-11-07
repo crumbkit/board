@@ -13,6 +13,7 @@ use board_scenario::{Item, Scenario};
 use super::*;
 use crate::Controls;
 use crate::for_path::for_path;
+use crate::for_paths::for_paths;
 
 /// One call the plugin made of its host, with the paths it named.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -340,6 +341,11 @@ fn a_source_that_names_nothing_degrades_its_control_and_one_naming_a_source_note
 /// Six controls on `docs/a.md`: an obligation, a budget and a stated
 /// control that leave `show` out, and a twin of each that sets it.
 fn shown() -> (Scenario, Recording) {
+    shown_with(&[])
+}
+
+/// The six controls of [`shown`], and `more` files.
+fn shown_with(more: &[(&str, &str)]) -> (Scenario, Recording) {
     let on_docs = |mut fields: Value, show: Option<&str>| {
         fields["paths"] = json!(["docs/*"]);
         if let Some(show) = show {
@@ -350,15 +356,18 @@ fn shown() -> (Scenario, Recording) {
     let obligation = |show| on_docs(json!({"kind": "obligation"}), show);
     let budget = |show| on_docs(json!({"rule": words(9)}), show);
     let stated = |show| on_docs(json!({"kind": "standing"}), show);
-    recording(&[
-        ("docs/a.md", "one"),
-        ("controls/a-obligation.json", &obligation(None)),
-        ("controls/b-obligation-edit.json", &obligation(Some("edit"))),
-        ("controls/c-budget.json", &budget(None)),
-        ("controls/d-budget-start.json", &budget(Some("start"))),
-        ("controls/e-stated.json", &stated(None)),
-        ("controls/f-stated-failing.json", &stated(Some("failing"))),
-    ])
+    let records = [
+        ("controls/a-obligation.json", obligation(None)),
+        ("controls/b-obligation-edit.json", obligation(Some("edit"))),
+        ("controls/c-budget.json", budget(None)),
+        ("controls/d-budget-start.json", budget(Some("start"))),
+        ("controls/e-stated.json", stated(None)),
+        ("controls/f-stated-failing.json", stated(Some("failing"))),
+    ];
+    let mut files = vec![("docs/a.md", "one")];
+    files.extend(records.iter().map(|(path, text)| (*path, text.as_str())));
+    files.extend_from_slice(more);
+    recording(&files)
 }
 
 /// Each item's control, kind and show.
@@ -409,6 +418,91 @@ fn check_and_for_path_give_each_control_its_kind_and_the_show_it_defaults_to_or_
             stated[3].clone(),
         ]
     );
+}
+
+/// The six controls of [`shown`], a budget obligation that is the twin of
+/// `c-budget` but for its kind, a standing control that is the twin of
+/// `b-obligation-edit` but for its kind, and a version obligation and its
+/// standing twin.
+fn owed() -> (Scenario, Recording) {
+    let owed = control(&json!({"paths": ["docs/*"], "rule": words(9), "kind": "obligation"}));
+    let edit = control(&json!({"paths": ["docs/*"], "kind": "standing", "show": "edit"}));
+    let pinned = |kind: &str| {
+        let rule = json!({"check": "version", "at_least": "1.2", "capture": "v([0-9.]+)"});
+        control(&json!({"paths": ["docs/*"], "rule": rule, "kind": kind}))
+    };
+    shown_with(&[
+        ("controls/g-budget-owed.json", &owed),
+        ("controls/h-standing-edit.json", &edit),
+        ("controls/i-version-owed.json", &pinned("obligation")),
+        ("controls/j-version-standing.json", &pinned("standing")),
+    ])
+}
+
+/// Each item's control and its `close` line, null when it has none.
+fn closes(items: &Value) -> Vec<(String, Value)> {
+    (items.as_array().unwrap().iter())
+        .map(|item| {
+            let control = item["control"].as_str().unwrap().to_owned();
+            (control, item.get("close").cloned().unwrap_or(Value::Null))
+        })
+        .collect()
+}
+
+/// The `close` line an obligation at `control` carries.
+fn close(control: &str) -> Value {
+    json!(format!(
+        "Once the work this obligation names is committed, delete it with `board rm \
+         /controls/{control}`, which commits the deletion; merging the work does not clear it."
+    ))
+}
+
+#[test]
+fn check_for_path_and_for_paths_tell_how_to_close_an_obligation_and_give_a_standing_control_no_close()
+ {
+    let (_scenario, host) = owed();
+    let output = check(&host, &json!({})).unwrap();
+    let stated = [
+        ("/controls/a-obligation".to_owned(), close("a-obligation")),
+        (
+            "/controls/b-obligation-edit".to_owned(),
+            close("b-obligation-edit"),
+        ),
+        ("/controls/e-stated".to_owned(), Value::Null),
+        ("/controls/f-stated-failing".to_owned(), Value::Null),
+        ("/controls/h-standing-edit".to_owned(), Value::Null),
+    ];
+    assert_eq!(closes(&output["stated"]), stated);
+    let budgets = [
+        ("/controls/c-budget".to_owned(), Value::Null),
+        ("/controls/d-budget-start".to_owned(), Value::Null),
+        ("/controls/g-budget-owed".to_owned(), close("g-budget-owed")),
+    ];
+    assert_eq!(closes(&output["measured"]), budgets);
+    let versions = [
+        (
+            "/controls/i-version-owed".to_owned(),
+            close("i-version-owed"),
+        ),
+        ("/controls/j-version-standing".to_owned(), Value::Null),
+    ];
+    assert_eq!(closes(&output["versions"]), versions);
+    let all = [
+        stated[0].clone(),
+        stated[1].clone(),
+        budgets[0].clone(),
+        budgets[1].clone(),
+        stated[2].clone(),
+        stated[3].clone(),
+        budgets[2].clone(),
+        stated[4].clone(),
+        versions[0].clone(),
+        versions[1].clone(),
+    ];
+    let output = for_path(&host, &json!({"path": "/docs/a.md"})).unwrap();
+    assert_eq!(closes(&output["controls"]), all);
+    let output = for_paths(&host, &json!({"paths": ["/docs/a.md", "/docs/**"]})).unwrap();
+    assert_eq!(closes(&output["controls"]), all);
 }
 
 #[test]
