@@ -421,14 +421,21 @@ fn check_and_for_path_give_each_control_its_kind_and_the_show_it_defaults_to_or_
 }
 
 /// The six controls of [`shown`], a budget obligation that is the twin of
-/// `c-budget` but for its kind, and a standing control that is the twin of
-/// `b-obligation-edit` but for its kind.
+/// `c-budget` but for its kind, a standing control that is the twin of
+/// `b-obligation-edit` but for its kind, and a version obligation and its
+/// standing twin.
 fn owed() -> (Scenario, Recording) {
     let owed = control(&json!({"paths": ["docs/*"], "rule": words(9), "kind": "obligation"}));
     let edit = control(&json!({"paths": ["docs/*"], "kind": "standing", "show": "edit"}));
+    let pinned = |kind: &str| {
+        let rule = json!({"check": "version", "at_least": "1.2", "capture": "v([0-9.]+)"});
+        control(&json!({"paths": ["docs/*"], "rule": rule, "kind": kind}))
+    };
     shown_with(&[
         ("controls/g-budget-owed.json", &owed),
         ("controls/h-standing-edit.json", &edit),
+        ("controls/i-version-owed.json", &pinned("obligation")),
+        ("controls/j-version-standing.json", &pinned("standing")),
     ])
 }
 
@@ -472,6 +479,14 @@ fn check_for_path_and_for_paths_tell_how_to_close_an_obligation_and_give_a_stand
         ("/controls/g-budget-owed".to_owned(), close("g-budget-owed")),
     ];
     assert_eq!(closes(&output["measured"]), budgets);
+    let versions = [
+        (
+            "/controls/i-version-owed".to_owned(),
+            close("i-version-owed"),
+        ),
+        ("/controls/j-version-standing".to_owned(), Value::Null),
+    ];
+    assert_eq!(closes(&output["versions"]), versions);
     let all = [
         stated[0].clone(),
         stated[1].clone(),
@@ -481,6 +496,8 @@ fn check_for_path_and_for_paths_tell_how_to_close_an_obligation_and_give_a_stand
         stated[3].clone(),
         budgets[2].clone(),
         stated[4].clone(),
+        versions[0].clone(),
+        versions[1].clone(),
     ];
     let output = for_path(&host, &json!({"path": "/docs/a.md"})).unwrap();
     assert_eq!(closes(&output["controls"]), all);

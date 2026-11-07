@@ -81,6 +81,10 @@ pub(crate) struct Pinned {
     unreadable: Vec<Unreadable>,
     kind: Kind,
     show: ShowAt,
+    /// How to close an obligation; left out for a standing control.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "Option<Prose>")]
+    close: Option<String>,
 }
 
 /// A version a file pins that is older than the rule's, and its line.
@@ -580,6 +584,7 @@ fn pinned(
         unreadable,
         kind: control.kind(),
         show: control.show(),
+        close: control.kind().close(logical),
     })
 }
 

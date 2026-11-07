@@ -177,10 +177,11 @@ The plugin ships both schemas. `board plugin enable controls` writes them to
   with their `paths` patterns and `files`, the number of their files under
   the path, so the output stays short; `board get <control>` shows its
   `applies_to`, `paths` and `sources`. Every item carries `kind` and the
-  effective `show`, and every obligation, measured or stated, carries
-  `close`, as `for-path` gives it. `passed` is false when a budget is over its max, a pin
-  is behind or a file is unreadable. These are answers, so the call still
-  exits 0, and a reader sees the whole report. It fails with
+  effective `show`, and every obligation, in `measured`, `versions` or
+  `stated`, carries `close`, as `for-path` gives it. `passed` is false
+  when a budget is over its max, a pin is behind or a file is unreadable.
+  These are answers, so the call still exits 0, and a reader sees the
+  whole report. It fails with
   `controls::capture::invalid` when a version rule's `capture` does not
   compile or has no group, and with
   `controls::control::degraded` when Board marks any control degraded, under
