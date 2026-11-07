@@ -178,20 +178,19 @@ pub(crate) struct Moved {
 /// the placeholders filled, or a fixed one for a phase outside the flow.
 fn instruction(observed: &Observed) -> String {
     let phase = observed.change.phase.as_str();
-    let found = (observed.flow.as_ref()).and_then(|flow| flow.phase(phase));
-    if let Some(found) = found {
-        return fill(&found.instruction, &values(observed));
+    match (observed.flow.as_ref()).and_then(|flow| flow.phase(phase)) {
+        Some(found) => fill(&found.instruction, &values(observed)),
+        None if phase == PAUSED => format!(
+            "This change was paused to free its place under the WIP limit on active changes in \
+             `build` per repository. Resume it with `board call changes.resume --path {}` when a \
+             place is free and the owner's queue allows.",
+            observed.path
+        ),
+        None => "Nothing is left to do.".to_owned(),
     }
-    if phase == PAUSED {
-        return "The keeper paused this change to keep the work in progress small. Resume it with \
-                `board call changes.resume` when the owner's queue and the cap allow."
-            .to_owned();
-    }
-    "Nothing is left to do.".to_owned()
 }
 
-/// The text of the change's plan, or none when it names none or nothing is
-/// there.
+/// The text of the change's plan, or none when it names none or nothing is there.
 pub(crate) fn plan_text(
     host: &dyn Host,
     change: &ChangeRecord,
