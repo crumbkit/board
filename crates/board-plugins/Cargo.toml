@@ -7,6 +7,7 @@ publish.workspace = true
 
 [features]
 artifacts = ["dep:board-plugin-artifacts"]
+attention = ["dep:board-plugin-attention"]
 boundary = ["dep:board-plugin-boundary"]
 changes = ["dep:board-plugin-changes"]
 controls = ["dep:board-plugin-controls"]
@@ -26,6 +27,7 @@ topics = ["dep:board-plugin-topics"]
 [dependencies]
 board-ops.workspace = true
 board-plugin-artifacts = { workspace = true, optional = true }
+board-plugin-attention = { workspace = true, optional = true }
 board-plugin-boundary = { workspace = true, optional = true }
 board-plugin-changes = { workspace = true, optional = true }
 board-plugin-controls = { workspace = true, optional = true }

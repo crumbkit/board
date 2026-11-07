@@ -797,6 +797,7 @@ fn uncommitted() -> Scenario {
 }
 
 mod artifacts;
+mod attention;
 mod boundary;
 mod changes;
 mod controls;

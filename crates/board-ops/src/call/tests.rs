@@ -721,15 +721,16 @@ fn a_grandchild_holding_the_pipes_cannot_keep_board_waiting_past_the_limit() {
         ..Limits::default()
     };
     // The grandchild holds the pipes, and writes finished.txt only if it is
-    // left to run to its end.
+    // left to run to its end. Board kills it when the plugin exits, so the
+    // plugin's answer arrives within the limit.
     let script = format!(
-        "#!/bin/sh\ncat > /dev/null\nsh -c 'echo $$ > grandchild.pid; sleep 30; touch finished.txt' &\nprintf '%s' '{RESULT}'\n"
+        "#!/bin/sh\ncat > /dev/null\nsh -c 'echo $$ > grandchild.pid; sleep 30; touch finished.txt' &\nuntil [ -s grandchild.pid ]; do sleep 0.01; done\nprintf '%s' '{RESULT}'\n"
     );
     let fixture = Fixture::tasks(&script);
-    let error = fixture
+    let answered = fixture
         .call_with("tasks.due", r#"{"n": 1}"#, &environment(), limits)
-        .unwrap_err();
-    assert_eq!(error.refusal().code, Board(Code::PluginTimeout));
+        .unwrap();
+    assert_eq!(answered.output, json!({"count": 2}));
     assert!(ends(&written_pid(&fixture, "grandchild.pid")));
     assert!(!fixture.plugin("tasks").join("finished.txt").exists());
 }
@@ -801,17 +802,17 @@ fn a_wrapper_has_its_program_stopped_whether_or_not_it_execs_it() {
 }
 
 #[test]
-fn a_plugin_past_its_time_limit_is_stopped_with_the_grandchild_it_started() {
+fn a_grandchild_left_in_a_plugins_group_is_stopped_when_the_plugin_times_out_and_when_it_answers() {
     let limits = Limits {
         time: Duration::from_millis(500),
         ..Limits::default()
     };
     // A plugin that waits for its grandchild past the limit, then one that
-    // answers without waiting. Board signals the group only past a limit, so
-    // the second grandchild is left running.
+    // answers without waiting. Board kills what is left of the group when
+    // the plugin exits, so the second grandchild is stopped too.
     for (wait, timeout) in [("wait\n", true), ("", false)] {
         let script = format!(
-            "#!/bin/sh\ncat > /dev/null\nsh -c 'echo $$ > grandchild.pid; exec sleep 60' > /dev/null 2>&1 &\n{wait}printf '%s' '{RESULT}'\n"
+            "#!/bin/sh\ncat > /dev/null\nsh -c 'echo $$ > grandchild.pid; exec sleep 60' > /dev/null 2>&1 &\nuntil [ -s grandchild.pid ]; do sleep 0.01; done\n{wait}printf '%s' '{RESULT}'\n"
         );
         let fixture = Fixture::tasks(&script);
         let called = fixture.call_with("tasks.due", r#"{"n": 1}"#, &environment(), limits);
@@ -828,10 +829,9 @@ fn a_plugin_past_its_time_limit_is_stopped_with_the_grandchild_it_started() {
         } else {
             assert_eq!(called.unwrap().output, json!({"count": 2}));
             assert!(
-                running(&pid),
+                ends(&pid),
                 "the grandchild of a plugin that answered in time"
             );
-            tool(&["kill", "-KILL", &pid]);
         }
     }
 }

@@ -53,8 +53,8 @@ pub(crate) struct Output {
     path: String,
     subject: Vec<String>,
     shows: Option<String>,
-    /// draft, shown, agreed or superseded, or a value a newer Board added,
-    /// as written.
+    /// draft, shown, agreed or superseded, or a value this Board does not
+    /// know, as written.
     #[schemars(with = "String")]
     state: Open<State>,
     area: Vec<String>,
@@ -133,7 +133,7 @@ pub(crate) fn set(host: &dyn Host, input: &Value) -> Result<Value, PluginError> 
 /// Refuses a state change on an artifact that is agreed or superseded,
 /// whose state only a decision or a newer artifact gives.
 fn settable(path: &str, record: &ArtifactRecord) -> Result<(), PluginError> {
-    // A state a newer Board added is not known to be settled.
+    // A state this Board does not know is not known to be settled.
     let state = match record.state {
         Open::Known(State::Draft | State::Shown) | Open::Other(_) => return Ok(()),
         Open::Known(State::Agreed) => "agreed",

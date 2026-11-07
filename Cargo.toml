@@ -6,6 +6,7 @@ members = [
     "crates/board-ops",
     "crates/board-plugin",
     "crates/board-plugin-artifacts",
+    "crates/board-plugin-attention",
     "crates/board-plugin-boundary",
     "crates/board-plugin-changes",
     "crates/board-plugin-controls",
@@ -46,6 +47,7 @@ board-model = { path = "crates/board-model", version = "0.0.0" }
 board-plugin = { path = "crates/board-plugin", version = "0.0.0" }
 board-repos = { path = "crates/board-repos", version = "0.0.0" }
 board-plugin-artifacts = { path = "crates/board-plugin-artifacts", version = "0.0.0" }
+board-plugin-attention = { path = "crates/board-plugin-attention", version = "0.0.0" }
 board-plugin-boundary = { path = "crates/board-plugin-boundary", version = "0.0.0" }
 board-plugin-changes = { path = "crates/board-plugin-changes", version = "0.0.0" }
 board-plugin-controls = { path = "crates/board-plugin-controls", version = "0.0.0" }
@@ -71,10 +73,15 @@ board-validate = { path = "crates/board-validate", version = "0.0.0" }
 # upgrade is deliberate; only board-cli/src/complete.rs uses it.
 clap_complete = { version = "=4.6.11", features = ["unstable-dynamic"] }
 # crumbkit prints every command's reports, failures and help; crumbkit-test's convention
-# checks run against the built binary. Pinned by rev to the 0.1.1 release
-# commit until crates.io has 0.1.1; the version satisfies deny.toml's wildcards.
-crumbkit = { git = "https://github.com/crumbkit/crumbkit", rev = "a85fa49c767a4313bbfa3261b84c4f6b4cbc73c1", version = "0.1.1", default-features = false }
-crumbkit-test = { git = "https://github.com/crumbkit/crumbkit", rev = "a85fa49c767a4313bbfa3261b84c4f6b4cbc73c1", version = "0.1.1", default-features = false }
+# checks run against the built binary. Pinned by rev, with crumbkit-process, to
+# one crumbkit commit until crates.io has 0.1.1; the version satisfies
+# deny.toml's wildcards.
+crumbkit = { git = "https://github.com/crumbkit/crumbkit", rev = "fefb2ab7f532c0a6366db66c7478fc0e5514259c", version = "0.1.1", default-features = false }
+crumbkit-test = { git = "https://github.com/crumbkit/crumbkit", rev = "fefb2ab7f532c0a6366db66c7478fc0e5514259c", version = "0.1.1", default-features = false }
+# crumbkit-process runs every child that Board's plugins and sync start, and
+# its `forward` feature, which board-plugin enables, forwards stop signals to
+# their groups.
+crumbkit-process = { git = "https://github.com/crumbkit/crumbkit", rev = "fefb2ab7f532c0a6366db66c7478fc0e5514259c", version = "0.1.1", default-features = false }
 clap = { version = "4.6.7", default-features = false, features = ["derive", "error-context", "help", "std", "suggestions", "usage"] }
 # board serve compares the per-launch token in constant time.
 constant_time_eq = "0.6.1"
@@ -129,16 +136,17 @@ saphyr-parser = "=0.1.2"
 # bundled: every platform runs the same SQLite, built from source.
 # modern_sqlite: a refresh asks whether its transaction took the write lock.
 rusqlite = { version = "0.40.2", default-features = false, features = ["bundled", "cache", "hooks", "limits", "modern_sqlite"] }
-# process: ask a plugin to stop with SIGTERM without unsafe code.
+# process: check the owner of the allowed signers file, and let tests signal
+# child processes, without unsafe code.
 rustix = { version = "1.1.5", default-features = false, features = ["process", "std"] }
 # board serve holds its per-launch token as a secret that Debug redacts.
 secrecy = "0.10.3"
 serde = { version = "1.0.228", features = ["derive"] }
 # derive: the rows crumbkit prints describe their own JSON Schema.
 schemars = { version = "1.2.2", default-features = false, features = ["derive", "std"] }
-# iterator: forward Ctrl-C to a plugin's process group from a thread, with no
+# `board ui` stops on a flag that SIGINT, SIGTERM and SIGHUP set, with no
 # async runtime and no unsafe code.
-signal-hook = { version = "0.4.4", default-features = false, features = ["iterator"] }
+signal-hook = { version = "0.4.4", default-features = false }
 # float_roundtrip parses floats exactly rounded, so a number Board reads back
 # from its own output keeps its value; the default parse is approximate.
 serde_json = { version = "1.0.151", features = ["float_roundtrip"] }

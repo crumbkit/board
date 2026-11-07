@@ -31,6 +31,10 @@
     {
       "name": "board-github",
       "source": "./plugins/github/claude-code"
+    },
+    {
+      "name": "board-attention",
+      "source": "./plugins/attention/claude-code"
     }
   ],
   "description": "Claude Code mods of Board and its plugins."
