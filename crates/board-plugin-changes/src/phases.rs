@@ -37,6 +37,7 @@ use crate::{PLUGIN, refusal, to_value};
 
 mod moves;
 
+use moves::latest_reason;
 pub(crate) use moves::{ReopenInput, pause, reopen, resume};
 
 /// One change, by path.
@@ -357,15 +358,21 @@ fn instruction_for(observed: &Observed, checks: &[Check], waiting: bool) -> Stri
     }
 }
 
-/// `said` with why the change was reopened, while it is in build and
-/// `reopen` recorded a reason.
-fn with_reopened(change: &ChangeRecord, said: String) -> String {
-    match &change.reopened {
-        Some(reason) if change.phase == BUILD => {
-            format!("{said} It was reopened for a fix round: {reason}")
-        }
-        _ => said,
+/// `said` with why the change at `path` was last reopened, while it is in
+/// build and `reopen` recorded a reason.
+fn with_reopened(
+    host: &dyn Host,
+    path: &str,
+    change: &ChangeRecord,
+    said: String,
+) -> Result<String, PluginError> {
+    if change.phase != BUILD {
+        return Ok(said);
     }
+    Ok(match latest_reason(host, path)? {
+        Some(reason) => format!("{said} It was reopened for a fix round: {reason}"),
+        None => said,
+    })
 }
 
 /// Whom the change waits on: the actors of its missing checks that block,
@@ -417,7 +424,12 @@ pub(crate) fn step_of(host: &dyn Host, path: &str) -> Result<(NextOutput, Observ
              '<one line>'` and exit.",
             shown.stop
         ),
-        _ => with_reopened(&change, instruction_for(&observed, &checks, ask.is_some())),
+        _ => with_reopened(
+            host,
+            path,
+            &change,
+            instruction_for(&observed, &checks, ask.is_some()),
+        )?,
     };
     let next = NextOutput {
         path: path.to_owned(),

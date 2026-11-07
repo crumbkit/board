@@ -40,7 +40,7 @@ blocks is missing.
 4. Run `board -C <board> call changes.advance --path /changes/<name>`
    when every check passes. To send a change back to build for a fix
    round, such as after a review asks for fixes, run
-   `board -C <board> call changes.reopen --path /changes/<name> --reason '<why>'`.
+   `board -C <board> call changes.reopen --path /changes/<name> --reason '<why>' --agent '<your name>'`.
    Never move its phase with `board put`.
 5. To drop a change, run
    `board -C <board> call changes.drop --path /changes/<name> --reason '<why>'`.
@@ -131,6 +131,8 @@ the development flow.
 - `changes::reflow::no_phase`: choose a flow that has the change's phase.
 - `changes::reopen::no_build`: the change's flow has no build phase before
   where it stands. Run `changes.next` for its next step.
+- `changes::reopen::no_actor`: give `--session`, `--program`, `--person` or
+  a non-blank `--agent`.
 - `changes::run::stop_reached`: the change is at its stop. Record
   `changes.stop --reason reached` and end the run. The person who started
   the run moves the stop by starting a later run with `--through` or

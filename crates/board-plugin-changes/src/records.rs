@@ -2,7 +2,8 @@
 //! struct; the files under `types/` are those schemas, committed.
 
 use board_plugin::shape::{
-    Accepts, CommitName, Date, LogicalGlob, Prose, Record, Ref, Slug, Summary, Tag, Timestamp, Url,
+    Accepts, Actor, CommitName, Date, LogicalGlob, Prose, Record, Ref, Slug, Summary, Tag,
+    Timestamp, Url,
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -233,11 +234,6 @@ pub(crate) struct ChangeRecord {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "Option<Prose>", extend("minLength" = 1))]
     pub(crate) dropped_reason: Option<String>,
-    /// The reason given for the latest move back to build with `reopen`,
-    /// which `next` shows while the change is in build.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(with = "Option<Prose>", extend("minLength" = 1))]
-    pub(crate) reopened: Option<String>,
     /// Whether Board read the change as a `changes/change/v1`, which it
     /// writes back as one until `migrate` rewrites it.
     #[serde(skip)]
@@ -270,7 +266,6 @@ impl Clone for ChangeRecord {
             over_limit: self.over_limit.clone(),
             merge_commit_url: self.merge_commit_url.clone(),
             dropped_reason: self.dropped_reason.clone(),
-            reopened: self.reopened.clone(),
             v1: self.v1,
         }
     }
@@ -298,7 +293,6 @@ impl ChangeRecord {
             over_limit: None,
             merge_commit_url: None,
             dropped_reason: None,
-            reopened: None,
             v1: false,
         }
     }
@@ -613,6 +607,33 @@ pub(crate) enum Reason {
     Refused,
     Budget,
     Error,
+}
+
+/// `changes/reopen/v1`: one move of a change back to build for a fix
+/// round, and why.
+///
+/// It lives at `/changes/<name>/reopens/<stamp>`. `changes.reopen` writes
+/// it with the change, and `next` shows the newest one's reason while the
+/// change is in build.
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+#[schemars(extend("x-board-folder" = "/changes/{change}/reopens/"))]
+pub(crate) struct ReopenRecord {
+    /// The record's type.
+    #[serde(rename = "$type")]
+    pub(crate) tag: Tag<Self>,
+    /// Why the change went back to build.
+    #[schemars(with = "Prose", extend("minLength" = 1))]
+    pub(crate) reason: String,
+    /// The phase the change left.
+    #[schemars(with = "Slug")]
+    pub(crate) from: String,
+    /// Who reopened it.
+    pub(crate) by: Actor,
+}
+
+impl Record for ReopenRecord {
+    const TYPE: &'static str = "changes/reopen/v1";
 }
 
 /// `changes/stop/v1`: why a run of a change stopped, and where.

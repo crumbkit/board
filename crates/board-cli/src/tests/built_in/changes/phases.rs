@@ -911,9 +911,33 @@ fn migrated(phase: &str, fields: &Value) -> Changes {
     board
 }
 
-/// The input of `reopen` for [`CHANGE`] with [`REASON`].
+/// The input of `reopen` for [`CHANGE`] with [`REASON`], by the agent
+/// named lead.
 fn reopening() -> Value {
-    at(&json!({"reason": REASON}))
+    at(&json!({"reason": REASON, "agent": "lead"}))
+}
+
+/// The `changes/reopen/v1` records under [`CHANGE`], oldest first.
+fn reopens(board: &Changes) -> Vec<Value> {
+    let Ok(listed) = std::fs::read_dir(board.root().join("changes/t/reopens")) else {
+        return Vec::new();
+    };
+    let mut names: Vec<String> = (listed.map(|entry| entry.unwrap().file_name()))
+        .map(|name| name.into_string().unwrap())
+        .collect();
+    names.sort();
+    (names.iter())
+        .map(|name| board.read(&format!("changes/t/reopens/{name}")))
+        .collect()
+}
+
+/// The change record of [`CHANGE`] without the fields `reopen` changes.
+fn unmoved(board: &Changes) -> Value {
+    let mut change = board.read("changes/t.json");
+    let fields = change.as_object_mut().unwrap();
+    fields.remove("phase");
+    fields.remove("touched");
+    change
 }
 
 /// Moves [`CHANGE`] to `phase` by rewriting its record.
@@ -932,9 +956,70 @@ fn reopen_moves_a_change_in_review_back_to_build_and_records_why() {
     );
     let change = board.read("changes/t.json");
     assert_eq!(
-        (&change["phase"], &change["reopened"], &change["touched"]),
-        (&json!("build"), &json!(REASON), &json!(today()))
+        (&change["phase"], &change["touched"]),
+        (&json!("build"), &json!(today()))
     );
+    assert_eq!(
+        reopens(&board),
+        [json!({
+            "$type": "changes/reopen/v1",
+            "reason": REASON,
+            "from": "review",
+            "by": {"agent": "lead"},
+        })]
+    );
+}
+
+#[test]
+fn two_reopens_leave_two_records_and_the_changes_other_fields_as_they_were() {
+    let board = migrated("review", &json!({"route": "owner"}));
+    let before = unmoved(&board);
+    board.call("reopen", &reopening());
+    move_to(&board, "land");
+    let again = at(&json!({"reason": "The land check failed.", "session": "local_abc123"}));
+    board.call("reopen", &again);
+    assert_eq!(unmoved(&board), before);
+    let found: Vec<(Value, Value, Value)> = (reopens(&board).into_iter())
+        .map(|record| {
+            (
+                record["reason"].clone(),
+                record["from"].clone(),
+                record["by"].clone(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        found,
+        [
+            (json!(REASON), json!("review"), json!({"agent": "lead"})),
+            (
+                json!("The land check failed."),
+                json!("land"),
+                json!({"session": "local_abc123"})
+            ),
+        ]
+    );
+}
+
+#[test]
+fn reopen_refuses_a_call_that_names_nobody_or_a_blank_agent_and_admits_its_twin_that_names_a_person()
+ {
+    let board = migrated("review", &json!({}));
+    let nobody = at(&json!({"reason": REASON}));
+    assert_eq!(
+        board.refusal("reopen", &nobody)["code"],
+        "board::plugin::bad_input"
+    );
+    assert_eq!(board.read("changes/t.json")["phase"], "review");
+    let blank = at(&json!({"reason": REASON, "agent": "  "}));
+    assert_eq!(
+        board.refusal("reopen", &blank)["code"],
+        "changes::reopen::no_actor"
+    );
+    assert_eq!(reopens(&board), Vec::<Value>::new());
+    let named = at(&json!({"reason": REASON, "person": "luke"}));
+    assert_eq!(board.call("reopen", &named)["to"], "build");
+    assert_eq!(reopens(&board)[0]["by"], json!({"person": "luke"}));
 }
 
 #[test]
@@ -1081,10 +1166,15 @@ fn reopen_refuses_a_v1_change_until_it_is_migrated() {
 }
 
 #[test]
-fn next_in_build_says_why_a_reopened_change_was_reopened_and_says_nothing_of_one_that_was_not() {
+fn next_in_build_gives_the_latest_reopens_reason_and_says_nothing_of_one_never_reopened() {
     let board = migrated("build", &json!({}));
     let said = board.call("next", &path())["instruction"].clone();
     assert!(!said.as_str().unwrap().contains("reopened"), "{said}");
+    move_to(&board, "review");
+    board.call(
+        "reopen",
+        &at(&json!({"reason": "An earlier round.", "agent": "lead"})),
+    );
     move_to(&board, "review");
     board.call("reopen", &reopening());
     let said = board.call("next", &path())["instruction"].clone();
@@ -1093,6 +1183,7 @@ fn next_in_build_says_why_a_reopened_change_was_reopened_and_says_nothing_of_one
         said.ends_with(&format!("It was reopened for a fix round: {REASON}")),
         "{said}"
     );
+    assert!(!said.contains("An earlier round."), "{said}");
     move_to(&board, "review");
     let said = board.call("next", &path())["instruction"].clone();
     assert!(!said.as_str().unwrap().contains("reopened"), "{said}");

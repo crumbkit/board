@@ -38,6 +38,7 @@ fn the_manifest_parses_as_a_built_in_one_with_each_capabilitys_variables_and_tim
             "changes/flow/v1",
             "changes/plan/v1",
             "changes/prototype/v1",
+            "changes/reopen/v1",
             "changes/run/v1",
             "changes/stop/v1",
             "changes/understanding/v1"
@@ -149,6 +150,10 @@ fn every_input_property_carries_a_sentence_that_says_what_it_means() {
         "resume.over_limit",
         "reopen.path",
         "reopen.reason",
+        "reopen.session",
+        "reopen.program",
+        "reopen.person",
+        "reopen.agent",
         "reopen.over_limit",
         "reflow.path",
         "reflow.flow",

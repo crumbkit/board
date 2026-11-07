@@ -580,17 +580,21 @@ fn reopen_refuses_when_the_cap_is_full_and_goes_past_it_with_a_reason() {
     board.change_at("changes/t.json", "review", &json!({}));
     board.call("migrate", &json!({"apply": true}));
     fill(&board, WIP_LIMIT, &json!({}));
-    let reason = json!({"reason": "The review asked for a fix."});
+    let reason = json!({"reason": "The review asked for a fix.", "agent": "lead"});
     let refused = board.refusal("reopen", &at(&reason));
     let override_command = format!(
-        "board call changes.reopen --path {CHANGE} --reason '<reason>' --over_limit '<why>'"
+        "board call changes.reopen --path {CHANGE} --reason '<reason>' --agent '<who>' \
+         --over_limit '<why>'"
     );
     assert_eq!(
         (&refused["code"], &refused["fields"]["override"]),
         (&json!("changes::wip::full"), &json!(override_command))
     );
-    let past =
-        json!({"reason": "The review asked for a fix.", "over_limit": "Blocked work elsewhere."});
+    let past = json!({
+        "reason": "The review asked for a fix.",
+        "agent": "lead",
+        "over_limit": "Blocked work elsewhere.",
+    });
     let output = board.call("reopen", &at(&past));
     assert_eq!(
         (&output["to"], &output["warning"]["code"]),

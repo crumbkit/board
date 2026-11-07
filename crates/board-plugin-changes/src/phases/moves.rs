@@ -1,23 +1,29 @@
 //! The `pause`, `resume` and `reopen` capabilities: moving a change out of
 //! build and back into it other than through its gate.
 
-use board_ops::{Host, PluginError};
-use board_plugin::shape::Prose;
+use board_ops::{Host, PluginError, literal};
+use board_plugin::shape::{Actor, Person, Prose, Record, SessionId, Slug, Tag};
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
 use super::{AdvanceInput, Moved, PathInput, final_phase, over_command, refuse_v1};
-use crate::change::{kind_of, read, touch, write};
+use crate::board::{self, rows, text};
+use crate::change::{kind_of, line, read, touch, write};
 use crate::flow::{Flow, of_change};
-use crate::records::{BUILD, PAUSED, is_final};
+use crate::plan::stamp;
+use crate::records::{BUILD, PAUSED, ReopenRecord, is_final};
 use crate::wip::{Move, active_days, admit};
 use crate::{PLUGIN, refusal, to_value};
 
-/// A change to move back to build, why, and why it may go past the WIP
-/// limit when that is reached.
+/// A change to move back to build, why, who moves it, and why it may go
+/// past the WIP limit when that is reached.
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
+#[schemars(extend("anyOf" = [
+    {"required": ["session"]}, {"required": ["program"]}, {"required": ["person"]},
+    {"required": ["agent"]},
+]))]
 pub(crate) struct ReopenInput {
     #[schemars(
         regex(pattern = "^/"),
@@ -29,9 +35,30 @@ pub(crate) struct ReopenInput {
         with = "Prose",
         length(min = 1),
         description = "Why the change goes back to build, such as the fixes a review asked \
-                       for; recorded on the change and shown by `next` in build."
+                       for; recorded in a changes/reopen/v1 under the change and shown by \
+                       `next` in build."
     )]
     reason: String,
+    #[schemars(
+        with = "Option<SessionId>",
+        description = "The session that reopens the change, by its local_ id."
+    )]
+    session: Option<String>,
+    #[schemars(
+        with = "Option<Slug>",
+        description = "The program that reopens the change, such as claude-code."
+    )]
+    program: Option<String>,
+    #[schemars(
+        with = "Option<Person>",
+        description = "The person who reopens the change, such as luke."
+    )]
+    person: Option<String>,
+    #[schemars(
+        with = "Option<Prose>",
+        description = "The name the agent that reopens the change was given, such as lead."
+    )]
+    agent: Option<String>,
     #[schemars(
         with = "Option<Prose>",
         length(min = 1),
@@ -102,8 +129,21 @@ pub(crate) fn reopen(host: &dyn Host, input: &Value) -> Result<Value, PluginErro
     let ReopenInput {
         path,
         reason,
+        session,
+        program,
+        person,
+        agent,
         over_limit,
     } = PluginError::read_input(PLUGIN, "reopen", input)?;
+    let Some(by) = Actor::of(session, program, person, agent) else {
+        return Err(refusal(
+            "changes::reopen::no_actor",
+            "the reopen names nobody, since its agent name is blank; give --session, \
+             --program, --person or --agent"
+                .to_owned(),
+            [("path", json!(path))],
+        ));
+    };
     let (mut change, blob) = read(host, &path)?;
     refuse_v1(&path, &change, "reason for a reopen")?;
     let phase = change.phase.clone();
@@ -153,21 +193,52 @@ pub(crate) fn reopen(host: &dyn Host, input: &Value) -> Result<Value, PluginErro
         ));
     }
     BUILD.clone_into(&mut change.phase);
-    change.reopened = Some(reason);
     let moving = Move {
         over: format!(
-            "board call changes.reopen --path {path} --reason '<reason>' --over_limit '<why>'"
+            "board call changes.reopen --path {path} --reason '<reason>' --agent '<who>' \
+             --over_limit '<why>'"
         ),
         reason: over_limit.as_deref(),
         days: active_days(host)?,
     };
     let limit = admit(host, &path, &mut change, kind_of(host, &path)?, &moving)?;
     let change = touch(host, change);
-    write(host, &path, &blob, &change)?;
+    let record = ReopenRecord {
+        tag: Tag::default(),
+        reason,
+        from: phase.clone(),
+        by,
+    };
+    let at = format!("{path}/reopens/{}", stamp(std::time::SystemTime::now()));
+    board::put(
+        host,
+        &[
+            line(&path, &blob, &change),
+            json!({"path": at, "expect": "none", "record": record}),
+        ],
+    )?;
     Ok(to_value(Moved {
         path,
         from: phase,
         to: BUILD.to_owned(),
         warning: limit,
     }))
+}
+
+/// The reason of the newest `changes/reopen/v1` under the change at
+/// `path`, by path order, or none when it was never reopened.
+pub(crate) fn latest_reason(host: &dyn Host, path: &str) -> Result<Option<String>, PluginError> {
+    let folder = format!("{path}/reopens/");
+    let sql = format!(
+        "SELECT json_extract(body, '$.reason') FROM records WHERE type = {} AND \
+         substr(logical, 1, {}) = {} ORDER BY logical DESC LIMIT 1",
+        literal(ReopenRecord::TYPE),
+        folder.len(),
+        literal(&folder)
+    );
+    let found = rows(host, &sql)?;
+    Ok(found
+        .first()
+        .and_then(|row| text(row.first()))
+        .map(str::to_owned))
 }

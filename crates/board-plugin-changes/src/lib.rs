@@ -39,7 +39,8 @@ use schemars::generate::SchemaSettings;
 use serde_json::{Map, Value, json};
 
 use records::{
-    ChangeRecord, ChangeV1, PlanRecord, PrototypeRecord, RunRecord, StopRecord, UnderstandingRecord,
+    ChangeRecord, ChangeV1, PlanRecord, PrototypeRecord, ReopenRecord, RunRecord, StopRecord,
+    UnderstandingRecord,
 };
 
 /// The plugin's name, which its codes start with.
@@ -374,6 +375,7 @@ impl Plugin for Changes {
             typed(flow::Flow::TYPE, schema_of::<flow::Flow>(settings())),
             typed(RunRecord::TYPE, schema_of::<RunRecord>(settings())),
             typed(StopRecord::TYPE, schema_of::<StopRecord>(settings())),
+            typed(ReopenRecord::TYPE, schema_of::<ReopenRecord>(settings())),
         ]
     }
 
@@ -443,6 +445,7 @@ fn manifest() -> Value {
             flow::Flow::TYPE,
             PlanRecord::TYPE,
             PrototypeRecord::TYPE,
+            ReopenRecord::TYPE,
             RunRecord::TYPE,
             StopRecord::TYPE,
             UnderstandingRecord::TYPE,

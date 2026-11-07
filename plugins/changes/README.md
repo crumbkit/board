@@ -65,9 +65,6 @@ understanding checks. Git history holds earlier phases.
 - `merge_commit_url` is the merge commit's GitHub page, which `sync` sets
   when the pull request merged. `dropped_reason` is why the change was
   dropped, which `sync` and `drop` set. `next` shows both.
-- `reopened` is the reason given for the latest move back to `build` with
-  `reopen`. `next` shows it while the change is in `build`. A v1 change
-  has no such field.
 - `route`: `owner` (nobody else owns a CODEOWNERS pattern), `ask-first`
   (someone else does) or `unowned` (no CODEOWNERS pattern names anyone).
 
@@ -139,6 +136,12 @@ stopped: its `reason` (`reached`, `waiting`, `refused`, `budget` or
 `plans/question/v1` it left for the owner as `question`, and a one-line
 `summary`. The agent writes it with `stop`; when the agent exits without
 one, `run` writes it.
+
+`changes/reopen/v1` at `/changes/<name>/reopens/<stamp>` records one move
+of a change back to `build` for a fix round: its `reason`, the phase it
+left as `from`, and `by`, who reopened it. `reopen` writes one each time,
+in the same commit as the change, so every fix round's reason is kept.
+`next` shows the newest one's reason while the change is in `build`.
 
 `changes/understanding/v1` at `/changes/<name>/understanding/<subject>`
 records how the owner showed he understands a change's `data` or `ux`.
@@ -300,10 +303,13 @@ of `changes` still fails `review`.
 - `resume --path /changes/<name>` moves a paused change back to `build`.
   It refuses a change that is not paused (`changes::resume::not_paused`),
   and is subject to the WIP limit, which `--over_limit '<why>'` goes past.
-- `reopen --path /changes/<name> --reason '<why>'` moves a change back to
-  the `build` phase of its flow for a fix round, such as from `review`,
-  and records the reason in `reopened`. It returns `path`, `from`, `to`
-  and `warning`. It refuses a change whose flow has no `build` phase
+- `reopen --path /changes/<name> --reason '<why>' (--session <id> |
+  --program <name> | --person <name> | --agent '<name>')` moves a change
+  back to the `build` phase of its flow for a fix round, such as from
+  `review`, and writes a `changes/reopen/v1` with the reason, the phase it
+  left and who reopened it. It returns `path`, `from`, `to` and
+  `warning`. It refuses a call that names nobody, through Board's input
+  check, or only a blank agent name (`changes::reopen::no_actor`). It refuses a change whose flow has no `build` phase
   before the phase it stands in, such as one in `plan` or already in
   `build`, or a prototype (`changes::reopen::no_build`, with `phases`),
   a done or dropped change (`changes::phase::final`), a paused one
