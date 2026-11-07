@@ -105,8 +105,7 @@ impl Kind {
             Self::Standing => None,
             Self::Obligation => Some(format!(
                 "Once the work this obligation names is committed, delete it with `board rm \
-                 {control}` in a board commit that names the work; merging the work does not \
-                 clear it."
+                 {control}`, which commits the deletion; merging the work does not clear it."
             )),
         }
     }

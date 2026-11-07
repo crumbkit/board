@@ -85,9 +85,8 @@ such as a pull request body, instead of files.
   such a control the verdict `stated`.
 - `kind` is `standing`, the default, for a rule that stays until it is
   changed, or `obligation` for work a landed change left owed. Once the work
-  that discharges an obligation is committed, a board commit that names the
-  work deletes the obligation with `board rm`; merging the work does not
-  clear it.
+  that discharges an obligation is committed, `board rm` deletes the
+  obligation and commits the deletion; merging the work does not clear it.
 - `show` says when to show the control: `start` at session start, `edit`
   before the first edit of a file it covers, or `failing` only when `check`
   reports it failing. Left out, an obligation shows at `start`, a control
@@ -127,8 +126,8 @@ The plugin ships both schemas. `board plugin enable controls` writes them to
   `kind`, and its effective `show`, with the default applied. An
   obligation also carries `close`, which says how to close it: "Once the
   work this obligation names is committed, delete it with `board rm
-  <path>` in a board commit that names the work; merging the work does not
-  clear it.", with the control's path in place of `<path>`. A standing
+  <path>`, which commits the deletion; merging the work does not clear
+  it.", with the control's path in place of `<path>`. A standing
   control has no `close`. A
   control with a dangling reference still applies to the paths it does
   reach; an invalid control applies to nothing. An agent can ask before it edits a file. Patterns match the file

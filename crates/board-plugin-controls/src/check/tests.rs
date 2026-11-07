@@ -420,11 +420,16 @@ fn check_and_for_path_give_each_control_its_kind_and_the_show_it_defaults_to_or_
     );
 }
 
-/// The six controls of [`shown`], and a budget obligation, the twin of
-/// `c-budget` but for its kind.
+/// The six controls of [`shown`], a budget obligation that is the twin of
+/// `c-budget` but for its kind, and a standing control that is the twin of
+/// `b-obligation-edit` but for its kind.
 fn owed() -> (Scenario, Recording) {
     let owed = control(&json!({"paths": ["docs/*"], "rule": words(9), "kind": "obligation"}));
-    shown_with(&[("controls/g-budget-owed.json", &owed)])
+    let edit = control(&json!({"paths": ["docs/*"], "kind": "standing", "show": "edit"}));
+    shown_with(&[
+        ("controls/g-budget-owed.json", &owed),
+        ("controls/h-standing-edit.json", &edit),
+    ])
 }
 
 /// Each item's control and its `close` line, null when it has none.
@@ -441,8 +446,7 @@ fn closes(items: &Value) -> Vec<(String, Value)> {
 fn close(control: &str) -> Value {
     json!(format!(
         "Once the work this obligation names is committed, delete it with `board rm \
-         /controls/{control}` in a board commit that names the work; merging the work does not \
-         clear it."
+         /controls/{control}`, which commits the deletion; merging the work does not clear it."
     ))
 }
 
@@ -459,6 +463,7 @@ fn check_for_path_and_for_paths_tell_how_to_close_an_obligation_and_give_a_stand
         ),
         ("/controls/e-stated".to_owned(), Value::Null),
         ("/controls/f-stated-failing".to_owned(), Value::Null),
+        ("/controls/h-standing-edit".to_owned(), Value::Null),
     ];
     assert_eq!(closes(&output["stated"]), stated);
     let budgets = [
@@ -475,6 +480,7 @@ fn check_for_path_and_for_paths_tell_how_to_close_an_obligation_and_give_a_stand
         stated[2].clone(),
         stated[3].clone(),
         budgets[2].clone(),
+        stated[4].clone(),
     ];
     let output = for_path(&host, &json!({"path": "/docs/a.md"})).unwrap();
     assert_eq!(closes(&output["controls"]), all);
