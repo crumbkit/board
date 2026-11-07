@@ -20,15 +20,25 @@ deny = [
     # crumbkit reads the terminal width with rustix; Board never asks it to,
     # because it builds every sink with Sink::new over a buffer.
     # board-tree's tests check that a stopped sync leaves no process running;
-    # board-plugin's process module signals the git child's group.
-    { crate = "rustix", wrappers = ["board-plugin", "board-tree", "crumbkit", "gix-index", "tempfile"] },
-    { crate = "signal-hook", wrappers = ["board-plugin"] },
-    # board-cli's config module reads the passwd entry's home.
-    { crate = "nix", wrappers = ["board-cli"] },
+    # board-plugin's sign module checks who owns the allowed signers file.
+    # crumbkit-process starts, signals and reaps every child Board runs.
+    { crate = "rustix", wrappers = ["board-plugin", "board-tree", "crumbkit", "crumbkit-process", "gix-index", "tempfile"] },
+    # board-plugin's process module sets the flag `board ui` stops on, and
+    # crumbkit-process's forward feature forwards stop signals to every
+    # child group Board runs.
+    { crate = "signal-hook", wrappers = ["board-plugin", "crumbkit-process"] },
+    # board-cli's config module reads the passwd entry's home. process-wrap,
+    # crumbkit-process's dependency on Windows only, runs a child in a job
+    # object.
+    { crate = "nix", wrappers = ["board-cli", "process-wrap"] },
     # board-cli's config module reads the local time zone, and gix dates
     # commits; a plugin gets the UTC offset in Settings.
     { crate = "jiff", wrappers = ["board-cli", "gix-date"] },
     { crate = "tiny_http", wrappers = ["board-serve"] },
+    # board-plugin's process module runs plugin, signer and built-in children
+    # and forwards signals through crumbkit-process; board-tree's transport
+    # module runs git through it.
+    { crate = "crumbkit-process", wrappers = ["board-plugin", "board-tree"] },
     { crate = "jsonschema-regex", wrappers = ["board-validate", "jsonschema"] },
     # Signatures are checked only by /usr/bin/ssh-keygen, through
     # board-plugin's sign module (STANDARDS.md 29), so no crate may sign or

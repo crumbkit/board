@@ -7,6 +7,8 @@ use board_ops::BuiltIn;
 pub const BUILT_IN: BuiltIn = BuiltIn(&[
     #[cfg(feature = "artifacts")]
     &board_plugin_artifacts::Artifacts,
+    #[cfg(feature = "attention")]
+    &board_plugin_attention::Attention,
     #[cfg(feature = "boundary")]
     &board_plugin_boundary::Boundary,
     #[cfg(feature = "changes")]

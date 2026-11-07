@@ -16,10 +16,10 @@ pub(crate) fn held(state: &str) -> ArtifactRecord {
     ArtifactRecord::deserialize(&record).unwrap()
 }
 
-/// An artifact whose state a newer Board added takes a state as a shown
-/// one does, and an agreed twin is refused.
+/// An artifact whose state this Board does not know takes a state as a
+/// shown one does, and an agreed twin is refused.
 #[test]
-fn a_state_a_newer_board_added_is_settable_like_shown_and_an_agreed_twin_is_refused() {
+fn a_state_this_board_does_not_know_is_settable_like_shown_and_an_agreed_twin_is_refused() {
     for state in ["shown", "parked"] {
         assert!(settable("/artifacts/A", &held(state)).is_ok(), "{state}");
     }

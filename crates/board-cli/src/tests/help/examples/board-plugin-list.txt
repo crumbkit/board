@@ -1,4 +1,5 @@
 ok artifacts 0.1.0 disabled offers list, import, record, set, agree
+ok attention 0.2.0 disabled offers verify, pinned, sign
 ok boundary 0.1.0 disabled offers check, covers, verify, record
 ok changes 0.1.0 disabled offers start, next, attach, advance, open, pr, plan, brief, prototype, verdict, pause, resume, reflow, sync, drop, migrate, run, stop
 ok controls 0.1.0 disabled offers for-path, for-paths, check, evaluate, from-standards

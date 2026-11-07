@@ -527,7 +527,7 @@ fn newer(files: &[(&str, &str)], newer: &[(&str, &str)]) -> (Scenario, Recording
 /// A control whose kind this Board does not know reads as standing, as its
 /// standing twin does, in `check` and `for-path`.
 #[test]
-fn a_kind_a_newer_board_added_reads_as_standing_like_its_standing_twin() {
+fn a_kind_this_board_does_not_know_reads_as_standing_like_its_standing_twin() {
     for kind in ["standing", "reminder"] {
         let fields = json!({"paths": ["docs/*"], "kind": kind});
         let (_scenario, host) = newer(
@@ -552,7 +552,7 @@ fn a_kind_a_newer_board_added_reads_as_standing_like_its_standing_twin() {
 /// A control whose show this Board does not know is shown at the start, the
 /// first point, as its twin that says `start` is.
 #[test]
-fn a_show_a_newer_board_added_reads_as_start_like_its_start_twin() {
+fn a_show_this_board_does_not_know_reads_as_start_like_its_start_twin() {
     for show in ["start", "hourly"] {
         let fields = json!({"paths": ["docs/*"], "show": show});
         let (_scenario, host) = newer(
@@ -568,12 +568,12 @@ fn a_show_a_newer_board_added_reads_as_start_like_its_start_twin() {
     }
 }
 
-/// A rule whose `check`, budget unit, `per` or pattern `quote` a newer
-/// Board added is not applied: `check` states its control with its
+/// A rule whose `check`, budget unit, `per` or pattern `quote` this Board
+/// does not know is not applied: `check` states its control with its
 /// requirement and measures nothing, and `evaluate` gives it `stated`. Its
 /// twin with known values is measured and evaluated.
 #[test]
-fn a_rule_holding_a_value_a_newer_board_added_is_stated_and_its_twin_is_applied() {
+fn a_rule_holding_a_value_this_board_does_not_know_is_stated_and_its_twin_is_applied() {
     let pattern = |quote: &str| json!({"check": "pattern", "file": "/names.txt", "quote": quote});
     let budget =
         |unit: &str, per: &str| json!({"check": "budget", "unit": unit, "max": 9, "per": per});
