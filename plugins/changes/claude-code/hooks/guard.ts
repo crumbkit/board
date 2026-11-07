@@ -26,12 +26,16 @@ export function briefOf(text: string): string | null {
   const at = lines.findIndex(line => line.trim() !== '')
   const first = lines[at]?.trim()
   if (first !== '{') return first?.match(BRIEF)?.[1] ?? null
-  // Board prints the object pretty, so it ends at the first line that is
-  // exactly `}`: every nested brace is indented.
+  // Board prints the object pretty, so it ends at the first line that is `}`
+  // with nothing but a line end after it: every nested brace is indented.
   const end = lines.findIndex((line, i) => i > at && line.trimEnd() === '}')
   if (end < 0) return null
-  const brief = parseJson(lines.slice(at, end + 1).join('\n')) as { brief_line?: unknown } | undefined
-  const line = brief?.brief_line
+  let line: unknown
+  try {
+    line = (JSON.parse(lines.slice(at, end + 1).join('\n')) as { brief_line?: unknown }).brief_line
+  } catch {
+    return null
+  }
   return typeof line === 'string' ? (line.match(BRIEF)?.[1] ?? null) : null
 }
 
@@ -222,7 +226,8 @@ export function noBrief(file: string, at: Mount, named: string | null): string {
       : `this agent's first message names ${named}, which the board at ${at.board} does not hold`
   return (
     `changes::guard::no_brief: ${file} is in ${at.mount}, which the board at ${at.board} mounts. Only an agent ` +
-    `whose first message starts with \`board-brief: /changes/<name>\` may edit it, and ${said}. Start a builder ` +
+    'whose first message is the brief `changes.brief` prints, or starts with `board-brief: /changes/<name>`, may ' +
+    `edit it, and ${said}. Start a builder ` +
     `whose first message is the output of \`board -C ${at.board} call changes.brief --path /changes/<name>\`.`
   )
 }

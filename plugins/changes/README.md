@@ -835,8 +835,9 @@ Each refusal names one code and what fixes it:
 - `changes::guard::board_record`: the file is the board config, a change
   record or a mount record. The refusal names the board command to use.
 
-- `changes::guard::no_brief`: the first message has no brief line, or names
-  a change no such board holds. Start a builder whose first message is the
+- `changes::guard::no_brief`: the first message starts with neither the
+  brief line nor the brief as `changes.brief` prints it, or names a change
+  no such board holds. Start a builder whose first message is the
   output of `changes.brief`.
 - `changes::guard::not_building`: run `changes.advance` until the change is
   in `build`.

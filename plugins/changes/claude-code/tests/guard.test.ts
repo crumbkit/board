@@ -291,6 +291,11 @@ test('a JSON brief that does not parse is refused, and the whole one is admitted
   expect(briefOf(PRINTED)).toBe('/changes/t')
 })
 
+test('a JSON brief with CRLF line ends is admitted, as its LF twin is', () => {
+  expect(briefOf(`${PRINTED.replaceAll('\n', '\r\n')}\r\nBuild it.`)).toBe('/changes/t')
+  expect(briefOf(`${PRINTED}\nBuild it.`)).toBe('/changes/t')
+})
+
 test('prose before the JSON brief is refused, as prose before the brief line is', () => {
   expect(briefOf(`Please build this.\n${PRINTED}`)).toBeNull()
   expect(briefOf(PRINTED)).toBe('/changes/t')
@@ -322,7 +327,8 @@ test('a main session without a brief is refused an edit of a mounted repository'
   const done = await edit($)
   expect(done.deny).toBe(
     `changes::guard::no_brief: ${FILE} is in /repos/widgets, which the board at ${BOARD} mounts. Only an agent ` +
-      'whose first message starts with `board-brief: /changes/<name>` may edit it, and this agent\'s first message ' +
+      'whose first message is the brief `changes.brief` prints, or starts with `board-brief: /changes/<name>`, may ' +
+      'edit it, and this agent\'s first message ' +
       `does not. Start a builder whose first message is the output of \`board -C ${BOARD} call changes.brief --path ` +
       '/changes/<name>`.',
   )
@@ -689,7 +695,8 @@ test('a known board that another known board mounts is admitted without a brief,
   answers.config = JSON.stringify({ boards: [SECOND] })
   expect((await edit($, HANDOFF)).deny).toBe(
     `changes::guard::no_brief: ${HANDOFF} is in /personal, which the board at ${SECOND} mounts. Only an agent ` +
-      'whose first message starts with `board-brief: /changes/<name>` may edit it, and this agent\'s first message ' +
+      'whose first message is the brief `changes.brief` prints, or starts with `board-brief: /changes/<name>`, may ' +
+      'edit it, and this agent\'s first message ' +
       `does not. Start a builder whose first message is the output of \`board -C ${SECOND} call changes.brief ` +
       '--path /changes/<name>`.',
   )
