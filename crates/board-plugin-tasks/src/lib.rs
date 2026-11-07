@@ -187,7 +187,7 @@ fn manifest() -> Value {
         ),
         (schema_of::<write::AddInput>(input()), written()),
         (schema_of::<claim::ClaimInput>(input()), written()),
-        (schema_of::<write::TaskPath>(input()), written()),
+        (schema_of::<write::DoneInput>(input()), written()),
         (schema_of::<write::DeferInput>(input()), written()),
         (schema_of::<write::TaskPath>(input()), written()),
         (schema_of::<write::TaskPath>(input()), written()),

@@ -255,6 +255,11 @@ holds an edit not committed in its clone or kept changing. A new read that
 finds the text the refused write sent counts as that write. It then pushes and
 moves the mount's pin to the pushed commit, and `unpushed` holds the code of a
 push that failed; the write stays committed in the clone.
+`done --push false` makes both syncs pull without pushing, so the task is
+closed in a commit in the clone alone and the mount's pin moves to it.
+`unpushed` is then `tasks::repo::not_pushed`, and the next write call that
+pushes, such as `reviewed` or a `done` without the flag, pushes the commit.
+`tasks.available` syncs without pushing, so it does not push it.
 Both are `tasks::repo::not_synced` for the board's own tree, which is never
 synced. `commit` is null when the board's own tree does not commit puts.
 

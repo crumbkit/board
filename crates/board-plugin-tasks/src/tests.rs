@@ -145,6 +145,7 @@ fn every_input_property_carries_a_sentence_that_says_what_it_means() {
         "claim.program",
         "claim.session",
         "done.path",
+        "done.push",
         "defer.path",
         "defer.until",
         "drop.path",

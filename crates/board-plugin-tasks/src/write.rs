@@ -50,6 +50,25 @@ pub(crate) struct TaskPath {
     pub(crate) path: String,
 }
 
+/// The task to mark done, and whether the call pushes.
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct DoneInput {
+    #[schemars(
+        regex(pattern = r"^/.*\.md$"),
+        description = "The task's path in the board, such as /tasks/call-the-bank.md or \
+                       /repos/personal/tasks/x.md."
+    )]
+    pub(crate) path: String,
+    #[schemars(
+        description = "Whether the call pushes the task's repo, true when left out. With false, \
+                       the sync before the write pulls without pushing, the task is closed in a \
+                       commit in the clone alone, and `unpushed` is tasks::repo::not_pushed; a \
+                       later write call pushes the commit."
+    )]
+    pub(crate) push: Option<bool>,
+}
+
 /// The task to defer, and until when.
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -165,8 +184,9 @@ fn kind(_: &mut SchemaGenerator) -> Schema {
 /// `commit` holds the write, null when the board's own tree left it
 /// uncommitted. `unsynced` is the code of a sync before the write that left
 /// the clone where it was, and `unpushed` the code of a push after it that
-/// failed; both are `tasks::repo::not_synced` for the board's own tree,
-/// which is never synced.
+/// failed, or `tasks::repo::not_pushed` when `done --push false` skipped
+/// it; both are `tasks::repo::not_synced` for the board's own tree, which
+/// is never synced.
 #[derive(Debug, Serialize, JsonSchema)]
 #[schemars(deny_unknown_fields)]
 pub(crate) struct Written {
@@ -281,9 +301,13 @@ pub(crate) fn add(host: &dyn Host, input: &Value) -> Result<Value, PluginError> 
     let record: Map<String, Value> = (fields.into_iter())
         .map(|(key, value)| (key.to_owned(), value))
         .collect();
+    let (commit, unpushed) = landed(writer, &repo, commit)?;
     Ok(json!(written(
-        writer, &repo, &path, &record, commit, synced
-    )?))
+        &repo,
+        &path,
+        &record,
+        (commit, synced, unpushed)
+    )))
 }
 
 /// The caller's origin to route a new task by, unless `repo` names its
@@ -319,12 +343,15 @@ fn json_values(values: Vec<(&'static str, Option<String>)>) -> Values {
 
 /// Marks the task done, or defers a repeating one to its next occurrence.
 pub(crate) fn done(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
-    let given: TaskPath = PluginError::read_input(PLUGIN, "done", input)?;
+    let given: DoneInput = PluginError::read_input(PLUGIN, "done", input)?;
     stamped(
         host,
         &given.path,
         &|record, day| Ok(json_values(completed(record, day))),
-        false,
+        Landing {
+            finished: false,
+            push: given.push != Some(false),
+        },
     )
 }
 
@@ -333,29 +360,56 @@ pub(crate) fn defer(host: &dyn Host, input: &Value) -> Result<Value, PluginError
     let given: DeferInput = PluginError::read_input(PLUGIN, "defer", input)?;
     let change =
         |_: &Map<String, Value>, day| Ok(vec![("defer", Some(until(&given.until, day).into()))]);
-    stamped(host, &given.path, &change, false)
+    stamped(host, &given.path, &change, Landing::open())
 }
 
 /// Marks the task dropped.
 pub(crate) fn drop(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
     let given: TaskPath = PluginError::read_input(PLUGIN, "drop", input)?;
     let change = |_: &Map<String, Value>, _| Ok(vec![("status", Some("dropped".into()))]);
-    stamped(host, &given.path, &change, false)
+    stamped(host, &given.path, &change, Landing::open())
 }
 
 /// Marks the task reviewed today, whatever its status.
 pub(crate) fn reviewed(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
     let given: TaskPath = PluginError::read_input(PLUGIN, "reviewed", input)?;
-    stamped(host, &given.path, &|_, _| Ok(Vec::new()), true)
+    stamped(
+        host,
+        &given.path,
+        &|_, _| Ok(Vec::new()),
+        Landing {
+            finished: true,
+            push: true,
+        },
+    )
+}
+
+/// Which tasks a write call takes, and whether it pushes: an open task
+/// unless `finished`, and the task's repo is pushed before and after the
+/// write when `push`.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Landing {
+    pub(crate) finished: bool,
+    pub(crate) push: bool,
+}
+
+impl Landing {
+    /// An open task, pushed.
+    pub(crate) fn open() -> Self {
+        Self {
+            finished: false,
+            push: true,
+        }
+    }
 }
 
 /// Sets the fields `change` names and `reviewed` on the task at `logical`,
-/// an open one unless `finished`, and gives the written task.
+/// as `landing` says, and gives the written task.
 pub(crate) fn stamped(
     host: &dyn Host,
     logical: &str,
     change: &Change<'_>,
-    finished: bool,
+    landing: Landing,
 ) -> Result<Value, PluginError> {
     let found = listed(host, PLUGIN)?;
     let repo = held(&found, logical);
@@ -366,15 +420,18 @@ pub(crate) fn stamped(
     };
     let clones = Through(host);
     let writer = writer(host, &clones);
-    let edited = edit(writer, &repo, logical, &stamp, finished)?;
+    let edited = edit(writer, &repo, logical, &stamp, landing)?;
+    let (commit, unpushed) = if landing.push {
+        landed(writer, &repo, edited.commit)?
+    } else {
+        kept(writer, &repo, edited.commit)?
+    };
     Ok(json!(written(
-        writer,
         &repo,
         &edited.path,
         &edited.record,
-        edited.commit,
-        edited.synced
-    )?))
+        (commit, edited.synced, unpushed)
+    )))
 }
 
 /// Sets the task's parent to another task in its repo, or clears it with
@@ -414,7 +471,11 @@ pub(crate) fn move_task(host: &dyn Host, input: &Value) -> Result<Value, PluginE
     };
     let clones = Through(host);
     let writer = writer(host, &clones);
-    let edited = edit(writer, &repo, logical, &change, true)?;
+    let landing = Landing {
+        finished: true,
+        push: true,
+    };
+    let edited = edit(writer, &repo, logical, &change, landing)?;
     let (commit, unpushed) = landed(writer, &repo, edited.commit)?;
     Ok(json!(Moved {
         repo: repo.root.clone(),
@@ -493,8 +554,9 @@ struct Edited {
     synced: Option<String>,
 }
 
-/// Sets the fields `change` names on the task at `logical` in `repo`, an
-/// open one unless `finished`.
+/// Sets the fields `change` names on the task at `logical` in `repo`, as
+/// `landing` says. The sync before the write pushes only when
+/// `landing.push`.
 ///
 /// A write refused because the task or the clone moved since it was read is
 /// tried again on a new read. A new read that finds the text the last
@@ -504,12 +566,16 @@ fn edit(
     repo: &Repo,
     logical: &str,
     change: &Change<'_>,
-    finished: bool,
+    landing: Landing,
 ) -> Result<Edited, PluginError> {
     let host = writer.host;
     let prefix = format!("{}/", repo.root.trim_end_matches('/'));
     let path = logical.strip_prefix(&prefix).unwrap_or(logical).to_owned();
-    let synced = push(writer, repo);
+    let synced = if landing.push {
+        push(writer, repo)
+    } else {
+        pulled(writer, repo)
+    };
     let day = day(host);
     let (mut moved, mut sent) = (None, None::<String>);
     for _ in 0..ATTEMPTS {
@@ -525,7 +591,7 @@ fn edit(
                 synced,
             });
         }
-        let record = checked(host, &task, repo, logical, finished)?;
+        let record = checked(host, &task, repo, logical, landing.finished)?;
         let values = change(&record, day)?;
         let text = with_fields(task.text.as_deref().unwrap_or(""), &values, logical)?;
         let error = match repo.write(host, &path, &text, task.blob.as_deref()) {
@@ -720,17 +786,49 @@ fn until(value: &str, day: Date) -> String {
     horizon(value).map_or_else(|| value.to_owned(), |days| day.plus(days).to_string())
 }
 
-/// The call's output, once the write is made: the clone is pushed, and the
-/// mount's pin moved after it.
-fn written(
+/// Syncs the clone without pushing: none, or the code of the refusal, as
+/// [`push`] gives it.
+fn pulled(writer: Writer<'_>, repo: &Repo) -> Option<String> {
+    if repo.clone.is_none() {
+        return push(writer, repo);
+    }
+    match repo.sync(writer, false) {
+        Ok(code) => code.map(|code| code.as_str().to_owned()),
+        Err(error) => Some(
+            (error.fields.get("code").and_then(|code| code.as_str()))
+                .map_or(error.code, str::to_owned),
+        ),
+    }
+}
+
+/// Keeps a write in the clone without pushing it, and moves the mount's
+/// pin to the clone's HEAD, as [`landed`] does after its push: the commit
+/// holding the write, and `tasks::repo::not_pushed`, or
+/// `tasks::repo::not_synced` for the board's own tree.
+fn kept(
     writer: Writer<'_>,
+    repo: &Repo,
+    commit: Option<String>,
+) -> Result<(Option<String>, Option<String>), PluginError> {
+    if repo.clone.is_none() {
+        return Ok((commit, push(writer, repo)));
+    }
+    let unpushed = Some(format!("{PLUGIN}::repo::not_pushed"));
+    let Some(commit) = commit else {
+        return Ok((None, unpushed));
+    };
+    let pinned = repo.pin(writer)?;
+    Ok((Some(pinned.unwrap_or(commit)), unpushed))
+}
+
+/// The call's output, once the write is landed: its commit, the code of
+/// the sync before it and the code of the push after it.
+fn written(
     repo: &Repo,
     path: &str,
     record: &Map<String, Value>,
-    commit: Option<String>,
-    synced: Option<String>,
-) -> Result<Written, PluginError> {
-    let (commit, unpushed) = landed(writer, repo, commit)?;
+    (commit, synced, unpushed): (Option<String>, Option<String>, Option<String>),
+) -> Written {
     let text = |key: &str| {
         (record.get(key))
             .filter(|value| !value.is_null())
@@ -740,7 +838,7 @@ fn written(
                     .map_or_else(|| value.to_string(), str::to_owned)
             })
     };
-    Ok(Written {
+    Written {
         repo: repo.root.clone(),
         path: repo.logical(path),
         status: text("status").unwrap_or_default(),
@@ -750,7 +848,7 @@ fn written(
         commit,
         unsynced: synced,
         unpushed,
-    })
+    }
 }
 
 #[cfg(test)]
