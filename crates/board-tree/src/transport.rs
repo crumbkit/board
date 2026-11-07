@@ -6,13 +6,12 @@
     reason = "board-tree's transport module owns the git child process"
 )]
 
-use std::io::Read;
+use std::os::unix::process::ExitStatusExt;
 use std::path::Path;
-use std::process::{Command, ExitStatus, Output, Stdio};
-
-use board_plugin::Group;
-use std::thread::{self, JoinHandle};
+use std::process::{Command, ExitStatus, Output};
 use std::time::{Duration, Instant};
+
+use crumbkit_process::{Capture, Escalation, Exit, OverLimit, Run, RunError, Signal};
 
 use crate::git::Repository;
 use crate::write::sync::SyncError;
@@ -21,10 +20,13 @@ use crate::write::sync::SyncError;
 /// the wait for the board lock and covers every fetch, push and replay.
 pub const GIT_DEADLINE: Duration = Duration::from_mins(1);
 
-/// How often a run checks whether git has finished.
-const POLL: Duration = Duration::from_millis(10);
-/// How long git's pipes have to close after it exits.
+/// How long git has to exit after SIGTERM, such as to remove its lock
+/// files, before Board kills its group.
 const GRACE: Duration = Duration::from_secs(1);
+/// The most stdout Board keeps of one git run.
+const STDOUT: usize = 16 * 1024 * 1024;
+/// How much of the end of git's stderr Board keeps.
+const STDERR: usize = 64 * 1024;
 
 /// How long one sync may run, from when it was made: every fetch and push
 /// it starts shares it.
@@ -175,14 +177,16 @@ pub(crate) fn rejected(stdout: &[u8]) -> Option<String> {
 }
 
 /// Runs git with `arguments` in `workdir` and returns what it printed.
-/// Git leads a process group of its own through board-plugin's process
-/// module, which stops the whole group, ssh and what it started included,
-/// when Board gets SIGINT, SIGTERM or SIGHUP. When `deadline` passes with
-/// git still running, the group is stopped the same way and the run is
+/// Git leads a process group of its own through crumbkit-process, which
+/// stops the whole group, ssh and what it started included, when Board gets
+/// SIGINT, SIGTERM or SIGHUP, and kills what is left of it when git exits.
+/// When `deadline` passes with git still running, the group gets SIGTERM,
+/// then SIGKILL up to a second later, and the run is
 /// [`SyncError::TimedOut`], so a hung remote holds the board lock no longer
-/// than the sync's deadline. A helper that outlives a git that finished
-/// holds no Board lock. Neither git nor ssh may ask anything: git gets
-/// `GIT_TERMINAL_PROMPT=0` and `ssh` as its `GIT_SSH_COMMAND`.
+/// than the sync's deadline. A helper that left the group and holds a pipe
+/// holds the run for at most a second after git exits. Neither git nor ssh
+/// may ask anything: git gets `GIT_TERMINAL_PROMPT=0` and `ssh` as its
+/// `GIT_SSH_COMMAND`.
 fn run(
     workdir: &Path,
     arguments: &[&str],
@@ -197,77 +201,68 @@ fn run(
         .arg(workdir)
         .args(arguments)
         .env("GIT_TERMINAL_PROMPT", "0")
-        .env("GIT_SSH_COMMAND", &ssh.0)
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
+        .env("GIT_SSH_COMMAND", &ssh.0);
     // A signal that stops Board mid-sync removes the board lock and git's
     // index lock that gix holds, so the next write is not refused.
-    board_plugin::clean_up_on_signals(gix::tempfile::registry::cleanup_tempfiles);
+    board_plugin::clean_up_on_signals(gix::tempfile::registry::cleanup_tempfiles)
+        .map_err(|source| SyncError::NotStarted { source })?;
     let left = deadline.left();
-    let mut child =
-        Group::spawn(&mut command).map_err(|source| SyncError::NotStarted { source })?;
-    let stdout = drain(child.stdout());
-    let stderr = drain(child.stderr());
-    let stopped = loop {
-        match child.try_wait() {
-            Ok(Some(status)) => return Ok(finished(status, stdout, stderr)),
-            Ok(None) if !deadline.left().is_zero() => thread::sleep(POLL),
-            Ok(None) => {
-                break SyncError::TimedOut {
-                    operation,
-                    remote: upstream.remote.clone(),
-                    left,
-                    deadline: deadline.given,
-                };
-            }
-            Err(error) => {
-                break SyncError::Failed {
-                    operation,
-                    remote: upstream.remote.clone(),
-                    status: format!("its status could not be read: {error}"),
-                    stderr: Vec::new(),
-                };
-            }
-        }
-    };
-    child.stop();
-    Err(stopped)
-}
-
-/// What git printed, once it has exited with `status`. A helper git started
-/// may still hold a pipe open; after [`GRACE`] that pipe's bytes are left
-/// out, so a run git finished is never reported as timed out.
-fn finished(status: ExitStatus, stdout: Drained, stderr: Drained) -> Output {
-    let until = Instant::now() + GRACE;
-    while !(stdout.is_finished() && stderr.is_finished()) && Instant::now() < until {
-        thread::sleep(POLL);
-    }
-    let read = |pipe: Drained| {
-        if pipe.is_finished() {
-            pipe.join().unwrap_or_default()
-        } else {
-            Vec::new()
-        }
-    };
-    Output {
+    let settings = Run::new()
+        .stdout(Capture::Whole {
+            limit: STDOUT,
+            over: OverLimit::Stop,
+        })
+        .stderr(Capture::Tail { limit: STDERR })
+        .deadline(Instant::now() + left)
+        .escalation(Escalation::default().step(Signal::Terminate, GRACE));
+    let failure = |status: String, stderr: Vec<u8>| SyncError::Failed {
+        operation,
+        remote: upstream.remote.clone(),
         status,
-        stdout: read(stdout),
-        stderr: read(stderr),
-    }
-}
-
-/// A pipe of git's, read to its end on a thread of its own.
-type Drained = JoinHandle<Vec<u8>>;
-
-/// Reads `pipe` to its end on a thread of its own.
-fn drain(pipe: Option<impl Read + Send + 'static>) -> Drained {
-    thread::spawn(move || {
-        let mut bytes = Vec::new();
-        if let Some(mut pipe) = pipe {
-            let _ = pipe.read_to_end(&mut bytes);
+        stderr,
+    };
+    let finished = match crumbkit_process::run(command, &settings) {
+        Ok(finished) => finished,
+        Err(RunError::Start(source)) => return Err(SyncError::NotStarted { source }),
+        Err(error) => {
+            let reason = match &error {
+                RunError::Run(source) => source.to_string(),
+                other => other.to_string(),
+            };
+            let status = format!("its status could not be read: {reason}");
+            return Err(failure(status, Vec::new()));
         }
-        bytes
+    };
+    let exit = finished.exit();
+    // git can exit before the reader sees its stdout pass the bound, so the
+    // kept stdout decides, not only the exit.
+    let whole = !finished.stdout().over_limit();
+    let (stdout, stderr) = finished.into_output();
+    let (stdout, stderr) = (stdout.into_bytes(), stderr.into_bytes());
+    // The raw wait status, so the status reads as git's exit status prints.
+    let status = match exit {
+        Exit::Code(code) if whole => ExitStatus::from_raw(code << 8),
+        Exit::Signal(signal) if whole => ExitStatus::from_raw(signal),
+        Exit::TimedOut => {
+            return Err(SyncError::TimedOut {
+                operation,
+                remote: upstream.remote.clone(),
+                left,
+                deadline: deadline.given,
+            });
+        }
+        // Stopped over the stdout bound; Board gives the run no cancel.
+        _ => {
+            return Err(failure(
+                format!("it wrote more than {STDOUT} bytes to stdout and was stopped"),
+                stderr,
+            ));
+        }
+    };
+    Ok(Output {
+        status,
+        stdout,
+        stderr,
     })
 }
 

@@ -102,9 +102,9 @@ example because the remote hangs, is `board::sync::timeout`; the 60 seconds
 start before the wait for the board lock and cover every fetch, push and
 replay. Board sends git's process group SIGTERM, on which git removes its
 lock files, kills the group, ssh included, a second later, and lets the
-board lock go. Ctrl-C, SIGTERM or SIGHUP during a sync stops git's group the
-same way through board-plugin's process module, which removes the board lock
-before Board stops. The commits here stay for the next sync. The report is
+board lock go. Ctrl-C, SIGTERM or SIGHUP during a sync sends git's group
+that signal and SIGKILL a second later, through crumbkit-process, and Board
+removes the board lock before it stops. The commits here stay for the next sync. The report is
 `board/sync-report/v2`: `remote`, `branch`, `fetched`, `old` (null before
 the first commit), `new`, `replayed` (each commit's `from` and its `to`,
 null when it made none), `pushed`, `attempts` and `kept` (each kept file's
