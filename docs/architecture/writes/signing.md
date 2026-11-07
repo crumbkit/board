@@ -60,7 +60,7 @@ own effects.
   reports as a cancel; AppKit may write other lines before it.
 - When the owner cancels at the Touch ID sheet instead, attention-sign
   exits 1 with the LAError text on stderr and no cancel line, so Board
-  reports a failed signer. This change does not change attention-sign.
+  reports a failed signer.
 - Under `approve` attention-sign signs only a statement whose first
   line is `board/approve/v1` or `board/write/v1`; under `sign` it refuses
   those and signs in `attention/order/v1`.
