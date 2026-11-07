@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use board_model::LogicalPath;
 use board_ops::{Absent, Host, PluginError, RefsError};
-use board_plugin::shape;
+use board_plugin::shape::{self, Prose};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
@@ -107,6 +107,10 @@ pub(crate) struct Checked {
     unreadable: Vec<Unreadable>,
     kind: Kind,
     show: ShowAt,
+    /// How to close an obligation; left out for a standing control.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "Option<Prose>")]
+    close: Option<String>,
     #[serde(flatten)]
     each: Option<EachFile>,
 }
@@ -166,6 +170,10 @@ struct Stated {
     files: usize,
     kind: Kind,
     show: ShowAt,
+    /// How to close an obligation; left out for a standing control.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "Option<Prose>")]
+    close: Option<String>,
 }
 
 fn path_or_null(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
@@ -254,6 +262,7 @@ pub(crate) fn check(host: &dyn Host, input: &Value) -> Result<Value, PluginError
                 purpose: control.purpose.clone(),
                 kind: control.kind(),
                 show: control.show(),
+                close: control.kind().close(logical),
                 paths: control.paths.clone().unwrap_or_default(),
                 files: files[logical].len()
                     + if root {
@@ -505,6 +514,7 @@ fn checked(
         unreadable,
         kind: control.kind(),
         show: control.show(),
+        close: control.kind().close(logical),
         each: None,
     };
     if per == Per::Total {

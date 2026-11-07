@@ -52,9 +52,10 @@ To run a command in a board other than the one you are in, add `-C <path>`.
 
        echo '{"paths": ["/<pattern>", "/<file>"]}' | board -C <board> call controls.for-paths
 3. Some controls are obligations, with `kind: obligation`: work that a
-   landed change left owed. When your work does what one asks, delete the
-   control in the commit that does the work, and name the work in the
-   commit message. When your work leaves something owed, write a new control
+   landed change left owed, and the output gives each its `close` line.
+   Once the work one names is committed, delete it with `board rm <path>`
+   in a board commit that names the work; merging the work does not clear
+   it. When your work leaves something owed, write a new control
    with `kind: obligation` that says what is owed, which change owes it, and
    the file it applies to.
 

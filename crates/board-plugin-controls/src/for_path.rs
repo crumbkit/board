@@ -4,6 +4,7 @@ use std::collections::BTreeSet;
 
 use board_model::Code;
 use board_ops::{Absent, Host, PluginError, RefsReport, literal, source_name};
+use board_plugin::shape::Prose;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -41,6 +42,10 @@ struct Applying {
     rule: Option<Rule>,
     kind: Kind,
     show: ShowAt,
+    /// How to close an obligation; left out for a standing control.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "Option<Prose>")]
+    close: Option<String>,
 }
 
 /// Each readable control whose `applies_to` reaches the path or whose
@@ -61,6 +66,7 @@ pub(crate) fn for_path(host: &dyn Host, input: &Value) -> Result<Value, PluginEr
             Some(Applying {
                 show: control.show(),
                 kind: control.kind(),
+                close: control.kind().close(&logical),
                 control: logical,
                 requirement: control.requirement,
                 purpose: control.purpose,
