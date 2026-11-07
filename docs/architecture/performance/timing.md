@@ -29,6 +29,10 @@ commit, untracked files included, such as
 `0.0.0+45aafa9e1b2c.dirty.3f0c2a9b8d7e6f15`. A build outside a git checkout
 has no suffix, and keeps no decisions. board-cli's build script asks git, and cargo runs it again
 after each commit, so board-cli recompiles after every commit.
+A build outside the checkout, such as in a copy with its own git repository,
+sets `BOARD_BUILD_COMMIT` to the commit the source came from: the build script
+then takes the first 12 of its 7 to 40 hex digits (all of them when fewer),
+lowercased, with no `.dirty.` part, and fails on any other value.
 `board --version` prints `board` and this same version.
 
 | Phase | What it times |
