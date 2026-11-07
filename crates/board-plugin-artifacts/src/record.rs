@@ -48,8 +48,8 @@ pub(crate) struct Output {
     created: bool,
     subject: Vec<String>,
     shows: Option<String>,
-    /// draft, shown, agreed or superseded, or a value a newer Board added,
-    /// as written.
+    /// draft, shown, agreed or superseded, or a value this Board does not
+    /// know, as written.
     #[schemars(with = "String")]
     state: Open<State>,
     may_replace: Vec<String>,

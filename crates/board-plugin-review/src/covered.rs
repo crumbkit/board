@@ -80,8 +80,9 @@ fn covering(path: String, body: &str) -> Option<Covering> {
     let findings = report.get("findings").and_then(Value::as_array);
     Some(Covering {
         path,
-        // Only a verdict that approves or comments covers, so one a newer
-        // Board added does not, and a severity a newer Board added blocks.
+        // Only a verdict that approves or comments covers, so one this Board
+        // does not know does not, and a severity this Board does not know
+        // blocks.
         changes: !matches!(
             report.get("verdict").map(Open::<Verdict>::deserialize),
             Some(Ok(Open::Known(Verdict::Approve | Verdict::Comment)))

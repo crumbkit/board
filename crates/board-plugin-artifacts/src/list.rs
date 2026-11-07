@@ -83,8 +83,8 @@ pub(crate) struct Listed {
     first_seen: String,
     subject: Vec<String>,
     shows: Option<String>,
-    /// draft, shown, agreed or superseded, or a value a newer Board added,
-    /// as written.
+    /// draft, shown, agreed or superseded, or a value this Board does not
+    /// know, as written.
     #[schemars(with = "String")]
     state: Open<State>,
     agreed_by: Option<String>,

@@ -81,12 +81,12 @@ struct Listed {
     path: String,
     question: String,
     subjects: Vec<String>,
-    /// planned, running, concluded or abandoned, or a value a newer Board
-    /// added, as written.
+    /// planned, running, concluded or abandoned, or a value this Board does
+    /// not know, as written.
     #[schemars(with = "String")]
     status: Open<Status>,
-    /// supported, refuted or inconclusive, or a value a newer Board added,
-    /// as written.
+    /// supported, refuted or inconclusive, or a value this Board does not
+    /// know, as written.
     #[schemars(with = "Option<String>")]
     verdict: Option<Open<Verdict>>,
     decision: Option<String>,
