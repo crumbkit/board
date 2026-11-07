@@ -19,6 +19,9 @@ find it. `plugins/effects/` holds nothing else and is not a Board plugin.
 The artifacts mod, `board-artifacts`, records each artifact a session
 publishes or reads; [claude-code/artifacts.md](claude-code/artifacts.md)
 says what it writes.
+The attention plugin's mod, `board-attention`, puts the pinned orders in
+each session and opens the signing window for an order an agent drafted;
+[claude-code/attention.md](claude-code/attention.md) says what it runs.
 The github plugin's mod, `board-github`, refuses raw `git push` and `gh`
 writes to a destination a boundary covers; plugins/github/README.md says
 when.

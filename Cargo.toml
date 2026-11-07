@@ -6,6 +6,7 @@ members = [
     "crates/board-ops",
     "crates/board-plugin",
     "crates/board-plugin-artifacts",
+    "crates/board-plugin-attention",
     "crates/board-plugin-boundary",
     "crates/board-plugin-changes",
     "crates/board-plugin-controls",
@@ -46,6 +47,7 @@ board-model = { path = "crates/board-model", version = "0.0.0" }
 board-plugin = { path = "crates/board-plugin", version = "0.0.0" }
 board-repos = { path = "crates/board-repos", version = "0.0.0" }
 board-plugin-artifacts = { path = "crates/board-plugin-artifacts", version = "0.0.0" }
+board-plugin-attention = { path = "crates/board-plugin-attention", version = "0.0.0" }
 board-plugin-boundary = { path = "crates/board-plugin-boundary", version = "0.0.0" }
 board-plugin-changes = { path = "crates/board-plugin-changes", version = "0.0.0" }
 board-plugin-controls = { path = "crates/board-plugin-controls", version = "0.0.0" }

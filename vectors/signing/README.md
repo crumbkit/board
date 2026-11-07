@@ -1,8 +1,8 @@
 # Signing vectors
 
-Fixed statements, signatures and test keys for the bytes board, board-app
-and board-attention build, sign and verify. crumbkit/board's tests check them; the
-other two repositories are to test against them.
+Fixed statements, signatures and test keys for the bytes board and
+board-app build, sign and verify. crumbkit/board's tests check them, and
+board-app is the only other repository that is to test against them.
 docs/architecture/writes/signing.md says how they are used.
 
 - The files live in `vectors/signing/` at the root of crumbkit/board.
@@ -20,15 +20,17 @@ docs/architecture/writes/signing.md says how they are used.
 | --- | --- | --- | --- |
 | `approval.statement` | board | `board_model::Effect::approval` of `approval.effect.json` | `board/approve/v1` |
 | `write.statement` | board | `board_model::Effect::owner_write` of `approval.effect.json` | `board/write/v1` |
-| `order.statement` | board-attention | `board_attention.order.statement` of `order.record` and `order.context.md` | `attention/order/v1` |
+| `order.statement` | board | `board_model::effect::order::Order::statement` of `order.record` and `order.context.md` | `attention/order/v1` |
 
 `v1/manifest.json` records the owner of the first two layouts as `viitta`,
-crumbkit/board's earlier name. A version is never edited, so the value
-stays until a new version replaces it.
+crumbkit/board's earlier name, and the owner of the order layout as
+`board-attention`, the repository that held the attention plugin before
+board built it in. A version is never edited, so these values stay until a
+new version replaces them.
 
 The owner of a layout changes it, and opens the crumbkit/board pull request that adds
 the version. `order.record` is the order's JSON without a `.json` extension,
-because crumbkit/board is a board and has no schema for `attention/order/v1`.
+because crumbkit/board's own board does not enable the attention plugin.
 
 ## Keys
 
