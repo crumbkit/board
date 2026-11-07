@@ -253,6 +253,7 @@ impl Desk {
             boards: Some(home.join("config/board/config.json")),
             signer: Some(self.signer.program().into_os_string()),
             allowed_signers: Some(self.signer.allowed()),
+            attention_allowed_signers: Some(self.signer.allowed()),
             environment: board_plugin::Environment {
                 path: Some(self.path().into()),
                 home: Some(home.clone().into_os_string()),

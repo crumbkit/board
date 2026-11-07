@@ -189,13 +189,17 @@ make it concrete. Rule 17 already fixes the report, the exit codes and `--json`.
 ## Signing
 
 29. **Signing has one owner.** `board_model::effect` builds the statements
-    and names their namespaces. `board_plugin::sign` runs the signer and
-    `ssh-keygen` and checks the allowed signers file. Only board-ops's
-    effects module calls `sign`, `verify`, `Effect::approval` or
-    `Effect::owner_write`. A changed layout is a new `vectors/signing/`
-    version (docs/architecture/writes/signing.md). Gate: clippy
-    `disallowed-methods` on those four functions; `cargo xtask lint` fails
-    with `xtask::signing::outside_owner` when source code outside
+    of approvals, owner's writes and attention orders, and names their
+    namespaces. `board_plugin::sign` runs the signer and `ssh-keygen` and
+    checks the allowed signers file. Only board-ops's effects module calls
+    `sign`, `verify`, `Effect::approval`, `Effect::owner_write` or
+    `Order::statement`. A built-in plugin signs and verifies an order only
+    through `Host::sign_order` and `Host::verify_order`, which only
+    `Hosted` implements, by calling the effects module. A changed layout is
+    a new `vectors/signing/` version (docs/architecture/writes/signing.md).
+    Gate: clippy `disallowed-methods` on those five functions and the
+    effects module's `sign_order` and `verify_order`; `cargo xtask lint`
+    fails with `xtask::signing::outside_owner` when source code outside
     `signing.owners` in `lint.toml` names a signing literal; cargo-deny bans
     the crates that sign or verify in process; the `released` test refuses
     an edit to a vector.

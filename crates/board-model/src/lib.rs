@@ -22,9 +22,9 @@ pub use crate::app::{BINARY_NAME, DISPLAY_NAME};
 pub use crate::attachment::{ATTACHMENT_TYPE, Attachment, Digest, media_type};
 pub use crate::code::Code;
 pub use crate::effect::{
-    APPROVAL_HEADER, Answer, EFFECT_TYPE, EFFECT_TYPES, Effect, MAX_DECIDE_BYTES, PUT_OP, RM_OP,
-    SEEN_TYPE, Seen, WRITE_HEADER, effect_record, is_effect_id, shown_digest, signature_namespace,
-    utc,
+    APPROVAL_HEADER, Answer, EFFECT_TYPE, EFFECT_TYPES, Effect, Expiry, MAX_DECIDE_BYTES,
+    ORDER_TYPE, Order, PUT_OP, Pinned, RM_OP, SEEN_TYPE, Seen, WRITE_HEADER, effect_record,
+    is_effect_id, shown_digest, signature_namespace, utc,
 };
 pub use crate::fields::{Fields, Found, Known, Lined};
 pub use crate::frontmatter::{Feature, FrontmatterError, frontmatter};

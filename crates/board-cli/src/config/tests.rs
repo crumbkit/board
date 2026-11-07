@@ -1,16 +1,17 @@
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
-use super::{Context, owner_home, trust};
+use super::{Context, Trusted, owner_home, trust};
 
 #[test]
-fn an_approval_trusts_the_signer_and_allowed_signers_file_in_the_owners_home() {
+fn an_approval_and_an_order_trust_the_signer_and_their_allowed_signers_files_in_the_owners_home() {
     assert_eq!(
         trust(Path::new("/Users/o")),
-        (
-            OsString::from("/Users/o/.local/bin/attention-sign"),
-            PathBuf::from("/Users/o/.config/board/allowed_signers")
-        )
+        Trusted {
+            signer: OsString::from("/Users/o/.local/bin/attention-sign"),
+            allowed: PathBuf::from("/Users/o/.config/board/allowed_signers"),
+            attention_allowed: PathBuf::from("/Users/o/.config/attention/allowed_signers"),
+        }
     );
 }
 

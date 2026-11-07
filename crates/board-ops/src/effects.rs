@@ -38,11 +38,16 @@ pub struct Asker {
 /// against (docs/architecture/writes/signing.md).
 #[derive(Clone, Debug, Default)]
 pub struct Signing {
-    /// The program run as `<signer> approve <statement-file>`, which shows
-    /// the statement and prints an SSH signature after Touch ID.
+    /// The program run as `<signer> approve <statement-file>`, or `<signer>
+    /// sign <statement-file>` for an order, which shows the statement and
+    /// prints an SSH signature after Touch ID.
     pub signer: Option<OsString>,
-    /// The allowed signers file that lists the owner's key.
+    /// The allowed signers file that lists the owner's key for approvals
+    /// and owner's writes.
     pub allowed: Option<PathBuf>,
+    /// The attention allowed signers file, which lists the owner's key for
+    /// orders.
+    pub attention_allowed: Option<PathBuf>,
     /// The cache, where the statement file is written.
     pub cache: Option<PathBuf>,
     /// All the signer sees of the environment.
@@ -493,8 +498,11 @@ fn root(board: &Board) -> String {
 }
 
 mod decide;
+mod order;
 
 pub use decide::{AnswerReport, DecideReport, Shown, answer};
+pub use order::{SignOrderError, VerifyOrderError};
+pub(crate) use order::{sign_order, verify_order};
 
 #[cfg(test)]
 mod tests;
