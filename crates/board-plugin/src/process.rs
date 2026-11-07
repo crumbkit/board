@@ -19,8 +19,23 @@ const GRACE: Duration = Duration::from_secs(1);
 /// the thread that forwards those signals, if it has not started, and fails
 /// when the thread cannot start.
 #[cfg(unix)]
+#[expect(
+    clippy::disallowed_methods,
+    reason = "board-plugin's process module owns signal handling"
+)]
 pub fn clean_up_on_signals(cleanup: fn()) -> io::Result<()> {
     crumbkit_process::forward::clean_up(cleanup);
+    forward_signals()
+}
+
+/// Starts the thread that forwards SIGINT, SIGTERM and SIGHUP to every
+/// child group, if it has not started.
+#[cfg(unix)]
+#[expect(
+    clippy::disallowed_methods,
+    reason = "board-plugin's process module owns signal handling"
+)]
+fn forward_signals() -> io::Result<()> {
     crumbkit_process::forward::install()
 }
 
@@ -109,10 +124,13 @@ pub(crate) enum Stopped {
 /// `scope` names SIGTERM, then SIGKILL up to [`GRACE`] later. With
 /// `Scope::Group`, every process still in the child's group is killed when
 /// the child exits, and Board forwards SIGINT, SIGTERM and SIGHUP to the
-/// group. A process that left the group, as `setsid` does, is not killed,
-/// and a pipe it holds keeps the run for at most a second after the child
-/// exits. Beside the result it returns the child it started, if it started
-/// one.
+/// group: each group gets the signal and SIGCONT, then SIGKILL once every
+/// leader has exited or a second later. A process that left the group, as
+/// `setsid` does, is not killed, and a pipe it holds keeps the run for at
+/// most a second after the child exits, which can end the run up to a
+/// second past its deadline. Every `Scope::Group` caller gets this, the
+/// signer and `ssh-keygen` that the sign module runs included. Beside the
+/// result it returns the child it started, if it started one.
 pub(crate) fn run(
     program: &Path,
     arguments: &[String],
@@ -124,7 +142,7 @@ pub(crate) fn run(
 ) -> (Option<Spawned>, Result<Finished, Stopped>) {
     #[cfg(unix)]
     if let Scope::Group = scope
-        && let Err(error) = crumbkit_process::forward::install()
+        && let Err(error) = forward_signals()
     {
         return (None, Err(Stopped::Io(error)));
     }
@@ -190,7 +208,8 @@ pub(crate) fn run(
     (Some(spawned), result)
 }
 
-/// Runs as [`run`] does with `Scope::Group`.
+/// Runs as [`run`] does with `Scope::Group`, so a pipe held after the
+/// child exits can keep it up to a second past its deadline.
 pub(crate) fn run_alone(
     program: &Path,
     arguments: &[String],

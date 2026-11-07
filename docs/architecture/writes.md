@@ -97,14 +97,15 @@ fetch or push git itself refuses is `board::sync::failed`, which carries the
 end of git's stderr. Neither git nor ssh may ask anything: git runs with
 `GIT_TERMINAL_PROMPT=0`, and the owner's ssh command with `-o BatchMode=yes`
 for OpenSSH, so a remote that needs a passphrase, host key or password fails
-at once this way. A sync still running 60 seconds after it started, for
-example because the remote hangs, is `board::sync::timeout`; the 60 seconds
-start before the wait for the board lock and cover every fetch, push and
-replay. Board sends git's process group SIGTERM, on which git removes its
-lock files, kills the group, ssh included, a second later, and lets the
-board lock go. Ctrl-C, SIGTERM or SIGHUP during a sync sends git's group
-that signal and SIGKILL a second later, through crumbkit-process, and Board
-removes the board lock before it stops. The commits here stay for the next sync. The report is
+at once. A sync still running after 60 seconds, as when the remote hangs, is
+`board::sync::timeout`; the 60 seconds start before the wait for the board
+lock and cover every fetch, push and replay. Board then sends git's group
+SIGTERM, on which git removes its lock files, kills the group, ssh included,
+a second later, and frees the board lock. On Ctrl-C, SIGTERM or SIGHUP, git's
+group gets that signal, then SIGKILL once git exits or a second later, and
+Board frees the board lock and stops. When git exits, Board kills its group,
+so a helper there, such as git-credential-cache's daemon, ends with it. The
+commits here stay for the next sync. The report is
 `board/sync-report/v2`: `remote`, `branch`, `fetched`, `old` (null before
 the first commit), `new`, `replayed` (each commit's `from` and its `to`,
 null when it made none), `pushed`, `attempts` and `kept` (each kept file's

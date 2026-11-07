@@ -1,10 +1,6 @@
 //! The one module that runs the `git` executable: the fetch and push of
 //! `board sync` (docs/architecture.md, Writes). git carries credentials,
 //! SSH and hosts as the owner set them up; gix reads what it brings.
-#![expect(
-    clippy::disallowed_methods,
-    reason = "board-tree's transport module owns the git child process"
-)]
 
 use std::os::unix::process::ExitStatusExt;
 use std::path::Path;
@@ -179,14 +175,18 @@ pub(crate) fn rejected(stdout: &[u8]) -> Option<String> {
 /// Runs git with `arguments` in `workdir` and returns what it printed.
 /// Git leads a process group of its own through crumbkit-process, which
 /// stops the whole group, ssh and what it started included, when Board gets
-/// SIGINT, SIGTERM or SIGHUP, and kills what is left of it when git exits.
+/// SIGINT, SIGTERM or SIGHUP, and kills what is left of it when git exits,
+/// so a helper git leaves in its group, such as git-credential-cache's
+/// daemon, ends with each fetch or push.
 /// When `deadline` passes with git still running, the group gets SIGTERM,
 /// then SIGKILL up to a second later, and the run is
 /// [`SyncError::TimedOut`], so a hung remote holds the board lock no longer
 /// than the sync's deadline. A helper that left the group and holds a pipe
 /// holds the run for at most a second after git exits. Neither git nor ssh
 /// may ask anything: git gets `GIT_TERMINAL_PROMPT=0` and `ssh` as its
-/// `GIT_SSH_COMMAND`.
+/// `GIT_SSH_COMMAND`. A git that writes more than 16 MiB of stdout is
+/// stopped and fails as [`SyncError::Failed`] with a status that says so. A
+/// status rebuilt from a signal never says "(core dumped)".
 fn run(
     workdir: &Path,
     arguments: &[&str],
@@ -195,7 +195,7 @@ fn run(
     ssh: &Ssh,
     deadline: Deadline,
 ) -> Result<Output, SyncError> {
-    let mut command = Command::new("git");
+    let mut command = git();
     command
         .arg("-C")
         .arg(workdir)
@@ -264,6 +264,15 @@ fn run(
         stdout,
         stderr,
     })
+}
+
+/// The command that starts git.
+#[expect(
+    clippy::disallowed_methods,
+    reason = "board-tree's transport module owns the git child process"
+)]
+fn git() -> Command {
+    Command::new("git")
 }
 
 fn failed(operation: &'static str, upstream: &Upstream, output: &Output) -> SyncError {

@@ -40,4 +40,5 @@ hangup.
 A nested Board leaves its plugin in the outermost plugin's group, which the
 outermost Board signals. Past its own limit, a nested Board signals only its
 plugin, so a `run` command must `exec` its final program or forward SIGTERM,
-as `uv run` does. Off Unix, Board kills only the plugin.
+as `uv run` does. On Windows, the plugin runs in a job object, and Board ends
+the whole job at once.

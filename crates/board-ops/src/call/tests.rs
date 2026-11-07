@@ -802,7 +802,7 @@ fn a_wrapper_has_its_program_stopped_whether_or_not_it_execs_it() {
 }
 
 #[test]
-fn a_plugin_past_its_time_limit_is_stopped_with_the_grandchild_it_started() {
+fn a_grandchild_left_in_a_plugins_group_is_stopped_when_the_plugin_times_out_and_when_it_answers() {
     let limits = Limits {
         time: Duration::from_millis(500),
         ..Limits::default()

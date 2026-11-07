@@ -46,17 +46,31 @@ fn finished(script: &str, limits: Limits) -> Finished {
     }
 }
 
-/// Whether the process `pid` stops within five seconds.
+/// Whether the process `pid` stops within five seconds. A zombie counts as
+/// stopped: it holds nothing, and only waits for its parent to reap it.
 fn gone(pid: i32) -> bool {
-    let pid = Pid::from_raw(pid).unwrap();
     let deadline = Instant::now() + Duration::from_secs(5);
-    while rustix::process::test_kill_process(pid).is_ok() {
+    while running(pid) {
         if Instant::now() > deadline {
             return false;
         }
         std::thread::sleep(Duration::from_millis(50));
     }
     true
+}
+
+/// Whether the process `pid` runs, as `ps` reports its state.
+#[expect(
+    clippy::disallowed_methods,
+    reason = "the test asks ps for a process's state, which no safe call gives"
+)]
+fn running(pid: i32) -> bool {
+    let state = Command::new("ps")
+        .args(["-o", "stat=", "-p", &pid.to_string()])
+        .output()
+        .unwrap();
+    let state = String::from_utf8_lossy(&state.stdout);
+    !(state.trim().is_empty() || state.trim_start().starts_with('Z'))
 }
 
 /// The numbers `bytes` holds, one for each whitespace-separated word.
@@ -88,7 +102,7 @@ fn stdout_of_exactly_the_limit_is_admitted_and_one_byte_more_is_too_large() {
 }
 
 #[test]
-fn a_child_past_its_deadline_times_out_with_its_stderr_tail_and_one_before_it_exits() {
+fn a_late_child_times_out_with_its_stderr_tail_and_one_that_exits_in_time_is_admitted() {
     let script = "printf abcdefgh >&2; sleep 1";
     let short = Limits {
         stderr: 4,
