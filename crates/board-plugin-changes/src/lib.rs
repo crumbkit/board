@@ -39,7 +39,8 @@ use schemars::generate::SchemaSettings;
 use serde_json::{Map, Value, json};
 
 use records::{
-    ChangeRecord, ChangeV1, PlanRecord, PrototypeRecord, RunRecord, StopRecord, UnderstandingRecord,
+    ChangeRecord, ChangeV1, PlanRecord, PrototypeRecord, ReopenRecord, RunRecord, StopRecord,
+    UnderstandingRecord,
 };
 
 /// The plugin's name, which its codes start with.
@@ -96,7 +97,7 @@ fn output<T: JsonSchema>() -> Value {
 /// Every capability, in the order the manifest lists them. A capability
 /// that rewrites a field of a change, or ends it, is destructive; one that
 /// adds a task or reads GitHub reaches the open world.
-const CAPABILITIES: [Capability; 18] = [
+const CAPABILITIES: [Capability; 19] = [
     Capability {
         name: "start",
         description: "Create a change in the first phase of its flow, its copy of the flow, its \
@@ -245,6 +246,19 @@ const CAPABILITIES: [Capability; 18] = [
         timeout: None,
     },
     Capability {
+        name: "reopen",
+        description: "Move a change back to the build phase of its flow for a fix round, such as \
+            from review, and record why. Refused when its flow has no build phase before where \
+            it stands, and while three active changes of its kind are in build for its mount, \
+            unless over_limit gives a reason.",
+        run: phases::reopen,
+        input: input::<phases::ReopenInput>,
+        output: output::<phases::Moved>,
+        hints: [false, true, false, false],
+        env: &ACTIVE_DAYS_ENV,
+        timeout: None,
+    },
+    Capability {
         name: "reflow",
         description: "Replace the change's copy of its flow with a copy of the flow named, \
             refused when that flow has no phase where the change stands.",
@@ -361,6 +375,7 @@ impl Plugin for Changes {
             typed(flow::Flow::TYPE, schema_of::<flow::Flow>(settings())),
             typed(RunRecord::TYPE, schema_of::<RunRecord>(settings())),
             typed(StopRecord::TYPE, schema_of::<StopRecord>(settings())),
+            typed(ReopenRecord::TYPE, schema_of::<ReopenRecord>(settings())),
         ]
     }
 
@@ -430,6 +445,7 @@ fn manifest() -> Value {
             flow::Flow::TYPE,
             PlanRecord::TYPE,
             PrototypeRecord::TYPE,
+            ReopenRecord::TYPE,
             RunRecord::TYPE,
             StopRecord::TYPE,
             UnderstandingRecord::TYPE,

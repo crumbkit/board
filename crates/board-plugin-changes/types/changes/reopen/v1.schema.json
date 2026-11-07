@@ -1,0 +1,65 @@
+{
+  "$defs": {
+    "Actor": {
+      "additionalProperties": false,
+      "description": "Who wrote a record or acted: the session, the program, the person and\nthe agent's name, each when known, and at least one. Every record type that names who\nacted holds one.",
+      "minProperties": 1,
+      "properties": {
+        "agent": {
+          "description": "The name the agent was given, such as `nightly scheduler`, as\nfree text.",
+          "type": "string",
+          "x-board-prose": true
+        },
+        "person": {
+          "description": "The person who acted, such as `luke`, or their email address.",
+          "pattern": "^([a-z0-9]+(-[a-z0-9]+)*|[^@\\s]+@[^@\\s]+)$",
+          "type": "string"
+        },
+        "program": {
+          "description": "The program that acted, such as `claude-code` or `codex`.",
+          "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+          "type": "string"
+        },
+        "session": {
+          "description": "The Claude Code session's `local_` id.",
+          "pattern": "^local_[0-9a-f-]+$",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "`changes/reopen/v1`: one move of a change back to build for a fix\nround, and why.\n\nIt lives at `/changes/<name>/reopens/<stamp>`. `changes.reopen` writes\nit with the change, and `next` shows the newest one's reason while the\nchange is in build.",
+  "properties": {
+    "$type": {
+      "const": "changes/reopen/v1",
+      "description": "The record's type.",
+      "type": "string"
+    },
+    "by": {
+      "$ref": "#/$defs/Actor",
+      "description": "Who reopened it."
+    },
+    "from": {
+      "description": "The phase the change left.",
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+      "type": "string"
+    },
+    "reason": {
+      "description": "Why the change went back to build.",
+      "minLength": 1,
+      "type": "string",
+      "x-board-prose": true
+    }
+  },
+  "required": [
+    "$type",
+    "reason",
+    "from",
+    "by"
+  ],
+  "title": "ReopenRecord",
+  "type": "object",
+  "x-board-folder": "/changes/{change}/reopens/"
+}
