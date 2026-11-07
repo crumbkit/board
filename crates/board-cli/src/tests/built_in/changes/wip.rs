@@ -125,7 +125,13 @@ fn a_paused_change_does_not_advance_and_says_to_resume() {
     );
     let output = board.call("next", &path());
     let instruction = output["instruction"].as_str().unwrap();
-    assert!(instruction.contains("changes.resume"), "{instruction}");
+    assert_eq!(
+        instruction,
+        "This change was paused to free its place under the WIP limit on active changes of its \
+         kind per repository. Resume it with `board call changes.resume --path /changes/t` when \
+         a place is free and the owner's queue allows."
+    );
+    assert!(!instruction.contains("keeper"), "{instruction}");
     board.change_at("changes/t.json", "build", &json!({}));
     assert_eq!(
         board.refusal("advance", &path())["code"],

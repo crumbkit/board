@@ -21,7 +21,7 @@ pub use crate::manifest::{
     Alias, AliasError, Annotations, Capability, MANIFEST_TYPE, Manifest, ManifestError, MetaFilter,
     MetaFilterError, Side, VariableName, VariableNameError, Version, VersionError,
 };
-pub use crate::process::{Group, Limits, Spawned};
+pub use crate::process::{Limits, Spawned};
 #[cfg(unix)]
 pub use crate::process::{clean_up_on_signals, stop_on_signals};
 pub use crate::protocol::{BadOutput, CALL_RESULT_TYPE, CALL_TYPE, ERROR_TYPE, PluginFailure};

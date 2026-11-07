@@ -136,8 +136,8 @@ pub struct Verdict {
 }
 
 impl Verdict {
-    /// Whether the part failed the control. A status a newer Board added is
-    /// not known to pass, so it fails.
+    /// Whether the part failed the control. A status this Board does not
+    /// know is not known to pass, so it fails.
     pub fn failed(&self) -> bool {
         !matches!(self.status, Open::Known(Status::Passed | Status::Skipped))
     }

@@ -119,8 +119,9 @@ pub(crate) fn built(files: &[(&str, String)]) -> (Scenario, Board) {
 
 /// The output of `board call runs.latest` for `/vendor/suites/a` on a board
 /// that mounts at `/vendor` a library holding `files`, whose schema for
-/// runs admits, as a newer Board's would, each `(pointer, value)` of
-/// `newer` beside the values at that pointer's `enum`.
+/// runs admits each `(pointer, value)` of `newer` beside the values at that
+/// pointer's `enum`, so the library can hold values this Board does not
+/// know.
 pub(crate) fn latest_in_newer(files: &[(&str, String)], newer: &[(&str, &str)]) -> Value {
     let (scenario, _) = built(&[]);
     let held = ".board/types/runs/run/v1.schema.json";
@@ -152,10 +153,10 @@ pub(crate) fn latest_in_newer(files: &[(&str, String)], newer: &[(&str, &str)]) 
     (board.call(&target, input, &Plugins::default()).unwrap()).output
 }
 
-/// A run whose scope a newer Board added is read but is not full, so it
-/// does not qualify, as its targeted twin does not.
+/// A run whose scope this Board does not know is read but is not full, so
+/// it does not qualify, as its targeted twin does not.
 #[test]
-fn a_run_with_a_scope_a_newer_board_added_is_counted_as_not_full_like_a_targeted_one() {
+fn a_run_with_a_scope_this_board_does_not_know_is_counted_as_not_full_like_a_targeted_one() {
     for scope in ["targeted", "partial"] {
         let files = [
             ("suites/a.json", suite()),

@@ -73,8 +73,8 @@ struct StoredHost {
     logical_cpus: Number,
 }
 
-/// What one case gave in a run. An outcome a newer Board added is kept as
-/// written and counts as not passed.
+/// What one case gave in a run. An outcome this Board does not know is
+/// kept as written and counts as not passed.
 #[derive(Deserialize)]
 pub(crate) struct Stored {
     pub(crate) case: String,
@@ -184,8 +184,8 @@ fn readable(body: &str) -> Option<(Run, bool)> {
             .all(|value| matches!(value, Value::Number(_) | Value::String(_) | Value::Bool(_)))
     };
     let results = (run.results.iter()).all(|result| {
-        // The board's schema decides whether an outcome a newer Board added
-        // needs a note.
+        // The board's schema decides whether an outcome this Board does not
+        // know needs a note.
         let noted = matches!(
             result.outcome,
             None | Some(Open::Known(Outcome::Pass) | Open::Other(_))
@@ -198,7 +198,7 @@ fn readable(body: &str) -> Option<(Run, bool)> {
     if !(written && host && results && measured(&run.measures)) {
         return None;
     }
-    // A scope a newer Board added is not known to be full.
+    // A scope this Board does not know is not known to be full.
     let clean = run.scope == Open::Known(Scope::Full) && run.dirty == Some(false);
     let run = Run {
         started,
