@@ -4,7 +4,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use board_ops::{Host, PluginError, literal};
-use board_plugin::shape::LogicalGlob;
+use board_plugin::shape::{LogicalGlob, Prose};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -33,14 +33,18 @@ pub(crate) struct Output {
 }
 
 /// A control, its summary, or else its requirement's first sentence cut
-/// to 25 words, and the asked paths that reached it, in the order they were
-/// asked.
+/// to 25 words, the asked paths that reached it, in the order they were
+/// asked, and how to close it when it is an obligation.
 #[derive(Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 struct Applying {
     control: String,
     summary: String,
     matched: Vec<String>,
+    /// How to close an obligation; left out for a standing control.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "Option<Prose>")]
+    close: Option<String>,
 }
 
 /// Each readable control that applies to one of the paths.
@@ -80,6 +84,7 @@ pub(crate) fn for_paths(host: &dyn Host, input: &Value) -> Result<Value, PluginE
         .filter_map(|(logical, matched)| {
             let control = controls.remove(&logical)?;
             Some(Applying {
+                close: control.kind().close(&logical),
                 control: logical,
                 summary: (control.summary).unwrap_or_else(|| summary(&control.requirement)),
                 matched,

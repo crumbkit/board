@@ -84,8 +84,9 @@ such as a pull request body, instead of files.
   such as one an edited copy of the schema admits, and `evaluate` gives
   such a control the verdict `stated`.
 - `kind` is `standing`, the default, for a rule that stays until it is
-  changed, or `obligation` for work a landed change left owed. The work that
-  discharges an obligation deletes it.
+  changed, or `obligation` for work a landed change left owed. Once the work
+  that discharges an obligation is committed, `board rm` deletes the
+  obligation and commits the deletion; merging the work does not clear it.
 - `show` says when to show the control: `start` at session start, `edit`
   before the first edit of a file it covers, or `failing` only when `check`
   reports it failing. Left out, an obligation shows at `start`, a control
@@ -122,7 +123,12 @@ The plugin ships both schemas. `board plugin enable controls` writes them to
   each control that applies to that path, by reference or by pattern, with
   its requirement, purpose and rule as the record holds it, `check`
   included, which is null when it has none, its
-  `kind`, and its effective `show`, with the default applied. A
+  `kind`, and its effective `show`, with the default applied. An
+  obligation also carries `close`, which says how to close it: "Once the
+  work this obligation names is committed, delete it with `board rm
+  <path>`, which commits the deletion; merging the work does not clear
+  it.", with the control's path in place of `<path>`. A standing
+  control has no `close`. A
   control with a dangling reference still applies to the paths it does
   reach; an invalid control applies to nothing. An agent can ask before it edits a file. Patterns match the file
   the path resolves to, through any link or mount. A path with nothing there
@@ -135,8 +141,9 @@ The plugin ships both schemas. `board plugin enable controls` writes them to
   `GLOB` patterns by logical path, such as
   `/repos/inbox/crates/inbox-store/**`. It returns each control that applies
   to any of them once, by the control's path, with its `summary`, or else
-  the requirement's first sentence cut to 25 words, and `matched`, the paths
-  that reached it in the order asked. A path with no `*`, `?` or `[` is
+  the requirement's first sentence cut to 25 words, `matched`, the paths
+  that reached it in the order asked, and, for an obligation, `close`, as
+  `for-path` gives it. A path with no `*`, `?` or `[` is
   matched as `for-path` matches it. A pattern reaches a
   control whose `applies_to` names a path it matches, and a control one of
   whose `paths` matches a file it matches, by the file's display path. It
@@ -170,9 +177,11 @@ The plugin ships both schemas. `board plugin enable controls` writes them to
   with their `paths` patterns and `files`, the number of their files under
   the path, so the output stays short; `board get <control>` shows its
   `applies_to`, `paths` and `sources`. Every item carries `kind` and the
-  effective `show`. `passed` is false when a budget is over its max, a pin
-  is behind or a file is unreadable. These are answers, so the call still
-  exits 0, and a reader sees the whole report. It fails with
+  effective `show`, and every obligation, in `measured`, `versions` or
+  `stated`, carries `close`, as `for-path` gives it. `passed` is false
+  when a budget is over its max, a pin is behind or a file is unreadable.
+  These are answers, so the call still exits 0, and a reader sees the
+  whole report. It fails with
   `controls::capture::invalid` when a version rule's `capture` does not
   compile or has no group, and with
   `controls::control::degraded` when Board marks any control degraded, under

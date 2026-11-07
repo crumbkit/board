@@ -96,6 +96,21 @@ pub enum Kind {
     Obligation,
 }
 
+impl Kind {
+    /// How to close the control at `control`: for an obligation, the line
+    /// `check`, `for-path` and `for-paths` give it, and nothing for a
+    /// standing control, which stays until it is changed.
+    pub fn close(self, control: &str) -> Option<String> {
+        match self {
+            Self::Standing => None,
+            Self::Obligation => Some(format!(
+                "Once the work this obligation names is committed, delete it with `board rm \
+                 {control}`, which commits the deletion; merging the work does not clear it."
+            )),
+        }
+    }
+}
+
 // When the mod shows a control.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
