@@ -304,18 +304,20 @@ of `changes` still fails `review`.
   It refuses a change that is not paused (`changes::resume::not_paused`),
   and is subject to the WIP limit, which `--over_limit '<why>'` goes past.
 - `reopen --path /changes/<name> --reason '<why>' (--session <id> |
-  --program <name> | --person <name> | --agent '<name>')` moves a change
-  back to the `build` phase of its flow for a fix round, such as from
-  `review`, and writes a `changes/reopen/v1` with the reason, the phase it
-  left and who reopened it. It returns `path`, `from`, `to` and
-  `warning`. It refuses a call that names nobody, through Board's input
-  check, or only a blank agent name (`changes::reopen::no_actor`). It refuses a change whose flow has no `build` phase
-  before the phase it stands in, such as one in `plan` or already in
-  `build`, or a prototype (`changes::reopen::no_build`, with `phases`),
-  a done or dropped change (`changes::phase::final`), a paused one
-  (`changes::phase::paused`) and a v1 change
-  (`changes::change::not_migrated`). It is subject to the WIP limit, which
-  `--over_limit '<why>'` goes past.
+  --program <name> | --person <name> | --agent '<name>')
+  [--over_limit '<why>']` moves a change back to the `build` phase of its
+  flow for a fix round, such as from `review`, and writes a
+  `changes/reopen/v1` with the reason, the phase it left and who reopened
+  it. It returns `path`, `from`, `to` and `warning`. It refuses a call
+  that names nobody, through Board's input check, or whose only actor is
+  a blank agent name (`changes::reopen::no_actor`). It refuses a change
+  whose flow has no `build` phase before the phase it stands in, such as
+  one in `plan` or already in `build`, or a prototype
+  (`changes::reopen::no_build`, with `phases`), a done or dropped change
+  (`changes::phase::final`), a paused one (`changes::phase::paused`) and
+  a v1 change (`changes::change::not_migrated`). It is subject to the WIP
+  limit, which `--over_limit '<why>'` goes past; the refusal's `override`
+  repeats the flags given.
 - `drop --path /changes/<name> --reason '<why>'` ends a change that is not
   `done` or `dropped` in `dropped` and records the reason in
   `dropped_reason`. It returns `path`, `from`, `to` and `task`, which stays

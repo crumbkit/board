@@ -12,6 +12,7 @@ use crate::board::{self, rows, text};
 use crate::change::{kind_of, line, read, touch, write};
 use crate::flow::{Flow, of_change};
 use crate::plan::stamp;
+use crate::pr::quote;
 use crate::records::{BUILD, PAUSED, ReopenRecord, is_final};
 use crate::wip::{Move, active_days, admit};
 use crate::{PLUGIN, refusal, to_value};
@@ -126,6 +127,8 @@ pub(crate) fn resume(host: &dyn Host, input: &Value) -> Result<Value, PluginErro
 /// Moves the change back to the build phase of its flow, when that comes
 /// before the phase it stands in, and records why.
 pub(crate) fn reopen(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
+    let asked: ReopenInput = PluginError::read_input(PLUGIN, "reopen", input)?;
+    let over = over_reopen(&asked);
     let ReopenInput {
         path,
         reason,
@@ -134,17 +137,18 @@ pub(crate) fn reopen(host: &dyn Host, input: &Value) -> Result<Value, PluginErro
         person,
         agent,
         over_limit,
-    } = PluginError::read_input(PLUGIN, "reopen", input)?;
+    } = asked;
+    let (mut change, blob) = read(host, &path)?;
     let Some(by) = Actor::of(session, program, person, agent) else {
         return Err(refusal(
             "changes::reopen::no_actor",
-            "the reopen names nobody, since its agent name is blank; give --session, \
-             --program, --person or --agent"
-                .to_owned(),
+            format!(
+                "the reopen of {path} names nobody; give --session, --program, --person or an \
+                 --agent name that is not blank"
+            ),
             [("path", json!(path))],
         ));
     };
-    let (mut change, blob) = read(host, &path)?;
     refuse_v1(&path, &change, "reason for a reopen")?;
     let phase = change.phase.clone();
     if is_final(&phase) {
@@ -194,10 +198,7 @@ pub(crate) fn reopen(host: &dyn Host, input: &Value) -> Result<Value, PluginErro
     }
     BUILD.clone_into(&mut change.phase);
     let moving = Move {
-        over: format!(
-            "board call changes.reopen --path {path} --reason '<reason>' --agent '<who>' \
-             --over_limit '<why>'"
-        ),
+        over,
         reason: over_limit.as_deref(),
         days: active_days(host)?,
     };
@@ -209,7 +210,7 @@ pub(crate) fn reopen(host: &dyn Host, input: &Value) -> Result<Value, PluginErro
         from: phase.clone(),
         by,
     };
-    let at = format!("{path}/reopens/{}", stamp(std::time::SystemTime::now()));
+    let at = format!("{path}/reopens/{}", stamp(host.settings().now));
     board::put(
         host,
         &[
@@ -225,6 +226,26 @@ pub(crate) fn reopen(host: &dyn Host, input: &Value) -> Result<Value, PluginErro
     }))
 }
 
+/// The `reopen` command that goes past the WIP limit: the flags given,
+/// quoted for a shell, and `--over_limit`.
+fn over_reopen(asked: &ReopenInput) -> String {
+    let given = [
+        ("path", Some(&asked.path)),
+        ("reason", Some(&asked.reason)),
+        ("session", asked.session.as_ref()),
+        ("program", asked.program.as_ref()),
+        ("person", asked.person.as_ref()),
+        ("agent", asked.agent.as_ref()),
+    ];
+    let flags: Vec<String> = (given.iter())
+        .filter_map(|(flag, value)| Some(format!("--{flag} {}", quote(value.as_ref()?))))
+        .collect();
+    format!(
+        "board call changes.reopen {} --over_limit '<why>'",
+        flags.join(" ")
+    )
+}
+
 /// The reason of the newest `changes/reopen/v1` under the change at
 /// `path`, by path order, or none when it was never reopened.
 pub(crate) fn latest_reason(host: &dyn Host, path: &str) -> Result<Option<String>, PluginError> {
@@ -233,7 +254,7 @@ pub(crate) fn latest_reason(host: &dyn Host, path: &str) -> Result<Option<String
         "SELECT json_extract(body, '$.reason') FROM records WHERE type = {} AND \
          substr(logical, 1, {}) = {} ORDER BY logical DESC LIMIT 1",
         literal(ReopenRecord::TYPE),
-        folder.len(),
+        folder.chars().count(),
         literal(&folder)
     );
     let found = rows(host, &sql)?;

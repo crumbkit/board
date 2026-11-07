@@ -1002,8 +1002,7 @@ fn two_reopens_leave_two_records_and_the_changes_other_fields_as_they_were() {
 }
 
 #[test]
-fn reopen_refuses_a_call_that_names_nobody_or_a_blank_agent_and_admits_its_twin_that_names_a_person()
- {
+fn reopen_refuses_a_call_that_names_nobody_or_a_blank_agent_and_admits_its_twin_that_names_one() {
     let board = migrated("review", &json!({}));
     let nobody = at(&json!({"reason": REASON}));
     assert_eq!(
@@ -1017,9 +1016,14 @@ fn reopen_refuses_a_call_that_names_nobody_or_a_blank_agent_and_admits_its_twin_
         "changes::reopen::no_actor"
     );
     assert_eq!(reopens(&board), Vec::<Value>::new());
-    let named = at(&json!({"reason": REASON, "person": "luke"}));
+    let missing = json!({"path": "/changes/missing", "reason": REASON, "agent": "  "});
+    assert_eq!(
+        board.refusal("reopen", &missing)["code"],
+        "changes::change::not_found"
+    );
+    let named = at(&json!({"reason": REASON, "agent": "lead"}));
     assert_eq!(board.call("reopen", &named)["to"], "build");
-    assert_eq!(reopens(&board)[0]["by"], json!({"person": "luke"}));
+    assert_eq!(reopens(&board)[0]["by"], json!({"agent": "lead"}));
 }
 
 #[test]
