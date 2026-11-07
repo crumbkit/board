@@ -1,6 +1,11 @@
 //! Sets `BOARD_BUILD`, the suffix the timing log adds to Board's version:
-//! `+<commit>`, with `.dirty.<hash>` when the source differs from it, or
-//! nothing outside a git checkout, so that a build there keeps no decisions
+//! `+<commit>`, with `.dirty.<hash>` when the source differs from it.
+//! `BOARD_BUILD_COMMIT` names the commit in place of git's, and asserts that
+//! the source is that commit: a copy whose own repository committed the
+//! snapshot, or a build with no local git to check for edits, reads as clean
+//! and shares decisions with every build that names the same commit. While
+//! the variable is unset or empty, a build outside a git checkout has no
+//! suffix, so that it keeps no decisions
 //! (docs/architecture/performance/timing.md). It also writes `skills.rs`
 //! in `OUT_DIR`, which embeds the skills of the plugins this build enables
 //! (docs/plugins.md, Skills).
@@ -14,6 +19,9 @@ use std::fmt::Write as _;
 use std::hash::{DefaultHasher, Hasher};
 use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
+
+#[path = "build/commit.rs"]
+mod commit;
 
 const SOURCE: [&str; 4] = ["crates", "Cargo.toml", "Cargo.lock", "rust-toolchain.toml"];
 const ROOT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../..");
@@ -67,13 +75,17 @@ fn main() {
         &SOURCE[..],
     ]
     .concat();
-    let dirty = text(&status).is_some_and(|changes| !changes.is_empty());
-    let build = match text(&["rev-parse", "--short=12", "HEAD"]) {
-        Some(commit) if dirty => format!("+{commit}.dirty.{}", changes()),
-        Some(commit) => format!("+{commit}"),
-        None => String::new(),
+    let given = std::env::var_os("BOARD_BUILD_COMMIT");
+    let head = || text(&["rev-parse", "--short=12", "HEAD"]);
+    let differs = || {
+        let dirty = text(&status).is_some_and(|changes| !changes.is_empty());
+        dirty.then(changes)
     };
-    println!("cargo::rustc-env=BOARD_BUILD={build}");
+    match commit::suffix(given.as_deref(), head, differs) {
+        Ok(build) => println!("cargo::rustc-env=BOARD_BUILD={build}"),
+        Err(message) => fail(&message),
+    }
+    println!("cargo::rerun-if-env-changed=BOARD_BUILD_COMMIT");
     // A commit appends to HEAD's reflog, or moves HEAD where git keeps no
     // reflog; an edit changes the source.
     let path = |name| text(&["rev-parse", "--path-format=absolute", "--git-path", name]);
