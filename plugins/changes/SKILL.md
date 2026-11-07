@@ -28,7 +28,10 @@ blocks is missing.
    flow's when it has none, unless told otherwise; once `next` returns
    `stop` with `reached` true, `advance` refuses. With the `board-changes` mod installed, only a builder started
    from `changes.brief` can Edit, Write or NotebookEdit the repository; it
-   cannot see writes made through Bash.
+   cannot see writes made through Bash. The builder's first message is the
+   brief as `changes.brief` prints it, or starts with its `brief_line`. Put
+   the brief in as plain text, not inside a code fence, which the guard does
+   not read.
 3. Attach every record you make with
    `board -C <board> call changes.attach --path /changes/<name> --ref <path>`.
    The records go on the plan the change names, so write the plan first.

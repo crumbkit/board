@@ -6,10 +6,27 @@
 
 const BRIEF = /^board-brief:\s*(\/changes\/\S+)$/
 
-/** The change the first line of `text` names as `board-brief: /changes/<name>`, or null. */
+/**
+ * The change `text` names as `board-brief: /changes/<name>`, or null. The
+ * first non-empty line is either that line or `{`, which opens the JSON
+ * object `changes.brief` prints; its `brief_line` field then holds the line.
+ */
 export function briefOf(text: string): string | null {
-  const first = text.split('\n').map(line => line.trim()).find(line => line !== '')
-  return first?.match(BRIEF)?.[1] ?? null
+  const lines = text.split('\n')
+  const at = lines.findIndex(line => line.trim() !== '')
+  const first = lines[at]?.trim()
+  if (first !== '{') return first?.match(BRIEF)?.[1] ?? null
+  // Board prints the object pretty, so it ends at the first line that is `}`
+  // with nothing but a line end after it: every nested brace is indented.
+  const end = lines.findIndex((line, i) => i > at && line.trimEnd() === '}')
+  if (end < 0) return null
+  let line: unknown
+  try {
+    line = (JSON.parse(lines.slice(at, end + 1).join('\n')) as { brief_line?: unknown }).brief_line
+  } catch {
+    return null
+  }
+  return typeof line === 'string' ? (line.match(BRIEF)?.[1] ?? null) : null
 }
 
 // `$.session.messages` returns at most this many entries, the newest.
