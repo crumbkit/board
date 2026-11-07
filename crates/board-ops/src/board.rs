@@ -76,6 +76,9 @@ pub struct Board {
     /// What built the code that decides, which keys the decisions the index
     /// keeps.
     pub(crate) build: &'static str,
+    /// The mount whose checkout this run started in, when Board found the
+    /// board through it: see [`Board::started_in`].
+    started: Option<(LogicalPath, PathBuf)>,
 }
 
 // Board must stay `Send` so that a caller can move it to another thread, as
@@ -123,6 +126,7 @@ impl Board {
             asker: Asker::default(),
             built_in: BuiltIn::default(),
             build: "",
+            started: None,
         })
     }
 
@@ -141,6 +145,28 @@ impl Board {
         self.repositories.read_at(checkout);
     }
 
+    /// Records that this run started in `directory`, in a checkout of the
+    /// repository the mount at `mount` reads.
+    pub(crate) fn started_from(&mut self, mount: LogicalPath, directory: PathBuf) {
+        self.started = Some((mount, directory));
+    }
+
+    /// The checkout of a mounted repository this run started in, when Board
+    /// found the board through that mount and reads it at its pin. A run
+    /// under `--checkout`, or one started in the board's own tree, has
+    /// none. HEAD and the working tree are read on each call.
+    pub fn started_in(&self) -> Option<StartedIn> {
+        if self.repositories.checkout().is_some() {
+            return None;
+        }
+        let (mount, directory) = self.started.as_ref()?;
+        Some(StartedIn {
+            mount: mount.clone(),
+            head: board_tree::head_of(directory)?,
+            uncommitted: board_tree::uncommitted(directory)?,
+        })
+    }
+
     pub fn config(&self) -> &Config {
         &self.config
     }
@@ -150,6 +176,18 @@ impl Board {
     pub fn built_by(&mut self, build: &'static str) {
         self.build = build;
     }
+}
+
+/// A checkout of a mounted repository that a run started in, while the
+/// run reads the mount at the commit its pointer pins.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct StartedIn {
+    /// The mount's display path, such as `/repos/lib`.
+    pub mount: LogicalPath,
+    /// The commit HEAD names in the checkout.
+    pub head: ObjectId,
+    /// Whether a file git tracks there differs from HEAD.
+    pub uncommitted: bool,
 }
 
 /// The logical path of the board's configuration.

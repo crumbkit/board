@@ -218,6 +218,8 @@ pub fn open_at(
         };
         let pointer = place.pointer.clone();
         board.read_checkout(Checkout { pointer, commit });
+    } else if place.matched == Matched::Mount {
+        board.started_from(place.mount.clone(), start.to_path_buf());
     }
     Ok((board, Some(place.prefix())))
 }

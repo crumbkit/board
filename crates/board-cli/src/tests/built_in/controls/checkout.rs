@@ -322,3 +322,73 @@ fn checkout_with_init_answer_serve_or_ui_is_refused_and_each_without_it_is_admit
     let alone = checkout.run_in(&checkout.linked, &["--checkout", "ls", "."], false);
     assert_eq!(alone.code, 0, "{}", text(&alone.stdout));
 }
+
+/// The `checkout` a check without `--checkout` carries when the checkout
+/// it ran from is at `head` and the pin is `read`.
+fn unmeasured(read: ObjectId, head: ObjectId, uncommitted: bool, note: &str) -> Value {
+    json!({
+        "mount": "/repos/lib",
+        "read": read.to_string(),
+        "head": head.to_string(),
+        "uncommitted": uncommitted,
+        "run": "board --checkout call controls.check --path /repos/lib",
+        "note": note,
+    })
+}
+
+#[test]
+fn a_check_from_a_checkout_off_the_pin_names_both_commits_and_the_command_and_with_checkout_it_does_not()
+ {
+    let checkout = Checkout::new();
+    let pin = checkout.check(&[], false);
+    assert_eq!(pin["passed"], true, "{pin}");
+    let note = format!(
+        "This check read /repos/lib at {}, the commit its pointer pins, but the checkout Board ran from has HEAD at {}, so the checkout's files were not measured. The command in `run` measures the checkout's HEAD.",
+        checkout.pinned, checkout.head
+    );
+    assert_eq!(
+        pin["checkout"],
+        unmeasured(checkout.pinned, checkout.head, false, &note)
+    );
+    let branch = checkout.check(&["--checkout"], false);
+    assert_eq!(branch.get("checkout"), None, "{branch}");
+}
+
+#[test]
+fn a_check_from_a_checkout_at_the_pin_carries_no_checkout_and_with_uncommitted_edits_it_does() {
+    let checkout = Checkout::new();
+    checkout
+        .library
+        .write(
+            ".git/worktrees/linked/HEAD",
+            Item::File(&format!("{}\n", checkout.pinned)),
+        )
+        .write("linked/docs/usage.md", Item::File(&words(294)));
+    let clean = checkout.check(&[], false);
+    assert_eq!(clean.get("checkout"), None, "{clean}");
+    checkout
+        .library
+        .write("linked/docs/usage.md", Item::File(&words(310)));
+    let edited = checkout.check(&[], false);
+    let note = format!(
+        "This check read /repos/lib at {}, the commit its pointer pins, which is the checkout's HEAD. The checkout has uncommitted changes to tracked files, which no check reads; commit them first. The command in `run` measures the checkout's HEAD.",
+        checkout.pinned
+    );
+    assert_eq!(
+        edited["checkout"],
+        unmeasured(checkout.pinned, checkout.pinned, true, &note)
+    );
+}
+
+#[test]
+fn a_check_from_the_boards_own_tree_carries_no_checkout_and_from_a_checkout_off_the_pin_it_does() {
+    let checkout = Checkout::new();
+    let arguments = ["call", "controls.check", "--path", "/repos/lib"];
+    let own = checkout.run_in(checkout.board.board.workdir(), &arguments, false);
+    assert_eq!(own.code, 0, "{}", text(&own.stdout));
+    let own = json(&own)["data"]["output"].clone();
+    assert_eq!(own.get("checkout"), None, "{own}");
+    let linked = checkout.run_in(&checkout.linked, &arguments, false);
+    let linked = json(&linked)["data"]["output"].clone();
+    assert_eq!(linked["checkout"]["head"], checkout.head.to_string());
+}

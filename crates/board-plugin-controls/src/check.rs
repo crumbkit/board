@@ -37,6 +37,46 @@ pub(crate) struct Output {
     versions: Vec<Pinned>,
     stated: Vec<Stated>,
     read: Vec<Read>,
+    /// The checkout Board ran from, when it differs from the commit the
+    /// check read; left out when they match, under `board --checkout`, and
+    /// when Board did not run from a checkout of a mount the check read.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    checkout: Option<Unmeasured>,
+}
+
+/// A checkout of a mounted repository that Board ran from, whose HEAD is
+/// not the commit the check read there or which has uncommitted changes to
+/// tracked files, so the check did not measure its files.
+#[derive(Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct Unmeasured {
+    /// The mount, by its display path.
+    #[schemars(with = "String", regex(pattern = "^/"), extend("format" = "board-path"))]
+    mount: LogicalPath,
+    /// The commit the check read, which the mount's pointer pins.
+    #[serde(serialize_with = "hex_id")]
+    #[schemars(with = "shape::ObjectId")]
+    read: board_model::ObjectId,
+    /// The commit HEAD names in the checkout.
+    #[serde(serialize_with = "hex_id")]
+    #[schemars(with = "shape::ObjectId")]
+    head: board_model::ObjectId,
+    /// Whether a file git tracks in the checkout differs from its HEAD.
+    uncommitted: bool,
+    /// The command that measures the checkout's HEAD.
+    #[schemars(with = "Prose")]
+    run: String,
+    /// What the check read and what it did not measure, in prose.
+    #[schemars(with = "Prose")]
+    note: String,
+}
+
+/// `commit` as git writes it, in lowercase hex.
+fn hex_id<S: serde::Serializer>(
+    commit: &board_model::ObjectId,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    serializer.collect_str(commit)
 }
 
 /// A source the measured and stated files came from: the board's own tree,
@@ -277,6 +317,7 @@ pub(crate) fn check(host: &dyn Host, input: &Value) -> Result<Value, PluginError
             }
         })
         .collect();
+    let checkout = unmeasured(host, &scope, &read, path.as_deref().unwrap_or("/"));
     let passed = (measured_controls.iter()).all(Checked::passed)
         && (versions.iter()).all(|item| item.behind.is_empty() && item.unreadable.is_empty());
     let output = Output {
@@ -285,6 +326,7 @@ pub(crate) fn check(host: &dyn Host, input: &Value) -> Result<Value, PluginError
         versions,
         stated,
         read,
+        checkout,
     };
     Ok(serde_json::to_value(output).expect("Output holds only strings, numbers and lists"))
 }
@@ -473,6 +515,63 @@ fn sources<'a>(
     Ok((read.into_iter())
         .map(|(mount, commit)| Read { mount, commit })
         .collect())
+}
+
+/// The checkout Board ran from, when the check read its mount, or the path
+/// checked lies under it, at a commit other than the checkout's HEAD, or
+/// the checkout has uncommitted changes to tracked files. `path` is the
+/// path asked, which the command in `run` names again.
+fn unmeasured(
+    host: &dyn Host,
+    scope: &LogicalPath,
+    read: &[Read],
+    path: &str,
+) -> Option<Unmeasured> {
+    let started = host.started_in()?;
+    let mount = started.mount;
+    let commit = (read.iter())
+        .find(|source| source.mount == mount)
+        .and_then(|source| source.commit);
+    let pinned = match commit {
+        Some(commit) => commit,
+        None if under(scope, &mount) => pin_of(host, &mount)?,
+        None => return None,
+    };
+    if pinned == started.head && !started.uncommitted {
+        return None;
+    }
+    let mut note = if pinned == started.head {
+        format!(
+            "This check read {mount} at {pinned}, the commit its pointer pins, which is the checkout's HEAD."
+        )
+    } else {
+        format!(
+            "This check read {mount} at {pinned}, the commit its pointer pins, but the checkout Board ran from has HEAD at {}, so the checkout's files were not measured.",
+            started.head
+        )
+    };
+    if started.uncommitted {
+        note.push_str(
+            " The checkout has uncommitted changes to tracked files, which no check reads; commit them first.",
+        );
+    }
+    note.push_str(" The command in `run` measures the checkout's HEAD.");
+    Some(Unmeasured {
+        run: format!("board --checkout call controls.check --path {path}"),
+        mount,
+        read: pinned,
+        head: started.head,
+        uncommitted: started.uncommitted,
+        note,
+    })
+}
+
+/// The commit the mount at `mount` is read at.
+fn pin_of(host: &dyn Host, mount: &LogicalPath) -> Option<board_model::ObjectId> {
+    let mounts: Vec<(String, String)> = index::string_pairs(host, MOUNTS).ok()?;
+    (mounts.into_iter())
+        .find(|(path, _)| path == mount.as_str())
+        .and_then(|(_, commit)| board_model::ObjectId::from_hex(&commit))
 }
 
 /// Whether `path` is `scope` or lies beneath it.
