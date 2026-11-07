@@ -470,9 +470,9 @@ fn board_calls_evals_in_its_own_process_over_this_board_and_its_mounted_ones() {
 }
 
 /// A mounted board can hold a status and a verdict this Board does not
-/// know. `about` and `open` list that eval with both as
-/// written, as they list its twin holding known values; `open` lists it
-/// because it is not known to be concluded or abandoned.
+/// know. `about` and `open` list that eval with both as written, as they
+/// list its twin holding known values; `open` lists it because it is not
+/// known to be concluded or abandoned.
 #[test]
 fn an_eval_with_a_status_and_verdict_this_board_does_not_know_is_listed_as_written_like_its_twin() {
     for (status, verdict) in [("running", "refuted"), ("paused", "mixed")] {

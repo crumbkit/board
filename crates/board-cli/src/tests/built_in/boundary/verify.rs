@@ -166,11 +166,11 @@ fn record_refuses_a_failed_crossing_and_one_never_checked() {
 }
 
 /// A crossing can hold a verdict whose rule and status this Board does not
-/// know. `verify`, called from another board so that
-/// the personal board's newer schema is not compared with this Board's,
-/// still reads that crossing. A rule it does not know passes as its twin
-/// with a known rule does, and a status it does not know is not known to
-/// pass, so the crossing fails.
+/// know. `verify`, called from another board so that the personal board's
+/// widened schema is not compared with this Board's, still reads that
+/// crossing. A rule it does not know passes as its twin with a known rule
+/// does, and a status it does not know is not known to pass, so the
+/// crossing fails.
 #[test]
 fn a_verdict_holding_a_rule_or_status_this_board_does_not_know_verifies_like_its_twin() {
     for (rule, status, passed) in [
