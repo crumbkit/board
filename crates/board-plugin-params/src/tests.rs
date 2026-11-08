@@ -14,7 +14,7 @@ use serde::Deserialize;
 use super::*;
 use crate::due::stale;
 use crate::records::Bounds;
-use crate::stored::{Check, Fallback, Heuristic, Stored, is_name, shipped, usable};
+use crate::stored::{Check, Fallback, Heuristic, Stored, is_name, moment, shipped, usable};
 
 /// The `description` of SKILL.md's frontmatter, a single-quoted YAML
 /// scalar on one line.
@@ -76,12 +76,29 @@ fn schema(record_type: &str) -> board_validate::Schema {
     board_validate::Schema::compile(schema).unwrap()
 }
 
+/// A shipped heuristic as a record: the file with its `$type` added.
+fn shipped_record(text: &str) -> Value {
+    let mut record: Value = serde_json::from_str(text).unwrap();
+    record["$type"] = json!(HeuristicRecord::TYPE);
+    record
+}
+
+/// A file with a `$type` is a record to `board check` in Board's own
+/// repository, which holds no schema for this type.
+#[test]
+fn the_shipped_heuristic_files_hold_no_type_so_board_check_does_not_read_them_as_records() {
+    for (name, text) in SHIPPED {
+        let file: Value = serde_json::from_str(text).unwrap();
+        assert_eq!(file.get("$type"), None, "{name}");
+    }
+}
+
 #[test]
 fn the_shipped_heuristics_are_admitted_with_the_start_default_bounds_and_check_the_plan_set() {
     let heuristic = schema(HeuristicRecord::TYPE);
     let found: Vec<(&str, [f64; 5])> = (SHIPPED.iter())
         .map(|(name, text)| {
-            let record: Value = serde_json::from_str(text).unwrap();
+            let record = shipped_record(text);
             heuristic.validate(&record).unwrap();
             assert_eq!(
                 (&record["unit"], &record["consumer"]),
@@ -193,7 +210,7 @@ fn the_value_schema_finds_the_evidence_as_its_only_reference() {
 #[test]
 fn the_heuristic_schema_refuses_no_inputs_and_a_recheck_of_zero_and_admits_their_twins() {
     let schema = schema(HeuristicRecord::TYPE);
-    let shipped: Value = serde_json::from_str(SHIPPED[0].1).unwrap();
+    let shipped = shipped_record(SHIPPED[0].1);
     let with = |name: &str, field: Value| {
         let mut record = shipped.clone();
         record[name] = field;
@@ -447,12 +464,30 @@ fn no_record_is_missing_and_too_little_data_is_judged_after_the_heuristic_and_be
 
 #[test]
 fn a_value_is_stale_one_second_past_its_days_and_fresh_at_exactly_its_days() {
-    let derived: jiff::Timestamp = "2026-11-01T00:00:00Z".parse().unwrap();
-    let at_limit: jiff::Timestamp = "2026-12-01T00:00:00Z".parse().unwrap();
-    let past: jiff::Timestamp = "2026-12-01T00:00:01Z".parse().unwrap();
+    let derived = moment("2026-11-01T00:00:00Z").unwrap();
+    let at_limit = moment("2026-12-01T00:00:00Z").unwrap();
+    let past = moment("2026-12-01T00:00:01Z").unwrap();
     assert!(!stale(at_limit, Some(derived), 30));
     assert!(stale(past, Some(derived), 30));
     assert!(stale(past, None, 30));
+    // A value derived after the clock's reading has not aged.
+    assert!(!stale(derived, Some(past), 30));
+}
+
+/// A check run's `started` may hold any RFC 3339 offset, and a value's
+/// `derived` ends in `Z`; both name the same moment when they should.
+#[test]
+fn moment_reads_z_a_fraction_and_an_offset_as_the_same_instant_and_refuses_what_is_no_time() {
+    let utc = moment("2026-11-08T09:00:00Z").unwrap();
+    assert_eq!(moment("2026-11-08T10:00:00+01:00"), Some(utc));
+    assert_eq!(moment("2026-11-08T03:30:00-05:30"), Some(utc));
+    assert_eq!(moment("2026-11-08T09:00:00+00:00"), Some(utc));
+    assert_eq!(
+        moment("2026-11-08T09:00:00.500Z"),
+        Some(utc + Duration::from_millis(500))
+    );
+    assert_eq!(moment("not a time"), None);
+    assert_eq!(moment("2026-11-08T09:00:00+xx:00"), None);
 }
 
 #[test]

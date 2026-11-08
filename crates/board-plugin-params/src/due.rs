@@ -1,12 +1,14 @@
 //! `due`: the values that need an agent to run their heuristic again.
 
+use std::time::{Duration, SystemTime};
+
 use board_ops::{Host, PluginError};
 use board_plugin::shape::Slug;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::stored::{CheckRun, Fallback, check_runs, params, usable};
+use crate::stored::{CheckRun, Fallback, check_runs, moment, params, usable};
 
 /// `due` takes no input.
 #[derive(Deserialize, JsonSchema)]
@@ -54,13 +56,11 @@ pub(crate) fn due(host: &dyn Host, input: &Value) -> Result<Value, PluginError> 
     let Input {} = PluginError::read_input("params", "due", input)?;
     let params = params(host)?;
     let runs = check_runs(host)?;
-    // A clock jiff cannot hold reads as the latest time, so a value comes due
-    // early and only an agent run is lost.
-    let now = jiff::Timestamp::try_from(host.settings().now).unwrap_or(jiff::Timestamp::MAX);
+    let now = host.settings().now;
     let mut due = Vec::new();
     for (name, heuristic) in &params.heuristics {
         let stored = params.values.get(name);
-        let derived = stored.and_then(|stored| stored.derived.parse::<jiff::Timestamp>().ok());
+        let derived = stored.and_then(|stored| moment(&stored.derived));
         let reason = match usable(name, heuristic, stored) {
             Err(Fallback::Missing | Fallback::TooLittle) => Some(Reason::OnDefault),
             Err(Fallback::OutOfBounds { .. }) => Some(Reason::OutOfBounds),
@@ -87,12 +87,7 @@ pub(crate) fn due(host: &dyn Host, input: &Value) -> Result<Value, PluginError> 
 
 /// Whether the latest check of `name` since `derived` measured above
 /// `fails_above`.
-fn failed(
-    runs: &[CheckRun],
-    name: &str,
-    derived: Option<jiff::Timestamp>,
-    fails_above: f64,
-) -> bool {
+fn failed(runs: &[CheckRun], name: &str, derived: Option<SystemTime>, fails_above: f64) -> bool {
     latest(runs, name, derived).is_some_and(|run| run.check > fails_above)
 }
 
@@ -100,10 +95,9 @@ fn failed(
 /// `derived` that cannot be read is stale. These are calendar days until the
 /// frecency change switches `recheck_after` to active days, which only makes
 /// a value come due early.
-pub(crate) fn stale(now: jiff::Timestamp, derived: Option<jiff::Timestamp>, days: u64) -> bool {
-    let limit = i64::try_from(days.saturating_mul(86_400)).unwrap_or(i64::MAX);
-    derived
-        .is_none_or(|derived| now.duration_since(derived) > jiff::SignedDuration::from_secs(limit))
+pub(crate) fn stale(now: SystemTime, derived: Option<SystemTime>, days: u64) -> bool {
+    let limit = Duration::from_secs(days.saturating_mul(86_400));
+    derived.is_none_or(|derived| now.duration_since(derived).is_ok_and(|age| age > limit))
 }
 
 /// The latest check run of `/suites/params-<name>` that started at or after
@@ -112,7 +106,7 @@ pub(crate) fn stale(now: jiff::Timestamp, derived: Option<jiff::Timestamp>, days
 fn latest<'a>(
     runs: &'a [CheckRun],
     name: &str,
-    derived: Option<jiff::Timestamp>,
+    derived: Option<SystemTime>,
 ) -> Option<&'a CheckRun> {
     let suite = format!("/suites/params-{name}");
     (runs.iter())

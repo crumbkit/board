@@ -1,5 +1,4 @@
 {
-  "$type": "params/heuristic/v1",
   "summary": "The changed lines a control may run over before an agent drafts a step.",
   "unit": "changed-lines",
   "inputs": [

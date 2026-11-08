@@ -23,6 +23,8 @@ use records::{HeuristicRecord, ValueRecord};
 
 /// The heuristics the plugin ships, by name: the two overflow graces. A
 /// record at `/params/heuristics/<name>` overrides the one of that name.
+/// The files hold no `$type`, so `board check` in Board's own repository does
+/// not read them as records of a type it has no schema for.
 pub const SHIPPED: [(&str, &str); 2] = [
     (
         "overflow-agent-grace",
