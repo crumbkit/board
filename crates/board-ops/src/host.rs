@@ -107,6 +107,13 @@ pub trait Host {
         deadline: Duration,
     ) -> Result<MountUpdateReport, MountError>;
     fn settings(&self) -> &Settings;
+    /// The checkout of a mounted repository the run started in, when Board
+    /// found the board through that mount and reads it at its pin, as
+    /// [`Board::started_in`] gives it. A host with no such checkout, such
+    /// as one [`Host::board`] opened, has none.
+    fn started_in(&self) -> Option<crate::StartedIn> {
+        None
+    }
     /// The `origin` of the git repository holding the caller's directory,
     /// as `git remote get-url origin` there gives it, read from git's
     /// config so no process starts. Without a caller, or outside a
@@ -568,6 +575,13 @@ impl Host for Hosted<'_> {
 
     fn settings(&self) -> &Settings {
         &self.settings
+    }
+
+    fn started_in(&self) -> Option<crate::StartedIn> {
+        match &self.board {
+            HostBoard::Called(board) => board.started_in(),
+            HostBoard::Opened(_) => None,
+        }
     }
 
     #[expect(
