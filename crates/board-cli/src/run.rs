@@ -467,7 +467,7 @@ pub(crate) fn run(
     let base = cli.personal.then(|| context.personal());
     let base = base.unwrap_or_else(|| Ok(context.start.clone()));
     let start = base.and_then(|base| entered(&base, &cli.directories));
-    let chosen = uri::chosen(&mut cli.command, context);
+    let chosen = uri::chosen(&mut cli, context);
     let started = start.and_then(|start| Ok((start, cli.mounts_at()?, chosen?)));
     let (start, at, clone) = match started {
         Ok(started) => started,
@@ -659,7 +659,7 @@ fn command(
         }
         Command::Uri { path } => {
             let path = or_refuse!(read(prefix, &path, "uri"));
-            match board_ops::uri_of(board.repository().path(), &path) {
+            match board_ops::uri_of(board.repository(), &path) {
                 Ok(uri) => render::uri(printer, &uri, &path),
                 Err(refusal) => render::refused(printer, *refusal),
             }

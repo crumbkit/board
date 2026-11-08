@@ -18,7 +18,9 @@ use board_model::{
     ATTACHMENT_TYPE, Fields, Location, LogicalPath, PathError, Refusal, Source, canonical_json,
     parse_json,
 };
-use board_ops::{Absent, Host, Limit, PluginError, RefsReport, literal, source_name, uri_of};
+use board_ops::{
+    Absent, Board, Host, Limit, PluginError, RefsReport, literal, source_name, uri_of,
+};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
@@ -177,8 +179,10 @@ pub(crate) fn share_to(host: &dyn Host, input: &Value) -> Result<Value, PluginEr
 /// The URI of each of `paths` in the board whose repository is at
 /// `repository`, or none when it has no origin.
 fn uris(repository: &str, paths: &[String]) -> Vec<String> {
-    let repository = std::path::Path::new(repository);
-    let uri = |path: &String| uri_of(repository, &path.parse().ok()?).ok();
+    let Ok(board) = Board::open(std::path::Path::new(repository), None) else {
+        return Vec::new();
+    };
+    let uri = |path: &String| uri_of(board.repository(), &path.parse().ok()?).ok();
     paths
         .iter()
         .map(uri)

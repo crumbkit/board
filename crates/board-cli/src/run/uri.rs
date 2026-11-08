@@ -5,21 +5,37 @@ use std::path::{Path, PathBuf};
 
 use board_model::{Code, Refusal, URI_SCHEME};
 
-use super::{Command, Given, Refs, plain};
+use super::{Cli, Command, Given, Refs, plain};
 use crate::config::Context;
 
-/// The root of the known board the URIs among the paths `command` reads
-/// name, with each URI replaced by its record's path in that board, or none
-/// when no path is a URI. URIs that name two boards are refused, since a
-/// run reads one, and so is a URI given to a command that writes.
-pub(super) fn chosen(
-    command: &mut Command,
-    context: &Context,
-) -> Result<Option<PathBuf>, Box<Refusal>> {
-    if let Some(refusal) = written_path(command).and_then(read_only) {
+/// The root of the known board the URIs among the paths `cli`'s command
+/// reads name, with each URI replaced by its record's path in that board,
+/// or none when no path is a URI. A URI chooses the board, so a run that
+/// gives one beside a plain path, -C or --personal is refused, and so are
+/// URIs that name two boards and a URI given to a command that writes.
+pub(super) fn chosen(cli: &mut Cli, context: &Context) -> Result<Option<PathBuf>, Box<Refusal>> {
+    if let Some(refusal) = written_path(&cli.command).and_then(read_only) {
         return Err(Box::new(refusal));
     }
-    let paths = read_paths(command);
+    let (directories, personal) = (&cli.directories, cli.personal);
+    let paths = read_paths(&mut cli.command);
+    let Some(uri) = paths.iter().find(|given| given.0.starts_with(URI_SCHEME)) else {
+        return Ok(None);
+    };
+    let uri = uri.0.clone();
+    let bare = (paths.iter()).find(|given| !given.0.starts_with(URI_SCHEME));
+    let beside = match (bare, directories.first(), personal) {
+        (Some(given), _, _) => Some(format!("the plain path {}", given.0)),
+        (None, Some(directory), _) => Some(format!("-C {}", directory.to_string_lossy())),
+        (None, None, true) => Some("--personal".to_owned()),
+        (None, None, false) => None,
+    };
+    if let Some(beside) = beside {
+        let message =
+            format!("{uri} chooses the board this run reads, so it takes no {beside} beside it");
+        let hint = "give every path as a URI, or leave out the URI and name the board with -C";
+        return Err(Box::new(plain(Code::CliUsage, &message).with_hint(hint)));
+    }
     let mut known = None;
     let mut chosen: Option<(PathBuf, String)> = None;
     for given in paths {

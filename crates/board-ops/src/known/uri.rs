@@ -4,32 +4,45 @@
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
-use board_model::{
-    Code, Fields, LogicalPath, Refusal, URI_SCHEME, github_remote, record_uri, shown_remote,
-};
-use board_tree::{Origin, own_origin};
+use board_model::{Code, Fields, LogicalPath, Refusal, URI_SCHEME, github_remote, record_uri};
+use board_tree::Repository;
 
 use super::{KnownBoards, against, shown};
 use crate::Board;
 
-/// The URI of the record at `path` in the board whose repository is at
-/// `repository`, from the stored form of its `origin`, or
-/// `board::uri::no_remote` when it has none.
-pub fn uri_of(repository: &Path, path: &LogicalPath) -> Result<String, Box<Refusal>> {
-    match own_origin(repository) {
-        Origin::Url(url) => Ok(record_uri(&shown_remote(&url), path)),
-        Origin::Unread(why) => Err(no_remote(repository, &why)),
-        Origin::Outside => Err(no_remote(repository, "it is not a git repository")),
-    }
+/// The URI of the record at `path` in `repository`'s board, from the stored
+/// form of its `origin`, or `board::uri::no_remote` when it has none.
+pub fn uri_of(repository: &Repository, path: &LogicalPath) -> Result<String, Box<Refusal>> {
+    let Some(remote) = repository.remote() else {
+        let message = format!(
+            "the board at {} has no origin git can read, so its records have no URI",
+            repository.path().display()
+        );
+        return Err(Box::new(Refusal::new(
+            Code::UriNoRemote,
+            message,
+            &Fields::default(),
+        )));
+    };
+    Ok(record_uri(&remote, path))
 }
 
-fn no_remote(repository: &Path, why: &str) -> Box<Refusal> {
-    let message = format!(
-        "the board at {} has no origin, so its records have no URI: {why}",
-        repository.display()
-    );
-    Box::new(Refusal::new(Code::UriNoRemote, message, &Fields::default()))
+/// What follows `remote` in `rest` when `rest` begins with it and then a
+/// `/`. A GitHub remote, `owner/name`, matches in any case, as GitHub does.
+fn after<'a>(rest: &'a str, remote: &str) -> Option<&'a str> {
+    let head = rest.get(..remote.len())?;
+    let same = if github_remote(remote).is_some() {
+        head.eq_ignore_ascii_case(remote)
+    } else {
+        head == remote
+    };
+    let tail = &rest[remote.len()..];
+    (same && tail.starts_with('/')).then_some(tail)
 }
+
+/// A known board whose origin begins a URI: the origin's length, the
+/// board's root, and the rest of the URI.
+type Match<'a> = (usize, PathBuf, &'a str);
 
 impl KnownBoards {
     /// The root of the one known board whose origin, in its stored form,
@@ -52,51 +65,55 @@ impl KnownBoards {
             return Err(invalid("it names no remote and path after board://"));
         }
         let file = self.file.as_deref();
-        let mut seen = HashSet::new();
-        let (mut origins, mut best): (Vec<String>, Vec<(usize, PathBuf, &str)>) = (vec![], vec![]);
+        let (mut seen, mut skipped) = (HashSet::new(), Vec::new());
+        let (mut origins, mut best): (Vec<String>, Vec<Match>) = (vec![], vec![]);
         for root in self.known.boards.iter().map(|root| against(file, root)) {
             let Ok(board) = Board::open(&root, home.map(Path::to_path_buf)) else {
+                skipped.push(root.display().to_string());
                 continue;
             };
-            let repository = board.repository().path();
-            let Origin::Url(url) = own_origin(repository) else {
+            let repository = board.repository();
+            let Some(remote) = repository.remote() else {
                 continue;
             };
-            if !seen.insert(repository.to_path_buf()) {
+            if !seen.insert(repository.path().to_path_buf()) {
                 continue;
             }
-            let remote = shown_remote(&url);
-            if rest == remote {
+            if after(&format!("{rest}/"), &remote) == Some("/") {
                 return Err(invalid("it names a board and no path; add / for its root"));
             }
-            let after = rest.strip_prefix(remote.as_str());
-            if let Some(after) = after.filter(|after| after.starts_with('/')) {
-                best.push((remote.len(), root, after));
+            if let Some(tail) = after(rest, &remote) {
+                best.push((remote.len(), root, tail));
             }
             origins.push(remote);
         }
+        let passed = match skipped.as_slice() {
+            [] => String::new(),
+            _ => format!(
+                "; these known boards could not be opened: {}",
+                skipped.join(", ")
+            ),
+        };
         let longest = best.iter().map(|(length, _, _)| *length).max();
         best.retain(|(length, _, _)| Some(*length) == longest);
         match best.as_slice() {
-            [] => Err(self.not_found(uri, rest, &origins)),
-            [(_, root, after)] => {
-                let path = after
-                    .parse()
+            [] => Err(self.not_found(uri, rest, &origins, &passed)),
+            [(_, root, tail)] => {
+                let path = (LogicalPath::root().join(tail))
                     .map_err(|error| invalid(&format!("{error}")))?;
                 Ok((root.clone(), path))
             }
-            [(_, _, after), ..] => {
+            [(_, _, tail), ..] => {
                 let roots: Vec<String> = (best.iter())
                     .map(|(_, root, _)| root.display().to_string())
                     .collect();
                 let message = format!(
-                    "{uri} names a remote that more than one known board has as its origin: {}",
+                    "{uri} names a remote that more than one known board has as its origin: {}{passed}",
                     roots.join(", ")
                 );
                 let hint = format!(
-                    "leave one clone of that remote among the boards in `{}`, or choose one with `board -C <dir> get {}`",
+                    "leave one clone of that remote among the boards in `{}`, or choose one with `board -C <dir> get {tail}`",
                     shown(file),
-                    after
                 );
                 let refusal = Refusal::new(Code::UriAmbiguous, message, &Fields::default());
                 Err(Box::new(refusal.with_hint(hint)))
@@ -105,8 +122,9 @@ impl KnownBoards {
     }
 
     /// `board::uri::not_found` for `uri`, naming the origins of the known
-    /// boards read and, when it reads as one, the GitHub remote to clone.
-    fn not_found(&self, uri: &str, rest: &str, origins: &[String]) -> Box<Refusal> {
+    /// boards read, those `passed` over, and the remote to clone: a GitHub
+    /// `owner/name`, or else the part of the URI before the record's path.
+    fn not_found(&self, uri: &str, rest: &str, origins: &[String], passed: &str) -> Box<Refusal> {
         let file = shown(self.file.as_deref());
         let read = match origins {
             [] => format!("the known boards in `{file}` have no origin"),
@@ -115,12 +133,12 @@ impl KnownBoards {
                 origins.join(", ")
             ),
         };
-        let message = format!("no known board has the remote {uri} names; {read}");
+        let message = format!("no known board has the remote {uri} names; {read}{passed}");
         let owner_name: Vec<&str> = rest.splitn(3, '/').take(2).collect();
         let owner_name = owner_name.join("/");
         let remote = match github_remote(&owner_name) {
             Some(_) => format!("`{owner_name}`"),
-            None => "at the start of the URI".to_owned(),
+            None => format!("the part of `{uri}` before the record's path"),
         };
         let hint = format!(
             "clone the board whose remote is {remote} and list the clone in `{file}` as {{\"boards\": [\"<board directory>\"]}}"

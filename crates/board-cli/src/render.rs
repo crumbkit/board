@@ -517,10 +517,11 @@ const LS: Document<Listing<Whole, Said>> =
 /// `board uri --help` after its options.
 pub(crate) const URI_HELP: &str = "\
 The URI is board://, the board's git origin as a repo record stores it
-(owner/name for GitHub), and the record's path. Every command that reads a
-path takes a URI in its place, and runs as the known board in
-$XDG_CONFIG_HOME/board/config.json whose origin the URI names. A board with
-no origin is refused with board::uri::no_remote.
+(owner/name for GitHub), and the record's path. check, get, ls, refs and
+uri take a URI in place of a path, with no plain path, -C or --personal
+beside it, and run as the known board in $XDG_CONFIG_HOME/board/config.json
+whose origin the URI names. A board with no origin is refused with
+board::uri::no_remote.
 
 Examples:
   board uri /tasks/fix-login

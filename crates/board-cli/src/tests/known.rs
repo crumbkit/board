@@ -681,3 +681,40 @@ fn a_write_through_a_uri_is_refused_and_one_through_the_clones_path_is_admitted(
     let (rm, _) = known(team.workdir(), &xdg, None, &["rm", "/projects/p"]);
     assert_eq!(text(&rm.stderr), "");
 }
+
+#[test]
+fn a_uri_beside_a_plain_path_c_or_personal_is_refused_and_the_uri_alone_is_admitted() {
+    let team = originated("git@github.com:acme/team-board.git");
+    let personal = uncommitted();
+    let xdg = config(Some(
+        &json!({"boards": [team.path()], "personal": personal.path()}).to_string(),
+    ));
+    let elsewhere = Scenario::new();
+    let other = personal.path();
+    for (command, named) in [
+        (vec!["get", URI, "/projects/p"], "/projects/p"),
+        (vec!["get", "p", URI], "p"),
+        (vec!["-C", &other, "get", URI], other.as_str()),
+        (vec!["--personal", "get", URI], "--personal"),
+        (
+            vec!["-C", &other, "ls", "board://acme/team-board/projects"],
+            other.as_str(),
+        ),
+    ] {
+        let (refused, _) = known(elsewhere.workdir(), &xdg, None, &command);
+        assert_eq!(refused.code, 2, "{command:?}");
+        assert_eq!(code(&refused), "board::cli::usage", "{command:?}");
+        let stderr = text(&refused.stderr);
+        assert!(stderr.contains(named), "{command:?}: {stderr}");
+        assert!(stderr.contains("  help:  "), "{stderr}");
+    }
+    let (admitted, _) = known(elsewhere.workdir(), &xdg, None, &["get", URI]);
+    assert_eq!(admitted.code, 0, "{}", text(&admitted.stderr));
+    let (plain, _) = known(
+        elsewhere.workdir(),
+        &xdg,
+        None,
+        &["-C", &other, "get", "/projects/p"],
+    );
+    assert_eq!(plain.code, 0, "{}", text(&plain.stderr));
+}
