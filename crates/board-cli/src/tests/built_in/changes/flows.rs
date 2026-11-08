@@ -488,7 +488,9 @@ fn next_on_a_small_change_in_build_says_to_resend_the_plan_start_wrote() {
     assert_eq!(started(&board, "A", &json!({"flow": "small"})).0, "small");
     let said = board.call("next", &json!({"path": "/changes/a"}))["instruction"].clone();
     assert!(
-        said.as_str().unwrap().contains(REVISED_PLAN_USAGE),
+        said.as_str()
+            .unwrap()
+            .contains(&revised_plan_usage("/changes/a", "/repos/x")),
         "{said}"
     );
 }

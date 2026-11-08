@@ -1216,7 +1216,12 @@ fn next_names_the_plan_input_where_its_instruction_asks_for_a_plan_and_nowhere_e
     let board = Changes::new();
     board.change_at("changes/t.json", "plan", &json!({"route": "owner"}));
     let said = board.call("next", &path())["instruction"].clone();
-    assert!(said.as_str().unwrap().contains(NEW_PLAN_USAGE), "{said}");
+    assert!(
+        said.as_str()
+            .unwrap()
+            .contains(&new_plan_usage(CHANGE, "/repos/x")),
+        "{said}"
+    );
     // The development flow's build instruction asks for no plan.
     move_to(&board, "build");
     let said = board.call("next", &path())["instruction"].clone();
@@ -1235,13 +1240,25 @@ fn next_in_review_says_to_resend_a_plan_without_paths_and_asks_a_change_without_
     board.write("changes/t/plan.md", "# T\n");
     let said = board.call("next", &path())["instruction"].clone();
     let said = said.as_str().unwrap();
-    assert!(said.contains(REVISED_PLAN_USAGE), "{said}");
-    assert!(!said.contains(NEW_PLAN_USAGE), "{said}");
+    assert!(
+        said.contains(&revised_plan_usage(CHANGE, "/repos/x")),
+        "{said}"
+    );
+    assert!(
+        !said.contains(&new_plan_usage(CHANGE, "/repos/x")),
+        "{said}"
+    );
     board.change_at("changes/u.json", "review", &json!({}));
     let said = board.call("next", &json!({"path": "/changes/u"}))["instruction"].clone();
     let said = said.as_str().unwrap();
-    assert!(said.contains(NEW_PLAN_USAGE), "{said}");
-    assert!(!said.contains(REVISED_PLAN_USAGE), "{said}");
+    assert!(
+        said.contains(&new_plan_usage("/changes/u", "/repos/x")),
+        "{said}"
+    );
+    assert!(
+        !said.contains(&revised_plan_usage("/changes/u", "/repos/x")),
+        "{said}"
+    );
 }
 
 #[test]
@@ -1251,6 +1268,23 @@ fn next_in_review_says_to_resend_the_current_plan_since_changes_plan_replaces_it
     board.call_stdin("plan", &planning(&["/repos/x/src/**"]));
     let said = board.call("next", &path())["instruction"].clone();
     let said = said.as_str().unwrap();
-    assert!(said.contains(REVISED_PLAN_USAGE), "{said}");
-    assert!(!said.contains(NEW_PLAN_USAGE), "{said}");
+    assert!(
+        said.contains(&revised_plan_usage(CHANGE, "/repos/x")),
+        "{said}"
+    );
+    assert!(
+        !said.contains(&new_plan_usage(CHANGE, "/repos/x")),
+        "{said}"
+    );
+}
+
+#[test]
+fn the_plan_example_for_a_change_on_the_board_itself_names_paths_under_the_root() {
+    let board = Changes::new();
+    board.change_at("changes/t.json", "plan", &json!({"mount": "/"}));
+    let said = board.call("next", &path())["instruction"].clone();
+    assert!(
+        said.as_str().unwrap().contains(&new_plan_usage(CHANGE, "")),
+        "{said}"
+    );
 }

@@ -262,10 +262,13 @@ of `changes` still fails `review`.
   and phases), its phase, each gate check as `pass` or `missing` with a
   `detail`, its `actor`, whether it `blocks`, and when missing its
   `remedy`; the instruction, with its placeholders filled; and `sync`.
-  An instruction that names `changes.plan` ends with its stdin fields,
-  `path`, `text`, `uses` and `paths`. When the
-  change has a plan, such as the one `start` writes, it says that `changes.plan`
-  replaces the plan, so resend its text, uses and every path. When
+  An instruction that names `changes.plan` ends with how to give its
+  input, JSON on stdin with the fields `path`, `text`, `uses` and `paths`,
+  and a one-line example such as
+  `{"path":"/changes/<name>","text":"<text>","uses":["<use>"],"paths":["<mount>/<path>"]}`.
+  Every change that `start` writes has a plan. For a change with a plan,
+  the instruction says that `changes.plan` replaces the plan, so all four
+  fields must be resent. When
   every missing check that blocks is the owner's or a reviewer's,
   `waiting_on` names them and `ask` holds the question to put to them,
   built from those checks' details and remedies.

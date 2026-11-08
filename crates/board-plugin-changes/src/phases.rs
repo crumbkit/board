@@ -195,27 +195,30 @@ fn instruction(observed: &Observed) -> String {
     }
 }
 
-/// `said` with the fields `changes.plan` takes on stdin, when `said` asks
-/// for a plan. `changes.plan` replaces the plan, so for a change that has
-/// one, `said` says to resend the current text, uses and paths.
+/// `said` with the fields `changes.plan` takes on stdin and a one-line
+/// example, when `said` asks for a plan. `changes.plan` replaces the plan,
+/// so for a change that has one, `said` says to resend all four fields.
 fn with_plan_usage(observed: &Observed, said: String) -> String {
     if !said.contains("changes.plan") {
         return said;
     }
-    let usage = if observed.change.plan.is_none() {
-        NEW_PLAN_USAGE
+    let example = format!(
+        r#"{{"path":"{}","text":"<text>","uses":["<use>"],"paths":["{}/<path>"]}}"#,
+        observed.path,
+        observed.change.mount.trim_end_matches('/')
+    );
+    if observed.change.plan.is_none() {
+        format!(
+            "{said} Pipe `changes.plan` JSON on stdin with the fields `path`, `text`, `uses` and \
+             `paths`, such as `{example}`."
+        )
     } else {
-        REVISED_PLAN_USAGE
-    };
-    format!("{said} {usage}")
+        format!(
+            "{said} `changes.plan` reads JSON on stdin and replaces the plan, so resend all four \
+             fields, such as `{example}`."
+        )
+    }
 }
-
-/// What an instruction that asks for a new plan ends with.
-const NEW_PLAN_USAGE: &str =
-    "Pipe `changes.plan` JSON on stdin with the fields `path`, `text`, `uses` and `paths`.";
-/// What an instruction that asks for a plan ends with when the change has one.
-const REVISED_PLAN_USAGE: &str =
-    "`changes.plan` replaces the plan: resend its `text`, `uses` and every path.";
 
 /// The text of the change's plan, or none when it names none or nothing is there.
 pub(crate) fn plan_text(
