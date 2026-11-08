@@ -474,7 +474,9 @@ fn a_plugin_named_help_never_takes_board_help() {
         let output = run_in(&board, &data, &[name, "due"]);
         assert_eq!(taken_by(&data, name).is_some(), runs, "{name}");
         if !runs {
+            let refused = run_in(&board, &data, &["--json", name, "due"]);
             assert_eq!(output.code, 2, "board help due asks for a topic");
+            assert_eq!(code(&refused), "board::cli::usage");
         }
     }
 }
