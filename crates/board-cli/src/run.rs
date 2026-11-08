@@ -34,7 +34,7 @@ use crate::effects;
 use crate::graft;
 use crate::render::{self, GUIDE, Printer};
 use crate::report::Output;
-use crate::stdin::{TypeCommand, call, put};
+use crate::stdin::{Input, TypeCommand, call, put};
 use crate::timing::Ran;
 use crate::values::{duration, expect, pointer, removal, var};
 
@@ -506,8 +506,8 @@ pub(crate) fn run(
     let output = match grafted {
         Some((target, mut flags)) => {
             graft::resolve(found.as_ref(), &mut flags, prefix);
-            let stdin = graft::reads_stdin(found.as_ref()).then_some(stdin);
-            call(&board, context, printer, &target, Some(flags), stdin)
+            let input = graft::input(found.as_ref(), &flags, stdin);
+            call(&board, context, printer, &target, Some(flags), input)
         }
         None => match cli.command {
             Command::Decide(deciding) => effects::decide(&board, printer, prefix, &deciding, stdin),
@@ -686,7 +686,7 @@ fn command(
                 (None, Some(capability)) => Target::Capability(capability),
                 (None, None) => unreachable!("clap requires a target or a capability"),
             };
-            call(board, context, printer, &target, None, Some(stdin))
+            call(board, context, printer, &target, None, Input::Stdin(stdin))
         }
         Command::Serve { idle } => crate::ui::serve(board, context, printer, idle),
         Command::Ui(command) => crate::ui::ui(command, board, context, printer, prefix),

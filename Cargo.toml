@@ -100,7 +100,7 @@ jsonschema-regex = "0.58.5"
 # move, so the signer and allowed signers file an approval trusts stay put.
 # Without default features it brings only libc, bitflags and cfg-if; only
 # board-cli/src/config.rs uses it.
-nix = { version = "0.31.3", default-features = false, features = ["user"] }
+nix = { version = "0.31.3", default-features = false, features = ["poll", "user"] }
 # A Markdown link names a path percent-encoded, as a URL does. gix already
 # brings this crate in.
 percent-encoding = "2.3.2"

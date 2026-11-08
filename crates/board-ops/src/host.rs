@@ -320,21 +320,25 @@ pub struct PluginError {
 }
 
 impl PluginError {
-    /// `<plugin>::board::refused`, as a process plugin's Python helper reports it.
+    /// `<plugin>::board::refused`, as a process plugin's Python helper
+    /// reports it. Its hint is the hint of Board's refusal. When that
+    /// refusal has none, the hint says to fix what Board's code names and
+    /// to run the command alone to see Board's own refusal.
     pub fn board_refused(plugin: &str, command: &str, refusal: &Refusal) -> Self {
         let code = refusal.code.as_str();
-        let then = (refusal.hint.as_deref().filter(|hint| !hint.is_empty()))
-            .map_or_else(String::new, |hint| format!("; {hint}"));
+        let hint = (refusal.hint.clone().filter(|hint| !hint.is_empty())).unwrap_or_else(|| {
+            format!(
+                "fix what {code} names, then run `board {command}` on its own to see Board's \
+                 refusal and its help"
+            )
+        });
         let mut fields = refusal.fields.clone();
         fields.insert("code".to_owned(), Value::from(code));
         Self {
             code: format!("{plugin}::board::refused"),
-            message: format!(
-                "`board {command}` refused with {code}: {}{then}",
-                refusal.message
-            ),
+            message: format!("`board {command}` refused with {code}: {}", refusal.message),
             fields,
-            hint: None,
+            hint: Some(hint),
         }
     }
 

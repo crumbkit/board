@@ -101,20 +101,30 @@ pub(crate) fn put(
     }
 }
 
+/// Where a call's input comes from when no flag gives it.
+pub(crate) enum Input<'a> {
+    /// JSON on stdin.
+    Stdin(&'a mut dyn Read),
+    /// Nothing, since Board leaves stdin unread, with why when the
+    /// capability is installed.
+    Ignored(&'a mut dyn Read, Option<String>),
+}
+
 /// `call`: the target, or the capability alone, with the input as flags or,
-/// when no flag is given, on `stdin` unless the call reads none. A terminal
-/// on stdin, or nothing read from it, is no input.
+/// when no flag is given, from `stdin`. A terminal on stdin, or nothing read
+/// from it, is no input. A `bad_input` refusal of a call that left stdin
+/// holding data says so in its help.
 pub(crate) fn call(
     board: &Board,
     context: &Context,
     printer: Printer,
     target: &Target,
     flags: Option<Map<String, Value>>,
-    stdin: Option<&mut dyn Read>,
+    mut stdin: Input<'_>,
 ) -> Output {
-    let read = match (flags.filter(|flags| !flags.is_empty()), stdin) {
+    let read = match (flags.filter(|flags| !flags.is_empty()), &mut stdin) {
         (Some(flags), _) => Ok(Value::Object(flags).to_string().into_bytes()),
-        (None, Some(stdin)) if !context.terminal => bounded(stdin),
+        (None, Input::Stdin(stdin)) if !context.terminal => bounded(&mut **stdin),
         (None, _) => Ok(Vec::new()),
     };
     let input = match read.map_err(|error| unreadable(Code::PluginBadInput, &error)) {
@@ -135,7 +145,19 @@ pub(crate) fn call(
     plugins.known = Some(&known);
     match board.call(target, &input, &plugins) {
         Ok(report) => render::call(printer, &report),
-        Err(error) => render::refused(printer, error.refusal()),
+        Err(error) => {
+            let mut refusal = error.refusal();
+            if let Input::Ignored(stdin, Some(why)) = stdin
+                && refusal.code.as_str().ends_with("::bad_input")
+                && held(context, stdin)
+            {
+                refusal.hint = Some(match refusal.hint.filter(|hint| !hint.is_empty()) {
+                    Some(hint) => format!("{why}; {hint}"),
+                    None => why,
+                });
+            }
+            render::refused(printer, refusal)
+        }
     }
 }
 
@@ -172,6 +194,28 @@ fn bounded(stdin: &mut dyn Read) -> std::io::Result<Vec<u8>> {
         .take(MAX_RECORD_BYTES as u64 + 1)
         .read_to_end(&mut bytes)?;
     Ok(bytes)
+}
+
+/// Whether `stdin`, which a call left unread, holds more than whitespace.
+/// Board reads it once, and only when the process's stdin holds data or
+/// has ended, so a pipe nobody closes does not hold up the refusal.
+fn held(context: &Context, stdin: &mut dyn Read) -> bool {
+    let mut start = [0; 512];
+    !context.terminal
+        && ready()
+        && stdin
+            .read(&mut start)
+            .is_ok_and(|read| !start[..read].trim_ascii().is_empty())
+}
+
+/// Whether the process's stdin holds data or has ended, asked without
+/// waiting.
+fn ready() -> bool {
+    use nix::poll::{PollFd, PollFlags, PollTimeout, poll};
+    use std::os::fd::AsFd as _;
+    let stdin = std::io::stdin();
+    let mut polled = [PollFd::new(stdin.as_fd(), PollFlags::POLLIN)];
+    poll(&mut polled, PollTimeout::ZERO).is_ok_and(|ready| ready > 0)
 }
 
 /// The refusal, with `code`, of stdin that cannot be read.
