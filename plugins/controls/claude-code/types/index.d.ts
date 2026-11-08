@@ -4,6 +4,8 @@ export type Control = {
   requirement: string
   /** For a measured control, its usage, such as `412 of 1000 words`. */
   usage?: string
+  /** For an obligation, how to close it, as the controls plugin gives it. */
+  close?: string
 }
 
 /** What `board call controls.check` answered for the repository a session starts in. */

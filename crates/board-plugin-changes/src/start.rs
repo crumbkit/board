@@ -12,7 +12,7 @@ use serde_json::{Value, json};
 
 use crate::board::{self, get};
 use crate::change::{line, touch};
-use crate::controls::on_mount;
+use crate::controls::{Found, on_mount};
 use crate::flow::{FlowSummary, chosen, copy_line, refuse_invalid, refuse_without_repository};
 use crate::gates::SECTIONS;
 use crate::phases::check_target;
@@ -98,11 +98,26 @@ pub(crate) struct Input {
     over_limit: Option<String>,
 }
 
-/// An obligation on the mount: the control and its summary.
+/// An obligation on the mount: the control, its summary and how to close
+/// it, as `controls.for-paths` gives them.
 #[derive(Debug, Serialize, JsonSchema)]
 struct Owed {
     control: String,
     summary: String,
+    /// How to close the obligation; left out when controls gives no line.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "Option<Prose>")]
+    close: Option<String>,
+}
+
+impl From<Found> for Owed {
+    fn from(found: Found) -> Self {
+        Self {
+            control: found.control,
+            summary: found.summary,
+            close: found.close,
+        }
+    }
 }
 
 /// The new change and the repository's brief.
@@ -277,7 +292,7 @@ pub(crate) fn start(host: &dyn Host, input: &Value) -> Result<Value, PluginError
     };
     let obligations_left_out = owed.len().saturating_sub(OBLIGATIONS_SHOWN);
     let obligations = (owed.into_iter().take(OBLIGATIONS_SHOWN))
-        .map(|(control, summary)| Owed { control, summary })
+        .map(Owed::from)
         .collect();
     Ok(to_value(Output {
         path,

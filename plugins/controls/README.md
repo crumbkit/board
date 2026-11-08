@@ -351,7 +351,8 @@ skills to install it:
 
 `claude-code/` holds a Claude Code mod. It adds the repository's controls to
 each session's context when the session starts, and names a control on a file
-before an edit of that file runs. Load it with
+before an edit of that file runs. Wherever it lists an obligation, it prints
+the obligation's `close` line beneath it. Load it with
 `claude --plugin-dir "$PWD/claude-code"`, or name that directory in
 `CLAUDE_CODE_PLUGIN_DIRS`. It runs `board` from `PATH`, `~/.local/bin`,
 `/opt/homebrew/bin` or `/usr/local/bin`. It needs Claude Code 2.1.308 or

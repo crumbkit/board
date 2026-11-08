@@ -80,6 +80,26 @@ test('the context block lists each control with its requirement, a budget with i
   )
 })
 
+const OWED = {
+  control: '/controls/crumbkit/docs-owed-9',
+  requirement: 'The merge of #9 owes a docs sweep.',
+  files: 1,
+  paths: [],
+  purpose: 'p',
+  kind: 'obligation',
+  close: 'Delete it with `board rm /controls/crumbkit/docs-owed-9` once the work is committed.',
+}
+
+test('the context block gives an obligation its close line and a standing control none', () => {
+  const checked = parseCheck(ROOT, 0, report({ measured: [], stated: [OWED, README] }), '')
+  expect(checked === null ? null : contextText(checked)).toContain(
+    '- /controls/crumbkit/docs-owed-9: The merge of #9 owes a docs sweep.\n' +
+      '  Delete it with `board rm /controls/crumbkit/docs-owed-9` once the work is committed.\n' +
+      '- /controls/example/readme: Keep the usage section of the README current.',
+  )
+  expect(checked === null ? null : contextText(checked)).toMatch(/current\.$/)
+})
+
 test('a version control with pins behind and a budget over its max with an unreadable file say so in the block', () => {
   const behind = { ...RUST, behind: [{ file: '/r/rust-toolchain.toml', line: 2, found: '1.98.0' }] }
   const unread = { ...DOCS, used: 300, unreadable: [{ file: '/r/AGENTS.md', code: 'board::path::shadowed' }] }
@@ -123,6 +143,19 @@ test('an edit of a file with a control the session was not told about appends a 
   expect(appended).toEqual([
     `This board control applies to ${ROOT}/src/listing.rs, which you are editing now. Follow each one in this ` +
       'edit and any that follows.\n\n- /controls/crumbkit/rust-10: A hand-written parser says what it misses.',
+  ])
+})
+
+test('the row before an edit gives an obligation its close line and a standing control none', async ($, on) => {
+  const { appended } = engine(on, { forPath: { 'docs/guide.md': [OWED, PARSER] } })
+  await start($)
+  await edit($, 'docs/guide.md')
+  expect(appended).toEqual([
+    `These board controls apply to ${ROOT}/docs/guide.md, which you are editing now. Follow each one in this ` +
+      'edit and any that follows.\n\n' +
+      '- /controls/crumbkit/docs-owed-9: The merge of #9 owes a docs sweep.\n' +
+      '  Delete it with `board rm /controls/crumbkit/docs-owed-9` once the work is committed.\n' +
+      '- /controls/crumbkit/rust-10: A hand-written parser says what it misses.',
   ])
 })
 
