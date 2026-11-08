@@ -179,25 +179,8 @@ github plugin enabled. Without `--apply` it writes nothing and says what
 it would. With `--apply` it writes every rewritten record in one commit,
 whose message ends in the trailer `Board-Bulk: migrate changes`.
 
-`migrate --flows true [--apply true]` also replaces each change's own copy
-of its flow with a reference to the flow's version. For each
-`changes/change/v2` whose `flow` names a record outside `/flows/`, it
-writes that flow's version when the board lacks it, points the change at
-it, and removes the copy when it sits at `<path>/flow`. Identical copies
-share one version. A copy that is not a flow Board reads stays where it is
-and is listed under `unreadable` with `changes::flow::unreadable`. A
-change whose rewritten record fails its schema stays as it is, with its
-copy, and is listed under `left` with the reason. The rest go on. A
-`changes/run/v1` that names its flow by name is rewritten to name its
-change's version; one whose change follows no version is listed under
-`left`. A run that names a copy the migration replaces is rewritten to
-name that copy's version. A run whose rewritten record fails its schema
-stays as it is and is listed under `left`. The output's `flows` holds `applied`, `versions` (the
-versions written), `changes` (at most 100, with `total` and `truncated`),
-`copies` (the count removed), `runs`, `unreadable` and `left`. The commit's
-trailer is `Board-Bulk: migrate flows`. A second run writes nothing. Each
-board runs its own migration, including a board nested in another. Both check each rewritten record against its schema. `left`
-lists each change and understanding check it leaves as it is, with why:
+A dry run and `--apply` both check each rewritten record against its
+schema. `left` lists each change and understanding check it leaves as it is, with why:
 
 - a field no shape has;
 - a rewritten record that fails its schema;
@@ -213,6 +196,25 @@ offline, says nothing about the page, so migrate stops with
 refusal from Board itself, such as the github plugin not being enabled,
 also stops it. Either stops it before it writes the changes, and the next
 run keeps the github records already written.
+
+`migrate --flows true [--apply true]` also replaces each change's own copy
+of its flow with a reference to the flow's version. For each
+`changes/change/v2` whose `flow` names a record outside `/flows/`, it
+writes that flow's version when the board lacks it, points the change at
+it, and removes the copy when it sits at `<path>/flow`. Identical copies
+share one version. A copy that is not a flow Board reads stays where it is
+and is listed under `unreadable` with `changes::flow::unreadable`. A
+change whose rewritten record fails its schema stays as it is, with its
+copy, and is listed under `left` with the reason. The rest go on. A
+`changes/run/v1` that names its flow by name is rewritten to name its
+change's version; one whose change follows no version is listed under
+`left`. A run that names a copy the migration replaces is rewritten to
+name that copy's version. A run whose rewritten record fails its schema
+stays as it is and is listed under `left`, and the copy it names stays too.
+The output's `flows` holds `applied`, `versions` (the versions written), `changes` (at most 100, with `total` and `truncated`),
+`copies` (the count removed), `runs`, `unreadable` and `left`. The commit's
+trailer is `Board-Bulk: migrate flows`. A second run writes nothing. Each
+board runs its own migration, including a board nested in another.
 
 A v1 change and a migrated one both meet the development flow's gates,
 below, which block on more than the gates before flows did:
@@ -330,7 +332,8 @@ of `changes` still fails `review`.
 - `reflow --path /changes/<name> --flow <name>` moves the change to the
   current version of the flow named, the board's own or a shipped one,
   writing that version when the board lacks it, and returns `path`, `flow`
-  and `phase`. A change not yet migrated loses its own copy. It refuses a flow without
+  and `phase`. A change not yet migrated loses its own copy, unless a run
+  names that copy, which then stays. It refuses a flow without
   the phase the change stands in, `build` for a paused change
   (`changes::reflow::no_phase`, whose `phases` lists the flow's), a flow
   that is not there (`changes::flow::not_found`), a v1 change

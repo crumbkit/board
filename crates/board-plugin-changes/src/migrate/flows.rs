@@ -14,7 +14,8 @@
 //! A `changes/run/v1` that names its flow by name, as runs did before
 //! versions, is rewritten to name the version its change follows. A run
 //! that names a copy the migration replaces, as a run of a change not yet
-//! migrated does, is rewritten to name that copy's version.
+//! migrated does, is rewritten to name that copy's version. A copy stays
+//! while a run that names it cannot be rewritten.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -159,8 +160,10 @@ pub(super) fn replace(
     let mut versions = Vec::new();
     let mut changes = Vec::new();
     let mut unreadable = Vec::new();
-    let mut copies = 0;
     let mut left = Vec::new();
+    // The copies to remove, with their blobs, once the runs that name them
+    // are known to be rewritten.
+    let mut removals: Vec<(String, String)> = Vec::new();
     let schemas = compiled();
     // The version each change follows, and the version of each copy the
     // migration replaces.
@@ -199,15 +202,21 @@ pub(super) fn replace(
         }
         written.insert(version.clone());
         if copy == format!("{}/flow", change.path) {
-            lines.push(json!({"path": copy, "expect": blob, "remove": true}));
-            copies += 1;
+            removals.push((copy.clone(), blob));
         }
         lines.push(repointed);
         replaced.insert(copy, version.clone());
         followed.insert(change.path.clone(), version);
         changes.push(change.path);
     }
-    let runs = rewrite_runs(host, &followed, &replaced, &schemas, &mut lines, &mut left)?;
+    let (runs, kept) = rewrite_runs(host, &followed, &replaced, &schemas, &mut lines, &mut left)?;
+    let mut copies = 0;
+    for (copy, blob) in removals {
+        if !kept.contains(&copy) {
+            lines.push(json!({"path": copy, "expect": blob, "remove": true}));
+            copies += 1;
+        }
+    }
     let total = changes.len();
     changes.truncate(LISTED);
     let output = Output {
@@ -226,9 +235,10 @@ pub(super) fn replace(
 
 /// Adds to `lines` a rewrite of each run that names its flow by name, to
 /// name the version its change follows by `followed`, and of each run that
-/// names a copy in `replaced`, to name that copy's version; returns the
-/// runs rewritten and adds to `left` those whose change follows no version
-/// and those whose rewritten record fails its schema in `schemas`.
+/// names a copy in `replaced`, to name that copy's version. Adds to `left`
+/// the runs whose change follows no version and those whose rewritten
+/// record fails its schema in `schemas`. Returns the runs rewritten and
+/// the flows that runs left unrewritten still name, which must stay.
 fn rewrite_runs(
     host: &dyn Host,
     followed: &BTreeMap<String, String>,
@@ -236,14 +246,15 @@ fn rewrite_runs(
     schemas: &BTreeMap<String, Schema>,
     lines: &mut Vec<Value>,
     left: &mut Vec<Left>,
-) -> Result<Vec<String>, PluginError> {
+) -> Result<(Vec<String>, BTreeSet<String>), PluginError> {
     let mut runs = Vec::new();
+    let mut kept = BTreeSet::new();
     for run in stored(host, RunRecord::TYPE)? {
-        let Some(named) = run.body.get("flow").and_then(Value::as_str) else {
+        let Some(named) = (run.body.get("flow").and_then(Value::as_str)).map(str::to_owned) else {
             continue;
         };
         let version = if named.starts_with('/') {
-            let Some(version) = replaced.get(named) else {
+            let Some(version) = replaced.get(&named) else {
                 continue;
             };
             version
@@ -265,12 +276,13 @@ fn rewrite_runs(
         let rewritten = json!({"path": run.path, "expect": run.blob, "record": body});
         if let Err(why) = conforms(schemas, std::slice::from_ref(&rewritten)) {
             left.push(left_at(run.path, why));
+            kept.insert(named);
             continue;
         }
         lines.push(rewritten);
         runs.push(run.path);
     }
-    Ok(runs)
+    Ok((runs, kept))
 }
 
 /// With `flows`, adds to `lines` the lines that replace the flow copies,

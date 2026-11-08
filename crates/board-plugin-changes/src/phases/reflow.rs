@@ -1,17 +1,18 @@
 //! The `reflow` capability: moving a change to another flow.
 
-use board_ops::{Host, PluginError};
+use board_ops::{Host, PluginError, literal};
+use board_plugin::shape::Record;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use super::{final_phase, refuse_v1};
-use crate::board;
-use crate::change::{line, read, touch};
+use crate::board::{self, rows};
+use crate::change::{OWN, line, read, touch};
 use crate::flow::{
     FlowSummary, asked_for, blob_at, refuse_invalid, refuse_without_repository, version_line,
 };
-use crate::records::{BOARD_ITSELF, BUILD, PAUSED, is_final};
+use crate::records::{BOARD_ITSELF, BUILD, PAUSED, RunRecord, is_final};
 use crate::{PLUGIN, refusal, to_value};
 
 /// A change and the flow to move it to.
@@ -43,7 +44,7 @@ pub(crate) struct Reflowed {
 /// Moves the change to the current version of the flow named, which must
 /// hold the phase the change stands in, writing that version when the board
 /// lacks it; a paused change stands in build. A change not yet migrated
-/// loses its own copy at `<path>/flow`.
+/// loses its own copy at `<path>/flow`, unless a run names that copy.
 pub(crate) fn reflow(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
     let ReflowInput { path, flow } = PluginError::read_input(PLUGIN, "reflow", input)?;
     let (mut change, blob) = read(host, &path)?;
@@ -90,7 +91,7 @@ pub(crate) fn reflow(host: &dyn Host, input: &Value) -> Result<Value, PluginErro
     let copy = format!("{path}/flow");
     if change.flow.as_deref() == Some(copy.as_str()) {
         let held = blob_at(host, &copy)?;
-        if held != "none" {
+        if held != "none" && !run_names(host, &copy)? {
             lines.push(json!({"path": copy, "expect": held, "remove": true}));
         }
     }
@@ -103,4 +104,18 @@ pub(crate) fn reflow(host: &dyn Host, input: &Value) -> Result<Value, PluginErro
         flow: FlowSummary::from(&chosen),
         phase: change.phase,
     }))
+}
+
+/// Whether a run of the board's own changes names the flow at `path`,
+/// whether or not Board reads that run as valid.
+fn run_names(host: &dyn Host, path: &str) -> Result<bool, PluginError> {
+    let sql = format!(
+        "SELECT 1 FROM entries AS e JOIN bodies AS b ON b.blob = e.blob WHERE e.type = {} AND \
+         substr(e.logical, 1, {}) = {} AND json_extract(b.body, '$.flow') = {} LIMIT 1",
+        literal(RunRecord::TYPE),
+        OWN.len(),
+        literal(OWN),
+        literal(path)
+    );
+    Ok(!rows(host, &sql)?.is_empty())
 }

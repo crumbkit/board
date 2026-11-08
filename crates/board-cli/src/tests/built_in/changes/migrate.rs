@@ -727,3 +727,53 @@ fn a_run_whose_rewrite_fails_its_schema_is_left_and_the_rest_of_the_flows_migrat
     assert_eq!(board.read("changes/a/runs/1.json")["flow"], "development");
     assert!(!board.exists("changes/a/flow.json"));
 }
+
+#[test]
+fn a_copy_stays_while_a_run_that_names_it_cannot_be_rewritten_and_one_with_a_rewritable_run_goes() {
+    let board = copies_board();
+    let mut odd = board.read("changes/b/runs/1.json");
+    odd["sandbox"] = json!("never");
+    board.write("changes/b/runs/1.json", &odd.to_string());
+    commit_all(&board);
+    let dry = board.call("migrate", &json!({"flows": true}));
+    assert_eq!(dry["flows"]["copies"], 3);
+    assert_eq!(dry["flows"]["left"][0]["path"], "/changes/b/runs/1");
+    let applied = board.call("migrate", &json!({"flows": true, "apply": true}));
+    assert_eq!(applied["flows"]["copies"], 3);
+    assert!(board.exists("changes/b/flow.json"));
+    assert_eq!(
+        board.read("changes/b/runs/1.json")["flow"],
+        "/changes/b/flow"
+    );
+    assert!(
+        board.read("changes/b.json")["flow"]
+            .as_str()
+            .unwrap()
+            .starts_with("/flows/")
+    );
+    // The run of a names its flow by name, and c has no run: their copies go.
+    assert!(!board.exists("changes/a/flow.json"));
+    assert!(!board.exists("changes/c/flow.json"));
+}
+
+#[test]
+fn reflow_keeps_a_copy_a_run_names_and_removes_a_copy_no_run_names() {
+    let board = copies_board();
+    let flow = json!({"path": "/changes/b", "flow": "development"});
+    board.call("reflow", &flow);
+    assert!(
+        board.read("changes/b.json")["flow"]
+            .as_str()
+            .unwrap()
+            .starts_with("/flows/")
+    );
+    assert!(board.exists("changes/b/flow.json"));
+    assert_eq!(
+        board.read("changes/b/runs/1.json")["flow"],
+        "/changes/b/flow"
+    );
+    assert_eq!(board.code("/changes/b/runs/1"), None);
+    let flow = json!({"path": "/changes/c", "flow": "development"});
+    board.call("reflow", &flow);
+    assert!(!board.exists("changes/c/flow.json"));
+}
