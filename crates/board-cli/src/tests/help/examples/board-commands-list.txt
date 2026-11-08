@@ -5,6 +5,7 @@ board check          Check every entry, or those at or beneath a path; list and 
 board get            Print the file at each path, following pointers
 board ls             List the directory at a path, without following pointers inside it
 board refs           List the references each entry makes and the entries that reach it
+board uri            Print the board:// URI that names a record from any known board's clone
 board put            Write the record on stdin at a path or --new name, or a file with --file
 board rm             Remove the file at a path
 board sync           Fetch the remote branch, replay this board's commits onto it, and push
@@ -23,4 +24,3 @@ board query          Run one read-only SQL statement over the index
 board serve          Serve this board's pages on 127.0.0.1 until it is idle
 board ui             List kinds, print a slot, or open a page
 board ui kinds       List the component kinds a view's slot can name, with each kind's schema
-board ui template    Print a slot's fill for a kind, to edit into a binding's `slots`

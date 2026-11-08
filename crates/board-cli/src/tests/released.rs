@@ -988,6 +988,13 @@ fn rendered() -> Vec<(Vec<&'static str>, Output)> {
         idle: std::time::Duration::from_secs(1),
     };
     rendered.push((vec!["serve"], render::serve(printer(&["serve"]), &served)));
+    let path = "/projects/p".parse().unwrap();
+    let uri = render::uri(
+        printer(&["uri"]),
+        "board://acme/team-board/projects/p",
+        &path,
+    );
+    rendered.push((vec!["uri"], uri));
     let opened = Opened {
         binding: "/bindings/review".parse().unwrap(),
         port: 1,

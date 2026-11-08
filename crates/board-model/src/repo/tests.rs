@@ -143,3 +143,17 @@ proptest::proptest! {
         proptest::prop_assert_eq!(shown_remote(&shown), shown, "{}", remote);
     }
 }
+
+#[test]
+fn a_record_uri_is_the_scheme_the_stored_remote_and_the_path() {
+    let path: crate::LogicalPath = "/tasks/fix-login".parse().unwrap();
+    assert_eq!(
+        record_uri("acme/team-board", &path),
+        "board://acme/team-board/tasks/fix-login"
+    );
+    let root = crate::LogicalPath::root();
+    assert_eq!(
+        record_uri("acme/team-board", &root),
+        "board://acme/team-board/"
+    );
+}

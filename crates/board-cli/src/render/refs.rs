@@ -2,7 +2,7 @@
 
 use std::fmt::Write as _;
 
-use board_model::{Code, Location, LogicalPath, Source};
+use board_model::{Code, Location, LogicalPath, Refusal, Source};
 use board_ops::{Fielded, Incoming, Missing, Outgoing, RefsError, RefsReport, source_name};
 use board_tree::Status;
 use crumbkit::help::Leaf;
@@ -163,12 +163,13 @@ impl<'a> Cut<'a> {
 /// refuses the whole run. As text, a `from` line per reference the record
 /// makes, with its status and any fields, and a `to` line per record whose
 /// references reach it, after a header when there are several paths. Exit
-/// 1 when any path is refused.
+/// 1 when any path is refused. Each path's refusal passes through `behind`.
 pub(crate) fn refs(
     printer: Printer,
     paths: &[LogicalPath],
     mut answers: impl Iterator<Item = Result<RefsReport, RefsError>>,
     limit: Option<usize>,
+    behind: &dyn Fn(Refusal) -> Refusal,
 ) -> Output {
     let mut room = printer.view.room(REFS);
     let mut batch = Batch::new(&["refs"], "paths", paths);
@@ -181,7 +182,7 @@ pub(crate) fn refs(
             Some(Err(error @ RefsError::Check { .. })) => {
                 return printer.print(REFS, Err(error.refusal()));
             }
-            Some(answer) => answer.map_err(|error| Refused::new(error.refusal())),
+            Some(answer) => answer.map_err(|error| Refused::new(behind(error.refusal()))),
             None => break,
         };
         batch.push(answer.map(|report| {

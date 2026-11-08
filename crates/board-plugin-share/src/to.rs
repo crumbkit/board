@@ -18,7 +18,7 @@ use board_model::{
     ATTACHMENT_TYPE, Fields, Location, LogicalPath, PathError, Refusal, Source, canonical_json,
     parse_json,
 };
-use board_ops::{Absent, Host, Limit, PluginError, RefsReport, literal, source_name};
+use board_ops::{Absent, Host, Limit, PluginError, RefsReport, literal, source_name, uri_of};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
@@ -56,8 +56,11 @@ pub(crate) struct Input {
 /// in it that holds the copies, which the mount's pin now names, null when
 /// nothing was written. `types` are the types whose schemas were added in
 /// that commit. `copied` lists at most 100 paths; `total` counts them all,
-/// and `truncated` says whether some were left out. `unchanged` counts the
-/// paths the destination already held equally.
+/// and `truncated` says whether some were left out. `uris` gives the
+/// board:// URI of each path `copied` lists, in order, by which a reader
+/// with a clone of the destination reads it, and is empty when the
+/// destination's repository has no origin. `unchanged` counts the paths
+/// the destination already held equally.
 #[derive(Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 #[schemars(rename = "ToOutput")]
@@ -66,6 +69,7 @@ pub(crate) struct Output {
     commit: Option<String>,
     types: Vec<String>,
     copied: Vec<String>,
+    uris: Vec<String>,
     total: usize,
     truncated: bool,
     unchanged: usize,
@@ -154,20 +158,32 @@ pub(crate) fn share_to(host: &dyn Host, input: &Value) -> Result<Value, PluginEr
         })?;
         commit = Some(mount(host, &to)?.1);
     }
+    let listed: Vec<String> = (copied.iter().take(LIST_LIMIT))
+        .map(|target| (*target).clone())
+        .collect();
     let output = Output {
+        uris: uris(&repository, &listed),
         repository,
         commit,
         types: missing,
-        copied: copied
-            .iter()
-            .take(LIST_LIMIT)
-            .map(|target| (*target).clone())
-            .collect(),
+        copied: listed,
         total: copied.len(),
         truncated: copied.len() > LIST_LIMIT,
         unchanged: unchanged.len(),
     };
     Ok(serde_json::to_value(output).expect("the output is strings, numbers and booleans"))
+}
+
+/// The URI of each of `paths` in the board whose repository is at
+/// `repository`, or none when it has no origin.
+fn uris(repository: &str, paths: &[String]) -> Vec<String> {
+    let repository = std::path::Path::new(repository);
+    let uri = |path: &String| uri_of(repository, &path.parse().ok()?).ok();
+    paths
+        .iter()
+        .map(uri)
+        .collect::<Option<_>>()
+        .unwrap_or_default()
 }
 
 /// The repository the mount at `to` reaches and the commit its pin names.

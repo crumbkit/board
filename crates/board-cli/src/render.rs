@@ -49,6 +49,7 @@ pub(crate) const LEAVES: &[Leaf] = &[
     get::LEAF.effects(READS.open_world()),
     Leaf::new(&["ls"]).document(LS).effects(READS),
     refs::LEAF.effects(READS),
+    Leaf::new(&["uri"]).document(URI).effects(READS),
     Leaf::new(&["put"])
         .document(PUT)
         .effects(CHANGES.open_world()),
@@ -119,7 +120,7 @@ pub(crate) const GOALS: Group = Group::new(
         Goal::new("These commands make and check a board", &["init", "check"]),
         Goal::new(
             "These commands read files and records",
-            &["get", "ls", "refs", "query"],
+            &["get", "ls", "refs", "query", "uri"],
         ),
         Goal::new(
             "These commands write files, records and types",
@@ -167,6 +168,7 @@ const PUT: Document<Answer> = prose(
 const ENABLE: Document<Answer> = prose("plugin-enable-report", "What enabling a plugin wrote.");
 const MOUNT_UPDATE: Document<Answer> =
     prose("mount-update-report", "Where a mount moved from and to.");
+const URI: Document<Answer> = prose("uri-report", "A record's board:// URI and its path.");
 const SYNC: Document<Answer> = prose(
     "sync-report",
     "What a sync fetched, replayed and pushed, and where HEAD moved.",
@@ -511,6 +513,24 @@ pub(crate) fn ls(printer: Printer, report: &LsReport, page: &crate::run::Page) -
 const LS: Document<Listing<Whole, Said>> =
     Document::new("board", "ls-report", 2, "The entries of one directory.")
         .when_empty("the directory is empty");
+
+/// `board uri --help` after its options.
+pub(crate) const URI_HELP: &str = "\
+The URI is board://, the board's git origin as a repo record stores it
+(owner/name for GitHub), and the record's path. Every command that reads a
+path takes a URI in its place, and runs as the known board in
+$XDG_CONFIG_HOME/board/config.json whose origin the URI names. A board with
+no origin is refused with board::uri::no_remote.
+
+Examples:
+  board uri /tasks/fix-login
+  board get board://acme/team-board/tasks/fix-login";
+
+/// `uri`: as text, the URI.
+pub(crate) fn uri(printer: Printer, uri: &str, path: &LogicalPath) -> Output {
+    let value = json!({"uri": uri, "path": path.to_string()});
+    printer.print(URI, Ok(said(value, format!("{uri}\n"))))
+}
 
 /// `mount update`: as text, what the mount moved from and to, or that it
 /// was already there.

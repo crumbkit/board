@@ -13,6 +13,7 @@ use board_plugin::{Limits, Target};
 
 mod checkout;
 mod remove;
+mod uri;
 
 /// What a plugin run gets from this command line's context.
 pub(crate) fn plugins(context: &Context) -> Plugins<'_> {
@@ -218,6 +219,12 @@ Examples:
     /// List the references each entry makes and the entries that reach it.
     #[command(after_help = render::REFS_HELP)]
     Refs(Refs),
+    /// Print the board:// URI that names a record from any known board's clone.
+    #[command(after_help = render::URI_HELP)]
+    Uri {
+        /// The record's logical path, such as /tasks/a, or a from /tasks.
+        path: Given,
+    },
     /// Write the record on stdin at a path or --new name, or a file with --file.
     #[command(after_help = "\
 The record must satisfy .board/types/<namespace>/<kind>/v<n>.schema.json, the
@@ -425,7 +432,7 @@ pub(crate) fn run(
         arguments.clone(),
     );
     ran.trace.add("parse", parsing);
-    let (graft::Parsed { cli, grafted }, view) = match parsed {
+    let (graft::Parsed { mut cli, grafted }, view) = match parsed {
         Ok(parsed) => parsed,
         Err(unparsed) => {
             if let Unparsed::Refused(refused) = &unparsed
@@ -460,10 +467,13 @@ pub(crate) fn run(
     let base = cli.personal.then(|| context.personal());
     let base = base.unwrap_or_else(|| Ok(context.start.clone()));
     let start = base.and_then(|base| entered(&base, &cli.directories));
-    let (start, at) = match start.and_then(|start| Ok((start, cli.mounts_at()?))) {
+    let chosen = uri::chosen(&mut cli.command, context);
+    let started = start.and_then(|start| Ok((start, cli.mounts_at()?, chosen?)));
+    let (start, at, clone) = match started {
         Ok(started) => started,
         Err(refusal) => return render::refused(printer, *refusal),
     };
+    let start = clone.clone().unwrap_or(start);
     if let Command::Init = cli.command {
         return init(printer, &start);
     }
@@ -496,7 +506,10 @@ pub(crate) fn run(
         }
         None => match cli.command {
             Command::Decide(deciding) => effects::decide(&board, printer, prefix, &deciding, stdin),
-            command => self::command(command, &board, context, printer, prefix, stdin),
+            command => {
+                let clone = clone.as_deref();
+                self::command(command, &board, context, printer, prefix, clone, stdin)
+            }
         },
     };
     ran.trace.extend(board.take_trace());
@@ -580,14 +593,17 @@ fn ask(board: &mut Board, context: &Context, command: &Command) -> Result<(), Bo
 
 /// Runs `command` against `board`, reading each path it is given from
 /// `prefix`, or refuses a path that does not read as a logical path there.
+/// `clone` is the clone the run's `board://` URIs chose, if any.
 fn command(
     command: Command,
     board: &Board,
     context: &Context,
     printer: Printer,
     prefix: Option<&Prefix>,
+    clone: Option<&std::path::Path>,
     stdin: &mut dyn Stdin,
 ) -> Output {
+    let behind = |refusal| uri::behind(refusal, clone);
     let cache = context.cache.as_deref();
     let at = |given: &[Given], name| -> Result<Vec<_>, _> {
         given.iter().map(|path| read(prefix, path, name)).collect()
@@ -618,12 +634,12 @@ fn command(
             let path = or_refuse!(path.map(|path| read(prefix, &path, "check")).transpose());
             match board.check(path.as_ref(), cache) {
                 Ok(report) => render::check(printer, &report, healthy, &page),
-                Err(error) => render::refused(printer, error.refusal()),
+                Err(error) => render::refused(printer, behind(error.refusal())),
             }
         }
         Command::Get { paths, fetch } => {
             let paths = or_refuse!(at(&paths, "get"));
-            get(board, printer, &paths, fetch)
+            get(board, printer, &paths, fetch, &behind)
         }
         Command::Put(putting) => put(board, printer, prefix, putting, stdin),
         Command::Rm(asked) => remove::remove(board, printer, prefix, asked),
@@ -639,7 +655,14 @@ fn command(
         }
         Command::Refs(asked) => {
             let paths = or_refuse!(at(&asked.paths, "refs"));
-            refs(printer, board, context, &asked, &paths)
+            refs(printer, board, context, &asked, &paths, &behind)
+        }
+        Command::Uri { path } => {
+            let path = or_refuse!(read(prefix, &path, "uri"));
+            match board_ops::uri_of(board.repository().path(), &path) {
+                Ok(uri) => render::uri(printer, &uri, &path),
+                Err(refusal) => render::refused(printer, *refusal),
+            }
         }
         Command::Query { sql, page } => {
             let budget = Some(render::rows_budget(printer.view.budget()));
@@ -666,7 +689,7 @@ fn command(
                 or_refuse!(path.map_or(Ok(LogicalPath::root()), |path| read(prefix, &path, "ls")));
             match board.ls(&path, cache) {
                 Ok(report) => render::ls(printer, &report, &page),
-                Err(error) => render::refused(printer, error.refusal("ls")),
+                Err(error) => render::refused(printer, behind(error.refusal("ls"))),
             }
         }
     }
@@ -735,15 +758,22 @@ pub(crate) fn plain(code: Code, message: &dyn std::fmt::Display) -> Refusal {
     Refusal::new(code, message, &Fields::default())
 }
 
-/// `get` of `paths`, with each attachment's bytes when `fetch` is set.
-fn get(board: &Board, printer: Printer, paths: &[LogicalPath], fetch: bool) -> Output {
+/// `get` of `paths`, with each attachment's bytes when `fetch` is set,
+/// passing each refusal through `behind`.
+fn get(
+    board: &Board,
+    printer: Printer,
+    paths: &[LogicalPath],
+    fetch: bool,
+    behind: &dyn Fn(Refusal) -> Refusal,
+) -> Output {
     let answers = board.get_each(paths).map(|each| {
         each.map(move |answer| match answer {
             Ok(report) if fetch => board.fetched(report),
             answer => answer,
         })
     });
-    render::get(printer, paths, answers)
+    render::get(printer, paths, answers, behind)
 }
 
 /// `refs` of `paths`, read from the paths asked, with `--missing` or without.
@@ -753,6 +783,7 @@ fn refs(
     context: &Context,
     asked: &Refs,
     paths: &[LogicalPath],
+    behind: &dyn Fn(Refusal) -> Refusal,
 ) -> Output {
     let absent = if asked.missing {
         Absent::Locate
@@ -763,6 +794,6 @@ fn refs(
     let cache = context.cache.as_deref();
     match board.refs(paths, absent, &asked.fields, limit, cache) {
         Err(error) => render::refused(printer, error.refusal()),
-        Ok(answers) => render::refs(printer, paths, answers, limit),
+        Ok(answers) => render::refs(printer, paths, answers, limit, behind),
     }
 }

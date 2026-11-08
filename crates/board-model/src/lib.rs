@@ -45,7 +45,7 @@ pub use crate::record::{
     RecordTypeError, Role, TYPES_DIRECTORY, classify, is_json_file,
 };
 pub use crate::refusal::{Refusal, RefusalCode};
-pub use crate::repo::{REPO_TYPE, Repo, github_remote, shown_remote};
+pub use crate::repo::{REPO_TYPE, Repo, URI_SCHEME, github_remote, record_uri, shown_remote};
 pub use crate::stat::{Change, Stat};
 pub use crate::ui::{
     BINDING_TYPE, Binding, ComponentKind, DERIVED_TYPE, Fill, PatchError, Slot, UiError, VIEW_TYPE,

@@ -292,6 +292,7 @@ fn every_listing_command_takes_limit_and_all() {
         "ui template",
         "ui open",
         "schemas show",
+        "uri",
     ];
     for (name, command) in leaves() {
         let takes = |flag: &str| {

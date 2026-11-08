@@ -201,6 +201,7 @@ fn rendered(scenario: &Scenario, texts: &[&str], format: bool, budget: usize) ->
         &paths,
         answers,
         None,
+        &std::convert::identity,
     )
 }
 
@@ -238,7 +239,13 @@ fn a_path_after_the_budget_is_spent_is_left_unanswered_with_its_error_in_its_slo
     let mut pulled = 0;
     let answers = board.refs(&paths, Absent::Refuse, &[], None, None).unwrap();
     let answers = answers.inspect(|_| pulled += 1);
-    let refused = render::refs(Printer::of(false, 27, &["refs"]), &paths, answers, None);
+    let refused = render::refs(
+        Printer::of(false, 27, &["refs"]),
+        &paths,
+        answers,
+        None,
+        &std::convert::identity,
+    );
     assert_eq!(pulled, 1, "a path left over budget is never resolved");
     assert_eq!(
         (refused.code, refused.error.as_deref()),
@@ -348,6 +355,7 @@ fn a_check_that_cannot_run_refuses_the_whole_run_and_a_path_refused_alone_does_n
         &paths,
         answers(failed()).into_iter(),
         None,
+        &std::convert::identity,
     );
     let refused = json(&refused);
     assert_eq!(refused["schema"], "board/failure/v1");
@@ -357,6 +365,7 @@ fn a_check_that_cannot_run_refuses_the_whole_run_and_a_path_refused_alone_does_n
         &paths,
         answers(alone()).into_iter(),
         None,
+        &std::convert::identity,
     );
     assert_eq!(json(&admitted)["schema"], "board/refs-report/v2");
     assert_eq!(
@@ -392,6 +401,7 @@ fn changed_between(change: bool, format: bool) -> (Output, serde_json::Value) {
         &paths,
         answers,
         Some(1),
+        &std::convert::identity,
     );
     let ran = crate::timing::Ran {
         command: Some("refs".to_owned()),

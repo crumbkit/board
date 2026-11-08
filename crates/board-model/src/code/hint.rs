@@ -634,6 +634,21 @@ fn generic(code: Code) -> &'static str {
         Code::SkillsWriteFailed => {
             "check that the skills directory and the folder the message names can be written, or name another directory with `--dir`"
         }
+        Code::UriNoRemote => {
+            "give the board's repository an origin with `git remote add origin <url>`; a URI names a board by its origin"
+        }
+        Code::UriNotFound => {
+            "clone the board the URI names and list the clone in `$XDG_CONFIG_HOME/board/config.json` as {\"boards\": [\"<board directory>\"]}"
+        }
+        Code::UriAmbiguous => {
+            "leave one clone of the URI's remote among the boards in `$XDG_CONFIG_HOME/board/config.json`, or choose one with -C and the record's path"
+        }
+        Code::UriInvalid => {
+            "write a URI as board:// followed by the board's remote and the record's path, such as `board://acme/team-board/tasks/a`; board uri prints one in the record's board"
+        }
+        Code::UriReadOnly => {
+            "write in the clone of the board the URI names, with -C and the record's path; a URI is only read"
+        }
         Code::CliUsage => {
             "run `board --help` for the commands, or `board <command> --help` for one command's arguments"
         }

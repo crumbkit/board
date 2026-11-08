@@ -57,8 +57,9 @@ The output is `repository`, the repository the mount reaches; `commit`, the
 commit in it that holds the copies, which the pin now names, null when nothing
 was written; `types`, the types
 whose schemas were added; `copied`, at most 100 paths, with `total` and
-`truncated`; and `unchanged`, the number of paths the destination already
-held equally. A dry run returns the same with `commit` null.
+`truncated`; `uris`, the `board://` URI of each path in `copied`, empty when
+the destination's repository has no origin; and `unchanged`, the number of
+paths the destination already held equally. A dry run returns the same with `commit` null.
 
 ## Refusals
 

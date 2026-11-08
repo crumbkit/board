@@ -58,6 +58,10 @@ Copy a record you wrote into a board other people read.
 5. Run `board -C <repository> sync` to push, where `<repository>` is the
    `repository` the call printed. A reviewer opens the record at its path in
    that repository at the printed `commit`.
+6. Give the reader the record's URI from `uris`, such as
+   `board://acme/team-board/evals/x`. A reader whose known boards list a
+   clone of the destination runs `board get <uri>` from any directory. When
+   `uris` is empty, the destination has no origin; give its path instead.
 
 A second call writes only what the destination still lacks, and leaves a path
 it already holds equally as it is. A second call finishes a share killed

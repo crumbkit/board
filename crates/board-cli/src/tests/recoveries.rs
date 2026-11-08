@@ -1034,10 +1034,71 @@ fn starts(twins: bool) -> Starts {
     apart(&mut starts);
     through_mounts(&mut starts);
     known_boards(&mut starts);
+    uris(&mut starts);
     effects(&mut starts);
     syncing(&mut starts);
     installing_skills(&mut starts);
     starts
+}
+
+/// Why `uri::ambiguous` has no twin.
+const URI_AMBIGUOUS: &str = "the known boards file, which no word of the line names, lists two clones of one remote; two_known_boards_with_one_remote_are_ambiguous_for_a_uri_and_one_is_admitted in board-ops/src/known/tests.rs pairs the code";
+
+/// URIs read from an unrelated repository: one whose remote no known board
+/// has, one two known boards have, a malformed one and one given to `rm`,
+/// and `uri` in a board with no origin.
+fn uris(starts: &mut Starts) {
+    let originated = |url: &str| {
+        let board = enabling("");
+        board.write("projects/p.json", Item::File("{}"));
+        let remote = format!("[remote \"origin\"]\n\turl = {url}\n");
+        board.write(".git/config", Item::Appended(&remote));
+        board
+    };
+    let team = originated("git@github.com:acme/team-board.git");
+    let twin = originated("https://github.com/acme/team-board.git");
+    let alone = enabling("");
+    let elsewhere = Scenario::new();
+    let config = |boards: &[&Scenario]| {
+        let xdg = Scenario::new();
+        let roots: Vec<String> = boards.iter().map(|board| board.path()).collect();
+        let boards = json!({"boards": roots}).to_string();
+        xdg.write("xdg/config/board/config.json", Item::File(&boards));
+        xdg
+    };
+    let (one, two) = (config(&[&team]), config(&[&team, &twin]));
+    let at = |dir: &Path, xdg: &Scenario| RuntimeFailing::at(dir).xdg(xdg.workdir().join("xdg"));
+    let uri = "get board://acme/team-board/projects/p";
+    let place = at(elsewhere.workdir(), &one);
+    for (code, line) in [
+        (Code::UriNotFound, "get board://acme/other-board/projects/p"),
+        (Code::UriInvalid, "get board://acme"),
+    ] {
+        starts.add(&place, code, line);
+        starts.pair(&place, code, line, uri);
+    }
+    let gone = "board://acme/team-board/projects/zz";
+    let line = format!("rm {gone} --ignore-unmatch");
+    starts.add(&place, Code::UriReadOnly, &line);
+    let local = at(team.workdir(), &one);
+    let refused = format!("rm {gone} --ignore-unmatch");
+    let admitted = "rm /projects/zz --ignore-unmatch";
+    starts.pair(&local, Code::UriReadOnly, &refused, admitted);
+    let place = at(elsewhere.workdir(), &two);
+    starts.add(&place, Code::UriAmbiguous, uri);
+    starts.untwinned(&place, Code::UriAmbiguous, uri, URI_AMBIGUOUS);
+    let place = at(alone.workdir(), &one);
+    starts.add(&place, Code::UriNoRemote, "uri /projects/p");
+    let line = |dir: &Path| format!("-C {} uri /projects/p", dir.display());
+    let (refused, admitted) = (line(alone.workdir()), line(team.workdir()));
+    starts.pair(&place, Code::UriNoRemote, &refused, &admitted);
+    starts
+        .shared
+        .extend([team.workdir().to_path_buf(), twin.workdir().to_path_buf()]);
+    starts.kept.extend(
+        [team, twin, alone, elsewhere, one, two]
+            .map(|kept| Box::new(kept) as Box<dyn std::any::Any>),
+    );
 }
 
 /// The golden reports of the chains.

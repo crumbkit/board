@@ -89,6 +89,11 @@ const ALLOW: &[Allow] = &[
         ],
         NO_ANSWER,
     ),
+    Allow::example(
+        "uri",
+        &["/tasks/fix-login"],
+        "the fixture's origin is a temporary directory, so no golden output can pin its URI",
+    ),
     Allow::example("serve", &[], SERVES),
     Allow::example("serve", &["--idle", "2m"], SERVES),
     Allow::example("ui open", &["/bindings/review"], SERVES),
@@ -206,8 +211,8 @@ fn files_of(root: &Path) -> Vec<(String, String)> {
 /// such as `plugin` and 1,200 for each other command.
 const BUDGETS: Budgets = Budgets::new()
     .root(
-        2_900,
-        "The root page lists all twenty commands under the goal each serves, the commands a newcomer runs first, and what a logical path and a record are, which STANDARDS.md 24 requires on one page. It also lists the global flags -C and --personal, which choose the board a run uses.",
+        2_950,
+        "The root page lists all twenty-one commands under the goal each serves, the commands a newcomer runs first, and what a logical path and a record are, which STANDARDS.md 24 requires on one page. It also lists the global flags -C and --personal, which choose the board a run uses.",
     )
     .nodes(&[
         Budget::new(

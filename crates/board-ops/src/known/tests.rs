@@ -558,3 +558,106 @@ fn a_mount_of_a_clone_with_its_origin_wins_over_another_boards_repo_record_and_t
     let alone = listing(&[&recorded]);
     assert_eq!(opened(&docs, &alone, None).unwrap(), "/work/lib");
 }
+
+/// A board whose `origin` is `url`.
+fn originated(url: &str) -> Scenario {
+    let scenario = board();
+    let remote = format!("[remote \"origin\"]\n\turl = {url}\n");
+    scenario.write(".git/config", Item::Appended(&remote));
+    scenario
+}
+
+/// The board a URI names among `xdg`'s known boards, and the record's path,
+/// or the refusal.
+fn by_uri(uri: &str, xdg: &Scenario) -> Result<(PathBuf, String), Box<Refusal>> {
+    let (root, path) = known(xdg)?.by_uri(uri, None)?;
+    Ok((root, path.to_string()))
+}
+
+#[test]
+fn a_uri_runs_as_the_known_board_with_its_remote_and_one_with_another_remote_is_not_found() {
+    let team = originated("git@github.com:acme/team-board.git");
+    let xdg = listing(&[&team]);
+    let (root, path) = by_uri("board://acme/team-board/tasks/fix-login", &xdg).unwrap();
+    assert_eq!(root, PathBuf::from(team.path()));
+    assert_eq!(path, "/tasks/fix-login");
+    let lost = *by_uri("board://acme/other-board/tasks/fix-login", &xdg).unwrap_err();
+    assert_eq!(lost.code.as_str(), "board::uri::not_found");
+    assert!(lost.message.contains("acme/team-board"), "{}", lost.message);
+    let hint = lost.hint.unwrap();
+    assert!(hint.contains("`acme/other-board`"), "{hint}");
+    assert!(hint.contains(&file(&xdg).display().to_string()), "{hint}");
+}
+
+#[test]
+fn a_uri_takes_the_longest_known_remote_that_ends_at_a_slash() {
+    let outer = originated("https://git.example.com/team");
+    let inner = originated("https://git.example.com/team/board");
+    let xdg = listing(&[&outer, &inner]);
+    let uri = "board://https://git.example.com/team/board/tasks/a";
+    let (root, path) = by_uri(uri, &xdg).unwrap();
+    assert_eq!(
+        (root, path.as_str()),
+        (PathBuf::from(inner.path()), "/tasks/a")
+    );
+    let uri = "board://https://git.example.com/team/boarding/tasks/a";
+    let (root, path) = by_uri(uri, &xdg).unwrap();
+    assert_eq!(
+        (root, path.as_str()),
+        (PathBuf::from(outer.path()), "/boarding/tasks/a")
+    );
+}
+
+#[test]
+fn two_known_boards_with_one_remote_are_ambiguous_for_a_uri_and_one_is_admitted() {
+    let one = originated("https://github.com/acme/team-board.git");
+    let two = originated("git@github.com:acme/team-board.git");
+    let uri = "board://acme/team-board/tasks/a";
+    let refusal = *by_uri(uri, &listing(&[&one, &two])).unwrap_err();
+    assert_eq!(refusal.code.as_str(), "board::uri::ambiguous");
+    for board in [&one, &two] {
+        assert!(
+            refusal.message.contains(&board.path()),
+            "{}",
+            refusal.message
+        );
+    }
+    assert!(by_uri(uri, &listing(&[&one])).is_ok());
+}
+
+#[test]
+fn a_uri_without_a_remote_and_a_path_is_invalid_and_one_with_both_is_admitted() {
+    let team = originated("git@github.com:acme/team-board.git");
+    let xdg = listing(&[&team]);
+    for uri in [
+        "board://",
+        "board://acme",
+        "board://acme/team-board",
+        "board://acme/team-board/tasks/../a",
+        "https://acme/team-board/tasks/a",
+    ] {
+        let refusal = *by_uri(uri, &xdg).unwrap_err();
+        assert_eq!(refusal.code.as_str(), "board::uri::invalid", "{uri}");
+        assert!(refusal.message.contains(uri), "{}", refusal.message);
+    }
+    let (_, path) = by_uri("board://acme/team-board/", &xdg).unwrap();
+    assert_eq!(path, "/");
+}
+
+#[test]
+fn a_record_uri_is_built_from_the_boards_origin_and_a_board_with_none_is_refused() {
+    let team = originated("git@github.com:acme/team-board.git");
+    let path: LogicalPath = "/tasks/fix-login".parse().unwrap();
+    assert_eq!(
+        uri_of(team.workdir(), &path).unwrap(),
+        "board://acme/team-board/tasks/fix-login"
+    );
+    let alone = board();
+    let refusal = *uri_of(alone.workdir(), &path).unwrap_err();
+    assert_eq!(refusal.code.as_str(), "board::uri::no_remote");
+    assert!(
+        refusal.message.contains(&alone.path()),
+        "{}",
+        refusal.message
+    );
+}
