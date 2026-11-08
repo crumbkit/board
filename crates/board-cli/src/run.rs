@@ -299,8 +299,9 @@ Examples:
         after_help = "\
 Board reads stdin only when no flag is given and the capability admits an
 input property that is not a flag; `-h` on the capability says which. With
---capability, the input goes on stdin. A plugin's alias runs a capability
-too: with the alias gh, `board gh pr-create` is `board call github.pr-create`.
+--capability, the input goes on stdin. An enabled plugin's name, or its
+alias, runs a capability too: `board tasks available` is
+`board call tasks.available`.
 
 Examples:
   board call tasks.available

@@ -53,7 +53,7 @@ fn manifest() -> Value {
         "version": "0.1.0",
         "description": "A topic is a concept, tool, model or design that several records concern, at \
             /topics/<slug>, with its title, aliases and links. An eval or suite names it as a subject \
-            by its path, and `board call evals.about --subject <name>` finds it by title or alias. \
+            by its path, and `board evals about --subject <name>` finds it by title or alias. \
             docs/plugins/built-in/topics.md in Board's repository says more.",
         "metadata": {"area": "testing"},
         "types": [TopicRecord::TYPE],

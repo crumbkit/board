@@ -141,9 +141,7 @@ fn a_private_match_refuses_naming_control_part_and_line_and_never_the_pattern() 
     let hint = document["recovery"]["text"].as_str().unwrap();
     assert!(hint.starts_with("Next: change pr.body:"), "{hint}");
     assert!(
-        hint.contains(
-            "run `board call github.pr-create` again, or `board --personal call boundary.check`"
-        ),
+        hint.contains("run `board github pr-create` again, or `board --personal boundary check`"),
         "{hint}"
     );
     let message = document["message"].as_str().unwrap();

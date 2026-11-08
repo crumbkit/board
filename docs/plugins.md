@@ -80,7 +80,7 @@ in its directory. Each type's namespace is the plugin's name, never
 unknown fields. An installed plugin's `name` equals its directory's name, and
 ships each type's schema; `check` and `put` check only the content.
 `version` is `MAJOR.MINOR.PATCH` in digits. The optional `alias` is one
-word of lowercase ASCII letters, described under Aliases. The schemas compile under a mounted
+word of lowercase ASCII letters, described under Plugin commands. The schemas compile under a mounted
 board's rules. Breaking any of these is `board::plugin::bad_manifest`.
 
 ## Finding plugins
@@ -189,23 +189,25 @@ at `board.root`. It never opens Board's index. Board increments `BOARD_CALL_DEPT
 0) and refuses a call arriving at 8, or at a value that is not a whole number,
 with `board::plugin::too_deep`.
 
-## Aliases
+## Plugin commands
 
-A plugin whose manifest sets `"alias": "gh"` can be run as board gh
-followed by a capability and its flags, which runs exactly what
-`board call <plugin>.<capability> [flags]` runs. Only the plugins that the
-board Board runs as enables provide aliases; a mounted board's plugins provide
-none. `board -h` lists each alias beside its plugin, and board gh -h lists
-the plugin's capabilities.
+Each plugin that the board Board runs as enables is also a command:
+`board tasks available` runs exactly what
+`board call tasks.available` runs. A manifest's `"alias": "gh"` adds a
+second word, so board gh pr-create runs `board call github.pr-create`. A
+mounted board's plugins provide none. `board -h` lists each plugin's command,
+and `board tasks -h` its capabilities.
 
-`board plugin enable` refuses an alias that is a built-in command, or the
-alias of another enabled plugin, with `board::plugin::alias_conflict`; the
-message names the manifest and the command or plugin. A built-in command
-always runs in place of an alias of the same word, and never reads an alias:
-Board reads the aliases only after clap refuses the first word, or for help.
-When two enabled plugins share an alias, running it is refused with the same
+A first word is a built-in command first, then an enabled plugin's name, then
+an alias. A plugin named like a built-in command runs only through
+`board call`, so Board's generic hints, which may name any plugin, print that
+form. A built-in command never reads a manifest: Board reads them only after
+clap refuses the first word, or for help. `board plugin enable` refuses an
+alias that is a built-in command, or another enabled plugin's name or alias,
+with `board::plugin::alias_conflict`, naming the manifest and the command or
+plugin. Running an alias two enabled plugins share is refused with the same
 code, and the hint names the `board call` line to run instead. The capability
-comes right after the alias; a flag in its place is a usage error.
+comes right after the plugin's word; a flag in its place is a usage error.
 
 ## Skills
 

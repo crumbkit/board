@@ -75,7 +75,7 @@ pub(crate) fn pinned(host: &dyn Host, input: &Value) -> Result<Value, PluginErro
                 code: "attention::pinned::over_budget".to_owned(),
                 message: format!(
                     "the pinned orders before it hold more than {PINNED_LIMIT} bytes; read it \
-                     with board call attention.verify, or unpin an order"
+                     with board attention verify, or unpin an order"
                 ),
             });
             continue;

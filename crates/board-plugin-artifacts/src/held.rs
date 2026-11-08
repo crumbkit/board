@@ -96,9 +96,7 @@ pub(crate) fn held(
 fn not_found(path: &str, what: &str) -> PluginError {
     refusal(
         "artifacts::artifact::not_found",
-        format!(
-            "{path} {what}; run `board --personal call artifacts.list` for the artifacts' paths"
-        ),
+        format!("{path} {what}; run `board --personal artifacts list` for the artifacts' paths"),
         &[("path", path)],
     )
 }

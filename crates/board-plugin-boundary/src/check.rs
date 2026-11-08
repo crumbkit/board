@@ -347,9 +347,10 @@ fn refusal(action: &str, digest: &str, failed: &[&Verdict], answer: &Answer) -> 
         ),
         fields,
         hint: Some(format!(
-            "Next: {}. Then run `board call {action}` again, or \
-             `board --personal call boundary.check` with the changed parts on stdin. {owner}",
-            steps.join("; ")
+            "Next: {}. Then run `board {}` again, or \
+             `board --personal boundary check` with the changed parts on stdin. {owner}",
+            steps.join("; "),
+            action.replacen('.', " ", 1)
         )),
     }
 }

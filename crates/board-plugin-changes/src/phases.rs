@@ -107,7 +107,7 @@ pub(crate) struct AttachInput {
         regex(pattern = "^/"),
         extend("format" = "board-path"),
         description = "A pull request of the change, a github/pull/v1 record, which `board \
-                       call github.ref --ref <owner>/<repo>#<number>` writes."
+                       github ref --ref <owner>/<repo>#<number>` writes."
     )]
     pull: Option<String>,
     #[schemars(
@@ -187,7 +187,7 @@ fn instruction(observed: &Observed) -> String {
         Some(found) => with_plan_usage(observed, fill(&found.instruction, &values(observed))),
         None if phase == PAUSED => format!(
             "This change was paused to free its place under the WIP limit on active changes of \
-             its kind per repository. Resume it with `board call changes.resume --path {}` when a \
+             its kind per repository. Resume it with `board changes resume --path {}` when a \
              place is free and the owner's queue allows.",
             observed.path
         ),
@@ -358,13 +358,13 @@ fn instruction_for(observed: &Observed, checks: &[Check], waiting: bool) -> Stri
         return format!(
             "Iterate with the owner on branch {}, committing and pushing after every round. When \
              the owner has his answer, ask for the verdict in one sentence and record it with \
-             `board call changes.verdict`.",
+             `board changes verdict`.",
             branch_of(path)
         );
     }
     let open = !is_final(phase) && phase != PAUSED;
     if open && !checks.iter().any(Check::blocking) {
-        return format!("The gate passes: run `board call changes.advance --path {path}`.");
+        return format!("The gate passes: run `board changes advance --path {path}`.");
     }
     let said = instruction(observed);
     if open && waiting {
@@ -444,7 +444,7 @@ pub(crate) fn step_of(host: &dyn Host, path: &str) -> Result<(NextOutput, Observ
     let instruction = match &stop {
         Some(shown) if shown.reached => format!(
             "The change has reached the stop of its run, {}: stop here. Running unattended, \
-             record it with `board call changes.stop --path {path} --reason reached --summary \
+             record it with `board changes stop --path {path} --reason reached --summary \
              '<one line>'` and exit.",
             shown.stop
         ),
@@ -535,7 +535,7 @@ fn current_plan(
             "changes::attach::no_plan",
             format!(
                 "the change at {path} names no plan record to keep the reference; write its plan \
-                 with `board call changes.plan --path {path}`, then attach it again"
+                 with `board changes plan --path {path}`, then attach it again"
             ),
             [("path", json!(path))],
         )
@@ -601,7 +601,7 @@ pub(crate) fn refuse_v1(path: &str, change: &ChangeRecord, what: &str) -> Result
         "changes::change::not_migrated",
         format!(
             "the change at {path} is a {}, which holds no {what}; rewrite it as a {} with `board \
-             call changes.migrate --apply true`, then try again",
+             changes migrate --apply true`, then try again",
             crate::CHANGE_V1,
             crate::CHANGE_TYPE
         ),
@@ -628,7 +628,7 @@ pub(crate) fn advance(host: &dyn Host, input: &Value) -> Result<Value, PluginErr
             &phase,
             format!(
                 "the change at {path} is {phase}, which has no next phase; list the open changes \
-                 with `board call changes.open`, or start one with `board call changes.start`"
+                 with `board changes open`, or start one with `board changes start`"
             ),
         ));
     }
@@ -636,8 +636,8 @@ pub(crate) fn advance(host: &dyn Host, input: &Value) -> Result<Value, PluginErr
         return Err(refusal(
             "changes::phase::paused",
             format!(
-                "the change at {path} is paused, which has no gate; resume it with `board call \
-                 changes.resume --path {path}`"
+                "the change at {path} is paused, which has no gate; resume it with `board \
+                 changes resume --path {path}`"
             ),
             [("path", json!(path)), ("phase", json!(phase))],
         ));
@@ -665,7 +665,7 @@ pub(crate) fn advance(host: &dyn Host, input: &Value) -> Result<Value, PluginErr
         return Err(refusal(
             first.code,
             format!(
-                "the {phase} gate of {path} is unmet: {}; run `board call changes.next --path \
+                "the {phase} gate of {path} is unmet: {}; run `board changes next --path \
                  {path}` for the next step",
                 said.join("; ")
             ),
@@ -746,7 +746,7 @@ pub(crate) fn reflow(host: &dyn Host, input: &Value) -> Result<Value, PluginErro
             &change.phase,
             format!(
                 "the change at {path} is {}, so it follows no flow any more; list the open changes \
-                 with `board call changes.open`",
+                 with `board changes open`",
                 change.phase
             ),
         ));
@@ -767,7 +767,7 @@ pub(crate) fn reflow(host: &dyn Host, input: &Value) -> Result<Value, PluginErro
             format!(
                 "the flow {flow} has no phase {standing}, where the change at {path} stands, so \
                  the change would have nowhere to be; choose a flow with a {standing} phase, \
-                 whose phases `board call changes.next` lists"
+                 whose phases `board changes next` lists"
             ),
             [
                 ("path", json!(path)),
@@ -792,5 +792,5 @@ pub(crate) fn reflow(host: &dyn Host, input: &Value) -> Result<Value, PluginErro
 /// The command that moves the change at `path` into build past the WIP
 /// limit, recording why.
 fn over_command(capability: &str, path: &str) -> String {
-    format!("board call changes.{capability} --path {path} --over_limit '<why>'")
+    format!("board changes {capability} --path {path} --over_limit '<why>'")
 }

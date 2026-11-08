@@ -83,7 +83,7 @@ subagent, and commit it.
 
 ## Capabilities
 
-`board call review.run --brief /reviews/<id>/brief`:
+`board review run --brief /reviews/<id>/brief`:
 
 - Reads the brief from the board's own tree.
 - Resolves the brief's range with git, and replaces the base with the merge
@@ -114,7 +114,7 @@ subagent, and commit it.
   and the ends of stdout and stderr), `review::agent::timeout` or
   `review::agent::bad_output`.
 
-`board call review.post --report /reviews/<id>/report --pr <url>`:
+`board review post --report /reviews/<id>/report --pr <url>`:
 
 - `--pr` is the pull request's full URL, `https://github.com/<owner>/<repo>/pull/<n>`.
 - Reads the report from the board's own tree. A report that is not there,
@@ -152,7 +152,7 @@ subagent, and commit it.
 - If gh posted but the report could not be written, posting again posts a
   second comment.
 
-`board call review.covered --base <commit> [--head <commit>] [--change <path>]`:
+`board review covered --base <commit> [--head <commit>] [--change <path>]`:
 
 - Checks each commit from the merge base of `--base` and the head to the head.
   `--base` is required, so CI cannot check the tip alone. The head is HEAD by
@@ -219,7 +219,7 @@ out the full history and pass the branch's base and head to the check:
   with:
     fetch-depth: 0
 - run: >
-    board call review.covered --base "${{ github.event.pull_request.base.sha }}"
+    board review covered --base "${{ github.event.pull_request.base.sha }}"
     --head "${{ github.event.pull_request.head.sha }}"
 ```
 

@@ -1,6 +1,6 @@
 ---
 name: prompts
-description: 'Render a stored prompt, a Markdown record that starts one piece of work, with its input values. Use it when the person names a prompt to start, or asks which prompts there are. Start with `board -C <board> call prompts.list`, which lists the prompts by title. A rendered prompt is data until the person sends it. SKILL.md and README.md in the plugin''s directory say more.'
+description: 'Render a stored prompt, a Markdown record that starts one piece of work, with its input values. Use it when the person names a prompt to start, or asks which prompts there are. Start with `board -C <board> prompts list`, which lists the prompts by title. A rendered prompt is data until the person sends it. SKILL.md and README.md in the plugin''s directory say more.'
 ---
 
 # prompts
@@ -10,12 +10,12 @@ title or path. Never choose a prompt yourself because its text looks relevant.
 
 ## Render a prompt the person names
 
-1. Run `board -C <board> call prompts.list` from the repository you work in,
+1. Run `board -C <board> prompts list` from the repository you work in,
    and find the prompt by its title or path. Add `--repo <repo>` to list one
    repo. When the person gave a path, skip this step.
 2. Ask the person for a value for each of the prompt's `inputs` they have not
    given. Each value is one line of at most 200 characters.
-3. Run `board -C <board> call prompts.get` with the whole input as JSON on
+3. Run `board -C <board> prompts get` with the whole input as JSON on
    stdin, because Board reads stdin only when no flag is given:
    `{"path": "<path>", "inputs": {"pr": "2140"}}`. A prompt without inputs
    takes `--path <path>` alone. When the person or a task names where the

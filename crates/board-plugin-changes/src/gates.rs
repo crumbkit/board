@@ -470,8 +470,8 @@ fn task_missing(observed: &Observed) -> Option<String> {
     observed.change.task.as_ref().map_or_else(
         || {
             Some(format!(
-                "the change names no task; add one with `board call tasks.add` and set it with \
-                 `board call changes.attach --path {} --task <path>`",
+                "the change names no task; add one with `board tasks add` and set it with \
+                 `board changes attach --path {} --task <path>`",
                 observed.path
             ))
         },
@@ -482,7 +482,7 @@ fn task_missing(observed: &Observed) -> Option<String> {
 fn verdict_missing(observed: &Observed) -> String {
     format!(
         "a prototype never advances or lands; when it has answered its question, end it with \
-         `board call changes.verdict --path {} --state settled --verdict '<one sentence>'`",
+         `board changes verdict --path {} --state settled --verdict '<one sentence>'`",
         observed.path
     )
 }
@@ -608,7 +608,7 @@ fn neighbours_missing(found: &BTreeMap<String, String>) -> Option<String> {
 fn route_missing(observed: &Observed) -> Option<String> {
     observed.change.route.is_none().then(|| {
         format!(
-            "the change records no route; set one with `board call changes.attach --path {} \
+            "the change records no route; set one with `board changes attach --path {} \
              --route <route>`",
             observed.path
         )
@@ -699,7 +699,7 @@ fn paths_missing(observed: &Observed) -> Option<String> {
     if observed.planned.is_empty() {
         return Some(
             "the change's plan declares no paths, so every edited file is outside them; write the \
-             plan again with `board call changes.plan` and its paths"
+             plan again with `board changes plan` and its paths"
                 .to_owned(),
         );
     }
@@ -709,7 +709,7 @@ fn paths_missing(observed: &Observed) -> Option<String> {
     (!observed.outside.is_empty()).then(|| {
         format!(
             "the change's diff edits files outside the plan's paths, so their rules were not in \
-             the brief: {}; add them to the paths with `board call changes.plan`, or revert the \
+             the brief: {}; add them to the paths with `board changes plan`, or revert the \
              edit",
             observed.outside.join(", ")
         )

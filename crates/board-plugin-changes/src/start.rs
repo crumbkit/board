@@ -193,8 +193,8 @@ pub(crate) fn refuse_existing(host: &dyn Host, path: &str) -> Result<(), PluginE
     Err(refusal(
         "changes::change::exists",
         format!(
-            "a change is already at {path}; give another --name, or resume it with `board call \
-             changes.next --path {path}`"
+            "a change is already at {path}; give another --name, or resume it with `board \
+             changes next --path {path}`"
         ),
         [("path", json!(path))],
     ))
@@ -332,7 +332,7 @@ fn over_command(asked: &Input) -> String {
         .filter_map(|(flag, value)| Some(format!("--{flag} {}", quote(value.as_ref()?))))
         .collect();
     format!(
-        "board call changes.start {} --over_limit '<why>'",
+        "board changes start {} --over_limit '<why>'",
         flags.join(" ")
     )
 }

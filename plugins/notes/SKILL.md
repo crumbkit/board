@@ -1,6 +1,6 @@
 ---
 name: notes
-description: 'Append a note to today''s daily note, or to a topic''s note, in a notes repo in Reflect''s layout, and read a day''s daily note. Use it when the person asks you to note something down or asks what their daily note says. Start with `board -C <board> call notes.daily`, run in the repository you work in, which syncs the notes repo that repository''s git remote routes to and prints today''s note. SKILL.md and README.md in the plugin''s directory say more.'
+description: 'Append a note to today''s daily note, or to a topic''s note, in a notes repo in Reflect''s layout, and read a day''s daily note. Use it when the person asks you to note something down or asks what their daily note says. Start with `board -C <board> notes daily`, run in the repository you work in, which syncs the notes repo that repository''s git remote routes to and prints today''s note. SKILL.md and README.md in the plugin''s directory say more.'
 ---
 
 # notes
@@ -13,12 +13,12 @@ their daily note back.
 1. Run the calls from the repository you are working in. Board passes the
    plugin that directory, and the plugin reads its git remote to pick the
    notes repo that covers that work.
-2. Run `board -C <board> call notes.daily`. It syncs the notes repo with its
+2. Run `board -C <board> notes daily`. It syncs the notes repo with its
    remote and prints today's daily note. Add `--repo <path>` to name a notes
    repo, such as `/repos/notes-personal`, or `/` for the board's own. Add
    `--date YYYY-MM-DD` for another day. `text` is null when the note does not
    exist yet or is private. Never try to read a private note another way.
-3. To note something, run `board -C <board> call notes.add --text '<text>'`.
+3. To note something, run `board -C <board> notes add --text '<text>'`.
    It appends the text under a `## HH:MM` heading to today's daily note. Add
    `--topic '<title>'` to append to that topic's note instead, which it starts
    with the title as its heading when there is none. Write the text as the

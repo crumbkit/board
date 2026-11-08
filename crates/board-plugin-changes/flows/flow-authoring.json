@@ -13,13 +13,13 @@
          "sections": ["Process", "Roles", "Gates", "Stops", "Rule map"]},
         {"id": "owner-confirms", "kind": "records", "actor": "owner",
          "type": "plans/decision/v1", "where": {"owner_signed": true, "refs": ["plan"]},
-         "remedy": "Only the owner can confirm the interview: play the plan's summary back to him and ask him to sign a plans/decision/v1 whose refs name {plan}, then attach it with `board call changes.attach --path {change} --ref <decision>`. Running without him, record the question and stop."}
+         "remedy": "Only the owner can confirm the interview: play the plan's summary back to him and ask him to sign a plans/decision/v1 whose refs name {plan}, then attach it with `board changes attach --path {change} --ref <decision>`. Running without him, record the question and stop."}
       ]
     },
     {
       "name": "draft",
       "agent": "lead",
-      "instruction": "Write the flow as a changes/flow/v1 at /changes/{name}/draft with `board put`, one check per line of the Rule map, each check that the owner or a reviewer passes with a remedy that tells an unattended agent how to ask. Attach it with `board call changes.attach --path {change} --ref /changes/{name}/draft`.",
+      "instruction": "Write the flow as a changes/flow/v1 at /changes/{name}/draft with `board put`, one check per line of the Rule map, each check that the owner or a reviewer passes with a remedy that tells an unattended agent how to ask. Attach it with `board changes attach --path {change} --ref /changes/{name}/draft`.",
       "checks": [
         {"id": "draft", "kind": "records", "type": "changes/flow/v1"},
         {"id": "valid", "kind": "flow-valid"}
@@ -28,7 +28,7 @@
     {
       "name": "dry-run",
       "agent": "lead",
-      "instruction": "Start an eval with the evals skill, naming the draft as its subject. Run `board call changes.run --flow /changes/{name}/draft --sandbox true --mount <the mount the flow is for, or /> --title '<a small sample task>'`, which runs an agent through the draft in a throwaway copy of the board and the repository, copies its run and stop records to {change}, and attaches the run. Check that it stopped where the Stops section says, that each gate refused what it should, and that each remedy was enough to act on. Attach the eval and conclude it.",
+      "instruction": "Start an eval with the evals skill, naming the draft as its subject. Run `board changes run --flow /changes/{name}/draft --sandbox true --mount <the mount the flow is for, or /> --title '<a small sample task>'`, which runs an agent through the draft in a throwaway copy of the board and the repository, copies its run and stop records to {change}, and attaches the run. Check that it stopped where the Stops section says, that each gate refused what it should, and that each remedy was enough to act on. Attach the eval and conclude it.",
       "checks": [
         {"id": "dry-run", "kind": "records", "type": "changes/run/v1",
          "where": {"values": {"sandbox": [true], "reason": ["reached", "waiting"]}}},
@@ -43,7 +43,7 @@
       "checks": [
         {"id": "adopted-by-owner", "kind": "records", "actor": "owner", "type": "plans/decision/v1",
          "where": {"owner_signed": true, "refs": ["changes/flow/v1", "evals/eval/v1"]},
-         "remedy": "Only the owner can adopt the flow: ask him to sign a plans/decision/v1 whose refs name the draft and the eval, then attach it with `board call changes.attach --path {change} --ref <decision>`. Running without him, record the question and stop."},
+         "remedy": "Only the owner can adopt the flow: ask him to sign a plans/decision/v1 whose refs name the draft and the eval, then attach it with `board changes attach --path {change} --ref <decision>`. Running without him, record the question and stop."},
         {"id": "installed", "kind": "exists", "path": "/flows/{draft}"}
       ]
     }

@@ -1,5 +1,6 @@
-//! `board <alias> <capability>` runs what `board call <plugin>.<capability>`
-//! runs (docs/plugins.md, Aliases).
+//! `board <plugin> <capability>`, and `board <alias> <capability>`, run
+//! what `board call <plugin>.<capability>` runs (docs/plugins.md, Plugin
+//! commands).
 
 use std::ffi::OsString;
 use std::path::Path;
@@ -10,10 +11,10 @@ use board_scenario::seed::mount_of;
 use super::plugins::RESULT;
 use super::*;
 
-/// A manifest of `name` with the alias `alias`, whose capability `due`
-/// takes the flag `--before`.
+/// A manifest of `name` with the alias `alias`, or none when it is empty,
+/// whose capability `due` takes the flag `--before`.
 fn manifest(name: &str, alias: &str) -> String {
-    json!({
+    let mut manifest = json!({
         "$type": "board/plugin-manifest/v1",
         "name": name,
         "version": "0.1.0",
@@ -28,8 +29,11 @@ fn manifest(name: &str, alias: &str) -> String {
             }, "additionalProperties": false},
             "outputSchema": {"type": "object"}
         }]
-    })
-    .to_string()
+    });
+    if alias.is_empty() {
+        manifest.as_object_mut().unwrap().remove("alias");
+    }
+    manifest.to_string()
 }
 
 /// A board enabling `enabled`, and a plugins directory holding tasks with
@@ -65,10 +69,15 @@ fn run_in(board: &Scenario, data: &Scenario, arguments: &[&str]) -> Output {
 /// The request the plugin was sent and the `BOARD_PLUGIN` it saw, which
 /// the read removes, so the next call writes them afresh.
 fn taken(data: &Scenario) -> Option<(Value, String)> {
-    let directory = data.workdir().join("plugins/tasks");
+    taken_by(data, "tasks")
+}
+
+/// [`taken`] for the plugin `name`.
+fn taken_by(data: &Scenario, name: &str) -> Option<(Value, String)> {
+    let directory = data.workdir().join("plugins").join(name);
     let request = std::fs::read(directory.join("request")).ok()?;
     let plugin = std::fs::read_to_string(directory.join("plugin")).ok()?;
-    data.write("plugins/tasks/request", Item::Deleted);
+    data.write(&format!("plugins/{name}/request"), Item::Deleted);
     Some((serde_json::from_slice(&request).unwrap(), plugin))
 }
 
@@ -203,7 +212,7 @@ fn a_flag_before_the_capability_is_refused_saying_where_the_capability_goes_and_
     assert_eq!(output.code, 2);
     assert_eq!(
         json(&output)["message"],
-        "board tk takes the capability right after the alias, as in board tk <capability> [flags], and was given --json in its place"
+        "board tk takes the capability right after tk, as in board tk <capability> [flags], and was given --json in its place"
     );
     assert_eq!(taken(&data), None);
     let twin = run_in(&board, &data, &["tk", "due", "--json"]);
@@ -296,7 +305,7 @@ fn dash_c_and_personal_lead_an_alias_to_the_board_that_enables_it() {
 
 #[test]
 fn help_lists_an_enabled_plugins_alias_and_the_aliases_help_lists_its_capabilities() {
-    let line = "Run a capability of the tasks plugin: `board tk <capability>` is `board call tasks.<capability>`.";
+    let line = "Run a tasks capability, as `board call tasks.<capability>`";
     for (enabled, listed) in [(&[][..], false), (&["tasks"][..], true)] {
         let (board, data) = aliased(enabled, "tk");
         let output = run_in(&board, &data, &["-h"]);
@@ -339,6 +348,117 @@ fn enable_refuses_an_alias_that_is_a_built_in_command_and_admits_another_word() 
             );
             assert!(
                 message.ends_with(", is also Board's built-in command get\""),
+                "{message}"
+            );
+        } else {
+            assert_eq!(output.code, 0, "{}", text(&output.stdout));
+        }
+    }
+}
+
+#[test]
+fn a_plugins_name_runs_what_board_call_runs_and_a_plugin_the_board_does_not_enable_is_refused() {
+    for (enabled, expected) in [(&["tasks"][..], 0), (&[][..], 2)] {
+        let (board, data) = aliased(enabled, "");
+        let output = run_in(&board, &data, &["--json", "tasks", "due", "--before", "x"]);
+        assert_eq!(
+            output.code,
+            expected,
+            "{enabled:?}: {}",
+            text(&output.stderr)
+        );
+        if expected == 2 {
+            assert_eq!(code(&output), "board::cli::usage");
+            assert_eq!(taken(&data), None);
+            continue;
+        }
+        let through_name = taken(&data);
+        let call = run_in(
+            &board,
+            &data,
+            &["--json", "call", "tasks.due", "--before", "x"],
+        );
+        assert_eq!(text(&output.stdout), text(&call.stdout));
+        assert_eq!(through_name, taken(&data));
+        assert_eq!(through_name.unwrap().0["input"], json!({"before": "x"}));
+    }
+}
+
+#[test]
+fn a_plugin_runs_by_its_name_when_a_built_in_command_follows_it() {
+    let (board, data) = aliased(&["tasks"], "");
+    for word in ["check", "get", "mount"] {
+        let output = run_in(&board, &data, &["--json", "tasks", word]);
+        let call = run_in(&board, &data, &["--json", "call", &format!("tasks.{word}")]);
+        assert_eq!(output.code, call.code, "{word}");
+        assert_eq!(text(&output.stdout), text(&call.stdout), "{word}");
+        assert_eq!(code(&output), "board::plugin::not_installed", "{word}");
+    }
+    let output = run_in(&board, &data, &["tasks", "due"]);
+    assert_eq!(output.code, 0, "{}", text(&output.stderr));
+}
+
+#[test]
+fn a_plugin_named_like_a_built_in_command_runs_only_through_board_call() {
+    for (name, built_in) in [("ls", true), ("todo", false)] {
+        let (board, data) = aliased(&[name], "");
+        install(&data, name, "");
+        let output = run_in(&board, &data, &[name, "due"]);
+        assert_eq!(taken_by(&data, name).is_some(), !built_in, "{name}");
+        if built_in {
+            assert_eq!(output.code, 1, "ls of /due finds nothing");
+        }
+        let call = run_in(&board, &data, &["call", &format!("{name}.due")]);
+        assert_eq!(call.code, 0, "{name}: {}", text(&call.stderr));
+        assert!(taken_by(&data, name).is_some(), "{name}");
+    }
+}
+
+#[test]
+fn a_plugins_name_wins_over_another_plugins_alias_of_the_same_word() {
+    for (enabled, runs) in [(&["tasks", "tk"][..], "tk"), (&["tasks"][..], "tasks")] {
+        let (board, data) = aliased(enabled, "tk");
+        install(&data, "tk", "");
+        let output = run_in(&board, &data, &["tk", "due"]);
+        assert_eq!(output.code, 0, "{enabled:?}: {}", text(&output.stderr));
+        let (_, plugin) = taken_by(&data, runs).unwrap();
+        assert_eq!(plugin, runs, "{enabled:?}");
+    }
+}
+
+#[test]
+fn a_plugin_with_an_alias_runs_by_both_words_and_help_lists_it_once() {
+    let (board, data) = aliased(&["tasks"], "tk");
+    for word in ["tasks", "tk"] {
+        let output = run_in(&board, &data, &[word, "due"]);
+        assert_eq!(output.code, 0, "{word}: {}", text(&output.stderr));
+        assert!(taken(&data).is_some(), "{word}");
+        let help = run_in(&board, &data, &[word, "-h"]);
+        assert_eq!(help.code, 0, "{word}: {}", text(&help.stderr));
+        assert!(text(&help.stdout).contains("due  Open tasks due before a date."));
+    }
+    let help = text(&run_in(&board, &data, &["-h"]).stdout);
+    assert_eq!(help.matches("Run a tasks capability").count(), 1, "{help}");
+    assert!(help.contains("  tasks "), "{help}");
+}
+
+#[test]
+fn enable_refuses_an_alias_that_is_another_enabled_plugins_name_and_admits_another_word() {
+    for (alias, refused) in [("todo", true), ("tk", false)] {
+        let (board, data) = aliased(&["todo"], alias);
+        install(&data, "todo", "");
+        board.write(
+            ".git/config",
+            Item::Appended("[user]\n\tname = T\n\temail = t@example.com\n"),
+        );
+        let output = run_in(&board, &data, &["--json", "plugin", "enable", "tasks"]);
+        if refused {
+            assert_eq!(output.code, 1);
+            assert_eq!(code(&output), "board::plugin::alias_conflict");
+            let message = json(&output)["message"].to_string();
+            assert!(
+                message
+                    .ends_with(", is also the name of the todo plugin, which the board enables\""),
                 "{message}"
             );
         } else {

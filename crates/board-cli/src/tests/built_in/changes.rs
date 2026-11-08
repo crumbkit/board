@@ -525,21 +525,21 @@ impl Changes {
         }
     }
 
-    /// The output of `board call changes.<capability>` with `given` as
+    /// The output of `board changes <capability>` with `given` as
     /// flags.
     fn call(&self, capability: &str, given: &Value) -> Value {
         (self.invoke(capability, given, false, &[]))
             .unwrap_or_else(|failure| panic!("{capability} {given}: {failure}"))
     }
 
-    /// The output of `board call changes.<capability>` with `given` on
+    /// The output of `board changes <capability>` with `given` on
     /// stdin.
     fn call_stdin(&self, capability: &str, given: &Value) -> Value {
         (self.invoke(capability, given, true, &[]))
             .unwrap_or_else(|failure| panic!("{capability} {given}: {failure}"))
     }
 
-    /// The failure `board call changes.<capability>` prints, with `given`
+    /// The failure `board changes <capability>` prints, with `given`
     /// as flags.
     fn refusal(&self, capability: &str, given: &Value) -> Value {
         self.refusal_inheriting(capability, given, &[])

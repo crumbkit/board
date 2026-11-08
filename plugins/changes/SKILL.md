@@ -1,6 +1,6 @@
 ---
 name: changes
-description: 'Walk one change to a repository from its plan to its pull request, and gather every record it produces. Use it to start, resume or list work on a repository the board mounts. Start a change with `board -C <board> call changes.start --mount /repos/<name> --title ''<title>''`, then call `changes.next --path /changes/<name>` for the next step. `changes.open` lists the changes in progress. SKILL.md and README.md in the plugin''s directory say more.'
+description: 'Walk one change to a repository from its plan to its pull request, and gather every record it produces. Use it to start, resume or list work on a repository the board mounts. Start a change with `board -C <board> changes start --mount /repos/<name> --title ''<title>''`, then call `changes.next --path /changes/<name>` for the next step. `changes.open` lists the changes in progress. SKILL.md and README.md in the plugin''s directory say more.'
 ---
 
 # changes
@@ -13,7 +13,7 @@ blocks is missing.
 ## Steps
 
 1. Every change does a task. Run
-   `board -C <board> call changes.start --mount /repos/<name> --title '<title>' --task <task>`,
+   `board -C <board> changes start --mount /repos/<name> --title '<title>' --task <task>`,
    or leave out `--task` to add one titled as the change.
    Add `--handle @<you>` so the route reflects who owns what. Add
    `--flow <name>` to follow another flow than the board's choice, such as
@@ -21,7 +21,7 @@ blocks is missing.
    `obligations` entry. Each entry carries a `close` line that says how to
    discharge that obligation once its work is committed. Treat each `ask_first` pattern as a file to ask
    about before changing.
-2. Run `board -C <board> call changes.next --path /changes/<name>`
+2. Run `board -C <board> changes next --path /changes/<name>`
    whenever you start a phase or lose context. Do what `instruction` says
    and fix each check whose `status` is `missing`, following its `remedy`.
    When `ask` is set, only the owner or a reviewer can pass the checks
@@ -38,24 +38,24 @@ blocks is missing.
    file keeps a version control. A rule with no room still applies, so read
    it with `controls.for-path`.
 3. Attach every record you make with
-   `board -C <board> call changes.attach --path /changes/<name> --ref <path>`.
+   `board -C <board> changes attach --path /changes/<name> --ref <path>`.
    The records go on the plan the change names, so write the plan first:
    pipe a JSON object with `path`, `text`, `uses` and `paths` to
-   `board -C <board> call changes.plan`.
+   `board -C <board> changes plan`.
    Set the commit under test with `--head <sha>` after each push, and the
    check suite with `--suite <path>` when the change names none. Record a
    GitHub issue or pull request with
-   `board -C <board> call github.ref --ref <owner>/<repo>#<number>`, then
+   `board -C <board> github ref --ref <owner>/<repo>#<number>`, then
    attach the path it returns with `--ticket <path>` or `--pull <path>`.
-4. Run `board -C <board> call changes.advance --path /changes/<name>`
+4. Run `board -C <board> changes advance --path /changes/<name>`
    when every check passes. To send a change back to build for a fix
    round, such as after a review asks for fixes, run
-   `board -C <board> call changes.reopen --path /changes/<name> --reason '<why>' --agent '<your name>'`.
+   `board -C <board> changes reopen --path /changes/<name> --reason '<why>' --agent '<your name>'`.
    Never move its phase with `board put`.
 5. To drop a change, run
-   `board -C <board> call changes.drop --path /changes/<name> --reason '<why>'`.
+   `board -C <board> changes drop --path /changes/<name> --reason '<why>'`.
 6. When `open` or `next` reports `sync.stale`, run
-   `board -C <board> call changes.sync`. It ends each change whose pull
+   `board -C <board> changes sync`. It ends each change whose pull
    request closed: `done` when it merged, `dropped` when it closed without
    merging. Add `--dry_run true` to see what it would do first. Close the
    task of each change it ends. An entry with `changes::sync::owed` still
@@ -80,7 +80,7 @@ blocks is missing.
 ## Prototypes
 
 When the owner wants to try an idea, run
-`board -C <board> call changes.prototype --mount /repos/<name> --question '<question>' --parent <task>`.
+`board -C <board> changes prototype --mount /repos/<name> --question '<question>' --parent <task>`.
 It adds the task, writes the change in `build` and returns its brief. Start
 one builder from the brief; the owner iterates with it directly. The builder
 commits and pushes to `proto/<name>` after every round, and may edit only
@@ -95,7 +95,7 @@ lists every prototype with its verdict.
 ## Runs
 
 To run a change to a stop, run
-`board -C <board> call changes.run --path /changes/<name> [--through <phase> | --until <phase>] --inline true`,
+`board -C <board> changes run --path /changes/<name> [--through <phase> | --until <phase>] --inline true`,
 or start one with `--mount` and `--title` in place of `--path`. It records
 the stop and returns the run brief; follow its `steps` and `stopping`.
 Without `--inline`, it starts the agent `BOARD_AGENT` or `agent` in
@@ -113,7 +113,7 @@ own flow at `/flows/<name>` wins over a shipped one. The links
 `/flows/repos/<name>` and `/flows/default` choose a repository's flow and
 every repository's. Each change keeps a copy, so editing a flow moves no
 change in flight. Run
-`board -C <board> call changes.reflow --path /changes/<name> --flow <name>`
+`board -C <board> changes reflow --path /changes/<name> --flow <name>`
 to move a change to another flow, or to take up an edit. To write a flow,
 start a change with `--flow flow-authoring --mount /` (or the mount the
 flow is for) and follow it: it drafts the flow, checks it with

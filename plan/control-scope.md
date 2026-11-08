@@ -78,9 +78,9 @@ the caller passes the branch's files as `files`, an array of
 repository-relative paths. An array is not a flag, so the input goes on
 stdin as JSON:
 
-    git diff --name-only origin/main... | jq -R . | jq -sc '{path: "/repos/app", files: .}' | board --personal call controls.check
+    git diff --name-only origin/main... | jq -R . | jq -sc '{path: "/repos/app", files: .}' | board --personal controls check
 
-Without `files`, `board --personal call controls.check --path /repos/<name>` lists
+Without `files`, `board --personal controls check --path /repos/<name>` lists
 every control on the repository, which is what an agent needs when it
 starts.
 
@@ -93,10 +93,10 @@ caller's repository: it finds the repo record whose `remote` equals
 checks `/repos/<name>`. With no such record it says so and checks nothing.
 The command from any checkout is therefore:
 
-    board --personal call controls.check
+    board --personal controls check
 
 This works in a checkout that is itself a board, where
-`board call controls.check --path .` would read only that board's own
+`board controls check --path .` would read only that board's own
 controls. The controls mod and the controls skill switch to this command.
 The owner's signed controls order names the old command, which keeps its
 meaning for repositories that are not boards; the owner re-signs the order
@@ -127,6 +127,6 @@ already holds a mounted board's records, so no crate changes. The tests:
   with its board, and `own_controls` is `not_read` for a repo record without
   a checkout, with a twin that has one.
 
-Done when `board --personal call controls.check`, run in a crumbkit/board
+Done when `board --personal controls check`, run in a crumbkit/board
 checkout, lists both the personal board's controls on it and the repository's own
 controls.

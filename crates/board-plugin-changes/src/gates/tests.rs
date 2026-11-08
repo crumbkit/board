@@ -231,7 +231,7 @@ fn the_plan_gate_misses_a_change_with_no_route_and_passes_each_route() {
         given("plan").check("route"),
         (
             "missing",
-            "the change records no route; set one with `board call changes.attach --path \
+            "the change records no route; set one with `board changes attach --path \
              /changes/t --route <route>`"
                 .to_owned()
         )
@@ -417,8 +417,8 @@ fn the_review_gate_refuses_a_diff_outside_the_planned_paths_and_passes_one_insid
         (
             "missing",
             "the change's diff edits files outside the plan's paths, so their rules were not in \
-             the brief: /repos/x/b.rs, /repos/x/c.rs; add them to the paths with `board call \
-             changes.plan`, or revert the edit"
+             the brief: /repos/x/b.rs, /repos/x/c.rs; add them to the paths with `board \
+             changes plan`, or revert the edit"
                 .to_owned()
         )
     );
@@ -430,7 +430,7 @@ fn the_review_gate_refuses_a_diff_outside_the_planned_paths_and_passes_one_insid
         (
             "missing",
             "the change's plan declares no paths, so every edited file is outside them; write the \
-             plan again with `board call changes.plan` and its paths"
+             plan again with `board changes plan` and its paths"
                 .to_owned()
         )
     );
@@ -451,7 +451,7 @@ fn the_land_gate_needs_the_test_sections_and_a_pull_request_record_and_done_has_
     assert_eq!(
         unread.check("pull-request").1,
         "the change's newest pull request /runs/1 does not read as a github/pull/v1 record; run \
-         `board check /runs/1`, or record the pull request with `board call github.ref` and \
+         `board check /runs/1`, or record the pull request with `board github ref` and \
          attach it with --pull"
     );
     let landed = (given("land").plan(Some(&tested))).with(json!({"pulls": ["/gh/o/r/pulls/1"]}));
