@@ -78,13 +78,17 @@ wrong-typed reference, and leaves out one that Board marks degraded for any
 other reason. It also leaves out an eval that a board's own looser schema
 admits but the plugin cannot read.
 
-An agent runs `about` before it tests. When a concluded eval's question
-covers the agent's own for the same subjects and versions, the agent tests
-nothing, cites that eval's path and verdict where it relies on it, and
-records nothing new. When the subject's version or the conditions differ,
-the agent writes a new eval that names the earlier one in its `question`,
-and says in its `conclusion` whether the verdict changed. `SKILL.md` step 1
-says the same, and its step 6 covers an earlier `inconclusive` verdict.
+An agent runs `about` before it tests. When a concluded eval with a
+`supported` or `refuted` verdict covers the agent's question for the same
+subjects and versions, the agent tests nothing, cites that eval's path and
+verdict where it relies on it, and records nothing new. When the subject's
+version or the conditions differ, the agent writes a new eval that names the
+earlier one in its `question`, and says in its `conclusion` whether the
+verdict changed. When the earlier verdict is `inconclusive`, the agent reads
+its `conclusion` and uses the follow-up eval it names. If it names none, the
+agent writes a new, narrower eval that names the earlier one in its
+`question`. The agent never edits the earlier eval. `SKILL.md` step 1 says
+the same.
 
 ## Across repositories
 

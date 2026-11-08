@@ -65,13 +65,18 @@ of the repository you are in before you test.
    `board call evals.open` lists the evals not concluded or
    abandoned.
 
-   When a concluded eval's question covers yours for the same subjects and
-   versions, do not test again. Cite the eval's path and verdict where you
-   rely on it, such as a plan, a review finding, a decision or the reply to
-   the owner, and record nothing new. When the subject's version or the
-   conditions differ, write a new eval that names the earlier one in its
-   `question`, and say in its `conclusion` whether the verdict changed.
-   When the earlier verdict is `inconclusive`, follow step 6.
+   When a concluded eval with a `supported` or `refuted` verdict covers
+   your question for the same subjects and versions, do not test again.
+   Cite the eval's path and verdict where you rely on it, such as a plan, a
+   review finding, a decision or the reply to the owner, and record nothing
+   new. When the subject's version or the conditions differ, write a new
+   eval that names the earlier one in its `question`, and say in its
+   `conclusion` whether the verdict changed.
+
+   When the earlier verdict is `inconclusive`, read its `conclusion` first.
+   If the conclusion names a follow-up eval, use that eval. Otherwise write
+   a new, narrower eval that names the earlier one in its `question`. Never
+   edit the earlier eval.
 2. Run the remaining steps in the board you chose. Before gathering
    evidence, write `evals/eval/v1` with `board put /evals/<name> < eval.json`.
    Give the question, the subjects and `status: planned`. The subjects are
