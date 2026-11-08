@@ -1,7 +1,8 @@
 //! The manifest parses as Board reads it, the committed schemas are what
 //! the record structs generate, the shipped heuristics are records those
-//! schemas admit, and `refusal` refuses a value outside its heuristic's
-//! bounds or naming another heuristic, beside the twin it admits.
+//! schemas admit, `usable` says why a reader falls back beside the twin it
+//! gives a reader, and `stale` counts calendar days. The tests through the
+//! binary, in `board-cli`, cover `params.get` and `params.due` themselves.
 
 use std::path::Path;
 
@@ -9,7 +10,9 @@ use board_model::{Code, canonical_json};
 use serde::Deserialize;
 
 use super::*;
+use crate::due::stale;
 use crate::records::Bounds;
+use crate::stored::{Check, Fallback, Heuristic, Stored, shipped, usable};
 
 /// The `description` of SKILL.md's frontmatter, a single-quoted YAML
 /// scalar on one line.
@@ -205,6 +208,29 @@ fn the_heuristic_schema_refuses_no_inputs_and_a_recheck_of_zero_and_admits_their
     }
 }
 
+#[test]
+fn the_shipped_heuristics_are_read_with_the_default_and_bounds_the_plan_set() {
+    let found: Vec<(String, f64, Bounds)> = (shipped().into_iter())
+        .map(|(name, heuristic)| (name, heuristic.default, heuristic.bounds))
+        .collect();
+    let bounds = |min, max| Bounds { min, max };
+    assert_eq!(
+        found,
+        [
+            (
+                "overflow-agent-grace".to_owned(),
+                200.0,
+                bounds(25.0, 2000.0)
+            ),
+            (
+                "overflow-owner-grace".to_owned(),
+                800.0,
+                bounds(100.0, 8000.0)
+            ),
+        ]
+    );
+}
+
 /// `value` as the plugin reads it, with `number` as its value and
 /// `heuristic` as the heuristic it names.
 fn stored(number: f64, heuristic: &str) -> Stored {
@@ -215,77 +241,114 @@ fn stored(number: f64, heuristic: &str) -> Stored {
     Stored::deserialize(&record).unwrap()
 }
 
+/// A heuristic with bounds `min` to `max`, as the plugin reads it.
+fn bounded(min: f64, max: f64) -> Heuristic {
+    Heuristic {
+        default: 14.0,
+        bounds: Bounds { min, max },
+        check: Check { fails_above: 0.2 },
+        recheck_after: 30,
+    }
+}
+
+const OWN: &str = "/params/heuristics/half-life";
+
 #[test]
-fn a_value_outside_its_bounds_is_refused_and_one_at_the_bound_is_admitted() {
-    let bounds = Bounds {
-        min: 3.0,
-        max: 28.0,
-    };
-    let own = "/params/heuristics/half-life";
-    let refused = refusal("half-life", bounds, &stored(2.0, own)).unwrap();
-    assert_eq!(refused.code, "params::value::out_of_bounds");
+fn a_value_outside_its_bounds_falls_back_and_one_at_either_bound_is_used() {
+    let heuristic = bounded(3.0, 28.0);
     assert_eq!(
-        refused.message,
-        "the value half-life is 2, outside its heuristic's bounds 3 to 28"
+        usable("half-life", &heuristic, Some(&stored(2.0, OWN))).unwrap_err(),
+        Fallback::OutOfBounds {
+            number: 2.0,
+            scope: None
+        }
     );
     assert_eq!(
-        (
-            &refused.fields["value"],
-            &refused.fields["min"],
-            &refused.fields["max"]
-        ),
-        (&json!(2.0), &json!(3.0), &json!(28.0))
+        usable("half-life", &heuristic, Some(&stored(29.0, OWN))).unwrap_err(),
+        Fallback::OutOfBounds {
+            number: 29.0,
+            scope: None
+        }
     );
-    assert!(refusal("half-life", bounds, &stored(3.0, own)).is_none());
-    assert!(refusal("half-life", bounds, &stored(28.0, own)).is_none());
+    for number in [3.0, 28.0] {
+        let value = stored(number, OWN);
+        assert_eq!(
+            usable("half-life", &heuristic, Some(&value)).unwrap().value,
+            number
+        );
+    }
 }
 
 #[test]
-fn a_scope_outside_the_bounds_is_refused_and_its_twin_inside_them_is_admitted() {
-    let bounds = Bounds {
-        min: 25.0,
-        max: 2000.0,
-    };
+fn a_scope_outside_the_bounds_makes_the_whole_record_fall_back_and_its_twin_inside_them_is_used() {
+    let heuristic = bounded(25.0, 2000.0);
     let scoped = |number: f64| {
         let mut record = value();
         record["scopes"] = json!({"/repos/board": number});
         Stored::deserialize(&record).unwrap()
     };
-    let refused = refusal("overflow-agent-grace", bounds, &scoped(2001.0)).unwrap();
-    assert_eq!(refused.code, "params::value::out_of_bounds");
-    assert_eq!(refused.fields["scope"], json!("/repos/board"));
-    assert!(refusal("overflow-agent-grace", bounds, &scoped(2000.0)).is_none());
-}
-
-#[test]
-fn a_value_naming_another_heuristic_is_refused_and_its_twin_naming_its_own_is_admitted() {
-    let bounds = Bounds {
-        min: 3.0,
-        max: 28.0,
-    };
-    let refused = refusal(
-        "half-life",
-        bounds,
-        &stored(7.0, "/params/heuristics/archive-after"),
-    )
-    .unwrap();
-    assert_eq!(refused.code, "params::value::wrong_heuristic");
+    let outside = scoped(2001.0);
     assert_eq!(
-        refused.hint.as_deref(),
-        Some("set heuristic to /params/heuristics/half-life")
+        usable("overflow-agent-grace", &heuristic, Some(&outside)).unwrap_err(),
+        Fallback::OutOfBounds {
+            number: 2001.0,
+            scope: Some("/repos/board".to_owned())
+        }
     );
-    assert!(
-        refusal(
-            "half-life",
-            bounds,
-            &stored(7.0, "/params/heuristics/half-life")
-        )
-        .is_none()
+    let inside = scoped(2000.0);
+    assert!(usable("overflow-agent-grace", &heuristic, Some(&inside)).is_ok());
+}
+
+#[test]
+fn a_value_naming_another_heuristic_falls_back_and_its_twin_naming_its_own_is_used() {
+    let heuristic = bounded(3.0, 28.0);
+    let other = "/params/heuristics/archive-after";
+    assert_eq!(
+        usable("half-life", &heuristic, Some(&stored(7.0, other))).unwrap_err(),
+        Fallback::WrongHeuristic {
+            named: other.to_owned()
+        }
+    );
+    assert!(usable("half-life", &heuristic, Some(&stored(7.0, OWN))).is_ok());
+}
+
+#[test]
+fn no_record_is_missing_and_too_little_data_is_judged_after_the_heuristic_and_before_the_bounds() {
+    let heuristic = bounded(3.0, 28.0);
+    assert_eq!(
+        usable("half-life", &heuristic, None).unwrap_err(),
+        Fallback::Missing
+    );
+    let little = |number, named| {
+        let mut record = stored(number, named);
+        record.data = records::Data::TooLittle;
+        record
+    };
+    assert_eq!(
+        usable("half-life", &heuristic, Some(&little(2.0, OWN))).unwrap_err(),
+        Fallback::TooLittle
+    );
+    let other = "/params/heuristics/archive-after";
+    assert_eq!(
+        usable("half-life", &heuristic, Some(&little(7.0, other))).unwrap_err(),
+        Fallback::WrongHeuristic {
+            named: other.to_owned()
+        }
     );
 }
 
 #[test]
-fn the_get_output_lists_its_sources_and_the_reasons_a_default_applies() {
+fn a_value_is_stale_one_second_past_its_days_and_fresh_at_exactly_its_days() {
+    let derived: jiff::Timestamp = "2026-11-01T00:00:00Z".parse().unwrap();
+    let at_limit: jiff::Timestamp = "2026-12-01T00:00:00Z".parse().unwrap();
+    let past: jiff::Timestamp = "2026-12-01T00:00:01Z".parse().unwrap();
+    assert!(!stale(at_limit, Some(derived), 30));
+    assert!(stale(past, Some(derived), 30));
+    assert!(stale(past, None, 30));
+}
+
+#[test]
+fn the_get_output_lists_its_sources_the_reasons_a_default_applies_and_its_warning_codes() {
     let output = schema_of::<Got>(SchemaSettings::draft2020_12().for_serialize());
     assert_eq!(
         output["properties"]["source"]["enum"],
@@ -293,6 +356,14 @@ fn the_get_output_lists_its_sources_and_the_reasons_a_default_applies() {
     );
     assert_eq!(
         output["properties"]["reason"]["enum"],
-        json!(["missing", "too-little"])
+        json!(["missing", "too-little", "out-of-bounds", "wrong-heuristic"])
+    );
+    assert_eq!(
+        output["$defs"]["Warning"]["properties"]["code"]["enum"],
+        json!([
+            "params::value::missing",
+            "params::value::out_of_bounds",
+            "params::value::wrong_heuristic"
+        ])
     );
 }

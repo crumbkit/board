@@ -7,9 +7,10 @@ description: 'Calibrated values, such as overflow''s graces, each with the heuri
 
 A calibrated value is a number a plugin uses, such as how many changed
 lines a control may run over before an agent drafts a step. Each value has a
-heuristic at `/params/heuristics/<name>` and, once an agent has run it, a
-value record at `/params/values/<name>`. Board stores and resolves the
-values. An agent runs each heuristic's method.
+heuristic, either shipped with Board or at `/params/heuristics/<name>`, and,
+once an agent has run it, a value record at `/params/values/<name>`. A record
+at `/params/heuristics/<name>` overrides the shipped heuristic of that name.
+Board stores and resolves the values. An agent runs each heuristic's method.
 
 ## Read a value
 
@@ -20,10 +21,13 @@ the number to use.
 - When `source` is `value`, cite `record` and `derived` in any output that
   used the number.
 - When `source` is `default`, the heuristic's lenient default applies.
-  `reason` says why: `missing` when no value record exists, and
-  `too-little` when the last run found too little data.
-- A refusal with `params::heuristic::not_found` means the board has no
-  heuristic of that name. Use your own built-in default and warn.
+  `reason` says why: `missing` when no value record exists, `too-little`
+  when the last run found too little data, `out-of-bounds` when a number in
+  the record is outside the heuristic's bounds, and `wrong-heuristic` when
+  the record names another heuristic. Except for `too-little`, `warning`
+  gives a code and a message to pass on.
+- A refusal with `params::heuristic::not_found` means there is no heuristic
+  of that name. Use your own built-in default and warn.
 
 Never copy a value into another record. Read it again each time.
 
@@ -38,8 +42,10 @@ these steps there.
    suite on first use, with the heuristic's `method` as its method.
 2. Run `board call params.due`. It lists each value due, oldest first, with
    a reason: `check-failed` when the latest check since the value was
-   derived measured above the check's `fails_above`, and `on-default` when
-   the value has no record or its last run found too little data.
+   derived measured above the check's `fails_above`, `stale` when the value
+   is older than the heuristic's `recheck_after` calendar days, `on-default`
+   when the value has no record or its last run found too little data, and
+   `out-of-bounds` or `wrong-heuristic` when readers cannot use the record.
 3. For each value listed, read its heuristic. Measure each input with the
    command its `source` gives, and record the inputs in a run of
    `/suites/params-<name>`. Decide from `enough` whether there is enough
@@ -48,8 +54,9 @@ these steps there.
    `heuristic` as `/params/heuristics/<name>`, the `value` the method
    derives, `scopes` for each repository or project with its own value,
    `data` as `enough` or `too-little`, `evidence` as the run, `derived` as
-   the current UTC time and `by` as yourself. Keep every value within the
-   heuristic's `bounds`.
+   the current UTC time and `by` as yourself. Keep every number within the
+   heuristic's `bounds`, because `board put` does not check them and readers
+   use the default for a record with a number outside them.
 
 When there is too little data, still write the record with `data:
 too-little`, so the next run knows when the data was last looked at. Git

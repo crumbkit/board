@@ -6,7 +6,7 @@
     {
       "name": "authored-lines-per-day",
       "meaning": "The repository's changed lines per active day across all its files, from authored commits only.",
-      "source": "Run `git log --numstat --no-merges` in the repository over the last 60 active days. Leave out bulk and automated commits, as the activity measure leaves them out of the count, and divide the changed lines by the active days."
+      "source": "Run `git log --numstat --no-merges` in the repository over the last 60 days. Leave out bulk and automated commits, as the activity measure leaves them out of the count, and divide the changed lines by the active days."
     },
     {
       "name": "authored-share",
@@ -20,8 +20,8 @@
     },
     {
       "name": "outcomes",
-      "meaning": "The outcomes of past owner decisions and the bypasses agents made in the last 60 active days.",
-      "source": "Read the owner's overflow decisions of the last 60 active days with `board query`."
+      "meaning": "The outcomes of past owner decisions and the bypasses agents made in the last 60 days.",
+      "source": "Read the owner's overflow decisions of the last 60 days with `board query`."
     }
   ],
   "method": "Multiply the start, 400, by the repository's authored-lines-per-day and divide by board-median-rate, then keep the result within the bounds. A repository at the median gets 400, and one twice as busy gets 800. Write the result in `scopes` under the repository's mount, such as /repos/board, so each repository has its own value. Bulk and automated lines stay out of the rate, so a migration does not lengthen the grace.",
@@ -31,9 +31,9 @@
     "min": 100,
     "max": 8000
   },
-  "enough": "At least 10 closed proposals or 5 owner decisions in the last 60 active days.",
+  "enough": "At least 10 closed proposals or 5 owner decisions in the last 60 days.",
   "check": {
-    "measure": "The share of owner decisions in the last 60 active days that confirm a bypass agents had already made, such as raising the limit to what was passed, read with `board query`. A high share means the owner was asked too soon to add anything.",
+    "measure": "The share of owner decisions in the last 60 days that confirm a bypass agents had already made, such as raising the limit to what was passed, read with `board query`. A high share means the owner was asked too soon to add anything.",
     "fails_above": 0.5
   },
   "recheck_after": 30,

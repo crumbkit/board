@@ -3,6 +3,8 @@
 //! it. `params.get` resolves a value, or the heuristic's default and why it
 //! applies; `params.due` lists the values an agent should derive again.
 //! Board stores the values and resolves them; an agent runs each method.
+//! A heuristic the plugin ships applies until a record of its name overrides
+//! it.
 
 mod due;
 mod get;
@@ -16,11 +18,11 @@ use board_plugin::shape::{Record, schema_of};
 use schemars::generate::SchemaSettings;
 use serde_json::{Map, Value, json};
 
-pub use get::{Got, MISSING, Reason, Source, get};
+pub use get::{Got, Reason, Source, Warning, WarningCode, get};
 use records::{HeuristicRecord, ValueRecord};
-pub use stored::{Stored, refusal};
 
-/// The heuristics the plugin ships, by name: the two overflow graces.
+/// The heuristics the plugin ships, by name: the two overflow graces. A
+/// record at `/params/heuristics/<name>` overrides the one of that name.
 pub const SHIPPED: [(&str, &str); 2] = [
     (
         "overflow-agent-grace",
@@ -104,7 +106,8 @@ fn manifest() -> Value {
         }, {
             "name": "due",
             "description": "The values an agent should derive again, oldest first: those on the \
-                default and those whose latest check failed.",
+                default, those readers cannot use, those whose latest check failed, and those \
+                older than their recheck_after in calendar days.",
             "inputSchema": schema_of::<due::Input>(settings()),
             "outputSchema": schema_of::<due::Output>(settings().for_serialize()),
             "annotations": read_only,

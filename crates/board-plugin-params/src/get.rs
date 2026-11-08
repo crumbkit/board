@@ -2,13 +2,13 @@
 //! default and why it applies.
 
 use board_ops::{Host, PluginError};
-use board_plugin::shape::{Ref, Slug, Timestamp};
+use board_plugin::shape::{Prose, Ref, Slug, Timestamp};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 
-use crate::records::{Data, ValueRecord};
-use crate::stored::{HEURISTICS, VALUES, params};
+use crate::records::ValueRecord;
+use crate::stored::{Fallback, HEURISTICS, Heuristic, VALUES, params, usable};
 
 /// The value `name` resolves to for `scope`.
 #[derive(Deserialize, JsonSchema)]
@@ -19,13 +19,14 @@ pub(crate) struct Input {
     #[schemars(with = "Slug")]
     name: String,
     /// The repository or project the value is for, by its path, such as /repos/board; the value's own `value` applies when the record lists no value for it or when this is left out.
-    #[schemars(regex(pattern = r"^/\S*$"))]
+    #[schemars(regex(pattern = "^/"), extend("format" = "board-path"))]
     scope: Option<String>,
 }
 
 /// The number a value resolves to, and where it came from. `record` and
 /// `derived` name the value record when `source` is `value`; `reason` says
-/// why the default applies when `source` is `default`.
+/// why the default applies when `source` is `default`, and `warning` carries
+/// the code and the words of a default a consumer should mention.
 #[derive(Clone, Debug, PartialEq, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 #[schemars(rename = "GetOutput")]
@@ -42,6 +43,8 @@ pub struct Got {
     pub derived: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reason: Option<Reason>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub warning: Option<Warning>,
 }
 
 // Where a resolved value came from. No doc comment, which would describe
@@ -62,17 +65,37 @@ pub enum Source {
 pub enum Reason {
     Missing,
     TooLittle,
+    OutOfBounds,
+    WrongHeuristic,
 }
 
-/// The code of the warning a consumer gives when `get` answers with
-/// `reason` `missing`: no value record exists, so the default applies.
-pub const MISSING: &str = "params::value::missing";
+/// A default applied because the value record is absent or unusable.
+#[derive(Clone, Debug, PartialEq, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Warning {
+    pub code: WarningCode,
+    #[schemars(with = "Prose")]
+    pub message: String,
+}
+
+// The warning's stable code. No doc comment, which would describe the
+// inlined enum.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+#[schemars(inline)]
+pub enum WarningCode {
+    #[serde(rename = "params::value::missing")]
+    Missing,
+    #[serde(rename = "params::value::out_of_bounds")]
+    OutOfBounds,
+    #[serde(rename = "params::value::wrong_heuristic")]
+    WrongHeuristic,
+}
 
 /// The value `name` resolves to for `scope` in the board `host` reads,
-/// which a plugin built into Board calls in-process. With no heuristic at
-/// `/params/heuristics/<name>`, it refuses with
-/// `params::heuristic::not_found`, and the caller falls back to its own
-/// built-in default.
+/// which a plugin built into Board calls in-process. With no heuristic of
+/// that name, shipped or at `/params/heuristics/<name>`, it refuses with
+/// `params::heuristic::not_found`, because there is no default to give, and
+/// the caller falls back to its own built-in default and warns.
 pub fn get(host: &dyn Host, name: &str, scope: Option<&str>) -> Result<Got, PluginError> {
     let params = params(host)?;
     let Some(heuristic) = params.heuristics.get(name) else {
@@ -81,26 +104,16 @@ pub fn get(host: &dyn Host, name: &str, scope: Option<&str>) -> Result<Got, Plug
         fields.insert("name".to_owned(), json!(name));
         return Err(PluginError {
             code: "params::heuristic::not_found".to_owned(),
-            message: format!("no heuristic for the value {name} is at {path}"),
+            message: format!("no heuristic for the value {name} is shipped or at {path}"),
             fields,
             hint: Some(format!(
-                "use your own built-in default and warn, or run `board plugin enable params` \
-                 and write the heuristic at {path}"
+                "use your own built-in default and warn, or write the heuristic at {path}"
             )),
         });
     };
-    let default = |reason| Got {
-        name: name.to_owned(),
-        value: heuristic.default,
-        source: Source::Default,
-        record: None,
-        derived: None,
-        reason: Some(reason),
-    };
-    Ok(match params.values.get(name) {
-        None => default(Reason::Missing),
-        Some(stored) if stored.data == Data::TooLittle => default(Reason::TooLittle),
-        Some(stored) => {
+    Ok(match usable(name, heuristic, params.values.get(name)) {
+        Err(fallback) => default(name, heuristic, &fallback),
+        Ok(stored) => {
             let scoped = scope.and_then(|scope| stored.scopes.as_ref()?.get(scope));
             Got {
                 name: name.to_owned(),
@@ -109,9 +122,65 @@ pub fn get(host: &dyn Host, name: &str, scope: Option<&str>) -> Result<Got, Plug
                 record: Some(format!("{VALUES}{name}")),
                 derived: Some(stored.derived.clone()),
                 reason: None,
+                warning: None,
             }
         }
     })
+}
+
+/// The answer when `fallback` sends a reader to `heuristic`'s default.
+fn default(name: &str, heuristic: &Heuristic, fallback: &Fallback) -> Got {
+    let number = heuristic.default;
+    let warning = |code, what: String| {
+        Some(Warning {
+            code,
+            message: format!("{what}, so the default {number} applies"),
+        })
+    };
+    let (reason, warning) = match fallback {
+        Fallback::Missing => (
+            Reason::Missing,
+            warning(
+                WarningCode::Missing,
+                format!("no value record is at {VALUES}{name}"),
+            ),
+        ),
+        Fallback::TooLittle => (Reason::TooLittle, None),
+        Fallback::OutOfBounds {
+            number: outside,
+            scope,
+        } => {
+            let at = scope
+                .as_ref()
+                .map_or_else(String::new, |scope| format!(" for {scope}"));
+            let (min, max) = (heuristic.bounds.min, heuristic.bounds.max);
+            (
+                Reason::OutOfBounds,
+                warning(
+                    WarningCode::OutOfBounds,
+                    format!(
+                        "the value {name} is {outside}{at}, outside its heuristic's bounds {min} to {max}"
+                    ),
+                ),
+            )
+        }
+        Fallback::WrongHeuristic { named } => (
+            Reason::WrongHeuristic,
+            warning(
+                WarningCode::WrongHeuristic,
+                format!("the value {name} names the heuristic {named}, not {HEURISTICS}{name}"),
+            ),
+        ),
+    };
+    Got {
+        name: name.to_owned(),
+        value: number,
+        source: Source::Default,
+        record: None,
+        derived: None,
+        reason: Some(reason),
+        warning,
+    }
 }
 
 pub(crate) fn call(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {

@@ -2,15 +2,15 @@
   "$defs": {
     "Bounds": {
       "additionalProperties": false,
-      "description": "The least and the greatest value a heuristic admits.",
+      "description": "The least and the greatest value readers use.",
       "properties": {
         "max": {
-          "description": "The greatest value admitted.",
+          "description": "The greatest value readers use.",
           "format": "double",
           "type": "number"
         },
         "min": {
-          "description": "The least value admitted.",
+          "description": "The least value readers use.",
           "format": "double",
           "type": "number"
         }
@@ -71,7 +71,7 @@
     }
   },
   "additionalProperties": false,
-  "description": "`params/heuristic/v1`: how an agent derives one calibrated value, at\n`/params/heuristics/<name>`. It names its inputs and its method, the\nestimate the method starts from, the lenient default used without enough\ndata, the bounds a value must keep, and the check that says when the\nvalue is wrong.",
+  "description": "`params/heuristic/v1`: how an agent derives one calibrated value, at\n`/params/heuristics/<name>`. It names its inputs and its method, the\nestimate the method starts from, the lenient default used without enough\ndata, the bounds outside which readers use the default, and the check\nthat says when the value is wrong.",
   "properties": {
     "$type": {
       "const": "params/heuristic/v1",
@@ -80,7 +80,7 @@
     },
     "bounds": {
       "$ref": "#/$defs/Bounds",
-      "description": "The least and the greatest value admitted."
+      "description": "The least and the greatest value readers use."
     },
     "check": {
       "$ref": "#/$defs/Check",
@@ -115,7 +115,7 @@
       "x-board-prose": true
     },
     "recheck_after": {
-      "description": "The active days after which the value is due again.",
+      "description": "The days after which the value is due again: calendar days until\nthe frecency change switches them to active days.",
       "minimum": 1,
       "type": "integer"
     },

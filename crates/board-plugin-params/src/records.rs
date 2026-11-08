@@ -5,15 +5,15 @@
 
 use std::collections::BTreeMap;
 
-use board_plugin::shape::{Actor, Prose, Record, Ref, Slug, Summary, Tag, Timestamp};
-use schemars::JsonSchema;
+use board_plugin::shape::{Actor, PathTemplate, Prose, Record, Ref, Slug, Summary, Tag, Timestamp};
+use schemars::{JsonSchema, Schema, SchemaGenerator};
 use serde::{Deserialize, Serialize};
 
 /// `params/heuristic/v1`: how an agent derives one calibrated value, at
 /// `/params/heuristics/<name>`. It names its inputs and its method, the
 /// estimate the method starts from, the lenient default used without enough
-/// data, the bounds a value must keep, and the check that says when the
-/// value is wrong.
+/// data, the bounds outside which readers use the default, and the check
+/// that says when the value is wrong.
 #[derive(Debug, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct HeuristicRecord {
@@ -36,14 +36,15 @@ pub struct HeuristicRecord {
     pub start: f64,
     /// The lenient value readers use without enough data.
     pub default: f64,
-    /// The least and the greatest value admitted.
+    /// The least and the greatest value readers use.
     pub bounds: Bounds,
     /// What counts as enough data to derive a value.
     #[schemars(with = "Prose")]
     pub enough: String,
     /// The measure that says when the value is wrong.
     pub check: Check,
-    /// The active days after which the value is due again.
+    /// The days after which the value is due again: calendar days until
+    /// the frecency change switches them to active days.
     #[schemars(range(min = 1))]
     pub recheck_after: u64,
     /// The plugin that reads the value, such as `controls`.
@@ -70,13 +71,13 @@ pub struct Input {
     pub source: String,
 }
 
-/// The least and the greatest value a heuristic admits.
+/// The least and the greatest value readers use.
 #[derive(Clone, Copy, Debug, PartialEq, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Bounds {
-    /// The least value admitted.
+    /// The least value readers use.
     pub min: f64,
-    /// The greatest value admitted.
+    /// The greatest value readers use.
     pub max: f64,
 }
 
@@ -107,7 +108,7 @@ pub struct ValueRecord {
     pub value: f64,
     /// The value for each repository or project, by its path, such as
     /// `/repos/board`.
-    #[schemars(extend("propertyNames" = {"pattern": "^/\\S*$"}))]
+    #[schemars(extend("propertyNames" = scope_key()))]
     pub scopes: Option<BTreeMap<String, f64>>,
     /// Whether the run found enough data.
     pub data: Data,
@@ -119,6 +120,13 @@ pub struct ValueRecord {
     pub derived: String,
     /// Who ran it.
     pub by: Actor,
+}
+
+/// The schema of a key of `scopes`. A JSON Schema key cannot be a reference,
+/// so a key is checked as a logical path, the shape `PathTemplate` shares; a
+/// scope holds no placeholder.
+fn scope_key() -> Schema {
+    SchemaGenerator::default().subschema_for::<PathTemplate>()
 }
 
 impl Record for ValueRecord {

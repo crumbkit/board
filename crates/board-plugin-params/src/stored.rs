@@ -1,5 +1,5 @@
 //! The heuristics, values and check runs in this board, read through one
-//! query each, and the bounds a value must keep.
+//! query each, and the one test of whether a reader may use a value.
 
 use std::collections::BTreeMap;
 
@@ -7,8 +7,9 @@ use board_model::parse_json;
 use board_ops::{Host, Limit, PluginError};
 use board_plugin::shape::TREE_CODES;
 use serde::Deserialize;
-use serde_json::{Map, Value, json};
+use serde_json::{Map, Value};
 
+use crate::SHIPPED;
 use crate::records::{Bounds, Data};
 
 /// Every heuristic and value in this board's own `/params/`, by path.
@@ -29,7 +30,9 @@ pub(crate) const VALUES: &str = "/params/values/";
 #[derive(Clone, Debug, Deserialize)]
 pub(crate) struct Heuristic {
     pub(crate) default: f64,
+    pub(crate) bounds: Bounds,
     pub(crate) check: Check,
+    pub(crate) recheck_after: u64,
 }
 
 /// A heuristic's check as far as the plugin reads it.
@@ -41,16 +44,16 @@ pub(crate) struct Check {
 /// A value record as far as the plugin reads it; any other field is
 /// ignored.
 #[derive(Clone, Debug, Deserialize)]
-pub struct Stored {
-    pub heuristic: String,
-    pub value: f64,
-    pub scopes: Option<BTreeMap<String, f64>>,
-    pub data: Data,
-    pub derived: String,
+pub(crate) struct Stored {
+    pub(crate) heuristic: String,
+    pub(crate) value: f64,
+    pub(crate) scopes: Option<BTreeMap<String, f64>>,
+    pub(crate) data: Data,
+    pub(crate) derived: String,
 }
 
 /// The heuristics and the values, each by name.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub(crate) struct Params {
     pub(crate) heuristics: BTreeMap<String, Heuristic>,
     pub(crate) values: BTreeMap<String, Stored>,
@@ -70,11 +73,27 @@ fn rows(host: &dyn Host, sql: &str) -> Result<Vec<Vec<Value>>, PluginError> {
     Ok(report.rows)
 }
 
-/// The readable heuristics and values in this board. A record Board marks
-/// degraded for anything but the tree, or that the plugin cannot read, is
-/// left out, so a reader treats it as absent.
+/// The heuristics the plugin ships, by name.
+pub(crate) fn shipped() -> BTreeMap<String, Heuristic> {
+    (SHIPPED.iter())
+        .map(|(name, text)| {
+            let heuristic = serde_json::from_str(text)
+                .expect("a shipped heuristic is a record the plugin reads; a test reads each");
+            ((*name).to_owned(), heuristic)
+        })
+        .collect()
+}
+
+/// The shipped heuristics, each overridden by a record of its name in this
+/// board, and this board's other heuristics and its values. A record Board
+/// marks degraded for anything but the tree, or that the plugin cannot read,
+/// is left out, so a reader treats it as absent and a shipped heuristic of
+/// that name still applies.
 pub(crate) fn params(host: &dyn Host) -> Result<Params, PluginError> {
-    let mut params = Params::default();
+    let mut params = Params {
+        heuristics: shipped(),
+        values: BTreeMap::new(),
+    };
     for row in rows(host, PARAMS)? {
         let [Value::String(kind), Value::String(path), code, text] = &row[..] else {
             continue;
@@ -137,52 +156,57 @@ pub(crate) fn check_runs(host: &dyn Host) -> Result<Vec<CheckRun>, PluginError> 
     Ok(found)
 }
 
-/// Why `put` would refuse the value `value` at `/params/values/<name>`
-/// against the heuristic's `bounds`: `params::value::wrong_heuristic` when
-/// its `heuristic` is not `/params/heuristics/<name>`, else
-/// `params::value::out_of_bounds` when its `value` or a scope's value lies
-/// outside them. `None` admits it.
-pub fn refusal(name: &str, bounds: Bounds, value: &Stored) -> Option<PluginError> {
-    let expected = format!("{HEURISTICS}{name}");
-    if value.heuristic != expected {
-        return Some(PluginError {
-            code: "params::value::wrong_heuristic".to_owned(),
-            message: format!(
-                "the value {name} names the heuristic {}, but a value runs its own heuristic, {expected}",
-                value.heuristic
-            ),
-            fields: fields(&[("name", json!(name)), ("heuristic", json!(value.heuristic))]),
-            hint: Some(format!("set heuristic to {expected}")),
-        });
-    }
-    let scoped = (value.scopes.iter().flatten()).map(|(scope, number)| (Some(scope), *number));
-    let outside = std::iter::once((None, value.value))
-        .chain(scoped)
-        .find(|(_, number)| !(bounds.min..=bounds.max).contains(number))?;
-    let (scope, number) = outside;
-    let at = scope.map_or_else(String::new, |scope| format!(" for {scope}"));
-    Some(PluginError {
-        code: "params::value::out_of_bounds".to_owned(),
-        message: format!(
-            "the value {name} is {number}{at}, outside its heuristic's bounds {} to {}",
-            bounds.min, bounds.max
-        ),
-        fields: fields(&[
-            ("name", json!(name)),
-            ("value", json!(number)),
-            ("scope", json!(scope)),
-            ("min", json!(bounds.min)),
-            ("max", json!(bounds.max)),
-        ]),
-        hint: Some(format!(
-            "derive a value from {} to {}, or ask the owner to widen the bounds in {expected}",
-            bounds.min, bounds.max
-        )),
-    })
+/// Why a reader uses a heuristic's default and not a value record.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) enum Fallback {
+    Missing,
+    TooLittle,
+    /// The first number in the record outside its heuristic's bounds, and
+    /// its scope when it is not the record's `value`.
+    OutOfBounds {
+        number: f64,
+        scope: Option<String>,
+    },
+    /// The heuristic the record names instead of its own.
+    WrongHeuristic {
+        named: String,
+    },
 }
 
-fn fields(pairs: &[(&str, Value)]) -> Map<String, Value> {
-    (pairs.iter())
-        .map(|(name, value)| ((*name).to_owned(), value.clone()))
-        .collect()
+/// The record a reader may use for the value `name`, or why it uses the
+/// default. `board put` checks a record only against its own JSON Schema, so
+/// a stored record can name another heuristic or hold a number outside the
+/// bounds; both make the whole record unusable, even for a scope whose own
+/// number is inside them, because an agent must derive the record again.
+/// A record naming another heuristic is judged first. A record with too
+/// little data is judged before the bounds, because readers use none of its
+/// numbers.
+pub(crate) fn usable<'a>(
+    name: &str,
+    heuristic: &Heuristic,
+    stored: Option<&'a Stored>,
+) -> Result<&'a Stored, Fallback> {
+    let Some(stored) = stored else {
+        return Err(Fallback::Missing);
+    };
+    if stored.heuristic != format!("{HEURISTICS}{name}") {
+        return Err(Fallback::WrongHeuristic {
+            named: stored.heuristic.clone(),
+        });
+    }
+    if stored.data == Data::TooLittle {
+        return Err(Fallback::TooLittle);
+    }
+    let Bounds { min, max } = heuristic.bounds;
+    let scoped = (stored.scopes.iter().flatten()).map(|(scope, number)| (Some(scope), *number));
+    let outside = std::iter::once((None, stored.value))
+        .chain(scoped)
+        .find(|(_, number)| !(min..=max).contains(number));
+    match outside {
+        Some((scope, number)) => Err(Fallback::OutOfBounds {
+            number,
+            scope: scope.cloned(),
+        }),
+        None => Ok(stored),
+    }
 }
