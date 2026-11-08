@@ -260,7 +260,10 @@ of `changes` still fails `review`.
   `detail`, its `actor`, whether it `blocks`, and when missing its
   `remedy`; the instruction, with its placeholders filled; and `sync`.
   An instruction that names `changes.plan` ends with its stdin fields,
-  `path`, `text`, `uses` and `paths`, and a one-line example. When
+  `path`, `text`, `uses` and `paths`. Once
+  `changes.plan` has written the change's plan, it says to resend the
+  current text, uses and paths with any added path, because `changes.plan`
+  replaces the plan. When
   every missing check that blocks is the owner's or a reviewer's,
   `waiting_on` names them and `ask` holds the question to put to them,
   built from those checks' details and remedies.

@@ -360,6 +360,30 @@ fn a_change_without_a_pull_request_gets_no_stale_warning_and_open_warns_once_one
 }
 
 #[test]
+fn a_change_in_plan_or_outside_the_boards_changes_gets_no_stale_warning_for_its_pull_request() {
+    let board = Changes::new();
+    board.change_at("changes/t.json", "plan", &json!({"pull_request": pull(3)}));
+    board.write(
+        "repos/other/changes/theirs.json",
+        &change("build", &json!({"pulls": ["/gh/octo/widgets/pulls/6"]})),
+    );
+    for output in [
+        board.call("open", &json!({})),
+        board.call("next", &json!({"path": "/changes/t"})),
+    ] {
+        assert_eq!(output["sync"], sync_report(&Value::Null, false));
+    }
+    // Past its plan, sync reads the change's pull request.
+    board.change_at("changes/t.json", "build", &json!({"pull_request": pull(3)}));
+    for output in [
+        board.call("open", &json!({})),
+        board.call("next", &json!({"path": "/changes/t"})),
+    ] {
+        assert_eq!(output["sync"], sync_report(&Value::Null, true));
+    }
+}
+
+#[test]
 fn drop_ends_an_open_change_with_its_reason_and_refuses_one_already_ended() {
     let board = Changes::new();
     board.change_at("changes/t.json", "build", &json!({}));

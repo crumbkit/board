@@ -8,7 +8,7 @@
       "name": "plan",
       "agent": "lead",
       "skills": ["understanding-check"],
-      "instruction": "Read each record the change surfaced; cite those you build on in the plan's uses and list the rest under ### Considered with a line on why each does not apply. Interview the owner and fill in Problem, Outcome, Out of scope, UX and Data. UX starts with No UI change and a reason, or lists each mockup under ### Mockups with a ### Neighbours list; attach the owner's decision naming each mockup. Data starts with None, or run the understanding-check skill and attach its record and the owner's decision that references it. Write the plan with `board call changes.plan`, giving uses and paths as JSON on stdin, and attach the owner's signed plans/decision/v1 whose refs name the plan.",
+      "instruction": "Read each record the change surfaced; cite those you build on in the plan's uses and list the rest under ### Considered with a line on why each does not apply. Interview the owner and fill in Problem, Outcome, Out of scope, UX and Data. UX starts with No UI change and a reason, or lists each mockup under ### Mockups with a ### Neighbours list; attach the owner's decision naming each mockup. Data starts with None, or run the understanding-check skill and attach its record and the owner's decision that references it. Write the plan with `board call changes.plan` and attach the owner's signed plans/decision/v1 whose refs name the plan.",
       "checks": [
         {"id": "plan-sections", "kind": "sections",
          "sections": ["Problem", "Outcome", "Out of scope", "UX", "Data"]},

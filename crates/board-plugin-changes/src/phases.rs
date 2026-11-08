@@ -195,20 +195,28 @@ fn instruction(observed: &Observed) -> String {
     }
 }
 
-/// `said` with how to give `changes.plan` its input, when `said` asks for a
-/// plan.
+/// `said` with the fields `changes.plan` takes on stdin, when `said` asks
+/// for a plan. `changes.plan` replaces the plan, so once it has written one
+/// with paths, `said` says to resend the current text, uses and paths.
 fn with_plan_usage(observed: &Observed, said: String) -> String {
     if !said.contains("changes.plan") {
         return said;
     }
-    format!(
-        "{said} Give `board call changes.plan` its input as JSON on stdin with the fields \
-         `path`, `text`, `uses` and `paths`, for example: `echo '{{\"path\": \"{}\", \"text\": \
-         \"<the plan in Markdown>\", \"uses\": [], \"paths\": [\"{}/**\"]}}' | board call \
-         changes.plan`.",
-        observed.path, observed.change.mount
-    )
+    let usage = if observed.planned.is_empty() {
+        NEW_PLAN_USAGE
+    } else {
+        REVISED_PLAN_USAGE
+    };
+    format!("{said} {usage}")
 }
+
+/// What an instruction that asks for a new plan ends with.
+const NEW_PLAN_USAGE: &str =
+    "Pipe `changes.plan` JSON on stdin with the fields `path`, `text`, `uses` and `paths`.";
+/// What an instruction that asks to revise a plan with paths ends with.
+const REVISED_PLAN_USAGE: &str = "`changes.plan` replaces the plan, so pipe it JSON on stdin \
+                                  that resends the current `text`, `uses` and every path, kept \
+                                  and added.";
 
 /// The text of the change's plan, or none when it names none or nothing is there.
 pub(crate) fn plan_text(
