@@ -87,14 +87,16 @@ const OWED = {
   paths: [],
   purpose: 'p',
   kind: 'obligation',
-  close: 'Delete it with `board rm /controls/crumbkit/docs-owed-9` once the work is committed.',
+  close:
+    'Once the work this obligation names is committed, delete it with `board rm /controls/crumbkit/docs-owed-9`, ' +
+    'which commits the deletion; merging the work does not clear it.',
 }
 
 test('the context block gives an obligation its close line and a standing control none', () => {
   const checked = parseCheck(ROOT, 0, report({ measured: [], stated: [OWED, README] }), '')
   expect(checked === null ? null : contextText(checked)).toContain(
     '- /controls/crumbkit/docs-owed-9: The merge of #9 owes a docs sweep.\n' +
-      '  Delete it with `board rm /controls/crumbkit/docs-owed-9` once the work is committed.\n' +
+      `  ${OWED.close}\n` +
       '- /controls/example/readme: Keep the usage section of the README current.',
   )
   expect(checked === null ? null : contextText(checked)).toMatch(/current\.$/)
@@ -154,7 +156,7 @@ test('the row before an edit gives an obligation its close line and a standing c
     `These board controls apply to ${ROOT}/docs/guide.md, which you are editing now. Follow each one in this ` +
       'edit and any that follows.\n\n' +
       '- /controls/crumbkit/docs-owed-9: The merge of #9 owes a docs sweep.\n' +
-      '  Delete it with `board rm /controls/crumbkit/docs-owed-9` once the work is committed.\n' +
+      `  ${OWED.close}\n` +
       '- /controls/crumbkit/rust-10: A hand-written parser says what it misses.',
   ])
 })

@@ -18,7 +18,8 @@ blocks is missing.
    Add `--handle @<you>` so the route reflects who owns what. Add
    `--flow <name>` to follow another flow than the board's choice, such as
    `small`. Read every path in `docs` and in `surfaced`, and note each
-   `obligations` entry. Treat each `ask_first` pattern as a file to ask
+   `obligations` entry. Each entry carries a `close` line that says how to
+   discharge that obligation once its work is committed. Treat each `ask_first` pattern as a file to ask
    about before changing.
 2. Run `board -C <board> call changes.next --path /changes/<name>`
    whenever you start a phase or lose context. Do what `instruction` says
