@@ -14,7 +14,7 @@ use crate::board::{self, get_text, rows, text};
 use crate::change::write;
 use crate::change::{
     LastSync, attached, branch_of, current, kind_of, last_sync, line, plan_at, pull_of, read,
-    referenced, touch,
+    referenced, sync_reads, touch,
 };
 use crate::controls::{listed_by, obligations};
 use crate::diff::{edited, outside};
@@ -184,7 +184,7 @@ pub(crate) struct Moved {
 fn instruction(observed: &Observed) -> String {
     let phase = observed.change.phase.as_str();
     match (observed.flow.as_ref()).and_then(|flow| flow.phase(phase)) {
-        Some(found) => fill(&found.instruction, &values(observed)),
+        Some(found) => with_plan_usage(observed, fill(&found.instruction, &values(observed))),
         None if phase == PAUSED => format!(
             "This change was paused to free its place under the WIP limit on active changes of \
              its kind per repository. Resume it with `board call changes.resume --path {}` when a \
@@ -193,6 +193,21 @@ fn instruction(observed: &Observed) -> String {
         ),
         None => "Nothing is left to do.".to_owned(),
     }
+}
+
+/// `said` with how to give `changes.plan` its input, when `said` asks for a
+/// plan.
+fn with_plan_usage(observed: &Observed, said: String) -> String {
+    if !said.contains("changes.plan") {
+        return said;
+    }
+    format!(
+        "{said} Give `board call changes.plan` its input as JSON on stdin with the fields \
+         `path`, `text`, `uses` and `paths`, for example: `echo '{{\"path\": \"{}\", \"text\": \
+         \"<the plan in Markdown>\", \"uses\": [], \"paths\": [\"{}/**\"]}}' | board call \
+         changes.plan`.",
+        observed.path, observed.change.mount
+    )
 }
 
 /// The text of the change's plan, or none when it names none or nothing is there.
@@ -440,7 +455,7 @@ pub(crate) fn step_of(host: &dyn Host, path: &str) -> Result<(NextOutput, Observ
         waiting_on,
         ask,
         stop,
-        sync: last_sync(host)?,
+        sync: last_sync(host, sync_reads(path, &change))?,
     };
     Ok((next, observed))
 }

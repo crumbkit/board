@@ -1192,3 +1192,21 @@ fn next_in_build_gives_the_latest_reopens_reason_and_says_nothing_of_one_never_r
     let said = board.call("next", &path())["instruction"].clone();
     assert!(!said.as_str().unwrap().contains("reopened"), "{said}");
 }
+
+/// What `next` adds where its instruction asks for a plan for [`CHANGE`].
+const PLAN_USAGE: &str = "Give `board call changes.plan` its input as JSON on stdin with the \
+                          fields `path`, `text`, `uses` and `paths`, for example: `echo '{\"path\": \
+                          \"/changes/t\", \"text\": \"<the plan in Markdown>\", \"uses\": [], \
+                          \"paths\": [\"/repos/x/**\"]}' | board call changes.plan`.";
+
+#[test]
+fn next_names_the_plan_input_where_its_instruction_asks_for_a_plan_and_nowhere_else() {
+    let board = Changes::new();
+    board.change_at("changes/t.json", "plan", &json!({"route": "owner"}));
+    let said = board.call("next", &path())["instruction"].clone();
+    assert!(said.as_str().unwrap().contains(PLAN_USAGE), "{said}");
+    // The development flow's build instruction asks for no plan.
+    move_to(&board, "build");
+    let said = board.call("next", &path())["instruction"].clone();
+    assert!(!said.as_str().unwrap().contains("changes.plan"), "{said}");
+}

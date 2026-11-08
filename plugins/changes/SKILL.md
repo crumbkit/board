@@ -34,7 +34,9 @@ blocks is missing.
    not read.
 3. Attach every record you make with
    `board -C <board> call changes.attach --path /changes/<name> --ref <path>`.
-   The records go on the plan the change names, so write the plan first.
+   The records go on the plan the change names, so write the plan first:
+   pipe a JSON object with `path`, `text`, `uses` and `paths` to
+   `board -C <board> call changes.plan`.
    Set the commit under test with `--head <sha>` after each push, and the
    check suite with `--suite <path>` when the change names none. Record a
    GitHub issue or pull request with
@@ -172,7 +174,8 @@ the development flow.
 - `changes::wip::bad_active_days`: set `BOARD_CHANGES_ACTIVE_DAYS` to a whole
   number of days, or unset it.
 - `changes::sync::stale`: a warning in `open` and `next`. No sync has run
-  today; run `changes.sync`.
+  today, and a change records a pull request that sync reads; run
+  `changes.sync`. A change with no pull request gets no such warning.
 - `changes::sync::gh_failed`: gh could not read a pull request, and sync wrote
   nothing. Check `gh auth status` and sync again.
 - `changes::sync::owed`, `changes::sync::pull_not_found`,
