@@ -4,8 +4,10 @@
 mod list;
 mod read;
 mod settle;
+mod uncommitted;
 
 pub use crate::worktree::read::{Directory, Reader, Working};
+pub use crate::worktree::uncommitted::uncommitted;
 
 use std::cell::OnceCell;
 use std::collections::HashMap;

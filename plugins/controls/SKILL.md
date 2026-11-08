@@ -42,6 +42,14 @@ To run a command in a board other than the one you are in, add `-C <path>`.
        board --checkout call controls.check --path .
 
    `read` names each mount the files came from and the commit it read.
+   When you run the check from a checkout without `--checkout`, and its
+   HEAD is not the commit read or it has uncommitted changes to tracked
+   files, the output carries `checkout`. It names both commits and gives
+   in `run` the command that measures your HEAD. When HEAD differs from
+   the commit read, the check did not measure your branch, whatever
+   `passed` says. When `uncommitted` is true, HEAD is the commit read, so
+   the check measured your last commit but missed your uncommitted edits;
+   commit them and run the command in `run`.
 2. Before you edit a file, ask which controls apply to it:
 
        board -C <board> call controls.for-path --path /<file>
