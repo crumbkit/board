@@ -285,7 +285,9 @@ fn copy_back(
         && blob_at(host, version)? == "none"
     {
         let flow = record_at(inner, version)?;
-        lines.push(json!({"path": version, "expect": "none", "record": flow}));
+        // No expect: the path names the flow's content, as
+        // `flow::version_line` says.
+        lines.push(json!({"path": version, "record": flow}));
     }
     lines.push(json!({"path": to_stop, "expect": "none", "record": stop}));
     lines.push(json!({"path": to_run, "expect": "none", "record": record}));

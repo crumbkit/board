@@ -345,3 +345,27 @@ fn two_starts_on_the_same_flow_store_one_version_and_reference_the_same_path() {
     assert_eq!(files_in(&board, "changes/a"), ["plans"]);
     assert_eq!(files_in(&board, "changes/b"), ["plans"]);
 }
+
+/// Two starts that both find the version missing both write its line. The
+/// line takes no expect, so the second, which finds the version the first
+/// wrote, writes the same bytes and succeeds; a line that expected none
+/// would be stale.
+#[test]
+fn writing_a_version_over_the_same_version_succeeds_and_expecting_none_there_is_stale() {
+    let board = Changes::new();
+    let mount = board.mount_x(&[("README.md", "x")]);
+    board.call(
+        "start",
+        &json!({"mount": mount, "task": TASK, "title": "A"}),
+    );
+    let version = version_of(&board, "/changes/a");
+    let file = format!("{}.json", version.trim_start_matches('/'));
+    let record = board.read(&file);
+    let racing = json!({"path": version, "record": record});
+    let written = board.json_with(&["put", "--batch"], &format!("{racing}\n"));
+    assert_eq!(written["code"], Value::Null, "{written}");
+    assert_eq!(board.read(&file), record);
+    let expecting = json!({"path": version, "expect": "none", "record": record});
+    let stale = board.json_with(&["put", "--batch"], &format!("{expecting}\n"));
+    assert_eq!(stale["code"], "board::put::stale", "{stale}");
+}

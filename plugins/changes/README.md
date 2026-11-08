@@ -185,10 +185,13 @@ of its flow with a reference to the flow's version. For each
 writes that flow's version when the board lacks it, points the change at
 it, and removes the copy when it sits at `<path>/flow`. Identical copies
 share one version. A copy that is not a flow Board reads stays where it is
-and is listed under `unreadable` with `changes::flow::unreadable`, and the
-rest go on. A `changes/run/v1` that names its flow by name is rewritten to
-name its change's version; one whose change follows no version is listed
-under `left`. The output's `flows` holds `applied`, `versions` (the
+and is listed under `unreadable` with `changes::flow::unreadable`. A
+change whose rewritten record fails its schema stays as it is, with its
+copy, and is listed under `left` with the reason. The rest go on. A
+`changes/run/v1` that names its flow by name is rewritten to name its
+change's version; one whose change follows no version is listed under
+`left`. A run that names a copy the migration replaces is rewritten to
+name that copy's version. The output's `flows` holds `applied`, `versions` (the
 versions written), `changes` (at most 100, with `total` and `truncated`),
 `copies` (the count removed), `runs`, `unreadable` and `left`. The commit's
 trailer is `Board-Bulk: migrate flows`. A second run writes nothing. Each
@@ -232,9 +235,10 @@ of `changes` still fails `review`.
 ## Capabilities
 
 - `start --mount (/repos/<name> | /) --title '<title>' [--task <path> | --task-repo <repo>] [--name <name>] [--handle @<you>] [--flow <name or path>] [--suite <path>]`
-  creates the change in the first phase of its flow, which references the
-  flow's version and writes it when the board lacks it, and a plan with empty Problem, Outcome, Out of scope, UX and Data
-  sections. "Flows" below says how the flow is chosen; `flow` in the output
+  creates the change in the first phase of its flow, and a plan with empty
+  Problem, Outcome, Out of scope, UX and Data sections. The change points
+  at the stored version of its flow, and `start` writes that version when
+  the board lacks it. "Flows" below says how the flow is chosen; `flow` in the output
   names it and its phases. `--task` names the task the change
   does, and must be a `tasks/task/v2` (`changes::ref::wrong_type`). Without
   it, `start` adds a task titled as the change through `board call

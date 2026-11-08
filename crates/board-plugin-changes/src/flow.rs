@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 use crate::records::{Route, Subject};
 
 pub(crate) use read::{
-    FlowSummary, asked_for, blob_at, chosen, of_change, version_line, version_path,
+    FlowSummary, asked_for, blob_at, chosen, of_change, version_line, version_path, version_write,
 };
 pub(crate) use valid::{problems, refuse_invalid, refuse_without_repository};
 

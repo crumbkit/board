@@ -506,8 +506,11 @@ const SMALL_FLOW: &str = include_str!("../../../../../board-plugin-changes/flows
 
 /// A board that commits its puts, holding changes written before flow
 /// versions: three with the same copy of the development flow, one with a
-/// copy of the small flow and one whose copy Board does not read; and a
-/// run of the first that names its flow by name. Everything is committed.
+/// copy of the small flow and one whose copy Board does not read. A run of
+/// the first names its flow by name, as runs did before versions; a run of
+/// the second names its change's copy, as a run of a change not yet
+/// migrated does; and a run of the last names that change's unreadable
+/// copy. Everything is committed.
 fn copies_board() -> Changes {
     let board = Changes::new();
     board.mount_x(&[("README.md", "x\n")]);
@@ -536,25 +539,31 @@ fn copies_board() -> Changes {
         board.write(&format!("changes/{name}.json"), &change.to_string());
         board.write(&format!("changes/{name}/flow.json"), &copy);
     }
-    board.write(
-        "changes/a/stops/1.json",
-        &typed(
-            "changes/stop/v1",
-            &json!({"reason": "reached", "phase": "plan", "missing": [], "summary": "Stopped."}),
-        ),
-    );
-    let run = json!({
-        "$type": "changes/run/v1",
-        "flow": "development",
-        "stop": {"through": "plan"},
-        "started": "2026-11-01T10:00:00Z",
-        "ended": "2026-11-01T10:05:00Z",
-        "sandbox": false,
-        "phase": "plan",
-        "reason": "reached",
-        "stopped": "/changes/a/stops/1",
-    });
-    board.write("changes/a/runs/1.json", &run.to_string());
+    for (name, flow) in [
+        ("a", "development"),
+        ("b", "/changes/b/flow"),
+        ("e", "/changes/e/flow"),
+    ] {
+        board.write(
+            &format!("changes/{name}/stops/1.json"),
+            &typed(
+                "changes/stop/v1",
+                &json!({"reason": "reached", "phase": "plan", "missing": [], "summary": "Stopped."}),
+            ),
+        );
+        let run = json!({
+            "$type": "changes/run/v1",
+            "flow": flow,
+            "stop": {"through": "plan"},
+            "started": "2026-11-01T10:00:00Z",
+            "ended": "2026-11-01T10:05:00Z",
+            "sandbox": false,
+            "phase": "plan",
+            "reason": "reached",
+            "stopped": format!("/changes/{name}/stops/1"),
+        });
+        board.write(&format!("changes/{name}/runs/1.json"), &run.to_string());
+    }
     let root = board.root().to_path_buf();
     git(&root, &["config", "user.name", "t"]);
     git(&root, &["config", "user.email", "t@t"]);
@@ -578,7 +587,10 @@ fn migrating_flows_collapses_identical_copies_into_one_version_in_one_bulk_commi
         flows["unreadable"],
         json!([{"path": "/changes/e/flow", "change": "/changes/e", "code": "changes::flow::unreadable"}])
     );
-    assert_eq!(flows["runs"], json!(["/changes/a/runs/1"]));
+    assert_eq!(
+        flows["runs"],
+        json!(["/changes/a/runs/1", "/changes/b/runs/1"])
+    );
     // The dry run writes nothing.
     assert_eq!(board.board.head().unwrap().id, before);
     assert!(board.exists("changes/a/flow.json"));
@@ -616,10 +628,18 @@ fn migrating_flows_collapses_identical_copies_into_one_version_in_one_bulk_commi
     assert!(board.exists("changes/e/flow.json"));
     assert_eq!(board.read("changes/e.json")["flow"], "/changes/e/flow");
     assert_eq!(board.read("changes/a/runs/1.json")["flow"], followed[0]);
+    // The run that named the removed copy names its version, and the run
+    // that names the copy the migration keeps is left as it is.
+    assert_eq!(board.read("changes/b/runs/1.json")["flow"], followed[1]);
+    assert_eq!(
+        board.read("changes/e/runs/1.json")["flow"],
+        "/changes/e/flow"
+    );
     for name in ["a", "b", "c", "d"] {
         assert_eq!(board.code(&format!("/changes/{name}")), None, "{name}");
     }
     assert_eq!(board.code("/changes/a/runs/1"), None);
+    assert_eq!(board.code("/changes/b/runs/1"), None);
     // A second apply finds nothing to write.
     let again = board.call("migrate", &json!({"flows": true, "apply": true}));
     assert_eq!(
@@ -629,11 +649,58 @@ fn migrating_flows_collapses_identical_copies_into_one_version_in_one_bulk_commi
     assert_eq!(board.board.head().unwrap().id, head.id);
 }
 
+/// Commits every file of `board` as it stands.
+fn commit_all(board: &Changes) {
+    let root = board.root().to_path_buf();
+    git(&root, &["add", "-A"]);
+    git(&root, &["commit", "-qm", "more"]);
+}
+
 #[test]
-fn migrate_without_flows_leaves_the_copies_and_says_nothing_of_them() {
+fn migrate_without_flows_leaves_the_copies_says_nothing_of_them_and_marks_its_commit() {
     let board = copies_board();
+    board.write(
+        "changes/old.json",
+        &change("build", &json!({"records": [TASK]})),
+    );
+    commit_all(&board);
     let output = board.call("migrate", &json!({"apply": true}));
     assert_eq!(output.get("flows"), None);
+    assert_eq!(output["changes"], json!(["/changes/old"]));
     assert!(board.exists("changes/a/flow.json"));
     assert_eq!(board.read("changes/a.json")["flow"], "/changes/a/flow");
+    let head = board.board.head().unwrap();
+    assert!(
+        head.message.ends_with("\n\nBoard-Bulk: migrate changes"),
+        "{}",
+        head.message
+    );
+}
+
+#[test]
+fn a_change_whose_rewrite_fails_its_schema_is_left_and_the_rest_of_the_flows_migrate() {
+    let board = copies_board();
+    let mut odd = board.read("changes/c.json");
+    odd["surfaced"] = json!("never");
+    board.write("changes/c.json", &odd.to_string());
+    commit_all(&board);
+    let dry = board.call("migrate", &json!({"flows": true}));
+    let flows = &dry["flows"];
+    assert_eq!(
+        flows["changes"],
+        json!(["/changes/a", "/changes/b", "/changes/d"])
+    );
+    let left = &flows["left"][0];
+    assert_eq!(left["path"], "/changes/c");
+    let why = left["why"].as_str().unwrap();
+    assert!(
+        why.starts_with("its rewritten record at /changes/c fails its schema at"),
+        "{why}"
+    );
+    assert_eq!(flows["copies"], 3);
+    let applied = board.call("migrate", &json!({"flows": true, "apply": true}));
+    assert_eq!(applied["flows"]["changes"], flows["changes"]);
+    assert!(board.exists("changes/c/flow.json"));
+    assert_eq!(board.read("changes/c.json")["flow"], "/changes/c/flow");
+    assert!(!board.exists("changes/a/flow.json"));
 }

@@ -367,3 +367,5 @@ fn a_flow_named_repos_is_refused_and_one_named_repo_is_admitted() {
     assert_eq!(codes_named("repos"), ["changes::flow::reserved_name"]);
     assert_eq!(codes_named("repo"), Vec::<&str>::new());
 }
+
+mod version;

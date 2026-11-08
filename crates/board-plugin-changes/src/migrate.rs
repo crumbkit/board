@@ -1,11 +1,13 @@
 //! The `migrate` capability: rewrites each `changes/change/v1` as a
 //! `changes/change/v2` (docs/plugins/lifecycle/updating.md).
 //!
-//! A v2 change follows a flow, so each change references the stored
-//! version of the shipped development flow, whose phase names are v1's,
-//! which the migration writes when the board lacks it, the check suite its mount's contributing docs name, which a v1 change read
-//! on every `next`, and an empty `surfaced`; a prototype follows no flow
-//! and gets none. Its phase, paused included, carries over.
+//! A v2 change follows a flow. The shipped development flow has v1's phase
+//! names, so each rewritten change points at the stored version of that
+//! flow, and the migration writes the version when the board lacks it.
+//! Each change also gets the check suite its mount's contributing docs
+//! name, which a v1 change read on every `next`, and an empty `surfaced`.
+//! A prototype follows no flow and gets none. A change keeps its phase,
+//! paused included.
 //!
 //! A change written before the split of `changes/change/v1` is rewritten
 //! from that older shape first. It keeps its entity fields. A prototype's fields
@@ -426,7 +428,7 @@ fn rewrite(known: &Known, old: &Old, record: &str) -> Result<Plan, String> {
 /// Makes `change`, the body of a v1 change, a v2 that surfaced nothing:
 /// unless it is a prototype, it follows the version of the shipped
 /// development flow and stores the suite its mount's contributing docs
-/// name. Whether it follows the version.
+/// name. It returns whether the change follows the version.
 fn upgrade(known: &Known, change: &mut Map<String, Value>, prototype: bool) -> bool {
     change.insert("$type".to_owned(), json!(ChangeRecord::TYPE));
     change.insert("surfaced".to_owned(), json!([]));

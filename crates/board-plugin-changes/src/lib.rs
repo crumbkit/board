@@ -100,8 +100,9 @@ fn output<T: JsonSchema>() -> Value {
 const CAPABILITIES: [Capability; 19] = [
     Capability {
         name: "start",
-        description: "Create a change in the first phase of its flow, which references the \
-            stored version of the flow and writes it when the board lacks it, its plan to fill in and, unless one is named, its task; set its route from CODEOWNERS and \
+        description: "Create a change in the first phase of its flow, its plan to fill in and, \
+            unless one is named, its task; point the change at the stored version of its flow, \
+            writing that version when the board lacks it; set its route from CODEOWNERS and \
             its check suite; record the open tasks, decisions and evals on the mount; and return \
             them with the repository's owners, contributing docs and obligations.",
         run: start::start,

@@ -213,14 +213,24 @@ pub(crate) fn version_path(flow: &Flow) -> String {
 
 /// The path of `flow`'s version, and the `put` line that writes it when
 /// the board does not hold it yet.
+///
+/// The line takes no expect. The path names the flow's content, so when
+/// another writer stores the version between this read and the write, as
+/// two concurrent starts do, the line writes the same record over it and
+/// succeeds.
 pub(crate) fn version_line(
     host: &dyn Host,
     flow: &Flow,
 ) -> Result<(String, Option<Value>), PluginError> {
     let at = version_path(flow);
-    let line = (blob_at(host, &at)? == "none")
-        .then(|| json!({"path": at, "expect": "none", "record": flow}));
+    let line = (blob_at(host, &at)? == "none").then(|| version_write(&at, flow));
     Ok((at, line))
+}
+
+/// The `put` line that writes `flow` as its version at `at`, with no
+/// expect, as `version_line` says.
+pub(crate) fn version_write(at: &str, flow: &Flow) -> Value {
+    json!({"path": at, "record": flow})
 }
 
 /// The flow the change at `path` follows: the version its `flow` names,

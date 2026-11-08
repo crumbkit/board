@@ -7,10 +7,14 @@
 //! `/flows/<name>/<version>` when the board lacks it, points the change at
 //! it and removes the change's own copy. Identical copies share one
 //! version. A copy that is not a flow Board reads is left in place and
-//! listed under `unreadable`, and the rest go on.
+//! listed under `unreadable`. A change whose rewritten record fails its
+//! schema is left as it is, with its copy, and listed under `left` with the
+//! reason. The rest go on.
 //!
 //! A `changes/run/v1` that names its flow by name, as runs did before
-//! versions, is rewritten to name the version its change follows.
+//! versions, is rewritten to name the version its change follows. A run
+//! that names a copy the migration replaces, as a run of a change not yet
+//! migrated does, is rewritten to name that copy's version.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -21,10 +25,10 @@ use schemars::JsonSchema;
 use serde::Serialize;
 use serde_json::{Map, Value, json};
 
-use super::{LISTED, Left};
+use super::{LISTED, Left, compiled, conforms};
 use crate::board::{self, readable, rows, text};
 use crate::change::OWN;
-use crate::flow::{Flow, blob_at, version_path};
+use crate::flow::{Flow, blob_at, version_path, version_write};
 use crate::records::{ChangeRecord, RunRecord};
 
 /// The reason the commit of a migration gives in its `Board-Bulk:`
@@ -51,8 +55,9 @@ pub(super) struct Unreadable {
 /// `versions` lists the flow versions written. `changes` lists the changes
 /// pointed at a version, at most 100, with `total` and `truncated`.
 /// `copies` counts the copies removed. `runs` lists the runs rewritten to
-/// name their change's version. `unreadable` lists each copy left in
-/// place, and `left` each run whose change follows no version.
+/// name a version. `unreadable` lists each copy left in place. `left`
+/// lists each change whose rewritten record fails its schema, and each
+/// run whose change follows no version, with the reason.
 #[derive(Debug, Serialize, JsonSchema)]
 #[schemars(rename = "MigrateFlowsOutput")]
 pub(super) struct Output {
@@ -144,26 +149,46 @@ pub(super) fn replace(
     let mut changes = Vec::new();
     let mut unreadable = Vec::new();
     let mut copies = 0;
+    let mut left = Vec::new();
+    let schemas = compiled();
+    // The version each change follows, and the version of each copy the
+    // migration replaces.
     let mut followed: BTreeMap<String, String> = BTreeMap::new();
+    let mut replaced: BTreeMap<String, String> = BTreeMap::new();
     for change in stored(host, ChangeRecord::TYPE)? {
-        let Some(copy) = change.body.get("flow").and_then(Value::as_str) else {
+        let Some(copy) = (change.body.get("flow").and_then(Value::as_str)).map(str::to_owned)
+        else {
             continue;
         };
         if copy.starts_with(FLOWS) {
-            followed.insert(change.path.clone(), copy.to_owned());
+            followed.insert(change.path.clone(), copy);
             continue;
         }
-        let Some((flow, blob)) = flow_at(host, copy)? else {
+        let Some((flow, blob)) = flow_at(host, &copy)? else {
             unreadable.push(Unreadable {
-                path: copy.to_owned(),
+                path: copy,
                 change: change.path.clone(),
                 code: UNREADABLE,
             });
             continue;
         };
         let version = version_path(&flow);
+        let mut body = change.body;
+        body.insert("flow".to_owned(), json!(version));
+        let repointed = json!({"path": change.path, "expect": change.blob, "record": body});
+        // Checked before anything of the change is written, so a dry run
+        // that lists a change promises an apply that writes it.
+        if let Err(why) = conforms(&schemas, std::slice::from_ref(&repointed)) {
+            left.push(Left {
+                path: change.path,
+                why,
+                page: None,
+                recorded: Vec::new(),
+            });
+            continue;
+        }
         if !written.contains(&version) && blob_at(host, &version)? == "none" {
-            lines.push(json!({"path": version, "expect": "none", "record": flow}));
+            lines.push(version_write(&version, &flow));
             versions.push(version.clone());
         }
         written.insert(version.clone());
@@ -171,13 +196,12 @@ pub(super) fn replace(
             lines.push(json!({"path": copy, "expect": blob, "remove": true}));
             copies += 1;
         }
-        let mut body = change.body;
-        body.insert("flow".to_owned(), json!(version));
-        lines.push(json!({"path": change.path, "expect": change.blob, "record": body}));
+        lines.push(repointed);
+        replaced.insert(copy, version.clone());
         followed.insert(change.path.clone(), version);
         changes.push(change.path);
     }
-    let (runs, left) = rewrite_runs(host, &followed, &mut lines)?;
+    let runs = rewrite_runs(host, (&followed, &replaced), &mut lines, &mut left)?;
     let total = changes.len();
     changes.truncate(LISTED);
     let output = Output {
@@ -195,41 +219,48 @@ pub(super) fn replace(
 }
 
 /// Adds to `lines` a rewrite of each run that names its flow by name, to
-/// name the version its change follows, by `followed`; returns the runs
-/// rewritten and those left because their change follows no version.
+/// name the version its change follows by `followed`, and of each run that
+/// names a copy in `replaced`, to name that copy's version; returns the
+/// runs rewritten and adds to `left` those whose change follows no version.
 fn rewrite_runs(
     host: &dyn Host,
-    followed: &BTreeMap<String, String>,
+    (followed, replaced): (&BTreeMap<String, String>, &BTreeMap<String, String>),
     lines: &mut Vec<Value>,
-) -> Result<(Vec<String>, Vec<Left>), PluginError> {
-    let (mut runs, mut left) = (Vec::new(), Vec::new());
+    left: &mut Vec<Left>,
+) -> Result<Vec<String>, PluginError> {
+    let mut runs = Vec::new();
     for run in stored(host, RunRecord::TYPE)? {
         let Some(named) = run.body.get("flow").and_then(Value::as_str) else {
             continue;
         };
-        if named.starts_with('/') {
-            continue;
-        }
-        let change = run.path.rsplit_once("/runs/").map(|(change, _)| change);
-        let Some(version) = change.and_then(|change| followed.get(change)) else {
-            left.push(Left {
-                path: run.path.clone(),
-                why: format!(
-                    "the run names the flow {named}, and its change follows no stored version of \
-                     a flow; reflow the change with `board call changes.reflow`, then run \
-                     migrate again"
-                ),
-                page: None,
-                recorded: Vec::new(),
-            });
-            continue;
+        let version = if named.starts_with('/') {
+            let Some(version) = replaced.get(named) else {
+                continue;
+            };
+            version
+        } else {
+            let change = run.path.rsplit_once("/runs/").map(|(change, _)| change);
+            let Some(version) = change.and_then(|change| followed.get(change)) else {
+                left.push(Left {
+                    path: run.path.clone(),
+                    why: format!(
+                        "the run names the flow {named}, and its change follows no stored \
+                         version of a flow; reflow the change with `board call \
+                         changes.reflow`, then run migrate again"
+                    ),
+                    page: None,
+                    recorded: Vec::new(),
+                });
+                continue;
+            };
+            version
         };
         let mut body = run.body;
         body.insert("flow".to_owned(), json!(version));
         lines.push(json!({"path": run.path, "expect": run.blob, "record": body}));
         runs.push(run.path);
     }
-    Ok((runs, left))
+    Ok(runs)
 }
 
 /// With `flows`, adds to `lines` the lines that replace the flow copies,
