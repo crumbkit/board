@@ -5,7 +5,7 @@ band above the Claude Code prompt shows and how four mods draw it together.
 
 The band is one row of badges, which wraps on a narrow terminal:
 
-`Orders [controls] [credentials-vq] [evals] | Home vq Board personal | [Controls 5] [Questions 3] [Effects 2]`
+`Orders [controls] [credentials] [evals] | Home work Board personal | [Controls 5] [Questions 3] [Effects 2]`
 
 A badge with nothing to show is left out. When every badge is left out, the
 band draws nothing. While a survey holds the band, no mod draws in it.

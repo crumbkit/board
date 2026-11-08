@@ -215,19 +215,19 @@ test('the badges file lists each badge\'s label and command, and a malformed fil
 })
 
 test('a badge shows the first line of its output, and a command that fails or prints nothing shows no badge', () => {
-  expect(badgeValue(0, 'vq\nmore\n')).toEqual({ value: 'vq' })
-  expect(badgeValue(0, '  vq  ')).toEqual({ value: 'vq' })
-  expect(badgeValue(0, '\nvq')).toEqual({ why: 'printed nothing on its first line' })
+  expect(badgeValue(0, 'work\nmore\n')).toEqual({ value: 'work' })
+  expect(badgeValue(0, '  work  ')).toEqual({ value: 'work' })
+  expect(badgeValue(0, '\nwork')).toEqual({ why: 'printed nothing on its first line' })
   expect(badgeValue(0, '')).toEqual({ why: 'printed nothing on its first line' })
-  expect(badgeValue(1, 'vq')).toEqual({ why: 'exited with status 1' })
+  expect(badgeValue(1, 'work')).toEqual({ why: 'exited with status 1' })
 })
 
 test('the Board badge names the personal board as personal, and any other board by its directory', () => {
   const listing = (repository: string) => JSON.stringify({ schema: 'board/ls-report/v2', summary: { location: { repository } } })
   expect(boardName(0, listing(PERSONAL), PERSONAL)).toBe('personal')
   expect(boardName(0, listing(`${PERSONAL}/`), PERSONAL)).toBe('personal')
-  expect(boardName(0, listing(`${PERSONAL}/vq`), PERSONAL)).toBe('vq')
-  expect(boardName(0, listing(`${PERSONAL}/vq`), null)).toBe('vq')
+  expect(boardName(0, listing(`${PERSONAL}/team`), PERSONAL)).toBe('team')
+  expect(boardName(0, listing(`${PERSONAL}/team`), null)).toBe('team')
   expect(boardName(1, JSON.stringify({ code: 'board::config::not_found', message: 'no board' }), PERSONAL)).toBeNull()
 })
 
@@ -244,8 +244,8 @@ test('the band shows the configured badges, the Board badge and the Controls but
   const { events, logs } = engine(on, {
     config,
     badges,
-    commands: { 'home-name': 'vq\n', broken: 'fails', slow: 'hangs', quiet: '' },
-    repository: `${PERSONAL}/vq`,
+    commands: { 'home-name': 'work\n', broken: 'fails', slow: 'hangs', quiet: '' },
+    repository: `${PERSONAL}/team`,
   })
   await start($)
   expect(events.filter(e => e.startsWith('badge')).sort()).toEqual([
@@ -263,7 +263,7 @@ test('the band shows the configured badges, the Board badge and the Controls but
   for (const surface of ['terminal', 'desktop'] as const) {
     const band = await $.ui.mount({ ...BAND, surface })
     const texts = (await band.findAll({ type: 'Text' })).map(t => t.text)
-    expect(texts).toEqual(['Home', ' vq ', 'Board', ' vq ', '|'])
+    expect(texts).toEqual(['Home', ' work ', 'Board', ' team ', '|'])
     expect((await band.find({ key: 'controls' }))?.text).toBe('Controls 2')
     await band.press({ key: 'controls' })
     await band.unmount()
