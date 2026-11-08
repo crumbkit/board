@@ -103,12 +103,15 @@ that one record.
   read and does not rely on: each group is `records`, one or more
   references, and `why`, the reason in words.
 - `owed`, left out when empty, holds the obligations the change leaves for
-  later: each is `control`, a reference to a `controls/control/v1`, and
-  `why`. A record that is missing is `changes::ref::dangling`, and an owed
-  path that is no control is `changes::ref::wrong_type`. A plan's text
+  later: each is `control`, the path of a `controls/control/v1`, and `why`.
+  `board check` does not follow `control`, because an obligation is deleted
+  once its work is done and a plan snapshot never changes. `plan` checks the
+  path when it writes it: a record that is missing is
+  `changes::ref::dangling`, and an owed path that is no control is
+  `changes::ref::wrong_type`. A plan's text
   takes no such paths: the `considered` and `obligations` checks read only
   these fields. A `### Considered` or `## Obligations left owed` heading
-  that lists paths earns the output's `warnings` entry
+  earns the output's `warnings` entry
   `changes::plan::considered_in_text`; `plan` still writes the plan.
 
 `changes/prototype/v1` at `/changes/<name>/prototype.json` makes the change
@@ -230,7 +233,17 @@ and `Obligations left owed` sections from its plan's text to the plan's
 as it was. A line that reads as neither paths and a reason nor a label, a path
 that reaches nothing, and an owed path that is no control are listed under
 `plan_fields.unread` with `changes::migrate::unread`, and that change keeps
-its old plan. The commit's trailer is `Board-Bulk: migrate plans`.
+its old plan. A path that exists but is degraded is accepted, so this
+migration can run before `plans.migrate` and `evals.migrate`. The commit's
+trailer is `Board-Bulk: migrate plans`.
+
+`board plugin enable` writes the new schemas, and from then on a question or
+eval that still holds words in `blocks` or `decision` is degraded and drops
+out of `plans.open` and `evals.open`. So apply `plans.migrate`,
+`evals.migrate` and `controls.migrate --owed_by true` in the same step as
+`plugin enable`, with `changes.migrate --plans true`. Read the dry runs first
+on a throwaway copy of the board, where enabling the plugins changes nothing
+that anyone else reads.
 
 The output's `flows` holds `applied`, `versions` (the versions written), `changes` (at most 100, with `total` and `truncated`),
 `copies` (the count removed), `runs`, `unreadable` and `left`. The commit's

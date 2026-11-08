@@ -3,8 +3,9 @@
 //!
 //! Three rules are tried in order, and the first that gives exactly one
 //! record decides. Rule 1 reads the pull request the requirement names as
-//! `owner/repo#n`, or as `#n` with a mount in `applies_to` whose clone's
-//! origin gives the owner and repository. Rule 2 takes the one
+//! `owner/repo#n`, or as `#n` after a word such as `PR` or `pull` with a mount
+//! in `applies_to` whose clone's origin gives the owner and repository. A
+//! number the board holds as an issue record is no match. Rule 2 takes the one
 //! `review/report/v1` among `sources`, and rule 3 the one `plans/decision/v1`
 //! among them. A pull request the board holds no record of lists the
 //! `github.ref` command that writes it, and sets nothing. Two records under
@@ -37,6 +38,8 @@ const MOUNT_TYPE: &str = "board/mount/v1";
 const PULL_TYPE: &str = OWED_BY_TYPES[0];
 const REPORT_TYPE: &str = OWED_BY_TYPES[1];
 const DECISION_TYPE: &str = OWED_BY_TYPES[2];
+/// What `github.ref` writes for a number that is an issue.
+const ISSUE_TYPE: &str = "github/issue/v1";
 
 fn compiled(pattern: &str) -> Regex {
     Regex::new(pattern).expect("each pattern is a constant; the migrate tests compile it")
@@ -46,8 +49,10 @@ fn compiled(pattern: &str) -> Regex {
 static FULL: LazyLock<Regex> = LazyLock::new(|| {
     compiled(r"(?:^|[^A-Za-z0-9_./-])([A-Za-z0-9][A-Za-z0-9-]*)/([A-Za-z0-9_.-]+)#([0-9]+)\b")
 });
-/// `#n` in prose, with no repository before it.
-static BARE: LazyLock<Regex> = LazyLock::new(|| compiled(r"(?:^|[^A-Za-z0-9_./#-])#([0-9]+)\b"));
+/// `#n` after a word that names a pull request, because a bare `#n` may number
+/// anything, such as a finding.
+static BARE: LazyLock<Regex> =
+    LazyLock::new(|| compiled(r"(?i)\b(?:pr|pull(?:\s+request)?)\s+#([0-9]+)\b"));
 /// The owner and repository of a GitHub remote.
 static REMOTE: LazyLock<Regex> =
     LazyLock::new(|| compiled(r"github\.com[:/]([A-Za-z0-9-]+)/([A-Za-z0-9_.-]+?)(?:\.git)?/?$"));
@@ -131,6 +136,10 @@ impl Pull {
         format!("/gh/{}/{}/pulls/{}", self.owner, self.repo, self.number)
     }
 
+    fn issue_path(&self) -> String {
+        format!("/gh/{}/{}/issues/{}", self.owner, self.repo, self.number)
+    }
+
     fn command(&self) -> String {
         format!(
             "board call github.ref --ref {}/{}#{}",
@@ -156,10 +165,12 @@ fn rows(host: &dyn Host, sql: &str) -> Result<Vec<Vec<Value>>, PluginError> {
     Ok(report.rows)
 }
 
-/// The path of each record of the types `owed_by` may name in this board's
-/// own tree, with its type.
+/// The path of each record of the types `owed_by` may name, and of each issue
+/// record, in this board's own tree, with its type.
 fn kinds(host: &dyn Host) -> Result<BTreeMap<String, String>, PluginError> {
-    let types: Vec<String> = OWED_BY_TYPES.iter().map(|each| literal(each)).collect();
+    let types: Vec<String> = (OWED_BY_TYPES.iter().chain([&ISSUE_TYPE]))
+        .map(|each| literal(each))
+        .collect();
     let sql = format!(
         "SELECT logical, type FROM entries WHERE source = 'worktree' AND type IN ({})",
         types.join(", ")
@@ -246,8 +257,12 @@ fn pulls(
 
 /// What the three rules find for an obligation, in order.
 fn find(named: &BTreeSet<Pull>, sources: &[String], kinds: &BTreeMap<String, String>) -> Found {
+    // A number the board holds as an issue names no pull request.
+    let named: Vec<&Pull> = (named.iter())
+        .filter(|pull| kinds.get(&pull.issue_path()).map(String::as_str) != Some(ISSUE_TYPE))
+        .collect();
     if named.len() > 1 {
-        return Found::Several(named.iter().map(Pull::path).collect());
+        return Found::Several(named.iter().map(|pull| pull.path()).collect());
     }
     if let Some(pull) = named.first() {
         let path = pull.path();

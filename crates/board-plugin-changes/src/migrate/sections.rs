@@ -6,12 +6,14 @@
 //! records, the sections cut from the text, and their lines in `considered`
 //! and `owed`. A line it cannot read as paths and a reason, a path that
 //! reaches nothing, or an owed path that is no control is listed under
-//! `unread`, and that change keeps its old plan.
+//! `unread`, and that change keeps its old plan. A path that exists but is
+//! degraded is accepted, so this migration can run before the others.
 //!
 //! The parser reads the forms the sections have held, and no others: list
 //! items that start with paths and a reason, list items of a reason and then
 //! only paths, and a prose line ending in a colon followed by lines of only
-//! paths. Anything else is `unread`, which a person rewrites by hand.
+//! paths. Anything else is `unread`, which a person rewrites by hand, and so
+//! is a label with no path lines under it.
 
 use std::sync::LazyLock;
 
@@ -25,7 +27,7 @@ use serde_json::{Value, json};
 use super::flows::stored;
 use super::{LISTED, compiled, conforms};
 use crate::board;
-use crate::change::{plan_at, referenced};
+use crate::change::{NOT_FOUND, plan_at, referenced};
 use crate::gates::{FENCES, HEADING};
 use crate::plan::{MOVED_HEADINGS, Planned, plan_lines};
 use crate::records::{CONTROL_TYPE, ChangeRecord, ChangeV1, Considered, Owed, is_final};
@@ -117,6 +119,13 @@ fn cut(text: &str) -> Cut {
             if open.is_none()
                 && let Some(which) = MOVED_HEADINGS.iter().position(|each| *each == name)
             {
+                // The join where the section is removed holds at most one blank line.
+                if kept.last().is_some_and(|last| last.trim().is_empty()) {
+                    while kept.last().is_some_and(|last| last.trim().is_empty()) {
+                        kept.pop();
+                    }
+                    kept.push("");
+                }
                 open = Some((level, which));
                 result.found = true;
                 continue;
@@ -128,16 +137,12 @@ fn cut(text: &str) -> Cut {
             None => kept.push(line),
         }
     }
-    let mut tidy: Vec<&str> = Vec::new();
-    for line in kept {
-        if !(line.trim().is_empty() && tidy.last().is_some_and(|last| last.trim().is_empty())) {
-            tidy.push(line);
+    if open.is_some() {
+        while kept.last().is_some_and(|last| last.trim().is_empty()) {
+            kept.pop();
         }
     }
-    while tidy.last().is_some_and(|last| last.trim().is_empty()) {
-        tidy.pop();
-    }
-    result.kept = format!("{}\n", tidy.join("\n"));
+    result.kept = format!("{}\n", kept.join("\n"));
     result
 }
 
@@ -204,22 +209,23 @@ fn read_section(lines: &[String]) -> (Vec<(Vec<String>, String)>, Vec<String>) {
         }
     };
     let finish_label = |label: &mut Option<(String, Vec<String>)>,
-                        groups: &mut Vec<(Vec<String>, String)>| {
-        if let Some((why, paths)) = label.take()
-            && !paths.is_empty()
-        {
-            groups.push((paths, why));
+                        groups: &mut Vec<(Vec<String>, String)>,
+                        unread: &mut Vec<String>| {
+        match label.take() {
+            Some((why, paths)) if paths.is_empty() => unread.push(format!("{why}:")),
+            Some((why, paths)) => groups.push((paths, why)),
+            None => {}
         }
     };
     for line in lines {
         if line.trim().is_empty() {
             finish_item(&mut item, &mut groups, &mut unread);
-            finish_label(&mut label, &mut groups);
+            finish_label(&mut label, &mut groups, &mut unread);
             continue;
         }
         if let Some(captures) = ITEM.captures(line) {
             finish_item(&mut item, &mut groups, &mut unread);
-            finish_label(&mut label, &mut groups);
+            finish_label(&mut label, &mut groups, &mut unread);
             item = Some(captures[1].trim().to_owned());
             continue;
         }
@@ -239,14 +245,14 @@ fn read_section(lines: &[String]) -> (Vec<(Vec<String>, String)>, Vec<String>) {
             }
             continue;
         }
-        finish_label(&mut label, &mut groups);
+        finish_label(&mut label, &mut groups, &mut unread);
         match line.trim().strip_suffix(':') {
             Some(words) => label = Some((words.trim().to_owned(), Vec::new())),
             None => unread.push(line.clone()),
         }
     }
     finish_item(&mut item, &mut groups, &mut unread);
-    finish_label(&mut label, &mut groups);
+    finish_label(&mut label, &mut groups, &mut unread);
     (groups, unread)
 }
 
@@ -289,17 +295,22 @@ fn moved(host: &dyn Host, path: &str, plan: &str) -> Result<Option<Moved>, Plugi
         .flat_map(|(paths, _)| paths.iter().cloned())
         .collect();
     let found = referenced(host, &named)?;
+    // A degraded record exists, as `put` accepts it, so the migrations can run
+    // in any order: an eval is degraded until its own migration is applied.
+    let reaches_nothing = |each: &str| {
+        found.get(each).is_none()
+            && (found.unreadable.iter()).any(|(seen, code)| seen == each && code == NOT_FOUND)
+    };
     for each in &named {
-        if found.get(each).is_none() {
-            unread.push((each.clone(), "it reaches nothing or is degraded".to_owned()));
+        if reaches_nothing(each) {
+            unread.push((each.clone(), "it reaches nothing".to_owned()));
         }
     }
     for (paths, _) in &owed_groups {
         for each in paths {
-            if found
-                .get(each)
-                .is_some_and(|(kind, _)| kind != CONTROL_TYPE)
-            {
+            let kind = (found.get(each).map(|(kind, _)| kind))
+                .or_else(|| found.unreadable_types.get(each));
+            if !reaches_nothing(each) && kind.map(String::as_str) != Some(CONTROL_TYPE) {
                 unread.push((each.clone(), format!("it is no {CONTROL_TYPE}")));
             }
         }
@@ -419,3 +430,6 @@ pub(super) fn rewrite(host: &dyn Host, lines: &mut Vec<Value>) -> Result<Output,
         unread,
     })
 }
+
+#[cfg(test)]
+mod tests;

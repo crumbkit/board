@@ -2,7 +2,7 @@
 //! struct; the files under `types/` are those schemas, committed.
 
 use board_plugin::shape::{
-    Accepts, Actor, CommitName, Date, LogicalGlob, Prose, Record, Ref, Slug, Summary, Tag,
+    Accepts, Actor, CommitName, Date, LogicalGlob, PathKey, Prose, Record, Ref, Slug, Summary, Tag,
     Timestamp, Url,
 };
 use schemars::JsonSchema;
@@ -534,20 +534,15 @@ pub(crate) struct Considered {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Owed {
-    /// The obligation left owed.
-    #[schemars(with = "Ref<Control>")]
+    /// The path of the obligation left owed. Board's check does not follow
+    /// it, because an obligation is deleted once its work is done and a plan
+    /// snapshot never changes. `changes.plan` and the migration check that
+    /// the path holds a control when they write it.
+    #[schemars(with = "PathKey")]
     pub(crate) control: String,
     /// Why this change does not discharge it, and what will.
     #[schemars(with = "Prose", length(min = 1))]
     pub(crate) why: String,
-}
-
-/// A control of the controls plugin.
-#[derive(Debug)]
-pub(crate) enum Control {}
-
-impl Accepts for Control {
-    const TYPES: &'static [&'static str] = &[CONTROL_TYPE];
 }
 
 /// The record type of a control; the controls plugin owns it.

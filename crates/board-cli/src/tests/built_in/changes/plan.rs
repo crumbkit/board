@@ -390,6 +390,26 @@ fn an_owed_control_that_is_a_task_is_refused_and_one_that_is_an_obligation_is_wr
 }
 
 #[test]
+fn a_plan_stays_valid_when_its_owed_control_is_deleted_and_is_dangling_when_a_considered_record_is()
+{
+    let board = Changes::new();
+    board.change_at("changes/t.json", "plan", &json!({}));
+    owed_control(&board);
+    board.write("notes/there.md", "# There\n");
+    let fields = json!({
+        "owed": [{"control": "/controls/x/owed", "why": "The next step does it."}],
+        "considered": [{"records": ["/notes/there.md"], "why": "It is about the old flow."}],
+    });
+    let output = board.call_stdin("plan", &with(PLAN, &fields));
+    let plan = output["path"].as_str().unwrap();
+    assert_eq!(board.code(plan), None);
+    board.delete("controls/x/owed.json");
+    assert_eq!(board.code(plan), None);
+    board.delete("notes/there.md");
+    assert_eq!(board.code(plan).as_deref(), Some("board::ref::dangling"));
+}
+
+#[test]
 fn a_plan_whose_text_holds_a_considered_or_owed_section_warns_and_one_without_does_not() {
     let board = Changes::new();
     board.change_at("changes/t.json", "plan", &json!({}));

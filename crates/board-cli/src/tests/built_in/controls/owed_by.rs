@@ -114,12 +114,12 @@ fn for_path_and_for_paths_return_what_an_obligation_is_owed_by() {
     );
 }
 
-/// The controls the migration tests hold, by the case each stands for.
+/// A repository whose origin is acme/lib, mounted at `/repos/lib`.
 #[expect(
     clippy::disallowed_methods,
     reason = "the test gives the mounted repository an origin with git"
 )]
-fn obligations_to_migrate(board: &Fixture) -> Scenario {
+fn mounted_library(board: &Fixture) -> Scenario {
     let library = Scenario::new();
     let commit = library.commit(&[("README.md", "lib\n")]);
     let origin = std::process::Command::new("git")
@@ -129,6 +129,12 @@ fn obligations_to_migrate(board: &Fixture) -> Scenario {
         .unwrap();
     assert!(origin.status.success(), "{origin:?}");
     mount(board, "repos/lib.json", &library, commit);
+    library
+}
+
+/// The controls the migration tests hold, by the case each stands for.
+fn obligations_to_migrate(board: &Fixture) -> Scenario {
+    let library = mounted_library(board);
     let pull = json!({
         "$type": "github/pull/v1", "owner": "acme", "repo": "lib", "number": 9,
         "url": "https://github.com/acme/lib/pull/9",
@@ -139,7 +145,7 @@ fn obligations_to_migrate(board: &Fixture) -> Scenario {
         ("missing-pull", "Owed by the merge of o/r#8.", json!({})),
         (
             "mount-pull",
-            "Owed by the merge of #9.",
+            "Owed by the merge of PR #9.",
             json!({"applies_to": ["/repos/lib/README.md"]}),
         ),
         ("two-pulls", "Owed by o/r#7 and o/r#8.", json!({})),
@@ -275,4 +281,75 @@ fn migrate_without_owed_by_writes_nothing_and_says_so() {
     let output = board.call("controls.migrate", &["--apply", "true"]);
     assert_eq!(output["total"], 0);
     assert_eq!(board.head(), before);
+}
+
+#[test]
+fn a_number_the_board_holds_as_an_issue_is_no_match_so_the_sources_decide_and_a_pull_still_matches()
+{
+    let board = owing();
+    let issue = json!({
+        "$type": "github/issue/v1", "owner": "o", "repo": "r", "number": 5,
+        "url": "https://github.com/o/r/issues/5",
+    });
+    board.write("gh/o/r/issues/5.json", &issue.to_string());
+    for (name, requirement, fields) in [
+        (
+            "issue-source",
+            "Owed by o/r#5.",
+            json!({"sources": [DECISION]}),
+        ),
+        ("issue-alone", "Owed by o/r#5.", json!({})),
+        ("pull", "Owed by o/r#7.", json!({})),
+    ] {
+        board.write(
+            &format!("controls/x/{name}.json"),
+            &obligation(requirement, &fields),
+        );
+    }
+    let dry = board.call("controls.migrate", &["--owed_by", "true"]);
+    assert_eq!(
+        dry["rewritten"],
+        json!([
+            {"path": "/controls/x/issue-source", "owed_by": DECISION},
+            {"path": "/controls/x/pull", "owed_by": PULL},
+        ])
+    );
+    assert_eq!(dry["commands"], json!([]));
+    assert_eq!(dry["unmatched"], json!(["/controls/x/issue-alone"]));
+}
+
+#[test]
+fn a_bare_number_counts_only_after_a_word_that_names_a_pull_request() {
+    let board = owing();
+    let _library = mounted_library(&board);
+    let pull = json!({
+        "$type": "github/pull/v1", "owner": "acme", "repo": "lib", "number": 3,
+        "url": "https://github.com/acme/lib/pull/3",
+    });
+    board.write("gh/acme/lib/pulls/3.json", &pull.to_string());
+    for (name, requirement) in [
+        ("finding", "Finding #3 stays open."),
+        ("pr", "Owed by PR #3."),
+        ("pull", "Owed by pull #3."),
+        ("request", "Owed by pull request #3."),
+    ] {
+        board.write(
+            &format!("controls/x/{name}.json"),
+            &obligation(
+                requirement,
+                &json!({"applies_to": ["/repos/lib/README.md"]}),
+            ),
+        );
+    }
+    let dry = board.call("controls.migrate", &["--owed_by", "true"]);
+    let at = "/gh/acme/lib/pulls/3";
+    assert_eq!(
+        dry["rewritten"],
+        json!([
+            {"path": "/controls/x/pr", "owed_by": at},
+            {"path": "/controls/x/pull", "owed_by": at},
+            {"path": "/controls/x/request", "owed_by": at},
+        ])
+    );
+    assert_eq!(dry["unmatched"], json!(["/controls/x/finding"]));
 }

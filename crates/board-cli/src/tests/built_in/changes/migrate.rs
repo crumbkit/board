@@ -783,7 +783,12 @@ const OWED_TEXT: &str = "# T\n\n## Problem\n\nA.\n\n### Considered\n\n- /notes/a
 /// A board committing each write, with a mount, the notes and control the
 /// plans name, and these changes in `(name, phase, text)`.
 fn plans_board(changes: &[(&str, &str, &str)]) -> Changes {
-    let board = Changes::new();
+    plans_board_enabling(&["changes", "controls"], changes)
+}
+
+/// As [`plans_board`], with `plugins` enabled.
+fn plans_board_enabling(plugins: &[&str], changes: &[(&str, &str, &str)]) -> Changes {
+    let board = Changes::enabling(plugins);
     board.mount_x(&[("README.md", "x\n")]);
     let mut config = board.read(".board/board.json");
     config["commit_on_put"] = json!(true);
@@ -925,4 +930,108 @@ fn migrate_with_plans_writes_a_new_snapshot_in_one_bulk_commit_and_a_second_appl
     let again = board.call("migrate", &json!({"plans": true, "apply": true}));
     assert_eq!(again["plan_fields"]["total"], 0);
     assert_eq!(board.board.head().unwrap().id, head.id);
+}
+
+const PROSE_EVAL: &str = "# T\n\n### Considered\n\n- /evals/prose: it tested something else.\n";
+const GONE_NOTE: &str = "# T\n\n### Considered\n\n- /notes/none.md: no longer there.\n";
+
+#[test]
+fn migrate_with_plans_accepts_a_path_that_exists_but_is_degraded_and_refuses_one_that_reaches_nothing()
+ {
+    let board = plans_board_enabling(
+        &["changes", "controls", "evals"],
+        &[
+            ("degraded", "plan", PROSE_EVAL),
+            ("gone", "plan", GONE_NOTE),
+        ],
+    );
+    let eval = json!({
+        "$type": "evals/eval/v1", "question": "Q?", "subjects": ["o/r"], "status": "planned",
+        "decision": "Which one.",
+    });
+    board.write("evals/prose.json", &eval.to_string());
+    commit_all(&board);
+    assert_eq!(
+        board.code("/evals/prose").as_deref(),
+        Some("board::ref::malformed")
+    );
+    let dry = board.call("migrate", &json!({"plans": true}));
+    assert_eq!(dry["plan_fields"]["changes"], json!(["/changes/degraded"]));
+    assert_eq!(dry["plan_fields"]["unread"][0]["path"], "/changes/gone");
+    assert_eq!(dry["plan_fields"]["unread"][0]["line"], "/notes/none.md");
+    board.call("migrate", &json!({"plans": true, "apply": true}));
+    let (plan, _) = current_plan(&board, "degraded");
+    assert_eq!(
+        plan["considered"],
+        json!([{"records": ["/evals/prose"], "why": "it tested something else."}])
+    );
+    assert_eq!(
+        board.read("changes/gone.json")["plan"],
+        "/changes/gone/plans/1"
+    );
+}
+
+#[test]
+fn migrate_with_plans_leaves_a_change_whose_owed_line_names_a_note_and_moves_one_that_names_a_control()
+ {
+    let board = plans_board(&[
+        (
+            "note",
+            "plan",
+            "# T\n\n## Obligations left owed\n\n- /notes/a.md, owed to the next step.\n",
+        ),
+        (
+            "control",
+            "plan",
+            "# T\n\n## Obligations left owed\n\n- /controls/x/owed, owed to the next step.\n",
+        ),
+    ]);
+    let output = board.call("migrate", &json!({"plans": true, "apply": true}));
+    let plans = &output["plan_fields"];
+    assert_eq!(plans["changes"], json!(["/changes/control"]));
+    assert_eq!(plans["unread"][0]["path"], "/changes/note");
+    assert_eq!(plans["unread"][0]["code"], "changes::migrate::unread");
+    assert_eq!(plans["unread"][0]["line"], "/notes/a.md");
+    assert_eq!(
+        board.read("changes/note.json")["plan"],
+        "/changes/note/plans/1"
+    );
+    let (plan, _) = current_plan(&board, "control");
+    assert_eq!(
+        plan["owed"],
+        json!([{"control": "/controls/x/owed", "why": "owed to the next step."}])
+    );
+}
+
+#[test]
+fn migrate_with_plans_leaves_a_change_whose_new_snapshot_fails_its_schema_and_moves_its_twin() {
+    let board = plans_board(&[
+        (
+            "empty-reason",
+            "plan",
+            "# T\n\n### Considered\n\n:\n/notes/a.md\n",
+        ),
+        (
+            "reason",
+            "plan",
+            "# T\n\n### Considered\n\nUnrelated:\n/notes/a.md\n",
+        ),
+    ]);
+    let output = board.call("migrate", &json!({"plans": true, "apply": true}));
+    let plans = &output["plan_fields"];
+    assert_eq!(plans["changes"], json!(["/changes/reason"]));
+    assert_eq!(plans["unread"][0]["path"], "/changes/empty-reason");
+    assert_eq!(plans["unread"][0]["code"], "changes::migrate::unread");
+    assert_eq!(plans["unread"][0]["line"], "/changes/empty-reason/plans/1");
+    assert!(
+        plans["unread"][0]["why"]
+            .as_str()
+            .unwrap()
+            .contains("rewritten record"),
+        "{plans}"
+    );
+    assert_eq!(
+        board.read("changes/empty-reason.json")["plan"],
+        "/changes/empty-reason/plans/1"
+    );
 }
