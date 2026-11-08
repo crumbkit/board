@@ -571,3 +571,150 @@ fn refusing_with_a_signature_is_refused_as_usage_and_refusing_without_one_is_adm
     assert_eq!(text(&admitted.stderr), "");
     assert!(!personal.workdir().join(&pending).exists());
 }
+
+/// A board whose `origin` is `url`, holding /projects/p.
+fn originated(url: &str) -> Scenario {
+    let scenario = uncommitted();
+    let remote = format!("[remote \"origin\"]\n\turl = {url}\n");
+    scenario.write(".git/config", Item::Appended(&remote));
+    scenario
+}
+
+const URI: &str = "board://acme/team-board/projects/p";
+
+#[test]
+fn uri_prints_a_records_uri_from_the_boards_origin_and_a_board_with_none_is_refused() {
+    let team = originated("git@github.com:acme/team-board.git");
+    let xdg = config(None);
+    let (printed, _) = known(team.workdir(), &xdg, None, &["uri", "/projects/p"]);
+    assert_eq!(text(&printed.stderr), "");
+    assert_eq!(text(&printed.stdout), format!("{URI}\n"));
+    let projects = team.workdir().join("projects");
+    let (relative, _) = known(&projects, &xdg, None, &["uri", "p", "--json"]);
+    assert_eq!(json(&relative)["data"]["uri"], URI);
+    assert_eq!(json(&relative)["data"]["path"], "/projects/p");
+    let alone = uncommitted();
+    let (refused, _) = known(alone.workdir(), &xdg, None, &["uri", "/projects/p"]);
+    assert_eq!(refused.code, 1);
+    assert_eq!(code(&refused), "board::uri::no_remote");
+}
+
+#[test]
+fn a_uri_reads_the_known_board_with_its_remote_from_anywhere_and_an_unknown_remote_is_not_found() {
+    let team = originated("https://github.com/acme/team-board.git");
+    let elsewhere = Scenario::new();
+    let xdg = listing(&[&team]);
+    for command in [
+        vec!["get", URI],
+        vec!["ls", "board://acme/team-board/projects"],
+        vec!["check", "board://acme/team-board/projects"],
+        vec!["refs", URI],
+        vec!["uri", URI],
+    ] {
+        let (read, prefix) = known(elsewhere.workdir(), &xdg, None, &command);
+        assert_eq!(read.code, 0, "{command:?}: {}", text(&read.stderr));
+        assert_eq!(prefix, "/", "{command:?}");
+    }
+    let (read, _) = known(elsewhere.workdir(), &xdg, None, &["get", URI]);
+    assert_eq!(text(&read.stdout), r#"{"$type": "lr/project/v1"}"#);
+    let other = "board://acme/other-board/projects/p";
+    let (lost, _) = known(elsewhere.workdir(), &xdg, None, &["get", other]);
+    assert_eq!(lost.code, 1);
+    assert_eq!(code(&lost), "board::uri::not_found");
+    let (lost, _) = known(elsewhere.workdir(), &xdg, None, &["get", "board://acme"]);
+    assert_eq!(code(&lost), "board::uri::invalid");
+}
+
+#[test]
+fn uris_naming_two_boards_are_refused_and_two_naming_one_board_are_admitted() {
+    let team = originated("git@github.com:acme/team-board.git");
+    let other = originated("git@github.com:acme/other-board.git");
+    let xdg = listing(&[&team, &other]);
+    let elsewhere = Scenario::new();
+    let both = ["get", URI, "board://acme/other-board/projects/p"];
+    let (refused, _) = known(elsewhere.workdir(), &xdg, None, &both);
+    assert_eq!(refused.code, 2);
+    assert_eq!(code(&refused), "board::cli::usage");
+    let one = ["get", URI, "board://acme/team-board/projects/p"];
+    let (admitted, _) = known(elsewhere.workdir(), &xdg, None, &one);
+    assert_eq!(text(&admitted.stderr), "");
+    assert_eq!(admitted.code, 0);
+}
+
+#[test]
+fn a_record_a_uri_names_that_the_clone_lacks_suggests_a_sync_and_one_given_by_path_does_not() {
+    let team = originated("git@github.com:acme/team-board.git");
+    let xdg = listing(&[&team]);
+    let elsewhere = Scenario::new();
+    let missing = "board://acme/team-board/projects/q";
+    let (lost, _) = known(elsewhere.workdir(), &xdg, None, &["get", missing]);
+    assert_eq!(lost.code, 1);
+    assert_eq!(code(&lost), "board::path::not_found");
+    let sync = format!("`board -C {} sync --no-push`", team.path());
+    assert!(text(&lost.stderr).contains(&sync), "{}", text(&lost.stderr));
+    let (json_lost, _) = known(elsewhere.workdir(), &xdg, None, &["get", missing, "--json"]);
+    assert!(text(&json_lost.stdout).contains("sync --no-push"));
+    let (plain, _) = known(team.workdir(), &xdg, None, &["get", "/projects/q"]);
+    assert_eq!(code(&plain), "board::path::not_found");
+    assert!(
+        !text(&plain.stderr).contains("sync"),
+        "{}",
+        text(&plain.stderr)
+    );
+    let (ls, _) = known(elsewhere.workdir(), &xdg, None, &["ls", missing]);
+    assert_eq!(code(&ls), "board::path::not_found");
+    assert!(text(&ls.stderr).contains(&sync), "{}", text(&ls.stderr));
+}
+
+#[test]
+fn a_write_through_a_uri_is_refused_and_one_through_the_clones_path_is_admitted() {
+    let team = originated("git@github.com:acme/team-board.git");
+    let xdg = listing(&[&team]);
+    let record = br#"{"$type": "lr/project/v1"}"#;
+    let (put, _) = fed(team.workdir(), &xdg, None, &["put", URI], record);
+    assert_eq!(put.code, 1);
+    assert_eq!(code(&put), "board::uri::read_only");
+    let (rm, _) = known(team.workdir(), &xdg, None, &["rm", URI]);
+    assert_eq!(code(&rm), "board::uri::read_only");
+    let (put, _) = fed(team.workdir(), &xdg, None, &["put", "/projects/p"], record);
+    assert_eq!(text(&put.stderr), "");
+    let (rm, _) = known(team.workdir(), &xdg, None, &["rm", "/projects/p"]);
+    assert_eq!(text(&rm.stderr), "");
+}
+
+#[test]
+fn a_uri_beside_a_plain_path_c_or_personal_is_refused_and_the_uri_alone_is_admitted() {
+    let team = originated("git@github.com:acme/team-board.git");
+    let personal = uncommitted();
+    let xdg = config(Some(
+        &json!({"boards": [team.path()], "personal": personal.path()}).to_string(),
+    ));
+    let elsewhere = Scenario::new();
+    let other = personal.path();
+    for (command, named) in [
+        (vec!["get", URI, "/projects/p"], "/projects/p"),
+        (vec!["get", "p", URI], "p"),
+        (vec!["-C", &other, "get", URI], other.as_str()),
+        (vec!["--personal", "get", URI], "--personal"),
+        (
+            vec!["-C", &other, "ls", "board://acme/team-board/projects"],
+            other.as_str(),
+        ),
+    ] {
+        let (refused, _) = known(elsewhere.workdir(), &xdg, None, &command);
+        assert_eq!(refused.code, 2, "{command:?}");
+        assert_eq!(code(&refused), "board::cli::usage", "{command:?}");
+        let stderr = text(&refused.stderr);
+        assert!(stderr.contains(named), "{command:?}: {stderr}");
+        assert!(stderr.contains("  help:  "), "{stderr}");
+    }
+    let (admitted, _) = known(elsewhere.workdir(), &xdg, None, &["get", URI]);
+    assert_eq!(admitted.code, 0, "{}", text(&admitted.stderr));
+    let (plain, _) = known(
+        elsewhere.workdir(),
+        &xdg,
+        None,
+        &["-C", &other, "get", "/projects/p"],
+    );
+    assert_eq!(plain.code, 0, "{}", text(&plain.stderr));
+}

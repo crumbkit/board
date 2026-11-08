@@ -135,6 +135,11 @@ codes! {
     ServeFailed => "board::serve::failed",
     SkillsNotBoard => "board::skills::not_board",
     SkillsWriteFailed => "board::skills::write_failed",
+    UriNoRemote => "board::uri::no_remote",
+    UriNotFound => "board::uri::not_found",
+    UriAmbiguous => "board::uri::ambiguous",
+    UriInvalid => "board::uri::invalid",
+    UriReadOnly => "board::uri::read_only",
     CliUsage => "board::cli::usage",
 }
 

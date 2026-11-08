@@ -17,6 +17,10 @@ use serde::Deserialize;
 
 use crate::{Asker, Board, OpenError, Signing};
 
+mod uri;
+
+pub use uri::uri_of;
+
 /// Where the run started, as a logical path in its board, or the refusal of
 /// that path when it is not one.
 pub type Prefix = Result<LogicalPath, PathError>;

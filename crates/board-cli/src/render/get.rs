@@ -1,6 +1,6 @@
 //! `get`, of one path or of several.
 
-use board_model::{Code, LogicalPath, Object};
+use board_model::{Code, LogicalPath, Object, Refusal};
 use board_ops::{GetReport, ReadError};
 use crumbkit::help::Leaf;
 use crumbkit::{Batch, Bytes, Document, Headed, Row};
@@ -37,11 +37,13 @@ Examples:
 /// in the run's budget of stdout, and the first always; crumbkit answers
 /// the paths after it with one `board::output::over_budget`. When the board
 /// could not be read at all, every path is answered with that one error.
-/// Exit 1 when any path is refused.
+/// Each path's refusal passes through `behind`. Exit 1 when any path is
+/// refused.
 pub(crate) fn get(
     printer: Printer,
     paths: &[LogicalPath],
     answers: Result<impl Iterator<Item = Result<GetReport, ReadError>>, ReadError>,
+    behind: &dyn Fn(Refusal) -> Refusal,
 ) -> Output {
     let mut room = printer.view.room(GET);
     let mut batch = Batch::new(&["get"], "paths", paths);
@@ -57,7 +59,7 @@ pub(crate) fn get(
         } else {
             match each.as_mut().and_then(Iterator::next) {
                 Some(Ok(report)) => Ok(FileAnswer::new(report)),
-                Some(Err(error)) => Err(error.refusal("get")),
+                Some(Err(error)) => Err(behind(error.refusal("get"))),
                 None => break,
             }
         };

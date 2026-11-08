@@ -13,6 +13,7 @@ Board: a fast, validated view of a git tree.
 - [`board get`](#board-get): Print the file at each path, following pointers
 - [`board ls`](#board-ls): List the directory at a path, without following pointers inside it
 - [`board refs`](#board-refs): List the references each entry makes and the entries that reach it
+- [`board uri`](#board-uri): Print the board:// URI that names a record from any known board's clone
 - [`board put`](#board-put): Write the record on stdin at a path or --new name, or a file with --file
 - [`board rm`](#board-rm): Remove the file at a path
 - [`board sync`](#board-sync): Fetch the remote branch, replay this board's commits onto it, and push
@@ -124,6 +125,16 @@ List the references each entry makes and the entries that reach it
 Effects: read-only, closed-world.
 
 Output: each answer's bytes unchanged, under a ==> KEY <== header when there are several keys, and --json prints the bytes as text or base64.
+
+## `board uri`
+
+Print the board:// URI that names a record from any known board's clone
+
+### Arguments
+
+- `<PATH>`: The record's logical path, such as /tasks/a, or a from /tasks. Required.
+
+Effects: read-only, closed-world.
 
 ## `board put`
 

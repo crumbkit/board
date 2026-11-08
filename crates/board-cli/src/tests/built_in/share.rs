@@ -193,6 +193,7 @@ fn one_call_copies_an_eval_its_runs_their_evidence_and_its_schemas_in_one_commit
             "commit": head.id.to_string(),
             "types": TYPES,
             "copied": SHARED,
+            "uris": [],
             "total": 5,
             "truncated": false,
             "unchanged": 0,
@@ -222,6 +223,21 @@ fn one_call_copies_an_eval_its_runs_their_evidence_and_its_schemas_in_one_commit
         (&location["repository"], &location["path"]),
         (&json!(real(clone.workdir())), &json!("evals/x.json"))
     );
+}
+
+#[test]
+fn a_share_into_a_team_board_with_an_origin_gives_each_copys_uri_and_one_without_gives_none() {
+    let boards = boards();
+    boards.standard();
+    let dry = boards.share(&["--path", "/evals/x", "--dry_run", "true"]);
+    assert_eq!(dry["uris"], json!([]));
+    let remote = "[remote \"origin\"]\n\turl = git@github.com:acme/team-board.git\n";
+    boards.team.write(".git/config", Item::Appended(remote));
+    let output = boards.share(&["--path", "/evals/x"]);
+    let uris: Vec<String> = (SHARED.iter())
+        .map(|path| format!("board://acme/team-board{path}"))
+        .collect();
+    assert_eq!(output["uris"], json!(uris));
 }
 
 #[test]

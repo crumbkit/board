@@ -223,6 +223,13 @@ impl Repository {
         }
     }
 
+    /// The stored form of this repository's `origin`, as its identity
+    /// holds it, with a relative URL made absolute, or none when it has no
+    /// origin git can read.
+    pub fn remote(&self) -> Option<String> {
+        self.identity().origin
+    }
+
     /// How many directories this repository's working-tree views have read
     /// from disk. Work-count tests assert it.
     pub fn directories_listed(&self) -> usize {
