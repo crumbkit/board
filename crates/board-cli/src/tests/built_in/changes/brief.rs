@@ -44,13 +44,13 @@ fn spent(brief: &Value) -> usize {
             matched.join(" ")
         ));
     }
-    counted.extend(
-        brief["rules_left_out"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(shown),
-    );
+    for left in brief["rules_left_out"].as_array().unwrap() {
+        counted.push(format!(
+            "{} {}",
+            shown(&left["control"]),
+            shown(&left["reason"])
+        ));
+    }
     for used in brief["uses"].as_array().unwrap() {
         counted.push(format!("{} {}", shown(&used["ref"]), shown(&used["line"])));
     }
@@ -347,6 +347,79 @@ fn brief_lists_each_control_on_the_planned_paths_once_matched_ones_first_and_wha
 }
 
 #[test]
+fn a_version_control_whose_matched_files_pin_no_version_is_left_out_and_says_why() {
+    let board = Changes::new();
+    board.change_at("changes/t.json", "plan", &json!({}));
+    board.mount_x(&[
+        ("src/a.rs", "a\n"),
+        ("mise.toml", "node = \"26\"\n"),
+        ("pinned/mise.toml", "rust = \"1.1\"\n"),
+    ]);
+    let rule =
+        json!({"rule": {"check": "version", "at_least": "1.2", "capture": "rust = \"([0-9.]+)\""}});
+    board.write(
+        "controls/rust.json",
+        &control("Pin Rust.", &["repos/x/*mise.toml"], &rule),
+    );
+    board.write(
+        "controls/typed.json",
+        &control("Errors are typed.", &["repos/x/*"], &json!({})),
+    );
+    board.call_stdin(
+        "plan",
+        &planned(&[], &["/repos/x/src/**", "/repos/x/mise.toml"]),
+    );
+    let left = brief(&board);
+    assert_eq!(named(&left["rules"]), ["/controls/typed"]);
+    assert_eq!(
+        (&left["rules_left_out"], &left["rules_unnamed"]),
+        (
+            &json!([{"control": "/controls/rust", "reason": NO_VERSION}]),
+            &json!(0)
+        )
+    );
+    assert!(spent(&left) <= BRIEF_WORDS, "{}", spent(&left));
+    board.call_stdin(
+        "plan",
+        &planned(&[], &["/repos/x/src/**", "/repos/x/pinned/**"]),
+    );
+    let kept = brief(&board);
+    assert_eq!(named(&kept["rules"]), ["/controls/rust", "/controls/typed"]);
+    assert_eq!(kept["rules_left_out"], json!([]));
+}
+
+#[test]
+fn a_version_control_is_kept_when_a_planned_file_is_new_or_unreadable_and_dropped_when_it_holds_none()
+ {
+    let board = Changes::new();
+    board.change_at("changes/t.json", "plan", &json!({}));
+    // dir/mise.toml is a directory, which Board cannot read as a file.
+    board.mount_x(&[("mise.toml", "node = \"26\"\n"), ("dir/mise.toml/a", "a\n")]);
+    let rule =
+        json!({"rule": {"check": "version", "at_least": "1.2", "capture": "rust = \"([0-9.]+)\""}});
+    board.write(
+        "controls/rust.json",
+        &control("Pin Rust.", &["repos/x/*mise.toml"], &rule),
+    );
+    let rules_for = |paths: &[&str]| {
+        board.call_stdin("plan", &planned(&[], paths));
+        let brief = brief(&board);
+        (named(&brief["rules"]), brief["rules_left_out"].clone())
+    };
+    let kept = (vec!["/controls/rust".to_owned()], json!([]));
+    assert_eq!(rules_for(&["/repos/x/new/mise.toml"]), kept);
+    assert_eq!(rules_for(&["/repos/x/new/**"]), kept);
+    assert_eq!(rules_for(&["/repos/x/dir/mise.toml"]), kept);
+    assert_eq!(
+        rules_for(&["/repos/x/mise.toml"]),
+        (
+            Vec::<String>::new(),
+            json!([{"control": "/controls/rust", "reason": NO_VERSION}])
+        )
+    );
+}
+
+#[test]
 fn a_rule_lists_at_most_three_matched_paths_and_counts_the_rest() {
     let board = Changes::new();
     board.change_at("changes/t.json", "plan", &json!({}));
@@ -414,10 +487,19 @@ fn brief_stays_within_600_words_with_100_rules_names_20_it_left_out_and_counts_t
     assert_eq!(listed(&board, command), every);
 }
 
-/// The strings of the array `paths`.
-fn named_paths(paths: &Value) -> Vec<String> {
-    (paths.as_array().unwrap().iter())
-        .map(|path| path.as_str().unwrap().to_owned())
+/// The reason a rule left out for want of room carries.
+const NO_ROOM: &str = "no room in the brief's 600 words";
+/// The reason a version control whose matched files pin no version carries.
+const NO_VERSION: &str = "no version found in the matched files";
+
+/// The controls of the left-out rules `left_out`, each of which was left
+/// out for want of room.
+fn named_paths(left_out: &Value) -> Vec<String> {
+    (left_out.as_array().unwrap().iter())
+        .map(|left| {
+            assert_eq!(left["reason"], NO_ROOM, "{left}");
+            left["control"].as_str().unwrap().to_owned()
+        })
         .collect()
 }
 

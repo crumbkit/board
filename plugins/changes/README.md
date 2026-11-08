@@ -427,8 +427,15 @@ of `changes` still fails `review`.
   Rules that matched only some planned paths come first, then the others,
   each group by control path. Each rule's path and summary are fitted
   first, skipping any that do not fit, and matched paths are added after
-  while room remains. `rules_left_out` names up to 20 rules the word limit
-  dropped, as many as fit, and `rules_unnamed` counts the rest.
+  while room remains. A version control is left out of `rules` when
+  `controls.for-paths` gives it `versions_found` 0: its capture finds no
+  version in the files the planned paths reach, at the commit each mount
+  pins. A planned file that is missing or unreadable, or a planned pattern
+  that matches no file yet, keeps the rule. `rules_left_out` names up to 20 rules left out, as many as fit,
+  each as `{control, reason}`. The rules the word limit dropped come first
+  with the reason `no room in the brief's 600 words`, then those version
+  controls with `no version found in the matched files`. `rules_unnamed`
+  counts the rest.
   `rules_command` lists every rule: run its `argv` without a shell and give
   it its `stdin`. It is null when the plan has no paths. The brief also
   holds one line per record the plan uses (a control's `summary`, else its
@@ -436,10 +443,10 @@ of `changes` still fails `review`.
   document's first heading), `left_out`, the phase and instruction `next`
   gives, and the `controls.check` command for the change's mount. It holds at
   most 600 words, counting each rule with its path and matched paths,
-  each named dropped rule, and each line with its reference. Rules are
-  counted before lines, but lines keep up to a quarter of the limit. A
-  line that does not fit is skipped, and `left_out` counts the lines it
-  dropped. The full requirement of a rule is `controls.for-path` away. It
+  each left-out rule with its reason, and each line with its reference.
+  Rules are counted before lines, but lines keep up to a quarter of the
+  limit. A line that does not fit is skipped, and `left_out` counts the
+  lines it dropped. The full requirement of a rule is `controls.for-path` away. It
   fails with `changes::brief::controls_missing` when the Board that runs
   it does not offer `controls.for-paths`, such as when the controls
   plugin is not enabled.

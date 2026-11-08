@@ -458,7 +458,7 @@ fn referenced(
 
 /// Each of `paths`, read through one `get_each`: its bytes, or Board's code
 /// for why it cannot be read.
-fn read(
+pub(crate) fn read(
     host: &dyn Host,
     paths: BTreeSet<&LogicalPath>,
 ) -> Result<BTreeMap<LogicalPath, Result<Vec<u8>, String>>, PluginError> {
