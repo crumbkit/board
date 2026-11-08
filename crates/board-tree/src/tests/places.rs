@@ -373,3 +373,60 @@ fn the_head_of_a_linked_worktree_is_its_own_commit_and_a_directory_in_no_reposit
     let outside = tempfile::tempdir().unwrap();
     assert_eq!(crate::head_of(outside.path()), None);
 }
+
+#[test]
+fn a_checkout_whose_tracked_files_hold_its_head_has_nothing_uncommitted_and_an_edited_one_has() {
+    let repository = Scenario::new();
+    let head = repository.commit(&[("docs/a.md", "a"), ("x.json", "1")]);
+    let linked = format!("{}/linked", repository.path());
+    let git_dir = format!("{}/.git/worktrees/linked", repository.path());
+    repository
+        .write(
+            ".git/worktrees/linked/HEAD",
+            Item::File(&format!("{head}\n")),
+        )
+        .write(".git/worktrees/linked/commondir", Item::File("../..\n"))
+        .write(
+            ".git/worktrees/linked/gitdir",
+            Item::File(&format!("{linked}/.git\n")),
+        )
+        .write("linked/.git", Item::File(&format!("gitdir: {git_dir}\n")))
+        .write("linked/docs/a.md", Item::File("a"))
+        .write("linked/x.json", Item::File("1"))
+        .write("linked/untracked.md", Item::File("new"));
+    let docs = Path::new(&linked).join("docs");
+    assert_eq!(crate::uncommitted(&docs), Some(false));
+    repository.write("linked/docs/a.md", Item::File("b"));
+    assert_eq!(crate::uncommitted(&docs), Some(true));
+    repository
+        .write("linked/docs/a.md", Item::File("a"))
+        .write("linked/x.json", Item::Deleted);
+    assert_eq!(crate::uncommitted(&docs), Some(true));
+    let outside = tempfile::tempdir().unwrap();
+    assert_eq!(crate::uncommitted(outside.path()), None);
+}
+
+/// A repository whose index matches its one commit, with every file on
+/// disk, as `git checkout` leaves it, less the index entries `unstaged`
+/// names; and the directory of its working tree.
+fn checked_out(unstaged: &[&str]) -> Scenario {
+    let repository = Scenario::new();
+    repository.commit(&[("docs/a.md", "a"), ("x.json", "1")]);
+    repository
+        .write("docs/a.md", Item::File("a"))
+        .write("x.json", Item::File("1"));
+    let git = gix::open(repository.workdir()).unwrap();
+    let tree = git.head_tree_id().unwrap().detach();
+    let mut index = git.index_from_tree(&tree).unwrap();
+    index.remove_entries(|_, path, _| unstaged.iter().any(|name| path == name.as_bytes()));
+    index.write(gix::index::write::Options::default()).unwrap();
+    repository
+}
+
+#[test]
+fn a_staged_deletion_whose_file_is_still_on_disk_is_uncommitted_and_a_full_index_is_not() {
+    let full = checked_out(&[]);
+    assert_eq!(crate::uncommitted(full.workdir()), Some(false));
+    let removed = checked_out(&["x.json"]);
+    assert_eq!(crate::uncommitted(removed.workdir()), Some(true));
+}
