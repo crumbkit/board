@@ -33,8 +33,9 @@ blocks is missing.
    the brief in as plain text, not inside a code fence, which the guard does
    not read. The brief's `rules_left_out` gives each rule it left out a
    `reason`: the rule had no room, or it is a version control whose capture
-   finds no version in the planned files. A rule with no room still
-   applies, so read it with `controls.for-path`.
+   finds no version in the planned files. A missing or unreadable planned
+   file keeps a version control. A rule with no room still applies, so read
+   it with `controls.for-path`.
 3. Attach every record you make with
    `board -C <board> call changes.attach --path /changes/<name> --ref <path>`.
    The records go on the plan the change names, so write the plan first.

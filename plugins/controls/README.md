@@ -148,7 +148,10 @@ The plugin ships both schemas. `board plugin enable controls` writes them to
   both an asked path and the control reach, read as `check` reads them at
   the commit each mount pins. A file path counts the file there, and a
   pattern counts each file it matches that the control's `paths` match or
-  its `applies_to` names. A path with no `*`, `?` or `[` is
+  its `applies_to` names. The count is unknown and `versions_found` is left
+  out when one of those files cannot be read, such as a file not written
+  yet or a directory, or when a pattern matches no file yet, because a file
+  written there could pin a version. A path with no `*`, `?` or `[` is
   matched as `for-path` matches it. A pattern reaches a
   control whose `applies_to` names a path it matches, and a control one of
   whose `paths` matches a file it matches, by the file's display path. It

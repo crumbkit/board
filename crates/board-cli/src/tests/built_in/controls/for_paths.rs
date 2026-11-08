@@ -283,7 +283,17 @@ fn a_version_control_counts_the_versions_its_capture_finds_in_the_files_the_path
         [docs.clone(), (json!("/controls/rust"), Some(json!(2)))]
     );
     assert_eq!(
+        found(&["/apps/bare/**"]),
+        [docs.clone(), (json!("/controls/rust"), Some(json!(0)))]
+    );
+    // A file not written yet, or a pattern that matches no file yet, may
+    // pin a version once written, so the count is unknown and left out.
+    assert_eq!(
         found(&["/apps/bare/**", "/apps/new/mise.toml"]),
-        [docs, (json!("/controls/rust"), Some(json!(0)))]
+        [docs.clone(), (json!("/controls/rust"), None)]
+    );
+    assert_eq!(
+        found(&["/apps/new/**"]),
+        [docs, (json!("/controls/rust"), None)]
     );
 }

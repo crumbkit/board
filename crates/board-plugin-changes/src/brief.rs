@@ -104,17 +104,19 @@ pub(crate) struct RulesCommand {
 /// path and summary are fitted first, skipping any that do not fit, and its
 /// matched paths after, while room remains. A version control whose
 /// capture finds no version in the files the planned paths reach is left
-/// out of `rules`. `rules_left_out` names up to 20 rules left out, as many
+/// out of `rules`; a missing or unreadable planned file, or a pattern that
+/// matches no file yet, keeps it. `rules_left_out` names up to 20 rules left out, as many
 /// as fit, each with its `reason`: those the word limit left out first,
 /// then those version controls. `rules_unnamed` counts the rest.
 /// `rules_command` is the command that lists every rule, as an `argv` to
 /// run and the `stdin` to give it; it is null when the plan has no paths.
 /// Rules are counted before uses, but the uses keep up to a quarter of the
 /// limit. `uses` gives one line per record it uses, in order, skipping any
-/// that do not fit, and `left_out` counts those the word limit left out. `controls` is the command that lists the controls
-/// on the change's repository. `brief_line`, `board-brief: <path>`, comes
-/// first in the output; a builder's first message starts with it, and the
-/// write guard reads it.
+/// that do not fit, and `left_out` counts those the word limit left out.
+/// `controls` is the command that lists the controls on the change's
+/// repository. `brief_line`, `board-brief: <path>`, comes first in the
+/// output; a builder's first message starts with it, and the write guard
+/// reads it.
 #[derive(Debug, Serialize, JsonSchema)]
 #[schemars(rename = "BriefOutput")]
 pub(crate) struct Output {

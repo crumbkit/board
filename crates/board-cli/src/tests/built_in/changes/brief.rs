@@ -377,6 +377,37 @@ fn a_version_control_whose_matched_files_pin_no_version_is_left_out_and_says_why
 }
 
 #[test]
+fn a_version_control_is_kept_when_a_planned_file_is_new_or_unreadable_and_dropped_when_it_holds_none()
+ {
+    let board = Changes::new();
+    board.change_at("changes/t.json", "plan", &json!({}));
+    // dir/mise.toml is a directory, which Board cannot read as a file.
+    board.mount_x(&[("mise.toml", "node = \"26\"\n"), ("dir/mise.toml/a", "a\n")]);
+    let rule =
+        json!({"rule": {"check": "version", "at_least": "1.2", "capture": "rust = \"([0-9.]+)\""}});
+    board.write(
+        "controls/rust.json",
+        &control("Pin Rust.", &["repos/x/*mise.toml"], &rule),
+    );
+    let rules_for = |paths: &[&str]| {
+        board.call_stdin("plan", &planned(&[], paths));
+        let brief = brief(&board);
+        (named(&brief["rules"]), brief["rules_left_out"].clone())
+    };
+    let kept = (vec!["/controls/rust".to_owned()], json!([]));
+    assert_eq!(rules_for(&["/repos/x/new/mise.toml"]), kept);
+    assert_eq!(rules_for(&["/repos/x/new/**"]), kept);
+    assert_eq!(rules_for(&["/repos/x/dir/mise.toml"]), kept);
+    assert_eq!(
+        rules_for(&["/repos/x/mise.toml"]),
+        (
+            Vec::<String>::new(),
+            json!([{"control": "/controls/rust", "reason": NO_VERSION}])
+        )
+    );
+}
+
+#[test]
 fn a_rule_lists_at_most_three_matched_paths_and_counts_the_rest() {
     let board = Changes::new();
     board.change_at("changes/t.json", "plan", &json!({}));
