@@ -1,6 +1,7 @@
 // The band above the prompt: one row of badges that wraps, which each Board
 // mod adds its own part to. The mods share nothing but this tree. Each mod
-// keeps an identical copy of this file, because a mod installs alone.
+// keeps an identical copy of this file, because a mod installs alone; the
+// mods workflow fails when a copy differs from the attention mod's.
 //
 // A part is a Box keyed `band:<slot>`. The row is the Box keyed `board-band`,
 // the first child of the band's column; any other line a mod draws, such as

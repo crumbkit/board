@@ -4,7 +4,8 @@ import type { RenderElement, RenderNode } from 'claude-code'
 import { ROW, SLOT, joinBand } from '../hooks/band'
 
 // These prove how a mod's part joins the band the mods beneath it drew. Each
-// Board mod keeps an identical copy of band.ts and of this test.
+// Board mod keeps an identical copy of band.ts, which the mods workflow
+// compares with this mod's, so this test covers all four.
 
 const part = (key: string, text: string): RenderElement => ({ type: 'Box', props: { key }, children: [text] })
 const ENGINE: RenderElement = { type: 'engine', ref: 0 }

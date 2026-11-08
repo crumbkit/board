@@ -75,5 +75,7 @@ a line after the row.
 
 The slots, in order, are `a1-orders`, `b1-state`, `c1-controls`,
 `c2-waiting` and `c3-effects`; the letter is the section. Each of the four
-mods keeps an identical copy of `hooks/band.ts`, which holds this logic, and
-of `tests/band.test.ts`, because a mod installs alone.
+mods keeps an identical copy of `hooks/band.ts`, which holds this logic,
+because a mod installs alone. The `mods` workflow fails when a copy differs
+from the attention mod's, and the attention mod's `tests/band.test.ts` tests
+the logic.
