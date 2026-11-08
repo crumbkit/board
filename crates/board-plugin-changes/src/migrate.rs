@@ -1,11 +1,13 @@
 //! The `migrate` capability: rewrites each `changes/change/v1` as a
 //! `changes/change/v2` (docs/plugins/lifecycle/updating.md).
 //!
-//! A v2 change follows a flow, so each change gets a copy of the shipped
-//! development flow at `<path>/flow`, whose phase names are v1's, the
-//! check suite its mount's contributing docs name, which a v1 change read
-//! on every `next`, and an empty `surfaced`; a prototype follows no flow
-//! and gets none. Its phase, paused included, carries over.
+//! A v2 change follows a flow. The shipped development flow has v1's phase
+//! names, so each rewritten change points at the stored version of that
+//! flow, and the migration writes the version when the board lacks it.
+//! Each change also gets the check suite its mount's contributing docs
+//! name, which a v1 change read on every `next`, and an empty `surfaced`.
+//! A prototype follows no flow and gets none. A change keeps its phase,
+//! paused included.
 //!
 //! A change written before the split of `changes/change/v1` is rewritten
 //! from that older shape first. It keeps its entity fields. A prototype's fields
@@ -14,6 +16,9 @@
 //! github plugin's record of it, which `github.ref` writes. The old
 //! `/changes/sync` stamp moves to Board's cache. Everything else in the
 //! board is left as it is.
+//!
+//! With `flows`, the migration also replaces each change's own copy of its
+//! flow with a reference to the flow's stored version, as `flows.rs` says.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsStr;
@@ -31,7 +36,7 @@ use serde_json::{Map, Value, json};
 
 use crate::board::{self, rows, text};
 use crate::change::{OWN, prototypes, record_sync};
-use crate::flow::{copy_line, development};
+use crate::flow::{development, version_line};
 use crate::plan::stamp;
 use crate::records::{ChangeRecord, ChangeV1, PlanRecord, PrototypeRecord, UnderstandingRecord};
 use crate::repo::check_suite;
@@ -70,7 +75,7 @@ const KEPT: [&str; 14] = [
 /// The most rewritten paths the output lists (STANDARDS 23).
 const LISTED: usize = 100;
 
-/// Whether to write the migration.
+/// Whether to write the migration, and whether to replace flow copies.
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 #[schemars(rename = "MigrateInput")]
@@ -78,6 +83,12 @@ pub(crate) struct Input {
     #[serde(default)]
     #[schemars(description = "Write every rewritten record; without it nothing is written.")]
     apply: bool,
+    #[serde(default)]
+    #[schemars(
+        description = "Also replace each change's own copy of its flow with a reference to the \
+                       flow's stored version, and rewrite each run that names its flow by name."
+    )]
+    flows: bool,
 }
 
 /// A record the migration could not rewrite, and why, with the GitHub page
@@ -103,7 +114,8 @@ struct Left {
 /// owner/repo#number. `left` lists the changes and understanding checks
 /// left as they are, which the owner fixes by hand. `synced` is the day moved from `/changes/sync` to
 /// Board's cache, and `unrecorded` says why the cache did not take it, when
-/// it did not.
+/// it did not. `flows`, given only with `flows`, says what replacing the
+/// flow copies wrote or would write.
 #[derive(Debug, Serialize, JsonSchema)]
 #[schemars(rename = "MigrateOutput")]
 pub(crate) struct Output {
@@ -118,6 +130,8 @@ pub(crate) struct Output {
     synced: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     unrecorded: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    flows: Option<flows::Output>,
 }
 
 /// One old change: its path, blob and body.
@@ -168,15 +182,15 @@ fn old_plan(body: &Map<String, Value>) -> bool {
 /// What the migration reads once for the whole board: every plan record
 /// under `/changes/`, by its change and then by path, with its blob, which
 /// of the Markdown plans the old changes name are there, the changes that
-/// already have something at `<path>/prototype`, and the blob of each file
-/// already at a change's `<path>/flow`, and the check suite the
-/// contributing docs of each old change's mount name, as a v1 change
-/// resolved it on every `next`.
+/// already have something at `<path>/prototype`, the version of the
+/// shipped development flow with the line that writes it when the board
+/// lacks it, and the check suite the contributing docs of each old
+/// change's mount name, as a v1 change resolved it on every `next`.
 struct Known {
     plans: BTreeMap<String, BTreeMap<String, (PlanRecord, String)>>,
     files: BTreeSet<String>,
     prototypes: BTreeMap<String, Option<PrototypeRecord>>,
-    flows: BTreeMap<String, String>,
+    development: (String, Option<Value>),
     suites: BTreeMap<String, Option<String>>,
 }
 
@@ -218,15 +232,7 @@ fn known(host: &dyn Host, olds: &[Old]) -> Result<Known, PluginError> {
         }
     }
     let prototypes = prototypes(host)?;
-    let sql = format!(
-        "SELECT logical, blob FROM entries WHERE substr(logical, 1, {}) = {} AND logical LIKE \
-         '%/flow'",
-        OWN.len(),
-        literal(OWN)
-    );
-    let flows = (rows(host, &sql)?.iter())
-        .filter_map(|row| Some((text(row.first())?.to_owned(), text(row.get(1))?.to_owned())))
-        .collect();
+    let development = version_line(host, &development())?;
     let mut suites = BTreeMap::new();
     for mount in olds.iter().filter_map(|old| string(&old.body, "mount")) {
         if !mount.is_empty() && !suites.contains_key(&mount) {
@@ -238,7 +244,7 @@ fn known(host: &dyn Host, olds: &[Old]) -> Result<Known, PluginError> {
         plans,
         files,
         prototypes,
-        flows,
+        development,
         suites,
     })
 }
@@ -305,13 +311,15 @@ fn add(listed: &mut Vec<String>, each: String) {
     }
 }
 
-/// What one old change becomes.
+/// What one old change becomes; `versioned` when it follows the
+/// development flow's version.
 #[derive(Default)]
 struct Plan {
     lines: Vec<Value>,
     refs: Vec<Page>,
     plans: usize,
     prototype: bool,
+    versioned: bool,
 }
 
 /// The lines that rewrite `old`, and the GitHub pages it names, or why it
@@ -322,7 +330,7 @@ fn rewrite(known: &Known, old: &Old, record: &str) -> Result<Plan, String> {
         let mut plan = Plan::default();
         let mut change = body.clone();
         let prototype = known.prototypes.contains_key(&old.path);
-        upgrade(known, &old.path, &mut change, prototype, &mut plan.lines);
+        plan.versioned = upgrade(known, &mut change, prototype);
         plan.lines
             .push(json!({"path": old.path, "expect": old.blob, "change": change}));
         return Ok(plan);
@@ -391,12 +399,10 @@ fn rewrite(known: &Known, old: &Old, record: &str) -> Result<Plan, String> {
     // A prototype's state is its change's phase, so only the question and
     // the verdict move.
     let prototype = string(body, "kind").as_deref() == Some("prototype");
-    upgrade(
+    plan.versioned = upgrade(
         known,
-        path,
         &mut change,
         prototype || known.prototypes.contains_key(path),
-        &mut plan.lines,
     );
     if prototype {
         let prototype = PrototypeRecord {
@@ -419,31 +425,22 @@ fn rewrite(known: &Known, old: &Old, record: &str) -> Result<Plan, String> {
     Ok(plan)
 }
 
-/// Makes `change`, the body of the v1 change at `path`, a v2: it follows a
-/// copy of the shipped development flow, which a line of `lines` writes,
-/// and stores the suite its mount's contributing docs name, unless it is a
-/// prototype, and surfaced nothing.
-fn upgrade(
-    known: &Known,
-    path: &str,
-    change: &mut Map<String, Value>,
-    prototype: bool,
-    lines: &mut Vec<Value>,
-) {
+/// Makes `change`, the body of a v1 change, a v2 that surfaced nothing:
+/// unless it is a prototype, it follows the version of the shipped
+/// development flow and stores the suite its mount's contributing docs
+/// name. It returns whether the change follows the version.
+fn upgrade(known: &Known, change: &mut Map<String, Value>, prototype: bool) -> bool {
     change.insert("$type".to_owned(), json!(ChangeRecord::TYPE));
     change.insert("surfaced".to_owned(), json!([]));
     if prototype {
-        return;
+        return false;
     }
     let suite = string(change, "mount").and_then(|mount| known.suites.get(&mount).cloned());
     if let Some(Some(suite)) = suite {
         change.insert("suite".to_owned(), json!(suite));
     }
-    let at = format!("{path}/flow");
-    let expect = known.flows.get(&at).map_or("none", String::as_str);
-    let (at, line) = copy_line(path, expect, &development());
-    change.insert("flow".to_owned(), json!(at));
-    lines.push(line);
+    change.insert("flow".to_owned(), json!(known.development.0));
+    true
 }
 
 /// Whether the old change's prototype fields still need a record: true
@@ -659,7 +656,7 @@ fn conforms(schemas: &BTreeMap<String, Schema>, lines: &[Value]) -> Result<(), S
             let at = line.get("path").and_then(Value::as_str).unwrap_or_default();
             return Err(format!(
                 "its rewritten record at {at} {error}, so nothing of it is written; fix the old \
-                 change and run migrate again"
+                 record and run migrate again"
             ));
         }
     }
@@ -688,12 +685,14 @@ fn finish(written: &mut [Value], pulls: Vec<String>, tickets: Vec<String>) {
     }
 }
 
-/// Rewrites each old change, or with no `apply` says what it would write.
+/// Rewrites each old change, and with `flows` each flow copy, or with no
+/// `apply` says what it would write.
 ///
 /// With `apply`, `github.ref` writes each GitHub record first, each in its
-/// own commit, and then every rewritten record is written in one commit.
+/// own commit, and then every rewritten record is written in one commit,
+/// whose `Board-Bulk:` trailer marks it as a migration.
 pub(crate) fn migrate(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
-    let Input { apply } = PluginError::read_input(PLUGIN, "migrate", input)?;
+    let Input { apply, flows } = PluginError::read_input(PLUGIN, "migrate", input)?;
     let record = stamp(host.settings().now);
     let mut changes = Vec::new();
     let mut left = Vec::new();
@@ -703,6 +702,7 @@ pub(crate) fn migrate(host: &dyn Host, input: &Value) -> Result<Value, PluginErr
     let olds = olds(host)?;
     let known = known(host, &olds)?;
     let schemas = compiled();
+    let mut versioned = false;
     for old in olds {
         let planned = match rewrite(&known, &old, &record) {
             Ok(planned) => planned,
@@ -721,6 +721,7 @@ pub(crate) fn migrate(host: &dyn Host, input: &Value) -> Result<Value, PluginErr
             refs: pages,
             plans: plan_count,
             prototype,
+            versioned: follows,
         } = planned;
         // Checked before github.ref writes anything for the change.
         if let Err(why) = conforms(&schemas, &written) {
@@ -756,25 +757,25 @@ pub(crate) fn migrate(host: &dyn Host, input: &Value) -> Result<Value, PluginErr
             Err(Unrecorded::Stop(error)) => return Err(error),
         }
         finish(&mut written, pulls, tickets);
+        versioned |= follows;
         plans += plan_count;
         prototypes += usize::from(prototype);
         changes.push(old.path.clone());
         lines.extend(written);
+    }
+    if versioned && let Some(line) = &known.development.1 {
+        lines.insert(0, line.clone());
     }
     left.extend(old_checks(host)?);
     let sync = old_sync(host)?;
     if let Some((_, blob)) = &sync {
         lines.push(json!({"path": SYNC_PATH, "expect": blob, "remove": true}));
     }
-    let mut unrecorded = None;
-    if apply {
-        if !lines.is_empty() {
-            board::put(host, &lines)?;
-        }
-        if let Some((day, _)) = &sync {
-            unrecorded = record_sync(host, day)?;
-        }
-    }
+    let replaced = flows::write(host, (apply, flows), &mut lines)?;
+    let unrecorded = match &sync {
+        Some((day, _)) if apply => record_sync(host, day)?,
+        _ => None,
+    };
     let total = changes.len();
     changes.truncate(LISTED);
     Ok(to_value(Output {
@@ -788,8 +789,10 @@ pub(crate) fn migrate(host: &dyn Host, input: &Value) -> Result<Value, PluginErr
         left,
         synced: sync.map(|(day, _)| day),
         unrecorded,
+        flows: replaced,
     }))
 }
 
+mod flows;
 #[cfg(test)]
 mod tests;

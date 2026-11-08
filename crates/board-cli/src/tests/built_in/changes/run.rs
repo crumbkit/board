@@ -482,12 +482,35 @@ fn run_starts_the_agent_in_a_worktree_for_the_change_and_records_the_run_and_its
             &json!(1.0)
         )
     );
+    let version = board.read("changes/quick-fix.json")["flow"].clone();
+    assert!(
+        version.as_str().unwrap().starts_with("/flows/quick/"),
+        "{version}"
+    );
+    assert_eq!(written["flow"], version);
     let stopped = output["stopped"].as_str().unwrap().trim_start_matches('/');
     let stop = board.read(&format!("{stopped}.json"));
     assert_eq!(
         stop["summary"],
         "The agent exited 3 before recording a stop."
     );
+    // A run record that names its flow by name is refused; its twin naming
+    // the version is admitted.
+    let mut by_name = written.clone();
+    by_name["flow"] = json!("quick");
+    let refused = board.json_with(
+        &["put", "/changes/quick-fix/runs/by-name"],
+        &by_name.to_string(),
+    );
+    assert_eq!(
+        (&refused["code"], &refused["fields"]["pointer"]),
+        (&json!("board::ref::malformed"), &json!("/flow"))
+    );
+    let admitted = board.run(
+        &["put", "/changes/quick-fix/runs/by-name"],
+        &written.to_string(),
+    );
+    assert_eq!(admitted.code, 0, "{}", text(&admitted.stderr));
     // A resumed run reuses the worktree and the branch.
     let again = spawned(
         &board,

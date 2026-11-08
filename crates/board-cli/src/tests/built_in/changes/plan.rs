@@ -51,6 +51,7 @@ fn plan_writes_the_plan_and_its_text_and_points_the_change_at_the_plan() {
             "path": format!("/changes/t/plans/{stamp}"),
             "text": format!("/changes/t/plans/{stamp}.md"),
             "uses": 1,
+            "unchanged": false,
         })
     );
     assert_eq!(
@@ -306,4 +307,31 @@ fn a_revised_plan_of_a_change_whose_plan_had_no_records_has_none() {
     let second = board.call_stdin("plan", &given(&format!("{PLAN}More.\n"), &[]));
     let written = stored(&board, &second);
     assert_eq!(written.get("records"), None, "{written}");
+}
+
+#[test]
+fn the_same_plan_twice_writes_one_snapshot_and_a_plan_with_another_path_writes_a_second() {
+    let board = Changes::new();
+    board.change_at("changes/t.json", "plan", &json!({}));
+    board.write("standards/errors.md", "# Errors\n");
+    let first = board.call_stdin("plan", &given(PLAN, &["/standards/errors.md"]));
+    let written = plans(&board);
+    let again = board.call_stdin("plan", &given(PLAN, &["/standards/errors.md"]));
+    assert_eq!(
+        again,
+        json!({
+            "path": first["path"],
+            "text": first["text"],
+            "uses": 1,
+            "unchanged": true,
+        })
+    );
+    assert_eq!(plans(&board), written);
+    assert_eq!(board.read("changes/t.json")["plan"], first["path"]);
+    let mut other = given(PLAN, &["/standards/errors.md"]);
+    other["paths"] = json!(["/repos/x/src/**"]);
+    let second = board.call_stdin("plan", &other);
+    assert_eq!(second["unchanged"], false);
+    assert_ne!(second["path"], first["path"]);
+    assert_eq!(plans(&board), written + 2);
 }

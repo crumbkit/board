@@ -59,3 +59,14 @@ again, up to three times; then each such line is refused with
 `board::put::name_taken` and the batch with `board::put::invalid`. The report's
 `writes[].display`, and the text line `wrote <path> <blob>`, carry each name
 chosen.
+
+## Bulk commits
+
+A bulk commit changes many files at once, such as a migration. Its message
+ends in the trailer `Board-Bulk: <reason>`, so a reader of git history can
+tell it from an edit. The reason is one line of 1 to 80 characters.
+`put --batch --bulk <reason>` writes it, and any other reason is
+`board::put::bulk_reason`. `mount update` writes `Board-Bulk: mount update
+<path>`, and `plugin enable` writes `Board-Bulk: plugin enable <name>` when it
+replaces or removes schemas. A built-in plugin writes one through its host,
+as the changes plugin's `migrate` does.

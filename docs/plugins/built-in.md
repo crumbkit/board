@@ -37,6 +37,8 @@ Board is called. `artifacts`, `attention`, `boundary`, `controls`, `plans`, `eva
     `expect`, refusals and report, one commit or nothing. It is checked as
     the plugin `BOARD_PLUGIN` names, else the called one, so it is refused
     what only the owner writes (docs/architecture/writes/effects.md).
+    `put_bulk(lines, bulk)` writes them as `board put --batch --bulk`
+    does, ending the commit's message in the `Board-Bulk:` trailer.
   - `call`, `board`, `decide`, `sync` and `mount_update` act as the
     plugin's own `board call`, `board --personal`, `board -C`, `board
     decide`, `board sync` and `board mount update` do

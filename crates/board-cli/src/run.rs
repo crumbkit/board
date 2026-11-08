@@ -8,7 +8,7 @@ use board_model::{
     Refusal,
 };
 pub(crate) use board_ops::entered;
-use board_ops::{Absent, Board, DEFAULT_LIMIT, Expect, MAX_LIMIT, Plugins, PutError};
+use board_ops::{Absent, Board, Bulk, DEFAULT_LIMIT, Expect, MAX_LIMIT, Plugins, PutError};
 use board_plugin::{Limits, Target};
 
 mod checkout;
@@ -137,6 +137,12 @@ pub(crate) struct Putting {
     /// batch through a mount commits in the mounted board and moves the mount's pin.
     #[arg(long, conflicts_with_all = ["path", "expect"])]
     pub(crate) batch: bool,
+    /// Mark the batch's commit as a bulk one, ending its message in `Board-Bulk: <REASON>`.
+    ///
+    /// The reason is one line of 1 to 80 characters, such as `migrate flows`, so a reader of
+    /// history can tell a commit that touches many files from an edit.
+    #[arg(long, value_name = "REASON", requires = "batch")]
+    pub(crate) bulk: Option<String>,
     /// Write stdin as a file at a path that is its whole name, such as /notes/plan.md.
     ///
     /// With a `store` setting, --file uploads bytes over 1 MiB or not UTF-8 under their digest and
@@ -567,9 +573,16 @@ fn reread(
     })
 }
 
-/// Lets `board` ask the owner to admit what `command` writes. Only a
-/// plugin's decide writes in the personal board.
+/// Lets `board` ask the owner to admit what `command` writes, and marks a
+/// `put --bulk` as a bulk commit, refusing a reason a trailer cannot hold.
+/// Only a plugin's decide writes in the personal board.
 fn ask(board: &mut Board, context: &Context, command: &Command) -> Result<(), Box<Refusal>> {
+    if let Command::Put(Putting {
+        bulk: Some(reason), ..
+    }) = command
+    {
+        board.mark_bulk(Bulk::new(reason).map_err(|error| Box::new(error.refusal()))?);
+    }
     let personal = match command {
         Command::Put(_) | Command::Rm(_) => false,
         Command::Decide(_) => context.environment.plugin.is_some(),

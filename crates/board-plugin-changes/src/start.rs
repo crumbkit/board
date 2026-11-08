@@ -1,5 +1,5 @@
 //! The `start` capability: a new change in the first phase of the flow it
-//! follows, its copy of that flow, its plan to fill in, its route, its
+//! follows, the stored version of that flow it references, its plan to fill in, its route, its
 //! check suite, the records it surfaces and the repository's brief.
 
 use std::fmt::Write as _;
@@ -13,7 +13,7 @@ use serde_json::{Value, json};
 use crate::board::{self, get};
 use crate::change::{line, touch};
 use crate::controls::{Found, on_mount};
-use crate::flow::{FlowSummary, chosen, copy_line, refuse_invalid, refuse_without_repository};
+use crate::flow::{FlowSummary, chosen, refuse_invalid, refuse_without_repository, version_line};
 use crate::gates::SECTIONS;
 use crate::phases::check_target;
 use crate::plan::plan_lines;
@@ -211,8 +211,9 @@ fn task_for(host: &dyn Host, asked: &Input, title: &str) -> Result<String, Plugi
     add_task(host, title, route, None)
 }
 
-/// Creates the change at `/changes/<name>`, its copy of its flow, its plan
-/// and, unless one is named, its task, and returns the brief.
+/// Creates the change at `/changes/<name>`, the version of its flow when
+/// the board lacks it, its plan and, unless one is named, its task, and
+/// returns the brief.
 pub(crate) fn start(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
     let asked: Input = PluginError::read_input(PLUGIN, "start", input)?;
     let mount = match asked.mount.trim_end_matches('/') {
@@ -264,9 +265,9 @@ pub(crate) fn start(host: &dyn Host, input: &Value) -> Result<Value, PluginError
     let plan = format!("{record}.md");
     let first = flow.phases.first().map_or("", |phase| phase.name.as_str());
     let mut change = ChangeRecord::new(title.clone(), mount.clone(), first);
-    let (copy, copied) = copy_line(&path, "none", &flow);
-    lines.push(copied);
-    change.flow = Some(copy);
+    let (version, written) = version_line(host, &flow)?;
+    lines.extend(written);
+    change.flow = Some(version);
     change.plan = Some(record);
     change.suite.clone_from(&suite);
     let routed = route(&rules, &asking);

@@ -818,6 +818,39 @@ fn plugin_enable_keeps_a_schema_the_plugin_dropped_while_a_record_has_its_type_a
     assert!(!board.workdir().join(old).exists());
 }
 
+const BULK_ENABLE: &str = "\n\nBoard-Bulk: plugin enable";
+
+#[test]
+fn an_enable_that_replaces_a_schema_marks_its_commit_as_bulk_and_a_first_enable_does_not() {
+    let (board, data) = holding(r#"{"type": "array"}"#);
+    let enabled = plugin(&board, &data, &["plugin", "enable", "tasks"]);
+    assert_eq!(enabled.code, 0, "{}", text(&enabled.stderr));
+    assert_eq!(
+        board.head().unwrap().message,
+        format!("Enable the tasks plugin{BULK_ENABLE} tasks")
+    );
+    let (board, data) = shipping();
+    let enabled = plugin(&board, &data, &["plugin", "enable", "journal"]);
+    assert_eq!(enabled.code, 0, "{}", text(&enabled.stderr));
+    assert_eq!(board.head().unwrap().message, "Enable the journal plugin");
+}
+
+#[test]
+fn an_enable_that_removes_a_schema_marks_its_commit_as_bulk() {
+    let (board, data) = shipping();
+    let old = ".board/types/journal/old/v1.schema.json";
+    let config = r#"{"$type": "board/config/v1"}"#;
+    let schema = r#"{"type": "object"}"#;
+    board.write(old, Item::File(schema));
+    board.commit(&[(old, schema), (".board/board.json", config)]);
+    let enabled = plugin(&board, &data, &["plugin", "enable", "journal"]);
+    assert_eq!(enabled.code, 0, "{}", text(&enabled.stderr));
+    assert_eq!(
+        board.head().unwrap().message,
+        format!("Enable the journal plugin{BULK_ENABLE} journal")
+    );
+}
+
 /// A board naming journal in its configuration without its schema.
 pub(super) fn lacking_a_schema() -> (Scenario, Scenario) {
     let (board, data) = shipping();

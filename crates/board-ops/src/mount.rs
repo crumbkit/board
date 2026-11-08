@@ -50,7 +50,14 @@ impl Board {
         if new == old {
             return Ok(report);
         }
-        let message = format!("{BINARY_NAME} mount update {path}");
+        // The new pin brings every file the mounted commits changed, so the
+        // commit is marked as a bulk one.
+        let reason = format!("mount update {path}");
+        let message = format!("{BINARY_NAME} {reason}");
+        let message = match crate::Bulk::new(&reason) {
+            Ok(bulk) => bulk.mark(&message),
+            Err(_) => message,
+        };
         self.repin(lock, path, target, blob, &canonical, &message)?;
         report.wrote = true;
         Ok(report)
