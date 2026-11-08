@@ -525,7 +525,12 @@ impl Fixture {
         let mut config: Value = serde_json::from_str(&self.read(".board/board.json")).unwrap();
         config["commit_on_put"] = json!(true);
         self.write(".board/board.json", &config.to_string());
-        for arguments in [["add", "-A"].as_slice(), &["commit", "-qm", "fixture"]] {
+        for arguments in [
+            ["config", "user.name", "t"].as_slice(),
+            &["config", "user.email", "t@t"],
+            &["add", "-A"],
+            &["commit", "-qm", "fixture"],
+        ] {
             let done = std::process::Command::new("git")
                 .args(arguments)
                 .current_dir(self.board.workdir())

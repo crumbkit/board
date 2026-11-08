@@ -793,6 +793,9 @@ fn plans_board_enabling(plugins: &[&str], changes: &[(&str, &str, &str)]) -> Cha
     let mut config = board.read(".board/board.json");
     config["commit_on_put"] = json!(true);
     board.write(".board/board.json", &config.to_string());
+    let root = board.root().to_path_buf();
+    git(&root, &["config", "user.name", "t"]);
+    git(&root, &["config", "user.email", "t@t"]);
     for name in ["a", "b", "c", "d"] {
         board.write(&format!("notes/{name}.md"), "# N\n");
     }
