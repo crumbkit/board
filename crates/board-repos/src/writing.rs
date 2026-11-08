@@ -180,14 +180,20 @@ pub fn create(
     Err(refusal(busy.to_owned(), why, [("path", json!(path))]))
 }
 
-/// Syncs the clone, pushing: none, or the code of the refusal. The code is
-/// `<plugin>::repo::not_synced` for the board's own tree, never synced. A
-/// failed push after a write is not retried, since the file is committed.
+/// Syncs the clone, pushing: [`synced`] with `push`.
 pub fn push(writer: Writer<'_>, repo: &Repo) -> Option<String> {
+    synced(writer, repo, true)
+}
+
+/// Syncs the clone, pushing only when `push`: none, or the code of the
+/// refusal. The code is `<plugin>::repo::not_synced` for the board's own
+/// tree, never synced. A failed push after a write is not retried, since
+/// the file is committed.
+pub fn synced(writer: Writer<'_>, repo: &Repo, push: bool) -> Option<String> {
     if repo.clone.is_none() {
         return Some(format!("{}::repo::not_synced", writer.plugin));
     }
-    match repo.sync(writer, true) {
+    match repo.sync(writer, push) {
         Ok(code) => code.map(|code| code.as_str().to_owned()),
         Err(error) => Some(
             (error.fields.get("code").and_then(|code| code.as_str()))
@@ -196,18 +202,34 @@ pub fn push(writer: Writer<'_>, repo: &Repo) -> Option<String> {
     }
 }
 
-/// Pushes a write, then moves the mount's pin to the clone's HEAD: the
-/// commit holding the write, and [`push`]'s code. A put through a mount
-/// pins the commit it made, and the push may rebase that commit onto the
-/// remote's, so the pin moves after the push and the commit returned is
-/// the clone's HEAD. `commit` is none when the put left the write
-/// uncommitted.
+/// Pushes a write, then moves the mount's pin: [`landed_with`] with
+/// `push`.
 pub fn landed(
     writer: Writer<'_>,
     repo: &Repo,
     commit: Option<String>,
 ) -> Result<(Option<String>, Option<String>), PluginError> {
-    let unpushed = push(writer, repo);
+    landed_with(writer, repo, commit, true)
+}
+
+/// Pushes a write when `push`, then moves the mount's pin to the clone's
+/// HEAD: the commit holding the write, and [`synced`]'s code, or
+/// `<plugin>::repo::not_pushed` for a clone left unpushed. A put through a
+/// mount pins the commit it made, and the push may rebase that commit onto
+/// the remote's, so the pin moves after the push and the commit returned
+/// is the clone's HEAD. `commit` is none when the put left the write
+/// uncommitted.
+pub fn landed_with(
+    writer: Writer<'_>,
+    repo: &Repo,
+    commit: Option<String>,
+    push: bool,
+) -> Result<(Option<String>, Option<String>), PluginError> {
+    let unpushed = if push || repo.clone.is_none() {
+        synced(writer, repo, true)
+    } else {
+        Some(format!("{}::repo::not_pushed", writer.plugin))
+    };
     let Some(commit) = commit else {
         return Ok((None, unpushed));
     };

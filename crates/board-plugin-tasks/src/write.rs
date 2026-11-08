@@ -9,164 +9,42 @@ use std::path::Path;
 
 use board_model::Source;
 use board_ops::{Host, PluginError};
-use board_plugin::shape::{Actor, Record as _, Slug};
+use board_plugin::shape::{Actor, Record as _};
 use board_repos::{
     ATTEMPTS, Date, EDITED, Listed, MOVED, Repo, Through, Writer, covering, create, day_start,
-    landed, listed, push, refused, root, slug, today, trimmed,
+    landed, landed_with, listed, push, refused, root, slug, synced, today, trimmed,
 };
-use schemars::{JsonSchema, Schema, SchemaGenerator, json_schema};
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 
 use crate::dates::horizon;
 use crate::lines::with_fields;
 use crate::listing::{grown, held_by, listing, read, resolve};
-use crate::records::{REPEAT, TaskRecord};
+use crate::records::TaskRecord;
 use crate::repeat::completed;
 use crate::task::model;
 use crate::tree::{Forest, descendants};
 use crate::{PLUGIN, caller_origin, refusal, writer};
+
+mod inputs;
+
+pub(crate) use inputs::{AddInput, DeferInput, DoneInput, MoveInput, TaskPath};
 
 /// The refusal of a write that found the task busy: edited in its clone
 /// and not committed, or changing.
 const BUSY: &str = "tasks::task::busy";
 /// How many names a new task tries, `<slug>.md`, then `<slug>-2.md` and on.
 const NAMES: usize = 10;
-/// A date or a horizon, as `defer` and `add` take it.
-const UNTIL: &str = r"^([0-9]{4}-[0-9]{2}-[0-9]{2}|not-today|not-this-week|soon|someday)$";
-const UNTIL_HELP: &str = "A date, YYYY-MM-DD, or a horizon from today: not-today (1 day), \
-                          not-this-week (6), soon (20) or someday (90). The task is written with \
-                          the date.";
-
-/// The task to act on.
-#[derive(Debug, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct TaskPath {
-    #[schemars(
-        regex(pattern = r"^/.*\.md$"),
-        description = "The task's path in the board, such as /tasks/call-the-bank.md or \
-                       /repos/personal/tasks/x.md."
-    )]
-    pub(crate) path: String,
-}
-
-/// The task to defer, and until when.
-#[derive(Debug, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct DeferInput {
-    #[schemars(
-        regex(pattern = r"^/.*\.md$"),
-        description = "The task's path in the board, such as /tasks/call-the-bank.md or \
-                       /repos/personal/tasks/x.md."
-    )]
-    pub(crate) path: String,
-    #[schemars(regex(pattern = UNTIL), description = UNTIL_HELP)]
-    pub(crate) until: String,
-}
-
-/// The task to move, and its new parent.
-#[derive(Debug, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct MoveInput {
-    #[schemars(
-        regex(pattern = r"^/.*\.md$"),
-        description = "The task's path in the board, such as /tasks/call-the-bank.md or \
-                       /repos/personal/tasks/x.md."
-    )]
-    pub(crate) path: String,
-    #[schemars(
-        regex(pattern = r"^(none|/.*\.md)$"),
-        description = "The new parent's path in the board, in the task's own repo, such as \
-                       /tasks/ship-flows-editor.md, or none to clear it."
-    )]
-    pub(crate) parent: String,
-}
-
-/// A new open task, and the fields it starts with.
-#[derive(Debug, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct AddInput {
-    #[schemars(
-        length(min = 1),
-        description = "The task's title, which names its file once and for all."
-    )]
-    pub(crate) title: String,
-    #[schemars(description = "The task's prose, written as its body.")]
-    pub(crate) text: Option<String>,
-    #[schemars(
-        regex(pattern = r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$"),
-        description = "The date, YYYY-MM-DD, the task is due by."
-    )]
-    pub(crate) due: Option<String>,
-    #[schemars(regex(pattern = UNTIL), description = UNTIL_HELP)]
-    pub(crate) defer: Option<String>,
-    #[schemars(
-        description = "The paths, in the task's own repo, of the tasks it waits on, such as \
-                       /tasks/agree-scope.md."
-    )]
-    pub(crate) after: Option<Vec<String>>,
-    #[schemars(
-        regex(pattern = REPEAT),
-        description = "When it comes back once done: daily, weekdays, weekly-mon, monthly-15 or \
-                       annually-10-25."
-    )]
-    pub(crate) repeat: Option<String>,
-    #[schemars(description = "Whether a missed day of a repeating task is dropped.")]
-    pub(crate) ephemeral: Option<bool>,
-    #[schemars(
-        range(min = 0, max = 23),
-        description = "The hour of the person's day, 0 to 23, the task is available from."
-    )]
-    pub(crate) from_hour: Option<u8>,
-    #[serde(default)]
-    #[schemars(
-        with = "Option<Vec<Slug>>",
-        description = "Tags of where it can be done, such as errands."
-    )]
-    pub(crate) contexts: Option<Vec<String>>,
-    #[serde(default)]
-    #[schemars(
-        schema_with = "kind",
-        description = "task, as when left out, or project."
-    )]
-    pub(crate) kind: Option<String>,
-    #[schemars(
-        regex(pattern = r"^/"),
-        description = "The board path, in the task's own repo, of a project's brief, such as \
-                       /projects/flows/README.md."
-    )]
-    pub(crate) brief: Option<String>,
-    #[schemars(
-        regex(pattern = r"^/.*\.md$"),
-        description = "The board path, in the task's own repo, of the task it is part of, such \
-                       as /tasks/ship-flows-editor.md."
-    )]
-    pub(crate) parent: Option<String>,
-    #[schemars(
-        regex(pattern = r"^/"),
-        description = "The repo to write the task to: / for the board's own tree, or a notes \
-                       repo's mount path; the caller's git remote chooses it when left out."
-    )]
-    pub(crate) repo: Option<String>,
-    #[schemars(
-        length(min = 1),
-        description = "A git remote, or owner/name, to choose the repos by in place of the origin \
-                       of the directory board was started in."
-    )]
-    pub(crate) remote: Option<String>,
-}
-
-fn kind(_: &mut SchemaGenerator) -> Schema {
-    json_schema!({"type": "string", "enum": ["task", "project"]})
-}
 
 /// The task as a write call left it.
 ///
 /// `commit` holds the write, null when the board's own tree left it
 /// uncommitted. `unsynced` is the code of a sync before the write that left
 /// the clone where it was, and `unpushed` the code of a push after it that
-/// failed; both are `tasks::repo::not_synced` for the board's own tree,
-/// which is never synced.
+/// failed, or `tasks::repo::not_pushed` when `done --push false` skipped
+/// it; both are `tasks::repo::not_synced` for the board's own tree, which
+/// is never synced.
 #[derive(Debug, Serialize, JsonSchema)]
 #[schemars(deny_unknown_fields)]
 pub(crate) struct Written {
@@ -281,9 +159,13 @@ pub(crate) fn add(host: &dyn Host, input: &Value) -> Result<Value, PluginError> 
     let record: Map<String, Value> = (fields.into_iter())
         .map(|(key, value)| (key.to_owned(), value))
         .collect();
+    let (commit, unpushed) = landed(writer, &repo, commit)?;
     Ok(json!(written(
-        writer, &repo, &path, &record, commit, synced
-    )?))
+        &repo,
+        &path,
+        &record,
+        (commit, synced, unpushed)
+    )))
 }
 
 /// The caller's origin to route a new task by, unless `repo` names its
@@ -319,12 +201,15 @@ fn json_values(values: Vec<(&'static str, Option<String>)>) -> Values {
 
 /// Marks the task done, or defers a repeating one to its next occurrence.
 pub(crate) fn done(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
-    let given: TaskPath = PluginError::read_input(PLUGIN, "done", input)?;
+    let given: DoneInput = PluginError::read_input(PLUGIN, "done", input)?;
     stamped(
         host,
         &given.path,
         &|record, day| Ok(json_values(completed(record, day))),
-        false,
+        Landing {
+            finished: false,
+            push: given.push != Some(false),
+        },
     )
 }
 
@@ -333,29 +218,56 @@ pub(crate) fn defer(host: &dyn Host, input: &Value) -> Result<Value, PluginError
     let given: DeferInput = PluginError::read_input(PLUGIN, "defer", input)?;
     let change =
         |_: &Map<String, Value>, day| Ok(vec![("defer", Some(until(&given.until, day).into()))]);
-    stamped(host, &given.path, &change, false)
+    stamped(host, &given.path, &change, Landing::open())
 }
 
 /// Marks the task dropped.
 pub(crate) fn drop(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
     let given: TaskPath = PluginError::read_input(PLUGIN, "drop", input)?;
     let change = |_: &Map<String, Value>, _| Ok(vec![("status", Some("dropped".into()))]);
-    stamped(host, &given.path, &change, false)
+    stamped(host, &given.path, &change, Landing::open())
 }
 
 /// Marks the task reviewed today, whatever its status.
 pub(crate) fn reviewed(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
     let given: TaskPath = PluginError::read_input(PLUGIN, "reviewed", input)?;
-    stamped(host, &given.path, &|_, _| Ok(Vec::new()), true)
+    stamped(
+        host,
+        &given.path,
+        &|_, _| Ok(Vec::new()),
+        Landing {
+            finished: true,
+            push: true,
+        },
+    )
+}
+
+/// Which tasks a write call takes, and whether it pushes: an open task
+/// unless `finished`, and the task's repo is pushed before and after the
+/// write when `push`.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Landing {
+    pub(crate) finished: bool,
+    pub(crate) push: bool,
+}
+
+impl Landing {
+    /// An open task, pushed.
+    pub(crate) fn open() -> Self {
+        Self {
+            finished: false,
+            push: true,
+        }
+    }
 }
 
 /// Sets the fields `change` names and `reviewed` on the task at `logical`,
-/// an open one unless `finished`, and gives the written task.
+/// as `landing` says, and gives the written task.
 pub(crate) fn stamped(
     host: &dyn Host,
     logical: &str,
     change: &Change<'_>,
-    finished: bool,
+    landing: Landing,
 ) -> Result<Value, PluginError> {
     let found = listed(host, PLUGIN)?;
     let repo = held(&found, logical);
@@ -366,15 +278,14 @@ pub(crate) fn stamped(
     };
     let clones = Through(host);
     let writer = writer(host, &clones);
-    let edited = edit(writer, &repo, logical, &stamp, finished)?;
+    let edited = edit(writer, &repo, logical, &stamp, landing)?;
+    let (commit, unpushed) = landed_with(writer, &repo, edited.commit, landing.push)?;
     Ok(json!(written(
-        writer,
         &repo,
         &edited.path,
         &edited.record,
-        edited.commit,
-        edited.synced
-    )?))
+        (commit, edited.synced, unpushed)
+    )))
 }
 
 /// Sets the task's parent to another task in its repo, or clears it with
@@ -414,7 +325,11 @@ pub(crate) fn move_task(host: &dyn Host, input: &Value) -> Result<Value, PluginE
     };
     let clones = Through(host);
     let writer = writer(host, &clones);
-    let edited = edit(writer, &repo, logical, &change, true)?;
+    let landing = Landing {
+        finished: true,
+        push: true,
+    };
+    let edited = edit(writer, &repo, logical, &change, landing)?;
     let (commit, unpushed) = landed(writer, &repo, edited.commit)?;
     Ok(json!(Moved {
         repo: repo.root.clone(),
@@ -493,8 +408,9 @@ struct Edited {
     synced: Option<String>,
 }
 
-/// Sets the fields `change` names on the task at `logical` in `repo`, an
-/// open one unless `finished`.
+/// Sets the fields `change` names on the task at `logical` in `repo`, as
+/// `landing` says. The sync before the write pushes only when
+/// `landing.push`.
 ///
 /// A write refused because the task or the clone moved since it was read is
 /// tried again on a new read. A new read that finds the text the last
@@ -504,12 +420,12 @@ fn edit(
     repo: &Repo,
     logical: &str,
     change: &Change<'_>,
-    finished: bool,
+    landing: Landing,
 ) -> Result<Edited, PluginError> {
     let host = writer.host;
     let prefix = format!("{}/", repo.root.trim_end_matches('/'));
     let path = logical.strip_prefix(&prefix).unwrap_or(logical).to_owned();
-    let synced = push(writer, repo);
+    let synced = synced(writer, repo, landing.push);
     let day = day(host);
     let (mut moved, mut sent) = (None, None::<String>);
     for _ in 0..ATTEMPTS {
@@ -525,7 +441,7 @@ fn edit(
                 synced,
             });
         }
-        let record = checked(host, &task, repo, logical, finished)?;
+        let record = checked(host, &task, repo, logical, landing.finished)?;
         let values = change(&record, day)?;
         let text = with_fields(task.text.as_deref().unwrap_or(""), &values, logical)?;
         let error = match repo.write(host, &path, &text, task.blob.as_deref()) {
@@ -720,17 +636,14 @@ fn until(value: &str, day: Date) -> String {
     horizon(value).map_or_else(|| value.to_owned(), |days| day.plus(days).to_string())
 }
 
-/// The call's output, once the write is made: the clone is pushed, and the
-/// mount's pin moved after it.
+/// The call's output, once the write is landed: its commit, the code of
+/// the sync before it and the code of the push after it.
 fn written(
-    writer: Writer<'_>,
     repo: &Repo,
     path: &str,
     record: &Map<String, Value>,
-    commit: Option<String>,
-    synced: Option<String>,
-) -> Result<Written, PluginError> {
-    let (commit, unpushed) = landed(writer, repo, commit)?;
+    (commit, synced, unpushed): (Option<String>, Option<String>, Option<String>),
+) -> Written {
     let text = |key: &str| {
         (record.get(key))
             .filter(|value| !value.is_null())
@@ -740,7 +653,7 @@ fn written(
                     .map_or_else(|| value.to_string(), str::to_owned)
             })
     };
-    Ok(Written {
+    Written {
         repo: repo.root.clone(),
         path: repo.logical(path),
         status: text("status").unwrap_or_default(),
@@ -750,7 +663,7 @@ fn written(
         commit,
         unsynced: synced,
         unpushed,
-    })
+    }
 }
 
 #[cfg(test)]
