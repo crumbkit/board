@@ -895,3 +895,300 @@ fn review_finds_no_obligations_while_the_controls_plugin_is_not_enabled() {
     reviewing_with_an_obligation(&board);
     assert_eq!(advanced(&board), "land");
 }
+
+/// The reason the reopen tests give.
+const REASON: &str = "The review asked for a test of the empty case.";
+/// The phases of the shipped development flow.
+const DEVELOPMENT: [&str; 4] = ["plan", "build", "review", "land"];
+
+/// A board mounting /repos/x with [`CHANGE`] in `phase` and `fields`,
+/// migrated to a `changes/change/v2` on the development flow.
+fn migrated(phase: &str, fields: &Value) -> Changes {
+    let board = Changes::new();
+    board.mount_x(&[("README.md", "x\n")]);
+    board.change_at("changes/t.json", phase, fields);
+    board.call("migrate", &json!({"apply": true}));
+    board
+}
+
+/// The input of `reopen` for [`CHANGE`] with [`REASON`], by the agent
+/// named lead.
+fn reopening() -> Value {
+    at(&json!({"reason": REASON, "agent": "lead"}))
+}
+
+/// The `changes/reopen/v1` records under [`CHANGE`], oldest first.
+fn reopens(board: &Changes) -> Vec<Value> {
+    let Ok(listed) = std::fs::read_dir(board.root().join("changes/t/reopens")) else {
+        return Vec::new();
+    };
+    let mut names: Vec<String> = (listed.map(|entry| entry.unwrap().file_name()))
+        .map(|name| name.into_string().unwrap())
+        .collect();
+    names.sort();
+    (names.iter())
+        .map(|name| board.read(&format!("changes/t/reopens/{name}")))
+        .collect()
+}
+
+/// The change record of [`CHANGE`] without the fields `reopen` changes.
+fn unmoved(board: &Changes) -> Value {
+    let mut change = board.read("changes/t.json");
+    let fields = change.as_object_mut().unwrap();
+    fields.remove("phase");
+    fields.remove("touched");
+    change
+}
+
+/// Moves [`CHANGE`] to `phase` by rewriting its record.
+fn move_to(board: &Changes, phase: &str) {
+    let mut change = board.read("changes/t.json");
+    change["phase"] = json!(phase);
+    board.write("changes/t.json", &change.to_string());
+}
+
+#[test]
+fn reopen_moves_a_change_in_review_back_to_build_and_records_why() {
+    let board = migrated("review", &json!({}));
+    assert_eq!(
+        board.call("reopen", &reopening()),
+        json!({"path": CHANGE, "from": "review", "to": "build"})
+    );
+    let change = board.read("changes/t.json");
+    assert_eq!(
+        (&change["phase"], &change["touched"]),
+        (&json!("build"), &json!(today()))
+    );
+    assert_eq!(
+        reopens(&board),
+        [json!({
+            "$type": "changes/reopen/v1",
+            "reason": REASON,
+            "from": "review",
+            "by": {"agent": "lead"},
+        })]
+    );
+}
+
+#[test]
+fn two_reopens_leave_two_records_and_the_changes_other_fields_as_they_were() {
+    let board = migrated("review", &json!({"route": "owner"}));
+    let before = unmoved(&board);
+    board.call("reopen", &reopening());
+    move_to(&board, "land");
+    let again = at(&json!({"reason": "The land check failed.", "session": "local_abc123"}));
+    board.call("reopen", &again);
+    assert_eq!(unmoved(&board), before);
+    let found: Vec<(Value, Value, Value)> = (reopens(&board).into_iter())
+        .map(|record| {
+            (
+                record["reason"].clone(),
+                record["from"].clone(),
+                record["by"].clone(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        found,
+        [
+            (json!(REASON), json!("review"), json!({"agent": "lead"})),
+            (
+                json!("The land check failed."),
+                json!("land"),
+                json!({"session": "local_abc123"})
+            ),
+        ]
+    );
+}
+
+#[test]
+fn reopen_refuses_a_call_that_names_nobody_or_a_blank_agent_and_admits_its_twin_that_names_one() {
+    let board = migrated("review", &json!({}));
+    let nobody = at(&json!({"reason": REASON}));
+    assert_eq!(
+        board.refusal("reopen", &nobody)["code"],
+        "board::plugin::bad_input"
+    );
+    assert_eq!(board.read("changes/t.json")["phase"], "review");
+    let blank = at(&json!({"reason": REASON, "agent": "  "}));
+    assert_eq!(
+        board.refusal("reopen", &blank)["code"],
+        "changes::reopen::no_actor"
+    );
+    assert_eq!(reopens(&board), Vec::<Value>::new());
+    let missing = json!({"path": "/changes/missing", "reason": REASON, "agent": "  "});
+    assert_eq!(
+        board.refusal("reopen", &missing)["code"],
+        "changes::change::not_found"
+    );
+    let named = at(&json!({"reason": REASON, "agent": "lead"}));
+    assert_eq!(board.call("reopen", &named)["to"], "build");
+    assert_eq!(reopens(&board)[0]["by"], json!({"agent": "lead"}));
+}
+
+#[test]
+fn reopen_refuses_a_change_already_in_build_or_in_plan_and_admits_one_in_land() {
+    let board = migrated("build", &json!({}));
+    let refused = board.refusal("reopen", &reopening());
+    assert_eq!(refused["code"], "changes::reopen::no_build");
+    assert_eq!(
+        (&refused["fields"]["phase"], &refused["fields"]["phases"]),
+        (&json!("build"), &json!(DEVELOPMENT))
+    );
+    let message = refused["message"].as_str().unwrap();
+    assert!(message.contains("is already in build"), "{message}");
+    move_to(&board, "plan");
+    assert_eq!(
+        board.refusal("reopen", &reopening())["code"],
+        "changes::reopen::no_build"
+    );
+    move_to(&board, "land");
+    assert_eq!(
+        board.call("reopen", &reopening()),
+        json!({"path": CHANGE, "from": "land", "to": "build"})
+    );
+}
+
+/// A board flow `name` with `phases`, each with no checks.
+fn bare_flow(name: &str, phases: &[&str]) -> String {
+    let listed: Vec<Value> = (phases.iter())
+        .map(|phase| {
+            json!({"name": phase, "agent": "lead", "instruction": format!("Do {phase}."), "checks": []})
+        })
+        .collect();
+    json!({
+        "$type": "changes/flow/v1",
+        "name": name,
+        "summary": "A flow for a test.",
+        "stop": {"through": phases[0]},
+        "phases": listed,
+    })
+    .to_string()
+}
+
+#[test]
+fn reopen_refuses_a_change_whose_flow_has_no_build_and_admits_its_twin_on_a_flow_with_one() {
+    let board = migrated("review", &json!({}));
+    board.write(
+        "flows/checked.json",
+        &bare_flow("checked", &["plan", "review"]),
+    );
+    board.call("reflow", &json!({"path": CHANGE, "flow": "checked"}));
+    let refused = board.refusal("reopen", &reopening());
+    assert_eq!(refused["code"], "changes::reopen::no_build");
+    assert_eq!(refused["fields"]["phases"], json!(["plan", "review"]));
+    board.write(
+        "flows/checked.json",
+        &bare_flow("checked", &["plan", "build", "review"]),
+    );
+    board.call("reflow", &json!({"path": CHANGE, "flow": "checked"}));
+    assert_eq!(board.call("reopen", &reopening())["to"], "build");
+}
+
+#[test]
+fn reopen_refuses_a_change_that_follows_no_flow_and_admits_its_twin_that_follows_one() {
+    let board = migrated("review", &json!({}));
+    let kept = board.read("changes/t.json");
+    let mut flowless = kept.clone();
+    flowless.as_object_mut().unwrap().remove("flow");
+    board.write("changes/t.json", &flowless.to_string());
+    let refused = board.refusal("reopen", &reopening());
+    assert_eq!(
+        (&refused["code"], &refused["fields"]["phases"]),
+        (&json!("changes::reopen::no_build"), &json!([]))
+    );
+    let message = refused["message"].as_str().unwrap();
+    assert!(message.contains("follows no flow"), "{message}");
+    board.write("changes/t.json", &kept.to_string());
+    assert_eq!(board.call("reopen", &reopening())["to"], "build");
+}
+
+#[test]
+fn reopen_refuses_a_change_whose_flow_puts_build_after_its_phase_and_admits_one_with_build_before()
+{
+    let board = migrated("review", &json!({}));
+    board.write(
+        "flows/late.json",
+        &bare_flow("late", &["plan", "review", "build"]),
+    );
+    board.call("reflow", &json!({"path": CHANGE, "flow": "late"}));
+    let refused = board.refusal("reopen", &reopening());
+    assert_eq!(
+        (&refused["code"], &refused["fields"]["phases"]),
+        (
+            &json!("changes::reopen::no_build"),
+            &json!(["plan", "review", "build"])
+        )
+    );
+    board.write(
+        "flows/late.json",
+        &bare_flow("late", &["plan", "build", "review"]),
+    );
+    board.call("reflow", &json!({"path": CHANGE, "flow": "late"}));
+    assert_eq!(board.call("reopen", &reopening())["to"], "build");
+}
+
+#[test]
+fn reopen_refuses_a_done_or_dropped_change_and_admits_one_in_review() {
+    let board = migrated("done", &json!({}));
+    let refused = board.refusal("reopen", &reopening());
+    assert_eq!(
+        (&refused["code"], &refused["fields"]["phase"]),
+        (&json!("changes::phase::final"), &json!("done"))
+    );
+    move_to(&board, "dropped");
+    assert_eq!(
+        board.refusal("reopen", &reopening())["code"],
+        "changes::phase::final"
+    );
+    move_to(&board, "review");
+    assert_eq!(board.call("reopen", &reopening())["to"], "build");
+}
+
+#[test]
+fn reopen_refuses_a_paused_change_and_says_to_resume_it_and_admits_one_in_review() {
+    let board = migrated("paused", &json!({}));
+    let refused = board.refusal("reopen", &reopening());
+    assert_eq!(refused["code"], "changes::phase::paused");
+    let message = refused["message"].as_str().unwrap();
+    assert!(message.contains("changes.resume"), "{message}");
+    move_to(&board, "review");
+    assert_eq!(board.call("reopen", &reopening())["to"], "build");
+}
+
+#[test]
+fn reopen_refuses_a_v1_change_until_it_is_migrated() {
+    let board = Changes::new();
+    board.mount_x(&[("README.md", "x\n")]);
+    board.change_at("changes/t.json", "review", &json!({}));
+    assert_eq!(
+        board.refusal("reopen", &reopening())["code"],
+        "changes::change::not_migrated"
+    );
+    board.call("migrate", &json!({"apply": true}));
+    assert_eq!(board.call("reopen", &reopening())["to"], "build");
+}
+
+#[test]
+fn next_in_build_gives_the_latest_reopens_reason_and_says_nothing_of_one_never_reopened() {
+    let board = migrated("build", &json!({}));
+    let said = board.call("next", &path())["instruction"].clone();
+    assert!(!said.as_str().unwrap().contains("reopened"), "{said}");
+    move_to(&board, "review");
+    board.call(
+        "reopen",
+        &at(&json!({"reason": "An earlier round.", "agent": "lead"})),
+    );
+    move_to(&board, "review");
+    board.call("reopen", &reopening());
+    let said = board.call("next", &path())["instruction"].clone();
+    let said = said.as_str().unwrap();
+    assert!(
+        said.ends_with(&format!("It was reopened for a fix round: {REASON}")),
+        "{said}"
+    );
+    assert!(!said.contains("An earlier round."), "{said}");
+    move_to(&board, "review");
+    let said = board.call("next", &path())["instruction"].clone();
+    assert!(!said.as_str().unwrap().contains("reopened"), "{said}");
+}

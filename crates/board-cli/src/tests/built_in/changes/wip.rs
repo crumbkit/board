@@ -578,3 +578,49 @@ fn a_chain_of_local_clones_past_three_hops_counts_by_the_last_and_says_so() {
     board.ready_in(&short);
     assert_eq!(advanced(&board), "build");
 }
+
+#[test]
+fn reopen_refuses_when_the_cap_is_full_and_goes_past_it_with_a_reason() {
+    let board = Changes::new();
+    board.mount_x(&[("README.md", "x\n")]);
+    board.change_at("changes/t.json", "review", &json!({}));
+    board.call("migrate", &json!({"apply": true}));
+    fill(&board, WIP_LIMIT, &json!({}));
+    let by_person = json!({"reason": "The review's fix.", "person": "luke"});
+    let refused = board.refusal("reopen", &at(&by_person));
+    assert_eq!(
+        (&refused["code"], &refused["fields"]["override"]),
+        (
+            &json!("changes::wip::full"),
+            &json!(format!(
+                "board call changes.reopen --path {CHANGE} --reason 'The review'\"'\"'s fix.' \
+                 --person luke --over_limit '<why>'"
+            ))
+        )
+    );
+    let reason = json!({"reason": "The review asked for a fix.", "agent": "lead"});
+    let refused = board.refusal("reopen", &at(&reason));
+    let override_command = format!(
+        "board call changes.reopen --path {CHANGE} --reason 'The review asked for a fix.' \
+         --agent lead --over_limit '<why>'"
+    );
+    assert_eq!(
+        (&refused["code"], &refused["fields"]["override"]),
+        (&json!("changes::wip::full"), &json!(override_command))
+    );
+    let past = json!({
+        "reason": "The review asked for a fix.",
+        "agent": "lead",
+        "over_limit": "Blocked work elsewhere.",
+    });
+    let output = board.call("reopen", &at(&past));
+    assert_eq!(
+        (&output["to"], &output["warning"]["code"]),
+        (&json!("build"), &json!("changes::wip::over_limit"))
+    );
+    assert_eq!(output["warning"]["override"], json!(override_command));
+    assert_eq!(
+        board.read("changes/t.json")["over_limit"],
+        "Blocked work elsewhere."
+    );
+}
