@@ -433,10 +433,11 @@ fn manifest() -> Value {
         "version": "0.1.0",
         // SKILL.md's description, the callout an agent sees first.
         "description": "Walk one change to a repository from its plan to its pull request, and \
-            gather every record it produces. Use it when you start a change to a repository \
-            mounted in the board, and whenever you resume one. Start with `board -C <board> call \
+            gather every record it produces. Use it to start, resume or list work on a \
+            repository the board mounts. Start a change with `board -C <board> call \
             changes.start --mount /repos/<name> --title '<title>'`, then call `changes.next \
-            --path /changes/<name>` for the next step. SKILL.md and README.md in the plugin's \
+            --path /changes/<name>` for the next step. `changes.open` lists the changes in \
+            progress. SKILL.md and README.md in the plugin's \
             directory say more.",
         "metadata": {"area": "delivery"},
         "types": [
