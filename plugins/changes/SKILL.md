@@ -1,6 +1,6 @@
 ---
 name: changes
-description: 'Walk one change to a repository from its plan to its pull request, and gather every record it produces. Use it when you start a change to a repository mounted in the board, and whenever you resume one. Start with `board -C <board> call changes.start --mount /repos/<name> --title ''<title>''`, then call `changes.next --path /changes/<name>` for the next step. SKILL.md and README.md in the plugin''s directory say more.'
+description: 'Walk one change to a repository from its plan to its pull request, and gather every record it produces. Use it to start, resume or list work on a repository the board mounts. Start a change with `board -C <board> call changes.start --mount /repos/<name> --title ''<title>''`, then call `changes.next --path /changes/<name>` for the next step. `changes.open` lists the changes in progress. SKILL.md and README.md in the plugin''s directory say more.'
 ---
 
 # changes
@@ -185,7 +185,7 @@ the development flow.
   change in `build` is paused, and only a paused one resumed.
 - `changes::prototype::not_prototype`: only a prototype takes a verdict.
 - `changes::task::not_a_task_path`: `--parent` names a task under a
-  `tasks/` directory, such as `/repos/notes-personal/tasks/<slug>.md`, not
+  `tasks/` directory, such as `/repos/notes/tasks/<slug>.md`, not
   a project brief.
 - `changes::task::unrouted`: name the task with `--task`, or the repo to
   add it to with `--task-repo`.

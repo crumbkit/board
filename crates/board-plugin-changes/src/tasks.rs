@@ -24,7 +24,7 @@ pub(crate) fn split_task(path: &str) -> Result<(&str, &str), PluginError> {
             "changes::task::not_a_task_path",
             format!(
                 "{path} is not under a tasks/ directory, so its notes repo is not known; name a \
-                 task such as /repos/notes-personal/tasks/<slug>.md, and list them with `board \
+                 task such as /repos/notes/tasks/<slug>.md, and list them with `board \
                  call tasks.available`"
             ),
             [("path", json!(path))],
