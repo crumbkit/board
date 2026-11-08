@@ -36,7 +36,7 @@ function failure(exitCode: number, stdout: string, stderr: string): { code: stri
   return { code: `exit ${exitCode}`, message: text || 'board printed nothing' }
 }
 
-type Stated = { control: string; requirement: string }
+type Stated = { control: string; requirement: string; close?: string }
 type Measured = Stated & { budget: string; used: number; max: number; unreadable?: unknown[] }
 type Pinned = Stated & { at_least: string; behind?: unknown[]; unreadable?: unknown[] }
 
@@ -51,6 +51,17 @@ function pins(v: Pinned): string {
   return behind > 0 ? `${behind} older than ${v.at_least}` : `every pin at least ${v.at_least}`
 }
 
+/** An obligation's `close` line, as the controls plugin gives it; nothing for a standing control. */
+function closing(c: Stated): { close?: string } {
+  return typeof c.close === 'string' ? { close: c.close } : {}
+}
+
+/** A control's line in a list, with an obligation's close line indented beneath it. */
+function line(c: Control): string {
+  const head = `- ${c.control}: ${c.requirement}${c.usage ? ` (now ${c.usage})` : ''}`
+  return c.close ? `${head}\n  ${c.close}` : head
+}
+
 /**
  * Reads `board --json call controls.check --path .` run at `root`. `null`
  * when no board holds the repository, which is no failure: it has no controls.
@@ -62,13 +73,15 @@ export function parseCheck(root: string, exitCode: number, stdout: string, stder
       control: m.control,
       requirement: m.requirement,
       usage: `${m.used} of ${m.max} ${m.budget}${m.used > m.max ? ', over budget' : ''}${unread(m.unreadable)}`,
+      ...closing(m),
     }))
     const versions = (Array.isArray(found.versions) ? (found.versions as Pinned[]) : []).map(v => ({
       control: v.control,
       requirement: v.requirement,
       usage: `${pins(v)}${unread(v.unreadable)}`,
+      ...closing(v),
     }))
-    const stated = (found.stated as Stated[]).map(s => ({ control: s.control, requirement: s.requirement }))
+    const stated = (found.stated as Stated[]).map(s => ({ control: s.control, requirement: s.requirement, ...closing(s) }))
     return { kind: 'read', root, controls: [...measured, ...versions, ...stated] }
   }
   const failed = failure(exitCode, stdout, stderr)
@@ -80,7 +93,7 @@ export function parseCheck(root: string, exitCode: number, stdout: string, stder
 export function parseForPath(exitCode: number, stdout: string): Control[] | null {
   const found = exitCode === 0 ? output(stdout) : null
   if (found === null || !Array.isArray(found.controls)) return null
-  return (found.controls as Stated[]).map(c => ({ control: c.control, requirement: c.requirement }))
+  return (found.controls as Stated[]).map(c => ({ control: c.control, requirement: c.requirement, ...closing(c) }))
 }
 
 /** The context block's text, or `null` when there is nothing to say. */
@@ -93,7 +106,7 @@ export function contextText(checked: Checked): string | null {
     )
   }
   if (checked.controls.length === 0) return null
-  const lines = checked.controls.map(c => `- ${c.control}: ${c.requirement}${c.usage ? ` (now ${c.usage})` : ''}`)
+  const lines = checked.controls.map(line)
   return (
     `The board's controls state requirements on files in ${checked.root}. Follow each one that applies to a ` +
     `file you change. \`board get <control>\` shows which files a control names.\n\n${lines.join('\n')}`
@@ -110,7 +123,7 @@ export function summary(checked: Checked): string {
 
 /** The hidden row that names controls on `file` the conversation was not told about. */
 export function reminder(file: string, controls: readonly Control[]): string {
-  const lines = controls.map(c => `- ${c.control}: ${c.requirement}`)
+  const lines = controls.map(line)
   const these = controls.length === 1 ? 'This board control applies' : 'These board controls apply'
   return `${these} to ${file}, which you are editing now. Follow each one in this edit and any that follows.\n\n${lines.join('\n')}`
 }

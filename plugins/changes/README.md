@@ -233,8 +233,9 @@ of `changes` still fails `review`.
   whose `refs` name the mount or a path under it, newest first; and the
   evals whose `mounts` name the mount or that sit under the project. The
   change records their paths. `obligations` lists at most ten obligation
-  controls on the mount, `<mount>/**`, by `control` and `summary`, from
-  `controls.for-paths`, and `obligations_left_out` counts the rest; both
+  controls on the mount, `<mount>/**`, by `control`, `summary` and
+  `close`, which says how to close that obligation, as `controls.for-paths` gives them,
+  and `obligations_left_out` counts the rest; both
   are empty when the controls plugin is not enabled. Refuses an existing name (`changes::change::exists`), a
   repository path holding nothing (`changes::mount::not_found`) and a flow
   neither the board holds nor the plugin ships (`changes::flow::not_found`).
