@@ -195,9 +195,10 @@ fn instruction(observed: &Observed) -> String {
     }
 }
 
-/// `said` with the fields `changes.plan` takes on stdin and a one-line
-/// example, when `said` asks for a plan. `changes.plan` replaces the plan,
-/// so for a change that has one, `said` says to resend all four fields.
+/// `said` with the fields `board changes plan` takes on stdin and a one-line
+/// example, when `said` names `changes plan` or `changes.plan`. The command
+/// replaces the plan, so for a change that has one, `said` says to resend
+/// all four fields.
 fn with_plan_usage(observed: &Observed, said: String) -> String {
     if !said.contains("changes plan") && !said.contains("changes.plan") {
         return said;
