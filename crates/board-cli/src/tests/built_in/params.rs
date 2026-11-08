@@ -448,7 +448,8 @@ fn due_leaves_out_a_heuristic_whose_path_is_not_a_name_and_lists_its_twin() {
 #[test]
 fn a_value_board_marks_degraded_reads_as_missing_and_its_valid_twin_is_used() {
     let board = board();
-    write_half_life(&board, &json!({"value": "seven"}));
+    // The plugin's struct reads this record; only Board's check refuses it.
+    write_half_life(&board, &json!({"scopes": {"repos/board": 7}}));
     assert_eq!(
         board.checked("/params/values"),
         BTreeMap::from([(
@@ -476,9 +477,21 @@ fn a_value_board_marks_degraded_reads_as_missing_and_its_valid_twin_is_used() {
 #[test]
 fn a_heuristic_board_marks_degraded_leaves_the_shipped_one_of_its_name_in_place() {
     let board = Fixture::enabling(&["runs", "params"]);
+    // The plugin's struct reads this record; only Board's check refuses it.
+    let mut own: Value = serde_json::from_str(&heuristic(NEVER)).unwrap();
+    own["unit"] = json!("Changed lines");
+    own["default"] = json!(300);
+    own["bounds"] = json!({"min": 1, "max": 400});
     board.write(
         "params/heuristics/overflow-agent-grace.json",
-        &json!({"$type": "params/heuristic/v1", "summary": "No other field."}).to_string(),
+        &own.to_string(),
+    );
+    assert_eq!(
+        board.checked("/params/heuristics"),
+        BTreeMap::from([(
+            "/params/heuristics/overflow-agent-grace".to_owned(),
+            Some("board::record::invalid".to_owned())
+        )])
     );
     assert_eq!(
         board.call("params.get", &["--name", "overflow-agent-grace"])["value"],
