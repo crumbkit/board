@@ -704,3 +704,26 @@ fn a_change_whose_rewrite_fails_its_schema_is_left_and_the_rest_of_the_flows_mig
     assert_eq!(board.read("changes/c.json")["flow"], "/changes/c/flow");
     assert!(!board.exists("changes/a/flow.json"));
 }
+
+#[test]
+fn a_run_whose_rewrite_fails_its_schema_is_left_and_the_rest_of_the_flows_migrate() {
+    let board = copies_board();
+    let mut odd = board.read("changes/a/runs/1.json");
+    odd["sandbox"] = json!("never");
+    board.write("changes/a/runs/1.json", &odd.to_string());
+    commit_all(&board);
+    let dry = board.call("migrate", &json!({"flows": true}));
+    let flows = &dry["flows"];
+    assert_eq!(flows["runs"], json!(["/changes/b/runs/1"]));
+    let left = &flows["left"][0];
+    assert_eq!(left["path"], "/changes/a/runs/1");
+    let why = left["why"].as_str().unwrap();
+    assert!(
+        why.starts_with("its rewritten record at /changes/a/runs/1 fails its schema at"),
+        "{why}"
+    );
+    let applied = board.call("migrate", &json!({"flows": true, "apply": true}));
+    assert_eq!(applied["flows"]["runs"], flows["runs"]);
+    assert_eq!(board.read("changes/a/runs/1.json")["flow"], "development");
+    assert!(!board.exists("changes/a/flow.json"));
+}

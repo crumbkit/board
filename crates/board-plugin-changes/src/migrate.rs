@@ -656,7 +656,7 @@ fn conforms(schemas: &BTreeMap<String, Schema>, lines: &[Value]) -> Result<(), S
             let at = line.get("path").and_then(Value::as_str).unwrap_or_default();
             return Err(format!(
                 "its rewritten record at {at} {error}, so nothing of it is written; fix the old \
-                 change and run migrate again"
+                 record and run migrate again"
             ));
         }
     }

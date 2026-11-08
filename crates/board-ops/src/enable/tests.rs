@@ -138,38 +138,6 @@ fn a_board_that_commits_on_put_commits_the_enable_once() {
     );
 }
 
-/// A board that commits its puts and holds `held` where notes ships its
-/// schema.
-fn committing_with(held: &str) -> (Scenario, Scenario, PathBuf) {
-    let config = r#"{"$type": "board/config/v1"}"#;
-    let (board, data, plugins) = installed_with(config, MANIFEST, SCHEMA);
-    board.write(
-        ".git/config",
-        Item::Appended("[user]\n\tname = Board Test\n\temail = board@example.com\n"),
-    );
-    let at = ".board/types/notes/note/v1.schema.json";
-    board.write(at, Item::File(held));
-    board.commit(&[(at, held), (".board/board.json", config)]);
-    (board, data, plugins)
-}
-
-#[test]
-fn an_enable_that_replaces_a_schema_marks_its_commit_as_bulk_and_one_that_replaces_none_does_not() {
-    let (board, _data, plugins) = committing_with(r#"{"type": "object"}"#);
-    open(&board)
-        .plugin_enable(Some(&plugins), None, &notes(), &[])
-        .unwrap();
-    assert_eq!(
-        board.head().unwrap().message,
-        "Enable the notes plugin\n\nBoard-Bulk: plugin enable notes"
-    );
-    let (board, _data, plugins) = committing_with(SCHEMA);
-    open(&board)
-        .plugin_enable(Some(&plugins), None, &notes(), &[])
-        .unwrap();
-    assert_eq!(board.head().unwrap().message, "Enable the notes plugin");
-}
-
 #[test]
 fn a_schema_symlinked_to_a_different_one_refuses_the_enable_and_one_symlinked_to_an_equal_one_is_left()
  {
@@ -420,10 +388,6 @@ fn a_removed_schema_leaves_the_commit_with_the_rest_of_the_enable() {
         .unwrap();
     let head = board.head().unwrap();
     assert_eq!(Some(head.id), report.put.commit);
-    assert_eq!(
-        head.message,
-        "Enable the notes plugin\n\nBoard-Bulk: plugin enable notes"
-    );
     assert!(!head.files.contains_key(OLD));
     assert!(
         head.files

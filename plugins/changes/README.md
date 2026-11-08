@@ -191,7 +191,8 @@ copy, and is listed under `left` with the reason. The rest go on. A
 `changes/run/v1` that names its flow by name is rewritten to name its
 change's version; one whose change follows no version is listed under
 `left`. A run that names a copy the migration replaces is rewritten to
-name that copy's version. The output's `flows` holds `applied`, `versions` (the
+name that copy's version. A run whose rewritten record fails its schema
+stays as it is and is listed under `left`. The output's `flows` holds `applied`, `versions` (the
 versions written), `changes` (at most 100, with `total` and `truncated`),
 `copies` (the count removed), `runs`, `unreadable` and `left`. The commit's
 trailer is `Board-Bulk: migrate flows`. A second run writes nothing. Each
