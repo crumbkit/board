@@ -244,7 +244,7 @@ fn manifest() -> Value {
             Also use it to sweep the person's tasks one at a time, marking each done, deferring, \
             dropping or editing it, when the person asks to sweep, review or go through their \
             tasks or to-do list, and to add a task to their own list. Start with `board -C \
-            <board> call tasks.available`, run in the repository you work in, which syncs the \
+            <board> tasks available`, run in the repository you work in, which syncs the \
             notes repos that repository's git remote routes to and lists the tasks to sweep. \
             SKILL.md and README.md in the plugin's directory say more.",
         "metadata": {"area": "planning"},

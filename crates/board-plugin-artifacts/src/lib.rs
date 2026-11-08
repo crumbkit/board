@@ -122,7 +122,7 @@ fn manifest() -> Value {
             belongs to, what it shows, whether the owner agreed it, and a copy of every version's \
             page, recorded by the board-artifacts Claude Code mod. Use it to find an artifact, to \
             file one, or to sync the artifacts published outside Claude Code. Start with `board \
-            --personal call artifacts.list --subject /changes/<name>`, which lists that work's \
+            --personal artifacts list --subject /changes/<name>`, which lists that work's \
             artifacts with every version, newest first. SKILL.md and README.md in the plugin's \
             directory say more.",
         "metadata": {"area": "publishing"},

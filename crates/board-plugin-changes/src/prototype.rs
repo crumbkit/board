@@ -130,7 +130,7 @@ fn question_plan(title: &str, question: &str) -> String {
 /// with its question as the plan, and briefs it.
 ///
 /// The task is added before the change is written, so a refused write
-/// leaves the task behind; drop it with `board call tasks.drop`.
+/// leaves the task behind; drop it with `board tasks drop`.
 pub(crate) fn prototype(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
     let asked: Input = PluginError::read_input(PLUGIN, "prototype", input)?;
     let mount = asked.mount.trim_end_matches('/').to_owned();
@@ -161,7 +161,7 @@ pub(crate) fn prototype(host: &dyn Host, input: &Value) -> Result<Value, PluginE
         .collect();
     let moving = Move {
         over: format!(
-            "board call changes.prototype {} --over_limit '<why>'",
+            "board changes prototype {} --over_limit '<why>'",
             flags.join(" ")
         ),
         reason: asked.over_limit.as_deref(),
@@ -207,7 +207,7 @@ pub(crate) fn verdict(host: &dyn Host, input: &Value) -> Result<Value, PluginErr
             "changes::prototype::not_prototype",
             format!(
                 "{path} is a build change, and only a prototype takes a verdict; move it on with \
-                 `board call changes.next --path {path}`"
+                 `board changes next --path {path}`"
             ),
             [("path", json!(path)), ("kind", json!(Kind::Build))],
         ));
@@ -218,7 +218,7 @@ pub(crate) fn verdict(host: &dyn Host, input: &Value) -> Result<Value, PluginErr
             &change.phase,
             format!(
                 "the prototype at {path} is {}, so its verdict is already recorded; start another \
-                 with `board call changes.prototype`",
+                 with `board changes prototype`",
                 change.phase
             ),
         ));

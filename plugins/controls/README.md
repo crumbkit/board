@@ -120,7 +120,7 @@ The plugin ships both schemas. `board plugin enable controls` writes them to
 
 ## Capabilities
 
-- `board call controls.for-path --path /AGENTS.md` returns
+- `board controls for-path --path /AGENTS.md` returns
   each control that applies to that path, by reference or by pattern, with
   its requirement, purpose and rule as the record holds it, `check`
   included, which is null when it has none, its
@@ -163,7 +163,7 @@ The plugin ships both schemas. `board plugin enable controls` writes them to
   counts as any one character there, so a pattern can reach a control that
   no path would put in both, never miss one that a path would.
   `changes.brief` calls it with a plan's paths.
-- `board call controls.check --path /repos/crumbkit` checks the controls
+- `board controls check --path /repos/crumbkit` checks the controls
   under that path, following any link or mount on the way. Without `--path`
   it checks `/`. A path with nothing there fails with
   `controls::board::refused`. Under `/` it lists every control, so one whose
@@ -202,7 +202,7 @@ The plugin ships both schemas. `board plugin enable controls` writes them to
   `read` lists each source the measured and stated files came from:
   `{"mount": "/", "commit": null}` for the board's own tree, and each mount
   by its display path with the commit read. A mount is read at its pin. On
-  a branch, commit and run `board --checkout call controls.check --path .`
+  a branch, commit and run `board --checkout controls check --path .`
   from the checkout, and the mount is read at the checkout's HEAD.
   `checkout` appears when Board ran from a checkout of a mount without
   `--checkout`, the check read that mount or the path lies under it, and
@@ -220,7 +220,7 @@ The plugin ships both schemas. `board plugin enable controls` writes them to
 
   ```sh
   echo '{"controls": ["/controls/short-title"], "parts": {"pr.title": "..."}}' \
-    | board call controls.evaluate
+    | board controls evaluate
   ```
 
   `controls` lists the controls by their paths in the board's own tree, and
@@ -296,7 +296,7 @@ The plugin ships both schemas. `board plugin enable controls` writes them to
   minutes from the start of the call, which the plugin enforces itself,
   since Board puts no deadline on a built-in call.
 
-- `board call controls.from-standards --standards /repos/<standards> --map
+- `board controls from-standards --standards /repos/<standards> --map
   /repos/<adopter>/rust-standards.toml --into /controls/<adopter>/standards`
   reads the adopter's map, a TOML file whose `profiles` lists the profiles
   it adopts, and each `<standards>/profiles/<profile>.md`. Every row of a
@@ -315,7 +315,7 @@ The plugin ships both schemas. `board plugin enable controls` writes them to
   there or `none`, and one removal per control under `into` that no rule
   gives any more. `profiles` gives each profile's `name`, its `file` and
   how many `rules` it gave. Apply the lines with
-  `board --json call controls.from-standards ... | jq -c '.data.output.lines[]' | board put --batch`.
+  `board --json controls from-standards ... | jq -c '.data.output.lines[]' | board put --batch`.
   It fails with `controls::standards::map_invalid` when the map has no
   `profiles` list of names, `controls::standards::unreadable` when the map
   or a profile cannot be read, `controls::standards::no_pattern` when a

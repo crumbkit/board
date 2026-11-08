@@ -7,7 +7,7 @@ design and the reasons for it; this file says how to call it.
 
 ## The call
 
-    board call share.to --path /evals/x --to /team [--dry_run true] [--local_attachments true]
+    board share to --path /evals/x --to /team [--dry_run true] [--local_attachments true]
 
 - `path` names a record or file in this board's own tree, not one read through
   a mount.

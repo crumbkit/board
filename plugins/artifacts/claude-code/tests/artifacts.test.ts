@@ -446,7 +446,10 @@ test('a full window with no kept brief files under the claimed task or nothing, 
   expect(recorded.at(-1)?.subject).toEqual(['/changes/flows-editor'])
 })
 
-test('a claim is the --path that follows tasks.claim, and a piped or || claim is left out', () => {
+test('a claim is the --path that follows tasks.claim or tasks claim, and a piped or || claim is left out', () => {
+  expect(claimOf('board -C ~/Code/board tasks claim --path /tasks/y --session s1')).toEqual({ task: '/tasks/y', board: '~/Code/board' })
+  expect(claimOf('board tasks claim --path /tasks/y | jq .')).toBeUndefined()
+  expect(claimOf('board tasks available --path /tasks')).toBeUndefined()
   expect(claimOf('board call artifacts.list --path /x && board call tasks.claim --path /tasks/y --owner s1')).toEqual({ task: '/tasks/y' })
   expect(claimOf("board -C ~/Code/board call tasks.claim --path='/tasks/y'")).toEqual({ task: '/tasks/y', board: '~/Code/board' })
   expect(claimOf('board call tasks.claim --path /tasks/y | jq .')).toBeUndefined()

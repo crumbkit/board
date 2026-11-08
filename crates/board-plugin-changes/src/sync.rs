@@ -239,9 +239,9 @@ fn open_tasks(host: &dyn Host, path: &str) -> Result<Vec<String>, PluginError> {
 fn without_pull(path: &str, change: &ChangeRecord) -> Entry {
     let action = idle_action(path, change);
     let detail = format!(
-        "it records no pull request; {} it, or record its pull request with `board call \
-         github.ref --ref <owner>/<repo>#<number>` and attach it with `board call \
-         changes.attach --path {path} --pull <record>`",
+        "it records no pull request; {} it, or record its pull request with `board \
+         github ref --ref <owner>/<repo>#<number>` and attach it with `board \
+         changes attach --path {path} --pull <record>`",
         action.action.as_str()
     );
     Entry {
@@ -265,7 +265,7 @@ fn merged(
     if !owed.is_empty() {
         let detail = format!(
             "its pull request merged, but these tasks are not done or dropped: {}; close them \
-             with `board call tasks.done`, then run `{SYNC_COMMAND}` again",
+             with `board tasks done`, then run `{SYNC_COMMAND}` again",
             owed.join(", ")
         );
         let owing = Entry {
@@ -324,9 +324,9 @@ fn synced(
     let Some(pull) = pull_of(host, &reference)? else {
         let detail = format!(
             "{reference} is not a github/pull/v1 record Board reads, so the pull request's state \
-             cannot be read; record it with `board call github.ref` and attach it with --pull"
+             cannot be read; record it with `board github ref` and attach it with --pull"
         );
-        let attach = format!("board call changes.attach --path {path} --pull <record>");
+        let attach = format!("board changes attach --path {path} --pull <record>");
         let unread = Entry {
             code: Some("changes::sync::pull_unreadable"),
             command: Some(attach),
@@ -342,9 +342,7 @@ fn synced(
         );
         let missing = Entry {
             code: Some("changes::sync::pull_not_found"),
-            command: Some(format!(
-                "board call changes.drop --path {path} --reason '<why>'"
-            )),
+            command: Some(format!("board changes drop --path {path} --reason '<why>'")),
             ..entry(path, change, Some(&url), "not_found", detail)
         };
         return Ok((missing, None));
@@ -434,7 +432,7 @@ pub(crate) fn drop(host: &dyn Host, input: &Value) -> Result<Value, PluginError>
             &phase,
             format!(
                 "the change at {path} is already {phase}, so it cannot be dropped; list the open \
-                 changes with `board call changes.open`"
+                 changes with `board changes open`"
             ),
         ));
     }

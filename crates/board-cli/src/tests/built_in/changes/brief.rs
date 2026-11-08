@@ -93,7 +93,7 @@ fn with_source() -> Changes {
     board
 }
 
-/// The controls `board call controls.for-paths` lists when run as the
+/// The controls `board controls for-paths` lists when run as the
 /// brief's `rules_command` says.
 fn listed(board: &Changes, command: &Value) -> Vec<String> {
     let argv: Vec<&str> = (command["argv"].as_array().unwrap().iter())
@@ -169,10 +169,7 @@ fn brief_gives_one_line_for_each_record_the_newest_plan_uses() {
         (&brief["left_out"], &brief["phase"]),
         (&json!(0), &json!("plan"))
     );
-    assert_eq!(
-        brief["controls"],
-        "board call controls.check --path /repos/x"
-    );
+    assert_eq!(brief["controls"], "board controls check --path /repos/x");
 }
 
 #[test]
@@ -245,7 +242,7 @@ fn brief_starts_with_the_line_the_write_guard_reads() {
     );
 }
 
-/// The golden of what `board call changes.brief` prints, which the write
+/// The golden of what `board changes brief` prints, which the write
 /// guard's tests read. A mod's tests import only TypeScript, so the golden
 /// is a module whose default export is the printed text as a JSON string.
 const BRIEF_GOLDEN: &str = concat!(
@@ -285,7 +282,7 @@ fn the_brief_an_agent_runs_is_the_golden_the_write_guard_tests_read() {
         "{printed}"
     );
     let golden = format!(
-        "// What `board call changes.brief` prints. Written by\n\
+        "// What `board changes brief` prints. Written by\n\
          // the_brief_an_agent_runs_is_the_golden_the_write_guard_tests_read in\n\
          // crates/board-cli/src/tests/built_in/changes/brief.rs; run it with\n\
          // SNAPSHOTS=overwrite to rewrite this file.\n\

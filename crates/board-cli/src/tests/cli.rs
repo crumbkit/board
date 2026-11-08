@@ -1233,13 +1233,61 @@ fn filled(line: &str) -> String {
         .replace("<answer>", "approve")
 }
 
+/// `line` with a built-in plugin's command, `board <plugin> <capability>`,
+/// read as the `board call <plugin>.<capability>` it runs, which Board's
+/// own grammar parses. The capability's flags come from its schema, which
+/// the grammar does not hold, so they are left out. `<plugin> -h` reads as
+/// help on its first capability. Any other line, an unknown capability's
+/// included, is left as it is.
+fn called(line: &str) -> String {
+    let mut words: Vec<String> = line.split_whitespace().map(str::to_owned).collect();
+    let mut at = 1;
+    while let Some(word) = words.get(at) {
+        match word.as_str() {
+            "-C" => at += 2,
+            "--personal" | "--json" | "--checkout" => at += 1,
+            _ => break,
+        }
+    }
+    let plugin = words.get(at).and_then(|word| {
+        (board_plugins::BUILT_IN.0.iter())
+            .map(|plugin| plugin.manifest())
+            .find(|manifest| manifest.name.as_str() == word.as_str())
+    });
+    let (Some(plugin), Some(next)) = (plugin, words.get(at + 1)) else {
+        return line.to_owned();
+    };
+    let capability = (plugin.capabilities.iter())
+        .map(|capability| capability.name.as_str())
+        .find(|capability| capability == next || next == "-h");
+    let Some(capability) = capability else {
+        return line.to_owned();
+    };
+    let target = format!("{}.{capability}", plugin.name);
+    let help = (next == "-h").then(|| next.clone());
+    words.truncate(at);
+    words.extend(["call".to_owned(), target].into_iter().chain(help));
+    words.join(" ")
+}
+
+#[test]
+fn a_built_in_plugins_command_reads_as_board_call_and_an_unknown_capability_does_not() {
+    assert_eq!(
+        called("board -C ~/b tasks add --title x"),
+        "board -C ~/b call tasks.add"
+    );
+    assert_eq!(called("board tasks nothing"), "board tasks nothing");
+    assert!(parses(&called("board tasks add --title x")).is_ok());
+    assert!(parses(&called("board tasks nothing")).is_err());
+}
+
 #[test]
 fn every_command_line_the_docs_show_parses() {
     let shown = documented();
     assert!(shown.len() >= 10, "{shown:?}");
     for (file, line) in shown {
         // A doc may name a command without its arguments.
-        let parsed = parses(&filled(&line));
+        let parsed = parses(&called(&filled(&line)));
         assert!(
             matches!(parsed, Ok(()) | Err(ErrorKind::MissingRequiredArgument)),
             "{file}: {line}: {parsed:?}"

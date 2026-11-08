@@ -51,7 +51,7 @@ fn manifest() -> Value {
         "name": "requests",
         "version": "0.1.0",
         "description": "A plugin's request to the owner as a thread: every version of a pending effect, \
-            the owner's answers and the owner's replies. Run `board --personal call requests.thread \
+            the owner's answers and the owner's replies. Run `board --personal requests thread \
             --effect <id>` with any version's id. docs/plugins/built-in/requests.md in Board's repository says \
             where a reply lives.",
         "metadata": {"area": "effects"},

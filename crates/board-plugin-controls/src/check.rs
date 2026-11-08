@@ -561,7 +561,7 @@ fn unmeasured(
         )
     };
     Some(Unmeasured {
-        run: format!("board --checkout call controls.check --path {path}"),
+        run: format!("board --checkout controls check --path {path}"),
         mount,
         read: pinned,
         head: started.head,

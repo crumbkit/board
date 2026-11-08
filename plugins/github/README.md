@@ -233,7 +233,7 @@ Before each push, git runs the hook. The hook first runs
 document is `board::config::not_found`, no config names a personal board,
 so there is no boundary at all, and the push goes. That output holds nothing
 of the push, so no text in a commit can match it. Otherwise the hook runs
-`board --personal call github.pre-push` with the remote and the refs git
+`board --personal github pre-push` with the remote and the refs git
 gives it, and the URL git pushes to in `BOARD_GITHUB_PUSH_URL`, so the URL
 and any password in it stay off the command line.
 
@@ -316,7 +316,7 @@ other gh commands, such as `gh repo create --push`, `gh gist create` or
 `gh workflow run`.
 The refusal names the github action that sends the same content, with the
 title, body, base and number the command gave, such as
-`Next: run \`board call github.pr-create --title "Add a gear" --body "..."\``.
+`Next: run \`board github pr-create --title "Add a gear" --body "..."\``.
 The command name is the constant `BOARD_COMMAND` in `claude-code/hooks/command.ts`.
 
 The mod refuses only when it is sure. It must be sure the command writes to

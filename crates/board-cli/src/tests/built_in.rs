@@ -812,3 +812,52 @@ mod review;
 mod runs;
 mod share;
 mod tasks;
+
+/// A board that enables `plans` through `board plugin enable` when `enabled`.
+fn planning(enabled: bool) -> Scenario {
+    let board = Scenario::new();
+    let config = json!({"$type": "board/config/v1", "plugins": []}).to_string();
+    board.write(".board/board.json", Item::File(&config));
+    board.write(
+        ".git/config",
+        Item::Appended("[user]\n\tname = T\n\temail = t@example.com\n"),
+    );
+    if enabled {
+        let (output, _) = built_in(board.workdir(), None, &["plugin", "enable", "plans"]);
+        assert_eq!(output.code, 0, "{}", text(&output.stderr));
+    }
+    board
+}
+
+#[test]
+fn a_built_in_plugins_name_the_board_does_not_enable_reports_what_board_call_does() {
+    for (enabled, expected) in [(false, 1), (true, 0)] {
+        let board = planning(enabled);
+        let (short, _) = built_in(board.workdir(), None, &["--json", "plans", "open"]);
+        let (call, _) = built_in(board.workdir(), None, &["--json", "call", "plans.open"]);
+        assert_eq!(short.code, expected, "{enabled}: {}", text(&short.stdout));
+        assert_eq!(short.code, call.code, "{enabled}");
+        assert_eq!(text(&short.stdout), text(&call.stdout), "{enabled}");
+        if expected == 1 {
+            assert_eq!(json(&short)["code"], "board::plugin::not_enabled");
+        }
+    }
+}
+
+#[test]
+fn a_built_in_plugins_name_outside_any_board_reports_that_no_board_is_there() {
+    let outside = tempfile::tempdir().unwrap();
+    let board = planning(true);
+    for (directory, expected) in [(outside.path(), 1), (board.workdir(), 0)] {
+        let (short, _) = built_in(directory, None, &["--json", "plans", "open"]);
+        assert_eq!(
+            short.code,
+            expected,
+            "{directory:?}: {}",
+            text(&short.stdout)
+        );
+        if expected == 1 {
+            assert_eq!(json(&short)["code"], "board::config::not_found");
+        }
+    }
+}

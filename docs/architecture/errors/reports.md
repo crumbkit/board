@@ -37,10 +37,10 @@ Each word is quoted for a shell. A line that is still refused without that
 argument, such as one with a second stray word, and a line with `--new`, keep
 clap's refusal. A first word that is a common mistake, which is only `cat`
 now, names the command meant, `get`, and the hint runs it with the same
-words, or `board get -h` when none follow. An enabled plugin's alias of that
-word still runs, because Board reads aliases first. `ls` given a second path
-says it takes one path. All keep the code `board::cli::usage`, and
-`fields.value` holds the word at fault.
+words, or `board get -h` when none follow. An enabled plugin named or aliased
+by that word still runs, because Board reads plugin commands first. `ls`
+given a second path says it takes one path. All keep the code
+`board::cli::usage`, and `fields.value` holds the word at fault.
 
 Text prints the same failure as `error: <message>`, then a `key:` line when it
 has one, a `help:` line holding the call or the hint text, a `help:` line for

@@ -164,7 +164,7 @@ fn next_tells_a_prototypes_builder_to_iterate_on_its_branch_and_ask_for_the_verd
         instruction.contains("on branch proto/step-list"),
         "{instruction}"
     );
-    assert!(instruction.contains("changes.verdict"), "{instruction}");
+    assert!(instruction.contains("changes verdict"), "{instruction}");
 }
 
 #[test]
@@ -332,7 +332,7 @@ fn prototype_refuses_when_three_prototypes_explore_and_starts_once_one_is_settle
     assert_eq!(
         refused["fields"]["override"],
         format!(
-            "board call changes.prototype --mount {mount} --question '{QUESTION}' --parent {PARENT} --title 'Step list' --over_limit '<why>'"
+            "board changes prototype --mount {mount} --question '{QUESTION}' --parent {PARENT} --title 'Step list' --over_limit '<why>'"
         )
     );
     board.call(

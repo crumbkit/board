@@ -66,7 +66,7 @@ fn start_on_a_flow_that_begins_in_build_refuses_a_full_cap_and_goes_past_it_with
     let input = json!({"mount": "/repos/x", "task": TASK, "title": "Quick", "flow": "small"});
     let refused = board.refusal("start", &input);
     let override_command = format!(
-        "board call changes.start --mount /repos/x --title Quick --task {TASK} --flow small \
+        "board changes start --mount /repos/x --title Quick --task {TASK} --flow small \
          --over_limit '<why>'"
     );
     assert_eq!(
@@ -128,7 +128,7 @@ fn a_paused_change_does_not_advance_and_says_to_resume() {
     assert_eq!(
         instruction,
         "This change was paused to free its place under the WIP limit on active changes of its \
-         kind per repository. Resume it with `board call changes.resume --path /changes/t` when \
+         kind per repository. Resume it with `board changes resume --path /changes/t` when \
          a place is free and the owner's queue allows."
     );
     assert!(!instruction.contains("keeper"), "{instruction}");
@@ -173,8 +173,7 @@ fn advance_past_the_limit_with_a_reason_goes_ahead_records_it_and_warns() {
     ready(&board);
     fill(&board, WIP_LIMIT, &json!({}));
     let refused = board.refusal("advance", &path());
-    let override_command =
-        format!("board call changes.advance --path {CHANGE} --over_limit '<why>'");
+    let override_command = format!("board changes advance --path {CHANGE} --over_limit '<why>'");
     assert_eq!(
         (&refused["code"], &refused["fields"]["override"]),
         (&json!("changes::wip::full"), &json!(override_command))
@@ -251,14 +250,14 @@ fn idle_changes_do_not_count_and_the_refusal_lists_each_with_its_action() {
             {
                 "path": "/changes/idle-bare",
                 "action": "drop",
-                "command": "board call changes.drop --path /changes/idle-bare --reason '<why>'",
+                "command": "board changes drop --path /changes/idle-bare --reason '<why>'",
             },
             {
                 "path": "/changes/idle-head",
                 "action": "resume",
-                "command": "board call changes.next --path /changes/idle-head",
+                "command": "board changes next --path /changes/idle-head",
             },
-            {"path": "/changes/idle-pr", "action": "sync", "command": "board call changes.sync"},
+            {"path": "/changes/idle-pr", "action": "sync", "command": "board changes sync"},
         ])
     );
 }
@@ -593,7 +592,7 @@ fn reopen_refuses_when_the_cap_is_full_and_goes_past_it_with_a_reason() {
         (
             &json!("changes::wip::full"),
             &json!(format!(
-                "board call changes.reopen --path {CHANGE} --reason 'The review'\"'\"'s fix.' \
+                "board changes reopen --path {CHANGE} --reason 'The review'\"'\"'s fix.' \
                  --person luke --over_limit '<why>'"
             ))
         )
@@ -601,7 +600,7 @@ fn reopen_refuses_when_the_cap_is_full_and_goes_past_it_with_a_reason() {
     let reason = json!({"reason": "The review asked for a fix.", "agent": "lead"});
     let refused = board.refusal("reopen", &at(&reason));
     let override_command = format!(
-        "board call changes.reopen --path {CHANGE} --reason 'The review asked for a fix.' \
+        "board changes reopen --path {CHANGE} --reason 'The review asked for a fix.' \
          --agent lead --over_limit '<why>'"
     );
     assert_eq!(

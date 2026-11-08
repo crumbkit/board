@@ -7,20 +7,20 @@
     {
       "name": "build",
       "agent": "lead",
-      "instruction": "Read every record in the change's surfaced list; adopt a matching open task with `changes.attach --task` instead of working beside it. Write a one-paragraph plan with `board call changes.plan` naming the paths you will edit. Build test-first, record the head and attach a run of {suite} on it.",
+      "instruction": "Read every record in the change's surfaced list; adopt a matching open task with `changes.attach --task` instead of working beside it. Write a one-paragraph plan with `board changes plan` naming the paths you will edit. Build test-first, record the head and attach a run of {suite} on it.",
       "checks": [
         {"id": "considered", "kind": "considered"},
         {"id": "head", "kind": "field", "field": "head"},
         {"id": "suite-run", "kind": "run", "scope": "full", "waivable": true},
         {"id": "not-small", "kind": "controlled-paths",
          "controls": ["/controls/{repo}/ui-paths", "/controls/{repo}/data-paths"],
-         "remedy": "This change touches a UI or data path, so it needs the development flow: run `board call changes.reflow --path {change} --flow development`."}
+         "remedy": "This change touches a UI or data path, so it needs the development flow: run `board changes reflow --path {change} --flow development`."}
       ]
     },
     {
       "name": "review",
       "agent": "lead",
-      "instruction": "Review {head} with clean context with `board call review.run`, fix every critical or high finding and review again.",
+      "instruction": "Review {head} with clean context with `board review run`, fix every critical or high finding and review again.",
       "checks": [
         {"id": "review", "kind": "records", "actor": "reviewer", "type": "review/report/v1",
          "where": {"at_head": "range", "values": {"verdict": ["approve", "comment"]}, "no_findings": ["critical", "high"]}}
@@ -29,7 +29,7 @@
     {
       "name": "land",
       "agent": "lead",
-      "instruction": "Draft and open the pull request with `board call changes.pr --path {change}`, record it with `board call github.ref` and attach it with --pull.",
+      "instruction": "Draft and open the pull request with `board changes pr --path {change}`, record it with `board github ref` and attach it with --pull.",
       "checks": [
         {"id": "pull-request", "kind": "field", "field": "pulls", "types": ["github/pull/v1"]}
       ]

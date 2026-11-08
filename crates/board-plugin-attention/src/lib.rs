@@ -96,9 +96,9 @@ fn manifest() -> Value {
         // SKILL.md's description, the callout an agent sees first.
         "description": "Orders the owner signed with Touch ID, which bind an agent until they \
             expire. Pinned orders normally arrive in your context when a session starts. Only \
-            when that section is missing, read them with `board --personal call \
-            attention.pinned`. Use when you need to check one: `board --personal call \
-            attention.verify --path /orders/<name>`. Use also when you have drafted an order for \
+            when that section is missing, read them with `board --personal \
+            attention pinned`. Use when you need to check one: `board --personal \
+            attention verify --path /orders/<name>`. Use also when you have drafted an order for \
             the owner to sign. SKILL.md and README.md in the plugin's directory say more.",
         "metadata": {"area": "authority"},
         "types": [ORDER_TYPE],

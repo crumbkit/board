@@ -56,13 +56,13 @@ An eval is a file `/evals/<name>.json`. Its evidence sits beside it, in
 
 ## Capabilities
 
-`board call evals.about --subject gix` returns the evals that name that
+`board evals about --subject gix` returns the evals that name that
 subject, or name a topic whose title or alias is that subject, whatever
-their status. `board call evals.about --mount /repos/board`
+their status. `board evals about --mount /repos/board`
 returns the evals whose `mounts` include that exact path, and the
 evals stored in that mounted board, whose paths start with `/repos/board/`.
 Board refuses input with both or neither as `board::plugin::bad_input`.
-`board call evals.open` returns the evals whose status is not
+`board evals open` returns the evals whose status is not
 `concluded` or `abandoned`, including a status this Board does not know.
 A `concluded` eval without a verdict is not valid, so neither lists it.
 

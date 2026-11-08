@@ -664,7 +664,7 @@ fn each_capability_rows_command_line_parses_with_the_flags_a_program_adds() {
         let sink = &mut crumbkit::Sink::new(&mut stdout, &mut stderr);
         let parsed = crumbkit::try_parse_to::<crate::graft::Parsed, _, _, _, _>(
             sink,
-            crate::graft::command(found.as_slice()),
+            crate::graft::command(found.as_slice(), Cli::command()),
             &crate::graft::guide(found.as_slice()),
             arguments,
         );

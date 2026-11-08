@@ -94,7 +94,7 @@ reference or the plugin cannot read them. Each takes the suite by its
 logical path, which may be in a mounted board, and refuses a path that holds
 no suite with `runs::suite::not_found`.
 
-`board call runs.latest --suite /suites/board-tests` returns the newest such
+`board runs latest --suite /suites/board-tests` returns the newest such
 run by `started`, a tie going to the run whose path sorts last. It gives the run's `path`, `started`,
 `finished`, `measures`, the cases that failed or erred in `failed`, each once, and
 `outcome`: `fail` when any result failed or erred, else `pass`. A result
@@ -102,7 +102,7 @@ whose outcome this Board does not know counts as failed and needs no note.
 `age_s` is the whole seconds since the run finished, or since it started
 when it records no finish. With no run that counts, `run` is `null`.
 
-`board call runs.trend --suite /suites/board-bench --measure median_ms --case get`
+`board runs trend --suite /suites/board-bench --measure median_ms --case get`
 returns one point per run that counts, newest first: its `path`, `started` and
 the measure's `value`. With `--case`, the value is that case's measure,
 taken from its lowest `trial` when the case ran several; without, it is the
