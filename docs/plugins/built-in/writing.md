@@ -83,7 +83,8 @@ Each capability module defines `Input` (`Deserialize`, `JsonSchema`,
 with `#[schemars(rename = "<Capability>Input")]` so schema names stay
 unique. It reads its input with `PluginError::read_input`. A `Host` error
 becomes `<name>::board::refused` through
-`PluginError::board_refused(<name>, <command>, &error.refusal())`. Its own
+`PluginError::board_refused(<name>, <command>, &error.refusal())`, whose
+help is Board's hint or a remedy. Its own
 refusals are `PluginError` values with a `<name>::<area>::<reason>` code. A
 path input carries
 `#[schemars(regex(pattern = "^/"), extend("format" = "board-path"))]`, so it

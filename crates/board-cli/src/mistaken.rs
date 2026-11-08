@@ -1,6 +1,7 @@
 //! Refusals of mistakes agents make often, which name the command they
 //! meant (STANDARDS.md 25): Board's wording of clap's refusal of such a
-//! command line, and the refusal of a put or rm path that names a folder.
+//! command line, such as `ls` given several paths, and the refusal of a put
+//! or rm path that names a folder.
 
 use std::ffi::OsString;
 
@@ -35,6 +36,12 @@ pub(crate) fn hinted(arguments: &[OsString], refused_line: &crumbkit::Refused) -
                 return None;
             };
             put_input(arguments, value)?
+        }
+        (ErrorKind::UnknownArgument, [ls]) if ls == "ls" => {
+            let Some(ContextValue::String(value)) = error.get(ContextKind::InvalidArg) else {
+                return None;
+            };
+            second_path(value)?
         }
         _ => return None,
     };
@@ -89,6 +96,21 @@ fn put_input(arguments: &[OsString], value: &str) -> Option<Refusal> {
              or {record} if it holds a JSON record"
         )
     };
+    Some(usage(&message, hint, value))
+}
+
+/// The refusal of `ls` given `value` after its path. `ls` answers one
+/// directory with its own page of entries, so it takes one path per call.
+/// `None` for a flag `ls` does not take, which clap's refusal names.
+fn second_path(value: &str) -> Option<Refusal> {
+    if value.starts_with('-') {
+        return None;
+    }
+    let message = format!("ls lists one path per call, and {value} is a second path");
+    let hint = format!(
+        "run ls once for each path, such as `board ls {}`",
+        quote(value)
+    );
     Some(usage(&message, hint, value))
 }
 

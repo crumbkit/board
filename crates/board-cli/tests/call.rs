@@ -377,3 +377,34 @@ fn a_capability_whose_schema_admits_properties_by_pattern_reads_stdin() {
     );
     assert_eq!(sent(&data), json!({"x-a": 1}));
 }
+
+#[test]
+fn bad_input_with_stdin_left_open_is_refused_at_once_without_the_ignored_stdin_note_and_its_written_twin_has_it()
+ {
+    let (board, data) = fixture(&["chores"]);
+    let properties = json!({"before": {"type": "string"}, "limit": {"type": "integer"}});
+    install_due(
+        &data,
+        &json!({"required": ["before", "limit"], "properties": properties}),
+    );
+    let arguments = ["--json", "call", "chores.due", "--limit", "3"];
+    let recovery = |output: &Output| {
+        let refused: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(refused["code"], "board::plugin::bad_input");
+        refused["recovery"]["text"]
+            .as_str()
+            .unwrap_or_default()
+            .to_owned()
+    };
+    let open = recovery(&left_open(&board, &data, &arguments));
+    assert!(!open.contains("ignored stdin"), "{open}");
+    let written = board_call(&board, &data, &arguments, r#"{"before": "2026-10-05"}"#);
+    assert!(
+        recovery(&written).starts_with(
+            "Board ignored stdin because chores.due takes every input as a flag; \
+             give the input as --before and --limit"
+        ),
+        "{}",
+        recovery(&written)
+    );
+}

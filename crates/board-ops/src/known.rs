@@ -243,7 +243,9 @@ pub fn unopened(
 }
 
 /// `start` after entering each of `directories` in turn, as `git -C` does,
-/// or the refusal of the first that is not a directory.
+/// or the refusal of the first that is not a directory. The refusal names
+/// the directory as given, the directory a relative one was read from, and
+/// the path it led to with each `..` taken out as text, and says so.
 pub fn entered(start: &Path, directories: &[OsString]) -> Result<PathBuf, Box<Refusal>> {
     let mut start = start.to_path_buf();
     for directory in directories {
@@ -262,10 +264,22 @@ pub fn entered(start: &Path, directories: &[OsString]) -> Result<PathBuf, Box<Re
             }
             Err(error) => format!("cannot be read: {error}"),
         };
+        let given = Path::new(directory);
+        let from = if given.is_relative() {
+            format!(" from {}", start.display())
+        } else {
+            String::new()
+        };
+        let dots = (given.components()).any(|part| part == std::path::Component::ParentDir);
+        let text = if dots {
+            "; Board took each .. out of that path as text, without following links"
+        } else {
+            ""
+        };
         let message = format!(
-            "cannot change to '{}': {} {fault}",
-            Path::new(directory).display(),
-            joined.display()
+            "cannot change to '{}'{from}: {} {fault}{text}",
+            given.display(),
+            lexical(&joined).display()
         );
         let hint = "give -C a directory that exists, such as the board's root or a directory \
                     inside it; a relative -C is taken from the one before it";
@@ -274,6 +288,22 @@ pub fn entered(start: &Path, directories: &[OsString]) -> Result<PathBuf, Box<Re
         ));
     }
     Ok(start)
+}
+
+/// `path` with each `.` left out and each `..` taking out the name before
+/// it, without reading the file system.
+fn lexical(path: &Path) -> PathBuf {
+    let mut kept = PathBuf::new();
+    for component in path.components() {
+        match component {
+            std::path::Component::CurDir => {}
+            std::path::Component::ParentDir if kept.file_name().is_some() => {
+                kept.pop();
+            }
+            component => kept.push(component),
+        }
+    }
+    kept
 }
 
 /// `root` read against the directory of `file`, the known boards file.

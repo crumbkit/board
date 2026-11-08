@@ -1,7 +1,6 @@
 //! The command line and what each command does with it.
 
 use std::ffi::OsString;
-use std::io::Read;
 use std::time::{Duration, Instant};
 
 use board_model::{
@@ -34,7 +33,7 @@ use crate::effects;
 use crate::graft;
 use crate::render::{self, GUIDE, Printer};
 use crate::report::Output;
-use crate::stdin::{TypeCommand, call, put};
+use crate::stdin::{Input, Stdin, TypeCommand, call, put};
 use crate::timing::Ran;
 use crate::values::{duration, expect, pointer, removal, var};
 
@@ -421,7 +420,7 @@ impl Command {
 pub(crate) fn run(
     arguments: impl IntoIterator<Item = OsString>,
     context: &Context,
-    stdin: &mut dyn Read,
+    stdin: &mut dyn Stdin,
     ran: &mut Ran,
 ) -> Output {
     let mut arguments: Vec<OsString> = arguments.into_iter().collect();
@@ -506,8 +505,8 @@ pub(crate) fn run(
     let output = match grafted {
         Some((target, mut flags)) => {
             graft::resolve(found.as_ref(), &mut flags, prefix);
-            let stdin = graft::reads_stdin(found.as_ref()).then_some(stdin);
-            call(&board, context, printer, &target, Some(flags), stdin)
+            let input = graft::input(found.as_ref(), &flags, stdin);
+            call(&board, context, printer, &target, Some(flags), input)
         }
         None => match cli.command {
             Command::Decide(deciding) => effects::decide(&board, printer, prefix, &deciding, stdin),
@@ -560,7 +559,7 @@ fn describe(
 fn reread(
     arguments: &[OsString],
     context: &Context,
-    stdin: &mut dyn Read,
+    stdin: &mut dyn Stdin,
     ran: &mut Ran,
     refused: &crumbkit::Refused,
 ) -> Option<Output> {
@@ -601,7 +600,7 @@ fn command(
     context: &Context,
     printer: Printer,
     prefix: Option<&Prefix>,
-    stdin: &mut dyn Read,
+    stdin: &mut dyn Stdin,
 ) -> Output {
     let cache = context.cache.as_deref();
     let at = |given: &[Given], name| -> Result<Vec<_>, _> {
@@ -686,7 +685,7 @@ fn command(
                 (None, Some(capability)) => Target::Capability(capability),
                 (None, None) => unreachable!("clap requires a target or a capability"),
             };
-            call(board, context, printer, &target, None, Some(stdin))
+            call(board, context, printer, &target, None, Input::Stdin(stdin))
         }
         Command::Serve { idle } => crate::ui::serve(board, context, printer, idle),
         Command::Ui(command) => crate::ui::ui(command, board, context, printer, prefix),
