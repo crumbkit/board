@@ -8,7 +8,7 @@
       "name": "plan",
       "agent": "lead",
       "skills": ["understanding-check"],
-      "instruction": "Read each record the change surfaced; cite those you build on in the plan's uses and list the rest under ### Considered with a line on why each does not apply. Interview the owner and fill in Problem, Outcome, Out of scope, UX and Data. UX starts with No UI change and a reason, or lists each mockup under ### Mockups with a ### Neighbours list; attach the owner's decision naming each mockup. Data starts with None, or run the understanding-check skill and attach its record and the owner's decision that references it. Write the plan with `board changes plan` and attach the owner's signed plans/decision/v1 whose refs name the plan.",
+      "instruction": "Read each record the change surfaced; cite those you build on in the plan's uses and list the rest in the plan's considered field with a line on why they do not apply. Interview the owner and fill in Problem, Outcome, Out of scope, UX and Data. UX starts with No UI change and a reason, or lists each mockup under ### Mockups with a ### Neighbours list; attach the owner's decision naming each mockup. Data starts with None, or run the understanding-check skill and attach its record and the owner's decision that references it. Write the plan with `board changes plan` and attach the owner's signed plans/decision/v1 whose refs name the plan.",
       "checks": [
         {"id": "plan-sections", "kind": "sections",
          "sections": ["Problem", "Outcome", "Out of scope", "UX", "Data"]},
@@ -50,7 +50,7 @@
          "when": {"section": {"UX": "^no ui change\\b[\\s.:,;-]*\\w"}}},
         {"id": "data-paths", "kind": "controlled-paths", "controls": ["/controls/{repo}/data-paths"],
          "when": {"section": {"Data": "^none\\s*(?:[.:]|\\n?\\z)"}}},
-        {"id": "obligations-settled", "kind": "obligations", "escape_section": "Obligations left owed"}
+        {"id": "obligations-settled", "kind": "obligations"}
       ]
     },
     {

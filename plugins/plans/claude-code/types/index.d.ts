@@ -9,7 +9,10 @@ export type Question = {
   session: string
   options: Option[]
   recommendation: string | null
+  /** The change the question holds up, by its path. */
   blocks: string | null
+  /** What the question holds up, in words. */
+  blocked_work: string | null
 }
 
 /** What `plans.open` answered: the questions it listed and how many are open in all. */

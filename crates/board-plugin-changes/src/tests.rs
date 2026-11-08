@@ -133,6 +133,8 @@ fn every_input_property_carries_a_sentence_that_says_what_it_means() {
         "plan.path",
         "plan.text",
         "plan.uses",
+        "plan.considered",
+        "plan.owed",
         "plan.paths",
         "brief.path",
         "prototype.mount",
@@ -180,6 +182,7 @@ fn every_input_property_carries_a_sentence_that_says_what_it_means() {
         "stop.summary",
         "migrate.apply",
         "migrate.flows",
+        "migrate.plans",
     ];
     expected.sort_unstable();
     assert_eq!(described, expected);

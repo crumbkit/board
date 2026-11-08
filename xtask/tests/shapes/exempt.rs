@@ -16,7 +16,7 @@ pub(super) enum Kind {
 use Kind::{Local, UntilAdopted};
 
 #[rustfmt::skip]
-pub(super) const UNSHARED: [(&str, &str, Kind, &str); 88] = [
+pub(super) const UNSHARED: [(&str, &str, Kind, &str); 86] = [
     // This repository's board's copy of the controls schema.
     (".board/controls/control/v1", "/rule/at_least", Local, "a version floor of dotted numbers, which only a version rule compares"),
     (".board/controls/control/v1", "/rule/capture", Local, "a regular expression in the syntax of Rust's regex crate, which only a version rule compiles"),
@@ -36,7 +36,6 @@ pub(super) const UNSHARED: [(&str, &str, Kind, &str); 88] = [
     ("controls/control/v1", "/rule/at_least", Local, "a version floor of dotted numbers, which only a version rule compares"),
     ("controls/control/v1", "/rule/capture", Local, "a regular expression in the syntax of Rust's regex crate, which only a version rule compiles"),
     ("evals/eval/v1", "/conclusion", UntilAdopted, "Prose"),
-    ("evals/eval/v1", "/decision", UntilAdopted, "Prose"),
     ("evals/eval/v1", "/mounts/-", UntilAdopted, "Ref<Mount> (audit row 25)"),
     ("evals/eval/v1", "/question", UntilAdopted, "Prose"),
     ("evals/eval/v1", "/written_by", UntilAdopted, "HookName (audit row 46)"),
@@ -63,7 +62,6 @@ pub(super) const UNSHARED: [(&str, &str, Kind, &str); 88] = [
     ("plans/decision/v1", "/why", UntilAdopted, "Prose"),
     ("plans/decision/v1", "/written_by", UntilAdopted, "HookName (audit row 48)"),
     ("plans/question/v1", "/asked", UntilAdopted, "Timestamp (audit row 37)"),
-    ("plans/question/v1", "/blocks", UntilAdopted, "Prose"),
     ("plans/question/v1", "/mount", UntilAdopted, "Ref<Mount> (audit row 26)"),
     ("plans/question/v1", "/note", UntilAdopted, "Prose"),
     ("plans/question/v1", "/options/-/id", UntilAdopted, "Slug, as the audit's Slug section says"),

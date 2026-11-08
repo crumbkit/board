@@ -37,6 +37,7 @@ use crate::records::{ChangeRecord, RunRecord};
 /// trailer, without and with `flows`.
 const BULK: &str = "migrate changes";
 const BULK_FLOWS: &str = "migrate flows";
+const BULK_PLANS: &str = "migrate plans";
 
 /// Where a board keeps its flows and their versions.
 const FLOWS: &str = "/flows/";
@@ -93,15 +94,15 @@ fn left_at(path: String, why: String) -> Left {
 }
 
 /// One stored record: its path, blob and body.
-struct Stored {
-    path: String,
-    blob: String,
-    body: Map<String, Value>,
+pub(super) struct Stored {
+    pub(super) path: String,
+    pub(super) blob: String,
+    pub(super) body: Map<String, Value>,
 }
 
 /// Each file of `record_type` under `/changes/`, readable or not, with its
 /// body.
-fn stored(host: &dyn Host, record_type: &str) -> Result<Vec<Stored>, PluginError> {
+pub(super) fn stored(host: &dyn Host, record_type: &str) -> Result<Vec<Stored>, PluginError> {
     let sql = format!(
         "SELECT e.logical, e.blob, b.body FROM entries AS e JOIN bodies AS b ON b.blob = e.blob \
          WHERE e.type = {} AND substr(e.logical, 1, {}) = {} ORDER BY e.logical",
@@ -286,13 +287,14 @@ fn rewrite_runs(
 }
 
 /// With `flows`, adds to `lines` the lines that replace the flow copies,
-/// and with `apply` writes `lines` in one bulk commit; returns what
-/// replacing the copies says, given only with `flows`.
+/// with `plans` those that move the plans' sections, and with `apply` writes
+/// `lines` in one bulk commit; returns what each says, given only with its
+/// flag.
 pub(super) fn write(
     host: &dyn Host,
-    (apply, flows): (bool, bool),
+    (apply, flows, plans): (bool, bool, bool),
     lines: &mut Vec<Value>,
-) -> Result<Option<Output>, PluginError> {
+) -> Result<(Option<Output>, Option<super::sections::Output>), PluginError> {
     let replaced = if flows {
         let (output, written) = replace(host, lines)?;
         lines.extend(written);
@@ -300,9 +302,18 @@ pub(super) fn write(
     } else {
         None
     };
+    let moved = if plans {
+        Some(super::sections::rewrite(host, lines)?.applied(apply))
+    } else {
+        None
+    };
     if apply && !lines.is_empty() {
-        let bulk = if flows { BULK_FLOWS } else { BULK };
+        let bulk = match (flows, plans) {
+            (true, _) => BULK_FLOWS,
+            (false, true) => BULK_PLANS,
+            (false, false) => BULK,
+        };
         board::put_bulk(host, lines, bulk)?;
     }
-    Ok(replaced)
+    Ok((replaced, moved))
 }

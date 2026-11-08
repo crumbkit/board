@@ -4,7 +4,7 @@
 
 use std::borrow::Cow;
 
-use board_plugin::shape::{Date, Glob, Open, Prose, Record, Ref, Summary, Tag, Url};
+use board_plugin::shape::{Accepts, Date, Glob, Open, Prose, Record, Ref, Summary, Tag, Url};
 use schemars::{JsonSchema, Schema, SchemaGenerator, json_schema};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::{Map, Value, json};
@@ -53,7 +53,23 @@ pub struct ControlRecord {
     /// What justifies the control, such as a source note
     /// (`controls/source/v1`) or an eval.
     pub sources: Option<Vec<Ref>>,
+    /// For an obligation, what left the work owed: the pull request whose
+    /// merge owes it, the review report that found it, or the decision that
+    /// accepted it.
+    pub owed_by: Option<Ref<OwedBy>>,
 }
+
+/// What may leave an obligation owed.
+#[derive(Debug)]
+pub enum OwedBy {}
+
+impl Accepts for OwedBy {
+    const TYPES: &'static [&'static str] = &OWED_BY_TYPES;
+}
+
+/// The record types an obligation's `owed_by` may name.
+pub(crate) const OWED_BY_TYPES: [&str; 3] =
+    ["github/pull/v1", "review/report/v1", "plans/decision/v1"];
 
 impl Record for ControlRecord {
     const TYPE: &'static str = "controls/control/v1";

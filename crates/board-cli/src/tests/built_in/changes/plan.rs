@@ -22,9 +22,7 @@ fn given(text: &str, uses: &[&str]) -> Value {
 
 /// The files under the change's plans directory.
 fn plans(board: &Changes) -> usize {
-    std::fs::read_dir(board.root().join("changes/t/plans"))
-        .unwrap()
-        .count()
+    std::fs::read_dir(board.root().join("changes/t/plans")).map_or(0, Iterator::count)
 }
 
 /// The plan record a `changes.plan` output names, read from the board.
@@ -52,6 +50,7 @@ fn plan_writes_the_plan_and_its_text_and_points_the_change_at_the_plan() {
             "text": format!("/changes/t/plans/{stamp}.md"),
             "uses": 1,
             "unchanged": false,
+            "warnings": [],
         })
     );
     assert_eq!(
@@ -324,6 +323,7 @@ fn the_same_plan_twice_writes_one_snapshot_and_a_plan_with_another_path_writes_a
             "text": first["text"],
             "uses": 1,
             "unchanged": true,
+            "warnings": [],
         })
     );
     assert_eq!(plans(&board), written);
@@ -334,4 +334,101 @@ fn the_same_plan_twice_writes_one_snapshot_and_a_plan_with_another_path_writes_a
     assert_eq!(second["unchanged"], false);
     assert_ne!(second["path"], first["path"]);
     assert_eq!(plans(&board), written + 2);
+}
+
+/// [`given`] with `extra` beside its fields.
+fn with(text: &str, extra: &Value) -> Value {
+    let mut input = given(text, &[]);
+    for (name, value) in extra.as_object().unwrap() {
+        input[name] = value.clone();
+    }
+    input
+}
+
+#[test]
+fn a_considered_record_that_reaches_nothing_is_refused_and_one_that_is_there_is_written() {
+    let board = Changes::new();
+    board.change_at("changes/t.json", "plan", &json!({}));
+    let list = |path: &str| json!({"considered": [{"records": [path], "why": "It is about the old flow."}]});
+    let refused = board.refusal_stdin("plan", &with(PLAN, &list("/notes/gone.md")));
+    assert_eq!(refused["code"], "changes::ref::dangling");
+    assert_eq!(plans(&board), 0);
+    board.write("notes/there.md", "# There\n");
+    let output = board.call_stdin("plan", &with(PLAN, &list("/notes/there.md")));
+    assert_eq!(
+        stored(&board, &output)["considered"],
+        list("/notes/there.md")["considered"]
+    );
+    assert_eq!(output["warnings"], json!([]));
+}
+
+/// An obligation at `/controls/x/owed`, as `controls.check` would list it.
+fn owed_control(board: &Changes) {
+    let owed = json!({
+        "$type": "controls/control/v1", "kind": "obligation", "requirement": "Sweep the docs.",
+        "purpose": "p", "paths": ["repos/x/**"],
+    });
+    board.write("controls/x/owed.json", &owed.to_string());
+}
+
+#[test]
+fn an_owed_control_that_is_a_task_is_refused_and_one_that_is_an_obligation_is_written() {
+    let board = Changes::new();
+    board.change_at("changes/t.json", "plan", &json!({}));
+    owed_control(&board);
+    let owe = |path: &str| json!({"owed": [{"control": path, "why": "The next step does it."}]});
+    let refused = board.refusal_stdin("plan", &with(PLAN, &owe(TASK)));
+    assert_eq!(refused["code"], "changes::ref::wrong_type");
+    assert_eq!(plans(&board), 0);
+    let gone = board.refusal_stdin("plan", &with(PLAN, &owe("/controls/x/gone")));
+    assert_eq!(gone["code"], "changes::ref::dangling");
+    let output = board.call_stdin("plan", &with(PLAN, &owe("/controls/x/owed")));
+    assert_eq!(
+        stored(&board, &output)["owed"],
+        owe("/controls/x/owed")["owed"]
+    );
+}
+
+#[test]
+fn a_plan_whose_text_holds_a_considered_or_owed_section_warns_and_one_without_does_not() {
+    let board = Changes::new();
+    board.change_at("changes/t.json", "plan", &json!({}));
+    let text = format!("{PLAN}\n### Considered\n\n- /tasks/a: unrelated.\n");
+    let warned = board.call_stdin("plan", &given(&text, &[]));
+    assert_eq!(
+        warned["warnings"][0]["code"],
+        "changes::plan::considered_in_text"
+    );
+    assert!(
+        warned["warnings"][0]["detail"]
+            .as_str()
+            .unwrap()
+            .contains("Considered"),
+        "{warned}"
+    );
+    let owed = format!("{PLAN}\n## Obligations left owed\n\n- /controls/x: later.\n");
+    let warned = board.call_stdin("plan", &given(&owed, &[]));
+    assert_eq!(
+        warned["warnings"][0]["code"],
+        "changes::plan::considered_in_text"
+    );
+    let quiet = board.call_stdin("plan", &given(PLAN, &[]));
+    assert_eq!(quiet["warnings"], json!([]));
+}
+
+#[test]
+fn a_plan_with_other_considered_or_owed_fields_is_not_unchanged() {
+    let board = Changes::new();
+    board.change_at("changes/t.json", "plan", &json!({}));
+    board.write("notes/there.md", "# There\n");
+    owed_control(&board);
+    let considered = json!({"considered": [{"records": ["/notes/there.md"], "why": "Other."}]});
+    let owed = json!({"owed": [{"control": "/controls/x/owed", "why": "Later."}]});
+    let first = board.call_stdin("plan", &with(PLAN, &considered));
+    assert_eq!(first["unchanged"], false);
+    let same = board.call_stdin("plan", &with(PLAN, &considered));
+    assert_eq!(same["unchanged"], true);
+    std::thread::sleep(std::time::Duration::from_millis(2));
+    let other = board.call_stdin("plan", &with(PLAN, &owed));
+    assert_eq!(other["unchanged"], false);
 }

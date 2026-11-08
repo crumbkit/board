@@ -182,8 +182,7 @@ fn first(observed: &Observed, list: Value) -> crate::gates::Check {
 }
 
 #[test]
-fn a_surfaced_record_neither_used_nor_considered_is_missing_and_one_listed_under_considered_passes()
-{
+fn a_surfaced_record_neither_used_nor_considered_is_missing_and_one_in_considered_passes() {
     let list = json!([{"id": "considered", "kind": "considered"}]);
     let mut found = observed(&json!({}), &[]);
     found.change.surfaced = vec!["/tasks/a".to_owned(), "/plans/d1".to_owned()];
@@ -192,20 +191,29 @@ fn a_surfaced_record_neither_used_nor_considered_is_missing_and_one_listed_under
     assert_eq!(check.status, Status::Missing);
     assert_eq!(
         check.detail,
-        "the plan neither uses nor lists under ### Considered these records that start surfaced: \
+        "the plan neither uses nor lists in considered these records that start surfaced: \
          /plans/d1"
     );
+    found.considered = vec!["/plans/d1".to_owned()];
+    assert_eq!(first(&found, list).status, Status::Pass);
+}
+
+#[test]
+fn a_surfaced_record_listed_only_under_a_considered_heading_in_the_text_is_missing() {
+    let list = json!([{"id": "considered", "kind": "considered"}]);
+    let mut found = observed(&json!({}), &[]);
+    found.change.surfaced = vec!["/plans/d1".to_owned()];
     found.plan = Some(
         "# T\n\n## UX\n\nNo UI change: it is headless.\n\n### Considered\n\n- /plans/d1: it is \
          about the old flow.\n"
             .to_owned(),
     );
-    assert_eq!(first(&found, list).status, Status::Pass);
+    assert_eq!(first(&found, list).status, Status::Missing);
 }
 
 #[test]
-fn an_obligation_on_the_plans_paths_is_missing_and_one_named_under_the_escape_heading_passes() {
-    let list = json!([{"id": "settled", "kind": "obligations", "escape_section": "Obligations left owed"}]);
+fn an_obligation_on_the_plans_paths_is_missing_and_one_in_owed_passes() {
+    let list = json!([{"id": "settled", "kind": "obligations"}]);
     let mut found = observed(&json!({}), &[]);
     found.obligations = vec!["/controls/x/docs-owed".to_owned()];
     let check = first(&found, list.clone());
@@ -218,13 +226,22 @@ fn an_obligation_on_the_plans_paths_is_missing_and_one_named_under_the_escape_he
         check.remedy.unwrap(),
         "Do the work each obligation names. Once the work is committed, delete each obligation \
          with `board rm <path> -m '<message naming the work>'`; merging the work does not \
-         clear it. List an obligation the change leaves owed under the plan's escape heading."
+         clear it. List an obligation the change leaves owed in the plan's owed field."
     );
+    found.owed = vec!["/controls/x/docs-owed".to_owned()];
+    assert_eq!(first(&found, list).status, Status::Pass);
+}
+
+#[test]
+fn an_obligation_listed_only_under_the_old_escape_heading_is_missing_even_with_escape_section() {
+    let list = json!([{"id": "settled", "kind": "obligations", "escape_section": "Obligations left owed"}]);
+    let mut found = observed(&json!({}), &[]);
+    found.obligations = vec!["/controls/x/docs-owed".to_owned()];
     found.plan = Some(
         "# T\n\n## Obligations left owed\n\n- /controls/x/docs-owed, owed to the next step.\n"
             .to_owned(),
     );
-    assert_eq!(first(&found, list).status, Status::Pass);
+    assert_eq!(first(&found, list).status, Status::Missing);
 }
 
 #[test]

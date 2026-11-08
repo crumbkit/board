@@ -1,16 +1,13 @@
 //! The `field`, `records`, `understood`, `considered`, `obligations`,
 //! `controlled-paths`, `flow-valid` and `exists` check kinds.
 
-use std::collections::{BTreeMap, BTreeSet};
-use std::sync::LazyLock;
-
-use regex::Regex;
 use serde_json::{Map, Value};
+use std::collections::BTreeSet;
 
 use super::remedy::{Values, fill, unfilled};
 use super::{
-    NO_HEAD, Observed, UNDERSTANDING_TYPE, objects, pattern, reviewed_head, route_missing,
-    same_commit, signed_decisions, strings, task_missing, truthy, unset,
+    NO_HEAD, Observed, UNDERSTANDING_TYPE, objects, reviewed_head, route_missing, same_commit,
+    signed_decisions, strings, task_missing, truthy, unset,
 };
 use board_plugin::shape::Record;
 
@@ -32,18 +29,6 @@ fn bounded(paths: &[&str]) -> String {
         0 => shown,
         more => format!("{shown}, and {more} more"),
     }
-}
-
-/// A board path in prose: a `/` and the characters up to a space, a quote,
-/// a bracket or a list's punctuation.
-static BOARD_PATH: LazyLock<Regex> = LazyLock::new(|| pattern(r#"/[^\s`'")>\],;]+"#));
-
-/// The board paths `text` names, each without a trailing full stop or
-/// colon.
-pub(super) fn paths_in(text: &str) -> BTreeSet<&str> {
-    (BOARD_PATH.find_iter(text))
-        .map(|found| found.as_str().trim_end_matches(['.', ':']))
-        .collect()
 }
 
 /// What a passing check says: for a `controlled-paths` check whose
@@ -79,36 +64,27 @@ pub(crate) fn named_controls(each: &flow::Check, values: &Values) -> Vec<String>
 }
 
 /// Every record the change's `surfaced` lists is in the plan's `uses` or
-/// named under a `Considered` heading.
-pub(super) fn considered_missing(
-    observed: &Observed,
-    plan: &BTreeMap<String, String>,
-) -> Option<String> {
-    let listed = paths_in(plan.get("considered").map_or("", String::as_str));
+/// its `considered`.
+pub(super) fn considered_missing(observed: &Observed) -> Option<String> {
     let left: Vec<&str> = (observed.change.surfaced.iter().map(String::as_str))
-        .filter(|each| !observed.uses.iter().any(|used| used == each) && !listed.contains(each))
+        .filter(|each| {
+            !observed.uses.iter().any(|used| used == each)
+                && !observed.considered.iter().any(|listed| listed == each)
+        })
         .collect();
     (!left.is_empty()).then(|| {
         format!(
-            "the plan neither uses nor lists under ### Considered these records that start \
-             surfaced: {}",
+            "the plan neither uses nor lists in considered these records that start surfaced: {}",
             left.join(", ")
         )
     })
 }
 
-/// No obligation control applies to the plan's paths, except those named
-/// under the plan's `escape_section` heading.
-pub(super) fn obligations_missing(
-    observed: &Observed,
-    plan: &BTreeMap<String, String>,
-    each: &flow::Check,
-) -> Option<String> {
-    let escaped = (each.escape_section.as_ref())
-        .map(|heading| paths_in(plan.get(&heading.to_lowercase()).map_or("", String::as_str)))
-        .unwrap_or_default();
+/// No obligation control applies to the plan's paths, except those the
+/// plan's `owed` names.
+pub(super) fn obligations_missing(observed: &Observed) -> Option<String> {
     let left: Vec<&str> = (observed.obligations.iter().map(String::as_str))
-        .filter(|control| !escaped.contains(control))
+        .filter(|control| !observed.owed.iter().any(|owed| owed == control))
         .collect();
     (!left.is_empty()).then(|| {
         format!(

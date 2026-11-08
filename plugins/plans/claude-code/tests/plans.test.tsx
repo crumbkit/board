@@ -2,7 +2,7 @@ import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 import type { Engine } from 'claude-code/testing'
 
-import { NAMES, parseWaiting, questionSql, questionsLabel, report, REPORT_SQL, waitingLabel } from '../hooks/plans'
+import { blocking, NAMES, parseWaiting, questionSql, questionsLabel, report, REPORT_SQL, waitingLabel } from '../hooks/plans'
 
 // These prove what the band and the panes draw, which `board` commands the
 // mod runs, the batch it hands `board put`, and what the asking session is
@@ -21,9 +21,10 @@ const MERGE = {
     { id: 'b', text: 'Hold' },
   ],
   recommendation: 'a',
-  blocks: 'home#201',
+  blocks: null,
+  blocked_work: 'home#201',
 }
-const COUNT = { ...MERGE, path: '/projects/core/questions/20261025T0800Z-x1', asked: '2026-10-25T08:00:00Z', question: 'How many users have a blank email?', options: [], recommendation: null, blocks: null }
+const COUNT = { ...MERGE, path: '/projects/core/questions/20261025T0800Z-x1', asked: '2026-10-25T08:00:00Z', question: 'How many users have a blank email?', options: [], recommendation: null, blocks: null, blocked_work: null }
 const BODY = JSON.stringify({ $type: 'plans/question/v1', question: MERGE.question, session: MERGE.session, asked: MERGE.asked, status: 'open' })
 
 const opened = (questions: object[]) =>
@@ -411,4 +412,10 @@ test('the report lists each kind of record under its heading, and says none wher
     ].join('\n\n'),
   )
   expect(line).toBe('board: 0 decisions, 1 question asked, 1 answered, 0 runs and 1 decision stub that want a why, since 2026-10-24 07:00, counting only the first 1000 records.')
+})
+
+test('a question shows the change it blocks by name, or the work in words, or nothing', () => {
+  expect(blocking({ blocks: '/changes/fix-the-sync', blocked_work: 'the release' })).toBe(' · blocks fix-the-sync')
+  expect(blocking({ blocks: null, blocked_work: 'the release' })).toBe(' · blocks the release')
+  expect(blocking({ blocks: null, blocked_work: null })).toBe('')
 })

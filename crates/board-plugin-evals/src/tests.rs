@@ -126,7 +126,7 @@ fn the_manifest_parses_as_a_built_in_one_and_describes_the_plugin_with_the_skill
     let names: Vec<&str> = (manifest.capabilities.iter())
         .map(|capability| capability.name.as_str())
         .collect();
-    assert_eq!(names, ["about", "open"]);
+    assert_eq!(names, ["about", "open", "migrate"]);
     assert_eq!(manifest.description, skill_description());
 }
 
@@ -184,6 +184,7 @@ fn the_output_schema_admits_an_answer_and_refuses_one_without_its_total() {
             "status": "concluded",
             "verdict": "supported",
             "decision": null,
+            "informs": null,
         }],
         "total": 1,
         "truncated": false,
@@ -286,10 +287,7 @@ fn the_shipped_schema_refuses_a_concluded_eval_without_a_verdict_a_null_and_a_ba
             with("verdict", Value::Null),
             with("status", json!("running")),
         ),
-        (
-            with("decision", Value::Null),
-            with("decision", json!("Pick.")),
-        ),
+        (with("informs", json!(5)), with("informs", json!("Pick."))),
         (
             with("written_by", json!("the hook")),
             with("written_by", json!("a/b")),
@@ -306,6 +304,10 @@ fn the_shipped_schema_refuses_a_concluded_eval_without_a_verdict_a_null_and_a_ba
         );
         schema.validate(&admitted).unwrap();
     }
+    assert!(schema.validate(&with("decision", json!("Pick."))).is_err());
+    schema
+        .validate(&with("decision", json!("/projects/a/decisions/d")))
+        .unwrap();
 }
 
 #[test]
@@ -315,7 +317,7 @@ fn a_capability_the_plugin_does_not_offer_is_refused_and_open_is_answered() {
     assert_eq!(refused.code, "evals::call::unknown_capability");
     assert_eq!(
         refused.message,
-        "evals offers no capability runs; it offers about and open"
+        "evals offers no capability runs; it offers about, open and migrate"
     );
     let open: CapabilityName = "open".parse().unwrap();
     let answered = Evals.call(&empty(), &open, json!({})).unwrap();

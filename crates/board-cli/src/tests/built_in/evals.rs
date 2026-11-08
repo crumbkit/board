@@ -62,7 +62,7 @@ fn about_lists_the_evals_that_name_a_subject_whatever_their_status_with_their_qu
     board
         .write(
             "evals/planned.json",
-            &eval("Planned?", &json!({"decision": "Pick a git library."})),
+            &eval("Planned?", &json!({"informs": "Pick a git library."})),
         )
         .write(
             "evals/done.json",
@@ -84,6 +84,7 @@ fn about_lists_the_evals_that_name_a_subject_whatever_their_status_with_their_qu
                     "status": "concluded",
                     "verdict": "supported",
                     "decision": null,
+                    "informs": null,
                 },
                 {
                     "path": "/evals/planned",
@@ -91,7 +92,8 @@ fn about_lists_the_evals_that_name_a_subject_whatever_their_status_with_their_qu
                     "subjects": ["o/gix"],
                     "status": "planned",
                     "verdict": null,
-                    "decision": "Pick a git library.",
+                    "decision": null,
+                    "informs": "Pick a git library.",
                 },
             ],
             "total": 2,
@@ -321,7 +323,7 @@ fn about_answers_across_two_mounted_repositories_and_the_boards_own_evals() {
     let board = board();
     let (first, first_commit) = evals_repository(&[(
         "evals/pin-gix.json",
-        eval("Does gix pin?", &json!({"decision": "Pick a library."})),
+        eval("Does gix pin?", &json!({"informs": "Pick a library."})),
     )]);
     let (second, second_commit) = evals_repository(&[
         (
@@ -385,7 +387,7 @@ fn about_a_mount_lists_the_evals_that_name_its_mount_here_and_in_mounted_boards(
             "evals/clap.json",
             &eval(
                 "Does clap fit?",
-                &json!({"subjects": ["o/clap"], "mounts": ["/repos/crumbkit"], "decision": "Pick a parser."}),
+                &json!({"subjects": ["o/clap"], "mounts": ["/repos/crumbkit"], "informs": "Pick a parser."}),
             ),
         )
         .write("evals/named-only.json", &eval("Named only?", &json!({"subjects": ["o/crumbkit"]})))
@@ -404,7 +406,8 @@ fn about_a_mount_lists_the_evals_that_name_its_mount_here_and_in_mounted_boards(
                     "subjects": ["o/clap"],
                     "status": "planned",
                     "verdict": null,
-                    "decision": "Pick a parser.",
+                    "decision": null,
+                    "informs": "Pick a parser.",
                 },
                 {
                     "path": "/repos/crumbkit/evals/regression",
@@ -413,6 +416,7 @@ fn about_a_mount_lists_the_evals_that_name_its_mount_here_and_in_mounted_boards(
                     "status": "planned",
                     "verdict": null,
                     "decision": null,
+                    "informs": null,
                 },
             ],
             "total": 2,
@@ -565,7 +569,7 @@ fn open_lists_planned_and_running_evals_and_leaves_out_concluded_and_abandoned_o
         )
         .write(
             "evals/a-planned.json",
-            &eval("A?", &json!({"decision": "Pick a library."})),
+            &eval("A?", &json!({"informs": "Pick a library."})),
         )
         .write(
             "evals/done.json",
@@ -589,7 +593,8 @@ fn open_lists_planned_and_running_evals_and_leaves_out_concluded_and_abandoned_o
                     "subjects": ["o/gix"],
                     "status": "planned",
                     "verdict": null,
-                    "decision": "Pick a library.",
+                    "decision": null,
+                    "informs": "Pick a library.",
                 },
                 {
                     "path": "/evals/b-running",
@@ -598,6 +603,7 @@ fn open_lists_planned_and_running_evals_and_leaves_out_concluded_and_abandoned_o
                     "status": "running",
                     "verdict": null,
                     "decision": null,
+                    "informs": null,
                 },
             ],
             "total": 2,
@@ -753,7 +759,7 @@ fn an_eval_needs_a_question_subjects_and_a_status() {
 #[test]
 fn an_eval_refers_to_suites_and_runs_and_holds_no_other_field() {
     let board = board();
-    let full = json!({"suites": ["/suites/s"], "runs": ["/suites/s/runs/1"], "decision": "Pick."});
+    let full = json!({"suites": ["/suites/s"], "runs": ["/suites/s/runs/1"], "informs": "Pick."});
     board
         .write("suites/s.json", &suite())
         .write("suites/s/runs/1.json", &run("/suites/s"))
@@ -919,4 +925,151 @@ fn an_eval_a_hook_wrote_names_the_plugin_and_hook_and_nothing_else() {
             ("/evals/empty", INVALID),
         ])
     );
+}
+
+/// A `plans/decision/v1` record whose refs are `refs`.
+fn decision(refs: &[&str]) -> String {
+    json!({
+        "$type": "plans/decision/v1",
+        "decision": "Do it.",
+        "why": "It is needed.",
+        "by": {"session": "local_0a1b"},
+        "decided": "2026-10-01T09:00:00Z",
+        "refs": refs,
+    })
+    .to_string()
+}
+
+fn with_decisions() -> Fixture {
+    Fixture::enabling(&["evals", "runs", "plans"])
+}
+
+#[test]
+fn an_eval_whose_decision_is_prose_is_invalid_and_its_twins_with_informs_or_a_decision_pass() {
+    let board = with_decisions();
+    board
+        .write("projects/a/decisions/d.json", &decision(&[]))
+        .write(
+            "evals/prose.json",
+            &eval("P?", &json!({"decision": "Pick."})),
+        )
+        .write(
+            "evals/words.json",
+            &eval("W?", &json!({"informs": "Pick."})),
+        )
+        .write(
+            "evals/typed.json",
+            &eval("T?", &json!({"decision": "/projects/a/decisions/d"})),
+        )
+        .write(
+            "evals/wrong.json",
+            &eval("X?", &json!({"decision": "/evals/words"})),
+        );
+    assert_eq!(
+        board.checked("/evals/"),
+        codes(&[
+            ("/evals/prose", Some("board::ref::malformed")),
+            ("/evals/words", None),
+            ("/evals/typed", None),
+            ("/evals/wrong", Some("board::ref::wrong_type")),
+        ])
+    );
+}
+
+/// The evals the migration tests hold, and the decisions that name them.
+fn evals_to_migrate(board: &Fixture) {
+    board
+        .write("projects/a/decisions/d1.json", &decision(&["/evals/named"]))
+        .write("projects/a/decisions/d2.json", &decision(&["/evals/both"]))
+        .write("projects/a/decisions/d3.json", &decision(&["/evals/both"]))
+        .write(
+            "evals/words.json",
+            &eval("W?", &json!({"decision": "Whether it merges."})),
+        )
+        .write(
+            "evals/named.json",
+            &eval("N?", &json!({"decision": "Whether it ships."})),
+        )
+        .write(
+            "evals/both.json",
+            &eval("B?", &json!({"decision": "Which one."})),
+        )
+        .write("evals/none.json", &eval("O?", &json!({})))
+        .write(
+            "evals/typed.json",
+            &eval("T?", &json!({"decision": "/projects/a/decisions/d1"})),
+        )
+        .write("evals/number.json", &eval("U?", &json!({"decision": 5})))
+        .write(
+            "evals/held.json",
+            &eval("H?", &json!({"decision": "New.", "informs": "Old."})),
+        );
+}
+
+fn stored_eval(board: &Fixture, name: &str) -> Value {
+    serde_json::from_str(&board.read(&format!("evals/{name}.json"))).unwrap()
+}
+
+#[test]
+fn evals_migrate_lists_what_it_would_do_and_writes_nothing_without_apply() {
+    let board = with_decisions();
+    evals_to_migrate(&board);
+    board.committing();
+    let before = board.head();
+    let dry = board.call("evals.migrate", &[]);
+    assert_eq!(dry["applied"], false);
+    assert_eq!(
+        dry["rewritten"],
+        json!(["/evals/both", "/evals/named", "/evals/words"])
+    );
+    assert_eq!((&dry["total"], &dry["referenced"]), (&json!(3), &json!(1)));
+    assert_eq!(
+        dry["several"],
+        json!([{
+            "path": "/evals/both",
+            "decisions": ["/projects/a/decisions/d2", "/projects/a/decisions/d3"],
+        }])
+    );
+    let unread = dry["unread"].as_array().unwrap();
+    assert_eq!(unread[0]["path"], "/evals/held");
+    assert_eq!(unread[1]["path"], "/evals/number");
+    assert_eq!(unread[1]["code"], "evals::migrate::unread");
+    assert_eq!(board.head(), before);
+}
+
+#[test]
+fn evals_migrate_with_apply_writes_one_bulk_commit_and_a_second_apply_writes_nothing() {
+    let board = with_decisions();
+    evals_to_migrate(&board);
+    board.committing();
+    let before = board.head();
+    let applied = board.call("evals.migrate", &["--apply", "true"]);
+    assert_eq!(
+        (&applied["applied"], &applied["total"]),
+        (&json!(true), &json!(3))
+    );
+    assert_eq!(board.board.head().unwrap().parents, [before]);
+    assert!(
+        board.message().ends_with("\n\nBoard-Bulk: migrate evals"),
+        "{}",
+        board.message()
+    );
+    let words = stored_eval(&board, "words");
+    assert_eq!(words.get("decision"), None);
+    assert_eq!(words["informs"], "Whether it merges.");
+    let named = stored_eval(&board, "named");
+    assert_eq!(named["decision"], "/projects/a/decisions/d1");
+    assert_eq!(named["informs"], "Whether it ships.");
+    let both = stored_eval(&board, "both");
+    assert_eq!(both.get("decision"), None);
+    assert_eq!(both["informs"], "Which one.");
+    assert_eq!(stored_eval(&board, "number")["decision"], 5);
+    let checked = board.checked("/evals/");
+    for name in ["words", "named", "both", "none", "typed"] {
+        assert_eq!(checked[&format!("/evals/{name}")], None, "{name}");
+    }
+    let head = board.head();
+    let again = board.call("evals.migrate", &["--apply", "true"]);
+    assert_eq!(again["total"], 0);
+    assert_eq!(board.head(), head);
 }

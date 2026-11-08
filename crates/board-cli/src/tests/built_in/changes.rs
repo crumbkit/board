@@ -1002,7 +1002,7 @@ fn refs_finds_the_changes_that_reference_a_ticket_and_not_one_that_does_not() {
 fn new_plan_usage(path: &str, mount: &str) -> String {
     format!(
         "Pipe `board changes plan` JSON on stdin with the fields `path`, `text`, `uses` and `paths`, \
-         such as `{}`.",
+         plus any `considered` and `owed`, such as `{}`.",
         plan_example(path, mount)
     )
 }
@@ -1011,8 +1011,8 @@ fn new_plan_usage(path: &str, mount: &str) -> String {
 /// at `path` on `mount` that already has one.
 fn revised_plan_usage(path: &str, mount: &str) -> String {
     format!(
-        "`board changes plan` reads JSON on stdin and replaces the plan, so resend all four fields, \
-         such as `{}`.",
+        "`board changes plan` reads JSON on stdin and replaces the plan, so resend all four fields \
+         with any `considered` and `owed`, such as `{}`.",
         plan_example(path, mount)
     )
 }

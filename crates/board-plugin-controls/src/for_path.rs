@@ -46,6 +46,9 @@ struct Applying {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[schemars(with = "Option<Prose>")]
     close: Option<String>,
+    /// What left an obligation owed; left out when it names nothing.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    owed_by: Option<String>,
 }
 
 /// Each readable control whose `applies_to` reaches the path or whose
@@ -67,6 +70,7 @@ pub(crate) fn for_path(host: &dyn Host, input: &Value) -> Result<Value, PluginEr
                 show: control.show(),
                 kind: control.kind(),
                 close: control.kind().close(&logical),
+                owed_by: control.owed(),
                 control: logical,
                 requirement: control.requirement,
                 purpose: control.purpose,

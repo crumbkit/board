@@ -27,7 +27,7 @@ const NO_HEAD: &str = "the change records no head commit; attach one with --head
 /// The fewest hex digits a commit is named by when compared with another.
 const SHORT_COMMIT: usize = 7;
 /// Lines that open or close a Markdown code fence.
-const FENCES: [&str; 2] = ["```", "~~~"];
+pub(crate) const FENCES: [&str; 2] = ["```", "~~~"];
 
 fn pattern(text: &str) -> Regex {
     Regex::new(text).expect("each pattern is a constant; the gate tests compile it")
@@ -110,6 +110,10 @@ pub(crate) struct Observed {
     /// The Markdown file the change's plan record names as its text.
     pub(crate) plan_file: Option<String>,
     pub(crate) uses: Vec<String>,
+    /// The records the plan's `considered` field lists.
+    pub(crate) considered: Vec<String>,
+    /// The obligations the plan's `owed` field lists.
+    pub(crate) owed: Vec<String>,
     pub(crate) suite: Option<String>,
     pub(crate) planned: Vec<String>,
     pub(crate) edited: Vec<String>,
@@ -137,6 +141,8 @@ impl Observed {
             plan: None,
             plan_file: None,
             uses: Vec::new(),
+            considered: Vec::new(),
+            owed: Vec::new(),
             suite: None,
             planned: Vec::new(),
             edited: Vec::new(),
@@ -425,8 +431,8 @@ fn evaluate(
             Some(Part::Neighbours) => neighbours_missing(plan),
             None => ux_missing(observed, plan).or_else(|| neighbours_missing(plan)),
         },
-        CheckKind::Considered => kinds::considered_missing(observed, plan),
-        CheckKind::Obligations => kinds::obligations_missing(observed, plan, each),
+        CheckKind::Considered => kinds::considered_missing(observed),
+        CheckKind::Obligations => kinds::obligations_missing(observed),
         CheckKind::ControlledPaths => kinds::controlled_missing(observed, each),
         CheckKind::FlowValid => kinds::flow_valid_missing(observed),
         CheckKind::Exists => kinds::exists_missing(observed, each),

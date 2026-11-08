@@ -112,7 +112,7 @@ fn an_installed_copy_of_a_built_in_plugin_is_listed_with_its_directory_and_one_u
             assert_eq!(row["code"], "board::plugin::duplicate");
             assert_eq!(row["shadows"], json!(directory.display().to_string()));
             let expected = format!(
-                "degraded board::plugin::duplicate plans 0.1.0 disabled: installed again at {} offers open, answer, withdraw",
+                "degraded board::plugin::duplicate plans 0.1.0 disabled: installed again at {} offers open, answer, withdraw, migrate",
                 directory.display()
             );
             assert_eq!(line, expected);
@@ -120,7 +120,7 @@ fn an_installed_copy_of_a_built_in_plugin_is_listed_with_its_directory_and_one_u
             assert_eq!((row.get("code"), row.get("shadows")), (None, None));
             assert_eq!(
                 line,
-                "ok plans 0.1.0 disabled offers open, answer, withdraw"
+                "ok plans 0.1.0 disabled offers open, answer, withdraw, migrate"
             );
         }
     }
@@ -513,6 +513,36 @@ impl Fixture {
     fn write(&self, path: &str, text: &str) -> &Self {
         self.board.write(path, Item::File(text));
         self
+    }
+
+    /// Makes the board commit each write, and commits every file it holds,
+    /// so a test can read the commit a migration writes.
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "the test commits the fixture with git so that a migration's commit is the next one"
+    )]
+    fn committing(&self) {
+        let mut config: Value = serde_json::from_str(&self.read(".board/board.json")).unwrap();
+        config["commit_on_put"] = json!(true);
+        self.write(".board/board.json", &config.to_string());
+        for arguments in [["add", "-A"].as_slice(), &["commit", "-qm", "fixture"]] {
+            let done = std::process::Command::new("git")
+                .args(arguments)
+                .current_dir(self.board.workdir())
+                .output()
+                .unwrap();
+            assert!(done.status.success(), "{done:?}");
+        }
+    }
+
+    /// The id of the commit the board stands on.
+    fn head(&self) -> ObjectId {
+        self.board.head().unwrap().id
+    }
+
+    /// The message of the commit the board stands on.
+    fn message(&self) -> String {
+        self.board.head().unwrap().message
     }
 
     fn delete(&self, path: &str) {

@@ -1,4 +1,55 @@
 {
+  "$defs": {
+    "Considered": {
+      "additionalProperties": false,
+      "description": "Records a plan does not build on, and why they do not apply.",
+      "properties": {
+        "records": {
+          "description": "The records the reason covers.",
+          "items": {
+            "format": "board-ref",
+            "type": "string"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "why": {
+          "description": "Why they do not apply.",
+          "minLength": 1,
+          "type": "string",
+          "x-board-prose": true
+        }
+      },
+      "required": [
+        "records",
+        "why"
+      ],
+      "type": "object"
+    },
+    "Owed": {
+      "additionalProperties": false,
+      "description": "An obligation a change leaves owed.",
+      "properties": {
+        "control": {
+          "description": "The obligation left owed.",
+          "format": "board-ref",
+          "type": "string",
+          "x-board-type": "controls/control/v1"
+        },
+        "why": {
+          "description": "Why this change does not discharge it, and what will.",
+          "minLength": 1,
+          "type": "string",
+          "x-board-prose": true
+        }
+      },
+      "required": [
+        "control",
+        "why"
+      ],
+      "type": "object"
+    }
+  },
   "additionalProperties": false,
   "description": "`changes/plan/v1`: one plan for a change, the records it uses, the paths\nit will edit and the records attached while it was the change's plan.\n\nA plan lives at `/changes/<name>/plans/<stamp>`, beside its text at\n`<stamp>.md`; the change's `plan` names its current one. A plan for a build\nchange that `changes.plan` wrote always has `paths`.",
   "properties": {
@@ -6,6 +57,20 @@
       "const": "changes/plan/v1",
       "description": "The record's type.",
       "type": "string"
+    },
+    "considered": {
+      "description": "Records the change surfaced that the plan does not build on, in\ngroups that share one reason.",
+      "items": {
+        "$ref": "#/$defs/Considered"
+      },
+      "type": "array"
+    },
+    "owed": {
+      "description": "Obligations on the plan's paths that the change leaves owed, each\nwith why.",
+      "items": {
+        "$ref": "#/$defs/Owed"
+      },
+      "type": "array"
     },
     "paths": {
       "description": "The files and SQLite GLOB patterns, by logical path, the change will\nedit.",

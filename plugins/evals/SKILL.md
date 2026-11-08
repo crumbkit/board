@@ -73,6 +73,10 @@ of the repository you are in before you test.
    eval that names the earlier one in its `question`, and say in its
    `conclusion` whether the verdict changed.
 
+   `decision` takes the path of a `plans/decision/v1` and nothing else. Say
+   the choice an eval informs in `informs`, and set `decision` when the
+   decision is recorded.
+
    When the earlier verdict is `inconclusive`, read its `conclusion` first.
    If the conclusion names a follow-up eval, use that eval. Otherwise write
    a new, narrower eval that names the earlier one in its `question`. Never

@@ -88,6 +88,11 @@ such as a pull request body, instead of files.
   that discharges an obligation is committed, `board rm <path> -m
   '<message naming the work>'` deletes the obligation in a commit whose
   message names the work; merging the work does not clear it.
+- `owed_by`, for an obligation, references what owes the work: a
+  `github/pull/v1`, a `review/report/v1` or a `plans/decision/v1`. The
+  record's other text may still say so in words. `check`, `for-path` and
+  `for-paths` return it. On a standing control, `check` warns
+  `controls::control::owed_by_standing` in its `warnings`.
 - `show` says when to show the control: `start` at session start, `edit`
   before the first edit of a file it covers, or `failing` only when `check`
   reports it failing. Left out, an obligation shows at `start`, a control
@@ -387,3 +392,19 @@ the binary are in `crates/board-cli/src/tests/built_in/controls.rs` and the
 files beside it in `controls/`, which run the same commands in process.
 The judged tests start a stub agent script, never a model.
 `claude plugin test claude-code` runs the mod's tests.
+
+`controls.migrate --owed_by true [--apply true]` sets `owed_by` on each
+obligation that lacks it. Three rules are tried in order, and the first that
+gives exactly one record decides. The first rule reads the pull request the
+requirement names as `owner/repo#n`, or as `#n` with a mount in `applies_to`
+whose clone's origin gives the owner and repository. The second takes the one
+`review/report/v1` among `sources`, and the third takes the one
+`plans/decision/v1` among them. A pull request the board holds no record of is
+listed under `commands` with the `github.ref` command that writes it, and
+nothing is set. Two records under one rule are listed under `ambiguous` with
+`controls::migrate::ambiguous`. An obligation no rule matches is listed under
+`unmatched`. A record that cannot be read is listed under `unread` with
+`controls::migrate::unread`. Without `--apply` it writes nothing, and without
+`--owed_by` it neither reads nor writes. With both, every rewrite lands in one
+commit whose trailer is `Board-Bulk: migrate controls`. Each nested board runs
+it itself.

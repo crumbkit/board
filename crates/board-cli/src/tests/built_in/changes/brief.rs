@@ -519,7 +519,7 @@ fn the_rules_command_needs_no_shell_quoting_for_a_path_holding_a_quote() {
 fn a_rule_too_long_to_fit_leaves_room_for_the_shorter_rules_after_it() {
     let board = with_source();
     let count = 120;
-    let long = format!("{}end.", "word ".repeat(24));
+    let long = format!("{}end.", "word ".repeat(22));
     for number in 0..count {
         let requirement = if number % 6 == 0 {
             long.as_str()

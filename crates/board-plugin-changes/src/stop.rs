@@ -20,13 +20,13 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use crate::board;
-use crate::change::read;
+use crate::change::{read, referenced};
 use crate::flow::{Flow, Stop};
 use crate::gates::Check;
 use crate::phases::{check_target, next_of};
 use crate::plan::stamp;
 use crate::records::{DONE, Reason, StopRecord};
-use crate::{PLUGIN, refusal, to_value};
+use crate::{PLUGIN, Warning, refusal, to_value};
 
 /// The record type of a question for the owner, which the plans plugin
 /// owns.
@@ -160,6 +160,7 @@ pub(crate) struct Output {
     pub(crate) stop: String,
     pub(crate) phase: String,
     pub(crate) missing: Vec<String>,
+    pub(crate) warnings: Vec<Warning>,
 }
 
 /// Writes a `changes/stop/v1` for the change at `path` with `reason`,
@@ -195,22 +196,43 @@ pub(crate) fn record(
         stop: at,
         phase: step.phase,
         missing,
+        warnings: Vec::new(),
     })
+}
+
+/// The warning for a question whose `blocks` does not name the change at
+/// `path`, which `changes.next` and a board reader then cannot link.
+fn unlinked(host: &dyn Host, question: &str, path: &str) -> Result<Option<Warning>, PluginError> {
+    let found = referenced(host, &[question.to_owned()])?;
+    let blocks = found.get(question).and_then(|(_, body)| body.get("blocks"));
+    if blocks.and_then(Value::as_str) == Some(path) {
+        return Ok(None);
+    }
+    Ok(Some(Warning {
+        code: "changes::stop::question_unlinked",
+        detail: format!(
+            "the question {question} does not name {path} in blocks; the stop is recorded, and \
+             a reader cannot tell the question holds up this change until blocks names it"
+        ),
+    }))
 }
 
 pub(crate) fn stop(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
     let given: Input = PluginError::read_input(PLUGIN, "stop", input)?;
     read(host, &given.path)?;
+    let mut warnings = Vec::new();
     if let Some(question) = &given.question {
         check_target(host, question, &[QUESTION_TYPE])?;
+        warnings.extend(unlinked(host, question, &given.path)?);
     }
-    let written = record(
+    let mut written = record(
         host,
         &given.path,
         given.reason,
         given.question,
         given.summary,
     )?;
+    written.warnings = warnings;
     Ok(to_value(written))
 }
 

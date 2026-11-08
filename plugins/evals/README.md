@@ -21,7 +21,7 @@ An eval is a file `/evals/<name>.json`. Its evidence sits beside it, in
   "mounts": ["/repos/board"],
   "suites": ["/suites/gix-refs"],
   "runs": ["/suites/gix-refs/runs/20261001T090000Z-a3f9"],
-  "decision": "Which git library board-tree uses.",
+  "informs": "Which git library board-tree uses.",
   "status": "concluded",
   "verdict": "supported",
   "conclusion": "gix resolved 1,000 refs in 41 ms against 63 ms for git2."
@@ -142,3 +142,14 @@ what the struct generates.
 This directory keeps `SKILL.md`. The tests of the plugin through the binary are
 in `crates/board-cli/src/tests/built_in/evals.rs`, which runs the same
 commands in process.
+
+`informs` is the choice an eval informs, in words. `decision` is the path of
+the `plans/decision/v1` it informed, set when that decision is recorded.
+
+`evals.migrate [--apply true]` moves each `decision` text to `informs`. When
+exactly one decision of this board names the eval in `refs`, `decision`
+references it; when several do, `several` lists them and `decision` is left
+out. A value that is no text, or an eval that already holds `informs`, is
+listed under `unread` with `evals::migrate::unread`. Without `--apply` it
+writes nothing. With it, every rewrite lands in one commit whose trailer is
+`Board-Bulk: migrate evals`. Each nested board runs it itself.

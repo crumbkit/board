@@ -4,7 +4,7 @@
 use schemars::JsonSchema;
 use serde::Serialize;
 
-use board_plugin::shape::{Actor, Prose, Record, Ref, Tag, Url};
+use board_plugin::shape::{Accepts, Actor, Prose, Record, Ref, Tag, Url};
 
 /// `plans/question/v1`: a question an agent session needs the owner to answer.
 ///
@@ -49,8 +49,12 @@ pub struct QuestionRecord {
     pub recommendation: Option<String>,
     /// Why the asker recommends it.
     pub why: Option<String>,
-    /// What cannot proceed until the question is answered.
-    pub blocks: Option<String>,
+    /// The change that cannot proceed until the question is answered.
+    pub blocks: Option<Ref<AnyChange>>,
+    /// What cannot proceed, in words, when no change names it or the change
+    /// needs more detail.
+    #[schemars(with = "Option<Prose>")]
+    pub blocked_work: Option<String>,
     /// A Markdown file in the board that holds long background.
     pub context_path: Option<Ref>,
     /// What the asker did not know, such as details nobody has written down
@@ -61,6 +65,17 @@ pub struct QuestionRecord {
 impl Record for QuestionRecord {
     const TYPE: &'static str = "plans/question/v1";
 }
+
+/// A change of the changes plugin, of either version.
+#[derive(Debug)]
+pub enum AnyChange {}
+
+impl Accepts for AnyChange {
+    const TYPES: &'static [&'static str] = &CHANGE_TYPES;
+}
+
+/// The record types of a change, which the changes plugin ships.
+pub(crate) const CHANGE_TYPES: [&str; 2] = ["changes/change/v1", "changes/change/v2"];
 
 /// Where a question stands.
 #[derive(Debug, JsonSchema)]

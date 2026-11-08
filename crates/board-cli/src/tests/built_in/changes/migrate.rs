@@ -777,3 +777,152 @@ fn reflow_keeps_a_copy_a_run_names_and_removes_a_copy_no_run_names() {
     board.call("reflow", &flow);
     assert!(!board.exists("changes/c/flow.json"));
 }
+
+const OWED_TEXT: &str = "# T\n\n## Problem\n\nA.\n\n### Considered\n\n- /notes/a.md: about the old flow.\n- `/notes/b.md` and `/notes/c.md`: both unrelated.\n- Unrelated: `/notes/d.md`, `/notes/a.md`.\n\nNothing here:\n/notes/b.md,\n/notes/c.md.\n\n## Obligations left owed\n\n- /controls/x/owed, owed to the next step.\n\n## Outcome\n\nB.\n";
+
+/// A board committing each write, with a mount, the notes and control the
+/// plans name, and these changes in `(name, phase, text)`.
+fn plans_board(changes: &[(&str, &str, &str)]) -> Changes {
+    let board = Changes::new();
+    board.mount_x(&[("README.md", "x\n")]);
+    let mut config = board.read(".board/board.json");
+    config["commit_on_put"] = json!(true);
+    board.write(".board/board.json", &config.to_string());
+    for name in ["a", "b", "c", "d"] {
+        board.write(&format!("notes/{name}.md"), "# N\n");
+    }
+    let owed = json!({
+        "$type": "controls/control/v1", "kind": "obligation", "requirement": "Sweep.",
+        "purpose": "p",
+    });
+    board.write("controls/x/owed.json", &owed.to_string());
+    for (name, phase, text) in changes {
+        board.write(&format!("changes/{name}/plans/1.md"), text);
+        let plan = typed(
+            "changes/plan/v1",
+            &json!({"text": format!("/changes/{name}/plans/1.md"), "uses": ["/notes/a.md"], "paths": ["/repos/x/**"]}),
+        );
+        board.write(&format!("changes/{name}/plans/1.json"), &plan);
+        let change = json!({
+            "$type": "changes/change/v2", "title": format!("Change {name}"), "mount": "/repos/x",
+            "flow": "/flows/development/none", "phase": phase, "surfaced": [], "task": TASK,
+            "plan": format!("/changes/{name}/plans/1"), "touched": "2026-01-02",
+        });
+        board.write(&format!("changes/{name}.json"), &change.to_string());
+    }
+    commit_all(&board);
+    board
+}
+
+/// The plan record the change at `name` now names, and its text.
+fn current_plan(board: &Changes, name: &str) -> (Value, String) {
+    let change = board.read(&format!("changes/{name}.json"));
+    let path = change["plan"]
+        .as_str()
+        .unwrap()
+        .trim_start_matches('/')
+        .to_owned();
+    let plan = board.read(&format!("{path}.json"));
+    let text = board.text(plan["text"].as_str().unwrap().trim_start_matches('/'));
+    (plan, text)
+}
+
+#[test]
+fn migrate_with_plans_lists_what_it_would_write_and_writes_nothing_without_apply() {
+    let board = plans_board(&[
+        ("good", "plan", OWED_TEXT),
+        ("over", "done", OWED_TEXT),
+        ("plain", "plan", "# T\n\n## Problem\n\nA.\n"),
+        (
+            "odd",
+            "plan",
+            "# T\n\n### Considered\n\n- Using a Glob: rejected, because.\n",
+        ),
+    ]);
+    let before = board.board.head().unwrap().id;
+    let dry = board.call("migrate", &json!({"plans": true}));
+    let plans = &dry["plan_fields"];
+    assert_eq!(plans["applied"], false);
+    assert_eq!(plans["changes"], json!(["/changes/good"]));
+    assert_eq!(
+        (&plans["total"], &plans["considered"], &plans["owed"]),
+        (&json!(1), &json!(4), &json!(1))
+    );
+    assert_eq!(plans["unread"][0]["path"], "/changes/odd");
+    assert_eq!(plans["unread"][0]["code"], "changes::migrate::unread");
+    assert_eq!(
+        plans["unread"][0]["line"],
+        "- Using a Glob: rejected, because."
+    );
+    assert_eq!(board.board.head().unwrap().id, before);
+    assert_eq!(
+        board.read("changes/good.json")["plan"],
+        "/changes/good/plans/1"
+    );
+}
+
+#[test]
+fn migrate_with_plans_writes_a_new_snapshot_in_one_bulk_commit_and_a_second_apply_writes_nothing() {
+    let board = plans_board(&[
+        ("good", "plan", OWED_TEXT),
+        ("over", "done", OWED_TEXT),
+        (
+            "odd",
+            "plan",
+            "# T\n\n### Considered\n\n- Using a Glob: rejected, because.\n",
+        ),
+        (
+            "gone",
+            "plan",
+            "# T\n\n### Considered\n\n- /notes/none.md: no longer there.\n",
+        ),
+    ]);
+    let before = board.board.head().unwrap().id;
+    let applied = board.call("migrate", &json!({"plans": true, "apply": true}));
+    assert_eq!(applied["plan_fields"]["total"], 1);
+    let head = board.board.head().unwrap();
+    assert_eq!(head.parents, [before]);
+    assert!(
+        head.message.ends_with("\n\nBoard-Bulk: migrate plans"),
+        "{}",
+        head.message
+    );
+    let (plan, text) = current_plan(&board, "good");
+    assert_eq!(
+        plan["considered"],
+        json!([
+            {"records": ["/notes/a.md"], "why": "about the old flow."},
+            {"records": ["/notes/b.md", "/notes/c.md"], "why": "both unrelated."},
+            {"records": ["/notes/d.md", "/notes/a.md"], "why": "Unrelated"},
+            {"records": ["/notes/b.md", "/notes/c.md"], "why": "Nothing here"},
+        ])
+    );
+    assert_eq!(
+        plan["owed"],
+        json!([{"control": "/controls/x/owed", "why": "owed to the next step."}])
+    );
+    assert_eq!(plan["uses"], json!(["/notes/a.md"]));
+    assert_eq!(plan["paths"], json!(["/repos/x/**"]));
+    assert_eq!(text, "# T\n\n## Problem\n\nA.\n\n## Outcome\n\nB.\n");
+    let change = board.read("changes/good.json");
+    assert_eq!(
+        change["touched"], "2026-01-02",
+        "a migration is not an edit"
+    );
+    assert_eq!(board.code(change["plan"].as_str().unwrap()), None);
+    assert_eq!(
+        board.read("changes/over.json")["plan"],
+        "/changes/over/plans/1"
+    );
+    assert_eq!(
+        board.read("changes/odd.json")["plan"],
+        "/changes/odd/plans/1"
+    );
+    assert_eq!(
+        board.read("changes/gone.json")["plan"],
+        "/changes/gone/plans/1"
+    );
+    let again = board.call("migrate", &json!({"plans": true, "apply": true}));
+    assert_eq!(again["plan_fields"]["total"], 0);
+    assert_eq!(board.board.head().unwrap().id, head.id);
+}

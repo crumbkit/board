@@ -1,7 +1,7 @@
 //! The record type the plugin ships. Its schema is generated from this
 //! struct; the file under `types/` is that schema, committed.
 
-use board_plugin::shape::{Record, Ref, Subject, Tag};
+use board_plugin::shape::{Prose, Record, Ref, Subject, Tag};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -34,8 +34,11 @@ pub struct EvalRecord {
     pub suites: Option<Vec<Ref<Suite>>>,
     /// The runs its verdict rests on.
     pub runs: Option<Vec<Ref<Run>>>,
-    /// The decision this eval informs.
-    pub decision: Option<String>,
+    /// The decision the eval informed, once it is recorded.
+    pub decision: Option<Ref<Decision>>,
+    /// The choice the eval informs, in words, such as "whether PR 26 merges".
+    #[schemars(with = "Option<Prose>")]
+    pub informs: Option<String>,
     /// What the runs show.
     pub verdict: Option<Verdict>,
     /// What was concluded, in words.
@@ -64,6 +67,14 @@ pub enum Run {}
 
 impl Record for Run {
     const TYPE: &'static str = "runs/run/v1";
+}
+
+/// A `plans/decision/v1` record, which the plans plugin ships.
+#[derive(Debug)]
+pub enum Decision {}
+
+impl Record for Decision {
+    const TYPE: &'static str = "plans/decision/v1";
 }
 
 /// Where an eval stands.

@@ -74,9 +74,19 @@
       "format": "date-time",
       "type": "string"
     },
+    "blocked_work": {
+      "description": "What cannot proceed, in words, when no change names it or the change\nneeds more detail.",
+      "type": "string",
+      "x-board-prose": true
+    },
     "blocks": {
-      "description": "What cannot proceed until the question is answered.",
-      "type": "string"
+      "description": "The change that cannot proceed until the question is answered.",
+      "format": "board-ref",
+      "type": "string",
+      "x-board-type": [
+        "changes/change/v1",
+        "changes/change/v2"
+      ]
     },
     "by": {
       "$ref": "#/$defs/Actor",

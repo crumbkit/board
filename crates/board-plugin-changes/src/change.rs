@@ -394,6 +394,29 @@ pub(crate) fn current(host: &dyn Host, change: &ChangeRecord) -> Result<Current,
     )
 }
 
+/// The records the change's current plan lists in `considered` and the
+/// obligations it lists in `owed`, none when it names no plan Board reads.
+pub(crate) fn listed(
+    host: &dyn Host,
+    change: &ChangeRecord,
+) -> Result<(Vec<String>, Vec<String>), PluginError> {
+    let Some(plan) = &change.plan else {
+        return Ok((Vec::new(), Vec::new()));
+    };
+    Ok(
+        plan_at(host, plan)?.map_or((Vec::new(), Vec::new()), |(record, _)| {
+            (
+                (record.considered.into_iter().flatten())
+                    .flat_map(|each| each.records)
+                    .collect(),
+                (record.owed.into_iter().flatten())
+                    .map(|each| each.control)
+                    .collect(),
+            )
+        }),
+    )
+}
+
 /// Each entry `refs` reaches, as its type and body, in their order, and
 /// each unreadable one with the code that says why.
 pub(crate) fn referenced(host: &dyn Host, refs: &[String]) -> Result<Referenced, PluginError> {

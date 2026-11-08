@@ -11,7 +11,7 @@ use crate::board;
 use crate::brief::{self, brief_of};
 use crate::change::{branch_of, line, prototype_of, read, touch};
 use crate::phases::final_phase;
-use crate::plan::plan_lines;
+use crate::plan::{Planned, plan_lines};
 use crate::pr::quote;
 use crate::records::{BUILD, ChangeRecord, DONE, DROPPED, Kind, PrototypeRecord, is_final};
 use crate::repo::exists;
@@ -171,14 +171,8 @@ pub(crate) fn prototype(host: &dyn Host, input: &Value) -> Result<Value, PluginE
     let task = add_task(host, &title, serde_json::Map::new(), Some(&asked.parent))?;
     change.task = Some(task.clone());
     let plan = question_plan(&title, &asked.question);
-    let (record, mut lines) = plan_lines(
-        host.settings().now,
-        &path,
-        &plan,
-        Vec::new(),
-        Vec::new(),
-        None,
-    );
+    let (record, mut lines) =
+        plan_lines(host.settings().now, &path, &plan, Planned::default(), None);
     change.plan = Some(record);
     lines.push(line(&path, "none", &touch(host, change)));
     lines.push(json!({"path": format!("{path}/prototype"), "expect": "none", "record": prototype}));
