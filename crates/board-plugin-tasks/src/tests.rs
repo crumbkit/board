@@ -83,7 +83,7 @@ fn the_manifest_parses_as_a_built_in_one_and_describes_the_plugin_with_the_skill
 }
 
 #[test]
-fn every_write_but_move_says_it_syncs_pushes_and_sets_reviewed() {
+fn every_write_but_done_and_move_says_it_syncs_pushes_and_sets_reviewed() {
     let manifest = super::manifest();
     for capability in manifest["capabilities"].as_array().unwrap() {
         let name = capability["name"].as_str().unwrap();
@@ -91,9 +91,18 @@ fn every_write_but_move_says_it_syncs_pushes_and_sets_reviewed() {
         let stamps = description.ends_with(WRITES);
         assert_eq!(
             stamps,
-            !["available", "tree", "move"].contains(&name),
+            !["available", "tree", "done", "move"].contains(&name),
             "{name}"
         );
+        if name == "done" {
+            assert!(
+                description.ends_with(
+                    " It syncs the task's repo first and pushes after, unless --push false makes \
+                     it commit in the clone alone, and sets reviewed."
+                ),
+                "{description}"
+            );
+        }
     }
 }
 
@@ -145,6 +154,7 @@ fn every_input_property_carries_a_sentence_that_says_what_it_means() {
         "claim.program",
         "claim.session",
         "done.path",
+        "done.push",
         "defer.path",
         "defer.until",
         "drop.path",

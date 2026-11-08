@@ -41,7 +41,7 @@ pub(crate) struct Input {
         regex(pattern = "^/"),
         extend("format" = "board-path"),
         description = "The task or project the prototype's task goes under, such as \
-                       /repos/notes-personal/tasks/<slug>.md."
+                       /repos/notes/tasks/<slug>.md."
     )]
     parent: String,
     #[schemars(
@@ -171,7 +171,14 @@ pub(crate) fn prototype(host: &dyn Host, input: &Value) -> Result<Value, PluginE
     let task = add_task(host, &title, serde_json::Map::new(), Some(&asked.parent))?;
     change.task = Some(task.clone());
     let plan = question_plan(&title, &asked.question);
-    let (record, mut lines) = plan_lines(host.settings().now, &path, &plan, Vec::new(), Vec::new());
+    let (record, mut lines) = plan_lines(
+        host.settings().now,
+        &path,
+        &plan,
+        Vec::new(),
+        Vec::new(),
+        None,
+    );
     change.plan = Some(record);
     lines.push(line(&path, "none", &touch(host, change)));
     lines.push(json!({"path": format!("{path}/prototype"), "expect": "none", "record": prototype}));

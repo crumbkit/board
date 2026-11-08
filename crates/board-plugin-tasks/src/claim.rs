@@ -7,7 +7,7 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 
-use crate::write::{Values, stamped};
+use crate::write::{Landing, Values, stamped};
 use crate::{PLUGIN, refusal};
 
 /// The task to claim, and who claims it.
@@ -94,7 +94,7 @@ pub(crate) fn claim(host: &dyn Host, input: &Value) -> Result<Value, PluginError
         }
         Ok(vec![("owner", Some(owner.clone()))])
     };
-    stamped(host, &given.path, &change, false)
+    stamped(host, &given.path, &change, Landing::open())
 }
 
 /// The owner that `owner` or the parts `[session, program, person, agent]`

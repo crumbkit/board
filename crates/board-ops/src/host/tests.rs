@@ -738,22 +738,28 @@ fn plugin_find_leaves_out_a_built_in_plugin_installed_again_and_finds_one_instal
 }
 
 #[test]
-fn a_board_refused_error_adds_the_refusals_hint_and_leaves_out_an_empty_one() {
+fn a_board_refused_error_carries_the_refusals_hint_and_one_without_a_hint_says_how_to_see_it() {
     let mut refusal = Refusal::new(
         Code::PathMalformed,
         "the path is bad",
         &board_model::Fields::default(),
     );
+    let code = refusal.code.as_str().to_owned();
+    let message = format!("`board query` refused with {code}: the path is bad");
     refusal.hint = Some("give another path".to_owned());
     let hinted = PluginError::board_refused("fixture", "query", &refusal);
-    refusal.hint = Some(String::new());
-    let empty = PluginError::board_refused("fixture", "query", &refusal);
-    let start = format!(
-        "`board query` refused with {}: the path is bad",
-        refusal.code.as_str()
+    assert_eq!(hinted.code, "fixture::board::refused");
+    assert_eq!(hinted.message, message);
+    assert_eq!(hinted.hint.as_deref(), Some("give another path"));
+    let remedy = format!(
+        "fix what {code} names, then run `board query` on its own to see Board's refusal and its help"
     );
-    assert_eq!(hinted.message, format!("{start}; give another path"));
-    assert_eq!(empty.message, start);
+    for none in [None, Some(String::new())] {
+        refusal.hint = none;
+        let bare = PluginError::board_refused("fixture", "query", &refusal);
+        assert_eq!(bare.message, message);
+        assert_eq!(bare.hint.as_deref(), Some(remedy.as_str()));
+    }
 }
 
 #[test]

@@ -729,6 +729,11 @@ const SHARED: &[(&str, &str, &[&str])] = &[
         "crates/board-repos/src/writing.rs",
         &["repo::not_synced"],
     ),
+    (
+        "landed_with",
+        "crates/board-repos/src/writing.rs",
+        &["repo::not_pushed"],
+    ),
 ];
 
 /// Whether `source` builds `<plugin>::<suffix>`: in one format string, as

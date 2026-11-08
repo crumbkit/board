@@ -430,6 +430,111 @@ fn done_in_a_mount_pushes_the_commit_and_moves_the_pin() {
 }
 
 #[test]
+fn done_with_push_false_commits_in_the_clone_and_leaves_the_remote_and_the_next_call_pushes_it() {
+    let tasks = Tasks::new();
+    let work = tasks.mounted();
+    let remote = tasks.beside.path().join("work.git");
+    let before = git(&remote, &["rev-parse", "main"]);
+    let output = tasks
+        .call(
+            "done",
+            &["--path", "/repos/work/tasks/report.md", "--push", "false"],
+        )
+        .unwrap();
+    let head = git(&work, &["rev-parse", "HEAD"]);
+    assert_eq!(
+        (
+            &output["status"],
+            &output["commit"],
+            &output["unsynced"],
+            &output["unpushed"]
+        ),
+        (
+            &json!("done"),
+            &json!(head),
+            &Value::Null,
+            &json!("tasks::repo::not_pushed")
+        )
+    );
+    assert_eq!(git(&remote, &["rev-parse", "main"]), before);
+    assert!(git(&work, &["show", "HEAD:tasks/report.md"]).contains("status: \"done\""));
+    let pointer: Value = serde_json::from_str(&tasks.read("repos/work.json")).unwrap();
+    assert_eq!(pointer["commit"], json!(head));
+    let output = tasks
+        .call("reviewed", &["--path", "/repos/work/tasks/report.md"])
+        .unwrap();
+    assert_eq!(output["unpushed"], Value::Null);
+    let pushed = git(&remote, &["show", "main:tasks/report.md"]);
+    assert_eq!(pushed.matches("status: \"done\"").count(), 1);
+}
+
+/// The work clone of `tasks.mounted()` holding a commit its remote lacks,
+/// and that commit.
+fn unpushed_commit(tasks: &Tasks) -> (PathBuf, String) {
+    let work = tasks.mounted();
+    write_file(&work.join("daily/2026-11-07.md"), "Offline note.\n");
+    git(&work, &["add", "daily/2026-11-07.md"]);
+    git(&work, &["commit", "-q", "-m", "an offline note"]);
+    let earlier = git(&work, &["rev-parse", "HEAD"]);
+    (work, earlier)
+}
+
+#[test]
+fn done_with_push_false_leaves_an_earlier_unpushed_commit_unpushed() {
+    let tasks = Tasks::new();
+    let (work, earlier) = unpushed_commit(&tasks);
+    let remote = tasks.beside.path().join("work.git");
+    let before = git(&remote, &["rev-parse", "main"]);
+    let output = tasks
+        .call(
+            "done",
+            &["--path", "/repos/work/tasks/report.md", "--push", "false"],
+        )
+        .unwrap();
+    assert_eq!(
+        (&output["unsynced"], &output["unpushed"]),
+        (&Value::Null, &json!("tasks::repo::not_pushed"))
+    );
+    assert_eq!(git(&remote, &["rev-parse", "main"]), before);
+    assert_eq!(git(&work, &["rev-parse", "HEAD~1"]), earlier);
+}
+
+#[test]
+fn done_without_the_flag_pushes_an_earlier_unpushed_commit_and_its_own() {
+    let tasks = Tasks::new();
+    let (work, earlier) = unpushed_commit(&tasks);
+    let remote = tasks.beside.path().join("work.git");
+    let output = tasks
+        .call("done", &["--path", "/repos/work/tasks/report.md"])
+        .unwrap();
+    assert_eq!(
+        (&output["unsynced"], &output["unpushed"]),
+        (&Value::Null, &Value::Null)
+    );
+    let head = git(&work, &["rev-parse", "HEAD"]);
+    assert_eq!(git(&remote, &["rev-parse", "main"]), head);
+    assert_eq!(git(&remote, &["rev-parse", "main~1"]), earlier);
+}
+
+#[test]
+fn done_with_push_true_pushes_as_done_without_the_flag_does() {
+    let tasks = Tasks::new();
+    let work = tasks.mounted();
+    let output = tasks
+        .call(
+            "done",
+            &["--path", "/repos/work/tasks/report.md", "--push", "true"],
+        )
+        .unwrap();
+    let head = git(&work, &["rev-parse", "HEAD"]);
+    assert_eq!(
+        (&output["commit"], &output["unpushed"]),
+        (&json!(head), &Value::Null)
+    );
+    assert_eq!(git(&work, &["rev-parse", "origin/main"]), head);
+}
+
+#[test]
 fn a_write_after_a_sync_that_cannot_reach_the_remote_is_committed_and_the_next_call_pushes_it() {
     let tasks = Tasks::new();
     let work = tasks.mounted();
