@@ -1206,6 +1206,27 @@ fn next_names_the_plan_input_where_its_instruction_asks_for_a_plan_and_nowhere_e
 }
 
 #[test]
+fn next_in_review_says_to_resend_a_plan_without_paths_and_asks_a_change_without_one_for_a_new_one()
+{
+    let board = Changes::new();
+    board.change_at(
+        "changes/t.json",
+        "review",
+        &json!({"plan": "/changes/t/plan.md"}),
+    );
+    board.write("changes/t/plan.md", "# T\n");
+    let said = board.call("next", &path())["instruction"].clone();
+    let said = said.as_str().unwrap();
+    assert!(said.contains(REVISED_PLAN_USAGE), "{said}");
+    assert!(!said.contains(NEW_PLAN_USAGE), "{said}");
+    board.change_at("changes/u.json", "review", &json!({}));
+    let said = board.call("next", &json!({"path": "/changes/u"}))["instruction"].clone();
+    let said = said.as_str().unwrap();
+    assert!(said.contains(NEW_PLAN_USAGE), "{said}");
+    assert!(!said.contains(REVISED_PLAN_USAGE), "{said}");
+}
+
+#[test]
 fn next_in_review_says_to_resend_the_current_plan_since_changes_plan_replaces_it() {
     let board = Changes::new();
     board.change_at("changes/t.json", "review", &json!({}));

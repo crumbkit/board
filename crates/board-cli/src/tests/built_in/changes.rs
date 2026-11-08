@@ -1001,8 +1001,7 @@ fn refs_finds_the_changes_that_reference_a_ticket_and_not_one_that_does_not() {
 const NEW_PLAN_USAGE: &str =
     "Pipe `changes.plan` JSON on stdin with the fields `path`, `text`, `uses` and `paths`.";
 
-/// What `next` adds where its instruction asks to revise a plan that
-/// `changes.plan` wrote with paths.
-const REVISED_PLAN_USAGE: &str = "`changes.plan` replaces the plan, so pipe it JSON on stdin \
-                                  that resends the current `text`, `uses` and every path, kept \
-                                  and added.";
+/// What `next` adds where its instruction asks for a plan and the change
+/// already has one.
+const REVISED_PLAN_USAGE: &str =
+    "`changes.plan` replaces the plan: resend its `text`, `uses` and every path.";

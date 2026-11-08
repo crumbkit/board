@@ -196,13 +196,13 @@ fn instruction(observed: &Observed) -> String {
 }
 
 /// `said` with the fields `changes.plan` takes on stdin, when `said` asks
-/// for a plan. `changes.plan` replaces the plan, so once it has written one
-/// with paths, `said` says to resend the current text, uses and paths.
+/// for a plan. `changes.plan` replaces the plan, so for a change that has
+/// one, `said` says to resend the current text, uses and paths.
 fn with_plan_usage(observed: &Observed, said: String) -> String {
     if !said.contains("changes.plan") {
         return said;
     }
-    let usage = if observed.planned.is_empty() {
+    let usage = if observed.change.plan.is_none() {
         NEW_PLAN_USAGE
     } else {
         REVISED_PLAN_USAGE
@@ -213,10 +213,9 @@ fn with_plan_usage(observed: &Observed, said: String) -> String {
 /// What an instruction that asks for a new plan ends with.
 const NEW_PLAN_USAGE: &str =
     "Pipe `changes.plan` JSON on stdin with the fields `path`, `text`, `uses` and `paths`.";
-/// What an instruction that asks to revise a plan with paths ends with.
-const REVISED_PLAN_USAGE: &str = "`changes.plan` replaces the plan, so pipe it JSON on stdin \
-                                  that resends the current `text`, `uses` and every path, kept \
-                                  and added.";
+/// What an instruction that asks for a plan ends with when the change has one.
+const REVISED_PLAN_USAGE: &str =
+    "`changes.plan` replaces the plan: resend its `text`, `uses` and every path.";
 
 /// The text of the change's plan, or none when it names none or nothing is there.
 pub(crate) fn plan_text(

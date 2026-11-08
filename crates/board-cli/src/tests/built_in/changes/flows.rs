@@ -455,9 +455,12 @@ fn start_lists_ten_obligations_on_the_mount_and_counts_the_rest() {
 }
 
 #[test]
-fn next_on_a_small_change_in_build_names_the_plan_input() {
+fn next_on_a_small_change_in_build_says_to_resend_the_plan_start_wrote() {
     let board = mounted();
     assert_eq!(started(&board, "A", &json!({"flow": "small"})).0, "small");
     let said = board.call("next", &json!({"path": "/changes/a"}))["instruction"].clone();
-    assert!(said.as_str().unwrap().contains(NEW_PLAN_USAGE), "{said}");
+    assert!(
+        said.as_str().unwrap().contains(REVISED_PLAN_USAGE),
+        "{said}"
+    );
 }
