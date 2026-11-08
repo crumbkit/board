@@ -18,7 +18,7 @@ fn removing(
     removing: Removing,
     unmatched: Unmatched,
 ) -> Result<PutReport, PutError> {
-    open(scenario).remove_waiting(&path(at), removing, unmatched, LOCK_WAIT)
+    open(scenario).remove_waiting(&path(at), removing, unmatched, None, LOCK_WAIT)
 }
 
 fn paths(report: &PutReport) -> Vec<String> {
@@ -71,6 +71,29 @@ fn a_removal_commits_only_its_own_path_onto_head() {
     assert_eq!(head.message, "board rm /tasks/a");
     assert_eq!(head.files.keys().collect::<Vec<_>>(), ["tasks/b.json"]);
     assert_eq!(file(&scenario, "notes.md").unwrap(), b"not committed");
+}
+
+#[test]
+fn a_removal_given_a_message_commits_with_it_as_written_and_one_without_keeps_the_default() {
+    let scenario = committing();
+    put(&scenario, "/tasks/a", Expect::Absent, &task("")).unwrap();
+    put(&scenario, "/tasks/b", Expect::Absent, &task("")).unwrap();
+    let message = "Close the docs obligation\n\nThe docs sweep landed in #12.";
+    let report = open(&scenario)
+        .remove_waiting(
+            &path("/tasks/a"),
+            Removing::File(Expect::Any),
+            Unmatched::Refuse,
+            Some(message),
+            LOCK_WAIT,
+        )
+        .unwrap();
+    let head = scenario.head().unwrap();
+    assert_eq!(report.commit, Some(head.id));
+    assert_eq!(head.message, message);
+    assert_eq!(head.files.keys().collect::<Vec<_>>(), ["tasks/b.json"]);
+    rm(&scenario, "/tasks/b", Expect::Any).unwrap();
+    assert_eq!(scenario.head().unwrap().message, "board rm /tasks/b");
 }
 
 #[test]

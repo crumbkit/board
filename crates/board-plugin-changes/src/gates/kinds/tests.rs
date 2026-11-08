@@ -217,8 +217,8 @@ fn an_obligation_on_the_plans_paths_is_missing_and_one_named_under_the_escape_he
     assert_eq!(
         check.remedy.unwrap(),
         "Do the work each obligation names. Once the work is committed, delete each obligation \
-         with `board rm <path>`, which commits the deletion; merging the work does not clear \
-         it. List an obligation the change leaves owed under the plan's escape heading."
+         with `board rm <path> -m '<message naming the work>'`; merging the work does not \
+         clear it. List an obligation the change leaves owed under the plan's escape heading."
     );
     found.plan = Some(
         "# T\n\n## Obligations left owed\n\n- /controls/x/docs-owed, owed to the next step.\n"
