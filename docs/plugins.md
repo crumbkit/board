@@ -199,15 +199,8 @@ mounted board's plugins provide none. A built-in plugin's name runs as
 `board call` even when not enabled, so its refusal shows. `board -h`
 names up to six plugins; `board tasks -h` lists capabilities.
 
-A first word is a built-in command first, then an enabled plugin's name, then
-an alias. A plugin named like a built-in command runs only through
-`board call`, so Board's generic hints, which may name any plugin, print that
-form. A built-in command never reads a manifest: Board reads them only after
-clap refuses the first word, or for help. `board plugin enable` refuses an
-alias that is a built-in command, or another enabled plugin's name or alias,
-with `board::plugin::alias_conflict`. Running an alias two enabled plugins share is refused with the same
-code; the hint names the `board call` line. The capability
-comes right after the plugin's word; a flag in its place is a usage error.
+[plugins/calling/commands.md](plugins/calling/commands.md) says how a word
+resolves and what is refused.
 
 ## Skills
 
