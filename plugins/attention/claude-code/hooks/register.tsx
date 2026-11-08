@@ -237,7 +237,6 @@ export const register: Register = on => {
     }
     const chosen = await read($, selected)
     const order = answer.orders.find(d => d.path === chosen)
-    const left = answer.leftOut.find(l => l.path === chosen)
     const all = (
       <Button key="all-orders" label="All pinned orders" dimColor onPress={() => update($, selected, () => null)} />
     )
@@ -268,17 +267,6 @@ export const register: Register = on => {
               <Text>{order.context_text}</Text>
             </Box>
           )}
-        </Box>
-      )
-    }
-    if (left !== undefined) {
-      return (
-        <Box flexDirection="column">
-          <Text bold>{left.path}</Text>
-          <Text color="red">
-            Not in this session's context: {left.message} ({left.code}).
-          </Text>
-          <Box marginTop={1}>{all}</Box>
         </Box>
       )
     }
