@@ -51,8 +51,8 @@ these steps there.
    `/suites/params-<name>`. Decide from `enough` whether there is enough
    data.
 4. Write the value record with `board put /params/values/<name>`. Give
-   `heuristic` as `/params/heuristics/<name>`, the `value` the method
-   derives, `scopes` for each repository or project with its own value,
+   `heuristic` as `<name>`, the `value` the method derives, `scopes` for each
+   repository or project with its own value,
    `data` as `enough` or `too-little`, `evidence` as the run, `derived` as
    the current UTC time and `by` as yourself. Keep every number within the
    heuristic's `bounds`, because `board put` does not check them and readers

@@ -102,8 +102,11 @@ pub struct ValueRecord {
     /// The record's type.
     #[serde(rename = "$type")]
     pub tag: Tag<Self>,
-    /// The heuristic run, `/params/heuristics/<name>`.
-    pub heuristic: Ref<HeuristicRecord>,
+    /// The name of the heuristic run, which is this value's own `<name>`.
+    /// It is a name and not a reference because a shipped heuristic has no
+    /// record to refer to.
+    #[schemars(with = "Slug")]
+    pub heuristic: String,
     /// The value for any scope `scopes` does not list.
     pub value: f64,
     /// The value for each repository or project, by its path, such as

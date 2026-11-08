@@ -2,7 +2,7 @@
 //! default and why it applies.
 
 use board_ops::{Host, PluginError};
-use board_plugin::shape::{Prose, Ref, Slug, Timestamp};
+use board_plugin::shape::{Ref, Slug, Summary, Timestamp};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
@@ -74,7 +74,7 @@ pub enum Reason {
 #[serde(deny_unknown_fields)]
 pub struct Warning {
     pub code: WarningCode,
-    #[schemars(with = "Prose")]
+    #[schemars(with = "Summary")]
     pub message: String,
 }
 
@@ -168,7 +168,7 @@ fn default(name: &str, heuristic: &Heuristic, fallback: &Fallback) -> Got {
             Reason::WrongHeuristic,
             warning(
                 WarningCode::WrongHeuristic,
-                format!("the value {name} names the heuristic {named}, not {HEURISTICS}{name}"),
+                format!("the value {name} names the heuristic {named}, not {name}"),
             ),
         ),
     };

@@ -189,7 +189,7 @@ pub(crate) fn usable<'a>(
     let Some(stored) = stored else {
         return Err(Fallback::Missing);
     };
-    if stored.heuristic != format!("{HEURISTICS}{name}") {
+    if stored.heuristic != name {
         return Err(Fallback::WrongHeuristic {
             named: stored.heuristic.clone(),
         });

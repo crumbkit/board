@@ -40,10 +40,6 @@ To change a shipped heuristic, write a record of the same name at
 `/params/heuristics/<name>`. That record replaces the shipped heuristic of
 its name and leaves the other shipped one in place.
 
-A shipped heuristic has no record, so `board check` reports a value that
-references one with `board::ref::dangling` until a record of that name exists.
-`board put` writes such a value and `params.get` reads it.
-
 ## The value record
 
 A value is a `params/value/v1` record at `/params/values/<name>`, with the
@@ -52,7 +48,7 @@ same `<name>` as its heuristic.
 ```json
 {
   "$type": "params/value/v1",
-  "heuristic": "/params/heuristics/overflow-agent-grace",
+  "heuristic": "overflow-agent-grace",
   "value": 100,
   "scopes": {"/repos/board": 180},
   "data": "enough",
@@ -62,8 +58,10 @@ same `<name>` as its heuristic.
 }
 ```
 
-- `heuristic` references the heuristic run, and `evidence` the run of
-  `/suites/params-<name>` that holds the inputs measured.
+- `heuristic` is the name of the heuristic run, which is the value's own
+  `<name>`. It is a name because a shipped heuristic has no record to refer
+  to. `evidence` references the run of `/suites/params-<name>` that holds the
+  inputs measured.
 - `value` applies to any scope that `scopes` does not list. `scopes` maps
   the path of a repository or project to its own value.
 - `data` is `enough` or `too-little`. With `too-little`, readers use the
@@ -97,7 +95,7 @@ measure as `check`.
   | `missing` | No value record exists. | `params::value::missing` |
   | `too-little` | The last run found too little data. | none |
   | `out-of-bounds` | A number in the record is outside the bounds. | `params::value::out_of_bounds` |
-  | `wrong-heuristic` | `heuristic` is not `/params/heuristics/<name>`. | `params::value::wrong_heuristic` |
+  | `wrong-heuristic` | `heuristic` is not the value's own `<name>`. | `params::value::wrong_heuristic` |
 
 - A name with no heuristic, shipped or stored, is refused with
   `params::heuristic::not_found`, because there is no default to give. The

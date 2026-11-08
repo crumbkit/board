@@ -111,7 +111,7 @@ fn the_shipped_heuristics_are_admitted_with_the_start_default_bounds_and_check_t
 fn value() -> Value {
     json!({
         "$type": "params/value/v1",
-        "heuristic": "/params/heuristics/overflow-agent-grace",
+        "heuristic": "overflow-agent-grace",
         "value": 120,
         "scopes": {"/repos/board": 240},
         "data": "enough",
@@ -133,6 +133,13 @@ fn the_value_schema_refuses_a_bad_data_scope_or_time_and_admits_their_twins() {
         (
             with("data", json!("some")),
             with("data", json!("too-little")),
+        ),
+        (
+            with(
+                "heuristic",
+                json!("/params/heuristics/overflow-agent-grace"),
+            ),
+            with("heuristic", json!("overflow-agent-grace")),
         ),
         (
             with("scopes", json!({"repos/board": 1})),
@@ -157,7 +164,7 @@ fn the_value_schema_refuses_a_bad_data_scope_or_time_and_admits_their_twins() {
 }
 
 #[test]
-fn the_value_schema_finds_the_heuristic_and_the_evidence_with_their_types() {
+fn the_value_schema_finds_the_evidence_as_its_only_reference() {
     let schema = schema(ValueRecord::TYPE);
     let found: Vec<(String, Option<Vec<String>>)> = (schema.references(&value()).into_iter())
         .map(|reference| {
@@ -168,13 +175,7 @@ fn the_value_schema_finds_the_heuristic_and_the_evidence_with_their_types() {
         .collect();
     assert_eq!(
         found,
-        [
-            ("/evidence".to_owned(), Some(vec!["runs/run/v1".to_owned()])),
-            (
-                "/heuristic".to_owned(),
-                Some(vec!["params/heuristic/v1".to_owned()])
-            ),
-        ]
+        [("/evidence".to_owned(), Some(vec!["runs/run/v1".to_owned()]))]
     );
 }
 
@@ -251,7 +252,7 @@ fn bounded(min: f64, max: f64) -> Heuristic {
     }
 }
 
-const OWN: &str = "/params/heuristics/half-life";
+const OWN: &str = "half-life";
 
 #[test]
 fn a_value_outside_its_bounds_falls_back_and_one_at_either_bound_is_used() {
@@ -302,7 +303,7 @@ fn a_scope_outside_the_bounds_makes_the_whole_record_fall_back_and_its_twin_insi
 #[test]
 fn a_value_naming_another_heuristic_falls_back_and_its_twin_naming_its_own_is_used() {
     let heuristic = bounded(3.0, 28.0);
-    let other = "/params/heuristics/archive-after";
+    let other = "archive-after";
     assert_eq!(
         usable("half-life", &heuristic, Some(&stored(7.0, other))).unwrap_err(),
         Fallback::WrongHeuristic {
@@ -328,7 +329,7 @@ fn no_record_is_missing_and_too_little_data_is_judged_after_the_heuristic_and_be
         usable("half-life", &heuristic, Some(&little(2.0, OWN))).unwrap_err(),
         Fallback::TooLittle
     );
-    let other = "/params/heuristics/archive-after";
+    let other = "archive-after";
     assert_eq!(
         usable("half-life", &heuristic, Some(&little(7.0, other))).unwrap_err(),
         Fallback::WrongHeuristic {

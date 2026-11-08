@@ -40,7 +40,7 @@ fn value(name: &str, derived: &str, fields: &Value) -> String {
     record(
         json!({
             "$type": "params/value/v1",
-            "heuristic": format!("/params/heuristics/{name}"),
+            "heuristic": name,
             "value": 7,
             "data": "enough",
             "evidence": format!("/suites/params-{name}/runs/a"),
@@ -157,10 +157,7 @@ fn a_value_naming_another_heuristic_gives_the_default_and_comes_due_and_its_twin
  {
     let board = board();
     board.write("params/heuristics/archive-after.json", &heuristic(NEVER));
-    write_half_life(
-        &board,
-        &json!({"heuristic": "/params/heuristics/archive-after"}),
-    );
+    write_half_life(&board, &json!({"heuristic": "archive-after"}));
     assert_eq!(
         half_life(&board),
         json!({
@@ -170,7 +167,7 @@ fn a_value_naming_another_heuristic_gives_the_default_and_comes_due_and_its_twin
             "reason": "wrong-heuristic",
             "warning": {
                 "code": "params::value::wrong_heuristic",
-                "message": "the value half-life names the heuristic /params/heuristics/archive-after, not /params/heuristics/half-life, so the default 14 applies",
+                "message": "the value half-life names the heuristic archive-after, not half-life, so the default 14 applies",
             },
         })
     );
@@ -242,6 +239,36 @@ fn a_record_overrides_the_shipped_heuristic_of_its_name_and_leaves_the_other_shi
     assert_eq!(answer("overflow-agent-grace"), json!(300.0));
     assert_eq!(answer("overflow-owner-grace"), json!(800.0));
     assert_eq!(board.call("params.due", &[])["checked"], 2);
+}
+
+#[test]
+fn check_reports_nothing_degraded_for_a_value_of_a_shipped_heuristic_with_no_heuristic_record() {
+    let board = Fixture::enabling(&["runs", "params"]);
+    let name = "overflow-agent-grace";
+    board
+        .write(
+            &format!("suites/params-{name}.json"),
+            &json!({
+                "$type": "runs/suite/v1",
+                "subjects": ["crumbkit/board"],
+                "method": "Run the heuristic's check.",
+            })
+            .to_string(),
+        )
+        .write(
+            &format!("suites/params-{name}/runs/a.json"),
+            &check(name, "2026-11-08T00:00:00Z", 0.1),
+        )
+        .write(
+            &format!("params/values/{name}.json"),
+            &value(name, "2026-11-08T00:00:00Z", &json!({"value": 150})),
+        );
+    let checked = board.checked("");
+    assert!(
+        checked.contains_key(&format!("/params/values/{name}")),
+        "{checked:?}"
+    );
+    assert!(checked.values().all(Option::is_none), "{checked:?}");
 }
 
 #[test]
