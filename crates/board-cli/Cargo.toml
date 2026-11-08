@@ -10,7 +10,7 @@ name = "board"
 path = "src/main.rs"
 
 [features]
-default = ["artifacts", "attention", "boundary", "changes", "controls", "evals", "github", "jira", "notes", "plans", "prompts", "requests", "review", "runs", "share", "tasks", "topics"]
+default = ["artifacts", "attention", "boundary", "changes", "controls", "evals", "github", "jira", "notes", "params", "plans", "prompts", "requests", "review", "runs", "share", "tasks", "topics"]
 artifacts = ["board-plugins/artifacts"]
 attention = ["board-plugins/attention"]
 boundary = ["board-plugins/boundary"]
@@ -20,6 +20,7 @@ evals = ["board-plugins/evals"]
 github = ["board-plugins/github"]
 jira = ["board-plugins/jira"]
 notes = ["board-plugins/notes"]
+params = ["board-plugins/params"]
 plans = ["board-plugins/plans"]
 prompts = ["board-plugins/prompts"]
 requests = ["board-plugins/requests"]

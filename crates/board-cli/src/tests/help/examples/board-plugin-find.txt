@@ -48,6 +48,8 @@ github.covers disabled Name the boundaries that cover a git push or gh write fro
 jira.ref disabled Write the issue at /jira/<site>/<key> with its title, read once through acli, unless a record is already there.
 notes.add disabled Sync the notes repo, append text under a `## HH:MM` heading to today's daily note or a topic's note, commit it and push it.
 notes.daily disabled Sync the notes repo and print a day's daily note, unless the note is private.
+params.get disabled A calibrated value for a scope, or its heuristic's default and why the default applies.
+params.due disabled The values an agent should derive again, oldest first: those on the default and those whose latest check failed.
 plans.open disabled The questions under a path whose status is open and that no answer names, oldest first.
 plans.answer disabled Record the owner's answer to an open question. The answer is what marks the question answered; the question's content is left unchanged.
 plans.withdraw disabled Withdraw an open question that no answer names, with the reason, so that plans.open stops listing it.

@@ -15,6 +15,7 @@ evals = ["dep:board-plugin-evals"]
 github = ["dep:board-plugin-github"]
 jira = ["dep:board-plugin-jira"]
 notes = ["dep:board-plugin-notes"]
+params = ["dep:board-plugin-params"]
 plans = ["dep:board-plugin-plans"]
 prompts = ["dep:board-plugin-prompts"]
 requests = ["dep:board-plugin-requests"]
@@ -35,6 +36,7 @@ board-plugin-evals = { workspace = true, optional = true }
 board-plugin-github = { workspace = true, optional = true }
 board-plugin-jira = { workspace = true, optional = true }
 board-plugin-notes = { workspace = true, optional = true }
+board-plugin-params = { workspace = true, optional = true }
 board-plugin-plans = { workspace = true, optional = true }
 board-plugin-prompts = { workspace = true, optional = true }
 board-plugin-requests = { workspace = true, optional = true }

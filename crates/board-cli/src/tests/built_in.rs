@@ -805,6 +805,7 @@ mod evals;
 mod github;
 mod jira;
 mod notes;
+mod params;
 mod plans;
 mod prompts;
 mod review;

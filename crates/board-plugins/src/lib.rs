@@ -23,6 +23,8 @@ pub const BUILT_IN: BuiltIn = BuiltIn(&[
     &board_plugin_jira::Jira,
     #[cfg(feature = "notes")]
     &board_plugin_notes::Notes,
+    #[cfg(feature = "params")]
+    &board_plugin_params::Params,
     #[cfg(feature = "plans")]
     &board_plugin_plans::Plans,
     #[cfg(feature = "prompts")]

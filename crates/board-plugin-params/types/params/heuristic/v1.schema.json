@@ -1,0 +1,154 @@
+{
+  "$defs": {
+    "Bounds": {
+      "additionalProperties": false,
+      "description": "The least and the greatest value a heuristic admits.",
+      "properties": {
+        "max": {
+          "description": "The greatest value admitted.",
+          "format": "double",
+          "type": "number"
+        },
+        "min": {
+          "description": "The least value admitted.",
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "required": [
+        "min",
+        "max"
+      ],
+      "type": "object"
+    },
+    "Check": {
+      "additionalProperties": false,
+      "description": "The check on a value: when `measure` passes `fails_above`, the value is\nwrong.",
+      "properties": {
+        "fails_above": {
+          "description": "The measure above which the value is wrong.",
+          "format": "double",
+          "type": "number"
+        },
+        "measure": {
+          "description": "What the check measures, with the command that computes it.",
+          "type": "string",
+          "x-board-prose": true
+        }
+      },
+      "required": [
+        "measure",
+        "fails_above"
+      ],
+      "type": "object"
+    },
+    "Input": {
+      "additionalProperties": false,
+      "description": "One input of a heuristic.",
+      "properties": {
+        "meaning": {
+          "description": "What the input measures.",
+          "pattern": "^\\S+( \\S+){0,24}$",
+          "type": "string"
+        },
+        "name": {
+          "description": "The input's name, such as `authored-lines-per-day`.",
+          "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+          "type": "string"
+        },
+        "source": {
+          "description": "The command that measures it, and how.",
+          "type": "string",
+          "x-board-prose": true
+        }
+      },
+      "required": [
+        "name",
+        "meaning",
+        "source"
+      ],
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "`params/heuristic/v1`: how an agent derives one calibrated value, at\n`/params/heuristics/<name>`. It names its inputs and its method, the\nestimate the method starts from, the lenient default used without enough\ndata, the bounds a value must keep, and the check that says when the\nvalue is wrong.",
+  "properties": {
+    "$type": {
+      "const": "params/heuristic/v1",
+      "description": "The record's type.",
+      "type": "string"
+    },
+    "bounds": {
+      "$ref": "#/$defs/Bounds",
+      "description": "The least and the greatest value admitted."
+    },
+    "check": {
+      "$ref": "#/$defs/Check",
+      "description": "The measure that says when the value is wrong."
+    },
+    "consumer": {
+      "description": "The plugin that reads the value, such as `controls`.",
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+      "type": "string"
+    },
+    "default": {
+      "description": "The lenient value readers use without enough data.",
+      "format": "double",
+      "type": "number"
+    },
+    "enough": {
+      "description": "What counts as enough data to derive a value.",
+      "type": "string",
+      "x-board-prose": true
+    },
+    "inputs": {
+      "description": "Each input the method reads.",
+      "items": {
+        "$ref": "#/$defs/Input"
+      },
+      "minItems": 1,
+      "type": "array"
+    },
+    "method": {
+      "description": "How to derive the value from the inputs.",
+      "type": "string",
+      "x-board-prose": true
+    },
+    "recheck_after": {
+      "description": "The active days after which the value is due again.",
+      "minimum": 1,
+      "type": "integer"
+    },
+    "start": {
+      "description": "The estimate the method starts from.",
+      "format": "double",
+      "type": "number"
+    },
+    "summary": {
+      "description": "What the value is for.",
+      "pattern": "^\\S+( \\S+){0,24}$",
+      "type": "string"
+    },
+    "unit": {
+      "description": "The value's unit, such as `active-days` or `changed-lines`.",
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "$type",
+    "summary",
+    "unit",
+    "inputs",
+    "method",
+    "start",
+    "default",
+    "bounds",
+    "enough",
+    "check",
+    "recheck_after",
+    "consumer"
+  ],
+  "title": "HeuristicRecord",
+  "type": "object"
+}
