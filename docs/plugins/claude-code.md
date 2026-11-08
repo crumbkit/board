@@ -22,6 +22,9 @@ says what it writes.
 The attention plugin's mod, `board-attention`, puts the pinned orders in
 each session and opens the signing window for an order an agent drafted;
 [claude-code/attention.md](claude-code/attention.md) says what it runs.
+A change to a mod raises the `version` in its `plugin.json`, because
+`claude plugin update` installs only a new version; the `mods` workflow fails a
+pull request that changes a mod without raising it.
 Four mods share one row of badges above the prompt;
 [claude-code/band.md](claude-code/band.md) says what each shows.
 The github plugin's mod, `board-github`, refuses raw `git push` and `gh`
