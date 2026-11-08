@@ -262,12 +262,24 @@ const BRIEF_GOLDEN: &str = concat!(
 )]
 #[test]
 fn the_brief_an_agent_runs_is_the_golden_the_write_guard_tests_read() {
+    // Every change `start` writes has a plan, so the fixture has one too.
+    // Its record is at plans/1, so the brief names no stamped plan file and
+    // nothing in it depends on the machine or the date.
     let board = with_source();
+    board.change_at(
+        "changes/t.json",
+        "plan",
+        &json!({"plan": "/changes/t/plan.md"}),
+    );
+    board.write("changes/t/plan.md", "# T\n");
     let ran = board.run(&["call", "changes.brief", "--path", CHANGE], "");
     assert_eq!(ran.code, 0, "{}", text(&ran.stderr));
     let printed = text(&ran.stdout);
-    // The fixture has no plan record, so the brief names no stamped plan
-    // file and nothing in it depends on the machine or the date.
+    let instruction = serde_json::from_str::<Value>(&printed).unwrap()["instruction"].clone();
+    assert!(
+        (instruction.as_str().unwrap()).ends_with(&revised_plan_usage(CHANGE, "/repos/x")),
+        "{printed}"
+    );
     assert!(
         !printed.contains(&board.root().display().to_string()),
         "{printed}"

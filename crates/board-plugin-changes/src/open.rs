@@ -8,7 +8,7 @@ use serde_json::Value;
 
 use crate::board::{readable, rows, text};
 use crate::change::{
-    LastSync, branch_of, change_types, kind_in, last_sync, parsed, prototypes, state_of,
+    LastSync, branch_of, change_types, kind_in, last_sync, parsed, prototypes, state_of, sync_reads,
 };
 use crate::flow::{FlowSummary, of_change};
 use crate::records::{ChangeRecord, Kind, PrototypeRecord, Route, State};
@@ -71,7 +71,8 @@ struct Listed {
 ///
 /// `total` counts every open change and `truncated` says whether the limit
 /// left some out. `unreadable` is how many were left out because Board
-/// marks them degraded. `sync` is the day of the last sync.
+/// marks them degraded. `sync` is the day of the last sync, stale only when
+/// some change records a pull request that sync reads.
 #[derive(Debug, Serialize, JsonSchema)]
 #[schemars(rename = "OpenOutput")]
 pub(crate) struct Output {
@@ -131,12 +132,14 @@ pub(crate) fn open(host: &dyn Host, input: &Value) -> Result<Value, PluginError>
     let prototypes = prototypes(host)?;
     let mut found = Vec::new();
     let mut unreadable = 0;
+    let mut reads = false;
     for row in rows(host, &sql)? {
         let change = (readable(row.get(1))).then(|| parsed(row.get(2))).flatten();
         let (Some(path), Some(change)) = (text(row.first()), change) else {
             unreadable += 1;
             continue;
         };
+        reads |= sync_reads(path, &change);
         // A prototype record Board does not read leaves the change
         // unreadable, since its kind is not known.
         let prototype = match prototypes.get(path) {
@@ -161,6 +164,6 @@ pub(crate) fn open(host: &dyn Host, input: &Value) -> Result<Value, PluginError>
         total,
         truncated: total > limit,
         unreadable,
-        sync: last_sync(host)?,
+        sync: last_sync(host, reads)?,
     }))
 }

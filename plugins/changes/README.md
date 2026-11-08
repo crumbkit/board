@@ -261,14 +261,24 @@ of `changes` still fails `review`.
 - `next --path /changes/<name>`: read-only. The change's `flow` (its name
   and phases), its phase, each gate check as `pass` or `missing` with a
   `detail`, its `actor`, whether it `blocks`, and when missing its
-  `remedy`; the instruction, with its placeholders filled; and `sync`. When
+  `remedy`; the instruction, with its placeholders filled; and `sync`.
+  An instruction that names `changes.plan` ends with how to give its
+  input, JSON on stdin with the fields `path`, `text`, `uses` and `paths`,
+  and a one-line example such as
+  `{"path":"/changes/<name>","text":"<text>","uses":["<use>"],"paths":["<mount>/<path>"]}`.
+  Every change that `start` writes has a plan. For a change with a plan,
+  the instruction says that `changes.plan` replaces the plan, so all four
+  fields must be resent. When
   every missing check that blocks is the owner's or a reviewer's,
   `waiting_on` names them and `ask` holds the question to put to them,
   built from those checks' details and remedies.
 - `sync` in the output of `open` and `next` is `{synced, stale, code,
   command}`: the day of the last sync, or null; `stale` when that is
-  before today in UTC or null, with `code` `changes::sync::stale`; and
-  `command`, `board call changes.sync`. Neither runs gh, so both stay
+  before today in UTC or null and sync has a pull request to read, with
+  `code` `changes::sync::stale`; and `command`, `board call changes.sync`.
+  Sync reads the pull request of a change in the board's own tree that is
+  past its plan, not ended and records one. `next` is stale only for such a
+  change, and `open` only when some open change is one. Neither runs gh, so both stay
   read-only and work offline.
 - `attach --path /changes/<name> [--ref <path>] [--ticket <path>] [--pull <path>] [--task <path>] [--route <route>] [--head <sha>] [--suite <path>]`
   adds a reference once or sets the fields. `--task` sets `task`, and must
