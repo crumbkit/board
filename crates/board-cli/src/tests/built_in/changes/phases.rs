@@ -195,6 +195,24 @@ fn a_referenced_record_deleted_after_it_was_attached_satisfies_nothing() {
 }
 
 #[test]
+fn a_review_attached_before_the_plan_is_revised_still_passes_the_gate_and_is_cited_in_the_pr() {
+    let board = Changes::new();
+    let (base, head) = reviewing(&board, &[]);
+    board.write("r/1.json", &approving(&head, &base));
+    board.call("attach", &at(&json!({"ref": "/r/1"})));
+    board.call_stdin("plan", &planning(&["/repos/x/src/**"]));
+    assert_eq!(advanced(&board), "land");
+    board.call("pr", &path());
+    let body = board.text("changes/t/pr.md");
+    assert!(
+        body.contains(&format!(
+            "- `/r/1`: approve by `a reviewer` over {base}..{head}, findings none"
+        )),
+        "{body}"
+    );
+}
+
+#[test]
 fn review_refuses_a_diff_that_edits_a_file_outside_the_planned_paths_until_the_plan_covers_it() {
     let board = Changes::new();
     let (base, head) = board.edited(&[("src/a.rs", "a\n"), ("docs/b.md", "b\n")]);
