@@ -6,6 +6,7 @@ use serde::Deserialize;
 use serde::de::IgnoredAny;
 use serde_json::Value;
 
+use crate::LogicalPath;
 use crate::pointer::{Mount, PointerError};
 
 /// The `$type` of a repo record.
@@ -58,6 +59,15 @@ impl Repo {
             checkout,
         })
     }
+}
+
+/// What begins a record's URI (docs/architecture/paths/uris.md).
+pub const URI_SCHEME: &str = "board://";
+
+/// The URI of the record at `path` in a board whose origin's stored form is
+/// `remote`, such as `board://acme/team-board/tasks/a`.
+pub fn record_uri(remote: &str, path: &LogicalPath) -> String {
+    format!("{URI_SCHEME}{remote}{path}")
 }
 
 /// `remote`, a git origin URL, as it may be shown and stored: `owner/name`

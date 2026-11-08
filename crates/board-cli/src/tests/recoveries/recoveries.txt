@@ -814,6 +814,26 @@ board --personal check
   fails with board::config::not_found
   hint
 
+board get board://acme/other-board/projects/p
+  fails with board::uri::not_found
+  hint
+
+board get board://acme
+  fails with board::uri::invalid
+  hint
+
+board rm board://acme/team-board/projects/zz --ignore-unmatch
+  fails with board::uri::read_only
+  hint
+
+board get board://acme/team-board/projects/p
+  fails with board::uri::ambiguous
+  hint
+
+board uri /projects/p
+  fails with board::uri::no_remote
+  hint
+
 board answer 0000000000000000000000000000000000000000000000000000000000000000 refuse
   fails with board::settings::not_found
   run board --personal ls /effects/pending

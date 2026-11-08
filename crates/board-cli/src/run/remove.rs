@@ -34,6 +34,13 @@ pub(crate) struct Removal {
     wait: Duration,
 }
 
+impl Removal {
+    /// The path as given.
+    pub(super) fn path(&self) -> &Given {
+        &self.path
+    }
+}
+
 /// Removes what `asked` names, read from `prefix`, and reports it.
 pub(crate) fn remove(
     board: &Board,

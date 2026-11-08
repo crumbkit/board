@@ -165,6 +165,7 @@ fn rendered(scenario: &Scenario, paths: &[&str], format: bool, budget: usize) ->
         Printer::of(format, budget, &["get"]),
         &paths,
         board.get_each(&paths),
+        &std::convert::identity,
     )
 }
 
@@ -266,7 +267,12 @@ fn an_over_budget_get_recovers_with_the_callers_flags_and_without_its_words_name
     let asked: Vec<LogicalPath> = paths.iter().map(|path| path.parse().unwrap()).collect();
     let ran = |json: bool, budget: usize, words: &[&str]| {
         let printer = Printer::of(json, budget, words);
-        render::get(printer, &asked, board.get_each(&asked))
+        render::get(
+            printer,
+            &asked,
+            board.get_each(&asked),
+            &std::convert::identity,
+        )
     };
     let budget = rendered(&scenario, &paths[..1], true, usize::MAX)
         .stdout
@@ -330,7 +336,12 @@ fn a_board_that_cannot_be_read_answers_every_path_with_its_one_error() {
         };
         Err(ReadError::Git { source })
     };
-    let ran = render::get(Printer::of(true, 1 << 20, &["get"]), &paths, failed());
+    let ran = render::get(
+        Printer::of(true, 1 << 20, &["get"]),
+        &paths,
+        failed(),
+        &std::convert::identity,
+    );
     let failures = json(&ran)["failures"].as_array().cloned().unwrap();
     assert_eq!(failures.len(), 2);
     assert_eq!(
@@ -338,7 +349,12 @@ fn a_board_that_cannot_be_read_answers_every_path_with_its_one_error() {
         (&"/a".into(), &"/b".into())
     );
     assert_eq!(failures[0]["code"], failures[1]["code"]);
-    let ran = render::get(Printer::of(false, 1 << 20, &["get"]), &paths, failed());
+    let ran = render::get(
+        Printer::of(false, 1 << 20, &["get"]),
+        &paths,
+        failed(),
+        &std::convert::identity,
+    );
     assert_eq!(ran.code, 1);
     let lines = text(&ran.stderr);
     assert!(lines.contains("  key:   /a (index 0)\n"), "{lines}");

@@ -27,7 +27,8 @@ with such a name is degraded with `board::path::malformed`, and `check` and
 
 A path is at most 4,096 bytes. A record's file name adds `.json`, so its
 segment is at most 250 bytes.
-Paths are read from the root of the board that holds them.
+Paths are read from the root of the board that holds them;
+architecture/paths/uris.md says how `board://` URIs name one in a known board.
 The working tree must also fit the OS's `PATH_MAX` (1,024 bytes on macOS, 4,096
 on Linux) with its checkout prefix; Board keeps its own limit because paths
 read through mounts never touch the file system.
@@ -76,8 +77,8 @@ mount; architecture/paths/repos.md describes repo records.
 }
 ```
 
-The first is a link to a path in the same board. The second is a mount of
-another repository at an exact commit. `follow` names what `board mount update`
+The first links to a path in the same board; the second mounts another
+repository at an exact commit. `follow` names what `board mount update`
 advances `commit` to; `commit` is what Board reads. v0 mounts local
 repositories only; a URL is `board::mount::remote_unsupported`. A mount's
 `repo` is a local path, read from `~/` or relative to the board, so on a
@@ -99,8 +100,8 @@ through it. Only a plain `.json` record file is a pointer; a schema under
 - The root board is read from its working tree, uncommitted edits included and
   marked. Resolution there hashes only the files it picks or reads, once per
   snapshot, however many files lie beside them. A
-  mounted board is read from committed objects at `commit`, so a board at a
-  given commit fully determines everything under its mounts.
+  mounted board is read from committed objects at `commit`, so a commit fully
+  determines everything under its mounts.
 - Mounting brings data and schemas, never code. A mounted board's plugin list
   is ignored.
 

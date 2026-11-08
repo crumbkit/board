@@ -61,7 +61,10 @@ may be on a phone, so keep each message short.
 
 To add a task, run `board -C <board> tasks add --title '<title>'` with
 the fields the person gives; `contexts` and `after` go as JSON on stdin, and
-`origin_unread` needs `--repo`.
+`origin_unread` needs `--repo`. To point someone else at a task in a shared
+board, give its URI: `board -C <board> uri <path>` prints one, such as
+`board://acme/team-board/tasks/fix-login`, which `board get` reads from any
+clone the reader's known boards list.
 
 ## Sweep as a lead
 

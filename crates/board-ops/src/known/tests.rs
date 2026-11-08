@@ -558,3 +558,187 @@ fn a_mount_of_a_clone_with_its_origin_wins_over_another_boards_repo_record_and_t
     let alone = listing(&[&recorded]);
     assert_eq!(opened(&docs, &alone, None).unwrap(), "/work/lib");
 }
+
+/// A board whose `origin` is `url`.
+fn originated(url: &str) -> Scenario {
+    let scenario = board();
+    let remote = format!("[remote \"origin\"]\n\turl = {url}\n");
+    scenario.write(".git/config", Item::Appended(&remote));
+    scenario
+}
+
+/// The board a URI names among `xdg`'s known boards, and the record's path,
+/// or the refusal.
+fn by_uri(uri: &str, xdg: &Scenario) -> Result<(PathBuf, String), Box<Refusal>> {
+    let (root, path) = known(xdg)?.by_uri(uri, None)?;
+    Ok((root, path.to_string()))
+}
+
+#[test]
+fn a_uri_runs_as_the_known_board_with_its_remote_and_one_with_another_remote_is_not_found() {
+    let team = originated("git@github.com:acme/team-board.git");
+    let xdg = listing(&[&team]);
+    let (root, path) = by_uri("board://acme/team-board/tasks/fix-login", &xdg).unwrap();
+    assert_eq!(root, PathBuf::from(team.path()));
+    assert_eq!(path, "/tasks/fix-login");
+    let lost = *by_uri("board://acme/other-board/tasks/fix-login", &xdg).unwrap_err();
+    assert_eq!(lost.code.as_str(), "board::uri::not_found");
+    assert!(lost.message.contains("acme/team-board"), "{}", lost.message);
+    let hint = lost.hint.unwrap();
+    assert!(hint.contains("`acme/other-board`"), "{hint}");
+    assert!(hint.contains(&file(&xdg).display().to_string()), "{hint}");
+}
+
+#[test]
+fn a_uri_takes_the_longest_known_remote_that_ends_at_a_slash() {
+    let outer = originated("https://git.example.com/team");
+    let inner = originated("https://git.example.com/team/board");
+    let xdg = listing(&[&outer, &inner]);
+    let uri = "board://https://git.example.com/team/board/tasks/a";
+    let (root, path) = by_uri(uri, &xdg).unwrap();
+    assert_eq!(
+        (root, path.as_str()),
+        (PathBuf::from(inner.path()), "/tasks/a")
+    );
+    let uri = "board://https://git.example.com/team/boarding/tasks/a";
+    let (root, path) = by_uri(uri, &xdg).unwrap();
+    assert_eq!(
+        (root, path.as_str()),
+        (PathBuf::from(outer.path()), "/boarding/tasks/a")
+    );
+}
+
+#[test]
+fn two_known_boards_with_one_remote_are_ambiguous_for_a_uri_and_one_is_admitted() {
+    let one = originated("https://github.com/acme/team-board.git");
+    let two = originated("git@github.com:acme/team-board.git");
+    let uri = "board://acme/team-board/tasks/a";
+    let refusal = *by_uri(uri, &listing(&[&one, &two])).unwrap_err();
+    assert_eq!(refusal.code.as_str(), "board::uri::ambiguous");
+    for board in [&one, &two] {
+        assert!(
+            refusal.message.contains(&board.path()),
+            "{}",
+            refusal.message
+        );
+    }
+    assert!(by_uri(uri, &listing(&[&one])).is_ok());
+}
+
+#[test]
+fn a_uri_without_a_remote_and_a_path_is_invalid_and_one_with_both_is_admitted() {
+    let team = originated("git@github.com:acme/team-board.git");
+    let xdg = listing(&[&team]);
+    for uri in [
+        "board://",
+        "board://acme",
+        "board://acme/team-board",
+        "board://acme/team-board/tasks/../a",
+        "https://acme/team-board/tasks/a",
+    ] {
+        let refusal = *by_uri(uri, &xdg).unwrap_err();
+        assert_eq!(refusal.code.as_str(), "board::uri::invalid", "{uri}");
+        assert!(refusal.message.contains(uri), "{}", refusal.message);
+    }
+    let (_, path) = by_uri("board://acme/team-board/", &xdg).unwrap();
+    assert_eq!(path, "/");
+}
+
+#[test]
+fn a_record_uri_is_built_from_the_boards_origin_and_a_board_with_none_is_refused() {
+    let team = originated("git@github.com:acme/team-board.git");
+    let path: LogicalPath = "/tasks/fix-login".parse().unwrap();
+    assert_eq!(
+        uri_in(&team, path.as_str()).unwrap(),
+        "board://acme/team-board/tasks/fix-login"
+    );
+    let alone = board();
+    let refusal = *uri_in(&alone, path.as_str()).unwrap_err();
+    assert_eq!(refusal.code.as_str(), "board::uri::no_remote");
+    assert!(
+        refusal.message.contains(&alone.path()),
+        "{}",
+        refusal.message
+    );
+}
+
+/// The URI `uri_of` gives `path` in `board`.
+fn uri_in(board: &Scenario, path: &str) -> Result<String, Box<Refusal>> {
+    let opened = Board::open(board.workdir(), None).unwrap();
+    uri_of(opened.repository(), &path.parse().unwrap())
+}
+
+#[test]
+fn a_github_remote_matches_a_uri_in_any_case_and_another_remote_matches_only_in_its_own() {
+    let team = originated("git@github.com:Acme/Team-Board.git");
+    assert_eq!(
+        uri_in(&team, "/tasks/a").unwrap(),
+        "board://Acme/Team-Board/tasks/a"
+    );
+    let xdg = listing(&[&team]);
+    let (root, path) = by_uri("board://acme/team-board/tasks/a", &xdg).unwrap();
+    assert_eq!(
+        (root, path.as_str()),
+        (PathBuf::from(team.path()), "/tasks/a")
+    );
+    let other = originated("https://git.example.com/Team");
+    let xdg = listing(&[&other]);
+    let lost = *by_uri("board://https://git.example.com/team/tasks/a", &xdg).unwrap_err();
+    assert_eq!(lost.code.as_str(), "board::uri::not_found");
+    assert!(by_uri("board://https://git.example.com/Team/tasks/a", &xdg).is_ok());
+}
+
+#[test]
+fn a_uri_path_with_a_trailing_slash_is_read_as_the_same_plain_path_is() {
+    let team = originated("git@github.com:acme/team-board.git");
+    let xdg = listing(&[&team]);
+    let (_, path) = by_uri("board://acme/team-board/tasks/", &xdg).unwrap();
+    assert_eq!(path, "/tasks");
+    let refused = *by_uri("board://acme/team-board/tasks//", &xdg).unwrap_err();
+    assert_eq!(refused.code.as_str(), "board::uri::invalid");
+}
+
+#[test]
+fn a_relative_origin_gives_an_absolute_uri_that_resolves_back_to_its_board() {
+    let team = originated("../team.git");
+    let uri = uri_in(&team, "/tasks/a").unwrap();
+    assert!(!uri.contains(".."), "{uri}");
+    assert!(uri.ends_with("/team.git/tasks/a"), "{uri}");
+    let (root, path) = by_uri(&uri, &listing(&[&team])).unwrap();
+    assert_eq!(
+        (root, path.as_str()),
+        (PathBuf::from(team.path()), "/tasks/a")
+    );
+}
+
+#[test]
+fn a_remote_that_is_not_on_github_is_named_in_the_hint_as_the_part_before_the_path() {
+    let team = originated("git@github.com:acme/team-board.git");
+    let xdg = listing(&[&team]);
+    let uri = "board://https://git.example.com/team/tasks/a";
+    let lost = *by_uri(uri, &xdg).unwrap_err();
+    assert_eq!(lost.code.as_str(), "board::uri::not_found");
+    let hint = lost.hint.unwrap();
+    assert!(hint.contains(&format!("`{uri}`")), "{hint}");
+    assert!(hint.contains("before the record's path"), "{hint}");
+}
+
+#[test]
+fn a_known_board_that_cannot_be_opened_is_named_when_a_uri_is_not_found_or_ambiguous() {
+    let team = originated("git@github.com:acme/team-board.git");
+    let twin = originated("https://github.com/acme/team-board.git");
+    let broken = Scenario::new();
+    let xdg = listing(&[&broken, &team]);
+    let lost = *by_uri("board://acme/other/tasks/a", &xdg).unwrap_err();
+    assert_eq!(lost.code.as_str(), "board::uri::not_found");
+    assert!(lost.message.contains(&broken.path()), "{}", lost.message);
+    let both = listing(&[&broken, &team, &twin]);
+    let ambiguous = *by_uri("board://acme/team-board/tasks/a", &both).unwrap_err();
+    assert_eq!(ambiguous.code.as_str(), "board::uri::ambiguous");
+    assert!(
+        ambiguous.message.contains(&broken.path()),
+        "{}",
+        ambiguous.message
+    );
+    assert!(by_uri("board://acme/team-board/tasks/a", &xdg).is_ok());
+}
