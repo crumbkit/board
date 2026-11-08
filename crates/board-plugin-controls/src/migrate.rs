@@ -49,10 +49,16 @@ fn compiled(pattern: &str) -> Regex {
 static FULL: LazyLock<Regex> = LazyLock::new(|| {
     compiled(r"(?:^|[^A-Za-z0-9_./-])([A-Za-z0-9][A-Za-z0-9-]*)/([A-Za-z0-9_.-]+)#([0-9]+)\b")
 });
-/// `#n` after a word that names a pull request, because a bare `#n` may number
-/// anything, such as a finding.
-static BARE: LazyLock<Regex> =
-    LazyLock::new(|| compiled(r"(?i)\b(?:pr|pull(?:\s+request)?)\s+#([0-9]+)\b"));
+/// `#n` after a word that names a pull request, and any more numbers joined to
+/// it by `and` or commas. A bare `#n` elsewhere may number anything, such as a
+/// finding.
+static BARE: LazyLock<Regex> = LazyLock::new(|| {
+    compiled(
+        r"(?i)\b(?:prs?|pulls?(?:\s+requests?)?)\s+(#[0-9]+(?:(?:\s*,\s*(?:and\s+)?|\s+and\s+)#[0-9]+)*)\b",
+    )
+});
+/// One number in what [`BARE`] captured.
+static NUMBER: LazyLock<Regex> = LazyLock::new(|| compiled(r"#([0-9]+)"));
 /// The owner and repository of a GitHub remote.
 static REMOTE: LazyLock<Regex> =
     LazyLock::new(|| compiled(r"github\.com[:/]([A-Za-z0-9-]+)/([A-Za-z0-9_.-]+?)(?:\.git)?/?$"));
@@ -243,13 +249,15 @@ fn pulls(
         })
         .map(|(_, place)| place)
         .collect();
-    for captures in BARE.captures_iter(requirement) {
-        for (owner, repo) in &places {
-            found.insert(Pull {
-                owner: owner.clone(),
-                repo: repo.clone(),
-                number: captures[1].to_owned(),
-            });
+    for list in BARE.captures_iter(requirement) {
+        for captures in NUMBER.captures_iter(&list[1]) {
+            for (owner, repo) in &places {
+                found.insert(Pull {
+                    owner: owner.clone(),
+                    repo: repo.clone(),
+                    number: captures[1].to_owned(),
+                });
+            }
         }
     }
     found

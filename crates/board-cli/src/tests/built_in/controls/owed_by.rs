@@ -332,6 +332,8 @@ fn a_bare_number_counts_only_after_a_word_that_names_a_pull_request() {
         ("pr", "Owed by PR #3."),
         ("pull", "Owed by pull #3."),
         ("request", "Owed by pull request #3."),
+        ("both", "Owed by PR #3 and #4."),
+        ("listed", "Owed by pull requests #3, #4."),
     ] {
         board.write(
             &format!("controls/x/{name}.json"),
@@ -352,4 +354,8 @@ fn a_bare_number_counts_only_after_a_word_that_names_a_pull_request() {
         ])
     );
     assert_eq!(dry["unmatched"], json!(["/controls/x/finding"]));
+    let ambiguous: Vec<&str> = (dry["ambiguous"].as_array().unwrap().iter())
+        .map(|each| each["path"].as_str().unwrap())
+        .collect();
+    assert_eq!(ambiguous, ["/controls/x/both", "/controls/x/listed"]);
 }

@@ -13,8 +13,8 @@ use serde_json::{Value, json};
 use crate::board::{self, get_text, rows, text};
 use crate::change::write;
 use crate::change::{
-    LastSync, attached, branch_of, current, kind_of, last_sync, line, listed, plan_at, pull_of,
-    read, referenced, sync_reads, touch,
+    LastSync, NOT_FOUND, attached, branch_of, current, kind_of, last_sync, line, listed, plan_at,
+    pull_of, read, referenced, sync_reads, touch,
 };
 use crate::controls::{listed_by, obligations};
 use crate::diff::{edited, outside};
@@ -275,6 +275,10 @@ pub(crate) fn observe(
         };
         found.uses = current(host, change)?.1;
         (found.considered, found.owed) = listed(host, change)?;
+        found.surfaced_gone = (referenced(host, &change.surfaced)?.unreadable.into_iter())
+            .filter(|(_, code)| code == NOT_FOUND)
+            .map(|(path, _)| path)
+            .collect();
     }
     if wanted.contains(&Read::Suite) {
         found.suite = if change.v1 {

@@ -531,3 +531,23 @@ fn next_on_a_small_change_in_build_says_to_resend_the_plan_start_wrote() {
         "{said}"
     );
 }
+
+#[test]
+fn next_passes_considered_for_a_surfaced_record_since_deleted_and_misses_one_that_still_exists() {
+    let board = mounted();
+    board.call("start", &starting("A", &json!({})));
+    board.write("notes/there.md", "# There\n");
+    let mut change = board.read("changes/a.json");
+    change["surfaced"] = json!(["/notes/there.md"]);
+    board.write("changes/a.json", &change.to_string());
+    let status = || {
+        let output = board.call("next", &json!({"path": "/changes/a"}));
+        (output["gate"].as_array().unwrap().iter())
+            .find(|check| check["check"] == "considered")
+            .unwrap()["status"]
+            .clone()
+    };
+    assert_eq!(status(), "missing");
+    board.delete("notes/there.md");
+    assert_eq!(status(), "pass");
+}

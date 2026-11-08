@@ -112,6 +112,8 @@ pub(crate) struct Observed {
     pub(crate) uses: Vec<String>,
     /// The records the plan's `considered` field lists.
     pub(crate) considered: Vec<String>,
+    /// The change's surfaced paths that no longer reach anything.
+    pub(crate) surfaced_gone: Vec<String>,
     /// The obligations the plan's `owed` field lists.
     pub(crate) owed: Vec<String>,
     pub(crate) suite: Option<String>,
@@ -142,6 +144,7 @@ impl Observed {
             plan_file: None,
             uses: Vec::new(),
             considered: Vec::new(),
+            surfaced_gone: Vec::new(),
             owed: Vec::new(),
             suite: None,
             planned: Vec::new(),

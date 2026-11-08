@@ -397,8 +397,8 @@ The judged tests start a stub agent script, never a model.
 obligation that lacks it. Three rules are tried in order, and the first that
 gives exactly one record decides. The first rule reads the pull request the
 requirement names as `owner/repo#n`, or as `#n` after a word such as `PR` or
-`pull` with a mount in `applies_to` whose clone's origin gives the owner and
-repository. A number the board holds as an issue record is no match. The second takes the one
+`pull`, with any numbers joined to it by `and` or commas, and a mount in
+`applies_to` whose clone's origin gives the owner and repository. A number the board holds as an issue record is no match. The second takes the one
 `review/report/v1` among `sources`, and the third takes the one
 `plans/decision/v1` among them. A pull request the board holds no record of is
 listed under `commands` with the `github.ref` command that writes it, and

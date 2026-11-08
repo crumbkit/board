@@ -34,3 +34,20 @@ fn a_blank_line_run_outside_any_cut_is_left_as_the_plan_wrote_it() {
     let text = "# T\n\n\n## Problem\n\nA.\n\n### Considered\n\n- /a: b.\n";
     assert_eq!(cut(text).kept, "# T\n\n\n## Problem\n\nA.\n");
 }
+
+#[test]
+fn a_reason_that_starts_with_inline_code_keeps_its_opening_backtick() {
+    let (groups, unread) = read_section(&lines(
+        "- `/notes/a.md`: `board check` output, unrelated.\n- /notes/b.md: `board ls` only.\n- `/notes/c.md`, `/notes/d.md`: both old.\n",
+    ));
+    assert!(unread.is_empty(), "{unread:?}");
+    let reasons: Vec<&str> = groups.iter().map(|(_, why)| why.as_str()).collect();
+    assert_eq!(
+        reasons,
+        [
+            "`board check` output, unrelated.",
+            "`board ls` only.",
+            "both old."
+        ]
+    );
+}

@@ -165,9 +165,13 @@ fn leading(text: &str) -> (Vec<String>, &str) {
     }
 }
 
-/// `text` without the punctuation that joins a path to its reason.
+/// `text` without the backtick that closes a backticked path and the
+/// punctuation that joins a path to its reason. A later backtick opens inline
+/// code in the reason, so it stays.
 fn reason(text: &str) -> &str {
-    text.trim_start_matches([' ', '`', ',', ':', '-', '\u{2014}', '\u{2013}', '('])
+    text.strip_prefix('`')
+        .unwrap_or(text)
+        .trim_start_matches([' ', ',', ':', '-', '\u{2014}', '\u{2013}', '('])
         .trim()
 }
 

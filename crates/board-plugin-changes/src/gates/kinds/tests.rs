@@ -199,6 +199,23 @@ fn a_surfaced_record_neither_used_nor_considered_is_missing_and_one_in_considere
 }
 
 #[test]
+fn a_surfaced_record_that_no_longer_resolves_passes_and_one_that_exists_unconsidered_is_missing() {
+    let list = json!([{"id": "considered", "kind": "considered"}]);
+    let mut found = observed(&json!({}), &[]);
+    found.change.surfaced = vec!["/plans/gone".to_owned()];
+    found.surfaced_gone = vec!["/plans/gone".to_owned()];
+    assert_eq!(first(&found, list.clone()).status, Status::Pass);
+    found.change.surfaced.push("/plans/there".to_owned());
+    let check = first(&found, list);
+    assert_eq!(check.status, Status::Missing);
+    assert_eq!(
+        check.detail,
+        "the plan neither uses nor lists in considered these records that start surfaced: \
+         /plans/there"
+    );
+}
+
+#[test]
 fn a_surfaced_record_listed_only_under_a_considered_heading_in_the_text_is_missing() {
     let list = json!([{"id": "considered", "kind": "considered"}]);
     let mut found = observed(&json!({}), &[]);

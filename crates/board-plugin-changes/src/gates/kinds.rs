@@ -64,12 +64,15 @@ pub(crate) fn named_controls(each: &flow::Check, values: &Values) -> Vec<String>
 }
 
 /// Every record the change's `surfaced` lists is in the plan's `uses` or
-/// its `considered`.
+/// its `considered`. A surfaced path that no longer reaches anything is
+/// ignored, because neither field can name it: `changes.plan` refuses a
+/// path that reaches nothing.
 pub(super) fn considered_missing(observed: &Observed) -> Option<String> {
     let left: Vec<&str> = (observed.change.surfaced.iter().map(String::as_str))
         .filter(|each| {
             !observed.uses.iter().any(|used| used == each)
                 && !observed.considered.iter().any(|listed| listed == each)
+                && !observed.surfaced_gone.iter().any(|gone| gone == each)
         })
         .collect();
     (!left.is_empty()).then(|| {

@@ -768,7 +768,7 @@ evaluated by kind:
 | `tasks` | every attached task but the change's own is done or dropped |
 | `understood` | a decision the owner signed references an attached understanding check of this change's `subject`; with `rechecks`, each such check also holds that many matching rechecks |
 | `mockups` | the `agreed` part: each mockup under UX is named by a signed decision; the `neighbours` part: UX lists its neighbours; both when `part` is left out |
-| `considered` | each path in the change's `surfaced` is in the plan's `uses` or its `considered` field |
+| `considered` | each path in the change's `surfaced` that still reaches something is in the plan's `uses` or its `considered` field |
 | `obligations` | no obligation control applies to the plan's paths, except those in the plan's `owed` field; a board without the controls plugin enabled has none |
 | `controlled-paths` | the diff edits no file that the controls in `controls` list in their `paths` or `applies_to`; the detail names at most ten such files and counts the rest |
 | `flow-valid` | at least one `changes/flow/v1` is attached, and each can run and gives a `remedy` to every check whose actor is the owner or a reviewer; the detail lists each problem with its phase and check id |
