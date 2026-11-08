@@ -1428,6 +1428,32 @@ fn cat_is_refused_naming_get_and_the_hinted_get_runs() {
 }
 
 #[test]
+fn ls_with_several_paths_is_refused_saying_it_takes_one_path_per_call_and_one_path_lists() {
+    let scenario = board();
+    let refused = board_in(scenario.workdir(), &["ls", "/projects", "/tasks"]);
+    assert_eq!(
+        (refused.code, refused.error.as_deref()),
+        (2, Some("board::cli::usage"))
+    );
+    assert_eq!(
+        text(&refused.stderr),
+        "error: ls lists one path per call, and /tasks is a second path\n\
+         \x20 help:  run ls once for each path, such as `board ls /tasks`\n\
+         \x20 code:  board::cli::usage\n"
+    );
+    let document = json(&board_in(
+        scenario.workdir(),
+        &["--json", "ls", "/projects", "/tasks", "/notes"],
+    ));
+    assert_eq!(document["code"], "board::cli::usage");
+    assert_eq!(document["fields"]["value"], "/tasks");
+    let admitted = board_in(scenario.workdir(), &["ls", "/projects"]);
+    assert_eq!(admitted.code, 0, "{}", text(&admitted.stderr));
+    let flag = board_in(scenario.workdir(), &["ls", "/projects", "--nope"]);
+    assert_eq!(hint_of(&flag), "run `board ls -h`");
+}
+
+#[test]
 fn put_hints_quote_each_word_and_a_second_stray_word_keeps_claps_refusal() {
     let scenario = uncommitted();
     let refused = board_in(

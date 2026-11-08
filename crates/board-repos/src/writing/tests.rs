@@ -283,6 +283,62 @@ fn an_uncommitted_write_lands_with_no_commit_and_the_boards_own_tree_keeps_its_c
 }
 
 #[test]
+fn a_sync_without_push_pulls_the_clone_and_with_push_pushes_it() {
+    let host = local(&[]);
+    let clones = Recorded::default();
+    assert_eq!(synced(writer(&host, &clones), &mounted(), false), None);
+    assert_eq!(synced(writer(&host, &clones), &mounted(), true), None);
+    let sync = |push| Cloned::Sync {
+        clone: "/clones/work".to_owned(),
+        push,
+    };
+    assert_eq!(*clones.calls.borrow(), [sync(false), sync(true)]);
+    assert_eq!(
+        synced(writer(&host, &clones), &own(), false).as_deref(),
+        Some("tasks::repo::not_synced")
+    );
+}
+
+#[test]
+fn a_write_landed_without_push_is_pinned_and_not_pushed_and_its_twin_is_pushed() {
+    let host = local(&[]);
+    let clones = Recorded {
+        head: "beef".to_owned(),
+        ..Recorded::default()
+    };
+    let kept = landed_with(
+        writer(&host, &clones),
+        &mounted(),
+        Some("c0ffee".to_owned()),
+        false,
+    )
+    .unwrap();
+    let not_pushed = Some("tasks::repo::not_pushed".to_owned());
+    assert_eq!(kept, (Some("beef".to_owned()), not_pushed));
+    assert_eq!(
+        *clones.calls.borrow(),
+        [Cloned::Pin("/repos/work".to_owned())]
+    );
+    let pushed = landed_with(
+        writer(&host, &clones),
+        &mounted(),
+        Some("c0ffee".to_owned()),
+        true,
+    )
+    .unwrap();
+    assert_eq!(pushed, (Some("beef".to_owned()), None));
+    let own_commit = landed_with(
+        writer(&host, &clones),
+        &own(),
+        Some("c0ffee".to_owned()),
+        false,
+    )
+    .unwrap();
+    let not_synced = Some("tasks::repo::not_synced".to_owned());
+    assert_eq!(own_commit, (Some("c0ffee".to_owned()), not_synced));
+}
+
+#[test]
 fn the_moved_codes_are_stale_and_head_moved() {
     let codes: Vec<&str> = MOVED.iter().map(|code| code.as_str()).collect();
     assert_eq!(codes, ["board::put::stale", "board::put::head_moved"]);

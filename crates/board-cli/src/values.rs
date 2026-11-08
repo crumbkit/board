@@ -82,3 +82,12 @@ pub(crate) fn pointer(text: &str) -> Result<String, String> {
         Err("must be a JSON pointer, such as /status, or /a~1b for the key a/b: empty or starting with /, with ~ only as ~0 or ~1".to_owned())
     }
 }
+
+/// A commit message: kept as written, and refused when it holds no text.
+pub(crate) fn message(text: &str) -> Result<String, String> {
+    if text.trim().is_empty() {
+        Err("must hold text that names the work, such as 'Close the docs obligation'".to_owned())
+    } else {
+        Ok(text.to_owned())
+    }
+}

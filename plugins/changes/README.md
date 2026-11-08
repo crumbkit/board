@@ -20,10 +20,10 @@ understanding checks. Git history holds earlier phases.
   "flow": "/changes/suite-timeout/flow",
   "phase": "build",
   "suite": "/suites/board-gates",
-  "surfaced": ["/repos/notes-personal/tasks/retry.md"],
+  "surfaced": ["/repos/notes/tasks/retry.md"],
   "route": "owner",
   "plan": "/changes/suite-timeout/plans/20261101T120000000000Z",
-  "task": "/repos/notes-personal/tasks/suite-timeout.md",
+  "task": "/repos/notes/tasks/suite-timeout.md",
   "head": "a3f9c0d",
   "tickets": ["/jira/acme/ACME-123"],
   "pulls": ["/gh/octo/widgets/pulls/7"]
@@ -91,7 +91,9 @@ that one record.
   the change will edit, in which `*` also matches `/`. A build change's plan
   always has them; a prototype's plan has none.
 - `records` lists the runs, reviews, decisions and other records `attach
-  --ref` attached while this plan was the change's plan. The records a change owns
+  --ref` attached while this plan was the change's plan. A revised plan
+  starts with the `records` of the plan it replaces, in order, and that
+  earlier plan record is left as it was. The records a change owns
   are those every one of its plans lists.
 
 `changes/prototype/v1` at `/changes/<name>/prototype.json` makes the change
@@ -231,8 +233,9 @@ of `changes` still fails `review`.
   whose `refs` name the mount or a path under it, newest first; and the
   evals whose `mounts` name the mount or that sit under the project. The
   change records their paths. `obligations` lists at most ten obligation
-  controls on the mount, `<mount>/**`, by `control` and `summary`, from
-  `controls.for-paths`, and `obligations_left_out` counts the rest; both
+  controls on the mount, `<mount>/**`, by `control`, `summary` and
+  `close`, which says how to close that obligation, as `controls.for-paths` gives them,
+  and `obligations_left_out` counts the rest; both
   are empty when the controls plugin is not enabled. Refuses an existing name (`changes::change::exists`), a
   repository path holding nothing (`changes::mount::not_found`) and a flow
   neither the board holds nor the plugin ships (`changes::flow::not_found`).
@@ -392,7 +395,8 @@ of `changes` still fails `review`.
   start with the change's mount and `/` (`changes::plan::outside_mount`,
   whose `paths` lists them). It writes the plan record and its text and points the change's `plan` at the
   text, in one write, in any phase but `done` and `dropped`
-  (`changes::phase::final`). It keeps each reference in `uses` once. It
+  (`changes::phase::final`). The new plan keeps the `records` of the plan
+  the change named before. It keeps each reference in `uses` once. It
   refuses a reference that reaches nothing, or a record Board marks degraded
   for anything but a broken reference of its own (`changes::ref::dangling`,
   whose `refs` lists them); a directory (`changes::plan::directory`); a text
@@ -897,7 +901,7 @@ There is no bypass flag. The guard cannot see:
 
 The guard refuses an edit of every mounted repository that is not itself a
 known board, including the notes repositories a personal board mounts, such
-as `/repos/notes-personal`. An agent without a brief writes notes and tasks
+as `/repos/notes`. An agent without a brief writes notes and tasks
 through the `tasks` and `notes` capabilities instead.
 
 `claude plugin test plugins/changes/claude-code` runs the mod's tests.

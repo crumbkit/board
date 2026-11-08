@@ -188,10 +188,10 @@ fn help_lists_the_flags_of_an_installed_capability_and_refuses_a_target_like_a_r
     assert_eq!(code(&nope), "board::plugin::not_installed");
 }
 
-#[test]
-fn a_terminal_on_stdin_is_not_read() {
-    let (board, data) = flagged();
-    let context = |terminal| Context {
+/// The context of a run in `board` with the plugins in `data`, and stdin a
+/// terminal when `terminal` is true.
+fn context(board: &Scenario, data: &Scenario, terminal: bool) -> Context {
+    Context {
         start: board.workdir().to_path_buf(),
         home: None,
         cache: None,
@@ -210,7 +210,13 @@ fn a_terminal_on_stdin_is_not_read() {
         binary: None,
         cursor: None,
         built_in: board_ops::BuiltIn::default(),
-    };
+    }
+}
+
+#[test]
+fn a_terminal_on_stdin_is_not_read() {
+    let (board, data) = flagged();
+    let context = |terminal| context(&board, &data, terminal);
     let arguments = || ["board", "call", "tasks.due"].map(OsString::from);
     let mut torn: &[u8] = b"{";
     let read = run(arguments(), &context(false), &mut torn, &mut Ran::default());
@@ -240,6 +246,61 @@ impl std::io::Read for Unreadable {
     fn read(&mut self, _: &mut [u8]) -> std::io::Result<usize> {
         Err(std::io::Error::other("stdin was read"))
     }
+}
+
+impl crate::stdin::Stdin for Unreadable {
+    fn ready(&self) -> bool {
+        false
+    }
+}
+
+/// A stdin holding `.0`, whose poll says a read would wait, as a pipe whose
+/// writer has not written yet says.
+struct Waiting(&'static [u8]);
+
+impl std::io::Read for Waiting {
+    fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+        std::io::Read::read(&mut self.0, buffer)
+    }
+}
+
+impl crate::stdin::Stdin for Waiting {
+    fn ready(&self) -> bool {
+        false
+    }
+}
+
+#[test]
+fn bad_input_leaves_out_the_ignored_stdin_note_when_a_read_would_wait_and_its_ready_twin_has_it() {
+    let (board, data) = required(false);
+    let arguments = || ["board", "call", "tasks.due", "--limit", "3"].map(OsString::from);
+    let held = br#"{"before": "2026-10-05"}"#;
+    let mut waiting = Waiting(held);
+    let refused = run(
+        arguments(),
+        &context(&board, &data, false),
+        &mut waiting,
+        &mut Ran::default(),
+    );
+    assert_eq!(refused.error.as_deref(), Some("board::plugin::bad_input"));
+    assert!(
+        !hint_of(&refused).contains("ignored stdin"),
+        "{}",
+        hint_of(&refused)
+    );
+    assert_eq!(waiting.0, held, "Board read a stdin whose read would wait");
+    let mut ready: &[u8] = held;
+    let noted = run(
+        arguments(),
+        &context(&board, &data, false),
+        &mut ready,
+        &mut Ran::default(),
+    );
+    assert!(
+        hint_of(&noted).starts_with("Board ignored stdin"),
+        "{}",
+        hint_of(&noted)
+    );
 }
 
 #[test]
@@ -446,4 +507,108 @@ fn help_says_stdin_is_read_only_when_the_schema_admits_properties_beyond_its_fla
         closed.contains("Every input property is a flag, so Board does not read stdin."),
         "{closed}"
     );
+}
+
+/// A board whose `tasks.due` requires `before` and `limit`, both flags, and
+/// admits no other property when `closed`, so that Board never reads its
+/// stdin.
+fn required(closed: bool) -> (Scenario, Scenario) {
+    let (board, data) = flagged();
+    let mut manifest: Value = serde_json::from_str(FLAGGED).unwrap();
+    let mut input = json!({"type": "object", "required": ["before", "limit"], "properties": {
+        "before": {"type": "string"},
+        "limit": {"type": "integer"}
+    }});
+    if closed {
+        input["additionalProperties"] = json!(false);
+    }
+    manifest["capabilities"][0]["inputSchema"] = input;
+    data.write(
+        "plugins/tasks/plugin.json",
+        Item::File(&manifest.to_string()),
+    );
+    (board, data)
+}
+
+/// Whether `hint` starts with `note`, which Board puts before its own hint
+/// for bad input.
+fn starts(hint: &str, note: &str) -> bool {
+    hint.strip_prefix(note)
+        .is_some_and(|rest| rest.is_empty() || rest.starts_with("; "))
+}
+
+#[test]
+fn bad_input_after_a_flag_says_board_ignored_stdin_and_its_twin_without_stdin_does_not() {
+    let (board, data) = required(false);
+    let flagged = ["call", "tasks.due", "--limit", "3"];
+    let refused = call(&board, &data, &flagged, r#"{"before": "2026-10-05"}"#);
+    assert_eq!(refused.code, 1, "{}", text(&refused.stderr));
+    assert_eq!(refused.error.as_deref(), Some("board::plugin::bad_input"));
+    let note = "Board ignored stdin because the flag --limit was given, and a call with a flag \
+                takes its whole input from flags; give every input as a flag, or give no flag \
+                and put the whole input on stdin";
+    assert!(starts(&hint_of(&refused), note), "{}", hint_of(&refused));
+    let empty = call(&board, &data, &flagged, "");
+    assert_eq!(empty.error.as_deref(), Some("board::plugin::bad_input"));
+    assert!(
+        !hint_of(&empty).contains("ignored stdin"),
+        "{}",
+        hint_of(&empty)
+    );
+    let whole = [
+        "call",
+        "tasks.due",
+        "--before",
+        "2026-10-05",
+        "--limit",
+        "3",
+    ];
+    let admitted = call(&board, &data, &whole, "");
+    assert_eq!(admitted.code, 0, "{}", text(&admitted.stderr));
+    assert_eq!(sent(&data), json!({"before": "2026-10-05", "limit": 3}));
+}
+
+#[test]
+fn bad_input_of_a_capability_that_takes_only_flags_names_its_flags_when_stdin_held_data() {
+    let (board, data) = required(true);
+    let stdin = r#"{"before": "2026-10-05", "limit": 3}"#;
+    for arguments in [
+        &["call", "tasks.due", "--limit", "3"][..],
+        &["call", "tasks.due"][..],
+    ] {
+        let refused = call(&board, &data, arguments, stdin);
+        assert_eq!(
+            refused.error.as_deref(),
+            Some("board::plugin::bad_input"),
+            "{arguments:?}"
+        );
+        let note = "Board ignored stdin because tasks.due takes every input as a flag; \
+                    give the input as --before and --limit";
+        let hint = hint_of(&refused);
+        assert!(starts(&hint, note), "{arguments:?}: {hint}");
+        let printed = call(&board, &data, &[&["--json"], arguments].concat(), stdin);
+        assert!(
+            json_hint(&printed).starts_with("Board ignored stdin"),
+            "{}",
+            text(&printed.stdout)
+        );
+    }
+    let whole = [
+        "call",
+        "tasks.due",
+        "--before",
+        "2026-10-05",
+        "--limit",
+        "3",
+    ];
+    let admitted = call(&board, &data, &whole, stdin);
+    assert_eq!(admitted.code, 0, "{}", text(&admitted.stderr));
+}
+
+/// The recovery text of a refusal printed under `--json`.
+fn json_hint(output: &Output) -> String {
+    json(output)["recovery"]["text"]
+        .as_str()
+        .unwrap_or_default()
+        .to_owned()
 }

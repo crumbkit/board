@@ -176,8 +176,8 @@ fn default(each: &flow::Check) -> String {
         }
         Kind::Obligations => {
             "Do the work each obligation names. Once the work is committed, delete each obligation \
-             with `board rm <path>`, which commits the deletion; merging the work does not clear \
-             it. List an obligation the change leaves owed under the plan's escape heading."
+             with `board rm <path> -m '<message naming the work>'`; merging the work does not \
+             clear it. List an obligation the change leaves owed under the plan's escape heading."
                 .to_owned()
         }
         Kind::ControlledPaths => {

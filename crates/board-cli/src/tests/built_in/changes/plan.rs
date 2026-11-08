@@ -271,3 +271,39 @@ fn a_plan_record_whose_path_does_not_start_at_the_root_is_invalid_and_one_that_d
     board.write(&file, &written.to_string());
     assert_eq!(board.code(logical), None);
 }
+
+#[test]
+fn a_revised_plan_keeps_the_records_attached_to_the_plan_it_replaces_in_order() {
+    let board = Changes::new();
+    board.change_at("changes/t.json", "plan", &json!({}));
+    let first = board.call_stdin("plan", &given(PLAN, &[]));
+    board.write("r/1.json", &report(HEAD, "approve", BASE, &json!({})));
+    let approved = board.approved();
+    board.call("attach", &json!({"path": CHANGE, "ref": approved}));
+    board.call("attach", &json!({"path": CHANGE, "ref": "/r/1"}));
+    let earlier = stored(&board, &first);
+    let second = board.call_stdin("plan", &given(&format!("{PLAN}More.\n"), &[]));
+    assert_eq!(
+        stored(&board, &second)["records"],
+        json!([APPROVED, "/r/1"])
+    );
+    // The earlier plan record is left as it was.
+    assert_eq!(stored(&board, &first), earlier);
+    // A later attach adds to the end of the copied list.
+    board.write("r/2.json", &report(HEAD, "approve", BASE, &json!({})));
+    board.call("attach", &json!({"path": CHANGE, "ref": "/r/2"}));
+    assert_eq!(
+        stored(&board, &second)["records"],
+        json!([APPROVED, "/r/1", "/r/2"])
+    );
+}
+
+#[test]
+fn a_revised_plan_of_a_change_whose_plan_had_no_records_has_none() {
+    let board = Changes::new();
+    board.change_at("changes/t.json", "plan", &json!({}));
+    board.call_stdin("plan", &given(PLAN, &[]));
+    let second = board.call_stdin("plan", &given(&format!("{PLAN}More.\n"), &[]));
+    let written = stored(&board, &second);
+    assert_eq!(written.get("records"), None, "{written}");
+}

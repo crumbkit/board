@@ -12,7 +12,7 @@ import { badgeValue, boardName, contextText, controlsBadge, parseBadges, parseCh
 const ROOT = '/work/crumbkit'
 const DOCS = { control: '/controls/crumbkit/docs-1', requirement: 'AGENTS.md has at most 200 words.', budget: 'words', used: 196, max: 200, files: [] }
 const README = { control: '/controls/example/readme', kind: 'standing', requirement: 'Keep the usage section of the README current.', files: 3, paths: [], purpose: 'p' }
-const OWED = { control: '/controls/crumbkit/docs-sweep', kind: 'obligation', requirement: 'Sweep the docs for #12.', files: 1, paths: [], purpose: 'p' }
+const SWEEP = { control: '/controls/crumbkit/docs-sweep', kind: 'obligation', requirement: 'Sweep the docs for #12.', files: 1, paths: [], purpose: 'p' }
 const PARSER = { control: '/controls/crumbkit/rust-10', requirement: 'A hand-written parser says what it misses.', purpose: 'p', rule: null }
 const report = (output: object) => JSON.stringify({ schema: 'board/call-report/v2', data: { plugin: 'controls', output } })
 const RUST = { control: '/controls/toolchains/rust', requirement: 'Pin the latest Rust.', at_least: '1.99.1', files: [], behind: [] }
@@ -117,6 +117,28 @@ test('the context block lists each control with its requirement, a budget with i
   )
 })
 
+const OWED = {
+  control: '/controls/crumbkit/docs-owed-9',
+  requirement: 'The merge of #9 owes a docs sweep.',
+  files: 1,
+  paths: [],
+  purpose: 'p',
+  kind: 'obligation',
+  close:
+    'Once the work this obligation names is committed, delete it with ' +
+    "`board rm /controls/crumbkit/docs-owed-9 -m '<message naming the work>'`; merging the work does not clear it.",
+}
+
+test('the context block gives an obligation its close line and a standing control none', () => {
+  const checked = parseCheck(ROOT, 0, report({ measured: [], stated: [OWED, README] }), '')
+  expect(checked === null ? null : contextText(checked)).toContain(
+    '- /controls/crumbkit/docs-owed-9: The merge of #9 owes a docs sweep.\n' +
+      `  ${OWED.close}\n` +
+      '- /controls/example/readme: Keep the usage section of the README current.',
+  )
+  expect(checked === null ? null : contextText(checked)).toMatch(/current\.$/)
+})
+
 test('a version control with pins behind and a budget over its max with an unreadable file say so in the block', () => {
   const behind = { ...RUST, behind: [{ file: '/r/rust-toolchain.toml', line: 2, found: '1.98.0' }] }
   const unread = { ...DOCS, used: 300, unreadable: [{ file: '/r/AGENTS.md', code: 'board::path::shadowed' }] }
@@ -162,6 +184,19 @@ test('an edit of a file with a control the session was not told about appends a 
   ])
 })
 
+test('the row before an edit gives an obligation its close line and a standing control none', async ($, on) => {
+  const { appended } = engine(on, { forPath: { 'docs/guide.md': [OWED, PARSER] } })
+  await start($)
+  await edit($, 'docs/guide.md')
+  expect(appended).toEqual([
+    `These board controls apply to ${ROOT}/docs/guide.md, which you are editing now. Follow each one in this ` +
+      'edit and any that follows.\n\n' +
+      '- /controls/crumbkit/docs-owed-9: The merge of #9 owes a docs sweep.\n' +
+      `  ${OWED.close}\n` +
+      '- /controls/crumbkit/rust-10: A hand-written parser says what it misses.',
+  ])
+})
+
 test('an edit of a file whose controls the session was told about appends nothing, and a file is asked about once', async ($, on) => {
   const { events } = engine(on, { forPath: { 'AGENTS.md': [DOCS], 'src/listing.rs': [PARSER] } })
   await start($)
@@ -190,7 +225,7 @@ test('the Controls button counts the controls, and a failed check shows its code
 })
 
 test('the pane groups the controls as standing rules, obligations owed and budgets', () => {
-  const checked = parseCheck(ROOT, 0, report({ measured: [DOCS], versions: [RUST], stated: [README, OWED] }), '')
+  const checked = parseCheck(ROOT, 0, report({ measured: [DOCS], versions: [RUST], stated: [README, SWEEP] }), '')
   const grouped = checked?.kind === 'read' ? sections(checked.controls) : []
   expect(grouped.map(g => [g.heading, g.controls.map(c => c.control)])).toEqual([
     ['Standing rules', ['/controls/toolchains/rust', '/controls/example/readme']],
@@ -275,6 +310,17 @@ test('the band shows the configured badges, the Board badge and the Controls but
     expect(await pane.find({ text: 'None.' })).toBeDefined()
     expect(await pane.find({ text: '/controls/crumbkit/docs-1: AGENTS.md has at most 200 words. (now 196 of 200 words)' })).toBeDefined()
     expect(await pane.find({ text: 'Editing a file adds a reminder for each control on that file that this session was not told about.' })).toBeDefined()
+    await pane.unmount()
+  }
+})
+
+test('the pane lists an obligation under Obligations owed with its close line beneath it', async ($, on) => {
+  engine(on, { repository: PERSONAL, check: { exitCode: 0, stdout: report({ measured: [], stated: [OWED] }) } })
+  await start($)
+  for (const surface of ['terminal', 'desktop'] as const) {
+    const pane = await $.ui.mount({ plugin: 'board-controls', surface, component: 'Pane', requestId: 'board-controls', props: PANE_PROPS })
+    expect(await pane.find({ text: '/controls/crumbkit/docs-owed-9: The merge of #9 owes a docs sweep.' })).toBeDefined()
+    expect(await pane.find({ text: `  ${OWED.close}` })).toBeDefined()
     await pane.unmount()
   }
 })

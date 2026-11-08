@@ -27,6 +27,13 @@ may be on a phone, so keep each message short.
    Otherwise run `tasks.add`.
 4. When the work goes through the changes plugin and you claimed a task, pass
    it with `changes.start --task <path>`.
+5. Close the task with `tasks.done --path <path>` when the work it names is
+   committed. For work that goes through the changes plugin, close the
+   change's task when its pull request merges or when `changes.sync` ends
+   the change; `changes.sync` never closes it. When you are told not to
+   push, close it with `tasks.done --path <path> --push false`, which
+   commits in the notes clone and pushes nothing; a later write call pushes
+   that commit.
 
 ## Sweep
 
@@ -114,9 +121,10 @@ it.
 - `unsynced` or `unpushed` set to `board::sync::conflict` means the clone
   conflicts with its remote, and nothing is pushed until the person fixes
   it: `git pull --rebase` in the clone, then `board mount update <mount>`.
-  Any other code but `tasks::repo::not_synced` means the write is committed
-  on this machine only, and a later call pushes it. Tell the person the code
-  once, and go on.
+  `tasks::repo::not_pushed` means `--push false` kept the write on this
+  machine. Any other code but `tasks::repo::not_synced` means the write is
+  committed on this machine only, and a later call pushes it. Tell the
+  person the code once, and go on.
 - `tasks::task::finished`: the task was finished elsewhere. Go on.
 - `tasks::task::held`: another owner holds the task. Go on.
 - `tasks::task::busy`: call again once; then tell the person, and go on.

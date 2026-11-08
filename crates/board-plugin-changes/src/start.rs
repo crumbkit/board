@@ -12,7 +12,7 @@ use serde_json::{Value, json};
 
 use crate::board::{self, get};
 use crate::change::{line, touch};
-use crate::controls::on_mount;
+use crate::controls::{Found, on_mount};
 use crate::flow::{FlowSummary, chosen, copy_line, refuse_invalid, refuse_without_repository};
 use crate::gates::SECTIONS;
 use crate::phases::check_target;
@@ -63,7 +63,7 @@ pub(crate) struct Input {
         regex(pattern = "^/"),
         extend("format" = "board-path"),
         description = "The task the change does, such as \
-                       /repos/notes-personal/tasks/<slug>.md; when left out, tasks.add adds one \
+                       /repos/notes/tasks/<slug>.md; when left out, tasks.add adds one \
                        titled as the change."
     )]
     task: Option<String>,
@@ -71,7 +71,7 @@ pub(crate) struct Input {
         regex(pattern = "^/"),
         extend("format" = "board-path"),
         description = "The notes repo tasks.add writes the new task to, such as \
-                       /repos/notes-personal; the caller's git remote chooses it when left out."
+                       /repos/notes; the caller's git remote chooses it when left out."
     )]
     task_repo: Option<String>,
     #[schemars(
@@ -98,11 +98,26 @@ pub(crate) struct Input {
     over_limit: Option<String>,
 }
 
-/// An obligation on the mount: the control and its summary.
+/// An obligation on the mount: the control, its summary and how to close
+/// it, as `controls.for-paths` gives them.
 #[derive(Debug, Serialize, JsonSchema)]
 struct Owed {
     control: String,
     summary: String,
+    /// How to close the obligation; left out when controls gives no line.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "Option<Prose>")]
+    close: Option<String>,
+}
+
+impl From<Found> for Owed {
+    fn from(found: Found) -> Self {
+        Self {
+            control: found.control,
+            summary: found.summary,
+            close: found.close,
+        }
+    }
 }
 
 /// The new change and the repository's brief.
@@ -244,6 +259,7 @@ pub(crate) fn start(host: &dyn Host, input: &Value) -> Result<Value, PluginError
         &skeleton,
         Vec::new(),
         Vec::new(),
+        None,
     );
     let plan = format!("{record}.md");
     let first = flow.phases.first().map_or("", |phase| phase.name.as_str());
@@ -277,7 +293,7 @@ pub(crate) fn start(host: &dyn Host, input: &Value) -> Result<Value, PluginError
     };
     let obligations_left_out = owed.len().saturating_sub(OBLIGATIONS_SHOWN);
     let obligations = (owed.into_iter().take(OBLIGATIONS_SHOWN))
-        .map(|(control, summary)| Owed { control, summary })
+        .map(Owed::from)
         .collect();
     Ok(to_value(Output {
         path,

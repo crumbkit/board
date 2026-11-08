@@ -30,17 +30,20 @@ pub enum Unmatched {
 
 impl Board {
     /// Takes the lock, waiting up to `wait`, and removes what `removing`
-    /// says at `path`, with one commit when `commit_on_put` is set.
+    /// says at `path`, with one commit when `commit_on_put` is set. The
+    /// commit's message is `message` when given, and otherwise names the
+    /// command, as `board rm <path>`.
     pub fn remove_waiting(
         &self,
         path: &LogicalPath,
         removing: Removing,
         unmatched: Unmatched,
+        message: Option<&str>,
         wait: Duration,
     ) -> Result<PutReport, PutError> {
         let lock = self.repositories().lock(wait)?;
         let mut view = self.repositories().snapshot().map_err(WriteError::from)?;
-        let (removals, message) = match removing {
+        let (removals, default) = match removing {
             Removing::File(expect) => (
                 self.prepare_removal(&lock, &mut view, path, expect)
                     .map(|removal| vec![removal]),
@@ -55,7 +58,7 @@ impl Board {
             Err(error) if unmatched.ignores(&error) => return Ok(PutReport::absent(path.clone())),
             removals => removals?,
         };
-        self.write_all(lock, &[], &removals, &message)
+        self.write_all(lock, &[], &removals, message.unwrap_or(&default))
             .map_err(Failure::one)
     }
 

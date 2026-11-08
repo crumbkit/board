@@ -1,6 +1,6 @@
 ---
 name: changes
-description: 'Walk one change to a repository from its plan to its pull request, and gather every record it produces. Use it when you start a change to a repository mounted in the board, and whenever you resume one. Start with `board -C <board> call changes.start --mount /repos/<name> --title ''<title>''`, then call `changes.next --path /changes/<name>` for the next step. SKILL.md and README.md in the plugin''s directory say more.'
+description: 'Walk one change to a repository from its plan to its pull request, and gather every record it produces. Use it to start, resume or list work on a repository the board mounts. Start a change with `board -C <board> call changes.start --mount /repos/<name> --title ''<title>''`, then call `changes.next --path /changes/<name>` for the next step. `changes.open` lists the changes in progress. SKILL.md and README.md in the plugin''s directory say more.'
 ---
 
 # changes
@@ -18,7 +18,8 @@ blocks is missing.
    Add `--handle @<you>` so the route reflects who owns what. Add
    `--flow <name>` to follow another flow than the board's choice, such as
    `small`. Read every path in `docs` and in `surfaced`, and note each
-   `obligations` entry. Treat each `ask_first` pattern as a file to ask
+   `obligations` entry. Each entry carries a `close` line that says how to
+   discharge that obligation once its work is committed. Treat each `ask_first` pattern as a file to ask
    about before changing.
 2. Run `board -C <board> call changes.next --path /changes/<name>`
    whenever you start a phase or lose context. Do what `instruction` says
@@ -185,7 +186,7 @@ the development flow.
   change in `build` is paused, and only a paused one resumed.
 - `changes::prototype::not_prototype`: only a prototype takes a verdict.
 - `changes::task::not_a_task_path`: `--parent` names a task under a
-  `tasks/` directory, such as `/repos/notes-personal/tasks/<slug>.md`, not
+  `tasks/` directory, such as `/repos/notes/tasks/<slug>.md`, not
   a project brief.
 - `changes::task::unrouted`: name the task with `--task`, or the repo to
   add it to with `--task-repo`.

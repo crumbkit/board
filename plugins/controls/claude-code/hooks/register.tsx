@@ -257,10 +257,13 @@ export const register: Register = on => {
               <Text dimColor>None.</Text>
             ) : (
               section.controls.map(c => (
-                <Text>
-                  <Text color="suggestion">{c.control}</Text>: {c.requirement}
-                  {c.usage ? ` (now ${c.usage})` : ''}
-                </Text>
+                <Box key={c.control} flexDirection="column">
+                  <Text>
+                    <Text color="suggestion">{c.control}</Text>: {c.requirement}
+                    {c.usage ? ` (now ${c.usage})` : ''}
+                  </Text>
+                  {c.close ? <Text dimColor>{`  ${c.close}`}</Text> : null}
+                </Box>
               ))
             )}
           </Box>

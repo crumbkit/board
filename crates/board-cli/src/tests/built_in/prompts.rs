@@ -617,8 +617,11 @@ fn a_path_board_cannot_read_is_refused_with_boards_own_refusal() {
     assert_eq!(
         refused["message"],
         "`board get` refused with board::path::malformed: logical path \
-         \"/prompts/../prompts/review-pr.md\" is malformed: it has a . or .. segment; a logical \
-         path starts with `/`, leaves out `.json`, has no empty, `.` or `..` segment, and holds \
-         no invisible character such as U+202E"
+         \"/prompts/../prompts/review-pr.md\" is malformed: it has a . or .. segment"
+    );
+    assert_eq!(
+        refused["recovery"]["text"],
+        "a logical path starts with `/`, leaves out `.json`, has no empty, `.` or `..` segment, \
+         and holds no invisible character such as U+202E"
     );
 }
