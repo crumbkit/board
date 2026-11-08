@@ -66,6 +66,13 @@ pub trait Host {
     /// command does under `BOARD_PLUGIN`: every line checked, the effects
     /// check run as the plugin, and one commit or nothing.
     fn put(&self, lines: &[Value]) -> Result<PutReport, PutError>;
+    /// Writes `lines` as [`Host::put`] does, with the trailer
+    /// `Board-Bulk: <reason>` that `bulk` gives on its commit. A host that
+    /// makes no commit, as a test's does, writes as [`Host::put`] does.
+    fn put_bulk(&self, lines: &[Value], bulk: &crate::Bulk) -> Result<PutReport, PutError> {
+        let _ = bulk;
+        self.put(lines)
+    }
     /// Runs `target` with `input` as the plugin's own `board call` does:
     /// one call deeper, under the `BOARD_PLUGIN` it would set, with only
     /// the capability's declared `env` among the variables. Board's
@@ -430,6 +437,33 @@ impl Hosted<'_> {
         Ok(board)
     }
 
+    /// Opens the board again as the plugin, as a put through a mount opens
+    /// the mounted board, so every check reads the plugin where it already
+    /// does, and writes `lines` there, marking the commit with `bulk`.
+    fn put_marked(
+        &self,
+        lines: &[Value],
+        bulk: Option<&crate::Bulk>,
+    ) -> Result<PutReport, PutError> {
+        let plugin = self.plugin()?;
+        let mut board = self
+            .again()
+            .map_err(|error| PutError::Open(Box::new(error)))?;
+        board.ask_as(Asker {
+            plugin: Some(plugin),
+            ..Asker::default()
+        });
+        if let Some(bulk) = bulk {
+            board.mark_bulk(bulk.clone());
+        }
+        let text = lines
+            .iter()
+            .map(Value::to_string)
+            .collect::<Vec<_>>()
+            .join("\n");
+        board.put_batch(&mut text.as_bytes())
+    }
+
     fn plugin(&self) -> Result<PluginName, PutError> {
         (self.plugin.clone()).map_err(|text| PutError::BadPlugin { text })
     }
@@ -485,20 +519,11 @@ impl Host for Hosted<'_> {
     /// the mounted board, so every check reads the plugin where it already
     /// does.
     fn put(&self, lines: &[Value]) -> Result<PutReport, PutError> {
-        let plugin = self.plugin()?;
-        let mut board = self
-            .again()
-            .map_err(|error| PutError::Open(Box::new(error)))?;
-        board.ask_as(Asker {
-            plugin: Some(plugin),
-            ..Asker::default()
-        });
-        let text = lines
-            .iter()
-            .map(Value::to_string)
-            .collect::<Vec<_>>()
-            .join("\n");
-        board.put_batch(&mut text.as_bytes())
+        self.put_marked(lines, None)
+    }
+
+    fn put_bulk(&self, lines: &[Value], bulk: &crate::Bulk) -> Result<PutReport, PutError> {
+        self.put_marked(lines, Some(bulk))
     }
 
     fn call(&self, target: &Target, input: &Value) -> Result<CallReport, Box<Refusal>> {

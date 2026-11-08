@@ -142,6 +142,9 @@ Write the record on stdin at a path or --new name, or a file with --file
 - `--batch`: Read JSON Lines of `{path, expect}` with a record, a text or `remove: true`; apply all or none.
 
   A line `{new, record}` writes the record in the folder `new` names, as --new does. A record line at `/.board/types/<namespace>/<kind>/v<n>.schema` adds that schema and takes no expect. Schema lines are checked before the other lines, and a schema the board holds is committed if HEAD lacks it, unless a symlink holds it. Every line writes in one board: this board, or the board one mount leads to. A batch through a mount commits in the mounted board and moves the mount's pin.
+- `--bulk <REASON>`: Mark the batch's commit as a bulk one, ending its message in `Board-Bulk: <REASON>`.
+
+  The reason is one line of 1 to 80 characters, such as `migrate flows`, so a reader of history can tell a commit that touches many files from an edit.
 - `--file`: Write stdin as a file at a path that is its whole name, such as /notes/plan.md.
 
   With a `store` setting, --file uploads bytes over 1 MiB or not UTF-8 under their digest and writes a board/attachment/v1 record.

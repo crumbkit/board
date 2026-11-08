@@ -1243,3 +1243,26 @@ fn a_put_beside_a_symlink_at_its_temporary_path_writes_the_record_and_leaves_the
         );
     }
 }
+
+#[test]
+fn a_bulk_reason_with_a_line_break_or_over_80_characters_is_refused_and_one_line_of_80_is_admitted()
+{
+    for refused in [
+        "",
+        "  ",
+        "migrate\nflows",
+        "migrate\rflows",
+        &"x".repeat(81),
+    ] {
+        let error = crate::Bulk::new(refused).unwrap_err();
+        assert_eq!(error.code(), Code::PutBulkReason, "{refused:?}");
+    }
+    let bulk = crate::Bulk::new(&"x".repeat(80)).unwrap();
+    let admitted = crate::Bulk::new("migrate flows").unwrap();
+    assert_eq!(
+        admitted.mark("board put --batch (1 records)"),
+        "board put --batch (1 records)\n\nBoard-Bulk: migrate flows"
+    );
+    let marked = bulk.mark("m");
+    assert_eq!(admitted.mark(&marked), marked);
+}

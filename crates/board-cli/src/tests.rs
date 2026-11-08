@@ -1462,6 +1462,44 @@ fn put_batch_writes_every_line_or_lists_the_refused_ones() {
 }
 
 #[test]
+fn put_batch_bulk_ends_the_commit_message_in_its_trailer_and_an_empty_reason_is_refused() {
+    let scenario = board();
+    scenario.write(
+        ".git/config",
+        Item::Appended("[user]\n\tname = Board Test\n\temail = board@example.com\n"),
+    );
+    let line = r#"{"path": "/tasks/a", "record": {"$type": "lr/task/v1", "title": "a"}}"#;
+    let refused = board_with(
+        scenario.workdir(),
+        None,
+        &["put", "--batch", "--bulk", "", "--json"],
+        format!("{line}\n").as_bytes(),
+    );
+    assert_eq!(refused.code, 1);
+    assert_eq!(json(&refused)["code"], "board::put::bulk_reason");
+    assert!(!scenario.workdir().join("tasks/a.json").exists());
+    let long = "x".repeat(81);
+    let over = board_with(
+        scenario.workdir(),
+        None,
+        &["put", "--batch", "--bulk", &long, "--json"],
+        format!("{line}\n").as_bytes(),
+    );
+    assert_eq!(json(&over)["code"], "board::put::bulk_reason");
+    let wrote = board_with(
+        scenario.workdir(),
+        None,
+        &["put", "--batch", "--bulk", "migrate flows"],
+        format!("{line}\n").as_bytes(),
+    );
+    assert_eq!(wrote.code, 0, "{}", text(&wrote.stderr));
+    assert_eq!(
+        scenario.head().unwrap().message,
+        "board put --batch (1 records)\n\nBoard-Bulk: migrate flows"
+    );
+}
+
+#[test]
 fn put_file_writes_stdin_as_given_and_a_batch_of_a_record_and_files_makes_one_commit() {
     let scenario = board();
     scenario

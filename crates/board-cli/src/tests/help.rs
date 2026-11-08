@@ -217,8 +217,8 @@ const BUDGETS: Budgets = Budgets::new()
         ),
         Budget::new(
             "put",
-            1_520,
-            "put has six options of its own (--new, --var, --expect, --batch, --file and --wait), and a reader needs to know on one page that with a store --file may write an attachment record in place of the bytes. Its page also ends with the Effects: line and a global flags line that names --no-input.",
+            1_620,
+            "put has seven options of its own (--new, --var, --expect, --batch, --bulk, --file and --wait), and a reader needs to know on one page that with a store --file may write an attachment record in place of the bytes. Its page also ends with the Effects: line and a global flags line that names --no-input.",
         ),
         Budget::new(
             "refs",
