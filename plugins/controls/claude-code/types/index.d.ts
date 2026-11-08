@@ -15,8 +15,11 @@ export type Checked =
   | { kind: 'read'; root: string; controls: Control[] }
   | { kind: 'failed'; root: string; code: string; message: string }
 
-/** A read-only badge of the session's state, such as `Board personal`. */
-export type StateBadge = { label: string; value: string }
+/**
+ * A read-only badge of the session's state, such as `Board personal`, or a
+ * red badge that says what is wrong with the badges file.
+ */
+export type StateBadge = { label: string; value: string; problem: null } | { problem: string }
 
 declare module 'claude-code' {
   interface PluginState {

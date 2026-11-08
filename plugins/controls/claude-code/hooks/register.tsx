@@ -2,6 +2,7 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, RenderElement } from 'claude-code'
 
 import type { Checked, Control, StateBadge } from '../types'
+import type { Configured } from './controls'
 import { SLOT, joinBand } from './band'
 import {
   BLOCK,
@@ -12,7 +13,9 @@ import {
   controlsBadge,
   paneTitle,
   parseCheck,
-  parseConfig,
+  badgesProblem,
+  parseBadges,
+  parsePersonal,
   parseForPath,
   reminder,
   sections,
@@ -49,15 +52,33 @@ async function repositoryRoot($: EngineInterface, cwd: string): Promise<string> 
   }
 }
 
-/** The known boards file, which names the configured badges and the personal board. */
-async function config($: EngineInterface) {
+/** Board's configuration directory: `$XDG_CONFIG_HOME/board`, or `~/.config/board`. */
+async function configDir($: EngineInterface) {
   const xdg = await $.env.get('XDG_CONFIG_HOME')
-  const base = xdg !== undefined && xdg !== '' ? xdg : `${(await $.env.get('HOME')) ?? ''}/.config`
+  return `${xdg !== undefined && xdg !== '' ? xdg : `${(await $.env.get('HOME')) ?? ''}/.config`}/board`
+}
+
+/** The personal board's directory, from the known boards file; null when it names none. */
+async function personalBoard($: EngineInterface, dir: string) {
   try {
-    return parseConfig(await $.fs.read(`${base}/board/config.json`))
+    return parsePersonal(await $.fs.read(`${dir}/config.json`))
   } catch {
-    return parseConfig('{}')
+    return null
   }
+}
+
+/** The configured badges, or the red badge saying what is wrong with the file. A missing file configures none. */
+async function configured($: EngineInterface, dir: string): Promise<Configured[] | StateBadge> {
+  const file = `${dir}/badges.json`
+  let text: string
+  try {
+    if (!(await $.fs.exists(file))) return []
+    text = await $.fs.read(file)
+  } catch (error) {
+    return badgesProblem(file, `could not be read: ${String(error)}`)
+  }
+  const parsed = parseBadges(text)
+  return 'problem' in parsed ? badgesProblem(file, parsed.problem) : parsed.badges
 }
 
 /** Runs `argv` in `cwd` and answers its badge value; null when it fails, times out or prints nothing. */
@@ -72,12 +93,16 @@ async function value($: EngineInterface, argv: string[], cwd: string, timeoutMs:
 
 /** Reads the state badges once: each configured command in the session's directory, then the board's name. */
 async function readState($: EngineInterface, cwd: string, root: string) {
-  const { badges, personal } = await config($)
-  const [configured, where] = await Promise.all([
+  const dir = await configDir($)
+  const [listed, personal] = await Promise.all([configured($, dir), personalBoard($, dir)])
+  const badges = Array.isArray(listed) ? listed : []
+  const [values, where] = await Promise.all([
     Promise.all(badges.map(async b => ({ label: b.label, value: await value($, b.argv, cwd, BADGE_MS) }))),
     $.process.run(['/bin/sh', '-c', WHERE], { cwd: root, timeoutMs: TIMEOUT_MS }).catch(() => null),
   ])
-  const shown = configured.filter((b): b is StateBadge => b.value !== null)
+  const shown: StateBadge[] = Array.isArray(listed)
+    ? values.flatMap(b => (b.value === null ? [] : [{ label: b.label, value: b.value, problem: null }]))
+    : [listed]
   const board = where === null ? null : boardName(where.exitCode, where.stdout, personal)
   await update($, state, () => stateBadges(shown, board))
 }
@@ -171,7 +196,9 @@ export const register: Register = on => {
       parts.push(
         (
           <Box key={SLOT.state} flexDirection="row" flexWrap="wrap" columnGap={1}>
-            {badges.map(b => [<Text dimColor>{b.label}</Text>, <Text bold>{b.value}</Text>])}
+            {badges.map(b =>
+              b.problem !== null ? <Text color="red">{b.problem}</Text> : [<Text dimColor>{b.label}</Text>, <Text bold>{b.value}</Text>],
+            )}
           </Box>
         ) as RenderElement,
       )

@@ -139,19 +139,28 @@ export const REMINDER_NOTE =
 /** A state badge the owner configured: its label and the command whose first line of output is its value. */
 export type Configured = { label: string; argv: string[] }
 
-/**
- * Reads the known boards file: the optional `badges` list, and the personal
- * board's directory. An entry without a label or a command is left out.
- */
-export function parseConfig(text: string): { badges: Configured[]; personal: string | null } {
+/** Reads the known boards file's `personal`, the personal board's directory; null when it names none. */
+export function parsePersonal(text: string): string | null {
   const config = parseJson(text)
-  const list = Array.isArray(config?.badges) ? (config.badges as unknown[]) : []
-  const badges = list.flatMap(entry => {
+  return typeof config?.personal === 'string' ? config.personal : null
+}
+
+/**
+ * Reads the badges file, `{"badges": [{"label", "argv"}]}`: the configured
+ * badges, or what is wrong with the file.
+ */
+export function parseBadges(text: string): { badges: Configured[] } | { problem: string } {
+  const file = parseJson(text)
+  if (file === null) return { problem: 'is not a JSON object' }
+  if (!Array.isArray(file.badges)) return { problem: 'has no badges list' }
+  const badges: Configured[] = []
+  for (const [i, entry] of (file.badges as unknown[]).entries()) {
     const { label, argv } = (typeof entry === 'object' && entry !== null ? entry : {}) as { label?: unknown; argv?: unknown }
     const ok = typeof label === 'string' && label.trim() !== '' && Array.isArray(argv) && argv.length > 0 && argv.every(a => typeof a === 'string')
-    return ok ? [{ label: label.trim(), argv: argv as string[] }] : []
-  })
-  return { badges, personal: typeof config?.personal === 'string' ? config.personal : null }
+    if (!ok) return { problem: `entry ${i + 1} needs a label and an argv of strings` }
+    badges.push({ label: label.trim(), argv: argv as string[] })
+  }
+  return { badges }
 }
 
 /** A badge command's value: the first line of its output; null when it failed or printed nothing. */
@@ -172,9 +181,12 @@ export function boardName(exitCode: number, stdout: string, personal: string | n
   return personal !== null && trim(personal) === trim(location.repository) ? 'personal' : lastSegment(location.repository)
 }
 
+/** The red badge for a badges file that could not be read or is malformed. */
+export const badgesProblem = (file: string, problem: string): StateBadge => ({ problem: `${file} ${problem}` })
+
 /** The state badges in the order they show: the configured ones, then Board. */
 export const stateBadges = (configured: readonly StateBadge[], board: string | null): StateBadge[] =>
-  board === null ? [...configured] : [...configured, { label: 'Board', value: board }]
+  board === null ? [...configured] : [...configured, { label: 'Board', value: board, problem: null }]
 
 /** The hidden row that names controls on `file` the conversation was not told about. */
 export function reminder(file: string, controls: readonly Control[]): string {

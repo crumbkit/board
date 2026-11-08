@@ -3,7 +3,7 @@ import type { On } from 'claude-code'
 import type { Engine } from 'claude-code/testing'
 
 import { SLOT } from '../hooks/band'
-import { badgeValue, boardName, contextText, controlsBadge, parseCheck, parseConfig, sections } from '../hooks/controls'
+import { badgeValue, boardName, contextText, controlsBadge, parseBadges, parseCheck, parsePersonal, sections } from '../hooks/controls'
 
 // These prove what a session is told about controls and when, with git and
 // board stood in by a process.run hook. They do not run board: the Python
@@ -29,6 +29,8 @@ type Answers = {
   forPath?: Record<string, object[]> | 'fails'
   /** The known boards file's text; none when absent. */
   config?: string
+  /** The badges file's text; none when absent, 'unreadable' when it exists and cannot be read. */
+  badges?: string
   /** What each configured command prints, by its first argument; 'fails' exits 1, 'hangs' rejects. */
   commands?: Record<string, string>
   /** The repository `board ls /` names; none when no board holds the directory. */
@@ -36,6 +38,7 @@ type Answers = {
 }
 
 const CONFIG = '/home/me/.config/board/config.json'
+const BADGES = '/home/me/.config/board/badges.json'
 const PERSONAL = '/home/me/Code/board'
 
 /** Stands in for the engine beneath the plugin: git, board, the tool list, the status line and the transcript. */
@@ -46,9 +49,11 @@ function engine(on: On, answers: Answers) {
     value: { exitCode, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false },
   })
   on('env.get', (_, e) => ({ value: e.name === 'HOME' ? '/home/me' : undefined }))
+  on('fs.exists', (_, e) => ({ value: e.path === BADGES ? answers.badges !== undefined : e.path === CONFIG && answers.config !== undefined }))
   on('fs.read', (_, e) => {
     if (e.path === CONFIG && answers.config !== undefined) return { value: answers.config }
-    throw new Error(`ENOENT: ${e.path}`)
+    if (e.path === BADGES && answers.badges !== undefined && answers.badges !== 'unreadable') return { value: answers.badges }
+    throw new Error(`EACCES: ${e.path}`)
   })
   on('process.run', (_, e) => {
     const line = e.argv.join(' ')
@@ -187,14 +192,19 @@ test('the pane groups the controls as standing rules, obligations owed and budge
   ])
 })
 
-test('the known boards file names the configured badges, and an entry without a label or a command is left out', () => {
-  const text = JSON.stringify({
-    personal: PERSONAL,
-    badges: [{ label: 'Home', argv: ['home-name'] }, { label: '', argv: ['x'] }, { label: 'Empty', argv: [] }, { argv: ['y'] }, 'z'],
+test('the badges file lists each badge\'s label and command, and a malformed file says what is wrong', () => {
+  expect(parseBadges(JSON.stringify({ badges: [{ label: ' Home ', argv: ['home-name', '--short'] }] }))).toEqual({
+    badges: [{ label: 'Home', argv: ['home-name', '--short'] }],
   })
-  expect(parseConfig(text)).toEqual({ badges: [{ label: 'Home', argv: ['home-name'] }], personal: PERSONAL })
-  expect(parseConfig('{"boards": []}')).toEqual({ badges: [], personal: null })
-  expect(parseConfig('not json')).toEqual({ badges: [], personal: null })
+  expect(parseBadges(JSON.stringify({ badges: [] }))).toEqual({ badges: [] })
+  expect(parseBadges('not json')).toEqual({ problem: 'is not a JSON object' })
+  expect(parseBadges('{}')).toEqual({ problem: 'has no badges list' })
+  expect(parseBadges(JSON.stringify({ badges: [{ label: 'Home', argv: ['x'] }, { label: '', argv: ['y'] }] }))).toEqual({
+    problem: 'entry 2 needs a label and an argv of strings',
+  })
+  expect(parseBadges(JSON.stringify({ badges: [{ label: 'Home', argv: [] }] }))).toEqual({ problem: 'entry 1 needs a label and an argv of strings' })
+  expect(parsePersonal(JSON.stringify({ personal: PERSONAL, boards: [] }))).toBe(PERSONAL)
+  expect(parsePersonal('{}')).toBeNull()
 })
 
 test('a badge shows the first line of its output, and a command that fails or prints nothing shows no badge', () => {
@@ -215,8 +225,8 @@ test('the Board badge names the personal board as personal, and any other board 
 })
 
 test('the band shows the configured badges, the Board badge and the Controls button, and the button opens the grouped pane', async ($, on) => {
-  const config = JSON.stringify({
-    personal: PERSONAL,
+  const config = JSON.stringify({ personal: PERSONAL })
+  const badges = JSON.stringify({
     badges: [
       { label: 'Home', argv: ['home-name'] },
       { label: 'Broken', argv: ['broken'] },
@@ -226,6 +236,7 @@ test('the band shows the configured badges, the Board badge and the Controls but
   })
   const { events } = engine(on, {
     config,
+    badges,
     commands: { 'home-name': 'vq\n', broken: 'fails', slow: 'hangs', quiet: '' },
     repository: `${PERSONAL}/vq`,
   })
@@ -264,6 +275,20 @@ test('the parts sit in their own slots in the band row', async ($, on) => {
   const keys = typeof row === 'object' && row.type === 'Box' ? row.children?.map(c => (typeof c === 'object' && c.type === 'Box' ? c.props?.key : 'bar')) : []
   expect(keys).toEqual([SLOT.state, 'bar', SLOT.controls])
   expect((await band.findAll({ type: 'Text' })).map(t => t.text)).toEqual(['Board', 'personal', '|'])
+})
+
+test('a badges file that is malformed or cannot be read is one red badge naming the file and the problem', async ($, on) => {
+  const answers: Answers = { badges: '{"badges": "Home"}', repository: PERSONAL, config: JSON.stringify({ personal: PERSONAL }) }
+  engine(on, answers)
+  await start($)
+  const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect((await band.findAll({ type: 'Text' })).map(t => t.text)).toEqual([`${BADGES} has no badges list`, 'Board', 'personal', '|'])
+  await band.unmount()
+  answers.badges = 'unreadable'
+  await start($)
+  const again = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  // The test engine words the read's failure its own way; a session shows the file system's error.
+  expect((await again.find({ type: 'Text' }))?.text?.startsWith(`${BADGES} could not be read: `)).toBe(true)
 })
 
 test('a failed check shows the Controls button in red with its code', async ($, on) => {

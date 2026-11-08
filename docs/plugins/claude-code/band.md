@@ -23,15 +23,18 @@ band draws nothing. While a survey holds the band, no mod draws in it.
   message. To shorten a badge, rename the order's path; the signature stays
   valid, because the signed statement does not include the path.
 - **State badges**, from `board-controls`. Each is a label and a value, and
-  none can be pressed. The owner configures them in
-  `~/.config/board/config.json` (or under `$XDG_CONFIG_HOME`) as an
-  optional `badges` list, such as
-  `"badges": [{"label": "Home", "argv": ["home-name", "--short"]}]`. Each
+  none can be pressed. The owner lists them in an optional file,
+  `~/.config/board/badges.json` (or under `$XDG_CONFIG_HOME`), such as
+  `{"badges": [{"label": "Home", "argv": ["home-name", "--short"]}]}`.
+  Without the file there are none. A file that cannot be read or is
+  malformed shows one red badge naming the file and the problem, such as
+  `has no badges list` or `entry 2 needs a label and an argv of strings`. Each
   command runs once as the session starts, in the session's directory, with
   2 seconds to finish. The first line of its standard output is the value.
   A command that fails, times out or prints nothing shows no badge. After
   them comes the built-in **Board** badge: `personal` when the session's
-  directory is in the personal board or a repository it mounts, else the
+  directory is in the board that `personal` in `config.json` names, or a
+  repository it mounts, else the
   name of the directory of the board that holds it, read from `board --json
   ls / --limit 1`. With no such board, it is left out.
 - **Controls button**, from `board-controls`: `Controls <n>`, the number of
