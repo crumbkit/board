@@ -142,7 +142,7 @@ fn default(name: &str, heuristic: &Heuristic, fallback: &Fallback) -> Got {
             Reason::Missing,
             warning(
                 WarningCode::Missing,
-                format!("no value record is at {VALUES}{name}"),
+                format!("no readable value record is at {VALUES}{name}"),
             ),
         ),
         Fallback::TooLittle => (Reason::TooLittle, None),

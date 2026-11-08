@@ -5,14 +5,16 @@
 //! binary, in `board-cli`, cover `params.get` and `params.due` themselves.
 
 use std::path::Path;
+use std::time::Duration;
 
-use board_model::{Code, canonical_json};
+use board_model::{Code, LogicalPath, Refusal, canonical_json};
+use board_ops::Elsewhere;
 use serde::Deserialize;
 
 use super::*;
 use crate::due::stale;
 use crate::records::Bounds;
-use crate::stored::{Check, Fallback, Heuristic, Stored, shipped, usable};
+use crate::stored::{Check, Fallback, Heuristic, Stored, is_name, shipped, usable};
 
 /// The `description` of SKILL.md's frontmatter, a single-quoted YAML
 /// scalar on one line.
@@ -86,6 +88,11 @@ fn the_shipped_heuristics_are_admitted_with_the_start_default_bounds_and_check_t
                 (&json!("changed-lines"), &json!("controls")),
                 "{name}"
             );
+            let method = record["method"].as_str().unwrap();
+            assert!(
+                method.contains("top-level `value`") && method.contains("lenient default"),
+                "{name}: {method}"
+            );
             let number = |pointer: &str| record.pointer(pointer).unwrap().as_f64().unwrap();
             let numbers = [
                 "/start",
@@ -144,6 +151,10 @@ fn the_value_schema_refuses_a_bad_data_scope_or_time_and_admits_their_twins() {
         (
             with("scopes", json!({"repos/board": 1})),
             with("scopes", json!({"/repos/board": 1})),
+        ),
+        (
+            with("scopes", json!({"/repos/{repo}": 1})),
+            with("scopes", json!({"/repos/repo": 1})),
         ),
         (
             with("scopes", json!({"/repos/board": "1"})),
@@ -206,6 +217,102 @@ fn the_heuristic_schema_refuses_no_inputs_and_a_recheck_of_zero_and_admits_their
             "{refused}"
         );
         schema.validate(&admitted).unwrap();
+    }
+}
+
+/// A host that reaches nothing of the board: an unknown capability and an
+/// input that does not read are refused before any read.
+struct Nowhere;
+
+impl Host for Nowhere {
+    fn query(
+        &self,
+        _: &str,
+        _: board_ops::Limit,
+    ) -> Result<board_ops::QueryReport, board_ops::QueryError> {
+        panic!("a refused call queries nothing")
+    }
+    fn refs(
+        &self,
+        _: &[LogicalPath],
+        _: board_ops::Absent,
+        _: &[String],
+    ) -> Result<Vec<Result<board_ops::RefsReport, board_ops::RefsError>>, board_ops::RefsError>
+    {
+        panic!("params resolves no refs")
+    }
+    fn get_each(
+        &self,
+        _: &[LogicalPath],
+    ) -> Result<Vec<Result<board_ops::GetReport, board_ops::ReadError>>, board_ops::ReadError> {
+        panic!("a refused call reads nothing")
+    }
+    fn put(&self, _: &[Value]) -> Result<board_ops::PutReport, board_ops::PutError> {
+        panic!("params writes nothing")
+    }
+    fn call(
+        &self,
+        _: &board_plugin::Target,
+        _: &Value,
+    ) -> Result<board_plugin::CallReport, Box<Refusal>> {
+        panic!("params calls no plugin")
+    }
+    fn board(&self, _: &Elsewhere) -> Result<Box<dyn Host + '_>, Box<Refusal>> {
+        panic!("params opens no other board")
+    }
+    fn decide(
+        &self,
+        _: &str,
+        _: &LogicalPath,
+        _: Option<&board_ops::Shown>,
+    ) -> Result<board_ops::DecideReport, Box<Refusal>> {
+        panic!("params asks the owner nothing")
+    }
+    fn sync(&self, _: bool, _: Duration) -> Result<board_ops::Synced, board_ops::SyncError> {
+        panic!("params syncs nothing")
+    }
+    fn mount_update(
+        &self,
+        _: &LogicalPath,
+        _: Duration,
+    ) -> Result<board_ops::MountUpdateReport, board_ops::MountError> {
+        panic!("params updates no mount")
+    }
+    fn settings(&self) -> &board_ops::Settings {
+        panic!("a refused call reads no settings")
+    }
+}
+
+#[test]
+fn a_capability_the_plugin_does_not_offer_is_refused_and_a_known_one_reaches_its_own_check() {
+    let call = |name: &str| Params.call(&Nowhere, &name.parse().unwrap(), json!({"extra": 1}));
+    let refused = call("set").unwrap_err();
+    assert_eq!(refused.code, "params::call::unknown_capability");
+    assert_eq!(
+        refused.message,
+        "params offers no capability set; it offers get and due"
+    );
+    assert_eq!(call("due").unwrap_err().code, "params::call::bad_input");
+}
+
+/// `is_name` keeps a record out of the output exactly when `Slug` would
+/// refuse its name there.
+#[test]
+fn is_name_agrees_with_the_slug_shape_on_refused_names_and_their_admitted_twins() {
+    let schema = schema_of::<board_plugin::shape::Slug>(SchemaSettings::draft2020_12());
+    let slug = board_validate::Schema::compile(schema).unwrap();
+    for (refused, admitted) in [
+        ("My_Value", "my-value"),
+        ("nested/one", "nested-one"),
+        ("-half", "half"),
+        ("half-", "half-life"),
+        ("half--life", "half-1"),
+        ("", "1"),
+    ] {
+        assert!(!is_name(refused), "{refused}");
+        assert!(slug.validate(&json!(refused)).is_err(), "{refused}");
+        assert!(is_name(admitted), "{admitted}");
+        slug.validate(&json!(admitted)).unwrap();
     }
 }
 

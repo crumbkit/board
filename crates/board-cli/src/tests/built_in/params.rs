@@ -99,7 +99,7 @@ fn get_gives_the_default_with_missing_when_no_value_record_exists() {
             "reason": "missing",
             "warning": {
                 "code": "params::value::missing",
-                "message": "no value record is at /params/values/half-life, so the default 14 applies",
+                "message": "no readable value record is at /params/values/half-life, so the default 14 applies",
             },
         })
     );
@@ -406,9 +406,14 @@ fn due_lists_a_failed_check_a_stale_value_and_one_on_the_default_oldest_first_an
 }
 
 #[test]
-fn due_lists_nothing_of_a_fresh_value_whose_check_passes_or_that_a_recheck_does_not_reach() {
+fn due_leaves_out_a_fresh_value_whose_check_passes_and_lists_it_once_it_is_older_than_its_recheck()
+{
     let board = board();
     write_half_life(&board, &json!({}));
+    board.write(
+        "suites/params-half-life/runs/a.json",
+        &check("half-life", "2026-11-09T00:00:00Z", 0.1),
+    );
     assert_eq!(due(&board), json!([]));
     board
         .write("params/heuristics/half-life.json", &heuristic(1))
@@ -420,4 +425,80 @@ fn due_lists_nothing_of_a_fresh_value_whose_check_passes_or_that_a_recheck_does_
         due(&board),
         json!([{"name": "half-life", "reason": "stale"}])
     );
+}
+
+#[test]
+fn due_leaves_out_a_heuristic_whose_path_is_not_a_name_and_lists_its_twin() {
+    let board = board();
+    board
+        .write("params/heuristics/My_Value.json", &heuristic(NEVER))
+        .write("params/heuristics/nested/one.json", &heuristic(NEVER))
+        .write("params/heuristics/my-value.json", &heuristic(NEVER));
+    assert_eq!(
+        due(&board),
+        json!([
+            {"name": "half-life", "reason": "on-default"},
+            {"name": "my-value", "reason": "on-default"},
+        ])
+    );
+    // The two written with names, and the two the plugin ships.
+    assert_eq!(board.call("params.due", &[])["checked"], 4);
+}
+
+#[test]
+fn a_value_board_marks_degraded_reads_as_missing_and_its_valid_twin_is_used() {
+    let board = board();
+    write_half_life(&board, &json!({"value": "seven"}));
+    assert_eq!(
+        board.checked("/params/values"),
+        BTreeMap::from([(
+            "/params/values/half-life".to_owned(),
+            Some("board::record::invalid".to_owned())
+        )])
+    );
+    assert_eq!(
+        half_life(&board),
+        json!({
+            "name": "half-life",
+            "value": 14.0,
+            "source": "default",
+            "reason": "missing",
+            "warning": {
+                "code": "params::value::missing",
+                "message": "no readable value record is at /params/values/half-life, so the default 14 applies",
+            },
+        })
+    );
+    write_half_life(&board, &json!({}));
+    assert_eq!(half_life(&board)["source"], "value");
+}
+
+#[test]
+fn a_heuristic_board_marks_degraded_leaves_the_shipped_one_of_its_name_in_place() {
+    let board = Fixture::enabling(&["runs", "params"]);
+    board.write(
+        "params/heuristics/overflow-agent-grace.json",
+        &json!({"$type": "params/heuristic/v1", "summary": "No other field."}).to_string(),
+    );
+    assert_eq!(
+        board.call("params.get", &["--name", "overflow-agent-grace"])["value"],
+        json!(200.0)
+    );
+}
+
+#[test]
+fn get_and_due_answer_the_same_from_a_warm_index_as_from_a_cold_one_after_a_record_changes() {
+    let board = board();
+    write_half_life(&board, &json!({}));
+    let targets = [
+        ("params.get", &["--name", "half-life"][..]),
+        ("params.due", &[]),
+    ];
+    let before = targets.map(|(target, flags)| board.call(target, flags));
+    write_half_life(&board, &json!({"value": 2}));
+    for ((target, flags), before) in targets.into_iter().zip(before) {
+        let warm = board.call(target, flags);
+        assert_ne!(warm, before, "{target}");
+        assert_eq!(board.answer(target, flags, true), warm, "{target}");
+    }
 }

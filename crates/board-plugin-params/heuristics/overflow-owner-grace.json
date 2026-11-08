@@ -24,7 +24,7 @@
       "source": "Read the owner's overflow decisions of the last 60 days with `board query`."
     }
   ],
-  "method": "Multiply the start, 400, by the repository's authored-lines-per-day and divide by board-median-rate, then keep the result within the bounds. A repository at the median gets 400, and one twice as busy gets 800. Write the result in `scopes` under the repository's mount, such as /repos/board, so each repository has its own value. Bulk and automated lines stay out of the rate, so a migration does not lengthen the grace.",
+  "method": "Multiply the start, 400, by the repository's authored-lines-per-day and divide by board-median-rate, then keep the result within the bounds. A repository at the median gets 400, and one twice as busy gets 800. Write the result in `scopes` under the repository's mount, such as /repos/board, so each repository has its own value. Write the heuristic's lenient default, 800, as the record's top-level `value`, which any repository not listed in `scopes` reads, because an unlisted repository has no data yet. Bulk and automated lines stay out of the rate, so a migration does not lengthen the grace.",
   "start": 400,
   "default": 800,
   "bounds": {

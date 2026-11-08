@@ -73,6 +73,15 @@ fn rows(host: &dyn Host, sql: &str) -> Result<Vec<Vec<Value>>, PluginError> {
     Ok(report.rows)
 }
 
+/// Whether `name` is what the shared shape `Slug` admits; a test keeps the
+/// two in step.
+pub(crate) fn is_name(name: &str) -> bool {
+    (name.split('-')).all(|word| {
+        !word.is_empty()
+            && (word.bytes()).all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit())
+    })
+}
+
 /// The heuristics the plugin ships, by name.
 pub(crate) fn shipped() -> BTreeMap<String, Heuristic> {
     (SHIPPED.iter())
@@ -88,7 +97,8 @@ pub(crate) fn shipped() -> BTreeMap<String, Heuristic> {
 /// board, and this board's other heuristics and its values. A record Board
 /// marks degraded for anything but the tree, or that the plugin cannot read,
 /// is left out, so a reader treats it as absent and a shipped heuristic of
-/// that name still applies.
+/// that name still applies. A record whose path gives a name that is not a
+/// `Slug` is left out too, because `params.due` could not name it.
 pub(crate) fn params(host: &dyn Host) -> Result<Params, PluginError> {
     let mut params = Params {
         heuristics: shipped(),
@@ -101,12 +111,12 @@ pub(crate) fn params(host: &dyn Host) -> Result<Params, PluginError> {
         let Some(record) = body(code, text) else {
             continue;
         };
-        if let Some(name) = path.strip_prefix(HEURISTICS)
+        if let Some(name) = path.strip_prefix(HEURISTICS).filter(|name| is_name(name))
             && let Ok(heuristic) = Heuristic::deserialize(&record)
             && kind == "params/heuristic/v1"
         {
             params.heuristics.insert(name.to_owned(), heuristic);
-        } else if let Some(name) = path.strip_prefix(VALUES)
+        } else if let Some(name) = path.strip_prefix(VALUES).filter(|name| is_name(name))
             && let Ok(value) = Stored::deserialize(&record)
             && kind == "params/value/v1"
         {

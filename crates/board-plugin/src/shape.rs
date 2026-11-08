@@ -435,6 +435,12 @@ patterned! {
 }
 
 patterned! {
+    /// A logical path with no placeholder, such as `/repos/board`, where a
+    /// reference cannot go, as in the key of a JSON object.
+    PathKey = "^/[^\\s{}]*$"
+}
+
+patterned! {
     /// A logical path that may hold `{name}` placeholders, such as
     /// `/controls/{repo}/ui-paths`, which its reader fills in before it
     /// resolves the path.
@@ -598,6 +604,7 @@ pub fn registry() -> Map<String, Value> {
         entry::<Glob>(&mut generator),
         entry::<LogicalGlob>(&mut generator),
         entry::<ObjectId>(&mut generator),
+        entry::<PathKey>(&mut generator),
         entry::<PathTemplate>(&mut generator),
         entry::<Pattern>(&mut generator),
         entry::<Person>(&mut generator),

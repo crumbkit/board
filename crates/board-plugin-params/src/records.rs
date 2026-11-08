@@ -5,7 +5,7 @@
 
 use std::collections::BTreeMap;
 
-use board_plugin::shape::{Actor, PathTemplate, Prose, Record, Ref, Slug, Summary, Tag, Timestamp};
+use board_plugin::shape::{Actor, PathKey, Prose, Record, Ref, Slug, Summary, Tag, Timestamp};
 use schemars::{JsonSchema, Schema, SchemaGenerator};
 use serde::{Deserialize, Serialize};
 
@@ -125,11 +125,9 @@ pub struct ValueRecord {
     pub by: Actor,
 }
 
-/// The schema of a key of `scopes`. A JSON Schema key cannot be a reference,
-/// so a key is checked as a logical path, the shape `PathTemplate` shares; a
-/// scope holds no placeholder.
+/// The schema of a key of `scopes`.
 fn scope_key() -> Schema {
-    SchemaGenerator::default().subschema_for::<PathTemplate>()
+    SchemaGenerator::default().subschema_for::<PathKey>()
 }
 
 impl Record for ValueRecord {

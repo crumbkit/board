@@ -247,6 +247,7 @@ fn the_registry_holds_each_shared_shape_by_name_as_a_field_using_it_sees_it() {
             "Glob",
             "LogicalGlob",
             "ObjectId",
+            "PathKey",
             "PathTemplate",
             "Pattern",
             "Person",
@@ -642,6 +643,22 @@ fn a_path_template_without_a_leading_slash_or_with_a_space_is_refused_and_its_tw
     for (refused, admitted) in [
         ("controls/{repo}/ui-paths", "/controls/{repo}/ui-paths"),
         ("/flows/{draft} .json", "/flows/{draft}.json"),
+    ] {
+        assert_eq!((refused, code(json!(refused))), (refused, invalid));
+        assert_eq!((admitted, code(json!(admitted))), (admitted, None));
+    }
+}
+
+/// A path key is a logical path on one line that holds no placeholder.
+#[test]
+fn a_path_key_without_a_leading_slash_with_a_space_or_with_a_placeholder_is_refused_and_its_twin_is_admitted()
+ {
+    let code = refusal_of::<PathKey>();
+    let invalid = Some(board_model::Code::RecordInvalid);
+    for (refused, admitted) in [
+        ("repos/board", "/repos/board"),
+        ("/repos/my board", "/repos/my-board"),
+        ("/repos/{repo}", "/repos/repo"),
     ] {
         assert_eq!((refused, code(json!(refused))), (refused, invalid));
         assert_eq!((admitted, code(json!(admitted))), (admitted, None));

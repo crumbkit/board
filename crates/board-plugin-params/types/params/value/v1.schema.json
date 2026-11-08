@@ -73,7 +73,7 @@
       },
       "description": "The value for each repository or project, by its path, such as\n`/repos/board`.",
       "propertyNames": {
-        "pattern": "^/\\S*$",
+        "pattern": "^/[^\\s{}]*$",
         "type": "string"
       },
       "type": "object"

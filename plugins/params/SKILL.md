@@ -21,7 +21,7 @@ the number to use.
 - When `source` is `value`, cite `record` and `derived` in any output that
   used the number.
 - When `source` is `default`, the heuristic's lenient default applies.
-  `reason` says why: `missing` when no value record exists, `too-little`
+  `reason` says why: `missing` when no readable value record exists, `too-little`
   when the last run found too little data, `out-of-bounds` when a number in
   the record is outside the heuristic's bounds, and `wrong-heuristic` when
   the record names another heuristic. Except for `too-little`, `warning`

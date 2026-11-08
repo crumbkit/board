@@ -34,7 +34,8 @@ The plugin compiles two heuristics into Board, `overflow-agent-grace` and
 Board's repository, so every board that enables the plugin has them. Each
 scales a starting grace of changed lines by how busy a repository is against
 the median of the board's repositories, and writes a value per repository
-under `scopes`.
+under `scopes`. The record's top-level `value` is the heuristic's lenient
+default, which any repository not listed in `scopes` reads.
 
 To change a shipped heuristic, write a record of the same name at
 `/params/heuristics/<name>`. That record replaces the shipped heuristic of
@@ -92,7 +93,7 @@ measure as `check`.
 
   | `reason` | Why the default applies | `warning.code` |
   | --- | --- | --- |
-  | `missing` | No value record exists. | `params::value::missing` |
+  | `missing` | No readable value record exists. | `params::value::missing` |
   | `too-little` | The last run found too little data. | none |
   | `out-of-bounds` | A number in the record is outside the bounds. | `params::value::out_of_bounds` |
   | `wrong-heuristic` | `heuristic` is not the value's own `<name>`. | `params::value::wrong_heuristic` |
@@ -126,7 +127,9 @@ first.
 
 Both capabilities read only the board's own `/params/` and `/suites/`, not
 its mounts. A record Board marks degraded for anything but a reference is
-read as absent.
+read as absent, so a degraded value gives `missing` and a degraded override
+leaves the shipped heuristic in place. A record whose path gives a name that
+is not a slug, such as `/params/heuristics/My_Value`, is left out.
 
 ## Enabling
 
