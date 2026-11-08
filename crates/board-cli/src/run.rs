@@ -12,6 +12,7 @@ use board_ops::{Absent, Board, DEFAULT_LIMIT, Expect, MAX_LIMIT, Plugins, PutErr
 use board_plugin::{Limits, Target};
 
 mod checkout;
+mod remove;
 
 /// What a plugin run gets from this command line's context.
 pub(crate) fn plugins(context: &Context) -> Plugins<'_> {
@@ -35,7 +36,7 @@ use crate::render::{self, GUIDE, Printer};
 use crate::report::Output;
 use crate::stdin::{Input, Stdin, TypeCommand, call, put};
 use crate::timing::Ran;
-use crate::values::{duration, expect, pointer, removal, var};
+use crate::values::{duration, expect, pointer, var};
 
 const ROOT_EXAMPLES: &str = "\
 Start here:
@@ -234,33 +235,18 @@ Examples:
     Put(Putting),
     /// Remove the file at a path.
     #[command(after_help = "\
-The path names one file: a record, a file such as /notes/plan.md, or a link
-or mount record itself. A path through a link removes the file it leads to.
--r removes every file beneath a directory in one commit, a link as itself,
-and refuses a symlink. Check reports references to removed files. Each
-removal is committed unless .board/board.json sets `commit_on_put` to false.
+The path names one file: a record, a file such as /notes/plan.md, or a
+link or mount record. A path through a link removes the file it leads to.
+-r removes a link beneath as itself and refuses a symlink. Each removal is
+one commit unless .board/board.json sets `commit_on_put` to false.
 
 Examples:
   board rm /tasks/a
   board rm /tasks/a --expect 2bb218481e3ef5fe92e9fd97979a4578cab9af2c
+  board rm /tasks/b -m 'Done in #12'
   board rm -r /tasks
   board rm /tasks/zz --ignore-unmatch")]
-    Rm {
-        /// The file's logical path, such as /tasks/a, or a from /tasks; a JSON file's leaves out .json.
-        path: Given,
-        /// The blob the file must hold.
-        #[arg(long, value_parser = expect)]
-        expect: Option<Expect>,
-        /// Remove every file beneath a directory.
-        #[arg(short = 'r', long, conflicts_with = "expect")]
-        recursive: bool,
-        /// Report a path that names nothing as absent.
-        #[arg(long)]
-        ignore_unmatch: bool,
-        /// How long to wait for the board's lock, with a unit: 500ms, 30s, 2m or 1h.
-        #[arg(long, value_name = "DURATION", value_parser = duration, default_value = "5s")]
-        wait: Duration,
-    },
+    Rm(remove::Removal),
     /// Fetch the remote branch, replay this board's commits onto it, and push.
     #[command(after_help = "\
 Board fetches the remote branch HEAD's branch follows, replays each commit
@@ -584,7 +570,7 @@ fn reread(
 /// plugin's decide writes in the personal board.
 fn ask(board: &mut Board, context: &Context, command: &Command) -> Result<(), Box<Refusal>> {
     let personal = match command {
-        Command::Put(_) | Command::Rm { .. } => false,
+        Command::Put(_) | Command::Rm(_) => false,
         Command::Decide(_) => context.environment.plugin.is_some(),
         _ => return Ok(()),
     };
@@ -640,21 +626,7 @@ fn command(
             get(board, printer, &paths, fetch)
         }
         Command::Put(putting) => put(board, printer, prefix, putting, stdin),
-        Command::Rm {
-            path,
-            expect,
-            recursive,
-            ignore_unmatch,
-            wait,
-            ..
-        } => {
-            let path = or_refuse!(crate::mistaken::file_path(prefix, &path, "rm", recursive));
-            let (removing, unmatched) = removal(recursive, expect, ignore_unmatch);
-            match board.remove_waiting(&path, removing, unmatched, wait) {
-                Ok(report) => render::put(printer, &report, None),
-                Err(error) => render::refused(printer, error.refusal()),
-            }
-        }
+        Command::Rm(asked) => remove::remove(board, printer, prefix, asked),
         Command::Sync { no_push } => match board.sync(!no_push, board_tree::GIT_DEADLINE) {
             Ok(report) => render::sync(printer, &report),
             Err(error) => render::refused(printer, error.refusal()),

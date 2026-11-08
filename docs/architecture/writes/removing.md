@@ -23,11 +23,12 @@ removes every file beneath a directory.
 - It passes the effects check as op `rm`; see
   [effects.md](effects.md).
 - It commits as a put does, only the removed path, with the message
-  `board rm <path>`.
+  `-m <message>` gives, kept as written, or `board rm <path>` without
+  `-m`. An empty or blank `-m` is refused with `board::cli::usage`.
 ## Recursive
 
 - `-r` on a directory removes each file beneath it in one commit, with the
-  message `board rm -r <path>`. On a file it removes that file.
+  message `-m` gives or `board rm -r <path>`. On a file it removes that file.
 - A link or mount record beneath is removed itself, never followed.
 - A symlink beneath refuses the whole removal with `board::put::symlink`. A
   name beneath with no logical path refuses it with

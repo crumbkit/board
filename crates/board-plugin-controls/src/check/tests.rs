@@ -453,7 +453,8 @@ fn closes(items: &Value) -> Vec<(String, Value)> {
 fn close(control: &str) -> Value {
     json!(format!(
         "Once the work this obligation names is committed, delete it with `board rm \
-         /controls/{control}`, which commits the deletion; merging the work does not clear it."
+         /controls/{control} -m '<message naming the work>'`; merging the work does not clear \
+         it."
     ))
 }
 
