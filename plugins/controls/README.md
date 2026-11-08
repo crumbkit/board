@@ -143,7 +143,12 @@ The plugin ships both schemas. `board plugin enable controls` writes them to
   to any of them once, by the control's path, with its `summary`, or else
   the requirement's first sentence cut to 25 words, `matched`, the paths
   that reached it in the order asked, and, for an obligation, `close`, as
-  `for-path` gives it. A path with no `*`, `?` or `[` is
+  `for-path` gives it. A version control also carries `versions_found`, the
+  number of versions its capture finds, older or not, in the files that
+  both an asked path and the control reach, read as `check` reads them at
+  the commit each mount pins. A file path counts the file there, and a
+  pattern counts each file it matches that the control's `paths` match or
+  its `applies_to` names. A path with no `*`, `?` or `[` is
   matched as `for-path` matches it. A pattern reaches a
   control whose `applies_to` names a path it matches, and a control one of
   whose `paths` matches a file it matches, by the file's display path. It

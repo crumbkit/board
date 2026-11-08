@@ -2,7 +2,7 @@
 //! input of `controls.for-paths`. The capability runs through the binary in
 //! board-cli's changes tests.
 
-use super::{Rule, fill, fit_rules, for_paths_input};
+use super::{LeftOut, Reason, Rule, fill, fit_rules, for_paths_input};
 
 fn rule(control: &str, summary: &str, matched: Option<&[&str]>) -> Rule {
     Rule {
@@ -29,10 +29,10 @@ fn rules_that_matched_some_paths_come_first_and_each_group_is_by_control() {
         rule("/c/a", "A.", None),
         rule("/c/z", "Z.", Some(&["/repos/x/a"])),
     ];
-    let (rules, named, unnamed, _) = fit_rules(&found, 100);
+    let (rules, named, unnamed, _) = fit_rules(&found, &[], 100);
     let order: Vec<&str> = rules.iter().map(|each| each.control.as_str()).collect();
     assert_eq!(order, ["/c/z", "/c/a", "/c/b"]);
-    assert_eq!(named, Vec::<String>::new());
+    assert_eq!(named, Vec::<LeftOut>::new());
     assert_eq!(unnamed, 0);
 }
 
@@ -61,4 +61,29 @@ fn every_rule_gets_its_summary_before_any_rule_gets_its_matched_paths() {
         "the matched paths would pass the room"
     );
     assert_eq!(spent, 4);
+}
+
+#[test]
+fn dropped_version_controls_are_named_after_the_rules_with_no_room_within_the_room() {
+    let found = [
+        rule("/c/a", "word word word.", None),
+        rule("/c/b", "B.", None),
+    ];
+    let dropped = ["/c/v".to_owned()];
+    let left = |control: &str, reason| LeftOut {
+        control: control.to_owned(),
+        reason,
+    };
+    // Each entry is 8 words, "/c/a word word word." 4 and "/c/b B." 2.
+    let (rules, named, unnamed, spent) = fit_rules(&found, &dropped, 14);
+    assert_eq!(rules.len(), 2);
+    assert_eq!(named, [left("/c/v", Reason::NoVersion)]);
+    assert_eq!((unnamed, spent), (0, 14));
+    // The words kept for the dropped entry leave no room for /c/a, which is
+    // named first and leaves no room for the dropped entry.
+    let (rules, named, unnamed, spent) = fit_rules(&found, &dropped, 10);
+    let shown: Vec<&str> = rules.iter().map(|each| each.control.as_str()).collect();
+    assert_eq!(shown, ["/c/b"]);
+    assert_eq!(named, [left("/c/a", Reason::NoRoom)]);
+    assert_eq!((unnamed, spent), (1, 10));
 }

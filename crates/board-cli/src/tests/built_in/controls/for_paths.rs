@@ -243,3 +243,47 @@ fn no_paths_are_refused_and_one_path_is_answered() {
     assert_eq!(admitted.code, 0, "{document}");
     assert_eq!(document["data"]["output"]["controls"], json!([]));
 }
+
+#[test]
+fn a_version_control_counts_the_versions_its_capture_finds_in_the_files_the_paths_reach() {
+    let board = board();
+    let rule = json!({"check": "version", "at_least": "1.2", "capture": "rust = \"([0-9.]+)\""});
+    board
+        .write("apps/pinned/mise.toml", "rust = \"1.1\"\nrust = \"1.3\"\n")
+        .write("apps/bare/mise.toml", "node = \"26\"\n")
+        .write("apps/bare/lib.rs", "//! L.\n")
+        .write(
+            "controls/rust.json",
+            &control(
+                "Pin Rust.",
+                &json!({"paths": ["apps/*mise.toml"], "rule": rule}),
+            ),
+        )
+        .write(
+            "controls/docs.json",
+            &control("R.", &json!({"paths": ["apps/*"]})),
+        );
+    let found = |paths: &[&str]| {
+        let (ran, document) = for_paths(&board, paths);
+        assert_eq!(ran.code, 0, "{document}");
+        (document["data"]["output"]["controls"]
+            .as_array()
+            .unwrap()
+            .iter())
+        .map(|item| (item["control"].clone(), item.get("versions_found").cloned()))
+        .collect::<Vec<_>>()
+    };
+    let docs = (json!("/controls/docs"), None);
+    assert_eq!(
+        found(&["/apps/pinned/**"]),
+        [docs.clone(), (json!("/controls/rust"), Some(json!(2)))]
+    );
+    assert_eq!(
+        found(&["/apps/pinned/mise.toml", "/apps/bare/**"]),
+        [docs.clone(), (json!("/controls/rust"), Some(json!(2)))]
+    );
+    assert_eq!(
+        found(&["/apps/bare/**", "/apps/new/mise.toml"]),
+        [docs, (json!("/controls/rust"), Some(json!(0)))]
+    );
+}

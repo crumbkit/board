@@ -26,7 +26,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use crate::board::{self, rows, text};
-use crate::brief::{Rule, RulesCommand, brief_of};
+use crate::brief::{LeftOut, Rule, RulesCommand, brief_of};
 use crate::change::{line, read, touch};
 use crate::flow::{Agent as Doer, Flow, Stop, of_change};
 use crate::gates::remedy::{fill, values};
@@ -173,7 +173,7 @@ pub(crate) struct RunBrief {
     surfaced: Vec<String>,
     surfaced_left_out: usize,
     rules: Vec<Rule>,
-    rules_left_out: Vec<String>,
+    rules_left_out: Vec<LeftOut>,
     rules_unnamed: usize,
     rules_command: Option<RulesCommand>,
     controls: String,

@@ -38,21 +38,33 @@ pub(crate) fn compile(control: &str, rule: &Version) -> Result<Regex, PluginErro
 }
 
 /// Each version `expression`'s first group captures in `text` that is older
-/// than `at_least`, by line. A capture that is not numbers separated by dots
-/// is no version and is skipped.
+/// than `at_least`, by line.
 pub(crate) fn behind(expression: &Regex, at_least: &str, text: &str) -> Vec<Behind> {
     let floor = numbers(at_least).expect("the schema admits only dotted numbers as at_least");
+    (pins(expression, text).into_iter())
+        .filter(|(_, pinned, _)| older(pinned, &floor))
+        .map(|(line, _, found)| Behind { line, found })
+        .collect()
+}
+
+/// How many versions `expression`'s first group captures in `text`, older
+/// or not.
+pub(crate) fn found(expression: &Regex, text: &str) -> usize {
+    pins(expression, text).len()
+}
+
+/// Each version `expression`'s first group captures in `text`: its line,
+/// its numbers and its text. A capture that is not numbers separated by
+/// dots is no version and is skipped.
+fn pins(expression: &Regex, text: &str) -> Vec<(usize, Vec<u64>, String)> {
     let mut found = Vec::new();
     for (line, content) in (1..).zip(lines(text)) {
         for captures in expression.captures_iter(content) {
             let Some(version) = captures.get(1).map(|group| group.as_str()) else {
                 continue;
             };
-            if numbers(version).is_some_and(|pinned| older(&pinned, &floor)) {
-                found.push(Behind {
-                    line,
-                    found: version.to_owned(),
-                });
+            if let Some(pinned) = numbers(version) {
+                found.push((line, pinned, version.to_owned()));
             }
         }
     }

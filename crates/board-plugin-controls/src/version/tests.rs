@@ -72,3 +72,11 @@ fn a_capture_that_does_not_compile_is_refused() {
     assert_eq!(refused.code, "controls::capture::invalid");
     assert!(compile("/controls/rust", &rule(r"channel = ()")).is_ok());
 }
+
+#[test]
+fn every_version_a_capture_finds_is_counted_older_or_not_and_a_capture_that_is_no_version_is_not() {
+    let expression = compile("/controls/rust", &rule(r"rust:([0-9a-z.]+)")).unwrap();
+    let text = "rust:1.97\nrust:1.100 rust:latest\n";
+    assert_eq!(super::found(&expression, text), 2);
+    assert_eq!(super::found(&expression, "rust:latest\n"), 0);
+}
