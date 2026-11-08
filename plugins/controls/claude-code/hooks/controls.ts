@@ -1,7 +1,7 @@
 // What the controls capabilities answered, and the words a session and the
 // owner read from them. Pure functions, so the tests can pin every word.
 
-import type { Checked, Control } from '../types'
+import type { Checked, Control, Kind, StateBadge } from '../types'
 
 /** The name of the context block the session's first message carries. */
 export const BLOCK = 'boardControls'
@@ -36,7 +36,7 @@ function failure(exitCode: number, stdout: string, stderr: string): { code: stri
   return { code: `exit ${exitCode}`, message: text || 'board printed nothing' }
 }
 
-type Stated = { control: string; requirement: string }
+type Stated = { control: string; requirement: string; kind?: string }
 type Measured = Stated & { budget: string; used: number; max: number; unreadable?: unknown[] }
 type Pinned = Stated & { at_least: string; behind?: unknown[]; unreadable?: unknown[] }
 
@@ -59,16 +59,22 @@ export function parseCheck(root: string, exitCode: number, stdout: string, stder
   const found = exitCode === 0 ? output(stdout) : null
   if (found !== null && Array.isArray(found.stated) && Array.isArray(found.measured)) {
     const measured = (found.measured as Measured[]).map(m => ({
+      kind: 'budget' as const,
       control: m.control,
       requirement: m.requirement,
       usage: `${m.used} of ${m.max} ${m.budget}${m.used > m.max ? ', over budget' : ''}${unread(m.unreadable)}`,
     }))
     const versions = (Array.isArray(found.versions) ? (found.versions as Pinned[]) : []).map(v => ({
+      kind: 'standing' as const,
       control: v.control,
       requirement: v.requirement,
       usage: `${pins(v)}${unread(v.unreadable)}`,
     }))
-    const stated = (found.stated as Stated[]).map(s => ({ control: s.control, requirement: s.requirement }))
+    const stated = (found.stated as Stated[]).map(s => ({
+      kind: (s.kind === 'obligation' ? 'obligation' : 'standing') as Kind,
+      control: s.control,
+      requirement: s.requirement,
+    }))
     return { kind: 'read', root, controls: [...measured, ...versions, ...stated] }
   }
   const failed = failure(exitCode, stdout, stderr)
@@ -80,7 +86,11 @@ export function parseCheck(root: string, exitCode: number, stdout: string, stder
 export function parseForPath(exitCode: number, stdout: string): Control[] | null {
   const found = exitCode === 0 ? output(stdout) : null
   if (found === null || !Array.isArray(found.controls)) return null
-  return (found.controls as Stated[]).map(c => ({ control: c.control, requirement: c.requirement }))
+  return (found.controls as Stated[]).map(c => ({
+    kind: (c.kind === 'obligation' ? 'obligation' : 'standing') as Kind,
+    control: c.control,
+    requirement: c.requirement,
+  }))
 }
 
 /** The context block's text, or `null` when there is nothing to say. */
@@ -100,13 +110,71 @@ export function contextText(checked: Checked): string | null {
   )
 }
 
-/** The one line a band or the status line shows. */
-export function summary(checked: Checked): string {
-  const name = checked.root.split('/').filter(Boolean).at(-1) ?? checked.root
-  if (checked.kind === 'failed') return `controls on ${name} could not be read: ${checked.code}`
-  const n = checked.controls.length
-  return n === 1 ? `1 control on ${name}` : `${n} controls on ${name}`
+/** The last segment of a path, such as `crumbkit` for `/work/crumbkit`. */
+const lastSegment = (path: string) => path.split('/').filter(Boolean).at(-1) ?? path
+
+/** The Controls button's label, and whether it is drawn in red; null when there are no controls. */
+export function controlsBadge(checked: Checked): { label: string; problem: boolean } | null {
+  if (checked.kind === 'failed') return { label: `Controls: ${checked.code}`, problem: true }
+  return checked.controls.length === 0 ? null : { label: `Controls ${checked.controls.length}`, problem: false }
 }
+
+/** The pane's heading. */
+export const paneTitle = (checked: Checked) => `Controls on ${lastSegment(checked.root)}`
+
+/** The pane's sections, in order, each with the controls of its kind. */
+export function sections(controls: readonly Control[]): { heading: string; controls: Control[] }[] {
+  const of = (kind: Kind) => controls.filter(c => c.kind === kind)
+  return [
+    { heading: 'Standing rules', controls: of('standing') },
+    { heading: 'Obligations owed', controls: of('obligation') },
+    { heading: 'Budgets', controls: of('budget') },
+  ]
+}
+
+/** What the pane says under its sections. */
+export const REMINDER_NOTE =
+  'Editing a file adds a reminder for each control on that file that this session was not told about.'
+
+/** A state badge the owner configured: its label and the command whose first line of output is its value. */
+export type Configured = { label: string; argv: string[] }
+
+/**
+ * Reads the known boards file: the optional `badges` list, and the personal
+ * board's directory. An entry without a label or a command is left out.
+ */
+export function parseConfig(text: string): { badges: Configured[]; personal: string | null } {
+  const config = parseJson(text)
+  const list = Array.isArray(config?.badges) ? (config.badges as unknown[]) : []
+  const badges = list.flatMap(entry => {
+    const { label, argv } = (typeof entry === 'object' && entry !== null ? entry : {}) as { label?: unknown; argv?: unknown }
+    const ok = typeof label === 'string' && label.trim() !== '' && Array.isArray(argv) && argv.length > 0 && argv.every(a => typeof a === 'string')
+    return ok ? [{ label: label.trim(), argv: argv as string[] }] : []
+  })
+  return { badges, personal: typeof config?.personal === 'string' ? config.personal : null }
+}
+
+/** A badge command's value: the first line of its output; null when it failed or printed nothing. */
+export function badgeValue(exitCode: number, stdout: string): string | null {
+  const first = (stdout.split('\n')[0] ?? '').trim()
+  return exitCode === 0 && first !== '' ? first : null
+}
+
+/**
+ * The Board badge's value from `board --json ls / --limit 1`: `personal` for
+ * the personal board, else its directory's name; null when no board answered.
+ */
+export function boardName(exitCode: number, stdout: string, personal: string | null): string | null {
+  const report = exitCode === 0 ? parseJson(stdout) : null
+  const location = (report?.summary as { location?: { repository?: unknown } } | undefined)?.location
+  if (typeof location?.repository !== 'string') return null
+  const trim = (path: string) => path.replace(/\/+$/, '')
+  return personal !== null && trim(personal) === trim(location.repository) ? 'personal' : lastSegment(location.repository)
+}
+
+/** The state badges in the order they show: the configured ones, then Board. */
+export const stateBadges = (configured: readonly StateBadge[], board: string | null): StateBadge[] =>
+  board === null ? [...configured] : [...configured, { label: 'Board', value: board }]
 
 /** The hidden row that names controls on `file` the conversation was not told about. */
 export function reminder(file: string, controls: readonly Control[]): string {

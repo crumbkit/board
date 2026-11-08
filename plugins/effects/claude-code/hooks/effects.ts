@@ -103,8 +103,22 @@ export const visible = (text: string, keepLines = true) =>
         : `\\u{${(c.codePointAt(0) as number).toString(16)}}`,
   )
 
-/** The band's line. */
-export const waitingLine = (n: number) => (n === 1 ? '1 effect waits for your answer' : `${n} effects wait for your answer`)
+/** Board's failure code when there is no personal board, which the band does not report. */
+export const NO_BOARD = 'board::config::not_found'
+
+/**
+ * The band's Effects button: how many effects wait, with `+` when Board
+ * listed only the first. A failed read is drawn in red, unless no read has
+ * worked because there is no personal board. Null when there is nothing to show.
+ */
+export function effectsBadge(found: Pending): { label: string; problem: boolean } | null {
+  const count = `${found.effects.length}${found.truncated ? '+' : ''}`
+  const unread = found.failed !== null && (found.worked || !found.failed.startsWith(NO_BOARD))
+  if (unread) {
+    return { label: found.worked ? `Effects ${count}: the last read failed` : 'Effects could not be read', problem: true }
+  }
+  return found.effects.length === 0 ? null : { label: `Effects ${count}`, problem: false }
+}
 
 /** `text` escaped and in double quotes, with a double quote in it escaped, so it reads as one value. */
 const quoted = (text: string) => `"${visible(text, false).replace(/"/g, '\\"')}"`

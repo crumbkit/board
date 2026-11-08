@@ -187,8 +187,11 @@ test('board runs through sh with each value its own argument, and the band count
   expect(argv[0]?.slice(3)).toEqual(['board', '--json', ...LIST])
   for (const surface of ['terminal', 'desktop'] as const) {
     const band = await $.ui.mount({ ...BAND, surface })
-    expect((await band.find({ type: 'Text', text: /wait/ }))?.text).toBe('2 effects wait for your answer ')
-    await band.press({ key: 'show' })
+    expect((await band.find({ key: 'effects' }))?.text).toBe('Effects 2')
+    const drawn = await band.drawn()
+    const row = drawn.type === 'Box' ? drawn.children?.[0] : undefined
+    expect(typeof row === 'object' && row.type === 'Box' ? row.children?.map(c => (typeof c === 'object' && c.type === 'Box' ? c.props?.key : '')) : []).toEqual(['band:c3-effects'])
+    await band.press({ key: 'effects' })
     await band.unmount()
   }
   expect(panes).toEqual(['effects', 'effects'])
@@ -200,18 +203,18 @@ test('with no personal board, or none pending, the band draws nothing of the mod
   engine(on, { query: () => answer })
   await start($)
   const shown = await band($)
-  expect(await shown.find({ type: 'Text' })).toBeUndefined()
+  expect(await shown.find({ key: 'effects' })).toBeUndefined()
   await shown.unmount()
   answer = { exitCode: 0, stdout: report([]) }
   await start($)
   const again = await band($)
-  expect(await again.find({ type: 'Text' })).toBeUndefined()
+  expect(await again.find({ key: 'effects' })).toBeUndefined()
   await again.unmount()
   // Once a read has worked, a missing personal board is a failure like any other.
   answer = { exitCode: 1, stdout: failed('board::config::not_found', 'no personal board') }
   await start($)
   const lost = await band($)
-  expect((await lost.find({ type: 'Text' }))?.text).toBe('Board: could not read pending effects (last read: 0) ')
+  expect((await lost.find({ key: 'effects' }))?.text).toBe('Effects 0: the last read failed')
 })
 
 test('when no read has worked for another reason, the band says the effects could not be read', async ($, on) => {
@@ -219,7 +222,7 @@ test('when no read has worked for another reason, the band says the effects coul
   engine(on, { query: () => ({ exitCode: 1, stdout: failed('board::index::locked', 'the index is locked') }) })
   await start($)
   const shown = await band($)
-  expect((await shown.find({ type: 'Text' }))?.text).toBe('Board: could not read pending effects ')
+  expect((await shown.find({ key: 'effects' }))?.text).toBe('Effects could not be read')
 })
 
 test('a read that fails after one that worked is marked in the band with the last count, and the pane says why', async ($, on) => {
@@ -231,7 +234,7 @@ test('a read that fails after one that worked is marked in the band with the las
   answer = { exitCode: 1, stdout: failed('board::query::timeout', 'the query ran past 5 s') }
   await clock.advance(60_000)
   const shown = await band($)
-  expect((await shown.find({ type: 'Text' }))?.text).toBe('Board: could not read pending effects (last read: 1) ')
+  expect((await shown.find({ key: 'effects' }))?.text).toBe('Effects 1: the last read failed')
   const pane = await $.ui.mount({ ...PANE, surface: 'desktop' })
   expect((await pane.find({ type: 'Text', text: /could not be read/ }))?.text).toBe(
     'The pending effects could not be read: board::query::timeout the query ran past 5 s. This list is from the last read that worked.',
@@ -310,12 +313,12 @@ test('a second press while an answer runs runs nothing and says so', async ($, o
   expect(toasts).toEqual([`An answer to this effect is already running: ${NOTE_LINE}`, `Approved: ${NOTE_LINE}`])
 })
 
-test('when Board lists only the first effects, the band says "or more" and the pane says more wait', async ($, on) => {
+test('when Board lists only the first effects, the button adds a plus and the pane says more wait', async ($, on) => {
   mock.clock(on, { now: 0 })
   engine(on, { truncated: true })
   await start($)
   const shown = await band($)
-  expect((await shown.find({ type: 'Text' }))?.text).toBe('2 effects wait for your answer (or more) ')
+  expect((await shown.find({ key: 'effects' }))?.text).toBe('Effects 2+')
   const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
   expect((await pane.find({ type: 'Text', text: /More wait/ }))?.text).toBe('More wait; `board --personal ls /effects/pending` lists them, with the effects already answered.')
 })
