@@ -163,10 +163,14 @@ export function parseBadges(text: string): { badges: Configured[] } | { problem:
   return { badges }
 }
 
-/** A badge command's value: the first line of its output; null when it failed or printed nothing. */
-export function badgeValue(exitCode: number, stdout: string): string | null {
+/**
+ * A badge command's value, the first line of its output, or why it shows no
+ * badge: it failed or printed nothing.
+ */
+export function badgeValue(exitCode: number, stdout: string): { value: string } | { why: string } {
+  if (exitCode !== 0) return { why: `exited with status ${exitCode}` }
   const first = (stdout.split('\n')[0] ?? '').trim()
-  return exitCode === 0 && first !== '' ? first : null
+  return first === '' ? { why: 'printed nothing on its first line' } : { value: first }
 }
 
 /**

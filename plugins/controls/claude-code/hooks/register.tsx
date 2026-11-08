@@ -35,6 +35,9 @@ const CHECK = `PATH=${PATH} exec board --json call controls.check --path .`
 const FOR_PATH = `PATH=${PATH} exec board --json call controls.for-path --path "$1"`
 // The board that holds the directory names its repository in the listing's summary.
 const WHERE = `PATH=${PATH} exec board --json ls / --limit 1 < /dev/null`
+// A configured badge's command runs with the PATH the board calls use, each
+// value of its argv its own argument through "$@".
+const BADGE = `PATH=${PATH} exec "$@" < /dev/null`
 const PANE = 'board-controls'
 
 // A slow or hung board holds the session start or the edit no longer than this.
@@ -81,14 +84,18 @@ async function configured($: EngineInterface, dir: string): Promise<Configured[]
   return 'problem' in parsed ? badgesProblem(file, parsed.problem) : parsed.badges
 }
 
-/** Runs `argv` in `cwd` and answers its badge value; null when it fails, times out or prints nothing. */
-async function value($: EngineInterface, argv: string[], cwd: string, timeoutMs: number): Promise<string | null> {
+/** Runs `argv` in `cwd` and answers its badge value; null, logged, when it fails, times out or prints nothing. */
+async function value($: EngineInterface, label: string, argv: string[], cwd: string, timeoutMs: number): Promise<string | null> {
+  let read: { value: string } | { why: string }
   try {
-    const ran = await $.process.run(argv, { cwd, timeoutMs })
-    return badgeValue(ran.exitCode, ran.stdout)
-  } catch {
-    return null
+    const ran = await $.process.run(['/bin/sh', '-c', BADGE, 'badge', ...argv], { cwd, timeoutMs })
+    read = badgeValue(ran.exitCode, ran.stdout)
+  } catch (error) {
+    read = { why: `did not finish within ${timeoutMs} ms: ${String(error)}` }
   }
+  if ('value' in read) return read.value
+  $.ui.log(`board: the ${label} badge is hidden, because its command ${read.why}`, { to: 'debug' })
+  return null
 }
 
 /** Reads the state badges once: each configured command in the session's directory, then the board's name. */
@@ -97,7 +104,7 @@ async function readState($: EngineInterface, cwd: string, root: string) {
   const [listed, personal] = await Promise.all([configured($, dir), personalBoard($, dir)])
   const badges = Array.isArray(listed) ? listed : []
   const [values, where] = await Promise.all([
-    Promise.all(badges.map(async b => ({ label: b.label, value: await value($, b.argv, cwd, BADGE_MS) }))),
+    Promise.all(badges.map(async b => ({ label: b.label, value: await value($, b.label, b.argv, cwd, BADGE_MS) }))),
     $.process.run(['/bin/sh', '-c', WHERE], { cwd: root, timeoutMs: TIMEOUT_MS }).catch(() => null),
   ])
   const shown: StateBadge[] = Array.isArray(listed)
@@ -197,7 +204,14 @@ export const register: Register = on => {
         (
           <Box key={SLOT.state} flexDirection="row" flexWrap="wrap" columnGap={1}>
             {badges.map(b =>
-              b.problem !== null ? <Text color="red">{b.problem}</Text> : [<Text dimColor>{b.label}</Text>, <Text bold>{b.value}</Text>],
+              b.problem !== null ? (
+                <Text color="red">{b.problem}</Text>
+              ) : (
+                <Box columnGap={1}>
+                  <Text dimColor>{b.label}</Text>
+                  <Text inverse> {b.value} </Text>
+                </Box>
+              ),
             )}
           </Box>
         ) as RenderElement,

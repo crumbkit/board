@@ -45,6 +45,7 @@ const PERSONAL = '/home/me/Code/board'
 function engine(on: On, answers: Answers) {
   const events: string[] = []
   const appended: string[] = []
+  const logs: string[] = []
   const run = (exitCode: number, stdout: string) => ({
     value: { exitCode, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false },
   })
@@ -62,9 +63,11 @@ function engine(on: On, answers: Answers) {
       if (answers.repository === undefined) return run(1, JSON.stringify({ code: 'board::config::not_found', message: 'no board' }))
       return run(0, JSON.stringify({ schema: 'board/ls-report/v2', data: [], summary: { location: { repository: answers.repository } } }))
     }
-    const command = answers.commands?.[e.argv[0] ?? '']
+    const name = e.argv[3] === 'badge' ? (e.argv[4] ?? '') : ''
+    const command = answers.commands?.[name]
     if (command !== undefined) {
-      events.push(`badge ${e.argv[0]} in ${e.init?.cwd}`)
+      events.push(`badge ${name} in ${e.init?.cwd}`)
+      if (!String(e.argv[2]).includes('$HOME/.local/bin')) throw new Error('the badge command ran without the board PATH')
       if (command === 'hangs') throw new Error('timed out')
       return command === 'fails' ? run(1, 'x\n') : run(0, command)
     }
@@ -79,6 +82,10 @@ function engine(on: On, answers: Answers) {
     return run(0, report({ controls: answers.forPath?.[file] ?? [] }))
   })
   on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('ui.log', (_, e) => {
+    logs.push(e.text)
+    return { value: undefined }
+  })
   on('session.append', (_, e, next) => {
     const block = e.message.content[0]
     appended.push(block?.type === 'text' ? String(block.text) : '')
@@ -92,7 +99,7 @@ function engine(on: On, answers: Answers) {
   on('ui.render', ($, e) => $.ui.resolve(e).Box({}))
   on('prompt.context', (_, e) => ({ blocks: e.blocks }))
   on('session.start', (_, e) => ({ cwd: e.cwd }))
-  return { events, appended }
+  return { events, appended, logs }
 }
 
 const start = ($: Engine) => $.session.start({ cwd: `${ROOT}/src`, surface: 'terminal', isInteractive: true })
@@ -208,11 +215,11 @@ test('the badges file lists each badge\'s label and command, and a malformed fil
 })
 
 test('a badge shows the first line of its output, and a command that fails or prints nothing shows no badge', () => {
-  expect(badgeValue(0, 'vq\nmore\n')).toBe('vq')
-  expect(badgeValue(0, '  vq  ')).toBe('vq')
-  expect(badgeValue(0, '\nvq')).toBeNull()
-  expect(badgeValue(0, '')).toBeNull()
-  expect(badgeValue(1, 'vq')).toBeNull()
+  expect(badgeValue(0, 'vq\nmore\n')).toEqual({ value: 'vq' })
+  expect(badgeValue(0, '  vq  ')).toEqual({ value: 'vq' })
+  expect(badgeValue(0, '\nvq')).toEqual({ why: 'printed nothing on its first line' })
+  expect(badgeValue(0, '')).toEqual({ why: 'printed nothing on its first line' })
+  expect(badgeValue(1, 'vq')).toEqual({ why: 'exited with status 1' })
 })
 
 test('the Board badge names the personal board as personal, and any other board by its directory', () => {
@@ -234,7 +241,7 @@ test('the band shows the configured badges, the Board badge and the Controls but
       { label: 'Quiet', argv: ['quiet'] },
     ],
   })
-  const { events } = engine(on, {
+  const { events, logs } = engine(on, {
     config,
     badges,
     commands: { 'home-name': 'vq\n', broken: 'fails', slow: 'hangs', quiet: '' },
@@ -247,10 +254,16 @@ test('the band shows the configured badges, the Board badge and the Controls but
     `badge quiet in ${ROOT}/src`,
     `badge slow in ${ROOT}/src`,
   ])
+  // The test engine words the rejected run its own way, so the slow badge's reason is matched up to it.
+  expect(logs.filter(l => l.includes('badge')).sort()).toEqual([
+    'board: the Broken badge is hidden, because its command exited with status 1',
+    'board: the Quiet badge is hidden, because its command printed nothing on its first line',
+    expect.stringMatching(/^board: the Slow badge is hidden, because its command did not finish within 2000 ms: /),
+  ])
   for (const surface of ['terminal', 'desktop'] as const) {
     const band = await $.ui.mount({ ...BAND, surface })
     const texts = (await band.findAll({ type: 'Text' })).map(t => t.text)
-    expect(texts).toEqual(['Home', 'vq', 'Board', 'vq', '|'])
+    expect(texts).toEqual(['Home', ' vq ', 'Board', ' vq ', '|'])
     expect((await band.find({ key: 'controls' }))?.text).toBe('Controls 2')
     await band.press({ key: 'controls' })
     await band.unmount()
@@ -274,7 +287,7 @@ test('the parts sit in their own slots in the band row', async ($, on) => {
   const row = drawn.type === 'Box' ? drawn.children?.[0] : undefined
   const keys = typeof row === 'object' && row.type === 'Box' ? row.children?.map(c => (typeof c === 'object' && c.type === 'Box' ? c.props?.key : 'bar')) : []
   expect(keys).toEqual([SLOT.state, 'bar', SLOT.controls])
-  expect((await band.findAll({ type: 'Text' })).map(t => t.text)).toEqual(['Board', 'personal', '|'])
+  expect((await band.findAll({ type: 'Text' })).map(t => t.text)).toEqual(['Board', ' personal ', '|'])
 })
 
 test('a badges file that is malformed or cannot be read is one red badge naming the file and the problem', async ($, on) => {
@@ -282,7 +295,7 @@ test('a badges file that is malformed or cannot be read is one red badge naming 
   engine(on, answers)
   await start($)
   const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
-  expect((await band.findAll({ type: 'Text' })).map(t => t.text)).toEqual([`${BADGES} has no badges list`, 'Board', 'personal', '|'])
+  expect((await band.findAll({ type: 'Text' })).map(t => t.text)).toEqual([`${BADGES} has no badges list`, 'Board', ' personal ', '|'])
   await band.unmount()
   answers.badges = 'unreadable'
   await start($)

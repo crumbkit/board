@@ -52,6 +52,7 @@ const BAND_PROPS = {
 /** Stands in for the engine beneath the plugin, with `board` answering `answer`. */
 function engine(on: On, answer: { exitCode: number; stdout: string; stderr?: string }, beneath?: 'controls') {
   const ran: (readonly string[])[] = []
+  const pressed: string[] = []
   const opened: string[] = []
   on('process.run', (_, e) => {
     ran.push(e.argv)
@@ -66,12 +67,12 @@ function engine(on: On, answer: { exitCode: number; stdout: string; stderr?: str
     const { Box, Button } = $.ui.resolve(e)
     if (beneath === undefined || e.component !== 'AbovePrompt') return Box({})
     // Another mod's part, as the controls mod beneath this one draws it.
-    const part = Box({ key: SLOT.controls, children: [Button({ key: 'controls', label: 'Controls 5', onPress: () => undefined })] })
+    const part = Box({ key: SLOT.controls, children: [Button({ key: 'controls', label: 'Controls 5', onPress: () => void pressed.push('controls') })] })
     return joinBand(Box({}), [part])
   })
   on('prompt.context', (_, e) => ({ blocks: e.blocks }))
   on('session.start', (_, e) => ({ cwd: e.cwd }))
-  return { ran, opened }
+  return { ran, opened, pressed }
 }
 
 const start = ($: Engine) =>
@@ -176,7 +177,7 @@ test('a left-out badge opens the pane on its code and message', async ($, on) =>
 })
 
 test('the order badges join the parts other mods draw beneath, in one row with a bar between sections', async ($, on) => {
-  engine(on, { exitCode: 0, stdout: JSON.stringify(REPORT) }, 'controls')
+  const { pressed } = engine(on, { exitCode: 0, stdout: JSON.stringify(REPORT) }, 'controls')
   await start($)
   const band = await $.ui.mount({ plugin: 'board-attention', surface: 'terminal', component: 'AbovePrompt', props: BAND_PROPS })
   const drawn = await band.drawn()
@@ -186,6 +187,9 @@ test('the order badges join the parts other mods draw beneath, in one row with a
   expect(keys).toEqual([SLOT.orders, 'text', SLOT.controls])
   expect((await band.find({ key: 'controls' }))?.text).toBe('Controls 5')
   expect((await band.find({ type: 'Text', text: '|' }))?.text).toBe('|')
+  // The other mod's button, moved into this mod's row, still reaches that mod's handler.
+  await band.press({ key: 'controls', plugin: 'test' })
+  expect(pressed).toEqual(['controls'])
 })
 
 test('a board that cannot be read is one red badge in the band', async ($, on) => {

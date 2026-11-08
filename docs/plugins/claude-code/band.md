@@ -22,21 +22,24 @@ band draws nothing. While a survey holds the band, no mod draws in it.
   personal board cannot be read, one red button says so with Board's
   message. To shorten a badge, rename the order's path; the signature stays
   valid, because the signed statement does not include the path.
-- **State badges**, from `board-controls`. Each is a label and a value, and
-  none can be pressed. The owner lists them in an optional file,
+- **State badges**, from `board-controls`. Each is a dim label and its value
+  drawn as a chip, and none can be pressed. The owner lists them in an optional file,
   `~/.config/board/badges.json` (or under `$XDG_CONFIG_HOME`), such as
   `{"badges": [{"label": "Home", "argv": ["home-name", "--short"]}]}`.
   Without the file there are none. A file that cannot be read or is
   malformed shows one red badge naming the file and the problem, such as
   `has no badges list` or `entry 2 needs a label and an argv of strings`. Each
   command runs once as the session starts, in the session's directory, with
-  2 seconds to finish. The first line of its standard output is the value.
-  A command that fails, times out or prints nothing shows no badge. After
+  the same PATH as the mods' board calls and 2 seconds to finish. The first
+  line of its standard output is the value. A command that fails, times out
+  or prints nothing shows no badge, and the debug log says why. After
   them comes the built-in **Board** badge: `personal` when the session's
   directory is in the board that `personal` in `config.json` names, or a
   repository it mounts, else the
-  name of the directory of the board that holds it, read from `board --json
-  ls / --limit 1`. With no such board, it is left out.
+  name of the directory of the board that holds it. The mod reads that
+  board from `board --json ls / --limit 1` at the repository root, because
+  `controls.check` does not report its board. With no such board, it is
+  left out.
 - **Controls button**, from `board-controls`: `Controls <n>`, the number of
   controls `controls.check` returned. It opens a pane that lists them as
   standing rules, obligations owed and budgets, each with its path and
@@ -54,7 +57,8 @@ band draws nothing. While a survey holds the band, no mod draws in it.
 - **Effects button**, from `board-effects`: `Effects <n>`, with `+` when
   Board listed only the first. It opens the pending effects pane. A failed
   read shows it in red, as `Effects could not be read`, or `Effects <n>: the
-  last read failed` once a read has worked.
+  last read failed` once a read has worked. The button stays after
+  `plans.waiting` lands, and its effects are then also counted in Waiting.
 
 ## How the mods share the row
 
