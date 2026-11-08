@@ -2,7 +2,7 @@
 //! as `changes::board::refused`, as the Python plugin's helper gave them.
 
 use board_model::{Code, Fields, LogicalPath, Object, PathError, Refusal, parse_json};
-use board_ops::{Absent, Host, Limit, PluginError, RefsReport, literal};
+use board_ops::{Absent, Bulk, Host, Limit, PluginError, RefsReport, literal};
 use board_plugin::Target;
 use board_plugin::shape::TREE_CODES;
 use serde_json::{Map, Value};
@@ -153,4 +153,14 @@ pub(crate) fn call_or_refusal(
         .parse()
         .expect("each capability called is <plugin>.<capability>");
     host.call(&target, input).map(|report| report.output)
+}
+
+/// Writes each of `lines` as [`put`] does, marking the commit as a bulk
+/// one with the trailer `Board-Bulk: <reason>`.
+pub(crate) fn put_bulk(host: &dyn Host, lines: &[Value], reason: &str) -> Result<(), PluginError> {
+    let bulk =
+        Bulk::new(reason).map_err(|error| refused("put --batch --bulk", &error.refusal()))?;
+    (host.put_bulk(lines, &bulk))
+        .map(|_| ())
+        .map_err(|error| refused("put --batch --bulk", &error.refusal()))
 }

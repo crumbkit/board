@@ -52,7 +52,7 @@ struct Prototype {
 /// A change that is not done or dropped, its task and kind, the name and
 /// phases of the flow it follows, and, for a prototype, what it asks and
 /// found. `flow` is left out for a change that follows no flow, such as a
-/// prototype, and for one whose flow copy Board does not read.
+/// prototype, and for one whose flow Board does not read.
 #[derive(Debug, Serialize, JsonSchema)]
 struct Listed {
     path: String,

@@ -347,3 +347,25 @@ fn a_check_holding_a_field_no_kind_names_is_refused_and_its_twin_without_it_is_a
         .validate(&with_check(&json!({"id": "x", "kind": "tasks"})))
         .unwrap();
 }
+
+/// The codes of the problems of a flow called `name` with one phase.
+fn codes_named(name: &str) -> Vec<&'static str> {
+    let flow: Flow = serde_json::from_value(json!({
+        "$type": "changes/flow/v1", "name": name, "summary": "A flow.",
+        "stop": {"until": "done"},
+        "phases": [{"name": "build", "agent": "lead", "instruction": "Do it.", "checks": []}]
+    }))
+    .unwrap();
+    problems(&flow, false)
+        .iter()
+        .map(|problem| problem.code)
+        .collect()
+}
+
+#[test]
+fn a_flow_named_repos_is_refused_and_one_named_repo_is_admitted() {
+    assert_eq!(codes_named("repos"), ["changes::flow::reserved_name"]);
+    assert_eq!(codes_named("repo"), Vec::<&str>::new());
+}
+
+mod version;

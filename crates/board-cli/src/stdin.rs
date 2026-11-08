@@ -61,6 +61,7 @@ pub(crate) fn put(
         batch,
         file,
         wait,
+        ..
     } = putting;
     let at = match (path, new) {
         _ if batch => Ok(At::Batch),

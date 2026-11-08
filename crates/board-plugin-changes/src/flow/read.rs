@@ -1,19 +1,27 @@
 //! Choosing a change's flow, and reading the flows a board holds and the
-//! copy each change keeps.
+//! version each change follows.
 //!
 //! A board's own flow lives at `/flows/<name>` and wins over a shipped flow
 //! of the same name. `/flows/repos/<mount name>` and `/flows/default` are
 //! links, `board/mount/v1` records with a `path`, that name a flow for one
 //! repository and for every repository. Board follows a link, so it names a
-//! flow the board holds; a link to nothing chooses no flow. `start` copies
-//! the chosen flow to `/changes/<name>/flow`, and the gates read that copy,
-//! so editing a board's flow never moves a change in flight.
+//! flow the board holds; a link to nothing chooses no flow.
+//!
+//! Each version of a flow is stored once, at `/flows/<name>/<version>`,
+//! where the version is the first 16 hex digits of the SHA-256 of the
+//! flow's canonical JSON. `start` writes the chosen flow's version when the
+//! board lacks it, and the change's `flow` references it. The gates read
+//! that version, so editing a board's flow never moves a change in flight.
 
+use std::fmt::Write as _;
+
+use board_model::canonical_json;
 use board_ops::{Host, PluginError, literal};
 use board_plugin::shape::Record;
 use schemars::JsonSchema;
 use serde::Serialize;
 use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
 
 use super::{DEFAULT, Flow, shipped};
 use crate::board::{body, logical, readable, refused, rows, text};
@@ -186,18 +194,50 @@ pub(crate) fn chosen(
     asked_for(host, DEFAULT)
 }
 
-/// The `put` line that writes `flow` as the change at `path`'s copy, at
-/// `<path>/flow`, over the blob `expect`.
-pub(crate) fn copy_line(path: &str, expect: &str, flow: &Flow) -> (String, Value) {
-    let at = format!("{path}/flow");
-    let line = json!({"path": at, "expect": expect, "record": flow});
-    (at, line)
+/// How many hex digits of the SHA-256 a version keeps.
+const VERSION_DIGITS: usize = 16;
+
+/// Where the version of `flow` is stored: `/flows/<name>/<version>`, the
+/// version being the first 16 hex digits of the SHA-256 of the flow's
+/// canonical JSON, so identical flows share one path.
+pub(crate) fn version_path(flow: &Flow) -> String {
+    let value = serde_json::to_value(flow).unwrap_or_default();
+    let digest = Sha256::digest(canonical_json(&value).as_str().as_bytes());
+    let hex: String =
+        (digest.iter().take(VERSION_DIGITS / 2)).fold(String::new(), |mut hex, byte| {
+            let _ = write!(hex, "{byte:02x}");
+            hex
+        });
+    format!("{FLOWS}{}/{hex}", flow.name)
 }
 
-/// The flow the change at `path` follows: the copy its `flow` names, the
-/// shipped development flow for a v1 change, or none for a change that
-/// follows no flow. A copy Board does not read is
-/// `changes::flow::unreadable`.
+/// The path of `flow`'s version, and the `put` line that writes it when
+/// the board does not hold it yet.
+///
+/// The line takes no expect. The path names the flow's content, so when
+/// another writer stores the version between this read and the write, as
+/// two concurrent starts do, the line writes the same record over it and
+/// succeeds.
+pub(crate) fn version_line(
+    host: &dyn Host,
+    flow: &Flow,
+) -> Result<(String, Option<Value>), PluginError> {
+    let at = version_path(flow);
+    let line = (blob_at(host, &at)? == "none").then(|| version_write(&at, flow));
+    Ok((at, line))
+}
+
+/// The `put` line that writes `flow` as its version at `at`, with no
+/// expect, as `version_line` says.
+pub(crate) fn version_write(at: &str, flow: &Flow) -> Value {
+    json!({"path": at, "record": flow})
+}
+
+/// The flow the change at `path` follows: the version its `flow` names,
+/// the shipped development flow for a v1 change, or none for a change that
+/// follows no flow. A version Board does not read, or one that is gone, is
+/// `changes::flow::unreadable`. A change not yet migrated names its own
+/// copy at `<path>/flow`, which reads the same way.
 pub(crate) fn of_change(
     host: &dyn Host,
     path: &str,

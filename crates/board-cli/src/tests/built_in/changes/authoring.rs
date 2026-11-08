@@ -334,7 +334,6 @@ fn a_sandboxed_run_leaves_the_real_board_and_repository_unchanged_and_copies_its
             &written["sandbox"],
             &written["change"],
             &written["reason"],
-            &written["flow"],
             &written["stopped"],
             &written["budget_usd"]
         ),
@@ -342,10 +341,17 @@ fn a_sandboxed_run_leaves_the_real_board_and_repository_unchanged_and_copies_its
             &json!(true),
             &json!("sample"),
             &json!("waiting"),
-            &json!("trial"),
             &output["stopped"],
             &json!(1.0)
         )
+    );
+    // The run names the version of the flow the sandboxed change followed,
+    // which is copied back with it, so the reference resolves here.
+    let version = written["flow"].as_str().unwrap();
+    assert!(version.starts_with("/flows/trial/"), "{version}");
+    assert_eq!(
+        board.read(&format!("{}.json", version.trim_start_matches('/')))["name"],
+        "trial"
     );
     let stopped = output["stopped"].as_str().unwrap().trim_start_matches('/');
     assert_eq!(board.read(&format!("{stopped}.json"))["reason"], "waiting");

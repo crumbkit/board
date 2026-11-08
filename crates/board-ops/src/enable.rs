@@ -132,6 +132,12 @@ impl Board {
             });
         }
         let message = format!("Enable the {name} plugin");
+        // Replacing or removing schemas rewrites records others wrote, so
+        // that commit is marked as a bulk one.
+        let message = match crate::Bulk::new(&format!("plugin enable {name}")) {
+            Ok(bulk) if !replaced.is_empty() || !removed.is_empty() => bulk.mark(&message),
+            _ => message,
+        };
         let put = self
             .write_all(lock, &prepared, &removed, &message)
             .map_err(|failure| match failure {

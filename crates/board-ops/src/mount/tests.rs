@@ -218,7 +218,10 @@ fn a_committing_update_commits_the_pointer() {
         );
     assert!(update(&scenario, "/vendor/lib").unwrap().wrote);
     let head = scenario.head().unwrap();
-    assert_eq!(head.message, "board mount update /vendor/lib");
+    assert_eq!(
+        head.message,
+        "board mount update /vendor/lib\n\nBoard-Bulk: mount update /vendor/lib"
+    );
     assert_eq!(head.files.keys().collect::<Vec<_>>(), ["vendor/lib.json"]);
     assert!(
         String::from_utf8(head.files["vendor/lib.json"].clone())

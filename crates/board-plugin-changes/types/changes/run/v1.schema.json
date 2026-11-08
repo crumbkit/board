@@ -75,9 +75,10 @@
       "type": "integer"
     },
     "flow": {
-      "description": "The name of the flow the change followed.",
-      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
-      "type": "string"
+      "description": "The version of the flow the change followed during the run, at\n`/flows/<name>/<version>`.",
+      "format": "board-ref",
+      "type": "string",
+      "x-board-type": "changes/flow/v1"
     },
     "phase": {
       "description": "The phase the change stood in when the run ended.",

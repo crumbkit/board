@@ -72,12 +72,15 @@ impl JsonSchema for BoardPath {
 }
 
 /// The plan record written, its text, and how many references it uses.
+/// `unchanged` is true when the plan equals the plan record the change
+/// already names, and nothing was written; that record is returned.
 #[derive(Debug, Serialize, JsonSchema)]
 #[schemars(rename = "PlanOutput")]
 pub(crate) struct Output {
     path: String,
     text: String,
     uses: usize,
+    unchanged: bool,
 }
 
 /// How many whitespace-separated words `text` holds.
@@ -205,6 +208,9 @@ pub(crate) fn plan(host: &dyn Host, input: &Value) -> Result<Value, PluginError>
         ));
     }
     let count = uses.len();
+    if let Some(same) = unchanged(host, change.plan.as_deref(), &text, &uses, &paths)? {
+        return Ok(same);
+    }
     let kept = kept_records(host, change.plan.as_deref())?;
     let (record, mut lines) = plan_lines(host.settings().now, &path, &text, uses, paths, kept);
     let written = format!("{record}.md");
@@ -215,6 +221,38 @@ pub(crate) fn plan(host: &dyn Host, input: &Value) -> Result<Value, PluginError>
         path: record,
         text: written,
         uses: count,
+        unchanged: false,
+    }))
+}
+
+/// The output that returns the plan record at `current` unchanged, when
+/// its text, `uses` and `paths` equal those given; none when the change
+/// names no plan or any differs.
+fn unchanged(
+    host: &dyn Host,
+    current: Option<&str>,
+    text: &str,
+    uses: &[String],
+    paths: &[String],
+) -> Result<Option<Value>, PluginError> {
+    let Some(current) = current else {
+        return Ok(None);
+    };
+    let Some((record, _)) = plan_at(host, current)? else {
+        return Ok(None);
+    };
+    let held_paths = record.paths.as_deref().unwrap_or_default();
+    if record.uses != uses || held_paths != paths {
+        return Ok(None);
+    }
+    let held = board::get_text(host, &record.text)?;
+    Ok((held.as_deref() == Some(text)).then(|| {
+        to_value(Output {
+            path: current.to_owned(),
+            text: record.text,
+            uses: uses.len(),
+            unchanged: true,
+        })
     }))
 }
 
