@@ -59,7 +59,7 @@ understanding checks. Git history holds earlier phases.
   sets it; the development flow's `task` check needs it.
 - `head` is the commit under test and review.
 - `touched` is the UTC day, `YYYY-MM-DD`, on which `start`, `run`,
-  `attach`, `advance`, `plan`, `resume` or `prototype` last wrote the change. The WIP
+  `attach`, `advance`, `plan`, `resume`, `reopen` or `prototype` last wrote the change. The WIP
   limit reads it. `sync`, `drop`, `pause` and `verdict` leave it as it is.
 - `over_limit` is the reason given for the latest move into `build` past
   the WIP limit, which `pr` puts in the pull request body.
@@ -137,6 +137,12 @@ stopped: its `reason` (`reached`, `waiting`, `refused`, `budget` or
 `plans/question/v1` it left for the owner as `question`, and a one-line
 `summary`. The agent writes it with `stop`; when the agent exits without
 one, `run` writes it.
+
+`changes/reopen/v1` at `/changes/<name>/reopens/<stamp>` records one move
+of a change back to `build` for a fix round: its `reason`, the phase it
+left as `from`, and `by`, who reopened it. `reopen` writes one each time,
+in the same commit as the change, so every fix round's reason is kept.
+`next` shows the newest one's reason while the change is in `build`.
 
 `changes/understanding/v1` at `/changes/<name>/understanding/<subject>`
 records how the owner showed he understands a change's `data` or `ux`.
@@ -298,6 +304,21 @@ of `changes` still fails `review`.
 - `resume --path /changes/<name>` moves a paused change back to `build`.
   It refuses a change that is not paused (`changes::resume::not_paused`),
   and is subject to the WIP limit, which `--over_limit '<why>'` goes past.
+- `reopen --path /changes/<name> --reason '<why>' (--session <id> |
+  --program <name> | --person <name> | --agent '<name>')
+  [--over_limit '<why>']` moves a change back to the `build` phase of its
+  flow for a fix round, such as from `review`, and writes a
+  `changes/reopen/v1` with the reason, the phase it left and who reopened
+  it. It returns `path`, `from`, `to` and `warning`. It refuses a call
+  that names nobody, through Board's input check, or whose only actor is
+  a blank agent name (`changes::reopen::no_actor`). It refuses a change
+  whose flow has no `build` phase before the phase it stands in, such as
+  one in `plan` or already in `build`, or a prototype
+  (`changes::reopen::no_build`, with `phases`), a done or dropped change
+  (`changes::phase::final`), a paused one (`changes::phase::paused`) and
+  a v1 change (`changes::change::not_migrated`). It is subject to the WIP
+  limit, which `--over_limit '<why>'` goes past; the refusal's `override`
+  repeats the flags given.
 - `drop --path /changes/<name> --reason '<why>'` ends a change that is not
   `done` or `dropped` in `dropped` and records the reason in
   `dropped_reason`. It returns `path`, `from`, `to` and `task`, which stays
@@ -444,7 +465,7 @@ not a whole number of at least 1 is refused with
 `changes::wip::bad_active_days`. A change with none of those days is idle.
 
 When three other active changes of the kind hold places for the repository,
-`advance` into `build`, `resume` and `prototype` refuse with
+`advance` into `build`, `resume`, `reopen` and `prototype` refuse with
 `changes::wip::full`, unless `--over_limit '<why>'` is given. The refusal's
 fields, and with `--over_limit` the output's `warning`, hold `mount`,
 `repository`, the key counted, `unread`, each mount whose origin git

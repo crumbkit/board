@@ -22,6 +22,7 @@ changes.prototype disabled Start a prototype that answers one question: add its 
 changes.verdict disabled Record what a prototype found in one sentence, and the artifact version it means, which ends it and its task: done when settled, dropped when abandoned.
 changes.pause disabled Move a change in build to paused, which frees its place under the WIP limit.
 changes.resume disabled Move a paused change back to build, refused while three active changes of its kind are in build for its mount, unless over_limit gives a reason.
+changes.reopen disabled Move a change back to the build phase of its flow for a fix round, such as from review, and record why. Refused when its flow has no build phase before where it stands, and while three active changes of its kind are in build for its mount, unless over_limit gives a reason.
 changes.reflow disabled Replace the change's copy of its flow with a copy of the flow named, refused when that flow has no phase where the change stands.
 changes.sync disabled Read each open change's GitHub pull request with gh and end the change when it closed: done, with its merge commit, when it merged and no attached task is open, else dropped with the reason. List the changes with no pull request and what to do with each. dry_run writes nothing; otherwise every move and the day of the sync are written in one commit, or nothing when gh fails.
 changes.drop disabled End a change that is not done or dropped in dropped, recording the reason, and name its task.
