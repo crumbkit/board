@@ -5,7 +5,9 @@
 reads the first word.
 
 A first word is a built-in command first, then an enabled plugin's name, then
-an alias. A plugin named like a built-in command runs only through
+an alias, then a built-in plugin's name, which runs as `board call` so the
+call reports why it cannot run. A plugin's name wins over another plugin's
+alias, and `board plugin enable` does not refuse that. A plugin named like a built-in command runs only through
 `board call`, so Board's generic hints, which may name any plugin, print that
 form. A built-in command never reads a manifest: Board reads them only after
 clap refuses the first word, or for help. `board plugin enable` refuses an

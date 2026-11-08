@@ -199,7 +199,7 @@ fn instruction(observed: &Observed) -> String {
 /// example, when `said` asks for a plan. `changes.plan` replaces the plan,
 /// so for a change that has one, `said` says to resend all four fields.
 fn with_plan_usage(observed: &Observed, said: String) -> String {
-    if !said.contains("changes.plan") {
+    if !said.contains("changes plan") && !said.contains("changes.plan") {
         return said;
     }
     let example = format!(
@@ -209,12 +209,12 @@ fn with_plan_usage(observed: &Observed, said: String) -> String {
     );
     if observed.change.plan.is_none() {
         format!(
-            "{said} Pipe `changes.plan` JSON on stdin with the fields `path`, `text`, `uses` and \
+            "{said} Pipe `board changes plan` JSON on stdin with the fields `path`, `text`, `uses` and \
              `paths`, such as `{example}`."
         )
     } else {
         format!(
-            "{said} `changes.plan` reads JSON on stdin and replaces the plan, so resend all four \
+            "{said} `board changes plan` reads JSON on stdin and replaces the plan, so resend all four \
              fields, such as `{example}`."
         )
     }
