@@ -104,7 +104,10 @@ pub(crate) fn grafted(
     let guide = graft::guide(&grafted);
     let (mut stdout, mut stderr) = (Vec::new(), Vec::new());
     let sink = &mut Sink::new(&mut stdout, &mut stderr);
-    let command = graft::command(&grafted);
+    let command = graft::command(
+        &grafted,
+        <crate::run::Cli as clap::CommandFactory>::command(),
+    );
     let parsed =
         crumbkit::try_parse_to::<graft::Parsed, _, _, _, _>(sink, command, &guide, arguments);
     // The line parsed against Board's own tree, so it parses with more leaves.

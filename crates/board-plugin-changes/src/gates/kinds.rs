@@ -164,8 +164,8 @@ pub(super) fn field_missing(observed: &Observed, each: &flow::Check) -> Option<S
             if held < min {
                 return Some(format!(
                     "the change references {held} tickets, and the flow's check {} needs {min}; \
-                     record a ticket with `board call jira.ref` or `board call github.ref` and \
-                     attach it with `board call changes.attach --path {} --ticket <path>`",
+                     record a ticket with `board jira ref` or `board github ref` and \
+                     attach it with `board changes attach --path {} --ticket <path>`",
                     each.id, observed.path
                 ));
             }
@@ -190,14 +190,14 @@ fn pulls_missing(observed: &Observed, each: &flow::Check, min: usize) -> Option<
     if pulls.is_empty() {
         return Some(
             "the change references no github/pull/v1 record; record the pull request with `board \
-             call github.ref` and attach it with --pull"
+             github ref` and attach it with --pull"
                 .to_owned(),
         );
     }
     if pulls.len() < min {
         return Some(format!(
             "the change references {} pull requests, and the flow's check {} needs {min}; record \
-             each with `board call github.ref` and attach it with --pull",
+             each with `board github ref` and attach it with --pull",
             pulls.len(),
             each.id
         ));
@@ -206,7 +206,7 @@ fn pulls_missing(observed: &Observed, each: &flow::Check, min: usize) -> Option<
     (each.types.is_some() && !observed.pull_read).then(|| {
         format!(
             "the change's newest pull request {newest} does not read as a github/pull/v1 record; \
-             run `board check {newest}`, or record the pull request with `board call github.ref` \
+             run `board check {newest}`, or record the pull request with `board github ref` \
              and attach it with --pull"
         )
     })

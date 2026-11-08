@@ -156,7 +156,7 @@ fn bad_input(given: &VerifyInput) -> PluginError {
         .collect();
     let hint = given.digest.as_ref().map_or_else(
         || "pass all of action, to and parts on stdin, or only --digest".to_owned(),
-        |digest| format!("run `board --personal call boundary.verify --digest {digest}`"),
+        |digest| format!("run `board --personal boundary verify --digest {digest}`"),
     );
     let listed = if names.is_empty() {
         "nothing".to_owned()
@@ -215,14 +215,14 @@ pub(crate) fn record(host: &dyn Host, input: &Value) -> Result<Value, PluginErro
         return Err(refusal(
             "not_found",
             format!("no crossing is at {crossing} in the personal board"),
-            "run `board --personal call boundary.check` on the content first",
+            "run `board --personal boundary check` on the content first",
         ));
     };
     if !record.passed() {
         return Err(refusal(
             "failed",
             format!("the crossing at {crossing} failed its checks, so nothing was sent to record"),
-            "change the content and run `board --personal call boundary.check` again",
+            "change the content and run `board --personal boundary check` again",
         ));
     }
     record.result = Some(result.clone());

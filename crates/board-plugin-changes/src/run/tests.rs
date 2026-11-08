@@ -35,7 +35,7 @@ fn both_stops_are_refused_and_either_one_alone_is_admitted() {
 #[test]
 fn the_stopping_text_names_the_budget_only_when_one_is_given() {
     let without = stopping("/changes/x", "/repos/x", None);
-    assert!(without.contains("changes.stop --path /changes/x --reason reached"));
+    assert!(without.contains("changes stop --path /changes/x --reason reached"));
     assert!(!without.contains("US dollars"));
     assert!(stopping("/changes/x", "/repos/x", Some(2.5)).contains("at most 2.5 US dollars"));
 }

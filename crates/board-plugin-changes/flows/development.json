@@ -8,7 +8,7 @@
       "name": "plan",
       "agent": "lead",
       "skills": ["understanding-check"],
-      "instruction": "Read each record the change surfaced; cite those you build on in the plan's uses and list the rest under ### Considered with a line on why each does not apply. Interview the owner and fill in Problem, Outcome, Out of scope, UX and Data. UX starts with No UI change and a reason, or lists each mockup under ### Mockups with a ### Neighbours list; attach the owner's decision naming each mockup. Data starts with None, or run the understanding-check skill and attach its record and the owner's decision that references it. Write the plan with `board call changes.plan` and attach the owner's signed plans/decision/v1 whose refs name the plan.",
+      "instruction": "Read each record the change surfaced; cite those you build on in the plan's uses and list the rest under ### Considered with a line on why each does not apply. Interview the owner and fill in Problem, Outcome, Out of scope, UX and Data. UX starts with No UI change and a reason, or lists each mockup under ### Mockups with a ### Neighbours list; attach the owner's decision naming each mockup. Data starts with None, or run the understanding-check skill and attach its record and the owner's decision that references it. Write the plan with `board changes plan` and attach the owner's signed plans/decision/v1 whose refs name the plan.",
       "checks": [
         {"id": "plan-sections", "kind": "sections",
          "sections": ["Problem", "Outcome", "Out of scope", "UX", "Data"]},
@@ -21,18 +21,18 @@
          "when": {"section_not": {"UX": "^no ui change\\b[\\s.:,;-]*\\w"}}},
         {"id": "data-signed", "kind": "understood", "actor": "owner", "subject": "data",
          "when": {"section_not": {"Data": "^none\\s*(?:[.:]|\\n?\\z)"}},
-         "remedy": "Run the understanding-check skill with the owner on the plan's Data section, attach its record with `board call changes.attach --path {change} --ref <record>`, and ask the owner to sign a plans/decision/v1 whose refs name it."},
+         "remedy": "Run the understanding-check skill with the owner on the plan's Data section, attach its record with `board changes attach --path {change} --ref <record>`, and ask the owner to sign a plans/decision/v1 whose refs name it."},
         {"id": "obligations", "kind": "obligations", "blocks": false}
       ]
     },
     {
       "name": "build",
       "agent": "builder",
-      "instruction": "Start one builder in a fresh agent from `board call changes.brief --path {change}`; its first message begins with brief_line, then the brief. Build test-first, commit, and record the head with `board call changes.attach --path {change} --head <sha>`. Attach each task. Run {suite} on the head and attach the run. Before advancing, ask the owner two of each understanding check's predict or edge questions again, worded differently, and add them to its rechecks.",
+      "instruction": "Start one builder in a fresh agent from `board changes brief --path {change}`; its first message begins with brief_line, then the brief. Build test-first, commit, and record the head with `board changes attach --path {change} --head <sha>`. Attach each task. Run {suite} on the head and attach the run. Before advancing, ask the owner two of each understanding check's predict or edge questions again, worded differently, and add them to its rechecks.",
       "checks": [
         {"id": "head", "kind": "field", "field": "head"},
         {"id": "suite-run", "kind": "run", "scope": "full", "waivable": true,
-         "remedy": "When {suite} is empty, the repository names no check suite: name one with `board call changes.attach --path {change} --suite /suites/<name>`, define one with `board call runs.define`, or ask the owner to waive this check. Otherwise run {suite} on {head} with `board call runs.run` and attach the run."},
+         "remedy": "When {suite} is empty, the repository names no check suite: name one with `board changes attach --path {change} --suite /suites/<name>`, define one with `board runs define`, or ask the owner to waive this check. Otherwise run {suite} on {head} with `board runs run` and attach the run."},
         {"id": "tasks", "kind": "tasks"},
         {"id": "rechecks", "kind": "understood", "actor": "owner", "subject": "data", "rechecks": 2,
          "when": {"section_not": {"Data": "^none\\s*(?:[.:]|\\n?\\z)"}}}
@@ -41,7 +41,7 @@
     {
       "name": "review",
       "agent": "lead",
-      "instruction": "Review {head} with clean context: run `board call review.run` on a brief whose subject is the change, so the reviewer reads the plan as the spec and the controls on the plan's paths, and attach the report. The gate refuses a diff that edits a file outside the plan's paths; add the file with `board call changes.plan`, or revert the edit. Fix every critical or high finding, record the new head and review again.",
+      "instruction": "Review {head} with clean context: run `board review run` on a brief whose subject is the change, so the reviewer reads the plan as the spec and the controls on the plan's paths, and attach the report. The gate refuses a diff that edits a file outside the plan's paths; add the file with `board changes plan`, or revert the edit. Fix every critical or high finding, record the new head and review again.",
       "checks": [
         {"id": "review", "kind": "records", "actor": "reviewer", "type": "review/report/v1",
          "where": {"at_head": "range", "values": {"verdict": ["approve", "comment"]}, "no_findings": ["critical", "high"]}},
@@ -56,7 +56,7 @@
     {
       "name": "land",
       "agent": "lead",
-      "instruction": "Add What the tests prove and What the tests do not prove to the plan. Draft the pull request with `board call changes.pr --path {change}`, read pr.md and fix what is wrong, fix each path in `unreadable` and draft again or say why in the body, then run the command it returns in a POSIX shell from a checkout on {head}. Record the pull request with `board call github.ref --ref <owner>/<repo>#<number>` and attach it with --pull. Merging happens outside Board; advancing from land ends the change in done.",
+      "instruction": "Add What the tests prove and What the tests do not prove to the plan. Draft the pull request with `board changes pr --path {change}`, read pr.md and fix what is wrong, fix each path in `unreadable` and draft again or say why in the body, then run the command it returns in a POSIX shell from a checkout on {head}. Record the pull request with `board github ref --ref <owner>/<repo>#<number>` and attach it with --pull. Merging happens outside Board; advancing from land ends the change in done.",
       "checks": [
         {"id": "test-sections", "kind": "sections",
          "sections": ["What the tests prove", "What the tests do not prove"]},

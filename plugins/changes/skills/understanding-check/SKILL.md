@@ -45,7 +45,7 @@ knows what the plan does, and records what he showed.
    `answer` in his own words and the `design`'s answer, its `kind`, and
    whether they `matches`. Settle each mismatch in the plan or in his
    expectation before you write it. Attach it with
-   `board call changes.attach --path /changes/<name> --ref <record>`.
+   `board changes attach --path /changes/<name> --ref <record>`.
 8. **Ask for the sign-off.** The owner signs a `plans/decision/v1` whose
    `refs` name the record. Attach that decision too. The plan gate refuses
    with `changes::data::not_signed` until both are attached.

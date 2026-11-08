@@ -200,7 +200,7 @@ fn sources<'a>(
             "review::change::no_head",
             format!(
                 "the change at {named} records no head commit, so nothing says which commits to \
-                 check; record one with `board call changes.attach --path {named} --head \
+                 check; record one with `board changes attach --path {named} --head \
                  <commit>`, or pass --head"
             ),
             [("change", json!(named))],
@@ -234,7 +234,7 @@ fn refusal_of(
         None => (
             "in the board's own tree".to_owned(),
             format!(
-                "Run `board call review.run --brief <brief>` with a brief whose range is \
+                "Run `board review run --brief <brief>` with a brief whose range is \
                  {reviewed}, and commit it"
             ),
             String::new(),
@@ -242,7 +242,7 @@ fn refusal_of(
         Some(named) => (
             format!("attached to {named}"),
             format!(
-                "Attach a report whose range is {reviewed} with `board call changes.attach --path \
+                "Attach a report whose range is {reviewed} with `board changes attach --path \
                  {named} --ref <report>`"
             ),
             format!(" and {blocked} have a critical or high finding"),
@@ -316,7 +316,7 @@ fn change(host: &dyn Host, path: &str) -> Result<Value, PluginError> {
         refusal(
             "review::change::not_found",
             format!(
-                "no readable change is at {path}; name a change `board call changes.open` \
+                "no readable change is at {path}; name a change `board changes open` \
                  lists, or run `board check {path}` to see why Board cannot read it"
             ),
             [("change", json!(path))],

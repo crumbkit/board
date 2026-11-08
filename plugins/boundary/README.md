@@ -86,7 +86,7 @@ of them. Its fields hold `digest`, `crossing` and every failure in
 `failures` (`control`, `part`, `text`, and `line` and `rewrite` when
 known). Its hint starts `Next:`, says what to change, including giving a
 control without a rule a rule, and names `board call <action>` and
-`board --personal call boundary.check` to run again. A pattern rule whose
+`board --personal boundary check` to run again. A pattern rule whose
 `quote` is `match-only` never reveals its expression here either.
 
 `boundary.covers --action <action> --to <destination> [--from <checkout>]`

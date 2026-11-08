@@ -80,7 +80,7 @@ pub(crate) fn read(host: &dyn Host, call: &str, path: &str) -> Result<Asked, Plu
     let Some([_, _, kind, Value::String(blob), body, own @ ..]) = row.map(Vec::as_slice) else {
         return Err(no_question(
             format!("nothing at {path} is a question"),
-            "list the open questions with `board call plans.open`",
+            "list the open questions with `board plans open`",
         ));
     };
     if kind != QuestionRecord::TYPE {
@@ -90,7 +90,7 @@ pub(crate) fn read(host: &dyn Host, call: &str, path: &str) -> Result<Asked, Plu
                 kind.as_str().unwrap_or("file without a type"),
                 QuestionRecord::TYPE
             ),
-            "list the open questions with `board call plans.open`",
+            "list the open questions with `board plans open`",
         ));
     }
     let record = (body.as_str()).and_then(|body| parse_json(body.as_bytes()).ok());
@@ -141,7 +141,7 @@ impl Asked {
                 "not_open",
                 path,
                 format!("{path} is {status}, not open, so nothing was recorded"),
-                "act on a question that `board call plans.open` lists",
+                "act on a question that `board plans open` lists",
             ));
         }
         Ok(())

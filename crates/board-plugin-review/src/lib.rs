@@ -178,7 +178,7 @@ fn manifest() -> Value {
             board. Use it when you review a change, and when you ask for a review of your own. \
             Write the brief, with its `range` and `focus`, on stdin to \
             `board -C <board> put /reviews/<id>/brief`, then run \
-            `board -C <board> call review.run --brief /reviews/<id>/brief`, or write the report \
+            `board -C <board> review run --brief /reviews/<id>/brief`, or write the report \
             yourself at `/reviews/<id>/report`. SKILL.md and README.md in the plugin's directory \
             say more.",
         "metadata": {"area": "review"},

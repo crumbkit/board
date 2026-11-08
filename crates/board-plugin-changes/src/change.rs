@@ -23,7 +23,7 @@ use crate::refusal;
 
 /// Where in Board's cache `sync` keeps the day it last ran, by board.
 const SYNC_PLACE: &str = "board-changes/synced";
-pub(crate) const SYNC_COMMAND: &str = "board call changes.sync";
+pub(crate) const SYNC_COMMAND: &str = "board changes sync";
 /// The board's own changes; a mounted board's changes sit under the mount
 /// and are that board's to keep.
 pub(crate) const OWN: &str = "/changes/";
@@ -80,7 +80,7 @@ pub(crate) fn read(host: &dyn Host, path: &str) -> Result<(ChangeRecord, String)
             "changes::change::not_found",
             format!(
                 "no {} record is at {path}; name a change by its logical path, such as \
-                 /changes/<name>, and list the open ones with `board call changes.open`",
+                 /changes/<name>, and list the open ones with `board changes open`",
                 ChangeRecord::TYPE
             ),
             [("path", json!(path))],

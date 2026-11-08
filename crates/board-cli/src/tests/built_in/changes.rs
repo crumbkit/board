@@ -525,21 +525,21 @@ impl Changes {
         }
     }
 
-    /// The output of `board call changes.<capability>` with `given` as
+    /// The output of `board changes <capability>` with `given` as
     /// flags.
     fn call(&self, capability: &str, given: &Value) -> Value {
         (self.invoke(capability, given, false, &[]))
             .unwrap_or_else(|failure| panic!("{capability} {given}: {failure}"))
     }
 
-    /// The output of `board call changes.<capability>` with `given` on
+    /// The output of `board changes <capability>` with `given` on
     /// stdin.
     fn call_stdin(&self, capability: &str, given: &Value) -> Value {
         (self.invoke(capability, given, true, &[]))
             .unwrap_or_else(|failure| panic!("{capability} {given}: {failure}"))
     }
 
-    /// The failure `board call changes.<capability>` prints, with `given`
+    /// The failure `board changes <capability>` prints, with `given`
     /// as flags.
     fn refusal(&self, capability: &str, given: &Value) -> Value {
         self.refusal_inheriting(capability, given, &[])
@@ -1001,7 +1001,7 @@ fn refs_finds_the_changes_that_reference_a_ticket_and_not_one_that_does_not() {
 /// at `path` on `mount`, given without its trailing slash, that has none.
 fn new_plan_usage(path: &str, mount: &str) -> String {
     format!(
-        "Pipe `changes.plan` JSON on stdin with the fields `path`, `text`, `uses` and `paths`, \
+        "Pipe `board changes plan` JSON on stdin with the fields `path`, `text`, `uses` and `paths`, \
          such as `{}`.",
         plan_example(path, mount)
     )
@@ -1011,7 +1011,7 @@ fn new_plan_usage(path: &str, mount: &str) -> String {
 /// at `path` on `mount` that already has one.
 fn revised_plan_usage(path: &str, mount: &str) -> String {
     format!(
-        "`changes.plan` reads JSON on stdin and replaces the plan, so resend all four fields, \
+        "`board changes plan` reads JSON on stdin and replaces the plan, so resend all four fields, \
          such as `{}`.",
         plan_example(path, mount)
     )

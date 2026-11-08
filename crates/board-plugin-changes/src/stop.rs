@@ -104,7 +104,7 @@ pub(crate) fn stop_reached(path: &str, phase: &str, stop: &Stop) -> PluginError 
         "changes::run::stop_reached",
         format!(
             "the run of {path} stops {stop}, and the change stands in {phase}, so it does not move \
-             on; record why the run ended with `board call changes.stop --path {path} --reason \
+             on; record why the run ended with `board changes stop --path {path} --reason \
              reached --summary '<one line>'` and end the run. To the person who started the run: \
              you move the stop by starting a later run with --through or --until"
         ),

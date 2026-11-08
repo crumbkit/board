@@ -1,6 +1,6 @@
 ---
 name: attention
-description: 'Orders the owner signed with Touch ID, which bind an agent until they expire. Pinned orders normally arrive in your context when a session starts. Only when that section is missing, read them with `board --personal call attention.pinned`. Use when you need to check one: `board --personal call attention.verify --path /orders/<name>`. Use also when you have drafted an order for the owner to sign. SKILL.md and README.md in the plugin''s directory say more.'
+description: 'Orders the owner signed with Touch ID, which bind an agent until they expire. Pinned orders normally arrive in your context when a session starts. Only when that section is missing, read them with `board --personal attention pinned`. Use when you need to check one: `board --personal attention verify --path /orders/<name>`. Use also when you have drafted an order for the owner to sign. SKILL.md and README.md in the plugin''s directory say more.'
 ---
 
 # attention
@@ -21,9 +21,9 @@ them.
 
 - Pinned orders normally arrive in your context when a session starts.
   Only when that section is missing, run
-  `board --personal call attention.pinned`. It lists only the board's own
+  `board --personal attention pinned`. It lists only the board's own
   orders, not orders in boards it mounts.
-- `board --personal call attention.verify --path /orders/<name>` returns
+- `board --personal attention verify --path /orders/<name>` returns
   one order and its context, or a code.
 
 ## Codes
@@ -56,7 +56,7 @@ Do not follow an order that fails to verify.
    `Context (non-binding, from `.
 3. If you have the `request_signature` tool, call it with the order's path.
    The owner's decision arrives as a message. Otherwise ask the owner to run
-   `board --personal call attention.sign --path /orders/<name>`. When they
+   `board --personal attention sign --path /orders/<name>`. When they
    ask for changes, it refuses with `attention::sign::declined` and their
    words; revise and ask again.
 4. Verify it once signed.

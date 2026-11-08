@@ -63,7 +63,7 @@ fn reply(scenario: &Scenario, id: &str, name: &str, text: &str) {
     scenario.write(&path, Item::File(&record.to_string()));
 }
 
-/// `board call requests.thread --effect <id>` on `scenario`, in process:
+/// `board requests thread --effect <id>` on `scenario`, in process:
 /// its output, or the code it was refused with.
 fn thread(scenario: &Scenario, id: &str) -> Result<Value, String> {
     let mut board = Board::open(scenario.workdir(), None).unwrap();

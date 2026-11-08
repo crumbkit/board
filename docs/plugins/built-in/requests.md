@@ -20,7 +20,7 @@ Board.app's request screen. It only reads.
 
 ## `requests.thread`
 
-`board --personal call requests.thread --effect <id>` takes the id of any
+`board --personal requests thread --effect <id>` takes the id of any
 version, pending or answered.
 
 - The versions are every `board/effect/v1` under `/effects/pending/` or

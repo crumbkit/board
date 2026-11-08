@@ -2,8 +2,8 @@
 // and the words a refusal says. Pure functions, so the tests can pin every word.
 
 /**
- * The command a refusal names, followed by the action's name. This is the one
- * place to change once `board gh <action>` exists.
+ * The command a refusal names, followed by the action's name. Hooks and
+ * scripts keep the `board call` form.
  */
 export const BOARD_COMMAND = 'board call github.'
 

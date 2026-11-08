@@ -16,7 +16,7 @@ Make one `changes.run` call with `--inline true`, then follow its brief.
      mount of the repository the flow is for.
    - No phase named: leave the stop out; the flow's or the change's holds.
 3. A new piece of work starts a change:
-   `board call changes.run --mount /repos/<name> --title '<title>' [--flow <name>] [--through <phase> | --until <phase>] --inline true`.
+   `board changes run --mount /repos/<name> --title '<title>' [--flow <name>] [--through <phase> | --until <phase>] --inline true`.
    Resume one with `--path /changes/<name>` in place of `--mount` and
    `--title`.
 4. Follow the returned brief: work through `steps`, run `changes.next` at

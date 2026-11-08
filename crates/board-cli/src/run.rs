@@ -299,8 +299,9 @@ Examples:
         after_help = "\
 Board reads stdin only when no flag is given and the capability admits an
 input property that is not a flag; `-h` on the capability says which. With
---capability, the input goes on stdin. A plugin's alias runs a capability
-too: with the alias gh, `board gh pr-create` is `board call github.pr-create`.
+--capability, the input goes on stdin. An enabled plugin's name, or its
+alias, runs a capability too: `board tasks available` is
+`board call tasks.available`.
 
 Examples:
   board call tasks.available
@@ -414,13 +415,13 @@ pub(crate) fn run(
         return completed;
     }
     let parsing = Instant::now();
-    let aliases = crate::alias::before(&mut arguments, context);
+    let root = crate::alias::before(&mut arguments, context, Cli::command());
     let found = graft::find(&arguments, context.built_in, context.plugins.as_deref());
     let (mut stdout, mut stderr) = (Vec::new(), Vec::new());
     let sink = &mut Sink::new(&mut stdout, &mut stderr);
     let parsed = crumbkit::try_parse_to::<graft::Parsed, _, _, _, _>(
         sink,
-        graft::command(found.as_slice()).subcommands(aliases),
+        graft::command(found.as_slice(), root),
         &graft::guide(found.as_slice()),
         arguments.clone(),
     );

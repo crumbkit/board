@@ -14,7 +14,7 @@ owner's personal board, the `personal` entry in
    order is the binding instruction. The context is the non-binding
    background from the conversation, so a reader can tell what the owner
    meant.
-2. The owner runs `board --personal call attention.sign --path
+2. The owner runs `board --personal attention sign --path
    /orders/<name>`, or presses **Review and sign** in the Claude Code mod.
    Board shows the order through its signer, which opens a window showing
    the order, its expiry, whether it is pinned, and the context as plain
@@ -26,7 +26,7 @@ owner's personal board, the `personal` entry in
    refuses with `attention::sign::declined`, and its `feedback` field holds
    what the owner wrote.
 3. Any agent given the path runs
-   `board --personal call attention.verify --path /orders/<name>`. It gets
+   `board --personal attention verify --path /orders/<name>`. It gets
    the order and its context back, or a code saying why it cannot be
    trusted.
 
@@ -57,8 +57,8 @@ keys are unchanged.
 
 An order with `"pinned": true` is shown to every agent session as it starts.
 `pinned` is part of what the owner signs, so an agent that pins or unpins an
-order by editing it breaks the signature. `board --personal call
-attention.pinned` lists each pinned order in the board's own tree that
+order by editing it breaks the signature. `board --personal
+attention pinned` lists each pinned order in the board's own tree that
 verifies, by path, up to 32 KiB of orders and context, and lists the rest
 with the code that says why each was left out. It does not read orders in
 boards the board mounts.

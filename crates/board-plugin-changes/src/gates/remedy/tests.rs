@@ -50,7 +50,7 @@ fn a_flows_remedy_wins_over_its_kinds_and_a_waivable_check_says_how_to_waive_it(
     let waivable = check(serde_json::json!({"id": "t", "kind": "tasks", "waivable": true}));
     assert!(of(&waivable, &values(None)).ends_with(
         "The owner may waive this check with a plans/decision/v1 he signs whose refs name \
-             /changes/t#t, attached with `board call changes.attach --path /changes/t --ref \
+             /changes/t#t, attached with `board changes attach --path /changes/t --ref \
              <decision>`."
     ));
 }

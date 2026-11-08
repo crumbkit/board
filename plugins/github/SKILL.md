@@ -1,6 +1,6 @@
 ---
 name: github
-description: 'Record a GitHub pull request or issue as a typed record, and push, open or edit pull requests, comment and open issues only after the boundary passes what they send. Use it to name a pull request or issue in a record, and in place of git push and gh for sending. Run `board call github.ref --ref <owner>/<repo>#<number>`, or `board call github.push`, `github.pr-create`, `github.pr-edit`, `github.comment` or `github.issue-create` from the checkout. SKILL.md and README.md in the plugin''s directory say more.'
+description: 'Record a GitHub pull request or issue as a typed record, and push, open or edit pull requests, comment and open issues only after the boundary passes what they send. Use it to name a pull request or issue in a record, and in place of git push and gh for sending. Run `board github ref --ref <owner>/<repo>#<number>`, or `board github push`, `pr-create`, `pr-edit`, `comment` or `issue-create` from the checkout. SKILL.md and README.md in the plugin''s directory say more.'
 ---
 
 # github
@@ -12,7 +12,7 @@ boundary checks it first.
 
 ## Record a pull request or issue
 
-1. Run `board -C <board> call github.ref --ref <owner>/<repo>#<number>`,
+1. Run `board -C <board> github ref --ref <owner>/<repo>#<number>`,
    such as `--ref octo/widgets#12`. You need not know whether the number is
    a pull request or an issue.
 2. Put the `path` it returns, such as `/gh/octo/widgets/pulls/12`, in the
@@ -25,14 +25,14 @@ boundary checks it first.
 Run each action from inside the checkout. From a checkout no board mounts,
 add `--personal` after `board`.
 
-- Push the branch checked out: `board call github.push`.
+- Push the branch checked out: `board github push`.
 - Push and open a pull request:
-  `board call github.pr-create --title <title> --body <body>`, with
+  `board github pr-create --title <title> --body <body>`, with
   `--base <branch>` or `--draft true` when needed.
-- Change a pull request: `board call github.pr-edit --number <n> --title <title>`,
+- Change a pull request: `board github pr-edit --number <n> --title <title>`,
   or `--body <body>`.
-- Comment: `board call github.comment --number <n> --body <body>`.
-- Open an issue: `board call github.issue-create --title <title> --body <body>`.
+- Comment: `board github comment --number <n> --body <body>`.
+- Open an issue: `board github issue-create --title <title> --body <body>`.
 
 On `github::boundary::refused`, nothing was sent. Read `fields.failures`, the
 message, and the hint after it, which is the boundary's `Next:` step. Change
@@ -48,7 +48,7 @@ its message ends with a `Next:` step naming the `board call github.<action>`
 that sends the same content. Run that command.
 
 To check pushes made outside Board too, such as from a terminal, run
-`board call github.install-hook` in the checkout once. It writes nothing: it
+`board github install-hook` in the checkout once. It writes nothing: it
 prints the `pre-push` hook, which has the boundary check what each push
 sends, inside the shell command that installs it. Show the owner the
 command and run it with their approval. When the hook refuses a push, read

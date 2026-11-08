@@ -170,7 +170,7 @@ fn manifest() -> Value {
         "description": "Append a note to today's daily note, or to a topic's note, in a notes \
             repo in Reflect's layout, and read a day's daily note. Use it when the person asks \
             you to note something down or asks what their daily note says. Start with `board -C \
-            <board> call notes.daily`, run in the repository you work in, which syncs the notes \
+            <board> notes daily`, run in the repository you work in, which syncs the notes \
             repo that repository's git remote routes to and prints today's note. SKILL.md and \
             README.md in the plugin's directory say more.",
         "metadata": {"area": "notes"},

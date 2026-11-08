@@ -1,6 +1,6 @@
 ---
 name: plans
-description: 'The plans plugin records the decisions a session makes, the questions only the owner can answer, and the owner''s answers, as records in the board. Use it when you choose between options that a later session or reviewer needs to know about, and when work waits on the owner. Write a decision with `board -C <board> put --new --var project=<project>` and a `plans/decision/v1` on stdin; `board -C <board> call plans.open` lists the questions still waiting for an answer. SKILL.md and README.md in the plugin''s directory say more.'
+description: 'The plans plugin records the decisions a session makes, the questions only the owner can answer, and the owner''s answers, as records in the board. Use it when you choose between options that a later session or reviewer needs to know about, and when work waits on the owner. Write a decision with `board -C <board> put --new --var project=<project>` and a `plans/decision/v1` on stdin; `board -C <board> plans open` lists the questions still waiting for an answer. SKILL.md and README.md in the plugin''s directory say more.'
 ---
 
 # plans
@@ -38,7 +38,7 @@ in. `<project>` names what the record concerns, such as the repository
    at it.
 3. When the decision belongs to a change, attach it:
 
-       board -C <board> call changes.attach --path /changes/<name> --ref /projects/<project>/decisions/<id>
+       board -C <board> changes attach --path /changes/<name> --ref /projects/<project>/decisions/<id>
 
 ## Questions and answers
 
@@ -53,18 +53,18 @@ in. `<project>` names what the record concerns, such as the repository
    back to it. Never put a secret in a question.
 2. List the questions still waiting for an answer:
 
-       board -C <board> call plans.open --path /projects/<project>
+       board -C <board> plans open --path /projects/<project>
 
 3. When the owner answers in chat, record the answer with the option they
    chose and their words verbatim:
 
-       board -C <board> call plans.answer --path /projects/<project>/questions/<id> --option <id> --words "<the owner's words>"
+       board -C <board> plans answer --path /projects/<project>/questions/<id> --option <id> --words "<the owner's words>"
 
    It writes the `plans/answer/v1` at `/projects/<project>/answers/<id>`,
    with the question's id. `--option none` with `--words` records an answer
    that chooses no option.
 4. Withdraw a question that no longer matters:
 
-       board -C <board> call plans.withdraw --path /projects/<project>/questions/<id> --reason '<why>'
+       board -C <board> plans withdraw --path /projects/<project>/questions/<id> --reason '<why>'
 
 The plugin's README.md gives every field of the three record types.

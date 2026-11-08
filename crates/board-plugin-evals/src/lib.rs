@@ -58,8 +58,8 @@ fn manifest() -> Value {
         "version": "0.1.0",
         "description": "Record every test of a library, tool, model or agent as an eval and its runs in the \
             board, and check what was already tested before testing. Use it before you start a test and \
-            when you conclude one. Start with `board -C <board> call evals.about --subject <name>`, which \
-            lists the evals of what you will test. `board -C <board> call evals.open` lists those not \
+            when you conclude one. Start with `board -C <board> evals about --subject <name>`, which \
+            lists the evals of what you will test. `board -C <board> evals open` lists those not \
             concluded or abandoned. SKILL.md and README.md in the plugin's directory say more.",
         "metadata": {"area": "testing"},
         "types": [EvalRecord::TYPE],

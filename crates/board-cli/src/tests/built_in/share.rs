@@ -102,13 +102,13 @@ impl Boards {
         self.experiment("/notes/cases.md", &json!({}))
     }
 
-    /// The output of `board call share.to` with `flags` and `--to /team`
+    /// The output of `board share to` with `flags` and `--to /team`
     /// unless they name another.
     fn share(&self, flags: &[&str]) -> Value {
         self.personal.call("share.to", &with_to(flags))
     }
 
-    /// The failure `board call share.to` prints when it is refused.
+    /// The failure `board share to` prints when it is refused.
     fn refused(&self, flags: &[&str]) -> Value {
         self.personal.refusal("share.to", &with_to(flags))
     }

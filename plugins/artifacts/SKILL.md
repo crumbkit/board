@@ -1,6 +1,6 @@
 ---
 name: artifacts
-description: 'The claude.ai artifacts the owner reviews, each with the task or change it belongs to, what it shows, whether the owner agreed it, and a copy of every version''s page, recorded by the board-artifacts Claude Code mod. Use it to find an artifact, to file one, or to sync the artifacts published outside Claude Code. Start with `board --personal call artifacts.list --subject /changes/<name>`, which lists that work''s artifacts with every version, newest first. SKILL.md and README.md in the plugin''s directory say more.'
+description: 'The claude.ai artifacts the owner reviews, each with the task or change it belongs to, what it shows, whether the owner agreed it, and a copy of every version''s page, recorded by the board-artifacts Claude Code mod. Use it to find an artifact, to file one, or to sync the artifacts published outside Claude Code. Start with `board --personal artifacts list --subject /changes/<name>`, which lists that work''s artifacts with every version, newest first. SKILL.md and README.md in the plugin''s directory say more.'
 ---
 
 # artifacts
@@ -14,7 +14,7 @@ reads. You never write the version records yourself.
 
 ## Find an artifact
 
-    board --personal call artifacts.list --subject /changes/<name>
+    board --personal artifacts list --subject /changes/<name>
 
 It lists each artifact's link, subject, `shows`, `state` and every version
 with its title, newest first. `--state shown` keeps one state, `--area
@@ -33,7 +33,7 @@ starts with. Otherwise it uses the task you claimed with
 `tasks.claim`. When it says the artifact has no subject or no `shows`, set
 them in the same turn:
 
-    board --personal call artifacts.set --path /artifacts/<id> --subject /changes/<name> --shows 'One sentence saying what the page is for.'
+    board --personal artifacts set --path /artifacts/<id> --subject /changes/<name> --shows 'One sentence saying what the page is for.'
 
 `--area <tag>` adds an area tag such as `dashboard/flows`. Run `set` again
 to add a second subject or area. After the owner has seen the page, set
@@ -52,7 +52,7 @@ it, but it carries no approval, and a gate that checks the owner's approval
 will not count it. When the owner
 accepts an artifact, record a `plans/decision/v1` that says so, then run:
 
-    board --personal call artifacts.agree --path /artifacts/<id> --decision <decision>
+    board --personal artifacts agree --path /artifacts/<id> --decision <decision>
 
 The first run refuses with `artifacts::agree::asked` and writes nothing. Its
 `effect` field names the approval Board is waiting for. Ask the owner to run

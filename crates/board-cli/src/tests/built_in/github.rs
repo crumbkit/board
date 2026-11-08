@@ -76,12 +76,12 @@ impl Board {
         argv.lines().map(str::to_owned).collect()
     }
 
-    /// The output of `board call github.ref --ref <reference>`.
+    /// The output of `board github ref --ref <reference>`.
     fn call(&self, reference: &str) -> Value {
         self.board.call("github.ref", &["--ref", reference])
     }
 
-    /// The failure `board call github.ref --ref <reference>` prints.
+    /// The failure `board github ref --ref <reference>` prints.
     fn refusal(&self, reference: &str) -> Value {
         self.board.refusal("github.ref", &["--ref", reference])
     }
