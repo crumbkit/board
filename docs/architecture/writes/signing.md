@@ -1,8 +1,9 @@
 # Signing
 
 This file holds detail for docs/architecture/writes/effects.md. It says what
-Board signs, how it checks a signature, and what the three repositories that
-sign agree on.
+Board signs, how it checks a signature, and what crumbkit/board and
+board-app, the two repositories that build, sign or verify the bytes, agree
+on.
 
 ## What is signed
 
@@ -27,8 +28,7 @@ own effects.
   record does not say), the order under `Order (binding):` and the context
   file's path and text under `Context (non-binding, from <path>):`. The
   order and context text are copied as stored, so the statement ends with
-  the context file's last byte. The attention plugin is built into Board,
-  so Board alone builds the order layout.
+  the context file's last byte.
 - Each statement is signed in the namespace its first line names. No
   signature verifies in another namespace, so a key limited to approvals
   cannot sign an owner's write or an order.
@@ -137,8 +137,9 @@ records it.
 ## Vectors
 
 - `vectors/signing/v1/` holds the statements, signatures, a test key and an
-  allowed signers file; its README says how each file was made and which
-  repository owns each layout. board-app is to test against them.
+  allowed signers file. `vectors/signing/README.md` says how each file was
+  made and which repository owns each layout. board-app is to test against
+  them.
 - `crates/board-ops/tests/signing_vectors.rs` checks that Board builds all
   three statements byte for byte, maps each to its namespace, admits the
   owner's signatures and refuses those in another namespace or by another
