@@ -111,8 +111,8 @@ records the run. An agent running unattended ends with
 The plugin ships `development`, `small` and `flow-authoring`; a board's
 own flow at `/flows/<name>` wins over a shipped one. The links
 `/flows/repos/<name>` and `/flows/default` choose a repository's flow and
-every repository's. Each change keeps a copy, so editing a flow moves no
-change in flight. Run
+every repository's. Each change references a stored version of its flow at
+`/flows/<name>/<version>`, so editing a flow moves no change in flight. Run
 `board -C <board> changes reflow --path /changes/<name> --flow <name>`
 to move a change to another flow, or to take up an edit. To write a flow,
 start a change with `--flow flow-authoring --mount /` (or the mount the
@@ -121,7 +121,8 @@ flow is for) and follow it: it drafts the flow, checks it with
 agent in a throwaway copy of the board, and adopts it at `/flows/<name>`.
 Run
 `changes.migrate --apply true` once to move every `changes/change/v1` onto
-the development flow.
+the development flow, and `changes.migrate --flows true --apply true` once
+to replace the flow copies changes kept before versions.
 
 ## Refusals
 
@@ -137,7 +138,7 @@ the development flow.
   `changes::sandbox::resume`, `changes::sandbox::setup`: a sandboxed run
   starts a new change, with `--for` naming the change that asked for it.
 - `changes::flow::unreadable`: fix the flow file named, or restore a
-  change's copy with `reflow`.
+  change's flow version with `reflow`.
 - `changes::reflow::no_phase`: choose a flow that has the change's phase.
 - `changes::reopen::no_build`: the change's flow has no build phase before
   where it stands. Run `changes.next` for its next step.

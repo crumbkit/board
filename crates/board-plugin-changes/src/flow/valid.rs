@@ -1,5 +1,5 @@
-//! Whether a flow can run: at least one phase, each named once and none
-//! `done`, `dropped` or `paused`, every check of a kind Board knows, with
+//! Whether a flow can run: a name other than `repos`, at least one phase,
+//! each named once and none `done`, `dropped` or `paused`, every check of a kind Board knows, with
 //! the parameters its kind needs, an id unique in the flow and `when`
 //! patterns that are regular expressions, a stop at one of its phases, and
 //! only known placeholders in its text. Each problem has a stable code.
@@ -21,6 +21,10 @@ use super::{Actor, Check, Flow, Kind};
 use crate::gates::remedy::placeholders;
 use crate::records::{DONE, DROPPED, PAUSED};
 use crate::refusal;
+
+/// The name no flow may take: `/flows/repos/` holds the links that choose
+/// a repository's flow, where that flow's versions would go.
+const RESERVED_NAME: &str = "repos";
 
 /// One thing wrong with a flow, its stable code, and the phase and check it
 /// is in.
@@ -90,6 +94,16 @@ pub(crate) fn problems(flow: &Flow, drafted: bool) -> Vec<Problem> {
         found.push(whole(
             "changes::flow::no_phases",
             "the flow has no phases; give it at least one".to_owned(),
+        ));
+    }
+    if flow.name == RESERVED_NAME {
+        found.push(whole(
+            "changes::flow::reserved_name",
+            format!(
+                "/flows/{RESERVED_NAME}/ holds the links that choose a repository's flow, so the \
+                 versions of a flow named {RESERVED_NAME} would sit among them; name the flow \
+                 otherwise"
+            ),
         ));
     }
     let names = flow.names();

@@ -61,6 +61,7 @@ impl Board {
         // The mounted board checks the put against its own settings, at the
         // path the put lands in there.
         mounted.ask_as(self.asker.clone());
+        mounted.bulk.clone_from(&self.bulk);
         // Refuses a `follow` that names nothing, as `mount update` does.
         let pin = self.repositories().pin(mount)?;
         let root = match sent {

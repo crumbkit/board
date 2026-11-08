@@ -651,6 +651,10 @@ board put --new --var project=board --var=team=a
   fails with board::put::var_unused
   hint
 
+board put --batch --bulk xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+  fails with board::put::bulk_reason
+  hint
+
 board get /mount/commit/x
   fails with board::mount::commit_missing
   run board mount update /mount/commit

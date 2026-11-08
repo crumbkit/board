@@ -79,6 +79,9 @@ pub struct Board {
     /// The mount whose checkout this run started in, when Board found the
     /// board through it: see [`Board::started_in`].
     started: Option<(LogicalPath, PathBuf)>,
+    /// Why this run's commits touch many files, which each commit gives in
+    /// a `Board-Bulk:` trailer: see [`Board::mark_bulk`].
+    pub(crate) bulk: Option<crate::Bulk>,
 }
 
 // Board must stay `Send` so that a caller can move it to another thread, as
@@ -127,7 +130,14 @@ impl Board {
             built_in: BuiltIn::default(),
             build: "",
             started: None,
+            bulk: None,
         })
+    }
+
+    /// Marks every commit this board makes from now on as a bulk one,
+    /// whose message ends in the trailer `Board-Bulk: <reason>`.
+    pub fn mark_bulk(&mut self, bulk: crate::Bulk) {
+        self.bulk = Some(bulk);
     }
 
     pub fn repository(&self) -> &Repository {

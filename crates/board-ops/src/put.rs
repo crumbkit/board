@@ -25,6 +25,9 @@ use crate::types::TypeError;
 use crate::ui::fitted;
 use crate::verdict::{self, Admitted, Fault, SchemaFound};
 
+mod bulk;
+pub use bulk::Bulk;
+
 /// What a put expects to find where it writes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Expect {
@@ -259,6 +262,14 @@ impl Board {
         })
     }
 
+    /// `message` with this board's `Board-Bulk:` trailer, when it has one.
+    pub(crate) fn marked(&self, message: &str) -> String {
+        match &self.bulk {
+            Some(bulk) => bulk.mark(message),
+            None => message.to_owned(),
+        }
+    }
+
     /// Compares every expect under `lock`, the lock the records were
     /// prepared under, and writes every prepared record in order, then
     /// removes each of `removed`, with one commit when `commit_on_put` is
@@ -332,7 +343,7 @@ impl Board {
                 .chain(removed.iter().map(|removal| (removal.file.as_str(), None)))
                 .collect();
             repository
-                .stage_commit(&lock, &files, message)
+                .stage_commit(&lock, &files, &self.marked(message))
                 .map_err(|error| Failure::Error(error.into()))?
         } else {
             None
@@ -596,6 +607,11 @@ pub enum PutError {
     },
     #[error("--var {var} names no placeholder of the folder {folder}")]
     VarUnused { var: String, folder: String },
+    #[error(
+        "--bulk {reason:?} is not a reason a trailer can hold: it must be one line of 1 to {} characters",
+        Bulk::MAX_CHARS
+    )]
+    BulkReason { reason: String },
     #[error(transparent)]
     Path(#[from] PathError),
     #[error(transparent)]
@@ -640,6 +656,7 @@ impl PutError {
             Self::NoFolder { .. } => Code::PutNoFolder,
             Self::FolderUnfilled { .. } => Code::PutFolderUnfilled,
             Self::VarUnused { .. } => Code::PutVarUnused,
+            Self::BulkReason { .. } => Code::PutBulkReason,
             Self::Path(error) => error.code(),
             Self::Write(error) => error.code(),
             Self::Mount(error) => error.code(),
@@ -703,6 +720,7 @@ impl PutError {
             | Self::TooManyLines
             | Self::Path(_)
             | Self::BadPlugin { .. }
+            | Self::BulkReason { .. }
             | Self::Input { .. } => Fields::default(),
         }
     }

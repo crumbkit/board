@@ -364,6 +364,17 @@ fn writing(starts: &mut Starts, fixture: &RuntimePlace) {
     starts.pair(&questions, Code::PutVarUnused, unused, filled);
     let unfilled = "put --new --var team=board";
     starts.pair(&questions, Code::PutFolderUnfilled, unfilled, filled);
+    let bulk = starts
+        .seed()
+        .stdin(r#"{"path": "/projects/b", "record": {"$type": "lr/project/v1"}}"#);
+    let long = format!("put --batch --bulk {}", "x".repeat(81));
+    starts.add(&bulk, Code::PutBulkReason, &long);
+    starts.pair(
+        &bulk,
+        Code::PutBulkReason,
+        &long,
+        "put --batch --bulk migrate",
+    );
     if !starts.twins {
         // Following these hints runs `mount update` or a put that succeeds.
         let writing: [(Code, &str); 7] = [

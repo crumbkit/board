@@ -28,7 +28,7 @@ with such a name is degraded with `board::path::malformed`, and `check` and
 A path is at most 4,096 bytes. A record's file name adds `.json`, so its
 segment is at most 250 bytes.
 Paths are read from the root of the board that holds them;
-architecture/paths/uris.md says how a `board://` URI names one in a known board.
+architecture/paths/uris.md says how `board://` URIs name one in a known board.
 The working tree must also fit the OS's `PATH_MAX` (1,024 bytes on macOS, 4,096
 on Linux) with its checkout prefix; Board keeps its own limit because paths
 read through mounts never touch the file system.

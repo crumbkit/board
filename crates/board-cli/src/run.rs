@@ -8,10 +8,11 @@ use board_model::{
     Refusal,
 };
 pub(crate) use board_ops::entered;
-use board_ops::{Absent, Board, DEFAULT_LIMIT, Expect, MAX_LIMIT, Plugins, PutError};
+use board_ops::{Board, Bulk, DEFAULT_LIMIT, Expect, MAX_LIMIT, Plugins, PutError};
 use board_plugin::{Limits, Target};
 
 mod checkout;
+mod lookup;
 mod remove;
 mod uri;
 
@@ -138,6 +139,12 @@ pub(crate) struct Putting {
     /// batch through a mount commits in the mounted board and moves the mount's pin.
     #[arg(long, conflicts_with_all = ["path", "expect"])]
     pub(crate) batch: bool,
+    /// Mark the batch's commit as a bulk one, ending its message in `Board-Bulk: <REASON>`.
+    ///
+    /// The reason is one line of 1 to 80 characters, such as `migrate flows`, so a reader of
+    /// history can tell a commit that touches many files from an edit.
+    #[arg(long, value_name = "REASON", requires = "batch")]
+    pub(crate) bulk: Option<String>,
     /// Write stdin as a file at a path that is its whole name, such as /notes/plan.md.
     ///
     /// With a `store` setting, --file uploads bytes over 1 MiB or not UTF-8 under their digest and
@@ -580,9 +587,16 @@ fn reread(
     })
 }
 
-/// Lets `board` ask the owner to admit what `command` writes. Only a
-/// plugin's decide writes in the personal board.
+/// Lets `board` ask the owner to admit what `command` writes, and marks a
+/// `put --bulk` as a bulk commit, refusing a reason a trailer cannot hold.
+/// Only a plugin's decide writes in the personal board.
 fn ask(board: &mut Board, context: &Context, command: &Command) -> Result<(), Box<Refusal>> {
+    if let Command::Put(Putting {
+        bulk: Some(reason), ..
+    }) = command
+    {
+        board.mark_bulk(Bulk::new(reason).map_err(|error| Box::new(error.refusal()))?);
+    }
     let personal = match command {
         Command::Put(_) | Command::Rm(_) => false,
         Command::Decide(_) => context.environment.plugin.is_some(),
@@ -640,7 +654,7 @@ fn command(
         }
         Command::Get { paths, fetch } => {
             let paths = or_refuse!(at(&paths, "get"));
-            get(board, printer, &paths, fetch, &behind)
+            lookup::get(board, printer, &paths, fetch, &behind)
         }
         Command::Put(putting) => put(board, printer, prefix, putting, stdin),
         Command::Rm(asked) => remove::remove(board, printer, prefix, asked),
@@ -656,7 +670,7 @@ fn command(
         }
         Command::Refs(asked) => {
             let paths = or_refuse!(at(&asked.paths, "refs"));
-            refs(printer, board, context, &asked, &paths, &behind)
+            lookup::refs(printer, board, context, &asked, &paths, &behind)
         }
         Command::Uri { path } => {
             let path = or_refuse!(read(prefix, &path, "uri"));
@@ -757,44 +771,4 @@ fn climbed(from: &LogicalPath, text: &str) -> Option<LogicalPath> {
 /// A refusal with the hint for its code.
 pub(crate) fn plain(code: Code, message: &dyn std::fmt::Display) -> Refusal {
     Refusal::new(code, message, &Fields::default())
-}
-
-/// `get` of `paths`, with each attachment's bytes when `fetch` is set,
-/// passing each refusal through `behind`.
-fn get(
-    board: &Board,
-    printer: Printer,
-    paths: &[LogicalPath],
-    fetch: bool,
-    behind: &dyn Fn(Refusal) -> Refusal,
-) -> Output {
-    let answers = board.get_each(paths).map(|each| {
-        each.map(move |answer| match answer {
-            Ok(report) if fetch => board.fetched(report),
-            answer => answer,
-        })
-    });
-    render::get(printer, paths, answers, behind)
-}
-
-/// `refs` of `paths`, read from the paths asked, with `--missing` or without.
-fn refs(
-    printer: Printer,
-    board: &Board,
-    context: &Context,
-    asked: &Refs,
-    paths: &[LogicalPath],
-    behind: &dyn Fn(Refusal) -> Refusal,
-) -> Output {
-    let absent = if asked.missing {
-        Absent::Locate
-    } else {
-        Absent::Refuse
-    };
-    let limit = asked.page.limit();
-    let cache = context.cache.as_deref();
-    match board.refs(paths, absent, &asked.fields, limit, cache) {
-        Err(error) => render::refused(printer, error.refusal()),
-        Ok(answers) => render::refs(printer, paths, answers, limit, behind),
-    }
 }

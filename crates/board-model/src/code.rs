@@ -87,6 +87,7 @@ codes! {
     PutNoFolder => "board::put::no_folder",
     PutFolderUnfilled => "board::put::folder_unfilled",
     PutVarUnused => "board::put::var_unused",
+    PutBulkReason => "board::put::bulk_reason",
     RmDirectory => "board::rm::directory",
     SyncNoRemote => "board::sync::no_remote",
     SyncFailed => "board::sync::failed",

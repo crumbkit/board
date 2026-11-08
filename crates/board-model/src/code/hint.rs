@@ -494,6 +494,9 @@ fn generic(code: Code) -> &'static str {
             "add a `--var <name>=<value>` for each placeholder the message names"
         }
         Code::PutVarUnused => "drop each `--var` that names no placeholder of the folder",
+        Code::PutBulkReason => {
+            "give --bulk one line of 1 to 80 characters that says why the commit touches many files, such as `--bulk 'migrate flows'`"
+        }
         Code::PutFailed => {
             "check that the working tree is writable and the disk has space; the message says whether the commit was made"
         }
