@@ -54,7 +54,7 @@ impl Board {
     /// kept, found through the index kept under `cache`, so the record stays
     /// valid until the plugin migrates it. The board is read under the lock
     /// the write holds. An alias that is one of `commands`, Board's built-in
-    /// commands, or another enabled plugin's alias is refused.
+    /// commands, or another enabled plugin's name or alias, is refused.
     pub fn plugin_enable(
         &self,
         plugins: Option<&Path>,
@@ -154,7 +154,8 @@ impl Board {
     }
 
     /// Refuses `manifest`'s alias when it is one of `commands`, Board's
-    /// built-in commands, or the alias of an enabled plugin among `others`.
+    /// built-in commands, or the name or alias of an enabled plugin among
+    /// `others`.
     fn alias_free(
         &self,
         name: &PluginName,
@@ -167,10 +168,15 @@ impl Board {
             return Ok(());
         };
         let other = || {
-            let aliased = self.aliased(others);
-            let other = aliased
-                .into_iter()
-                .find(|other| other.alias.as_ref() == Some(alias))?;
+            let enabled = self.aliased(others);
+            let named = (enabled.iter()).find(|other| other.name.as_str() == alias.as_str());
+            if let Some(other) = named {
+                return Some(format!(
+                    "the name of the {} plugin, which the board enables",
+                    other.name
+                ));
+            }
+            let other = (enabled.iter()).find(|other| other.alias.as_ref() == Some(alias))?;
             Some(format!(
                 "the alias of the {} plugin, which the board enables",
                 other.name

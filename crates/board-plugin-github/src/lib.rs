@@ -303,9 +303,9 @@ fn manifest() -> Value {
         "description": "Record a GitHub pull request or issue as a typed record, and push, open or \
             edit pull requests, comment and open issues only after the boundary passes what they \
             send. Use it to name a pull request or issue in a record, and in place of git push and \
-            gh for sending. Run `board call github.ref --ref <owner>/<repo>#<number>`, or `board \
-            call github.push`, `github.pr-create`, `github.pr-edit`, `github.comment` or \
-            `github.issue-create` from the checkout. SKILL.md and README.md in the plugin's \
+            gh for sending. Run `board github ref --ref <owner>/<repo>#<number>`, or `board \
+            github push`, `pr-create`, `pr-edit`, `comment` or \
+            `issue-create` from the checkout. SKILL.md and README.md in the plugin's \
             directory say more.",
         "metadata": {"area": "delivery"},
         "types": [PullRecord::TYPE, IssueRecord::TYPE],

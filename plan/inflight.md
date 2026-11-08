@@ -54,8 +54,8 @@ and branch the command targets. It takes them from the command's `-R` and
 directory, or the one a leading `cd <dir> &&` names. When it cannot tell,
 for example after another `cd`, it refuses and says to run `gh pr create`
 with `-R` and `--head`. A repository with no repo record has no change, so
-it is refused too; the refusal says to run `board --personal call
-changes.start`, which creates both. The gate has no exemptions, as the owner asked. It reads local
+it is refused too; the refusal says to run `board --personal
+changes start`, which creates both. The gate has no exemptions, as the owner asked. It reads local
 records only and makes no network call.
 
 This is the mod's first hook that blocks what it watches. Until now every
@@ -73,7 +73,7 @@ changes, runs, plans, evals and artifacts plugins and writes nothing.
 Putting it in `changes` would make that plugin read evals and artifacts,
 which a change does not need.
 
-    board --personal call inflight.now [--holder <session>] [--stopped-at <time>] [--limit <n>]
+    board --personal inflight now [--holder <session>] [--stopped-at <time>] [--limit <n>]
 
 It returns, each part bounded and saying what it left out:
 
@@ -99,7 +99,7 @@ checks it, `gh pr view <url> --json state`.
 
 After a usage stop, a new session runs:
 
-    board --personal call inflight.now --stopped-at <time>
+    board --personal inflight now --stopped-at <time>
 
 For each change it shows, the session goes to the change's worktree,
 writes a claim from there, runs `changes.brief`, and restarts the next

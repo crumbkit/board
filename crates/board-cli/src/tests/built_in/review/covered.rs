@@ -555,7 +555,7 @@ fn a_report_the_change_does_not_attach_is_refused_and_an_attached_one_covers_the
     assert_eq!(document["fields"]["uncovered"], json!([mounted.head]));
     let message = document["message"].as_str().unwrap();
     assert!(
-        message.contains("changes.attach --path /changes/work"),
+        message.contains("changes attach --path /changes/work"),
         "{message}"
     );
     change(&repo, Some(&mounted.head), &[&path], "/project");
@@ -640,7 +640,7 @@ fn a_change_with_no_head_is_refused_and_one_with_a_head_admitted() {
     );
     let message = document["message"].as_str().unwrap();
     assert!(
-        message.contains("changes.attach --path /changes/work --head"),
+        message.contains("changes attach --path /changes/work --head"),
         "{message}"
     );
     change(&repo, Some(&mounted.head), &[&path], "/project");

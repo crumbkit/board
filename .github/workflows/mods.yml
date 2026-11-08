@@ -32,6 +32,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
+          fetch-depth: 0
       # The exact version the mods' tests were last run with locally. The
       # controls mod needs `$.session.append`, which 2.1.289 lacks.
       - run: npm install --global @anthropic-ai/claude-code@2.1.308 # zizmor: ignore[adhoc-packages]
@@ -41,6 +42,14 @@ jobs:
             echo "::group::$mod"
             claude plugin test "$mod"
             echo "::endgroup::"
+          done
+      # Each mod that draws in the band keeps a copy of the attention mod's
+      # band.ts, whose tests only the attention mod runs.
+      - name: every band.ts matches the attention mod's
+        run: |
+          for copy in plugins/*/claude-code/hooks/band.ts; do
+            cmp -s plugins/attention/claude-code/hooks/band.ts "$copy" \
+              || { echo "::error file=$copy::$copy differs from plugins/attention/claude-code/hooks/band.ts"; exit 1; }
           done
       # Every mod has an entry whose name is its plugin.json name and whose
       # source is its directory, so `claude plugin install <name>@board`
@@ -53,5 +62,24 @@ jobs:
               'any(.plugins[]; .name == $name and .source == $source)' \
               .claude-plugin/marketplace.json >/dev/null \
               || { echo "::error::.claude-plugin/marketplace.json has no entry for $name at ./$mod"; exit 1; }
+          done
+      # `claude plugin update` installs a mod only when its version changes,
+      # so a changed mod needs a higher version than the base branch has.
+      - name: a changed mod raises its version
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          base=$(git merge-base "origin/$BASE_REF" HEAD)
+          for mod in plugins/*/claude-code; do
+            git diff --quiet "$base" HEAD -- "$mod" && continue
+            file="$mod/.claude-plugin/plugin.json"
+            old=$(git show "$base:$file" 2>/dev/null | jq -r .version) || continue
+            [ -n "$old" ] || continue
+            new=$(jq -r .version "$file")
+            if [ "$(printf '%s\n%s\n' "$old" "$new" | sort -V | tail -n1)" != "$new" ] || [ "$old" = "$new" ]; then
+              echo "::error file=$file::$mod changed but its version is $new, not above $old on $BASE_REF; raise the version in $file"
+              exit 1
+            fi
           done
       - run: claude plugin validate .

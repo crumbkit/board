@@ -99,7 +99,7 @@ fn next_reads_the_gate_from_the_plan_file_and_says_what_to_do() {
     let output = board.call("next", &path());
     assert_eq!(
         output["instruction"],
-        "The gate passes: run `board call changes.advance --path /changes/t`."
+        "The gate passes: run `board changes advance --path /changes/t`."
     );
 }
 
@@ -378,7 +378,7 @@ fn advance_runs_from_land_to_done_and_refuses_to_leave_done() {
         (&json!("changes::phase::final"), &json!("done"))
     );
     let message = refused["message"].as_str().unwrap();
-    assert!(message.contains("`board call changes.open`"), "{message}");
+    assert!(message.contains("`board changes open`"), "{message}");
 }
 
 #[test]
@@ -416,7 +416,7 @@ fn attach_refuses_a_reference_for_a_change_with_no_plan_record_and_keeps_it_on_t
     );
     let message = refused["message"].as_str().unwrap();
     assert!(
-        message.contains("changes.plan --path /changes/t"),
+        message.contains("changes plan --path /changes/t"),
         "{message}"
     );
     let written = board.call_stdin("plan", &planning(&["/repos/x/**"]));
@@ -1169,7 +1169,7 @@ fn reopen_refuses_a_paused_change_and_says_to_resume_it_and_admits_one_in_review
     let refused = board.refusal("reopen", &reopening());
     assert_eq!(refused["code"], "changes::phase::paused");
     let message = refused["message"].as_str().unwrap();
-    assert!(message.contains("changes.resume"), "{message}");
+    assert!(message.contains("changes resume"), "{message}");
     move_to(&board, "review");
     assert_eq!(board.call("reopen", &reopening())["to"], "build");
 }
@@ -1209,4 +1209,82 @@ fn next_in_build_gives_the_latest_reopens_reason_and_says_nothing_of_one_never_r
     move_to(&board, "review");
     let said = board.call("next", &path())["instruction"].clone();
     assert!(!said.as_str().unwrap().contains("reopened"), "{said}");
+}
+
+#[test]
+fn next_names_the_plan_input_where_its_instruction_asks_for_a_plan_and_nowhere_else() {
+    let board = Changes::new();
+    board.change_at("changes/t.json", "plan", &json!({"route": "owner"}));
+    let said = board.call("next", &path())["instruction"].clone();
+    assert!(
+        said.as_str()
+            .unwrap()
+            .contains(&new_plan_usage(CHANGE, "/repos/x")),
+        "{said}"
+    );
+    // The development flow's build instruction asks for no plan.
+    move_to(&board, "build");
+    let said = board.call("next", &path())["instruction"].clone();
+    assert!(!said.as_str().unwrap().contains("changes.plan"), "{said}");
+}
+
+#[test]
+fn next_in_review_says_to_resend_a_plan_without_paths_and_asks_a_change_without_one_for_a_new_one()
+{
+    let board = Changes::new();
+    board.change_at(
+        "changes/t.json",
+        "review",
+        &json!({"plan": "/changes/t/plan.md"}),
+    );
+    board.write("changes/t/plan.md", "# T\n");
+    let said = board.call("next", &path())["instruction"].clone();
+    let said = said.as_str().unwrap();
+    assert!(
+        said.contains(&revised_plan_usage(CHANGE, "/repos/x")),
+        "{said}"
+    );
+    assert!(
+        !said.contains(&new_plan_usage(CHANGE, "/repos/x")),
+        "{said}"
+    );
+    board.change_at("changes/u.json", "review", &json!({}));
+    let said = board.call("next", &json!({"path": "/changes/u"}))["instruction"].clone();
+    let said = said.as_str().unwrap();
+    assert!(
+        said.contains(&new_plan_usage("/changes/u", "/repos/x")),
+        "{said}"
+    );
+    assert!(
+        !said.contains(&revised_plan_usage("/changes/u", "/repos/x")),
+        "{said}"
+    );
+}
+
+#[test]
+fn next_in_review_says_to_resend_the_current_plan_since_changes_plan_replaces_it() {
+    let board = Changes::new();
+    board.change_at("changes/t.json", "review", &json!({}));
+    board.call_stdin("plan", &planning(&["/repos/x/src/**"]));
+    let said = board.call("next", &path())["instruction"].clone();
+    let said = said.as_str().unwrap();
+    assert!(
+        said.contains(&revised_plan_usage(CHANGE, "/repos/x")),
+        "{said}"
+    );
+    assert!(
+        !said.contains(&new_plan_usage(CHANGE, "/repos/x")),
+        "{said}"
+    );
+}
+
+#[test]
+fn the_plan_example_for_a_change_on_the_board_itself_names_paths_under_the_root() {
+    let board = Changes::new();
+    board.change_at("changes/t.json", "plan", &json!({"mount": "/"}));
+    let said = board.call("next", &path())["instruction"].clone();
+    assert!(
+        said.as_str().unwrap().contains(&new_plan_usage(CHANGE, "")),
+        "{said}"
+    );
 }

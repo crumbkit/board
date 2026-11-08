@@ -50,7 +50,7 @@ Such a stub names its plugin and hook in `written_by`, such as
 
 ## Capabilities
 
-`board call plans.open [--path /projects/<project>] [--limit <n>]` lists the
+`board plans open [--path /projects/<project>] [--limit <n>]` lists the
 questions below the path whose `status` is `open` and that no answer names, oldest first, with their options,
 recommendation and what each blocks. It returns at most 100 by default, with
 `total`, which counts the readable ones, and `truncated`. `unreadable` counts
@@ -58,7 +58,7 @@ open questions Board marks degraded or this plugin cannot read. Each question
 also carries `why`, `note`, `mount` and `context_path`, null when the record
 leaves them out.
 
-`board call plans.answer --path <question> --option <id> [--words <text>]
+`board plans answer --path <question> --option <id> [--words <text>]
 [--session <local_ id>] [--program <slug>] [--person <slug>] [--agent <name>]
 [--written_by <plugin>/<client>]` records the owner's answer
 as the Claude Code mod's pane does, so a client without the mod, such as
@@ -83,7 +83,7 @@ question (`plans::answer::already_answered`), the question's status is not
 `plans::board::refused`, carrying Board's `board::put::stale`. It asks for no
 Touch ID, as the pane does not.
 
-`board call plans.withdraw --path <question> --reason <text>` withdraws a
+`board plans withdraw --path <question> --reason <text>` withdraws a
 question that no longer matters: it rewrites the question with `status:
 "withdrawn"` and the reason in `withdrawn_reason`, if it still holds the blob
 the call read, and returns the question's path and the reason. It refuses

@@ -40,7 +40,7 @@ export type Claim = { task: string; board?: string }
 
 /**
  * The task a Bash command claims: the absolute `--path` that follows
- * `tasks.claim` in the same command. A claim piped onward or followed by
+ * `tasks.claim` or `tasks claim` in the same command. A claim piped onward or followed by
  * `||` is left out, since Bash then reports success even when Board refused
  * it. Soft limit: this reads the command's words, not a parse of the shell;
  * a claim inside a subshell, a variable or a script is not seen.
@@ -49,7 +49,7 @@ export function claimOf(command: string): Claim | undefined {
   const parts = command.split(/(\|\||&&|[|;\n])/)
   for (let at = 0; at < parts.length; at += 2) {
     const part = parts[at]!
-    const claim = part.search(/\btasks\.claim\b/)
+    const claim = part.search(/\btasks(?:\.|\s+)claim\b/)
     if (claim === -1) continue
     const next = parts[at + 1]
     if (next === '|' || next === '||') return undefined

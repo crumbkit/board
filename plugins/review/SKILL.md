@@ -1,6 +1,6 @@
 ---
 name: review
-description: 'The review plugin records a code review as a brief and a report in the board. Use it when you review a change, and when you ask for a review of your own. Write the brief, with its `range` and `focus`, on stdin to `board -C <board> put /reviews/<id>/brief`, then run `board -C <board> call review.run --brief /reviews/<id>/brief`, or write the report yourself at `/reviews/<id>/report`. SKILL.md and README.md in the plugin''s directory say more.'
+description: 'The review plugin records a code review as a brief and a report in the board. Use it when you review a change, and when you ask for a review of your own. Write the brief, with its `range` and `focus`, on stdin to `board -C <board> put /reviews/<id>/brief`, then run `board -C <board> review run --brief /reviews/<id>/brief`, or write the report yourself at `/reviews/<id>/report`. SKILL.md and README.md in the plugin''s directory say more.'
 ---
 
 # review
@@ -27,7 +27,7 @@ in.
 
 2. Run the review:
 
-       board -C <board> call review.run --brief /reviews/<id>/brief
+       board -C <board> review run --brief /reviews/<id>/brief
 
    It gives the brief and the diff to the agent that `BOARD_REVIEW_AGENT`
    names and writes the report at `/reviews/<id>/report`. It reads the
@@ -51,19 +51,19 @@ in.
 
 4. When the review belongs to a change, attach the report:
 
-       board -C <board> call changes.attach --path /changes/<name> --ref /reviews/<id>/report
+       board -C <board> changes attach --path /changes/<name> --ref /reviews/<id>/report
 
    The change's review gate needs an attached report whose range ends at
    the change's head, whose verdict is not `changes`, and which has no high
    finding. The gate also refuses a diff that edits files outside the
    plan's paths. After you fix findings, record the new head with
-   `board -C <board> call changes.attach --path /changes/<name> --head <commit>`
+   `board -C <board> changes attach --path /changes/<name> --head <commit>`
    and review it again under a new id, with `follows` naming the last
    report.
 
-`board -C <board> call review.post --report /reviews/<id>/report --pr <url>`
+`board -C <board> review post --report /reviews/<id>/report --pr <url>`
 comments a report on a pull request once the owner approves the comment.
-`board -C <board> call review.covered --base <commit> --change /changes/<name>`
+`board -C <board> review covered --base <commit> --change /changes/<name>`
 checks that the reports the change attaches cover every commit from the
 merge base to the change's head, read from the clone its mount reads.
 Without `--change`, it checks the reports committed in the board's own

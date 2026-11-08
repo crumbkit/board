@@ -62,21 +62,23 @@ export function contextText(pinned: Pinned): string | null {
   return parts.join('\n\n')
 }
 
-/** The band's line, or `null` when it has nothing to say. `problem` is drawn as a warning. */
-export function bandLine(pinned: Pinned): { text: string; problem: string | null } | null {
-  if (pinned.kind === 'none') return null
+/** An order's name: the last segment of its path, so `/orders/evals` is `evals`. */
+export const orderName = (path: string) => path.split('/').filter(Boolean).at(-1) ?? path
+
+/**
+ * One badge in the band. `path` is the order it opens, or null for the
+ * badge that says the orders could not be read; `problem` draws it in red.
+ */
+export type Badge = { label: string; path: string | null; problem: boolean }
+
+/** The band's order badges; empty when there is nothing to show. */
+export function orderBadges(pinned: Pinned): Badge[] {
+  if (pinned.kind === 'none') return []
   if (pinned.kind === 'failed') {
-    return { text: '', problem: `Pinned orders could not be read: ${pinned.message}` }
+    return [{ label: `Pinned orders could not be read: ${pinned.message}`, path: null, problem: true }]
   }
-  const shown = pinned.orders.length
-  const failed = pinned.leftOut.length
-  if (shown === 0 && failed === 0) return null
-  const text = shown === 1 ? '1 signed order binds this session.' : `${shown} signed orders bind this session.`
-  const problem =
-    failed === 0
-      ? null
-      : failed === 1
-        ? '1 pinned order is not in context.'
-        : `${failed} pinned orders are not in context.`
-  return { text, problem }
+  return [
+    ...pinned.orders.map(o => ({ label: orderName(o.path), path: o.path, problem: false })),
+    ...pinned.leftOut.map(l => ({ label: `${orderName(l.path)}: ${l.code}`, path: l.path, problem: true })),
+  ]
 }

@@ -69,8 +69,8 @@ fn manifest() -> Value {
         "name": "runs",
         "version": "0.1.0",
         "description": "Suites of tests, benchmarks and evals, and the runs that record what each gave. \
-            `board call runs.latest --suite /suites/<name>` returns the latest full run of a clean revision; \
-            `board call runs.trend --suite /suites/<name> --measure <name>` returns a measure over such runs. \
+            `board runs latest --suite /suites/<name>` returns the latest full run of a clean revision; \
+            `board runs trend --suite /suites/<name> --measure <name>` returns a measure over such runs. \
             README.md in the plugin's directory says how to record a run.",
         "metadata": {"area": "testing"},
         "types": [SuiteRecord::TYPE, RunRecord::TYPE],

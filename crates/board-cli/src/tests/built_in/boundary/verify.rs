@@ -89,7 +89,7 @@ fn verify_refuses_a_digest_given_with_content_and_takes_either_alone() {
     let hint = document["recovery"]["text"].as_str().unwrap();
     assert_eq!(
         hint,
-        format!("run `board --personal call boundary.verify --digest {digest}`")
+        format!("run `board --personal boundary verify --digest {digest}`")
     );
     let partial = json!({"to": "github:octo/board", "parts": {"pr.body": "Fine."}});
     let (_, document) = personal.call("verify", &partial);

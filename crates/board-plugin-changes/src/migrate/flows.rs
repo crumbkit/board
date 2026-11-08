@@ -207,12 +207,7 @@ pub(super) fn replace(
         followed.insert(change.path.clone(), version);
         changes.push(change.path);
     }
-    let runs = rewrite_runs(
-        host,
-        (&followed, &replaced, &schemas),
-        &mut lines,
-        &mut left,
-    )?;
+    let runs = rewrite_runs(host, &followed, &replaced, &schemas, &mut lines, &mut left)?;
     let total = changes.len();
     changes.truncate(LISTED);
     let output = Output {
@@ -236,11 +231,9 @@ pub(super) fn replace(
 /// and those whose rewritten record fails its schema in `schemas`.
 fn rewrite_runs(
     host: &dyn Host,
-    (followed, replaced, schemas): (
-        &BTreeMap<String, String>,
-        &BTreeMap<String, String>,
-        &BTreeMap<String, Schema>,
-    ),
+    followed: &BTreeMap<String, String>,
+    replaced: &BTreeMap<String, String>,
+    schemas: &BTreeMap<String, Schema>,
     lines: &mut Vec<Value>,
     left: &mut Vec<Left>,
 ) -> Result<Vec<String>, PluginError> {
@@ -260,7 +253,7 @@ fn rewrite_runs(
                 let why = format!(
                     "the run names the flow {named}, and its change follows no stored version \
                      of a flow; fix the change if `left` lists it, or reflow it with `board \
-                     call changes.reflow`, then run migrate again"
+                     changes reflow`, then run migrate again"
                 );
                 left.push(left_at(run.path, why));
                 continue;

@@ -51,7 +51,7 @@ fn manifest() -> Value {
         "description": "Copy a record from this board into a mounted board, such as a team's, with \
             its children, every record and file it references and the schemas of their types, so \
             a reader there can open it. Use it when someone else needs to read a record you wrote. \
-            Start with `board -C <board> call share.to --path /<record> --to /<mount> --dry_run \
+            Start with `board -C <board> share to --path /<record> --to /<mount> --dry_run \
             true`, which lists what would be copied. SKILL.md and README.md in the plugin's \
             directory say more.",
         "metadata": {"area": "sharing"},

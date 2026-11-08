@@ -23,7 +23,7 @@ their own text.
 
 An eval's or a suite's `subjects` may name a topic by its path, such as
 `/topics/seatbelt`, since a subject is a repository or a board path.
-`board call evals.about --subject <name>` lists the evals that name a topic
+`board evals about --subject <name>` lists the evals that name a topic
 whose title or alias is `<name>`, ignoring ASCII case, beside those that
 name `<name>` itself. It matches a JSON topic at its path in the eval's own
 board, so a mounted board's evals match only that board's topics. A subject

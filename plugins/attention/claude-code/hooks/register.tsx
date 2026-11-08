@@ -1,8 +1,9 @@
 import { atom, read, update } from 'claude-code'
-import type { EngineInterface, Register } from 'claude-code'
+import type { EngineInterface, Register, RenderElement } from 'claude-code'
 
 import type { Pinned, Request } from '../types'
-import { BLOCK, bandLine, contextText, parsePinned } from './pinned'
+import { SLOT, joinBand } from './band'
+import { BLOCK, contextText, orderBadges, orderName, parsePinned } from './pinned'
 
 // The mod reads and signs orders in the owner's personal board through
 // Board. The button only runs `board call attention.sign`, which opens the
@@ -11,6 +12,8 @@ import { BLOCK, bandLine, contextText, parsePinned } from './pinned'
 const pending = atom({ plugin: 'board-attention', key: 'pending' } as const, [] as Request[])
 const open = atom({ plugin: 'board-attention', key: 'open' } as const, null as string | null)
 const pinned = atom({ plugin: 'board-attention', key: 'pinned' } as const, null as Pinned | null)
+const selected = atom({ plugin: 'board-attention', key: 'selected' } as const, null as string | null)
+const showContext = atom({ plugin: 'board-attention', key: 'showContext' } as const, false)
 
 const TOOL = 'request_signature'
 const BOARD = 'the personal board'
@@ -148,11 +151,11 @@ export const register: Register = on => {
     if (e.props.hasSurvey) return below
     const { Box, Button, Text } = $.ui.resolve(e)
     const answer = await read($, pinned)
-    const line = answer === null ? null : bandLine(answer)
+    const badges = answer === null ? [] : orderBadges(answer)
     const list = await read($, pending)
     const first = list[0]
     const opened = await read($, open)
-    if (line === null && first === undefined) return below
+    if (badges.length === 0 && first === undefined) return below
 
     const done = async (message?: string) => {
       if (first === undefined) return
@@ -181,6 +184,13 @@ export const register: Register = on => {
     const dismiss = () =>
       first && done(`The owner dismissed the request to sign ${first.path} in ${BOARD}, without signing it.`)
 
+    // A badge opens the pane on its order; the red badge of a failed read opens it on the failure.
+    const show = async (path: string | null) => {
+      await update($, selected, () => path)
+      await update($, showContext, () => false)
+      await $.ui.open({ id: PANE, title: path === null ? 'Pinned orders' : orderName(path) })
+    }
+
     const more = list.length > 1 ? ` (and ${list.length - 1} more)` : ''
     const request =
       first === undefined ? null : opened !== null ? (
@@ -198,23 +208,23 @@ export const register: Register = on => {
         </Box>
       )
 
-    return (
-      <Box flexDirection="column">
-        {line !== null && (
-          <Box>
-            {line.text !== '' && <Text>{line.text} </Text>}
-            {line.problem !== null && <Text color="red">{line.problem} </Text>}
-            <Button key="show-pinned" label="Show" onPress={() => $.ui.open({ id: PANE, title: 'Pinned orders' })} />
-          </Box>
-        )}
-        {request}
-        {below.type === 'engine' ? null : below}
-      </Box>
-    )
+    const part =
+      badges.length === 0 ? null : (
+        <Box key={SLOT.orders} flexDirection="row" flexWrap="wrap" columnGap={1}>
+          <Text dimColor>Orders</Text>
+          {badges.map(b => (
+            <Button key={`order:${b.path ?? ''}`} label={b.label} onPress={() => show(b.path)}>
+              {b.problem ? <Text color="red">{b.label}</Text> : b.label}
+            </Button>
+          ))}
+        </Box>
+      )
+
+    return joinBand(below, part === null ? [] : [part as RenderElement], request === null ? [] : [request as RenderElement])
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
-    const { Box, Text } = $.ui.resolve(e)
+    const { Box, Button, Text } = $.ui.resolve(e)
     const answer = await read($, pinned)
     if (answer === null) return <Text dimColor>The pinned orders have not been read yet.</Text>
     if (answer.kind === 'none') return <Text dimColor>There is no personal board, so nothing is pinned.</Text>
@@ -225,6 +235,53 @@ export const register: Register = on => {
           <Text>
             {answer.code}: {answer.message}
           </Text>
+        </Box>
+      )
+    }
+    const chosen = await read($, selected)
+    const order = answer.orders.find(d => d.path === chosen)
+    const left = answer.leftOut.find(l => l.path === chosen)
+    const all = (
+      <Button key="all-orders" label="All pinned orders" dimColor onPress={() => update($, selected, () => null)} />
+    )
+    if (order !== undefined) {
+      const shown = await read($, showContext)
+      return (
+        <Box flexDirection="column">
+          <Text bold>{orderName(order.path)}</Text>
+          <Text dimColor>
+            {order.path}, until {order.expires}
+          </Text>
+          <Text color="green">Verified: signed by {order.signer}.</Text>
+          <Box marginTop={1}>
+            <Text>{order.order}</Text>
+          </Box>
+          <Box marginTop={1}>
+            <Button
+              key="context"
+              label={shown ? 'Hide context' : 'Show context'}
+              onPress={() => update($, showContext, v => !v)}
+            />
+            <Text> </Text>
+            {all}
+          </Box>
+          {shown && (
+            <Box marginTop={1} flexDirection="column">
+              <Text dimColor>Context (non-binding), from {order.context}:</Text>
+              <Text>{order.context_text}</Text>
+            </Box>
+          )}
+        </Box>
+      )
+    }
+    if (left !== undefined) {
+      return (
+        <Box flexDirection="column">
+          <Text bold>{left.path}</Text>
+          <Text color="red">
+            Not in this session's context: {left.message} ({left.code}).
+          </Text>
+          <Box marginTop={1}>{all}</Box>
         </Box>
       )
     }

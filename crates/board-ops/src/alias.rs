@@ -1,5 +1,5 @@
-//! Plugin aliases: the word that runs a plugin's capabilities as
-//! `board <alias> <capability>` (docs/plugins.md, Aliases).
+//! Plugin commands: the words that run a plugin's capabilities as
+//! `board <plugin> <capability>` (docs/plugins.md, Plugin commands).
 
 use std::path::Path;
 
@@ -8,10 +8,10 @@ use board_plugin::{DiscoveryError, Installed, Manifest};
 use crate::Board;
 
 impl Board {
-    /// The manifest of each plugin this board enables that declares an
-    /// alias, from the plugins built into Board and those in `plugins`, in
-    /// name order. A broken install, or an installed copy of a built-in
-    /// plugin, offers no alias.
+    /// The manifest of each plugin this board enables, whose name and alias
+    /// run its capabilities, from the plugins built into Board and those in
+    /// `plugins`, in name order. A broken install, or an installed copy of a
+    /// built-in plugin, offers no command.
     pub fn aliases(&self, plugins: Option<&Path>) -> Result<Vec<Manifest>, DiscoveryError> {
         Ok(self.aliased(self.offered(plugins)?))
     }
@@ -23,7 +23,6 @@ impl Board {
             .filter(|installed| installed.origin.shadows().is_none())
             .filter(|installed| enabled.iter().any(|name| name.as_str() == installed.name))
             .filter_map(|installed| installed.manifest.ok())
-            .filter(|manifest| manifest.alias.is_some())
             .collect()
     }
 }

@@ -1,13 +1,13 @@
 ---
 name: jira
-description: 'Record a Jira issue as a typed jira/issue/v1 record that other records can reference by path. Use it when work names a Jira ticket. Start with `board -C <board> call jira.ref --key ACME-123 --site acme`, which writes /jira/acme/ACME-123 once with its title. SKILL.md and README.md in the plugin''s directory say more.'
+description: 'Record a Jira issue as a typed jira/issue/v1 record that other records can reference by path. Use it when work names a Jira ticket. Start with `board -C <board> jira ref --key ACME-123 --site acme`, which writes /jira/acme/ACME-123 once with its title. SKILL.md and README.md in the plugin''s directory say more.'
 ---
 
 # jira
 
 ## Record an issue
 
-1. Run `board -C <board> call jira.ref --key <KEY> --site <site>`. The site
+1. Run `board -C <board> jira ref --key <KEY> --site <site>`. The site
    is the name before `.atlassian.net` in the ticket's address.
 2. Reference the issue by the `path` it returns, such as `/jira/acme/ACME-123`,
    in the record that names the ticket.

@@ -57,6 +57,36 @@ pub(crate) struct Rule {
     matched_left_out: Option<usize>,
 }
 
+/// Why the brief left a rule out: it did not fit in the word limit, or it
+/// is a version control whose capture finds no version in the files the
+/// planned paths reach.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+pub(crate) enum Reason {
+    #[serde(rename = "no room in the brief's 600 words")]
+    NoRoom,
+    #[serde(rename = "no version found in the matched files")]
+    NoVersion,
+}
+
+/// A rule the brief left out, and why.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+pub(crate) struct LeftOut {
+    control: String,
+    reason: Reason,
+}
+
+impl LeftOut {
+    /// The words the entry takes in the brief.
+    fn words(&self) -> usize {
+        let reason = serde_json::to_value(self.reason).expect("a reason is a string");
+        words(&format!(
+            "{} {}",
+            self.control,
+            reason.as_str().unwrap_or_default()
+        ))
+    }
+}
+
 /// A command to run without a shell: `argv` is the program and its
 /// arguments, and `stdin` is its input.
 #[derive(Debug, Serialize, JsonSchema)]
@@ -72,17 +102,21 @@ pub(crate) struct RulesCommand {
 /// as `controls.for-paths` finds them: those that matched only some planned
 /// paths first, then the others, each group by control path. Each rule's
 /// path and summary are fitted first, skipping any that do not fit, and its
-/// matched paths after, while room remains. `rules_left_out` names up to 20
-/// rules the word limit left out, as many as fit, and `rules_unnamed`
-/// counts the rest. `rules_command` is the command that lists every rule,
-/// as an `argv` to run and the `stdin` to give it; it is null when the plan
-/// has no paths. Rules are counted before uses, but the uses keep up to a
-/// quarter of the limit. `uses` gives one line per record it uses, in
-/// order, skipping any that do not fit, and `left_out` counts those the
-/// word limit left out. `controls` is the command that lists the controls
-/// on the change's repository. `brief_line`, `board-brief: <path>`, comes
-/// first in the output; a builder's first message starts with it, and the
-/// write guard reads it.
+/// matched paths after, while room remains. A version control whose
+/// capture finds no version in the files the planned paths reach is left
+/// out of `rules`; a missing or unreadable planned file, or a pattern that
+/// matches no file yet, keeps it. `rules_left_out` names up to 20 rules left out, as many
+/// as fit, each with its `reason`: those the word limit left out first,
+/// then those version controls. `rules_unnamed` counts the rest.
+/// `rules_command` is the command that lists every rule, as an `argv` to
+/// run and the `stdin` to give it; it is null when the plan has no paths.
+/// Rules are counted before uses, but the uses keep up to a quarter of the
+/// limit. `uses` gives one line per record it uses, in order, skipping any
+/// that do not fit, and `left_out` counts those the word limit left out.
+/// `controls` is the command that lists the controls on the change's
+/// repository. `brief_line`, `board-brief: <path>`, comes first in the
+/// output; a builder's first message starts with it, and the write guard
+/// reads it.
 #[derive(Debug, Serialize, JsonSchema)]
 #[schemars(rename = "BriefOutput")]
 pub(crate) struct Output {
@@ -90,7 +124,7 @@ pub(crate) struct Output {
     pub(crate) path: String,
     pub(crate) plan: Option<String>,
     pub(crate) rules: Vec<Rule>,
-    pub(crate) rules_left_out: Vec<String>,
+    pub(crate) rules_left_out: Vec<LeftOut>,
     pub(crate) rules_unnamed: usize,
     pub(crate) rules_command: Option<RulesCommand>,
     pub(crate) uses: Vec<Use>,
@@ -221,33 +255,57 @@ fn rule_line(rule: &Map<String, Value>, paths: &[String]) -> Rule {
     line
 }
 
-/// The rules that fit in `room` words, the names of up to 20 left out, how
-/// many more were, and the words used.
+/// The rules that fit in `room` words, up to 20 rules left out with their
+/// reasons, how many more were, and the words used.
 ///
 /// Rules that matched only some of the planned paths come first, then the
-/// others, each group by control path. When every rule fits, they take the
-/// whole room. Otherwise the words for the left-out names that fit are kept
-/// back first, so the rules and names never pass `room`.
-pub(crate) fn fit_rules(found: &[Rule], room: i64) -> (Vec<Rule>, Vec<String>, usize, usize) {
+/// others, each group by control path. `dropped` names the version controls
+/// left out because they find no version; they are named after the rules
+/// the word limit left out. When nothing is left out, the rules take the
+/// whole room. Otherwise the words the entries need when every rule has
+/// the whole room are kept back first, and the entries are named in order
+/// while they fit, so the rules and entries never pass `room`.
+pub(crate) fn fit_rules(
+    found: &[Rule],
+    dropped: &[String],
+    room: i64,
+) -> (Vec<Rule>, Vec<LeftOut>, usize, usize) {
     let mut ordered = found.to_vec();
     ordered.sort_by(|one, other| {
         (one.matched.is_none(), &one.control).cmp(&(other.matched.is_none(), &other.control))
     });
+    let entries = |left_out: Vec<String>| -> Vec<LeftOut> {
+        (left_out.into_iter())
+            .map(|control| LeftOut {
+                control,
+                reason: Reason::NoRoom,
+            })
+            .chain(dropped.iter().map(|control| LeftOut {
+                control: control.clone(),
+                reason: Reason::NoVersion,
+            }))
+            .collect()
+    };
     let (rules, left_out, spent) = fill(&ordered, room);
-    if left_out.is_empty() {
+    let first = entries(left_out);
+    if first.is_empty() {
         return (rules, Vec::new(), 0, spent);
     }
-    let kept = LEFT_OUT_NAMED.min(usize::try_from(room.max(0)).unwrap_or(0));
-    let (rules, left_out, spent) = fill(&ordered, room - i64::try_from(kept).unwrap_or(0));
-    let free =
-        usize::try_from((room - i64::try_from(spent).unwrap_or(i64::MAX)).max(0)).unwrap_or(0);
-    let named: Vec<String> = left_out
-        .iter()
-        .take(LEFT_OUT_NAMED.min(free))
-        .cloned()
-        .collect();
+    let needed: usize = (first.iter().take(LEFT_OUT_NAMED))
+        .map(LeftOut::words)
+        .sum();
+    let kept = i64::try_from(needed).unwrap_or(i64::MAX).min(room.max(0));
+    let (rules, left_out, mut spent) = fill(&ordered, room - kept);
+    let left_out = entries(left_out);
+    let mut named = Vec::new();
+    for entry in left_out.iter().take(LEFT_OUT_NAMED) {
+        if i64::try_from(spent + entry.words()).unwrap_or(i64::MAX) > room {
+            break;
+        }
+        spent += entry.words();
+        named.push(entry.clone());
+    }
     let unnamed = left_out.len() - named.len();
-    let spent = spent + named.len();
     (rules, named, unnamed, spent)
 }
 
@@ -303,7 +361,7 @@ pub(crate) fn brief_of(host: &dyn Host, path: &str) -> Result<Output, PluginErro
     let records = referenced(host, &uses)?;
     let texts = documents(host, &uses, &records)?;
     let step = next_of(host, path)?;
-    let controls = format!("board call controls.check --path {}", change.mount);
+    let controls = format!("board controls check --path {}", change.mount);
     let brief_line = format!("board-brief: {path}");
     let mut spent = words(
         &[
@@ -337,12 +395,17 @@ pub(crate) fn brief_of(host: &dyn Host, path: &str) -> Result<Output, PluginErro
         .map(|(each, line)| words(&format!("{each} {line}")))
         .sum();
     let kept = needed.min(BRIEF_WORDS / USES_SHARE);
-    let found: Vec<Rule> = (rules_for(host, &paths)?.iter())
-        .map(|rule| rule_line(rule, &paths))
+    // A version control that finds no version in the matched files does
+    // not apply there, so it is named as dropped and costs no rule line.
+    let (found, dropped): (Vec<_>, Vec<_>) = (rules_for(host, &paths)?.into_iter())
+        .partition(|rule| rule.get("versions_found").and_then(Value::as_u64) != Some(0));
+    let found: Vec<Rule> = (found.iter()).map(|rule| rule_line(rule, &paths)).collect();
+    let dropped: Vec<String> = (dropped.iter())
+        .map(|rule| field(rule, "control").to_owned())
         .collect();
     let signed = |count: usize| i64::try_from(count).unwrap_or(i64::MAX);
     let room = signed(BRIEF_WORDS) - signed(spent) - signed(kept);
-    let (rules, named, unnamed, cost) = fit_rules(&found, room);
+    let (rules, named, unnamed, cost) = fit_rules(&found, &dropped, room);
     spent += cost;
     let mut shown = Vec::new();
     for (each, line) in lines {

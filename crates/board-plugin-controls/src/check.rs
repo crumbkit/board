@@ -458,7 +458,7 @@ fn referenced(
 
 /// Each of `paths`, read through one `get_each`: its bytes, or Board's code
 /// for why it cannot be read.
-fn read(
+pub(crate) fn read(
     host: &dyn Host,
     paths: BTreeSet<&LogicalPath>,
 ) -> Result<BTreeMap<LogicalPath, Result<Vec<u8>, String>>, PluginError> {
@@ -561,7 +561,7 @@ fn unmeasured(
         )
     };
     Some(Unmeasured {
-        run: format!("board --checkout call controls.check --path {path}"),
+        run: format!("board --checkout controls check --path {path}"),
         mount,
         read: pinned,
         head: started.head,

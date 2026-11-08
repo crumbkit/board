@@ -310,7 +310,7 @@ fn the_skill_description_covers_starting_resuming_and_listing_work_within_the_sk
         description.contains("start, resume or list work on a repository the board mounts"),
         "{description}"
     );
-    assert!(description.contains("changes.open"), "{description}");
+    assert!(description.contains("changes open"), "{description}");
     // Agent Skills cap a skill's description at 1,024 characters.
     assert!(description.chars().count() <= 1024, "{description}");
 }

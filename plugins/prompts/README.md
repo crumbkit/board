@@ -95,7 +95,7 @@ stdin:
 
 ```bash
 echo '{"path": "/prompts/review-pr.md", "inputs": {"repo": "example-org/widgets", "pr": "2140"}}' |
-  board call prompts.get
+  board prompts get
 ```
 
 A prompt without inputs takes `--path` alone. A `runs_in` in the input, with

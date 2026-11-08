@@ -68,7 +68,7 @@ fn manifest() -> Value {
             you choose between options that a later session or reviewer needs to know about, and \
             when work waits on the owner. Write a decision with \
             `board -C <board> put --new --var project=<project>` and a `plans/decision/v1` on \
-            stdin; `board -C <board> call plans.open` lists the questions still waiting for an \
+            stdin; `board -C <board> plans open` lists the questions still waiting for an \
             answer. SKILL.md and README.md in the plugin's directory say more.",
         "metadata": {"area": "planning"},
         "types": record_schemas().map(|(name, _)| name),

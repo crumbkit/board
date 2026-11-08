@@ -432,16 +432,13 @@ pub(crate) fn split(
 /// with commits, else drop it.
 pub(crate) fn idle_action(path: &str, change: &ChangeRecord) -> Idle {
     let (action, command) = if !change.pulls().is_empty() {
-        (Action::Sync, "board call changes.sync".to_owned())
+        (Action::Sync, "board changes sync".to_owned())
     } else if change.head.is_some() {
-        (
-            Action::Resume,
-            format!("board call changes.next --path {path}"),
-        )
+        (Action::Resume, format!("board changes next --path {path}"))
     } else {
         (
             Action::Drop,
-            format!("board call changes.drop --path {path} --reason '<why>'"),
+            format!("board changes drop --path {path} --reason '<why>'"),
         )
     };
     Idle {

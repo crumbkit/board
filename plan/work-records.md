@@ -35,7 +35,7 @@ the agent plans and asks again, or drops it.
 
 `start` picks the flow as plugins/changes/README.md describes, and also
 reads `/flows/owners/<owner>` for the remote's owner, such as its GitHub
-organisation, when no repository link names one. `board call changes.seed`
+organisation, when no repository link names one. `board changes seed`
 writes the `work` flow, development with an `approve` phase after plan, at
 `/flows/work` when it is missing.
 

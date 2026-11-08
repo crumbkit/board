@@ -102,7 +102,7 @@ fn run_inline_starts_the_change_records_its_stop_and_returns_the_brief_up_to_it(
             .unwrap()
             .contains("enters the land phase")
     );
-    assert!(brief["stopping"].as_str().unwrap().contains("changes.stop"));
+    assert!(brief["stopping"].as_str().unwrap().contains("changes stop"));
     assert!(brief.get("budget_usd").is_none());
     assert_eq!(
         board.read("changes/quick-fix.json")["stop"],
@@ -188,7 +188,7 @@ fn advance_is_refused_past_the_stop_with_how_to_record_it_and_admitted_once_the_
     assert_eq!(refused["code"], "changes::run::stop_reached");
     let message = refused["message"].as_str().unwrap();
     assert!(
-        message.contains("board call changes.stop --path /changes/quick-fix --reason reached"),
+        message.contains("board changes stop --path /changes/quick-fix --reason reached"),
         "{message}"
     );
     assert!(!message.contains("changes.run --path"), "{message}");

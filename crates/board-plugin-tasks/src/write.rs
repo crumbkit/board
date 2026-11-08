@@ -383,7 +383,7 @@ fn parented(
     );
     if !tasks.iter().any(|task| task.path == parent) {
         let why = format!(
-            "no task is at {parent}; give the path of a task, as `board call tasks.tree --root \
+            "no task is at {parent}; give the path of a task, as `board tasks tree --root \
              true` lists them"
         );
         return Err(refusal(
@@ -507,8 +507,7 @@ fn checked(
 ) -> Result<Map<String, Value>, PluginError> {
     let at = [("path", json!(logical))];
     if task.blob.is_none() {
-        let why =
-            format!("no file is at {logical}; list the tasks with `board call tasks.available`");
+        let why = format!("no file is at {logical}; list the tasks with `board tasks available`");
         return Err(refusal("tasks::task::not_found", why, at.clone()));
     }
     let board = task.location.as_ref().map(|location| &location.board);
@@ -519,7 +518,7 @@ fn checked(
     if !held {
         let why = format!(
             "{logical} is not in a notes repo, the board's own tree or a mount whose tree has \
-             daily/, so no call writes it; give a path under one, as `board call tasks.available` \
+             daily/, so no call writes it; give a path under one, as `board tasks available` \
              lists them"
         );
         return Err(refusal("tasks::repo::not_found", why, at.clone()));

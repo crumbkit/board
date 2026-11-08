@@ -26,7 +26,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use crate::board::{self, rows, text};
-use crate::brief::{Rule, RulesCommand, brief_of};
+use crate::brief::{LeftOut, Rule, RulesCommand, brief_of};
 use crate::change::{line, read, touch};
 use crate::flow::{Agent as Doer, Flow, Stop, of_change};
 use crate::gates::remedy::{fill, values};
@@ -173,7 +173,7 @@ pub(crate) struct RunBrief {
     surfaced: Vec<String>,
     surfaced_left_out: usize,
     rules: Vec<Rule>,
-    rules_left_out: Vec<String>,
+    rules_left_out: Vec<LeftOut>,
     rules_unnamed: usize,
     rules_command: Option<RulesCommand>,
     controls: String,
@@ -333,7 +333,7 @@ fn set_stop(
         return Err(refusal(
             "changes::phase::paused",
             format!(
-                "the change at {path} is paused; resume it with `board call changes.resume --path \
+                "the change at {path} is paused; resume it with `board changes resume --path \
                  {path}`, then run it"
             ),
             [("path", json!(path)), ("phase", json!(change.phase))],
@@ -344,7 +344,7 @@ fn set_stop(
             "changes::run::no_flow",
             format!(
                 "the change at {path} follows no flow, as a prototype does, so it has no stop; \
-                 work on a prototype with its brief from `board call changes.brief --path {path}`"
+                 work on a prototype with its brief from `board changes brief --path {path}`"
             ),
             [("path", json!(path))],
         ));
@@ -516,11 +516,11 @@ fn stopping(path: &str, mount: &str, budget: Option<f64>) -> String {
         )
     });
     format!(
-        "Run `board call changes.next --path {path}` at each phase. When it returns `stop` with \
-         `reached` true, run `board call changes.stop --path {path} --reason reached --summary \
+        "Run `board changes next --path {path}` at each phase. When it returns `stop` with \
+         `reached` true, run `board changes stop --path {path} --reason reached --summary \
          '<one line>'` and exit 0. When it returns `waiting_on`, write its `ask` as a \
          plans/question/v1 with `board put`, its blocks naming {path} and its mount {mount}; then \
-         run `board call changes.stop --path {path} --reason waiting --question <its path> \
+         run `board changes stop --path {path} --reason waiting --question <its path> \
          --summary '<one line>'` and exit 0. When a gate refuses what you cannot fix, stop with \
          --reason refused. Never advance past the stop: `advance` refuses it.{budget}"
     )

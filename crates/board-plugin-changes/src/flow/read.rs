@@ -254,7 +254,7 @@ pub(crate) fn of_change(
             "changes::flow::unreadable",
             format!(
                 "the change at {path} names its flow at {copy}, and nothing is there; restore it \
-                 with `board call changes.reflow --path {path} --flow {DEFAULT}`"
+                 with `board changes reflow --path {path} --flow {DEFAULT}`"
             ),
             [("path", json!(copy))],
         )

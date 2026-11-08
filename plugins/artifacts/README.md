@@ -75,7 +75,7 @@ by `at`, is the artifact's current version.
 
 ## Capabilities
 
-`board --personal call artifacts.list` returns the artifacts, newest first
+`board --personal artifacts list` returns the artifacts, newest first
 by their newest version, or by `first_seen` for one with none, each with its
 fields and every version's `path`, `version`, `title` and `at`, newest
 first. `--account`, `--state` and `--area` keep the artifacts with that

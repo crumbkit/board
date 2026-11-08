@@ -54,7 +54,7 @@ plans, a prototype's record and its understanding checks. Git history holds earl
   (`board::ref::wrong_type`).
 - `tickets` references the `jira/issue/v1` or `github/issue/v1` records the
   change works on, and `pulls` its `github/pull/v1` records. The jira and
-  github plugins write those records; `board call github.ref --ref
+  github plugins write those records; `board github ref --ref
   owner/repo#number` writes a GitHub one. `board refs <ticket>` lists the
   changes that reference a ticket.
 - `task` references the `tasks/task/v2` the change does. `start` always
@@ -242,8 +242,8 @@ of `changes` still fails `review`.
   the board lacks it. "Flows" below says how the flow is chosen; `flow` in the output
   names it and its phases. `--task` names the task the change
   does, and must be a `tasks/task/v2` (`changes::ref::wrong_type`). Without
-  it, `start` adds a task titled as the change through `board call
-  tasks.add`, in `--task-repo` or, when that is left out, in the repo the
+  it, `start` adds a task titled as the change through `board
+  tasks add`, in `--task-repo` or, when that is left out, in the repo the
   caller's git remote routes to. A caller in a git repository with no
   `origin` is refused with `changes::task::unrouted`. It reads `CODEOWNERS`
   (`.github/`, root, `docs/`, the first found) to set the route and list
@@ -286,14 +286,24 @@ of `changes` still fails `review`.
 - `next --path /changes/<name>`: read-only. The change's `flow` (its name
   and phases), its phase, each gate check as `pass` or `missing` with a
   `detail`, its `actor`, whether it `blocks`, and when missing its
-  `remedy`; the instruction, with its placeholders filled; and `sync`. When
+  `remedy`; the instruction, with its placeholders filled; and `sync`.
+  An instruction that names `changes plan` or `changes.plan` ends with how
+  to give its input, JSON on stdin with the fields `path`, `text`, `uses`
+  and `paths`, and a one-line example such as
+  `{"path":"/changes/<name>","text":"<text>","uses":["<use>"],"paths":["<mount>/<path>"]}`.
+  Every change that `start` writes has a plan. For a change with a plan,
+  the instruction says that `board changes plan` replaces the plan, so all
+  four fields must be resent. When
   every missing check that blocks is the owner's or a reviewer's,
   `waiting_on` names them and `ask` holds the question to put to them,
   built from those checks' details and remedies.
 - `sync` in the output of `open` and `next` is `{synced, stale, code,
   command}`: the day of the last sync, or null; `stale` when that is
-  before today in UTC or null, with `code` `changes::sync::stale`; and
-  `command`, `board call changes.sync`. Neither runs gh, so both stay
+  before today in UTC or null and sync has a pull request to read, with
+  `code` `changes::sync::stale`; and `command`, `board changes sync`.
+  Sync reads the pull request of a change in the board's own tree that is
+  past its plan, not ended and records one. `next` is stale only for such a
+  change, and `open` only when some open change is one. Neither runs gh, so both stay
   read-only and work offline.
 - `attach --path /changes/<name> [--ref <path>] [--ticket <path>] [--pull <path>] [--task <path>] [--route <route>] [--head <sha>] [--suite <path>]`
   adds a reference once or sets the fields. `--task` sets `task`, and must
@@ -390,7 +400,7 @@ of `changes` still fails `review`.
   settled and abandoned prototypes, since their verdicts are what is looked
   for.
 - `prototype --mount /repos/<name> --question '<question>' --parent <task> [--title '<title>'] [--name <name>]`
-  adds the prototype's task under `--parent` through `board call tasks.add
+  adds the prototype's task under `--parent` through `board tasks add
   --parent`, in the parent's repo. It writes a change in `build`, its prototype
   record with its question, and a plan whose text is the question, and returns
   `path`, `task`, `branch` and the `brief` its one builder starts from. The
@@ -415,7 +425,7 @@ of `changes` still fails `review`.
   `gh` or git, and makes no model calls. See "The pull request body".
 
 - `plan` takes `{path, text, uses, paths}` as JSON on stdin, since `uses`
-  and `paths` are lists: `board call changes.plan` with the JSON piped in.
+  and `paths` are lists: `board changes plan` with the JSON piped in.
   A missing `uses` is an empty list. It keeps each path once. It refuses a build change's
   plan with no paths (`changes::plan::no_paths`) and a path that does not
   start with the change's mount and `/` (`changes::plan::outside_mount`,
@@ -445,8 +455,15 @@ of `changes` still fails `review`.
   Rules that matched only some planned paths come first, then the others,
   each group by control path. Each rule's path and summary are fitted
   first, skipping any that do not fit, and matched paths are added after
-  while room remains. `rules_left_out` names up to 20 rules the word limit
-  dropped, as many as fit, and `rules_unnamed` counts the rest.
+  while room remains. A version control is left out of `rules` when
+  `controls.for-paths` gives it `versions_found` 0: its capture finds no
+  version in the files the planned paths reach, at the commit each mount
+  pins. A planned file that is missing or unreadable, or a planned pattern
+  that matches no file yet, keeps the rule. `rules_left_out` names up to 20 rules left out, as many as fit,
+  each as `{control, reason}`. The rules the word limit dropped come first
+  with the reason `no room in the brief's 600 words`, then those version
+  controls with `no version found in the matched files`. `rules_unnamed`
+  counts the rest.
   `rules_command` lists every rule: run its `argv` without a shell and give
   it its `stdin`. It is null when the plan has no paths. The brief also
   holds one line per record the plan uses (a control's `summary`, else its
@@ -454,10 +471,10 @@ of `changes` still fails `review`.
   document's first heading), `left_out`, the phase and instruction `next`
   gives, and the `controls.check` command for the change's mount. It holds at
   most 600 words, counting each rule with its path and matched paths,
-  each named dropped rule, and each line with its reference. Rules are
-  counted before lines, but lines keep up to a quarter of the limit. A
-  line that does not fit is skipped, and `left_out` counts the lines it
-  dropped. The full requirement of a rule is `controls.for-path` away. It
+  each left-out rule with its reason, and each line with its reference.
+  Rules are counted before lines, but lines keep up to a quarter of the
+  limit. A line that does not fit is skipped, and `left_out` counts the
+  lines it dropped. The full requirement of a rule is `controls.for-path` away. It
   fails with `changes::brief::controls_missing` when the Board that runs
   it does not offer `controls.for-paths`, such as when the controls
   plugin is not enabled.

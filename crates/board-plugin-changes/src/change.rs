@@ -17,12 +17,13 @@ use sha2::{Digest, Sha256};
 use crate::board::{self, body, readable, rows, text, tree_codes};
 use crate::records::{
     ChangeRecord, ChangeV1, DONE, DROPPED, Kind, PULL_TYPES, PlanRecord, PrototypeRecord, State,
+    is_final,
 };
 use crate::refusal;
 
 /// Where in Board's cache `sync` keeps the day it last ran, by board.
 const SYNC_PLACE: &str = "board-changes/synced";
-pub(crate) const SYNC_COMMAND: &str = "board call changes.sync";
+pub(crate) const SYNC_COMMAND: &str = "board changes sync";
 /// The board's own changes; a mounted board's changes sit under the mount
 /// and are that board's to keep.
 pub(crate) const OWN: &str = "/changes/";
@@ -79,7 +80,7 @@ pub(crate) fn read(host: &dyn Host, path: &str) -> Result<(ChangeRecord, String)
             "changes::change::not_found",
             format!(
                 "no {} record is at {path}; name a change by its logical path, such as \
-                 /changes/<name>, and list the open ones with `board call changes.open`",
+                 /changes/<name>, and list the open ones with `board changes open`",
                 ChangeRecord::TYPE
             ),
             [("path", json!(path))],
@@ -455,7 +456,7 @@ pub(crate) fn referenced(host: &dyn Host, refs: &[String]) -> Result<Referenced,
 }
 
 /// The UTC day the last writing sync ran, and, when that is before today or
-/// never, the warning and its command.
+/// never and sync has a change to read, the warning and its command.
 #[derive(Debug, Serialize, JsonSchema)]
 pub(crate) struct LastSync {
     synced: Option<String>,
@@ -491,14 +492,25 @@ pub(crate) fn record_sync(host: &dyn Host, day: &str) -> Result<Option<String>, 
         }))
 }
 
+/// Whether `sync` reads the pull request of the change at `path`: a change
+/// in this board's own tree, past its plan and not ended, that records a
+/// pull request.
+pub(crate) fn sync_reads(path: &str, change: &ChangeRecord) -> bool {
+    path.starts_with(OWN)
+        && !change.pulls().is_empty()
+        && change.phase != "plan"
+        && !is_final(&change.phase)
+}
+
 /// The day the last writing sync ran and whether that is before today, with
-/// the warning when it is.
-pub(crate) fn last_sync(host: &dyn Host) -> Result<LastSync, PluginError> {
+/// the warning when it is. With `reads` false sync has nothing to read for
+/// the answer, so it is never stale.
+pub(crate) fn last_sync(host: &dyn Host, reads: bool) -> Result<LastSync, PluginError> {
     let synced = (sync_key(host)?)
         .and_then(|key| host.cached(SYNC_PLACE, &key))
         .and_then(|bytes| String::from_utf8(bytes).ok());
     let today = today(host).to_string();
-    let stale = synced.as_ref().is_none_or(|day| *day < today);
+    let stale = reads && synced.as_ref().is_none_or(|day| *day < today);
     Ok(LastSync {
         synced,
         stale,

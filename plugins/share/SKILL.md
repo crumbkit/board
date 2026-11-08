@@ -1,6 +1,6 @@
 ---
 name: share
-description: 'Copy a record from this board into a mounted board, such as a team''s, with its children, every record and file it references and the schemas of their types, so a reader there can open it. Use it when someone else needs to read a record you wrote. Start with `board -C <board> call share.to --path /<record> --to /<mount> --dry_run true`, which lists what would be copied. SKILL.md and README.md in the plugin''s directory say more.'
+description: 'Copy a record from this board into a mounted board, such as a team''s, with its children, every record and file it references and the schemas of their types, so a reader there can open it. Use it when someone else needs to read a record you wrote. Start with `board -C <board> share to --path /<record> --to /<mount> --dry_run true`, which lists what would be copied. SKILL.md and README.md in the plugin''s directory say more.'
 ---
 
 # share
@@ -15,7 +15,7 @@ Copy a record you wrote into a board other people read.
    follows, as any write through a mount does. Run
    `board -C <board> mount update /<mount>` first if the mount's repository
    has moved on since its pin.
-2. Run `board -C <board> call share.to --path /<record> --to /<mount>
+2. Run `board -C <board> share to --path /<record> --to /<mount>
    --dry_run true`. A flag is named after the input property, with an
    underscore; `--dry-run` is refused with `board::cli::usage`. It lists what would be copied and the schemas the
    destination lacks, or refuses with the reason. Nothing is written. Board's

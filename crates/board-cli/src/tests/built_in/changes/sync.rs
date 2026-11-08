@@ -207,15 +207,15 @@ fn sync_ends_merged_and_closed_changes_and_reports_the_rest() {
     let commands = by_path(&output, "command");
     assert_eq!(
         commands["/changes/bare"],
-        "board call changes.drop --path /changes/bare --reason '<why>'"
+        "board changes drop --path /changes/bare --reason '<why>'"
     );
     assert_eq!(
         commands["/changes/started"],
-        "board call changes.next --path /changes/started"
+        "board changes next --path /changes/started"
     );
     assert_eq!(
         commands["/changes/elsewhere"],
-        "board call changes.attach --path /changes/elsewhere --pull <record>"
+        "board changes attach --path /changes/elsewhere --pull <record>"
     );
     let tasks: BTreeSet<&str> = (output["changes"].as_array().unwrap().iter())
         .map(|entry| entry["task"].as_str().unwrap())
@@ -299,39 +299,87 @@ fn a_gh_failure_refuses_the_whole_sync_and_writes_nothing() {
     assert_eq!(board.call("sync", &json!({}))["moved"], 2);
 }
 
+/// What `open` and `next` report of a sync that has not run today, when
+/// `stale`, or that ran today.
+fn sync_report(synced: &Value, stale: bool) -> Value {
+    json!({
+        "synced": synced,
+        "stale": stale,
+        "code": stale.then_some("changes::sync::stale"),
+        "command": "board changes sync",
+    })
+}
+
 #[test]
 fn open_and_next_warn_that_the_sync_is_stale_until_it_ran_today() {
+    let board = gh();
+    board.change_at(
+        "changes/t.json",
+        "review",
+        &json!({"pull_request": pull(3)}),
+    );
+    board.answers(3, &json!({"state": "open", "merged": false}));
+    for output in [
+        board.call("open", &json!({})),
+        board.call("next", &json!({"path": "/changes/t"})),
+    ] {
+        assert_eq!(output["sync"], sync_report(&Value::Null, true));
+    }
+    board.call("sync", &json!({}));
+    for output in [
+        board.call("open", &json!({})),
+        board.call("next", &json!({"path": "/changes/t"})),
+    ] {
+        assert_eq!(output["sync"], sync_report(&json!(today()), false));
+    }
+}
+
+#[test]
+fn a_change_without_a_pull_request_gets_no_stale_warning_and_open_warns_once_one_has_it() {
     let board = Changes::new();
     board.change_at("changes/t.json", "build", &json!({}));
     for output in [
         board.call("open", &json!({})),
         board.call("next", &json!({"path": "/changes/t"})),
     ] {
-        assert_eq!(
-            output["sync"],
-            json!({
-                "synced": null,
-                "stale": true,
-                "code": "changes::sync::stale",
-                "command": "board call changes.sync",
-            })
-        );
+        assert_eq!(output["sync"], sync_report(&Value::Null, false));
     }
-    // No change records a pull request, so the sync asks gh nothing.
-    board.call("sync", &json!({}));
+    board.change_at("changes/u.json", "build", &json!({"pull_request": pull(3)}));
+    assert_eq!(
+        board.call("open", &json!({}))["sync"],
+        sync_report(&Value::Null, true)
+    );
+    assert_eq!(
+        board.call("next", &json!({"path": "/changes/t"}))["sync"],
+        sync_report(&Value::Null, false)
+    );
+    assert_eq!(
+        board.call("next", &json!({"path": "/changes/u"}))["sync"],
+        sync_report(&Value::Null, true)
+    );
+}
+
+#[test]
+fn a_change_in_plan_or_outside_the_boards_changes_gets_no_stale_warning_for_its_pull_request() {
+    let board = Changes::new();
+    board.change_at("changes/t.json", "plan", &json!({"pull_request": pull(3)}));
+    board.write(
+        "repos/other/changes/theirs.json",
+        &change("build", &json!({"pulls": ["/gh/octo/widgets/pulls/6"]})),
+    );
     for output in [
         board.call("open", &json!({})),
         board.call("next", &json!({"path": "/changes/t"})),
     ] {
-        assert_eq!(
-            output["sync"],
-            json!({
-                "synced": today(),
-                "stale": false,
-                "code": null,
-                "command": "board call changes.sync",
-            })
-        );
+        assert_eq!(output["sync"], sync_report(&Value::Null, false));
+    }
+    // Past its plan, sync reads the change's pull request.
+    board.change_at("changes/t.json", "build", &json!({"pull_request": pull(3)}));
+    for output in [
+        board.call("open", &json!({})),
+        board.call("next", &json!({"path": "/changes/t"})),
+    ] {
+        assert_eq!(output["sync"], sync_report(&Value::Null, true));
     }
 }
 
@@ -406,9 +454,12 @@ fn a_sync_whose_day_the_cache_cannot_take_says_why_and_one_it_can_says_nothing()
         )),
         "{output}"
     );
-    assert_eq!(board.call("open", &json!({}))["sync"]["stale"], true);
+    assert_eq!(
+        board.call("open", &json!({}))["sync"]["synced"],
+        Value::Null
+    );
     remove_file(&place);
     let output = board.call("sync", &json!({}));
     assert_eq!(output.get("unrecorded"), None, "{output}");
-    assert_eq!(board.call("open", &json!({}))["sync"]["stale"], false);
+    assert_eq!(board.call("open", &json!({}))["sync"]["synced"], today());
 }

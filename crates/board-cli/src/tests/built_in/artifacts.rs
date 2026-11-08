@@ -45,7 +45,7 @@ fn version(at: &str, fields: &Value) -> String {
     )
 }
 
-/// The output of `board call artifacts.<capability>` with `input` on stdin.
+/// The output of `board artifacts <capability>` with `input` on stdin.
 fn given(board: &Fixture, capability: &str, input: &Value) -> Value {
     let target = format!("artifacts.{capability}");
     let output = board.run_with(&["--json", "call", &target], &input.to_string());
@@ -53,7 +53,7 @@ fn given(board: &Fixture, capability: &str, input: &Value) -> Value {
     json(&output)["data"]["output"].clone()
 }
 
-/// The code `board call artifacts.<capability>` refuses `input` with.
+/// The code `board artifacts <capability>` refuses `input` with.
 fn refused_given(board: &Fixture, capability: &str, input: &Value) -> String {
     let target = format!("artifacts.{capability}");
     let output = board.run_with(&["--json", "call", &target], &input.to_string());

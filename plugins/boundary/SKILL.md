@@ -1,6 +1,6 @@
 ---
 name: boundary
-description: 'The boundary plugin checks content, such as a pull request body, before it leaves a checkout, against the controls that boundaries in the personal board name for its destination. Use it before you send anything a boundary may cover. Run `board --personal call boundary.check` with the action, destination, checkout and parts on stdin; on `boundary::check::failed`, change what it names and check again. SKILL.md and README.md in the plugin''s directory say more.'
+description: 'The boundary plugin checks content, such as a pull request body, before it leaves a checkout, against the controls that boundaries in the personal board name for its destination. Use it before you send anything a boundary may cover. Run `board --personal boundary check` with the action, destination, checkout and parts on stdin; on `boundary::check::failed`, change what it names and check again. SKILL.md and README.md in the plugin''s directory say more.'
 ---
 
 # boundary
@@ -19,7 +19,7 @@ Then follow that action's refusal the same way.
 1. Check the content. Name the action that will send it, the destination,
    the checkout's path in the personal board, and each part:
 
-       echo '{"action": "github.pr-create", "to": "github:octo/board", "from": "/repos/board", "parts": {"pr.title": "<title>", "pr.body": "<body>"}}' | board --personal call boundary.check
+       echo '{"action": "github.pr-create", "to": "github:octo/board", "from": "/repos/board", "parts": {"pr.title": "<title>", "pr.body": "<body>"}}' | board --personal boundary check
 
    Leave out `from` for a checkout no board mounts. The output names the
    boundaries that matched, every verdict and the crossing it wrote. A
@@ -40,10 +40,10 @@ Then follow that action's refusal the same way.
 3. Send only content that passed. After sending, record what the
    destination returned:
 
-       board --personal call boundary.record --digest <digest> --result <url>
+       board --personal boundary record --digest <digest> --result <url>
 
 4. To ask whether content passed, such as in a hook, run
-   `board --personal call boundary.verify --digest <digest>`, or pass the
+   `board --personal boundary verify --digest <digest>`, or pass the
    action, destination and parts on stdin. It reports not passed when other
    boundaries match now, but it misses an edited check or rule; run `check`
    when that matters.

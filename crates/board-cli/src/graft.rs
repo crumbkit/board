@@ -9,7 +9,7 @@ use board_ops::{Board, BuiltIn, PluginState};
 use board_plugin::{Capability, Target};
 use clap::builder::{BoolValueParser, PossibleValue, StringValueParser};
 use clap::builder::{TypedValueParser, ValueParser};
-use clap::{Arg, ArgMatches, Command, CommandFactory as _, FromArgMatches};
+use clap::{Arg, ArgMatches, Command, FromArgMatches};
 use crumbkit::help::{Effects, Guide, RuntimeLeaf};
 use serde_json::{Map, Value};
 
@@ -355,9 +355,9 @@ impl TypedValueParser for Choices {
 /// Board's command tree, with each of `grafted` below `call`. A target
 /// that no installed plugin offers takes any words, help among them, so
 /// the run reaches Board's refusal of the target.
-pub(crate) fn command(grafted: &[Grafted]) -> Command {
+pub(crate) fn command(grafted: &[Grafted], root: Command) -> Command {
     if grafted.is_empty() {
-        return Cli::command();
+        return root;
     }
     let leaves = grafted.iter().map(|grafted| {
         let leaf = Command::new(grafted.name.clone());
@@ -384,7 +384,7 @@ pub(crate) fn command(grafted: &[Grafted]) -> Command {
             ),
         }
     });
-    Cli::command().mut_subcommand("call", |call| {
+    root.mut_subcommand("call", |call| {
         call.subcommand_negates_reqs(true).subcommands(leaves)
     })
 }
