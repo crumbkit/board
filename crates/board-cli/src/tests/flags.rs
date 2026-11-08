@@ -188,10 +188,10 @@ fn help_lists_the_flags_of_an_installed_capability_and_refuses_a_target_like_a_r
     assert_eq!(code(&nope), "board::plugin::not_installed");
 }
 
-#[test]
-fn a_terminal_on_stdin_is_not_read() {
-    let (board, data) = flagged();
-    let context = |terminal| Context {
+/// The context of a run in `board` with the plugins in `data`, and stdin a
+/// terminal when `terminal` is true.
+fn context(board: &Scenario, data: &Scenario, terminal: bool) -> Context {
+    Context {
         start: board.workdir().to_path_buf(),
         home: None,
         cache: None,
@@ -210,7 +210,13 @@ fn a_terminal_on_stdin_is_not_read() {
         binary: None,
         cursor: None,
         built_in: board_ops::BuiltIn::default(),
-    };
+    }
+}
+
+#[test]
+fn a_terminal_on_stdin_is_not_read() {
+    let (board, data) = flagged();
+    let context = |terminal| context(&board, &data, terminal);
     let arguments = || ["board", "call", "tasks.due"].map(OsString::from);
     let mut torn: &[u8] = b"{";
     let read = run(arguments(), &context(false), &mut torn, &mut Ran::default());
@@ -240,6 +246,61 @@ impl std::io::Read for Unreadable {
     fn read(&mut self, _: &mut [u8]) -> std::io::Result<usize> {
         Err(std::io::Error::other("stdin was read"))
     }
+}
+
+impl crate::stdin::Stdin for Unreadable {
+    fn ready(&self) -> bool {
+        false
+    }
+}
+
+/// A stdin holding `.0`, whose poll says a read would wait, as a pipe whose
+/// writer has not written yet says.
+struct Waiting(&'static [u8]);
+
+impl std::io::Read for Waiting {
+    fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+        std::io::Read::read(&mut self.0, buffer)
+    }
+}
+
+impl crate::stdin::Stdin for Waiting {
+    fn ready(&self) -> bool {
+        false
+    }
+}
+
+#[test]
+fn bad_input_leaves_out_the_ignored_stdin_note_when_a_read_would_wait_and_its_ready_twin_has_it() {
+    let (board, data) = required(false);
+    let arguments = || ["board", "call", "tasks.due", "--limit", "3"].map(OsString::from);
+    let held = br#"{"before": "2026-10-05"}"#;
+    let mut waiting = Waiting(held);
+    let refused = run(
+        arguments(),
+        &context(&board, &data, false),
+        &mut waiting,
+        &mut Ran::default(),
+    );
+    assert_eq!(refused.error.as_deref(), Some("board::plugin::bad_input"));
+    assert!(
+        !hint_of(&refused).contains("ignored stdin"),
+        "{}",
+        hint_of(&refused)
+    );
+    assert_eq!(waiting.0, held, "Board read a stdin whose read would wait");
+    let mut ready: &[u8] = held;
+    let noted = run(
+        arguments(),
+        &context(&board, &data, false),
+        &mut ready,
+        &mut Ran::default(),
+    );
+    assert!(
+        hint_of(&noted).starts_with("Board ignored stdin"),
+        "{}",
+        hint_of(&noted)
+    );
 }
 
 #[test]

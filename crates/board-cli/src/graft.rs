@@ -15,7 +15,7 @@ use serde_json::{Map, Value};
 
 use crate::render::{CALL_REPORT, GUIDE};
 use crate::run::{Cli, Prefix};
-use crate::stdin::Input;
+use crate::stdin::{Input, Stdin};
 
 /// The target a command line names after `call`, and the description, the
 /// flags and the help on stdin of the capability an installed plugin offers
@@ -226,7 +226,7 @@ fn graft(name: &str, offered: &Capability) -> Grafted {
 pub(crate) fn input<'a>(
     found: Option<&Grafted>,
     flags: &Map<String, Value>,
-    stdin: &'a mut dyn std::io::Read,
+    stdin: &'a mut dyn Stdin,
 ) -> Input<'a> {
     if flags.is_empty() && found.is_none_or(|found| found.stdin) {
         Input::Stdin(stdin)
@@ -247,6 +247,8 @@ fn ignored(found: Option<&Grafted>, flags: &Map<String, Value>) -> Option<String
             .map(|(name, ..)| format!("--{name}"))
             .collect::<Vec<_>>();
         let names = match names.as_slice() {
+            // A capability without flags takes no input that stdin could give.
+            [] => return None,
             [.., last] if names.len() > 1 => {
                 format!("{} and {last}", names[..names.len() - 1].join(", "))
             }

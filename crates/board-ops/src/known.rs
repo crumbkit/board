@@ -243,7 +243,7 @@ pub fn unopened(
 /// `start` after entering each of `directories` in turn, as `git -C` does,
 /// or the refusal of the first that is not a directory. The refusal names
 /// the directory as given, the directory a relative one was read from, and
-/// the path it led to with each `..` taken out.
+/// the path it led to with each `..` taken out as text, and says so.
 pub fn entered(start: &Path, directories: &[OsString]) -> Result<PathBuf, Box<Refusal>> {
     let mut start = start.to_path_buf();
     for directory in directories {
@@ -268,8 +268,14 @@ pub fn entered(start: &Path, directories: &[OsString]) -> Result<PathBuf, Box<Re
         } else {
             String::new()
         };
+        let dots = (given.components()).any(|part| part == std::path::Component::ParentDir);
+        let text = if dots {
+            "; Board took each .. out of that path as text, without following links"
+        } else {
+            ""
+        };
         let message = format!(
-            "cannot change to '{}'{from}: {} {fault}",
+            "cannot change to '{}'{from}: {} {fault}{text}",
             given.display(),
             lexical(&joined).display()
         );

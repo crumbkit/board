@@ -101,13 +101,37 @@ pub(crate) fn put(
     }
 }
 
+/// Standard input as `board` reads it.
+pub(crate) trait Stdin: Read {
+    /// Whether a read returns at once, because the input holds data or has
+    /// ended.
+    fn ready(&self) -> bool;
+}
+
+/// Bytes in memory, which a read always returns at once.
+impl Stdin for &[u8] {
+    fn ready(&self) -> bool {
+        true
+    }
+}
+
+/// The process's stdin, asked with a poll that does not wait.
+impl Stdin for std::io::StdinLock<'_> {
+    fn ready(&self) -> bool {
+        use nix::poll::{PollFd, PollFlags, PollTimeout, poll};
+        use std::os::fd::AsFd as _;
+        let mut polled = [PollFd::new(self.as_fd(), PollFlags::POLLIN)];
+        poll(&mut polled, PollTimeout::ZERO).is_ok_and(|ready| ready > 0)
+    }
+}
+
 /// Where a call's input comes from when no flag gives it.
 pub(crate) enum Input<'a> {
     /// JSON on stdin.
-    Stdin(&'a mut dyn Read),
+    Stdin(&'a mut dyn Stdin),
     /// Nothing, since Board leaves stdin unread, with why when the
     /// capability is installed.
-    Ignored(&'a mut dyn Read, Option<String>),
+    Ignored(&'a mut dyn Stdin, Option<String>),
 }
 
 /// `call`: the target, or the capability alone, with the input as flags or,
@@ -197,25 +221,15 @@ fn bounded(stdin: &mut dyn Read) -> std::io::Result<Vec<u8>> {
 }
 
 /// Whether `stdin`, which a call left unread, holds more than whitespace.
-/// Board reads it once, and only when the process's stdin holds data or
-/// has ended, so a pipe nobody closes does not hold up the refusal.
-fn held(context: &Context, stdin: &mut dyn Read) -> bool {
+/// Board reads it once, and only when the read returns at once, so a pipe
+/// nobody closes does not hold up the refusal.
+fn held(context: &Context, stdin: &mut dyn Stdin) -> bool {
     let mut start = [0; 512];
     !context.terminal
-        && ready()
+        && stdin.ready()
         && stdin
             .read(&mut start)
             .is_ok_and(|read| !start[..read].trim_ascii().is_empty())
-}
-
-/// Whether the process's stdin holds data or has ended, asked without
-/// waiting.
-fn ready() -> bool {
-    use nix::poll::{PollFd, PollFlags, PollTimeout, poll};
-    use std::os::fd::AsFd as _;
-    let stdin = std::io::stdin();
-    let mut polled = [PollFd::new(stdin.as_fd(), PollFlags::POLLIN)];
-    poll(&mut polled, PollTimeout::ZERO).is_ok_and(|ready| ready > 0)
 }
 
 /// The refusal, with `code`, of stdin that cannot be read.

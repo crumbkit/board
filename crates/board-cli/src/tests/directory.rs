@@ -278,7 +278,8 @@ fn a_relative_directory_with_dot_dot_names_the_directory_it_was_read_from_and_wh
     assert_eq!(
         text(&refused.stderr),
         format!(
-            "error: cannot change to '../nowhere' from {}: {} does not exist\n  help:  {HINT}\n\
+            "error: cannot change to '../nowhere' from {}: {} does not exist; Board took each \
+             .. out of that path as text, without following links\n  help:  {HINT}\n\
              \x20 code:  board::cli::usage\n",
             root.join("projects").display(),
             root.join("nowhere").display()

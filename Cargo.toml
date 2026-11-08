@@ -99,7 +99,8 @@ jsonschema-regex = "0.58.5"
 # The owner's home from the passwd entry, which no variable a caller sets can
 # move, so the signer and allowed signers file an approval trusts stay put.
 # Without default features it brings only libc, bitflags and cfg-if; only
-# board-cli/src/config.rs uses it.
+# board-cli uses it: src/config.rs for the passwd entry, and src/stdin.rs to
+# poll stdin before it reads a stdin a call left unread.
 nix = { version = "0.31.3", default-features = false, features = ["poll", "user"] }
 # A Markdown link names a path percent-encoded, as a URL does. gix already
 # brings this crate in.
