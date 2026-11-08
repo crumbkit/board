@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use crate::board::{self};
-use crate::change::{Referenced, kind_of, line, read, referenced, touch};
+use crate::change::{Referenced, kind_of, line, plan_at, read, referenced, touch};
 use crate::phases::final_phase;
 use crate::records::{Kind, PlanRecord, is_final};
 use crate::{PLUGIN, refusal, to_value};
@@ -205,7 +205,8 @@ pub(crate) fn plan(host: &dyn Host, input: &Value) -> Result<Value, PluginError>
         ));
     }
     let count = uses.len();
-    let (record, mut lines) = plan_lines(host.settings().now, &path, &text, uses, paths);
+    let kept = kept_records(host, change.plan.as_deref())?;
+    let (record, mut lines) = plan_lines(host.settings().now, &path, &text, uses, paths, kept);
     let written = format!("{record}.md");
     change.plan = Some(record.clone());
     lines.push(line(&path, &blob, &touch(host, change)));
@@ -215,6 +216,18 @@ pub(crate) fn plan(host: &dyn Host, input: &Value) -> Result<Value, PluginError>
         text: written,
         uses: count,
     }))
+}
+
+/// The records attached to the plan the change names as `plan`, in order,
+/// which a revised plan keeps; none when it names no plan Board reads or
+/// that plan has none.
+fn kept_records(host: &dyn Host, plan: Option<&str>) -> Result<Option<Vec<String>>, PluginError> {
+    let Some(plan) = plan else {
+        return Ok(None);
+    };
+    Ok(plan_at(host, plan)?
+        .and_then(|(record, _)| record.records)
+        .filter(|records| !records.is_empty()))
 }
 
 /// `count` with a comma between each group of three digits, as Python's
@@ -304,14 +317,15 @@ fn parts(now: SystemTime) -> (board_repos::Date, i64, u32) {
     (day, seconds.rem_euclid(86_400), since.subsec_micros())
 }
 
-/// A new plan record for the change at `path`, and the `put` lines that
-/// write its text and then the record.
+/// A new plan record for the change at `path` that starts with `records`
+/// attached, and the `put` lines that write its text and then the record.
 pub(crate) fn plan_lines(
     now: SystemTime,
     path: &str,
     text: &str,
     uses: Vec<String>,
     paths: Vec<String>,
+    records: Option<Vec<String>>,
 ) -> (String, Vec<Value>) {
     let record = format!("{path}/plans/{}", stamp(now));
     let written = format!("{record}.md");
@@ -320,7 +334,7 @@ pub(crate) fn plan_lines(
         text: written.clone(),
         uses,
         paths: (!paths.is_empty()).then_some(paths),
-        records: None,
+        records,
     };
     let lines = vec![
         json!({"path": written, "expect": "none", "text": text}),

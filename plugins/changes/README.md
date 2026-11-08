@@ -91,7 +91,9 @@ that one record.
   the change will edit, in which `*` also matches `/`. A build change's plan
   always has them; a prototype's plan has none.
 - `records` lists the runs, reviews, decisions and other records `attach
-  --ref` attached while this plan was the change's plan. The records a change owns
+  --ref` attached while this plan was the change's plan. A revised plan
+  starts with the `records` of the plan it replaces, in order, and that
+  earlier plan record is left as it was. The records a change owns
   are those every one of its plans lists.
 
 `changes/prototype/v1` at `/changes/<name>/prototype.json` makes the change
@@ -393,7 +395,8 @@ of `changes` still fails `review`.
   start with the change's mount and `/` (`changes::plan::outside_mount`,
   whose `paths` lists them). It writes the plan record and its text and points the change's `plan` at the
   text, in one write, in any phase but `done` and `dropped`
-  (`changes::phase::final`). It keeps each reference in `uses` once. It
+  (`changes::phase::final`). The new plan keeps the `records` of the plan
+  the change named before. It keeps each reference in `uses` once. It
   refuses a reference that reaches nothing, or a record Board marks degraded
   for anything but a broken reference of its own (`changes::ref::dangling`,
   whose `refs` lists them); a directory (`changes::plan::directory`); a text

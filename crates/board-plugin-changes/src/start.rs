@@ -259,6 +259,7 @@ pub(crate) fn start(host: &dyn Host, input: &Value) -> Result<Value, PluginError
         &skeleton,
         Vec::new(),
         Vec::new(),
+        None,
     );
     let plan = format!("{record}.md");
     let first = flow.phases.first().map_or("", |phase| phase.name.as_str());

@@ -159,6 +159,9 @@ Remove the file at a path
 - `--expect <EXPECT>`: The blob the file must hold
 - `-r`, `--recursive`: Remove every file beneath a directory
 - `--ignore-unmatch`: Report a path that names nothing as absent
+- `-m`, `--message <TEXT>`: The commit message.
+
+  The removal's commit takes this message as written. Without it, the message is `board rm <PATH>`, or `board rm -r <PATH>` with -r.
 - `--wait <DURATION>`: How long to wait for the board's lock, with a unit: 500ms, 30s, 2m or 1h. Default: `5s`.
 
 Effects: destructive, not idempotent, closed-world.

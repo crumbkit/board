@@ -24,7 +24,7 @@ fn done(host: &Real, logical: &str) -> Result<Edited, PluginError> {
         deadline: board_tree::GIT_DEADLINE,
     };
     let change = |record: &Map<String, Value>, day| Ok(json_values(completed(record, day)));
-    edit(writer, &repo, logical, &change, false)
+    edit(writer, &repo, logical, &change, Landing::open())
 }
 
 #[test]

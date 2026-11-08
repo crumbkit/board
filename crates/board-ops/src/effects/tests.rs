@@ -88,6 +88,7 @@ fn rm(board: &Board, at: &str) -> Result<PutReport, EffectError> {
         &path(at),
         Removing::File(Expect::Any),
         Unmatched::Refuse,
+        None,
         board_tree::LOCK_WAIT,
     ))
 }

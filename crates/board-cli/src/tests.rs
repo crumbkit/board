@@ -1240,6 +1240,44 @@ fn rm_removes_the_file_and_reports_its_path_and_blob_and_a_stale_expect_removes_
 }
 
 #[test]
+fn rm_message_names_the_commit_and_an_empty_message_is_refused_as_usage() {
+    let scenario = committing();
+    let run = |args: &[&str]| board_with(scenario.workdir(), None, args, b"");
+    for empty in ["", "  \n"] {
+        let refused = run(&["rm", "/projects/p", "-m", empty]);
+        assert_eq!(refused.code, 2, "{empty:?}");
+        let document = json(&run(&["rm", "/projects/p", "-m", empty, "--json"]));
+        assert_eq!(document["code"], "board::cli::usage", "{empty:?}");
+        assert_eq!(document["fields"]["argument"], "--message", "{empty:?}");
+        let message = document["message"].as_str().unwrap_or_default();
+        assert!(
+            message.ends_with(
+                ": must hold text that names the work, such as 'Close the docs obligation'"
+            ),
+            "{message}"
+        );
+        assert!(scenario.workdir().join("projects/p.json").exists());
+    }
+    // A removal commits only a file HEAD holds, so each task is put first.
+    for at in ["/tasks/a", "/tasks/b"] {
+        let put = board_with(
+            scenario.workdir(),
+            None,
+            &["put", at],
+            br#"{"$type": "lr/task/v1", "title": "t"}"#,
+        );
+        assert_eq!(put.code, 0, "{}", text(&put.stderr));
+    }
+    let message = "Close the docs obligation\n\nThe sweep landed in #12.";
+    let removed = run(&["rm", "/tasks/a", "--message", message]);
+    assert_eq!(removed.code, 0, "{}", text(&removed.stderr));
+    assert_eq!(scenario.head().unwrap().message, message);
+    let plain = run(&["rm", "/tasks/b"]);
+    assert_eq!(plain.code, 0, "{}", text(&plain.stderr));
+    assert_eq!(scenario.head().unwrap().message, "board rm /tasks/b");
+}
+
+#[test]
 fn rm_ignore_unmatch_reports_an_absent_path_and_recursive_refuses_an_expect() {
     let scenario = board();
     scenario.write(
