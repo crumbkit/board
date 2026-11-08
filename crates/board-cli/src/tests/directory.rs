@@ -80,8 +80,9 @@ fn a_directory_that_does_not_exist_is_refused_and_one_that_exists_is_admitted() 
     assert_eq!(
         text(&refused.stderr),
         format!(
-            "error: cannot change to 'nowhere': {} does not exist\n  help:  {HINT}\n\
+            "error: cannot change to 'nowhere' from {}: {} does not exist\n  help:  {HINT}\n\
              \x20 code:  board::cli::usage\n",
+            scenario.workdir().display(),
             scenario.workdir().join("nowhere").display()
         )
     );
@@ -96,7 +97,10 @@ fn a_file_named_as_the_directory_is_refused_and_its_directory_is_admitted() {
     assert_eq!(refused.code, 2);
     let stderr = text(&refused.stderr);
     assert!(
-        stderr.starts_with("error: cannot change to 'projects/p.json': "),
+        stderr.starts_with(&format!(
+            "error: cannot change to 'projects/p.json' from {}: ",
+            scenario.workdir().display()
+        )),
         "{stderr}"
     );
     assert!(
@@ -121,7 +125,8 @@ fn a_refused_directory_is_an_error_document_with_json_and_an_admitted_one_is_a_r
     assert_eq!(
         error["message"],
         format!(
-            "cannot change to 'nowhere': {} does not exist",
+            "cannot change to 'nowhere' from {}: {} does not exist",
+            scenario.workdir().display(),
             scenario.workdir().join("nowhere").display()
         )
     );
@@ -177,8 +182,9 @@ fn a_path_through_a_file_or_a_symlink_loop_is_refused_and_a_directory_is_admitte
     assert_eq!(
         text(&through.stderr),
         format!(
-            "error: cannot change to 'projects/p.json/sub': {} is not a \
+            "error: cannot change to 'projects/p.json/sub' from {}: {} is not a \
              directory\n  help:  {HINT}\n  code:  board::cli::usage\n",
+            scenario.workdir().display(),
             scenario.workdir().join("projects/p.json/sub").display()
         )
     );
@@ -188,7 +194,8 @@ fn a_path_through_a_file_or_a_symlink_loop_is_refused_and_a_directory_is_admitte
     let stderr = text(&looped.stderr);
     assert!(
         stderr.starts_with(&format!(
-            "error: cannot change to 'loop': {} cannot be read: ",
+            "error: cannot change to 'loop' from {}: {} cannot be read: ",
+            scenario.workdir().display(),
             scenario.workdir().join("loop").display()
         )),
         "{stderr}"
@@ -255,5 +262,40 @@ fn a_long_listing_outside_a_board_fails_as_not_found_and_inside_one_lists() {
         text(&found.stdout).starts_with("STATUS"),
         "{}",
         text(&found.stdout)
+    );
+}
+
+#[test]
+fn a_relative_directory_with_dot_dot_names_the_directory_it_was_read_from_and_where_it_led_and_an_absolute_one_is_admitted()
+ {
+    let scenario = board();
+    let refused = board_in(
+        scenario.workdir(),
+        &["-C", "projects", "-C", "../nowhere", "check"],
+    );
+    assert_eq!(refused.code, 2);
+    let root = std::fs::canonicalize(scenario.workdir()).unwrap();
+    assert_eq!(
+        text(&refused.stderr),
+        format!(
+            "error: cannot change to '../nowhere' from {}: {} does not exist; Board took each \
+             .. out of that path as text, without following links\n  help:  {HINT}\n\
+             \x20 code:  board::cli::usage\n",
+            root.join("projects").display(),
+            root.join("nowhere").display()
+        )
+    );
+    let absolute = root.join("projects");
+    let admitted = board_in(scenario.workdir(), &["-C", path(&absolute), "check"]);
+    assert_eq!(admitted.code, 0, "{}", text(&admitted.stderr));
+    let missing = root.join("nowhere");
+    let refused = board_in(scenario.workdir(), &["-C", path(&missing), "check"]);
+    assert_eq!(
+        text(&refused.stderr),
+        format!(
+            "error: cannot change to '{0}': {0} does not exist\n  help:  {HINT}\n\
+             \x20 code:  board::cli::usage\n",
+            missing.display()
+        )
     );
 }

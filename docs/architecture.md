@@ -344,7 +344,8 @@ Each command returns one typed report. `--json` prints it as crumbkit's
 
 `-C <dir>` before the command runs it as if Board started in `<dir>`. Several
 combine as in git: a relative one is taken from the one before. A `<dir>` naming
-no directory is `board::cli::usage`. `--personal` starts from the personal
+no directory is `board::cli::usage`, naming where a relative `<dir>` was
+taken from and led. `--personal` starts from the personal
 board's root instead of the current directory.
 
 Tab completion covers commands, flags and logical paths;

@@ -187,11 +187,8 @@ fn a_sync_past_its_deadline_is_refused_as_a_timeout_and_one_within_it_syncs() {
         "{}",
         refusal.message
     );
-    assert!(
-        refusal.message.contains("within its deadline"),
-        "the hint follows the message: {}",
-        refusal.message
-    );
+    let hint = refusal.hint.as_deref().unwrap_or_default();
+    assert!(hint.contains("within its deadline"), "{hint}");
     let pin = std::fs::read_to_string(notes.board.workdir().join("notes.json")).unwrap();
     assert!(
         pin.contains(&notes.started.to_string()),
