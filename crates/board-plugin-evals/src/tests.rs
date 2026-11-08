@@ -341,3 +341,31 @@ fn input_that_does_not_read_is_refused_and_a_whole_number_written_as_a_decimal_i
     );
     assert!(Evals.call(&empty(), &open, json!({"limit": 5.0})).is_ok());
 }
+
+/// `text` with each run of whitespace made one space, so a phrase matches
+/// across the line breaks of wrapped prose.
+fn unwrapped(text: &str) -> String {
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+#[test]
+fn the_skill_and_readme_say_a_concluded_eval_that_covers_the_question_is_cited_and_not_retested() {
+    let skill = unwrapped(include_str!("../../../plugins/evals/SKILL.md"));
+    let readme = unwrapped(include_str!("../../../plugins/evals/README.md"));
+    for text in [&skill, &readme] {
+        for phrase in [
+            "for the same subjects and versions",
+            "path and verdict",
+            "nothing new",
+            "names the earlier one in its `question`",
+            "whether the verdict changed",
+        ] {
+            assert!(text.contains(phrase), "no {phrase:?} in {text}");
+        }
+    }
+    let lookup = skill.find("look for earlier evals").unwrap();
+    let settled = skill.find("for the same subjects and versions").unwrap();
+    let write = skill.find("2. Run the remaining steps").unwrap();
+    assert!(lookup < settled && settled < write, "{skill}");
+    assert!(skill.contains("When the earlier verdict is `inconclusive`, follow step 6."));
+}
