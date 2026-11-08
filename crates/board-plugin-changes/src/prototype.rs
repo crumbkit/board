@@ -41,7 +41,7 @@ pub(crate) struct Input {
         regex(pattern = "^/"),
         extend("format" = "board-path"),
         description = "The task or project the prototype's task goes under, such as \
-                       /repos/notes-personal/tasks/<slug>.md."
+                       /repos/notes/tasks/<slug>.md."
     )]
     parent: String,
     #[schemars(

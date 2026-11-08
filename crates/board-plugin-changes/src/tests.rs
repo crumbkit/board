@@ -245,3 +245,71 @@ fn the_boards_own_flow_schema_is_the_committed_one() {
         copy.display()
     );
 }
+
+/// Every text the plugin ships: its skills, its README and its manifest,
+/// which holds the capability and field help.
+fn shipped_texts() -> Vec<(&'static str, String)> {
+    vec![
+        (
+            "SKILL.md",
+            include_str!("../../../plugins/changes/SKILL.md").to_owned(),
+        ),
+        (
+            "README.md",
+            include_str!("../../../plugins/changes/README.md").to_owned(),
+        ),
+        (
+            "skills/flow/SKILL.md",
+            include_str!("../../../plugins/changes/skills/flow/SKILL.md").to_owned(),
+        ),
+        (
+            "skills/understanding-check/SKILL.md",
+            include_str!("../../../plugins/changes/skills/understanding-check/SKILL.md").to_owned(),
+        ),
+        ("manifest", manifest().to_string()),
+    ]
+}
+
+/// The name of one person's private notes repository, which no example
+/// path in shipped text uses.
+const PRIVATE_MOUNT: &str = "notes-personal";
+
+/// The shipped texts that name the private notes repository.
+fn naming_the_private_mount(texts: &[(&'static str, String)]) -> Vec<&'static str> {
+    (texts.iter())
+        .filter(|(_, text)| text.contains(PRIVATE_MOUNT))
+        .map(|(name, _)| *name)
+        .collect()
+}
+
+#[test]
+fn a_text_naming_the_private_notes_repository_is_found_and_a_neutral_one_is_not() {
+    let texts = [
+        (
+            "private",
+            "such as /repos/notes-personal/tasks/<slug>.md".to_owned(),
+        ),
+        ("neutral", "such as /repos/notes/tasks/<slug>.md".to_owned()),
+    ];
+    assert_eq!(naming_the_private_mount(&texts), ["private"]);
+}
+
+#[test]
+fn no_shipped_text_names_the_private_notes_repository() {
+    assert_eq!(
+        naming_the_private_mount(&shipped_texts()),
+        Vec::<&str>::new()
+    );
+}
+
+#[test]
+fn the_skill_description_covers_starting_resuming_and_listing_work_within_the_skill_limit() {
+    let description = skill_description();
+    assert!(
+        description.contains("start, resume or list work on a repository the board mounts"),
+        "{description}"
+    );
+    assert!(description.contains("changes.open"), "{description}");
+    // Agent Skills cap a skill's description at 1,024 characters.
+    assert!(description.chars().count() <= 1024, "{description}");
+}

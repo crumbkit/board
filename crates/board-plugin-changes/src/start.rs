@@ -63,7 +63,7 @@ pub(crate) struct Input {
         regex(pattern = "^/"),
         extend("format" = "board-path"),
         description = "The task the change does, such as \
-                       /repos/notes-personal/tasks/<slug>.md; when left out, tasks.add adds one \
+                       /repos/notes/tasks/<slug>.md; when left out, tasks.add adds one \
                        titled as the change."
     )]
     task: Option<String>,
@@ -71,7 +71,7 @@ pub(crate) struct Input {
         regex(pattern = "^/"),
         extend("format" = "board-path"),
         description = "The notes repo tasks.add writes the new task to, such as \
-                       /repos/notes-personal; the caller's git remote chooses it when left out."
+                       /repos/notes; the caller's git remote chooses it when left out."
     )]
     task_repo: Option<String>,
     #[schemars(

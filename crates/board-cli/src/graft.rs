@@ -15,6 +15,7 @@ use serde_json::{Map, Value};
 
 use crate::render::{CALL_REPORT, GUIDE};
 use crate::run::{Cli, Prefix};
+use crate::stdin::{Input, Stdin};
 
 /// The target a command line names after `call`, and the description, the
 /// flags and the help on stdin of the capability an installed plugin offers
@@ -218,11 +219,60 @@ fn graft(name: &str, offered: &Capability) -> Grafted {
     }
 }
 
-/// Whether the call `found` names reads stdin when no flag is given: when
-/// it names no target, or a capability whose schema admits a property that
-/// is not a flag.
-pub(crate) fn reads_stdin(found: Option<&Grafted>) -> bool {
-    found.is_none_or(|found| found.stdin)
+/// Where the call `found` names with `flags` takes its input: from `stdin`
+/// when no flag is given and it names no target, or a capability whose
+/// schema admits a property that is not a flag. Otherwise Board leaves
+/// `stdin` unread.
+pub(crate) fn input<'a>(
+    found: Option<&Grafted>,
+    flags: &Map<String, Value>,
+    stdin: &'a mut dyn Stdin,
+) -> Input<'a> {
+    if flags.is_empty() && found.is_none_or(|found| found.stdin) {
+        Input::Stdin(stdin)
+    } else {
+        Input::Ignored(stdin, ignored(found, flags))
+    }
+}
+
+/// Why Board leaves stdin unread for the call `found` names with `flags`,
+/// or `None` when it reads stdin. A `bad_input` refusal adds it to its help
+/// when stdin held data.
+fn ignored(found: Option<&Grafted>, flags: &Map<String, Value>) -> Option<String> {
+    let found = found?;
+    found.offered.as_ref()?;
+    if !found.stdin {
+        let names = (found.offered.iter())
+            .flat_map(|(_, flags, ..)| flags)
+            .map(|(name, ..)| format!("--{name}"))
+            .collect::<Vec<_>>();
+        let names = match names.as_slice() {
+            // A capability without flags takes no input that stdin could give.
+            [] => return None,
+            [.., last] if names.len() > 1 => {
+                format!("{} and {last}", names[..names.len() - 1].join(", "))
+            }
+            _ => names.join(""),
+        };
+        return Some(format!(
+            "Board ignored stdin because {} takes every input as a flag; give the input as {names}",
+            found.name
+        ));
+    }
+    let given = flags
+        .keys()
+        .map(|name| format!("--{name}"))
+        .collect::<Vec<_>>();
+    let (noun, given, was) = match given.as_slice() {
+        [] => return None,
+        [one] => ("the flag", one.clone(), "was"),
+        _ => ("the flags", given.join(", "), "were"),
+    };
+    Some(format!(
+        "Board ignored stdin because {noun} {given} {was} given, and a call with a flag takes \
+         its whole input from flags; give every input as a flag, or give no flag and put the \
+         whole input on stdin"
+    ))
 }
 
 /// Each top-level string, integer, number or boolean input property whose
