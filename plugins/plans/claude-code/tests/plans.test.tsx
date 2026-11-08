@@ -2,7 +2,7 @@ import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 import type { Engine } from 'claude-code/testing'
 
-import { NAMES, questionSql, report, REPORT_SQL } from '../hooks/plans'
+import { NAMES, parseWaiting, questionSql, questionsLabel, report, REPORT_SQL, waitingLabel } from '../hooks/plans'
 
 // These prove what the band and the panes draw, which `board` commands the
 // mod runs, the batch it hands `board put`, and what the asking session is
@@ -30,12 +30,30 @@ const opened = (questions: object[]) =>
   JSON.stringify({ schema: 'board/call-report/v2', data: { plugin: 'plans', capability: 'open', output: { questions, total: questions.length, truncated: false, unreadable: 0 } } })
 const rows = (columns: string[], data: unknown[][]) => JSON.stringify({ schema: 'board/query-report/v2', data, truncated: false, summary: { columns, plugins: [] } })
 
+const ABSENT = JSON.stringify({
+  schema: 'board/failure/v1',
+  code: 'board::plugin::not_installed',
+  message: 'plugin plans has no capability waiting; it offers open, answer, withdraw',
+  fields: { capability: 'waiting', offered: ['open', 'answer', 'withdraw'], plugin: 'plans' },
+})
+const waitingReport = (total: number, blocking: number) =>
+  JSON.stringify({
+    schema: 'board/call-report/v2',
+    data: {
+      plugin: 'plans',
+      capability: 'waiting',
+      output: { total, blocking, line: `${total} wait on you`, questions: [], gates: [], effects: [], truncated: false, unreadable: 0 },
+    },
+  })
+
 const BAND = { plugin: 'board-plans', component: 'AbovePrompt', props: { hasSurvey: false, isWorking: false, maxRows: 10, bodyColumns: 80, scroll: { offset: 0, bodyRows: 10 }, view: {} } } as const
 const pane = (requestId: string) =>
   ({ plugin: 'board-plans', component: 'Pane', requestId, props: { title: requestId, isFocused: true, bodyColumns: 60, placement: 'dock', scroll: { offset: 0, bodyRows: 30 }, view: {} } }) as const
 
 type Answers = {
   open?: () => { exitCode: number; stdout: string }
+  /** What plans.waiting answers; by default the plans plugin has no such capability. */
+  waiting?: () => { exitCode: number; stdout: string }
   body?: string
   answered?: string[]
   put?: { exitCode: number; stdout: string }
@@ -57,8 +75,13 @@ function engine(on: On, answers: Answers = {}) {
   let answered = answers.answered ?? []
   const whole = { stderr: '', isStdoutTruncated: false, isStderrTruncated: false }
   mock.env(on, answers.host === null ? {} : { CLAUDE_CODE_HOST_SESSION_ID: answers.host ?? 'local_cd34' })
+  const waited: string[][] = []
   on('process.run', (_, e) => {
     const args = e.argv.slice(e.argv.indexOf('--json') + 1)
+    if (args[1] === 'plans.waiting') {
+      waited.push(e.argv.slice(4))
+      return { value: { ...(answers.waiting?.() ?? { exitCode: 1, stdout: ABSENT }), ...whole } }
+    }
     ran.push([...e.argv.slice(4, e.argv.indexOf('--json')), ...args])
     if (e.init?.stdin !== undefined) stdins.push(e.init.stdin)
     if (args[0] === 'call') return { value: { ...(answers.open?.() ?? { exitCode: 0, stdout: opened(questions) }), ...whole } }
@@ -89,23 +112,61 @@ function engine(on: On, answers: Answers = {}) {
   on('command.register', (_, e) => ({ value: { command: e.name } }))
   on('ui.render', ($, e) => $.ui.resolve(e).Box({}))
   on('session.start', (_, e) => ({ cwd: e.cwd }))
-  return { ran, stdins, panes, sent, toasts }
+  return { ran, waited, stdins, panes, sent, toasts }
 }
 
 const start = ($: Engine) => $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
 
-test('the band counts the open questions, and its Show button opens the pane', async ($, on) => {
-  mock.clock(on, { now: NOW })
-  const { ran, panes } = engine(on)
+test('plans.waiting is read as its total and blocking count, and a board without it is told apart from a failure', () => {
+  expect(parseWaiting(0, waitingReport(14, 11), '')).toEqual({ kind: 'read', waiting: { total: 14, blocking: 11 } })
+  expect(parseWaiting(1, ABSENT, '')).toEqual({ kind: 'absent' })
+  const locked = JSON.stringify({ schema: 'board/failure/v1', code: 'board::lock', message: 'the board is locked' })
+  expect(parseWaiting(1, locked, '')).toEqual({ kind: 'failed', why: 'board::lock the board is locked' })
+  const other = JSON.stringify({ ...JSON.parse(ABSENT), fields: { capability: 'open' } })
+  expect(parseWaiting(1, other, '').kind).toBe('failed')
+})
+
+test('the button says what waits and how much blocks, or the open questions until plans.waiting exists', () => {
+  expect(waitingLabel({ total: 14, blocking: 11 })).toBe('Waiting 14 · 11 blocking')
+  expect(waitingLabel({ total: 3, blocking: 0 })).toBe('Waiting 3')
+  expect(waitingLabel({ total: 0, blocking: 0 })).toBeNull()
+  expect(questionsLabel(2)).toBe('Questions 2')
+  expect(questionsLabel(0)).toBeNull()
+})
+
+test('without plans.waiting the button counts the open questions, asks for waiting once, and opens the pane', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const { ran, waited, panes } = engine(on)
   await start($)
   expect(ran).toEqual([['--personal', 'call', 'plans.open', '--limit', '100']])
   for (const surface of ['terminal', 'desktop'] as const) {
     const band = await $.ui.mount({ ...BAND, surface })
-    expect((await band.find({ type: 'Text', text: /open questions/ }))?.text).toBe('2 open questions for you ')
-    await band.press({ key: 'show' })
+    expect((await band.find({ key: 'waiting' }))?.text).toBe('Questions 2')
+    await band.press({ key: 'waiting' })
     await band.unmount()
   }
+  await clock.advance(60_000)
+  expect(waited).toEqual([['--personal', '--json', 'call', 'plans.waiting']])
   expect(panes).toEqual(['questions', 'questions'])
+})
+
+test('with plans.waiting the button says what waits and how much blocks, and its part sits in the waiting slot', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  engine(on, { waiting: () => ({ exitCode: 0, stdout: waitingReport(14, 11) }) })
+  await start($)
+  const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect((await band.find({ key: 'waiting' }))?.text).toBe('Waiting 14 · 11 blocking')
+  const drawn = await band.drawn()
+  const row = drawn.type === 'Box' ? drawn.children?.[0] : undefined
+  expect(typeof row === 'object' && row.type === 'Box' ? row.children?.map(c => (typeof c === 'object' && c.type === 'Box' ? c.props?.key : '')) : []).toEqual(['band:c2-waiting'])
+})
+
+test('when nothing waits the band draws nothing of the mod\'s, even with open questions counted elsewhere', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  engine(on, { waiting: () => ({ exitCode: 0, stdout: waitingReport(0, 0) }) })
+  await start($)
+  const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect(await band.find({ key: 'waiting' })).toBeUndefined()
 })
 
 test('with no open question, or no plans plugin, the band draws nothing of the mod\'s', async ($, on) => {
@@ -115,12 +176,12 @@ test('with no open question, or no plans plugin, the band draws nothing of the m
   engine(on, { open: () => ({ exitCode: stdout === missing ? 1 : 0, stdout }) })
   await start($)
   const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
-  expect(await band.find({ type: 'Text', text: /open question/ })).toBeUndefined()
+  expect(await band.find({ key: 'waiting' })).toBeUndefined()
   await band.unmount()
   stdout = missing
   await start($)
   const again = await $.ui.mount({ ...BAND, surface: 'terminal' })
-  expect(await again.find({ type: 'Text', text: /open question/ })).toBeUndefined()
+  expect(await again.find({ key: 'waiting' })).toBeUndefined()
 })
 
 test('once the band is drawn, the count is read again every minute, in a desktop session too', { options: { board: '/boards/me' } }, async ($, on) => {
@@ -153,7 +214,7 @@ test('a failed refresh keeps the last count read', async ($, on) => {
   fails = true
   await clock.advance(60_000)
   const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
-  expect((await band.find({ type: 'Text', text: /open questions/ }))?.text).toBe('2 open questions for you ')
+  expect((await band.find({ key: 'waiting' }))?.text).toBe('Questions 2')
 })
 
 test('the pane lists each question with its options, and an option answers it in one batch sent to the asking session', async ($, on) => {
@@ -200,7 +261,7 @@ test('the pane lists each question with its options, and an option answers it in
   expect(toasts).toEqual(['Answered, and sent to local_ab12'])
   expect(await ui.find({ type: 'Text', text: 'Merge home#201?' })).toBeUndefined()
   const band = await $.ui.mount({ ...BAND, surface: 'desktop' })
-  expect((await band.find({ type: 'Text', text: /open question/ }))?.text).toBe('1 open question for you ')
+  expect((await band.find({ key: 'waiting' }))?.text).toBe('Questions 1')
 })
 
 test('the owner answers in words where the surface has a field, and none of the options is chosen', async ($, on) => {

@@ -18,13 +18,9 @@ lists effects and runs `board answer` for the owner.
   returns the board, plugin, op and path of each. The mod reads the list when a
   session starts and after each answer. It also reads it every 60 seconds
   from the first time the band is drawn, which a `claude -p` run never does.
-- When any are pending, the band above the prompt says how many, such as
-  `2 effects wait for your answer`, with a Show button. When a read fails,
-  the band says `Board: could not read pending effects`, followed by the
-  count of the last read that worked, such as `(last read: 2)`, and the
-  failure goes to the debug log. The band shows nothing when no read has
-  worked and the failure is `board::config::not_found`, which means there is
-  no personal board.
+- The mod's button in the band above the prompt is described in
+  [claude-code/band.md](claude-code/band.md). A failed read goes to the
+  debug log.
 - The pane lists up to 100 effects. Each starts with a line such as
   `In board "~/work", notes asks to notes.publish "/notes/plan.md"`. The board's full
   root comes first, with the home directory written as `~`, and the path is

@@ -1,7 +1,7 @@
 // What board answered, and the records and words the mod makes from it. Pure
 // functions, so the tests can pin every word.
 
-import type { Open, Question } from '../types'
+import type { Open, Question, Waiting } from '../types'
 
 /** The `written_by` of an answer the owner gave in the pane. */
 export const WRITTEN_BY = 'plans/pane-answer'
@@ -120,8 +120,31 @@ export const answerText = (question: string, choice: string | undefined, words: 
   `The owner answered ${question}: choice ${choice ?? 'none'}, in these words: ${words}\n` +
   `The answer is recorded at ${answerPath(question)}.`
 
-/** The band's line. */
-export const openLine = (total: number) => `${total} open question${total === 1 ? '' : 's'} for you`
+/**
+ * Reads `board --json call plans.waiting`, whose output is
+ * `{total, blocking, line, questions, gates, effects, truncated, unreadable}`.
+ * `absent` when the plans plugin has no `waiting` capability yet, so the
+ * band counts open questions instead; `failed` with Board's words otherwise.
+ */
+export function parseWaiting(exitCode: number, stdout: string, stderr: string): { kind: 'read'; waiting: Waiting } | { kind: 'absent' } | { kind: 'failed'; why: string } {
+  const report = parseJson(stdout)
+  const output = (report?.data as { output?: { total?: unknown; blocking?: unknown } } | undefined)?.output
+  if (exitCode === 0 && report?.schema === 'board/call-report/v2' && typeof output?.total === 'number') {
+    return { kind: 'read', waiting: { total: output.total, blocking: typeof output.blocking === 'number' ? output.blocking : 0 } }
+  }
+  const fields = report?.fields as { capability?: unknown } | undefined
+  if (report?.code === 'board::plugin::not_installed' && fields?.capability === 'waiting') return { kind: 'absent' }
+  return { kind: 'failed', why: failure(exitCode, stdout, stderr) }
+}
+
+/** The Waiting button's label, `Waiting 14 · 11 blocking`; null when nothing waits. */
+export function waitingLabel(w: Waiting): string | null {
+  if (w.total === 0) return null
+  return w.blocking === 0 ? `Waiting ${w.total}` : `Waiting ${w.total} · ${w.blocking} blocking`
+}
+
+/** The button's label while plans.waiting does not exist: the open questions; null when none are open. */
+export const questionsLabel = (total: number) => (total === 0 ? null : `Questions ${total}`)
 
 // The report covers the day before the current one, from 07:00 local time
 // to 07:00 today. The 07:00 day start is fixed here; no config changes it. SQLite

@@ -33,6 +33,10 @@ declare module 'claude-code' {
       open: string | null
       /** The pinned orders read at session start; null until they are read. */
       pinned: Pinned | null
+      /** The order the pane shows alone, chosen by its badge; null shows every order. */
+      selected: string | null
+      /** Whether the pane shows the chosen order's context. */
+      showContext: boolean
     }
   }
 }

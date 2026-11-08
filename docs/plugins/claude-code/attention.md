@@ -15,11 +15,12 @@ As a session starts, the mod runs `board --personal --json call
 attention.pinned`, which verifies each pinned order. It adds the verified
 orders, and the path and code of each one left out, to the session's first
 message as one context block, `attentionOrders`. Claude Code sends that
-block once and again after a compaction. A line above the prompt says how
-many signed orders bind the session, and says in red how many were left out
-of context or that the personal board could not be read. Its **Show** button
-opens a pane that lists each order with its expiry and the signer that
-verified it, and gives the code and message for each one left out.
+block once and again after a compaction. The band above the prompt shows
+each order as a badge, and each one left out, or a personal board that
+could not be read, as a red badge; [band.md](band.md) says what they show.
+A badge opens a pane on its order, with its expiry, the signer that
+verified it and its context. The pane's **All pinned orders** button lists
+every order, with the code and message of each one left out.
 
 ## Asking the owner to sign
 

@@ -13,22 +13,20 @@ owner in any session, so no session has to relay them.
 The mod runs `board --personal`, because the owner's questions live in the
 personal board. Its `board` option names another board's directory instead.
 That board needs the plans plugin enabled, since the mod reads questions
-through `plans.open`. When the call fails, the band draws nothing and the
-debug log gives the code, such as `board::plugin::not_installed`.
+through `plans.open`. When the call fails, the debug log gives the code.
 
 ## Open questions
 
 When the session starts, the mod runs
-`board --json call plans.open --limit 100`. The band above the prompt then
-says how many questions are open, such as "3 open questions for you", with a
-Show button. With none open, or while a survey holds the band, it draws
-nothing. From the first time the band is drawn, the mod runs the call again
+`board --json call plans.open --limit 100`. Its button in the band above the
+prompt is described in [claude-code/band.md](claude-code/band.md). From the
+first time the band is drawn, the mod runs the call again
 every minute, so a `-p` run, which draws no band, reads Board once. The
 refresh does not depend on `isInteractive`, because desktop sessions run
 through the Agent SDK and report it as false. A failed refresh is logged and
 keeps the last count read. The band is drawn on the terminal and the desktop app only.
 
-Show opens the `questions` pane. It lists each question with its project, its
+The button opens the `questions` pane. It lists each question with its project, its
 age and what it blocks, and each option as a button; the recommended option is
 drawn as the primary one. Where the surface draws a text field, which mobile
 does not, the owner may answer in words instead. Pressing an option records

@@ -1,8 +1,9 @@
 import { atom, read, update } from 'claude-code'
-import type { EngineInterface, PluginOptions, Register } from 'claude-code'
+import type { EngineInterface, PluginOptions, Register, RenderElement } from 'claude-code'
 
-import type { Open, Question } from '../types'
-import { answerBatch, answerText, failure, openLine, parseOpen, parseRows, project, questionSql, refusal, report, REPORT_LIMIT, REPORT_SQL } from './plans'
+import type { Open, Question, Waiting } from '../types'
+import { SLOT, joinBand } from './band'
+import { answerBatch, answerText, failure, parseOpen, parseRows, parseWaiting, project, questionSql, questionsLabel, refusal, report, REPORT_LIMIT, REPORT_SQL, waitingLabel } from './plans'
 
 // The mod reads the owner's open questions from Board, draws their count in
 // the band above the prompt and lists them in a pane, where the owner answers
@@ -12,6 +13,7 @@ import { answerBatch, answerText, failure, openLine, parseOpen, parseRows, proje
 
 const open = atom({ plugin: 'board-plans', key: 'open' } as const, null as Open | null)
 const morning = atom({ plugin: 'board-plans', key: 'report' } as const, null as string | null)
+const waiting = atom({ plugin: 'board-plans', key: 'waiting' } as const, null as Waiting | null)
 
 const QUESTIONS = 'questions'
 // Board lives in ~/.local/bin, which a session's PATH may lack.
@@ -37,8 +39,25 @@ function board($: EngineInterface, options: PluginOptions, args: string[], stdin
   })
 }
 
+/**
+ * Reads what waits on the owner. Until the plans plugin has `waiting`, it
+ * says so once and is not asked again while the module is loaded.
+ */
+async function refreshWaiting($: EngineInterface, options: PluginOptions, local: { absent: boolean }) {
+  if (local.absent) return
+  try {
+    const ran = await board($, options, ['call', 'plans.waiting'])
+    const read = parseWaiting(ran.exitCode, ran.stdout, ran.stderr)
+    if (read.kind === 'absent') local.absent = true
+    if (read.kind === 'failed') $.ui.log(`board: plans.waiting failed: ${read.why}`, { to: 'debug' })
+    if (read.kind === 'read') await update($, waiting, () => read.waiting)
+  } catch (error) {
+    $.ui.log(`board: plans.waiting did not run: ${String(error)}`, { to: 'debug' })
+  }
+}
+
 /** Reads the open questions again. A failure is logged and keeps the last count read. */
-async function refresh($: EngineInterface, options: PluginOptions) {
+async function refreshOpen($: EngineInterface, options: PluginOptions) {
   let found: Open | null = null
   try {
     const ran = await board($, options, ['call', 'plans.open', '--limit', String(LISTED)])
@@ -48,6 +67,11 @@ async function refresh($: EngineInterface, options: PluginOptions) {
     $.ui.log(`board: plans.open did not run: ${String(error)}`, { to: 'debug' })
   }
   if (found !== null) await update($, open, () => found)
+}
+
+/** Reads the open questions and what waits on the owner, side by side. */
+async function refresh($: EngineInterface, options: PluginOptions, local: { absent: boolean }) {
+  await Promise.all([refreshOpen($, options), refreshWaiting($, options, local)])
 }
 
 /** Reads the question and its answers; undefined when board fails. */
@@ -102,6 +126,8 @@ const age = (asked: string, now: number) => {
 }
 
 export const register: Register = (on, options) => {
+  const local = { absent: false }
+
   // The minute's refresh starts with the first band drawn, which a `-p` run
   // never draws. Desktop sessions report `isInteractive: false`, so that flag
   // cannot gate it.
@@ -110,7 +136,7 @@ export const register: Register = (on, options) => {
   on('session.start', async ($, e, next) => {
     const started = await next(e)
     await $.command.register({ name: 'yesterday', description: "Show the morning report of yesterday's Board records, from 07:00" })
-    await refresh($, options)
+    await refresh($, options, local)
     return started
   })
 
@@ -118,20 +144,23 @@ export const register: Register = (on, options) => {
     const below = await next(e)
     if (!polling) {
       polling = true
-      $.clock.every(REFRESH_MS, () => void refresh($, options))
+      $.clock.every(REFRESH_MS, () => void refresh($, options, local))
     }
+    if (e.props.hasSurvey) return below
+    // plans.waiting counts questions, gates and effects; until it exists the button counts open questions.
+    const counted = await read($, waiting)
     const found = await read($, open)
-    if (e.props.hasSurvey || found === null || found.total === 0) return below
+    const label = counted !== null ? waitingLabel(counted) : found === null ? null : questionsLabel(found.total)
+    if (label === null) return below
     const { Box, Button, Text } = $.ui.resolve(e)
-    return (
-      <Box flexDirection="column">
-        {below.type === 'engine' ? null : below}
-        <Box>
-          <Text>{openLine(found.total)} </Text>
-          <Button key="show" label="Show" onPress={() => void $.ui.open({ id: QUESTIONS, title: 'Open questions' })} />
-        </Box>
+    const part = (
+      <Box key={SLOT.waiting}>
+        <Button key="waiting" label={label} onPress={() => void $.ui.open({ id: QUESTIONS, title: 'Open questions' })}>
+          <Text color="warning">{label}</Text>
+        </Button>
       </Box>
     )
+    return joinBand(below, [part as RenderElement])
   })
 
   on('ui.render', { component: 'Pane', requestId: QUESTIONS }, async ($, e) => {

@@ -15,11 +15,16 @@ export type Question = {
 /** What `plans.open` answered: the questions it listed and how many are open in all. */
 export type Open = { questions: Question[]; total: number }
 
+/** What `plans.waiting` counts: everything that waits on the owner, and how much of it blocks work. */
+export type Waiting = { total: number; blocking: number }
+
 declare module 'claude-code' {
   interface PluginState {
     'board-plans': {
       /** The open questions; null until the first read, or when it failed. */
       open: Open | null
+      /** What waits on the owner; null until plans.waiting answers, and while it does not exist. */
+      waiting: Waiting | null
       /** The last morning report, as Markdown; null before /yesterday ran. */
       report: string | null
     }
