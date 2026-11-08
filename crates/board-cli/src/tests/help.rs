@@ -211,8 +211,8 @@ fn files_of(root: &Path) -> Vec<(String, String)> {
 /// such as `plugin` and 1,200 for each other command.
 const BUDGETS: Budgets = Budgets::new()
     .root(
-        2_950,
-        "The root page lists all twenty-one commands under the goal each serves, the commands a newcomer runs first, and what a logical path and a record are, which STANDARDS.md 24 requires on one page. It also lists the global flags -C and --personal, which choose the board a run uses.",
+        3_050,
+        "The root page lists all twenty-one commands under the goal each serves, the commands a newcomer runs first, and what a logical path and a record are, which STANDARDS.md 24 requires on one page. It also lists the global flags -C and --personal, which choose the board a run uses, and one line naming at most six of the plugins the board enables, which run as `board <plugin> <capability>`.",
     )
     .nodes(&[
         Budget::new(

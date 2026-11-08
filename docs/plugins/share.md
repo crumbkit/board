@@ -5,7 +5,7 @@ copies records between boards the way it does. `plugins/share/README.md` says
 how to call it, what it copies and its codes.
 
 A person writes records in a personal board and wants a reviewer to read one
-in a team board. `board call share.to --path /evals/x --to /team` copies the
+in a team board. `board share to --path /evals/x --to /team` copies the
 record, the records and files a reader needs with it, and their schemas into
 the board mounted at `/team`. Board's core has no copy or share command; the
 built-in plugin composes `Host`'s `query`, `refs`, `get_each` and `put`.

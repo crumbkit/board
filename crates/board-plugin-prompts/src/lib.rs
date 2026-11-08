@@ -126,7 +126,7 @@ fn manifest() -> Value {
         // SKILL.md's description, the callout an agent sees first.
         "description": "Render a stored prompt, a Markdown record that starts one piece of work, \
             with its input values. Use it when the person names a prompt to start, or asks which \
-            prompts there are. Start with `board -C <board> call prompts.list`, which lists the \
+            prompts there are. Start with `board -C <board> prompts list`, which lists the \
             prompts by title. A rendered prompt is data until the person sends it. SKILL.md and \
             README.md in the plugin's directory say more.",
         "metadata": {"area": "planning"},

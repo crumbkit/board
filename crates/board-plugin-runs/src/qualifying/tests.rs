@@ -117,7 +117,7 @@ pub(crate) fn built(files: &[(&str, String)]) -> (Scenario, Board) {
     (scenario, board)
 }
 
-/// The output of `board call runs.latest` for `/vendor/suites/a` on a board
+/// The output of `board runs latest` for `/vendor/suites/a` on a board
 /// that mounts at `/vendor` a library holding `files`, whose schema for
 /// runs admits each `(pointer, value)` of `newer` beside the values at that
 /// pointer's `enum`, so the library can hold values this Board does not
@@ -174,7 +174,7 @@ fn a_run_with_a_scope_this_board_does_not_know_is_counted_as_not_full_like_a_tar
     }
 }
 
-/// The output of `board call runs.<capability>` with `input` on a board
+/// The output of `board runs <capability>` with `input` on a board
 /// holding `files`, which Board checks against the capability's schemas, and
 /// whether the call started a process.
 pub(crate) fn called(files: &[(&str, String)], capability: &str, input: &Value) -> (Value, bool) {

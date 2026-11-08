@@ -5,11 +5,11 @@
   "stop": {"through": "plan"},
   "phases": [
     {"name": "plan", "agent": "lead",
-     "instruction": "Find the Jira ticket, record it with `board call jira.ref --key <KEY> --site <site>` and attach it with --ticket. Write the plan.",
+     "instruction": "Find the Jira ticket, record it with `board jira ref --key <KEY> --site <site>` and attach it with --ticket. Write the plan.",
      "checks": [
        {"id": "plan-sections", "kind": "sections", "sections": ["Problem", "Outcome"]},
        {"id": "jira-ticket", "kind": "field", "field": "tickets", "types": ["jira/issue/v1"], "min": 1,
-        "remedy": "Ask the owner for the ticket key if none is named; record it with `board call jira.ref` and attach it with `changes.attach --path {change} --ticket <path>`."}
+        "remedy": "Ask the owner for the ticket key if none is named; record it with `board jira ref` and attach it with `changes.attach --path {change} --ticket <path>`."}
      ]},
     {"name": "build", "agent": "builder",
      "instruction": "Build test-first and attach a run of {suite} on the head.",
@@ -23,7 +23,7 @@
         "remedy": "Two different people must approve {head}. Ask for the missing approvals and stop."}
      ]},
     {"name": "land", "agent": "lead",
-     "instruction": "Open the pull request with `board call changes.pr`.",
+     "instruction": "Open the pull request with `board changes pr`.",
      "checks": [{"id": "pull-request", "kind": "field", "field": "pulls", "types": ["github/pull/v1"]}]}
   ]
 }

@@ -106,7 +106,7 @@ pub(crate) fn of(each: &flow::Check, values: &Values) -> String {
     if each.waivable == Some(true) {
         let waiver = format!(
             " The owner may waive this check with a plans/decision/v1 he signs whose refs name \
-             {{change}}#{}, attached with `board call changes.attach --path {{change}} --ref \
+             {{change}}#{}, attached with `board changes attach --path {{change}} --ref \
              <decision>`.",
             each.id
         );
@@ -116,7 +116,7 @@ pub(crate) fn of(each: &flow::Check, values: &Values) -> String {
 }
 
 /// What to attach a record with.
-const ATTACH: &str = "attach it with `board call changes.attach --path {change} --ref <path>`";
+const ATTACH: &str = "attach it with `board changes attach --path {change} --ref <path>`";
 
 /// A kind's own remedy for `each`.
 fn default(each: &flow::Check) -> String {
@@ -127,32 +127,30 @@ fn default(each: &flow::Check) -> String {
     let ask = match each.actor {
         Some(Actor::Owner) => "Only the owner can provide this: ask him, then ",
         Some(Actor::Reviewer) => {
-            "Only a reviewer can provide this: start one with `board call review.run`, then "
+            "Only a reviewer can provide this: start one with `board review run`, then "
         }
         Some(Actor::Agent) | None => "",
     };
     let said = match kind {
         Kind::Sections => {
             "Write text under each heading the detail names and write the plan again with `board \
-             call changes.plan --path {change}`."
+             changes plan --path {change}`."
                 .to_owned()
         }
         Kind::Field => field(each.field),
         Kind::Records => format!("{ask}write the record the detail describes and {ATTACH}."),
-        Kind::Run => {
-            "Run {suite} on {head} with `board call runs.run` and attach the run with `board call \
-             changes.attach --path {change} --ref <run>`. When the change names no suite, name \
-             one with `board call changes.attach --path {change} --suite /suites/<name>`."
-                .to_owned()
-        }
+        Kind::Run => "Run {suite} on {head} with `board runs run` and attach the run with `board \
+             changes attach --path {change} --ref <run>`. When the change names no suite, name \
+             one with `board changes attach --path {change} --suite /suites/<name>`."
+            .to_owned(),
         Kind::Paths => {
-            "Add the files to the plan's paths with `board call changes.plan --path {change}`, or \
+            "Add the files to the plan's paths with `board changes plan --path {change}`, or \
              revert the edits."
                 .to_owned()
         }
         Kind::Tasks => {
-            "Finish each open task and close it with `board call tasks.done`, or drop it with \
-             `board call tasks.drop`."
+            "Finish each open task and close it with `board tasks done`, or drop it with \
+             `board tasks drop`."
                 .to_owned()
         }
         Kind::Understood if each.rechecks.is_some() => format!(
@@ -171,7 +169,7 @@ fn default(each: &flow::Check) -> String {
         Kind::Considered => {
             "Cite each surfaced record you build on in the plan's uses, list the rest under ### \
              Considered with one line on why it does not apply, and write the plan again with \
-             `board call changes.plan --path {change}`."
+             `board changes plan --path {change}`."
                 .to_owned()
         }
         Kind::Obligations => {
@@ -182,12 +180,12 @@ fn default(each: &flow::Check) -> String {
         }
         Kind::ControlledPaths => {
             "Revert the edits to the controlled paths, or move the change to a flow that allows \
-             them with `board call changes.reflow --path {change} --flow <flow>`."
+             them with `board changes reflow --path {change} --flow <flow>`."
                 .to_owned()
         }
         Kind::FlowValid => {
             "Fix each problem the detail names in the drafted flow, write it again with `board \
-             put`, and keep it attached with `board call changes.attach --path {change} --ref \
+             put`, and keep it attached with `board changes attach --path {change} --ref \
              <draft>`."
                 .to_owned()
         }
@@ -203,24 +201,24 @@ fn default(each: &flow::Check) -> String {
 fn field(field: Option<Field>) -> String {
     match field {
         Some(Field::Task) => {
-            "Add a task with `board call tasks.add` and set it with `board call changes.attach \
+            "Add a task with `board tasks add` and set it with `board changes attach \
              --path {change} --task <path>`."
         }
         Some(Field::Route) => {
-            "Set the route with `board call changes.attach --path {change} --route <route>`."
+            "Set the route with `board changes attach --path {change} --route <route>`."
         }
         Some(Field::Head) => {
-            "Commit, then record the head with `board call changes.attach --path {change} --head \
+            "Commit, then record the head with `board changes attach --path {change} --head \
              <sha>`."
         }
-        Some(Field::Plan) => "Write the plan with `board call changes.plan --path {change}`.",
+        Some(Field::Plan) => "Write the plan with `board changes plan --path {change}`.",
         Some(Field::Tickets) => {
-            "Record the ticket with `board call jira.ref` or `board call github.ref` and attach it \
-             with `board call changes.attach --path {change} --ticket <path>`."
+            "Record the ticket with `board jira ref` or `board github ref` and attach it \
+             with `board changes attach --path {change} --ticket <path>`."
         }
         Some(Field::Pulls) => {
-            "Draft the pull request with `board call changes.pr --path {change}`, open it, record \
-             it with `board call github.ref` and attach it with `board call changes.attach --path \
+            "Draft the pull request with `board changes pr --path {change}`, open it, record \
+             it with `board github ref` and attach it with `board changes attach --path \
              {change} --pull <path>`."
         }
         None => "Add a field to the check in the flow.",

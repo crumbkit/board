@@ -81,7 +81,7 @@ the task, such as a `parent` or an `after`, keeps working.
 
 ## Capabilities
 
-`board call tasks.available` chooses the repos in scope, syncs them, and
+`board tasks available` chooses the repos in scope, syncs them, and
 returns four sections of their `open` tasks:
 
 - `available`: the tasks not deferred, not waiting on an unfinished task in
@@ -156,7 +156,7 @@ as a top-level task and is listed in `cycles`.
   as `ship-flows-editor/dispatch-owns-flow-documents/choose-store`. A move
   changes it, and nothing else.
 
-`board call tasks.tree --path <task>` returns the task and every task under
+`board tasks tree --path <task>` returns the task and every task under
 it, nested, in every status, so finished pieces still show. Each node carries
 `path`, `title`, `status`, `kind`, `brief`, `owner`, `blocked_by`,
 `subtasks`, `tree_path` and `children`, which are sorted by title. A project
@@ -164,7 +164,7 @@ under a task is one of its children, so the task's tree holds the project's
 tasks too. `brief` is a path in the board. A path that holds no task is
 refused with `tasks::task::not_found`.
 
-`board call tasks.tree --root true` returns `roots`, every top-level task of
+`board tasks tree --root true` returns `roots`, every top-level task of
 the repos in scope with its tree: at most 100, open ones first and then by
 title, with `total` counting them all. The scope is chosen as `available`
 chooses it, with `--repo` and `--remote`. Giving both `--path` and `--root
@@ -175,7 +175,7 @@ task has an `after` or a `parent`.
 
 ## Writing tasks
 
-`board call tasks.add --title <title>` writes a new open task to
+`board tasks add --title <title>` writes a new open task to
 `tasks/<slug>.md`, its slug derived from the title as notes derives a note's,
 with `-2` and on added when the name is taken. It takes `--text` for the body,
 and `--due`, `--defer`, `--repeat`, `--ephemeral` and `--from_hour`; `after`

@@ -207,15 +207,15 @@ fn sync_ends_merged_and_closed_changes_and_reports_the_rest() {
     let commands = by_path(&output, "command");
     assert_eq!(
         commands["/changes/bare"],
-        "board call changes.drop --path /changes/bare --reason '<why>'"
+        "board changes drop --path /changes/bare --reason '<why>'"
     );
     assert_eq!(
         commands["/changes/started"],
-        "board call changes.next --path /changes/started"
+        "board changes next --path /changes/started"
     );
     assert_eq!(
         commands["/changes/elsewhere"],
-        "board call changes.attach --path /changes/elsewhere --pull <record>"
+        "board changes attach --path /changes/elsewhere --pull <record>"
     );
     let tasks: BTreeSet<&str> = (output["changes"].as_array().unwrap().iter())
         .map(|entry| entry["task"].as_str().unwrap())
@@ -306,7 +306,7 @@ fn sync_report(synced: &Value, stale: bool) -> Value {
         "synced": synced,
         "stale": stale,
         "code": stale.then_some("changes::sync::stale"),
-        "command": "board call changes.sync",
+        "command": "board changes sync",
     })
 }
 

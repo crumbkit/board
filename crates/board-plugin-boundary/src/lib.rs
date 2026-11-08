@@ -102,7 +102,7 @@ fn manifest() -> Value {
         "description": "The boundary plugin checks content, such as a pull request body, before it \
             leaves a checkout, against the controls that boundaries in the personal board name for \
             its destination. Use it before you send anything a boundary may cover. Run `board \
-            --personal call boundary.check` with the action, destination, checkout and parts on \
+            --personal boundary check` with the action, destination, checkout and parts on \
             stdin; on `boundary::check::failed`, change what it names and check again. SKILL.md and \
             README.md in the plugin's directory say more.",
         "metadata": {"area": "governance"},

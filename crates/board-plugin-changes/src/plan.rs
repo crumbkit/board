@@ -136,7 +136,7 @@ pub(crate) fn plan(host: &dyn Host, input: &Value) -> Result<Value, PluginError>
             &change.phase,
             format!(
                 "the change at {path} is {}, so it takes no new plan; list open changes with \
-                 `board call changes.open`, or start a new one",
+                 `board changes open`, or start a new one",
                 change.phase
             ),
         ));

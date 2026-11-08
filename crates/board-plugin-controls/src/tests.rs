@@ -102,7 +102,7 @@ fn the_check_output_schema_admits_a_null_or_string_largest_and_refuses_a_number(
 
 /// Each committed schema file, the plugin's golden under `types/` and the
 /// copy in this repository's own board, holds, byte for byte, the canonical
-/// JSON of the schema its struct generates, so `board call controls.check`
+/// JSON of the schema its struct generates, so `board controls check`
 /// in a Board checkout finds its copy equal to the shipped one.
 /// `SNAPSHOTS=overwrite` rewrites both.
 #[expect(

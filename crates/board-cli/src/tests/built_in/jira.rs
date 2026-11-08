@@ -57,12 +57,12 @@ impl Board {
             .unwrap_or_default()
     }
 
-    /// The output of `board call jira.ref` with `flags`, which must answer.
+    /// The output of `board jira ref` with `flags`, which must answer.
     fn answer(&self, flags: &[&str]) -> Value {
         self.board.call("jira.ref", flags)
     }
 
-    /// The exit code and failure of `board call jira.ref` with `flags`.
+    /// The exit code and failure of `board jira ref` with `flags`.
     fn refused(&self, flags: &[&str]) -> (u8, Value) {
         let arguments: Vec<&str> = ["--json", "call", "jira.ref"]
             .into_iter()

@@ -361,7 +361,7 @@ pub(crate) fn brief_of(host: &dyn Host, path: &str) -> Result<Output, PluginErro
     let records = referenced(host, &uses)?;
     let texts = documents(host, &uses, &records)?;
     let step = next_of(host, path)?;
-    let controls = format!("board call controls.check --path {}", change.mount);
+    let controls = format!("board controls check --path {}", change.mount);
     let brief_line = format!("board-brief: {path}");
     let mut spent = words(
         &[

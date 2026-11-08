@@ -77,7 +77,7 @@ pub(crate) fn pause(host: &dyn Host, input: &Value) -> Result<Value, PluginError
             "changes::pause::not_building",
             format!(
                 "the change at {path} is in {}, and only a change in build is paused; list the \
-                 changes in build with `board call changes.open`",
+                 changes in build with `board changes open`",
                 change.phase
             ),
             [("path", json!(path)), ("phase", json!(change.phase))],
@@ -101,7 +101,7 @@ pub(crate) fn resume(host: &dyn Host, input: &Value) -> Result<Value, PluginErro
             "changes::resume::not_paused",
             format!(
                 "the change at {path} is in {}, and only a paused change is resumed; run `board \
-                 call changes.next --path {path}` for its next step",
+                 changes next --path {path}` for its next step",
                 change.phase
             ),
             [("path", json!(path)), ("phase", json!(change.phase))],
@@ -157,7 +157,7 @@ pub(crate) fn reopen(host: &dyn Host, input: &Value) -> Result<Value, PluginErro
             &phase,
             format!(
                 "the change at {path} is {phase}, so it cannot go back to build; start a new \
-                 change with `board call changes.start`"
+                 change with `board changes start`"
             ),
         ));
     }
@@ -166,7 +166,7 @@ pub(crate) fn reopen(host: &dyn Host, input: &Value) -> Result<Value, PluginErro
             "changes::phase::paused",
             format!(
                 "the change at {path} is paused, so it is not reopened; resume it with `board \
-                 call changes.resume --path {path}`"
+                 changes resume --path {path}`"
             ),
             [("path", json!(path)), ("phase", json!(phase))],
         ));
@@ -186,7 +186,7 @@ pub(crate) fn reopen(host: &dyn Host, input: &Value) -> Result<Value, PluginErro
         return Err(refusal(
             "changes::reopen::no_build",
             format!(
-                "the change at {path} {why}; run `board call changes.next --path {path}` for its \
+                "the change at {path} {why}; run `board changes next --path {path}` for its \
                  next step"
             ),
             [
@@ -241,7 +241,7 @@ fn over_reopen(asked: &ReopenInput) -> String {
         .filter_map(|(flag, value)| Some(format!("--{flag} {}", quote(value.as_ref()?))))
         .collect();
     format!(
-        "board call changes.reopen {} --over_limit '<why>'",
+        "board changes reopen {} --over_limit '<why>'",
         flags.join(" ")
     )
 }

@@ -40,7 +40,7 @@ usually a symlink to a checkout, so remove the link, not the checkout.
 
 ## Capabilities
 
-`board call jira.ref --key ACME-123 --site acme` writes the issue's record
+`board jira ref --key ACME-123 --site acme` writes the issue's record
 with a put that expects no file there. Both flags are required. Before it
 writes, it runs `acli jira workitem view <key> --fields summary --json` once, found on
 the PATH a plugin's process sees, with 10 seconds to answer, and keeps the

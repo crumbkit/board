@@ -116,9 +116,8 @@ pub(crate) fn tree(host: &dyn Host, input: &Value) -> Result<Value, PluginError>
     if let Some(path) = path
         && !by_path.contains_key(path)
     {
-        let why = format!(
-            "no task is at {path}; list the trees with `board call tasks.tree --root true`"
-        );
+        let why =
+            format!("no task is at {path}; list the trees with `board tasks tree --root true`");
         return Err(refusal(
             "tasks::task::not_found",
             why,

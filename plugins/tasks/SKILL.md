@@ -1,6 +1,6 @@
 ---
 name: tasks
-description: 'Before you fix a bug or build a feature, use it to check whether an open task already covers the work, and claim that task and finish it with tasks.done instead of adding a new one. Also use it to sweep the person''s tasks one at a time, marking each done, deferring, dropping or editing it, when the person asks to sweep, review or go through their tasks or to-do list, and to add a task to their own list. Start with `board -C <board> call tasks.available`, run in the repository you work in, which syncs the notes repos that repository''s git remote routes to and lists the tasks to sweep. SKILL.md and README.md in the plugin''s directory say more.'
+description: 'Before you fix a bug or build a feature, use it to check whether an open task already covers the work, and claim that task and finish it with tasks.done instead of adding a new one. Also use it to sweep the person''s tasks one at a time, marking each done, deferring, dropping or editing it, when the person asks to sweep, review or go through their tasks or to-do list, and to add a task to their own list. Start with `board -C <board> tasks available`, run in the repository you work in, which syncs the notes repos that repository''s git remote routes to and lists the tasks to sweep. SKILL.md and README.md in the plugin''s directory say more.'
 ---
 
 # tasks
@@ -12,10 +12,10 @@ may be on a phone, so keep each message short.
 
 ## Before you start work
 
-1. Run `board -C <board> call tasks.available` from the repository you work
+1. Run `board -C <board> tasks available` from the repository you work
    in. It syncs the notes repos and shows only the tasks that are ready, so
    it can miss a deferred or blocked task that covers the work. Then run
-   `board -C <board> call tasks.tree --root true`, which lists every task in
+   `board -C <board> tasks tree --root true`, which lists every task in
    every status at the synced pins. Run them in that order, because
    `tasks.tree` does not sync. Look for an open task that covers the work.
 2. When one does, claim it with
@@ -37,7 +37,7 @@ may be on a phone, so keep each message short.
 
 ## Sweep
 
-1. Run `board -C <board> call tasks.available` from the repository you work
+1. Run `board -C <board> tasks available` from the repository you work
    in. Add `--context <tag>` when the person names a place, such as
    `errands`. Tell the person once, in a line each, when `unsynced`,
    `cross_repo` or `origin_unread` is non-empty or non-null, or `degraded` is
@@ -59,7 +59,7 @@ may be on a phone, so keep each message short.
 4. The sweep is complete when every task listed has an answer, or the person
    stops. Then say how many were done, deferred and dropped.
 
-To add a task, run `board -C <board> call tasks.add --title '<title>'` with
+To add a task, run `board -C <board> tasks add --title '<title>'` with
 the fields the person gives; `contexts` and `after` go as JSON on stdin, and
 `origin_unread` needs `--repo`. To point someone else at a task in a shared
 board, give its URI: `board -C <board> uri <path>` prints one, such as
@@ -73,15 +73,15 @@ its conversation, which forgets in a busy period. Use one id for yourself,
 such as your session's `local_` id as `--session`, in every call.
 
 1. At the start of each turn, run
-   `board -C <board> call tasks.available --session <your id>`. `held` lists
+   `board -C <board> tasks available --session <your id>`. `held` lists
    your tasks that wait, and `available` the ones you hold or may take.
 2. Before you start a task, run
-   `board -C <board> call tasks.claim --path <path> --session <your id>`.
+   `board -C <board> tasks claim --path <path> --session <your id>`.
    On `tasks::task::held`, another owner has it; take another task.
 3. When a turn leaves work owed, add a task for it with `tasks.add` and claim
    it. Never hold owed work only in the conversation.
 4. Finish a task with `tasks.done`, or `tasks.drop` when it is no longer owed.
-5. Now and then, run `board -C <board> call tasks.available` without
+5. Now and then, run `board -C <board> tasks available` without
    `--session`. A task held by a session that has ended is hidden from every
    other owner's sweep. Hand each one on by changing its `owner` line, as
    Edit below says.

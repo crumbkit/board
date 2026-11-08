@@ -1,6 +1,6 @@
 ---
 name: evals
-description: 'Record every test of a library, tool, model or agent as an eval and its runs in the board, and check what was already tested before testing. Use it before you start a test and when you conclude one. Start with `board -C <board> call evals.about --subject <name>`, which lists the evals of what you will test. `board -C <board> call evals.open` lists those not concluded or abandoned. SKILL.md and README.md in the plugin''s directory say more.'
+description: 'Record every test of a library, tool, model or agent as an eval and its runs in the board, and check what was already tested before testing. Use it before you start a test and when you conclude one. Start with `board -C <board> evals about --subject <name>`, which lists the evals of what you will test. `board -C <board> evals open` lists those not concluded or abandoned. SKILL.md and README.md in the plugin''s directory say more.'
 ---
 
 # evals
@@ -51,8 +51,8 @@ of the repository you are in before you test.
 ## Steps
 
 1. Before testing anything, look for earlier evals. Run
-   `board call evals.about --mount /repos/<name>` with the repository's
-   mount, and `board call evals.about --subject <name>` with each thing you
+   `board evals about --mount /repos/<name>` with the repository's
+   mount, and `board evals about --subject <name>` with each thing you
    will test. The `mount` lookup finds the evals that
    name it in `mounts` and the evals stored in the repository's own
    board. It reads that board through the mount at the mount's `commit`, so
@@ -62,7 +62,7 @@ of the repository you are in before you test.
    `origin/main`, such as ones on your branch, are not seen this way.
 
    Ask the personal board and any board the owner named for sharing.
-   `board call evals.open` lists the evals not concluded or
+   `board evals open` lists the evals not concluded or
    abandoned.
 
    When a concluded eval with a `supported` or `refuted` verdict covers
