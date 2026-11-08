@@ -304,8 +304,8 @@ fn dash_c_and_personal_lead_an_alias_to_the_board_that_enables_it() {
 }
 
 #[test]
-fn help_lists_an_enabled_plugins_alias_and_the_aliases_help_lists_its_capabilities() {
-    let line = "Run a tasks capability, as `board call tasks.<capability>`";
+fn help_names_an_enabled_plugin_and_its_words_help_lists_its_capabilities() {
+    let line = "Plugins: tasks; `board <plugin> -h` lists one's capabilities.";
     for (enabled, listed) in [(&[][..], false), (&["tasks"][..], true)] {
         let (board, data) = aliased(enabled, "tk");
         let output = run_in(&board, &data, &["-h"]);
@@ -327,6 +327,26 @@ fn help_lists_an_enabled_plugins_alias_and_the_aliases_help_lists_its_capabiliti
         help.contains("due  Open tasks due before a date."),
         "{help}"
     );
+}
+
+#[test]
+fn help_names_six_plugins_and_counts_the_rest() {
+    let names = ["a1", "a2", "a3", "a4", "a5", "a6", "a7", "a8"];
+    for (enabled, line) in [
+        (&names[..], "Plugins: a1, a2, a3, a4, a5, a6 and 2 more;"),
+        (&names[..6], "Plugins: a1, a2, a3, a4, a5, a6;"),
+    ] {
+        let (board, data) = aliased(enabled, "");
+        for name in names {
+            install(&data, name, "");
+        }
+        let help = text(&run_in(&board, &data, &["-h"]).stdout);
+        assert!(help.contains(line), "{enabled:?}: {help}");
+        assert!(
+            !help.contains("  a1 "),
+            "the plugins are not listed one per line: {help}"
+        );
+    }
 }
 
 #[test]
@@ -406,7 +426,9 @@ fn a_plugin_named_like_a_built_in_command_runs_only_through_board_call() {
         let output = run_in(&board, &data, &[name, "due"]);
         assert_eq!(taken_by(&data, name).is_some(), !built_in, "{name}");
         if built_in {
+            let listed = run_in(&board, &data, &["--json", name, "due"]);
             assert_eq!(output.code, 1, "ls of /due finds nothing");
+            assert_eq!(code(&listed), "board::path::not_found");
         }
         let call = run_in(&board, &data, &["call", &format!("{name}.due")]);
         assert_eq!(call.code, 0, "{name}: {}", text(&call.stderr));
@@ -427,19 +449,34 @@ fn a_plugins_name_wins_over_another_plugins_alias_of_the_same_word() {
 }
 
 #[test]
-fn a_plugin_with_an_alias_runs_by_both_words_and_help_lists_it_once() {
-    let (board, data) = aliased(&["tasks"], "tk");
-    for word in ["tasks", "tk"] {
-        let output = run_in(&board, &data, &[word, "due"]);
-        assert_eq!(output.code, 0, "{word}: {}", text(&output.stderr));
-        assert!(taken(&data).is_some(), "{word}");
-        let help = run_in(&board, &data, &[word, "-h"]);
-        assert_eq!(help.code, 0, "{word}: {}", text(&help.stderr));
-        assert!(text(&help.stdout).contains("due  Open tasks due before a date."));
+fn a_plugin_with_an_alias_runs_by_both_words_and_one_whose_alias_is_its_name_has_help() {
+    for alias in ["tk", "tasks"] {
+        let (board, data) = aliased(&["tasks"], alias);
+        for word in ["tasks", alias] {
+            let output = run_in(&board, &data, &[word, "due"]);
+            assert_eq!(output.code, 0, "{word}: {}", text(&output.stderr));
+            assert!(taken(&data).is_some(), "{word}");
+            let help = run_in(&board, &data, &[word, "-h"]);
+            assert_eq!(help.code, 0, "{word}: {}", text(&help.stderr));
+            assert!(text(&help.stdout).contains("due  Open tasks due before a date."));
+        }
+        let help = run_in(&board, &data, &["-h"]);
+        assert_eq!(help.code, 0, "{alias}: {}", text(&help.stderr));
+        assert!(text(&help.stdout).contains("Plugins: tasks;"), "{alias}");
     }
-    let help = text(&run_in(&board, &data, &["-h"]).stdout);
-    assert_eq!(help.matches("Run a tasks capability").count(), 1, "{help}");
-    assert!(help.contains("  tasks "), "{help}");
+}
+
+#[test]
+fn a_plugin_named_help_never_takes_board_help() {
+    for (name, runs) in [("help", false), ("todo", true)] {
+        let (board, data) = aliased(&[name], "");
+        install(&data, name, "");
+        let output = run_in(&board, &data, &[name, "due"]);
+        assert_eq!(taken_by(&data, name).is_some(), runs, "{name}");
+        if !runs {
+            assert_eq!(output.code, 2, "board help due asks for a topic");
+        }
+    }
 }
 
 #[test]

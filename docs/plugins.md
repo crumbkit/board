@@ -195,8 +195,9 @@ Each plugin that the board Board runs as enables is also a command:
 `board tasks available` runs exactly what
 `board call tasks.available` runs. A manifest's `"alias": "gh"` adds a
 second word, so board gh pr-create runs `board call github.pr-create`. A
-mounted board's plugins provide none. `board -h` lists each plugin's command,
-and `board tasks -h` its capabilities.
+mounted board's plugins provide none. A built-in plugin's name runs as
+`board call` even when not enabled, so its refusal shows. `board -h`
+names up to six plugins; `board tasks -h` lists capabilities.
 
 A first word is a built-in command first, then an enabled plugin's name, then
 an alias. A plugin named like a built-in command runs only through
@@ -204,9 +205,8 @@ an alias. A plugin named like a built-in command runs only through
 form. A built-in command never reads a manifest: Board reads them only after
 clap refuses the first word, or for help. `board plugin enable` refuses an
 alias that is a built-in command, or another enabled plugin's name or alias,
-with `board::plugin::alias_conflict`, naming the manifest and the command or
-plugin. Running an alias two enabled plugins share is refused with the same
-code, and the hint names the `board call` line to run instead. The capability
+with `board::plugin::alias_conflict`. Running an alias two enabled plugins share is refused with the same
+code; the hint names the `board call` line. The capability
 comes right after the plugin's word; a flag in its place is a usage error.
 
 ## Skills

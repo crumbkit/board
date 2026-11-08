@@ -811,3 +811,19 @@ mod review;
 mod runs;
 mod share;
 mod tasks;
+
+#[test]
+fn a_built_in_plugins_name_the_board_does_not_enable_reports_what_board_call_does() {
+    for (enabled, expected) in [(&[][..], 1), (&["plans"][..], 0)] {
+        let board = Scenario::new();
+        let config = json!({"$type": "board/config/v1", "plugins": enabled});
+        board.write(".board/board.json", Item::File(&config.to_string()));
+        let (short, _) = built_in(board.workdir(), None, &["--json", "plans", "open"]);
+        let (call, _) = built_in(board.workdir(), None, &["--json", "call", "plans.open"]);
+        assert_eq!(short.code, call.code, "{enabled:?}");
+        assert_eq!(text(&short.stdout), text(&call.stdout), "{enabled:?}");
+        if expected == 1 {
+            assert_eq!(json(&short)["code"], "board::plugin::not_enabled");
+        }
+    }
+}

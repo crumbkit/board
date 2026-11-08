@@ -41,14 +41,15 @@ fn names(root: &Command) -> Vec<String> {
 pub(crate) type Resolved = Result<Vec<OsString>, Box<Refusal>>;
 
 /// For root help (`board`, `board -h`, `board --help`, `board help`) and for
-/// help on a first word that is no built-in command: a command for each
-/// alias, which Board's tree gains so that help lists it, and the words with
-/// an alias and its capability read as `board call`, whose help lists the
-/// flags. Help on a built-in command reads no alias.
-pub(crate) fn before(arguments: &mut Vec<OsString>, context: &Context) -> Vec<Command> {
+/// help on a first word that is no built-in command: `root` with a hidden
+/// command for each enabled plugin, whose own help lists its capabilities,
+/// and a line naming them, and the words with a plugin's word and its
+/// capability read as `board call`, whose help lists the flags. Help on a
+/// built-in command reads no manifest.
+pub(crate) fn before(arguments: &mut Vec<OsString>, context: &Context, root: Command) -> Command {
     let helps = |word: &OsString| ["-h", "--help", HELP].map(OsString::from).contains(word);
     if arguments.len() > 1 && !arguments.iter().skip(1).any(helps) {
-        return Vec::new();
+        return root;
     }
     let (external, manifests) = read(arguments, context);
     if let Some(external) = &external
@@ -56,7 +57,38 @@ pub(crate) fn before(arguments: &mut Vec<OsString>, context: &Context) -> Vec<Co
     {
         *arguments = called;
     }
-    help(&manifests)
+    let commands = help(&manifests);
+    let Some(line) = listed(&commands) else {
+        return root;
+    };
+    let after = root.get_after_help().map(ToString::to_string);
+    let after = after.map_or_else(|| line.clone(), |after| format!("{after}\n\n{line}"));
+    root.subcommands(commands.into_iter().map(|command| command.hide(true)))
+        .after_help(after)
+}
+
+/// The most plugin commands the root page names before it counts the rest.
+const NAMED: usize = 6;
+
+/// The line that names the plugin commands among `commands`, at most
+/// [`NAMED`] of them, and counts the rest; `None` when there are none.
+fn listed(commands: &[Command]) -> Option<String> {
+    if commands.is_empty() {
+        return None;
+    }
+    let names: Vec<&str> = (commands.iter().take(NAMED))
+        .map(Command::get_name)
+        .collect();
+    let left = commands.len().saturating_sub(NAMED);
+    let more = if left == 0 {
+        String::new()
+    } else {
+        format!(" and {left} more")
+    };
+    Some(format!(
+        "Plugins: {}{more}; `board <plugin> -h` lists one's capabilities.",
+        names.join(", ")
+    ))
 }
 
 /// After clap refused `refused` for a first word that is no command of
@@ -73,7 +105,24 @@ pub(crate) fn after(
         return None;
     }
     let (external, manifests) = read(arguments, context);
-    resolve(arguments, &external?, &manifests)
+    let external = external?;
+    resolve(arguments, &external, &manifests).or_else(|| built_in(arguments, &external, context))
+}
+
+/// The `board call` line of a built-in plugin's name and capability when no
+/// enabled plugin took the word, as when no board opens or the board does
+/// not enable the plugin, so the call reports why it cannot run.
+fn built_in(arguments: &[OsString], external: &External, context: &Context) -> Option<Resolved> {
+    let capability = external.rest.first()?.to_str()?;
+    let named =
+        (context.built_in.0.iter()).any(|plugin| plugin.manifest().name.as_str() == external.alias);
+    if !named || capability.starts_with('-') {
+        return None;
+    }
+    let mut called = arguments.to_vec();
+    let target = format!("{}.{capability}", external.alias);
+    called.splice(external.at..external.at + 2, ["call".into(), target.into()]);
+    Some(Ok(called))
 }
 
 /// The first word that is no built-in command, where it is, and the words
@@ -153,6 +202,9 @@ fn resolve(
     manifests: &[Manifest],
 ) -> Option<Resolved> {
     let alias = external.alias.as_str();
+    if alias == HELP {
+        return None;
+    }
     let mut named = named(manifests, alias).into_iter();
     let manifest = named.next()?;
     let plugin = &manifest.name;
@@ -247,11 +299,14 @@ fn help(manifests: &[Manifest]) -> Vec<Command> {
             && matches!(named(manifests, word).as_slice(), [only] if only.name == manifest.name)
     };
     let commands = manifests.iter().filter_map(|manifest| {
-        let words = [Some(manifest.name.as_str()), manifest_alias(manifest)];
+        let alias = manifest_alias(manifest).filter(|alias| *alias != manifest.name.as_str());
+        let words = [Some(manifest.name.as_str()), alias];
         let mut words = (words.into_iter().flatten()).filter(|word| runs(manifest, word));
         let first = words.next()?;
         let plugin = &manifest.name;
-        let about = format!("Run a {plugin} capability, as `board call {plugin}.<capability>`");
+        let about = format!(
+            "Run a capability of the {plugin} plugin, as `board call {plugin}.<capability>`"
+        );
         let capabilities = (manifest.capabilities.iter()).map(|capability| {
             Command::new(capability.name.as_str().to_owned()).about(capability.description.clone())
         });

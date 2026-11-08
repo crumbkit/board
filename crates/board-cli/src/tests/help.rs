@@ -206,8 +206,8 @@ fn files_of(root: &Path) -> Vec<(String, String)> {
 /// such as `plugin` and 1,200 for each other command.
 const BUDGETS: Budgets = Budgets::new()
     .root(
-        2_900,
-        "The root page lists all twenty commands under the goal each serves, the commands a newcomer runs first, and what a logical path and a record are, which STANDARDS.md 24 requires on one page. It also lists the global flags -C and --personal, which choose the board a run uses.",
+        3_000,
+        "The root page lists all twenty commands under the goal each serves, the commands a newcomer runs first, and what a logical path and a record are, which STANDARDS.md 24 requires on one page. It also lists the global flags -C and --personal, which choose the board a run uses, and one line naming at most six of the plugins the board enables, which run as `board <plugin> <capability>`.",
     )
     .nodes(&[
         Budget::new(
@@ -259,12 +259,7 @@ fn each_document_declares_its_id_and_its_opt_outs() {
 #[test]
 fn every_dash_h_page_fits_its_byte_budget() {
     let binary = binary();
-    // Outside any board, so the root page lists no enabled plugin's command
-    // and measures Board's own commands only.
-    let outside = tempfile::tempdir().unwrap();
-    let outside = outside.path().to_str().unwrap();
-    let examples = Examples::new(&binary, "").current_dir(outside);
-    let guide = Guide::new();
+    let (examples, guide) = (Examples::new(&binary, ""), Guide::new());
     let pages = Pages::binary(&guide, &examples);
     crumbkit_test::check_help_sizes(&Cli::command(), pages, &BUDGETS);
 }
