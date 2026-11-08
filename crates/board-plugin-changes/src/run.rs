@@ -226,7 +226,7 @@ pub(crate) fn run(host: &dyn Host, input: &Value) -> Result<Value, PluginError> 
     };
     let asked = asked_stop(&given)?;
     let path = change_of(host, &given, None)?;
-    let (flow, stop, previous) = set_stop(host, &path, asked)?;
+    let (flow, version, stop, previous) = set_stop(host, &path, asked)?;
     let (brief, shown, mount) = brief_for(host, &path, &flow, &stop, given.budget)?;
     let mut output = Output::of(&path, shown);
     let phases: Vec<&str> = brief.steps.iter().map(|step| step.phase.as_str()).collect();
@@ -254,7 +254,7 @@ pub(crate) fn run(host: &dyn Host, input: &Value) -> Result<Value, PluginError> 
         }
     };
     let told = Told {
-        flow: &flow.name,
+        flow: &version,
         stop: &stop,
         argv: &argv,
         budget: given.budget,
@@ -308,14 +308,14 @@ impl Output {
 }
 
 /// Records `asked`, else the change's stop, else its flow's, as the stop
-/// of the change at `path`, and returns its flow, the stop and the stop
-/// the change held before; refused for a change that is v1, ended, paused
+/// of the change at `path`, and returns its flow, the path of the flow's
+/// version, the stop and the stop the change held before; refused for a change that is v1, ended, paused
 /// or follows no flow, and for a phase its flow lacks.
 fn set_stop(
     host: &dyn Host,
     path: &str,
     asked: Option<Stop>,
-) -> Result<(Flow, Stop, Option<Stop>), PluginError> {
+) -> Result<(Flow, String, Stop, Option<Stop>), PluginError> {
     let (mut change, blob) = read(host, path)?;
     refuse_v1(path, &change, "run")?;
     if is_final(&change.phase) {
@@ -368,9 +368,10 @@ fn set_stop(
             ],
         ));
     }
+    let version = change.flow.clone().unwrap_or_default();
     let previous = change.stop.replace(stop.clone());
     board::put(host, &[line(path, &blob, &touch(host, change))])?;
-    Ok((flow, stop, previous))
+    Ok((flow, version, stop, previous))
 }
 
 /// Puts back `previous` as the stop of the change at `path`, for a run that
@@ -670,7 +671,7 @@ struct Recorded {
     reason: Reason,
 }
 
-/// What the run was told: its flow's name, its stop, the agent's argv, its
+/// What the run was told: the version of its flow, its stop, the agent's argv, its
 /// budget and whether it ran in a sandbox.
 struct Told<'a> {
     flow: &'a str,

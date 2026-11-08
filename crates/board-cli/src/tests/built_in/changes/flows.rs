@@ -1,5 +1,6 @@
-//! Which flow a change follows: `start` chooses one and keeps a copy, the
-//! gates read the copy, and `reflow` moves a change to another flow.
+//! Which flow a change follows: `start` chooses one and references a
+//! stored version of it, the gates read that version, and `reflow` moves a
+//! change to another flow or version.
 
 use super::*;
 
@@ -42,6 +43,15 @@ fn starting(title: &str, fields: &Value) -> Value {
     serde_json::from_str(&record(input, fields)).unwrap()
 }
 
+/// The flow record the change at `/changes/<name>` references.
+fn followed(board: &Changes, name: &str) -> Value {
+    let version = board.read(&format!("changes/{name}.json"))["flow"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    board.read(&format!("{}.json", version.trim_start_matches('/')))
+}
+
 /// The name and phases of the flow the change `start` wrote follows.
 fn started(board: &Changes, title: &str, fields: &Value) -> (Value, Value) {
     let output = board.call("start", &starting(title, fields));
@@ -68,10 +78,7 @@ fn start_follows_the_development_flow_unless_the_board_holds_its_own_flow_of_tha
         (&json!(["draft", "land"]), &json!("draft"))
     );
     assert_eq!(board.read("changes/b.json")["phase"], "draft");
-    assert_eq!(
-        board.read("changes/b/flow.json")["phases"][0]["name"],
-        "draft"
-    );
+    assert_eq!(followed(&board, "b")["phases"][0]["name"], "draft");
 }
 
 #[test]
@@ -122,15 +129,31 @@ fn gate(board: &Changes) -> Vec<String> {
 }
 
 #[test]
-fn the_gate_reads_the_changes_copy_so_editing_the_boards_flow_moves_only_a_reflowed_change() {
+fn the_gate_reads_the_changes_version_so_editing_the_boards_flow_moves_only_a_reflowed_change() {
     let board = mounted();
     board.write("flows/mine.json", &flow("mine", &["draft", "land"]));
     started(&board, "A", &json!({"flow": "mine"}));
+    let first = board.read("changes/a.json")["flow"].clone();
     let mut edited: Value = serde_json::from_str(&flow("mine", &["draft", "land"])).unwrap();
     edited["phases"][0]["checks"] = json!([{"id": "head", "kind": "field", "field": "head"}]);
     board.write("flows/mine.json", &edited.to_string());
     assert_eq!(gate(&board), Vec::<String>::new());
+    started(&board, "B", &json!({"flow": "mine"}));
+    let second = board.read("changes/b.json")["flow"].clone();
+    assert_ne!(first, second);
+    assert_eq!(
+        followed(&board, "b")["phases"][0]["checks"][0]["id"],
+        "head"
+    );
+    assert!(
+        board.exists(&format!(
+            "{}.json",
+            first.as_str().unwrap().trim_start_matches('/')
+        )),
+        "the first version stays for the change that follows it"
+    );
     let reflowed = board.call("reflow", &json!({"path": "/changes/a", "flow": "mine"}));
+    assert_eq!(board.read("changes/a.json")["flow"], second);
     assert_eq!(
         reflowed,
         json!({"path": "/changes/a", "flow": {"name": "mine", "phases": ["draft", "land"]}, "phase": "draft"})
@@ -155,14 +178,11 @@ fn reflow_refuses_a_flow_without_the_changes_phase_and_admits_one_with_it() {
             &json!(["build", "review", "land"])
         )
     );
-    assert_eq!(board.read("changes/a/flow.json")["name"], "development");
+    assert_eq!(followed(&board, "a")["name"], "development");
     board.write("flows/small.json", &flow("small", &["plan", "land"]));
     let moved = board.call("reflow", &json!({"path": "/changes/a", "flow": "small"}));
     assert_eq!(moved["flow"]["name"], "small");
-    assert_eq!(
-        board.read("changes/a/flow.json")["phases"][1]["name"],
-        "land"
-    );
+    assert_eq!(followed(&board, "a")["phases"][1]["name"], "land");
 }
 
 #[test]
@@ -224,12 +244,29 @@ fn attach_suite_refuses_a_record_that_is_no_suite_and_sets_one_that_is() {
 }
 
 #[test]
-fn a_change_whose_flow_copy_is_gone_is_refused_as_unreadable_and_reflow_restores_it() {
+fn a_change_whose_flow_version_is_gone_is_dangling_and_unreadable_and_reflow_restores_it() {
     let board = mounted();
     started(&board, "A", &json!({}));
-    board.delete("changes/a/flow.json");
+    let version = board.read("changes/a.json")["flow"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    // The twin: with its version there, the change checks and reads.
+    assert_eq!(board.code("/changes/a"), None);
+    assert_eq!(
+        board.call("next", &json!({"path": "/changes/a"}))["phase"],
+        "plan"
+    );
+    board.delete(&format!("{}.json", version.trim_start_matches('/')));
+    assert_eq!(
+        board.code("/changes/a").as_deref(),
+        Some("board::ref::dangling")
+    );
     let refused = board.refusal("next", &json!({"path": "/changes/a"}));
-    assert_eq!(refused["code"], "changes::flow::unreadable");
+    assert_eq!(
+        (&refused["code"], &refused["fields"]["path"]),
+        (&json!("changes::flow::unreadable"), &json!(version))
+    );
     board.call(
         "reflow",
         &json!({"path": "/changes/a", "flow": "development"}),

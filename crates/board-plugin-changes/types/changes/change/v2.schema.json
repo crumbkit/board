@@ -35,7 +35,7 @@
     }
   },
   "additionalProperties": false,
-  "description": "`changes/change/v2`: one change to a repository, the flow it follows\nand where it stands in it.\n\nA change lives at `/changes/<name>`, and the records it owns sit under\n`/changes/<name>/`: its copy of its flow, its plans, a prototype's\nrecord and its understanding checks. Git history holds its earlier\nphases.",
+  "description": "`changes/change/v2`: one change to a repository, the flow it follows\nand where it stands in it.\n\nA change lives at `/changes/<name>`, and the records it owns sit under\n`/changes/<name>/`: its plans, a prototype's record and its\nunderstanding checks. Git history holds its earlier phases.",
   "properties": {
     "$type": {
       "const": "changes/change/v2",
@@ -49,7 +49,7 @@
       "x-board-prose": true
     },
     "flow": {
-      "description": "The change's copy of the flow it follows, at `/changes/<name>/flow`,\ntaken when it started; a prototype follows no flow.",
+      "description": "The version of the flow the change follows, at\n`/flows/<name>/<version>`, taken when it started or last reflowed. A\nprototype follows no flow.",
       "format": "board-ref",
       "type": "string",
       "x-board-type": "changes/flow/v1"

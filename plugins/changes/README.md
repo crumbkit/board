@@ -9,15 +9,14 @@ their own instructions, which `next` returns.
 
 `changes/change/v2` at `/changes/<name>.json` holds the change, the flow it
 follows and its phase. The records it owns sit in `/changes/<name>/`: its
-copy of its flow at `flow`, its plans, a prototype's record and its
-understanding checks. Git history holds earlier phases.
+plans, a prototype's record and its understanding checks. Git history holds earlier phases.
 
 ```json
 {
   "$type": "changes/change/v2",
   "title": "Let a suite declare a timeout",
   "mount": "/repos/board",
-  "flow": "/changes/suite-timeout/flow",
+  "flow": "/flows/development/3f2a9c0de1b47a65",
   "phase": "build",
   "suite": "/suites/board-gates",
   "surfaced": ["/repos/notes/tasks/retry.md"],
@@ -32,8 +31,11 @@ understanding checks. Git history holds earlier phases.
 
 - `title` and `phase` are required. `mount` is left out for a change on
   the board itself, which `start --mount /` starts.
-- `flow` references the change's copy of the `changes/flow/v1` it follows,
-  which `start` writes. A prototype follows no flow and has none.
+- `flow` references the version of the `changes/flow/v1` the change
+  follows, at `/flows/<name>/<version>`, taken when it started or last
+  reflowed. "Flows" below says how versions are stored. A prototype follows
+  no flow and has none. A change written before versions references its
+  own copy at `<path>/flow` until `migrate --flows true` replaces it.
 - `phase` is a phase of the flow, `done`, or `dropped` to end a change
   early. `paused` holds a change taken out of `build` to free its place
   under the WIP limit.
@@ -125,7 +127,8 @@ v1. `reflow` and `attach --suite` refuse it with
 `changes::change::not_migrated`; `migrate --apply true` rewrites it as v2.
 
 `changes/run/v1` at `/changes/<name>/runs/<stamp>` records one run of an
-agent that `run` started: the `flow`, the `stop` it was given, the
+agent that `run` started: the `flow`, the version of the flow the change
+followed during the run, the `stop` it was given, the
 `program` (the file name of argv[0] when it is a slug, never the
 arguments), `started` and `ended` in UTC, the `exit` status, the
 `cost_usd` and `duration_ms` the agent reported, the `budget_usd` its brief
@@ -163,16 +166,33 @@ until a sync runs there. When the cache does not take the day, `sync` and
 `migrate [--apply true]` rewrites each `changes/change/v1` of the board's
 own as a `changes/change/v2`. It keeps the phase, `paused` included, sets
 `surfaced` to `[]`, sets `suite` to the suite the mount's contributing docs
-name, which a v1 change looked up on every `next`, and writes a copy of the
-shipped development flow at `<path>/flow`, whose phases are v1's; a
-prototype gets no flow and no suite. A v2 change
+name, which a v1 change looked up on every `next`, and points `flow` at the
+version of the shipped development flow, whose phases are v1's, writing
+that version when the board lacks it; a prototype gets no flow and no
+suite. A v2 change
 is left as it is, so a second run finds nothing. A change of the shape
 before the split of `changes/change/v1` is rewritten from that shape first:
 it moves `records` to the plan the change names, a prototype's fields to its
 prototype record and a `/changes/sync` day to the cache, and records each
 GitHub `pull_request` or `issue` URL through `github.ref`, which needs the
 github plugin enabled. Without `--apply` it writes nothing and says what
-it would. Both check each rewritten record against its schema. `left`
+it would. With `--apply` it writes every rewritten record in one commit,
+whose message ends in the trailer `Board-Bulk: migrate changes`.
+
+`migrate --flows true [--apply true]` also replaces each change's own copy
+of its flow with a reference to the flow's version. For each
+`changes/change/v2` whose `flow` names a record outside `/flows/`, it
+writes that flow's version when the board lacks it, points the change at
+it, and removes the copy when it sits at `<path>/flow`. Identical copies
+share one version. A copy that is not a flow Board reads stays where it is
+and is listed under `unreadable` with `changes::flow::unreadable`, and the
+rest go on. A `changes/run/v1` that names its flow by name is rewritten to
+name its change's version; one whose change follows no version is listed
+under `left`. The output's `flows` holds `applied`, `versions` (the
+versions written), `changes` (at most 100, with `total` and `truncated`),
+`copies` (the count removed), `runs`, `unreadable` and `left`. The commit's
+trailer is `Board-Bulk: migrate flows`. A second run writes nothing. Each
+board runs its own migration, including a board nested in another. Both check each rewritten record against its schema. `left`
 lists each change and understanding check it leaves as it is, with why:
 
 - a field no shape has;
@@ -212,8 +232,8 @@ of `changes` still fails `review`.
 ## Capabilities
 
 - `start --mount (/repos/<name> | /) --title '<title>' [--task <path> | --task-repo <repo>] [--name <name>] [--handle @<you>] [--flow <name or path>] [--suite <path>]`
-  creates the change in the first phase of its flow, its copy of the flow,
-  and a plan with empty Problem, Outcome, Out of scope, UX and Data
+  creates the change in the first phase of its flow, which references the
+  flow's version and writes it when the board lacks it, and a plan with empty Problem, Outcome, Out of scope, UX and Data
   sections. "Flows" below says how the flow is chosen; `flow` in the output
   names it and its phases. `--task` names the task the change
   does, and must be a `tasks/task/v2` (`changes::ref::wrong_type`). Without
@@ -292,14 +312,15 @@ of `changes` still fails `review`.
   refused with
   `changes::phase::paused`. Leaving `done` or `dropped` is
   `changes::phase::final`, which points to `open` and `start`.
-- `reflow --path /changes/<name> --flow <name>` replaces the change's copy
-  of its flow with a copy of the flow named, the board's own or a shipped
-  one, and returns `path`, `flow` and `phase`. It refuses a flow without
+- `reflow --path /changes/<name> --flow <name>` moves the change to the
+  current version of the flow named, the board's own or a shipped one,
+  writing that version when the board lacks it, and returns `path`, `flow`
+  and `phase`. A change not yet migrated loses its own copy. It refuses a flow without
   the phase the change stands in, `build` for a paused change
   (`changes::reflow::no_phase`, whose `phases` lists the flow's), a flow
   that is not there (`changes::flow::not_found`), a v1 change
   (`changes::change::not_migrated`) and a done or dropped one
-  (`changes::phase::final`). It also restores a copy that went missing.
+  (`changes::phase::final`). It also restores a version that went missing.
 - `pause --path /changes/<name>` moves a change in `build` to `paused`,
   which frees its place. A prototype can be paused too, and `verdict`
   still ends a paused prototype. It refuses any other phase
@@ -358,7 +379,7 @@ of `changes` still fails `review`.
   `done` or `dropped`, by path, at most 100 by default, with `total`,
   `truncated`, `unreadable` and `sync`. Each names its `task`, `kind` and
   `flow`, the flow's name and phases, left out for a prototype and for a
-  change whose flow copy Board does not read; and a
+  change whose flow version Board does not read; and a
   prototype also its `question`, `state` (from its phase), `verdict`,
   `verdict_artifact` and `branch`. `--kind` keeps one kind; `--kind prototype` also lists the
   settled and abandoned prototypes, since their verdicts are what is looked
@@ -396,7 +417,9 @@ of `changes` still fails `review`.
   whose `paths` lists them). It writes the plan record and its text and points the change's `plan` at the
   text, in one write, in any phase but `done` and `dropped`
   (`changes::phase::final`). The new plan keeps the `records` of the plan
-  the change named before. It keeps each reference in `uses` once. It
+  the change named before. A plan whose text, `uses` and `paths` equal
+  those of the plan record the change names writes nothing and returns
+  that record with `unchanged: true`; otherwise `unchanged` is false. It keeps each reference in `uses` once. It
   refuses a reference that reaches nothing, or a record Board marks degraded
   for anything but a broken reference of its own (`changes::ref::dangling`,
   whose `refs` lists them); a directory (`changes::plan::directory`); a text
@@ -631,7 +654,9 @@ eval; it stops until adopt. A board's own flow at `/flows/<name>` wins
 over a shipped flow of the same name. `--flow` also takes the path of a
 flow record, such as a draft.
 
-A flow can run when it has at least one phase (`changes::flow::no_phases`);
+A flow can run when it is not named `repos` (`changes::flow::reserved_name`),
+since `/flows/repos/` holds the links and a flow's versions sit under
+`/flows/<name>/`; when it has at least one phase (`changes::flow::no_phases`);
 each phase name is used once (`changes::flow::duplicate_phase`) and is not
 `done`, `dropped` or `paused` (`changes::flow::reserved_phase`); every
 check's kind is one Board knows (`changes::flow::unknown_kind`) and has the
@@ -654,11 +679,17 @@ link `/flows/repos/<mount name>` points to; else the one `/flows/default`
 points to; else `development`. A link is a `board/mount/v1` with a `path`,
 and Board follows it, so it must point at a flow the board holds. A flow
 that is not there is `changes::flow::not_found`, and a file there that is
-not a flow Board reads is `changes::flow::unreadable`. `start` writes a
-copy of the flow at `<change>/flow`, and every gate reads that copy,
-so editing a board's flow never moves a change in flight; `reflow` takes
-up the edit. A change whose copy is missing or does not read is refused
-with `changes::flow::unreadable`, and `reflow` restores it.
+not a flow Board reads is `changes::flow::unreadable`.
+
+Each version of a flow is stored once, as a `changes/flow/v1` at
+`/flows/<name>/<version>`. The version is the first 16 hex digits of the
+SHA-256 of the flow's canonical JSON, so identical flows share one path.
+`start` writes the version when the board lacks it, in the same commit as
+the change, and the change's `flow` references it. Every gate reads that
+version, so editing a board's flow never moves a change in flight; `reflow`
+takes up the edit. A missing version makes `board check` report the change
+`board::ref::dangling`, and the gates refuse it with
+`changes::flow::unreadable`; `reflow` restores it.
 
 `advance` moves a change through its flow's phases in order and then to
 `done`. Each gate is the list of the phase's checks whose `when` holds,

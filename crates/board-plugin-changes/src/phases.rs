@@ -20,8 +20,8 @@ use crate::controls::{listed_by, obligations};
 use crate::diff::{edited, outside};
 use crate::flow::Kind as CheckKind;
 use crate::flow::{
-    Actor, FlowSummary, asked_for, blob_at, copy_line, of_change, refuse_invalid,
-    refuse_without_repository,
+    Actor, FlowSummary, asked_for, blob_at, of_change, refuse_invalid, refuse_without_repository,
+    version_line,
 };
 use crate::gates::kinds::named_controls;
 use crate::gates::remedy::{fill, unfilled, values};
@@ -708,13 +708,14 @@ pub(crate) struct Reflowed {
     phase: String,
 }
 
-/// Replaces the change's copy of its flow with a copy of the flow named,
-/// which must hold the phase the change stands in; a paused change stands
-/// in build.
+/// Moves the change to the current version of the flow named, which must
+/// hold the phase the change stands in, writing that version when the board
+/// lacks it; a paused change stands in build. A change not yet migrated
+/// loses its own copy at `<path>/flow`.
 pub(crate) fn reflow(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
     let ReflowInput { path, flow } = PluginError::read_input(PLUGIN, "reflow", input)?;
     let (mut change, blob) = read(host, &path)?;
-    refuse_v1(&path, &change, "copy of a flow")?;
+    refuse_v1(&path, &change, "flow version")?;
     if is_final(&change.phase) {
         return Err(final_phase(
             &path,
@@ -752,11 +753,19 @@ pub(crate) fn reflow(host: &dyn Host, input: &Value) -> Result<Value, PluginErro
             ],
         ));
     }
+    let (version, written) = version_line(host, &chosen)?;
+    let mut lines: Vec<Value> = written.into_iter().collect();
     let copy = format!("{path}/flow");
-    let (at, copied) = copy_line(&path, &blob_at(host, &copy)?, &chosen);
-    change.flow = Some(at);
+    if change.flow.as_deref() == Some(copy.as_str()) {
+        let held = blob_at(host, &copy)?;
+        if held != "none" {
+            lines.push(json!({"path": copy, "expect": held, "remove": true}));
+        }
+    }
+    change.flow = Some(version);
     let change = touch(host, change);
-    board::put(host, &[copied, line(&path, &blob, &change)])?;
+    lines.push(line(&path, &blob, &change));
+    board::put(host, &lines)?;
     Ok(to_value(Reflowed {
         path,
         flow: FlowSummary::from(&chosen),

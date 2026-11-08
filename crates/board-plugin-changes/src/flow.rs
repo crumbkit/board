@@ -5,7 +5,7 @@
 //! The plugin ships three flows, `development`, `small` and
 //! `flow-authoring`, compiled in from `flows/`. A board's own flows, at `/flows/<name>`, win over a shipped
 //! flow of the same name; `read.rs` chooses a change's flow and reads the
-//! copy it keeps.
+//! version it follows.
 
 use std::collections::BTreeMap;
 
@@ -15,7 +15,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::records::{Route, Subject};
 
-pub(crate) use read::{FlowSummary, asked_for, blob_at, chosen, copy_line, of_change};
+pub(crate) use read::{
+    FlowSummary, asked_for, blob_at, chosen, of_change, version_line, version_path,
+};
 pub(crate) use valid::{problems, refuse_invalid, refuse_without_repository};
 
 /// The flows the plugin ships, by name.

@@ -46,6 +46,7 @@ use super::{
 };
 use crate::board::{self, body, rows};
 use crate::change::{name_in, read};
+use crate::flow::blob_at;
 use crate::records::BOARD_ITSELF;
 use crate::{refusal, to_value};
 
@@ -262,8 +263,9 @@ fn record_at(host: &dyn Host, path: &str) -> Result<Map<String, Value>, PluginEr
 }
 
 /// Copies the run record at `run` and the stop record at `stopped`, of the
-/// change at `path` in the sandbox `inner`, under `asker` in `host`, and
-/// attaches the run to it; returns the copies' paths.
+/// change at `path` in the sandbox `inner`, under `asker` in `host`, with
+/// the flow version the run names when `host` lacks it, and attaches the
+/// run to it; returns the copies' paths.
 fn copy_back(
     host: &dyn Host,
     inner: &dyn Host,
@@ -278,13 +280,16 @@ fn copy_back(
     record.insert("stopped".to_owned(), json!(to_stop));
     record.insert("change".to_owned(), json!(name_in(path)));
     stop.remove("question");
-    board::put(
-        host,
-        &[
-            json!({"path": to_stop, "expect": "none", "record": stop}),
-            json!({"path": to_run, "expect": "none", "record": record}),
-        ],
-    )?;
+    let mut lines = Vec::new();
+    if let Some(version) = record.get("flow").and_then(Value::as_str)
+        && blob_at(host, version)? == "none"
+    {
+        let flow = record_at(inner, version)?;
+        lines.push(json!({"path": version, "expect": "none", "record": flow}));
+    }
+    lines.push(json!({"path": to_stop, "expect": "none", "record": stop}));
+    lines.push(json!({"path": to_run, "expect": "none", "record": record}));
+    board::put(host, &lines)?;
     crate::phases::attach(host, &json!({"path": asker, "ref": to_run}))?;
     Ok((to_run, to_stop))
 }
@@ -305,7 +310,7 @@ pub(super) fn run(host: &dyn Host, given: &Input) -> Result<Value, PluginError> 
         .map_err(|refused| board::refused("-C", &refused))?;
     let inner = inner.as_ref();
     let path = change_of(inner, given, Some(BOARD_ITSELF))?;
-    let (flow, stop, _) = set_stop(inner, &path, wanted)?;
+    let (flow, version, stop, _) = set_stop(inner, &path, wanted)?;
     let (brief, shown, mount) = brief_for(inner, &path, &flow, &stop, given.budget)?;
     let mut output = Output::of(&path, shown);
     output.sandbox = Some(made.root.display().to_string());
@@ -318,7 +323,7 @@ pub(super) fn run(host: &dyn Host, given: &Input) -> Result<Value, PluginError> 
         .collect();
     let ran = spawn(host, &path, &argv, &directory, &brief, &extra)?;
     let told = Told {
-        flow: &flow.name,
+        flow: &version,
         stop: &stop,
         argv: &argv,
         budget: given.budget,

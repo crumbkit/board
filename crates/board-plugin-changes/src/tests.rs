@@ -179,6 +179,7 @@ fn every_input_property_carries_a_sentence_that_says_what_it_means() {
         "stop.question",
         "stop.summary",
         "migrate.apply",
+        "migrate.flows",
     ];
     expected.sort_unstable();
     assert_eq!(described, expected);

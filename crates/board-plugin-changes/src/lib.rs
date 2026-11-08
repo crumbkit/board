@@ -100,8 +100,8 @@ fn output<T: JsonSchema>() -> Value {
 const CAPABILITIES: [Capability; 19] = [
     Capability {
         name: "start",
-        description: "Create a change in the first phase of its flow, its copy of the flow, its \
-            plan to fill in and, unless one is named, its task; set its route from CODEOWNERS and \
+        description: "Create a change in the first phase of its flow, which references the \
+            stored version of the flow and writes it when the board lacks it, its plan to fill in and, unless one is named, its task; set its route from CODEOWNERS and \
             its check suite; record the open tasks, decisions and evals on the mount; and return \
             them with the repository's owners, contributing docs and obligations.",
         run: start::start,
@@ -178,7 +178,8 @@ const CAPABILITIES: [Capability; 19] = [
         description: "Write a plan for the change, the records it uses and the paths it will \
             edit, given as JSON on stdin since uses and paths are lists, refusing a build change's plan without paths, a path outside the change's \
             mount, a reference that reaches nothing, a plan over 3,000 words and used documents \
-            over 3,000 words in all; the new plan becomes the change's plan.",
+            over 3,000 words in all; the new plan becomes the change's plan, and a plan equal to \
+            the change's current one writes nothing and says unchanged.",
         run: plan::plan,
         input: input::<plan::Input>,
         output: output::<plan::Output>,
@@ -260,8 +261,9 @@ const CAPABILITIES: [Capability; 19] = [
     },
     Capability {
         name: "reflow",
-        description: "Replace the change's copy of its flow with a copy of the flow named, \
-            refused when that flow has no phase where the change stands.",
+        description: "Move the change to the current version of the flow named, writing that \
+            version when the board lacks it, refused when that flow has no phase where the change \
+            stands.",
         run: phases::reflow,
         input: input::<phases::ReflowInput>,
         output: output::<phases::Reflowed>,
@@ -297,12 +299,14 @@ const CAPABILITIES: [Capability; 19] = [
     },
     Capability {
         name: "migrate",
-        description: "Rewrite each changes/change/v1 as a changes/change/v2 with a copy of the \
-            development flow, a prototype's with none; for one written before the split of \
+        description: "Rewrite each changes/change/v1 as a changes/change/v2 that references the \
+            stored version of the development flow, a prototype's with none; for one written before the split of \
             changes/change/v1, a prototype's fields move to changes/prototype/v1, the records a \
             change lists move to the plan it names, a pull request's URL becomes a github/pull/v1 \
-            record through github.ref, and the sync stamp moves to Board's cache. apply writes \
-            every line in one commit; without it nothing is written.",
+            record through github.ref, and the sync stamp moves to Board's cache. flows also \
+            replaces each change's own copy of its flow with a reference to the flow's stored \
+            version, and rewrites each run that names its flow by name. apply writes every line \
+            in one commit with a Board-Bulk trailer; without it nothing is written.",
         run: migrate::migrate,
         input: input::<migrate::Input>,
         output: output::<migrate::Output>,

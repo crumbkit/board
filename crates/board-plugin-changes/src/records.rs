@@ -149,9 +149,8 @@ pub(crate) enum State {
 /// and where it stands in it.
 ///
 /// A change lives at `/changes/<name>`, and the records it owns sit under
-/// `/changes/<name>/`: its copy of its flow, its plans, a prototype's
-/// record and its understanding checks. Git history holds its earlier
-/// phases.
+/// `/changes/<name>/`: its plans, a prototype's record and its
+/// understanding checks. Git history holds its earlier phases.
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 #[schemars(extend("x-board-folder" = "/changes/"))]
@@ -168,8 +167,9 @@ pub(crate) struct ChangeRecord {
     #[serde(default = "board_itself", skip_serializing_if = "is_board_itself")]
     #[schemars(with = "Option<Ref<Mount>>")]
     pub(crate) mount: String,
-    /// The change's copy of the flow it follows, at `/changes/<name>/flow`,
-    /// taken when it started; a prototype follows no flow.
+    /// The version of the flow the change follows, at
+    /// `/flows/<name>/<version>`, taken when it started or last reflowed. A
+    /// prototype follows no flow.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "Option<Ref<crate::flow::Flow>>")]
     pub(crate) flow: Option<String>,
@@ -682,8 +682,9 @@ pub(crate) struct RunRecord {
     /// The record's type.
     #[serde(rename = "$type")]
     pub(crate) tag: Tag<Self>,
-    /// The name of the flow the change followed.
-    #[schemars(with = "Slug")]
+    /// The version of the flow the change followed during the run, at
+    /// `/flows/<name>/<version>`.
+    #[schemars(with = "Ref<crate::flow::Flow>")]
     pub(crate) flow: String,
     /// Where the run was told to stop.
     pub(crate) stop: crate::flow::Stop,

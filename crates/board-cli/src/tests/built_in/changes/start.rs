@@ -24,6 +24,7 @@ fn start_creates_the_change_in_plan_of_the_development_flow_with_a_plan_whose_se
     );
     let at = "/changes/let-a-suite-declare-a-timeout";
     assert_eq!(output["path"], at);
+    let version = version_of(&board, at);
     let text = output["plan"].as_str().unwrap();
     let record = text.strip_suffix(".md").unwrap();
     assert!(record.starts_with(&format!("{at}/plans/")), "{output}");
@@ -33,7 +34,7 @@ fn start_creates_the_change_in_plan_of_the_development_flow_with_a_plan_whose_se
             "$type": "changes/change/v2",
             "title": "Let a suite declare a timeout!",
             "mount": "/repos/x",
-            "flow": format!("{at}/flow"),
+            "flow": version,
             "phase": "plan",
             "surfaced": [],
             "plan": record,
@@ -46,11 +47,12 @@ fn start_creates_the_change_in_plan_of_the_development_flow_with_a_plan_whose_se
         output["flow"],
         json!({"name": "development", "phases": ["plan", "build", "review", "land"]})
     );
-    let copy = board.read("changes/let-a-suite-declare-a-timeout/flow.json");
+    let stored = board.read(&format!("{}.json", version.trim_start_matches('/')));
     assert_eq!(
-        (&copy["$type"], &copy["name"]),
+        (&stored["$type"], &stored["name"]),
         (&json!("changes/flow/v1"), &json!("development"))
     );
+    assert!(!board.exists("changes/let-a-suite-declare-a-timeout/flow.json"));
     assert_eq!(
         board.read(&format!("{}.json", record.trim_start_matches('/'))),
         json!({"$type": "changes/plan/v1", "text": text, "uses": []})
@@ -295,4 +297,51 @@ fn start_refuses_a_task_that_is_not_a_task_record_and_admits_one_that_is() {
         &json!({"mount": mount, "task": TASK, "title": "T"}),
     );
     assert_eq!(output["task"], TASK);
+}
+
+/// The flow version the change at `path` references, checked to be
+/// `/flows/<name>/` and 16 hex digits.
+fn version_of(board: &Changes, path: &str) -> String {
+    let change = board.read(&format!("{}.json", path.trim_start_matches('/')));
+    let version = change["flow"].as_str().unwrap().to_owned();
+    let (folder, digits) = version.rsplit_once('/').unwrap();
+    assert!(folder.starts_with("/flows/"), "{version}");
+    assert!(
+        digits.len() == 16 && digits.chars().all(|digit| digit.is_ascii_hexdigit()),
+        "{version}"
+    );
+    version
+}
+
+/// The files under `folder`, from the board's root, by name.
+fn files_in(board: &Changes, folder: &str) -> Vec<String> {
+    let mut names: Vec<String> = std::fs::read_dir(board.root().join(folder))
+        .map(|read| {
+            read.map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+                .collect()
+        })
+        .unwrap_or_default();
+    names.sort();
+    names
+}
+
+#[test]
+fn two_starts_on_the_same_flow_store_one_version_and_reference_the_same_path() {
+    let board = Changes::new();
+    let mount = board.mount_x(&[("README.md", "x")]);
+    for title in ["A", "B"] {
+        board.call(
+            "start",
+            &json!({"mount": mount, "task": TASK, "title": title}),
+        );
+    }
+    let (a, b) = (
+        version_of(&board, "/changes/a"),
+        version_of(&board, "/changes/b"),
+    );
+    assert_eq!(a, b);
+    let stored = files_in(&board, "flows/development");
+    assert_eq!(stored, [format!("{}.json", a.rsplit_once('/').unwrap().1)]);
+    assert_eq!(files_in(&board, "changes/a"), ["plans"]);
+    assert_eq!(files_in(&board, "changes/b"), ["plans"]);
 }
