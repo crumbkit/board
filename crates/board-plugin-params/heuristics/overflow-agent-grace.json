@@ -1,0 +1,40 @@
+{
+  "summary": "The changed lines a control may run over before an agent drafts a step.",
+  "unit": "changed-lines",
+  "inputs": [
+    {
+      "name": "authored-lines-per-day",
+      "meaning": "The repository's changed lines per active day across all its files, from authored commits only.",
+      "source": "Run `git log --numstat --no-merges` in the repository over the last 60 days. Leave out bulk and automated commits, as the activity measure leaves them out of the count, and divide the changed lines by the active days."
+    },
+    {
+      "name": "authored-share",
+      "meaning": "The share of the repository's changed lines that come from authored commits rather than automated or bulk ones.",
+      "source": "From the same `git log --numstat --no-merges`, divide the authored changed lines by all changed lines."
+    },
+    {
+      "name": "board-median-rate",
+      "meaning": "The median of authored-lines-per-day across the repositories the board mounts.",
+      "source": "Measure authored-lines-per-day for each mount under /repos and take the median."
+    },
+    {
+      "name": "outcomes",
+      "meaning": "The outcomes of past agent-draft proposals and overrides in the last 60 days.",
+      "source": "Read the closed overflow proposals of the last 60 days with `board query`."
+    }
+  ],
+  "method": "Multiply the start, 100, by the repository's authored-lines-per-day and divide by board-median-rate, then keep the result within the bounds. A repository at the median gets 100, and one twice as busy gets 200. Write the result in `scopes` under the repository's mount, such as /repos/board, so each repository has its own value. Write the heuristic's lenient default, 200, as the record's top-level `value`, which any repository not listed in `scopes` reads, because an unlisted repository has no data yet. Bulk and automated lines stay out of the rate, so a migration does not lengthen the grace.",
+  "start": 100,
+  "default": 200,
+  "bounds": {
+    "min": 25,
+    "max": 2000
+  },
+  "enough": "At least 10 closed proposals or 5 owner decisions in the last 60 days.",
+  "check": {
+    "measure": "The share of agent-draft proposals in the last 60 days that closed because the control passed again before the step was taken, read with `board query`. A high share means the agent was asked too soon.",
+    "fails_above": 0.3
+  },
+  "recheck_after": 30,
+  "consumer": "controls"
+}

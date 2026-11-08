@@ -304,9 +304,10 @@ fn reserved(name: &str, registry: &Map<String, Value>) -> Option<(bool, Option<V
 /// walk does not read cannot hide a string. `if`, `not` and
 /// `dependentRequired` only constrain which fields are present.
 #[cfg(test)]
-const READ: [&str; 20] = [
+const READ: [&str; 21] = [
     "$ref",
     "properties",
+    "propertyNames",
     "patternProperties",
     "additionalProperties",
     "items",
@@ -454,6 +455,9 @@ impl Walk<'_> {
         {
             self.node(values, &format!("{at}/{{key}}"));
         }
+        if let Some(names) = keywords.get("propertyNames") {
+            self.node(names, &format!("{at}/{{name}}"));
+        }
         if let Some(items) = keywords.get("items") {
             self.node(items, &format!("{at}/-"));
         }
@@ -577,6 +581,7 @@ fn admitted() -> Value {
             "labels": {
                 "description": "Labels.",
                 "type": "object",
+                "propertyNames": {"type": "string", "x-board-prose": true},
                 "additionalProperties": {"type": "string", "x-board-prose": true}
             },
             "named": {
@@ -620,7 +625,7 @@ fn each_string_shape_the_lint_refuses_has_an_admitted_twin() {
     registry.insert("Remote".into(), json!({"type": "string", "pattern": "^r$"}));
     registry.insert("Url".into(), json!({"type": "string", "format": "uri"}));
     assert_eq!(unshared(&kept, &registry), []);
-    let changes: [(&str, Value, &str); 24] = [
+    let changes: [(&str, Value, &str); 25] = [
         ("/properties/mood/enum", Value::Null, "/mood"),
         ("/properties/note/x-board-prose", Value::Null, "/note"),
         ("/properties/note/pattern", json!("^a"), "/note"),
@@ -640,6 +645,11 @@ fn each_string_shape_the_lint_refuses_has_an_admitted_twin() {
             "/properties/labels/additionalProperties/x-board-prose",
             Value::Null,
             "/labels/{key}",
+        ),
+        (
+            "/properties/labels/propertyNames/x-board-prose",
+            Value::Null,
+            "/labels/{name}",
         ),
         (
             "/properties/named/patternProperties/^[a-z]+$/enum",

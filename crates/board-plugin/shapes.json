@@ -54,6 +54,10 @@
     "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$",
     "type": "string"
   },
+  "PathKey": {
+    "pattern": "^/[^\\s{}]*$",
+    "type": "string"
+  },
   "PathTemplate": {
     "pattern": "^/\\S*$",
     "type": "string"

@@ -105,7 +105,7 @@ Built-in plugins generate schemas from structs with schemars, through
   out. Both are always inlined.
 - `Prose`, `Date`, `Timestamp`, `Url`, `Digest`, `Glob`, `LogicalGlob`, `Summary`,
   `SessionId`, `Slug`, `Person`, `ObjectId`, `CommitName`, `Repository`, `Subject`, `TypeName`,
-  `PathTemplate` and `Pattern` are shared string
+  `PathKey`, `PathTemplate` and `Pattern` are shared string
   shapes, and `Actor` and `Pinned` are shared object shapes. A `String` field takes one with
   `#[schemars(with = "Prose")]`, and a `urls` field with `#[schemars(with = "Vec<Url>")]`. `Digest` is `sha256:` and 64
   lowercase hex digits, such as an effect's id in a record. `Glob` is an SQLite GLOB pattern, which a
@@ -118,7 +118,8 @@ Built-in plugins generate schemas from structs with schemars, through
   lowercase hex digits. `CommitName` is a commit named by 7 to 40 of
   its leading hex digits, such as a change's head. `Subject` is what a test or study concerns: an
   `owner/name` repository or a board path that starts with `/`. `TypeName` is a record type
-  as `$type` names it, such as `changes/flow/v1`. `PathTemplate` is a logical path that
+  as `$type` names it, such as `changes/flow/v1`. `PathKey` is a logical path with no
+  placeholder, where a reference cannot go, such as the key of an object. `PathTemplate` is a logical path that
   may hold `{name}` placeholders, which its reader fills in. `Pattern` is a regular
   expression in the syntax of Rust's regex crate, which only its reader compiles.
 - `Actor` is who wrote or acted: `{session, program, person, agent}`, each part
