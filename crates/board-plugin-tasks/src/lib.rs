@@ -36,7 +36,8 @@ pub struct Tasks;
 /// task, a second one on a repeat, and `done` defers a repeating task
 /// again on each call.
 const EDITS: [&str; 6] = ["claim", "done", "defer", "drop", "reviewed", "move"];
-/// What every write call but `move` says after its own description.
+/// What every write call but `done` and `move` says after its own
+/// description; `done` says it in its own words, since it may not push.
 const WRITES: &str = " It syncs the task's repo first and pushes after, and sets reviewed.";
 
 /// Each capability's name and description, in the order the manifest
@@ -62,7 +63,9 @@ const CAPABILITIES: [(&str, &str); 9] = [
     ),
     (
         "done",
-        "Mark a task done, or defer a repeating one to its next occurrence.",
+        "Mark a task done, or defer a repeating one to its next occurrence. It syncs the task's \
+         repo first and pushes after, unless --push false makes it commit in the clone alone, and \
+         sets reviewed.",
     ),
     (
         "defer",
@@ -198,7 +201,7 @@ fn manifest() -> Value {
     ];
     let capabilities: Vec<Value> = (CAPABILITIES.iter().zip(schemas))
         .map(|((name, description), (input, output))| {
-            let writes = !["available", "tree", "move"].contains(name);
+            let writes = !["available", "tree", "done", "move"].contains(name);
             let description = if writes {
                 format!("{description}{WRITES}")
             } else {

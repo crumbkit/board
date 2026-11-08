@@ -468,6 +468,54 @@ fn done_with_push_false_commits_in_the_clone_and_leaves_the_remote_and_the_next_
     assert_eq!(pushed.matches("status: \"done\"").count(), 1);
 }
 
+/// The work clone of `tasks.mounted()` holding a commit its remote lacks,
+/// and that commit.
+fn unpushed_commit(tasks: &Tasks) -> (PathBuf, String) {
+    let work = tasks.mounted();
+    write_file(&work.join("daily/2026-11-07.md"), "Offline note.\n");
+    git(&work, &["add", "daily/2026-11-07.md"]);
+    git(&work, &["commit", "-q", "-m", "an offline note"]);
+    let earlier = git(&work, &["rev-parse", "HEAD"]);
+    (work, earlier)
+}
+
+#[test]
+fn done_with_push_false_leaves_an_earlier_unpushed_commit_unpushed() {
+    let tasks = Tasks::new();
+    let (work, earlier) = unpushed_commit(&tasks);
+    let remote = tasks.beside.path().join("work.git");
+    let before = git(&remote, &["rev-parse", "main"]);
+    let output = tasks
+        .call(
+            "done",
+            &["--path", "/repos/work/tasks/report.md", "--push", "false"],
+        )
+        .unwrap();
+    assert_eq!(
+        (&output["unsynced"], &output["unpushed"]),
+        (&Value::Null, &json!("tasks::repo::not_pushed"))
+    );
+    assert_eq!(git(&remote, &["rev-parse", "main"]), before);
+    assert_eq!(git(&work, &["rev-parse", "HEAD~1"]), earlier);
+}
+
+#[test]
+fn done_without_the_flag_pushes_an_earlier_unpushed_commit_and_its_own() {
+    let tasks = Tasks::new();
+    let (work, earlier) = unpushed_commit(&tasks);
+    let remote = tasks.beside.path().join("work.git");
+    let output = tasks
+        .call("done", &["--path", "/repos/work/tasks/report.md"])
+        .unwrap();
+    assert_eq!(
+        (&output["unsynced"], &output["unpushed"]),
+        (&Value::Null, &Value::Null)
+    );
+    let head = git(&work, &["rev-parse", "HEAD"]);
+    assert_eq!(git(&remote, &["rev-parse", "main"]), head);
+    assert_eq!(git(&remote, &["rev-parse", "main~1"]), earlier);
+}
+
 #[test]
 fn done_with_push_true_pushes_as_done_without_the_flag_does() {
     let tasks = Tasks::new();

@@ -28,11 +28,12 @@ may be on a phone, so keep each message short.
 4. When the work goes through the changes plugin and you claimed a task, pass
    it with `changes.start --task <path>`.
 5. Close the task with `tasks.done --path <path>` when the work it names is
-   committed. For work that goes through the changes plugin, close it when
-   its pull request merges; `changes.sync` does not end a change while its
-   task is open. When you are told not to push, close it with
-   `tasks.done --path <path> --push false`, which commits in the notes clone
-   and pushes nothing; a later write call pushes that commit.
+   committed. For work that goes through the changes plugin, close the
+   change's task when its pull request merges or when `changes.sync` ends
+   the change; `changes.sync` never closes it. When you are told not to
+   push, close it with `tasks.done --path <path> --push false`, which
+   commits in the notes clone and pushes nothing; a later write call pushes
+   that commit.
 
 ## Sweep
 

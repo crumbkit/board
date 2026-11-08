@@ -12,7 +12,7 @@ use board_ops::{Host, PluginError};
 use board_plugin::shape::{Actor, Record as _, Slug};
 use board_repos::{
     ATTEMPTS, Date, EDITED, Listed, MOVED, Repo, Through, Writer, covering, create, day_start,
-    landed, listed, push, refused, root, slug, today, trimmed,
+    landed, landed_with, listed, push, refused, root, slug, synced, today, trimmed,
 };
 use schemars::{JsonSchema, Schema, SchemaGenerator, json_schema};
 use serde::{Deserialize, Serialize};
@@ -421,11 +421,7 @@ pub(crate) fn stamped(
     let clones = Through(host);
     let writer = writer(host, &clones);
     let edited = edit(writer, &repo, logical, &stamp, landing)?;
-    let (commit, unpushed) = if landing.push {
-        landed(writer, &repo, edited.commit)?
-    } else {
-        kept(writer, &repo, edited.commit)?
-    };
+    let (commit, unpushed) = landed_with(writer, &repo, edited.commit, landing.push)?;
     Ok(json!(written(
         &repo,
         &edited.path,
@@ -571,11 +567,7 @@ fn edit(
     let host = writer.host;
     let prefix = format!("{}/", repo.root.trim_end_matches('/'));
     let path = logical.strip_prefix(&prefix).unwrap_or(logical).to_owned();
-    let synced = if landing.push {
-        push(writer, repo)
-    } else {
-        pulled(writer, repo)
-    };
+    let synced = synced(writer, repo, landing.push);
     let day = day(host);
     let (mut moved, mut sent) = (None, None::<String>);
     for _ in 0..ATTEMPTS {
@@ -784,41 +776,6 @@ fn held(found: &[Listed], logical: &str) -> Repo {
 /// `day`.
 fn until(value: &str, day: Date) -> String {
     horizon(value).map_or_else(|| value.to_owned(), |days| day.plus(days).to_string())
-}
-
-/// Syncs the clone without pushing: none, or the code of the refusal, as
-/// [`push`] gives it.
-fn pulled(writer: Writer<'_>, repo: &Repo) -> Option<String> {
-    if repo.clone.is_none() {
-        return push(writer, repo);
-    }
-    match repo.sync(writer, false) {
-        Ok(code) => code.map(|code| code.as_str().to_owned()),
-        Err(error) => Some(
-            (error.fields.get("code").and_then(|code| code.as_str()))
-                .map_or(error.code, str::to_owned),
-        ),
-    }
-}
-
-/// Keeps a write in the clone without pushing it, and moves the mount's
-/// pin to the clone's HEAD, as [`landed`] does after its push: the commit
-/// holding the write, and `tasks::repo::not_pushed`, or
-/// `tasks::repo::not_synced` for the board's own tree.
-fn kept(
-    writer: Writer<'_>,
-    repo: &Repo,
-    commit: Option<String>,
-) -> Result<(Option<String>, Option<String>), PluginError> {
-    if repo.clone.is_none() {
-        return Ok((commit, push(writer, repo)));
-    }
-    let unpushed = Some(format!("{PLUGIN}::repo::not_pushed"));
-    let Some(commit) = commit else {
-        return Ok((None, unpushed));
-    };
-    let pinned = repo.pin(writer)?;
-    Ok((Some(pinned.unwrap_or(commit)), unpushed))
 }
 
 /// The call's output, once the write is landed: its commit, the code of
