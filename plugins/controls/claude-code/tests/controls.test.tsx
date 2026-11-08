@@ -88,8 +88,8 @@ const OWED = {
   purpose: 'p',
   kind: 'obligation',
   close:
-    'Once the work this obligation names is committed, delete it with `board rm /controls/crumbkit/docs-owed-9`, ' +
-    'which commits the deletion; merging the work does not clear it.',
+    'Once the work this obligation names is committed, delete it with ' +
+    "`board rm /controls/crumbkit/docs-owed-9 -m '<message naming the work>'`; merging the work does not clear it.",
 }
 
 test('the context block gives an obligation its close line and a standing control none', () => {
