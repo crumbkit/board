@@ -135,6 +135,7 @@ input property named like one of `board call`'s own flags (`--json`, `--fields`,
 `--long`, `--full`, `--capability`, `--no-input` or `--help`), or not made of
 lowercase letters, digits, `-` and `_`, is not a flag and goes on stdin.
 Whitespace alone on stdin is no input.
+Bad input with unread stdin holding data says why Board ignored it.
 Then Board:
 
 1. checks that the board holds each schema the plugin ships, as `plugin list`

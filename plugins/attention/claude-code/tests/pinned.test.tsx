@@ -2,7 +2,8 @@ import { expect, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 import type { Engine } from 'claude-code/testing'
 
-import { contextText, parsePinned } from '../hooks/pinned'
+import { SLOT, joinBand } from '../hooks/band'
+import { contextText, orderBadges, parsePinned } from '../hooks/pinned'
 
 // These prove what a session and the owner are shown from attention.pinned's
 // answer, with `board` stood in by a process.run hook. They do not run board
@@ -49,8 +50,9 @@ const BAND_PROPS = {
 } as const
 
 /** Stands in for the engine beneath the plugin, with `board` answering `answer`. */
-function engine(on: On, answer: { exitCode: number; stdout: string; stderr?: string }) {
+function engine(on: On, answer: { exitCode: number; stdout: string; stderr?: string }, beneath?: 'controls') {
   const ran: (readonly string[])[] = []
+  const pressed: string[] = []
   const opened: string[] = []
   on('process.run', (_, e) => {
     ran.push(e.argv)
@@ -61,10 +63,16 @@ function engine(on: On, answer: { exitCode: number; stdout: string; stderr?: str
     opened.push(e.id)
     return { value: { isPlaced: true } }
   })
-  on('ui.render', ($, e) => $.ui.resolve(e).Box({}))
+  on('ui.render', ($, e) => {
+    const { Box, Button } = $.ui.resolve(e)
+    if (beneath === undefined || e.component !== 'AbovePrompt') return Box({})
+    // Another mod's part, as the controls mod beneath this one draws it.
+    const part = Box({ key: SLOT.controls, children: [Button({ key: 'controls', label: 'Controls 5', onPress: () => void pressed.push('controls') })] })
+    return joinBand(Box({}), [part])
+  })
   on('prompt.context', (_, e) => ({ blocks: e.blocks }))
   on('session.start', (_, e) => ({ cwd: e.cwd }))
-  return { ran, opened }
+  return { ran, opened, pressed }
 }
 
 const start = ($: Engine) =>
@@ -112,15 +120,29 @@ test('with nothing pinned the first message carries no block of the plugin\'s', 
   expect(context.blocks.map(b => b.name)).toEqual(['claudeMd'])
 })
 
-test('the band says how many signed orders bind the session, and Show lists each with its expiry and verify result', async ($, on) => {
+test('each verified order is a badge named by its path\'s last segment, and each one left out a red badge with its code', () => {
+  expect(orderBadges(parsePinned(BOARD, 0, JSON.stringify(REPORT), ''))).toEqual([
+    { label: 'evals', path: '/orders/evals', problem: false },
+    { label: 'old: attention::order::expired', path: '/orders/old', problem: true },
+  ])
+  const failure = { schema: 'board/failure/v1', code: 'attention::signers::missing', message: 'there is no allowed_signers file' }
+  expect(orderBadges(parsePinned(BOARD, 1, JSON.stringify(failure), ''))).toEqual([
+    { label: 'Pinned orders could not be read: there is no allowed_signers file', path: null, problem: true },
+  ])
+  const empty = { ...REPORT, data: { ...REPORT.data, output: { orders: [], left_out: [] } } }
+  expect(orderBadges(parsePinned(BOARD, 0, JSON.stringify(empty), ''))).toEqual([])
+})
+
+test('the band shows a badge per order, and a badge opens its order with its expiry, signature and context', async ($, on) => {
   const { opened } = engine(on, { exitCode: 0, stdout: JSON.stringify(REPORT) })
   await start($)
 
   for (const surface of ['terminal', 'desktop'] as const) {
     const band = await $.ui.mount({ plugin: 'board-attention', surface, component: 'AbovePrompt', props: BAND_PROPS })
-    expect(await band.find({ text: /1 signed order binds this session\./ })).toBeDefined()
-    expect(await band.find({ text: /1 pinned order is not in context\./ })).toBeDefined()
-    await band.press({ key: 'show-pinned' })
+    expect((await band.find({ type: 'Text', text: 'Orders' }))?.text).toBe('Orders')
+    expect((await band.find({ key: 'order:/orders/evals' }))?.text).toBe('evals')
+    expect((await band.find({ key: 'order:/orders/old' }))?.text).toBe('old: attention::order::expired')
+    await band.press({ key: 'order:/orders/evals' })
     await band.unmount()
 
     const pane = await $.ui.mount({
@@ -130,20 +152,52 @@ test('the band says how many signed orders bind the session, and Show lists each
       requestId: 'attention-pinned',
       props: PANE_PROPS,
     })
-    expect(await pane.find({ text: /\/orders\/evals, until 2026-12-31/ })).toBeDefined()
-    expect(await pane.find({ text: /Verified: signed by owner\./ })).toBeDefined()
+    expect(await pane.find({ text: '/orders/evals, until 2026-12-31' })).toBeDefined()
+    expect(await pane.find({ text: 'Verified: signed by owner.' })).toBeDefined()
+    expect(await pane.find({ text: 'Record every test as an eval.' })).toBeDefined()
+    expect(await pane.find({ text: 'Luke asked for this on 2026-10-20.' })).toBeUndefined()
+    await pane.press({ key: 'context' })
+    expect(await pane.find({ text: 'Context (non-binding), from /orders/evals.md:' })).toBeDefined()
+    expect(await pane.find({ text: 'Luke asked for this on 2026-10-20.' })).toBeDefined()
+    await pane.press({ key: 'all-orders' })
     expect(await pane.find({ text: /Not in this session's context: the order expired on 2026-10-01 \(attention::order::expired\)/ })).toBeDefined()
     await pane.unmount()
   }
   expect(opened).toEqual(['attention-pinned', 'attention-pinned'])
 })
 
-test('a board that cannot be read is said plainly in the band', async ($, on) => {
+test('a left-out badge opens the pane on its code and message', async ($, on) => {
+  engine(on, { exitCode: 0, stdout: JSON.stringify(REPORT) })
+  await start($)
+  const band = await $.ui.mount({ plugin: 'board-attention', surface: 'terminal', component: 'AbovePrompt', props: BAND_PROPS })
+  await band.press({ key: 'order:/orders/old' })
+  const pane = await $.ui.mount({ plugin: 'board-attention', surface: 'terminal', component: 'Pane', requestId: 'attention-pinned', props: PANE_PROPS })
+  expect(await pane.find({ text: "Not in this session's context: the order expired on 2026-10-01 (attention::order::expired)." })).toBeDefined()
+  expect(await pane.find({ text: /evals/ })).toBeUndefined()
+})
+
+test('the order badges join the parts other mods draw beneath, in one row with a bar between sections', async ($, on) => {
+  const { pressed } = engine(on, { exitCode: 0, stdout: JSON.stringify(REPORT) }, 'controls')
+  await start($)
+  const band = await $.ui.mount({ plugin: 'board-attention', surface: 'terminal', component: 'AbovePrompt', props: BAND_PROPS })
+  const drawn = await band.drawn()
+  const row = drawn.type === 'Box' ? drawn.children?.[0] : undefined
+  expect(typeof row === 'object' && row.type === 'Box' ? row.props?.key : null).toBe('board-band')
+  const keys = typeof row === 'object' && row.type === 'Box' ? row.children?.map(c => (typeof c === 'object' && c.type === 'Box' ? c.props?.key : 'text')) : []
+  expect(keys).toEqual([SLOT.orders, 'text', SLOT.controls])
+  expect((await band.find({ key: 'controls' }))?.text).toBe('Controls 5')
+  expect((await band.find({ type: 'Text', text: '|' }))?.text).toBe('|')
+  // The other mod's button, moved into this mod's row, still reaches that mod's handler.
+  await band.press({ key: 'controls', plugin: 'test' })
+  expect(pressed).toEqual(['controls'])
+})
+
+test('a board that cannot be read is one red badge in the band', async ($, on) => {
   const failure = { schema: 'board/failure/v1', code: 'attention::signers::missing', message: 'there is no allowed_signers file' }
   engine(on, { exitCode: 1, stdout: JSON.stringify(failure) })
   await start($)
   const band = await $.ui.mount({ plugin: 'board-attention', surface: 'terminal', component: 'AbovePrompt', props: BAND_PROPS })
-  expect(await band.find({ text: /Pinned orders could not be read: there is no allowed_signers file/ })).toBeDefined()
+  expect((await band.find({ key: 'order:' }))?.text).toBe('Pinned orders could not be read: there is no allowed_signers file')
 })
 
 test('with no personal board the mod shows nothing, adds no block and runs board once, and a board that answers is shown', async ($, on) => {
@@ -158,7 +212,7 @@ test('with no personal board the mod shows nothing, adds no block and runs board
   expect(ran.length).toBe(1)
   const band = await $.ui.mount({ plugin: 'board-attention', surface: 'terminal', component: 'AbovePrompt', props: BAND_PROPS })
   expect(await band.find({ text: /Pinned orders could not be read/ })).toBeUndefined()
-  expect(await band.find({ text: /signed order/ })).toBeUndefined()
+  expect(await band.find({ text: 'Orders' })).toBeUndefined()
   await band.unmount()
 
   answer.exitCode = 0
@@ -167,5 +221,5 @@ test('with no personal board the mod shows nothing, adds no block and runs board
   const context = await $.prompt.context({ blocks: [{ name: 'claudeMd', text: 'instructions' }] })
   expect(context.blocks.map(b => b.name)).toEqual(['claudeMd', 'attentionOrders'])
   const shown = await $.ui.mount({ plugin: 'board-attention', surface: 'terminal', component: 'AbovePrompt', props: BAND_PROPS })
-  expect(await shown.find({ text: /1 signed order binds this session\./ })).toBeDefined()
+  expect((await shown.find({ key: 'order:/orders/evals' }))?.text).toBe('evals')
 })

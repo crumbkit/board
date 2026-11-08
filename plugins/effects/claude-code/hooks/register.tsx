@@ -1,9 +1,10 @@
 import { atom, read, update } from 'claude-code'
-import type { EngineInterface, Register } from 'claude-code'
+import type { EngineInterface, Register, RenderElement } from 'claude-code'
 
 import type { Effect, Pending } from '../types'
 import type { Listed } from './effects'
-import { askedIds, boardFailure, failure, headline, outputText, parsePending, pendingSql, question, standing, told, visible, waitingLine } from './effects'
+import { SLOT, joinBand } from './band'
+import { askedIds, boardFailure, effectsBadge, failure, headline, outputText, parsePending, pendingSql, question, standing, told, visible } from './effects'
 
 // The mod lists the owner's pending effects from the personal board and
 // answers one with `board answer`. Board makes every decision and checks
@@ -25,8 +26,6 @@ const ANSWER_MS = 30_000
 const REFRESH_MS = 60_000
 // The pane lists this many effects; past it the band says "or more".
 const LISTED = 100
-// The failure when there is no personal board, which the band does not report.
-const NO_BOARD = 'board::config::not_found'
 
 type Answer = 'approve' | 'refuse'
 
@@ -198,27 +197,17 @@ export const register: Register = on => {
       $.clock.every(REFRESH_MS, () => void refresh($))
     }
     const found = await read($, pending)
-    if (e.props.hasSurvey || found === null) return below
-    // A failed read is marked, unless no read has worked because there is no
-    // personal board.
-    const unread = found.failed !== null && (found.worked || !found.failed.startsWith(NO_BOARD))
-    if (found.effects.length === 0 && !unread) return below
+    const badge = e.props.hasSurvey || found === null ? null : effectsBadge(found)
+    if (badge === null) return below
     const { Box, Button, Text } = $.ui.resolve(e)
-    const more = found.truncated ? ' or more' : ''
-    const line = !unread
-      ? waitingLine(found.effects.length) + (found.truncated ? ' (or more)' : '')
-      : found.worked
-        ? `Board: could not read pending effects (last read: ${found.effects.length}${more})`
-        : 'Board: could not read pending effects'
-    return (
-      <Box flexDirection="column">
-        {below.type === 'engine' ? null : below}
-        <Box>
-          <Text>{line} </Text>
-          <Button key="show" label="Show" onPress={() => void $.ui.open({ id: PANE, title: 'Pending effects' })} />
-        </Box>
+    const part = (
+      <Box key={SLOT.effects}>
+        <Button key="effects" label={badge.label} onPress={() => void $.ui.open({ id: PANE, title: 'Pending effects' })}>
+          {badge.problem ? <Text color="red">{badge.label}</Text> : badge.label}
+        </Button>
       </Box>
     )
+    return joinBand(below, [part as RenderElement])
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {

@@ -309,6 +309,13 @@ fn start_stores_the_suite_and_surfaces_the_open_records_on_the_mount_and_its_obl
         "paths": ["repos/x/**"],
     });
     board.write("controls/x/docs.json", &owed.to_string());
+    let standing = json!({
+        "$type": "controls/control/v1",
+        "requirement": "Keep the README short.",
+        "purpose": "p",
+        "paths": ["repos/x/**"],
+    });
+    board.write("controls/x/readme.json", &standing.to_string());
     let output = board.call("start", &starting("A", &json!({"suite": "/suites/checks"})));
     assert_eq!(output["suite"], "/suites/checks");
     let surfaced = &output["surfaced"];
@@ -324,9 +331,30 @@ fn start_stores_the_suite_and_surfaces_the_open_records_on_the_mount_and_its_obl
             &json!(["/evals/e"])
         )
     );
+    // Each obligation carries the close line controls gives it, and a
+    // standing control on the mount is no obligation, so start lists none.
+    let given = board.json_with(
+        &["call", "controls.for-paths"],
+        &json!({"paths": ["/repos/x/**"]}).to_string(),
+    );
+    let controls = &given["data"]["output"]["controls"];
+    let close = |control: &str| {
+        (controls.as_array().unwrap().iter())
+            .find(|each| each["control"] == control)
+            .map(|each| each.get("close").cloned())
+            .unwrap()
+    };
+    assert_eq!(close("/controls/x/readme"), None);
+    let closing = close("/controls/x/docs").unwrap();
+    assert!(
+        closing
+            .as_str()
+            .unwrap()
+            .contains("board rm /controls/x/docs")
+    );
     assert_eq!(
         output["obligations"],
-        json!([{"control": "/controls/x/docs", "summary": "Sweep the docs."}])
+        json!([{"control": "/controls/x/docs", "summary": "Sweep the docs.", "close": closing}])
     );
     assert_eq!(output["obligations_left_out"], 0);
     let change = board.read("changes/a.json");
@@ -451,5 +479,18 @@ fn start_lists_ten_obligations_on_the_mount_and_counts_the_rest() {
             &twelve["obligations_left_out"]
         ),
         (10, &json!(2))
+    );
+}
+
+#[test]
+fn next_on_a_small_change_in_build_says_to_resend_the_plan_start_wrote() {
+    let board = mounted();
+    assert_eq!(started(&board, "A", &json!({"flow": "small"})).0, "small");
+    let said = board.call("next", &json!({"path": "/changes/a"}))["instruction"].clone();
+    assert!(
+        said.as_str()
+            .unwrap()
+            .contains(&revised_plan_usage("/changes/a", "/repos/x")),
+        "{said}"
     );
 }

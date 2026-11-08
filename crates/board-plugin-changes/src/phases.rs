@@ -14,7 +14,7 @@ use crate::board::{self, get_text, rows, text};
 use crate::change::write;
 use crate::change::{
     LastSync, attached, branch_of, current, kind_of, last_sync, line, plan_at, pull_of, read,
-    referenced, touch,
+    referenced, sync_reads, touch,
 };
 use crate::controls::{listed_by, obligations};
 use crate::diff::{edited, outside};
@@ -184,7 +184,7 @@ pub(crate) struct Moved {
 fn instruction(observed: &Observed) -> String {
     let phase = observed.change.phase.as_str();
     match (observed.flow.as_ref()).and_then(|flow| flow.phase(phase)) {
-        Some(found) => fill(&found.instruction, &values(observed)),
+        Some(found) => with_plan_usage(observed, fill(&found.instruction, &values(observed))),
         None if phase == PAUSED => format!(
             "This change was paused to free its place under the WIP limit on active changes of \
              its kind per repository. Resume it with `board call changes.resume --path {}` when a \
@@ -192,6 +192,31 @@ fn instruction(observed: &Observed) -> String {
             observed.path
         ),
         None => "Nothing is left to do.".to_owned(),
+    }
+}
+
+/// `said` with the fields `changes.plan` takes on stdin and a one-line
+/// example, when `said` asks for a plan. `changes.plan` replaces the plan,
+/// so for a change that has one, `said` says to resend all four fields.
+fn with_plan_usage(observed: &Observed, said: String) -> String {
+    if !said.contains("changes.plan") {
+        return said;
+    }
+    let example = format!(
+        r#"{{"path":"{}","text":"<text>","uses":["<use>"],"paths":["{}/<path>"]}}"#,
+        observed.path,
+        observed.change.mount.trim_end_matches('/')
+    );
+    if observed.change.plan.is_none() {
+        format!(
+            "{said} Pipe `changes.plan` JSON on stdin with the fields `path`, `text`, `uses` and \
+             `paths`, such as `{example}`."
+        )
+    } else {
+        format!(
+            "{said} `changes.plan` reads JSON on stdin and replaces the plan, so resend all four \
+             fields, such as `{example}`."
+        )
     }
 }
 
@@ -440,7 +465,7 @@ pub(crate) fn step_of(host: &dyn Host, path: &str) -> Result<(NextOutput, Observ
         waiting_on,
         ask,
         stop,
-        sync: last_sync(host)?,
+        sync: last_sync(host, sync_reads(path, &change))?,
     };
     Ok((next, observed))
 }
