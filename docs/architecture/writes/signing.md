@@ -27,8 +27,8 @@ own effects.
   record does not say), the order under `Order (binding):` and the context
   file's path and text under `Context (non-binding, from <path>):`. The
   order and context text are copied as stored, so the statement ends with
-  the context file's last byte. It is byte for byte the statement
-  board-attention built.
+  the context file's last byte. The attention plugin is built into Board,
+  so Board alone builds the order layout.
 - Each statement is signed in the namespace its first line names. No
   signature verifies in another namespace, so a key limited to approvals
   cannot sign an owner's write or an order.
@@ -131,14 +131,14 @@ records it.
 - Board verifies with `ssh-keygen`. board-app builds the SSHSIG armor
   itself.
 - The vectors' v1 manifest still names board-attention as the order
-  layout's owner, because a released version is never edited.
+  layout's owner, because a released version is never edited. Board owns
+  the order layout now, because the attention plugin is built into Board.
 
 ## Vectors
 
 - `vectors/signing/v1/` holds the statements, signatures, a test key and an
   allowed signers file; its README says how each file was made and which
-  repository owns each layout. board-app and board-attention are to test
-  against them.
+  repository owns each layout. board-app is to test against them.
 - `crates/board-ops/tests/signing_vectors.rs` checks that Board builds all
   three statements byte for byte, maps each to its namespace, admits the
   owner's signatures and refuses those in another namespace or by another
@@ -146,8 +146,8 @@ records it.
 - `released.json` lists every vector file, so the `released` test refuses an
   edit in place.
 - A changed layout or namespace adds `vectors/signing/v2/`. The pull
-  request names the board-app and board-attention pull requests that take
-  it, and all three merge the same day.
+  request names the board-app pull request that takes it, and both merge
+  the same day.
 
 ## What an agent never does
 
