@@ -495,7 +495,15 @@ fn a_migrated_change_in_each_phase_faces_the_blocking_checks_of_the_development_
                 "obligations-settled",
             ],
         ),
-        ("land", vec!["test-sections", "pull-request"]),
+        (
+            "land",
+            vec![
+                "test-sections",
+                "pull-request",
+                "lifecycle-paths-at-land",
+                "lifecycle-none-paths-at-land",
+            ],
+        ),
     ]
     .into_iter()
     .map(|(phase, ids)| (phase, ids.into_iter().map(str::to_owned).collect()))

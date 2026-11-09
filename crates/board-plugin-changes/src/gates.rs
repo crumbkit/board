@@ -275,8 +275,12 @@ pub(crate) fn reads(checks: &[flow::Check]) -> BTreeSet<Read> {
         {
             reads.insert(Read::Plan);
         }
-        if (each.when.as_ref()).is_some_and(|when| when.absent.is_some()) {
+        if let Some(absent) = each.when.as_ref().and_then(|when| when.absent.as_ref()) {
             reads.insert(Read::Absent);
+            reads.insert(Read::References);
+            if absent.path.contains("{suite}") {
+                reads.insert(Read::Suite);
+            }
         }
         if each.waivable == Some(true) {
             reads.insert(Read::References);

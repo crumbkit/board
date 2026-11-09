@@ -14,7 +14,7 @@ use crate::board::{self, get_text, rows, text};
 use crate::change::write;
 use crate::change::{
     LastSync, NOT_FOUND, attached, branch_of, current, kind_of, last_sync, line, listed, plan_at,
-    pull_of, read, referenced, sync_reads, touch,
+    pull_of, read, referenced, sync_reads, touch, whole_record_at,
 };
 use crate::controls::{listed_by, obligations, on_paths};
 use crate::diff::{edited, outside};
@@ -348,11 +348,7 @@ fn records_held(host: &dyn Host, found: &mut Observed) -> Result<(), PluginError
         if board::resolve(host, &path)?.is_none() {
             continue;
         }
-        let read = referenced(host, std::slice::from_ref(&path))?;
-        if read
-            .get(&path)
-            .is_some_and(|(kind, _)| *kind == record_type)
-        {
+        if whole_record_at(host, &path, &record_type)? {
             found.records_held.insert(path);
         }
     }

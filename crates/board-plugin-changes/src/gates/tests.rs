@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 
 use serde_json::{Map, Value, json};
 
-use super::{Observed, Status, gate, mockups, sections};
+use super::{Observed, Read, Status, gate, mockups, reads, sections};
 use crate::change::Referenced;
 use crate::flow::development;
 use crate::records::Kind;
@@ -486,7 +486,12 @@ fn the_review_gate_refuses_a_diff_outside_the_planned_paths_and_passes_one_insid
 fn the_land_gate_needs_the_test_sections_and_a_pull_request_record_and_done_has_no_gate() {
     assert_eq!(
         given("land").statuses(),
-        statuses(&[("test-sections", "missing"), ("pull-request", "missing")])
+        statuses(&[
+            ("test-sections", "missing"),
+            ("pull-request", "missing"),
+            ("lifecycle-paths-at-land", "pass"),
+            ("lifecycle-none-paths-at-land", "pass"),
+        ])
     );
     let tested = format!("{PLAN}{TESTS}");
     let mut unread = given("land").with(json!({"pulls": ["/runs/1"]}));
@@ -500,7 +505,12 @@ fn the_land_gate_needs_the_test_sections_and_a_pull_request_record_and_done_has_
     let landed = (given("land").plan(Some(&tested))).with(json!({"pulls": ["/gh/o/r/pulls/1"]}));
     assert_eq!(
         landed.statuses(),
-        statuses(&[("test-sections", "pass"), ("pull-request", "pass")])
+        statuses(&[
+            ("test-sections", "pass"),
+            ("pull-request", "pass"),
+            ("lifecycle-paths-at-land", "pass"),
+            ("lifecycle-none-paths-at-land", "pass"),
+        ])
     );
     assert!(gate(&given("done").observed()).is_empty());
 }
@@ -1125,4 +1135,23 @@ fn the_development_review_names_a_reviewer_with_tools_and_a_checkout_and_not_the
     let remedy = change.remedy("review");
     assert!(remedy.contains("tools and a checkout"), "{remedy}");
     assert!(!remedy.contains("board review run"), "{remedy}");
+}
+
+#[test]
+fn a_when_absent_reads_the_references_and_the_suite_only_when_its_path_names_it() {
+    let read = |path: &str| {
+        let check: crate::flow::Check = serde_json::from_value(json!({
+            "id": "x",
+            "kind": "field",
+            "field": "head",
+            "when": {"absent": {"path": path, "type": "a/b/v1"}},
+        }))
+        .unwrap();
+        reads(&[check])
+    };
+    let plain = read("/changes/{name}/x");
+    assert!(plain.contains(&Read::Absent));
+    assert!(plain.contains(&Read::References));
+    assert!(!plain.contains(&Read::Suite));
+    assert!(read("{suite}/x").contains(&Read::Suite));
 }

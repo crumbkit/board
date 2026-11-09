@@ -119,6 +119,41 @@ fn next_reads_a_when_absent_path_under_a_mount_and_refuses_once_the_mount_cannot
     );
 }
 
+/// The placeholder comes from the attached draft, and only `when.absent`
+/// in this phase reads the attached records.
+#[test]
+fn a_when_absent_path_naming_draft_finds_the_record_the_attached_draft_names() {
+    let board = mounted();
+    let mut own: Value = serde_json::from_str(&flow("own", &["draft", "land"])).unwrap();
+    own["phases"][0]["checks"] = json!([{
+        "id": "guarded",
+        "kind": "field",
+        "field": "head",
+        "when": {"absent": {"path": "/changes/a/{draft}", "type": "changes/lifecycle/v1"}},
+    }]);
+    board.write("flows/own.json", &own.to_string());
+    started(&board, "A", &json!({"flow": "own"}));
+    board.write("changes/a/draft.json", &flow("d", &["only"]));
+    board.call(
+        "attach",
+        &json!({"path": "/changes/a", "ref": "/changes/a/draft"}),
+    );
+    let guarded = |board: &Changes| {
+        let found = board.call("next", &json!({"path": "/changes/a"}));
+        found["gate"].as_array().unwrap().len()
+    };
+    assert_eq!(guarded(&board), 1);
+    board.write("changes/a/d.md", "A table.\n");
+    board.write(
+        "changes/a/d.json",
+        &typed(
+            "changes/lifecycle/v1",
+            &json!({"text": "/changes/a/d.md", "doc": "/repos/x/docs/states.md"}),
+        ),
+    );
+    assert_eq!(guarded(&board), 0);
+}
+
 /// The plan text `start` wrote for the change at `/changes/<name>`.
 fn skeleton(board: &Changes, name: &str) -> String {
     let plan = board.read(&format!("changes/{name}.json"))["plan"]

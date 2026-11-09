@@ -82,7 +82,12 @@ fn the_board_itself_is_refused_for_a_flow_that_reads_a_repository_and_admitted_f
     assert_eq!(refused["code"], "changes::mount::needs_repository");
     assert_eq!(
         refused["fields"]["checks"],
-        json!(["suite-run", "not-small", "lifecycle-paths"])
+        json!([
+            "suite-run",
+            "not-small",
+            "lifecycle-paths",
+            "lifecycle-paths-at-land"
+        ])
     );
     board.call(
         "start",

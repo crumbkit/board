@@ -34,7 +34,10 @@
       "agent": "lead",
       "instruction": "Draft and open the pull request with `board changes pr --path {change}`, record it with `board github ref` and attach it with --pull.",
       "checks": [
-        {"id": "pull-request", "kind": "field", "field": "pulls", "types": ["github/pull/v1"]}
+        {"id": "pull-request", "kind": "field", "field": "pulls", "types": ["github/pull/v1"]},
+        {"id": "lifecycle-paths-at-land", "kind": "controlled-paths",
+         "controls": ["/controls/{repo}/lifecycle-paths"],
+         "remedy": "This change touches a lifecycle path, so it needs the development flow: run `board changes reflow --path {change} --flow development`."}
       ]
     }
   ]

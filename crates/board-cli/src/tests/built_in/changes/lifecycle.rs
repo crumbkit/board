@@ -328,12 +328,17 @@ fn only_a_lifecycle_record_board_reads_at_the_path_switches_off_lifecycle_paths(
         }),
     );
     let invalid = typed("changes/lifecycle/v1", &json!({}));
+    let dangling = typed(
+        "changes/lifecycle/v1",
+        &json!({"text": "/changes/t/lifecycle.md", "doc": "/repos/x/docs/states.md"}),
+    );
     let cases = [
         ("changes/t/lifecycle/x.md", "text\n"),
         (RECORD, understanding.as_str()),
         (RECORD, "{}"),
         (RECORD, "not json"),
         (RECORD, invalid.as_str()),
+        (RECORD, dangling.as_str()),
     ];
     for (file, body) in cases {
         let board = reflowed_from_small();
@@ -417,4 +422,49 @@ fn next_on_the_shipped_flow_refuses_with_the_controls_refusal_when_for_paths_ref
         check(&found, "lifecycle-declared").unwrap()["status"],
         "pass"
     );
+}
+
+#[test]
+fn a_development_change_in_land_over_a_lifecycle_path_with_no_record_misses_and_its_twins_pass() {
+    let (edited, head) = started_over("development", "src/sync.rs");
+    moved(&edited, "land", &head);
+    assert_eq!(
+        status_of(&edited, "lifecycle-paths-at-land"),
+        Some(json!("missing"))
+    );
+    edited.call_stdin("lifecycle", &lifecycle(TABLE, "/repos/x/docs/states.md"));
+    assert_eq!(status_of(&edited, "lifecycle-paths-at-land"), None);
+    let (elsewhere, head) = started_over("development", "src/a.rs");
+    moved(&elsewhere, "land", &head);
+    assert_eq!(
+        status_of(&elsewhere, "lifecycle-paths-at-land"),
+        Some(json!("pass"))
+    );
+}
+
+#[test]
+fn a_development_change_in_land_saying_none_over_a_lifecycle_path_misses_and_one_naming_passes() {
+    let (board, head) = started_over("development", "src/sync.rs");
+    board.call_stdin("plan", &plan_saying("None: nothing changes state."));
+    board.call_stdin("lifecycle", &lifecycle(TABLE, "/repos/x/docs/states.md"));
+    moved(&board, "land", &head);
+    assert_eq!(
+        status_of(&board, "lifecycle-none-paths-at-land"),
+        Some(json!("missing"))
+    );
+    board.call_stdin("plan", &plan_saying(NAMED));
+    assert_eq!(status_of(&board, "lifecycle-none-paths-at-land"), None);
+}
+
+#[test]
+fn a_small_change_in_land_over_a_lifecycle_path_misses_and_one_elsewhere_passes() {
+    for (file, want) in [("src/sync.rs", "missing"), ("src/a.rs", "pass")] {
+        let (board, head) = started_over("small", file);
+        moved(&board, "land", &head);
+        assert_eq!(
+            status_of(&board, "lifecycle-paths-at-land"),
+            Some(json!(want)),
+            "{file}"
+        );
+    }
 }
