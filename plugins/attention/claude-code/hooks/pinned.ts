@@ -65,20 +65,14 @@ export function contextText(pinned: Pinned): string | null {
 /** An order's name: the last segment of its path, so `/orders/evals` is `evals`. */
 export const orderName = (path: string) => path.split('/').filter(Boolean).at(-1) ?? path
 
-/**
- * One badge in the band. `path` is the order it opens, or null for the
- * badge that says the orders could not be read; `problem` draws it in red.
- */
-export type Badge = { label: string; path: string | null; problem: boolean }
+/** The band's Orders button, or null when there is nothing to show; `problem` draws it in red. */
+export type OrdersButton = { label: string; problem: boolean }
 
-/** The band's order badges; empty when there is nothing to show. */
-export function orderBadges(pinned: Pinned): Badge[] {
-  if (pinned.kind === 'none') return []
-  if (pinned.kind === 'failed') {
-    return [{ label: `Pinned orders could not be read: ${pinned.message}`, path: null, problem: true }]
-  }
-  return [
-    ...pinned.orders.map(o => ({ label: orderName(o.path), path: o.path, problem: false })),
-    ...pinned.leftOut.map(l => ({ label: `${orderName(l.path)}: ${l.code}`, path: l.path, problem: true })),
-  ]
+export function ordersButton(pinned: Pinned): OrdersButton | null {
+  if (pinned.kind === 'none') return null
+  if (pinned.kind === 'failed') return { label: `Orders: ${pinned.code}`, problem: true }
+  const { orders, leftOut } = pinned
+  if (orders.length === 0 && leftOut.length === 0) return null
+  if (leftOut.length > 0) return { label: `Orders ${orders.length}: ${leftOut.length} left out`, problem: true }
+  return { label: `Orders ${orders.length}`, problem: false }
 }

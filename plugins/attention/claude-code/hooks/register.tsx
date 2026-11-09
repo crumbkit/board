@@ -3,7 +3,7 @@ import type { EngineInterface, Register, RenderElement } from 'claude-code'
 
 import type { Pinned, Request } from '../types'
 import { SLOT, joinBand } from './band'
-import { BLOCK, contextText, orderBadges, orderName, parsePinned } from './pinned'
+import { BLOCK, contextText, ordersButton, orderName, parsePinned } from './pinned'
 
 // The mod reads and signs orders in the owner's personal board through
 // Board. The button only runs `board call attention.sign`, which opens the
@@ -151,11 +151,11 @@ export const register: Register = on => {
     if (e.props.hasSurvey) return below
     const { Box, Button, Text } = $.ui.resolve(e)
     const answer = await read($, pinned)
-    const badges = answer === null ? [] : orderBadges(answer)
+    const button = answer === null ? null : ordersButton(answer)
     const list = await read($, pending)
     const first = list[0]
     const opened = await read($, open)
-    if (badges.length === 0 && first === undefined) return below
+    if (button === null && first === undefined) return below
 
     const done = async (message?: string) => {
       if (first === undefined) return
@@ -184,11 +184,11 @@ export const register: Register = on => {
     const dismiss = () =>
       first && done(`The owner dismissed the request to sign ${first.path} in ${BOARD}, without signing it.`)
 
-    // A badge opens the pane on its order; the red badge of a failed read opens it on the failure.
-    const show = async (path: string | null) => {
-      await update($, selected, () => path)
+    // The Orders button opens the list of pinned orders.
+    const show = async () => {
+      await update($, selected, () => null)
       await update($, showContext, () => false)
-      await $.ui.open({ id: PANE, title: path === null ? 'Pinned orders' : orderName(path) })
+      await $.ui.open({ id: PANE, title: 'Pinned orders' })
     }
 
     const more = list.length > 1 ? ` (and ${list.length - 1} more)` : ''
@@ -209,14 +209,11 @@ export const register: Register = on => {
       )
 
     const part =
-      badges.length === 0 ? null : (
-        <Box key={SLOT.orders} flexDirection="row" flexWrap="wrap" columnGap={1}>
-          <Text dimColor>Orders</Text>
-          {badges.map(b => (
-            <Button key={`order:${b.path ?? ''}`} label={b.label} onPress={() => show(b.path)}>
-              {b.problem ? <Text color="red">{b.label}</Text> : b.label}
-            </Button>
-          ))}
+      button === null ? null : (
+        <Box key={SLOT.orders}>
+          <Button key="orders" label={button.label} onPress={show}>
+            {button.problem ? <Text color="red">{button.label}</Text> : button.label}
+          </Button>
         </Box>
       )
 
@@ -240,7 +237,6 @@ export const register: Register = on => {
     }
     const chosen = await read($, selected)
     const order = answer.orders.find(d => d.path === chosen)
-    const left = answer.leftOut.find(l => l.path === chosen)
     const all = (
       <Button key="all-orders" label="All pinned orders" dimColor onPress={() => update($, selected, () => null)} />
     )
@@ -274,25 +270,19 @@ export const register: Register = on => {
         </Box>
       )
     }
-    if (left !== undefined) {
-      return (
-        <Box flexDirection="column">
-          <Text bold>{left.path}</Text>
-          <Text color="red">
-            Not in this session's context: {left.message} ({left.code}).
-          </Text>
-          <Box marginTop={1}>{all}</Box>
-        </Box>
-      )
-    }
     return (
       <Box flexDirection="column">
         <Text dimColor>From {answer.board}. Each verified order below is in this session's context.</Text>
         {answer.orders.map(d => (
           <Box key={d.path} flexDirection="column" marginTop={1}>
-            <Text bold>
-              {d.path}, until {d.expires}
-            </Text>
+            <Button
+              key={`order:${d.path}`}
+              label={`${d.path}, until ${d.expires}`}
+              onPress={async () => {
+                await update($, selected, () => d.path)
+                await update($, showContext, () => false)
+              }}
+            />
             <Text color="green">Verified: signed by {d.signer}.</Text>
             <Text>{d.order}</Text>
           </Box>

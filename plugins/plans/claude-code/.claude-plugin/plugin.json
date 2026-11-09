@@ -1,6 +1,6 @@
 {
   "name": "board-plans",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Shows the owner's open Board questions above the prompt and answers them from a pane, and /yesterday shows the morning report of the previous day's records.",
   "types": "./types/index.d.ts",
   "author": {

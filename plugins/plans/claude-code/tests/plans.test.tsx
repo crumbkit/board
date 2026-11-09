@@ -158,7 +158,7 @@ test('with plans.waiting the button says what waits and how much blocks, and its
   expect((await band.find({ key: 'waiting' }))?.text).toBe('Waiting 14 · 11 blocking')
   const drawn = await band.drawn()
   const row = drawn.type === 'Box' ? drawn.children?.[0] : undefined
-  expect(typeof row === 'object' && row.type === 'Box' ? row.children?.map(c => (typeof c === 'object' && c.type === 'Box' ? c.props?.key : '')) : []).toEqual(['band:c2-waiting'])
+  expect(typeof row === 'object' && row.type === 'Box' ? row.children?.map(c => (typeof c === 'object' && c.type === 'Box' ? c.props?.key : '')) : []).toEqual(['band:b3-waiting'])
 })
 
 test('when nothing waits the band draws nothing of the mod\'s, even with open questions counted elsewhere', async ($, on) => {

@@ -1,6 +1,6 @@
 {
   "name": "board-attention",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Puts the owner's verified pinned orders from the personal board in each session's context with a band and pane that show them, and a button above the prompt that opens the signing window for an order an agent drafted.",
   "types": "./types/index.d.ts",
   "author": {
