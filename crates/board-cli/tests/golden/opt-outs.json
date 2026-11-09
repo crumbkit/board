@@ -1,0 +1,484 @@
+{
+  "schema": "board/opt-outs/v2",
+  "data": [
+    {
+      "rule": "effects/yes",
+      "applies_to": "board put",
+      "reason": "the command asks no question, so it has no confirmation to skip, and git keeps each commit it makes, which a revert undoes",
+      "costs": [
+        "An agent without a terminal cannot run the command, or the command runs without asking anyone."
+      ],
+      "budget": null
+    },
+    {
+      "rule": "effects/yes",
+      "applies_to": "board rm",
+      "reason": "the command asks no question, so it has no confirmation to skip, and git keeps each commit it makes, which a revert undoes",
+      "costs": [
+        "An agent without a terminal cannot run the command, or the command runs without asking anyone."
+      ],
+      "budget": null
+    },
+    {
+      "rule": "effects/yes",
+      "applies_to": "board mount update",
+      "reason": "the command asks no question, so it has no confirmation to skip, and git keeps each commit it makes, which a revert undoes",
+      "costs": [
+        "An agent without a terminal cannot run the command, or the command runs without asking anyone."
+      ],
+      "budget": null
+    },
+    {
+      "rule": "effects/yes",
+      "applies_to": "board call",
+      "reason": "the capability decides what it writes, and a plugin's op that the owner must admit already waits for the owner through decide",
+      "costs": [
+        "An agent without a terminal cannot run the command, or the command runs without asking anyone."
+      ],
+      "budget": null
+    },
+    {
+      "rule": "effects/yes",
+      "applies_to": "board answer",
+      "reason": "an approval waits for the owner's Touch ID unless --signature gives a signature made elsewhere, --no-input refuses that wait, and a refusal writes only the answer",
+      "costs": [
+        "An agent without a terminal cannot run the command, or the command runs without asking anyone."
+      ],
+      "budget": null
+    },
+    {
+      "rule": "effects/yes",
+      "applies_to": "board skills install",
+      "reason": "it replaces and removes only folders that hold Board's marker, which a second install writes again, and a folder without the marker only with --force",
+      "costs": [
+        "An agent without a terminal cannot run the command, or the command runs without asking anyone."
+      ],
+      "budget": null
+    },
+    {
+      "rule": "effects/expect-flag",
+      "applies_to": "board put",
+      "reason": "Board's --expect names the git blob the file must hold, or none for a new file, which crumbkit's Expect does not take",
+      "costs": [
+        "The flag means what the tool makes it mean, which can differ from what `--expect` means in other tools.",
+        "A failed check does not fail with the tool's `version::conflict` code, so an agent cannot tell a conflict from another failure by its code."
+      ],
+      "budget": null
+    },
+    {
+      "rule": "effects/expect-flag",
+      "applies_to": "board rm",
+      "reason": "Board's --expect names the git blob the file must hold, or none for a new file, which crumbkit's Expect does not take",
+      "costs": [
+        "The flag means what the tool makes it mean, which can differ from what `--expect` means in other tools.",
+        "A failed check does not fail with the tool's `version::conflict` code, so an agent cannot tell a conflict from another failure by its code."
+      ],
+      "budget": null
+    },
+    {
+      "rule": "documents/rows-whole",
+      "applies_to": "board ls",
+      "reason": "an agent that asks for --json gets every field without needing a second flag",
+      "costs": [
+        "--json prints every field of each row, so the document costs more tokens than the compact columns."
+      ],
+      "budget": null
+    },
+    {
+      "rule": "documents/rows-whole",
+      "applies_to": "board check",
+      "reason": "an agent that asks for --json gets every field without needing a second flag",
+      "costs": [
+        "--json prints every field of each row, so the document costs more tokens than the compact columns."
+      ],
+      "budget": null
+    },
+    {
+      "rule": "documents/rows-whole",
+      "applies_to": "board query",
+      "reason": "an agent that asks for --json gets every field without needing a second flag",
+      "costs": [
+        "--json prints every field of each row, so the document costs more tokens than the compact columns."
+      ],
+      "budget": null
+    },
+    {
+      "rule": "documents/rows-whole",
+      "applies_to": "board plugin list",
+      "reason": "an agent that asks for --json gets every field without needing a second flag",
+      "costs": [
+        "--json prints every field of each row, so the document costs more tokens than the compact columns."
+      ],
+      "budget": null
+    },
+    {
+      "rule": "documents/rows-whole",
+      "applies_to": "board plugin find",
+      "reason": "an agent that asks for --json gets every field without needing a second flag",
+      "costs": [
+        "--json prints every field of each row, so the document costs more tokens than the compact columns."
+      ],
+      "budget": null
+    },
+    {
+      "rule": "suite/skip",
+      "applies_to": "Check::Grammar",
+      "reason": "board's root verbs (get, ls, put, check) are single words by design, so the resource-verb form is not adopted",
+      "costs": [
+        "No test checks this check's rules anywhere in the tool, so a change that breaks one of them passes unnoticed and an agent meets the broken convention."
+      ],
+      "budget": null
+    },
+    {
+      "rule": "suite/skip",
+      "applies_to": "Check::Filters",
+      "reason": "board's repeatable options (-C, --field, --var, --meta) take one value per repeat, so comma lists are not adopted",
+      "costs": [
+        "No test checks this check's rules anywhere in the tool, so a change that breaks one of them passes unnoticed and an agent meets the broken convention."
+      ],
+      "budget": null
+    },
+    {
+      "rule": "suite/skip",
+      "applies_to": "Check::Help",
+      "reason": "board check and board refs print rows that the help rules' column and Bytes-field checks do not match, and the call example in the help is not adopted",
+      "costs": [
+        "No test checks this check's rules anywhere in the tool, so a change that breaks one of them passes unnoticed and an agent meets the broken convention."
+      ],
+      "budget": null
+    },
+    {
+      "rule": "suite/skip",
+      "applies_to": "Check::PathWeights",
+      "reason": "no per-path help weight budget is declared; help_sizes in help.rs pins each page's size",
+      "costs": [
+        "No test checks this check's rules anywhere in the tool, so a change that breaks one of them passes unnoticed and an agent meets the broken convention."
+      ],
+      "budget": null
+    },
+    {
+      "rule": "suite/skip",
+      "applies_to": "Check::HelpGoldens",
+      "reason": "help pages are pinned by the size budgets in help.rs and the command reference in docs/commands.md, not by golden files",
+      "costs": [
+        "No test checks this check's rules anywhere in the tool, so a change that breaks one of them passes unnoticed and an agent meets the broken convention."
+      ],
+      "budget": null
+    },
+    {
+      "rule": "suite/skip",
+      "applies_to": "Check::SchemaGoldens",
+      "reason": "document schemas are pinned by the released.json tests, not by golden files",
+      "costs": [
+        "No test checks this check's rules anywhere in the tool, so a change that breaks one of them passes unnoticed and an agent meets the broken convention."
+      ],
+      "budget": null
+    },
+    {
+      "rule": "suite/skip",
+      "applies_to": "Check::Examples",
+      "reason": "the examples test in help.rs runs the examples on a fixture board that it builds and removes",
+      "costs": [
+        "No test checks this check's rules anywhere in the tool, so a change that breaks one of them passes unnoticed and an agent meets the broken convention."
+      ],
+      "budget": null
+    },
+    {
+      "rule": "suite/skip",
+      "applies_to": "Check::OutputBudget",
+      "reason": "the output budget is tested by crates/board-cli/tests/output_budget.rs",
+      "costs": [
+        "No test checks this check's rules anywhere in the tool, so a change that breaks one of them passes unnoticed and an agent meets the broken convention."
+      ],
+      "budget": null
+    },
+    {
+      "rule": "suite/skip",
+      "applies_to": "Check::CommandReference",
+      "reason": "the command reference test in describe.rs runs it with the binary on a scratch board",
+      "costs": [
+        "No test checks this check's rules anywhere in the tool, so a change that breaks one of them passes unnoticed and an agent meets the broken convention."
+      ],
+      "budget": null
+    },
+    {
+      "rule": "suite/skip",
+      "applies_to": "Check::Recoveries",
+      "reason": "the recoveries test in recoveries.rs runs it with its scratch scenarios",
+      "costs": [
+        "No test checks this check's rules anywhere in the tool, so a change that breaks one of them passes unnoticed and an agent meets the broken convention."
+      ],
+      "budget": null
+    },
+    {
+      "rule": "suite/skip",
+      "applies_to": "Check::Twins",
+      "reason": "the twins test in recoveries.rs runs it with its scratch scenarios",
+      "costs": [
+        "No test checks this check's rules anywhere in the tool, so a change that breaks one of them passes unnoticed and an agent meets the broken convention."
+      ],
+      "budget": null
+    },
+    {
+      "rule": "help-budget/root",
+      "applies_to": "board",
+      "reason": "The root page lists all twenty-one commands under the goal each serves, the commands a newcomer runs first, and what a logical path and a record are, which STANDARDS.md 24 requires on one page. It also lists the global flags -C and --personal, which choose the board a run uses, and one line naming at most six of the plugins the board enables, which run as `board <plugin> <capability>`.",
+      "costs": [
+        "Each read of the page can cost 1550 bytes more than the default, about 388 tokens."
+      ],
+      "budget": {
+        "bytes": 3050,
+        "default": 1500,
+        "extra_bytes": 1550,
+        "extra_tokens": 388
+      }
+    },
+    {
+      "rule": "help-budget/command",
+      "applies_to": "board get",
+      "reason": "get has two output formats and --fetch, and a reader needs to know on one page that without --fetch get prints an attachment record and never reaches the store.",
+      "costs": [
+        "Each read of the page can cost 200 bytes more than the default, about 50 tokens."
+      ],
+      "budget": {
+        "bytes": 1400,
+        "default": 1200,
+        "extra_bytes": 200,
+        "extra_tokens": 50
+      }
+    },
+    {
+      "rule": "help-budget/command",
+      "applies_to": "board put",
+      "reason": "put has seven options of its own (--new, --var, --expect, --batch, --bulk, --file and --wait), and a reader needs to know on one page that with a store --file may write an attachment record in place of the bytes. Its page also ends with the Effects: line and a global flags line that names --no-input.",
+      "costs": [
+        "Each read of the page can cost 420 bytes more than the default, about 105 tokens."
+      ],
+      "budget": {
+        "bytes": 1620,
+        "default": 1200,
+        "extra_bytes": 420,
+        "extra_tokens": 105
+      }
+    },
+    {
+      "rule": "help-budget/command",
+      "applies_to": "board refs",
+      "reason": "refs has five options and two output formats, and a reader needs the from/to line format and the --field encoding on one page to parse its text output. Its page also ends with the Effects: line and a global flags line that names --no-input.",
+      "costs": [
+        "Each read of the page can cost 800 bytes more than the default, about 200 tokens."
+      ],
+      "budget": {
+        "bytes": 2000,
+        "default": 1200,
+        "extra_bytes": 800,
+        "extra_tokens": 200
+      }
+    },
+    {
+      "rule": "help-budget/command",
+      "applies_to": "board decide",
+      "reason": "decide says on one page what the owner's approval, refusal and silence each do, its Effects: line says that it adds, and its global flags line names --no-input, which a program adds to every run.",
+      "costs": [
+        "Each read of the page can cost 60 bytes more than the default, about 15 tokens."
+      ],
+      "budget": {
+        "bytes": 1260,
+        "default": 1200,
+        "extra_bytes": 60,
+        "extra_tokens": 15
+      }
+    },
+    {
+      "rule": "help-budget/command",
+      "applies_to": "board answer",
+      "reason": "answer says on one page how an approval is signed and checked, its Effects: line says that it is destructive, and its global flags line names --no-input, which a program adds to every run.",
+      "costs": [
+        "Each read of the page can cost 60 bytes more than the default, about 15 tokens."
+      ],
+      "budget": {
+        "bytes": 1260,
+        "default": 1200,
+        "extra_bytes": 60,
+        "extra_tokens": 15
+      }
+    },
+    {
+      "rule": "output-budget/run",
+      "applies_to": "every run of board",
+      "reason": "a reader asks again for the paths and rows a run leaves out",
+      "costs": [
+        "A run can print 66060288 bytes more than the default, about 16515072 tokens."
+      ],
+      "budget": {
+        "bytes": 67108864,
+        "default": 1048576,
+        "extra_bytes": 66060288,
+        "extra_tokens": 16515072
+      }
+    },
+    {
+      "rule": "terminal-detection/off",
+      "applies_to": "every run of board",
+      "reason": "Board's tests read its text from a pipe",
+      "costs": [
+        "A picker never asks for a missing argument and `Run::confirm` never asks, even at a terminal, so a person must type every argument and `--yes` as a script does.",
+        "Progress never prints, help prints without clap's colours at a terminal, and a table's cells print without their styles.",
+        "A text table never fits the terminal's width, so the terminal wraps each line of a table that is wider than the terminal."
+      ],
+      "budget": null
+    }
+  ],
+  "declarations": [
+    {
+      "declaration": "refusal-alternatives",
+      "applies_to": "every run of board",
+      "declares": "A refused command line for a command without its own function also offers the tool's own alternatives."
+    },
+    {
+      "declaration": "document-name",
+      "applies_to": "board init",
+      "declares": "The command prints board/init-report/v2, where its path gives the name init."
+    },
+    {
+      "declaration": "document-name",
+      "applies_to": "board check",
+      "declares": "The command prints board/check-report/v2, where its path gives the name check."
+    },
+    {
+      "declaration": "text-line",
+      "applies_to": "board check",
+      "declares": "The text prints each row as the line <ENTRY> in place of a table row."
+    },
+    {
+      "declaration": "document-name",
+      "applies_to": "board get",
+      "declares": "The command prints board/get-report/v2, where its path gives the name get."
+    },
+    {
+      "declaration": "document-name",
+      "applies_to": "board ls",
+      "declares": "The command prints board/ls-report/v2, where its path gives the name ls."
+    },
+    {
+      "declaration": "text-line",
+      "applies_to": "board ls",
+      "declares": "The text prints each row as the line <ENTRY> in place of a table row."
+    },
+    {
+      "declaration": "document-name",
+      "applies_to": "board refs",
+      "declares": "The command prints board/refs-report/v2, where its path gives the name refs."
+    },
+    {
+      "declaration": "document-name",
+      "applies_to": "board uri",
+      "declares": "The command prints board/uri-report/v2, where its path gives the name uri."
+    },
+    {
+      "declaration": "document-name",
+      "applies_to": "board put",
+      "declares": "The command prints board/put-report/v2, where its path gives the name put."
+    },
+    {
+      "declaration": "document-name",
+      "applies_to": "board rm",
+      "declares": "The command prints board/put-report/v2, where its path gives the name rm."
+    },
+    {
+      "declaration": "document-name",
+      "applies_to": "board sync",
+      "declares": "The command prints board/sync-report/v2, where its path gives the name sync."
+    },
+    {
+      "declaration": "document-name",
+      "applies_to": "board mount update",
+      "declares": "The command prints board/mount-update-report/v2, where its path gives the name mount-update."
+    },
+    {
+      "declaration": "document-name",
+      "applies_to": "board plugin list",
+      "declares": "The command prints board/plugin-list-report/v2, where its path gives the name plugin-list."
+    },
+    {
+      "declaration": "text-line",
+      "applies_to": "board plugin list",
+      "declares": "The text prints each row as the line <STATUS> <NAME> [<VERSION>] <ENABLED>[: <PROBLEMS>][ offers <OFFERS>] in place of a table row."
+    },
+    {
+      "declaration": "document-name",
+      "applies_to": "board plugin find",
+      "declares": "The command prints board/plugin-find-report/v2, where its path gives the name plugin-find."
+    },
+    {
+      "declaration": "text-line",
+      "applies_to": "board plugin find",
+      "declares": "The text prints each row as the line <PLUGIN>.<CAPABILITY> <ENABLED> <DESCRIPTION> in place of a table row."
+    },
+    {
+      "declaration": "document-name",
+      "applies_to": "board plugin enable",
+      "declares": "The command prints board/plugin-enable-report/v2, where its path gives the name plugin-enable."
+    },
+    {
+      "declaration": "document-name",
+      "applies_to": "board type add",
+      "declares": "The command prints board/put-report/v2, where its path gives the name type-add."
+    },
+    {
+      "declaration": "document-name",
+      "applies_to": "board call",
+      "declares": "The command prints board/call-report/v2, where its path gives the name call."
+    },
+    {
+      "declaration": "document-name",
+      "applies_to": "board query",
+      "declares": "The command prints board/query-report/v2, where its path gives the name query."
+    },
+    {
+      "declaration": "text-line",
+      "applies_to": "board query",
+      "declares": "The text prints each row as the line <ENTRY> in place of a table row."
+    },
+    {
+      "declaration": "document-name",
+      "applies_to": "board decide",
+      "declares": "The command prints board/decide-report/v2, where its path gives the name decide."
+    },
+    {
+      "declaration": "document-name",
+      "applies_to": "board answer",
+      "declares": "The command prints board/answer-report/v2, where its path gives the name answer."
+    },
+    {
+      "declaration": "document-name",
+      "applies_to": "board serve",
+      "declares": "The command prints board/serve-report/v2, where its path gives the name serve."
+    },
+    {
+      "declaration": "document-name",
+      "applies_to": "board ui kinds",
+      "declares": "The command prints board/ui-kinds-report/v2, where its path gives the name ui-kinds."
+    },
+    {
+      "declaration": "document-name",
+      "applies_to": "board ui template",
+      "declares": "The command prints board/ui-template-report/v2, where its path gives the name ui-template."
+    },
+    {
+      "declaration": "document-name",
+      "applies_to": "board ui open",
+      "declares": "The command prints board/ui-open-report/v2, where its path gives the name ui-open."
+    },
+    {
+      "declaration": "document-name",
+      "applies_to": "board skills install",
+      "declares": "The command prints board/skills-install-report/v2, where its path gives the name skills-install."
+    },
+    {
+      "declaration": "document-name",
+      "applies_to": "board skills list",
+      "declares": "The command prints board/skills-list-report/v2, where its path gives the name skills-list."
+    }
+  ]
+}

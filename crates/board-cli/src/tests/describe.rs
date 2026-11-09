@@ -3,7 +3,7 @@
 //! the flags a program adds when it runs one for a person.
 
 use clap::CommandFactory as _;
-use crumbkit_test::{Allow, Rule};
+use crumbkit_test::{Allow, Check, Examples, Rule, Suite};
 
 use super::*;
 use crate::run::Cli;
@@ -99,10 +99,10 @@ fn line(path: &str, options: &[&str], flags: &[&str], words: &[&str]) -> Vec<OsS
 fn parses(arguments: Vec<OsString>) -> Result<(), String> {
     let (mut stdout, mut stderr) = (Vec::new(), Vec::new());
     let sink = &mut crumbkit::Sink::new(&mut stdout, &mut stderr);
-    let parsed = crumbkit::try_parse_to::<crate::graft::Parsed, _, _, _, _>(
+    let parsed = crumbkit::try_parse_to::<crate::graft::Parsed>(
         sink,
         Cli::command(),
-        &crate::render::GUIDE,
+        &crate::render::TOOL,
         arguments,
     );
     match parsed {
@@ -414,7 +414,7 @@ const COMMITTED: &str = "the command asks no question, so it has no confirmation
 const BLOB: &str = "Board's --expect names the git blob the file must hold, or none for a new file, which crumbkit's Expect does not take";
 
 /// Board's opt-outs from crumbkit's effects rules.
-const EFFECTS: &[Allow] = &[
+pub(super) const EFFECTS: &[Allow] = &[
     Allow::new(Rule::Yes, "put", COMMITTED),
     Allow::new(Rule::Yes, "rm", COMMITTED),
     Allow::new(Rule::Yes, "mount update", COMMITTED),
@@ -438,16 +438,6 @@ const EFFECTS: &[Allow] = &[
 ];
 
 #[test]
-fn every_command_declares_its_effects() {
-    crumbkit_test::check_effects(&Cli::command(), &crate::render::GUIDE, EFFECTS);
-}
-
-#[test]
-fn commands_and_schemas_sit_at_crumbkits_fixed_paths() {
-    crumbkit_test::check_mounts(&Cli::command(), &crate::render::GUIDE);
-}
-
-#[test]
 fn every_command_matches_the_checked_in_command_reference() {
     // The reference describes `call` alone, so the check runs Board outside
     // any board, where `commands list` lists no plugin's capabilities. Its
@@ -459,9 +449,10 @@ fn every_command_matches_the_checked_in_command_reference() {
         super::help::binary()
     );
     outside.write("bin/board", Item::Executable(&script));
-    let reference = concat!(env!("CARGO_MANIFEST_DIR"), "/docs/commands.md");
     let binary = outside.workdir().join("bin/board");
-    crumbkit_test::check_command_reference(binary.to_str().unwrap(), reference);
+    Suite::new(super::conventions::build)
+        .examples(Examples::new(binary.to_str().unwrap(), ""))
+        .run(Check::CommandReference);
 }
 
 /// A plugin installed beside the built-in ones, with one capability that
@@ -664,10 +655,10 @@ fn each_capability_rows_command_line_parses_with_the_flags_a_program_adds() {
         let found = crate::graft::find(&arguments, board_plugins::BUILT_IN, Some(&plugins));
         let (mut stdout, mut stderr) = (Vec::new(), Vec::new());
         let sink = &mut crumbkit::Sink::new(&mut stdout, &mut stderr);
-        let parsed = crumbkit::try_parse_to::<crate::graft::Parsed, _, _, _, _>(
+        let parsed = crumbkit::try_parse_to::<crate::graft::Parsed>(
             sink,
             crate::graft::command(found.as_slice(), Cli::command()),
-            &crate::graft::guide(found.as_slice()),
+            &crate::graft::tool(found.as_slice()),
             arguments,
         );
         assert!(parsed.is_ok(), "{path}: {}{}", text(&stdout), text(&stderr));

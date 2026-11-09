@@ -8,7 +8,10 @@ use std::path::Path;
 use std::process::Command;
 use std::time::{Duration, Instant};
 
-use crumbkit_process::{Capture, Escalation, Exit, Input, OverLimit, Run, RunError, Signal, Stop};
+use crumbkit_process::{
+    Capture, Escalation, Input, Outcome, OverLimit, RunError, RunOptions, Signal, Status,
+    StopReason,
+};
 
 /// How long a child has to exit after SIGTERM before Board kills it.
 const GRACE: Duration = Duration::from_secs(1);
@@ -147,7 +150,7 @@ pub(crate) fn run(
         return (None, Err(Stopped::Io(error)));
     }
     let at = Instant::now();
-    let settings = Run::new()
+    let settings = RunOptions::new()
         .stdin(Input::Bytes(input))
         .stdout(Capture::Whole {
             limit: limits.stdout,
@@ -179,26 +182,26 @@ pub(crate) fn run(
         at,
         replied: finished.first_stdout(),
     };
-    let exit = finished.exit();
+    let outcome = finished.outcome();
     // A child can exit before the reader sees its stdout pass the bound, so
     // the kept stdout decides, not only the exit.
     let too_large = finished.stdout().over_limit();
     let (stdout, stderr) = finished.into_output();
     let (stdout, stderr) = (stdout.into_bytes(), stderr.into_bytes());
-    let result = match exit {
-        Exit::Stopped(Stop::OverLimit) => Err(Stopped::TooLarge(stderr)),
+    let result = match outcome {
+        Outcome::Stopped(StopReason::OverLimit) => Err(Stopped::TooLarge(stderr)),
         _ if too_large => Err(Stopped::TooLarge(stderr)),
-        Exit::Code(code) => Ok(Finished {
+        Outcome::Ended(Status::Code(code)) => Ok(Finished {
             code: Some(code),
             stdout,
             stderr,
         }),
-        Exit::Signal(_) => Ok(Finished {
+        Outcome::Ended(Status::Signal(_)) => Ok(Finished {
             code: None,
             stdout,
             stderr,
         }),
-        Exit::TimedOut => Err(Stopped::Timeout(stderr)),
+        Outcome::TimedOut => Err(Stopped::Timeout(stderr)),
         // Board gives the run no cancel, so only a later crumbkit-process
         // can end it another way.
         _ => Err(Stopped::Io(io::Error::other(

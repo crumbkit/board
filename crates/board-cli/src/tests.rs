@@ -2021,6 +2021,7 @@ mod built_in;
 mod cli;
 mod complete;
 mod consistency;
+mod conventions;
 mod decide;
 mod describe;
 mod directory;

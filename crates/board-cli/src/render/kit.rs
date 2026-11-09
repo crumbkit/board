@@ -4,10 +4,11 @@ use std::fmt;
 use std::fmt::Write as _;
 
 use board_model::Refusal;
-use crumbkit::help::{Guide, RefusalContext};
+use crumbkit::help::Help;
+use crumbkit::tool::{Failures, Output as Printing, RefusalContext};
 use crumbkit::{
     Batch, Call, Code, Document, Failure, Field, FieldValue, Listing, Prose, Recovery, Row, Rows,
-    Sink, Spelling, codes,
+    Sink, Spelling, Tool, codes,
 };
 use schemars::JsonSchema;
 use serde::Serialize;
@@ -17,18 +18,20 @@ use crate::report::Output;
 
 /// How Board prints: its budget, and the same text on a terminal as in a
 /// pipe.
-pub(crate) const GUIDE: Guide = guide(super::BUDGET);
+pub(crate) const TOOL: Tool = tool(super::BUDGET);
 
-const fn guide(budget: usize) -> Guide {
-    Guide::new()
-        .output_budget(
-            budget,
-            "a reader asks again for the paths and rows a run leaves out",
+const fn tool(budget: usize) -> Tool {
+    Tool::new()
+        .output(
+            Printing::new()
+                .budget(
+                    budget,
+                    "a reader asks again for the paths and rows a run leaves out",
+                )
+                .without_terminal_detection("Board's tests read its text from a pipe"),
         )
-        .without_terminal_detection("Board's tests read its text from a pipe")
-        .refusal_alternatives(path_fixed)
-        .leaves(super::LEAVES)
-        .groups(&[super::GOALS])
+        .failures(Failures::new().refusal_alternatives(path_fixed))
+        .help(Help::new().leaves(super::LEAVES).groups(&[super::GOALS]))
 }
 
 /// For a path refused only for its form, the refused line with the path
@@ -217,24 +220,24 @@ impl<R: Row> Noted for Batch<R, Refused> {
 /// One run's printer: crumbkit's view of the command line it parsed. It
 /// prints one result, so printing takes it by value.
 pub(crate) struct Printer {
-    pub(crate) view: crumbkit::Output,
+    pub(crate) view: crumbkit::Run,
 }
 
 impl Printer {
     /// A printer for `words`, the whole command line, that prints JSON when
-    /// `json` is set and prints by `guide`.
+    /// `json` is set and prints by `tool`.
     pub(crate) fn new(
         json: bool,
-        guide: &Guide,
+        tool: &Tool,
         words: impl IntoIterator<Item = impl Into<std::ffi::OsString>>,
     ) -> Self {
         use clap::CommandFactory as _;
-        let view = crumbkit::Output::new_to(
+        let view = crumbkit::Run::new_to(
             &mut Sink::new(std::io::sink(), std::io::sink()),
             crumbkit::ViewFlags::new().json(json),
             crumbkit::DryRun::default(),
             crate::run::Cli::command(),
-            guide,
+            tool,
             words,
         )
         .expect("crumbkit refuses only --full without --json or --fields with --long or --full, and these flags set neither");
@@ -246,7 +249,7 @@ impl Printer {
     #[cfg(test)]
     pub(crate) fn of(json: bool, budget: usize, words: &[&str]) -> Self {
         let args = std::iter::once("board").chain(words.iter().copied());
-        Self::new(json, &guide(budget), args)
+        Self::new(json, &tool(budget), args)
     }
 
     pub(crate) const fn json(&self) -> bool {

@@ -7,7 +7,9 @@ use std::path::Path;
 use std::process::{Command, ExitStatus, Output};
 use std::time::{Duration, Instant};
 
-use crumbkit_process::{Capture, Escalation, Exit, OverLimit, Run, RunError, Signal};
+use crumbkit_process::{
+    Capture, Escalation, Outcome, OverLimit, RunError, RunOptions, Signal, Status,
+};
 
 use crate::git::Repository;
 use crate::write::sync::SyncError;
@@ -207,7 +209,7 @@ fn run(
     board_plugin::clean_up_on_signals(gix::tempfile::registry::cleanup_tempfiles)
         .map_err(|source| SyncError::NotStarted { source })?;
     let left = deadline.left();
-    let settings = Run::new()
+    let settings = RunOptions::new()
         .stdout(Capture::Whole {
             limit: STDOUT,
             over: OverLimit::Stop,
@@ -233,17 +235,17 @@ fn run(
             return Err(failure(status, Vec::new()));
         }
     };
-    let exit = finished.exit();
+    let outcome = finished.outcome();
     // git can exit before the reader sees its stdout pass the bound, so the
     // kept stdout decides, not only the exit.
     let whole = !finished.stdout().over_limit();
     let (stdout, stderr) = finished.into_output();
     let (stdout, stderr) = (stdout.into_bytes(), stderr.into_bytes());
     // The raw wait status, so the status reads as git's exit status prints.
-    let status = match exit {
-        Exit::Code(code) if whole => ExitStatus::from_raw(code << 8),
-        Exit::Signal(signal) if whole => ExitStatus::from_raw(signal),
-        Exit::TimedOut => {
+    let status = match outcome {
+        Outcome::Ended(Status::Code(code)) if whole => ExitStatus::from_raw(code << 8),
+        Outcome::Ended(Status::Signal(signal)) if whole => ExitStatus::from_raw(signal),
+        Outcome::TimedOut => {
             return Err(SyncError::TimedOut {
                 operation,
                 remote: upstream.remote.clone(),

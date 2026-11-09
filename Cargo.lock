@@ -848,8 +848,9 @@ checksum = "a31eee39dddec8330830986fcd7625edb5a24ec90ea038215273bbc3adb08ac6"
 
 [[package]]
 name = "crumbkit"
-version = "0.1.1"
-source = "git+https://github.com/crumbkit/crumbkit?rev=fefb2ab7f532c0a6366db66c7478fc0e5514259c#fefb2ab7f532c0a6366db66c7478fc0e5514259c"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9a0a6c8d3ef6350af97967fd136e6833f6eb99ec8905ffa496ba47fcaa918f82"
 dependencies = [
  "clap",
  "clap_complete",
@@ -863,8 +864,9 @@ dependencies = [
 
 [[package]]
 name = "crumbkit-markdown"
-version = "0.1.1"
-source = "git+https://github.com/crumbkit/crumbkit?rev=fefb2ab7f532c0a6366db66c7478fc0e5514259c#fefb2ab7f532c0a6366db66c7478fc0e5514259c"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "389093080e087c805b67095b59215b1dc2cf00234495ac580ff9689b6cd0b293"
 dependencies = [
  "crumbkit",
  "serde",
@@ -873,8 +875,9 @@ dependencies = [
 
 [[package]]
 name = "crumbkit-process"
-version = "0.1.1"
-source = "git+https://github.com/crumbkit/crumbkit?rev=fefb2ab7f532c0a6366db66c7478fc0e5514259c#fefb2ab7f532c0a6366db66c7478fc0e5514259c"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b73d4de026d83871f7d850fe8c1d1074dffb166e2bca5a0ac013078a59256274"
 dependencies = [
  "process-wrap",
  "rustix",
@@ -883,8 +886,9 @@ dependencies = [
 
 [[package]]
 name = "crumbkit-test"
-version = "0.1.1"
-source = "git+https://github.com/crumbkit/crumbkit?rev=fefb2ab7f532c0a6366db66c7478fc0e5514259c#fefb2ab7f532c0a6366db66c7478fc0e5514259c"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0a518081f0ca7857f03237046558b6257da7fb7f59f5a3fddd0439169b68cd27"
 dependencies = [
  "clap",
  "crumbkit",
