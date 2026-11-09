@@ -481,8 +481,8 @@ fn prefixes(places: &[board_tree::Place]) -> Result<Vec<LogicalPath>, Box<Refusa
         .collect()
 }
 
-fn opened(error: &OpenError) -> Box<Refusal> {
-    Box::new(Refusal::new(error.code(), error, &error.fields()))
+fn opened(error: &OpenError) -> Refusal {
+    Refusal::new(error.code(), error, &error.fields())
 }
 
 impl Host for Hosted<'_> {
@@ -527,7 +527,7 @@ impl Host for Hosted<'_> {
     }
 
     fn call(&self, target: &Target, input: &Value) -> Result<CallReport, Box<Refusal>> {
-        let board = self.again().map_err(|error| opened(&error))?;
+        let board = self.again().map_err(|error| Box::new(opened(&error)))?;
         // As bytes, so the input passes the size limit and parse a process
         // plugin's `board call` reads it through.
         let called = board.call(target, input.to_string().as_bytes(), &self.plugins);
@@ -585,7 +585,7 @@ impl Host for Hosted<'_> {
             home,
             self.plugins.signing.clone(),
         )?;
-        let mut board = self.again().map_err(|error| opened(&error))?;
+        let mut board = self.again().map_err(|error| Box::new(opened(&error)))?;
         board.ask_as(asker);
         (board.decide_op(op, path, shown)).map_err(|error| Box::new(error.refusal()))
     }

@@ -4,7 +4,7 @@ use std::fmt;
 
 use serde_json::{Map, Value};
 
-use crate::{Code, Fields, Lined, PluginCode};
+use crate::{Code, Fields, PluginCode};
 
 /// The code a refusal carries: one of Board's, or a plugin's own.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -33,10 +33,10 @@ pub struct Refusal {
     pub hint: Option<String>,
     /// The values at fault, by their names in a failure's `fields`.
     pub fields: Map<String, Value>,
-    /// The end of a plugin's stderr, or empty.
-    pub stderr: Vec<u8>,
-    /// Each line of a batch that refused it, in order.
-    pub lines: Vec<Lined>,
+    /// The end of the stderr of a plugin call or a git transport that ran,
+    /// or `None` when none ran. A batch's refused lines are in `fields`
+    /// under `refusals`.
+    pub stderr: Option<Vec<u8>>,
 }
 
 impl Refusal {
@@ -48,8 +48,7 @@ impl Refusal {
             message: message.to_string(),
             hint: Some(code.hint(fields)),
             fields: fields.json(),
-            stderr: Vec::new(),
-            lines: fields.refusals.clone(),
+            stderr: None,
         }
     }
 
@@ -70,8 +69,7 @@ impl Refusal {
             message,
             hint: None,
             fields,
-            stderr: Vec::new(),
-            lines: Vec::new(),
+            stderr: None,
         }
     }
 }
@@ -221,7 +219,10 @@ mod tests {
             ..Fields::default()
         };
         let refused = Refusal::new(Code::PutStale, "the batch is refused", &batch);
-        assert_eq!(refused.lines, batch.refusals);
+        assert_eq!(
+            refused.fields["refusals"],
+            json!([{"line": 2, "code": "board::put::stale", "message": "it holds nothing"}])
+        );
         for code in [Code::PutInvalid, Code::PutStale] {
             assert_eq!(
                 code.hint(&batch),
@@ -262,7 +263,7 @@ mod tests {
             "run `board query \"SELECT name, sql FROM sqlite_master\"` for every table and its columns"
         );
         let refusal = Refusal::new(Code::QueryInvalid, "no such table: entires", &tables);
-        assert_eq!(refusal.lines, []);
+        assert!(!refusal.fields.contains_key("refusals"));
         assert_eq!(refusal.hint, Some(Code::QueryInvalid.hint(&tables)));
         assert_eq!(refusal.fields, tables.json());
     }
@@ -305,6 +306,6 @@ mod tests {
         assert_eq!(refusal.code.as_str(), "tasks::due::past");
         assert_eq!(refusal.hint, None);
         assert_eq!(refusal.fields, fields);
-        assert_eq!(refusal.lines, []);
+        assert_eq!(refusal.stderr, None);
     }
 }

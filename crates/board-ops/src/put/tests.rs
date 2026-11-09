@@ -1199,10 +1199,6 @@ fn a_batch_refusal_lists_each_line_with_its_own_fields_and_a_single_refusal_list
         refusals: vec![Lined::new(3, record.code(), &record, record.fields())],
     }
     .refusal();
-    assert_eq!(
-        batch.lines,
-        [Lined::new(3, record.code(), &record, record.fields())]
-    );
     assert_eq!(batch.code, RefusalCode::Board(Code::PutInvalid));
     assert_eq!(batch.message, "the batch is refused");
     assert_eq!(

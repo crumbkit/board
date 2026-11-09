@@ -44,7 +44,7 @@ impl SyncError {
         if !stderr.is_empty() {
             let text = String::from_utf8_lossy(stderr);
             refusal.fields.insert("stderr".to_owned(), text.into());
-            refusal.stderr = stderr.to_vec();
+            refusal.stderr = Some(stderr.to_vec());
         }
         refusal
     }

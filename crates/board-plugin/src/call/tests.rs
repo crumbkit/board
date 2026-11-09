@@ -437,8 +437,8 @@ fn assert_refused(error: &CallError, code: Code, fields: &Value, stderr: &[u8]) 
             message: error.to_string(),
             hint: Some(code.hint(&hinted)),
             fields: fields.as_object().unwrap().clone(),
-            stderr: stderr.to_vec(),
-            lines: Vec::new(),
+            // A refusal names `stderr` in its fields exactly when a process ran.
+            stderr: fields.get("stderr").map(|_| stderr.to_vec()),
         },
         "{error}"
     );
@@ -618,7 +618,7 @@ fn a_plugins_own_refusal_keeps_its_code_and_fields_with_its_stderr_and_no_hint_f
         .refusal()
     };
     let expected = |stderr: &str| Refusal {
-        stderr: stderr.as_bytes().to_vec(),
+        stderr: Some(stderr.as_bytes().to_vec()),
         ..Refusal::plugin(
             PluginCode::parse(&tasks, "tasks::date::bad".to_owned()).unwrap(),
             "no such date".to_owned(),
@@ -642,7 +642,7 @@ fn a_plugins_own_refusal_keeps_its_code_and_fields_with_its_stderr_and_no_hint_f
     .refusal();
     assert_eq!(board.code, Board(Code::PluginFailed));
     assert!(board.hint.is_some());
-    assert_eq!(board.stderr, b"a log line");
+    assert_eq!(board.stderr.as_deref(), Some(&b"a log line"[..]));
     assert_eq!(board.fields["stderr"], "a log line");
 }
 

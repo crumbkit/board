@@ -97,7 +97,7 @@ impl KnownBoards {
         let longest = best.iter().map(|(length, _, _)| *length).max();
         best.retain(|(length, _, _)| Some(*length) == longest);
         match best.as_slice() {
-            [] => Err(self.not_found(uri, rest, &origins, &passed)),
+            [] => Err(Box::new(self.not_found(uri, rest, &origins, &passed))),
             [(_, root, tail)] => {
                 let path = (LogicalPath::root().join(tail))
                     .map_err(|error| invalid(&format!("{error}")))?;
@@ -124,7 +124,7 @@ impl KnownBoards {
     /// `board::uri::not_found` for `uri`, naming the origins of the known
     /// boards read, those `passed` over, and the remote to clone: a GitHub
     /// `owner/name`, or else the part of the URI before the record's path.
-    fn not_found(&self, uri: &str, rest: &str, origins: &[String], passed: &str) -> Box<Refusal> {
+    fn not_found(&self, uri: &str, rest: &str, origins: &[String], passed: &str) -> Refusal {
         let file = shown(self.file.as_deref());
         let read = match origins {
             [] => format!("the known boards in `{file}` have no origin"),
@@ -144,6 +144,6 @@ impl KnownBoards {
             "clone the board whose remote is {remote} and list the clone in `{file}` as {{\"boards\": [\"<board directory>\"]}}"
         );
         let refusal = Refusal::new(Code::UriNotFound, message, &Fields::default());
-        Box::new(refusal.with_hint(hint))
+        refusal.with_hint(hint)
     }
 }

@@ -20,7 +20,7 @@ fn refused(json: bool, refusal: &Refusal) -> crate::report::Output {
 #[test]
 fn a_refusal_prints_its_code_message_hint_and_stderr_as_text_and_its_fields_as_json() {
     let refusal = Refusal {
-        stderr: b"Traceback: boom".to_vec(),
+        stderr: Some(b"Traceback: boom".to_vec()),
         ..Refusal::new(
             Code::PluginFailed,
             "plugin tasks exited 1",
@@ -100,12 +100,48 @@ fn a_plugins_refusal_whose_fields_hold_refusals_prints_no_refused_lines() {
         json!([{"line": 1, "code": "tasks::due::past", "message": "past"}, {"line": null}]),
     )]);
     let plugin = Refusal {
-        stderr: b"a log line".to_vec(),
+        stderr: Some(b"a log line".to_vec()),
         ..Refusal::plugin(past(), "the date is past".to_owned(), fields)
     };
     assert_eq!(
         text(&refused(false, &plugin).stderr),
         "error: the date is past\n  help:  no next step: the plugin gave no hint\n\
          \x20 code:  tasks::due::past\na log line\n"
+    );
+}
+
+#[test]
+fn a_batch_refusal_prints_every_refused_line_in_order_as_text_and_as_json() {
+    let line = |line, message: &str| Lined::new(line, Code::PutInvalid, message, Fields::default());
+    let batch = Refusal::new(
+        Code::PutInvalid,
+        "the batch is refused",
+        &Fields {
+            refusals: vec![
+                line(2, "it has no $type"),
+                line(4, "it is empty"),
+                line(7, "it is stale"),
+            ],
+            ..Fields::default()
+        },
+    );
+    let plain = refused(false, &batch);
+    assert_eq!(
+        text(&plain.stderr),
+        "error: the batch is refused\n\
+         \x20 help:  fix each line listed, then send the whole batch again; nothing was written\n\
+         \x20 code:  board::put::invalid\n\
+         \x20 line 2: board::put::invalid: it has no $type\n\
+         \x20 line 4: board::put::invalid: it is empty\n\
+         \x20 line 7: board::put::invalid: it is stale\n"
+    );
+    let document: Value = serde_json::from_slice(&refused(true, &batch).stdout).unwrap();
+    assert_eq!(
+        document["fields"],
+        json!({"refusals": [
+            {"line": 2, "code": "board::put::invalid", "message": "it has no $type"},
+            {"line": 4, "code": "board::put::invalid", "message": "it is empty"},
+            {"line": 7, "code": "board::put::invalid", "message": "it is stale"},
+        ]})
     );
 }
