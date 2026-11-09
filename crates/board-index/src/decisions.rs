@@ -75,10 +75,7 @@ impl Decided {
         }
         drop(statement);
         fill.commit()?;
-        Ok(View {
-            index: self.index,
-            prunes: self.prunes,
-        })
+        Ok(View::new(self.index, self.prunes))
     }
 }
 
