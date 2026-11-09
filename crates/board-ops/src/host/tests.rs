@@ -1058,3 +1058,81 @@ fn a_nested_call_under_a_checkout_reads_the_checkout_and_refuses_a_write_and_its
         );
     }
 }
+
+fn warning() -> Refusal {
+    Refusal::new(
+        Code::MountRepoMissing,
+        "/m cannot be opened",
+        &Fields::default(),
+    )
+}
+
+/// Calls the fixture answering `answer`, in a board of its own.
+fn warned(answer: Answer) -> Result<CallReport, CallFailed> {
+    let scenario = board(&[("fixture", true)], &["fixture"], Holds::Same);
+    let mut board = open(&scenario);
+    board.build_in(built(vec![answering("fixture", answer)]));
+    call_base(&board, &Plugins::default())
+}
+
+#[test]
+fn a_warning_given_twice_is_reported_once_and_two_different_ones_each_once() {
+    let once = warned(Box::new(|host| {
+        host.warn(&warning());
+        host.warn(&warning());
+        Ok(json!({"count": 0}))
+    }));
+    assert_eq!(once.unwrap().warnings.len(), 1);
+    let twice = warned(Box::new(|host| {
+        host.warn(&warning());
+        host.warn(&Refusal::new(
+            Code::RefDangling,
+            "/l dangles",
+            &Fields::default(),
+        ));
+        Ok(json!({"count": 0}))
+    }));
+    assert_eq!(twice.unwrap().warnings.len(), 2);
+}
+
+#[test]
+fn a_call_that_is_refused_keeps_its_warnings_and_one_that_answers_reports_them() {
+    let refused = warned(Box::new(|host| {
+        host.warn(&warning());
+        Err(PluginError {
+            code: "fixture::call::refused".to_owned(),
+            message: "no".to_owned(),
+            fields: serde_json::Map::new(),
+            hint: None,
+        })
+    }));
+    let stderr = refused.unwrap_err().refusal().stderr;
+    assert!(
+        String::from_utf8(stderr)
+            .unwrap()
+            .contains("warning: board::mount::repo_missing")
+    );
+    let answered = warned(Box::new(|host| {
+        host.warn(&warning());
+        Ok(json!({"count": 0}))
+    }));
+    assert!(answered.unwrap().warnings[0].contains("/m cannot be opened"));
+}
+
+#[test]
+fn a_warning_given_on_a_board_the_host_opened_reaches_the_call() {
+    let elsewhere = Scenario::new();
+    elsewhere.write(
+        ".board/board.json",
+        Item::File(r#"{"$type": "board/config/v1"}"#),
+    );
+    let directory = elsewhere.workdir().to_path_buf();
+    let report = warned(Box::new(move |host| {
+        let opened = host
+            .board(&Elsewhere::Directory(directory.clone()))
+            .unwrap();
+        opened.warn(&warning());
+        Ok(json!({"count": 0}))
+    }));
+    assert_eq!(report.unwrap().warnings.len(), 1);
+}

@@ -335,3 +335,25 @@ fn the_same_plan_twice_writes_one_snapshot_and_a_plan_with_another_path_writes_a
     assert_ne!(second["path"], first["path"]);
     assert_eq!(plans(&board), written + 2);
 }
+
+#[test]
+fn a_plan_using_a_file_beneath_a_mount_that_cannot_be_read_is_refused_naming_the_mount() {
+    let plan_using = |board: &Changes| {
+        let mut input = plan_input(CHANGE, &["/repos/x/src/a.rs"]);
+        input["uses"] = json!(["/repos/x/README.md"]);
+        board.change_at("changes/t.json", "plan", &json!({}));
+        input
+    };
+    let board = Changes::new();
+    board.mount_x(&[("README.md", "x\n")]);
+    let input = plan_using(&board);
+    board.call_stdin("plan", &input);
+    board.break_mount("repos/x", true);
+    let refused = board.refusal_stdin("plan", &input);
+    assert_eq!(refused["code"], "changes::board::refused", "{refused}");
+    assert_eq!(refused["fields"]["code"], "board::mount::repo_missing");
+    assert!(
+        refused["message"].as_str().unwrap().contains("/repos/x"),
+        "{refused}"
+    );
+}

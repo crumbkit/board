@@ -235,6 +235,19 @@ fn open_tasks(host: &dyn Host, path: &str) -> Result<Vec<String>, PluginError> {
         .collect())
 }
 
+/// The entry of a change Board could not read what it depends on for, such
+/// as a task beneath a mount that cannot be read. It is left as it is, and
+/// the other changes sync.
+fn unread(path: &str, change: &ChangeRecord, error: &PluginError) -> Entry {
+    let hint = error.hint.as_deref().unwrap_or("no next step is known");
+    let detail = format!("{}; {hint}", error.message);
+    Entry {
+        code: Some("changes::sync::unread"),
+        command: Some(SYNC_COMMAND.to_owned()),
+        ..entry(path, change, None, "unread", detail)
+    }
+}
+
 /// The entry of a change that records no pull request: what to do with it.
 fn without_pull(path: &str, change: &ChangeRecord) -> Entry {
     let action = idle_action(path, change);
@@ -381,6 +394,8 @@ fn synced(
     Ok((open, None))
 }
 
+const BOARD_REFUSED: &str = "changes::board::refused";
+
 /// Reads each open change's pull request and ends the change when it
 /// closed: done when merged, else dropped. With `dry_run`, reports the same
 /// and writes nothing. Otherwise every move and the day of the sync are
@@ -395,7 +410,10 @@ pub(crate) fn sync(host: &dyn Host, input: &Value) -> Result<Value, PluginError>
             entries.push(without_pull(&path, &change));
             continue;
         }
-        let (found, ended) = synced(host, &path, &change, deadline)?;
+        let (found, ended) = match synced(host, &path, &change, deadline) {
+            Err(error) if error.code == BOARD_REFUSED => (unread(&path, &change, &error), None),
+            answer => answer?,
+        };
         entries.push(found);
         if let Some(ended) = ended {
             lines.push(json!({"path": path, "expect": blob, "record": ended}));

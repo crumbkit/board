@@ -381,6 +381,7 @@ of `changes` still fails `review`.
   | `closed` | It closed without merging | `to` is `dropped`, and `dropped_reason` says so with the day it closed | none |
   | `open` | It is open | Leaves it | none |
   | `not_found` | GitHub answers 404, which it also answers when gh's account cannot see the repository | Leaves it; `detail` says to check `gh auth status`, and `command` drops it | `changes::sync::pull_not_found` |
+  | `unread` | Board cannot read something the change depends on, such as a task beneath a mount that cannot be read | Leaves it; `detail` names what and the fix | `changes::sync::unread` |
   | `pull_unreadable` | The newest of `pulls` is not a `github/pull/v1` record Board reads | Leaves it; `command` attaches another | `changes::sync::pull_unreadable` |
   | `no_pull_request` | The change records no pull request | Leaves it; `command` resumes it when it has a `head`, else drops it | `changes::sync::no_pull_request` |
 

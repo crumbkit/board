@@ -91,12 +91,22 @@ fn found(answer: Result<RefsReport, RefsError>) -> Result<Option<RefsReport>, Re
     }
 }
 
-/// Where each of `paths`, which a walk of the board gathered, resolves, in
-/// order, or none when nothing is there. A path that one record stops, such
-/// as a mount that cannot be read or a dangling link, is none as well and
-/// warned of, so that it cannot stop the walk. Any other refusal of a path
-/// is `changes::board::refused`.
+/// Where each of `paths` resolves, in order, or none when nothing is there.
+/// Any other refusal of a path is `changes::board::refused`, because what
+/// one change depends on must not read as absent.
 pub(crate) fn refs(
+    host: &dyn Host,
+    paths: &[String],
+) -> Result<Vec<Option<RefsReport>>, PluginError> {
+    (answers(host, paths)?.into_iter())
+        .map(|answer| found(answer).map_err(|error| refused("refs", &error.refusal())))
+        .collect()
+}
+
+/// [`refs`] for a walk over many changes: a path that one record stops, such
+/// as a mount that cannot be read or a dangling link, is none as well and
+/// warned of, so that it stops only the changes that depend on it.
+pub(crate) fn refs_in_walk(
     host: &dyn Host,
     paths: &[String],
 ) -> Result<Vec<Option<RefsReport>>, PluginError> {
@@ -111,14 +121,9 @@ pub(crate) fn refs(
         .collect()
 }
 
-/// Where `path`, which one operation reads through, resolves, or none when
-/// nothing is there. Any other refusal of it is `changes::board::refused`,
-/// because the operation cannot go on without it.
+/// Where `path` resolves, or none when nothing is there.
 pub(crate) fn resolve(host: &dyn Host, path: &str) -> Result<Option<RefsReport>, PluginError> {
-    let answer = answers(host, &[path.to_owned()])?.into_iter().next();
-    answer
-        .map_or(Ok(None), found)
-        .map_err(|error| refused("refs", &error.refusal()))
+    Ok(refs(host, &[path.to_owned()])?.into_iter().next().flatten())
 }
 
 /// The stored bytes of the file at each of `paths`, in order, or none for a

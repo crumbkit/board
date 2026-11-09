@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 use std::time::Duration;
 
 use board_model::parse_json;
-use board_ops::{Host, PluginError, literal};
+use board_ops::{Host, PluginError, RefsReport, literal};
 use board_plugin::shape::Record;
 use board_repos::Date;
 use schemars::JsonSchema;
@@ -394,9 +394,30 @@ pub(crate) fn current(host: &dyn Host, change: &ChangeRecord) -> Result<Current,
     )
 }
 
-/// Each entry `refs` reaches, as its type and body, in their order, and
-/// each unreadable one with the code that says why.
+/// Each entry `refs`, one change's references, reaches, as its type and body,
+/// in their order, and each unreadable one with the code that says why. A
+/// reference the tree stopped, such as one beneath a mount that cannot be
+/// read, is `changes::board::refused`, so that no gate or sync takes it for
+/// absent.
 pub(crate) fn referenced(host: &dyn Host, refs: &[String]) -> Result<Referenced, PluginError> {
+    gathered(host, refs, board::refs)
+}
+
+/// [`referenced`] for a walk over many changes, which passes over a
+/// reference the tree stopped and warns of it.
+pub(crate) fn referenced_in_walk(
+    host: &dyn Host,
+    refs: &[String],
+) -> Result<Referenced, PluginError> {
+    gathered(host, refs, board::refs_in_walk)
+}
+
+/// [`referenced`], with `resolve` answering the references no entry holds.
+fn gathered(
+    host: &dyn Host,
+    refs: &[String],
+    resolve: fn(&dyn Host, &[String]) -> Result<Vec<Option<RefsReport>>, PluginError>,
+) -> Result<Referenced, PluginError> {
     if refs.is_empty() {
         return Ok(Referenced::default());
     }
@@ -430,7 +451,7 @@ pub(crate) fn referenced(host: &dyn Host, refs: &[String]) -> Result<Referenced,
         .filter(|each| !records.contains_key(*each) && !codes.contains_key(*each))
         .cloned()
         .collect();
-    for (each, answer) in unfound.iter().zip(board::refs(host, &unfound)?) {
+    for (each, answer) in unfound.iter().zip(resolve(host, &unfound)?) {
         if answer.is_some() {
             records.insert(each.clone(), ("directory".to_owned(), Map::new()));
         }

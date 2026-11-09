@@ -185,7 +185,8 @@ to replace the flow copies changes kept before versions.
 - `changes::sync::gh_failed`: gh could not read a pull request, and sync wrote
   nothing. Check `gh auth status` and sync again.
 - `changes::sync::owed`, `changes::sync::pull_not_found`,
-  `changes::sync::pull_unreadable`, `changes::sync::no_pull_request`: entries
+  `changes::sync::pull_unreadable`, `changes::sync::unread`,
+  `changes::sync::no_pull_request`: entries
   that sync left alone. Run each entry's `command`. For
   `pull_not_found`, check `gh auth status` first, since GitHub answers 404
   for a repository gh cannot see.

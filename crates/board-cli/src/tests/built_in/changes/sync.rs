@@ -463,3 +463,41 @@ fn a_sync_whose_day_the_cache_cannot_take_says_why_and_one_it_can_says_nothing()
     assert_eq!(output.get("unrecorded"), None, "{output}");
     assert_eq!(board.call("open", &json!({}))["sync"]["synced"], today());
 }
+
+#[test]
+fn a_merged_change_with_a_task_beneath_a_mount_that_cannot_be_read_stays_and_the_others_sync() {
+    let board = gh();
+    let open = task("open");
+    board.mount_repo(&[("tasks/t.md", &open)], "repos/notes", "HEAD");
+    board.break_mount("repos/notes", true);
+    board.change_at(
+        "changes/blocked.json",
+        "build",
+        &json!({"pull_request": pull(1), "records": ["/repos/notes/tasks/t.md"]}),
+    );
+    board.change_at(
+        "changes/free.json",
+        "build",
+        &json!({"pull_request": pull(2)}),
+    );
+    for number in [1, 2] {
+        board.answers(
+            number,
+            &json!({"state": "closed", "merged": true, "merge_commit_sha": MERGE}),
+        );
+    }
+    let synced = board.call("sync", &json!({}));
+    let codes = by_path(&synced, "code");
+    assert_eq!(
+        codes["/changes/blocked"], "changes::sync::unread",
+        "{synced}"
+    );
+    assert_eq!(by_path(&synced, "to")["/changes/blocked"], Value::Null);
+    let detail = by_path(&synced, "detail")["/changes/blocked"].clone();
+    assert!(
+        detail.as_str().unwrap().contains("/repos/notes"),
+        "{detail}"
+    );
+    assert_eq!(board.read("changes/blocked.json")["phase"], "build");
+    assert_eq!(board.read("changes/free.json")["phase"], "done");
+}

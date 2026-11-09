@@ -624,23 +624,6 @@ fn reopen_refuses_when_the_cap_is_full_and_goes_past_it_with_a_reason() {
     );
 }
 
-/// Each way a mount at `<at>` cannot be read: with the repository's `.git`
-/// gone, and with a commit the repository lacks.
-#[expect(
-    clippy::disallowed_methods,
-    reason = "the test removes the mounted repository's git directory, as happens to a mount"
-)]
-fn break_mount(board: &Changes, at: &str, losing_git: bool) {
-    if losing_git {
-        std::fs::remove_dir_all(board.repo_root(at).join(".git")).unwrap();
-    } else {
-        let file = format!("{at}.json");
-        let mut pointer = board.read(&file);
-        pointer["commit"] = json!("9".repeat(40));
-        board.write(&file, &pointer.to_string());
-    }
-}
-
 #[test]
 fn another_changes_mount_that_cannot_be_read_warns_and_every_start_carries_on() {
     for (losing_git, code) in [
@@ -651,7 +634,7 @@ fn another_changes_mount_that_cannot_be_read_warns_and_every_start_carries_on() 
         board.mount_x(&[("README.md", "x\n")]);
         let gone = board.repository("repos/gone", None);
         board.building_in(&gone, WIP_LIMIT, "elsewhere");
-        break_mount(&board, "repos/gone", losing_git);
+        board.break_mount("repos/gone", losing_git);
         let (output, warnings) = board.warned(&[
             "changes.start",
             "--mount",
@@ -679,17 +662,24 @@ fn the_limit_still_refuses_with_an_unreadable_mount_beside_a_full_repository() {
     board.mount_x(&[("README.md", "x\n")]);
     let gone = board.repository("repos/gone", None);
     board.building_in(&gone, 1, "elsewhere");
-    break_mount(&board, "repos/gone", true);
+    board.break_mount("repos/gone", true);
     board.building_in("/repos/x", WIP_LIMIT, "busy");
     let input = json!({"mount": "/repos/x", "task": TASK, "title": "Quick", "flow": "small"});
-    assert_eq!(board.refusal("start", &input)["code"], "changes::wip::full");
+    let refused = board.refusal("start", &input);
+    assert_eq!(refused["code"], "changes::wip::full");
+    let warnings = refused["fields"]["stderr"].as_str().unwrap();
+    assert!(
+        warnings.contains("warning: board::mount::repo_missing"),
+        "{warnings}"
+    );
+    assert!(warnings.contains("/repos/gone"), "{warnings}");
 }
 
 #[test]
 fn a_change_for_the_mount_that_cannot_be_read_is_refused_with_the_mounts_code() {
     let board = Changes::new();
     board.repository("repos/gone", None);
-    break_mount(&board, "repos/gone", true);
+    board.break_mount("repos/gone", true);
     let input = json!({"mount": "/repos/gone", "task": TASK, "title": "Quick", "flow": "small"});
     let refused = board.refusal("start", &input);
     assert_eq!(

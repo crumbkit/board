@@ -116,7 +116,8 @@ pub trait Host {
     ) -> Result<MountUpdateReport, MountError>;
     fn settings(&self) -> &Settings;
     /// Says that a walk passed over a path for what `refusal` names. Each
-    /// distinct warning is printed once after the call, beside its output.
+    /// distinct warning is printed once after the call, beside its output
+    /// or its refusal.
     /// A host with nowhere to print it drops it.
     fn warn(&self, refusal: &Refusal) {
         let _ = refusal;
@@ -409,8 +410,9 @@ pub(crate) struct Hosted<'a> {
     pub(crate) plugins: Plugins<'a>,
     /// Where a process plugin's `board` runs: the called board's root.
     pub(crate) root: &'a Path,
-    /// What [`Host::warn`] was told, one line each, without repeats.
-    pub(crate) warnings: RefCell<Vec<String>>,
+    /// What [`Host::warn`] was told, one line each, without repeats. A host
+    /// [`Host::board`] opens adds to the same list.
+    pub(crate) warnings: &'a RefCell<Vec<String>>,
 }
 
 impl Hosted<'_> {
@@ -587,7 +589,7 @@ impl Host for Hosted<'_> {
             plugin: self.plugin.clone(),
             plugins: self.plugins.clone(),
             root: self.root,
-            warnings: RefCell::default(),
+            warnings: self.warnings,
         }))
     }
 

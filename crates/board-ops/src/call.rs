@@ -104,6 +104,7 @@ impl Board {
     ) -> Result<CallReport, CallError> {
         let environment = &plugins.environment;
         let root = self.repository().path();
+        let warnings = RefCell::default();
         let host = Hosted {
             board: HostBoard::Called(self),
             settings: Settings {
@@ -135,7 +136,7 @@ impl Board {
                 ..*plugins
             },
             root,
-            warnings: RefCell::default(),
+            warnings: &warnings,
         };
         let plugin = &chosen.manifest.name;
         let capability = &chosen.capability().name;
@@ -157,7 +158,9 @@ impl Board {
                     failure: Box::new(
                         PluginFailure::parse(plugin, code, message, fields, hint).map_err(bad)?,
                     ),
-                    stderr: Vec::new(),
+                    stderr: (warnings.borrow().iter())
+                        .flat_map(|line| format!("warning: {line}\n").into_bytes())
+                        .collect(),
                 });
             }
         };
@@ -165,7 +168,7 @@ impl Board {
             plugin: plugin.clone(),
             capability: capability.clone(),
             output,
-            warnings: host.warnings.into_inner(),
+            warnings: warnings.into_inner(),
         })
     }
 }

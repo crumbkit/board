@@ -27,7 +27,9 @@ use serde::Serialize;
 use serde_json::{Value, json};
 
 use crate::board::{self, rows, text};
-use crate::change::{OWN, attached, change_types, kind_in, parsed, prototypes, referenced, today};
+use crate::change::{
+    OWN, attached, change_types, kind_in, parsed, prototypes, referenced_in_walk, today,
+};
 use crate::diff::git;
 use crate::gates::RUN_TYPE;
 use crate::records::{BUILD, ChangeRecord, Kind};
@@ -185,7 +187,7 @@ pub(crate) fn followed(host: &dyn Host, clone: &Path) -> Repository {
 /// The clone each of `mounts` reads, by mount, or none for a mount Board
 /// cannot resolve.
 fn clones(host: &dyn Host, mounts: &[String]) -> Result<BTreeMap<String, PathBuf>, PluginError> {
-    let answers = board::refs(host, mounts)?;
+    let answers = board::refs_in_walk(host, mounts)?;
     Ok((mounts.iter().zip(answers))
         .filter_map(|(mount, answer)| Some((mount.clone(), answer?.location.board.repository)))
         .collect())
@@ -401,7 +403,7 @@ fn finished(
 ) -> Result<BTreeMap<String, Date>, PluginError> {
     let mut found = BTreeMap::new();
     for (path, _) in changes {
-        let records = referenced(host, &attached(host, path)?)?;
+        let records = referenced_in_walk(host, &attached(host, path)?)?;
         let newest = (records.of_type(RUN_TYPE))
             .filter_map(|(_, body)| day_of(body.get("finished")))
             .max();

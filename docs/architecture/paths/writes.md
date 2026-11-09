@@ -75,5 +75,7 @@ A mount that cannot be read, because its repository cannot be opened or lacks
 `commit`, stops only what reads through it. `board get` of the mount returns
 its record, and `board put` of a pointer replaces the file, so `repo` or
 `commit` can be repaired. A path beneath the mount is refused with the mount's
-code. A plugin's walk over many records passes over such a path and prints a
-warning on stderr that names the mount, the repository and the fix.
+code, and so is a reference one change makes beneath it. The changes plugin's
+limit on changes in build, which reads every change, passes over such a path
+and prints a warning on stderr that names the mount, the repository and the
+fix.
