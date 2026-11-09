@@ -487,6 +487,18 @@ fn a_revised_plan_drops_a_lifecycle_reference_board_no_longer_reads_and_keeps_on
 }
 
 #[test]
+fn the_same_plan_resubmitted_after_its_lifecycle_record_is_removed_drops_the_reference() {
+    let board = planned();
+    let same = json!({"path": CHANGE, "text": PLAN, "uses": [], "paths": PATHS});
+    board.call_stdin("lifecycle", &lifecycle(TABLE, "/repos/x/docs/states.md"));
+    assert_eq!(board.call_stdin("plan", &same)["unchanged"], true);
+    assert_eq!(plan_record(&board)["lifecycle"], "/changes/t/lifecycle");
+    board.delete(RECORD);
+    assert_eq!(board.call_stdin("plan", &same)["unchanged"], false);
+    assert_eq!(plan_record(&board).get("lifecycle"), None);
+}
+
+#[test]
 fn lifecycle_refuses_a_doc_with_whitespace_or_a_placeholder_and_admits_a_path() {
     let board = planned();
     for doc in ["/repos/x/docs/a b.md", "/repos/x/docs/{name}.md"] {
@@ -498,22 +510,28 @@ fn lifecycle_refuses_a_doc_with_whitespace_or_a_placeholder_and_admits_a_path() 
     assert!(board.exists(RECORD));
 }
 
-/// A directory at the text's path makes the one `put` fail, so nothing of
-/// the four lines it carries is written.
+/// The lifecycle record is the second of the four lines one `put` carries,
+/// and a directory at its path makes `put` refuse that line. The text line
+/// before it stays unwritten only because the four lines are one write.
 #[test]
-fn a_lifecycle_put_that_fails_writes_no_record_and_leaves_the_plan_unset_and_its_twin_writes() {
+fn a_lifecycle_put_with_a_refused_line_after_the_text_writes_no_line_and_its_twin_writes_them() {
     let board = planned();
-    board.write("changes/t/lifecycle.md/x.txt", "x\n");
+    let before = board.text("changes/t.json");
+    board.write("changes/t/lifecycle.json/x.txt", "x\n");
     let refused = board.refusal_stdin("lifecycle", &lifecycle(TABLE, "/repos/x/docs/states.md"));
     assert_eq!(refused["code"], "changes::board::refused", "{refused}");
     assert!(
         refused["message"].as_str().unwrap().contains("put --batch"),
         "{refused}"
     );
-    assert!(!board.exists(RECORD));
+    assert!(!board.exists(TEXT));
+    assert!(board.root().join(RECORD).is_dir());
     assert_eq!(plan_record(&board).get("lifecycle"), None);
+    assert_eq!(board.text("changes/t.json"), before);
     let twin = planned();
     twin.call_stdin("lifecycle", &lifecycle(TABLE, "/repos/x/docs/states.md"));
+    assert!(twin.exists(TEXT));
+    assert!(twin.exists(RECORD));
     assert_eq!(plan_record(&twin)["lifecycle"], "/changes/t/lifecycle");
 }
 

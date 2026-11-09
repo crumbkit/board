@@ -371,6 +371,7 @@ fn unchanged(
         || record.paths.as_deref().unwrap_or_default() != planned.paths
         || record.considered.as_deref().unwrap_or_default() != planned.considered
         || record.owed.as_deref().unwrap_or_default() != planned.owed
+        || record.lifecycle != planned.lifecycle
     {
         return Ok(None);
     }

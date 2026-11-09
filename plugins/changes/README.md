@@ -438,7 +438,7 @@ of `changes` still fails `review`.
 
   | `status` | When | What sync does | `code` |
   | --- | --- | --- | --- |
-  | `merged` | GitHub says it merged | `to` is `done`, and `merge_commit_url` is set; `detail` says when the change left `build`, `review` or `land`, whose gates it did not pass | none |
+  | `merged` | GitHub says it merged | `to` is `done`, and `merge_commit_url` is set; `detail` says when the change left `build` or `review`, whose gates it did not pass, and says when sync moved it from `land` without evaluating the land gates | none |
   | `owed` | It merged, but a `tasks/task/v2` that its plans' `records` reach, through any link, is not done or dropped | Leaves it; `detail` names the tasks | `changes::sync::owed` |
   | `closed` | It closed without merging | `to` is `dropped`, and `dropped_reason` says so with the day it closed | none |
   | `open` | It is open | Leaves it | none |
