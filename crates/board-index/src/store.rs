@@ -1,7 +1,7 @@
 //! Writing facts. Each is keyed by content alone, so a fact once written is
 //! true wherever its key appears and is never updated.
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::collections::{BTreeSet, HashMap};
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -160,7 +160,11 @@ pub struct Decided {
 /// reads them.
 #[derive(Debug)]
 pub struct View {
-    pub(crate) index: Index,
+    /// In a cell because a query sets hooks on the connection, which rusqlite
+    /// allows only through an exclusive reference, and [`View::query`] takes
+    /// a shared one.
+    pub(crate) index: RefCell<Index>,
+    storage: Storage,
     /// The prune count the views were built under.
     pub(crate) prunes: i64,
 }
@@ -195,12 +199,21 @@ impl Index {
 }
 
 impl View {
-    pub fn storage(&self) -> &Storage {
-        self.index.storage()
+    pub(crate) fn new(index: Index, prunes: i64) -> Self {
+        Self {
+            storage: index.storage().clone(),
+            index: RefCell::new(index),
+            prunes,
+        }
     }
 
-    pub(crate) fn connection(&self) -> &Connection {
-        &self.index.connection
+    pub fn storage(&self) -> &Storage {
+        &self.storage
+    }
+
+    #[cfg(test)]
+    pub(crate) fn connection(&self) -> std::cell::Ref<'_, Connection> {
+        std::cell::Ref::map(self.index.borrow(), |index| &index.connection)
     }
 }
 

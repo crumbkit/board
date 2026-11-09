@@ -242,7 +242,7 @@ fn synced_twice(first: &[Entry], second: &[Entry], hashed: usize) -> Synced {
     Synced {
         wrote,
         rows,
-        refreshed: refreshed(view.connection()),
+        refreshed: refreshed(&view.connection()),
     }
 }
 

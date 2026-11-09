@@ -546,7 +546,13 @@ fn a_query_cannot_write_and_leaves_the_index_writable() {
         .query("SELECT count(*) AS n FROM main.blobs", 10, None)
         .unwrap();
     assert_eq!(admitted.rows, [vec![serde_json::json!(1)]]);
-    let writer = view.index.write().unwrap();
+    // A pragma function passes the readonly check, so only `query_only` stops
+    // this one writing the statistics it gathers.
+    let refused = view
+        .query("SELECT count(*) FROM pragma_optimize(-1)", 10, None)
+        .unwrap_err();
+    assert_eq!(refused.code(), Code::QueryInvalid);
+    let writer = view.index.into_inner().write().unwrap();
     writer.put_blob(blob(2), Role::Json, &record()).unwrap();
     writer.decide(Vec::new()).unwrap();
 }
@@ -631,8 +637,7 @@ fn a_failure_of_the_database_is_the_indexs_and_any_other_is_the_querys() {
 }
 
 fn journal_mode(view: &View) -> String {
-    view.index
-        .connection
+    view.connection()
         .query_row("PRAGMA journal_mode", [], |row| row.get(0))
         .unwrap()
 }
@@ -655,6 +660,31 @@ fn a_query_cannot_run_a_pragma_but_can_call_a_pragma_function() {
         .unwrap();
     assert_eq!(admitted.rows.len(), 1);
     assert_eq!(journal_mode(&index), "wal");
+    // The readonly check passes this statement, so only the authorizer stops
+    // it changing the connection.
+    let refused = index
+        .query("PRAGMA writable_schema=1", 10, None)
+        .unwrap_err();
+    assert_eq!(refused.code(), Code::QueryInvalid);
+    let writable: i64 = index
+        .connection()
+        .query_row("PRAGMA writable_schema", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(writable, 0);
+}
+
+#[test]
+fn a_pragma_function_given_a_name_that_is_not_utf8_returns_no_rows() {
+    let cache = tempfile::tempdir().unwrap();
+    let index = filled(cache.path());
+    let admitted = index
+        .query(
+            "SELECT count(*) FROM pragma_table_info(CAST(x'ff' AS TEXT))",
+            10,
+            None,
+        )
+        .unwrap();
+    assert_eq!(admitted.rows, [vec![serde_json::json!(0)]]);
 }
 
 #[test]
@@ -672,6 +702,131 @@ fn a_query_cannot_attach_or_detach_a_database_and_one_that_reads_runs() {
     assert_eq!(admitted.rows, [vec![serde_json::json!(7)]]);
 }
 
+/// The names of the databases open on the connection under `index`.
+fn databases(index: &View) -> Vec<String> {
+    let connection = index.connection();
+    let mut statement = connection
+        .prepare("SELECT name FROM pragma_database_list")
+        .unwrap();
+    statement
+        .query_map([], |row| row.get(0))
+        .unwrap()
+        .map(Result::unwrap)
+        .collect()
+}
+
+#[test]
+fn a_query_cannot_attach_a_file_named_by_an_expression_and_one_that_reads_runs() {
+    let cache = tempfile::tempdir().unwrap();
+    let index = filled(cache.path());
+    let before = databases(&index);
+    for (name, sql) in [
+        ("concatenated", "ATTACH '{}'||'' AS a"),
+        ("selected", "ATTACH (SELECT '{}') AS b"),
+    ] {
+        let target = cache.path().join(name);
+        let sql = sql.replace("{}", &target.display().to_string());
+        let refused = index.query(&sql, 10, None).unwrap_err();
+        assert_eq!(refused.code(), Code::QueryInvalid, "{sql}");
+        assert!(!target.exists(), "no file is created by {sql}");
+    }
+    assert_eq!(databases(&index), before);
+    let admitted = index.query("SELECT 7", 10, None).unwrap();
+    assert_eq!(admitted.rows, [vec![serde_json::json!(7)]]);
+}
+
+/// Only the authorizer protects `extra`: a DETACH passes the readonly check
+/// and SQLite itself allows it, unlike a DETACH of `temp` or `main`.
+#[test]
+fn a_query_cannot_detach_a_database_by_name_or_by_expression() {
+    let cache = tempfile::tempdir().unwrap();
+    let index = filled(cache.path());
+    index
+        .connection()
+        .execute_batch("ATTACH ':memory:' AS extra")
+        .unwrap();
+    for sql in ["DETACH DATABASE extra", "DETACH 'extra'||''"] {
+        let refused = index.query(sql, 10, None).unwrap_err();
+        assert_eq!(refused.code(), Code::QueryInvalid, "{sql}");
+        assert!(
+            databases(&index).contains(&"extra".to_owned()),
+            "{sql} leaves the database attached"
+        );
+    }
+}
+
+/// `EXPLAIN` runs nothing, so `query_only` never stops it, and the authorizer
+/// allows a DELETE. It reports the readonly state of the statement it explains.
+#[test]
+fn a_query_cannot_explain_a_write_and_can_explain_a_read() {
+    let cache = tempfile::tempdir().unwrap();
+    let index = filled(cache.path());
+    let refused = index
+        .query("EXPLAIN DELETE FROM main.blobs", 10, None)
+        .unwrap_err();
+    assert_eq!(refused.code(), Code::QueryInvalid);
+    let admitted = index
+        .query("EXPLAIN SELECT count(*) FROM main.blobs", 1, None)
+        .unwrap();
+    assert_eq!(admitted.rows.len(), 1);
+}
+
+/// Each statement raises authorizer actions that are not ATTACH or DETACH,
+/// so none of them may reach the authorizer as an action it cannot name.
+#[test]
+fn the_statements_agents_write_are_all_authorized() {
+    let cache = tempfile::tempdir().unwrap();
+    let index = filled(cache.path());
+    for (sql, expected) in [
+        (
+            "SELECT count(*) FROM json_each('[1,2,3]')",
+            serde_json::json!(3),
+        ),
+        (
+            "SELECT json_extract('{\"a\":4}', '$.a')",
+            serde_json::json!(4),
+        ),
+        (
+            "SELECT count(*) FROM pragma_table_info('state')",
+            serde_json::json!(2),
+        ),
+        (
+            "WITH RECURSIVE c(n) AS (SELECT 1 UNION ALL SELECT n+1 FROM c WHERE n < 3) \
+             SELECT sum(n) FROM c",
+            serde_json::json!(6),
+        ),
+        (
+            "WITH a(n) AS (SELECT 5) SELECT n FROM a",
+            serde_json::json!(5),
+        ),
+        (
+            "SELECT count(*) FROM (SELECT 1 UNION SELECT 2)",
+            serde_json::json!(2),
+        ),
+        (
+            "SELECT max(x) OVER () FROM (SELECT 8 AS x)",
+            serde_json::json!(8),
+        ),
+        ("SELECT count(*) FROM entries", serde_json::json!(0)),
+        ("SELECT count(*) FROM main.blobs", serde_json::json!(1)),
+    ] {
+        let admitted = index.query(sql, 10, None).unwrap();
+        assert_eq!(admitted.rows, [vec![expected]], "{sql}");
+    }
+}
+
+#[test]
+fn a_statement_that_cannot_compile_on_a_broken_index_is_the_index_failing() {
+    let cache = tempfile::tempdir().unwrap();
+    let index = filled(cache.path());
+    index
+        .connection()
+        .execute_batch("DROP TABLE main.state")
+        .unwrap();
+    let refused = index.query("SELECT 1 FROM nowhere", 10, None).unwrap_err();
+    assert_eq!(refused.code(), Code::IndexFailed, "{refused:?}");
+}
+
 #[test]
 fn a_query_that_runs_too_long_is_stopped_and_a_bounded_one_finishes() {
     let cache = tempfile::tempdir().unwrap();
@@ -684,10 +839,20 @@ fn a_query_that_runs_too_long_is_stopped_and_a_bounded_one_finishes() {
     // within the time limit.
     let bounded = "WITH RECURSIVE c(n) AS (SELECT 1 UNION ALL SELECT n+1 FROM c WHERE n < 10000) \
                    SELECT count(*) FROM c";
+    // The stopped query's limit has passed, so a statement outside any query
+    // finishes only if that query took its clock away.
+    let after: i64 = index
+        .connection()
+        .query_row(bounded, [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(after, 10000);
     let admitted = index.query(bounded, 10, None).unwrap();
     assert_eq!(admitted.rows, [vec![serde_json::json!(10000)]]);
     assert_eq!(journal_mode(&index), "wal");
-    assert!(has_fact(index.index), "the index is still writable");
+    assert!(
+        has_fact(index.index.into_inner()),
+        "the index is still writable"
+    );
 }
 
 #[test]
