@@ -93,6 +93,32 @@ fn next_gives_a_planned_controlled_check_missing_with_the_refusal_when_for_paths
     assert_eq!(planned(&["/repos/x/src/a.rs"])["status"], "pass");
 }
 
+#[test]
+#[expect(
+    clippy::disallowed_methods,
+    reason = "the test removes a fixture repository outside the board"
+)]
+fn next_reads_a_when_absent_path_under_a_mount_and_refuses_once_the_mount_cannot_be_read() {
+    let board = mounted();
+    board.mount_repo(&[("a.txt", "a\n")], "repos/gone", "HEAD");
+    let mut own: Value = serde_json::from_str(&flow("own", &["draft", "land"])).unwrap();
+    own["phases"][0]["checks"] = json!([{
+        "id": "guarded",
+        "kind": "tasks",
+        "when": {"absent": {"path": "/repos/gone/nothing", "type": "changes/lifecycle/v1"}},
+    }]);
+    board.write("flows/own.json", &own.to_string());
+    started(&board, "A", &json!({"flow": "own"}));
+    let found = board.call("next", &json!({"path": "/changes/a"}));
+    assert_eq!(found["gate"][0]["check"], "guarded", "{found}");
+    std::fs::remove_dir_all(board.repo_root("repos/gone")).unwrap();
+    let refused = board.refusal("next", &json!({"path": "/changes/a"}));
+    assert!(
+        refused.to_string().contains("board::mount::repo_missing"),
+        "{refused}"
+    );
+}
+
 /// The plan text `start` wrote for the change at `/changes/<name>`.
 fn skeleton(board: &Changes, name: &str) -> String {
     let plan = board.read(&format!("changes/{name}.json"))["plan"]

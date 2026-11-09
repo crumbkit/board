@@ -154,7 +154,7 @@ fn said(flow: &Flow, drafted: bool) -> Vec<String> {
 
 #[test]
 fn a_when_absent_path_with_an_unknown_placeholder_is_a_problem_and_a_known_one_is_not() {
-    let check = |path: &str| json!({"id": "x", "kind": "tasks", "when": {"absent": path}});
+    let check = |path: &str| json!({"id": "x", "kind": "tasks", "when": {"absent": {"path": path, "type": "a/b/v1"}}});
     assert_eq!(
         said(&one(&check("/changes/{who}"), "build", "Build."), false),
         [

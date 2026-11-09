@@ -48,6 +48,8 @@ struct Given {
     held: Vec<&'static str>,
     /// What is at each path an `exists` check names.
     existing: Vec<(&'static str, bool)>,
+    /// The paths a `when.absent` names that hold the record it means.
+    records_held: Vec<&'static str>,
     /// The files a controlled-paths control lists among the edited ones.
     controlled: Vec<(&'static str, Vec<&'static str>)>,
 }
@@ -67,6 +69,7 @@ fn given(phase: &'static str) -> Given {
         on_planned: Vec::new(),
         held: Vec::new(),
         existing: Vec::new(),
+        records_held: Vec::new(),
         controlled: Vec::new(),
     }
 }
@@ -139,6 +142,9 @@ impl Given {
         observed.held = self.held.iter().map(|each| (*each).to_owned()).collect();
         observed.existing = (self.existing.iter())
             .map(|(path, held)| ((*path).to_owned(), *held))
+            .collect();
+        observed.records_held = (self.records_held.iter())
+            .map(|path| (*path).to_owned())
             .collect();
         observed.controlled = (self.controlled.iter())
             .map(|(control, files)| {
@@ -410,6 +416,7 @@ fn review_statuses(review: &'static str) -> BTreeMap<String, &'static str> {
         ("ui-paths", "pass"),
         ("data-paths", "pass"),
         ("lifecycle-paths", "pass"),
+        ("lifecycle-none-paths", "pass"),
         ("obligations-settled", "pass"),
     ])
 }
@@ -1008,9 +1015,54 @@ fn lifecycle_paths_in_review_is_left_out_once_a_lifecycle_record_exists_whatever
     for plan in &cases {
         let mut change = given("review").plan(Some(plan));
         change.controlled = vec![(CONTROL, vec!["/repos/x/src/sync.rs"])];
-        change.existing = vec![("/changes/t/lifecycle", true)];
+        change.records_held = vec!["/changes/t/lifecycle"];
         assert!(!change.statuses().contains_key("lifecycle-paths"), "{plan}");
+        if *plan == cases[0] {
+            assert_eq!(
+                change.check("lifecycle-none-paths"),
+                ("missing", LIFECYCLE_EDIT.to_owned()),
+                "{plan}"
+            );
+        } else {
+            assert!(
+                !change.statuses().contains_key("lifecycle-none-paths"),
+                "{plan}"
+            );
+        }
     }
+}
+
+/// A `when` needs every one of its conditions.
+#[test]
+fn a_check_with_absent_and_a_section_applies_only_when_both_hold() {
+    let observed = |plan: &str, held: Vec<&'static str>| {
+        let mut change = given("review").plan(Some(plan));
+        change.records_held = held;
+        change.controlled = vec![(CONTROL, Vec::new())];
+        let mut observed = change.observed();
+        let flow = observed.flow.as_mut().unwrap();
+        let review = (flow.phases.iter_mut())
+            .find(|phase| phase.name == "review")
+            .unwrap();
+        let check = (review.checks.iter_mut())
+            .find(|each| each.id == "lifecycle-paths")
+            .unwrap();
+        check.when.as_mut().unwrap().section = Some(BTreeMap::from([(
+            "Lifecycle".to_owned(),
+            crate::lifecycle::NONE.to_owned(),
+        )]));
+        observed
+    };
+    let applies = |observed: &Observed| {
+        gate(observed)
+            .iter()
+            .any(|found| found.check == "lifecycle-paths")
+    };
+    let none = with_lifecycle("None: nothing changes state.");
+    let named = with_lifecycle("See `/changes/t/lifecycle`: three states.");
+    assert!(applies(&observed(&none, Vec::new())));
+    assert!(!applies(&observed(&named, Vec::new())));
+    assert!(!applies(&observed(&none, vec!["/changes/t/lifecycle"])));
 }
 
 #[test]

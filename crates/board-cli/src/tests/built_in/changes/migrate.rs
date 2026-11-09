@@ -491,6 +491,7 @@ fn a_migrated_change_in_each_phase_faces_the_blocking_checks_of_the_development_
                 "ui-paths",
                 "data-paths",
                 "lifecycle-paths",
+                "lifecycle-none-paths",
                 "obligations-settled",
             ],
         ),

@@ -200,7 +200,10 @@ fn check_problems<'a>(
     for why in bad_patterns(each) {
         found.push(at("changes::flow::bad_pattern", id, why));
     }
-    let absent = each.when.iter().flat_map(|when| when.absent.iter());
+    let absent = each
+        .when
+        .iter()
+        .flat_map(|when| when.absent.iter().map(|absent| &absent.path));
     let texts = (each.remedy.iter().chain(each.path.iter()))
         .chain(each.controls.iter().flatten())
         .chain(absent);

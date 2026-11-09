@@ -1,5 +1,26 @@
 {
   "$defs": {
+    "Absent": {
+      "additionalProperties": false,
+      "description": "A record whose absence a check's `when` needs.",
+      "properties": {
+        "path": {
+          "description": "Where the record would be, its placeholders filled.",
+          "pattern": "^/\\S*$",
+          "type": "string"
+        },
+        "type": {
+          "description": "The type a record there must have to count.",
+          "pattern": "^[a-z0-9-]+/[a-z0-9-]+/v[1-9][0-9]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "type"
+      ],
+      "type": "object"
+    },
     "Allowed": {
       "anyOf": [
         {
@@ -695,9 +716,8 @@
       "description": "When a check applies: every condition given holds.",
       "properties": {
         "absent": {
-          "description": "Nothing is at this path, its placeholders filled.",
-          "pattern": "^/\\S*$",
-          "type": "string"
+          "$ref": "#/$defs/Absent",
+          "description": "No record of this type that Board reads is at this path."
         },
         "route": {
           "description": "The change's route is one of these.",

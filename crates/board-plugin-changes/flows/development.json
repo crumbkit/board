@@ -59,9 +59,22 @@
          "when": {"section": {"Data": "^none\\s*(?:[.:]|\\n?\\z)"}}},
         {"id": "lifecycle-paths", "kind": "controlled-paths", "controls": ["/controls/{repo}/lifecycle-paths"],
          "when": {
-            "absent": "/changes/{name}/lifecycle"
+            "absent": {"path": "/changes/{name}/lifecycle", "type": "changes/lifecycle/v1"}
           },
           "remedy": "The change's diff edits what this repository names as lifecycle code and the change has no lifecycle record. Write one with `board changes lifecycle --path {change}`, or revert the edit."},
+        {
+          "id": "lifecycle-none-paths",
+          "kind": "controlled-paths",
+          "controls": [
+            "/controls/{repo}/lifecycle-paths"
+          ],
+          "when": {
+            "section": {
+              "Lifecycle": "^none\\s*(?:[.:]|\\n?\\z)"
+            }
+          },
+          "remedy": "The plan says None under Lifecycle and the change's diff edits what this repository names as lifecycle code. Name the lifecycle record under Lifecycle with `board changes plan --path {change}`, writing it first with `board changes lifecycle --path {change}` if it does not exist, or revert the edit."
+        },
         {"id": "obligations-settled", "kind": "obligations"}
       ]
     },

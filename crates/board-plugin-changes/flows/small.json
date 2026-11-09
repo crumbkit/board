@@ -1,7 +1,7 @@
 {
   "$type": "changes/flow/v1",
   "name": "small",
-  "summary": "Build and review a small change that touches no UI or data path, with no plan gate.",
+  "summary": "Build and review a small change that touches no UI, data or lifecycle path, with no plan gate.",
   "stop": {"through": "review"},
   "phases": [
     {
@@ -13,8 +13,8 @@
         {"id": "head", "kind": "field", "field": "head"},
         {"id": "suite-run", "kind": "run", "scope": "full", "waivable": true},
         {"id": "not-small", "kind": "controlled-paths",
-         "controls": ["/controls/{repo}/ui-paths", "/controls/{repo}/data-paths"],
-         "remedy": "This change touches a UI or data path, so it needs the development flow: run `board changes reflow --path {change} --flow development`."}
+         "controls": ["/controls/{repo}/ui-paths", "/controls/{repo}/data-paths", "/controls/{repo}/lifecycle-paths"],
+         "remedy": "This change touches a UI, data or lifecycle path, so it needs the development flow: run `board changes reflow --path {change} --flow development`."}
       ]
     },
     {
@@ -23,7 +23,10 @@
       "instruction": "Review {head} with clean context with `board review run`, fix every critical or high finding and review again.",
       "checks": [
         {"id": "review", "kind": "records", "actor": "reviewer", "type": "review/report/v1",
-         "where": {"at_head": "range", "values": {"verdict": ["approve", "comment"]}, "no_findings": ["critical", "high"]}}
+         "where": {"at_head": "range", "values": {"verdict": ["approve", "comment"]}, "no_findings": ["critical", "high"]}},
+        {"id": "lifecycle-paths", "kind": "controlled-paths",
+         "controls": ["/controls/{repo}/lifecycle-paths"],
+         "remedy": "This change touches a lifecycle path, so it needs the development flow: run `board changes reflow --path {change} --flow development`."}
       ]
     },
     {

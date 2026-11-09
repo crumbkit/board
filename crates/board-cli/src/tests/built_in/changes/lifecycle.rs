@@ -248,12 +248,11 @@ fn with_no_lifecycle_paths_control_none_passes_and_the_check_says_none_exists() 
     }
 }
 
-/// A change started on the `small` flow, reflowed to `development` at build
-/// and moved to review, whose head edits a file a lifecycle-paths control
-/// lists. Its plan has no Lifecycle heading.
-fn reflowed_from_small() -> Changes {
+/// A change started on `flow` whose head edits `file`, in a board with a
+/// lifecycle-paths control that lists src/sync.rs, and that head.
+fn started_over(flow: &str, file: &str) -> (Changes, String) {
     let board = Changes::enabling(&["changes", "controls"]);
-    let (_, head) = board.edited(&[("src/sync.rs", "a\n")]);
+    let (_, head) = board.edited(&[(file, "a\n")]);
     board.write(
         "controls/x/lifecycle-paths.json",
         &typed(
@@ -267,14 +266,123 @@ fn reflowed_from_small() -> Changes {
     );
     board.call(
         "start",
-        &json!({"mount": "/repos/x", "task": TASK, "title": "T", "name": "t", "flow": "small"}),
+        &json!({"mount": "/repos/x", "task": TASK, "title": "T", "name": "t", "flow": flow}),
     );
-    board.call("reflow", &json!({"path": CHANGE, "flow": "development"}));
+    (board, head)
+}
+
+/// Moves the change to `phase` with `head` recorded.
+fn moved(board: &Changes, phase: &str, head: &str) {
     let mut change = board.read("changes/t.json");
-    change["phase"] = json!("review");
+    change["phase"] = json!(phase);
     change["head"] = json!(head);
     board.write("changes/t.json", &change.to_string());
+}
+
+/// A change started on the `small` flow, reflowed to `development` at build
+/// and moved to review, whose head edits a file a lifecycle-paths control
+/// lists. Its plan has no Lifecycle heading.
+fn reflowed_from_small() -> Changes {
+    let (board, head) = started_over("small", "src/sync.rs");
+    board.call("reflow", &json!({"path": CHANGE, "flow": "development"}));
+    moved(&board, "review", &head);
     board
+}
+
+/// The input of `plan` for the fixture plan with `section` under Lifecycle.
+fn plan_saying(section: &str) -> Value {
+    let (before, _) = PLAN.rsplit_once("## Lifecycle").unwrap();
+    let text = format!("{before}## Lifecycle\n\n{section}\n");
+    json!({"path": CHANGE, "text": text, "uses": [], "paths": PATHS})
+}
+
+/// The status of check `id` in the change's gate, none when it is left out.
+fn status_of(board: &Changes, id: &str) -> Option<Value> {
+    let found = board.call("next", &json!({"path": CHANGE}));
+    check(&found, id).map(|each| each["status"].clone())
+}
+
+#[test]
+fn a_plan_revised_to_none_with_a_record_misses_review_and_a_plan_naming_it_does_not() {
+    let board = reflowed_from_small();
+    board.call_stdin("lifecycle", &lifecycle(TABLE, "/repos/x/docs/states.md"));
+    board.call_stdin("plan", &plan_saying("None: nothing changes state."));
+    assert_eq!(
+        status_of(&board, "lifecycle-none-paths"),
+        Some(json!("missing"))
+    );
+    board.call_stdin("plan", &plan_saying(NAMED));
+    assert_eq!(status_of(&board, "lifecycle-none-paths"), None);
+    assert_eq!(status_of(&board, "lifecycle-paths"), None);
+}
+
+#[test]
+fn only_a_lifecycle_record_board_reads_at_the_path_switches_off_lifecycle_paths() {
+    let understanding = typed(
+        "changes/understanding/v1",
+        &json!({
+            "change": CHANGE,
+            "subject": "data",
+            "playback": "One record per call.",
+            "questions": [{"round": 1, "question": "Q?", "answer": "A.", "matches": true}],
+        }),
+    );
+    let invalid = typed("changes/lifecycle/v1", &json!({}));
+    let cases = [
+        ("changes/t/lifecycle/x.md", "text\n"),
+        (RECORD, understanding.as_str()),
+        (RECORD, "{}"),
+        (RECORD, "not json"),
+        (RECORD, invalid.as_str()),
+    ];
+    for (file, body) in cases {
+        let board = reflowed_from_small();
+        board.write(file, body);
+        assert_eq!(
+            status_of(&board, "lifecycle-paths"),
+            Some(json!("missing")),
+            "{file}: {body}"
+        );
+    }
+    let board = reflowed_from_small();
+    board.call_stdin("lifecycle", &lifecycle(TABLE, "/repos/x/docs/states.md"));
+    assert_eq!(status_of(&board, "lifecycle-paths"), None);
+}
+
+#[test]
+fn a_small_change_in_build_over_a_lifecycle_path_misses_not_small_and_one_elsewhere_passes() {
+    for (file, want) in [("src/sync.rs", "missing"), ("src/a.rs", "pass")] {
+        let (board, head) = started_over("small", file);
+        moved(&board, "build", &head);
+        assert_eq!(status_of(&board, "not-small"), Some(json!(want)), "{file}");
+    }
+}
+
+#[test]
+fn a_small_change_in_review_over_a_lifecycle_path_misses_and_one_elsewhere_passes() {
+    for (file, want) in [("src/sync.rs", "missing"), ("src/a.rs", "pass")] {
+        let (board, head) = started_over("small", file);
+        moved(&board, "review", &head);
+        assert_eq!(
+            status_of(&board, "lifecycle-paths"),
+            Some(json!(want)),
+            "{file}"
+        );
+    }
+}
+
+#[test]
+fn a_change_in_review_reflowed_to_small_over_a_lifecycle_path_misses_and_one_elsewhere_passes() {
+    for (file, want) in [("src/sync.rs", "missing"), ("src/a.rs", "pass")] {
+        let (board, head) = started_over("development", file);
+        moved(&board, "review", &head);
+        board.call("reflow", &json!({"path": CHANGE, "flow": "small"}));
+        assert_eq!(
+            status_of(&board, "lifecycle-paths"),
+            Some(json!(want)),
+            "{file}"
+        );
+    }
 }
 
 #[test]

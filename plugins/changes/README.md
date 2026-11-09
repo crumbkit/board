@@ -738,8 +738,8 @@ order. Each phase has a `name`, the `instruction` that `next` returns, the
 instruction relies on, and its `checks`. A check has an `id`, a `kind`, and
 optionally an `actor` (`agent`, `owner` or `reviewer`), `blocks`, a `when`
 (`route`; `section` or `section_not`, each mapping a plan heading to a
-pattern matched without case; and `absent`, a path at which nothing may be,
-with its placeholders filled), a `remedy`, `waivable`, and the parameters
+pattern matched without case; and `absent`, with the `path`, placeholders
+filled, and the `type` of a record that Board must not read there), a `remedy`, `waivable`, and the parameters
 of its kind. The schema gives each kind's parameters their own `$defs`
 entry, such as `RecordsCheck`. It requires the parameter a kind needs and
 refuses a parameter of another kind, so a `tasks` check that holds `min` is
@@ -750,7 +750,11 @@ The committed schema is
 The plugin ships three flows, compiled in from
 `crates/board-plugin-changes/flows/`. `development` has the phases plan,
 build, review and land, and stops through plan. `small` has build, review
-and land, and stops through review. `flow-authoring` writes a flow, on
+and land, and stops through review. Its `not-small` check at build refuses a
+diff that edits a path the `ui-paths`, `data-paths` or `lifecycle-paths`
+control lists, and its `lifecycle-paths` check at review refuses a lifecycle
+path, so a change reflowed to `small` at review meets it too; each sends the
+change to the development flow. `flow-authoring` writes a flow, on
 `--mount /` or the mount it is for: interview the owner, draft the flow at
 `<change>/draft`, dry-run it with `run --sandbox`, and adopt it at
 `/flows/<name>` once the owner signs a decision naming the draft and the
@@ -854,16 +858,18 @@ The development flow's gates:
 | --- | --- |
 | plan | `plan-sections`, the eight sections; `considered`; `task`; `route`; `owner-approval`, a `plans/decision/v1` the owner signed whose `refs` name the plan or the change, on every route; `mockups`, unless UX starts with "No UI change" and a reason; `data-signed`, an `understood` check of the data, unless Data starts with "None"; `lifecycle-declared`, a `planned-controlled` check of `/controls/{repo}/lifecycle-paths`, when Lifecycle says "None"; `lifecycle-record`, an `exists` check of `/changes/{name}/lifecycle`, unless Lifecycle says "None"; `obligations`, which does not block |
 | build | `head`; `suite-run`, waivable; `tasks`; `rechecks`, two matching rechecks, unless Data starts with "None" |
-| review | `review`, a report on `head` with no critical or high finding; `paths`; `ui-paths` and `data-paths`, `controlled-paths` checks of `/controls/{repo}/ui-paths` when UX says "No UI change" and `/controls/{repo}/data-paths` when Data says "None"; `lifecycle-paths`, the same check of `/controls/{repo}/lifecycle-paths` unless a record is at `/changes/{name}/lifecycle`, whatever the Lifecycle section says; `obligations-settled`, with the escape heading `Obligations left owed` |
+| review | `review`, a report on `head` with no critical or high finding; `paths`; `ui-paths` and `data-paths`, `controlled-paths` checks of `/controls/{repo}/ui-paths` when UX says "No UI change" and `/controls/{repo}/data-paths` when Data says "None"; `lifecycle-paths`, the same check of `/controls/{repo}/lifecycle-paths` unless Board reads a `changes/lifecycle/v1` at `/changes/{name}/lifecycle`; `lifecycle-none-paths`, the same check when Lifecycle says "None", whether or not a record exists; `obligations-settled`, with the escape heading `Obligations left owed` |
 | land | `test-sections`, What the tests prove and What the tests do not prove; `pull-request` |
 | build, for a prototype | Never passes: `verdict` ends a prototype instead. |
 
 Three layers identify a lifecycle change. The Lifecycle heading is required,
 so skipping it takes a written None. `lifecycle-declared` refuses that None
 when the plan's paths reach the lifecycle-paths control. `lifecycle-paths`
-refuses a diff that edits such a path while no record is at
-`/changes/<name>/lifecycle`, whatever the section says, so rewriting or
-removing the heading after the plan gate does not switch it off. A repository with no
+refuses a diff that edits such a path until Board reads a
+`changes/lifecycle/v1` at `/changes/<name>/lifecycle`, so rewriting or
+removing the heading after the plan gate does not switch it off, and
+`lifecycle-none-paths` refuses the same diff while the section says None,
+even with a record present. A repository with no
 lifecycle-paths control has only the heading, and `brief` warns about that.
 
 "No UI change" counts only when a reason follows it, and "None" only as a

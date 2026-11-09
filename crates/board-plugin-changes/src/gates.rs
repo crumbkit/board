@@ -126,6 +126,9 @@ pub(crate) struct Observed {
     pub(crate) ticket_types: Vec<String>,
     pub(crate) board: Option<String>,
     pub(crate) existing: BTreeMap<String, bool>,
+    /// The paths a check's `when.absent` names, filled, that hold the record
+    /// it means, so the check does not apply.
+    pub(crate) records_held: BTreeSet<String>,
     /// The controls `controls.for-paths` finds on the plan's paths, which a
     /// `planned-controlled` check reads.
     pub(crate) on_planned: Vec<String>,
@@ -161,6 +164,7 @@ impl Observed {
             ticket_types: Vec::new(),
             board: None,
             existing: BTreeMap::new(),
+            records_held: BTreeSet::new(),
             on_planned: Vec::new(),
             on_planned_unread: None,
             held: BTreeSet::new(),
@@ -257,6 +261,7 @@ pub(crate) enum Read {
     Controlled,
     Tickets,
     Exists,
+    Absent,
     PlannedControls,
 }
 
@@ -271,7 +276,7 @@ pub(crate) fn reads(checks: &[flow::Check]) -> BTreeSet<Read> {
             reads.insert(Read::Plan);
         }
         if (each.when.as_ref()).is_some_and(|when| when.absent.is_some()) {
-            reads.insert(Read::Exists);
+            reads.insert(Read::Absent);
         }
         if each.waivable == Some(true) {
             reads.insert(Read::References);
@@ -395,11 +400,10 @@ fn applies(
             return Ok(false);
         }
     }
-    if let Some(template) = &when.absent
+    if let Some(absent) = &when.absent
         && observed
-            .existing
-            .get(&remedy::fill(template, &remedy::values(observed)))
-            == Some(&true)
+            .records_held
+            .contains(&remedy::fill(&absent.path, &remedy::values(observed)))
     {
         return Ok(false);
     }

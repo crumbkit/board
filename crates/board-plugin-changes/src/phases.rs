@@ -316,7 +316,8 @@ pub(crate) fn observe(
     if wanted.contains(&Read::Exists) {
         let filled = values(&found);
         let paths: Vec<String> = (found.checks().iter())
-            .flat_map(paths_read)
+            .filter(|each| each.kind.known() == Some(&CheckKind::Exists))
+            .filter_map(|each| each.path.as_deref())
             .filter(|template| unfilled(template, &filled).is_empty())
             .map(|template| fill(template, &filled))
             .collect();
@@ -325,20 +326,37 @@ pub(crate) fn observe(
             found.existing.insert(path, held);
         }
     }
+    if wanted.contains(&Read::Absent) {
+        records_held(host, &mut found)?;
+    }
     if wanted.contains(&Read::PlannedControls) {
         planned_controls(host, &mut found)?;
     }
     Ok(found)
 }
 
-/// The path templates whose existence `each` reads: the one an `exists`
-/// check names and the one its `when` needs absent.
-fn paths_read(each: &crate::flow::Check) -> impl Iterator<Item = &str> {
-    let named = (each.kind.known() == Some(&CheckKind::Exists))
-        .then_some(each.path.as_deref())
-        .flatten();
-    let absent = each.when.as_ref().and_then(|when| when.absent.as_deref());
-    named.into_iter().chain(absent)
+/// Adds to `found` each path a check's `when.absent` names that holds the
+/// record it means.
+fn records_held(host: &dyn Host, found: &mut Observed) -> Result<(), PluginError> {
+    let filled = values(found);
+    let asked: Vec<(String, String)> = (found.checks().iter())
+        .filter_map(|each| each.when.as_ref()?.absent.as_ref())
+        .filter(|absent| unfilled(&absent.path, &filled).is_empty())
+        .map(|absent| (fill(&absent.path, &filled), absent.record_type.clone()))
+        .collect();
+    for (path, record_type) in asked {
+        if board::resolve(host, &path)?.is_none() {
+            continue;
+        }
+        let read = referenced(host, std::slice::from_ref(&path))?;
+        if read
+            .get(&path)
+            .is_some_and(|(kind, _)| *kind == record_type)
+        {
+            found.records_held.insert(path);
+        }
+    }
+    Ok(())
 }
 
 /// What `planned-controlled` checks read: which controls they name the board

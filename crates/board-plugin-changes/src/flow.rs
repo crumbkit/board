@@ -302,10 +302,22 @@ pub(crate) struct When {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "Option<BTreeMap<String, Pattern>>")]
     pub(crate) section_not: Option<BTreeMap<String, String>>,
-    /// Nothing is at this path, its placeholders filled.
+    /// No record of this type that Board reads is at this path.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(with = "Option<PathTemplate>")]
-    pub(crate) absent: Option<String>,
+    pub(crate) absent: Option<Absent>,
+}
+
+/// A record whose absence a check's `when` needs.
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct Absent {
+    /// Where the record would be, its placeholders filled.
+    #[schemars(with = "PathTemplate")]
+    pub(crate) path: String,
+    /// The type a record there must have to count.
+    #[serde(rename = "type")]
+    #[schemars(rename = "type", with = "TypeName")]
+    pub(crate) record_type: String,
 }
 
 /// A field of the change that a `field` check reads.
