@@ -1,7 +1,5 @@
 //! Reading the index with SQL (docs/architecture/index.md).
 
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use rusqlite::hooks::{AuthAction, AuthContext, Authorization};
@@ -54,8 +52,8 @@ impl View {
         limit: usize,
         budget: Option<Budget>,
     ) -> Result<Rows, IndexError> {
-        // Setting a hook needs the connection alone, so both hooks are set
-        // here, while no statement or transaction borrows it.
+        // Setting a hook needs the connection alone, so hooks are set here,
+        // while no statement or transaction borrows it.
         let mut index = self.index.borrow_mut();
         let connection = &mut index.connection;
         connection.pragma_update(None, "query_only", true)?;
@@ -64,15 +62,10 @@ impl View {
             STEPS_PER_CHECK,
             Some(move || started.elapsed() > QUERY_TIME),
         )?;
-        let compiling = Arc::new(AtomicBool::new(false));
-        let authorizer = Arc::clone(&compiling);
-        connection.authorizer(Some(move |context: AuthContext<'_>| {
-            authorize(&authorizer, context)
-        }))?;
         let before = connection.limit(Limit::SQLITE_LIMIT_LENGTH)?;
-        let result = self.snapshot(connection, &compiling, sql, limit, budget);
+        let result =
+            compile(connection, sql).and_then(|()| self.snapshot(connection, sql, limit, budget));
         connection.set_limit(Limit::SQLITE_LIMIT_LENGTH, before)?;
-        connection.authorizer(None::<fn(AuthContext<'_>) -> Authorization>)?;
         connection.progress_handler(STEPS_PER_CHECK, None::<fn() -> bool>)?;
         connection.pragma_update(None, "query_only", false)?;
         result
@@ -83,7 +76,6 @@ impl View {
     fn snapshot(
         &self,
         connection: &Connection,
-        compiling: &AtomicBool,
         sql: &str,
         limit: usize,
         budget: Option<Budget>,
@@ -93,24 +85,16 @@ impl View {
         if prunes != self.prunes {
             return Err(IndexError::Pruned);
         }
-        Self::read(connection, compiling, sql, limit, budget).map_err(blame)
+        Self::read(connection, sql, limit, budget).map_err(blame)
     }
 
     fn read(
         connection: &Connection,
-        compiling: &AtomicBool,
         sql: &str,
         limit: usize,
         budget: Option<Budget>,
     ) -> Result<Rows, rusqlite::Error> {
-        // `query_only` does not stop ATTACH, DETACH or a PRAGMA that writes.
-        // The authorizer refuses only during this prepare: a pragma function
-        // such as `pragma_table_info` prepares its own PRAGMA while it runs.
-        compiling.store(true, Ordering::Relaxed);
-        // rusqlite refuses a string holding more than one statement.
-        let prepared = connection.prepare(sql);
-        compiling.store(false, Ordering::Relaxed);
-        let mut statement = prepared?;
+        let mut statement = connection.prepare(sql)?;
         // Each check covers a gap in the other: `readonly` passes ATTACH, and
         // the authorizer cannot see the file VACUUM INTO attaches as it runs.
         if !statement.readonly() {
@@ -178,11 +162,22 @@ fn too_big() -> rusqlite::Error {
     )
 }
 
-/// Refuses ATTACH, DETACH and the PRAGMA statement while the query compiles.
-fn authorize(compiling: &AtomicBool, context: AuthContext<'_>) -> Authorization {
-    if !compiling.load(Ordering::Relaxed) {
-        return Authorization::Allow;
-    }
+/// Compiles `sql` under the authorizer and discards the result, so a refused
+/// statement never reaches the transaction. `query_only` does not stop ATTACH,
+/// DETACH or a PRAGMA that writes. The authorizer is gone before the statement
+/// that runs is compiled: a pragma function such as `pragma_table_info`
+/// prepares its own PRAGMA as it runs, and rusqlite's authorizer panics on an
+/// argument that is not UTF-8, which that PRAGMA can hold.
+fn compile(connection: &mut Connection, sql: &str) -> Result<(), IndexError> {
+    connection.authorizer(Some(authorize))?;
+    // rusqlite refuses a string holding more than one statement.
+    let compiled = connection.prepare(sql).map(drop).map_err(blame);
+    connection.authorizer(None::<fn(AuthContext<'_>) -> Authorization>)?;
+    compiled
+}
+
+/// Refuses ATTACH, DETACH and the PRAGMA statement.
+fn authorize(context: AuthContext<'_>) -> Authorization {
     match context.action {
         AuthAction::Attach { .. } | AuthAction::Detach { .. } | AuthAction::Pragma { .. } => {
             Authorization::Deny

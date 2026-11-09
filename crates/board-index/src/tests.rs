@@ -546,6 +546,12 @@ fn a_query_cannot_write_and_leaves_the_index_writable() {
         .query("SELECT count(*) AS n FROM main.blobs", 10, None)
         .unwrap();
     assert_eq!(admitted.rows, [vec![serde_json::json!(1)]]);
+    // A pragma function passes the readonly check, so only `query_only` stops
+    // this one writing the statistics it gathers.
+    let refused = view
+        .query("SELECT count(*) FROM pragma_optimize(-1)", 10, None)
+        .unwrap_err();
+    assert_eq!(refused.code(), Code::QueryInvalid);
     let writer = view.index.into_inner().write().unwrap();
     writer.put_blob(blob(2), Role::Json, &record()).unwrap();
     writer.decide(Vec::new()).unwrap();
@@ -654,6 +660,31 @@ fn a_query_cannot_run_a_pragma_but_can_call_a_pragma_function() {
         .unwrap();
     assert_eq!(admitted.rows.len(), 1);
     assert_eq!(journal_mode(&index), "wal");
+    // The readonly check passes this statement, so only the authorizer stops
+    // it changing the connection.
+    let refused = index
+        .query("PRAGMA writable_schema=1", 10, None)
+        .unwrap_err();
+    assert_eq!(refused.code(), Code::QueryInvalid);
+    let writable: i64 = index
+        .connection()
+        .query_row("PRAGMA writable_schema", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(writable, 0);
+}
+
+#[test]
+fn a_pragma_function_given_a_name_that_is_not_utf8_returns_no_rows() {
+    let cache = tempfile::tempdir().unwrap();
+    let index = filled(cache.path());
+    let admitted = index
+        .query(
+            "SELECT count(*) FROM pragma_table_info(CAST(x'ff' AS TEXT))",
+            10,
+            None,
+        )
+        .unwrap();
+    assert_eq!(admitted.rows, [vec![serde_json::json!(0)]]);
 }
 
 #[test]
@@ -683,6 +714,13 @@ fn a_query_that_runs_too_long_is_stopped_and_a_bounded_one_finishes() {
     // within the time limit.
     let bounded = "WITH RECURSIVE c(n) AS (SELECT 1 UNION ALL SELECT n+1 FROM c WHERE n < 10000) \
                    SELECT count(*) FROM c";
+    // The stopped query's limit has passed, so a statement outside any query
+    // finishes only if that query took its clock away.
+    let after: i64 = index
+        .connection()
+        .query_row(bounded, [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(after, 10000);
     let admitted = index.query(bounded, 10, None).unwrap();
     assert_eq!(admitted.rows, [vec![serde_json::json!(10000)]]);
     assert_eq!(journal_mode(&index), "wal");
