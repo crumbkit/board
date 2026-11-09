@@ -184,7 +184,6 @@ fn filled(code: Code, fields: &Fields) -> Option<String> {
         | Code::PluginAmbiguous
         | Code::PluginDuplicate
         | Code::PluginBadInput => plugin(code, fields)?,
-        Code::PluginNoCapability => no_capability(fields.capability.as_ref()?),
         Code::QueryInvalid => query(fields.known.as_ref()?),
         Code::SettingsAsked | Code::SettingsRefused => {
             return effect(code, fields.effect.as_ref()?);
@@ -192,13 +191,6 @@ fn filled(code: Code, fields: &Fields) -> Option<String> {
         Code::UiSlotInvalid | Code::UiSlotMismatch => return ui(code, fields, pointer),
         _ => return at_offset(code, fields),
     })
-}
-
-/// The hint for a capability that no plugin, or the named plugin, lacks.
-fn no_capability(capability: &impl std::fmt::Display) -> String {
-    format!(
-        "read the plugin's capabilities in `fields.offered`, use the name in `fields.nearest` when it is given, or run `board plugin find --capability {capability}` to see which plugin offers it"
-    )
 }
 
 /// The hint for a `plugin` code that names the plugin.
@@ -539,7 +531,7 @@ fn generic(code: Code) -> &'static str {
             "run `board plugin list` to see the installed plugins and their capabilities"
         }
         Code::PluginNoCapability => {
-            "read the plugin's capabilities in `fields.offered`, use the name in `fields.nearest` when it is given, or run `board plugin find --capability <name>` to see which plugin offers it"
+            "read the capabilities the named plugin offers in `fields.offered` when given, use the nearest name in `fields.nearest` when given, or run `board plugin find` to see which plugin offers the capability"
         }
         Code::PluginBadManifest => {
             "fix the plugin's `plugin.json` or the shipped schema the message names, or reinstall the plugin"

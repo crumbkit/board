@@ -734,7 +734,7 @@ board call nowhere.due
 
 board call chores.dew
   fails with board::plugin::no_capability
-  run board plugin find --capability dew
+  run board plugin find
     exits 0
 
 board call broken.due

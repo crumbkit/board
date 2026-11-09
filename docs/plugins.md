@@ -213,7 +213,7 @@ folder.
 
 ## Codes
 
-`board::plugin::` `not_installed`, `not_enabled`, `bad_manifest`,
+`board::plugin::` `not_installed`, `no_capability`, `not_enabled`, `bad_manifest`,
 `schema_missing`, `schema_differs`, `ambiguous`, `duplicate`, `alias_conflict`,
 `bad_input`, `bad_output`, `failed`, `not_started`, `timeout`,
 `too_large`, `too_deep`.
