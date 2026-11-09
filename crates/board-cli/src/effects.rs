@@ -46,7 +46,7 @@ pub(crate) fn decide(
     };
     let decided = (shown.transpose()).and_then(|shown| {
         let path = read(prefix, &deciding.path, "decide")?;
-        (board.decide_op(&deciding.capability, &path, shown.as_ref()))
+        (board.decide_capability(&deciding.capability, &path, shown.as_ref()))
             .map_err(|error| refusal(&error))
     });
     match decided {

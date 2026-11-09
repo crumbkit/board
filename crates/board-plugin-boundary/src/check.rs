@@ -25,7 +25,7 @@ const NAMED: usize = 20;
 const NO_RULE: &str = "this control has no rule, so it cannot check content; give it a rule, \
                        or remove it from the boundary";
 const GIVE_RULE: &str = "give each control without a rule a rule, or remove it from the boundary";
-/// The op the owner approves to let one failed crossing through, and how
+/// The capability the owner approves to let one failed crossing through, and how
 /// Board refuses a decide it has not admitted.
 const OVERRIDE: &str = "boundary.override";
 const ASKED: &str = Code::SettingsAsked.as_str();

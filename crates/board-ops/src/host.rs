@@ -587,7 +587,8 @@ impl Host for Hosted<'_> {
         )?;
         let mut board = self.again().map_err(|error| opened(&error))?;
         board.ask_as(asker);
-        (board.decide_op(capability, path, shown)).map_err(|error| Box::new(error.refusal()))
+        (board.decide_capability(capability, path, shown))
+            .map_err(|error| Box::new(error.refusal()))
     }
 
     fn sync(&self, push: bool, deadline: Duration) -> Result<Synced, SyncError> {

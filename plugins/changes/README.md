@@ -647,7 +647,7 @@ they move the stop by starting a later run with `--through` or `--until`.
 Recording a stop with `changes.stop` does not clear the change's `stop`,
 so an agent that records its stop and carries on still cannot advance
 past it. For a run that starts an agent, `run` clears the stop in the same
-write as the run record, once the agent has exited; `next` then shows no
+write as the attempt record, once the agent has exited; `next` then shows no
 stop and `advance` reads only the gate. The stop of an inline run stays
 until the person starts a later run, whose `--through` or `--until`
 replaces it; `--until done` lets the change advance to `done`. A run
@@ -694,7 +694,7 @@ Claude Code's `--output-format json` prints, it reads `total_cost_usd` and
 printed too much. Otherwise, after an exit 0, it is `reached` when the
 stop is reached and `waiting` when the change waits on the owner or a
 reviewer. Failing those, it is `budget` when the reported cost is over
-`--budget`, and `error` otherwise. It then writes the run record.
+`--budget`, and `error` otherwise. It then writes the attempt record.
 Board does not enforce `--budget`. The budget reaches the agent only as
 text in the brief, `run` passes no flag of any agent program, and an agent
 that spends past it runs on until it exits or the 59 minutes pass. The run
@@ -728,7 +728,7 @@ and write any path it names, the real board and repositories included. It
 must authenticate through the variables `run` passes on, since its home
 holds no credentials. Nothing removes the directory afterwards.
 
-The run record and its stop record are then copied, at the same stamps,
+The attempt record and its stop record are then copied, at the same stamps,
 under the change the run is for: `--for`, else the change whose directory
 holds the flow `--flow` names by path, else `changes::sandbox::no_change`.
 The copy of the run says `sandbox: true` and names the throwaway change in

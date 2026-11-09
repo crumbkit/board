@@ -43,7 +43,7 @@ impl Board {
     /// and it is refused as asked. The owner's own capability is admitted. With
     /// `shown`, the effect shows that content and its id covers its digest,
     /// so an approval admits only the same content.
-    pub fn decide_op(
+    pub fn decide_capability(
         &self,
         capability: &str,
         path: &LogicalPath,
@@ -67,7 +67,7 @@ impl Board {
                 let mut mounted = Board::open(&inside.repository, home)
                     .map_err(|source| EffectError::Open { source })?;
                 mounted.ask_as(self.asker.clone());
-                let mut report = mounted.decide_op(capability, &inside.path, shown)?;
+                let mut report = mounted.decide_capability(capability, &inside.path, shown)?;
                 report.path = path.clone();
                 return Ok(report);
             }
@@ -88,7 +88,7 @@ impl Board {
         self.decide_at(capability, path, landed, (record, text))
     }
 
-    /// [`Board::decide_op`] for `capability` at `landed`, the path in this board
+    /// [`Board::decide_capability`] for `capability` at `landed`, the path in this board
     /// where `path` lands, showing `shown`.
     fn decide_at(
         &self,

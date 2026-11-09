@@ -134,8 +134,9 @@ fn a_built_ins_decide_asks_as_board_decide_does_and_the_owners_approval_admits_i
         ..Asker::default()
     });
     let shown = Shown::Text(b"the body".to_vec());
-    let asked = (direct.decide_op("outer.override", &"/pulls/7".parse().unwrap(), Some(&shown)))
-        .unwrap_err();
+    let asked =
+        (direct.decide_capability("outer.override", &"/pulls/7".parse().unwrap(), Some(&shown)))
+            .unwrap_err();
     assert_eq!(asked.fields().effect.as_deref(), Some(id.as_str()));
 
     owner.answer(&id, Answer::Approve);

@@ -772,6 +772,24 @@ fn flows_and_attempts_together_write_each_run_once_with_the_new_type_and_flow() 
 }
 
 #[test]
+fn flows_and_attempts_together_list_a_run_naming_a_flow_its_change_does_not_follow_once() {
+    let board = copies_board();
+    let mut named = board.read("changes/e/runs/1.json");
+    named["flow"] = json!("development");
+    board.write("changes/e/runs/2.json", &named.to_string());
+    commit_all(&board);
+    let dry = board.call("migrate", &json!({"flows": true, "attempts": true}));
+    let paths: Vec<&Value> = dry["flows"]["left"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|left| &left["path"])
+        .filter(|path| *path == "/changes/e/runs/2")
+        .collect();
+    assert_eq!(paths.len(), 1, "{}", dry["flows"]["left"]);
+}
+
+#[test]
 fn migrate_without_flows_leaves_the_copies_says_nothing_of_them_and_marks_its_commit() {
     let board = copies_board();
     board.write(

@@ -285,6 +285,7 @@ fn rewrite_runs(
     for run in every {
         let retype = attempts && run.body.get("$type").and_then(Value::as_str) == Some(RUN_V1);
         let named = (run.body.get("flow").and_then(Value::as_str)).map(str::to_owned);
+        let mut listed = false;
         let version = match (flows, &named) {
             (Some((_, replaced)), Some(named)) if named.starts_with('/') => replaced.get(named),
             (Some((followed, _)), Some(named)) => {
@@ -297,12 +298,15 @@ fn rewrite_runs(
                          with `board changes reflow`, then run migrate again"
                     );
                     left.push(left_at(run.path.clone(), why));
+                    listed = true;
                 }
                 version
             }
             _ => None,
         };
-        if version.is_none() && !retype {
+        if version.is_none() && (!retype || listed) {
+            // A run already listed under `left` is not listed again for the
+            // schema refusing the flow name it still holds.
             continue;
         }
         let mut body = run.body;
