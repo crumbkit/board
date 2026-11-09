@@ -75,15 +75,13 @@ board-validate = { path = "crates/board-validate", version = "0.0.0" }
 # upgrade is deliberate; only board-cli/src/complete.rs uses it.
 clap_complete = { version = "=4.6.11", features = ["unstable-dynamic"] }
 # crumbkit prints every command's reports, failures and help; crumbkit-test's convention
-# checks run against the built binary. Pinned by rev, with crumbkit-process, to
-# one crumbkit commit until crates.io has 0.1.1; the version satisfies
-# deny.toml's wildcards.
-crumbkit = { git = "https://github.com/crumbkit/crumbkit", rev = "fefb2ab7f532c0a6366db66c7478fc0e5514259c", version = "0.1.1", default-features = false }
-crumbkit-test = { git = "https://github.com/crumbkit/crumbkit", rev = "fefb2ab7f532c0a6366db66c7478fc0e5514259c", version = "0.1.1", default-features = false }
+# checks run against the built binary.
+crumbkit = { version = "0.2", default-features = false }
+crumbkit-test = { version = "0.2", default-features = false }
 # crumbkit-process runs every child that Board's plugins and sync start, and
 # its `forward` feature, which board-plugin enables, forwards stop signals to
 # their groups.
-crumbkit-process = { git = "https://github.com/crumbkit/crumbkit", rev = "fefb2ab7f532c0a6366db66c7478fc0e5514259c", version = "0.1.1", default-features = false }
+crumbkit-process = { version = "0.2", default-features = false }
 clap = { version = "4.6.7", default-features = false, features = ["derive", "error-context", "help", "std", "suggestions", "usage"] }
 # board serve compares the per-launch token in constant time.
 constant_time_eq = "0.6.1"

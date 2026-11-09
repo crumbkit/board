@@ -21,7 +21,7 @@ use serde_json::{Map, Value, json};
 
 use crate::report::Output;
 use kit::{Flagged, Note, Refused, Said, Whole};
-pub(crate) use kit::{GUIDE, Printer};
+pub(crate) use kit::{Printer, TOOL};
 
 mod effects;
 mod get;
@@ -719,7 +719,7 @@ pub(crate) fn too_many_paths(unparsed: &crumbkit::Refused) -> Option<Output> {
         .fields
         .insert("value".to_owned(), value.as_str().into());
     let printer = Printer {
-        view: unparsed.output().clone(),
+        view: unparsed.run().clone(),
     };
     Some(refused(printer, refusal))
 }

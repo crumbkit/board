@@ -7,19 +7,16 @@ use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
-use clap::CommandFactory;
 use crumbkit::FieldValue;
-use crumbkit::form::{ReadFailure, Step};
 use crumbkit_test::{
-    Allow, Examples, Failing, FailureReader, Recoveries, Rule, RuntimeFailing, RuntimePlace, Twin,
-    Twins, Unprovoked,
+    Allow, Check, Examples, Failing, FailureReader, ReadFailure, Recoveries, RecoveryStep, Rule,
+    RuntimeFailing, RuntimePlace, Suite, Twin, Twins, Unprovoked,
 };
 
 use super::cli::words;
-use super::help::{binary, guide};
+use super::help::{binary, build};
 use super::plugins::{RESULT, TASKS, answering, lacking_a_schema, shipping};
 use super::*;
-use crate::run::Cli;
 
 /// Board's failures as crumbkit reads them: each error document, refused
 /// answer and entry with a code, with its string fields, and as steps the
@@ -71,7 +68,7 @@ impl BoardReader {
 /// when it names none. Board cannot know another board's directory or the
 /// command a reader meant, so a command whose only placeholders are `<dir>`
 /// and `<command>` is the reader's to finish, and no step.
-fn steps(hint: Option<&str>) -> Vec<Step> {
+fn steps(hint: Option<&str>) -> Vec<RecoveryStep> {
     let Some(hint) = hint else {
         return Vec::new();
     };
@@ -82,15 +79,15 @@ fn steps(hint: Option<&str>) -> Vec<Step> {
                 .iter()
                 .all(|name| name.starts_with("dir>") || name.starts_with("command>"))
     };
-    let runs: Vec<Step> = hint
+    let runs: Vec<RecoveryStep> = hint
         .split('`')
         .skip(1)
         .step_by(2)
         .filter(|quoted| quoted.starts_with("board ") && !readers(quoted))
-        .map(|quoted| Step::Run(quoted.to_owned()))
+        .map(|quoted| RecoveryStep::Run(quoted.to_owned()))
         .collect();
     if runs.is_empty() {
-        vec![Step::Hint(hint.to_owned())]
+        vec![RecoveryStep::Hint(hint.to_owned())]
     } else {
         runs
     }
@@ -1174,7 +1171,10 @@ fn recover(starts: &[Failing<'_>]) -> BTreeSet<String> {
     let recoveries = Recoveries::from_codes(examples, &codes)
         .starts(starts)
         .unprovoked(&unprovoked);
-    crumbkit_test::check_recoveries(&Cli::command(), &guide(), &recoveries, GOLDENS);
+    Suite::new(build)
+        .goldens(GOLDENS)
+        .recoveries(recoveries)
+        .run(Check::Recoveries);
     reader.then_run.take()
 }
 
@@ -1239,5 +1239,5 @@ fn every_refusal_has_a_twin_one_word_apart_that_succeeds() {
     let twins = Twins::from_codes(examples, &codes)
         .pairs(&starts.pairs)
         .unprovoked(&unprovoked);
-    crumbkit_test::check_twins(&Cli::command(), &guide(), &twins);
+    Suite::new(build).twins(twins).run(Check::Twins);
 }

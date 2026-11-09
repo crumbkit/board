@@ -10,10 +10,11 @@ use board_plugin::{Capability, Target};
 use clap::builder::{BoolValueParser, PossibleValue, StringValueParser};
 use clap::builder::{TypedValueParser, ValueParser};
 use clap::{Arg, ArgMatches, Command, FromArgMatches};
-use crumbkit::help::{Effects, Guide, RuntimeLeaf};
+use crumbkit::Tool;
+use crumbkit::help::{Effects, RuntimeLeaf};
 use serde_json::{Map, Value};
 
-use crate::render::{CALL_REPORT, GUIDE};
+use crate::render::{CALL_REPORT, TOOL};
 use crate::run::{Cli, Prefix};
 use crate::stdin::{Input, Stdin};
 
@@ -389,11 +390,11 @@ pub(crate) fn command(grafted: &[Grafted], root: Command) -> Command {
     })
 }
 
-/// Board's guide, with a leaf for each of `grafted` that prints a call
+/// Board's tool record, with a leaf for each of `grafted` that prints a call
 /// report, with the effects its capability's hints declare.
-pub(crate) fn guide(grafted: &[Grafted]) -> Guide {
+pub(crate) fn tool(grafted: &[Grafted]) -> Tool {
     if grafted.is_empty() {
-        return GUIDE;
+        return TOOL;
     }
     let leaves = grafted.iter().map(|grafted| {
         let about = format!(
@@ -407,5 +408,5 @@ pub(crate) fn guide(grafted: &[Grafted]) -> Guide {
             None => leaf,
         }
     });
-    GUIDE.with_runtime_leaves(leaves.collect())
+    TOOL.with_runtime_leaves(leaves.collect())
 }

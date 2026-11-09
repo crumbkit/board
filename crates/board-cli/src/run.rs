@@ -34,7 +34,7 @@ use crumbkit::{Sink, Unparsed};
 use crate::config::Context;
 use crate::effects;
 use crate::graft;
-use crate::render::{self, GUIDE, Printer};
+use crate::render::{self, Printer};
 use crate::report::Output;
 use crate::stdin::{Input, Stdin, TypeCommand, call, put};
 use crate::timing::Ran;
@@ -433,10 +433,10 @@ pub(crate) fn run(
     let found = graft::find(&arguments, context.built_in, context.plugins.as_deref());
     let (mut stdout, mut stderr) = (Vec::new(), Vec::new());
     let sink = &mut Sink::new(&mut stdout, &mut stderr);
-    let parsed = crumbkit::try_parse_to::<graft::Parsed, _, _, _, _>(
+    let parsed = crumbkit::try_parse_to::<graft::Parsed>(
         sink,
         graft::command(found.as_slice(), root),
-        &graft::guide(found.as_slice()),
+        &graft::tool(found.as_slice()),
         arguments.clone(),
     );
     ran.trace.add("parse", parsing);
@@ -459,7 +459,7 @@ pub(crate) fn run(
         }
     };
     let words = arguments.get(1..).unwrap_or_default();
-    ran.command = Some(crumbkit::command_path(&Cli::command(), &GUIDE, words).join(" "));
+    ran.command = Some(crumbkit::command_path(&Cli::command(), words).join(" "));
     if let Command::Commands(_) | Command::Schemas(_) = cli.command {
         return describe(&arguments, context, &cli, view, ran);
     }
@@ -486,7 +486,7 @@ pub(crate) fn run(
         return init(printer, &start);
     }
     if let Command::Answer(answering) = cli.command {
-        let no_input = cli.no_input != crumbkit::NoInput::default();
+        let no_input = printer.view.no_input();
         return effects::answer(context, printer, answering, no_input, stdin);
     }
     let opening = Instant::now();
@@ -545,18 +545,18 @@ fn describe(
     arguments: &[OsString],
     context: &Context,
     cli: &Cli,
-    view: crumbkit::Output,
+    view: crumbkit::Run,
     ran: &mut Ran,
 ) -> Output {
     let base = cli.personal.then(|| context.personal());
     let base = base.unwrap_or_else(|| Ok(context.start.clone()));
     let start = base.and_then(|base| entered(&base, &cli.directories));
-    let (guide, notes, view) =
+    let (tool, notes, view) =
         crate::describe::grafted(arguments, context, start, view, &mut ran.trace);
     let printer = Printer { view };
     match &cli.command {
-        Command::Commands(command) => crate::describe::commands(printer, &guide, command, notes),
-        Command::Schemas(command) => crate::describe::schemas(printer, &guide, command, notes),
+        Command::Commands(command) => crate::describe::commands(printer, &tool, command, notes),
+        Command::Schemas(command) => crate::describe::schemas(printer, &tool, command, notes),
         _ => unreachable!("run passes only commands and schemas"),
     }
 }
@@ -580,7 +580,7 @@ fn reread(
         Ok(called) => run(called, context, stdin, ran),
         Err(refusal) => {
             let printer = Printer {
-                view: refused.output().clone(),
+                view: refused.run().clone(),
             };
             render::refused(printer, *refusal)
         }
