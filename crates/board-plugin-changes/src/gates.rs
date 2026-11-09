@@ -19,9 +19,6 @@ pub(crate) const RUN_TYPE: &str = "runs/run/v1";
 pub(crate) const DECISION_TYPE: &str = "plans/decision/v1";
 pub(crate) const REPORT_TYPE: &str = "review/report/v1";
 pub(crate) const UNDERSTANDING_TYPE: &str = "changes/understanding/v1";
-/// The plan's sections the plan gate requires, by heading, compared
-/// without case.
-pub(crate) const SECTIONS: [&str; 5] = ["Problem", "Outcome", "Out of scope", "UX", "Data"];
 /// What a check that needs a head commit says when the change has none.
 const NO_HEAD: &str = "the change records no head commit; attach one with --head";
 /// The fewest hex digits a commit is named by when compared with another.
@@ -129,6 +126,16 @@ pub(crate) struct Observed {
     pub(crate) ticket_types: Vec<String>,
     pub(crate) board: Option<String>,
     pub(crate) existing: BTreeMap<String, bool>,
+    /// The paths a check's `when.absent` names, filled, that hold the record
+    /// it means, so the check does not apply.
+    pub(crate) records_held: BTreeSet<String>,
+    /// The controls `controls.for-paths` finds on the plan's paths, which a
+    /// `planned-controlled` check reads.
+    pub(crate) on_planned: Vec<String>,
+    /// Why `controls.for-paths` could not be read for the plan's paths.
+    pub(crate) on_planned_unread: Option<String>,
+    /// Which controls a `planned-controlled` check names the board holds.
+    pub(crate) held: BTreeSet<String>,
 }
 
 impl Observed {
@@ -157,6 +164,10 @@ impl Observed {
             ticket_types: Vec::new(),
             board: None,
             existing: BTreeMap::new(),
+            records_held: BTreeSet::new(),
+            on_planned: Vec::new(),
+            on_planned_unread: None,
+            held: BTreeSet::new(),
         }
     }
 
@@ -237,8 +248,8 @@ pub(crate) fn sections(text: &str) -> BTreeMap<String, String> {
 /// Something the gate of a phase reads beyond the change: the records the
 /// change references, the plan, the change's check suite, the change's
 /// diff, whether its newest pull request reads, the obligation controls on
-/// its paths, the controls a check names, its tickets' types, or the paths
-/// an `exists` check names.
+/// its paths, the controls a check names, its tickets' types, the paths an
+/// `exists` check names, or the controls on the plan's paths.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) enum Read {
     References,
@@ -250,6 +261,8 @@ pub(crate) enum Read {
     Controlled,
     Tickets,
     Exists,
+    Absent,
+    PlannedControls,
 }
 
 /// What `checks` read, by their kinds. A waivable check reads the
@@ -261,6 +274,13 @@ pub(crate) fn reads(checks: &[flow::Check]) -> BTreeSet<Read> {
             .is_some_and(|when| when.section.is_some() || when.section_not.is_some())
         {
             reads.insert(Read::Plan);
+        }
+        if let Some(absent) = each.when.as_ref().and_then(|when| when.absent.as_ref()) {
+            reads.insert(Read::Absent);
+            reads.insert(Read::References);
+            if absent.path.contains("{suite}") {
+                reads.insert(Read::Suite);
+            }
         }
         if each.waivable == Some(true) {
             reads.insert(Read::References);
@@ -282,6 +302,7 @@ pub(crate) fn reads(checks: &[flow::Check]) -> BTreeSet<Read> {
             CheckKind::Paths => &[Read::Diff],
             CheckKind::Obligations => &[Read::Plan, Read::Obligations],
             CheckKind::ControlledPaths => &[Read::Diff, Read::Controlled],
+            CheckKind::PlannedControlled => &[Read::PlannedControls],
             CheckKind::Field if each.field == Some(Field::Pulls) => &[Read::Pull],
             CheckKind::Field if each.field == Some(Field::Tickets) && each.types.is_some() => {
                 &[Read::Tickets]
@@ -383,6 +404,13 @@ fn applies(
             return Ok(false);
         }
     }
+    if let Some(absent) = &when.absent
+        && observed
+            .records_held
+            .contains(&remedy::fill(&absent.path, &remedy::values(observed)))
+    {
+        return Ok(false);
+    }
     Ok(true)
 }
 
@@ -437,6 +465,7 @@ fn evaluate(
         CheckKind::Considered => kinds::considered_missing(observed),
         CheckKind::Obligations => kinds::obligations_missing(observed),
         CheckKind::ControlledPaths => kinds::controlled_missing(observed, each),
+        CheckKind::PlannedControlled => kinds::planned_controlled_missing(observed, each),
         CheckKind::FlowValid => kinds::flow_valid_missing(observed),
         CheckKind::Exists => kinds::exists_missing(observed, each),
     }

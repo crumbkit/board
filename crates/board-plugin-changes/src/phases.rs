@@ -14,9 +14,9 @@ use crate::board::{self, get_text, rows, text};
 use crate::change::write;
 use crate::change::{
     LastSync, NOT_FOUND, attached, branch_of, current, kind_of, last_sync, line, listed, plan_at,
-    pull_of, read, referenced, sync_reads, touch,
+    pull_of, read, referenced, sync_reads, touch, whole_record_at,
 };
-use crate::controls::{listed_by, obligations};
+use crate::controls::{listed_by, obligations, on_paths};
 use crate::diff::{edited, outside};
 use crate::flow::Kind as CheckKind;
 use crate::flow::{Actor, FlowSummary, of_change};
@@ -183,7 +183,10 @@ pub(crate) struct Moved {
 fn instruction(observed: &Observed) -> String {
     let phase = observed.change.phase.as_str();
     match (observed.flow.as_ref()).and_then(|flow| flow.phase(phase)) {
-        Some(found) => with_plan_usage(observed, fill(&found.instruction, &values(observed))),
+        Some(found) => with_plan_usage(
+            observed,
+            with_lifecycle_usage(observed, fill(&found.instruction, &values(observed))),
+        ),
         None if phase == PAUSED => format!(
             "This change was paused to free its place under the WIP limit on active changes of \
              its kind per repository. Resume it with `board changes resume --path {}` when a \
@@ -218,6 +221,24 @@ fn with_plan_usage(observed: &Observed, said: String) -> String {
              fields with any `considered` and `owed`, such as `{example}`."
         )
     }
+}
+
+/// `said` with the fields `board changes lifecycle` takes on stdin and a
+/// one-line example, when `said` names it: a flag leaves stdin unread, and
+/// `external` goes only on stdin.
+fn with_lifecycle_usage(observed: &Observed, said: String) -> String {
+    if !said.contains("changes lifecycle") {
+        return said;
+    }
+    let example = format!(
+        r#"{{"path":"{}","text":"<text>","doc":"{}/<file>","external":["<system>"]}}"#,
+        observed.path,
+        observed.change.mount.trim_end_matches('/')
+    );
+    format!(
+        "{said} Pipe `board changes lifecycle` JSON on stdin with the fields `path`, `text`, \
+         `doc` and `external`, such as `{example}`."
+    )
 }
 
 /// The text of the change's plan, or none when it names none or nothing is there.
@@ -326,7 +347,53 @@ pub(crate) fn observe(
             found.existing.insert(path, held);
         }
     }
+    if wanted.contains(&Read::Absent) {
+        records_held(host, &mut found)?;
+    }
+    if wanted.contains(&Read::PlannedControls) {
+        planned_controls(host, &mut found)?;
+    }
     Ok(found)
+}
+
+/// Adds to `found` each path a check's `when.absent` names that holds the
+/// record it means.
+fn records_held(host: &dyn Host, found: &mut Observed) -> Result<(), PluginError> {
+    let filled = values(found);
+    let asked: Vec<(String, String)> = (found.checks().iter())
+        .filter_map(|each| each.when.as_ref()?.absent.as_ref())
+        .filter(|absent| unfilled(&absent.path, &filled).is_empty())
+        .map(|absent| (fill(&absent.path, &filled), absent.record_type.clone()))
+        .collect();
+    for (path, record_type) in asked {
+        if board::resolve(host, &path)?.is_none() {
+            continue;
+        }
+        if whole_record_at(host, &path, &record_type)? {
+            found.records_held.insert(path);
+        }
+    }
+    Ok(())
+}
+
+/// What `planned-controlled` checks read: which controls they name the board
+/// holds, and the controls on the plan's paths, or why those cannot be read.
+fn planned_controls(host: &dyn Host, found: &mut Observed) -> Result<(), PluginError> {
+    let filled = values(found);
+    let named: Vec<String> = (found.checks().iter())
+        .filter(|each| each.kind.known() == Some(&CheckKind::PlannedControlled))
+        .flat_map(|each| named_controls(each, &filled))
+        .collect();
+    for control in named {
+        if listed_by(host, &control, &[])?.is_some() {
+            found.held.insert(control);
+        }
+    }
+    match on_paths(host, &current(host, &found.change)?.2) {
+        Ok(controls) => found.on_planned = controls,
+        Err(error) => found.on_planned_unread = Some(error.message),
+    }
+    Ok(())
 }
 
 /// Adds the paths of the plan the change names and the files the change's diff edits

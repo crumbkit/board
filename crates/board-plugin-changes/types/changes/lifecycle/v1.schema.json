@@ -1,0 +1,36 @@
+{
+  "additionalProperties": false,
+  "description": "`changes/lifecycle/v1`: the states, events, transition owners and crash\npoints of what a change creates, stops, replaces, retires, retries,\nrestores or migrates.\n\nIt lives at `/changes/<name>/lifecycle`, beside its text at\n`lifecycle.md`, and the plan's `lifecycle` names it. The builder's brief\nnames its text and the reviewer reads it.",
+  "properties": {
+    "$type": {
+      "const": "changes/lifecycle/v1",
+      "description": "The record's type.",
+      "type": "string"
+    },
+    "doc": {
+      "description": "The repository file, by logical path, where the landed table lives\nfor the next author. A path, no pattern.",
+      "pattern": "^/[^\\s{}]*$",
+      "type": "string"
+    },
+    "external": {
+      "description": "The external systems whose state the lifecycle touches, each named.",
+      "items": {
+        "pattern": "^\\S+( \\S+){0,24}$",
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "text": {
+      "description": "The state table, the crash points and the invariants in Markdown,\nat most 1,500 words.",
+      "format": "board-ref",
+      "type": "string"
+    }
+  },
+  "required": [
+    "$type",
+    "text",
+    "doc"
+  ],
+  "title": "LifecycleRecord",
+  "type": "object"
+}

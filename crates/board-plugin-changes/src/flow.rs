@@ -223,6 +223,7 @@ pub(crate) struct Check {
     #[schemars(with = "Option<Prose>", extend("minLength" = 1))]
     pub(crate) escape_section: Option<String>,
     /// `controlled-paths`: the controls whose paths the diff must not touch.
+    /// `planned-controlled`: the controls the plan's paths must not reach.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "Option<Vec<PathTemplate>>")]
     pub(crate) controls: Option<Vec<String>>,
@@ -248,6 +249,7 @@ pub(crate) enum Kind {
     Considered,
     Obligations,
     ControlledPaths,
+    PlannedControlled,
     FlowValid,
     Exists,
 }
@@ -266,6 +268,7 @@ impl Kind {
             Self::Considered => "considered",
             Self::Obligations => "obligations",
             Self::ControlledPaths => "controlled-paths",
+            Self::PlannedControlled => "planned-controlled",
             Self::FlowValid => "flow-valid",
             Self::Exists => "exists",
         }
@@ -299,6 +302,22 @@ pub(crate) struct When {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "Option<BTreeMap<String, Pattern>>")]
     pub(crate) section_not: Option<BTreeMap<String, String>>,
+    /// No record of this type that Board reads is at this path.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) absent: Option<Absent>,
+}
+
+/// A record whose absence a check's `when` needs.
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct Absent {
+    /// Where the record would be, its placeholders filled.
+    #[schemars(with = "PathTemplate")]
+    pub(crate) path: String,
+    /// The type a record there must have to count.
+    #[serde(rename = "type")]
+    #[schemars(rename = "type", with = "TypeName")]
+    pub(crate) record_type: String,
 }
 
 /// A field of the change that a `field` check reads.

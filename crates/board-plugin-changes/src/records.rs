@@ -516,6 +516,11 @@ pub(crate) struct PlanRecord {
     /// with why.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) owed: Option<Vec<Owed>>,
+    /// The change's lifecycle record, which `changes.lifecycle` sets and a
+    /// revised plan keeps.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "Option<Ref<crate::lifecycle::LifecycleRecord>>")]
+    pub(crate) lifecycle: Option<String>,
 }
 
 /// Records a plan does not build on, and why they do not apply.

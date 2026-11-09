@@ -518,6 +518,7 @@ fn fresh_plan(
         records: None,
         considered: None,
         owed: None,
+        lifecycle: None,
     };
     (at, fresh, "none".to_owned())
 }
@@ -532,6 +533,7 @@ fn plan_copy(plan: &PlanRecord) -> PlanRecord {
         records: plan.records.clone(),
         considered: plan.considered.clone(),
         owed: plan.owed.clone(),
+        lifecycle: plan.lifecycle.clone(),
     }
 }
 

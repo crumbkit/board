@@ -422,3 +422,72 @@ fn a_check_that_is_not_waivable_ignores_a_decision_naming_it() {
     let found = first(&observed(&json!({"head": HEAD}), &[signed]), list);
     assert_eq!(found.status, Status::Missing);
 }
+
+/// The kind `planned-controlled` over one control, applied unconditionally.
+fn planned_controlled() -> Value {
+    json!([{"id": "declared", "kind": "planned-controlled", "controls": ["/controls/{repo}/lifecycle-paths"]}])
+}
+
+#[test]
+fn planned_controlled_misses_a_control_the_planned_paths_reach_and_passes_one_they_do_not() {
+    let mut found = observed(&json!({}), &[]);
+    found.held.insert("/controls/x/lifecycle-paths".to_owned());
+    found.on_planned = vec!["/controls/x/lifecycle-paths".to_owned()];
+    let (_, status, detail) = run(&found, planned_controlled()).remove(0);
+    assert_eq!(status, Status::Missing, "{detail}");
+    assert_eq!(detail, "the plan's paths reach /controls/x/lifecycle-paths");
+    found.on_planned = vec!["/controls/x/other".to_owned()];
+    let (_, status, detail) = run(&found, planned_controlled()).remove(0);
+    assert_eq!((status, detail.as_str()), (Status::Pass, ""));
+}
+
+#[test]
+fn planned_controlled_says_no_control_exists_when_the_board_holds_none() {
+    let found = observed(&json!({}), &[]);
+    let (_, status, detail) = run(&found, planned_controlled()).remove(0);
+    assert_eq!(status, Status::Pass);
+    assert_eq!(
+        detail,
+        "no control /controls/x/lifecycle-paths exists, so the board names no such paths and the \
+         check passes"
+    );
+}
+
+#[test]
+fn planned_controlled_is_missing_with_the_refusal_when_for_paths_fails() {
+    let mut found = observed(&json!({}), &[]);
+    found.on_planned_unread = Some("controls.for-paths refused the call".to_owned());
+    let (_, status, detail) = run(&found, planned_controlled()).remove(0);
+    assert_eq!(status, Status::Missing);
+    assert_eq!(detail, "controls.for-paths refused the call");
+}
+
+#[test]
+fn planned_controlled_with_no_controls_says_it_cannot_pass() {
+    let list = json!([{"id": "declared", "kind": "planned-controlled"}]);
+    let (_, status, detail) = run(&observed(&json!({}), &[]), list).remove(0);
+    assert_eq!(status, Status::Missing);
+    assert!(detail.contains("names no controls"), "{detail}");
+}
+
+/// The unsure fact the plan marked: an `exists` check takes a `when` and
+/// fills `{change}` in its path.
+#[test]
+fn an_exists_check_with_a_when_condition_fills_change_in_its_path() {
+    let list = json!([{
+        "id": "x", "kind": "exists", "path": "{change}/lifecycle",
+        "when": {"section_not": {"UX": "^no ui change\\b"}}
+    }]);
+    let found = observed(&json!({}), &[]);
+    assert!(run(&found, list.clone()).is_empty(), "the when left it out");
+    let mut applied = observed(&json!({}), &[]);
+    applied.plan = Some("# T\n\n## UX\n\nA new screen.\n".to_owned());
+    let (_, status, detail) = run(&applied, list.clone()).remove(0);
+    assert_eq!(status, Status::Missing);
+    assert_eq!(detail, "nothing is at /changes/t/lifecycle");
+    applied
+        .existing
+        .insert("/changes/t/lifecycle".to_owned(), true);
+    let (_, status, detail) = run(&applied, list).remove(0);
+    assert_eq!((status, detail.as_str()), (Status::Pass, ""));
+}

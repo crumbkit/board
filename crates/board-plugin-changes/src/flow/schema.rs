@@ -24,7 +24,7 @@ struct Parameters {
 
 /// The parameters of each kind that takes any. `paths`, `tasks`,
 /// `considered` and `flow-valid` take none.
-const PARAMETERS: [Parameters; 9] = [
+const PARAMETERS: [Parameters; 10] = [
     Parameters {
         kind: Kind::Sections,
         entry: "SectionsCheck",
@@ -70,6 +70,12 @@ const PARAMETERS: [Parameters; 9] = [
     Parameters {
         kind: Kind::ControlledPaths,
         entry: "ControlledPathsCheck",
+        named: &["controls"],
+        required: &["controls"],
+    },
+    Parameters {
+        kind: Kind::PlannedControlled,
+        entry: "PlannedControlledCheck",
         named: &["controls"],
         required: &["controls"],
     },

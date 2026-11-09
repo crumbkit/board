@@ -83,6 +83,7 @@ fn next_reads_the_gate_from_the_plan_file_and_says_what_to_do() {
             ("owner-approval", "pass"),
             ("mockups", "missing"),
             ("data-signed", "missing"),
+            ("lifecycle-record", "missing"),
             ("obligations", "pass"),
         ])
     );
@@ -116,10 +117,16 @@ fn advance_refuses_an_unmet_gate_naming_what_is_missing_and_moves_on_once_it_is_
     assert_eq!(refused["code"], "changes::gate::unmet");
     assert_eq!(
         refused["fields"]["missing"],
-        json!(["plan-sections", "owner-approval", "mockups", "data-signed"])
+        json!([
+            "plan-sections",
+            "owner-approval",
+            "mockups",
+            "data-signed",
+            "lifecycle-record"
+        ])
     );
     let remedies = refused["fields"]["remedies"].as_array().unwrap();
-    assert_eq!(remedies.len(), 4);
+    assert_eq!(remedies.len(), 5);
     assert!(
         remedies[1]
             .as_str()
@@ -644,7 +651,8 @@ fn a_change_with_no_task_blocks_the_plan_gate_and_attaching_one_clears_it() {
 /// The fixture plan with these UX and Data sections.
 fn ux_plan(ux: &str, data: &str) -> String {
     let before = PLAN.split("## UX").next().unwrap();
-    format!("{before}## UX\n\n{ux}\n\n## Data\n\n{data}\n")
+    let (_, after) = PLAN.split_once("## Failure paths").unwrap();
+    format!("{before}## UX\n\n{ux}\n\n## Data\n\n{data}\n\n## Failure paths{after}")
 }
 
 /// An owner-routed change in plan whose plan file holds `plan`.
