@@ -713,15 +713,15 @@ impl Record for StopRecord {
     const TYPE: &'static str = "changes/stop/v1";
 }
 
-/// `changes/run/v1`: one run of an agent on a change that `changes.run`
-/// started, which lets the cost of each flow be measured.
+/// `changes/attempt/v1`: one attempt of an agent on a change that
+/// `changes.run` started, which lets the cost of each flow be measured.
 ///
-/// It lives at `/changes/<name>/runs/<stamp>`, stamped when the run
+/// It lives at `/changes/<name>/runs/<stamp>`, stamped when the attempt
 /// started.
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 #[schemars(extend("x-board-folder" = "/changes/{change}/runs/"))]
-pub(crate) struct RunRecord {
+pub(crate) struct AttemptRecord {
     /// The record's type.
     #[serde(rename = "$type")]
     pub(crate) tag: Tag<Self>,
@@ -775,6 +775,10 @@ pub(crate) struct RunRecord {
     pub(crate) stopped: String,
 }
 
-impl Record for RunRecord {
-    const TYPE: &'static str = "changes/run/v1";
+impl Record for AttemptRecord {
+    const TYPE: &'static str = "changes/attempt/v1";
 }
+
+/// The type an attempt had before it was renamed. `migrate --attempts`
+/// rewrites each record of it, and a gate reads it as an attempt.
+pub(crate) const RUN_V1: &str = "changes/run/v1";

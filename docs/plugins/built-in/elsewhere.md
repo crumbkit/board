@@ -17,10 +17,10 @@ checks, refusals and codes are the same.
   (`Elsewhere::Personal`) or `board -C <directory>`
   (`Elsewhere::Directory`, read against the called board's root) opens,
   with the same refusals, as the same plugin at the same depth.
-- `decide(op, path, shown)` answers as `board decide` does under
+- `decide(capability, path, shown)` answers as `board decide` does under
   `BOARD_PLUGIN`: the pending effect goes in the personal board, and an
   approval is checked against the owner's allowed signers file
-  (docs/architecture/writes/effects.md). An `op` that is not
+  (docs/architecture/writes/effects.md). A capability that is not
   `<plugin>.<capability>` is `board::cli::usage`.
 - `sync(push, deadline)` syncs the host's board as `board sync` does, or
   `board sync --no-push` without `push`. A plugin syncs a notes clone on

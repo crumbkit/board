@@ -145,8 +145,9 @@ whose suite the repository's contributing docs name, and writes it back as
 v1. `reflow` and `attach --suite` refuse it with
 `changes::change::not_migrated`; `migrate --apply true` rewrites it as v2.
 
-`changes/run/v1` at `/changes/<name>/runs/<stamp>` records one run of an
-agent that `run` started: the `flow`, the version of the flow the change
+`changes/attempt/v1` at `/changes/<name>/runs/<stamp>` records one attempt of an
+agent that `run` started (the type was `changes/run/v1` before; `migrate
+--attempts true` rewrites those records): the `flow`, the version of the flow the change
 followed during the run, the `stop` it was given, the
 `program` (the file name of argv[0] when it is a slug, never the
 arguments), `started` and `ended` in UTC, the `exit` status, the
@@ -238,7 +239,7 @@ share one version. A copy that is not a flow Board reads stays where it is
 and is listed under `unreadable` with `changes::flow::unreadable`. A
 change whose rewritten record fails its schema stays as it is, with its
 copy, and is listed under `left` with the reason. The rest go on. A
-`changes/run/v1` that names its flow by name is rewritten to name its
+`changes/attempt/v1` or `changes/run/v1` that names its flow by name is rewritten to name its
 change's version; one whose change follows no version is listed under
 `left`. A run that names a copy the migration replaces is rewritten to
 name that copy's version. A run whose rewritten record fails its schema
@@ -252,6 +253,14 @@ that reaches nothing, and an owed path that is no control are listed under
 its old plan. A path that exists but is degraded is accepted, so this
 migration can run before `plans.migrate` and `evals.migrate`. The commit's
 trailer is `Board-Bulk: migrate plans`.
+`migrate --attempts true [--apply true]` rewrites each stored
+`changes/run/v1` as a `changes/attempt/v1` in place, at the same path, and
+lists the paths under `attempts`. A record whose rewrite fails the new schema
+stays as it is and is listed under `left`. With `--flows true` too, each run is
+written once, with the new type and its flow's version. The commit's trailer is
+`Board-Bulk: migrate attempts`, or `migrate flows` with `--flows`. A stored flow
+version whose check names `changes/run/v1` keeps working: a records check reads
+an attempt of either type.
 
 `board plugin enable` writes the new schemas, and from then on a question or
 eval that still holds words in `blocks` or `decision` is degraded and drops

@@ -1173,3 +1173,36 @@ fn a_when_absent_reads_the_references_and_the_suite_only_when_its_path_names_it(
     assert!(!plain.contains(&Read::Suite));
     assert!(read("{suite}/x").contains(&Read::Suite));
 }
+
+/// A stored flow version may still name `changes/run/v1` in a records check,
+/// so an attempt stored as either type answers a check that names either.
+#[test]
+fn a_records_check_reads_an_attempt_whichever_type_it_has_and_not_a_record_of_another_type() {
+    let referenced = |kind: &str| crate::change::Referenced {
+        records: vec![(
+            "/changes/t/runs/1".to_owned(),
+            (kind.to_owned(), Map::new()),
+        )],
+        ..Default::default()
+    };
+    for stored in ["changes/attempt/v1", "changes/run/v1"] {
+        for asked in ["changes/attempt/v1", "changes/run/v1"] {
+            assert_eq!(
+                referenced(stored).of_type(asked).count(),
+                1,
+                "{stored} {asked}"
+            );
+        }
+        assert_eq!(
+            referenced(stored).of_type("changes/stop/v1").count(),
+            0,
+            "{stored}"
+        );
+    }
+    assert_eq!(
+        referenced("changes/stop/v1")
+            .of_type("changes/run/v1")
+            .count(),
+        0
+    );
+}

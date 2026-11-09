@@ -143,7 +143,7 @@ subagent, and commit it.
   and the report it follows. A footer names the report and the pull request.
   Every `@` is followed by a zero-width joiner, so text an agent wrote from an
   untrusted diff mentions no one.
-- Asks the owner with `board decide --op review.post --path <report> --text -`,
+- Asks the owner with `board decide --capability review.post --path <report> --text -`,
   showing the whole comment. Until the owner approves, it fails with
   `review::board::refused` carrying Board's `board::settings::asked` or
   `board::settings::refused`, its message and the `effect` id. The effect's

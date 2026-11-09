@@ -1,7 +1,7 @@
 # Effects
 
 This file holds detail for docs/architecture.md, Commands. It says what only
-the owner may write, and how a plugin asks the owner before an op.
+the owner may write, and how a plugin asks the owner before a capability runs.
 
 ## Who is checked
 
@@ -26,7 +26,8 @@ the owner may write, and how a plugin asks the owner before an op.
 Each is a Board type, checked by its Rust type, with no schema file.
 
 - `board/effect/v1`: a pending effect at `/effects/pending/<id>` in the
-  personal board. It names the board root, plugin, op and path.
+  personal board. It names the board root, plugin, op and path. Its `op`
+  field holds `put` or `rm`, or a `<plugin>.<capability>`.
   - It may also hold `record` or `text`, `digest` and `prior`. A decide
     given content sets `record` or `text` and `digest`.
   - `asked` is when the decide first wrote it: RFC 3339 in UTC to the
@@ -77,12 +78,12 @@ Every other put or `rm` by a plugin is written.
 
 ## `board decide`
 
-`board decide --op <plugin>.<capability> --path <path>` asks whether the
-plugin `BOARD_PLUGIN` names may run its op at the path.
+`board decide --capability <plugin>.<capability> --path <path>` asks whether the
+plugin `BOARD_PLUGIN` names may run its capability at the path.
 
 - It resolves the path as a put does: after links, and through a mount in
   the mounted board. The effect names that board's root and the path there.
-- The owner's approval admits the op, and the report names the effect.
+- The owner's approval admits the capability, and the report names the effect.
 - The owner's refusal refuses it with `board::settings::refused`, whose
   `effect` field is the id.
 - With no answer it writes the pending effect and refuses with
@@ -92,7 +93,7 @@ plugin `BOARD_PLUGIN` names may run its op at the path.
 - The owner's own decide is admitted and writes nothing.
 
 `--text <file>` or `--record <file>`, `-` for stdin, shows the owner what
-the op will write. They exclude each other.
+the capability will write. They exclude each other.
 
 - The effect holds the content and its digest, so the id covers it. An
   approval admits only those bytes. Other content is another pending
@@ -183,7 +184,7 @@ of it does not.
 - A plugin's put never asks the owner. Only the plugin's own decide asks.
 - A plugin that unsets `BOARD_PLUGIN` escapes the check. The check catches
   mistakes by a plugin that keeps it set.
-- A bare decide's approval names no content, so it admits that op at that
+- A bare decide's approval names no content, so it admits that capability at that
   path again until the owner removes the seen record.
 - `board call` runs a plugin, which must ask with `decide` itself.
 - A plugin can set `BOARD_PLUGIN` to another installed plugin's name.

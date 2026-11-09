@@ -12,7 +12,7 @@ use crate::change::{OWN, line, read, touch};
 use crate::flow::{
     FlowSummary, asked_for, blob_at, refuse_invalid, refuse_without_repository, version_line,
 };
-use crate::records::{BOARD_ITSELF, BUILD, PAUSED, RunRecord, is_final};
+use crate::records::{AttemptRecord, BOARD_ITSELF, BUILD, PAUSED, RUN_V1, is_final};
 use crate::{PLUGIN, refusal, to_value};
 
 /// A change and the flow to move it to.
@@ -106,13 +106,16 @@ pub(crate) fn reflow(host: &dyn Host, input: &Value) -> Result<Value, PluginErro
     }))
 }
 
-/// Whether a run of the board's own changes names the flow at `path`,
+/// Whether an attempt, stored as either of its types, of the board's own
+/// changes names the flow at `path`,
 /// whether or not Board reads that run as valid.
 fn run_names(host: &dyn Host, path: &str) -> Result<bool, PluginError> {
     let sql = format!(
-        "SELECT 1 FROM entries AS e JOIN bodies AS b ON b.blob = e.blob WHERE e.type = {} AND \
+        "SELECT 1 FROM entries AS e JOIN bodies AS b ON b.blob = e.blob WHERE e.type IN ({}, {}) \
+         AND \
          substr(e.logical, 1, {}) = {} AND json_extract(b.body, '$.flow') = {} LIMIT 1",
-        literal(RunRecord::TYPE),
+        literal(AttemptRecord::TYPE),
+        literal(RUN_V1),
         OWN.len(),
         literal(OWN),
         literal(path)

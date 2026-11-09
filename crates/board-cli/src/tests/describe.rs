@@ -31,7 +31,7 @@ const LINES: &[(&str, &[&str], &[&str])] = &[
     ("call", &[], &["tasks.available"]),
     (
         "decide",
-        &["--op", "review.comment", "--path", "/reviews/r1"],
+        &["--capability", "review.comment", "--path", "/reviews/r1"],
         &[],
     ),
     (

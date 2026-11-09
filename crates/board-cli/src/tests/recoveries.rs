@@ -956,10 +956,13 @@ fn effects(starts: &mut Starts) {
     let unreadable = place.clone().xdg(broken.workdir().join("xdg"));
     // Each message names the pending effect's id, so neither starts a chain.
     for (code, line) in [
-        (Code::SettingsAsked, "decide --op review.comment --path /y"),
+        (
+            Code::SettingsAsked,
+            "decide --capability review.comment --path /y",
+        ),
         (
             Code::SettingsRefused,
-            "decide --op review.comment --path /r",
+            "decide --capability review.comment --path /r",
         ),
     ] {
         starts.variable(&place, code, line, "BOARD_PLUGIN");
@@ -978,7 +981,7 @@ fn effects(starts: &mut Starts) {
     let line = format!("answer {plugged} refuse");
     starts.add(&place, Code::SettingsFromPlugin, &line);
     starts.variable(&place, Code::SettingsFromPlugin, &line, "BOARD_PLUGIN");
-    let line = "decide --op review.comment --path /y";
+    let line = "decide --capability review.comment --path /y";
     starts.add(&unnamed, Code::SettingsNoPersonal, line);
     starts.variable(&unnamed, Code::SettingsNoPersonal, line, "BOARD_PLUGIN");
     starts.add(&unreadable, Code::ConfigInvalid, line);

@@ -18,7 +18,7 @@ board plugin enable  Enable an installed plugin: write the schemas it ships, the
 board type           Add types
 board type add       Add a type: compile the JSON Schema on stdin and write it to .board/types/
 board call           Call a plugin's capability with flags, or else JSON on stdin
-board decide         Ask the owner to admit a plugin's op
+board decide         Ask the owner to admit a plugin's capability
 board answer         Answer a pending effect
 board query          Run one read-only SQL statement over the index
 board serve          Serve this board's pages on 127.0.0.1 until it is idle

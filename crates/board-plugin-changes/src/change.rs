@@ -16,8 +16,8 @@ use sha2::{Digest, Sha256};
 
 use crate::board::{self, body, readable, rows, text, tree_codes};
 use crate::records::{
-    ChangeRecord, ChangeV1, DONE, DROPPED, Kind, PULL_TYPES, PlanRecord, PrototypeRecord, State,
-    is_final,
+    AttemptRecord, ChangeRecord, ChangeV1, DONE, DROPPED, Kind, PULL_TYPES, PlanRecord,
+    PrototypeRecord, RUN_V1, State, is_final,
 };
 use crate::refusal;
 
@@ -44,6 +44,13 @@ pub(crate) struct Referenced {
     pub(crate) unreadable_types: BTreeMap<String, String>,
 }
 
+/// Whether `a` and `b` are the two types an attempt has had.
+fn both_attempts(a: &str, b: &str) -> bool {
+    [a, b]
+        .iter()
+        .all(|each| [AttemptRecord::TYPE, RUN_V1].contains(each))
+}
+
 impl Referenced {
     pub(crate) fn get(&self, path: &str) -> Option<&Found> {
         (self.records.iter())
@@ -52,13 +59,17 @@ impl Referenced {
     }
 
     /// The referenced records of `record_type`, by path, in the order the
-    /// change references them.
+    /// change references them. An attempt counts as one whichever of its two
+    /// types it has, so a stored flow that names `changes/run/v1` still
+    /// reads the attempts written as `changes/attempt/v1`.
     pub(crate) fn of_type<'a>(
         &'a self,
         record_type: &'a str,
     ) -> impl Iterator<Item = (&'a str, &'a Map<String, Value>)> {
         (self.records.iter())
-            .filter(move |(_, (found, _))| found == record_type)
+            .filter(move |(_, (found, _))| {
+                found == record_type || both_attempts(found, record_type)
+            })
             .map(|(path, (_, body))| (path.as_str(), body))
     }
 }

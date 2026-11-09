@@ -11,7 +11,8 @@
 //! its schema is left as it is, a change with its copy, and listed under
 //! `left` with the reason. The rest go on.
 //!
-//! A `changes/run/v1` that names its flow by name, as runs did before
+//! An attempt, stored as `changes/run/v1` or `changes/attempt/v1`, that
+//! names its flow by name, as runs did before
 //! versions, is rewritten to name the version its change follows. A run
 //! that names a copy the migration replaces, as a run of a change not yet
 //! migrated does, is rewritten to name that copy's version. A copy stays
@@ -31,13 +32,14 @@ use super::{LISTED, Left, compiled, conforms};
 use crate::board::{self, readable, rows, text};
 use crate::change::OWN;
 use crate::flow::{Flow, blob_at, version_path, version_write};
-use crate::records::{ChangeRecord, RunRecord};
+use crate::records::{AttemptRecord, ChangeRecord, RUN_V1};
 
 /// The reason the commit of a migration gives in its `Board-Bulk:`
 /// trailer, without and with `flows`.
 const BULK: &str = "migrate changes";
 const BULK_FLOWS: &str = "migrate flows";
 const BULK_PLANS: &str = "migrate plans";
+const BULK_ATTEMPTS: &str = "migrate attempts";
 
 /// Where a board keeps its flows and their versions.
 const FLOWS: &str = "/flows/";
@@ -152,7 +154,8 @@ fn flow_at(host: &dyn Host, path: &str) -> Result<Option<(Flow, String)>, Plugin
 pub(super) fn replace(
     host: &dyn Host,
     planned: &[Value],
-) -> Result<(Output, Vec<Value>), PluginError> {
+    attempts: bool,
+) -> Result<(Output, Vec<Value>, Vec<String>), PluginError> {
     let mut written: BTreeSet<String> = (planned.iter())
         .filter_map(|line| line.get("path").and_then(Value::as_str))
         .map(str::to_owned)
@@ -210,7 +213,12 @@ pub(super) fn replace(
         followed.insert(change.path.clone(), version);
         changes.push(change.path);
     }
-    let (runs, kept) = rewrite_runs(host, &followed, &replaced, &schemas, &mut lines, &mut left)?;
+    let flows = Some((&followed, &replaced));
+    let Rewritten {
+        runs,
+        retyped: attempted,
+        kept,
+    } = rewrite_runs(host, flows, attempts, &schemas, &mut lines, &mut left)?;
     let mut copies = 0;
     for (copy, blob) in removals {
         if !kept.contains(&copy) {
@@ -231,75 +239,127 @@ pub(super) fn replace(
         unreadable,
         left,
     };
-    Ok((output, lines))
+    Ok((output, lines, attempted))
 }
 
-/// Adds to `lines` a rewrite of each run that names its flow by name, to
-/// name the version its change follows by `followed`, and of each run that
+/// The attempts whose flow was rewritten, those retyped, and the flows that
+/// attempts left unrewritten still name.
+struct Rewritten {
+    runs: Vec<String>,
+    retyped: Vec<String>,
+    kept: BTreeSet<String>,
+}
+
+/// The version each change follows, and the version of each copy the
+/// migration replaces.
+type Versions<'a> = (&'a BTreeMap<String, String>, &'a BTreeMap<String, String>);
+
+/// Adds to `lines` one rewrite of each attempt, stored as either of its types,
+/// that needs one.
+///
+/// With `flows` (`followed`, `replaced`), an attempt that names its flow by
+/// name is rewritten to name the version its change follows, and one that
 /// names a copy in `replaced`, to name that copy's version. Adds to `left`
-/// the runs whose change follows no version and those whose rewritten
-/// record fails its schema in `schemas`. Returns the runs rewritten and
-/// the flows that runs left unrewritten still name, which must stay.
+/// the attempts whose change follows no version. With `attempts`, an attempt
+/// of `changes/run/v1` is also given `changes/attempt/v1`. Either change is
+/// one line, so an attempt is written once. Adds to `left` each attempt whose
+/// rewritten record fails its schema in `schemas`. Returns the attempts
+/// whose flow was rewritten, those retyped, and the flows that attempts left
+/// unrewritten still name, which must stay.
 fn rewrite_runs(
     host: &dyn Host,
-    followed: &BTreeMap<String, String>,
-    replaced: &BTreeMap<String, String>,
+    flows: Option<Versions>,
+    attempts: bool,
     schemas: &BTreeMap<String, Schema>,
     lines: &mut Vec<Value>,
     left: &mut Vec<Left>,
-) -> Result<(Vec<String>, BTreeSet<String>), PluginError> {
-    let mut runs = Vec::new();
+) -> Result<Rewritten, PluginError> {
+    let (mut runs, mut retyped) = (Vec::new(), Vec::new());
     let mut kept = BTreeSet::new();
-    for run in stored(host, RunRecord::TYPE)? {
-        let Some(named) = (run.body.get("flow").and_then(Value::as_str)).map(str::to_owned) else {
+    let found = [AttemptRecord::TYPE, RUN_V1]
+        .into_iter()
+        .map(|kind| stored(host, kind))
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut every: Vec<Stored> = found.into_iter().flatten().collect();
+    every.sort_by(|a, b| a.path.cmp(&b.path));
+    for run in every {
+        let retype = attempts && run.body.get("$type").and_then(Value::as_str) == Some(RUN_V1);
+        let named = (run.body.get("flow").and_then(Value::as_str)).map(str::to_owned);
+        let version = match (flows, &named) {
+            (Some((_, replaced)), Some(named)) if named.starts_with('/') => replaced.get(named),
+            (Some((followed, _)), Some(named)) => {
+                let change = run.path.rsplit_once("/runs/").map(|(change, _)| change);
+                let version = change.and_then(|change| followed.get(change));
+                if version.is_none() {
+                    let why = format!(
+                        "the run names the flow {named}, and its change follows no stored \
+                         version of a flow; fix the change if `left` lists it, or reflow it \
+                         with `board changes reflow`, then run migrate again"
+                    );
+                    left.push(left_at(run.path.clone(), why));
+                }
+                version
+            }
+            _ => None,
+        };
+        if version.is_none() && !retype {
             continue;
-        };
-        let version = if named.starts_with('/') {
-            let Some(version) = replaced.get(&named) else {
-                continue;
-            };
-            version
-        } else {
-            let change = run.path.rsplit_once("/runs/").map(|(change, _)| change);
-            let Some(version) = change.and_then(|change| followed.get(change)) else {
-                let why = format!(
-                    "the run names the flow {named}, and its change follows no stored version \
-                     of a flow; fix the change if `left` lists it, or reflow it with `board \
-                     changes reflow`, then run migrate again"
-                );
-                left.push(left_at(run.path, why));
-                continue;
-            };
-            version
-        };
+        }
         let mut body = run.body;
-        body.insert("flow".to_owned(), json!(version));
+        if let Some(version) = version {
+            body.insert("flow".to_owned(), json!(version));
+        }
+        if retype {
+            body.insert("$type".to_owned(), json!(AttemptRecord::TYPE));
+        }
         let rewritten = json!({"path": run.path, "expect": run.blob, "record": body});
-        if let Err(why) = conforms(schemas, std::slice::from_ref(&rewritten)) {
+        // The two types share one shape, and the plugin ships the schema of
+        // only the new one, so the record is checked as an attempt.
+        let mut checked = rewritten.clone();
+        checked["record"]["$type"] = json!(AttemptRecord::TYPE);
+        if let Err(why) = conforms(schemas, &[checked]) {
             left.push(left_at(run.path, why));
-            kept.insert(named);
+            kept.extend(named);
             continue;
         }
         lines.push(rewritten);
-        runs.push(run.path);
+        if version.is_some() {
+            runs.push(run.path.clone());
+        }
+        if retype {
+            retyped.push(run.path);
+        }
     }
-    Ok((runs, kept))
+    Ok(Rewritten {
+        runs,
+        retyped,
+        kept,
+    })
 }
 
 /// With `flows`, adds to `lines` the lines that replace the flow copies,
-/// with `plans` those that move the plans' sections, and with `apply` writes
-/// `lines` in one bulk commit; returns what each says, given only with its
-/// flag.
+/// with `plans` those that move the plans' sections, with `attempts` those
+/// that retype the attempts, and with `apply` writes `lines` in one bulk
+/// commit; returns what each says, given only with its flag. Attempts
+/// that fail their schema without `flows` are added to `left`.
 pub(super) fn write(
     host: &dyn Host,
-    (apply, flows, plans): (bool, bool, bool),
+    (apply, flows, plans, attempts): (bool, bool, bool, bool),
     lines: &mut Vec<Value>,
-) -> Result<(Option<Output>, Option<super::sections::Output>), PluginError> {
+    left: &mut Vec<Left>,
+) -> Result<Written, PluginError> {
+    let mut retyped = None;
     let replaced = if flows {
-        let (output, written) = replace(host, lines)?;
+        let (output, written, attempted) = replace(host, lines, attempts)?;
         lines.extend(written);
+        retyped = attempts.then_some(attempted);
         Some(output.applied(apply))
     } else {
+        if attempts {
+            let schemas = compiled();
+            let done = rewrite_runs(host, None, true, &schemas, lines, left)?;
+            retyped = Some(done.retyped);
+        }
         None
     };
     let moved = if plans {
@@ -308,12 +368,21 @@ pub(super) fn write(
         None
     };
     if apply && !lines.is_empty() {
-        let bulk = match (flows, plans) {
-            (true, _) => BULK_FLOWS,
-            (false, true) => BULK_PLANS,
-            (false, false) => BULK,
+        let bulk = match (flows, plans, attempts) {
+            (true, _, _) => BULK_FLOWS,
+            (false, true, _) => BULK_PLANS,
+            (false, false, true) => BULK_ATTEMPTS,
+            (false, false, false) => BULK,
         };
         board::put_bulk(host, lines, bulk)?;
     }
-    Ok((replaced, moved))
+    Ok((replaced, moved, retyped))
 }
+
+/// What `write` reports: the flows, plan fields and attempts, each given
+/// only with its flag.
+pub(super) type Written = (
+    Option<Output>,
+    Option<super::sections::Output>,
+    Option<Vec<String>>,
+);

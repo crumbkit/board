@@ -329,21 +329,21 @@ Examples:
         #[arg(long)]
         capability: Option<CapabilityName>,
     },
-    /// Ask the owner to admit a plugin's op.
+    /// Ask the owner to admit a plugin's capability.
     #[command(after_help = "\
-Decide asks for the plugin BOARD_PLUGIN names. The owner's approval admits
-the op, and their refusal refuses it with board::settings::refused. With no
-answer, decide writes a pending effect in the personal board and refuses with
-board::settings::asked; the owner answers it with board answer. The owner's
-own op, with BOARD_PLUGIN unset, is admitted.
+Decide asks for the plugin BOARD_PLUGIN names. The owner's approval admits it;
+a refusal refuses it with board::settings::refused. With no answer it
+writes a pending effect in the personal board and refuses with
+board::settings::asked; the owner answers with board answer. With
+BOARD_PLUGIN unset, the owner's call is admitted.
 
---text or --record shows the owner what the op writes; an approval admits
+--text or --record shows the owner what it writes; approval admits
 only those bytes.
 
 Examples:
-  board decide --op review.comment --path /reviews/r1
-  board decide --op review.comment --path /reviews/r1 --text - < comment.md
-  board decide --op review.comment --path /reviews/r1 --json")]
+  board decide --capability review.comment --path /reviews/r1
+  board decide --capability review.comment --path /reviews/r1 --text - < comment.md
+  board decide --capability review.comment --path /reviews/r1 --json")]
     Decide(effects::Deciding),
     /// Answer a pending effect.
     #[command(after_help = "\

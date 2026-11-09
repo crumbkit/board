@@ -21,7 +21,7 @@ Board: a fast, validated view of a git tree.
 - [`board plugin`](#board-plugin): Work with plugins
 - [`board type`](#board-type): Add types
 - [`board call`](#board-call): Call a plugin's capability with flags, or else JSON on stdin
-- [`board decide`](#board-decide): Ask the owner to admit a plugin's op
+- [`board decide`](#board-decide): Ask the owner to admit a plugin's capability
 - [`board answer`](#board-answer): Answer a pending effect
 - [`board query`](#board-query): Run one read-only SQL statement over the index
 - [`board serve`](#board-serve): Serve this board's pages on 127.0.0.1 until it is idle
@@ -251,7 +251,7 @@ List the installed plugins' capabilities, or those that match every filter
 
 ### Arguments
 
-- `--capability <CAPABILITY>`: Only capabilities of this name
+- `--capability <NAME>`: Only capabilities of this name
 - `--meta <FILTERS>`: `<key>=<value>`: the capability's metadata, or else its plugin's, holds this string. Takes more than one value.
 - `--limit <N>`: Print at most this many rows, up to 10000. Default: `100`.
 - `--all`: Print every row
@@ -310,20 +310,20 @@ Call a plugin's capability with flags, or else JSON on stdin
 ### Arguments
 
 - `<TARGET>`: `<plugin>.<capability>`, such as tasks.available. Required, or give `--capability` in its place.
-- `--capability <CAPABILITY>`: The capability of the one enabled plugin that offers it. Required, or give `<TARGET>` in its place.
+- `--capability <NAME>`: The capability of the one enabled plugin that offers it. Required, or give `<TARGET>` in its place.
 
 Effects: destructive, not idempotent, open-world.
 
 ## `board decide`
 
-Ask the owner to admit a plugin's op
+Ask the owner to admit a plugin's capability
 
 ### Arguments
 
-- `--op <OP>`: A plugin's `<plugin>.<capability>`, such as review.comment. Required.
-- `--path <PATH>`: The logical path the op acts on, such as /tasks/a. Required.
-- `--text <FILE>`: The UTF-8 text the op writes: this file, or - for stdin
-- `--record <FILE>`: The JSON object the op writes: this file, or - for stdin
+- `--capability <NAME>`: A plugin's `<plugin>.<capability>`, such as review.comment. Required.
+- `--path <PATH>`: The logical path it acts on, such as /tasks/a. Required.
+- `--text <FILE>`: The UTF-8 text it writes: this file, or - for stdin
+- `--record <FILE>`: The JSON object it writes: this file, or - for stdin
 
 Effects: additive, idempotent, closed-world.
 
@@ -334,7 +334,7 @@ Answer a pending effect
 ### Arguments
 
 - `<ID>`: The pending effect's id, 64 hex digits. Required.
-- `<ANSWER>`: approve lets the op act, after the owner signs it with Touch ID; refuse refuses it. Required.
+- `<ANSWER>`: approve admits it, after the owner signs it with Touch ID; refuse refuses it. Required.
 - `--reason <REASON>`: Why, kept in the seen record
 - `--signature <FILE>`: A signature made elsewhere: this file, or - for stdin
 

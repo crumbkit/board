@@ -35,10 +35,10 @@
     }
   },
   "additionalProperties": false,
-  "description": "`changes/run/v1`: one run of an agent on a change that `changes.run`\nstarted, which lets the cost of each flow be measured.\n\nIt lives at `/changes/<name>/runs/<stamp>`, stamped when the run\nstarted.",
+  "description": "`changes/attempt/v1`: one attempt of an agent on a change that\n`changes.run` started, which lets the cost of each flow be measured.\n\nIt lives at `/changes/<name>/runs/<stamp>`, stamped when the attempt\nstarted.",
   "properties": {
     "$type": {
-      "const": "changes/run/v1",
+      "const": "changes/attempt/v1",
       "description": "The record's type.",
       "type": "string"
     },
@@ -133,7 +133,7 @@
     "reason",
     "stopped"
   ],
-  "title": "RunRecord",
+  "title": "AttemptRecord",
   "type": "object",
   "x-board-folder": "/changes/{change}/runs/"
 }

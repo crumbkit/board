@@ -18,11 +18,11 @@ use super::{
 use crate::board::Board;
 use crate::put::{Expect, Failure, PutError, PutReport, Removal, Schemas};
 
-/// A plugin's op at a path that `board decide` admitted, and the pending
-/// effect whose approval admitted it, if the op needed one.
+/// A plugin's capability at a path that `board decide` admitted, and the pending
+/// effect whose approval admitted it, if the capability needed one.
 #[derive(Debug)]
 pub struct DecideReport {
-    pub op: String,
+    pub capability: String,
     pub path: LogicalPath,
     pub effect: Option<String>,
 }
@@ -36,16 +36,16 @@ pub struct AnswerReport {
 }
 
 impl Board {
-    /// Whether the plugin `BOARD_PLUGIN` names may run its own `op` at
+    /// Whether the plugin `BOARD_PLUGIN` names may run its own capability at
     /// `path`, named as a put to `path` would land: after links, and through
     /// a mount in the mounted board. The owner's approval admits it, their
     /// refusal refuses it, and with no answer its pending effect is written
-    /// and it is refused as asked. The owner's own op is admitted. With
+    /// and it is refused as asked. The owner's own capability is admitted. With
     /// `shown`, the effect shows that content and its id covers its digest,
     /// so an approval admits only the same content.
     pub fn decide_op(
         &self,
-        op: &str,
+        capability: &str,
         path: &LogicalPath,
         shown: Option<&Shown>,
     ) -> Result<DecideReport, EffectError> {
@@ -67,7 +67,7 @@ impl Board {
                 let mut mounted = Board::open(&inside.repository, home)
                     .map_err(|source| EffectError::Open { source })?;
                 mounted.ask_as(self.asker.clone());
-                let mut report = mounted.decide_op(op, &inside.path, shown)?;
+                let mut report = mounted.decide_op(capability, &inside.path, shown)?;
                 report.path = path.clone();
                 return Ok(report);
             }
@@ -85,34 +85,39 @@ impl Board {
                 .transpose()?,
         };
         let landed = landed.unwrap_or_else(|| path.clone());
-        self.decide_at(op, path, landed, (record, text))
+        self.decide_at(capability, path, landed, (record, text))
     }
 
-    /// [`Board::decide_op`] for `op` at `landed`, the path in this board
+    /// [`Board::decide_op`] for `capability` at `landed`, the path in this board
     /// where `path` lands, showing `shown`.
     fn decide_at(
         &self,
-        op: &str,
+        capability: &str,
         path: &LogicalPath,
         landed: LogicalPath,
         (record, text): (Option<Value>, Option<String>),
     ) -> Result<DecideReport, EffectError> {
         let mut report = DecideReport {
-            op: op.to_owned(),
+            capability: capability.to_owned(),
             path: path.clone(),
             effect: None,
         };
         let Some(plugin) = &self.asker.plugin else {
             return Ok(report);
         };
-        let personal = self
-            .asker
-            .personal(|| format!("{op} {path} needs a pending effect in the personal board"))?;
-        let mut effect = Effect::new(root(self), plugin.clone(), op.to_owned(), landed.into())
-            .showing(record, text);
+        let personal = self.asker.personal(|| {
+            format!("{capability} {path} needs a pending effect in the personal board")
+        })?;
+        let mut effect = Effect::new(
+            root(self),
+            plugin.clone(),
+            capability.to_owned(),
+            landed.into(),
+        )
+        .showing(record, text);
         effect.asked = Some(utc(SystemTime::now()));
         let id = effect.id();
-        let (plugin, op, path) = (plugin.clone(), op.to_owned(), path.clone());
+        let (plugin, op, path) = (plugin.clone(), capability.to_owned(), path.clone());
         match seen(&personal, &effect, self.asker.signing.allowed.as_deref())? {
             Some(Answer::Approve) => {
                 report.effect = Some(id);

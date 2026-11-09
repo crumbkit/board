@@ -937,7 +937,13 @@ fn samples() -> Vec<(String, Value)> {
         (&["ls", "/"], b""),
         (&["refs", "/tasks/a", "/tasks/b"], b""),
         (
-            &["decide", "--op", "review.comment", "--path", "/tasks/a"],
+            &[
+                "decide",
+                "--capability",
+                "review.comment",
+                "--path",
+                "/tasks/a",
+            ],
             b"",
         ),
         (&["mount", "update", "/vendor/lib"], b""),

@@ -38,8 +38,8 @@ const UNDERSTANDING_SCHEMA: &str =
 const PROTOTYPE_SCHEMA: &str =
     include_str!("../../../../board-plugin-changes/types/changes/prototype/v1.schema.json");
 
-const RUN_SCHEMA: &str =
-    include_str!("../../../../board-plugin-changes/types/changes/run/v1.schema.json");
+const ATTEMPT_SCHEMA: &str =
+    include_str!("../../../../board-plugin-changes/types/changes/attempt/v1.schema.json");
 const STOP_SCHEMA: &str =
     include_str!("../../../../board-plugin-changes/types/changes/stop/v1.schema.json");
 const REOPEN_SCHEMA: &str =
@@ -290,6 +290,13 @@ impl Changes {
             assert_eq!(enabled.code, 0, "{}", text(&enabled.stderr));
         }
         fixture
+    }
+
+    /// Writes the schema `changes/run/v1`, which the plugin no longer ships, as
+    /// enabling an older version of it left the board holding it.
+    fn with_old_run_schema(&self) {
+        let old = ATTEMPT_SCHEMA.replace("changes/attempt/v1", "changes/run/v1");
+        self.write(".board/types/changes/run/v1.schema.json", &old);
     }
 
     /// Writes a file of the board's own tree at `path`, from its root.
@@ -740,7 +747,7 @@ fn board_lists_the_plugin_as_enabled_and_enabling_wrote_the_schema_it_ships() {
         ("plan/v1", PLAN_SCHEMA),
         ("understanding/v1", UNDERSTANDING_SCHEMA),
         ("prototype/v1", PROTOTYPE_SCHEMA),
-        ("run/v1", RUN_SCHEMA),
+        ("attempt/v1", ATTEMPT_SCHEMA),
         ("stop/v1", STOP_SCHEMA),
         ("reopen/v1", REOPEN_SCHEMA),
     ] {

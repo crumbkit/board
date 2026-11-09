@@ -14,7 +14,7 @@ board/plugin-find-report/v2     output  document  The installed capabilities, or
 board/plugin-enable-report/v2   output  document  What enabling a plugin wrote.
 board/call-report/v2            output  document  What a plugin's capability returned.
 board/query-report/v2           output  document  The rows a query returned.
-board/decide-report/v2          output  document  The op admitted at a path, and the pending effect whose approval admitted it.
+board/decide-report/v2          output  document  The capability admitted at a path, and the pending effect whose approval admitted it.
 board/answer-report/v2          output  document  The answer written in the personal board, and its commit.
 board/serve-report/v2           output  document  Where the server listened and what it served before it went idle.
 board/ui-kinds-report/v2        output  document  The component kinds a view's slot can name.

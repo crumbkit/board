@@ -28,7 +28,7 @@ pub(crate) struct Grafted {
     stdin: bool,
 }
 
-/// The long flags that a grafted call takes for itself, which no input
+/// The long flags that a grafted command takes for itself, which no input
 /// property can be.
 pub(crate) const RESERVED_FLAGS: &[&str] = &[
     "capability",
@@ -40,11 +40,11 @@ pub(crate) const RESERVED_FLAGS: &[&str] = &[
     "no-input",
 ];
 
-/// How a grafted call takes stdin, as its help says.
+/// How a grafted command takes stdin, as its help says.
 const STDIN: &str =
     "Without a flag, Board reads the input as JSON on stdin; with one, it ignores stdin.";
 
-/// How a grafted call whose input properties are all flags takes stdin.
+/// How a grafted command whose input properties are all flags takes stdin.
 const NO_STDIN: &str = "Every input property is a flag, so Board does not read stdin.";
 
 /// The format that marks a string input property as a logical path, which
@@ -57,7 +57,7 @@ const RELATIVE: &str = "; a path without a leading / is read from the current di
 /// An input property's name, help and parser, and whether it is a path.
 type Flag = (String, String, ValueParser, bool);
 
-/// A parsed command line, with the target and flags of a grafted call.
+/// A parsed command line, with the target and flags of a grafted command.
 pub(crate) struct Parsed {
     pub(crate) cli: Cli,
     pub(crate) grafted: Option<(Target, Map<String, Value>)>,
