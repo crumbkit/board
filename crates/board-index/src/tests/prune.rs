@@ -259,7 +259,7 @@ fn a_prune_gives_the_pages_it_frees_back_to_the_file() {
 /// Builds the views of one handle on an index file over a record nothing
 /// reaches, lets a second handle on the file write, pruning when `prunes`,
 /// then queries the views through the first.
-fn queried_after_another_handle_writes(prunes: bool) -> Result<Rows, IndexError> {
+fn queried_after_another_handle_writes(prunes: bool, sql: &str) -> Result<Rows, IndexError> {
     let cache = tempfile::tempdir().unwrap();
     let first = Index::open(Some(cache.path()), Path::new(ROOT)).unwrap();
     let (first, _) = filled_with(first, true);
@@ -288,18 +288,35 @@ fn queried_after_another_handle_writes(prunes: bool) -> Result<Rows, IndexError>
         writer.put_blob(blob(6), Role::Json, &record()).unwrap();
     }
     writer.decide(Vec::new()).unwrap();
-    first.query("SELECT type, status FROM entries", 10, None)
+    first.query(sql, 10, None)
 }
+
+const READS: &str = "SELECT type, status FROM entries";
+const INVALID: &str = "SELECT 1 FROM nowhere";
 
 #[test]
 fn a_query_after_another_process_prunes_is_refused_as_pruned() {
-    let refused = queried_after_another_handle_writes(true).unwrap_err();
+    let refused = queried_after_another_handle_writes(true, READS).unwrap_err();
+    assert!(matches!(refused, IndexError::Pruned), "{refused:?}");
+}
+
+/// The run that refuses as pruned builds its views again, which may be what
+/// the statement needed.
+#[test]
+fn a_query_that_cannot_compile_after_another_process_prunes_is_refused_as_pruned() {
+    let refused = queried_after_another_handle_writes(true, INVALID).unwrap_err();
     assert!(matches!(refused, IndexError::Pruned), "{refused:?}");
 }
 
 #[test]
+fn a_query_that_cannot_compile_after_another_process_writes_without_pruning_is_invalid() {
+    let refused = queried_after_another_handle_writes(false, INVALID).unwrap_err();
+    assert!(matches!(refused, IndexError::Query { .. }), "{refused:?}");
+}
+
+#[test]
 fn a_query_after_another_process_writes_without_pruning_reads_the_views() {
-    let rows = queried_after_another_handle_writes(false).unwrap();
+    let rows = queried_after_another_handle_writes(false, READS).unwrap();
     assert_eq!(
         rows.rows,
         [[serde_json::json!("test/task/v1"), serde_json::json!("ok")]]

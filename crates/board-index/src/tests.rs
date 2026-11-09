@@ -702,6 +702,119 @@ fn a_query_cannot_attach_or_detach_a_database_and_one_that_reads_runs() {
     assert_eq!(admitted.rows, [vec![serde_json::json!(7)]]);
 }
 
+/// The names of the databases open on the connection under `index`.
+fn databases(index: &View) -> Vec<String> {
+    let connection = index.connection();
+    let mut statement = connection
+        .prepare("SELECT name FROM pragma_database_list")
+        .unwrap();
+    statement
+        .query_map([], |row| row.get(0))
+        .unwrap()
+        .map(Result::unwrap)
+        .collect()
+}
+
+#[test]
+fn a_query_cannot_attach_a_file_named_by_an_expression_and_one_that_reads_runs() {
+    let cache = tempfile::tempdir().unwrap();
+    let index = filled(cache.path());
+    let before = databases(&index);
+    for (name, sql) in [
+        ("concatenated", "ATTACH '{}'||'' AS a"),
+        ("selected", "ATTACH (SELECT '{}') AS b"),
+    ] {
+        let target = cache.path().join(name);
+        let sql = sql.replace("{}", &target.display().to_string());
+        let refused = index.query(&sql, 10, None).unwrap_err();
+        assert_eq!(refused.code(), Code::QueryInvalid, "{sql}");
+        assert!(!target.exists(), "no file is created by {sql}");
+    }
+    assert_eq!(databases(&index), before);
+    let admitted = index.query("SELECT 7", 10, None).unwrap();
+    assert_eq!(admitted.rows, [vec![serde_json::json!(7)]]);
+}
+
+/// Only the authorizer protects `extra`: a DETACH passes the readonly check
+/// and SQLite itself allows it, unlike a DETACH of `temp` or `main`.
+#[test]
+fn a_query_cannot_detach_a_database_by_name_or_by_expression() {
+    let cache = tempfile::tempdir().unwrap();
+    let index = filled(cache.path());
+    index
+        .connection()
+        .execute_batch("ATTACH ':memory:' AS extra")
+        .unwrap();
+    for sql in ["DETACH DATABASE extra", "DETACH 'extra'||''"] {
+        let refused = index.query(sql, 10, None).unwrap_err();
+        assert_eq!(refused.code(), Code::QueryInvalid, "{sql}");
+        assert!(
+            databases(&index).contains(&"extra".to_owned()),
+            "{sql} leaves the database attached"
+        );
+    }
+}
+
+/// `EXPLAIN` runs nothing, so `query_only` never stops it, and the authorizer
+/// allows a DELETE. It reports the readonly state of the statement it explains.
+#[test]
+fn a_query_cannot_explain_a_write_and_can_explain_a_read() {
+    let cache = tempfile::tempdir().unwrap();
+    let index = filled(cache.path());
+    let refused = index
+        .query("EXPLAIN DELETE FROM main.blobs", 10, None)
+        .unwrap_err();
+    assert_eq!(refused.code(), Code::QueryInvalid);
+    let admitted = index
+        .query("EXPLAIN SELECT count(*) FROM main.blobs", 1, None)
+        .unwrap();
+    assert_eq!(admitted.rows.len(), 1);
+}
+
+/// Each statement raises authorizer actions that are not ATTACH or DETACH,
+/// so none of them may reach the authorizer as an action it cannot name.
+#[test]
+fn the_statements_agents_write_are_all_authorized() {
+    let cache = tempfile::tempdir().unwrap();
+    let index = filled(cache.path());
+    for (sql, expected) in [
+        (
+            "SELECT count(*) FROM json_each('[1,2,3]')",
+            serde_json::json!(3),
+        ),
+        (
+            "SELECT json_extract('{\"a\":4}', '$.a')",
+            serde_json::json!(4),
+        ),
+        (
+            "SELECT count(*) FROM pragma_table_info('state')",
+            serde_json::json!(2),
+        ),
+        (
+            "WITH RECURSIVE c(n) AS (SELECT 1 UNION ALL SELECT n+1 FROM c WHERE n < 3) \
+             SELECT sum(n) FROM c",
+            serde_json::json!(6),
+        ),
+        (
+            "WITH a(n) AS (SELECT 5) SELECT n FROM a",
+            serde_json::json!(5),
+        ),
+        (
+            "SELECT count(*) FROM (SELECT 1 UNION SELECT 2)",
+            serde_json::json!(2),
+        ),
+        (
+            "SELECT max(x) OVER () FROM (SELECT 8 AS x)",
+            serde_json::json!(8),
+        ),
+        ("SELECT count(*) FROM entries", serde_json::json!(0)),
+        ("SELECT count(*) FROM main.blobs", serde_json::json!(1)),
+    ] {
+        let admitted = index.query(sql, 10, None).unwrap();
+        assert_eq!(admitted.rows, [vec![expected]], "{sql}");
+    }
+}
+
 #[test]
 fn a_query_that_runs_too_long_is_stopped_and_a_bounded_one_finishes() {
     let cache = tempfile::tempdir().unwrap();

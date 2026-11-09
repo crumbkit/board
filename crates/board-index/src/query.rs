@@ -63,12 +63,24 @@ impl View {
             Some(move || started.elapsed() > QUERY_TIME),
         )?;
         let before = connection.limit(Limit::SQLITE_LIMIT_LENGTH)?;
-        let result =
-            compile(connection, sql).and_then(|()| self.snapshot(connection, sql, limit, budget));
+        let result = match compile(connection, sql) {
+            Ok(()) => self.snapshot(connection, sql, limit, budget),
+            Err(error) => Err(self.pruned_or(connection, error)),
+        };
         connection.set_limit(Limit::SQLITE_LIMIT_LENGTH, before)?;
         connection.progress_handler(STEPS_PER_CHECK, None::<fn() -> bool>)?;
         connection.pragma_update(None, "query_only", false)?;
         result
+    }
+
+    /// [`IndexError::Pruned`] when another process has pruned since the views
+    /// were built, so the run builds them again before a statement that did
+    /// not compile against them is refused; otherwise `error`.
+    fn pruned_or(&self, connection: &Connection, error: IndexError) -> IndexError {
+        match connection.query_row(PRUNES, [], |row| row.get::<_, i64>(0)) {
+            Ok(prunes) if prunes != self.prunes => IndexError::Pruned,
+            _ => error,
+        }
     }
 
     /// Reads the prune count and runs `sql` in one transaction, so no prune
@@ -176,12 +188,15 @@ fn compile(connection: &mut Connection, sql: &str) -> Result<(), IndexError> {
     compiled
 }
 
-/// Refuses ATTACH, DETACH and the PRAGMA statement.
+/// Refuses ATTACH, DETACH and the PRAGMA statement. When the file or name in
+/// an ATTACH or DETACH is an expression, `SQLite` passes no argument and
+/// rusqlite reports an action it cannot name, so that is refused too.
 fn authorize(context: AuthContext<'_>) -> Authorization {
     match context.action {
-        AuthAction::Attach { .. } | AuthAction::Detach { .. } | AuthAction::Pragma { .. } => {
-            Authorization::Deny
-        }
+        AuthAction::Attach { .. }
+        | AuthAction::Detach { .. }
+        | AuthAction::Pragma { .. }
+        | AuthAction::Unknown { .. } => Authorization::Deny,
         _ => Authorization::Allow,
     }
 }
