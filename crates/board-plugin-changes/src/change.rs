@@ -417,6 +417,21 @@ pub(crate) fn listed(
     )
 }
 
+/// Whether Board reads a record of `record_type` at `path` with no code at
+/// all, so a record with a dangling reference does not count.
+pub(crate) fn whole_record_at(
+    host: &dyn Host,
+    path: &str,
+    record_type: &str,
+) -> Result<bool, PluginError> {
+    let sql = format!(
+        "SELECT 1 FROM entries WHERE logical = {} AND type = {} AND code IS NULL",
+        literal(path),
+        literal(record_type)
+    );
+    Ok(!rows(host, &sql)?.is_empty())
+}
+
 /// Each entry `refs` reaches, as its type and body, in their order, and
 /// each unreadable one with the code that says why.
 pub(crate) fn referenced(host: &dyn Host, refs: &[String]) -> Result<Referenced, PluginError> {

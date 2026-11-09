@@ -479,6 +479,7 @@ fn a_migrated_change_in_each_phase_faces_the_blocking_checks_of_the_development_
                 "task",
                 "route",
                 "owner-approval",
+                "lifecycle-declared",
             ],
         ),
         ("build", vec!["head", "suite-run", "tasks"]),
@@ -489,10 +490,20 @@ fn a_migrated_change_in_each_phase_faces_the_blocking_checks_of_the_development_
                 "paths",
                 "ui-paths",
                 "data-paths",
+                "lifecycle-paths",
+                "lifecycle-none-paths",
                 "obligations-settled",
             ],
         ),
-        ("land", vec!["test-sections", "pull-request"]),
+        (
+            "land",
+            vec![
+                "test-sections",
+                "pull-request",
+                "lifecycle-paths-at-land",
+                "lifecycle-none-paths-at-land",
+            ],
+        ),
     ]
     .into_iter()
     .map(|(phase, ids)| (phase, ids.into_iter().map(str::to_owned).collect()))
@@ -1037,4 +1048,66 @@ fn migrate_with_plans_leaves_a_change_whose_new_snapshot_fails_its_schema_and_mo
         board.read("changes/empty-reason.json")["plan"],
         "/changes/empty-reason/plans/1"
     );
+}
+
+/// Writes the lifecycle record of the change `name` and points the plan at
+/// `plans/1` to it.
+fn with_lifecycle(board: &Changes, name: &str) -> String {
+    let record = format!("/changes/{name}/lifecycle");
+    board.write(&format!("changes/{name}/lifecycle.md"), "A table.\n");
+    board.write(
+        &format!("changes/{name}/lifecycle.json"),
+        &typed(
+            "changes/lifecycle/v1",
+            &json!({"text": format!("{record}.md"), "doc": "/repos/x/docs/states.md"}),
+        ),
+    );
+    let at = format!("changes/{name}/plans/1.json");
+    let mut plan = board.read(&at);
+    plan["lifecycle"] = json!(record);
+    board.write(&at, &plan.to_string());
+    record
+}
+
+#[test]
+fn migrate_with_plans_keeps_the_plans_lifecycle_record_and_one_never_given_stays_unset() {
+    let board = plans_board(&[("good", "plan", OWED_TEXT), ("bare", "plan", OWED_TEXT)]);
+    let record = with_lifecycle(&board, "good");
+    commit_all(&board);
+    let applied = board.call("migrate", &json!({"plans": true, "apply": true}));
+    assert_eq!(applied["plan_fields"]["total"], 2);
+    assert_eq!(current_plan(&board, "good").0["lifecycle"], json!(record));
+    assert_eq!(current_plan(&board, "bare").0.get("lifecycle"), None);
+}
+
+#[test]
+fn migrating_a_v1_change_keeps_its_plans_lifecycle_record_and_one_never_given_stays_unset() {
+    let board = Changes::new();
+    board.mount_x(&[("README.md", "x\n")]);
+    for name in ["named", "bare"] {
+        board.write(&format!("changes/{name}/plans/1.md"), PLAN);
+        board.write(
+            &format!("changes/{name}/plans/1.json"),
+            &typed(
+                "changes/plan/v1",
+                &json!({
+                    "text": format!("/changes/{name}/plans/1.md"),
+                    "uses": [],
+                    "paths": ["/repos/x/**"],
+                }),
+            ),
+        );
+        board.write(
+            &format!("changes/{name}.json"),
+            &change(
+                "build",
+                &json!({"plan": format!("/changes/{name}/plans/1"), "records": [TASK]}),
+            ),
+        );
+    }
+    let record = with_lifecycle(&board, "named");
+    let output = board.call("migrate", &json!({"apply": true}));
+    assert_eq!(output["total"], 2);
+    assert_eq!(current_plan(&board, "named").0["lifecycle"], json!(record));
+    assert_eq!(current_plan(&board, "bare").0.get("lifecycle"), None);
 }

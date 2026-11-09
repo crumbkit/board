@@ -64,6 +64,12 @@
       },
       "type": "array"
     },
+    "lifecycle": {
+      "description": "The change's lifecycle record, which `changes.lifecycle` sets and a\nrevised plan keeps.",
+      "format": "board-ref",
+      "type": "string",
+      "x-board-type": "changes/lifecycle/v1"
+    },
     "owed": {
       "description": "Obligations on the plan's paths that the change leaves owed, each\nwith why.",
       "items": {

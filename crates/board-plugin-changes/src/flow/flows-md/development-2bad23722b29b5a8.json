@@ -1,0 +1,201 @@
+{
+  "$type": "changes/flow/v1",
+  "name": "development",
+  "phases": [
+    {
+      "agent": "lead",
+      "checks": [
+        {
+          "id": "plan-sections",
+          "kind": "sections",
+          "sections": [
+            "Problem",
+            "Outcome",
+            "Out of scope",
+            "UX",
+            "Data"
+          ]
+        },
+        {
+          "id": "considered",
+          "kind": "considered"
+        },
+        {
+          "field": "task",
+          "id": "task",
+          "kind": "field"
+        },
+        {
+          "field": "route",
+          "id": "route",
+          "kind": "field"
+        },
+        {
+          "actor": "owner",
+          "id": "owner-approval",
+          "kind": "records",
+          "type": "plans/decision/v1",
+          "where": {
+            "owner_signed": true,
+            "refs": [
+              "plan"
+            ]
+          }
+        },
+        {
+          "actor": "owner",
+          "id": "mockups",
+          "kind": "mockups",
+          "when": {
+            "section_not": {
+              "UX": "^no ui change\\b[\\s.:,;-]*\\w"
+            }
+          }
+        },
+        {
+          "actor": "owner",
+          "id": "data-signed",
+          "kind": "understood",
+          "remedy": "Run the understanding-check skill with the owner on the plan's Data section, attach its record with `board changes attach --path {change} --ref <record>`, and ask the owner to sign a plans/decision/v1 whose refs name it.",
+          "subject": "data",
+          "when": {
+            "section_not": {
+              "Data": "^none\\s*(?:[.:]|\\n?\\z)"
+            }
+          }
+        },
+        {
+          "blocks": false,
+          "id": "obligations",
+          "kind": "obligations"
+        }
+      ],
+      "instruction": "Read each record the change surfaced; cite those you build on in the plan's uses and list the rest under ### Considered with a line on why each does not apply. Interview the owner and fill in Problem, Outcome, Out of scope, UX and Data. UX starts with No UI change and a reason, or lists each mockup under ### Mockups with a ### Neighbours list; attach the owner's decision naming each mockup. Data starts with None, or run the understanding-check skill and attach its record and the owner's decision that references it. Write the plan with `board changes plan` and attach the owner's signed plans/decision/v1 whose refs name the plan.",
+      "name": "plan",
+      "skills": [
+        "understanding-check"
+      ]
+    },
+    {
+      "agent": "builder",
+      "checks": [
+        {
+          "field": "head",
+          "id": "head",
+          "kind": "field"
+        },
+        {
+          "id": "suite-run",
+          "kind": "run",
+          "remedy": "When {suite} is empty, the repository names no check suite: name one with `board changes attach --path {change} --suite /suites/<name>`, define one with `board runs define`, or ask the owner to waive this check. Otherwise run {suite} on {head} with `board runs run` and attach the run.",
+          "scope": "full",
+          "waivable": true
+        },
+        {
+          "id": "tasks",
+          "kind": "tasks"
+        },
+        {
+          "actor": "owner",
+          "id": "rechecks",
+          "kind": "understood",
+          "rechecks": 2,
+          "subject": "data",
+          "when": {
+            "section_not": {
+              "Data": "^none\\s*(?:[.:]|\\n?\\z)"
+            }
+          }
+        }
+      ],
+      "instruction": "Start one builder in a fresh agent from `board changes brief --path {change}`; its first message begins with brief_line, then the brief. Build test-first, commit, and record the head with `board changes attach --path {change} --head <sha>`. Attach each task. Run {suite} on the head and attach the run. Before advancing, ask the owner two of each understanding check's predict or edge questions again, worded differently, and add them to its rechecks.",
+      "name": "build"
+    },
+    {
+      "agent": "lead",
+      "checks": [
+        {
+          "actor": "reviewer",
+          "id": "review",
+          "kind": "records",
+          "type": "review/report/v1",
+          "where": {
+            "at_head": "range",
+            "no_findings": [
+              "critical",
+              "high"
+            ],
+            "values": {
+              "verdict": [
+                "approve",
+                "comment"
+              ]
+            }
+          }
+        },
+        {
+          "id": "paths",
+          "kind": "paths"
+        },
+        {
+          "controls": [
+            "/controls/{repo}/ui-paths"
+          ],
+          "id": "ui-paths",
+          "kind": "controlled-paths",
+          "when": {
+            "section": {
+              "UX": "^no ui change\\b[\\s.:,;-]*\\w"
+            }
+          }
+        },
+        {
+          "controls": [
+            "/controls/{repo}/data-paths"
+          ],
+          "id": "data-paths",
+          "kind": "controlled-paths",
+          "when": {
+            "section": {
+              "Data": "^none\\s*(?:[.:]|\\n?\\z)"
+            }
+          }
+        },
+        {
+          "escape_section": "Obligations left owed",
+          "id": "obligations-settled",
+          "kind": "obligations"
+        }
+      ],
+      "instruction": "Review {head} with clean context: run `board review run` on a brief whose subject is the change, so the reviewer reads the plan as the spec and the controls on the plan's paths, and attach the report. The gate refuses a diff that edits a file outside the plan's paths; add the file with `board changes plan`, or revert the edit. Fix every critical or high finding, record the new head and review again.",
+      "name": "review"
+    },
+    {
+      "agent": "lead",
+      "checks": [
+        {
+          "id": "test-sections",
+          "kind": "sections",
+          "sections": [
+            "What the tests prove",
+            "What the tests do not prove"
+          ]
+        },
+        {
+          "field": "pulls",
+          "id": "pull-request",
+          "kind": "field",
+          "types": [
+            "github/pull/v1"
+          ]
+        }
+      ],
+      "instruction": "Add What the tests prove and What the tests do not prove to the plan. Draft the pull request with `board changes pr --path {change}`, read pr.md and fix what is wrong, fix each path in `unreadable` and draft again or say why in the body, then run the command it returns in a POSIX shell from a checkout on {head}. Record the pull request with `board github ref --ref <owner>/<repo>#<number>` and attach it with --pull. Merging happens outside Board; advancing from land ends the change in done.",
+      "name": "land"
+    }
+  ],
+  "stop": {
+    "through": "plan"
+  },
+  "summary": "Plan with the owner, build test-first, review with clean context, land through a pull request."
+}

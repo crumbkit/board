@@ -94,6 +94,9 @@ that one record.
 - `paths` holds the files and SQLite `GLOB` patterns, by logical path, that
   the change will edit, in which `*` also matches `/`. A build change's plan
   always has them; a prototype's plan has none.
+- `lifecycle` names the change's `changes/lifecycle/v1`, which
+  `changes.lifecycle` sets and a revised plan keeps while Board still reads a
+  `changes/lifecycle/v1` there. It is left out when the change has none.
 - `records` lists the runs, reviews, decisions and other records `attach
   --ref` attached while this plan was the change's plan. A revised plan
   starts with the `records` of the plan it replaces, in order, and that
@@ -164,6 +167,19 @@ of a change back to `build` for a fix round: its `reason`, the phase it
 left as `from`, and `by`, who reopened it. `reopen` writes one each time,
 in the same commit as the change, so every fix round's reason is kept.
 `next` shows the newest one's reason while the change is in `build`.
+
+`changes/lifecycle/v1` at `/changes/<name>/lifecycle`, beside its text at
+`lifecycle.md`, holds the states, events, transition owners and crash points
+of what a change creates, stops, replaces, retires, retries, restores or
+migrates, in a record of its own so the plan's 3,000-word limit stays what
+it is. `text` is the Markdown, at most 1,500 words: the state table (state,
+event, next state, owner of the transition, external system touched), the
+crash-point list (each point, what is on disk and in each external system
+after a crash there, and the recovery) and the invariants the types must
+enforce. `doc` is the repository file, by logical path, where the landed
+table lives for the next author. `external` names each external system
+whose state the lifecycle touches. The builder's brief names the text and
+the reviewer reads it.
 
 `changes/understanding/v1` at `/changes/<name>/understanding/<subject>`
 records how the owner showed he understands a change's `data` or `ux`.
@@ -272,8 +288,16 @@ of `changes` still fails `review`.
 ## Capabilities
 
 - `start --mount (/repos/<name> | /) --title '<title>' [--task <path> | --task-repo <repo>] [--name <name>] [--handle @<you>] [--flow <name or path>] [--suite <path>]`
-  creates the change in the first phase of its flow, and a plan with empty
-  Problem, Outcome, Out of scope, UX and Data sections. The change points
+  creates the change in the first phase of its flow, and a plan with an
+  empty section for each heading the flow's `plan-sections` check names. A
+  flow with no such check, such as `small`, gets Problem, Outcome, Out of
+  scope, UX and Data. On the development flow the plan also has Failure
+  paths, Consumers and Lifecycle. Failure paths has one row per step that can fail: what
+  fails, the state it leaves, the recovery, and the order of the check
+  against the destructive step it guards. Consumers lists every caller and
+  reader of what the change produces or alters, and names the files
+  searched. Lifecycle starts with None and a reason, or names the record
+  `board changes lifecycle` writes and summarises its states in one line. The change points
   at the stored version of its flow, and `start` writes that version when
   the board lacks it. "Flows" below says how the flow is chosen; `flow` in the output
   names it and its phases. `--task` names the task the change
@@ -414,7 +438,7 @@ of `changes` still fails `review`.
 
   | `status` | When | What sync does | `code` |
   | --- | --- | --- | --- |
-  | `merged` | GitHub says it merged | `to` is `done`, and `merge_commit_url` is set; `detail` says when the change left `build` or `review`, whose gates it did not pass | none |
+  | `merged` | GitHub says it merged | `to` is `done`, and `merge_commit_url` is set; `detail` says when the change left `build` or `review`, whose gates it did not pass, and says when sync moved it from `land` without evaluating the land gates | none |
   | `owed` | It merged, but a `tasks/task/v2` that its plans' `records` reach, through any link, is not done or dropped | Leaves it; `detail` names the tasks | `changes::sync::owed` |
   | `closed` | It closed without merging | `to` is `dropped`, and `dropped_reason` says so with the day it closed | none |
   | `open` | It is open | Leaves it | none |
@@ -484,11 +508,27 @@ of `changes` still fails `review`.
   separated by whitespace. The last limit comes from
   `/evals/board-standards-selection` in the owner's board: agents that chose
   standards from each directory's `index.md` stayed within it.
+- `lifecycle`, given as JSON on stdin with `path`, `text`, `doc` and
+  `external`, since `external` is a list, writes the change's
+  `changes/lifecycle/v1` and its text and sets the plan's `lifecycle`. A
+  second call replaces the first. Refuses text over 1,500 words
+  (`changes::lifecycle::too_long`), a `doc` that is a pattern
+  (`changes::lifecycle::doc_is_a_pattern`) or outside the change's mount
+  (`changes::lifecycle::doc_outside_mount`), a `doc` with a `.`, `..` or
+  empty segment or a trailing slash (`changes::lifecycle::doc_not_a_file`),
+  a change that names no plan
+  (`changes::lifecycle::no_plan`), and a change that is done or dropped
+  (`changes::phase::final`).
 - `brief --path /changes/<name>`: read-only. `brief_line`,
   `board-brief: /changes/<name>`, which comes first; a builder's first
   message is the brief as `brief` prints it, or starts with that line (see
   "The write guard"). The text path of the plan the change names,
   even once a reference in it breaks,
+  `lifecycle`, the text path of its lifecycle record, left out when it has
+  none or the plan's Lifecycle section says None, which counts outside the 600 words as the plan's text does,
+  `warnings`, left out when empty, whose `changes::brief::no_control` entry
+  says a control a `planned-controlled` check of the change's flow names does
+  not exist, so only the heading guards what it would list,
   `rules`, each control that applies to the plan's `paths`, once, from
   `controls.for-paths`: its `control`, its `summary` and at most three of
   the planned paths it `matched`, with `matched_left_out` counting the
@@ -697,8 +737,10 @@ order. Each phase has a `name`, the `instruction` that `next` returns, the
 `agent` that does its work (`lead` or `builder`), the `skills` the
 instruction relies on, and its `checks`. A check has an `id`, a `kind`, and
 optionally an `actor` (`agent`, `owner` or `reviewer`), `blocks`, a `when`
-(`route`, and `section` or `section_not`, each mapping a plan heading to a
-pattern matched without case), a `remedy`, `waivable`, and the parameters
+(`route`; `section` or `section_not`, each mapping a plan heading to a
+pattern matched without case; and `absent`, with the `path`, placeholders
+filled, and the `type` of a record that Board must not read whole there,
+with no code such as a dangling reference), a `remedy`, `waivable`, and the parameters
 of its kind. The schema gives each kind's parameters their own `$defs`
 entry, such as `RecordsCheck`. It requires the parameter a kind needs and
 refuses a parameter of another kind, so a `tasks` check that holds `min` is
@@ -709,7 +751,11 @@ The committed schema is
 The plugin ships three flows, compiled in from
 `crates/board-plugin-changes/flows/`. `development` has the phases plan,
 build, review and land, and stops through plan. `small` has build, review
-and land, and stops through review. `flow-authoring` writes a flow, on
+and land, and stops through review. Its `not-small` check at build refuses a
+diff that edits a path the `ui-paths`, `data-paths` or `lifecycle-paths`
+control lists, and its `lifecycle-paths` check at review, repeated at land, refuses a
+lifecycle path, so a change reflowed to `small` at review meets it too; each sends the
+change to the development flow. `flow-authoring` writes a flow, on
 `--mount /` or the mount it is for: interview the owner, draft the flow at
 `<change>/draft`, dry-run it with `run --sandbox`, and adopt it at
 `/flows/<name>` once the owner signs a decision naming the draft and the
@@ -750,7 +796,9 @@ SHA-256 of the flow's canonical JSON, so identical flows share one path.
 `start` writes the version when the board lacks it, in the same commit as
 the change, and the change's `flow` references it. Every gate reads that
 version, so editing a board's flow never moves a change in flight; `reflow`
-takes up the edit. A missing version makes `board check` report the change
+takes up the edit. A `changes/change/v1` is the one exception: it names no
+stored version, so it reads the shipped flow and takes up an edit to it at
+once, until `migrate` stamps a version on it. A missing version makes `board check` report the change
 `board::ref::dangling`, and the gates refuse it with
 `changes::flow::unreadable`; `reflow` restores it.
 
@@ -771,11 +819,14 @@ evaluated by kind:
 | `considered` | each path in the change's `surfaced` that still reaches something is in the plan's `uses` or its `considered` field |
 | `obligations` | no obligation control applies to the plan's paths, except those in the plan's `owed` field; a board without the controls plugin enabled has none |
 | `controlled-paths` | the diff edits no file that the controls in `controls` list in their `paths` or `applies_to`; the detail names at most ten such files and counts the rest |
+| `planned-controlled` | `controls.for-paths` on the plan's paths reaches none of the controls in `controls`; `when` says which plans the check asks this of |
 | `flow-valid` | at least one `changes/flow/v1` is attached, and each can run and gives a `remedy` to every check whose actor is the owner or a reviewer; the detail lists each problem with its phase and check id |
 | `exists` | something is at `path`, its placeholders filled; a placeholder with no value yet leaves it missing |
 
-A `controlled-paths` check whose controls the board does not hold passes,
-and its detail says that no such control exists. A kind Board does not
+A `controlled-paths` or `planned-controlled` check whose controls the board
+does not hold passes, and its detail says that no such control exists. When
+`controls.for-paths` fails, a `planned-controlled` check is missing with its
+refusal as the detail. A kind Board does not
 know reads but is always missing.
 
 A check's `actor` (`agent`, the default, `owner` or `reviewer`) says who
@@ -787,7 +838,8 @@ its kind's own. A `waivable` check passes when an attached
 with `written_by` set is an agent's stub and signs nothing, here and in
 every check.
 
-Instructions, remedies and a `controlled-paths` check's controls may name
+Instructions, remedies and the controls of a `controlled-paths` or
+`planned-controlled` check may name
 `{change}`, `{name}`, `{mount}`, `{repo}`, `{plan}`, `{head}`, `{suite}`,
 `{draft}` (the name of the first attached `changes/flow/v1`) and `{board}`
 (the board's root). A placeholder with no value is left out cleanly: the
@@ -798,18 +850,31 @@ braces stays.
 Each gate reads only what its checks need: the change, the records it
 references, its plan file, its suite, the diff, the controls plugin's
 obligations on the plan's paths, the controls a check names, its
-tickets' types, and whether something is at each path an `exists` check
-names. A referenced record Board marks degraded satisfies nothing.
+tickets' types, whether something is at each path an `exists` check
+names, and the controls `controls.for-paths` finds on the plan's paths. A referenced record Board marks degraded satisfies nothing.
 
 The development flow's gates:
 
 | Leaving | Checks |
 | --- | --- |
-| plan | `plan-sections`; `considered`; `task`; `route`; `owner-approval`, a `plans/decision/v1` the owner signed whose `refs` name the plan or the change, on every route; `mockups`, unless UX starts with "No UI change" and a reason; `data-signed`, an `understood` check of the data, unless Data starts with "None"; `obligations`, which does not block |
+| plan | `plan-sections`, the eight sections; `considered`; `task`; `route`; `owner-approval`, a `plans/decision/v1` the owner signed whose `refs` name the plan or the change, on every route; `mockups`, unless UX starts with "No UI change" and a reason; `data-signed`, an `understood` check of the data, unless Data starts with "None"; `lifecycle-declared`, a `planned-controlled` check of `/controls/{repo}/lifecycle-paths`, when Lifecycle says "None"; `lifecycle-record`, an `exists` check of `/changes/{name}/lifecycle`, unless Lifecycle says "None"; `obligations`, which does not block |
 | build | `head`; `suite-run`, waivable; `tasks`; `rechecks`, two matching rechecks, unless Data starts with "None" |
-| review | `review`, a report on `head` with no critical or high finding; `paths`; `ui-paths` and `data-paths`, `controlled-paths` checks of `/controls/{repo}/ui-paths` when UX says "No UI change" and `/controls/{repo}/data-paths` when Data says "None"; `obligations-settled`, with the escape heading `Obligations left owed` |
-| land | `test-sections`, What the tests prove and What the tests do not prove; `pull-request` |
+| review | `review`, a report on `head` with no critical or high finding; `paths`; `ui-paths` and `data-paths`, `controlled-paths` checks of `/controls/{repo}/ui-paths` when UX says "No UI change" and `/controls/{repo}/data-paths` when Data says "None"; `lifecycle-paths`, the same check of `/controls/{repo}/lifecycle-paths` unless Board reads a `changes/lifecycle/v1` at `/changes/{name}/lifecycle`; `lifecycle-none-paths`, the same check when Lifecycle says "None", whether or not a record exists; `obligations-settled`, with the escape heading `Obligations left owed` |
+| land | `test-sections`, What the tests prove and What the tests do not prove; `pull-request`; `lifecycle-paths-at-land` and `lifecycle-none-paths-at-land`, the two review checks of `/controls/{repo}/lifecycle-paths` again, so each re-reads the diff at the recorded head and a record removed after review is gated |
 | build, for a prototype | Never passes: `verdict` ends a prototype instead. |
+
+Three layers identify a lifecycle change. The Lifecycle heading is required,
+so skipping it takes a written None. `lifecycle-declared` refuses that None
+when the plan's paths reach the lifecycle-paths control. `lifecycle-paths`
+refuses a diff that edits such a path until Board reads a
+`changes/lifecycle/v1` at `/changes/<name>/lifecycle`, so rewriting or
+removing the heading after the plan gate does not switch it off, and
+`lifecycle-none-paths` refuses the same diff while the section says None,
+even with a record present. Both run again at land. Board does not tie a
+lifecycle record to the plan it describes, so a record written for an earlier
+plan switches off `lifecycle-paths` for a later one; this is an accepted gap. The diff checks trust the head recorded on the
+change, so moving that head or pushing after it is not gated. A repository with no
+lifecycle-paths control has only the heading, and `brief` warns about that.
 
 "No UI change" counts only when a reason follows it, and "None" only as a
 word of its own followed by a full stop, a colon or nothing. Each item of

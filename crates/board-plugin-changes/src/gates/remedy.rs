@@ -183,6 +183,11 @@ fn default(each: &flow::Check) -> String {
              them with `board changes reflow --path {change} --flow <flow>`."
                 .to_owned()
         }
+        Kind::PlannedControlled => {
+            "Give the section this check reads what it needs in place of None, or narrow the \
+             plan's paths with `board changes plan --path {change}`."
+                .to_owned()
+        }
         Kind::FlowValid => {
             "Fix each problem the detail names in the drafted flow, write it again with `board \
              put`, and keep it attached with `board changes attach --path {change} --ref \

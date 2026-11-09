@@ -13,8 +13,9 @@ use serde_json::{Value, json};
 use crate::board::{self, get};
 use crate::change::{line, touch};
 use crate::controls::{Found, on_mount};
-use crate::flow::{FlowSummary, chosen, refuse_invalid, refuse_without_repository, version_line};
-use crate::gates::SECTIONS;
+use crate::flow::{
+    Flow, FlowSummary, chosen, refuse_invalid, refuse_without_repository, version_line,
+};
 use crate::phases::check_target;
 use crate::plan::{Planned, plan_lines};
 use crate::pr::quote;
@@ -27,6 +28,8 @@ use crate::{PLUGIN, refusal, to_value};
 
 /// The longest name a title is shortened to.
 const NAME_MAX: usize = 60;
+/// The headings of a new plan on a flow with no `plan-sections` check.
+const DEFAULT_SECTIONS: [&str; 5] = ["Problem", "Outcome", "Out of scope", "UX", "Data"];
 /// The most obligations `start` lists (STANDARDS 23); it counts the rest.
 const OBLIGATIONS_SHOWN: usize = 10;
 
@@ -211,6 +214,19 @@ fn task_for(host: &dyn Host, asked: &Input, title: &str) -> Result<String, Plugi
     add_task(host, title, route, None)
 }
 
+/// The headings of a new plan: those the `plan-sections` check of `flow`
+/// names, or the five every flow's plans start from when it has no such
+/// check.
+fn skeleton_sections(flow: &Flow) -> Vec<&str> {
+    (flow.phases.iter().flat_map(|phase| phase.checks.iter()))
+        .find(|each| each.id == "plan-sections")
+        .and_then(|each| each.sections.as_ref())
+        .map_or_else(
+            || DEFAULT_SECTIONS.to_vec(),
+            |named| named.iter().map(String::as_str).collect(),
+        )
+}
+
 /// Creates the change at `/changes/<name>`, the version of its flow when
 /// the board lacks it, its plan and, unless one is named, its task, and
 /// returns the brief.
@@ -251,7 +267,7 @@ pub(crate) fn start(host: &dyn Host, input: &Value) -> Result<Value, PluginError
         None => suite_in(host, &mount, &docs)?,
     };
     let mut skeleton = format!("# {title}\n");
-    for section in SECTIONS {
+    for section in skeleton_sections(&flow) {
         let _ = write!(skeleton, "\n## {section}\n");
     }
     let (record, mut lines) = plan_lines(

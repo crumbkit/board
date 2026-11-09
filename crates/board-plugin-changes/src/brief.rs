@@ -2,17 +2,22 @@
 //! most 600 words.
 
 use board_ops::{Host, PluginError};
+use board_plugin::shape::Record;
 use schemars::JsonSchema;
 use serde::Serialize;
 use serde_json::{Map, Value, json};
 
 use crate::board::{call_or_refusal, refused};
-use crate::change::{current, read, referenced};
-use crate::controls::CONTROLS_UNAVAILABLE;
-use crate::gates::HEADING;
-use crate::phases::{PathInput, next_of};
+use crate::change::{current, plan_at, read, referenced};
+use crate::controls::{CONTROLS_UNAVAILABLE, listed_by};
+use crate::flow::Kind;
+use crate::gates::kinds::named_controls;
+use crate::gates::remedy::values;
+use crate::gates::{HEADING, Observed};
+use crate::lifecycle::{LifecycleRecord, says_none};
+use crate::phases::{PathInput, plan_text, step_of};
 use crate::plan::{documents, words};
-use crate::{PLUGIN, refusal, to_value};
+use crate::{PLUGIN, Warning, refusal, to_value};
 
 /// The most words `brief` returns.
 const BRIEF_WORDS: usize = 600;
@@ -98,7 +103,11 @@ pub(crate) struct RulesCommand {
 /// What an agent needs to start a change, in at most 600 words.
 ///
 /// `plan` is the path of the text of the plan the change names, or null when the change
-/// has no plan record. `rules` lists each control on the plan's paths once,
+/// has no plan record. `lifecycle` is the path of the text of its lifecycle
+/// record, left out when it has none; the text counts outside the limit, as
+/// the plan's does. `warnings` says when a control a `planned-controlled`
+/// check of the change's flow names does not exist, left out when none is
+/// missing. `rules` lists each control on the plan's paths once,
 /// as `controls.for-paths` finds them: those that matched only some planned
 /// paths first, then the others, each group by control path. Each rule's
 /// path and summary are fitted first, skipping any that do not fit, and its
@@ -123,6 +132,10 @@ pub(crate) struct Output {
     pub(crate) brief_line: String,
     pub(crate) path: String,
     pub(crate) plan: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) lifecycle: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub(crate) warnings: Vec<Warning>,
     pub(crate) rules: Vec<Rule>,
     pub(crate) rules_left_out: Vec<LeftOut>,
     pub(crate) rules_unnamed: usize,
@@ -349,6 +362,53 @@ fn fill(ordered: &[Rule], room: i64) -> (Vec<Rule>, Vec<String>, usize) {
     )
 }
 
+/// The path of the text of the lifecycle record the plan at `plan` names, or
+/// none when it names none Board reads.
+fn lifecycle_text(host: &dyn Host, plan: Option<&str>) -> Result<Option<String>, PluginError> {
+    let Some(plan) = plan else {
+        return Ok(None);
+    };
+    let Some(record) = plan_at(host, plan)?.and_then(|(record, _)| record.lifecycle) else {
+        return Ok(None);
+    };
+    let found = referenced(host, std::slice::from_ref(&record))?;
+    Ok(found
+        .get(&record)
+        .filter(|(kind, _)| kind == LifecycleRecord::TYPE)
+        .and_then(|(_, body)| Some(field(body, "text").to_owned()).filter(|text| !text.is_empty())))
+}
+
+/// The warning for each control a `planned-controlled` check of the change's
+/// flow names and the board does not hold, in which case the gate has only
+/// the section heading to go on.
+fn missing_controls(host: &dyn Host, observed: &Observed) -> Result<Vec<Warning>, PluginError> {
+    let filled = values(observed);
+    let mut said = Vec::new();
+    for check in (observed.flow.iter())
+        .flat_map(|flow| &flow.phases)
+        .flat_map(|phase| &phase.checks)
+        .filter(|each| each.kind.known() == Some(&Kind::PlannedControlled))
+    {
+        let headings: Vec<&str> = (check.when.iter())
+            .flat_map(|when| when.section.iter().flatten())
+            .map(|(heading, _)| heading.as_str())
+            .collect();
+        for control in named_controls(check, &filled) {
+            if listed_by(host, &control, &[])?.is_none() {
+                said.push(Warning {
+                    code: "changes::brief::no_control",
+                    detail: format!(
+                        "no control {control} exists, so only the plan's {} heading guards what \
+                         it would list; write the control to name those paths",
+                        headings.join(" and ")
+                    ),
+                });
+            }
+        }
+    }
+    Ok(said)
+}
+
 pub(crate) fn brief(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
     let PathInput { path } = PluginError::read_input(PLUGIN, "brief", input)?;
     Ok(to_value(brief_of(host, &path)?))
@@ -360,7 +420,13 @@ pub(crate) fn brief_of(host: &dyn Host, path: &str) -> Result<Output, PluginErro
     let (text, uses, paths) = current(host, &change)?;
     let records = referenced(host, &uses)?;
     let texts = documents(host, &uses, &records)?;
-    let step = next_of(host, path)?;
+    let (step, observed) = step_of(host, path)?;
+    let lifecycle = if plan_text(host, &change)?.as_deref().is_some_and(says_none) {
+        None
+    } else {
+        lifecycle_text(host, change.plan.as_deref())?
+    };
+    let warnings = missing_controls(host, &observed)?;
     let controls = format!("board controls check --path {}", change.mount);
     let brief_line = format!("board-brief: {path}");
     let mut spent = words(
@@ -371,9 +437,13 @@ pub(crate) fn brief_of(host: &dyn Host, path: &str) -> Result<Output, PluginErro
             step.phase.as_str(),
             &step.instruction,
             &controls,
+            lifecycle.as_deref().unwrap_or_default(),
         ]
         .join(" "),
     );
+    spent += (warnings.iter())
+        .map(|warning| words(&format!("{} {}", warning.code, warning.detail)))
+        .sum::<usize>();
     let rules_command = (!paths.is_empty()).then(|| RulesCommand {
         argv: RULES_ARGV,
         stdin: for_paths_input(&paths),
@@ -423,6 +493,8 @@ pub(crate) fn brief_of(host: &dyn Host, path: &str) -> Result<Output, PluginErro
         brief_line,
         path: path.to_owned(),
         plan: text,
+        lifecycle,
+        warnings,
         rules,
         rules_left_out: named,
         rules_unnamed: unnamed,

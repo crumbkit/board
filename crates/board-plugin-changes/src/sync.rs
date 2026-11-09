@@ -5,7 +5,6 @@
 //! writes every move in one commit, or, when gh fails, writes nothing.
 //! `open` and `next` never run gh; they report the day of the last sync.
 
-use std::fmt::Write as _;
 use std::time::{Duration, Instant};
 
 use board_model::parse_json;
@@ -293,17 +292,13 @@ fn merged(
         }
         None => detail.push_str(", and GitHub gave no merge commit, so none is recorded"),
     }
-    let skipped = match change.phase.as_str() {
-        "build" => Some("build and review"),
-        "review" => Some("review"),
-        _ => None,
-    };
-    if let Some(skipped) = skipped {
-        let _ = write!(
-            detail,
-            "; it left {} without passing the {skipped} gates",
-            change.phase
-        );
+    match change.phase.as_str() {
+        "build" => detail.push_str("; it left build without passing the build and review gates"),
+        "review" => detail.push_str("; it left review without passing the review gates"),
+        "land" => {
+            detail.push_str("; sync moved it from land to done without evaluating the land gates");
+        }
+        _ => {}
     }
     let done = Entry {
         to: Some(DONE.to_owned()),

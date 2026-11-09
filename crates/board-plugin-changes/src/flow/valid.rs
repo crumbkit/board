@@ -73,7 +73,7 @@ fn required(each: &Check, kind: Kind) -> Option<&'static str> {
         Kind::Field => ("field", each.field.is_some()),
         Kind::Records => ("type", each.record_type.is_some()),
         Kind::Understood => ("subject", each.subject.is_some()),
-        Kind::ControlledPaths => ("controls", each.controls.is_some()),
+        Kind::ControlledPaths | Kind::PlannedControlled => ("controls", each.controls.is_some()),
         Kind::Exists => ("path", each.path.is_some()),
         _ => return None,
     };
@@ -200,7 +200,13 @@ fn check_problems<'a>(
     for why in bad_patterns(each) {
         found.push(at("changes::flow::bad_pattern", id, why));
     }
-    let texts = (each.remedy.iter().chain(each.path.iter())).chain(each.controls.iter().flatten());
+    let absent = each
+        .when
+        .iter()
+        .flat_map(|when| when.absent.iter().map(|absent| &absent.path));
+    let texts = (each.remedy.iter().chain(each.path.iter()))
+        .chain(each.controls.iter().flatten())
+        .chain(absent);
     for word in texts.flat_map(|text| unknown_placeholders(text)) {
         found.push(at(
             "changes::flow::unknown_placeholder",

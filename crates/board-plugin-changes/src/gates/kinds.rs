@@ -1,5 +1,6 @@
 //! The `field`, `records`, `understood`, `considered`, `obligations`,
-//! `controlled-paths`, `flow-valid` and `exists` check kinds.
+//! `controlled-paths`, `planned-controlled`, `flow-valid` and `exists` check
+//! kinds.
 
 use serde_json::{Map, Value};
 use std::collections::BTreeSet;
@@ -31,21 +32,21 @@ fn bounded(paths: &[&str]) -> String {
     }
 }
 
-/// What a passing check says: for a `controlled-paths` check whose
-/// controls the board does not hold, that none exists, and otherwise
-/// nothing.
+/// What a passing check says: for a `controlled-paths` or
+/// `planned-controlled` check whose controls the board does not hold, that
+/// none exists, and otherwise nothing.
 pub(super) fn passed(observed: &Observed, each: &flow::Check, values: &Values) -> String {
-    if each.kind.known().copied() != Some(Kind::ControlledPaths) {
-        return String::new();
-    }
+    let kind = each.kind.known().copied();
     let named = named_controls(each, values);
-    if named.is_empty()
-        || named.iter().any(|control| {
-            observed
-                .controlled
-                .get(control)
-                .is_some_and(Option::is_some)
-        })
+    let held = |control: &String| match kind {
+        Some(Kind::ControlledPaths) => {
+            (observed.controlled.get(control)).is_some_and(Option::is_some)
+        }
+        _ => observed.held.contains(control),
+    };
+    if !matches!(kind, Some(Kind::ControlledPaths | Kind::PlannedControlled))
+        || named.is_empty()
+        || named.iter().any(held)
     {
         return String::new();
     }
@@ -120,6 +121,46 @@ pub(super) fn controlled_missing(observed: &Observed, each: &flow::Check) -> Opt
             "the change's diff edits files that {} list: {}",
             named.join(" or "),
             bounded(&touched)
+        )
+    })
+}
+
+/// The plan's paths reach none of the named controls, which only a check
+/// whose `when` holds asks of them. A board without the control, or without
+/// the controls plugin, finds none.
+pub(super) fn planned_controlled_missing(
+    observed: &Observed,
+    each: &flow::Check,
+) -> Option<String> {
+    if each.controls.is_none() {
+        return Some(unset(each, "controls"));
+    }
+    if let Some(unread) = &observed.on_planned_unread {
+        return Some(unread.clone());
+    }
+    let named = named_controls(each, &super::remedy::values(observed));
+    let reached: Vec<&str> = (named.iter().map(String::as_str))
+        .filter(|control| observed.on_planned.iter().any(|on| on == control))
+        .collect();
+    if reached.is_empty() {
+        return None;
+    }
+    let reached = either(
+        &reached
+            .iter()
+            .map(|each| (*each).to_owned())
+            .collect::<Vec<_>>(),
+    );
+    let headings: Vec<String> = (each.when.iter())
+        .flat_map(|when| when.section.iter().flatten())
+        .map(|(heading, _)| heading.clone())
+        .collect();
+    Some(if headings.is_empty() {
+        format!("the plan's paths reach {reached}")
+    } else {
+        format!(
+            "the plan's paths reach {reached} while its {} section declares nothing",
+            either(&headings)
         )
     })
 }

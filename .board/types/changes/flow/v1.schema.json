@@ -1,5 +1,26 @@
 {
   "$defs": {
+    "Absent": {
+      "additionalProperties": false,
+      "description": "A record whose absence a check's `when` needs.",
+      "properties": {
+        "path": {
+          "description": "Where the record would be, its placeholders filled.",
+          "pattern": "^/\\S*$",
+          "type": "string"
+        },
+        "type": {
+          "description": "The type a record there must have to count.",
+          "pattern": "^[a-z0-9-]+/[a-z0-9-]+/v[1-9][0-9]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "type"
+      ],
+      "type": "object"
+    },
     "Allowed": {
       "anyOf": [
         {
@@ -39,6 +60,9 @@
           "$ref": "#/$defs/ControlledPathsCheck"
         },
         {
+          "$ref": "#/$defs/PlannedControlledCheck"
+        },
+        {
           "$ref": "#/$defs/ExistsCheck"
         }
       ],
@@ -76,6 +100,7 @@
             "considered",
             "obligations",
             "controlled-paths",
+            "planned-controlled",
             "flow-valid",
             "exists"
           ],
@@ -109,6 +134,18 @@
         "not": {
           "anyOf": [
             {
+              "not": {
+                "properties": {
+                  "kind": {
+                    "enum": [
+                      "planned-controlled"
+                    ]
+                  }
+                },
+                "required": [
+                  "kind"
+                ]
+              },
               "required": [
                 "controls"
               ]
@@ -128,7 +165,7 @@
       },
       "properties": {
         "controls": {
-          "description": "`controlled-paths`: the controls whose paths the diff must not touch.",
+          "description": "`controlled-paths`: the controls whose paths the diff must not touch.\n`planned-controlled`: the controls the plan's paths must not reach.",
           "items": {
             "pattern": "^/\\S*$",
             "type": "string"
@@ -368,6 +405,57 @@
         "agent"
       ],
       "type": "object"
+    },
+    "PlannedControlledCheck": {
+      "description": "The parameters of a check of kind `planned-controlled`.",
+      "else": {
+        "not": {
+          "anyOf": [
+            {
+              "not": {
+                "properties": {
+                  "kind": {
+                    "enum": [
+                      "controlled-paths"
+                    ]
+                  }
+                },
+                "required": [
+                  "kind"
+                ]
+              },
+              "required": [
+                "controls"
+              ]
+            }
+          ]
+        }
+      },
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "planned-controlled"
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "properties": {
+        "controls": {
+          "description": "`controlled-paths`: the controls whose paths the diff must not touch.\n`planned-controlled`: the controls the plan's paths must not reach.",
+          "items": {
+            "pattern": "^/\\S*$",
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "then": {
+        "required": [
+          "controls"
+        ]
+      }
     },
     "RecordsCheck": {
       "description": "The parameters of a check of kind `records`.",
@@ -627,6 +715,10 @@
       "additionalProperties": false,
       "description": "When a check applies: every condition given holds.",
       "properties": {
+        "absent": {
+          "$ref": "#/$defs/Absent",
+          "description": "No record of this type that Board reads is at this path."
+        },
         "route": {
           "description": "The change's route is one of these.",
           "items": {

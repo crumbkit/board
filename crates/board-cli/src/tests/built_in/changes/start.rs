@@ -59,7 +59,7 @@ fn start_creates_the_change_in_plan_of_the_development_flow_with_a_plan_whose_se
     );
     assert_eq!(
         board.text(text.trim_start_matches('/')),
-        "# Let a suite declare a timeout!\n\n## Problem\n\n## Outcome\n\n## Out of scope\n\n## UX\n\n## Data\n"
+        "# Let a suite declare a timeout!\n\n## Problem\n\n## Outcome\n\n## Out of scope\n\n## UX\n\n## Data\n\n## Failure paths\n\n## Consumers\n\n## Lifecycle\n"
     );
 }
 

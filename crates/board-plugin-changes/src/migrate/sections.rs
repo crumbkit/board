@@ -345,6 +345,7 @@ fn moved(host: &dyn Host, path: &str, plan: &str) -> Result<Option<Moved>, Plugi
             paths: record.paths.unwrap_or_default(),
             considered,
             owed,
+            lifecycle: record.lifecycle,
         },
         record.records,
     );

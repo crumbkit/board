@@ -4,7 +4,7 @@
 use std::time::SystemTime;
 
 use board_ops::{Host, PluginError};
-use board_plugin::shape::{LogicalGlob, Tag};
+use board_plugin::shape::{LogicalGlob, Record, Tag};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -12,6 +12,7 @@ use serde_json::{Value, json};
 use crate::board::{self};
 use crate::change::{Referenced, kind_of, line, plan_at, read, referenced, touch};
 use crate::gates::sections;
+use crate::lifecycle::LifecycleRecord;
 use crate::phases::final_phase;
 use crate::records::{CONTROL_TYPE, Considered, Kind, Owed, PlanRecord, is_final};
 use crate::{PLUGIN, Warning, refusal, to_value};
@@ -107,6 +108,7 @@ pub(crate) struct Planned {
     pub(crate) paths: Vec<String>,
     pub(crate) considered: Vec<Considered>,
     pub(crate) owed: Vec<Owed>,
+    pub(crate) lifecycle: Option<String>,
 }
 
 /// How many whitespace-separated words `text` holds.
@@ -274,6 +276,7 @@ pub(crate) fn plan(host: &dyn Host, input: &Value) -> Result<Value, PluginError>
         paths,
         considered,
         owed,
+        lifecycle: kept_lifecycle(host, change.plan.as_deref())?,
     };
     if let Some(same) = unchanged(host, change.plan.as_deref(), &text, &planned)? {
         return Ok(to_value(Output {
@@ -368,6 +371,7 @@ fn unchanged(
         || record.paths.as_deref().unwrap_or_default() != planned.paths
         || record.considered.as_deref().unwrap_or_default() != planned.considered
         || record.owed.as_deref().unwrap_or_default() != planned.owed
+        || record.lifecycle != planned.lifecycle
     {
         return Ok(None);
     }
@@ -387,9 +391,24 @@ fn kept_records(host: &dyn Host, plan: Option<&str>) -> Result<Option<Vec<String
         .filter(|records| !records.is_empty()))
 }
 
+/// The lifecycle record the plan the change names as `plan` points at, which
+/// a revised plan keeps while Board still reads a `changes/lifecycle/v1` at
+/// it; none when it names no plan Board reads or that plan has none.
+fn kept_lifecycle(host: &dyn Host, plan: Option<&str>) -> Result<Option<String>, PluginError> {
+    let Some(plan) = plan else {
+        return Ok(None);
+    };
+    let Some(record) = plan_at(host, plan)?.and_then(|(record, _)| record.lifecycle) else {
+        return Ok(None);
+    };
+    let found = referenced(host, std::slice::from_ref(&record))?;
+    let read = (found.get(&record)).is_some_and(|(kind, _)| kind == LifecycleRecord::TYPE);
+    Ok(read.then_some(record))
+}
+
 /// `count` with a comma between each group of three digits, as Python's
 /// `{:,}` writes it.
-fn thousands(count: usize) -> String {
+pub(crate) fn thousands(count: usize) -> String {
     let digits = count.to_string();
     let mut shown = String::new();
     for (at, digit) in digits.chars().enumerate() {
@@ -490,6 +509,7 @@ pub(crate) fn plan_lines(
         paths,
         considered,
         owed,
+        lifecycle,
     } = planned;
     let body = PlanRecord {
         tag: Tag::default(),
@@ -499,6 +519,7 @@ pub(crate) fn plan_lines(
         records,
         considered: (!considered.is_empty()).then_some(considered),
         owed: (!owed.is_empty()).then_some(owed),
+        lifecycle,
     };
     let lines = vec![
         json!({"path": written, "expect": "none", "text": text}),

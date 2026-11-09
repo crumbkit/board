@@ -7,7 +7,6 @@ use schemars::generate::SchemaSettings;
 use serde_json::json;
 
 use super::*;
-use crate::gates::SECTIONS;
 
 /// The four flows of the design's flows.md, copied verbatim.
 const DESIGNED: [(&str, &str); 4] = [
@@ -66,7 +65,34 @@ fn the_shipped_development_flow_passes_its_schema_and_orders_plan_build_review_l
         ]
     );
     let plan = &flow.phase("plan").unwrap().checks[0];
-    assert_eq!(plan.sections.as_deref().unwrap(), SECTIONS);
+    assert_eq!(
+        plan.sections.as_deref().unwrap(),
+        [
+            "Problem",
+            "Outcome",
+            "Out of scope",
+            "UX",
+            "Data",
+            "Failure paths",
+            "Consumers",
+            "Lifecycle"
+        ]
+    );
+}
+
+/// The stored version an open change follows, from before the development
+/// flow gained Failure paths, Consumers and Lifecycle. The edit gives the
+/// flow a new version and leaves this one reading as it did.
+#[test]
+fn a_stored_flow_version_still_reads_passes_its_schema_and_keeps_its_version_path() {
+    let text = include_str!("flows-md/development-2bad23722b29b5a8.json");
+    let value: serde_json::Value = serde_json::from_str(text).unwrap();
+    schema().validate(&value).unwrap();
+    let flow: Flow = serde_json::from_str(text).unwrap();
+    assert_eq!(serde_json::to_value(&flow).unwrap(), value);
+    assert_eq!(problems(&flow, false), []);
+    assert_eq!(version_path(&flow), "/flows/development/2bad23722b29b5a8");
+    assert_ne!(version_path(&development()), version_path(&flow));
 }
 
 /// A check of a kind this Board does not know still reads, so the flow
@@ -124,6 +150,21 @@ fn said(flow: &Flow, drafted: bool) -> Vec<String> {
         .iter()
         .map(ToString::to_string)
         .collect()
+}
+
+#[test]
+fn a_when_absent_path_with_an_unknown_placeholder_is_a_problem_and_a_known_one_is_not() {
+    let check = |path: &str| json!({"id": "x", "kind": "tasks", "when": {"absent": {"path": path, "type": "a/b/v1"}}});
+    assert_eq!(
+        said(&one(&check("/changes/{who}"), "build", "Build."), false),
+        [
+            "phase build, check x: it names the unknown placeholder {who} (changes::flow::unknown_placeholder)"
+        ]
+    );
+    assert_eq!(
+        said(&one(&check("/changes/{name}"), "build", "Build."), false),
+        Vec::<String>::new()
+    );
 }
 
 #[test]

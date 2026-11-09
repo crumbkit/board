@@ -46,6 +46,17 @@ blocks is missing.
    `[{"records": ["<path>"], "why": "<reason>"}]`. Obligations the change
    leaves owed go in `owed`, as `[{"control": "<path>", "why": "<reason>"}]`.
    Both fields take paths, and the gates do not read paths in the text.
+   Failure paths has one row per step that can fail: what fails, the state
+   it leaves, the recovery, and the order of the check against the
+   destructive step it guards. Consumers lists every caller and reader of
+   what the change produces or alters, and names the files searched.
+   Lifecycle starts with None and a reason, or names the record
+   `board changes lifecycle` writes and summarises its states in one line.
+   When the plan's paths reach `/controls/<repo>/lifecycle-paths`, the gate
+   refuses None. Write the record by piping `path`, `text` (at most 1,500
+   words: the state table, the crash points and the invariants), `doc` (the
+   repository file where the table lands) and `external` to
+   `board -C <board> changes lifecycle`. The builder's brief names its text.
    Set the commit under test with `--head <sha>` after each push, and the
    check suite with `--suite <path>` when the change names none. Record a
    GitHub issue or pull request with
