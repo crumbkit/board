@@ -860,7 +860,7 @@ The development flow's gates:
 | plan | `plan-sections`, the eight sections; `considered`; `task`; `route`; `owner-approval`, a `plans/decision/v1` the owner signed whose `refs` name the plan or the change, on every route; `mockups`, unless UX starts with "No UI change" and a reason; `data-signed`, an `understood` check of the data, unless Data starts with "None"; `lifecycle-declared`, a `planned-controlled` check of `/controls/{repo}/lifecycle-paths`, when Lifecycle says "None"; `lifecycle-record`, an `exists` check of `/changes/{name}/lifecycle`, unless Lifecycle says "None"; `obligations`, which does not block |
 | build | `head`; `suite-run`, waivable; `tasks`; `rechecks`, two matching rechecks, unless Data starts with "None" |
 | review | `review`, a report on `head` with no critical or high finding; `paths`; `ui-paths` and `data-paths`, `controlled-paths` checks of `/controls/{repo}/ui-paths` when UX says "No UI change" and `/controls/{repo}/data-paths` when Data says "None"; `lifecycle-paths`, the same check of `/controls/{repo}/lifecycle-paths` unless Board reads a `changes/lifecycle/v1` at `/changes/{name}/lifecycle`; `lifecycle-none-paths`, the same check when Lifecycle says "None", whether or not a record exists; `obligations-settled`, with the escape heading `Obligations left owed` |
-| land | `test-sections`, What the tests prove and What the tests do not prove; `pull-request`; `lifecycle-paths-at-land` and `lifecycle-none-paths-at-land`, the two review checks of `/controls/{repo}/lifecycle-paths` again, so a head changed or a record removed after review is gated |
+| land | `test-sections`, What the tests prove and What the tests do not prove; `pull-request`; `lifecycle-paths-at-land` and `lifecycle-none-paths-at-land`, the two review checks of `/controls/{repo}/lifecycle-paths` again, so each re-reads the diff at the recorded head and a record removed after review is gated |
 | build, for a prototype | Never passes: `verdict` ends a prototype instead. |
 
 Three layers identify a lifecycle change. The Lifecycle heading is required,
@@ -872,7 +872,8 @@ removing the heading after the plan gate does not switch it off, and
 `lifecycle-none-paths` refuses the same diff while the section says None,
 even with a record present. Both run again at land. Board does not tie a
 lifecycle record to the plan it describes, so a record written for an earlier
-plan switches off `lifecycle-paths` for a later one; this is an accepted gap. A repository with no
+plan switches off `lifecycle-paths` for a later one; this is an accepted gap. The diff checks trust the head recorded on the
+change, so moving that head or pushing after it is not gated. A repository with no
 lifecycle-paths control has only the heading, and `brief` warns about that.
 
 "No UI change" counts only when a reason follows it, and "None" only as a
