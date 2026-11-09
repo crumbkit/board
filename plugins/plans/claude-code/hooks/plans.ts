@@ -83,6 +83,12 @@ export function refusal(path: string, rows: readonly Record<string, unknown>[] |
 /** The project a question's path names, `/projects/<project>/questions/<id>`. */
 export const project = (path: string) => path.split('/')[2] ?? path
 
+/** What a question holds up, as its row says it: the change's name, or the work in words, or nothing. */
+export const blocking = (q: { blocks: string | null; blocked_work: string | null }) => {
+  const what = q.blocks === null ? q.blocked_work : (q.blocks.split('/').pop() ?? q.blocks)
+  return what === null ? '' : ` · blocks ${what}`
+}
+
 /** Where a question's answer lives: the same id under `answers/`. */
 export const answerPath = (path: string) => path.replace(/\/questions\/([^/]+)$/, '/answers/$1')
 

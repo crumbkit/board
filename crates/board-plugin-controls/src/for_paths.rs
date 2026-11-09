@@ -55,6 +55,9 @@ struct Applying {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[schemars(with = "Option<Prose>")]
     close: Option<String>,
+    /// What left an obligation owed; left out when it names nothing.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    owed_by: Option<String>,
 }
 
 /// Each readable control that applies to one of the paths.
@@ -103,6 +106,7 @@ pub(crate) fn for_paths(host: &dyn Host, input: &Value) -> Result<Value, PluginE
             let control = controls.remove(&logical)?;
             Some(Applying {
                 close: control.kind().close(&logical),
+                owed_by: control.owed(),
                 versions_found: found.remove(&logical),
                 control: logical,
                 summary: (control.summary).unwrap_or_else(|| summary(&control.requirement)),

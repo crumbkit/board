@@ -6,6 +6,7 @@ mod for_path;
 mod for_paths;
 mod index;
 mod judged;
+mod migrate;
 mod overlap;
 pub mod records;
 mod standards;
@@ -56,10 +57,11 @@ impl Plugin for Controls {
             "check" => check::check(host, &input),
             "evaluate" => evaluate::evaluate(host, &input),
             "from-standards" => standards::from_standards(host, &input),
+            "migrate" => migrate::migrate(host, &input),
             other => Err(PluginError {
                 code: "controls::call::unknown_capability".to_owned(),
                 message: format!(
-                    "controls offers no capability {other}; it offers for-path, for-paths, check, evaluate and from-standards"
+                    "controls offers no capability {other}; it offers for-path, for-paths, check, evaluate, from-standards and migrate"
                 ),
                 fields: Map::new(),
                 hint: None,
@@ -156,6 +158,21 @@ fn manifest() -> Value {
             "annotations": {
                 "readOnlyHint": true,
                 "destructiveHint": false,
+                "idempotentHint": true,
+                "openWorldHint": false,
+            },
+            "_meta": {},
+        }, {
+            "name": "migrate",
+            "description": "With owed_by, set each obligation's owed_by to the one record that left \
+                it owed: the pull request its requirement names, else the review report among its \
+                sources, else the decision among them. apply writes every line in one commit with \
+                a Board-Bulk trailer; without it nothing is written.",
+            "inputSchema": schema_of::<migrate::Input>(SchemaSettings::draft2020_12()),
+            "outputSchema": schema_of::<migrate::Output>(settings()),
+            "annotations": {
+                "readOnlyHint": false,
+                "destructiveHint": true,
                 "idempotentHint": true,
                 "openWorldHint": false,
             },

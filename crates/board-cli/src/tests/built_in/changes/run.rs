@@ -561,3 +561,36 @@ fn a_run_whose_stop_is_already_reached_starts_no_agent() {
     assert!(output.get("run").is_none());
     assert!(!out.path().join("stdin").exists());
 }
+
+/// A loose question at `/questions/q` whose `blocks` is `blocks`.
+fn question(board: &Changes, blocks: &str) {
+    board.write(
+        ".board/types/plans/question/v1.schema.json",
+        r#"{"type": "object"}"#,
+    );
+    board.write(
+        "questions/q.json",
+        &typed("plans/question/v1", &json!({"blocks": blocks})),
+    );
+}
+
+#[test]
+fn stop_warns_of_a_question_that_blocks_another_change_and_records_the_stop_and_its_twin_is_quiet()
+{
+    let board = quick();
+    board.call("run", &starting(&json!({"inline": true})));
+    let stopped = json!({
+        "path": CHANGE, "reason": "waiting", "question": "/questions/q", "summary": "Waiting.",
+    });
+    question(&board, "/changes/another");
+    let warned = board.call("stop", &stopped);
+    assert_eq!(
+        warned["warnings"][0]["code"],
+        "changes::stop::question_unlinked"
+    );
+    let written = warned["stop"].as_str().unwrap().trim_start_matches('/');
+    assert!(board.exists(&format!("{written}.json")));
+    question(&board, CHANGE);
+    let quiet = board.call("stop", &stopped);
+    assert_eq!(quiet["warnings"], json!([]));
+}

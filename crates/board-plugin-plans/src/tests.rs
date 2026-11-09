@@ -130,7 +130,7 @@ fn the_manifest_parses_as_a_built_in_one_and_describes_the_plugin_with_the_skill
     let names: Vec<&str> = (manifest.capabilities.iter())
         .map(|capability| capability.name.as_str())
         .collect();
-    assert_eq!(names, ["open", "answer", "withdraw"]);
+    assert_eq!(names, ["open", "answer", "withdraw", "migrate"]);
     assert_eq!(manifest.description, skill_description());
 }
 
@@ -181,7 +181,8 @@ fn the_output_schema_admits_an_answer_and_refuses_one_without_its_total() {
             "options": [{"id": "a", "text": "A"}],
             "recommendation": null,
             "why": null,
-            "blocks": "the release",
+            "blocks": "/changes/release",
+            "blocked_work": "the release",
             "note": null,
             "mount": null,
             "context_path": null,
@@ -556,6 +557,7 @@ fn open_reads_fields_the_question_struct_declares() {
         "options",
         "recommendation",
         "blocks",
+        "blocked_work",
         "status",
         "why",
         "note",
@@ -575,7 +577,7 @@ fn a_capability_the_plugin_does_not_offer_is_refused_and_open_is_answered() {
     assert_eq!(refused.code, "plans::call::unknown_capability");
     assert_eq!(
         refused.message,
-        "plans offers no capability closed; it offers open, answer and withdraw"
+        "plans offers no capability closed; it offers open, answer, withdraw and migrate"
     );
     let answered = call("open").unwrap();
     assert_eq!(answered["total"], 0);

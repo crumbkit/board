@@ -190,7 +190,7 @@ test('board runs through sh with each value its own argument, and the band count
     expect((await band.find({ key: 'effects' }))?.text).toBe('Effects 2')
     const drawn = await band.drawn()
     const row = drawn.type === 'Box' ? drawn.children?.[0] : undefined
-    expect(typeof row === 'object' && row.type === 'Box' ? row.children?.map(c => (typeof c === 'object' && c.type === 'Box' ? c.props?.key : '')) : []).toEqual(['band:c3-effects'])
+    expect(typeof row === 'object' && row.type === 'Box' ? row.children?.map(c => (typeof c === 'object' && c.type === 'Box' ? c.props?.key : '')) : []).toEqual(['band:b4-effects'])
     await band.press({ key: 'effects' })
     await band.unmount()
   }

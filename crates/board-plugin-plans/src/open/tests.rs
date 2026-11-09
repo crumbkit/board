@@ -351,7 +351,10 @@ fn twins() -> Vec<(Value, Value)> {
             json!({"recommendation": 1}),
             json!({"recommendation": null}),
         ),
-        (json!({"blocks": ["release"]}), json!({"blocks": "release"})),
+        (
+            json!({"blocks": ["release"]}),
+            json!({"blocks": "/changes/release"}),
+        ),
         (json!({"why": 1}), json!({"why": "It is simpler."})),
         (
             json!({"note": false}),
@@ -430,6 +433,7 @@ fn a_question_is_returned_with_its_original_time_and_null_for_what_it_leaves_out
             "recommendation": "a",
             "why": null,
             "blocks": null,
+            "blocked_work": null,
             "note": null,
             "mount": "/repos/r",
             "context_path": null,

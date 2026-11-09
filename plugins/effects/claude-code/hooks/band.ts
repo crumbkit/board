@@ -17,14 +17,14 @@ export const ROW = 'board-band'
 
 /**
  * Where a part sits, in key order. The letter is its section: a dim bar
- * separates the orders, the session's state, and the buttons.
+ * separates the session's state from the buttons.
  */
 export const SLOT = {
-  orders: 'band:a1-orders',
-  state: 'band:b1-state',
-  controls: 'band:c1-controls',
-  waiting: 'band:c2-waiting',
-  effects: 'band:c3-effects',
+  state: 'band:a1-state',
+  orders: 'band:b1-orders',
+  controls: 'band:b2-controls',
+  waiting: 'band:b3-waiting',
+  effects: 'band:b4-effects',
 } as const
 
 type Element = RenderElement & { type: 'Box' | 'Text'; props?: Record<string, string | number | boolean>; children?: RenderNode[] }

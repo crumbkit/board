@@ -13,8 +13,8 @@ use serde_json::{Value, json};
 use crate::board::{self, get_text, rows, text};
 use crate::change::write;
 use crate::change::{
-    LastSync, attached, branch_of, current, kind_of, last_sync, line, plan_at, pull_of, read,
-    referenced, sync_reads, touch,
+    LastSync, NOT_FOUND, attached, branch_of, current, kind_of, last_sync, line, listed, plan_at,
+    pull_of, read, referenced, sync_reads, touch,
 };
 use crate::controls::{listed_by, obligations};
 use crate::diff::{edited, outside};
@@ -197,7 +197,7 @@ fn instruction(observed: &Observed) -> String {
 /// `said` with the fields `board changes plan` takes on stdin and a one-line
 /// example, when `said` names `changes plan` or `changes.plan`. The command
 /// replaces the plan, so for a change that has one, `said` says to resend
-/// all four fields.
+/// all four fields and the two optional ones.
 fn with_plan_usage(observed: &Observed, said: String) -> String {
     if !said.contains("changes plan") && !said.contains("changes.plan") {
         return said;
@@ -210,12 +210,12 @@ fn with_plan_usage(observed: &Observed, said: String) -> String {
     if observed.change.plan.is_none() {
         format!(
             "{said} Pipe `board changes plan` JSON on stdin with the fields `path`, `text`, `uses` and \
-             `paths`, such as `{example}`."
+             `paths`, plus any `considered` and `owed`, such as `{example}`."
         )
     } else {
         format!(
             "{said} `board changes plan` reads JSON on stdin and replaces the plan, so resend all four \
-             fields, such as `{example}`."
+             fields with any `considered` and `owed`, such as `{example}`."
         )
     }
 }
@@ -274,6 +274,11 @@ pub(crate) fn observe(
             None => None,
         };
         found.uses = current(host, change)?.1;
+        (found.considered, found.owed) = listed(host, change)?;
+        found.surfaced_gone = (referenced(host, &change.surfaced)?.unreadable.into_iter())
+            .filter(|(_, code)| code == NOT_FOUND)
+            .map(|(path, _)| path)
+            .collect();
     }
     if wanted.contains(&Read::Suite) {
         found.suite = if change.v1 {

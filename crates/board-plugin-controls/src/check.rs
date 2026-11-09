@@ -37,11 +37,23 @@ pub(crate) struct Output {
     versions: Vec<Pinned>,
     stated: Vec<Stated>,
     read: Vec<Read>,
+    /// What Board wrote nothing about but wants read: for now, a standing
+    /// control that names `owed_by`.
+    warnings: Vec<Warning>,
     /// The checkout Board ran from, when it differs from the commit the
     /// check read; left out when they match, under `board --checkout`, and
     /// when Board did not run from a checkout of a mount the check read.
     #[serde(skip_serializing_if = "Option::is_none")]
     checkout: Option<Unmeasured>,
+}
+
+/// Something `check` says of a control without failing it.
+#[derive(Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct Warning {
+    code: &'static str,
+    #[schemars(with = "Prose")]
+    detail: String,
 }
 
 /// A checkout of a mounted repository that Board ran from, whose HEAD is
@@ -128,6 +140,9 @@ pub(crate) struct Pinned {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[schemars(with = "Option<Prose>")]
     close: Option<String>,
+    /// What left an obligation owed; left out when it names nothing.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    owed_by: Option<String>,
 }
 
 /// A version a file pins that is older than the rule's, and its line.
@@ -158,6 +173,9 @@ pub(crate) struct Checked {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[schemars(with = "Option<Prose>")]
     close: Option<String>,
+    /// What left an obligation owed; left out when it names nothing.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    owed_by: Option<String>,
     #[serde(flatten)]
     each: Option<EachFile>,
 }
@@ -221,6 +239,9 @@ struct Stated {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[schemars(with = "Option<Prose>")]
     close: Option<String>,
+    /// What left an obligation owed; left out when it names nothing.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    owed_by: Option<String>,
 }
 
 fn path_or_null(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
@@ -299,6 +320,16 @@ pub(crate) fn check(host: &dyn Host, input: &Value) -> Result<Value, PluginError
         applying.iter().flat_map(|logical| &files[*logical]),
         own,
     )?;
+    let warnings = (applying.iter())
+        .filter(|logical| controls[**logical].owed_though_standing())
+        .map(|logical| Warning {
+            code: "controls::control::owed_by_standing",
+            detail: format!(
+                "the control {logical} is standing and names owed_by, which only an obligation \
+                 uses; set its kind to obligation or delete owed_by"
+            ),
+        })
+        .collect();
     let stated = (applying.into_iter())
         .filter(|logical| !controls[*logical].measured())
         .map(|logical| {
@@ -310,6 +341,7 @@ pub(crate) fn check(host: &dyn Host, input: &Value) -> Result<Value, PluginError
                 kind: control.kind(),
                 show: control.show(),
                 close: control.kind().close(logical),
+                owed_by: control.owed(),
                 paths: control.paths.clone().unwrap_or_default(),
                 files: files[logical].len()
                     + if root {
@@ -329,6 +361,7 @@ pub(crate) fn check(host: &dyn Host, input: &Value) -> Result<Value, PluginError
         versions,
         stated,
         read,
+        warnings,
         checkout,
     };
     Ok(serde_json::to_value(output).expect("Output holds only strings, numbers and lists"))
@@ -622,6 +655,7 @@ fn checked(
         kind: control.kind(),
         show: control.show(),
         close: control.kind().close(logical),
+        owed_by: control.owed(),
         each: None,
     };
     if per == Per::Total {
@@ -688,6 +722,7 @@ fn pinned(
         kind: control.kind(),
         show: control.show(),
         close: control.kind().close(logical),
+        owed_by: control.owed(),
     })
 }
 

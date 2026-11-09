@@ -41,7 +41,11 @@ blocks is missing.
    `board -C <board> changes attach --path /changes/<name> --ref <path>`.
    The records go on the plan the change names, so write the plan first:
    pipe a JSON object with `path`, `text`, `uses` and `paths` to
-   `board -C <board> changes plan`.
+   `board -C <board> changes plan`. Records the change surfaced that you
+   read and do not rely on go in `considered`, as
+   `[{"records": ["<path>"], "why": "<reason>"}]`. Obligations the change
+   leaves owed go in `owed`, as `[{"control": "<path>", "why": "<reason>"}]`.
+   Both fields take paths, and the gates do not read paths in the text.
    Set the commit under test with `--head <sha>` after each push, and the
    check suite with `--suite <path>` when the change names none. Record a
    GitHub issue or pull request with

@@ -46,11 +46,13 @@ in. `<project>` names what the record concerns, such as the repository
    answer, write a `plans/question/v1` with the options the owner may
    choose:
 
-       echo '{"$type": "plans/question/v1", "question": "<what the owner is asked>", "options": [{"id": "a", "text": "<option a>"}, {"id": "b", "text": "<option b>"}], "recommendation": "a", "why": "<why you recommend it>", "blocks": "<what waits on it>", "by": {"session": "<your local_ id>"}, "asked": "<now>", "status": "open"}' | board -C <board> put --new --var project=<project>
+       echo '{"$type": "plans/question/v1", "question": "<what the owner is asked>", "options": [{"id": "a", "text": "<option a>"}, {"id": "b", "text": "<option b>"}], "recommendation": "a", "why": "<why you recommend it>", "blocked_work": "<what waits on it, in words>", "by": {"session": "<your local_ id>"}, "asked": "<now>", "status": "open"}' | board -C <board> put --new --var project=<project>
 
    It writes `/projects/<project>/questions/<id>`. `asked` is the UTC time.
    `by` must name your session's `local_` id, so the answer can be sent
-   back to it. Never put a secret in a question.
+   back to it. Never put a secret in a question. When a change waits on the
+   answer, add `"blocks": "/changes/<name>"`; `blocks` takes a change's path
+   and no words.
 2. List the questions still waiting for an answer:
 
        board -C <board> plans open --path /projects/<project>

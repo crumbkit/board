@@ -15,8 +15,11 @@ so it is written at its path. Its schema declares its folder too, so
   sortable UTC time and a short suffix, such as `20261024T1830Z-k3`.
   `question`, `by` (an `Actor` whose `session` is the asking session's
   `local_` id), `asked` and `status` (`open` or `withdrawn`) are required.
-  `options`, `recommendation`, `why`, `blocks`, `mount`, `context_path`,
-  `note` and `withdrawn_reason` are optional. A question is answered when a
+  `options`, `recommendation`, `why`, `blocks`, `blocked_work`, `mount`,
+  `context_path`, `note` and `withdrawn_reason` are optional. `blocks` is the
+  path of the change that cannot proceed until the question is answered.
+  `blocked_work` says what cannot proceed in words, when no change names it
+  or the change needs more detail. A question is answered when a
   `plans/answer/v1` names it in `question`; answering leaves its status
   `open`. A reference is read from the root of the board it is in, so an
   answer in a mounted board names its question by the question's path in
@@ -132,3 +135,12 @@ test fails when they differ from what the structs generate; run it with
 This directory keeps the mod. The tests of the plugin through the binary are
 in `crates/board-cli/src/tests/built_in/plans.rs`, which runs the same
 commands in process.
+
+`plans.migrate [--apply true]` rewrites a question whose `blocks` still holds
+words. A value that names one change becomes that change's path, and its words
+move to `blocked_work`. Any other value moves to `blocked_work`. A value that
+is no text, or a question that already holds `blocked_work`, is listed under
+`unread` with `plans::migrate::unread`. Without `--apply` it writes nothing.
+With it, every rewrite lands in one commit whose trailer is `Board-Bulk:
+migrate questions`. It reads only this board's own questions, so each nested
+board runs it itself.

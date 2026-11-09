@@ -19,6 +19,8 @@
 //!
 //! With `flows`, the migration also replaces each change's own copy of its
 //! flow with a reference to the flow's stored version, as `flows.rs` says.
+//! With `plans`, it moves each open change's `Considered` and `Obligations
+//! left owed` sections to its plan's fields, as `sections.rs` says.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsStr;
@@ -26,14 +28,14 @@ use std::path::Path;
 use std::sync::LazyLock;
 
 use board_model::parse_json;
-use board_ops::{Host, Plugin, PluginError, literal};
+use board_ops::{Host, PluginError, literal};
 use board_plugin::shape::{Record, Tag, Url};
-use board_validate::Schema;
 use regex::Regex;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 
+use self::schemas::{compiled, conforms};
 use crate::board::{self, rows, text};
 use crate::change::{OWN, prototypes, record_sync};
 use crate::flow::{development, version_line};
@@ -89,6 +91,13 @@ pub(crate) struct Input {
                        flow's stored version, and rewrite each run that names its flow by name."
     )]
     flows: bool,
+    #[serde(default)]
+    #[schemars(
+        description = "Also move each open change's Considered and Obligations left owed \
+                       sections from its plan's text to the plan's considered and owed fields, \
+                       in a new plan snapshot."
+    )]
+    plans: bool,
 }
 
 /// A record the migration could not rewrite, and why, with the GitHub page
@@ -132,6 +141,10 @@ pub(crate) struct Output {
     unrecorded: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     flows: Option<flows::Output>,
+    /// Given only with `plans`: what moving the plans' sections wrote or
+    /// would write.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    plan_fields: Option<sections::Output>,
 }
 
 /// One old change: its path, blob and body.
@@ -503,6 +516,8 @@ fn fresh_plan(
         uses: Vec::new(),
         paths: None,
         records: None,
+        considered: None,
+        owed: None,
     };
     (at, fresh, "none".to_owned())
 }
@@ -515,6 +530,8 @@ fn plan_copy(plan: &PlanRecord) -> PlanRecord {
         uses: plan.uses.clone(),
         paths: plan.paths.clone(),
         records: plan.records.clone(),
+        considered: plan.considered.clone(),
+        owed: plan.owed.clone(),
     }
 }
 
@@ -629,40 +646,6 @@ fn refusal_of(code: &str, message: String, url: &str) -> PluginError {
     crate::refusal(code, message, [("page", json!(url))])
 }
 
-/// The plugin's own schemas, compiled, by type.
-fn compiled() -> BTreeMap<String, Schema> {
-    (crate::Changes.schemas().into_iter())
-        .filter_map(|(kind, document)| {
-            Some((kind.as_str().to_owned(), Schema::compile(document).ok()?))
-        })
-        .collect()
-}
-
-/// Whether every record among `lines` passes its type's schema, so a dry
-/// run that lists a change promises an apply that writes it. A record of a
-/// type the plugin does not ship is left to Board's own check.
-fn conforms(schemas: &BTreeMap<String, Schema>, lines: &[Value]) -> Result<(), String> {
-    for line in lines {
-        let Some(record) = line.get("record").or_else(|| line.get("change")) else {
-            continue;
-        };
-        let kind = record
-            .get("$type")
-            .and_then(Value::as_str)
-            .unwrap_or_default();
-        if let Some(schema) = schemas.get(kind)
-            && let Err(error) = schema.validate(record)
-        {
-            let at = line.get("path").and_then(Value::as_str).unwrap_or_default();
-            return Err(format!(
-                "its rewritten record at {at} {error}, so nothing of it is written; fix the old \
-                 record and run migrate again"
-            ));
-        }
-    }
-    Ok(())
-}
-
 /// Adds the github records' paths to the rewritten change, the last of
 /// `written`, and makes it the line's record.
 fn finish(written: &mut [Value], pulls: Vec<String>, tickets: Vec<String>) {
@@ -685,6 +668,17 @@ fn finish(written: &mut [Value], pulls: Vec<String>, tickets: Vec<String>) {
     }
 }
 
+/// The old change at `path`, left as it is because of `why`, with no GitHub
+/// page to blame.
+fn unwritten(path: &str, why: String) -> Left {
+    Left {
+        path: path.to_owned(),
+        why,
+        page: None,
+        recorded: Vec::new(),
+    }
+}
+
 /// Rewrites each old change, and with `flows` each flow copy, or with no
 /// `apply` says what it would write.
 ///
@@ -692,7 +686,11 @@ fn finish(written: &mut [Value], pulls: Vec<String>, tickets: Vec<String>) {
 /// own commit, and then every rewritten record is written in one commit,
 /// whose `Board-Bulk:` trailer marks it as a migration.
 pub(crate) fn migrate(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
-    let Input { apply, flows } = PluginError::read_input(PLUGIN, "migrate", input)?;
+    let Input {
+        apply,
+        flows,
+        plans: plan_sections,
+    } = PluginError::read_input(PLUGIN, "migrate", input)?;
     let record = stamp(host.settings().now);
     let mut changes = Vec::new();
     let mut left = Vec::new();
@@ -707,12 +705,7 @@ pub(crate) fn migrate(host: &dyn Host, input: &Value) -> Result<Value, PluginErr
         let planned = match rewrite(&known, &old, &record) {
             Ok(planned) => planned,
             Err(why) => {
-                left.push(Left {
-                    path: old.path.clone(),
-                    why,
-                    page: None,
-                    recorded: Vec::new(),
-                });
+                left.push(unwritten(&old.path, why));
                 continue;
             }
         };
@@ -725,12 +718,7 @@ pub(crate) fn migrate(host: &dyn Host, input: &Value) -> Result<Value, PluginErr
         } = planned;
         // Checked before github.ref writes anything for the change.
         if let Err(why) = conforms(&schemas, &written) {
-            left.push(Left {
-                path: old.path.clone(),
-                why,
-                page: None,
-                recorded: Vec::new(),
-            });
+            left.push(unwritten(&old.path, why));
             continue;
         }
         let (mut pulls, mut tickets) = (Vec::new(), Vec::new());
@@ -771,7 +759,7 @@ pub(crate) fn migrate(host: &dyn Host, input: &Value) -> Result<Value, PluginErr
     if let Some((_, blob)) = &sync {
         lines.push(json!({"path": SYNC_PATH, "expect": blob, "remove": true}));
     }
-    let replaced = flows::write(host, (apply, flows), &mut lines)?;
+    let (replaced, plan_fields) = flows::write(host, (apply, flows, plan_sections), &mut lines)?;
     let unrecorded = match &sync {
         Some((day, _)) if apply => record_sync(host, day)?,
         _ => None,
@@ -790,9 +778,12 @@ pub(crate) fn migrate(host: &dyn Host, input: &Value) -> Result<Value, PluginErr
         synced: sync.map(|(day, _)| day),
         unrecorded,
         flows: replaced,
+        plan_fields,
     }))
 }
 
 mod flows;
+mod schemas;
+mod sections;
 #[cfg(test)]
 mod tests;

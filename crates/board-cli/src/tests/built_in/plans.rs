@@ -94,8 +94,7 @@ fn open_lists_open_questions_oldest_first_and_leaves_out_answered_and_withdrawn_
 fn open_shows_what_the_owner_needs_to_answer() {
     let board = board();
     let options = json!([{"id": "a", "text": "Go."}, {"id": "b", "text": "Stay."}]);
-    let fields =
-        json!({"options": options, "recommendation": "a", "why": "It ships.", "blocks": "step 2"});
+    let fields = json!({"options": options, "recommendation": "a", "why": "It ships.", "blocked_work": "step 2"});
     board.write("projects/a/questions/q.json", &open(&fields));
     let (_, output) = listed(&board, &[]);
     assert_eq!(
@@ -108,7 +107,8 @@ fn open_shows_what_the_owner_needs_to_answer() {
             "options": options,
             "recommendation": "a",
             "why": "It ships.",
-            "blocks": "step 2",
+            "blocks": null,
+            "blocked_work": "step 2",
             "note": null,
             "mount": null,
             "context_path": null,
@@ -653,4 +653,159 @@ fn an_answer_a_hook_wrote_names_the_plugin_and_hook() {
             ("/projects/a/answers/prose", INVALID),
         ])
     );
+}
+
+/// A board with plans and changes enabled that holds the changes
+/// `/changes/c` and `/changes/d`.
+fn with_changes() -> Fixture {
+    let board = Fixture::enabling(&["plans", "changes"]);
+    for name in ["c", "d"] {
+        let change = json!({
+            "$type": "changes/change/v1", "title": name, "mount": "/", "phase": "plan",
+        });
+        board.write(&format!("changes/{name}.json"), &change.to_string());
+    }
+    board
+}
+
+#[test]
+fn a_question_whose_blocks_is_prose_is_invalid_and_its_twin_with_a_change_and_blocked_work_passes()
+{
+    let board = with_changes();
+    board.write(
+        "projects/a/questions/prose.json",
+        &open(&json!({"blocks": "the release"})),
+    );
+    board.write(
+        "projects/a/questions/typed.json",
+        &open(&json!({"blocks": "/changes/c", "blocked_work": "the release"})),
+    );
+    assert_eq!(
+        board.checked("/projects/a/questions"),
+        codes(&[
+            ("/projects/a/questions/prose", Some("board::ref::malformed")),
+            ("/projects/a/questions/typed", None),
+        ])
+    );
+}
+
+#[test]
+fn open_returns_the_change_a_question_blocks_and_the_work_in_words() {
+    let board = with_changes();
+    board.write(
+        "projects/a/questions/q.json",
+        &open(&json!({"blocks": "/changes/c", "blocked_work": "the release"})),
+    );
+    let (_, output) = listed(&board, &[]);
+    let question = &output["questions"][0];
+    assert_eq!(question["blocks"], "/changes/c");
+    assert_eq!(question["blocked_work"], "the release");
+}
+
+/// The questions the migration tests hold, by name.
+fn questions_to_migrate(board: &Fixture) {
+    let cases = [
+        ("exact", json!({"blocks": "/changes/c"})),
+        ("within", json!({"blocks": "the merge of /changes/c."})),
+        ("prose", json!({"blocks": "the release"})),
+        ("two", json!({"blocks": "/changes/c and /changes/d"})),
+        ("none", json!({})),
+        ("list", json!({"blocks": ["the release"]})),
+        (
+            "held",
+            json!({"blocks": "the release", "blocked_work": "other words"}),
+        ),
+    ];
+    for (name, fields) in cases {
+        board.write(&format!("projects/a/questions/{name}.json"), &open(&fields));
+    }
+}
+
+fn stored(board: &Fixture, name: &str) -> Value {
+    serde_json::from_str(&board.read(&format!("projects/a/questions/{name}.json"))).unwrap()
+}
+
+#[test]
+fn migrate_lists_what_it_would_do_and_writes_nothing_without_apply() {
+    let board = with_changes();
+    questions_to_migrate(&board);
+    board.committing();
+    let before = board.head();
+    let dry = board.call("plans.migrate", &[]);
+    assert_eq!(dry["applied"], false);
+    assert_eq!(
+        dry["rewritten"],
+        json!([
+            "/projects/a/questions/prose",
+            "/projects/a/questions/two",
+            "/projects/a/questions/within",
+        ])
+    );
+    assert_eq!(
+        (&dry["total"], &dry["truncated"], &dry["referenced"]),
+        (&json!(3), &json!(false), &json!(1))
+    );
+    let unread = dry["unread"].as_array().unwrap();
+    let named: Vec<(&str, &str)> = (unread.iter())
+        .map(|each| {
+            (
+                each["path"].as_str().unwrap(),
+                each["code"].as_str().unwrap(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        named,
+        [
+            ("/projects/a/questions/held", "plans::migrate::unread"),
+            ("/projects/a/questions/list", "plans::migrate::unread"),
+        ]
+    );
+    assert_eq!(board.head(), before);
+    assert_eq!(stored(&board, "prose")["blocks"], "the release");
+}
+
+#[test]
+fn migrate_with_apply_writes_one_bulk_commit_and_a_second_apply_writes_nothing() {
+    let board = with_changes();
+    questions_to_migrate(&board);
+    board.committing();
+    let before = board.head();
+    let applied = board.call("plans.migrate", &["--apply", "true"]);
+    assert_eq!(
+        (&applied["applied"], &applied["total"]),
+        (&json!(true), &json!(3))
+    );
+    assert_eq!(board.board.head().unwrap().parents, [before]);
+    assert!(
+        board
+            .message()
+            .ends_with("\n\nBoard-Bulk: migrate questions"),
+        "{}",
+        board.message()
+    );
+    let within = stored(&board, "within");
+    assert_eq!(within["blocks"], "/changes/c");
+    assert_eq!(within["blocked_work"], "the merge of /changes/c.");
+    let prose = stored(&board, "prose");
+    assert_eq!(prose.get("blocks"), None);
+    assert_eq!(prose["blocked_work"], "the release");
+    let two = stored(&board, "two");
+    assert_eq!(two.get("blocks"), None);
+    assert_eq!(two["blocked_work"], "/changes/c and /changes/d");
+    assert_eq!(stored(&board, "exact")["blocks"], "/changes/c");
+    assert_eq!(stored(&board, "held")["blocks"], "the release");
+    assert_eq!(stored(&board, "list")["blocks"], json!(["the release"]));
+    let checked = board.checked("/projects/a/questions");
+    for name in ["exact", "within", "prose", "two", "none"] {
+        assert_eq!(
+            checked[&format!("/projects/a/questions/{name}")],
+            None,
+            "{name}"
+        );
+    }
+    let head = board.head();
+    let again = board.call("plans.migrate", &["--apply", "true"]);
+    assert_eq!(again["total"], 0);
+    assert_eq!(board.head(), head);
 }

@@ -22,8 +22,15 @@
       "type": "string"
     },
     "decision": {
-      "description": "The decision this eval informs.",
-      "type": "string"
+      "description": "The decision the eval informed, once it is recorded.",
+      "format": "board-ref",
+      "type": "string",
+      "x-board-type": "plans/decision/v1"
+    },
+    "informs": {
+      "description": "The choice the eval informs, in words, such as \"whether PR 26 merges\".",
+      "type": "string",
+      "x-board-prose": true
     },
     "mounts": {
       "description": "The mount of each repository the eval concerns, such as\n`/repos/crumbkit`.",

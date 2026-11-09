@@ -66,7 +66,8 @@ To run a command in a board other than the one you are in, add `-C <path>`.
    history says which work closed it; merging the work does not clear it. When
    your work leaves something owed, write a new control with
    `kind: obligation` that says what is owed, which change owes it, and the
-   file it applies to.
+   file it applies to. Set `owed_by` to the path of the record that owes
+   it: a `github/pull/v1`, a `review/report/v1` or a `plans/decision/v1`.
 
 4. To check text before it leaves the checkout, such as a pull request
    body, pass the controls and the named parts on stdin:

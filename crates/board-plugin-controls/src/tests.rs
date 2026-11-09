@@ -41,7 +41,8 @@ fn the_manifest_parses_as_a_built_in_one_and_describes_the_plugin_with_the_skill
             "for-paths",
             "check",
             "evaluate",
-            "from-standards"
+            "from-standards",
+            "migrate"
         ]
     );
     assert_eq!(manifest.description, skill_description());
@@ -93,6 +94,7 @@ fn the_check_output_schema_admits_a_null_or_string_largest_and_refuses_a_number(
             "versions": [],
             "stated": [],
             "read": [],
+            "warnings": [],
         })
     };
     assert!(output.validate(&measured(Value::Null)).is_ok());
@@ -361,13 +363,13 @@ fn a_capability_the_plugin_does_not_offer_is_refused_and_check_is_answered() {
     assert_eq!(refused.code, "controls::call::unknown_capability");
     assert_eq!(
         refused.message,
-        "controls offers no capability budgets; it offers for-path, for-paths, check, evaluate and from-standards"
+        "controls offers no capability budgets; it offers for-path, for-paths, check, evaluate, from-standards and migrate"
     );
     let check: CapabilityName = "check".parse().unwrap();
     let answered = Controls.call(&host, &check, json!({})).unwrap();
     assert_eq!(
         answered,
-        json!({"passed": true, "measured": [], "versions": [], "stated": [], "read": []})
+        json!({"passed": true, "measured": [], "versions": [], "stated": [], "read": [], "warnings": []})
     );
 }
 

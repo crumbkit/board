@@ -3,7 +3,7 @@ import type { EngineInterface, PluginOptions, Register, RenderElement } from 'cl
 
 import type { Open, Question, Waiting } from '../types'
 import { SLOT, joinBand } from './band'
-import { answerBatch, answerText, failure, parseOpen, parseRows, parseWaiting, project, questionSql, questionsLabel, refusal, report, REPORT_LIMIT, REPORT_SQL, waitingLabel } from './plans'
+import { answerBatch, answerText, blocking, failure, parseOpen, parseRows, parseWaiting, project, questionSql, questionsLabel, refusal, report, REPORT_LIMIT, REPORT_SQL, waitingLabel } from './plans'
 
 // The mod reads the owner's open questions from Board, draws their count in
 // the band above the prompt and lists them in a pane, where the owner answers
@@ -178,7 +178,7 @@ export const register: Register = (on, options) => {
           <Box key={q.path} flexDirection="column" marginBottom={1}>
             <Text dimColor>
               {project(q.path)} · {age(q.asked, now)}
-              {q.blocks === null ? '' : ` · blocks ${q.blocks}`}
+              {blocking(q)}
             </Text>
             <Text>{q.question}</Text>
             <Box flexWrap="wrap">

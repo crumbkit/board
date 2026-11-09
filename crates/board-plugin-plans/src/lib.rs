@@ -1,6 +1,7 @@
 //! The plans plugin built into Board (plugins/plans/README.md).
 
 mod answer;
+mod migrate;
 mod open;
 mod question;
 pub mod records;
@@ -46,10 +47,11 @@ impl Plugin for Plans {
             "open" => open::open(host, &input),
             "answer" => answer::answer(host, &input),
             "withdraw" => withdraw::withdraw(host, &input),
+            "migrate" => migrate::migrate(host, &input),
             other => Err(PluginError {
                 code: "plans::call::unknown_capability".to_owned(),
                 message: format!(
-                    "plans offers no capability {other}; it offers open, answer and withdraw"
+                    "plans offers no capability {other}; it offers open, answer, withdraw and migrate"
                 ),
                 fields: Map::new(),
                 hint: None,
@@ -104,6 +106,21 @@ fn manifest() -> Value {
                 that plans.open stops listing it.",
             "inputSchema": schema_of::<withdraw::Input>(SchemaSettings::draft2020_12()),
             "outputSchema": schema_of::<withdraw::Output>(SchemaSettings::draft2020_12().for_serialize()),
+            "annotations": {
+                "readOnlyHint": false,
+                "destructiveHint": true,
+                "idempotentHint": true,
+                "openWorldHint": false,
+            },
+            "_meta": {},
+        }, {
+            "name": "migrate",
+            "description": "Rewrite each question whose blocks holds words: a value that names one \
+                change becomes that change's path and its words move to blocked_work, and any \
+                other value moves to blocked_work. apply writes every line in one commit with a \
+                Board-Bulk trailer; without it nothing is written.",
+            "inputSchema": schema_of::<migrate::Input>(SchemaSettings::draft2020_12()),
+            "outputSchema": schema_of::<migrate::Output>(SchemaSettings::draft2020_12().for_serialize()),
             "annotations": {
                 "readOnlyHint": false,
                 "destructiveHint": true,

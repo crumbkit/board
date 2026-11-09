@@ -16,7 +16,7 @@ use crate::controls::{Found, on_mount};
 use crate::flow::{FlowSummary, chosen, refuse_invalid, refuse_without_repository, version_line};
 use crate::gates::SECTIONS;
 use crate::phases::check_target;
-use crate::plan::plan_lines;
+use crate::plan::{Planned, plan_lines};
 use crate::pr::quote;
 use crate::records::{BOARD_ITSELF, BUILD, ChangeRecord, Kind, Route, SUITE_TYPE, TASK_TYPE};
 use crate::repo::{CODEOWNERS, DOCS, Rule, ask_first, exists, files, owners, route, suite_in};
@@ -258,8 +258,7 @@ pub(crate) fn start(host: &dyn Host, input: &Value) -> Result<Value, PluginError
         host.settings().now,
         &path,
         &skeleton,
-        Vec::new(),
-        Vec::new(),
+        Planned::default(),
         None,
     );
     let plan = format!("{record}.md");

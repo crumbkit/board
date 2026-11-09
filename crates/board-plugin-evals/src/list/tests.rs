@@ -198,6 +198,7 @@ fn open_lists_planned_and_running_evals_and_leaves_out_concluded_and_abandoned_o
             "status": "planned",
             "verdict": null,
             "decision": null,
+            "informs": null,
         })
     );
 }
