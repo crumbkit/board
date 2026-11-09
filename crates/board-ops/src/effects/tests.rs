@@ -93,7 +93,7 @@ fn rm(board: &Board, at: &str) -> Result<PutReport, EffectError> {
     ))
 }
 
-/// `board decide --op review.comment --path <at>`.
+/// `board decide --capability review.comment --path <at>`.
 fn decide(board: &Board, at: &str) -> Result<DecideReport, EffectError> {
     board.decide_op(OP, &path(at), None)
 }
