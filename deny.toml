@@ -59,5 +59,3 @@ confidence-threshold = 0.9
 [sources]
 unknown-registry = "deny"
 unknown-git = "deny"
-# crumbkit is unreleased; board-cli takes it from git by rev.
-allow-git = ["https://github.com/crumbkit/crumbkit"]

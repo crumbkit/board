@@ -2,9 +2,10 @@
 //! fixture board and prints its golden output, and each `-h` page fits a
 //! byte budget (STANDARDS.md 24).
 
-use clap::CommandFactory;
-use crumbkit::help::{Guide, RuntimeLeaf};
-use crumbkit_test::{Allow, Budget, Budgets, Examples, Pages, Rule};
+use clap::{Command, CommandFactory};
+use crumbkit::Tool;
+use crumbkit::help::RuntimeLeaf;
+use crumbkit_test::{Allow, Budget, Budgets, Check, Examples, Suite};
 
 use super::cli::{examples, words};
 use super::*;
@@ -19,11 +20,12 @@ pub(super) fn binary() -> String {
     path.to_str().unwrap().to_owned()
 }
 
-/// A guide whose leaves hold the examples each command's own help ends
-/// with. crumbkit runs no shell: an example's `< file` becomes its golden's
-/// `.stdin` file, and of a pipe each command belongs to its own leaf.
-pub(super) fn guide() -> Guide {
-    fn walk(path: &[String], command: &clap::Command, leaves: &mut Vec<RuntimeLeaf>) {
+/// Board's command tree with a tool record whose leaves hold the examples
+/// each command's own help ends with. crumbkit runs no shell: an example's
+/// `< file` becomes its golden's `.stdin` file, and of a pipe each command
+/// belongs to its own leaf.
+pub(super) fn build() -> (Command, Tool) {
+    fn walk(path: &[String], command: &Command, leaves: &mut Vec<RuntimeLeaf>) {
         for sub in command
             .get_subcommands()
             .filter(|sub| sub.get_name() != "help")
@@ -46,9 +48,10 @@ pub(super) fn guide() -> Guide {
             leaves.push(leaf);
         }
     }
+    let command = Cli::command();
     let mut leaves = Vec::new();
-    walk(&[], &Cli::command(), &mut leaves);
-    Guide::new().with_runtime_leaves(leaves)
+    walk(&[], &command, &mut leaves);
+    (command, Tool::new().with_runtime_leaves(leaves))
 }
 
 /// The fixture board does not enable tasks, whose sweep needs notes repos
@@ -184,7 +187,7 @@ fn every_help_example_runs_on_a_fixture_board_and_prints_its_golden_output() {
         .fresh_dir(&fixture)
         .xdg(&xdg)
         .allow(ALLOW);
-    crumbkit_test::check_examples(&Cli::command(), &guide(), &examples);
+    Suite::new(build).examples(examples).run(Check::Examples);
 }
 
 /// Every text file below `root` but git's own, by `/`-separated path.
@@ -209,7 +212,7 @@ fn files_of(root: &Path) -> Vec<(String, String)> {
 
 /// crumbkit's defaults are 1,500 bytes for the root page, 800 for a group
 /// such as `plugin` and 1,200 for each other command.
-const BUDGETS: Budgets = Budgets::new()
+pub(super) const BUDGETS: Budgets = Budgets::new()
     .root(
         3_050,
         "The root page lists all twenty-one commands under the goal each serves, the commands a newcomer runs first, and what a logical path and a record are, which STANDARDS.md 24 requires on one page. It also lists the global flags -C and --personal, which choose the board a run uses, and one line naming at most six of the plugins the board enables, which run as `board <plugin> <capability>`.",
@@ -241,30 +244,3 @@ const BUDGETS: Budgets = Budgets::new()
             "answer says on one page how an approval is signed and checked, its Effects: line says that it is destructive, and its global flags line names --no-input, which a program adds to every run.",
         ),
     ]);
-
-/// Why each document's rows print whole: `--json` gives every field without
-/// `--full`.
-const WHOLE: &str = "an agent that asks for --json gets every field without needing a second flag";
-
-/// Each document Board prints has its id, and each rule it breaks has an
-/// opt-out with a reason.
-#[test]
-fn each_document_declares_its_id_and_its_opt_outs() {
-    let guide = Guide::new().leaves(crate::render::LEAVES);
-    let allow = [
-        Allow::new(Rule::RowsWhole, "ls", WHOLE),
-        Allow::new(Rule::RowsWhole, "check", WHOLE),
-        Allow::new(Rule::RowsWhole, "query", WHOLE),
-        Allow::new(Rule::RowsWhole, "plugin list", WHOLE),
-        Allow::new(Rule::RowsWhole, "plugin find", WHOLE),
-    ];
-    crumbkit_test::check_document_ids(&Cli::command(), &guide, &allow);
-}
-
-#[test]
-fn every_dash_h_page_fits_its_byte_budget() {
-    let binary = binary();
-    let (examples, guide) = (Examples::new(&binary, ""), Guide::new());
-    let pages = Pages::binary(&guide, &examples);
-    crumbkit_test::check_help_sizes(&Cli::command(), pages, &BUDGETS);
-}

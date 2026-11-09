@@ -16,7 +16,7 @@ use clap_complete::{ArgValueCompleter, CompletionCandidate};
 use crumbkit::Sink;
 
 use crate::config::Context;
-use crate::render::{self, GUIDE, Printer};
+use crate::render::{self, Printer, TOOL};
 use crate::report::Output;
 use crate::run::{Cli, Given, entered};
 
@@ -53,7 +53,7 @@ pub(crate) fn complete(arguments: &[OsString], context: &Context) -> Option<Outp
     let sink = &mut Sink::new(&mut stdout, std::io::sink());
     // A line crumbkit cannot complete prints nothing, which is all the
     // shell needs; its exit code goes unread.
-    let _ = crumbkit::complete_to(sink, command, &GUIDE, VARIABLE, shell, arguments, None);
+    let _ = crumbkit::complete_to(sink, command, VARIABLE, shell, arguments, None);
     Some(Output {
         stdout,
         ..Output::default()
@@ -74,7 +74,7 @@ fn unknown(shell: &OsStr) -> Output {
         SHELLS.join(", ")
     );
     let refusal = Refusal::new(Code::CliUsage, message, &Fields::default()).with_hint(hint);
-    let printer = Printer::new(false, &GUIDE, [BINARY_NAME]);
+    let printer = Printer::new(false, &TOOL, [BINARY_NAME]);
     render::refused(printer, refusal)
 }
 

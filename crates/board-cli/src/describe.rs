@@ -11,13 +11,13 @@ use board_model::{Code, Refusal, RefusalCode};
 use board_ops::{MountsAt, Trace};
 use clap::Subcommand;
 use crumbkit::Sink;
+use crumbkit::Tool;
 use crumbkit::commands::{self, COMMANDS_LIST, CommandsList};
-use crumbkit::help::Guide;
 use crumbkit::schemas::{self, SCHEMAS_LIST, SCHEMAS_SHOW, SchemasList, SchemasShow};
 
 use crate::config::Context;
 use crate::graft;
-use crate::render::{GUIDE, Printer};
+use crate::render::{Printer, TOOL};
 use crate::report::Output;
 
 /// The examples of `board commands`.
@@ -65,7 +65,7 @@ Examples:
     Show(SchemasShow),
 }
 
-/// The guide and the parsed view of a listing command line `arguments`,
+/// The tool record and the parsed view of a listing command line `arguments`,
 /// with `call <plugin>.<capability>` for each capability of each plugin that
 /// the board at `start` enables, and a note for each enabled plugin it
 /// cannot read. Only `board commands` and `board schemas` read plugin
@@ -76,16 +76,16 @@ pub(crate) fn grafted(
     arguments: &[OsString],
     context: &Context,
     start: Result<PathBuf, Box<Refusal>>,
-    view: crumbkit::Output,
+    view: crumbkit::Run,
     trace: &mut Trace,
-) -> (Guide, Vec<String>, crumbkit::Output) {
+) -> (Tool, Vec<String>, crumbkit::Run) {
     let opening = Instant::now();
     let opened = start.and_then(|start| context.open(&start, MountsAt::Pins));
     trace.add("open", opening);
     let mut board = match opened {
         Ok((board, _)) => board,
         Err(refusal) if refusal.code == RefusalCode::Board(Code::ConfigNotFound) => {
-            return (GUIDE, Vec::new(), view);
+            return (TOOL, Vec::new(), view);
         }
         Err(refusal) => {
             let note = format!(
@@ -93,7 +93,7 @@ pub(crate) fn grafted(
                 refusal.code.as_str(),
                 refusal.message
             );
-            return (GUIDE, vec![note], view);
+            return (TOOL, vec![note], view);
         }
     };
     board.build_in(context.built_in.0);
@@ -101,31 +101,30 @@ pub(crate) fn grafted(
     let (grafted, notes) = graft::enabled(&board, context.plugins.as_deref());
     trace.add("plugin.list", listing);
     trace.count("capabilities", grafted.len());
-    let guide = graft::guide(&grafted);
+    let tool = graft::tool(&grafted);
     let (mut stdout, mut stderr) = (Vec::new(), Vec::new());
     let sink = &mut Sink::new(&mut stdout, &mut stderr);
     let command = graft::command(
         &grafted,
         <crate::run::Cli as clap::CommandFactory>::command(),
     );
-    let parsed =
-        crumbkit::try_parse_to::<graft::Parsed, _, _, _, _>(sink, command, &guide, arguments);
+    let parsed = crumbkit::try_parse_to::<graft::Parsed>(sink, command, &tool, arguments);
     // The line parsed against Board's own tree, so it parses with more leaves.
     let view = parsed.map_or(view, |(_, view)| view);
-    (guide, notes, view)
+    (tool, notes, view)
 }
 
-/// `board commands <command>`, with the commands of `guide` and `notes`
+/// `board commands <command>`, with the commands of `tool` and `notes`
 /// on the plugins whose capabilities it leaves out.
 pub(crate) fn commands(
     printer: Printer,
-    guide: &Guide,
+    tool: &Tool,
     command: &CommandsCommand,
     notes: Vec<String>,
 ) -> Output {
     let CommandsCommand::List(args) = command;
     let mut view = printer.view;
-    let listed = commands::list(&mut view, guide, args);
+    let listed = commands::list(&mut view, tool, args);
     noted(Printer { view }.kit(COMMANDS_LIST, listed), notes)
 }
 
@@ -137,21 +136,21 @@ fn noted(mut output: Output, notes: Vec<String>) -> Output {
     output
 }
 
-/// `board schemas <command>`, as [`commands()`] reads `guide` and `notes`.
+/// `board schemas <command>`, as [`commands()`] reads `tool` and `notes`.
 pub(crate) fn schemas(
     printer: Printer,
-    guide: &Guide,
+    tool: &Tool,
     command: &SchemasCommand,
     notes: Vec<String>,
 ) -> Output {
     let mut view = printer.view;
     match command {
         SchemasCommand::List(args) => {
-            let listed = schemas::list(&mut view, guide, args);
+            let listed = schemas::list(&mut view, tool, args);
             noted(Printer { view }.kit(SCHEMAS_LIST, listed), notes)
         }
         SchemasCommand::Show(args) => {
-            let shown = schemas::show(&mut view, guide, args);
+            let shown = schemas::show(&mut view, tool, args);
             noted(Printer { view }.kit(SCHEMAS_SHOW, shown), notes)
         }
     }

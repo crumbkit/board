@@ -46,7 +46,7 @@ pub(crate) fn hinted(arguments: &[OsString], refused_line: &crumbkit::Refused) -
         _ => return None,
     };
     let printer = Printer {
-        view: refused_line.output().clone(),
+        view: refused_line.run().clone(),
     };
     Some(refused(printer, refusal))
 }
