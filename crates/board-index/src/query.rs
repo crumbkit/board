@@ -1,11 +1,13 @@
 //! Reading the index with SQL (docs/architecture/index.md).
 
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
-use rusqlite::ErrorCode;
 use rusqlite::hooks::{AuthAction, AuthContext, Authorization};
 use rusqlite::limits::Limit;
 use rusqlite::types::ValueRef;
+use rusqlite::{Connection, ErrorCode};
 use serde_json::Value;
 
 use crate::open::{IndexError, hex};
@@ -52,19 +54,27 @@ impl View {
         limit: usize,
         budget: Option<Budget>,
     ) -> Result<Rows, IndexError> {
-        self.connection().pragma_update(None, "query_only", true)?;
+        // Setting a hook needs the connection alone, so both hooks are set
+        // here, while no statement or transaction borrows it.
+        let mut index = self.index.borrow_mut();
+        let connection = &mut index.connection;
+        connection.pragma_update(None, "query_only", true)?;
         let started = Instant::now();
-        self.connection().progress_handler(
+        connection.progress_handler(
             STEPS_PER_CHECK,
             Some(move || started.elapsed() > QUERY_TIME),
         )?;
-        let before = self.connection().limit(Limit::SQLITE_LIMIT_LENGTH)?;
-        let result = self.snapshot(sql, limit, budget);
-        self.connection()
-            .set_limit(Limit::SQLITE_LIMIT_LENGTH, before)?;
-        self.connection()
-            .progress_handler(STEPS_PER_CHECK, None::<fn() -> bool>)?;
-        self.connection().pragma_update(None, "query_only", false)?;
+        let compiling = Arc::new(AtomicBool::new(false));
+        let authorizer = Arc::clone(&compiling);
+        connection.authorizer(Some(move |context: AuthContext<'_>| {
+            authorize(&authorizer, context)
+        }))?;
+        let before = connection.limit(Limit::SQLITE_LIMIT_LENGTH)?;
+        let result = self.snapshot(connection, &compiling, sql, limit, budget);
+        connection.set_limit(Limit::SQLITE_LIMIT_LENGTH, before)?;
+        connection.authorizer(None::<fn(AuthContext<'_>) -> Authorization>)?;
+        connection.progress_handler(STEPS_PER_CHECK, None::<fn() -> bool>)?;
+        connection.pragma_update(None, "query_only", false)?;
         result
     }
 
@@ -72,32 +82,34 @@ impl View {
     /// can come between them.
     fn snapshot(
         &self,
+        connection: &Connection,
+        compiling: &AtomicBool,
         sql: &str,
         limit: usize,
         budget: Option<Budget>,
     ) -> Result<Rows, IndexError> {
-        let _snapshot = self.connection().unchecked_transaction()?;
-        let prunes: i64 = self.connection().query_row(PRUNES, [], |row| row.get(0))?;
+        let _snapshot = connection.unchecked_transaction()?;
+        let prunes: i64 = connection.query_row(PRUNES, [], |row| row.get(0))?;
         if prunes != self.prunes {
             return Err(IndexError::Pruned);
         }
-        self.read(sql, limit, budget).map_err(blame)
+        Self::read(connection, compiling, sql, limit, budget).map_err(blame)
     }
 
     fn read(
-        &self,
+        connection: &Connection,
+        compiling: &AtomicBool,
         sql: &str,
         limit: usize,
         budget: Option<Budget>,
     ) -> Result<Rows, rusqlite::Error> {
         // `query_only` does not stop ATTACH, DETACH or a PRAGMA that writes.
-        // The authorizer covers only this prepare: a pragma function such as
-        // `pragma_table_info` prepares its own PRAGMA while it runs.
-        self.connection().authorizer(Some(authorize))?;
+        // The authorizer refuses only during this prepare: a pragma function
+        // such as `pragma_table_info` prepares its own PRAGMA while it runs.
+        compiling.store(true, Ordering::Relaxed);
         // rusqlite refuses a string holding more than one statement.
-        let prepared = self.connection().prepare(sql);
-        self.connection()
-            .authorizer(None::<fn(AuthContext<'_>) -> Authorization>)?;
+        let prepared = connection.prepare(sql);
+        compiling.store(false, Ordering::Relaxed);
         let mut statement = prepared?;
         // Each check covers a gap in the other: `readonly` passes ATTACH, and
         // the authorizer cannot see the file VACUUM INTO attaches as it runs.
@@ -107,18 +119,13 @@ impl View {
                 Some("the statement would write".to_owned()),
             ));
         }
-        let columns: Vec<String> = statement
-            .column_names()
-            .into_iter()
-            .map(str::to_owned)
-            .collect();
+        let columns: Vec<String> = statement.column_names().map(str::to_owned).collect();
         let width = columns.len();
         let mut rows = Vec::new();
         // SQLite raises a length limit under 30 bytes to 30.
         if let Some(Budget { bytes, .. }) = budget {
             let length = i32::try_from(bytes).unwrap_or(i32::MAX);
-            self.connection()
-                .set_limit(Limit::SQLITE_LIMIT_LENGTH, length)?;
+            connection.set_limit(Limit::SQLITE_LIMIT_LENGTH, length)?;
         }
         let mut cursor = statement.query([])?;
         let mut truncated = false;
@@ -171,8 +178,11 @@ fn too_big() -> rusqlite::Error {
     )
 }
 
-/// Refuses ATTACH, DETACH and the PRAGMA statement.
-fn authorize(context: AuthContext<'_>) -> Authorization {
+/// Refuses ATTACH, DETACH and the PRAGMA statement while the query compiles.
+fn authorize(compiling: &AtomicBool, context: AuthContext<'_>) -> Authorization {
+    if !compiling.load(Ordering::Relaxed) {
+        return Authorization::Allow;
+    }
     match context.action {
         AuthAction::Attach { .. } | AuthAction::Detach { .. } | AuthAction::Pragma { .. } => {
             Authorization::Deny

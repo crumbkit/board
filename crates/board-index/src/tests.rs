@@ -546,7 +546,7 @@ fn a_query_cannot_write_and_leaves_the_index_writable() {
         .query("SELECT count(*) AS n FROM main.blobs", 10, None)
         .unwrap();
     assert_eq!(admitted.rows, [vec![serde_json::json!(1)]]);
-    let writer = view.index.write().unwrap();
+    let writer = view.index.into_inner().write().unwrap();
     writer.put_blob(blob(2), Role::Json, &record()).unwrap();
     writer.decide(Vec::new()).unwrap();
 }
@@ -631,8 +631,7 @@ fn a_failure_of_the_database_is_the_indexs_and_any_other_is_the_querys() {
 }
 
 fn journal_mode(view: &View) -> String {
-    view.index
-        .connection
+    view.connection()
         .query_row("PRAGMA journal_mode", [], |row| row.get(0))
         .unwrap()
 }
@@ -687,7 +686,10 @@ fn a_query_that_runs_too_long_is_stopped_and_a_bounded_one_finishes() {
     let admitted = index.query(bounded, 10, None).unwrap();
     assert_eq!(admitted.rows, [vec![serde_json::json!(10000)]]);
     assert_eq!(journal_mode(&index), "wal");
-    assert!(has_fact(index.index), "the index is still writable");
+    assert!(
+        has_fact(index.index.into_inner()),
+        "the index is still writable"
+    );
 }
 
 #[test]
