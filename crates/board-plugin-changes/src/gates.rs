@@ -19,18 +19,6 @@ pub(crate) const RUN_TYPE: &str = "runs/run/v1";
 pub(crate) const DECISION_TYPE: &str = "plans/decision/v1";
 pub(crate) const REPORT_TYPE: &str = "review/report/v1";
 pub(crate) const UNDERSTANDING_TYPE: &str = "changes/understanding/v1";
-/// The plan's sections the plan gate requires, by heading, compared
-/// without case.
-pub(crate) const SECTIONS: [&str; 8] = [
-    "Problem",
-    "Outcome",
-    "Out of scope",
-    "UX",
-    "Data",
-    "Failure paths",
-    "Consumers",
-    "Lifecycle",
-];
 /// What a check that needs a head commit says when the change has none.
 const NO_HEAD: &str = "the change records no head commit; attach one with --head";
 /// The fewest hex digits a commit is named by when compared with another.
@@ -282,6 +270,9 @@ pub(crate) fn reads(checks: &[flow::Check]) -> BTreeSet<Read> {
         {
             reads.insert(Read::Plan);
         }
+        if (each.when.as_ref()).is_some_and(|when| when.absent.is_some()) {
+            reads.insert(Read::Exists);
+        }
         if each.waivable == Some(true) {
             reads.insert(Read::References);
         }
@@ -403,6 +394,14 @@ fn applies(
         if matches_section(plan, heading, text)? {
             return Ok(false);
         }
+    }
+    if let Some(template) = &when.absent
+        && observed
+            .existing
+            .get(&remedy::fill(template, &remedy::values(observed)))
+            == Some(&true)
+    {
+        return Ok(false);
     }
     Ok(true)
 }

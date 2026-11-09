@@ -316,8 +316,7 @@ pub(crate) fn observe(
     if wanted.contains(&Read::Exists) {
         let filled = values(&found);
         let paths: Vec<String> = (found.checks().iter())
-            .filter(|each| each.kind.known() == Some(&CheckKind::Exists))
-            .filter_map(|each| each.path.as_deref())
+            .flat_map(paths_read)
             .filter(|template| unfilled(template, &filled).is_empty())
             .map(|template| fill(template, &filled))
             .collect();
@@ -330,6 +329,16 @@ pub(crate) fn observe(
         planned_controls(host, &mut found)?;
     }
     Ok(found)
+}
+
+/// The path templates whose existence `each` reads: the one an `exists`
+/// check names and the one its `when` needs absent.
+fn paths_read(each: &crate::flow::Check) -> impl Iterator<Item = &str> {
+    let named = (each.kind.known() == Some(&CheckKind::Exists))
+        .then_some(each.path.as_deref())
+        .flatten();
+    let absent = each.when.as_ref().and_then(|when| when.absent.as_deref());
+    named.into_iter().chain(absent)
 }
 
 /// What `planned-controlled` checks read: which controls they name the board

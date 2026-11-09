@@ -62,6 +62,70 @@ fn started(board: &Changes, title: &str, fields: &Value) -> (Value, Value) {
 }
 
 #[test]
+fn next_gives_a_planned_controlled_check_missing_with_the_refusal_when_for_paths_refuses() {
+    let board = Changes::enabling(&["changes", "controls"]);
+    board.mount_x(&[("src/a.rs", "a\n")]);
+    let mut own: Value = serde_json::from_str(&flow("own", &["draft", "land"])).unwrap();
+    own["phases"][0]["checks"] = json!([{
+        "id": "declared",
+        "kind": "planned-controlled",
+        "controls": ["/controls/{repo}/lifecycle-paths"],
+    }]);
+    board.write("flows/own.json", &own.to_string());
+    started(&board, "A", &json!({"flow": "own"}));
+    let planned = |paths: &[&str]| {
+        board.call_stdin(
+            "plan",
+            &json!({"path": "/changes/a", "text": PLAN, "uses": [], "paths": paths}),
+        );
+        let next = board.call("next", &json!({"path": "/changes/a"}));
+        next["gate"][0].clone()
+    };
+    let declared = planned(&["/repos/x/../y"]);
+    assert_eq!(declared["status"], "missing", "{declared}");
+    assert!(
+        declared["detail"]
+            .as_str()
+            .unwrap()
+            .contains("controls::board::refused"),
+        "{declared}"
+    );
+    assert_eq!(planned(&["/repos/x/src/a.rs"])["status"], "pass");
+}
+
+/// The plan text `start` wrote for the change at `/changes/<name>`.
+fn skeleton(board: &Changes, name: &str) -> String {
+    let plan = board.read(&format!("changes/{name}.json"))["plan"]
+        .as_str()
+        .unwrap()
+        .trim_start_matches('/')
+        .to_owned();
+    board.text(&format!("{plan}.md"))
+}
+
+#[test]
+fn start_writes_the_headings_of_the_chosen_flows_plan_sections_and_the_first_five_without_any() {
+    let board = mounted();
+    let mut mine: Value = serde_json::from_str(&flow("mine", &["draft", "land"])).unwrap();
+    mine["phases"][0]["checks"] =
+        json!([{"id": "plan-sections", "kind": "sections", "sections": ["Why", "How"]}]);
+    board.write("flows/mine.json", &mine.to_string());
+    started(&board, "Long", &json!({}));
+    started(&board, "Short", &json!({"flow": "small"}));
+    started(&board, "Own", &json!({"flow": "mine"}));
+    assert_eq!(
+        skeleton(&board, "long"),
+        "# Long\n\n## Problem\n\n## Outcome\n\n## Out of scope\n\n## UX\n\n## Data\n\n## Failure \
+         paths\n\n## Consumers\n\n## Lifecycle\n"
+    );
+    assert_eq!(
+        skeleton(&board, "short"),
+        "# Short\n\n## Problem\n\n## Outcome\n\n## Out of scope\n\n## UX\n\n## Data\n"
+    );
+    assert_eq!(skeleton(&board, "own"), "# Own\n\n## Why\n\n## How\n");
+}
+
+#[test]
 fn start_follows_the_development_flow_unless_the_board_holds_its_own_flow_of_that_name() {
     let board = mounted();
     assert_eq!(

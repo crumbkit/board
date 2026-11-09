@@ -77,6 +77,17 @@ fn planned(uses: &[&str], paths: &[&str]) -> Value {
     json!({"path": CHANGE, "text": PLAN, "uses": uses, "paths": paths})
 }
 
+/// The fixture plan with a Lifecycle section that names a record.
+fn lifecycle_named() -> String {
+    let (before, _) = PLAN.rsplit_once("## Lifecycle").unwrap();
+    format!("{before}## Lifecycle\n\nSee the change's lifecycle record: open, closed.\n")
+}
+
+/// The input of `plan` for `text`.
+fn naming(text: &str) -> Value {
+    json!({"path": CHANGE, "text": text, "uses": [], "paths": PATHS})
+}
+
 fn brief(board: &Changes) -> Value {
     board.call("brief", &json!({"path": CHANGE}))
 }
@@ -271,7 +282,7 @@ const BRIEF_GOLDEN: &str = concat!(
 #[test]
 fn the_brief_names_the_lifecycle_text_and_a_1500_word_text_stays_outside_its_600_words() {
     let board = with_source();
-    board.call_stdin("plan", &planned(&[], &PATHS));
+    board.call_stdin("plan", &naming(&lifecycle_named()));
     assert_eq!(brief(&board).get("lifecycle"), None);
     let text = "w ".repeat(1_500);
     board.call_stdin(
@@ -281,6 +292,22 @@ fn the_brief_names_the_lifecycle_text_and_a_1500_word_text_stays_outside_its_600
     let found = brief(&board);
     assert_eq!(found["lifecycle"], "/changes/t/lifecycle.md");
     assert!(spent(&found) <= BRIEF_WORDS, "{}: {found}", spent(&found));
+}
+
+#[test]
+fn the_brief_leaves_out_the_lifecycle_text_of_a_plan_revised_to_none_and_names_it_once_revised_back()
+ {
+    let board = with_source();
+    board.call_stdin("plan", &naming(&lifecycle_named()));
+    board.call_stdin(
+        "lifecycle",
+        &json!({"path": CHANGE, "text": "A table.", "doc": "/repos/x/docs/states.md", "external": []}),
+    );
+    assert_eq!(brief(&board)["lifecycle"], "/changes/t/lifecycle.md");
+    board.call_stdin("plan", &planned(&[], &PATHS));
+    assert_eq!(brief(&board).get("lifecycle"), None);
+    board.call_stdin("plan", &naming(&lifecycle_named()));
+    assert_eq!(brief(&board)["lifecycle"], "/changes/t/lifecycle.md");
 }
 
 #[test]

@@ -14,8 +14,8 @@ use crate::flow::Kind;
 use crate::gates::kinds::named_controls;
 use crate::gates::remedy::values;
 use crate::gates::{HEADING, Observed};
-use crate::lifecycle::LifecycleRecord;
-use crate::phases::{PathInput, step_of};
+use crate::lifecycle::{LifecycleRecord, says_none};
+use crate::phases::{PathInput, plan_text, step_of};
 use crate::plan::{documents, words};
 use crate::{PLUGIN, Warning, refusal, to_value};
 
@@ -421,7 +421,11 @@ pub(crate) fn brief_of(host: &dyn Host, path: &str) -> Result<Output, PluginErro
     let records = referenced(host, &uses)?;
     let texts = documents(host, &uses, &records)?;
     let (step, observed) = step_of(host, path)?;
-    let lifecycle = lifecycle_text(host, change.plan.as_deref())?;
+    let lifecycle = if plan_text(host, &change)?.as_deref().is_some_and(says_none) {
+        None
+    } else {
+        lifecycle_text(host, change.plan.as_deref())?
+    };
     let warnings = missing_controls(host, &observed)?;
     let controls = format!("board controls check --path {}", change.mount);
     let brief_line = format!("board-brief: {path}");

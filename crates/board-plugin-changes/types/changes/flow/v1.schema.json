@@ -694,6 +694,11 @@
       "additionalProperties": false,
       "description": "When a check applies: every condition given holds.",
       "properties": {
+        "absent": {
+          "description": "Nothing is at this path, its placeholders filled.",
+          "pattern": "^/\\S*$",
+          "type": "string"
+        },
         "route": {
           "description": "The change's route is one of these.",
           "items": {

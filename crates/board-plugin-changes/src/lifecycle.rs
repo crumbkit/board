@@ -4,12 +4,14 @@
 
 use board_ops::{Host, PluginError};
 use board_plugin::shape::{LogicalGlob, Record, Ref, Summary, Tag};
+use regex::Regex;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use crate::change::{line, plan_at, read, touch};
 use crate::flow::blob_at;
+use crate::gates::sections;
 use crate::phases::final_phase;
 use crate::plan::{thousands, words};
 use crate::records::is_final;
@@ -17,6 +19,9 @@ use crate::{PLUGIN, board, refusal, to_value};
 
 /// The most words a change's lifecycle text holds.
 const LIFECYCLE_WORDS: usize = 1_500;
+/// How a plan's Lifecycle section says nothing changes state, as the
+/// development flow's checks read it.
+pub(crate) const NONE: &str = r"^none\s*(?:[.:]|\n?\z)";
 /// The characters that make a logical path a pattern.
 const GLOB: [char; 3] = ['*', '?', '['];
 
@@ -158,13 +163,34 @@ pub(crate) fn lifecycle(host: &dyn Host, input: &Value) -> Result<Value, PluginE
     }))
 }
 
-/// Refuses a `doc` that is a pattern, or that names a file outside the
-/// change's `mount`.
+/// Whether the Lifecycle section of the plan `text` says nothing changes
+/// state.
+pub(crate) fn says_none(text: &str) -> bool {
+    let none = Regex::new(&format!("(?i){NONE}")).expect("the pattern is a regular expression");
+    (sections(text).get("lifecycle")).is_some_and(|section| none.is_match(section))
+}
+
+/// Refuses a `doc` that is a pattern, that has a `.`, `..` or empty segment
+/// or a trailing slash, or that names a file outside the change's `mount`.
 fn check_doc(path: &str, mount: &str, doc: &str) -> Result<(), PluginError> {
     if doc.contains(GLOB) {
         return Err(refusal(
             "changes::lifecycle::doc_is_a_pattern",
             format!("the lifecycle doc for {path} is the pattern {doc}; name one file"),
+            [("path", json!(path)), ("doc", json!(doc))],
+        ));
+    }
+    if doc
+        .split('/')
+        .skip(1)
+        .any(|each| matches!(each, "" | "." | ".."))
+    {
+        return Err(refusal(
+            "changes::lifecycle::doc_not_a_file",
+            format!(
+                "the lifecycle doc for {path} is {doc}, which names no one file; give a path with \
+                 no . or .. segment, no empty segment and no trailing slash"
+            ),
             [("path", json!(path)), ("doc", json!(doc))],
         ));
     }

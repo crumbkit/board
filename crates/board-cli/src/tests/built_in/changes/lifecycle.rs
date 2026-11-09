@@ -83,11 +83,26 @@ fn lifecycle_refuses_text_over_1500_words_and_admits_1500() {
 }
 
 #[test]
-fn lifecycle_refuses_a_doc_outside_the_mount_or_with_a_pattern_and_admits_one_inside() {
+fn lifecycle_refuses_a_doc_outside_the_mount_with_a_pattern_or_naming_no_file_and_admits_a_file() {
     let board = planned();
     let refused = board.refusal_stdin("lifecycle", &lifecycle(TABLE, "/repos/y/docs/states.md"));
     assert_eq!(refused["code"], "changes::lifecycle::doc_outside_mount");
     assert_eq!(refused["fields"]["doc"], "/repos/y/docs/states.md");
+    let refused = board.refusal_stdin("lifecycle", &lifecycle(TABLE, "/repos/xy/docs/states.md"));
+    assert_eq!(refused["code"], "changes::lifecycle::doc_outside_mount");
+    for doc in [
+        "/repos/x/../y/a.md",
+        "/repos/x/./a.md",
+        "/repos/x/docs/..",
+        "/repos/x/docs/",
+    ] {
+        let refused = board.refusal_stdin("lifecycle", &lifecycle(TABLE, doc));
+        assert_eq!(
+            refused["code"], "changes::lifecycle::doc_not_a_file",
+            "{doc}"
+        );
+        assert_eq!(refused["fields"]["doc"], doc);
+    }
     let refused = board.refusal_stdin("lifecycle", &lifecycle(TABLE, "/repos/x/docs/*.md"));
     assert_eq!(refused["code"], "changes::lifecycle::doc_is_a_pattern");
     assert!(!board.exists(RECORD), "a refusal writes nothing");
@@ -231,4 +246,67 @@ fn with_no_lifecycle_paths_control_none_passes_and_the_check_says_none_exists() 
         assert_eq!(declared["status"], "pass", "{enabled:?}: {declared}");
         assert_eq!(declared["detail"], said, "{enabled:?}");
     }
+}
+
+/// A change started on the `small` flow, reflowed to `development` at build
+/// and moved to review, whose head edits a file a lifecycle-paths control
+/// lists. Its plan has no Lifecycle heading.
+fn reflowed_from_small() -> Changes {
+    let board = Changes::enabling(&["changes", "controls"]);
+    let (_, head) = board.edited(&[("src/sync.rs", "a\n")]);
+    board.write(
+        "controls/x/lifecycle-paths.json",
+        &typed(
+            "controls/control/v1",
+            &json!({
+                "requirement": "This code changes state.",
+                "purpose": "p",
+                "paths": ["repos/x/src/sync.rs"],
+            }),
+        ),
+    );
+    board.call(
+        "start",
+        &json!({"mount": "/repos/x", "task": TASK, "title": "T", "name": "t", "flow": "small"}),
+    );
+    board.call("reflow", &json!({"path": CHANGE, "flow": "development"}));
+    let mut change = board.read("changes/t.json");
+    change["phase"] = json!("review");
+    change["head"] = json!(head);
+    board.write("changes/t.json", &change.to_string());
+    board
+}
+
+#[test]
+fn a_change_reflowed_from_small_at_build_faces_lifecycle_paths_until_it_has_a_record() {
+    let board = reflowed_from_small();
+    let next = |board: &Changes| board.call("next", &json!({"path": CHANGE}));
+    let found = next(&board);
+    let paths = check(&found, "lifecycle-paths").unwrap();
+    assert_eq!(paths["status"], "missing", "{paths}");
+    assert_eq!(
+        paths["detail"],
+        "the change's diff edits files that /controls/x/lifecycle-paths list: /repos/x/src/sync.rs"
+    );
+    board.call_stdin("lifecycle", &lifecycle(TABLE, "/repos/x/docs/states.md"));
+    let found = next(&board);
+    assert!(check(&found, "lifecycle-paths").is_none(), "{found}");
+}
+
+/// The shipped plan phase also has the `obligations` check, which reads the
+/// same capability and propagates its refusal, so `next` refuses there.
+#[test]
+fn next_on_the_shipped_flow_refuses_with_the_controls_refusal_when_for_paths_refuses() {
+    let enabled = ["changes", "controls"];
+    let none = "None: nothing changes state.";
+    let refusing = gated(&enabled, none, &["/repos/x/../y"], true);
+    let refused = refusing.refusal("next", &json!({"path": CHANGE}));
+    assert_eq!(refused["code"], "changes::board::refused");
+    assert_eq!(refused["fields"]["code"], "controls::board::refused");
+    let reading = gated(&enabled, none, &["/repos/x/src/a.rs"], true);
+    let found = reading.call("next", &json!({"path": CHANGE}));
+    assert_eq!(
+        check(&found, "lifecycle-declared").unwrap()["status"],
+        "pass"
+    );
 }

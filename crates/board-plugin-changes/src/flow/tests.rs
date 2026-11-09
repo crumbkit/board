@@ -7,7 +7,6 @@ use schemars::generate::SchemaSettings;
 use serde_json::json;
 
 use super::*;
-use crate::gates::SECTIONS;
 
 /// The four flows of the design's flows.md, copied verbatim.
 const DESIGNED: [(&str, &str); 4] = [
@@ -66,7 +65,19 @@ fn the_shipped_development_flow_passes_its_schema_and_orders_plan_build_review_l
         ]
     );
     let plan = &flow.phase("plan").unwrap().checks[0];
-    assert_eq!(plan.sections.as_deref().unwrap(), SECTIONS);
+    assert_eq!(
+        plan.sections.as_deref().unwrap(),
+        [
+            "Problem",
+            "Outcome",
+            "Out of scope",
+            "UX",
+            "Data",
+            "Failure paths",
+            "Consumers",
+            "Lifecycle"
+        ]
+    );
 }
 
 /// The stored version an open change follows, from before the development
@@ -139,6 +150,21 @@ fn said(flow: &Flow, drafted: bool) -> Vec<String> {
         .iter()
         .map(ToString::to_string)
         .collect()
+}
+
+#[test]
+fn a_when_absent_path_with_an_unknown_placeholder_is_a_problem_and_a_known_one_is_not() {
+    let check = |path: &str| json!({"id": "x", "kind": "tasks", "when": {"absent": path}});
+    assert_eq!(
+        said(&one(&check("/changes/{who}"), "build", "Build."), false),
+        [
+            "phase build, check x: it names the unknown placeholder {who} (changes::flow::unknown_placeholder)"
+        ]
+    );
+    assert_eq!(
+        said(&one(&check("/changes/{name}"), "build", "Build."), false),
+        Vec::<String>::new()
+    );
 }
 
 #[test]

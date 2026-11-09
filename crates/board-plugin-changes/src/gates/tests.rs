@@ -149,6 +149,14 @@ impl Given {
         observed
     }
 
+    /// The remedy the gate gives for the check `id`.
+    fn remedy(&self, id: &str) -> String {
+        (gate(&self.observed()).into_iter())
+            .find(|found| found.check == id)
+            .and_then(|found| found.remedy)
+            .unwrap()
+    }
+
     /// Each check's status, by name.
     fn statuses(&self) -> BTreeMap<String, &'static str> {
         (gate(&self.observed()).into_iter())
@@ -957,21 +965,112 @@ fn lifecycle_none_reads_as_data_none_does_so_a_sentence_that_starts_with_none_is
     assert!(bare.statuses().contains_key("lifecycle-declared"));
 }
 
+const LIFECYCLE_EDIT: &str =
+    "the change's diff edits files that /controls/x/lifecycle-paths list: /repos/x/src/sync.rs";
+
+/// The plan text with the Lifecycle heading left out.
+fn without_lifecycle() -> String {
+    PLAN.split_once("\n## Lifecycle").unwrap().0.to_owned()
+}
+
 #[test]
-fn lifecycle_paths_in_review_misses_an_edit_after_none_and_is_left_out_for_a_named_record() {
-    let mut none = lifecycle_change("review", "None: nothing changes state.");
-    none.controlled = vec![(CONTROL, vec!["/repos/x/src/sync.rs"])];
-    assert_eq!(
-        none.check("lifecycle-paths"),
-        (
-            "missing",
-            "the change's diff edits files that /controls/x/lifecycle-paths list: \
-             /repos/x/src/sync.rs"
-                .to_owned()
-        )
+fn lifecycle_paths_in_review_misses_an_edit_with_no_record_whatever_the_section_says() {
+    let cases = [
+        with_lifecycle("None: nothing changes state."),
+        with_lifecycle("See `/changes/t/lifecycle`: three states."),
+        without_lifecycle(),
+    ];
+    for plan in &cases {
+        let mut change = given("review").plan(Some(plan));
+        change.controlled = vec![(CONTROL, vec!["/repos/x/src/sync.rs"])];
+        assert_eq!(
+            change.check("lifecycle-paths"),
+            ("missing", LIFECYCLE_EDIT.to_owned()),
+            "{plan}"
+        );
+        change.controlled = vec![(CONTROL, Vec::new())];
+        assert_eq!(
+            change.check("lifecycle-paths"),
+            ("pass", String::new()),
+            "{plan}"
+        );
+    }
+}
+
+#[test]
+fn lifecycle_paths_in_review_is_left_out_once_a_lifecycle_record_exists_whatever_the_section_says()
+{
+    let cases = [
+        with_lifecycle("None: nothing changes state."),
+        with_lifecycle("See `/changes/t/lifecycle`: three states."),
+        without_lifecycle(),
+    ];
+    for plan in &cases {
+        let mut change = given("review").plan(Some(plan));
+        change.controlled = vec![(CONTROL, vec!["/repos/x/src/sync.rs"])];
+        change.existing = vec![("/changes/t/lifecycle", true)];
+        assert!(!change.statuses().contains_key("lifecycle-paths"), "{plan}");
+    }
+}
+
+#[test]
+fn the_lifecycle_paths_remedy_says_to_write_the_record_or_revert_the_edit() {
+    let mut change = lifecycle_change("review", "None: nothing changes state.");
+    change.controlled = vec![(CONTROL, vec!["/repos/x/src/sync.rs"])];
+    let remedy = change.remedy("lifecycle-paths");
+    assert!(
+        remedy.contains("`board changes lifecycle --path /changes/t`"),
+        "{remedy}"
     );
-    none.controlled = vec![(CONTROL, Vec::new())];
-    assert_eq!(none.check("lifecycle-paths"), ("pass", String::new()));
-    let named = lifecycle_change("review", "See `/changes/t/lifecycle`: three states.");
-    assert!(!named.statuses().contains_key("lifecycle-paths"));
+    assert!(remedy.contains("revert the edit"), "{remedy}");
+}
+
+#[test]
+fn the_lifecycle_record_remedy_says_none_colon_followed_by_the_reason() {
+    let named = lifecycle_change("plan", "See `/changes/t/lifecycle`: three states.");
+    let remedy = named.remedy("lifecycle-record");
+    assert!(
+        remedy.contains("start the section with `None:` followed by the reason"),
+        "{remedy}"
+    );
+}
+
+#[test]
+fn the_flow_and_the_brief_read_a_lifecycle_of_none_with_one_pattern() {
+    let flow = development();
+    let plan = flow.phase("plan").unwrap();
+    let when = |id: &str| {
+        let check = plan.checks.iter().find(|each| each.id == id).unwrap();
+        check.when.as_ref().unwrap()
+    };
+    assert_eq!(
+        when("lifecycle-declared").section.as_ref().unwrap()["Lifecycle"],
+        crate::lifecycle::NONE
+    );
+    assert_eq!(
+        when("lifecycle-record").section_not.as_ref().unwrap()["Lifecycle"],
+        crate::lifecycle::NONE
+    );
+}
+
+#[test]
+fn the_development_review_names_a_reviewer_with_tools_and_a_checkout_and_not_the_toolless_run() {
+    let change = given("review");
+    let flow = development();
+    let review = flow.phase("review").unwrap();
+    assert!(
+        review
+            .instruction
+            .contains("a reviewer in a fresh agent with tools and a checkout of {head}"),
+        "{}",
+        review.instruction
+    );
+    assert!(
+        !review.instruction.contains("board review run"),
+        "{}",
+        review.instruction
+    );
+    let remedy = change.remedy("review");
+    assert!(remedy.contains("tools and a checkout"), "{remedy}");
+    assert!(!remedy.contains("board review run"), "{remedy}");
 }

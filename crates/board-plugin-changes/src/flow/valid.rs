@@ -200,7 +200,10 @@ fn check_problems<'a>(
     for why in bad_patterns(each) {
         found.push(at("changes::flow::bad_pattern", id, why));
     }
-    let texts = (each.remedy.iter().chain(each.path.iter())).chain(each.controls.iter().flatten());
+    let absent = each.when.iter().flat_map(|when| when.absent.iter());
+    let texts = (each.remedy.iter().chain(each.path.iter()))
+        .chain(each.controls.iter().flatten())
+        .chain(absent);
     for word in texts.flat_map(|text| unknown_placeholders(text)) {
         found.push(at(
             "changes::flow::unknown_placeholder",

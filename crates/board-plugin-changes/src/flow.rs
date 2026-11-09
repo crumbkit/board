@@ -302,6 +302,10 @@ pub(crate) struct When {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "Option<BTreeMap<String, Pattern>>")]
     pub(crate) section_not: Option<BTreeMap<String, String>>,
+    /// Nothing is at this path, its placeholders filled.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "Option<PathTemplate>")]
+    pub(crate) absent: Option<String>,
 }
 
 /// A field of the change that a `field` check reads.
