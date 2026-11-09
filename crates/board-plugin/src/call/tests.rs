@@ -437,7 +437,8 @@ fn assert_refused(error: &CallError, code: Code, fields: &Value, stderr: &[u8]) 
             message: error.to_string(),
             hint: Some(code.hint(&hinted)),
             fields: fields.as_object().unwrap().clone(),
-            stderr: Some(stderr.to_vec()),
+            // A refusal names `stderr` in its fields exactly when a process ran.
+            stderr: fields.get("stderr").map(|_| stderr.to_vec()),
         },
         "{error}"
     );
