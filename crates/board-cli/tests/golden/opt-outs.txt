@@ -1,4 +1,4 @@
-board has 25 opt-outs from the conventions and sets 7 budgets.
+board has 27 opt-outs from the conventions and sets 7 budgets.
 
 effects/yes: board put
   Reason: the command asks no question, so it has no confirmation to skip, and git keeps each commit it makes, which a revert undoes
@@ -34,6 +34,22 @@ effects/expect-flag: board rm
   Cost: The flag means what the tool makes it mean, which can differ from what `--expect` means in other tools.
   Cost: A failed check does not fail with the tool's `version::conflict` code, so an agent cannot tell a conflict from another failure by its code.
 
+filters/repeats-and-commas: board -C
+  Reason: a value may hold a comma, so one repeat carries one value
+  Cost: An agent that writes the form the option does not accept gets a refusal or a wrong value.
+
+filters/repeats-and-commas: board refs --field
+  Reason: a value may hold a comma, so one repeat carries one value
+  Cost: An agent that writes the form the option does not accept gets a refusal or a wrong value.
+
+filters/repeats-and-commas: board put --var
+  Reason: a value may hold a comma, so one repeat carries one value
+  Cost: An agent that writes the form the option does not accept gets a refusal or a wrong value.
+
+filters/repeats-and-commas: board plugin find --meta
+  Reason: a value may hold a comma, so one repeat carries one value
+  Cost: An agent that writes the form the option does not accept gets a refusal or a wrong value.
+
 documents/rows-whole: board ls
   Reason: an agent that asks for --json gets every field without needing a second flag
   Cost: --json prints every field of each row, so the document costs more tokens than the compact columns.
@@ -54,28 +70,20 @@ documents/rows-whole: board plugin find
   Reason: an agent that asks for --json gets every field without needing a second flag
   Cost: --json prints every field of each row, so the document costs more tokens than the compact columns.
 
-suite/skip: Check::Grammar
-  Reason: board's root verbs (get, ls, put, check) are single words by design, so the resource-verb form is not adopted
-  Cost: No test checks this check's rules anywhere in the tool, so a change that breaks one of them passes unnoticed and an agent meets the broken convention.
-
-suite/skip: Check::Filters
-  Reason: board's repeatable options (-C, --field, --var, --meta) take one value per repeat, so comma lists are not adopted
-  Cost: No test checks this check's rules anywhere in the tool, so a change that breaks one of them passes unnoticed and an agent meets the broken convention.
-
 suite/skip: Check::Help
   Reason: board check and board refs print rows that the help rules' column and Bytes-field checks do not match, and the call example in the help is not adopted
   Cost: No test checks this check's rules anywhere in the tool, so a change that breaks one of them passes unnoticed and an agent meets the broken convention.
 
 suite/skip: Check::PathWeights
-  Reason: no per-path help weight budget is declared; help_sizes in help.rs pins each page's size
+  Reason: no per-path help weight budget is declared; every_help_page_fits_its_size_budget checks each page against BUDGETS in help.rs
   Cost: No test checks this check's rules anywhere in the tool, so a change that breaks one of them passes unnoticed and an agent meets the broken convention.
 
 suite/skip: Check::HelpGoldens
-  Reason: help pages are pinned by the size budgets in help.rs and the command reference in docs/commands.md, not by golden files
+  Reason: the text of a -h page is not pinned by a golden file; the size budgets limit only its bytes and docs/commands.md is rendered from `commands list`
   Cost: No test checks this check's rules anywhere in the tool, so a change that breaks one of them passes unnoticed and an agent meets the broken convention.
 
 suite/skip: Check::SchemaGoldens
-  Reason: document schemas are pinned by the released.json tests, not by golden files
+  Reason: no golden file pins the schemas; released.json lists none until a release, and one schema's text is pinned by the example golden for `schemas show board/check-report/v2`
   Cost: No test checks this check's rules anywhere in the tool, so a change that breaks one of them passes unnoticed and an agent meets the broken convention.
 
 suite/skip: Check::Examples
@@ -83,7 +91,7 @@ suite/skip: Check::Examples
   Cost: No test checks this check's rules anywhere in the tool, so a change that breaks one of them passes unnoticed and an agent meets the broken convention.
 
 suite/skip: Check::OutputBudget
-  Reason: the output budget is tested by crates/board-cli/tests/output_budget.rs
+  Reason: not adopted: at half its printed bytes, `board check --json` and `board plugin find --meta category=tasks --json` still print their whole result and exit 0
   Cost: No test checks this check's rules anywhere in the tool, so a change that breaks one of them passes unnoticed and an agent meets the broken convention.
 
 suite/skip: Check::CommandReference
@@ -91,7 +99,7 @@ suite/skip: Check::CommandReference
   Cost: No test checks this check's rules anywhere in the tool, so a change that breaks one of them passes unnoticed and an agent meets the broken convention.
 
 suite/skip: Check::Recoveries
-  Reason: the recoveries test in recoveries.rs runs it with its scratch scenarios
+  Reason: the recoveries test in recoveries.rs runs it with its scratch scenarios and asserts on them afterwards
   Cost: No test checks this check's rules anywhere in the tool, so a change that breaks one of them passes unnoticed and an agent meets the broken convention.
 
 suite/skip: Check::Twins
@@ -139,10 +147,14 @@ terminal-detection/off: every run of board
   Cost: Progress never prints, help prints without clap's colours at a terminal, and a table's cells print without their styles.
   Cost: A text table never fits the terminal's width, so the terminal wraps each line of a table that is wider than the terminal.
 
-board has 30 declarations, which need no reason.
+board has 31 declarations.
 
 refusal-alternatives: every run of board
   Declares: A refused command line for a command without its own function also offers the tool's own alternatives.
+
+root-verbs: board init, board check, board get, board ls, board refs, board uri, board put, board rm, board sync, board call, board decide, board answer, board query, board serve
+  Declares: Each command sits directly under the root as a verb.
+  Reason: board's root commands are the verbs an agent types most, each acting on the board or a record, and a resource word before them would lengthen every call
 
 document-name: board init
   Declares: The command prints board/init-report/v2, where its path gives the name init.

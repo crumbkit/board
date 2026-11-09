@@ -2,10 +2,14 @@
 //! fixture board and prints its golden output, and each `-h` page fits a
 //! byte budget (STANDARDS.md 24).
 
+use clap::{Command, CommandFactory};
+use crumbkit::Tool;
+use crumbkit::help::RuntimeLeaf;
 use crumbkit_test::{Allow, Budget, Budgets, Check, Examples, Suite};
 
-use super::conventions::build;
+use super::cli::{examples, words};
 use super::*;
+use crate::run::Cli;
 
 /// The `board` binary cargo built beside this test binary
 /// (`target/debug/deps/board-<hash>`). cargo sets `CARGO_BIN_EXE_board`
@@ -14,6 +18,40 @@ pub(super) fn binary() -> String {
     let test = std::env::current_exe().unwrap();
     let path = test.parent().unwrap().parent().unwrap().join("board");
     path.to_str().unwrap().to_owned()
+}
+
+/// Board's command tree with a tool record whose leaves hold the examples
+/// each command's own help ends with. crumbkit runs no shell: an example's
+/// `< file` becomes its golden's `.stdin` file, and of a pipe each command
+/// belongs to its own leaf.
+pub(super) fn build() -> (Command, Tool) {
+    fn walk(path: &[String], command: &Command, leaves: &mut Vec<RuntimeLeaf>) {
+        for sub in command
+            .get_subcommands()
+            .filter(|sub| sub.get_name() != "help")
+        {
+            let mut below = path.to_vec();
+            below.push(sub.get_name().to_owned());
+            if sub.has_subcommands() {
+                walk(&below, sub, leaves);
+                continue;
+            }
+            let prefix = format!("board {} ", below.join(" "));
+            let help = sub.get_after_help().map(ToString::to_string);
+            let mut leaf = RuntimeLeaf::new(below.clone());
+            for line in examples(&help.unwrap_or_default()) {
+                if format!("{line} ").starts_with(&prefix) {
+                    let rest = words(&line).split_off(below.len() + 1);
+                    leaf = leaf.example(rest, "an example from board's help".to_owned());
+                }
+            }
+            leaves.push(leaf);
+        }
+    }
+    let command = Cli::command();
+    let mut leaves = Vec::new();
+    walk(&[], &command, &mut leaves);
+    (command, Tool::new().with_runtime_leaves(leaves))
 }
 
 /// The fixture board does not enable tasks, whose sweep needs notes repos
@@ -25,7 +63,7 @@ const NO_ANSWER: &str = "a pending effect's id hashes the asking board's directo
 /// `serve` runs until it is idle, and `ui open` starts a server and a
 /// browser; board-serve/src/tests.rs and the ui tests here run both.
 const SERVES: &str = "the command starts a server that outlives the example's time limit";
-pub(super) const ALLOW: &[Allow] = &[
+const ALLOW: &[Allow] = &[
     Allow::example(
         "answer",
         &[
@@ -206,8 +244,3 @@ pub(super) const BUDGETS: Budgets = Budgets::new()
             "answer says on one page how an approval is signed and checked, its Effects: line says that it is destructive, and its global flags line names --no-input, which a program adds to every run.",
         ),
     ]);
-
-/// Why each document's rows print whole: `--json` gives every field without
-/// `--full`.
-pub(super) const WHOLE: &str =
-    "an agent that asks for --json gets every field without needing a second flag";

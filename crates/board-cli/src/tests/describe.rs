@@ -3,7 +3,6 @@
 //! the flags a program adds when it runs one for a person.
 
 use clap::CommandFactory as _;
-use crumbkit_test::{Allow, Check, Examples, Rule, Suite};
 
 use super::*;
 use crate::run::Cli;
@@ -406,37 +405,6 @@ fn no_input_before_the_command_is_admitted_and_a_misspelling_is_refused() {
     assert_eq!(json(&refused)["code"], "board::cli::usage");
 }
 
-/// Why a write that commits takes no `--yes`: it asks no question, and git
-/// keeps the commit that a revert undoes.
-const COMMITTED: &str = "the command asks no question, so it has no confirmation to skip, and git keeps each commit it makes, which a revert undoes";
-
-/// Why `put` and `rm` keep their own `--expect`.
-const BLOB: &str = "Board's --expect names the git blob the file must hold, or none for a new file, which crumbkit's Expect does not take";
-
-/// Board's opt-outs from crumbkit's effects rules.
-pub(super) const EFFECTS: &[Allow] = &[
-    Allow::new(Rule::Yes, "put", COMMITTED),
-    Allow::new(Rule::Yes, "rm", COMMITTED),
-    Allow::new(Rule::Yes, "mount update", COMMITTED),
-    Allow::new(
-        Rule::Yes,
-        "call",
-        "the capability decides what it writes, and a plugin's op that the owner must admit already waits for the owner through decide",
-    ),
-    Allow::new(
-        Rule::Yes,
-        "answer",
-        "an approval waits for the owner's Touch ID unless --signature gives a signature made elsewhere, --no-input refuses that wait, and a refusal writes only the answer",
-    ),
-    Allow::new(
-        Rule::Yes,
-        "skills install",
-        "it replaces and removes only folders that hold Board's marker, which a second install writes again, and a folder without the marker only with --force",
-    ),
-    Allow::new(Rule::ExpectFlag, "put", BLOB),
-    Allow::new(Rule::ExpectFlag, "rm", BLOB),
-];
-
 #[test]
 fn every_command_matches_the_checked_in_command_reference() {
     // The reference describes `call` alone, so the check runs Board outside
@@ -450,9 +418,8 @@ fn every_command_matches_the_checked_in_command_reference() {
     );
     outside.write("bin/board", Item::Executable(&script));
     let binary = outside.workdir().join("bin/board");
-    Suite::new(super::conventions::build)
-        .examples(Examples::new(binary.to_str().unwrap(), ""))
-        .run(Check::CommandReference);
+    let reference = concat!(env!("CARGO_MANIFEST_DIR"), "/docs/commands.md");
+    crumbkit_test::check_command_reference(binary.to_str().unwrap(), reference);
 }
 
 /// A plugin installed beside the built-in ones, with one capability that

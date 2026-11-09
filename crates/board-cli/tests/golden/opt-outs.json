@@ -76,6 +76,42 @@
       "budget": null
     },
     {
+      "rule": "filters/repeats-and-commas",
+      "applies_to": "board -C",
+      "reason": "a value may hold a comma, so one repeat carries one value",
+      "costs": [
+        "An agent that writes the form the option does not accept gets a refusal or a wrong value."
+      ],
+      "budget": null
+    },
+    {
+      "rule": "filters/repeats-and-commas",
+      "applies_to": "board refs --field",
+      "reason": "a value may hold a comma, so one repeat carries one value",
+      "costs": [
+        "An agent that writes the form the option does not accept gets a refusal or a wrong value."
+      ],
+      "budget": null
+    },
+    {
+      "rule": "filters/repeats-and-commas",
+      "applies_to": "board put --var",
+      "reason": "a value may hold a comma, so one repeat carries one value",
+      "costs": [
+        "An agent that writes the form the option does not accept gets a refusal or a wrong value."
+      ],
+      "budget": null
+    },
+    {
+      "rule": "filters/repeats-and-commas",
+      "applies_to": "board plugin find --meta",
+      "reason": "a value may hold a comma, so one repeat carries one value",
+      "costs": [
+        "An agent that writes the form the option does not accept gets a refusal or a wrong value."
+      ],
+      "budget": null
+    },
+    {
       "rule": "documents/rows-whole",
       "applies_to": "board ls",
       "reason": "an agent that asks for --json gets every field without needing a second flag",
@@ -122,24 +158,6 @@
     },
     {
       "rule": "suite/skip",
-      "applies_to": "Check::Grammar",
-      "reason": "board's root verbs (get, ls, put, check) are single words by design, so the resource-verb form is not adopted",
-      "costs": [
-        "No test checks this check's rules anywhere in the tool, so a change that breaks one of them passes unnoticed and an agent meets the broken convention."
-      ],
-      "budget": null
-    },
-    {
-      "rule": "suite/skip",
-      "applies_to": "Check::Filters",
-      "reason": "board's repeatable options (-C, --field, --var, --meta) take one value per repeat, so comma lists are not adopted",
-      "costs": [
-        "No test checks this check's rules anywhere in the tool, so a change that breaks one of them passes unnoticed and an agent meets the broken convention."
-      ],
-      "budget": null
-    },
-    {
-      "rule": "suite/skip",
       "applies_to": "Check::Help",
       "reason": "board check and board refs print rows that the help rules' column and Bytes-field checks do not match, and the call example in the help is not adopted",
       "costs": [
@@ -150,7 +168,7 @@
     {
       "rule": "suite/skip",
       "applies_to": "Check::PathWeights",
-      "reason": "no per-path help weight budget is declared; help_sizes in help.rs pins each page's size",
+      "reason": "no per-path help weight budget is declared; every_help_page_fits_its_size_budget checks each page against BUDGETS in help.rs",
       "costs": [
         "No test checks this check's rules anywhere in the tool, so a change that breaks one of them passes unnoticed and an agent meets the broken convention."
       ],
@@ -159,7 +177,7 @@
     {
       "rule": "suite/skip",
       "applies_to": "Check::HelpGoldens",
-      "reason": "help pages are pinned by the size budgets in help.rs and the command reference in docs/commands.md, not by golden files",
+      "reason": "the text of a -h page is not pinned by a golden file; the size budgets limit only its bytes and docs/commands.md is rendered from `commands list`",
       "costs": [
         "No test checks this check's rules anywhere in the tool, so a change that breaks one of them passes unnoticed and an agent meets the broken convention."
       ],
@@ -168,7 +186,7 @@
     {
       "rule": "suite/skip",
       "applies_to": "Check::SchemaGoldens",
-      "reason": "document schemas are pinned by the released.json tests, not by golden files",
+      "reason": "no golden file pins the schemas; released.json lists none until a release, and one schema's text is pinned by the example golden for `schemas show board/check-report/v2`",
       "costs": [
         "No test checks this check's rules anywhere in the tool, so a change that breaks one of them passes unnoticed and an agent meets the broken convention."
       ],
@@ -186,7 +204,7 @@
     {
       "rule": "suite/skip",
       "applies_to": "Check::OutputBudget",
-      "reason": "the output budget is tested by crates/board-cli/tests/output_budget.rs",
+      "reason": "not adopted: at half its printed bytes, `board check --json` and `board plugin find --meta category=tasks --json` still print their whole result and exit 0",
       "costs": [
         "No test checks this check's rules anywhere in the tool, so a change that breaks one of them passes unnoticed and an agent meets the broken convention."
       ],
@@ -204,7 +222,7 @@
     {
       "rule": "suite/skip",
       "applies_to": "Check::Recoveries",
-      "reason": "the recoveries test in recoveries.rs runs it with its scratch scenarios",
+      "reason": "the recoveries test in recoveries.rs runs it with its scratch scenarios and asserts on them afterwards",
       "costs": [
         "No test checks this check's rules anywhere in the tool, so a change that breaks one of them passes unnoticed and an agent meets the broken convention."
       ],
@@ -334,6 +352,12 @@
       "declaration": "refusal-alternatives",
       "applies_to": "every run of board",
       "declares": "A refused command line for a command without its own function also offers the tool's own alternatives."
+    },
+    {
+      "declaration": "root-verbs",
+      "applies_to": "board init, board check, board get, board ls, board refs, board uri, board put, board rm, board sync, board call, board decide, board answer, board query, board serve",
+      "declares": "Each command sits directly under the root as a verb.",
+      "reason": "board's root commands are the verbs an agent types most, each acting on the board or a record, and a resource word before them would lengthen every call"
     },
     {
       "declaration": "document-name",

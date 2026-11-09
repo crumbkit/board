@@ -14,8 +14,7 @@ use crumbkit_test::{
 };
 
 use super::cli::words;
-use super::conventions::build;
-use super::help::binary;
+use super::help::{binary, build};
 use super::plugins::{RESULT, TASKS, answering, lacking_a_schema, shipping};
 use super::*;
 
