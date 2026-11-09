@@ -416,7 +416,7 @@ pub(crate) fn referenced_in_walk(
 fn gathered(
     host: &dyn Host,
     refs: &[String],
-    resolve: fn(&dyn Host, &[String]) -> Result<Vec<Option<RefsReport>>, PluginError>,
+    resolve: fn(&dyn Host, &[String]) -> board::Resolved,
 ) -> Result<Referenced, PluginError> {
     if refs.is_empty() {
         return Ok(Referenced::default());

@@ -91,13 +91,13 @@ fn found(answer: Result<RefsReport, RefsError>) -> Result<Option<RefsReport>, Re
     }
 }
 
+/// Where each path resolves, in order, or none when nothing is there.
+pub(crate) type Resolved = Result<Vec<Option<RefsReport>>, PluginError>;
+
 /// Where each of `paths` resolves, in order, or none when nothing is there.
 /// Any other refusal of a path is `changes::board::refused`, because what
 /// one change depends on must not read as absent.
-pub(crate) fn refs(
-    host: &dyn Host,
-    paths: &[String],
-) -> Result<Vec<Option<RefsReport>>, PluginError> {
+pub(crate) fn refs(host: &dyn Host, paths: &[String]) -> Resolved {
     (answers(host, paths)?.into_iter())
         .map(|answer| found(answer).map_err(|error| refused("refs", &error.refusal())))
         .collect()
@@ -106,10 +106,7 @@ pub(crate) fn refs(
 /// [`refs`] for a walk over many changes: a path that one record stops, such
 /// as a mount that cannot be read or a dangling link, is none as well and
 /// warned of, so that it stops only the changes that depend on it.
-pub(crate) fn refs_in_walk(
-    host: &dyn Host,
-    paths: &[String],
-) -> Result<Vec<Option<RefsReport>>, PluginError> {
+pub(crate) fn refs_in_walk(host: &dyn Host, paths: &[String]) -> Resolved {
     (answers(host, paths)?.into_iter())
         .map(|answer| match found(answer) {
             Err(error) if error.stops_only_this_path() => {
