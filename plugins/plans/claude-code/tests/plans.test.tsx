@@ -121,6 +121,8 @@ const start = ($: Engine) => $.session.start({ cwd: '/work', surface: 'terminal'
 test('plans.waiting is read as its total and blocking count, and a board without it is told apart from a failure', () => {
   expect(parseWaiting(0, waitingReport(14, 11), '')).toEqual({ kind: 'read', waiting: { total: 14, blocking: 11 } })
   expect(parseWaiting(1, ABSENT, '')).toEqual({ kind: 'absent' })
+  const older = JSON.stringify({ ...JSON.parse(ABSENT), code: 'board::plugin::not_installed' })
+  expect(parseWaiting(1, older, '')).toEqual({ kind: 'absent' })
   const locked = JSON.stringify({ schema: 'board/failure/v1', code: 'board::lock', message: 'the board is locked' })
   expect(parseWaiting(1, locked, '')).toEqual({ kind: 'failed', why: 'board::lock the board is locked' })
   const other = JSON.stringify({ ...JSON.parse(ABSENT), fields: { capability: 'open' } })
