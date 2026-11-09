@@ -9,10 +9,8 @@
     },
     "doc": {
       "description": "The repository file, by logical path, where the landed table lives\nfor the next author. A path, no pattern.",
-      "minLength": 1,
-      "pattern": "^/",
-      "type": "string",
-      "x-board-glob": true
+      "pattern": "^/[^\\s{}]*$",
+      "type": "string"
     },
     "external": {
       "description": "The external systems whose state the lifecycle touches, each named.",

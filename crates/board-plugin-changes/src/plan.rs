@@ -4,7 +4,7 @@
 use std::time::SystemTime;
 
 use board_ops::{Host, PluginError};
-use board_plugin::shape::{LogicalGlob, Tag};
+use board_plugin::shape::{LogicalGlob, Record, Tag};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -12,6 +12,7 @@ use serde_json::{Value, json};
 use crate::board::{self};
 use crate::change::{Referenced, kind_of, line, plan_at, read, referenced, touch};
 use crate::gates::sections;
+use crate::lifecycle::LifecycleRecord;
 use crate::phases::final_phase;
 use crate::records::{CONTROL_TYPE, Considered, Kind, Owed, PlanRecord, is_final};
 use crate::{PLUGIN, Warning, refusal, to_value};
@@ -390,13 +391,18 @@ fn kept_records(host: &dyn Host, plan: Option<&str>) -> Result<Option<Vec<String
 }
 
 /// The lifecycle record the plan the change names as `plan` points at, which
-/// a revised plan keeps; none when it names no plan Board reads or that plan
-/// has none.
+/// a revised plan keeps while Board still reads a `changes/lifecycle/v1` at
+/// it; none when it names no plan Board reads or that plan has none.
 fn kept_lifecycle(host: &dyn Host, plan: Option<&str>) -> Result<Option<String>, PluginError> {
     let Some(plan) = plan else {
         return Ok(None);
     };
-    Ok(plan_at(host, plan)?.and_then(|(record, _)| record.lifecycle))
+    let Some(record) = plan_at(host, plan)?.and_then(|(record, _)| record.lifecycle) else {
+        return Ok(None);
+    };
+    let found = referenced(host, std::slice::from_ref(&record))?;
+    let read = (found.get(&record)).is_some_and(|(kind, _)| kind == LifecycleRecord::TYPE);
+    Ok(read.then_some(record))
 }
 
 /// `count` with a comma between each group of three digits, as Python's

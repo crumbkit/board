@@ -296,6 +296,7 @@ fn merged(
     let skipped = match change.phase.as_str() {
         "build" => Some("build and review"),
         "review" => Some("review"),
+        "land" => Some("land"),
         _ => None,
     };
     if let Some(skipped) = skipped {

@@ -95,8 +95,8 @@ that one record.
   the change will edit, in which `*` also matches `/`. A build change's plan
   always has them; a prototype's plan has none.
 - `lifecycle` names the change's `changes/lifecycle/v1`, which
-  `changes.lifecycle` sets and a revised plan keeps. It is left out when the
-  change has none.
+  `changes.lifecycle` sets and a revised plan keeps while Board still reads a
+  `changes/lifecycle/v1` there. It is left out when the change has none.
 - `records` lists the runs, reviews, decisions and other records `attach
   --ref` attached while this plan was the change's plan. A revised plan
   starts with the `records` of the plan it replaces, in order, and that
@@ -438,7 +438,7 @@ of `changes` still fails `review`.
 
   | `status` | When | What sync does | `code` |
   | --- | --- | --- | --- |
-  | `merged` | GitHub says it merged | `to` is `done`, and `merge_commit_url` is set; `detail` says when the change left `build` or `review`, whose gates it did not pass | none |
+  | `merged` | GitHub says it merged | `to` is `done`, and `merge_commit_url` is set; `detail` says when the change left `build`, `review` or `land`, whose gates it did not pass | none |
   | `owed` | It merged, but a `tasks/task/v2` that its plans' `records` reach, through any link, is not done or dropped | Leaves it; `detail` names the tasks | `changes::sync::owed` |
   | `closed` | It closed without merging | `to` is `dropped`, and `dropped_reason` says so with the day it closed | none |
   | `open` | It is open | Leaves it | none |

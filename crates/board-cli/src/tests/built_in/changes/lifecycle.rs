@@ -468,3 +468,78 @@ fn a_small_change_in_land_over_a_lifecycle_path_misses_and_one_elsewhere_passes(
         );
     }
 }
+
+#[test]
+fn a_revised_plan_drops_a_lifecycle_reference_board_no_longer_reads_and_keeps_one_it_does() {
+    let board = planned();
+    board.call_stdin("lifecycle", &lifecycle(TABLE, "/repos/x/docs/states.md"));
+    let revise = |more: &str| {
+        board.call_stdin(
+            "plan",
+            &json!({"path": CHANGE, "text": format!("{PLAN}{more}\n"), "uses": [], "paths": PATHS}),
+        );
+    };
+    revise("Kept.");
+    assert_eq!(plan_record(&board)["lifecycle"], "/changes/t/lifecycle");
+    board.delete(RECORD);
+    revise("Gone.");
+    assert_eq!(plan_record(&board).get("lifecycle"), None);
+}
+
+#[test]
+fn lifecycle_refuses_a_doc_with_whitespace_or_a_placeholder_and_admits_a_path() {
+    let board = planned();
+    for doc in ["/repos/x/docs/a b.md", "/repos/x/docs/{name}.md"] {
+        let refused = board.refusal_stdin("lifecycle", &lifecycle(TABLE, doc));
+        assert_eq!(refused["code"], "board::plugin::bad_input", "{doc}");
+        assert!(!board.exists(RECORD), "{doc}: a refusal writes nothing");
+    }
+    board.call_stdin("lifecycle", &lifecycle(TABLE, "/repos/x/docs/states.md"));
+    assert!(board.exists(RECORD));
+}
+
+/// A directory at the text's path makes the one `put` fail, so nothing of
+/// the four lines it carries is written.
+#[test]
+fn a_lifecycle_put_that_fails_writes_no_record_and_leaves_the_plan_unset_and_its_twin_writes() {
+    let board = planned();
+    board.write("changes/t/lifecycle.md/x.txt", "x\n");
+    let refused = board.refusal_stdin("lifecycle", &lifecycle(TABLE, "/repos/x/docs/states.md"));
+    assert_eq!(refused["code"], "changes::board::refused", "{refused}");
+    assert!(
+        refused["message"].as_str().unwrap().contains("put --batch"),
+        "{refused}"
+    );
+    assert!(!board.exists(RECORD));
+    assert_eq!(plan_record(&board).get("lifecycle"), None);
+    let twin = planned();
+    twin.call_stdin("lifecycle", &lifecycle(TABLE, "/repos/x/docs/states.md"));
+    assert_eq!(plan_record(&twin)["lifecycle"], "/changes/t/lifecycle");
+}
+
+#[test]
+fn next_on_a_plan_phase_says_what_board_changes_lifecycle_reads_on_stdin_and_build_does_not() {
+    let board = planned();
+    let said = board.call("next", &json!({"path": CHANGE}))["instruction"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert!(
+        said.contains(
+            "Pipe `board changes lifecycle` JSON on stdin with the fields `path`, `text`, `doc` \
+             and `external`"
+        ),
+        "{said}"
+    );
+    assert!(
+        said.contains(r#"{"path":"/changes/t","text":"<text>""#),
+        "{said}"
+    );
+    let build = planned();
+    build.change_at("changes/t.json", "build", &json!({}));
+    let said = build.call("next", &json!({"path": CHANGE}))["instruction"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert!(!said.contains("Pipe `board changes lifecycle`"), "{said}");
+}

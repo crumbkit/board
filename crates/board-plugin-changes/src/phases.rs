@@ -183,7 +183,10 @@ pub(crate) struct Moved {
 fn instruction(observed: &Observed) -> String {
     let phase = observed.change.phase.as_str();
     match (observed.flow.as_ref()).and_then(|flow| flow.phase(phase)) {
-        Some(found) => with_plan_usage(observed, fill(&found.instruction, &values(observed))),
+        Some(found) => with_plan_usage(
+            observed,
+            with_lifecycle_usage(observed, fill(&found.instruction, &values(observed))),
+        ),
         None if phase == PAUSED => format!(
             "This change was paused to free its place under the WIP limit on active changes of \
              its kind per repository. Resume it with `board changes resume --path {}` when a \
@@ -218,6 +221,24 @@ fn with_plan_usage(observed: &Observed, said: String) -> String {
              fields with any `considered` and `owed`, such as `{example}`."
         )
     }
+}
+
+/// `said` with the fields `board changes lifecycle` takes on stdin and a
+/// one-line example, when `said` names it: a flag leaves stdin unread, and
+/// `external` goes only on stdin.
+fn with_lifecycle_usage(observed: &Observed, said: String) -> String {
+    if !said.contains("changes lifecycle") {
+        return said;
+    }
+    let example = format!(
+        r#"{{"path":"{}","text":"<text>","doc":"{}/<file>","external":["<system>"]}}"#,
+        observed.path,
+        observed.change.mount.trim_end_matches('/')
+    );
+    format!(
+        "{said} Pipe `board changes lifecycle` JSON on stdin with the fields `path`, `text`, \
+         `doc` and `external`, such as `{example}`."
+    )
 }
 
 /// The text of the change's plan, or none when it names none or nothing is there.

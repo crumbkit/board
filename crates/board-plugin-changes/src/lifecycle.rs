@@ -3,7 +3,7 @@
 //! restores or migrates, in a record of its own beside the plan.
 
 use board_ops::{Host, PluginError};
-use board_plugin::shape::{LogicalGlob, Record, Ref, Summary, Tag};
+use board_plugin::shape::{PathKey, Record, Ref, Summary, Tag};
 use regex::Regex;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -44,7 +44,7 @@ pub(crate) struct LifecycleRecord {
     pub(crate) text: String,
     /// The repository file, by logical path, where the landed table lives
     /// for the next author. A path, no pattern.
-    #[schemars(with = "LogicalGlob")]
+    #[schemars(with = "PathKey")]
     pub(crate) doc: String,
     /// The external systems whose state the lifecycle touches, each named.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -74,7 +74,7 @@ pub(crate) struct Input {
     )]
     text: String,
     #[schemars(
-        with = "LogicalGlob",
+        with = "PathKey",
         description = "The repository file, by logical path under the change's mount, where the \
                        landed table lives for the next author; a path, no pattern."
     )]

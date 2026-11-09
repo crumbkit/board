@@ -1080,11 +1080,29 @@ fn the_lifecycle_paths_remedy_says_to_write_the_record_or_revert_the_edit() {
     let mut change = lifecycle_change("review", "None: nothing changes state.");
     change.controlled = vec![(CONTROL, vec!["/repos/x/src/sync.rs"])];
     let remedy = change.remedy("lifecycle-paths");
-    assert!(
-        remedy.contains("`board changes lifecycle --path /changes/t`"),
-        "{remedy}"
-    );
+    assert!(remedy.contains("`board changes lifecycle`"), "{remedy}");
     assert!(remedy.contains("revert the edit"), "{remedy}");
+}
+
+/// `board changes lifecycle --path` ignores stdin, and `external` goes only
+/// on stdin, so a remedy that names the flag names a command Board refuses.
+#[test]
+fn every_remedy_that_names_changes_lifecycle_names_the_stdin_form_and_no_flag() {
+    let flow = development();
+    let remedies: Vec<&str> = (flow.phases.iter().flat_map(|phase| phase.checks.iter()))
+        .filter_map(|each| each.remedy.as_deref())
+        .filter(|remedy| remedy.contains("changes lifecycle"))
+        .collect();
+    assert_eq!(remedies.len(), 6, "{remedies:?}");
+    for remedy in remedies {
+        assert!(!remedy.contains("changes lifecycle --path"), "{remedy}");
+        assert!(
+            remedy.contains(
+                "piping JSON with `path`, `text`, `doc` and `external` to `board changes lifecycle`"
+            ),
+            "{remedy}"
+        );
+    }
 }
 
 #[test]

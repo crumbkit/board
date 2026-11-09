@@ -224,7 +224,7 @@ fn sync_ends_merged_and_closed_changes_and_reports_the_rest() {
     let details = by_path(&output, "detail");
     let merged_detail = details["/changes/merged"].as_str().unwrap();
     assert!(
-        !merged_detail.contains("without passing"),
+        merged_detail.ends_with("it left land without passing the land gates"),
         "{merged_detail}"
     );
     let gone_detail = details["/changes/gone"].as_str().unwrap();
@@ -405,6 +405,27 @@ fn drop_ends_an_open_change_with_its_reason_and_refuses_one_already_ended() {
     assert_eq!(
         (&refused["code"], &refused["fields"]["phase"]),
         (&json!("changes::phase::final"), &json!("dropped"))
+    );
+}
+
+#[test]
+fn a_change_that_merged_from_land_ends_and_says_it_did_not_pass_the_land_gates() {
+    let board = gh();
+    board.change_at(
+        "changes/late.json",
+        "land",
+        &json!({"pull_request": pull(1)}),
+    );
+    board.answers(
+        1,
+        &json!({"state": "closed", "merged": true, "merge_commit_sha": MERGE}),
+    );
+    let found = board.call("sync", &json!({}))["changes"][0].clone();
+    assert_eq!(found["to"], "done");
+    let detail = found["detail"].as_str().unwrap();
+    assert!(
+        detail.ends_with("it left land without passing the land gates"),
+        "{detail}"
     );
 }
 
