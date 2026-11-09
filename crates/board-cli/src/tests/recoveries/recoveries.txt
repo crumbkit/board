@@ -732,6 +732,11 @@ board call nowhere.due
   run board plugin list
     fails with board::plugin::bad_manifest
 
+board call chores.dew
+  fails with board::plugin::no_capability
+  run board plugin find --capability dew
+    exits 0
+
 board call broken.due
   fails with board::plugin::bad_manifest
   hint

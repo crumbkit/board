@@ -139,7 +139,7 @@ export function parseWaiting(exitCode: number, stdout: string, stderr: string): 
     return { kind: 'read', waiting: { total: output.total, blocking: typeof output.blocking === 'number' ? output.blocking : 0 } }
   }
   const fields = report?.fields as { capability?: unknown } | undefined
-  if (report?.code === 'board::plugin::not_installed' && fields?.capability === 'waiting') return { kind: 'absent' }
+  if (report?.code === 'board::plugin::no_capability' && fields?.capability === 'waiting') return { kind: 'absent' }
   return { kind: 'failed', why: failure(exitCode, stdout, stderr) }
 }
 

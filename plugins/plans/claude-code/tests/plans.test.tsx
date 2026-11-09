@@ -33,7 +33,7 @@ const rows = (columns: string[], data: unknown[][]) => JSON.stringify({ schema: 
 
 const ABSENT = JSON.stringify({
   schema: 'board/failure/v1',
-  code: 'board::plugin::not_installed',
+  code: 'board::plugin::no_capability',
   message: 'plugin plans has no capability waiting; it offers open, answer, withdraw',
   fields: { capability: 'waiting', offered: ['open', 'answer', 'withdraw'], plugin: 'plans' },
 })

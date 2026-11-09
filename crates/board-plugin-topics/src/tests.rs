@@ -105,5 +105,5 @@ fn a_call_is_refused_because_the_plugin_offers_no_capability() {
     let code = called
         .map(|_| ())
         .map_err(|failed| failed.refusal().code.as_str().to_owned());
-    assert_eq!(code, Err("board::plugin::not_installed".to_owned()));
+    assert_eq!(code, Err("board::plugin::no_capability".to_owned()));
 }

@@ -259,7 +259,7 @@ const CASES: [(&str, Case, Case); 15] = [
         BASE,
     ),
     (
-        "board::plugin::not_installed",
+        "board::plugin::no_capability",
         Case {
             target: "fixture.overdue",
             ..BASE
@@ -267,7 +267,7 @@ const CASES: [(&str, Case, Case); 15] = [
         BASE,
     ),
     (
-        "board::plugin::not_installed",
+        "board::plugin::no_capability",
         Case {
             target: "--capability overdue",
             ..BASE

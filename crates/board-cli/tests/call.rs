@@ -337,7 +337,7 @@ fn a_target_nobody_offers_is_refused_with_stdin_left_open_and_the_offered_one_an
     let typo = left_open(&board, &data, &["--json", "call", "chores.dew"]);
     assert_eq!(typo.status.code(), Some(1));
     let refused: Value = serde_json::from_slice(&typo.stdout).unwrap();
-    assert_eq!(refused["code"], "board::plugin::not_installed");
+    assert_eq!(refused["code"], "board::plugin::no_capability");
     let offered = left_open(&board, &data, &["--json", "call", "chores.due"]);
     assert_eq!(offered.status.code(), Some(0));
 }

@@ -404,7 +404,7 @@ fn a_capability_the_plugin_does_not_offer_is_refused_by_board_and_ref_is_answere
     let refused = board
         .board
         .refusal("github.merge", &["--ref", "octo/widgets#7"]);
-    assert_eq!(refused["code"], "board::plugin::not_installed", "{refused}");
+    assert_eq!(refused["code"], "board::plugin::no_capability", "{refused}");
     assert_eq!(board.call("octo/widgets#7")["written"], false);
 }
 

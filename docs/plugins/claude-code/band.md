@@ -48,7 +48,7 @@ band draws nothing. While a survey holds the band, no mod draws in it.
 - **Waiting button**, from `board-plans`: `Waiting <total> · <blocking>
   blocking` from `board --json call plans.waiting`, or `Waiting <total>`
   when nothing blocks. While the plans plugin has no `waiting` capability,
-  Board refuses the call with `board::plugin::not_installed`, and the button
+  Board refuses the call with `board::plugin::no_capability`, and the button
   counts the open questions instead, as `Questions <n>`. The mod then stops
   asking for `waiting` until it loads again. The button opens the open
   questions pane.

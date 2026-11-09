@@ -55,9 +55,9 @@ plugin's own code carries.
 | `schema` | string | as `type`, but `type add` and batch schema lines set it only on `schema::differs` and a `json` code for the board's copy | that type's schema file, by its path from the board's root |
 | `directory` | string | a code that a directory has of its own, such as `path::case_collision`, refusing a `put` beneath it | that directory, by its path from the board's root, without a leading `/` |
 | `plugin` | string | `plugin` codes from `call` that name one plugin; every plugin's own code | the plugin |
-| `capability` | string | `plugin::not_installed`, `plugin::ambiguous`, `plugin::bad_input` | the capability called |
-| `offered` | array of strings | `plugin::not_installed` when the named plugin lacks the capability | each capability that plugin offers |
-| `nearest` | string | `plugin::not_installed` when no plugin offers the capability and one offered name is near | the nearest offered name |
+| `capability` | string | `plugin::no_capability`, `plugin::ambiguous`, `plugin::bad_input` | the capability called |
+| `offered` | array of strings | `plugin::no_capability` when the named plugin lacks the capability | each capability that plugin offers |
+| `nearest` | string | `plugin::no_capability` when no plugin offers the capability and one offered name is near | the nearest offered name |
 | `plugins` | array of strings | `plugin::ambiguous` | each enabled plugin that offers the capability |
 | `stderr` | string | `plugin::failed`, `plugin::timeout`, `plugin::too_large`, `plugin::bad_output`; every plugin's own code; `sync::failed` | the end of the plugin's stderr, or of git's, with bytes that are not UTF-8 replaced |
 | `tables` | array of strings | `query::invalid` for a missing table | every table and view |
