@@ -75,11 +75,13 @@ impl View {
 
     /// [`IndexError::Pruned`] when another process has pruned since the views
     /// were built, so the run builds them again before a statement that did
-    /// not compile against them is refused; otherwise `error`.
+    /// not compile against them is refused. The failure to read the count
+    /// when the index is broken, and `error` when the count still matches.
     fn pruned_or(&self, connection: &Connection, error: IndexError) -> IndexError {
         match connection.query_row(PRUNES, [], |row| row.get::<_, i64>(0)) {
-            Ok(prunes) if prunes != self.prunes => IndexError::Pruned,
-            _ => error,
+            Ok(prunes) if prunes == self.prunes => error,
+            Ok(_) => IndexError::Pruned,
+            Err(read) => IndexError::from(read),
         }
     }
 

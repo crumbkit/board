@@ -816,6 +816,18 @@ fn the_statements_agents_write_are_all_authorized() {
 }
 
 #[test]
+fn a_statement_that_cannot_compile_on_a_broken_index_is_the_index_failing() {
+    let cache = tempfile::tempdir().unwrap();
+    let index = filled(cache.path());
+    index
+        .connection()
+        .execute_batch("DROP TABLE main.state")
+        .unwrap();
+    let refused = index.query("SELECT 1 FROM nowhere", 10, None).unwrap_err();
+    assert_eq!(refused.code(), Code::IndexFailed, "{refused:?}");
+}
+
+#[test]
 fn a_query_that_runs_too_long_is_stopped_and_a_bounded_one_finishes() {
     let cache = tempfile::tempdir().unwrap();
     let index = filled(cache.path());
