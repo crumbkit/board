@@ -73,7 +73,7 @@ fn required(each: &Check, kind: Kind) -> Option<&'static str> {
         Kind::Field => ("field", each.field.is_some()),
         Kind::Records => ("type", each.record_type.is_some()),
         Kind::Understood => ("subject", each.subject.is_some()),
-        Kind::ControlledPaths => ("controls", each.controls.is_some()),
+        Kind::ControlledPaths | Kind::PlannedControlled => ("controls", each.controls.is_some()),
         Kind::Exists => ("path", each.path.is_some()),
         _ => return None,
     };

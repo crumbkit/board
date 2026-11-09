@@ -16,7 +16,7 @@ use crate::change::{
     LastSync, NOT_FOUND, attached, branch_of, current, kind_of, last_sync, line, listed, plan_at,
     pull_of, read, referenced, sync_reads, touch,
 };
-use crate::controls::{listed_by, obligations};
+use crate::controls::{listed_by, obligations, on_paths};
 use crate::diff::{edited, outside};
 use crate::flow::Kind as CheckKind;
 use crate::flow::{Actor, FlowSummary, of_change};
@@ -326,7 +326,30 @@ pub(crate) fn observe(
             found.existing.insert(path, held);
         }
     }
+    if wanted.contains(&Read::PlannedControls) {
+        planned_controls(host, &mut found)?;
+    }
     Ok(found)
+}
+
+/// What `planned-controlled` checks read: which controls they name the board
+/// holds, and the controls on the plan's paths, or why those cannot be read.
+fn planned_controls(host: &dyn Host, found: &mut Observed) -> Result<(), PluginError> {
+    let filled = values(found);
+    let named: Vec<String> = (found.checks().iter())
+        .filter(|each| each.kind.known() == Some(&CheckKind::PlannedControlled))
+        .flat_map(|each| named_controls(each, &filled))
+        .collect();
+    for control in named {
+        if listed_by(host, &control, &[])?.is_some() {
+            found.held.insert(control);
+        }
+    }
+    match on_paths(host, &current(host, &found.change)?.2) {
+        Ok(controls) => found.on_planned = controls,
+        Err(error) => found.on_planned_unread = Some(error.message),
+    }
+    Ok(())
 }
 
 /// Adds the paths of the plan the change names and the files the change's diff edits

@@ -51,6 +51,14 @@ fn for_paths(host: &dyn Host, paths: &[String]) -> Result<Vec<Found>, PluginErro
     .collect())
 }
 
+/// Every control on `paths`, a plan's files and patterns, by path; none when
+/// the controls plugin is not enabled.
+pub(crate) fn on_paths(host: &dyn Host, paths: &[String]) -> Result<Vec<String>, PluginError> {
+    Ok((for_paths(host, paths)?.into_iter())
+        .map(|found| found.control)
+        .collect())
+}
+
 /// Which of `controls` are obligations, by the `kind` their records hold.
 fn obligations_among(host: &dyn Host, controls: &[String]) -> Result<Vec<String>, PluginError> {
     if controls.is_empty() {

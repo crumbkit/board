@@ -223,6 +223,7 @@ pub(crate) struct Check {
     #[schemars(with = "Option<Prose>", extend("minLength" = 1))]
     pub(crate) escape_section: Option<String>,
     /// `controlled-paths`: the controls whose paths the diff must not touch.
+    /// `planned-controlled`: the controls the plan's paths must not reach.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "Option<Vec<PathTemplate>>")]
     pub(crate) controls: Option<Vec<String>>,
@@ -248,6 +249,7 @@ pub(crate) enum Kind {
     Considered,
     Obligations,
     ControlledPaths,
+    PlannedControlled,
     FlowValid,
     Exists,
 }
@@ -266,6 +268,7 @@ impl Kind {
             Self::Considered => "considered",
             Self::Obligations => "obligations",
             Self::ControlledPaths => "controlled-paths",
+            Self::PlannedControlled => "planned-controlled",
             Self::FlowValid => "flow-valid",
             Self::Exists => "exists",
         }

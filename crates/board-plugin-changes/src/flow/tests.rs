@@ -69,6 +69,21 @@ fn the_shipped_development_flow_passes_its_schema_and_orders_plan_build_review_l
     assert_eq!(plan.sections.as_deref().unwrap(), SECTIONS);
 }
 
+/// The stored version an open change follows, from before the development
+/// flow gained Failure paths, Consumers and Lifecycle. The edit gives the
+/// flow a new version and leaves this one reading as it did.
+#[test]
+fn a_stored_flow_version_still_reads_passes_its_schema_and_keeps_its_version_path() {
+    let text = include_str!("flows-md/development-2bad23722b29b5a8.json");
+    let value: serde_json::Value = serde_json::from_str(text).unwrap();
+    schema().validate(&value).unwrap();
+    let flow: Flow = serde_json::from_str(text).unwrap();
+    assert_eq!(serde_json::to_value(&flow).unwrap(), value);
+    assert_eq!(problems(&flow, false), []);
+    assert_eq!(version_path(&flow), "/flows/development/2bad23722b29b5a8");
+    assert_ne!(version_path(&development()), version_path(&flow));
+}
+
 /// A check of a kind this Board does not know still reads, so the flow
 /// reads; the schema refuses it, and admits its twin of a known kind.
 #[test]

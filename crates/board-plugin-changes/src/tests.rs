@@ -8,6 +8,7 @@ use board_model::canonical_json;
 use board_plugin::VariableName;
 
 use super::*;
+use crate::flow::development;
 
 /// The `description` of SKILL.md's frontmatter, a single-quoted YAML
 /// scalar on one line.
@@ -36,6 +37,7 @@ fn the_manifest_parses_as_a_built_in_one_with_each_capabilitys_variables_and_tim
             "changes/change/v1",
             "changes/change/v2",
             "changes/flow/v1",
+            "changes/lifecycle/v1",
             "changes/plan/v1",
             "changes/prototype/v1",
             "changes/reopen/v1",
@@ -64,6 +66,7 @@ fn the_manifest_parses_as_a_built_in_one_with_each_capabilitys_variables_and_tim
             ("open", vec![], None),
             ("pr", vec![], None),
             ("plan", vec![], None),
+            ("lifecycle", vec![], None),
             ("brief", vec![], None),
             ("prototype", days.clone(), Some(120)),
             ("verdict", vec![], Some(120)),
@@ -163,6 +166,10 @@ fn every_input_property_carries_a_sentence_that_says_what_it_means() {
         "sync.limit",
         "drop.path",
         "drop.reason",
+        "lifecycle.doc",
+        "lifecycle.external",
+        "lifecycle.path",
+        "lifecycle.text",
         "run.path",
         "run.mount",
         "run.title",
@@ -272,6 +279,36 @@ fn shipped_texts() -> Vec<(&'static str, String)> {
         ),
         ("manifest", manifest().to_string()),
     ]
+}
+
+/// `text` with each run of white space as one space, so a sentence compares
+/// across the line breaks of a Markdown file.
+fn flat(text: &str) -> String {
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// What the flow's plan instruction says each of the new sections holds,
+/// sentence by sentence, which the skill and the README repeat word for word.
+const SECTION_RULES: [&str; 3] = [
+    "Failure paths has one row per step that can fail: what fails, the state it leaves, the \
+     recovery, and the order of the check against the destructive step it guards.",
+    "Consumers lists every caller and reader of what the change produces or alters, and names \
+     the files searched.",
+    "Lifecycle starts with None and a reason, or names the record `board changes lifecycle` \
+     writes and summarises its states in one line.",
+];
+
+#[test]
+fn the_flow_the_skill_and_the_readme_say_what_each_new_section_holds_in_the_same_words() {
+    let flow = development();
+    let instruction = flat(&flow.phase("plan").unwrap().instruction);
+    let skill = flat(include_str!("../../../plugins/changes/SKILL.md"));
+    let readme = flat(include_str!("../../../plugins/changes/README.md"));
+    for rule in SECTION_RULES {
+        assert!(instruction.contains(rule), "the flow lacks: {rule}");
+        assert!(skill.contains(rule), "SKILL.md lacks: {rule}");
+        assert!(readme.contains(rule), "README.md lacks: {rule}");
+    }
 }
 
 /// The name of one person's private notes repository, which no example

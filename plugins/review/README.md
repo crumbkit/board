@@ -50,6 +50,20 @@ the reports a change attaches cover the commits of the repository it changes.
 - `brief`, `cost` (`seconds`, `input_tokens`, `output_tokens`), `source` (a
   URL such as a GitHub review) and `follows`: optional.
 
+## Reviewing a change
+
+A review that belongs to a change also checks the plan's Failure paths,
+Consumers and Lifecycle sections against the code, and files each gap as an
+ordinary finding; the report's fields do not change. For each Failure paths
+row, the reviewer finds the code that leaves the stated state and the
+recovery, and files a finding when either is missing or the destructive
+step runs before its check. For each Consumers entry, the reviewer runs the
+stated search and files a finding for a reader the diff changes that the
+list omits. For a `changes/lifecycle/v1` record, the reviewer checks that
+every transition in the table has one owner in the code, that no `_ =>` arm
+covers a state enum the record names, that a test exists for each crash
+point, and that the landed `doc` matches the record.
+
 ## The agent
 
 `review.run` starts the argv in `BOARD_REVIEW_AGENT`, a JSON array of strings

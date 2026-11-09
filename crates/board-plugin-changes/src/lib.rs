@@ -12,6 +12,7 @@ mod controls;
 mod diff;
 mod flow;
 mod gates;
+mod lifecycle;
 mod migrate;
 mod open;
 mod phases;
@@ -38,6 +39,7 @@ use schemars::JsonSchema;
 use schemars::generate::SchemaSettings;
 use serde_json::{Map, Value, json};
 
+use lifecycle::LifecycleRecord;
 use records::{
     ChangeRecord, ChangeV1, PlanRecord, PrototypeRecord, ReopenRecord, RunRecord, StopRecord,
     UnderstandingRecord,
@@ -104,7 +106,7 @@ fn output<T: JsonSchema>() -> Value {
 /// Every capability, in the order the manifest lists them. A capability
 /// that rewrites a field of a change, or ends it, is destructive; one that
 /// adds a task or reads GitHub reaches the open world.
-const CAPABILITIES: [Capability; 19] = [
+const CAPABILITIES: [Capability; 20] = [
     Capability {
         name: "start",
         description: "Create a change in the first phase of its flow, its plan to fill in and, \
@@ -199,9 +201,23 @@ const CAPABILITIES: [Capability; 19] = [
         timeout: None,
     },
     Capability {
+        name: "lifecycle",
+        description: "Write the change's states, events, owners and crash points, given as JSON \
+            on stdin since external is a list: the Markdown text and the record beside it, and \
+            point the change's plan at them. Refuses text over 1,500 words, a doc outside the \
+            change's mount or that is a pattern, and a change with no plan; a second call replaces \
+            the first.",
+        run: lifecycle::lifecycle,
+        input: input::<lifecycle::Input>,
+        output: output::<lifecycle::Output>,
+        hints: [false, true, true, false],
+        env: &[],
+        timeout: None,
+    },
+    Capability {
         name: "brief",
-        description: "What an agent needs to start: the change's plan, a one-line summary of each \
-            control on its paths, one line per record it uses, the next step and the command \
+        description: "What an agent needs to start: the change's plan, its lifecycle text, any \
+            warning, a one-line summary of each control on its paths, one line per record it uses, the next step and the command \
             that lists the repository's controls, in at most 600 words.",
         run: brief::brief,
         input: input::<phases::PathInput>,
@@ -381,6 +397,10 @@ impl Plugin for Changes {
             typed(ChangeV1::TYPE, schema_of::<ChangeV1>(settings())),
             typed(PlanRecord::TYPE, schema_of::<PlanRecord>(settings())),
             typed(
+                LifecycleRecord::TYPE,
+                schema_of::<LifecycleRecord>(settings()),
+            ),
+            typed(
                 UnderstandingRecord::TYPE,
                 schema_of::<UnderstandingRecord>(settings()),
             ),
@@ -460,6 +480,7 @@ fn manifest() -> Value {
             ChangeV1::TYPE,
             ChangeRecord::TYPE,
             flow::Flow::TYPE,
+            LifecycleRecord::TYPE,
             PlanRecord::TYPE,
             PrototypeRecord::TYPE,
             ReopenRecord::TYPE,

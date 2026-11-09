@@ -13,6 +13,7 @@ use super::*;
 mod authoring;
 mod brief;
 mod flows;
+mod lifecycle;
 mod migrate;
 mod phases;
 mod plan;
@@ -60,7 +61,7 @@ const FOREIGN_TYPES: [&str; 7] = [
 const REVIEW_TYPE: &str = "review/report/v1";
 /// The task every fixture change does, which the fixture board holds.
 const TASK: &str = "/tasks/given.md";
-const PLAN: &str = "# Timeout\n\n## Problem\n\nSuites hang.\n\n## Outcome\n\nA suite stops.\n\n## Out of scope\n\nRetries.\n\n## UX\n\nNo UI change: suites run headless.\n\n## Data\n\nNone.\n";
+const PLAN: &str = "# Timeout\n\n## Problem\n\nSuites hang.\n\n## Outcome\n\nA suite stops.\n\n## Out of scope\n\nRetries.\n\n## UX\n\nNo UI change: suites run headless.\n\n## Data\n\nNone.\n\n## Failure paths\n\nNone: nothing can fail.\n\n## Consumers\n\nNone: nothing reads it.\n\n## Lifecycle\n\nNone: nothing changes state.\n";
 /// The paths a fixture plan declares: everything under the fixture
 /// change's mount.
 const PATHS: [&str; 1] = ["/repos/x/**"];
@@ -717,6 +718,7 @@ fn board_lists_the_plugin_as_enabled_and_enabling_wrote_the_schema_it_ships() {
             "open",
             "pr",
             "plan",
+            "lifecycle",
             "brief",
             "prototype",
             "verdict",

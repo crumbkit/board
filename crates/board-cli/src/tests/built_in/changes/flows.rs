@@ -161,6 +161,53 @@ fn the_gate_reads_the_changes_version_so_editing_the_boards_flow_moves_only_a_re
     assert_eq!(gate(&board), ["head"]);
 }
 
+/// A change in plan that follows the stored version of the development flow
+/// from before the plan gained Failure paths, Consumers and Lifecycle, and
+/// whose plan has only the five sections that version asks for.
+fn on_the_old_flow() -> Changes {
+    let board = mounted();
+    started(&board, "A", &json!({}));
+    let old = include_str!(
+        "../../../../../board-plugin-changes/src/flow/flows-md/development-2bad23722b29b5a8.json"
+    );
+    board.write("flows/development/2bad23722b29b5a8.json", old);
+    let mut change = board.read("changes/a.json");
+    change["flow"] = json!("/flows/development/2bad23722b29b5a8");
+    board.write("changes/a.json", &change.to_string());
+    let (five, _) = PLAN.split_once("## Failure paths").unwrap();
+    board.call_stdin(
+        "plan",
+        &json!({"path": "/changes/a", "text": five, "uses": [], "paths": PATHS}),
+    );
+    board
+}
+
+/// The status of `id` in the gate of /changes/a.
+fn status(board: &Changes, id: &str) -> Option<Value> {
+    let output = board.call("next", &json!({"path": "/changes/a"}));
+    (output["gate"].as_array().unwrap().iter())
+        .find(|each| each["check"] == id)
+        .map(|each| each["status"].clone())
+}
+
+#[test]
+fn the_shipped_flows_new_sections_reach_a_change_in_flight_only_when_it_reflows() {
+    let board = on_the_old_flow();
+    assert_eq!(status(&board, "plan-sections"), Some(json!("pass")));
+    assert_eq!(status(&board, "lifecycle-declared"), None);
+    assert_eq!(status(&board, "lifecycle-record"), None);
+    board.call(
+        "reflow",
+        &json!({"path": "/changes/a", "flow": "development"}),
+    );
+    assert_ne!(
+        board.read("changes/a.json")["flow"],
+        "/flows/development/2bad23722b29b5a8"
+    );
+    assert_eq!(status(&board, "plan-sections"), Some(json!("missing")));
+    assert_eq!(status(&board, "lifecycle-record"), Some(json!("missing")));
+}
+
 #[test]
 fn reflow_refuses_a_flow_without_the_changes_phase_and_admits_one_with_it() {
     let board = mounted();

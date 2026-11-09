@@ -28,6 +28,21 @@ fn spent(brief: &Value) -> usize {
     .iter()
     .map(|key| shown(&brief[*key]))
     .collect();
+    if let Some(lifecycle) = brief.get("lifecycle") {
+        counted.push(shown(lifecycle));
+    }
+    for warning in brief
+        .get("warnings")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+    {
+        counted.push(format!(
+            "{} {}",
+            shown(&warning["code"]),
+            shown(&warning["detail"])
+        ));
+    }
     let command = &brief["rules_command"];
     if !command.is_null() {
         counted.extend(command["argv"].as_array().unwrap().iter().map(shown));
@@ -253,6 +268,62 @@ const BRIEF_GOLDEN: &str = concat!(
 /// The committed golden holds what an agent sees when it runs `board call
 /// changes.brief` without `--json`, so the guard's tests read Board's real
 /// output. `SNAPSHOTS=overwrite` rewrites the file.
+#[test]
+fn the_brief_names_the_lifecycle_text_and_a_1500_word_text_stays_outside_its_600_words() {
+    let board = with_source();
+    board.call_stdin("plan", &planned(&[], &PATHS));
+    assert_eq!(brief(&board).get("lifecycle"), None);
+    let text = "w ".repeat(1_500);
+    board.call_stdin(
+        "lifecycle",
+        &json!({"path": CHANGE, "text": text, "doc": "/repos/x/docs/states.md", "external": []}),
+    );
+    let found = brief(&board);
+    assert_eq!(found["lifecycle"], "/changes/t/lifecycle.md");
+    assert!(spent(&found) <= BRIEF_WORDS, "{}: {found}", spent(&found));
+}
+
+#[test]
+fn the_brief_warns_when_the_board_holds_no_lifecycle_paths_control_and_is_silent_when_it_does() {
+    let board = with_source();
+    board.call_stdin("plan", &planned(&[], &PATHS));
+    let found = brief(&board);
+    assert_eq!(found["warnings"][0]["code"], "changes::brief::no_control");
+    assert_eq!(
+        found["warnings"][0]["detail"],
+        "no control /controls/x/lifecycle-paths exists, so only the plan's Lifecycle heading \
+         guards what it would list; write the control to name those paths"
+    );
+    assert!(spent(&found) <= BRIEF_WORDS, "{}: {found}", spent(&found));
+    board.write(
+        "controls/x/lifecycle-paths.json",
+        &control(
+            "This code changes state.",
+            &["repos/x/src/sync.rs"],
+            &json!({}),
+        ),
+    );
+    assert_eq!(brief(&board).get("warnings"), None);
+}
+
+#[test]
+fn the_brief_of_a_change_on_a_flow_with_no_lifecycle_check_gives_no_warning() {
+    let board = Changes::new();
+    board.mount_x(&[("src/a.rs", "a\n")]);
+    let start = |name: &str, flow: &str| {
+        board.call(
+            "start",
+            &json!({"mount": "/repos/x", "title": name, "name": name, "task": TASK, "flow": flow}),
+        );
+        board.call("brief", &json!({"path": format!("/changes/{name}")}))
+    };
+    assert_eq!(start("small-one", "small").get("warnings"), None);
+    assert_eq!(
+        start("development-one", "development")["warnings"][0]["code"],
+        "changes::brief::no_control"
+    );
+}
+
 #[expect(
     clippy::disallowed_methods,
     reason = "brief.golden.ts is a golden, written as the other goldens are"

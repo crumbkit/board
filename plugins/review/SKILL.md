@@ -61,6 +61,19 @@ in.
    and review it again under a new id, with `follows` naming the last
    report.
 
+5. When the review belongs to a change, read the plan's Failure paths,
+   Consumers and Lifecycle sections and check them against the code. File
+   each gap as a finding with `severity`, `text`, `file` and `line`.
+   - For each Failure paths row, find the code that leaves the stated state
+     and the recovery. File a finding when either is missing, or when the
+     destructive step runs before its check.
+   - For each Consumers entry, run the stated search. File a finding for a
+     reader the diff changes that the list omits.
+   - For a `changes/lifecycle/v1` record, read its text. Check that every
+     transition in the table has one owner in the code, that no `_ =>` arm
+     covers a state enum the record names, that a test exists for each
+     crash point, and that the landed `doc` matches the record.
+
 `board -C <board> review post --report /reviews/<id>/report --pr <url>`
 comments a report on a pull request once the owner approves the comment.
 `board -C <board> review covered --base <commit> --change /changes/<name>`

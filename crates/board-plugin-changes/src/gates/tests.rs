@@ -17,7 +17,7 @@ const RUN: &str = "/suites/checks/runs/1";
 const HEAD: &str = "a3f9c0de1234567890abcdef1234567890abcdef";
 const BASE: &str = "0123456789abcdef0123456789abcdef01234567";
 const TASK: &str = "/tasks/given.md";
-const PLAN: &str = "# Timeout\n\n## Problem\n\nSuites hang.\n\n## Outcome\n\nA suite stops.\n\n## Out of scope\n\nRetries.\n\n## UX\n\nNo UI change: suites run headless.\n\n## Data\n\nNone.\n";
+const PLAN: &str = "# Timeout\n\n## Problem\n\nSuites hang.\n\n## Outcome\n\nA suite stops.\n\n## Out of scope\n\nRetries.\n\n## UX\n\nNo UI change: suites run headless.\n\n## Data\n\nNone.\n\n## Failure paths\n\nNone: nothing can fail.\n\n## Consumers\n\nNone: nothing reads it.\n\n## Lifecycle\n\nNone: nothing changes state.\n";
 const MOCKUP: &str = "https://claude.ai/artifact/m1";
 const NEIGHBOURS: &str = "### Neighbours\n\n- /changes/flows-list, the same area.\n";
 const UNDERSTOOD: &str = "/changes/t/understanding/data";
@@ -42,6 +42,14 @@ struct Given {
     unreadable: Vec<(&'static str, &'static str, &'static str)>,
     /// Whether the newest pull request reads as a github/pull/v1 record.
     pull_read: bool,
+    /// The controls `controls.for-paths` finds on the plan's paths.
+    on_planned: Vec<&'static str>,
+    /// The controls the board holds.
+    held: Vec<&'static str>,
+    /// What is at each path an `exists` check names.
+    existing: Vec<(&'static str, bool)>,
+    /// The files a controlled-paths control lists among the edited ones.
+    controlled: Vec<(&'static str, Vec<&'static str>)>,
 }
 
 fn given(phase: &'static str) -> Given {
@@ -56,6 +64,10 @@ fn given(phase: &'static str) -> Given {
         fields: json!({}),
         unreadable: Vec::new(),
         pull_read: true,
+        on_planned: Vec::new(),
+        held: Vec::new(),
+        existing: Vec::new(),
+        controlled: Vec::new(),
     }
 }
 
@@ -119,6 +131,21 @@ impl Given {
         observed.outside = self.outside.iter().map(|each| (*each).to_owned()).collect();
         observed.diff_unread = self.diff_unread.map(str::to_owned);
         observed.pull_read = self.pull_read;
+        observed.on_planned = self
+            .on_planned
+            .iter()
+            .map(|each| (*each).to_owned())
+            .collect();
+        observed.held = self.held.iter().map(|each| (*each).to_owned()).collect();
+        observed.existing = (self.existing.iter())
+            .map(|(path, held)| ((*path).to_owned(), *held))
+            .collect();
+        observed.controlled = (self.controlled.iter())
+            .map(|(control, files)| {
+                let files = files.iter().map(|each| (*each).to_owned()).collect();
+                ((*control).to_owned(), Some(files))
+            })
+            .collect();
         observed
     }
 
@@ -207,7 +234,7 @@ fn the_plan_gate_passes_when_each_plan_section_has_text_and_misses_when_one_is_e
         owned.check("plan-sections"),
         (
             "missing",
-            "the plan at /changes/t/plans/1 has no text under: Outcome, UX, Data".to_owned()
+            "the plan at /changes/t/plans/1 has no text under: Outcome, UX, Data, Failure paths, Consumers, Lifecycle".to_owned()
         )
     );
 }
@@ -374,6 +401,7 @@ fn review_statuses(review: &'static str) -> BTreeMap<String, &'static str> {
         ("paths", "pass"),
         ("ui-paths", "pass"),
         ("data-paths", "pass"),
+        ("lifecycle-paths", "pass"),
         ("obligations-settled", "pass"),
     ])
 }
@@ -465,7 +493,11 @@ fn the_land_gate_needs_the_test_sections_and_a_pull_request_record_and_done_has_
 /// The fixture plan with these UX and Data sections.
 fn planned(ux: &str, data: &str) -> String {
     let head = PLAN.split("## UX").next().unwrap();
-    format!("{head}## UX\n\n{ux}\n\n## Data\n\n{data}\n")
+    format!(
+        "{head}## UX\n\n{ux}\n\n## Data\n\n{data}\n\n## Failure paths\n\nNone: nothing can \
+         fail.\n\n## Consumers\n\nNone: nothing reads it.\n\n## Lifecycle\n\nNone: nothing changes \
+         state.\n"
+    )
 }
 
 fn planned_ux(ux: &str) -> String {
@@ -520,7 +552,7 @@ fn the_plan_gate_needs_text_under_ux_and_data() {
     let bare = format!("{}## UX\n\n## Data\n", PLAN.split("## UX").next().unwrap());
     assert_eq!(
         detail(&bare, "plan-sections", Vec::new()),
-        "the plan at /changes/t/plans/1 has no text under: UX, Data"
+        "the plan at /changes/t/plans/1 has no text under: UX, Data, Failure paths, Consumers, Lifecycle"
     );
     let plan = planned_ux("No UI change: it is headless.");
     assert_eq!(plan_checks(&plan, Vec::new())["plan-sections"], "pass");
@@ -796,4 +828,150 @@ fn a_heading_inside_a_code_fence_starts_no_section() {
     let found = sections("# T\n\n## Problem\n\n```\n## Outcome\n```\n");
     assert_eq!(found["problem"], "```\n## Outcome\n```");
     assert!(!found.contains_key("outcome"));
+}
+
+/// The plan fixture with its Lifecycle section replaced by `section`.
+fn with_lifecycle(section: &str) -> String {
+    let (before, _) = PLAN.rsplit_once("## Lifecycle").unwrap();
+    format!("{before}## Lifecycle\n\n{section}\n")
+}
+
+const CONTROL: &str = "/controls/x/lifecycle-paths";
+
+/// A change in plan whose plan says `section` under Lifecycle and whose
+/// planned paths reach the lifecycle-paths control.
+fn lifecycle_change(phase: &'static str, section: &str) -> Given {
+    let mut change = given(phase).plan(Some(&with_lifecycle(section)));
+    change.on_planned = vec![CONTROL];
+    change.held = vec![CONTROL];
+    change
+}
+
+#[test]
+fn the_plan_gate_misses_each_new_section_when_left_out_or_empty_and_passes_none_and_a_reason() {
+    let owned = |plan: &str| {
+        given("plan")
+            .with(json!({"route": "owner"}))
+            .plan(Some(plan))
+    };
+    let cut = |heading: &str| {
+        let (before, rest) = PLAN.split_once(heading).unwrap();
+        let after = rest.split_once("## ").map_or("", |(_, after)| after);
+        if after.is_empty() {
+            before.to_owned()
+        } else {
+            format!("{before}## {after}")
+        }
+    };
+    for (heading, name) in [
+        ("## Failure paths", "Failure paths"),
+        ("## Consumers", "Consumers"),
+        ("## Lifecycle", "Lifecycle"),
+    ] {
+        assert_eq!(
+            owned(&cut(heading)).check("plan-sections"),
+            (
+                "missing",
+                format!("the plan at /changes/t/plans/1 has no text under: {name}")
+            ),
+            "{heading} left out"
+        );
+    }
+    let empty = "## Failure paths\n\n## Consumers\n\nNone: nothing reads it.\n";
+    let plan = PLAN.replace(
+        "## Failure paths\n\nNone: nothing can fail.\n\n## Consumers\n\nNone: nothing reads it.\n",
+        empty,
+    );
+    assert_eq!(
+        owned(&plan).check("plan-sections"),
+        (
+            "missing",
+            "the plan at /changes/t/plans/1 has no text under: Failure paths".to_owned()
+        )
+    );
+    assert_eq!(owned(PLAN).statuses()["plan-sections"], "pass");
+}
+
+#[test]
+fn lifecycle_declared_misses_none_when_the_planned_paths_reach_the_control_and_its_twins_pass() {
+    assert_eq!(
+        lifecycle_change("plan", "None: nothing changes state.").check("lifecycle-declared"),
+        (
+            "missing",
+            "the plan's paths reach /controls/x/lifecycle-paths while its Lifecycle section \
+             declares nothing"
+                .to_owned()
+        )
+    );
+    let unreached = {
+        let mut change = lifecycle_change("plan", "None: nothing changes state.");
+        change.on_planned = Vec::new();
+        change
+    };
+    assert_eq!(
+        unreached.check("lifecycle-declared"),
+        ("pass", String::new())
+    );
+    let named = lifecycle_change("plan", "See `/changes/t/lifecycle`: three states.");
+    assert!(!named.statuses().contains_key("lifecycle-declared"));
+}
+
+#[test]
+fn lifecycle_declared_passes_and_says_no_control_exists_when_the_board_holds_none() {
+    let mut change = lifecycle_change("plan", "None: nothing changes state.");
+    change.on_planned = Vec::new();
+    change.held = Vec::new();
+    assert_eq!(
+        change.check("lifecycle-declared"),
+        (
+            "pass",
+            "no control /controls/x/lifecycle-paths exists, so the board names no such paths and \
+             the check passes"
+                .to_owned()
+        )
+    );
+}
+
+#[test]
+fn lifecycle_record_misses_a_named_record_nobody_wrote_and_passes_one_that_is_there() {
+    let mut named = lifecycle_change("plan", "See `/changes/t/lifecycle`: three states.");
+    assert_eq!(
+        named.check("lifecycle-record"),
+        ("missing", "nothing is at /changes/t/lifecycle".to_owned())
+    );
+    named.existing = vec![("/changes/t/lifecycle", true)];
+    assert_eq!(named.check("lifecycle-record"), ("pass", String::new()));
+    let none = lifecycle_change("plan", "None: nothing changes state.");
+    assert!(!none.statuses().contains_key("lifecycle-record"));
+}
+
+/// "None" counts only as Data's pattern counts it: a word of its own followed
+/// by a full stop, a colon or nothing.
+#[test]
+fn lifecycle_none_reads_as_data_none_does_so_a_sentence_that_starts_with_none_is_no_opt_out() {
+    let sentence = lifecycle_change("plan", "None of the states change, and one is added.");
+    let checks = sentence.statuses();
+    assert!(!checks.contains_key("lifecycle-declared"), "{checks:?}");
+    assert_eq!(checks["lifecycle-record"], "missing", "{checks:?}");
+    let bare = lifecycle_change("plan", "None");
+    assert!(bare.statuses().contains_key("lifecycle-declared"));
+}
+
+#[test]
+fn lifecycle_paths_in_review_misses_an_edit_after_none_and_is_left_out_for_a_named_record() {
+    let mut none = lifecycle_change("review", "None: nothing changes state.");
+    none.controlled = vec![(CONTROL, vec!["/repos/x/src/sync.rs"])];
+    assert_eq!(
+        none.check("lifecycle-paths"),
+        (
+            "missing",
+            "the change's diff edits files that /controls/x/lifecycle-paths list: \
+             /repos/x/src/sync.rs"
+                .to_owned()
+        )
+    );
+    none.controlled = vec![(CONTROL, Vec::new())];
+    assert_eq!(none.check("lifecycle-paths"), ("pass", String::new()));
+    let named = lifecycle_change("review", "See `/changes/t/lifecycle`: three states.");
+    assert!(!named.statuses().contains_key("lifecycle-paths"));
 }

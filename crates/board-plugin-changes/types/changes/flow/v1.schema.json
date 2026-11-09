@@ -39,6 +39,9 @@
           "$ref": "#/$defs/ControlledPathsCheck"
         },
         {
+          "$ref": "#/$defs/PlannedControlledCheck"
+        },
+        {
           "$ref": "#/$defs/ExistsCheck"
         }
       ],
@@ -76,6 +79,7 @@
             "considered",
             "obligations",
             "controlled-paths",
+            "planned-controlled",
             "flow-valid",
             "exists"
           ],
@@ -109,6 +113,18 @@
         "not": {
           "anyOf": [
             {
+              "not": {
+                "properties": {
+                  "kind": {
+                    "enum": [
+                      "planned-controlled"
+                    ]
+                  }
+                },
+                "required": [
+                  "kind"
+                ]
+              },
               "required": [
                 "controls"
               ]
@@ -128,7 +144,7 @@
       },
       "properties": {
         "controls": {
-          "description": "`controlled-paths`: the controls whose paths the diff must not touch.",
+          "description": "`controlled-paths`: the controls whose paths the diff must not touch.\n`planned-controlled`: the controls the plan's paths must not reach.",
           "items": {
             "pattern": "^/\\S*$",
             "type": "string"
@@ -368,6 +384,57 @@
         "agent"
       ],
       "type": "object"
+    },
+    "PlannedControlledCheck": {
+      "description": "The parameters of a check of kind `planned-controlled`.",
+      "else": {
+        "not": {
+          "anyOf": [
+            {
+              "not": {
+                "properties": {
+                  "kind": {
+                    "enum": [
+                      "controlled-paths"
+                    ]
+                  }
+                },
+                "required": [
+                  "kind"
+                ]
+              },
+              "required": [
+                "controls"
+              ]
+            }
+          ]
+        }
+      },
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "planned-controlled"
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "properties": {
+        "controls": {
+          "description": "`controlled-paths`: the controls whose paths the diff must not touch.\n`planned-controlled`: the controls the plan's paths must not reach.",
+          "items": {
+            "pattern": "^/\\S*$",
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "then": {
+        "required": [
+          "controls"
+        ]
+      }
     },
     "RecordsCheck": {
       "description": "The parameters of a check of kind `records`.",

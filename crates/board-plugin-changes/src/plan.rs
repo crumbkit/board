@@ -107,6 +107,7 @@ pub(crate) struct Planned {
     pub(crate) paths: Vec<String>,
     pub(crate) considered: Vec<Considered>,
     pub(crate) owed: Vec<Owed>,
+    pub(crate) lifecycle: Option<String>,
 }
 
 /// How many whitespace-separated words `text` holds.
@@ -274,6 +275,7 @@ pub(crate) fn plan(host: &dyn Host, input: &Value) -> Result<Value, PluginError>
         paths,
         considered,
         owed,
+        lifecycle: kept_lifecycle(host, change.plan.as_deref())?,
     };
     if let Some(same) = unchanged(host, change.plan.as_deref(), &text, &planned)? {
         return Ok(to_value(Output {
@@ -387,9 +389,19 @@ fn kept_records(host: &dyn Host, plan: Option<&str>) -> Result<Option<Vec<String
         .filter(|records| !records.is_empty()))
 }
 
+/// The lifecycle record the plan the change names as `plan` points at, which
+/// a revised plan keeps; none when it names no plan Board reads or that plan
+/// has none.
+fn kept_lifecycle(host: &dyn Host, plan: Option<&str>) -> Result<Option<String>, PluginError> {
+    let Some(plan) = plan else {
+        return Ok(None);
+    };
+    Ok(plan_at(host, plan)?.and_then(|(record, _)| record.lifecycle))
+}
+
 /// `count` with a comma between each group of three digits, as Python's
 /// `{:,}` writes it.
-fn thousands(count: usize) -> String {
+pub(crate) fn thousands(count: usize) -> String {
     let digits = count.to_string();
     let mut shown = String::new();
     for (at, digit) in digits.chars().enumerate() {
@@ -490,6 +502,7 @@ pub(crate) fn plan_lines(
         paths,
         considered,
         owed,
+        lifecycle,
     } = planned;
     let body = PlanRecord {
         tag: Tag::default(),
@@ -499,6 +512,7 @@ pub(crate) fn plan_lines(
         records,
         considered: (!considered.is_empty()).then_some(considered),
         owed: (!owed.is_empty()).then_some(owed),
+        lifecycle,
     };
     let lines = vec![
         json!({"path": written, "expect": "none", "text": text}),
