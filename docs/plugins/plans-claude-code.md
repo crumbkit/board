@@ -27,7 +27,8 @@ through the Agent SDK and report it as false. A failed refresh is logged and
 keeps the last count read. The band is drawn on the terminal and the desktop app only.
 
 The button opens the `questions` pane. It lists each question with its project, its
-age and what it blocks, and each option as a button; the recommended option is
+age and what it blocks, shown as the last path segment of `blocks` or as
+`blocked_work`, and each option as a button; the recommended option is
 drawn as the primary one. Where the surface draws a text field, which mobile
 does not, the owner may answer in words instead. Pressing an option records
 that option's `id` as `choice` and its text as `words`. Words typed in the

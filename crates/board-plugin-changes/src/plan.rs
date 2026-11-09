@@ -11,9 +11,10 @@ use serde_json::{Value, json};
 
 use crate::board::{self};
 use crate::change::{Referenced, kind_of, line, plan_at, read, referenced, touch};
+use crate::gates::sections;
 use crate::phases::final_phase;
-use crate::records::{Kind, PlanRecord, is_final};
-use crate::{PLUGIN, refusal, to_value};
+use crate::records::{CONTROL_TYPE, Considered, Kind, Owed, PlanRecord, is_final};
+use crate::{PLUGIN, Warning, refusal, to_value};
 
 /// The most words a plan's text holds, and the most words the documents it
 /// uses hold in all.
@@ -51,7 +52,22 @@ pub(crate) struct Input {
                        where `*` also matches `/`; a build change needs one."
     )]
     paths: Option<Vec<String>>,
+    #[serde(default)]
+    #[schemars(
+        description = "The records the change surfaced that the plan does not build on, in \
+                       groups that share one reason, a list given on stdin."
+    )]
+    considered: Vec<Considered>,
+    #[serde(default)]
+    #[schemars(
+        description = "The obligations on the plan's paths that the change leaves owed, each \
+                       with why, a list given on stdin."
+    )]
+    owed: Vec<Owed>,
 }
+
+/// The headings the gates no longer read from a plan's text, in lower case.
+pub(crate) const MOVED_HEADINGS: [&str; 2] = ["considered", "obligations left owed"];
 
 /// A logical path `board call` takes as a flag.
 #[derive(Debug)]
@@ -81,6 +97,16 @@ pub(crate) struct Output {
     text: String,
     uses: usize,
     unchanged: bool,
+    warnings: Vec<Warning>,
+}
+
+/// What a plan record holds besides its text and the records attached to it.
+#[derive(Debug, Default)]
+pub(crate) struct Planned {
+    pub(crate) uses: Vec<String>,
+    pub(crate) paths: Vec<String>,
+    pub(crate) considered: Vec<Considered>,
+    pub(crate) owed: Vec<Owed>,
 }
 
 /// How many whitespace-separated words `text` holds.
@@ -123,12 +149,94 @@ pub(crate) fn documents(
         .collect())
 }
 
+/// What each path the plan names is, or a refusal when one reaches nothing
+/// or an owed path is no control.
+fn check_named(
+    host: &dyn Host,
+    path: &str,
+    uses: &[String],
+    considered: &[Considered],
+    owed: &[Owed],
+) -> Result<Referenced, PluginError> {
+    let mut named = uses.to_vec();
+    named.extend(
+        considered
+            .iter()
+            .flat_map(|each| each.records.iter().cloned()),
+    );
+    named.extend(owed.iter().map(|each| each.control.clone()));
+    let records = referenced(host, &named)?;
+    let dangling: Vec<&String> = named
+        .iter()
+        .filter(|each| records.get(each).is_none())
+        .collect();
+    if !dangling.is_empty() {
+        let listed: Vec<&str> = dangling.iter().map(|each| each.as_str()).collect();
+        return Err(refusal(
+            "changes::ref::dangling",
+            format!(
+                "these references in the plan reach nothing or are degraded: {}; check each path \
+                 with `board ls` or `board check`",
+                listed.join(", ")
+            ),
+            [("path", json!(path)), ("refs", json!(listed))],
+        ));
+    }
+    check_owed(path, owed, &records)?;
+    Ok(records)
+}
+
+/// Refuses `uses` that hold a directory, or documents over the word limit.
+fn check_uses(
+    host: &dyn Host,
+    path: &str,
+    uses: &[String],
+    records: &Referenced,
+) -> Result<(), PluginError> {
+    let directories: Vec<&str> = (uses.iter())
+        .filter(|each| {
+            records
+                .get(each)
+                .is_some_and(|(found, _)| found == "directory")
+        })
+        .map(String::as_str)
+        .collect();
+    if !directories.is_empty() {
+        return Err(refusal(
+            "changes::plan::directory",
+            format!(
+                "the plan uses the directories {}, whose words the limit cannot count; use the \
+                 documents in them that apply, choosing from each directory's index.md",
+                directories.join(", ")
+            ),
+            [("path", json!(path)), ("refs", json!(directories))],
+        ));
+    }
+    let words_used: usize = (documents(host, uses, records)?.iter())
+        .map(|(_, text)| words(text))
+        .sum();
+    if words_used > USES_WORDS {
+        return Err(refusal(
+            "changes::plan::uses_too_long",
+            format!(
+                "the documents the plan for {path} uses hold {} words in all, over the \
+                 3,000-word limit; use fewer, choosing from each directory's index.md",
+                thousands(words_used)
+            ),
+            [("path", json!(path)), ("words", json!(words_used))],
+        ));
+    }
+    Ok(())
+}
+
 pub(crate) fn plan(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
     let Input {
         path,
         text,
         uses,
         paths,
+        considered,
+        owed,
     } = PluginError::read_input(PLUGIN, "plan", input)?;
     let uses = once(uses);
     let paths = once(paths.unwrap_or_default());
@@ -157,62 +265,27 @@ pub(crate) fn plan(host: &dyn Host, input: &Value) -> Result<Value, PluginError>
             [("path", json!(path)), ("words", json!(counted))],
         ));
     }
-    let records = referenced(host, &uses)?;
-    let dangling: Vec<&String> = uses
-        .iter()
-        .filter(|each| records.get(each).is_none())
-        .collect();
-    if !dangling.is_empty() {
-        let listed: Vec<&str> = dangling.iter().map(|each| each.as_str()).collect();
-        return Err(refusal(
-            "changes::ref::dangling",
-            format!(
-                "these references in the plan reach nothing or are degraded: {}; check each path \
-                 with `board ls` or `board check`",
-                listed.join(", ")
-            ),
-            [("path", json!(path)), ("refs", json!(listed))],
-        ));
-    }
-    let directories: Vec<&str> = (uses.iter())
-        .filter(|each| {
-            records
-                .get(each)
-                .is_some_and(|(found, _)| found == "directory")
-        })
-        .map(String::as_str)
-        .collect();
-    if !directories.is_empty() {
-        return Err(refusal(
-            "changes::plan::directory",
-            format!(
-                "the plan uses the directories {}, whose words the limit cannot count; use the \
-                 documents in them that apply, choosing from each directory's index.md",
-                directories.join(", ")
-            ),
-            [("path", json!(path)), ("refs", json!(directories))],
-        ));
-    }
-    let words_used: usize = (documents(host, &uses, &records)?.iter())
-        .map(|(_, text)| words(text))
-        .sum();
-    if words_used > USES_WORDS {
-        return Err(refusal(
-            "changes::plan::uses_too_long",
-            format!(
-                "the documents the plan for {path} uses hold {} words in all, over the \
-                 3,000-word limit; use fewer, choosing from each directory's index.md",
-                thousands(words_used)
-            ),
-            [("path", json!(path)), ("words", json!(words_used))],
-        ));
-    }
+    let records = check_named(host, &path, &uses, &considered, &owed)?;
+    check_uses(host, &path, &uses, &records)?;
     let count = uses.len();
-    if let Some(same) = unchanged(host, change.plan.as_deref(), &text, &uses, &paths)? {
-        return Ok(same);
+    let warnings = text_warnings(&text);
+    let planned = Planned {
+        uses,
+        paths,
+        considered,
+        owed,
+    };
+    if let Some(same) = unchanged(host, change.plan.as_deref(), &text, &planned)? {
+        return Ok(to_value(Output {
+            path: same.0,
+            text: same.1,
+            uses: count,
+            unchanged: true,
+            warnings,
+        }));
     }
     let kept = kept_records(host, change.plan.as_deref())?;
-    let (record, mut lines) = plan_lines(host.settings().now, &path, &text, uses, paths, kept);
+    let (record, mut lines) = plan_lines(host.settings().now, &path, &text, planned, kept);
     let written = format!("{record}.md");
     change.plan = Some(record.clone());
     lines.push(line(&path, &blob, &touch(host, change)));
@@ -222,38 +295,84 @@ pub(crate) fn plan(host: &dyn Host, input: &Value) -> Result<Value, PluginError>
         text: written,
         uses: count,
         unchanged: false,
+        warnings,
     }))
 }
 
-/// The output that returns the plan record at `current` unchanged, when
-/// its text, `uses` and `paths` equal those given; none when the change
+/// `changes::ref::wrong_type` for an `owed` entry that is no control.
+fn check_owed(path: &str, owed: &[Owed], records: &Referenced) -> Result<(), PluginError> {
+    let wrong: Vec<&str> = (owed.iter())
+        .map(|each| each.control.as_str())
+        .filter(|each| {
+            records
+                .get(each)
+                .is_none_or(|(found, _)| found != CONTROL_TYPE)
+        })
+        .collect();
+    if wrong.is_empty() {
+        return Ok(());
+    }
+    Err(refusal(
+        "changes::ref::wrong_type",
+        format!(
+            "the plan for {path} leaves owed {}, and owed accepts only {CONTROL_TYPE} records; \
+             name each obligation by its path, or check its `$type` with `board get`",
+            wrong.join(", ")
+        ),
+        [("path", json!(path)), ("refs", json!(wrong))],
+    ))
+}
+
+/// The warning for a plan whose text still has a section the gates no
+/// longer read.
+fn text_warnings(text: &str) -> Vec<Warning> {
+    let found = sections(text);
+    let held: Vec<&str> = (MOVED_HEADINGS.iter().copied())
+        .filter(|heading| found.contains_key(*heading))
+        .collect();
+    if held.is_empty() {
+        return Vec::new();
+    }
+    vec![Warning {
+        code: "changes::plan::considered_in_text",
+        detail: format!(
+            "the plan's text has a {} section, which the gates ignore; give those records in \
+             considered and owed on stdin, and cut the section",
+            held.iter()
+                .map(|heading| match *heading {
+                    "considered" => "Considered",
+                    _ => "Obligations left owed",
+                })
+                .collect::<Vec<_>>()
+                .join(" and ")
+        ),
+    }]
+}
+
+/// The path and text path of the plan record at `current`, when its text
+/// and every field of `planned` equal those given; none when the change
 /// names no plan or any differs.
 fn unchanged(
     host: &dyn Host,
     current: Option<&str>,
     text: &str,
-    uses: &[String],
-    paths: &[String],
-) -> Result<Option<Value>, PluginError> {
+    planned: &Planned,
+) -> Result<Option<(String, String)>, PluginError> {
     let Some(current) = current else {
         return Ok(None);
     };
     let Some((record, _)) = plan_at(host, current)? else {
         return Ok(None);
     };
-    let held_paths = record.paths.as_deref().unwrap_or_default();
-    if record.uses != uses || held_paths != paths {
+    if record.uses != planned.uses
+        || record.paths.as_deref().unwrap_or_default() != planned.paths
+        || record.considered.as_deref().unwrap_or_default() != planned.considered
+        || record.owed.as_deref().unwrap_or_default() != planned.owed
+    {
         return Ok(None);
     }
     let held = board::get_text(host, &record.text)?;
-    Ok((held.as_deref() == Some(text)).then(|| {
-        to_value(Output {
-            path: current.to_owned(),
-            text: record.text,
-            uses: uses.len(),
-            unchanged: true,
-        })
-    }))
+    Ok((held.as_deref() == Some(text)).then(|| (current.to_owned(), record.text)))
 }
 
 /// The records attached to the plan the change names as `plan`, in order,
@@ -361,18 +480,25 @@ pub(crate) fn plan_lines(
     now: SystemTime,
     path: &str,
     text: &str,
-    uses: Vec<String>,
-    paths: Vec<String>,
+    planned: Planned,
     records: Option<Vec<String>>,
 ) -> (String, Vec<Value>) {
     let record = format!("{path}/plans/{}", stamp(now));
     let written = format!("{record}.md");
+    let Planned {
+        uses,
+        paths,
+        considered,
+        owed,
+    } = planned;
     let body = PlanRecord {
         tag: Tag::default(),
         text: written.clone(),
         uses,
         paths: (!paths.is_empty()).then_some(paths),
         records,
+        considered: (!considered.is_empty()).then_some(considered),
+        owed: (!owed.is_empty()).then_some(owed),
     };
     let lines = vec![
         json!({"path": written, "expect": "none", "text": text}),

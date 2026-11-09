@@ -59,6 +59,13 @@ pub const CHANGE_TYPES: [&str; 2] = [CHANGE_V1, CHANGE_TYPE];
 #[derive(Clone, Copy, Debug)]
 pub struct Changes;
 
+/// Something a capability says of what it wrote without refusing it.
+#[derive(Debug, serde::Serialize, JsonSchema)]
+pub(crate) struct Warning {
+    pub(crate) code: &'static str,
+    pub(crate) detail: String,
+}
+
 /// How long a capability that calls the tasks plugin may run, in seconds:
 /// the nested call syncs and pushes a notes repo.
 const NESTED_TIMEOUT: u64 = 120;
@@ -177,7 +184,9 @@ const CAPABILITIES: [Capability; 19] = [
     Capability {
         name: "plan",
         description: "Write a plan for the change, the records it uses and the paths it will \
-            edit, given as JSON on stdin since uses and paths are lists, refusing a build change's plan without paths, a path outside the change's \
+            edit, given as JSON on stdin since uses, paths, considered and owed are lists, with \
+            considered the surfaced records it does not build on and owed the obligations it \
+            leaves owed, refusing a build change's plan without paths, a path outside the change's \
             mount, a reference that reaches nothing, a plan over 3,000 words and used documents \
             over 3,000 words in all; the new plan becomes the change's plan, and a plan equal to \
             the change's current one writes nothing and says unchanged.",
@@ -306,7 +315,9 @@ const CAPABILITIES: [Capability; 19] = [
             change lists move to the plan it names, a pull request's URL becomes a github/pull/v1 \
             record through github.ref, and the sync stamp moves to Board's cache. flows also \
             replaces each change's own copy of its flow with a reference to the flow's stored \
-            version, and rewrites each run that names its flow by name. apply writes every line \
+            version, and rewrites each run that names its flow by name. plans moves each open \
+            change's Considered and Obligations left owed sections from its plan's text to the \
+            plan's considered and owed fields, in a new snapshot. apply writes every line \
             in one commit with a Board-Bulk trailer; without it nothing is written.",
         run: migrate::migrate,
         input: input::<migrate::Input>,

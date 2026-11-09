@@ -215,6 +215,8 @@ pub(crate) struct Check {
     /// left out.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) part: Option<Part>,
+    // Board no longer reads this field: the plan's `owed` lists what is left
+    // owed. It stays so stored flows keep their schema and their hash.
     /// `obligations`: the plan's heading under which obligations left owed
     /// are listed.
     #[serde(default, skip_serializing_if = "Option::is_none")]

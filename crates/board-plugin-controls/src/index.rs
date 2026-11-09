@@ -66,6 +66,7 @@ pub(crate) struct Control {
     pub(crate) rule: Option<Rule>,
     kind: Option<Open<Kind>>,
     show: Option<Open<ShowAt>>,
+    owed_by: Option<String>,
 }
 
 impl Control {
@@ -82,6 +83,19 @@ impl Control {
     pub(crate) fn show(&self) -> ShowAt {
         let show = (self.show.as_ref()).map(|show| show.known().copied().unwrap_or(ShowAt::Start));
         ShowAt::effective(show, self.kind(), self.measured())
+    }
+
+    /// What left an obligation owed; none for a standing control, whose
+    /// `owed_by` `check` warns of.
+    pub(crate) fn owed(&self) -> Option<String> {
+        (self.kind() == Kind::Obligation)
+            .then(|| self.owed_by.clone())
+            .flatten()
+    }
+
+    /// Whether the control is standing and yet names what left it owed.
+    pub(crate) fn owed_though_standing(&self) -> bool {
+        self.kind() == Kind::Standing && self.owed_by.is_some()
     }
 
     /// Whether `check` measures the control's files: it has a budget or a

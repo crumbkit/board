@@ -167,15 +167,15 @@ fn default(each: &flow::Check) -> String {
              urls or refs; or start UX with No UI change and a reason."
         ),
         Kind::Considered => {
-            "Cite each surfaced record you build on in the plan's uses, list the rest under ### \
-             Considered with one line on why it does not apply, and write the plan again with \
-             `board changes plan --path {change}`."
+            "Cite each surfaced record you build on in the plan's uses, list the rest in its \
+             considered field with one line on why they do not apply, and write the plan again \
+             with `board changes plan --path {change}`."
                 .to_owned()
         }
         Kind::Obligations => {
             "Do the work each obligation names. Once the work is committed, delete each obligation \
              with `board rm <path> -m '<message naming the work>'`; merging the work does not \
-             clear it. List an obligation the change leaves owed under the plan's escape heading."
+             clear it. List an obligation the change leaves owed in the plan's owed field."
                 .to_owned()
         }
         Kind::ControlledPaths => {

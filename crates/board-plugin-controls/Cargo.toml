@@ -9,6 +9,7 @@ publish.workspace = true
 board-model.workspace = true
 board-ops.workspace = true
 board-plugin.workspace = true
+board-validate.workspace = true
 regex.workspace = true
 regex-syntax.workspace = true
 sha2.workspace = true
@@ -22,7 +23,6 @@ toml.workspace = true
 
 [dev-dependencies]
 board-scenario.workspace = true
-board-validate.workspace = true
 
 [lints]
 workspace = true

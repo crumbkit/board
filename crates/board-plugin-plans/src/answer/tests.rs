@@ -398,7 +398,7 @@ fn a_question_changed_after_the_read_is_refused_by_board_and_nothing_is_written(
         let (scenario, host) = on_board(&json!({}));
         let scenario = Rc::new(scenario);
         if changed {
-            let edited = question(&json!({"blocks": "the release"}));
+            let edited = question(&json!({"blocked_work": "the release"}));
             let there = Rc::clone(&scenario);
             *host.between.borrow_mut() = Some(Box::new(move || {
                 there.write(

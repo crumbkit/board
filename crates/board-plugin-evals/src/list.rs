@@ -90,6 +90,7 @@ struct Listed {
     #[schemars(with = "Option<String>")]
     verdict: Option<Open<Verdict>>,
     decision: Option<String>,
+    informs: Option<String>,
 }
 
 /// An eval as a mounted board's own, possibly looser, schema may admit it.
@@ -102,6 +103,7 @@ struct Stored {
     status: Open<Status>,
     verdict: Option<Open<Verdict>>,
     decision: Option<String>,
+    informs: Option<String>,
     written_by: Option<String>,
     mounts: Option<Vec<String>>,
     #[serde(rename = "conclusion")]
@@ -240,6 +242,7 @@ fn listed(
                 status: eval.status,
                 verdict: eval.verdict,
                 decision: eval.decision,
+                informs: eval.informs,
             });
         }
     }

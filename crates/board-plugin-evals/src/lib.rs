@@ -1,6 +1,7 @@
 //! The evals plugin built into Board (plugins/evals/README.md).
 
 mod list;
+mod migrate;
 pub mod records;
 
 use board_model::{CapabilityName, RecordType};
@@ -40,9 +41,12 @@ impl Plugin for Evals {
         match capability.as_str() {
             "about" => list::about(host, &input),
             "open" => list::open(host, &input),
+            "migrate" => migrate::migrate(host, &input),
             other => Err(PluginError {
                 code: "evals::call::unknown_capability".to_owned(),
-                message: format!("evals offers no capability {other}; it offers about and open"),
+                message: format!(
+                    "evals offers no capability {other}; it offers about, open and migrate"
+                ),
                 fields: Map::new(),
                 hint: None,
             }),
@@ -84,6 +88,21 @@ fn manifest() -> Value {
             "annotations": {
                 "readOnlyHint": true,
                 "destructiveHint": false,
+                "idempotentHint": true,
+                "openWorldHint": false,
+            },
+            "_meta": {},
+        }, {
+            "name": "migrate",
+            "description": "Move each eval's decision text to informs, and set decision to the one \
+                decision record of this board that names the eval in its refs, when there is one. \
+                apply writes every line in one commit with a Board-Bulk trailer; without it nothing \
+                is written.",
+            "inputSchema": schema_of::<migrate::Input>(SchemaSettings::draft2020_12()),
+            "outputSchema": schema_of::<migrate::Output>(SchemaSettings::draft2020_12().for_serialize()),
+            "annotations": {
+                "readOnlyHint": false,
+                "destructiveHint": true,
                 "idempotentHint": true,
                 "openWorldHint": false,
             },

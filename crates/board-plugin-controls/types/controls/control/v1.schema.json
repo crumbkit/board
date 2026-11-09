@@ -256,6 +256,16 @@
       ],
       "type": "string"
     },
+    "owed_by": {
+      "description": "For an obligation, what left the work owed: the pull request whose\nmerge owes it, the review report that found it, or the decision that\naccepted it.",
+      "format": "board-ref",
+      "type": "string",
+      "x-board-type": [
+        "github/pull/v1",
+        "review/report/v1",
+        "plans/decision/v1"
+      ]
+    },
     "paths": {
       "description": "The paths the control applies to, as `SQLite` GLOB patterns from the\nboard's root, such as `docs/*.md`, where `*` also matches `/`.",
       "items": {

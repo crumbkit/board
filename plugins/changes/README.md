@@ -82,7 +82,9 @@ that one record.
   "text": "/changes/suite-timeout/plans/20261101T120000000000Z.md",
   "uses": ["/repos/board/STANDARDS.md", "/controls/rules/pair-refusals", "/evals/board-standards-selection"],
   "paths": ["/repos/board/plugins/changes/**", "/repos/board/docs/plugins.md"],
-  "records": ["/suites/board-tests/runs/20261025T101500Z-a3f9"]
+  "records": ["/suites/board-tests/runs/20261025T101500Z-a3f9"],
+  "considered": [{"records": ["/plans/old-timeout"], "why": "It sets the deploy timeout."}],
+  "owed": [{"control": "/controls/board/docs-owed", "why": "The docs sweep follows the release."}]
 }
 ```
 
@@ -97,6 +99,20 @@ that one record.
   starts with the `records` of the plan it replaces, in order, and that
   earlier plan record is left as it was. The records a change owns
   are those every one of its plans lists.
+- `considered`, left out when empty, holds the surfaced records the plan
+  read and does not rely on: each group is `records`, one or more
+  references, and `why`, the reason in words.
+- `owed`, left out when empty, holds the obligations the change leaves for
+  later: each is `control`, the path of a `controls/control/v1`, and `why`.
+  `board check` does not follow `control`, because an obligation is deleted
+  once its work is done and a plan snapshot never changes. `plan` checks the
+  path when it writes it: a record that is missing is
+  `changes::ref::dangling`, and an owed path that is no control is
+  `changes::ref::wrong_type`. A plan's text
+  takes no such paths: the `considered` and `obligations` checks read only
+  these fields. A `### Considered` or `## Obligations left owed` heading
+  earns the output's `warnings` entry
+  `changes::plan::considered_in_text`; `plan` still writes the plan.
 
 `changes/prototype/v1` at `/changes/<name>/prototype.json` makes the change
 a prototype, and its path names the change. A prototype answers
@@ -211,6 +227,24 @@ change's version; one whose change follows no version is listed under
 `left`. A run that names a copy the migration replaces is rewritten to
 name that copy's version. A run whose rewritten record fails its schema
 stays as it is and is listed under `left`, and the copy it names stays too.
+`migrate --plans true [--apply true]` moves each open change's `Considered`
+and `Obligations left owed` sections from its plan's text to the plan's
+`considered` and `owed` fields, in a new plan snapshot, and leaves `touched`
+as it was. A line that reads as neither paths and a reason nor a label, a path
+that reaches nothing, and an owed path that is no control are listed under
+`plan_fields.unread` with `changes::migrate::unread`, and that change keeps
+its old plan. A path that exists but is degraded is accepted, so this
+migration can run before `plans.migrate` and `evals.migrate`. The commit's
+trailer is `Board-Bulk: migrate plans`.
+
+`board plugin enable` writes the new schemas, and from then on a question or
+eval that still holds words in `blocks` or `decision` is degraded and drops
+out of `plans.open` and `evals.open`. So apply `plans.migrate`,
+`evals.migrate` and `controls.migrate --owed_by true` in the same step as
+`plugin enable`, with `changes.migrate --plans true`. Read the dry runs first
+on a throwaway copy of the board, where enabling the plugins changes nothing
+that anyone else reads.
+
 The output's `flows` holds `applied`, `versions` (the versions written), `changes` (at most 100, with `total` and `truncated`),
 `copies` (the count removed), `runs`, `unreadable` and `left`. The commit's
 trailer is `Board-Bulk: migrate flows`. A second run writes nothing. Each
@@ -284,18 +318,22 @@ of `changes` still fails `review`.
 - `stop --path /changes/<name> --reason <reason> --summary '<one line>' [--question <path>]`
   writes a `changes/stop/v1` with the change's phase and the blocking
   checks missing there. It leaves the change's `stop` as it is. `--question` must be a `plans/question/v1`
-  (`changes::ref::wrong_type`). Each call writes a new record.
+  (`changes::ref::wrong_type`). A question whose `blocks` does not name this
+  change earns the output's `warnings` entry
+  `changes::stop::question_unlinked`, and the stop is still recorded. Each
+  call writes a new record.
 - `next --path /changes/<name>`: read-only. The change's `flow` (its name
   and phases), its phase, each gate check as `pass` or `missing` with a
   `detail`, its `actor`, whether it `blocks`, and when missing its
   `remedy`; the instruction, with its placeholders filled; and `sync`.
   An instruction that names `changes plan` or `changes.plan` ends with how
   to give its input, JSON on stdin with the fields `path`, `text`, `uses`
-  and `paths`, and a one-line example such as
+  and `paths`, plus `considered` and `owed` when the plan has them, and a
+  one-line example such as
   `{"path":"/changes/<name>","text":"<text>","uses":["<use>"],"paths":["<mount>/<path>"]}`.
   Every change that `start` writes has a plan. For a change with a plan,
   the instruction says that `board changes plan` replaces the plan, so all
-  four fields must be resent. When
+  four fields must be resent, with `considered` and `owed` when it has them. When
   every missing check that blocks is the owner's or a reviewer's,
   `waiting_on` names them and `ask` holds the question to put to them,
   built from those checks' details and remedies.
@@ -730,8 +768,8 @@ evaluated by kind:
 | `tasks` | every attached task but the change's own is done or dropped |
 | `understood` | a decision the owner signed references an attached understanding check of this change's `subject`; with `rechecks`, each such check also holds that many matching rechecks |
 | `mockups` | the `agreed` part: each mockup under UX is named by a signed decision; the `neighbours` part: UX lists its neighbours; both when `part` is left out |
-| `considered` | each path in the change's `surfaced` is in the plan's `uses` or named under a `### Considered` heading |
-| `obligations` | no obligation control applies to the plan's paths, except those named under the `escape_section` heading; a board without the controls plugin enabled has none |
+| `considered` | each path in the change's `surfaced` that still reaches something is in the plan's `uses` or its `considered` field |
+| `obligations` | no obligation control applies to the plan's paths, except those in the plan's `owed` field; a board without the controls plugin enabled has none |
 | `controlled-paths` | the diff edits no file that the controls in `controls` list in their `paths` or `applies_to`; the detail names at most ten such files and counts the rest |
 | `flow-valid` | at least one `changes/flow/v1` is attached, and each can run and gives a `remedy` to every check whose actor is the owner or a reviewer; the detail lists each problem with its phase and check id |
 | `exists` | something is at `path`, its placeholders filled; a placeholder with no value yet leaves it missing |
