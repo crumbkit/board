@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 use std::time::Duration;
 
 use board_model::parse_json;
-use board_ops::{Host, PluginError, RefsReport, literal};
+use board_ops::{Host, PluginError, literal};
 use board_plugin::shape::Record;
 use board_repos::Date;
 use schemars::JsonSchema;
