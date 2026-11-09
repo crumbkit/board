@@ -704,7 +704,7 @@ impl CallError {
                 let (code, message) = (failure.code.clone(), failure.message.clone());
                 return Refusal {
                     hint: failure.hint.clone(),
-                    stderr: stderr.cloned().unwrap_or_default(),
+                    stderr: stderr.cloned(),
                     ..Refusal::plugin(code, message, fields)
                 };
             }
@@ -773,7 +773,7 @@ impl CallError {
         };
         Refusal {
             fields: json,
-            stderr: stderr.cloned().unwrap_or_default(),
+            stderr: stderr.cloned(),
             ..Refusal::new(code, self, &hinted)
         }
     }

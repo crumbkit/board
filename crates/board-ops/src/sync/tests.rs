@@ -233,7 +233,7 @@ fn a_remote_git_cannot_reach_fails_the_sync_with_gits_stderr() {
             .starts_with("git could not fetch origin (exit status"),
         "{error}"
     );
-    let stderr = String::from_utf8(error.refusal().stderr).unwrap();
+    let stderr = String::from_utf8(error.refusal().stderr.unwrap()).unwrap();
     assert!(stderr.contains("/nowhere/at/all"), "{stderr}");
 }
 

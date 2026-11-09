@@ -105,7 +105,8 @@ impl KnownBoards {
     /// board's root is there. `home` is what a mount's `~/` means.
     pub fn personal(&self, home: Option<&Path>) -> Result<PathBuf, Box<Refusal>> {
         let unnamed = format!("`{}` names no personal board", shown(self.file.as_deref()));
-        self.named(home)?.ok_or_else(|| self.no_personal(unnamed))
+        self.named(home)?
+            .ok_or_else(|| Box::new(self.no_personal(unnamed)))
     }
 
     /// The root of the personal board the file names, if it names one,
@@ -132,16 +133,16 @@ impl KnownBoards {
             shown(file),
             root.display()
         );
-        Err(self.no_personal(message))
+        Err(Box::new(self.no_personal(message)))
     }
 
-    fn no_personal(&self, message: String) -> Box<Refusal> {
+    fn no_personal(&self, message: String) -> Refusal {
         let shown = shown(self.file.as_deref());
         let hint = format!(
             "name the personal board in `{shown}` as {{\"personal\": \"<board directory>\"}}, the directory that holds .board/board.json"
         );
         let refusal = Refusal::new(Code::ConfigNotFound, message, &Fields::default());
-        Box::new(refusal.with_hint(hint))
+        refusal.with_hint(hint)
     }
 }
 
