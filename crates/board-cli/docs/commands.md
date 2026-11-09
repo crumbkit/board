@@ -251,7 +251,7 @@ List the installed plugins' capabilities, or those that match every filter
 
 ### Arguments
 
-- `--capability <NAME>`: Only capabilities of this name
+- `--capability <CAPABILITY>`: Only capabilities of this name
 - `--meta <FILTERS>`: `<key>=<value>`: the capability's metadata, or else its plugin's, holds this string. Takes more than one value.
 - `--limit <N>`: Print at most this many rows, up to 10000. Default: `100`.
 - `--all`: Print every row
@@ -310,7 +310,7 @@ Call a plugin's capability with flags, or else JSON on stdin
 ### Arguments
 
 - `<TARGET>`: `<plugin>.<capability>`, such as tasks.available. Required, or give `--capability` in its place.
-- `--capability <NAME>`: The capability of the one enabled plugin that offers it. Required, or give `<TARGET>` in its place.
+- `--capability <CAPABILITY>`: The capability of the one enabled plugin that offers it. Required, or give `<TARGET>` in its place.
 
 Effects: destructive, not idempotent, open-world.
 
