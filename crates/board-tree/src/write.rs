@@ -68,7 +68,8 @@ impl Repositories {
 impl Resolver<'_, '_> {
     /// The record file `path` names for writing. Pointers are followed,
     /// including a link at the last segment; a path that reaches a mount is
-    /// refused. A path that names nothing yet names a new file beneath the
+    /// refused, unless `path` is a mount that cannot be read and the record
+    /// is a pointer, which replaces it. A path that names nothing yet names a new file beneath the
     /// deepest directory that exists. `is_pointer` says whether the record
     /// to be written is a pointer, which would shadow a directory beside it;
     /// a write that would leave its own path degraded is refused with that
@@ -80,6 +81,9 @@ impl Resolver<'_, '_> {
                 (location, physical, path.clone())
             }
             Err(ResolveError::NotFound { .. }) => self.new_file(path)?,
+            Err(source) if is_pointer && source.is_unread_mount(path) => {
+                return self.pointer_target(path);
+            }
             Err(source) => return Err(unresolved(path, source)),
         };
         if location.board.source != Source::WorkingTree {

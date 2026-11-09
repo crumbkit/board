@@ -135,6 +135,7 @@ impl Board {
                 ..*plugins
             },
             root,
+            warnings: RefCell::default(),
         };
         let plugin = &chosen.manifest.name;
         let capability = &chosen.capability().name;
@@ -164,6 +165,7 @@ impl Board {
             plugin: plugin.clone(),
             capability: capability.clone(),
             output,
+            warnings: host.warnings.into_inner(),
         })
     }
 }

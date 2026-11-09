@@ -52,6 +52,8 @@ pub struct Written {
     /// reference that does not resolve, or reaches the wrong type, or a
     /// binding that does not fit its view.
     pub degraded: Option<(Code, Detail)>,
+    /// The `repo` of a mount written under a temporary directory.
+    pub temporary: Option<String>,
 }
 
 /// One file a put removed.
@@ -325,6 +327,7 @@ impl Board {
                 previous,
                 blob,
                 degraded: None,
+                temporary: temporary_repo(&item.admitted),
             });
         }
         stale.extend(
@@ -731,6 +734,24 @@ impl PutError {
             _ => Refusal::new(self.code(), self, &self.fields()),
         }
     }
+}
+
+/// The `repo` of `admitted` when it is a mount under a directory the system
+/// empties. It names the usual places on Linux and macOS; a `TMPDIR`
+/// elsewhere, or a relative `repo`, is missed, which costs only the warning.
+fn temporary_repo(admitted: &Admitted) -> Option<String> {
+    const TEMPORARY: [&str; 6] = [
+        "/tmp",
+        "/private/tmp",
+        "/var/tmp",
+        "/private/var/tmp",
+        "/var/folders",
+        "/private/var/folders",
+    ];
+    let repo = admitted.value.get("repo")?.as_str()?;
+    let path = std::path::Path::new(repo);
+    (admitted.pointer && TEMPORARY.iter().any(|root| path.starts_with(root)))
+        .then(|| repo.to_owned())
 }
 
 /// `bytes` classified as a record, once they are one JSON object with a

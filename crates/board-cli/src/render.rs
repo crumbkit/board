@@ -261,8 +261,16 @@ pub(crate) fn put(printer: Printer, report: &PutReport, note: Option<String>) ->
         let note = format!("note: {display} is written but degraded: {code} {display}{why}");
         Some(Note::Always(note))
     });
+    let temporary = (report.writes.iter()).filter_map(|written| {
+        let repo = written.temporary.as_ref()?;
+        Some(Note::Always(format!(
+            "note: {} mounts the repository {repo}, which is under a temporary directory; \
+             the mount stops working when that directory goes, so keep the clone elsewhere",
+            written.display
+        )))
+    });
     let answer = said(put_json(report), put_text(report));
-    let notes = notes.chain(note.map(Note::Text));
+    let notes = notes.chain(temporary).chain(note.map(Note::Text));
     printer.noted(PUT, answer, notes.collect())
 }
 

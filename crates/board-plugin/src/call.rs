@@ -284,6 +284,9 @@ pub struct CallReport {
     pub plugin: PluginName,
     pub capability: CapabilityName,
     pub output: Value,
+    /// What a built-in plugin's walks passed over, one line each. A process
+    /// plugin has no way to give any.
+    pub warnings: Vec<String>,
 }
 
 /// Where a call runs: the board's root and what the child inherits, and
@@ -366,6 +369,7 @@ pub fn invoke(
         plugin: plugin.clone(),
         capability: capability.name.clone(),
         output,
+        warnings: Vec::new(),
     })
 }
 

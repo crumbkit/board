@@ -623,3 +623,115 @@ fn reopen_refuses_when_the_cap_is_full_and_goes_past_it_with_a_reason() {
         "Blocked work elsewhere."
     );
 }
+
+/// Each way a mount at `<at>` cannot be read: with the repository's `.git`
+/// gone, and with a commit the repository lacks.
+#[expect(
+    clippy::disallowed_methods,
+    reason = "the test removes the mounted repository's git directory, as happens to a mount"
+)]
+fn break_mount(board: &Changes, at: &str, losing_git: bool) {
+    if losing_git {
+        std::fs::remove_dir_all(board.repo_root(at).join(".git")).unwrap();
+    } else {
+        let file = format!("{at}.json");
+        let mut pointer = board.read(&file);
+        pointer["commit"] = json!("9".repeat(40));
+        board.write(&file, &pointer.to_string());
+    }
+}
+
+#[test]
+fn another_changes_mount_that_cannot_be_read_warns_and_every_start_carries_on() {
+    for (losing_git, code) in [
+        (true, "board::mount::repo_missing"),
+        (false, "board::mount::commit_missing"),
+    ] {
+        let board = Changes::new();
+        board.mount_x(&[("README.md", "x\n")]);
+        let gone = board.repository("repos/gone", None);
+        board.building_in(&gone, WIP_LIMIT, "elsewhere");
+        break_mount(&board, "repos/gone", losing_git);
+        let (output, warnings) = board.warned(&[
+            "changes.start",
+            "--mount",
+            "/repos/x",
+            "--task",
+            TASK,
+            "--title",
+            "Quick",
+            "--flow",
+            "small",
+        ]);
+        assert_eq!(output["phase"], "build");
+        assert!(warnings.contains("/repos/gone"), "{warnings}");
+        assert!(warnings.contains(code), "{warnings}");
+        assert!(
+            warnings.contains("`board mount update") || warnings.contains("change `repo`"),
+            "{warnings}"
+        );
+    }
+}
+
+#[test]
+fn the_limit_still_refuses_with_an_unreadable_mount_beside_a_full_repository() {
+    let board = Changes::new();
+    board.mount_x(&[("README.md", "x\n")]);
+    let gone = board.repository("repos/gone", None);
+    board.building_in(&gone, 1, "elsewhere");
+    break_mount(&board, "repos/gone", true);
+    board.building_in("/repos/x", WIP_LIMIT, "busy");
+    let input = json!({"mount": "/repos/x", "task": TASK, "title": "Quick", "flow": "small"});
+    assert_eq!(board.refusal("start", &input)["code"], "changes::wip::full");
+}
+
+#[test]
+fn a_change_for_the_mount_that_cannot_be_read_is_refused_with_the_mounts_code() {
+    let board = Changes::new();
+    board.repository("repos/gone", None);
+    break_mount(&board, "repos/gone", true);
+    let input = json!({"mount": "/repos/gone", "task": TASK, "title": "Quick", "flow": "small"});
+    let refused = board.refusal("start", &input);
+    assert_eq!(
+        refused["fields"]["code"], "board::mount::repo_missing",
+        "{refused}"
+    );
+}
+
+#[test]
+fn another_changes_mount_that_is_a_dangling_link_warns_and_start_carries_on() {
+    let board = Changes::new();
+    board.mount_x(&[("README.md", "x\n")]);
+    board.write(
+        "repos/dangling.json",
+        r#"{"$type": "board/mount/v1", "path": "/nowhere"}"#,
+    );
+    board.building_in("/repos/dangling", WIP_LIMIT, "elsewhere");
+    let (output, warnings) = board.warned(&[
+        "changes.start",
+        "--mount",
+        "/repos/x",
+        "--task",
+        TASK,
+        "--title",
+        "Quick",
+        "--flow",
+        "small",
+    ]);
+    assert_eq!(output["phase"], "build");
+    assert!(warnings.contains("/repos/dangling"), "{warnings}");
+    assert!(warnings.contains("board::ref::dangling"), "{warnings}");
+}
+
+impl Changes {
+    /// `board --json call <arguments>`: the output, and what it printed on
+    /// stderr.
+    fn warned(&self, arguments: &[&str]) -> (Value, String) {
+        let mut all = vec!["--json", "call"];
+        all.extend_from_slice(arguments);
+        let output = self.run(&all, "");
+        let warnings = text(&output.stderr);
+        assert_eq!(output.code, 0, "{warnings}");
+        (json(&output)["data"]["output"].clone(), warnings)
+    }
+}

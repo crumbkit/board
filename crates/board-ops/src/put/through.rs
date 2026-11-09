@@ -112,6 +112,7 @@ impl Board {
                 previous,
                 blob,
                 degraded: mounted.degraded((resolve, root), item, &crossing.inside.path),
+                temporary: None,
             });
         }
         Ok(PutReport::new(writes, commit))

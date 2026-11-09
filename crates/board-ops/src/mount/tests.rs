@@ -4,7 +4,8 @@ use board_model::{Code, Fields, LogicalPath, ObjectId, canonical_json, parse_jso
 use board_scenario::{Item, Scenario};
 
 use crate::mount::MountUpdateReport;
-use crate::tests::{board, open};
+use crate::put::Expect;
+use crate::tests::{board, open, task};
 
 fn mount(repo: &str, follow: &str, commit: ObjectId) -> String {
     format!(
@@ -273,4 +274,131 @@ fn a_repo_record_moves_its_checkout_commit_to_its_follow_and_keeps_its_remote() 
     assert_eq!(written["checkout"]["commit"], new.to_string());
     assert_eq!(written["remote"], "example-org/lib");
     assert!(written.get("commit").is_none());
+}
+
+/// A library holding one commit, and a mount of it in each way a mount
+/// cannot be read, by the code each is degraded with.
+fn broken(library: &Scenario, pinned: ObjectId) -> [(String, Code); 2] {
+    [
+        (
+            mount(&format!("{}/gone", library.path()), "main", pinned),
+            Code::MountRepoMissing,
+        ),
+        (
+            mount(&library.path(), "main", ObjectId::Sha1([9; 20])),
+            Code::MountCommitMissing,
+        ),
+    ]
+}
+
+#[test]
+fn get_of_a_mount_that_cannot_be_read_returns_its_record_and_get_beneath_it_refuses() {
+    let library = Scenario::new();
+    let pinned = library.commit(&[("a.md", "one")]);
+    for (pointer, code) in broken(&library, pinned) {
+        let scenario = board();
+        scenario.write("vendor/lib.json", Item::File(&pointer));
+        let board = open(&scenario);
+        let report = board.get(&path("/vendor/lib")).unwrap();
+        assert_eq!(report.bytes, pointer.as_bytes());
+        assert_eq!(
+            report.record.unwrap()["repo"],
+            parse_json(pointer.as_bytes()).unwrap()["repo"]
+        );
+        let beneath = path("/vendor/lib/a.md");
+        assert_eq!(board.get(&beneath).unwrap_err().code(), code);
+        let paths = [path("/vendor/lib"), beneath];
+        let each: Vec<_> = board.get_each(&paths).unwrap().collect();
+        assert!(each[0].is_ok());
+        assert_eq!(each[1].as_ref().unwrap_err().code(), code);
+    }
+}
+
+#[test]
+fn get_of_a_mount_that_can_be_read_is_not_a_record() {
+    let (scenario, _library, ..) = moved();
+    assert_eq!(
+        open(&scenario)
+            .get(&path("/vendor/lib"))
+            .unwrap_err()
+            .code(),
+        Code::RecordNotARecord
+    );
+}
+
+#[test]
+fn a_put_of_a_mount_that_opens_replaces_one_that_cannot_be_read() {
+    let library = Scenario::new();
+    let pinned = library.commit(&[("a.md", "one")]);
+    let good = mount(&library.path(), "main", pinned);
+    for (pointer, _) in broken(&library, pinned) {
+        let scenario = board();
+        scenario
+            .write(
+                ".board/board.json",
+                Item::File(r#"{"$type": "board/config/v1", "commit_on_put": false}"#),
+            )
+            .write("vendor/lib.json", Item::File(&pointer));
+        let board = open(&scenario);
+        let written = board
+            .put(&path("/vendor/lib"), Expect::Any, good.as_bytes())
+            .unwrap();
+        assert_eq!(written.writes[0].degraded, None);
+        assert_eq!(
+            file(&scenario, "vendor/lib.json"),
+            canonical_json(&parse_json(good.as_bytes()).unwrap()).into_bytes()
+        );
+        assert!(board.get(&path("/vendor/lib/a.md")).is_ok());
+    }
+}
+
+#[test]
+fn a_put_of_a_record_that_is_no_pointer_over_a_mount_that_cannot_be_read_is_refused() {
+    let library = Scenario::new();
+    let pinned = library.commit(&[("a.md", "one")]);
+    for (pointer, code) in broken(&library, pinned) {
+        let scenario = board();
+        scenario.write("vendor/lib.json", Item::File(&pointer));
+        let refused = open(&scenario)
+            .put(&path("/vendor/lib"), Expect::Any, task("").as_bytes())
+            .unwrap_err();
+        assert_eq!(refused.code(), code);
+    }
+}
+
+#[test]
+fn a_put_of_a_mount_over_one_that_can_be_read_stays_refused() {
+    let (scenario, library, old, _) = moved();
+    let again = mount(&library.path(), "main", old);
+    assert_eq!(
+        open(&scenario)
+            .put(&path("/vendor/lib"), Expect::Any, again.as_bytes())
+            .unwrap_err()
+            .code(),
+        Code::PutThroughMount
+    );
+}
+
+#[test]
+fn a_mount_written_under_a_temporary_directory_says_so_and_one_elsewhere_does_not() {
+    let library = Scenario::new();
+    let pinned = library.commit(&[("a.md", "one")]);
+    let scenario = board();
+    scenario.write(
+        ".board/board.json",
+        Item::File(r#"{"$type": "board/config/v1", "commit_on_put": false}"#),
+    );
+    let board = open(&scenario);
+    let written = |at: &str, repo: &str| {
+        let pointer = mount(repo, "main", pinned);
+        let report = board
+            .put(&path(at), Expect::Any, pointer.as_bytes())
+            .unwrap();
+        report.writes[0].temporary.clone()
+    };
+    for repo in ["/tmp/a", "/private/tmp/b", "/var/folders/x/T/c"] {
+        assert_eq!(written("/vendor/one", repo).as_deref(), Some(repo));
+    }
+    assert_eq!(written("/vendor/two", "/home/person/code/lib"), None);
+    assert_eq!(written("/vendor/three", "/tmpfiles/lib"), None);
 }

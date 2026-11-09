@@ -11,6 +11,7 @@ use serde::Serialize;
 use serde_json::{Map, Value, json};
 
 use super::Health;
+use super::kit::Note;
 use super::kit::{Printer, Refused, Said};
 use crate::report::Output;
 use crate::run::Page;
@@ -331,7 +332,10 @@ pub(crate) fn call(printer: Printer, report: &CallReport) -> Output {
         value,
         canonical_json(&report.output).as_str().to_owned(),
     ));
-    printer.noted(CALL_REPORT, answer, Vec::new())
+    let warnings = (report.warnings.iter())
+        .map(|line| Note::Always(format!("warning: {line}")))
+        .collect();
+    printer.noted(CALL_REPORT, answer, warnings)
 }
 
 pub(crate) const CALL_REPORT: Document<Prose<Said, Refused>> = Document::new(

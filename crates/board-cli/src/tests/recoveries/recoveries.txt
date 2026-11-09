@@ -144,11 +144,6 @@ board check /mount/commit
   run board mount update /mount/commit
     exits 0
 
-board get /mount/commit
-  fails with board::mount::commit_missing
-  run board mount update /mount/commit
-    exits 0
-
 board ls /mount/commit
   fails with board::mount::commit_missing
   run board mount update /mount/commit
@@ -211,10 +206,6 @@ board check /mount/repo
   fails with board::mount::repo_missing
   hint
 
-board get /mount/repo
-  fails with board::mount::repo_missing
-  hint
-
 board ls /mount/repo
   fails with board::mount::repo_missing
   hint
@@ -224,12 +215,6 @@ board refs /mount/repo
   hint
 
 board check /mount/unfollowed
-  fails with board::mount::commit_missing
-  run board mount update /mount/unfollowed
-    fails with board::mount::follow_missing
-    hint
-
-board get /mount/unfollowed
   fails with board::mount::commit_missing
   run board mount update /mount/unfollowed
     fails with board::mount::follow_missing

@@ -411,6 +411,17 @@ impl<'k> Resolver<'_, 'k> {
         )
     }
 
+    /// Resolves `path` as [`Resolver::resolve`] does, except that a mount
+    /// at the end that cannot be read is not followed: `path` then names
+    /// the mount's own record, so a person can see what to repair. A path
+    /// beneath that mount reads through it, and is refused as ever.
+    pub fn resolve_record(&mut self, path: &LogicalPath) -> Result<Location, ResolveError> {
+        match self.resolve(path) {
+            Err(error) if error.is_unread_mount(path) => self.resolve_pointer(path),
+            resolved => resolved,
+        }
+    }
+
     /// What [`crate::walk::planned_code`] gives `file` in this snapshot.
     pub(crate) fn planned_code(
         &mut self,
@@ -705,6 +716,15 @@ impl ResolveError {
                 return None;
             }
         })
+    }
+
+    /// Whether resolving stopped because `path` is itself a mount whose
+    /// repository cannot be opened or lacks the pinned commit.
+    pub fn is_unread_mount(&self, path: &LogicalPath) -> bool {
+        matches!(
+            self,
+            Self::RepoMissing { path: at, .. } | Self::CommitMissing { path: at, .. } if at == path
+        )
     }
 
     pub fn code(&self) -> Code {

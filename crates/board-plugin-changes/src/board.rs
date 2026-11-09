@@ -2,7 +2,7 @@
 //! as `changes::board::refused`, as the Python plugin's helper gave them.
 
 use board_model::{Code, Fields, LogicalPath, Object, PathError, Refusal, parse_json};
-use board_ops::{Absent, Bulk, Host, Limit, PluginError, RefsReport, literal};
+use board_ops::{Absent, Bulk, Host, Limit, PluginError, RefsError, RefsReport, literal};
 use board_plugin::Target;
 use board_plugin::shape::TREE_CODES;
 use serde_json::{Map, Value};
@@ -67,32 +67,58 @@ pub(crate) fn tree_codes() -> String {
     codes.join(", ")
 }
 
-/// Where each of `paths` resolves, in order, or none when nothing is there.
-/// Any other refusal of a path is `changes::board::refused`.
-pub(crate) fn refs(
+/// Board's answer for each of `paths`, in order, read as `board refs` reads
+/// them.
+fn answers(
     host: &dyn Host,
     paths: &[String],
-) -> Result<Vec<Option<RefsReport>>, PluginError> {
+) -> Result<Vec<Result<RefsReport, RefsError>>, PluginError> {
     if paths.is_empty() {
         return Ok(Vec::new());
     }
     let asked = (paths.iter())
         .map(|path| logical(path, "refs"))
         .collect::<Result<Vec<_>, _>>()?;
-    let answers = (host.refs(&asked, Absent::Refuse, &[]))
-        .map_err(|error| refused("refs", &error.refusal()))?;
-    (answers.into_iter())
-        .map(|answer| match answer {
-            Ok(report) => Ok(Some(report)),
-            Err(error) if error.code() == Code::PathNotFound => Ok(None),
-            Err(error) => Err(refused("refs", &error.refusal())),
+    (host.refs(&asked, Absent::Refuse, &[])).map_err(|error| refused("refs", &error.refusal()))
+}
+
+/// `answer`, with a path that names nothing as none.
+fn found(answer: Result<RefsReport, RefsError>) -> Result<Option<RefsReport>, RefsError> {
+    match answer {
+        Ok(report) => Ok(Some(report)),
+        Err(error) if error.code() == Code::PathNotFound => Ok(None),
+        Err(error) => Err(error),
+    }
+}
+
+/// Where each of `paths`, which a walk of the board gathered, resolves, in
+/// order, or none when nothing is there. A path that one record stops, such
+/// as a mount that cannot be read or a dangling link, is none as well and
+/// warned of, so that it cannot stop the walk. Any other refusal of a path
+/// is `changes::board::refused`.
+pub(crate) fn refs(
+    host: &dyn Host,
+    paths: &[String],
+) -> Result<Vec<Option<RefsReport>>, PluginError> {
+    (answers(host, paths)?.into_iter())
+        .map(|answer| match found(answer) {
+            Err(error) if error.stops_only_this_path() => {
+                host.warn(&error.refusal());
+                Ok(None)
+            }
+            answer => answer.map_err(|error| refused("refs", &error.refusal())),
         })
         .collect()
 }
 
-/// Where `path` resolves, or none when nothing is there.
+/// Where `path`, which one operation reads through, resolves, or none when
+/// nothing is there. Any other refusal of it is `changes::board::refused`,
+/// because the operation cannot go on without it.
 pub(crate) fn resolve(host: &dyn Host, path: &str) -> Result<Option<RefsReport>, PluginError> {
-    Ok(refs(host, &[path.to_owned()])?.into_iter().next().flatten())
+    let answer = answers(host, &[path.to_owned()])?.into_iter().next();
+    answer
+        .map_or(Ok(None), found)
+        .map_err(|error| refused("refs", &error.refusal()))
 }
 
 /// The stored bytes of the file at each of `paths`, in order, or none for a
