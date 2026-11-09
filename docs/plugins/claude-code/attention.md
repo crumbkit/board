@@ -16,11 +16,11 @@ attention.pinned`, which verifies each pinned order. It adds the verified
 orders, and the path and code of each one left out, to the session's first
 message as one context block, `attentionOrders`. Claude Code sends that
 block once and again after a compaction. The band above the prompt shows
-each order as a badge, and each one left out, or a personal board that
-could not be read, as a red badge; [band.md](band.md) says what they show.
-A badge opens a pane on its order, with its expiry, the signer that
-verified it and its context. The pane's **All pinned orders** button lists
-every order, with the code and message of each one left out.
+one Orders button with the count of verified orders; [band.md](band.md) says
+what it shows. The button opens a pane that lists the orders, and each one
+opens its expiry, the signer that verified it and its context. A left-out
+order or a personal board that could not be read turns the button red; the
+pane gives the code and message of each.
 
 ## Asking the owner to sign
 

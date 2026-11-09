@@ -3,7 +3,7 @@ import type { On } from 'claude-code'
 import type { Engine } from 'claude-code/testing'
 
 import { SLOT, joinBand } from '../hooks/band'
-import { contextText, orderBadges, parsePinned } from '../hooks/pinned'
+import { contextText, ordersButton, parsePinned } from '../hooks/pinned'
 
 // These prove what a session and the owner are shown from attention.pinned's
 // answer, with `board` stood in by a process.run hook. They do not run board
@@ -120,29 +120,25 @@ test('with nothing pinned the first message carries no block of the plugin\'s', 
   expect(context.blocks.map(b => b.name)).toEqual(['claudeMd'])
 })
 
-test('each verified order is a badge named by its path\'s last segment, and each one left out a red badge with its code', () => {
-  expect(orderBadges(parsePinned(BOARD, 0, JSON.stringify(REPORT), ''))).toEqual([
-    { label: 'evals', path: '/orders/evals', problem: false },
-    { label: 'old: attention::order::expired', path: '/orders/old', problem: true },
-  ])
+test('the button counts the verified orders, and says in red how many were left out or that the read failed', () => {
+  const two = { ...REPORT, data: { ...REPORT.data, output: { orders: [EVALS, { ...EVALS, path: '/orders/plans' }], left_out: [] } } }
+  expect(ordersButton(parsePinned(BOARD, 0, JSON.stringify(two), ''))).toEqual({ label: 'Orders 2', problem: false })
+  expect(ordersButton(parsePinned(BOARD, 0, JSON.stringify(REPORT), ''))).toEqual({ label: 'Orders 1: 1 left out', problem: true })
   const failure = { schema: 'board/failure/v1', code: 'attention::signers::missing', message: 'there is no allowed_signers file' }
-  expect(orderBadges(parsePinned(BOARD, 1, JSON.stringify(failure), ''))).toEqual([
-    { label: 'Pinned orders could not be read: there is no allowed_signers file', path: null, problem: true },
-  ])
+  expect(ordersButton(parsePinned(BOARD, 1, JSON.stringify(failure), ''))).toEqual({ label: 'Orders: attention::signers::missing', problem: true })
   const empty = { ...REPORT, data: { ...REPORT.data, output: { orders: [], left_out: [] } } }
-  expect(orderBadges(parsePinned(BOARD, 0, JSON.stringify(empty), ''))).toEqual([])
+  expect(ordersButton(parsePinned(BOARD, 0, JSON.stringify(empty), ''))).toBeNull()
 })
 
-test('the band shows a badge per order, and a badge opens its order with its expiry, signature and context', async ($, on) => {
+test('the band shows one Orders button and no order by name, and the button opens the list, where an order opens its expiry, signature and context', async ($, on) => {
   const { opened } = engine(on, { exitCode: 0, stdout: JSON.stringify(REPORT) })
   await start($)
 
   for (const surface of ['terminal', 'desktop'] as const) {
     const band = await $.ui.mount({ plugin: 'board-attention', surface, component: 'AbovePrompt', props: BAND_PROPS })
-    expect((await band.find({ type: 'Text', text: 'Orders' }))?.text).toBe('Orders')
-    expect((await band.find({ key: 'order:/orders/evals' }))?.text).toBe('evals')
-    expect((await band.find({ key: 'order:/orders/old' }))?.text).toBe('old: attention::order::expired')
-    await band.press({ key: 'order:/orders/evals' })
+    expect((await band.find({ key: 'orders' }))?.text).toBe('Orders 1: 1 left out')
+    expect(await band.find({ text: /evals/ })).toBeUndefined()
+    await band.press({ key: 'orders' })
     await band.unmount()
 
     const pane = await $.ui.mount({
@@ -152,6 +148,8 @@ test('the band shows a badge per order, and a badge opens its order with its exp
       requestId: 'attention-pinned',
       props: PANE_PROPS,
     })
+    expect((await pane.find({ key: 'order:/orders/evals' }))?.text).toBe('/orders/evals, until 2026-12-31')
+    await pane.press({ key: 'order:/orders/evals' })
     expect(await pane.find({ text: '/orders/evals, until 2026-12-31' })).toBeDefined()
     expect(await pane.find({ text: 'Verified: signed by owner.' })).toBeDefined()
     expect(await pane.find({ text: 'Record every test as an eval.' })).toBeDefined()
@@ -166,17 +164,16 @@ test('the band shows a badge per order, and a badge opens its order with its exp
   expect(opened).toEqual(['attention-pinned', 'attention-pinned'])
 })
 
-test('a left-out badge opens the pane on its code and message', async ($, on) => {
+test('the list names each order left out with its code and message', async ($, on) => {
   engine(on, { exitCode: 0, stdout: JSON.stringify(REPORT) })
   await start($)
   const band = await $.ui.mount({ plugin: 'board-attention', surface: 'terminal', component: 'AbovePrompt', props: BAND_PROPS })
-  await band.press({ key: 'order:/orders/old' })
+  await band.press({ key: 'orders' })
   const pane = await $.ui.mount({ plugin: 'board-attention', surface: 'terminal', component: 'Pane', requestId: 'attention-pinned', props: PANE_PROPS })
   expect(await pane.find({ text: "Not in this session's context: the order expired on 2026-10-01 (attention::order::expired)." })).toBeDefined()
-  expect(await pane.find({ text: /evals/ })).toBeUndefined()
 })
 
-test('the order badges join the parts other mods draw beneath, in one row with a bar between sections', async ($, on) => {
+test('the Orders button joins the buttons other mods draw beneath, in the same section', async ($, on) => {
   const { pressed } = engine(on, { exitCode: 0, stdout: JSON.stringify(REPORT) }, 'controls')
   await start($)
   const band = await $.ui.mount({ plugin: 'board-attention', surface: 'terminal', component: 'AbovePrompt', props: BAND_PROPS })
@@ -184,20 +181,22 @@ test('the order badges join the parts other mods draw beneath, in one row with a
   const row = drawn.type === 'Box' ? drawn.children?.[0] : undefined
   expect(typeof row === 'object' && row.type === 'Box' ? row.props?.key : null).toBe('board-band')
   const keys = typeof row === 'object' && row.type === 'Box' ? row.children?.map(c => (typeof c === 'object' && c.type === 'Box' ? c.props?.key : 'text')) : []
-  expect(keys).toEqual([SLOT.orders, 'text', SLOT.controls])
+  expect(keys).toEqual([SLOT.orders, SLOT.controls])
   expect((await band.find({ key: 'controls' }))?.text).toBe('Controls 5')
-  expect((await band.find({ type: 'Text', text: '|' }))?.text).toBe('|')
   // The other mod's button, moved into this mod's row, still reaches that mod's handler.
   await band.press({ key: 'controls', plugin: 'test' })
   expect(pressed).toEqual(['controls'])
 })
 
-test('a board that cannot be read is one red badge in the band', async ($, on) => {
+test('a board that cannot be read shows the button with its code, and the pane says what failed', async ($, on) => {
   const failure = { schema: 'board/failure/v1', code: 'attention::signers::missing', message: 'there is no allowed_signers file' }
   engine(on, { exitCode: 1, stdout: JSON.stringify(failure) })
   await start($)
   const band = await $.ui.mount({ plugin: 'board-attention', surface: 'terminal', component: 'AbovePrompt', props: BAND_PROPS })
-  expect((await band.find({ key: 'order:' }))?.text).toBe('Pinned orders could not be read: there is no allowed_signers file')
+  expect((await band.find({ key: 'orders' }))?.text).toBe('Orders: attention::signers::missing')
+  await band.press({ key: 'orders' })
+  const pane = await $.ui.mount({ plugin: 'board-attention', surface: 'terminal', component: 'Pane', requestId: 'attention-pinned', props: PANE_PROPS })
+  expect(await pane.find({ text: /there is no allowed_signers file/ })).toBeDefined()
 })
 
 test('with no personal board the mod shows nothing, adds no block and runs board once, and a board that answers is shown', async ($, on) => {
@@ -211,8 +210,7 @@ test('with no personal board the mod shows nothing, adds no block and runs board
   }
   expect(ran.length).toBe(1)
   const band = await $.ui.mount({ plugin: 'board-attention', surface: 'terminal', component: 'AbovePrompt', props: BAND_PROPS })
-  expect(await band.find({ text: /Pinned orders could not be read/ })).toBeUndefined()
-  expect(await band.find({ text: 'Orders' })).toBeUndefined()
+  expect(await band.find({ key: 'orders' })).toBeUndefined()
   await band.unmount()
 
   answer.exitCode = 0
@@ -221,5 +219,5 @@ test('with no personal board the mod shows nothing, adds no block and runs board
   const context = await $.prompt.context({ blocks: [{ name: 'claudeMd', text: 'instructions' }] })
   expect(context.blocks.map(b => b.name)).toEqual(['claudeMd', 'attentionOrders'])
   const shown = await $.ui.mount({ plugin: 'board-attention', surface: 'terminal', component: 'AbovePrompt', props: BAND_PROPS })
-  expect((await shown.find({ key: 'order:/orders/evals' }))?.text).toBe('evals')
+  expect((await shown.find({ key: 'orders' }))?.text).toBe('Orders 1: 1 left out')
 })

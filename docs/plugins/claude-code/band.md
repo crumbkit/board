@@ -5,23 +5,13 @@ band above the Claude Code prompt shows and how four mods draw it together.
 
 The band is one row of badges, which wraps on a narrow terminal:
 
-`Orders [controls] [credentials] [evals] | Home work Board personal | [Controls 5] [Questions 3] [Effects 2]`
+`Home work Board personal | [Orders 4] [Controls 5] [Questions 3] [Effects 2]`
 
 A badge with nothing to show is left out. When every badge is left out, the
 band draws nothing. While a survey holds the band, no mod draws in it.
 
 ## Badges
 
-- **Order badges**, from `board-attention`. The word `Orders` comes first,
-  then one button per pinned order that verified, labelled with the last
-  segment of its path, so `/orders/evals` shows `evals`. A button opens the
-  pinned-orders pane on that order: its text, path, expiry and signer, and a
-  **Show context** button for its context. An order left out of context
-  shows in red as its name and code, such as `old:
-  attention::order::expired`, and opens the pane on its message. When the
-  personal board cannot be read, one red button says so with Board's
-  message. To shorten a badge, rename the order's path; the signature stays
-  valid, because the signed statement does not include the path.
 - **State badges**, from `board-controls`. Each is a dim label and its value
   drawn as a chip, and none can be pressed. The owner lists them in an optional file,
   `~/.config/board/badges.json` (or under `$XDG_CONFIG_HOME`), such as
@@ -40,6 +30,14 @@ band draws nothing. While a survey holds the band, no mod draws in it.
   board from `board --json ls / --limit 1` at the repository root, because
   `controls.check` does not report its board. With no such board, it is
   left out.
+- **Orders button**, from `board-attention`: `Orders <n>`, the number of
+  pinned orders that verified. It opens the pinned-orders pane, which lists
+  every order; pressing one opens its text, path, expiry and signer, and a
+  **Show context** button for its context. When orders are left out, the
+  button shows in red as `Orders <n>: <m> left out`, and the pane gives each
+  one's code and message. When the personal board cannot be read, the button
+  shows in red with Board's code, such as `Orders:
+  attention::signers::missing`, and the pane gives the message.
 - **Controls button**, from `board-controls`: `Controls <n>`, the number of
   controls `controls.check` returned. It opens a pane that lists them as
   standing rules, obligations owed and budgets, each with its path and
@@ -73,8 +71,8 @@ line that is not a badge, such as a request to sign an order, follows the
 row. A tree beneath that is not a band, such as another plugin's, is kept as
 a line after the row.
 
-The slots, in order, are `a1-orders`, `b1-state`, `c1-controls`,
-`c2-waiting` and `c3-effects`; the letter is the section. Each of the four
+The slots, in order, are `a1-state`, `b1-orders`, `b2-controls`,
+`b3-waiting` and `b4-effects`; the letter is the section. Each of the four
 mods keeps an identical copy of `hooks/band.ts`, which holds this logic,
 because a mod installs alone. The `mods` workflow fails when a copy differs
 from the attention mod's, and the attention mod's `tests/band.test.ts` tests
