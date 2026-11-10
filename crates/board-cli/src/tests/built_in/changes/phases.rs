@@ -1296,3 +1296,54 @@ fn the_plan_example_for_a_change_on_the_board_itself_names_paths_under_the_root(
         "{said}"
     );
 }
+
+/// A board whose change in build attaches an open task in the repository
+/// mounted at /repos/notes.
+fn attaching_a_mounted_task() -> Changes {
+    let board = Changes::new();
+    let schema = board.text(".board/types/tasks/task/v2.schema.json");
+    let open = task("open");
+    board.mount_repo(
+        &[
+            (".board/types/tasks/task/v2.schema.json", &schema),
+            ("tasks/t.md", &open),
+        ],
+        "repos/notes",
+        "HEAD",
+    );
+    board.write("changes/t/plan.md", PLAN);
+    board.change_at(
+        "changes/t.json",
+        "build",
+        &json!({"plan": "/changes/t/plan.md", "records": ["/repos/notes/tasks/t.md"]}),
+    );
+    board
+}
+
+#[test]
+fn an_open_task_in_a_mount_that_can_be_read_fails_the_tasks_gate() {
+    let board = attaching_a_mounted_task();
+    let gate = board.call("next", &path())["gate"].clone();
+    let tasks = (gate.as_array().unwrap().iter())
+        .find(|check| check["check"] == "tasks")
+        .unwrap();
+    assert_eq!(tasks["status"], "missing");
+}
+
+#[test]
+fn an_open_task_beneath_a_mount_that_cannot_be_read_refuses_next_and_advance_naming_the_mount() {
+    for (losing_git, code) in [
+        (true, "board::mount::repo_missing"),
+        (false, "board::mount::commit_missing"),
+    ] {
+        let board = attaching_a_mounted_task();
+        board.break_mount("repos/notes", losing_git);
+        for capability in ["next", "advance"] {
+            let refused = board.refusal(capability, &path());
+            assert_eq!(refused["code"], "changes::board::refused", "{refused}");
+            assert_eq!(refused["fields"]["code"], code, "{refused}");
+            let message = refused["message"].as_str().unwrap();
+            assert!(message.contains("/repos/notes"), "{message}");
+        }
+    }
+}

@@ -443,9 +443,31 @@ pub(crate) fn whole_record_at(
     Ok(!rows(host, &sql)?.is_empty())
 }
 
-/// Each entry `refs` reaches, as its type and body, in their order, and
-/// each unreadable one with the code that says why.
+/// Each entry `refs`, one change's references, reaches, as its type and body,
+/// in their order, and each unreadable one with the code that says why. A
+/// reference the tree stopped, such as one beneath a mount that cannot be
+/// read, is `changes::board::refused`, so that no gate or sync takes it for
+/// absent.
 pub(crate) fn referenced(host: &dyn Host, refs: &[String]) -> Result<Referenced, PluginError> {
+    gathered(host, refs, board::refs_strictly)
+}
+
+/// [`referenced`] for a walk over many changes, which passes over a
+/// reference the tree stopped, as unreadable with the code that stopped it,
+/// and warns of it.
+pub(crate) fn referenced_in_walk(
+    host: &dyn Host,
+    refs: &[String],
+) -> Result<Referenced, PluginError> {
+    gathered(host, refs, board::refs_in_walk)
+}
+
+/// [`referenced`], with `resolve` answering the references no entry holds.
+fn gathered(
+    host: &dyn Host,
+    refs: &[String],
+    resolve: fn(&dyn Host, &[String]) -> board::Walked,
+) -> Result<Referenced, PluginError> {
     if refs.is_empty() {
         return Ok(Referenced::default());
     }
@@ -479,9 +501,15 @@ pub(crate) fn referenced(host: &dyn Host, refs: &[String]) -> Result<Referenced,
         .filter(|each| !records.contains_key(*each) && !codes.contains_key(*each))
         .cloned()
         .collect();
-    for (each, answer) in unfound.iter().zip(board::refs(host, &unfound)?) {
-        if answer.is_some() {
-            records.insert(each.clone(), ("directory".to_owned(), Map::new()));
+    for (each, answer) in unfound.iter().zip(resolve(host, &unfound)?) {
+        match answer {
+            Ok(Some(_)) => {
+                records.insert(each.clone(), ("directory".to_owned(), Map::new()));
+            }
+            Ok(None) => {}
+            Err(code) => {
+                codes.insert(each.clone(), code.as_str().to_owned());
+            }
         }
     }
     let mut found = Referenced::default();
@@ -567,3 +595,6 @@ pub(crate) fn last_sync(host: &dyn Host, reads: bool) -> Result<LastSync, Plugin
         command: SYNC_COMMAND,
     })
 }
+
+#[cfg(test)]
+pub(crate) mod tests;

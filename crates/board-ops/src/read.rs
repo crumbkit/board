@@ -60,11 +60,11 @@ pub struct LsReport {
 
 impl Board {
     /// Resolves `path`, following pointers, and returns the file there. A
-    /// directory is `record::not_a_record`, and a file over 16 MiB is
-    /// `json::too_large`.
+    /// mount that cannot be read returns its own record. A directory is
+    /// `record::not_a_record`, and a file over 16 MiB is `json::too_large`.
     pub fn get(&self, path: &LogicalPath) -> Result<GetReport, ReadError> {
         let mut view = self.working_view()?;
-        let location = self.locate_in(&mut view, path)?;
+        let location = self.locate_record_in(&mut view, path)?;
         read_at(&mut view, location, path, true)
     }
 
@@ -78,7 +78,7 @@ impl Board {
     ) -> Result<impl Iterator<Item = Result<GetReport, ReadError>> + 'a, ReadError> {
         let mut view = self.working_view()?;
         Ok(paths.iter().map(move |path| {
-            let location = self.locate_in(&mut view, path)?;
+            let location = self.locate_record_in(&mut view, path)?;
             read_at(&mut view, location, path, true)
         }))
     }
@@ -268,6 +268,17 @@ impl Board {
         Self::located(path, |path| view.resolve(path))
     }
 
+    /// Where `path` leads in `view`, as [`Board::locate_in`] says, or the
+    /// mount's own record when `path` is a mount that cannot be read.
+    fn locate_record_in(
+        &self,
+        view: &mut Resolver,
+        path: &LogicalPath,
+    ) -> Result<Location, ReadError> {
+        let _timed = self.timed("resolve");
+        Self::located(path, |path| view.resolve_record(path))
+    }
+
     /// Where `path` leads by `resolve`, as [`Board::locate`] says.
     fn located(
         path: &LogicalPath,
@@ -322,8 +333,10 @@ pub(crate) fn read_at(
         Refusal::new(code.unwrap_or(Code::RecordNotARecord), message, &fields)
     };
     let record = match classify(&location.path, Some(&bytes)) {
+        // A pointer is read only when `get` stopped at a mount it cannot
+        // read, to show what to repair.
         Classified {
-            content: Content::Record { value, .. },
+            content: Content::Record { value, .. } | Content::Pointer { value, .. },
             ..
         } => Ok(value),
         // classify keeps only the code, so bytes that failed are parsed

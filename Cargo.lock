@@ -245,6 +245,7 @@ dependencies = [
  "board-ops",
  "board-plugin",
  "board-repos",
+ "board-tree",
  "board-validate",
  "regex",
  "schemars",

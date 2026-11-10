@@ -70,3 +70,12 @@ tell it from an edit. The reason is one line of 1 to 80 characters.
 <path>`, and `plugin enable` writes `Board-Bulk: plugin enable <name>` when it
 replaces or removes schemas. A built-in plugin writes one through its host,
 as the changes plugin's `migrate` does.
+
+A mount that cannot be read, because its repository cannot be opened or lacks
+`commit`, stops only what reads through it. `board get` of the mount returns
+its record, and `board put` of a pointer replaces the file, so `repo` or
+`commit` can be repaired. A path beneath the mount is refused with the mount's
+code, and so is a reference one change makes beneath it. The changes plugin's
+limit on changes in build, which reads every change, passes over such a path
+and prints a warning on stderr that names the mount, the repository and the
+fix.

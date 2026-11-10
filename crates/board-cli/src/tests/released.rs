@@ -1094,6 +1094,7 @@ fn full_put() -> PutReport {
         follow: Some("main".to_owned()),
     };
     let written = Written {
+        temporary: None,
         location: Location {
             board: board("/b"),
             path: "tasks/b.json".to_owned(),

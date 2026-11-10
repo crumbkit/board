@@ -43,6 +43,9 @@ Board is called. `artifacts`, `attention`, `boundary`, `controls`, `plans`, `eva
     plugin's own `board call`, `board --personal`, `board -C`, `board
     decide`, `board sync` and `board mount update` do
     ([built-in/elsewhere.md](built-in/elsewhere.md)).
+  - `warn(refusal)` says a walk over many records passed over a path. Board
+    prints each distinct warning on stderr after the call, whether it
+    answers or is refused, and records it nowhere.
   - `settings()` gives `now`, the time the call started, `day_start` and
     `caller`, from `BOARD_DAY_START` and `BOARD_CALLER_DIR`, and
     `utc_offset`, the local clock's seconds east of UTC, which board-cli
