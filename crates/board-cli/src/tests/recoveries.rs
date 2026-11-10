@@ -582,9 +582,10 @@ fn chores(starts: &mut Starts, xdg: &Scenario) -> RuntimePlace {
 fn calling_plugins(starts: &mut Starts) {
     let xdg = calling();
     let chores = chores(starts, &xdg);
-    let lines: [(Code, &str); 3] = [
+    let lines: [(Code, &str); 4] = [
         (Code::PluginNotEnabled, "call journal.due"),
         (Code::PluginNotInstalled, "call nowhere.due"),
+        (Code::PluginNoCapability, "call chores.dew"),
         (Code::PluginBadManifest, "call broken.due"),
     ];
     for (code, line) in lines {

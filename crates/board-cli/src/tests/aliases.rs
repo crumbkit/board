@@ -412,7 +412,7 @@ fn a_plugin_runs_by_its_name_when_a_built_in_command_follows_it() {
         let call = run_in(&board, &data, &["--json", "call", &format!("tasks.{word}")]);
         assert_eq!(output.code, call.code, "{word}");
         assert_eq!(text(&output.stdout), text(&call.stdout), "{word}");
-        assert_eq!(code(&output), "board::plugin::not_installed", "{word}");
+        assert_eq!(code(&output), "board::plugin::no_capability", "{word}");
     }
     let output = run_in(&board, &data, &["tasks", "due"]);
     assert_eq!(output.code, 0, "{}", text(&output.stderr));

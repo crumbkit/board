@@ -287,10 +287,14 @@ fn a_plugin_the_board_does_not_enable_is_not_called() {
 #[test]
 fn a_plugin_or_capability_that_is_not_installed_is_refused() {
     let fixture = Fixture::tasks(RECORDING);
-    for target in ["notes.due", "tasks.late", "--capability late"] {
+    assert_eq!(
+        fixture.refused("notes.due", r#"{"n": 1}"#),
+        Board(Code::PluginNotInstalled)
+    );
+    for target in ["tasks.late", "--capability late"] {
         assert_eq!(
             fixture.refused(target, r#"{"n": 1}"#),
-            Board(Code::PluginNotInstalled),
+            Board(Code::PluginNoCapability),
             "{target}"
         );
     }
@@ -328,7 +332,7 @@ fn a_refusal_names_the_missing_plugin_or_capability_and_what_is_offered() {
         assert_eq!(error.to_string(), message, "{target}");
     }
     let error = fixture.call("tasks.dew", r#"{"n": 1}"#).unwrap_err();
-    assert_eq!(error.refusal().code, Board(Code::PluginNotInstalled));
+    assert_eq!(error.refusal().code, Board(Code::PluginNoCapability));
     assert_eq!(
         Value::Object(error.refusal().fields),
         json!({"plugin": "tasks", "capability": "dew", "offered": ["due"]})

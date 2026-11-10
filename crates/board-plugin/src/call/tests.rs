@@ -196,7 +196,7 @@ fn a_capability_the_named_plugin_lacks_is_refused_listing_what_it_offers() {
             &"tasks.closed".parse().unwrap()
         )),
         (
-            Board(Code::PluginNotInstalled),
+            Board(Code::PluginNoCapability),
             "plugin tasks has no capability closed; it offers due, open".to_owned(),
             json!({"plugin": "tasks", "capability": "closed", "offered": ["due", "open"]}),
         )
@@ -298,7 +298,7 @@ fn a_capability_nobody_offers_is_refused_with_the_nearest_name() {
     assert_eq!(
         call("dues"),
         (
-            Board(Code::PluginNotInstalled),
+            Board(Code::PluginNoCapability),
             "no installed plugin offers capability dues; the nearest is due".to_owned(),
             json!({"capability": "dues", "nearest": "due"}),
         )
@@ -306,7 +306,7 @@ fn a_capability_nobody_offers_is_refused_with_the_nearest_name() {
     assert_eq!(
         call("closed"),
         (
-            Board(Code::PluginNotInstalled),
+            Board(Code::PluginNoCapability),
             "no installed plugin offers capability closed".to_owned(),
             json!({"capability": "closed"}),
         )
@@ -477,20 +477,20 @@ fn a_call_board_refuses_before_choosing_a_capability_has_its_code_and_the_names_
         offered: names(&["open"]),
     };
     let named = json!({"plugin": "tasks", "capability": "due", "offered": ["open"]});
-    assert_refused(&lacking, Code::PluginNotInstalled, &named, b"");
+    assert_refused(&lacking, Code::PluginNoCapability, &named, b"");
     let near = CallError::NotOffered {
         capability: due(),
         nearest: Some("dew".parse().unwrap()),
     };
     let nearest = json!({"capability": "due", "nearest": "dew"});
-    assert_refused(&near, Code::PluginNotInstalled, &nearest, b"");
+    assert_refused(&near, Code::PluginNoCapability, &nearest, b"");
     let far = CallError::NotOffered {
         capability: due(),
         nearest: None,
     };
     assert_refused(
         &far,
-        Code::PluginNotInstalled,
+        Code::PluginNoCapability,
         &json!({"capability": "due"}),
         b"",
     );

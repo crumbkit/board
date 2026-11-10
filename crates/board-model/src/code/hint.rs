@@ -530,6 +530,9 @@ fn generic(code: Code) -> &'static str {
         Code::PluginNotInstalled => {
             "run `board plugin list` to see the installed plugins and their capabilities"
         }
+        Code::PluginNoCapability => {
+            "read the capabilities the named plugin offers in `fields.offered` when given, use the nearest name in `fields.nearest` when given, or run `board plugin find` to see which plugin offers the capability"
+        }
         Code::PluginBadManifest => {
             "fix the plugin's `plugin.json` or the shipped schema the message names, or reinstall the plugin"
         }
