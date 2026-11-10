@@ -54,8 +54,7 @@ the current directory.
 A record is a JSON object whose `$type`, such as runs/suite/v1, names its
 schema at .board/types/runs/suite/v1.schema.json.
 
-Tab completion: run `board completion install` once; `board completion print`
-prints the registration script for your shell to load yourself.";
+Tab completion: run `board completion install` once.";
 
 #[derive(Debug, Parser)]
 #[command(
@@ -471,11 +470,8 @@ pub(crate) fn run(
     {
         return render::refused(printer, *refusal);
     }
-    if let Command::Completion(command) = &cli.command {
-        return crate::completion::completion(command, printer);
-    }
-    if let Command::Skills(command) = &cli.command {
-        return crate::skills::skills(command, context, printer, cli.chooses_board());
+    if let Command::Completion(_) | Command::Skills(_) = cli.command {
+        return without_a_board(&cli, context, printer);
     }
     let base = cli.personal.then(|| context.personal());
     let base = base.unwrap_or_else(|| Ok(context.start.clone()));
@@ -527,6 +523,17 @@ pub(crate) fn run(
     };
     ran.trace.extend(board.take_trace());
     output
+}
+
+/// Runs completion and skills, which need no board.
+fn without_a_board(cli: &Cli, context: &Context, printer: Printer) -> Output {
+    match &cli.command {
+        Command::Completion(command) => crate::completion::completion(command, printer),
+        Command::Skills(command) => {
+            crate::skills::skills(command, context, printer, cli.chooses_board())
+        }
+        _ => unreachable!("only completion and skills run without a board"),
+    }
 }
 
 /// `board init`, which makes the directory at `start` a board without

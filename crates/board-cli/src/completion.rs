@@ -15,22 +15,28 @@ use crate::run::Cli;
 
 /// `board completion -h`'s examples.
 pub(crate) const HELP: &str = "\
-Install writes the registration where the shell loads completions, for the
-shell SHELL names or --shell names. Run it once; Tab then completes
-commands, flags and the paths of the board.
-
 Examples:
-  board completion install
+  board completion install --shell zsh
   board completion check --shell zsh
   board completion print --shell fish";
 
 #[derive(Debug, Subcommand)]
 pub(crate) enum CompletionCommand {
     /// Install Board's completion where the shell loads it.
+    #[command(after_help = "\
+Examples:
+  board completion install --shell zsh
+  board completion install --shell zsh --force")]
     Install(CompletionInstall),
     /// Check that the installed completion file matches this Board.
+    #[command(after_help = "\
+Examples:
+  board completion check --shell zsh")]
     Check(CompletionCheck),
     /// Print Board's completion registration script for a shell.
+    #[command(after_help = "\
+Examples:
+  board completion print --shell fish")]
     Print(CompletionPrint),
 }
 

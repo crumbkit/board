@@ -293,6 +293,9 @@ fn every_listing_command_takes_limit_and_all() {
         "ui open",
         "schemas show",
         "uri",
+        "completion check",
+        "completion print",
+        "completion install",
     ];
     for (name, command) in leaves() {
         let takes = |flag: &str| {

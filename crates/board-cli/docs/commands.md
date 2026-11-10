@@ -27,6 +27,7 @@ Board: a fast, validated view of a git tree.
 - [`board serve`](#board-serve): Serve this board's pages on 127.0.0.1 until it is idle
 - [`board ui`](#board-ui): List kinds, print a slot, or open a page
 - [`board skills`](#board-skills): Install or list the skills Board ships
+- [`board completion`](#board-completion): Set up Board's completion in a shell
 - [`board commands`](#board-commands): Describe Board's commands
 - [`board schemas`](#board-schemas): Describe the JSON documents that Board prints
 
@@ -458,6 +459,91 @@ List each skill this binary ships and each Board folder in a skills directory
 - `state`: The folder's state.
 - `name`: The skill's name, which names its folder, or a backup's path within the skills directory.
 - `path`: The folder, in the skills directory as given.
+
+Effects: read-only, closed-world.
+
+## `board completion`
+
+Set up Board's completion in a shell
+
+### Commands
+
+- [`board completion install`](#board-completion-install): Install Board's completion where the shell loads it
+- [`board completion check`](#board-completion-check): Check that the installed completion file matches this Board
+- [`board completion print`](#board-completion-print): Print Board's completion registration script for a shell
+
+## `board completion install`
+
+Install Board's completion where the shell loads it
+
+### Arguments
+
+- `--shell <SHELL>`: Install for this shell in place of the one that SHELL names. One of `bash`, `elvish`, `fish`, `powershell`, `zsh`.
+- `--force`: Replace a file or a link that install did not write; a link's target stays as it is
+
+### Examples
+
+Install Board's completion for fish.
+
+```sh
+board completion install --shell fish
+```
+
+Install it for zsh, replacing a file or a link that install did not write.
+
+```sh
+board completion install --shell zsh --force
+```
+
+### Columns
+
+- `state`: What install did: failed, skipped, written or unchanged.
+- `shell`: The shell: bash, elvish, fish, powershell or zsh.
+- `path`: The completion file that install wrote or left. When the file is a link to a file that install wrote, the path of that file.
+- `reason`: Why install skipped or failed, or what it replaced under --force, such as `linked to /src/shelf/shelf.fish`, or null.
+
+Effects: additive, idempotent, closed-world.
+
+## `board completion check`
+
+Check that the installed completion file matches this Board
+
+### Arguments
+
+- `--shell <SHELL>`: Check the file of this shell in place of the one that SHELL names. One of `bash`, `elvish`, `fish`, `powershell`, `zsh`.
+
+### Examples
+
+Report zsh's completion file when it is missing or differs.
+
+```sh
+board completion check --shell zsh
+```
+
+### Columns
+
+- `state`: Whether the file holds the script that install writes: missing, differs, unreadable, linked or current.
+- `shell`: The shell: bash, elvish, fish, powershell or zsh.
+- `path`: The completion file that was checked. When the file is a link to a file that install wrote, the path of that file.
+- `reason`: Why the file differs, cannot be read or is linked, such as `linked to /src/shelf/shelf.fish`, or null.
+
+Effects: read-only, closed-world.
+
+## `board completion print`
+
+Print Board's completion registration script for a shell
+
+### Arguments
+
+- `--shell <SHELL>`: Print the script of this shell in place of the one that SHELL names. One of `bash`, `elvish`, `fish`, `powershell`, `zsh`.
+
+### Examples
+
+Print the registration script for fish.
+
+```sh
+board completion print --shell fish
+```
 
 Effects: read-only, closed-world.
 
