@@ -1,6 +1,6 @@
 ---
 name: github
-description: 'Record a GitHub pull request or issue as a typed record, and push, open or edit pull requests, comment and open issues only after the boundary passes what they send, and merge pull requests once their change's land gate passes. Use it to name a pull request or issue in a record, and in place of git push and gh for sending. Run `board github ref --ref <owner>/<repo>#<number>`, or `board github push`, `pr-create`, `pr-edit`, `comment`, `issue-create` or `merge` from the checkout. SKILL.md and README.md in the plugin''s directory say more.'
+description: 'Record a GitHub pull request or issue as a typed record, and push, open or edit pull requests, comment and open issues only after the boundary passes what they send, and merge pull requests once the land gate of their change passes. Use it to name a pull request or issue in a record, and in place of git push and gh for sending. Run `board github ref --ref <owner>/<repo>#<number>`, or `board github push`, `pr-create`, `pr-edit`, `comment`, `issue-create` or `merge` from the checkout. SKILL.md and README.md in the plugin''s directory say more.'
 ---
 
 # github
@@ -36,7 +36,9 @@ add `--personal` after `board`.
 - Squash-merge the pull request of a change in its land phase:
   `board github merge --number <n> --subject <subject> --body <body>
   --change /changes/<name>`. It merges the change's head and moves the
-  change to its next phase. Without a change, pass `--head <sha>`.
+  change to its next phase. Without a change, pass `--head <sha>`, the full
+  40-hex commit. When `queued` is true, a merge queue holds the pull
+  request: run `board changes advance --path <change>` after it merges.
 
 On `github::boundary::refused`, nothing was sent. Read `fields.failures`, the
 message, and the hint after it, which is the boundary's `Next:` step. Change

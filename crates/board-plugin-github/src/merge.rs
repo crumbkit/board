@@ -37,15 +37,17 @@ pub(crate) struct MergeInput {
     /// merged, and it moves to its next phase after the merge.
     #[schemars(regex(pattern = "^/"))]
     change: Option<String>,
-    /// The commit the pull request's head must be at. With `change` it
-    /// must equal the change's head; without it, it is required.
-    #[schemars(length(min = 1))]
+    /// The full 40-hex commit the pull request's head must be at. With
+    /// `change` it must equal the change's head; without it, it is
+    /// required.
+    #[schemars(regex(pattern = "^[0-9a-f]{40}$"))]
     head: Option<String>,
 }
 
 /// The crossing the boundary passed, the pull request's URL in `sent`, the
-/// head commit merged, and the phase the change moved to, left out when no
-/// change was named.
+/// head commit merged, whether GitHub only queued the merge, and the phase
+/// the change moved to, left out when no change was named or the merge was
+/// queued.
 #[derive(Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 #[schemars(rename = "MergeOutput")]
@@ -55,15 +57,18 @@ pub(crate) struct MergeOutput {
     note: Option<String>,
     sent: String,
     head: String,
+    queued: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     phase: Option<String>,
 }
 
-/// What this capability reads of `changes.next`'s output.
+/// What this capability reads of `changes.next`'s output. `stop` is there
+/// only when a run of the change set where it stops.
 #[derive(Deserialize)]
 struct Next {
     phase: String,
     gate: Vec<Gated>,
+    stop: Option<Value>,
 }
 
 /// One check of a change's gate.
@@ -94,6 +99,13 @@ pub(crate) fn merge(host: &dyn Host, input: &Value) -> Result<Value, PluginError
                     return Err(head_refused(format!(
                         "the change at {change} records no head commit; record one with `board \
                          changes attach --path {change} --head <sha>`"
+                    )));
+                }
+                (Some(recorded), _) if !is_full_commit(&recorded) => {
+                    return Err(head_refused(format!(
+                        "the change at {change} records the head {recorded}, which is not a full \
+                         40-hex commit; attach the full commit with `board changes attach --path \
+                         {change} --head <sha>`"
                     )));
                 }
                 (Some(recorded), Some(asked)) if asked != recorded => {
@@ -144,9 +156,10 @@ pub(crate) fn merge(host: &dyn Host, input: &Value) -> Result<Value, PluginError
         note,
         sent,
     } = place.sent(passed, url)?;
+    let queued = !merged(host, &repository, number, &sent)?;
     let phase = match change {
-        Some(change) => Some(advance(&*place.personal, &change, &sent)?),
-        None => None,
+        Some(change) if !queued => Some(advance(&*place.personal, &change, &sent)?),
+        _ => None,
     };
     Ok(output(&MergeOutput {
         digest,
@@ -154,8 +167,38 @@ pub(crate) fn merge(host: &dyn Host, input: &Value) -> Result<Value, PluginError
         note,
         sent,
         head,
+        queued,
         phase,
     }))
+}
+
+/// Whether `commit` is a full 40-hex commit name.
+fn is_full_commit(commit: &str) -> bool {
+    commit.len() == 40
+        && commit
+            .bytes()
+            .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
+}
+
+/// Whether GitHub says pull request `number` of `repository`, at `url`,
+/// merged. gh exits 0 when a merge queue only queued it, so its exit code
+/// alone does not say.
+fn merged(host: &dyn Host, repository: &str, number: u64, url: &str) -> Result<bool, PluginError> {
+    let lead = format!(
+        "the merge of pull request {url} was already sent, so do not merge it again; look on \
+         GitHub whether it merged, then run `board changes advance` for its change"
+    );
+    let endpoint = format!("repos/{repository}/pulls/{number}");
+    let answer = gh::api(host, &endpoint).map_err(|error| after_sent(&lead, url, error))?;
+    let Some(pull) = answer else {
+        let error = gh::failed(
+            &endpoint,
+            "answered 404",
+            "check the pull request on GitHub",
+        );
+        return Err(after_sent(&lead, url, error));
+    };
+    Ok(pull.get("merged").and_then(Value::as_bool) == Some(true))
 }
 
 /// Runs `changes.<capability>` in the personal board with `path`.
@@ -185,10 +228,12 @@ fn gate(personal: &dyn Host, path: &str) -> Result<(), PluginError> {
         .filter(|check| check.status == "missing" && check.blocks)
         .map(|check| check.check)
         .collect();
-    if next.phase == LAND && missing.is_empty() {
+    if next.phase == LAND && missing.is_empty() && next.stop.is_none() {
         return Ok(());
     }
-    let why = if next.phase == LAND {
+    let why = if let Some(stop) = &next.stop {
+        format!("a run of it is set to stop at {stop}; end the run with `board changes stop` first")
+    } else if next.phase == LAND {
         format!("its land gate misses {}", missing.join(", "))
     } else {
         format!("it is in its {} phase, not {LAND}", next.phase)
@@ -197,6 +242,9 @@ fn gate(personal: &dyn Host, path: &str) -> Result<(), PluginError> {
     fields.insert("path".to_owned(), json!(path));
     fields.insert("phase".to_owned(), json!(next.phase));
     fields.insert("missing".to_owned(), json!(missing));
+    if let Some(stop) = next.stop {
+        fields.insert("stop".to_owned(), stop);
+    }
     Err(PluginError {
         code: "github::merge::gate".to_owned(),
         message: format!(

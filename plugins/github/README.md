@@ -79,10 +79,16 @@ result it recorded.
   --match-head-commit <sha>`, so GitHub refuses it when the pull request's
   head has moved. With `--change`, it first runs `changes.next` in the
   personal board and refuses unless the change is in its land phase with no
-  blocking check missing. The head is the change's head; a `--head` that
-  differs is refused. Without `--change`, `--head` is required. After the
-  merge it runs `changes.advance` and returns the new phase as `phase`, and
-  the merged commit as `head`; `sent` is the pull request's URL.
+  blocking check missing, and while a run of the change has a stop set. The
+  head is the change's head, which must be a full 40-hex commit; a
+  `--head` that differs is refused. Without `--change`, `--head` is
+  required. After gh exits 0, it records the pull request's URL on the
+  crossing and asks `gh api repos/<owner>/<repo>/pulls/<n>` whether it
+  merged. When it did, it runs `changes.advance` and returns the new phase
+  as `phase`. When a merge queue only queued it, it returns `queued: true`
+  and no `phase`; run `board changes advance --path <change>` once the
+  queue merges it. It returns the merged commit as `head`; `sent` is the
+  pull request's URL.
 
 The destination is `github:<owner>/<repo>` in lower case, from the URL
 configured for the checkout's `origin`. It is read before any `insteadOf`
@@ -159,11 +165,13 @@ Refusals:
 - `github::push::failed`: git refused the push, such as a branch that is
   behind. The crossing passed and keeps no result.
 - `github::merge::gate`: `merge` named a change that is not in its land
-  phase, or whose land gate misses a blocking check. `fields.phase` names
-  its phase and `fields.missing` the checks. gh does not run.
+  phase, whose land gate misses a blocking check, or whose run has a stop
+  set. `fields.phase` names its phase, `fields.missing` the checks and
+  `fields.stop` the stop. gh does not run.
 - `github::merge::head`: `merge` has no head to match, because the change
-  records none or neither `--change` nor `--head` was given, or `--head`
-  differs from the change's head. gh does not run.
+  records none or one that is not a full 40-hex commit, or neither
+  `--change` nor `--head` was given, or `--head` differs from the change's
+  head. gh does not run.
 - `github::merge::advance`: the pull request merged, but `changes.advance`
   refused. The message says not to merge again and names the command to
   move the change; `fields.sent` is the pull request's URL.
