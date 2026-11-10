@@ -82,7 +82,7 @@ test('a sign that runs past the limit tells the owner its outcome is unknown and
   })
   on('ui.render', ($, e) => $.ui.resolve(e).Box({}))
   on('session.start', (_, e) => e)
-  await $.session.start({ cwd: '/Users/luke/Code/board', surface: 'terminal', isInteractive: true })
+  await $.session.start({ cwd: '/Users/ana/Code/board', surface: 'terminal', isInteractive: true })
   await $.tool.call({ tool: TOOL, ...REQUEST })
   const band = await $.ui.mount({ plugin: 'board-attention', surface: 'terminal', component: 'AbovePrompt', props: BAND_PROPS })
 
@@ -121,7 +121,7 @@ test('a request shows a band whose button runs attention.sign on the personal bo
   })
   on('ui.render', ($, e) => $.ui.resolve(e).Box({}))
   on('session.start', (_, e) => e)
-  await $.session.start({ cwd: '/Users/luke/Code/board', surface: 'terminal', isInteractive: true })
+  await $.session.start({ cwd: '/Users/ana/Code/board', surface: 'terminal', isInteractive: true })
   await $.tool.call({ tool: TOOL, ...REQUEST })
 
   const band = await $.ui.mount({ plugin: 'board-attention', surface: 'terminal', component: 'AbovePrompt', props: BAND_PROPS })
@@ -138,7 +138,7 @@ test('a request whose path is not absolute is denied, and an absolute one is acc
   on('tool.register', (_, e) => ({ value: { tool: `mcp__board-attention__${e.name}` } }))
   on('process.run', () => ({ value: { exitCode: 1, stdout: failureDocument('board::config::not_found'), stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }))
   on('session.start', (_, e) => e)
-  await $.session.start({ cwd: '/Users/luke/Code/board', surface: 'terminal', isInteractive: true })
+  await $.session.start({ cwd: '/Users/ana/Code/board', surface: 'terminal', isInteractive: true })
   const denied = await $.tool.call({ tool: TOOL, path: 'orders/evals' })
   expect(JSON.stringify(denied)).toContain('path must be absolute')
   const accepted = await $.tool.call({ tool: TOOL, path: '/orders/evals' })

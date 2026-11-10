@@ -58,7 +58,7 @@ pub(crate) struct Input {
     name: Option<String>,
     #[schemars(
         regex(pattern = r"^@\S+$"),
-        description = "Whose change this is, as CODEOWNERS names people, such as @luke; sets \
+        description = "Whose change this is, as CODEOWNERS names people, such as @ana; sets \
                        the route."
     )]
     handle: Option<String>,

@@ -59,7 +59,7 @@ pub(crate) struct Input {
     pub(crate) program: Option<String>,
     #[schemars(
         with = "Option<Person>",
-        description = "The owner's person, such as luke."
+        description = "The owner's person, such as ana."
     )]
     pub(crate) person: Option<String>,
     #[schemars(

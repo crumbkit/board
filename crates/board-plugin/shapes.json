@@ -10,7 +10,7 @@
         "x-board-prose": true
       },
       "person": {
-        "description": "The person who acted, such as `luke`, or their email address.",
+        "description": "The person who acted, such as `ana`, or their email address.",
         "pattern": "^([a-z0-9]+(-[a-z0-9]+)*|[^@\\s]+@[^@\\s]+)$",
         "type": "string"
       },

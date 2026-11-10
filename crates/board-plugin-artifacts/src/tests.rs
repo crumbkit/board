@@ -294,7 +294,7 @@ fn an_artifact_is_a_claude_ai_link_an_account_and_a_time_with_its_zone() {
         (json!({"url": "https://claude.ai/artifact/../AbCd"}), false),
         (json!({"url": "https://example.com/../elsewhere"}), false),
         (json!({"account": "owner@example.com"}), false),
-        (json!({"account": {"person": "luke"}}), true),
+        (json!({"account": {"person": "ana"}}), true),
         (json!({"account": {}}), false),
         (json!({"first_seen": "2026-10-31T18:20:00"}), false),
     ] {

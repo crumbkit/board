@@ -456,12 +456,12 @@ fn board_calls_plans_answer_in_its_own_process_and_a_second_answer_is_refused() 
 fn every_actor_input_reaches_the_answers_by_and_a_blank_agent_is_left_out() {
     let cases = [
         (
-            json!({"program": "codex", "person": "luke", "agent": "Inbox builder"}),
-            json!({"program": "codex", "person": "luke", "agent": "Inbox builder"}),
+            json!({"program": "codex", "person": "ana", "agent": "Inbox builder"}),
+            json!({"program": "codex", "person": "ana", "agent": "Inbox builder"}),
         ),
         (
-            json!({"person": "luke", "agent": " "}),
-            json!({"person": "luke"}),
+            json!({"person": "ana", "agent": " "}),
+            json!({"person": "ana"}),
         ),
     ];
     for (given, expected) in cases {

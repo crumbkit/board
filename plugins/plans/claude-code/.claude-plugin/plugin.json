@@ -1,10 +1,10 @@
 {
   "name": "board-plans",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "description": "Shows the owner's open Board questions above the prompt and answers them from a pane, and /yesterday shows the morning report of the previous day's records.",
   "types": "./types/index.d.ts",
   "author": {
-    "name": "Luke Randall"
+    "name": "crumbkit"
   },
   "userConfig": {
     "board": {
