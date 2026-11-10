@@ -1,0 +1,23 @@
+{
+  "$type": "controls/control/v2",
+  "summary": "The change names the task it does.",
+  "requirement": "The change's task field names a task.",
+  "purpose": "Work traces back to the task list, so nothing is built that no task asked for.",
+  "subject": {
+    "of": "change"
+  },
+  "trigger": "transition",
+  "expectations": [
+    {
+      "checker": "program",
+      "rule": {
+        "check": "field",
+        "field": "task"
+      }
+    }
+  ],
+  "on_failure": {
+    "action": "block",
+    "remedy": "Add a task with `board tasks add` and set it with `board changes attach --path {change} --task <path>`."
+  }
+}

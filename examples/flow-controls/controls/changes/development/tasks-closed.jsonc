@@ -1,0 +1,33 @@
+{
+  "$type": "controls/control/v2",
+  "summary": "Every task the change attached, other than its own, is done or dropped.",
+  "requirement": "No attached task other than the change's own has a status other than done or dropped.",
+  "purpose": "Side tasks picked up during the work are finished or consciously dropped before review.",
+  "subject": {
+    "of": "change"
+  },
+  "trigger": "transition",
+  "expectations": [
+    {
+      "checker": "program",
+      "rule": {
+        "check": "records",
+        "type": "tasks/task/v2",
+        "except": "{task}",
+        "max": 0,
+        "where": {
+          "values_not": {
+            "status": [
+              "done",
+              "dropped"
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "on_failure": {
+    "action": "block",
+    "remedy": "Finish each open task and close it with `board tasks done`, or drop it with `board tasks drop`."
+  }
+}

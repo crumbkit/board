@@ -1,0 +1,25 @@
+{
+  "$type": "controls/control/v2",
+  "summary": "A change in the small flow still edits no lifecycle path.",
+  "requirement": "The change's diff edits no file that /controls/{repo}/lifecycle-paths lists.",
+  "purpose": "The diff can grow during review; a lifecycle edit needs the development flow's Lifecycle section and record.",
+  "subject": {
+    "of": "diff",
+    "within": [
+      "/controls/{repo}/lifecycle-paths"
+    ]
+  },
+  "trigger": "transition",
+  "expectations": [
+    {
+      "checker": "program",
+      "rule": {
+        "check": "untouched"
+      }
+    }
+  ],
+  "on_failure": {
+    "action": "block",
+    "remedy": "This change touches a lifecycle path, so it needs the development flow: run `board changes reflow --path {change} --flow development`."
+  }
+}

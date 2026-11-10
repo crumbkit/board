@@ -1,0 +1,39 @@
+{
+  "$type": "changes/flow/v2",
+  "name": "small",
+  "summary": "Build and review a small change that touches no UI, data or lifecycle path, with no plan gate.",
+  "stop": {
+    "through": "review"
+  },
+  "phases": [
+    {
+      "name": "build",
+      "agent": "lead",
+      "instruction": "Read every record in the change's surfaced list; adopt a matching open task with `changes.attach --task` instead of working beside it. Write a one-paragraph plan with `board changes plan` naming the paths you will edit. Build test-first, record the head and attach a run of {suite} on it.",
+      "controls": [
+        "/controls/changes/considered",
+        "/controls/changes/head-recorded",
+        "/controls/changes/suite-run",
+        "/controls/changes/small/not-small"
+      ]
+    },
+    {
+      "name": "review",
+      "agent": "lead",
+      "instruction": "Review {head} with clean context with `board review run`, fix every critical or high finding and review again.",
+      "controls": [
+        "/controls/changes/review-approved",
+        "/controls/changes/small/lifecycle-paths"
+      ]
+    },
+    {
+      "name": "land",
+      "agent": "lead",
+      "instruction": "Draft and open the pull request with `board changes pr --path {change}`, record it with `board github ref` and attach it with --pull.",
+      "controls": [
+        "/controls/changes/pull-request",
+        "/controls/changes/small/lifecycle-paths"
+      ]
+    }
+  ]
+}

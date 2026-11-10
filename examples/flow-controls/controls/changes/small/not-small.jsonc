@@ -1,0 +1,27 @@
+{
+  "$type": "controls/control/v2",
+  "summary": "A change in the small flow edits no UI, data or lifecycle path.",
+  "requirement": "The change's diff edits no file that /controls/{repo}/ui-paths, /controls/{repo}/data-paths or /controls/{repo}/lifecycle-paths lists. A named control the board does not hold lists nothing.",
+  "purpose": "The small flow skips the plan gate, so it is safe only for changes that cannot alter what users see, what is stored, or how state moves.",
+  "subject": {
+    "of": "diff",
+    "within": [
+      "/controls/{repo}/ui-paths",
+      "/controls/{repo}/data-paths",
+      "/controls/{repo}/lifecycle-paths"
+    ]
+  },
+  "trigger": "transition",
+  "expectations": [
+    {
+      "checker": "program",
+      "rule": {
+        "check": "untouched"
+      }
+    }
+  ],
+  "on_failure": {
+    "action": "block",
+    "remedy": "This change touches a UI, data or lifecycle path, so it needs the development flow: run `board changes reflow --path {change} --flow development`."
+  }
+}

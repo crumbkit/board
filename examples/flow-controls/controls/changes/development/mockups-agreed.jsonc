@@ -1,0 +1,40 @@
+{
+  "$type": "controls/control/v2",
+  "summary": "The owner agreed each mockup the plan lists, and the plan names its neighbours.",
+  "requirement": "Each item under ### Mockups in the plan's UX section names an artifact by URL or board path, a plans/decision/v1 the owner signed names each in its urls or refs, and a ### Neighbours list follows.",
+  "purpose": "A UI change is built to a design the owner saw, placed among the screens around it.",
+  "subject": {
+    "of": "plan"
+  },
+  "when": {
+    "section_not": {
+      "UX": "^no ui change\\b[\\s.:,;-]*\\w"
+    }
+  },
+  "trigger": "transition",
+  "expectations": [
+    {
+      "checker": "person",
+      "who": "owner",
+      "verdict": {
+        "type": "plans/decision/v1",
+        "where": {
+          "owner_signed": true,
+          "names_each": "plan-mockups"
+        }
+      },
+      "code": "changes::ux::not_agreed"
+    },
+    {
+      "checker": "program",
+      "rule": {
+        "check": "neighbours-listed"
+      },
+      "code": "changes::ux::no_neighbours"
+    }
+  ],
+  "on_failure": {
+    "action": "block",
+    "remedy": "Only the owner can provide this: ask him, then list each mockup by URL or board path under ### Mockups in UX, with a ### Neighbours list, and attach the owner's plans/decision/v1 that names each in its urls or refs; or start UX with No UI change and a reason."
+  }
+}

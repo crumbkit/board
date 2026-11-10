@@ -1,0 +1,28 @@
+{
+  "$type": "controls/control/v2",
+  "summary": "A plan that declares a lifecycle has its lifecycle record.",
+  "requirement": "When the plan's Lifecycle section is not None, something is at /changes/{name}/lifecycle.",
+  "purpose": "The record is what the builder and reviewer check the code against.",
+  "subject": {
+    "of": "path",
+    "path": "/changes/{name}/lifecycle"
+  },
+  "when": {
+    "section_not": {
+      "Lifecycle": "^none\\s*(?:[.:]|\\n?\\z)"
+    }
+  },
+  "trigger": "transition",
+  "expectations": [
+    {
+      "checker": "program",
+      "rule": {
+        "check": "exists"
+      }
+    }
+  ],
+  "on_failure": {
+    "action": "block",
+    "remedy": "Write the record the Lifecycle section names by piping JSON with `path`, `text`, `doc` and `external` to `board changes lifecycle`, or start the section with `None:` followed by the reason."
+  }
+}

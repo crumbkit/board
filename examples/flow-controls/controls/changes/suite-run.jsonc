@@ -1,0 +1,40 @@
+{
+  "$type": "controls/control/v2",
+  "summary": "A full, clean, passing run of the change's check suite covers its head.",
+  "requirement": "An attached run of {suite}, stored under {suite}/runs/, has scope full, is not dirty, names {head} among its versions, and has no result whose outcome is fail or error.",
+  "purpose": "Code reaches review only after the repository's own gates pass on exactly the commit under review.",
+  "subject": {
+    "of": "change"
+  },
+  "trigger": "transition",
+  "expectations": [
+    {
+      "checker": "test",
+      "suite": "{suite}",
+      "verdict": {
+        "type": "runs/run/v1",
+        "under": "{suite}/runs/",
+        "where": {
+          "at_head": "versions",
+          "values": {
+            "scope": [
+              "full"
+            ],
+            "dirty": [
+              false
+            ]
+          },
+          "no_outcomes": [
+            "fail",
+            "error"
+          ]
+        }
+      }
+    }
+  ],
+  "on_failure": {
+    "action": "block",
+    "waivable_by": "owner",
+    "remedy": "When {suite} is empty, the repository names no check suite: name one with `board changes attach --path {change} --suite /suites/<name>`, define one with `board runs define`, or ask the owner to waive this check. Otherwise run {suite} on {head} with `board runs run` and attach the run."
+  }
+}

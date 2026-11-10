@@ -1,0 +1,36 @@
+{
+  "$type": "controls/control/v2",
+  "summary": "A clean-context reviewer approved the head with no critical or high finding.",
+  "requirement": "An attached review/report/v1 whose range ends at {head} has the verdict approve or comment and no finding of severity critical or high.",
+  "purpose": "A second reader with no stake in the change catches what its author cannot see.",
+  "subject": {
+    "of": "change"
+  },
+  "trigger": "transition",
+  "expectations": [
+    {
+      "checker": "model",
+      "role": "reviewer",
+      "verdict": {
+        "type": "review/report/v1",
+        "where": {
+          "at_head": "range",
+          "values": {
+            "verdict": [
+              "approve",
+              "comment"
+            ]
+          },
+          "no_findings": [
+            "critical",
+            "high"
+          ]
+        }
+      }
+    }
+  ],
+  "on_failure": {
+    "action": "block",
+    "remedy": "Only a reviewer can provide this: start one in a fresh agent with tools and a checkout of {head}, have it write a review/report/v1 for the change at /reviews/<id>/report, and attach it with `board changes attach --path {change} --ref /reviews/<id>/report`."
+  }
+}

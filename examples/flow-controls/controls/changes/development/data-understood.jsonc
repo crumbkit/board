@@ -1,0 +1,46 @@
+{
+  "$type": "controls/control/v2",
+  "summary": "The owner signed off an understanding check of the change's data.",
+  "requirement": "An attached plans/decision/v1 the owner signed has refs naming an attached changes/understanding/v1 whose subject is data and whose change is {change}. No attached understanding check is degraded.",
+  "purpose": "The owner knows what the change stores, where, and who shares it before agreeing to it.",
+  "subject": {
+    "of": "change"
+  },
+  "when": {
+    "section_not": {
+      "Data": "^none\\s*(?:[.:]|\\n?\\z)"
+    }
+  },
+  "trigger": "transition",
+  "expectations": [
+    {
+      "checker": "person",
+      "who": "owner",
+      "verdict": {
+        "type": "plans/decision/v1",
+        "where": {
+          "owner_signed": true,
+          "refs": [
+            {
+              "type": "changes/understanding/v1",
+              "values": {
+                "subject": [
+                  "data"
+                ],
+                "change": [
+                  "{change}"
+                ]
+              },
+              "degraded": "fail"
+            }
+          ]
+        }
+      },
+      "code": "changes::data::not_signed"
+    }
+  ],
+  "on_failure": {
+    "action": "block",
+    "remedy": "Run the understanding-check skill with the owner on the plan's Data section, attach its record with `board changes attach --path {change} --ref <record>`, and ask the owner to sign a plans/decision/v1 whose refs name it."
+  }
+}

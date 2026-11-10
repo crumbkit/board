@@ -1,0 +1,26 @@
+{
+  "$type": "controls/control/v2",
+  "summary": "The plan says what the tests prove and what they do not.",
+  "requirement": "The plan has text under What the tests prove and What the tests do not prove.",
+  "purpose": "The reader of the pull request learns the limits of the evidence, not only its strengths.",
+  "subject": {
+    "of": "plan"
+  },
+  "trigger": "transition",
+  "expectations": [
+    {
+      "checker": "program",
+      "rule": {
+        "check": "sections",
+        "sections": [
+          "What the tests prove",
+          "What the tests do not prove"
+        ]
+      }
+    }
+  ],
+  "on_failure": {
+    "action": "block",
+    "remedy": "Write text under each heading the detail names and write the plan again with `board changes plan --path {change}`."
+  }
+}

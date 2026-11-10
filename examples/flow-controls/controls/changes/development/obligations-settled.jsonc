@@ -1,0 +1,22 @@
+{
+  "$type": "controls/control/v2",
+  "summary": "Before review, every obligation on the plan's paths is discharged or listed as owed.",
+  "requirement": "Every obligation control that applies to the plan's paths is listed in the plan's owed field.",
+  "purpose": "A change does not reach review silently leaving work owed on the files it touches.",
+  "subject": {
+    "of": "plan-paths"
+  },
+  "trigger": "transition",
+  "expectations": [
+    {
+      "checker": "program",
+      "rule": {
+        "check": "obligations-owed"
+      }
+    }
+  ],
+  "on_failure": {
+    "action": "block",
+    "remedy": "Do the work each obligation names. Once the work is committed, delete each obligation with `board rm <path> -m '<message naming the work>'`; merging the work does not clear it. List an obligation the change leaves owed in the plan's owed field."
+  }
+}

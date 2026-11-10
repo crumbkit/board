@@ -1,0 +1,29 @@
+{
+  "$type": "controls/control/v2",
+  "summary": "The owner signed a decision approving the plan.",
+  "requirement": "An attached plans/decision/v1 that the owner signed has refs naming the plan, its text or the change.",
+  "purpose": "Nothing is built that the owner has not agreed to.",
+  "subject": {
+    "of": "change"
+  },
+  "trigger": "transition",
+  "expectations": [
+    {
+      "checker": "person",
+      "who": "owner",
+      "verdict": {
+        "type": "plans/decision/v1",
+        "where": {
+          "owner_signed": true,
+          "refs": [
+            "plan"
+          ]
+        }
+      }
+    }
+  ],
+  "on_failure": {
+    "action": "block",
+    "remedy": "Only the owner can provide this: ask him, then write the record the detail describes and attach it with `board changes attach --path {change} --ref <path>`."
+  }
+}

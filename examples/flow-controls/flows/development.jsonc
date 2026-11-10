@@ -1,0 +1,66 @@
+{
+  "$type": "changes/flow/v2",
+  "name": "development",
+  "summary": "Plan with the owner, build test-first, review with clean context, land through a pull request.",
+  "stop": {
+    "through": "plan"
+  },
+  "phases": [
+    {
+      "name": "plan",
+      "agent": "lead",
+      "skills": [
+        "understanding-check"
+      ],
+      "instruction": "Read each record the change surfaced; cite those you build on in the plan's uses and list the rest in the plan's considered field with a line on why they do not apply. Interview the owner and fill in Problem, Outcome, Out of scope, UX, Data, Failure paths, Consumers and Lifecycle. UX starts with No UI change and a reason, or lists each mockup under ### Mockups with a ### Neighbours list; attach the owner's decision naming each mockup. Data starts with None, or run the understanding-check skill and attach its record and the owner's decision that references it. Failure paths has one row per step that can fail: what fails, the state it leaves, the recovery, and the order of the check against the destructive step it guards. Consumers lists every caller and reader of what the change produces or alters, and names the files searched. Lifecycle starts with None and a reason, or names the record `board changes lifecycle` writes and summarises its states in one line. Write the plan with `board changes plan` and attach the owner's signed plans/decision/v1 whose refs name the plan.",
+      "controls": [
+        "/controls/changes/development/plan-sections",
+        "/controls/changes/considered",
+        "/controls/changes/development/task-set",
+        "/controls/changes/development/route-set",
+        "/controls/changes/development/plan-approved",
+        "/controls/changes/development/mockups-agreed",
+        "/controls/changes/development/data-understood",
+        "/controls/changes/development/lifecycle-declared",
+        "/controls/changes/development/lifecycle-record",
+        "/controls/changes/development/obligations-noted"
+      ]
+    },
+    {
+      "name": "build",
+      "agent": "builder",
+      "instruction": "Start one builder in a fresh agent from `board changes brief --path {change}`; its first message begins with brief_line, then the brief. Read the lifecycle text the brief names, when it names one. Build test-first, commit, and record the head with `board changes attach --path {change} --head <sha>`. Attach each task. Run {suite} on the head and attach the run. Before advancing, ask the owner two of each understanding check's predict or edge questions again, worded differently, and add them to its rechecks.",
+      "controls": [
+        "/controls/changes/head-recorded",
+        "/controls/changes/suite-run",
+        "/controls/changes/development/tasks-closed",
+        "/controls/changes/development/data-rechecked"
+      ]
+    },
+    {
+      "name": "review",
+      "agent": "lead",
+      "instruction": "Review {head} with clean context: start a reviewer in a fresh agent with tools and a checkout of {head}, because the review plugin's run capability gives its model neither. Write a brief whose subject is the change, so the reviewer reads the plan as the spec, the lifecycle text the plan names and the controls on the plan's paths, and have it write a review/report/v1 at /reviews/<id>/report. Attach the report. The reviewer checks the Failure paths, Consumers and Lifecycle sections against the code as the review skill says: each Failure paths row has code that leaves the stated state and the recovery, and each check runs before the destructive step it guards; each Consumers search finds no reader the list omits; each lifecycle transition has one owner, no `_ =>` arm covers a state enum the record names, each crash point has a test, and the landed doc matches the record. The gate refuses a diff that edits a file outside the plan's paths; add the file with `board changes plan`, or revert the edit. Fix every critical or high finding, record the new head and review again.",
+      "controls": [
+        "/controls/changes/review-approved",
+        "/controls/changes/development/within-plan-paths",
+        "/controls/changes/development/ui-paths",
+        "/controls/changes/development/data-paths",
+        "/controls/changes/development/lifecycle-paths-unrecorded",
+        "/controls/changes/development/lifecycle-paths-declared-none",
+        "/controls/changes/development/obligations-settled"
+      ]
+    },
+    {
+      "name": "land",
+      "agent": "lead",
+      "instruction": "Add What the tests prove and What the tests do not prove to the plan. Draft the pull request with `board changes pr --path {change}`, read pr.md and fix what is wrong, fix each path in `unreadable` and draft again or say why in the body, then run the command it returns in a POSIX shell from a checkout on {head}. Record the pull request with `board github ref --ref <owner>/<repo>#<number>` and attach it with --pull. Merging happens outside Board; advancing from land ends the change in done.",
+      "controls": [
+        "/controls/changes/development/test-sections",
+        "/controls/changes/pull-request",
+        "/controls/changes/development/lifecycle-paths-unrecorded",
+        "/controls/changes/development/lifecycle-paths-declared-none"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,30 @@
+{
+  "$type": "controls/control/v2",
+  "summary": "A plan whose paths reach lifecycle code does not say None under Lifecycle.",
+  "requirement": "When the plan says None under Lifecycle, none of the plan's paths reaches /controls/{repo}/lifecycle-paths.",
+  "purpose": "Lifecycle code needs its states, events and crash points written down before it is changed.",
+  "subject": {
+    "of": "plan-paths",
+    "within": [
+      "/controls/{repo}/lifecycle-paths"
+    ]
+  },
+  "when": {
+    "section": {
+      "Lifecycle": "^none\\s*(?:[.:]|\\n?\\z)"
+    }
+  },
+  "trigger": "transition",
+  "expectations": [
+    {
+      "checker": "program",
+      "rule": {
+        "check": "untouched"
+      }
+    }
+  ],
+  "on_failure": {
+    "action": "block",
+    "remedy": "The plan's paths reach what this repository names as lifecycle code, so the plan cannot say None under Lifecycle. Write the states, events and crash points by piping JSON with `path`, `text`, `doc` and `external` to `board changes lifecycle` and name that record under Lifecycle."
+  }
+}

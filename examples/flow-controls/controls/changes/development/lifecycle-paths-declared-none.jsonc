@@ -1,0 +1,30 @@
+{
+  "$type": "controls/control/v2",
+  "summary": "A plan that says None under Lifecycle edits no lifecycle path.",
+  "requirement": "When the plan says None under Lifecycle, the diff edits no file /controls/{repo}/lifecycle-paths lists.",
+  "purpose": "The plan's Lifecycle answer must match the code the change actually edits.",
+  "subject": {
+    "of": "diff",
+    "within": [
+      "/controls/{repo}/lifecycle-paths"
+    ]
+  },
+  "when": {
+    "section": {
+      "Lifecycle": "^none\\s*(?:[.:]|\\n?\\z)"
+    }
+  },
+  "trigger": "transition",
+  "expectations": [
+    {
+      "checker": "program",
+      "rule": {
+        "check": "untouched"
+      }
+    }
+  ],
+  "on_failure": {
+    "action": "block",
+    "remedy": "The plan says None under Lifecycle and the change's diff edits what this repository names as lifecycle code. Name the lifecycle record under Lifecycle with `board changes plan --path {change}`, writing it first by piping JSON with `path`, `text`, `doc` and `external` to `board changes lifecycle` if it does not exist, or revert the edit."
+  }
+}

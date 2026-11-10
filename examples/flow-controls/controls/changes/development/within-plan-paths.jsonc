@@ -1,0 +1,23 @@
+{
+  "$type": "controls/control/v2",
+  "summary": "The diff edits only files inside the plan's paths.",
+  "requirement": "Every file the change's diff edits matches one of the plan's paths, and the plan declares at least one.",
+  "purpose": "The builder's brief carried the rules for the planned paths only; an edit outside them was made without those rules.",
+  "subject": {
+    "of": "diff"
+  },
+  "trigger": "transition",
+  "expectations": [
+    {
+      "checker": "program",
+      "rule": {
+        "check": "within-plan-paths"
+      },
+      "code": "changes::paths::outside_plan"
+    }
+  ],
+  "on_failure": {
+    "action": "block",
+    "remedy": "Add the files to the plan's paths with `board changes plan --path {change}`, or revert the edits."
+  }
+}

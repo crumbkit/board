@@ -1,0 +1,23 @@
+{
+  "$type": "controls/control/v2",
+  "summary": "The change records its route.",
+  "requirement": "The change's route field is set.",
+  "purpose": "The route decides who reviews and who may merge.",
+  "subject": {
+    "of": "change"
+  },
+  "trigger": "transition",
+  "expectations": [
+    {
+      "checker": "program",
+      "rule": {
+        "check": "field",
+        "field": "route"
+      }
+    }
+  ],
+  "on_failure": {
+    "action": "block",
+    "remedy": "Set the route with `board changes attach --path {change} --route <route>`."
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "$type": "controls/control/v2",
+  "summary": "A change without a lifecycle record edits no lifecycle path.",
+  "requirement": "When no changes/lifecycle/v1 is at /changes/{name}/lifecycle, the diff edits no file /controls/{repo}/lifecycle-paths lists.",
+  "purpose": "Lifecycle code is checked against its record; without one there is nothing to check it against.",
+  "subject": {
+    "of": "diff",
+    "within": [
+      "/controls/{repo}/lifecycle-paths"
+    ]
+  },
+  "when": {
+    "absent": {
+      "path": "/changes/{name}/lifecycle",
+      "type": "changes/lifecycle/v1"
+    }
+  },
+  "trigger": "transition",
+  "expectations": [
+    {
+      "checker": "program",
+      "rule": {
+        "check": "untouched"
+      }
+    }
+  ],
+  "on_failure": {
+    "action": "block",
+    "remedy": "The change's diff edits what this repository names as lifecycle code and the change has no lifecycle record. Write one by piping JSON with `path`, `text`, `doc` and `external` to `board changes lifecycle`, or revert the edit."
+  }
+}

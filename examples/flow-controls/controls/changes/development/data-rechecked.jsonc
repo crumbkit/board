@@ -1,0 +1,73 @@
+{
+  "$type": "controls/control/v2",
+  "summary": "Each data understanding check holds two rechecks that match the plan.",
+  "requirement": "An attached plans/decision/v1 the owner signed names an attached changes/understanding/v1 of this change's data. At least one such understanding check is attached, none is degraded, and every one holds at least two rechecks whose matches is true.",
+  "purpose": "Asking again, worded differently, shows the owner's understanding held while the code was built.",
+  "subject": {
+    "of": "change"
+  },
+  "when": {
+    "section_not": {
+      "Data": "^none\\s*(?:[.:]|\\n?\\z)"
+    }
+  },
+  "trigger": "transition",
+  "expectations": [
+    {
+      "checker": "person",
+      "who": "owner",
+      "verdict": {
+        "type": "plans/decision/v1",
+        "where": {
+          "owner_signed": true,
+          "refs": [
+            {
+              "type": "changes/understanding/v1",
+              "values": {
+                "subject": [
+                  "data"
+                ],
+                "change": [
+                  "{change}"
+                ]
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "checker": "person",
+      "who": "owner",
+      "verdict": {
+        "type": "changes/understanding/v1",
+        "every": true,
+        "min": 1,
+        "degraded": "fail",
+        "where": {
+          "values": {
+            "subject": [
+              "data"
+            ],
+            "change": [
+              "{change}"
+            ]
+          },
+          "count": {
+            "field": "rechecks",
+            "values": {
+              "matches": [
+                true
+              ]
+            },
+            "min": 2
+          }
+        }
+      }
+    }
+  ],
+  "on_failure": {
+    "action": "block",
+    "remedy": "Only the owner can provide this: ask him, then ask the owner again, worded differently, the predict or edge questions of each understanding check the detail names, and add them to its rechecks."
+  }
+}

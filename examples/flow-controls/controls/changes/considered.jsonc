@@ -1,0 +1,22 @@
+{
+  "$type": "controls/control/v2",
+  "summary": "The plan uses or dismisses every record the change surfaced.",
+  "requirement": "Every record in the change's surfaced list is in the plan's uses or in its considered field, except a surfaced path that no longer reaches anything.",
+  "purpose": "An agent that ignores an open task or a decision repeats or contradicts work already done.",
+  "subject": {
+    "of": "change"
+  },
+  "trigger": "transition",
+  "expectations": [
+    {
+      "checker": "program",
+      "rule": {
+        "check": "considered"
+      }
+    }
+  ],
+  "on_failure": {
+    "action": "block",
+    "remedy": "Cite each surfaced record you build on in the plan's uses, list the rest in its considered field with one line on why they do not apply, and write the plan again with `board changes plan --path {change}`."
+  }
+}

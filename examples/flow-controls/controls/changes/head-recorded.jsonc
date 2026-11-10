@@ -1,0 +1,23 @@
+{
+  "$type": "controls/control/v2",
+  "summary": "The change records the commit it is building.",
+  "requirement": "The change's head field names a commit.",
+  "purpose": "Every later check, run and review is pinned to the head; without it they cannot say what they covered.",
+  "subject": {
+    "of": "change"
+  },
+  "trigger": "transition",
+  "expectations": [
+    {
+      "checker": "program",
+      "rule": {
+        "check": "field",
+        "field": "head"
+      }
+    }
+  ],
+  "on_failure": {
+    "action": "block",
+    "remedy": "Commit, then record the head with `board changes attach --path {change} --head <sha>`."
+  }
+}

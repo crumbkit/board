@@ -1,0 +1,26 @@
+{
+  "$type": "controls/control/v2",
+  "summary": "The change references the pull request that lands it.",
+  "requirement": "The change's pulls field names at least one record, and its newest reads as a github/pull/v1.",
+  "purpose": "Board records where the change landed so a later reader can follow it from the change.",
+  "subject": {
+    "of": "change"
+  },
+  "trigger": "transition",
+  "expectations": [
+    {
+      "checker": "program",
+      "rule": {
+        "check": "field",
+        "field": "pulls",
+        "types": [
+          "github/pull/v1"
+        ]
+      }
+    }
+  ],
+  "on_failure": {
+    "action": "block",
+    "remedy": "Draft the pull request with `board changes pr --path {change}`, open it, record it with `board github ref` and attach it with `board changes attach --path {change} --pull <path>`."
+  }
+}

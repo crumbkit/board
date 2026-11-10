@@ -1,0 +1,32 @@
+{
+  "$type": "controls/control/v2",
+  "summary": "The plan has text under each of the eight planning headings.",
+  "requirement": "The plan has text under Problem, Outcome, Out of scope, UX, Data, Failure paths, Consumers and Lifecycle.",
+  "purpose": "Each heading forces a question the owner and builder must answer before code exists.",
+  "subject": {
+    "of": "plan"
+  },
+  "trigger": "transition",
+  "expectations": [
+    {
+      "checker": "program",
+      "rule": {
+        "check": "sections",
+        "sections": [
+          "Problem",
+          "Outcome",
+          "Out of scope",
+          "UX",
+          "Data",
+          "Failure paths",
+          "Consumers",
+          "Lifecycle"
+        ]
+      }
+    }
+  ],
+  "on_failure": {
+    "action": "block",
+    "remedy": "Write text under each heading the detail names and write the plan again with `board changes plan --path {change}`."
+  }
+}

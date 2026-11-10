@@ -1,0 +1,30 @@
+{
+  "$type": "controls/control/v2",
+  "summary": "A plan that says No UI change edits no UI path.",
+  "requirement": "When the plan's UX section starts with No UI change, the diff edits no file /controls/{repo}/ui-paths lists.",
+  "purpose": "A UI edit needs the mockups the owner agreed, which No UI change skipped.",
+  "subject": {
+    "of": "diff",
+    "within": [
+      "/controls/{repo}/ui-paths"
+    ]
+  },
+  "when": {
+    "section": {
+      "UX": "^no ui change\\b[\\s.:,;-]*\\w"
+    }
+  },
+  "trigger": "transition",
+  "expectations": [
+    {
+      "checker": "program",
+      "rule": {
+        "check": "untouched"
+      }
+    }
+  ],
+  "on_failure": {
+    "action": "block",
+    "remedy": "Revert the edits to the controlled paths, or move the change to a flow that allows them with `board changes reflow --path {change} --flow <flow>`."
+  }
+}
