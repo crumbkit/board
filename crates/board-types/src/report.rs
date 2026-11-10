@@ -21,8 +21,11 @@ pub struct Report<D> {
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub dry_run: bool,
     pub data: D,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub failures: Vec<Failure>,
+    /// The failures, when the report lists them. A command that takes
+    /// several keys lists them even when there are none, as `[]`; others
+    /// leave the field out.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub failures: Option<Vec<Failure>>,
 }
 
 /// What one run printed: the report of `D`, or the failure document,
@@ -171,7 +174,7 @@ struct Either<D> {
     #[serde(default = "none")]
     data: Option<D>,
     #[serde(default)]
-    failures: Vec<Failure>,
+    failures: Option<Vec<Failure>>,
     /// The failure the other fields make, if they make one.
     #[serde(flatten)]
     failure: Option<Failure>,

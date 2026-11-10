@@ -12,19 +12,14 @@ use board_types::{
 
 use super::*;
 
-/// The schema `board schemas show <id> --json` prints. It is compiled
-/// without the record validator's limit on expansion, which the failure
-/// document's recursive `related` exceeds.
-fn shown(id: &str) -> jsonschema::Validator {
+/// The schema `board schemas show <id> --json` prints, compiled as the
+/// schema of a document Board prints.
+fn shown(id: &str) -> board_validate::Schema {
     let scenario = board();
     let output = board_in(scenario.workdir(), &["schemas", "show", id, "--json"]);
     let printed = json(&output);
     assert_eq!(printed["data"][0]["id"], id);
-    jsonschema::options()
-        .with_draft(jsonschema::Draft::Draft202012)
-        .with_pattern_options(jsonschema::PatternOptions::regex())
-        .build(&printed["data"][0]["schema"])
-        .unwrap()
+    board_validate::Schema::compile_document(printed["data"][0]["schema"].clone()).unwrap()
 }
 
 /// A failure with every field crumbkit can print.
@@ -140,7 +135,7 @@ fn each_document_board_types_writes_is_admitted_by_its_schema_and_one_lacking_a_
                 previous: None,
             }],
         },
-        failures: vec![every_failure()],
+        failures: Some(vec![every_failure()]),
     };
     let file = |content, record, code: Option<&str>| File {
         location: mounted(),
@@ -164,7 +159,7 @@ fn each_document_board_types_writes_is_admitted_by_its_schema_and_one_lacking_a_
                 Some("board::record::not_a_record"),
             ),
         ],
-        failures: vec![every_failure()],
+        failures: Some(vec![every_failure()]),
     };
     let failure = Printed::<PutReport>::Failure(Box::new(every_failure()));
     for (id, (full, lacking)) in [
@@ -173,9 +168,14 @@ fn each_document_board_types_writes_is_admitted_by_its_schema_and_one_lacking_a_
         (Failure::SCHEMA, and_lacking(failure, "recovery")),
     ] {
         let schema = shown(id);
-        let refused: Vec<String> = schema.iter_errors(&full).map(|e| e.to_string()).collect();
-        assert_eq!(refused, Vec::<String>::new(), "{id}");
-        assert!(!schema.is_valid(&lacking), "{id}");
+        if let Err(error) = schema.validate(&full) {
+            panic!("{id} refused {full}: {}", error.reason());
+        }
+        assert_eq!(
+            schema.validate(&lacking).unwrap_err().code(),
+            Code::RecordInvalid,
+            "{id}"
+        );
     }
 }
 
@@ -202,7 +202,8 @@ fn what_put_and_get_print_reads_through_board_types_and_writes_back_the_same_jso
     let Printed::Report(report) = &read else {
         panic!("get printed a failure: {printed}")
     };
-    assert_eq!(report.failures[0].code, "board::path::not_found");
+    let failures = report.failures.as_deref().unwrap_or_default();
+    assert_eq!(failures[0].code, "board::path::not_found");
     assert_eq!(serde_json::to_value(&read).unwrap(), printed);
 }
 

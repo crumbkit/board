@@ -113,7 +113,7 @@ fn board_types_writes_a_run_and_a_suite_the_shipped_schemas_admit_with_every_pro
         for (definition, pointer) in nested {
             let defined = names(&schema["$defs"][definition]["properties"]);
             assert_eq!(
-                names(&record.pointer(pointer).unwrap()),
+                names(record.pointer(pointer).unwrap()),
                 defined,
                 "{definition}"
             );

@@ -123,6 +123,16 @@ fn a_get_report_reads_its_failures_and_skips_each_record_unread() {
         panic!("a get report is a report")
     };
     assert!(read.dry_run);
-    assert_eq!(read.failures[0].index, Some(4));
+    assert_eq!(read.failures.unwrap()[0].index, Some(4));
     assert!(read.data[0].record.is_some());
+}
+
+#[test]
+fn an_empty_failures_list_writes_back_as_printed_and_an_absent_one_stays_absent() {
+    let mut listed = empty_put();
+    listed["failures"] = json!([]);
+    for printed in [listed, empty_put()] {
+        let read: Report<PutReport> = serde_json::from_value(printed.clone()).unwrap();
+        assert_eq!(serde_json::to_value(&read).unwrap(), printed);
+    }
 }

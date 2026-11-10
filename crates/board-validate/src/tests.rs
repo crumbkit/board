@@ -478,6 +478,20 @@ fn branches_multiplying_through_any_in_place_keyword_are_refused_and_a_shallow_t
 }
 
 #[test]
+fn a_document_schema_past_the_expansion_limit_compiles_as_a_document_and_not_as_a_record_schema() {
+    let deep = nested(16, LEVELS[1].1);
+    assert_eq!(compile_code(deep.clone()), Code::SchemaInvalid);
+    let document = Schema::compile_document(deep).unwrap();
+    assert!(document.validate(&json!({"r": "a"})).is_ok());
+    assert!(document.validate(&json!({"r": 1})).is_err());
+    let older = json!({"$schema": "http://json-schema.org/draft-07/schema#", "type": "object"});
+    assert_eq!(
+        Schema::compile_document(older).unwrap_err().code(),
+        Code::SchemaInvalid
+    );
+}
+
+#[test]
 fn refusing_an_exploding_schema_stops_after_the_bound_at_each_start() {
     for (keyword, level) in LEVELS {
         let schema = nested(22, level);

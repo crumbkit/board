@@ -19,6 +19,16 @@ const DRAFT_2020_12: &str = "https://json-schema.org/draft/2020-12/schema";
 /// The format that marks a string as a reference to a logical path.
 const REFERENCE_FORMAT: &str = "board-ref";
 
+/// Refuses a schema that declares a draft other than 2020-12.
+fn check_draft(document: &Value) -> Result<(), SchemaError> {
+    match document.get("$schema") {
+        Some(draft) if draft.as_str() != Some(DRAFT_2020_12) => Err(SchemaError::Draft {
+            draft: draft.to_string(),
+        }),
+        _ => Ok(()),
+    }
+}
+
 /// A compiled schema.
 #[derive(Debug)]
 pub struct Schema {
@@ -31,16 +41,26 @@ impl Schema {
     /// `x-board-type` values must be record types, and it may mark a
     /// reference only where references are searched.
     pub fn compile(document: Value) -> Result<Self, SchemaError> {
-        if let Some(draft) = document.get("$schema")
-            && draft.as_str() != Some(DRAFT_2020_12)
-        {
-            return Err(SchemaError::Draft {
-                draft: draft.to_string(),
-            });
-        }
+        check_draft(&document)?;
         references::check_types(&document)?;
         references::check_expansion(&document)?;
         references::check_hidden(&document)?;
+        Self::build(document)
+    }
+
+    /// Compiles the schema of a document Board itself prints, such as a
+    /// report. It must be JSON Schema 2020-12. The checks that keep a
+    /// record schema searchable for references are skipped, since Board
+    /// never searches such a document for references; one exceeds the
+    /// expansion limit when it nests a definition in itself, as the failure
+    /// document's `related` does. Use [`Schema::compile`] for any schema
+    /// read from a board.
+    pub fn compile_document(document: Value) -> Result<Self, SchemaError> {
+        check_draft(&document)?;
+        Self::build(document)
+    }
+
+    fn build(document: Value) -> Result<Self, SchemaError> {
         let validator = jsonschema::options()
             .with_draft(Draft::Draft202012)
             .with_pattern_options(PatternOptions::regex())
