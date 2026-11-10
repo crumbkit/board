@@ -213,8 +213,8 @@ ends, counted from today. `drop` sets `status: dropped`. `claim`, `done`,
 refusing `tasks::claim::no_owner` when they name nobody. `--owner`, the
 one flag a released Board took, names the owner in a single text, read as
 the shapes migration read old owners: a `local_` id in it is the session,
-Codex or Claude the program, Luke the person, and the whole text the
-agent's name unless it is only one of those, so `lead-1` is the agent
+Codex or Claude the program, the owner's own name the person, and the
+whole text the agent's name unless it is only one of those, so `lead-1` is the agent
 `lead-1`. `--owner` beside any of
 the other four is refused with `tasks::owner::twice`. It claims an open
 task that nobody or the same owner holds, where two owners that both name a

@@ -398,7 +398,7 @@ fn an_actor_with_no_part_a_bad_part_or_an_unknown_key_is_refused_and_its_twin_is
             json!({"program": "Codex nightly scheduler"}),
             json!({"program": "claude-code"}),
         ),
-        (json!({"person": "Luke"}), json!({"person": "luke"})),
+        (json!({"person": "Ana"}), json!({"person": "ana"})),
         (
             json!({"person": "a b@c"}),
             json!({"person": "owner@example.com"}),
@@ -408,8 +408,8 @@ fn an_actor_with_no_part_a_bad_part_or_an_unknown_key_is_refused_and_its_twin_is
             json!({"agent": "Codex nightly scheduler"}),
         ),
         (
-            json!({"person": "luke", "model": "opus"}),
-            json!({"session": session, "program": "claude-code", "person": "luke"}),
+            json!({"person": "ana", "model": "opus"}),
+            json!({"session": session, "program": "claude-code", "person": "ana"}),
         ),
     ] {
         assert_eq!((code(refused.clone()), &refused), (invalid, &refused));
@@ -434,13 +434,13 @@ fn an_actor_writes_only_the_parts_it_holds() {
     );
     let all = Actor {
         session: Some("local_1".into()),
-        person: Some("luke".into()),
+        person: Some("ana".into()),
         agent: Some("Codex builder".into()),
         ..actor.clone()
     };
     assert_eq!(
         (actor.to_string(), all.to_string()),
-        ("codex".into(), "codex, Codex builder, luke, local_1".into())
+        ("codex".into(), "codex, Codex builder, ana, local_1".into())
     );
 }
 

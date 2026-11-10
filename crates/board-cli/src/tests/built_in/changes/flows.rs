@@ -593,7 +593,7 @@ fn start_refuses_a_suite_that_is_not_there_and_admits_one_that_is() {
 #[test]
 fn next_names_the_owner_and_what_to_ask_when_only_the_owner_can_pass_the_checks_left() {
     let board = mounted();
-    started(&board, "A", &json!({"handle": "@luke"}));
+    started(&board, "A", &json!({"handle": "@ana"}));
     board.call("attach", &json!({"path": "/changes/a", "route": "owner"}));
     let text = board.read("changes/a.json")["plan"]
         .as_str()

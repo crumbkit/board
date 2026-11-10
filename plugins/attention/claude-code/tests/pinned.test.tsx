@@ -10,14 +10,14 @@ import { contextText, ordersButton, parsePinned } from '../hooks/pinned'
 // or check a signature: board-cli's attention tests prove that pinned verifies.
 
 const BOARD = 'the personal board'
-const CWD = '/Users/luke/Code/board'
+const CWD = '/Users/ana/Code/board'
 const EVALS = {
   path: '/orders/evals',
   signer: 'owner',
   order: 'Record every test as an eval.',
   expires: '2026-12-31',
   context: '/orders/evals.md',
-  context_text: 'Luke asked for this on 2026-10-20.',
+  context_text: 'Ana asked for this on 2026-10-20.',
 }
 const REPORT = {
   schema: 'board/call-report/v2',
@@ -85,7 +85,7 @@ test('the context block holds each verified order with its expiry, and names eac
       'session started. Each one binds you until it expires. Its context is non-binding background that says ' +
       'what the owner meant.\n\n' +
       '## /orders/evals, until 2026-12-31\n\nRecord every test as an eval.\n\n' +
-      'Context (non-binding):\n\nLuke asked for this on 2026-10-20.\n\n' +
+      'Context (non-binding):\n\nAna asked for this on 2026-10-20.\n\n' +
       '## Pinned orders not shown\n\n- /orders/old: attention::order::expired. the order expired on 2026-10-01',
   )
 })
@@ -153,10 +153,10 @@ test('the band shows one Orders button and no order by name, and the button open
     expect(await pane.find({ text: '/orders/evals, until 2026-12-31' })).toBeDefined()
     expect(await pane.find({ text: 'Verified: signed by owner.' })).toBeDefined()
     expect(await pane.find({ text: 'Record every test as an eval.' })).toBeDefined()
-    expect(await pane.find({ text: 'Luke asked for this on 2026-10-20.' })).toBeUndefined()
+    expect(await pane.find({ text: 'Ana asked for this on 2026-10-20.' })).toBeUndefined()
     await pane.press({ key: 'context' })
     expect(await pane.find({ text: 'Context (non-binding), from /orders/evals.md:' })).toBeDefined()
-    expect(await pane.find({ text: 'Luke asked for this on 2026-10-20.' })).toBeDefined()
+    expect(await pane.find({ text: 'Ana asked for this on 2026-10-20.' })).toBeDefined()
     await pane.press({ key: 'all-orders' })
     expect(await pane.find({ text: /Not in this session's context: the order expired on 2026-10-01 \(attention::order::expired\)/ })).toBeDefined()
     await pane.unmount()

@@ -68,11 +68,11 @@ fn the_route_is_owner_when_the_handle_owns_every_owned_pattern() {
     let board = Changes::new();
     let mount = board.mount_x(&[(
         ".github/CODEOWNERS",
-        "# owners\n* @luke\ndocs/ @Luke  # docs too\n",
+        "# owners\n* @ana\ndocs/ @Ana  # docs too\n",
     )]);
     let output = board.call(
         "start",
-        &json!({"mount": mount, "task": TASK, "title": "T", "handle": "@luke"}),
+        &json!({"mount": mount, "task": TASK, "title": "T", "handle": "@ana"}),
     );
     assert_eq!(
         (&output["route"], &output["ask_first"]),
@@ -82,8 +82,8 @@ fn the_route_is_owner_when_the_handle_owns_every_owned_pattern() {
     assert_eq!(
         output["owners"],
         json!([
-            {"pattern": "*", "owners": ["@luke"]},
-            {"pattern": "docs/", "owners": ["@Luke"]},
+            {"pattern": "*", "owners": ["@ana"]},
+            {"pattern": "docs/", "owners": ["@Ana"]},
         ])
     );
 }
@@ -91,10 +91,10 @@ fn the_route_is_owner_when_the_handle_owns_every_owned_pattern() {
 #[test]
 fn the_route_is_ask_first_and_lists_the_patterns_someone_else_owns() {
     let board = Changes::new();
-    let mount = board.mount_x(&[("CODEOWNERS", "* @luke\n/auth/ @sam @kim\n")]);
+    let mount = board.mount_x(&[("CODEOWNERS", "* @ana\n/auth/ @sam @kim\n")]);
     let output = board.call(
         "start",
-        &json!({"mount": mount, "task": TASK, "title": "T", "handle": "@luke"}),
+        &json!({"mount": mount, "task": TASK, "title": "T", "handle": "@ana"}),
     );
     assert_eq!(
         (&output["route"], &output["ask_first"]),
@@ -106,7 +106,7 @@ fn the_route_is_ask_first_and_lists_the_patterns_someone_else_owns() {
 #[test]
 fn without_a_handle_every_owned_pattern_is_ask_first() {
     let board = Changes::new();
-    let mount = board.mount_x(&[("CODEOWNERS", "* @luke\n")]);
+    let mount = board.mount_x(&[("CODEOWNERS", "* @ana\n")]);
     let output = board.call(
         "start",
         &json!({"mount": mount, "task": TASK, "title": "T"}),
@@ -123,7 +123,7 @@ fn the_route_is_unowned_when_the_repository_names_no_owners() {
     let mount = board.mount_x(&[("CODEOWNERS", "# nobody yet\n")]);
     let output = board.call(
         "start",
-        &json!({"mount": mount, "task": TASK, "title": "T", "handle": "@luke"}),
+        &json!({"mount": mount, "task": TASK, "title": "T", "handle": "@ana"}),
     );
     assert_eq!(
         (&output["route"], &output["owners"], &output["codeowners"]),

@@ -399,7 +399,7 @@ patterned! {
 }
 
 patterned! {
-    /// A person: a [`Slug`], such as `luke`, or an email address, such as
+    /// A person: a [`Slug`], such as `ana`, or an email address, such as
     /// `owner@example.com`.
     Person = "^([a-z0-9]+(-[a-z0-9]+)*|[^@\\s]+@[^@\\s]+)$"
 }
@@ -482,7 +482,7 @@ pub struct Actor {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "Option<Slug>")]
     pub program: Option<String>,
-    /// The person who acted, such as `luke`, or their email address.
+    /// The person who acted, such as `ana`, or their email address.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "Option<Person>")]
     pub person: Option<String>,
@@ -514,9 +514,10 @@ impl Actor {
 
     /// The actor that one text names, as a released Board recorded who
     /// acted: its `local_` session, the program its words name (Codex, or
-    /// Claude and its subagents), and Luke. The whole text is also the
-    /// agent's name unless it is only a program's name, Luke's name or the
-    /// session id, so no words are lost. Blank text names nobody. The shapes
+    /// Claude and its subagents), and the owner when it holds the owner's
+    /// own name. The whole text is also the agent's name unless it is only
+    /// a program's name, the owner's own name or the session id, so no
+    /// words are lost. Blank text names nobody. The shapes
     /// migration reads old actors with it, and `--owner` reads its text with
     /// it, so the two agree on who an old name is.
     #[must_use]
@@ -569,7 +570,7 @@ impl Actor {
 
 impl std::fmt::Display for Actor {
     /// The parts it holds, in the order program, agent, person and
-    /// session, separated by `, `, such as `claude-code, luke`.
+    /// session, separated by `, `, such as `claude-code, ana`.
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let parts: Vec<&str> = [&self.program, &self.agent, &self.person, &self.session]
             .into_iter()

@@ -52,7 +52,7 @@ pub(crate) struct ReopenInput {
     program: Option<String>,
     #[schemars(
         with = "Option<Person>",
-        description = "The person who reopens the change, such as luke."
+        description = "The person who reopens the change, such as ana."
     )]
     person: Option<String>,
     #[schemars(

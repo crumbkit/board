@@ -33,7 +33,7 @@ pub(crate) struct Input {
     /// The program that writes the answer, such as board-app.
     #[schemars(with = "Option<Slug>")]
     program: Option<String>,
-    /// The person who writes the answer, such as luke.
+    /// The person who writes the answer, such as ana.
     #[schemars(with = "Option<Person>")]
     person: Option<String>,
     /// The name the agent that writes the answer was given.

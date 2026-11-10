@@ -7,7 +7,7 @@ use super::rules::{self, Context, MapError, Outcome};
 use super::{Options, run};
 
 fn context() -> Context {
-    Context::new(json!({"Board app": "crumbkit/board-app", "odd one": {"person": "luke"}})).unwrap()
+    Context::new(json!({"Board app": "crumbkit/board-app", "odd one": {"person": "ana"}})).unwrap()
 }
 
 /// The outcome of a subject `name` that now names the topic `slug`.
@@ -59,7 +59,7 @@ fn old_actor_text_becomes_an_actor_with_the_parts_it_names() {
             "Codex in local_7455",
             json!({"session": "local_7455", "program": "codex", "agent": "Codex in local_7455"}),
         ),
-        ("odd one", json!({"person": "luke"})),
+        ("odd one", json!({"person": "ana"})),
     ];
     for (text, actor) in cases {
         assert_eq!(rules::actor(text, &context()), Some(actor), "{text}");
@@ -336,7 +336,7 @@ fn a_github_remote_names_its_repository() {
             "{url}"
         );
     }
-    assert_eq!(rules::github("/Users/luke/Code/x"), None);
+    assert_eq!(rules::github("/Users/ana/Code/x"), None);
 }
 
 #[test]
@@ -355,7 +355,7 @@ fn a_task_owner_line_in_frontmatter_becomes_an_actor() {
         "---\n$type: tasks/task/v2\nowner: {\"agent\":\"c2_b_builder\"}\n---\n"
     );
     assert_eq!(outcomes, [Outcome::Changed("tasks/task/v2.owner")]);
-    let done = "---\n$type: tasks/task/v2\nowner: {\"person\":\"luke\"}\n---\n";
+    let done = "---\n$type: tasks/task/v2\nowner: {\"person\":\"ana\"}\n---\n";
     assert_eq!(rules::markdown(done, &context()), None);
     assert_eq!(
         rules::markdown("---\n$type: prompts/prompt/v1\nowner: x\n---\n", &context()),

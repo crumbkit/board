@@ -24,8 +24,8 @@ pub(crate) struct ClaimInput {
         length(min = 1),
         description = "Who holds the task, as one text in place of session, program, person and \
                        agent, read as the shapes migration reads an old owner: a local_ id in it \
-                       is the session, Codex or Claude the program, Luke the person, and the \
-                       text the agent's name."
+                       is the session, Codex or Claude the program, the owner's own name the person, \
+                       and the text the agent's name."
     )]
     pub(crate) owner: Option<String>,
     #[schemars(
@@ -40,7 +40,7 @@ pub(crate) struct ClaimInput {
     pub(crate) program: Option<String>,
     #[schemars(
         with = "Option<Person>",
-        description = "The person who holds the task, such as luke."
+        description = "The person who holds the task, such as ana."
     )]
     pub(crate) person: Option<String>,
     #[schemars(
