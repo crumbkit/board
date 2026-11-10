@@ -354,12 +354,5 @@ fn a_dash_c_under_the_home_directory_completes_through_a_tilde() {
 #[test]
 fn the_root_help_says_how_to_install_completion() {
     let help = text(&board_in(board().workdir(), &["--help"]).stdout);
-    assert!(
-        help.contains("BOARD_COMPLETE=fish board | source"),
-        "{help}"
-    );
-    assert!(
-        help.contains(r#"eval "$(BOARD_COMPLETE=bash board)""#),
-        "{help}"
-    );
+    assert!(help.contains("board completion install"), "{help}");
 }

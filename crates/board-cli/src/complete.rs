@@ -22,14 +22,34 @@ use crate::run::{Cli, Given, entered};
 
 const VARIABLE: &str = "BOARD_COMPLETE";
 
+/// The shell `BOARD_COMPLETE` names; empty or `0` asks nothing.
+fn requested(context: &Context) -> Option<&OsStr> {
+    context
+        .complete
+        .as_deref()
+        .filter(|shell| !shell.is_empty() && *shell != "0")
+}
+
+/// Declares `BOARD_COMPLETE` to crumbkit as Board's completion variable, so
+/// that the registration `board completion install`, `check` and `print`
+/// write sets it. crumbkit records the name when it first looks for a
+/// request, and answers one only when the variable asks for completion, so
+/// this runs only when it does not: `complete` answers those requests,
+/// because it completes paths from the board, which crumbkit's own answer
+/// cannot. A run that asks for completion and also names a command, such as
+/// `BOARD_COMPLETE=fish board completion install`, declares nothing and
+/// registers `COMPLETE`.
+pub(crate) fn declare(context: &Context) {
+    if requested(context).is_none() {
+        let _ = crumbkit::complete_with_words(VARIABLE, |_| Cli::command());
+    }
+}
+
 /// What `BOARD_COMPLETE` asks of `arguments`: the registration script when
 /// they are `board` alone, the candidates when they are `board -- <words>`,
 /// and otherwise `None`, so the command runs. Empty or `0` asks nothing.
 pub(crate) fn complete(arguments: &[OsString], context: &Context) -> Option<Output> {
-    let shell = context
-        .complete
-        .as_deref()
-        .filter(|shell| !shell.is_empty() && *shell != "0")?;
+    let shell = requested(context)?;
     let script = match arguments {
         [_] => true,
         [_, dashes, words @ ..] if dashes == "--" && !words.is_empty() => false,

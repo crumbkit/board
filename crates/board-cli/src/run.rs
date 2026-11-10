@@ -54,9 +54,8 @@ the current directory.
 A record is a JSON object whose `$type`, such as runs/suite/v1, names its
 schema at .board/types/runs/suite/v1.schema.json.
 
-Tab completion: in fish, add `BOARD_COMPLETE=fish board | source` to
-~/.config/fish/config.fish; in bash, add `eval \"$(BOARD_COMPLETE=bash board)\"`
-to ~/.bashrc; in zsh, add `eval \"$(BOARD_COMPLETE=zsh board)\"` to ~/.zshrc.";
+Tab completion: run `board completion install` once; `board completion print`
+prints the registration script for your shell to load yourself.";
 
 #[derive(Debug, Parser)]
 #[command(
@@ -381,6 +380,9 @@ Examples:
     /// Install or list the skills Board ships.
     #[command(subcommand, after_help = crate::skills::HELP)]
     Skills(crate::skills::SkillsCommand),
+    /// Set up Board's completion in a shell.
+    #[command(subcommand, after_help = crate::completion::HELP)]
+    Completion(crate::completion::CompletionCommand),
     /// Describe Board's commands.
     #[command(subcommand, after_help = crate::describe::COMMANDS_HELP)]
     Commands(crate::describe::CommandsCommand),
@@ -468,6 +470,9 @@ pub(crate) fn run(
         && let Some(refusal) = effects::from_plugin(context, ran)
     {
         return render::refused(printer, *refusal);
+    }
+    if let Command::Completion(command) = &cli.command {
+        return crate::completion::completion(command, printer);
     }
     if let Command::Skills(command) = &cli.command {
         return crate::skills::skills(command, context, printer, cli.chooses_board());
@@ -633,13 +638,14 @@ fn command(
         };
     }
     match command {
-        // `run` takes these before this match: init, answer and skills open
+        // `run` takes these before this match: init, answer, completion and skills open
         // no board, and decide is matched there to keep this function short.
         Command::Init
         | Command::Answer(_)
         | Command::Decide(_)
         | Command::Commands(_)
         | Command::Schemas(_)
+        | Command::Completion(_)
         | Command::Skills(_) => unreachable!(),
         Command::Check {
             path,

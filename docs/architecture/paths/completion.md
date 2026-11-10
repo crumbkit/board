@@ -7,10 +7,12 @@ Tab completion covers commands, flags and logical paths, through
 `clap_complete`'s dynamic engine. `BOARD_COMPLETE=<shell> board`, with no other
 argument, prints a script for bash, zsh, fish, elvish or powershell; on each Tab
 the script runs `BOARD_COMPLETE=<shell> board -- <words>`. Any other command
-line runs as usual whatever `BOARD_COMPLETE` holds. Install it in fish with
-`BOARD_COMPLETE=fish board | source` in `config.fish`, in bash with
-`eval "$(BOARD_COMPLETE=bash board)"` in `.bashrc`, and in zsh with
-`eval "$(BOARD_COMPLETE=zsh board)"` in `.zshrc`.
+line runs as usual whatever `BOARD_COMPLETE` holds. `board completion install`
+writes the script where the shell loads completions (fish's `completions`
+directory, bash-completion's user directory, a directory on zsh's `fpath`) for
+the shell `SHELL` or `--shell` names. `completion check` exits 1 when that file
+is missing or differs, and `completion print` prints the script. They are
+crumbkit's `completion` commands, and the script sets `BOARD_COMPLETE`.
 
 `Board::complete` resolves the directory the typed path ends in, through links,
 mounts, `--personal` and any `-C` (a leading `~/` is the home directory), then
