@@ -28,6 +28,7 @@ members = [
     "crates/board-scenario",
     "crates/board-serve",
     "crates/board-tree",
+    "crates/board-types",
     "crates/board-validate",
     "xtask",
 ]
@@ -35,7 +36,9 @@ resolver = "3"
 
 [workspace.package]
 edition = "2024"
+license = "MIT OR Apache-2.0"
 publish = false
+repository = "https://github.com/crumbkit/board"
 rust-version = "1.99"
 
 [workspace.dependencies]
@@ -69,6 +72,7 @@ board-plugins = { path = "crates/board-plugins", version = "0.0.0" }
 board-scenario = { path = "crates/board-scenario", version = "0.0.0" }
 board-serve = { path = "crates/board-serve", version = "0.0.0" }
 board-tree = { path = "crates/board-tree", version = "0.0.0" }
+board-types = { path = "crates/board-types", version = "0.0.0" }
 board-validate = { path = "crates/board-validate", version = "0.0.0" }
 # unstable-dynamic: completion that asks the binary, so paths complete from the
 # board. The API may change in any release, so the version is exact and an

@@ -117,6 +117,8 @@ dependencies = [
  "board-scenario",
  "board-serve",
  "board-tree",
+ "board-types",
+ "board-validate",
  "clap",
  "clap_complete",
  "crumbkit",
@@ -170,6 +172,7 @@ dependencies = [
  "board-plugin",
  "board-scenario",
  "board-tree",
+ "board-types",
  "board-validate",
  "proptest",
  "serde",
@@ -413,6 +416,7 @@ dependencies = [
  "board-ops",
  "board-plugin",
  "board-scenario",
+ "board-types",
  "board-validate",
  "schemars",
  "serde",
@@ -538,6 +542,15 @@ dependencies = [
  "rustix",
  "tempfile",
  "thiserror",
+]
+
+[[package]]
+name = "board-types"
+version = "0.0.0"
+dependencies = [
+ "proptest",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

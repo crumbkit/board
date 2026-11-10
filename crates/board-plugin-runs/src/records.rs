@@ -3,8 +3,9 @@
 //! They keep the bytes the Python plugin's pydantic models generated, so a
 //! board that enabled runs before the port needs no `plugin enable`: every
 //! property has a title, and field meanings live in each type's description.
-//! The plugin reads a run through `qualifying::StoredRun`, which ignores the
-//! fields a board's looser schema may add, so these structs only describe.
+//! The plugin reads a run through `board_types::Run`, which ignores the
+//! fields a board's looser schema may add, so these structs only describe;
+//! a test checks that the two name the same fields.
 
 use std::collections::BTreeMap;
 
@@ -188,13 +189,6 @@ pub enum Outcome {
     Fail,
     Error,
     Skipped,
-}
-
-impl Outcome {
-    /// Whether the outcome makes a run fail.
-    pub(crate) fn failed(self) -> bool {
-        matches!(self, Self::Fail | Self::Error)
-    }
 }
 
 /// What a case or a run measures: a number, a label or a flag.

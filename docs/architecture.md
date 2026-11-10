@@ -361,6 +361,7 @@ STANDARDS.md 23 to 26 hold the rules.
 
 | Crate | Owns | Depends on |
 | --- | --- | --- |
+| `board-types` | the types of the put and get reports, the failure document, a `put --batch` line and the runs records, for programs outside Board; Board prints and parses through them | serde |
 | `board-model` | pure types and decisions: logical paths, Locations, record types, codes and their hints, refusals, canonical JSON, the duplicate-key parse | serde, serde_json, thiserror |
 | `board-tree` | every read and write of git objects and the working tree; resolution; walking a board and every board its mounts reach | board-model, board-plugin, gix |
 | `board-validate` | JSON Schema validation of record bytes against schema bytes | board-model, jsonschema |
@@ -370,7 +371,7 @@ STANDARDS.md 23 to 26 hold the rules.
 | `board-plugins` | plugins built into the binary, each behind a feature | board-ops, each `board-plugin-<name>` |
 | `board-plugin-<name>` | one built-in plugin, such as controls; [plugins/built-in.md](plugins/built-in.md) lists them | board-model, board-ops, board-plugin, schemars |
 | `board-serve` | the local web server and the app it embeds ([architecture/ui/serve.md](architecture/ui/serve.md)) | board-index, board-model, board-ops, tiny_http |
-| `board-cli` | the `board` binary: arguments (clap), configuration, the one printer | board-model, board-ops, board-plugin, board-plugins, board-serve, board-tree |
+| `board-cli` | the `board` binary: arguments (clap), configuration, the one printer | board-model, board-ops, board-plugin, board-plugins, board-serve, board-tree, board-types |
 
 `board-cli` only parses arguments, reads configuration and prints, so a later
 adapter, such as a server, needs no logic of its own. Rust code names the

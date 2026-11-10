@@ -12,6 +12,7 @@ use board_model::{
     parse_json,
 };
 use board_tree::{LOCK_WAIT, Lock, Resolver, WriteError};
+use board_types::BatchLine;
 use serde_json::Value;
 
 use super::new::{Draw, REDRAWS, drawn, folder_text, redrawing, taken, under};
@@ -23,26 +24,6 @@ use crate::types::TypeError;
 
 /// The most lines one batch may hold.
 pub const MAX_BATCH_LINES: usize = 10_000;
-
-/// One line of `put --batch`.
-#[derive(serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-struct RawLine {
-    #[serde(default)]
-    path: Option<String>,
-    #[serde(default)]
-    new: Option<String>,
-    #[serde(default)]
-    expect: Option<String>,
-    #[serde(default)]
-    record: Option<Value>,
-    #[serde(default)]
-    text: Option<String>,
-    #[serde(default)]
-    remove: bool,
-    #[serde(default)]
-    ignore_unmatch: bool,
-}
 
 /// A batch line read with its number, or why it is refused.
 pub(crate) type ReadLine = Result<(usize, Line), Lined>;
@@ -439,62 +420,51 @@ impl Board {
             code: error.code(),
             reason: error.to_string(),
         })?;
-        let raw: RawLine =
+        let line: BatchLine<Value> =
             serde_json::from_value(value).map_err(|error| invalid(error.to_string()))?;
-        let (given, new) = match (&raw.path, &raw.new) {
-            (Some(path), None) => (path, false),
-            (None, Some(folder)) => (folder, true),
-            (Some(_), Some(_)) => return Err(invalid("it holds both path and new".to_owned())),
-            (None, None) => return Err(invalid("it holds no path or new".to_owned())),
+        let record = |record: &Value| {
+            let bytes = serde_json::to_vec(record).map_err(|error| invalid(error.to_string()));
+            bytes.map(Content::Record)
         };
-        let text = if new { folder_text(given) } else { given };
+        let (given, new, expect, content) = match line {
+            BatchLine::Record {
+                path,
+                expect,
+                record: written,
+            } => (path, false, expect, record(&written)?),
+            BatchLine::Text { path, expect, text } => {
+                (path, false, expect, Content::File(text.into_bytes()))
+            }
+            BatchLine::Remove {
+                path,
+                expect,
+                ignore_unmatch,
+            } => {
+                let unmatched = if ignore_unmatch {
+                    Unmatched::Ignore
+                } else {
+                    Unmatched::Refuse
+                };
+                (path, false, expect, Content::Remove(unmatched))
+            }
+            BatchLine::New {
+                new,
+                record: written,
+            } => (new, true, None, record(&written)?),
+        };
+        let text = if new { folder_text(&given) } else { &given };
         let path: LogicalPath = text
             .parse()
             .map_err(|_| invalid(format!("{given:?} is not a logical path")))?;
         if new && !given.ends_with('/') {
             return Err(PutError::NotAFolder { folder: path });
         }
-        if new && (raw.expect.is_some() || raw.record.is_none()) {
-            return Err(invalid(
-                "a new line holds a record and no expect, since its name is new".to_owned(),
-            ));
-        }
-        let expect = match raw.expect.as_deref() {
+        let expect = match expect.as_deref() {
             None => Expect::Any,
             Some("none") => Expect::Absent,
             Some(hex) => ObjectId::from_hex(hex)
                 .map(Expect::Blob)
                 .ok_or_else(|| invalid(format!("expect {hex:?} is not `none` or a blob id")))?,
-        };
-        if raw.ignore_unmatch && !raw.remove {
-            return Err(invalid(
-                "it ignores an unmatched path and does not remove".to_owned(),
-            ));
-        }
-        let unmatched = if raw.ignore_unmatch {
-            Unmatched::Ignore
-        } else {
-            Unmatched::Refuse
-        };
-        let content = match (raw.record, raw.text, raw.remove) {
-            (Some(record), None, false) => Content::Record(
-                serde_json::to_vec(&record).map_err(|error| invalid(error.to_string()))?,
-            ),
-            (None, Some(text), false) => Content::File(text.into_bytes()),
-            (None, None, true) => Content::Remove(unmatched),
-            (Some(_), Some(_), _) => {
-                return Err(invalid("it holds both record and text".to_owned()));
-            }
-            (_, _, true) => {
-                return Err(invalid(
-                    "it removes and also holds a record or text".to_owned(),
-                ));
-            }
-            (None, None, false) => {
-                return Err(invalid(
-                    "it holds no record or text and does not remove".to_owned(),
-                ));
-            }
         };
         Ok(Line {
             shown: path.clone(),
