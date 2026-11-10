@@ -98,8 +98,9 @@ enabled is `board::plugin::not_enabled`. `board call --capability <name>` calls
 the one enabled plugin that offers a capability, so a plugin can use another by
 ability. When more than one offers it, the call is
 `board::plugin::ambiguous`, naming each. A broken install offers nothing. A
-plugin that is not installed, or a capability no installed plugin offers, is
-`board::plugin::not_installed`; the message lists what the named plugin
+plugin that is not installed is `board::plugin::not_installed`. A capability
+that the named plugin lacks, or that no installed plugin offers, is
+`board::plugin::no_capability`; the message lists what the named plugin
 offers, or the nearest offered name, and so do its `fields`
 ([architecture/errors.md](architecture/errors.md)).
 
@@ -212,7 +213,7 @@ folder.
 
 ## Codes
 
-`board::plugin::` `not_installed`, `not_enabled`, `bad_manifest`,
+`board::plugin::` `not_installed`, `no_capability`, `not_enabled`, `bad_manifest`,
 `schema_missing`, `schema_differs`, `ambiguous`, `duplicate`, `alias_conflict`,
 `bad_input`, `bad_output`, `failed`, `not_started`, `timeout`,
 `too_large`, `too_deep`.

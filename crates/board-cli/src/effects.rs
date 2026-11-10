@@ -47,7 +47,7 @@ pub(crate) fn decide(
     let decided = (shown.transpose()).and_then(|shown| {
         let path = read(prefix, &deciding.path, "decide")?;
         (board.decide_capability(&deciding.capability, &path, shown.as_ref()))
-            .map_err(|error| refusal(&error))
+            .map_err(|error| Box::new(error.refusal()))
     });
     match decided {
         Ok(report) => render::decide(printer, &report),
@@ -125,10 +125,10 @@ fn answered(
         .transpose()?;
     let asker = asker(context, true)?;
     board_ops::answer(&asker, &id, answer, reason, signature).map_err(|error| {
-        let refused = refusal(&error);
+        let refused = error.refusal();
         match error.code() {
             Code::SettingsUnsigned if given => Box::new(refused.with_hint(unverified())),
-            _ => refused,
+            _ => Box::new(refused),
         }
     })
 }
@@ -196,7 +196,7 @@ pub(crate) fn from_plugin(context: &Context, ran: &Ran) -> Option<Box<Refusal>> 
         path: None,
         what,
     };
-    Some(refusal(&error))
+    Some(Box::new(error.refusal()))
 }
 
 /// Who asks for an effect in this run: the plugin `BOARD_PLUGIN` names, and
@@ -249,8 +249,4 @@ fn plugin(context: &Context) -> Result<Option<PluginName>, Box<Refusal>> {
         return Err(Box::new(refusal.with_hint(hint)));
     };
     Ok(Some(named))
-}
-
-fn refusal(error: &EffectError) -> Box<Refusal> {
-    Box::new(error.refusal())
 }

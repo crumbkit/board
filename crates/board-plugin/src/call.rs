@@ -704,7 +704,7 @@ impl CallError {
                 let (code, message) = (failure.code.clone(), failure.message.clone());
                 return Refusal {
                     hint: failure.hint.clone(),
-                    stderr: stderr.cloned().unwrap_or_default(),
+                    stderr: stderr.cloned(),
                     ..Refusal::plugin(code, message, fields)
                 };
             }
@@ -717,7 +717,7 @@ impl CallError {
                 offered,
             } => {
                 extra.insert("offered".to_owned(), json!(offered));
-                (Code::PluginNotInstalled, Some(plugin), Some(capability))
+                (Code::PluginNoCapability, Some(plugin), Some(capability))
             }
             Self::NotOffered {
                 capability,
@@ -726,7 +726,7 @@ impl CallError {
                 if let Some(nearest) = nearest {
                     extra.insert("nearest".to_owned(), json!(nearest));
                 }
-                (Code::PluginNotInstalled, None, Some(capability))
+                (Code::PluginNoCapability, None, Some(capability))
             }
             Self::BadManifest { plugin, .. } => (Code::PluginBadManifest, Some(plugin), None),
             Self::NotEnabled { plugin } => (Code::PluginNotEnabled, Some(plugin), None),
@@ -773,7 +773,7 @@ impl CallError {
         };
         Refusal {
             fields: json,
-            stderr: stderr.cloned().unwrap_or_default(),
+            stderr: stderr.cloned(),
             ..Refusal::new(code, self, &hinted)
         }
     }

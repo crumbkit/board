@@ -100,6 +100,7 @@ codes! {
     AttachmentMissing => "board::attachment::missing",
     AttachmentMismatch => "board::attachment::mismatch",
     PluginNotInstalled => "board::plugin::not_installed",
+    PluginNoCapability => "board::plugin::no_capability",
     PluginBadManifest => "board::plugin::bad_manifest",
     PluginNotEnabled => "board::plugin::not_enabled",
     PluginSchemaMissing => "board::plugin::schema_missing",

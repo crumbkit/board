@@ -3,7 +3,7 @@
 use std::fmt;
 use std::fmt::Write as _;
 
-use board_model::Refusal;
+use board_model::{Refusal, RefusalCode};
 use crumbkit::help::Help;
 use crumbkit::tool::{Failures, Output as Printing, RefusalContext};
 use crumbkit::{
@@ -353,17 +353,29 @@ impl Printer {
 /// batch, then the end of a plugin's stderr.
 fn text_only(refusal: &Refusal) -> Vec<u8> {
     let mut text = String::new();
-    for line in &refusal.lines {
+    // Only Board's own batch refusals list lines; a plugin's `refusals`
+    // field is its own.
+    let lines = match (&refusal.code, refusal.fields.get("refusals")) {
+        (RefusalCode::Board(_), Some(Value::Array(lines))) => lines.as_slice(),
+        _ => &[],
+    };
+    for line in lines {
         let _ = writeln!(
             text,
             "  line {}: {}: {}",
-            line.line, line.code, line.message
+            line["line"],
+            line["code"].as_str().unwrap_or_default(),
+            line["message"].as_str().unwrap_or_default(),
         );
     }
     let mut bytes = text.into_bytes();
-    if !refusal.stderr.is_empty() {
-        bytes.extend_from_slice(&refusal.stderr);
-        if !refusal.stderr.ends_with(b"\n") {
+    if let Some(stderr) = refusal
+        .stderr
+        .as_deref()
+        .filter(|stderr| !stderr.is_empty())
+    {
+        bytes.extend_from_slice(stderr);
+        if !stderr.ends_with(b"\n") {
             bytes.push(b'\n');
         }
     }

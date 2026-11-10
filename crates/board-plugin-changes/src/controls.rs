@@ -9,9 +9,12 @@ use crate::board::{body, call_or_refusal, readable, refused, rows, text};
 
 /// The record type of a control.
 const CONTROL_TYPE: &str = "controls/control/v1";
-/// The codes Board gives a call to a plugin it does not offer.
-pub(crate) const CONTROLS_UNAVAILABLE: [&str; 2] =
-    ["board::plugin::not_installed", "board::plugin::not_enabled"];
+/// The codes Board gives a call to a plugin, or a capability, it does not offer.
+pub(crate) const CONTROLS_UNAVAILABLE: [&str; 3] = [
+    "board::plugin::not_installed",
+    "board::plugin::no_capability",
+    "board::plugin::not_enabled",
+];
 
 /// A control `controls.for-paths` found: its path, its summary and, for an
 /// obligation, the line that says how to close it, as controls gives it.

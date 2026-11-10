@@ -287,10 +287,14 @@ fn a_plugin_the_board_does_not_enable_is_not_called() {
 #[test]
 fn a_plugin_or_capability_that_is_not_installed_is_refused() {
     let fixture = Fixture::tasks(RECORDING);
-    for target in ["notes.due", "tasks.late", "--capability late"] {
+    assert_eq!(
+        fixture.refused("notes.due", r#"{"n": 1}"#),
+        Board(Code::PluginNotInstalled)
+    );
+    for target in ["tasks.late", "--capability late"] {
         assert_eq!(
             fixture.refused(target, r#"{"n": 1}"#),
-            Board(Code::PluginNotInstalled),
+            Board(Code::PluginNoCapability),
             "{target}"
         );
     }
@@ -328,7 +332,7 @@ fn a_refusal_names_the_missing_plugin_or_capability_and_what_is_offered() {
         assert_eq!(error.to_string(), message, "{target}");
     }
     let error = fixture.call("tasks.dew", r#"{"n": 1}"#).unwrap_err();
-    assert_eq!(error.refusal().code, Board(Code::PluginNotInstalled));
+    assert_eq!(error.refusal().code, Board(Code::PluginNoCapability));
     assert_eq!(
         Value::Object(error.refusal().fields),
         json!({"plugin": "tasks", "capability": "dew", "offered": ["due"]})
@@ -646,7 +650,10 @@ fn board_keeps_the_end_of_a_failed_plugins_stderr() {
     let error = fixture
         .call_with("tasks.due", r#"{"n": 1}"#, &environment(), limits)
         .unwrap_err();
-    assert_eq!(error.refusal().stderr, b"the last line");
+    assert_eq!(
+        error.refusal().stderr.as_deref(),
+        Some(&b"the last line"[..])
+    );
     assert_eq!(error.refusal().fields["stderr"], "the last line");
 }
 
@@ -662,7 +669,7 @@ fn board_keeps_the_stderr_of_a_plugin_whose_output_fails_the_output_schema() {
         .unwrap_err()
         .refusal();
     assert_eq!(refused.code, Board(Code::PluginBadOutput));
-    assert_eq!(refused.stderr, b"a log line");
+    assert_eq!(refused.stderr.as_deref(), Some(&b"a log line"[..]));
     assert_eq!(refused.fields["stderr"], "a log line");
     let admitted = Fixture::tasks(&logging(r#"{"count": 2}"#)).call("tasks.due", r#"{"n": 1}"#);
     assert_eq!(admitted.unwrap().output, json!({"count": 2}));
@@ -685,8 +692,8 @@ fn board_keeps_the_last_64_kib_of_stderr_by_default() {
             .call("tasks.due", r#"{"n": 1}"#)
             .unwrap_err();
         assert_eq!(
-            error.refusal().stderr,
-            written[total.saturating_sub(limit)..],
+            error.refusal().stderr.as_deref(),
+            Some(&written[total.saturating_sub(limit)..]),
             "{total} bytes written"
         );
     }

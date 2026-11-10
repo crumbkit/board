@@ -196,7 +196,7 @@ fn a_capability_the_named_plugin_lacks_is_refused_listing_what_it_offers() {
             &"tasks.closed".parse().unwrap()
         )),
         (
-            Board(Code::PluginNotInstalled),
+            Board(Code::PluginNoCapability),
             "plugin tasks has no capability closed; it offers due, open".to_owned(),
             json!({"plugin": "tasks", "capability": "closed", "offered": ["due", "open"]}),
         )
@@ -298,7 +298,7 @@ fn a_capability_nobody_offers_is_refused_with_the_nearest_name() {
     assert_eq!(
         call("dues"),
         (
-            Board(Code::PluginNotInstalled),
+            Board(Code::PluginNoCapability),
             "no installed plugin offers capability dues; the nearest is due".to_owned(),
             json!({"capability": "dues", "nearest": "due"}),
         )
@@ -306,7 +306,7 @@ fn a_capability_nobody_offers_is_refused_with_the_nearest_name() {
     assert_eq!(
         call("closed"),
         (
-            Board(Code::PluginNotInstalled),
+            Board(Code::PluginNoCapability),
             "no installed plugin offers capability closed".to_owned(),
             json!({"capability": "closed"}),
         )
@@ -437,8 +437,8 @@ fn assert_refused(error: &CallError, code: Code, fields: &Value, stderr: &[u8]) 
             message: error.to_string(),
             hint: Some(code.hint(&hinted)),
             fields: fields.as_object().unwrap().clone(),
-            stderr: stderr.to_vec(),
-            lines: Vec::new(),
+            // A refusal names `stderr` in its fields exactly when a process ran.
+            stderr: fields.get("stderr").map(|_| stderr.to_vec()),
         },
         "{error}"
     );
@@ -477,20 +477,20 @@ fn a_call_board_refuses_before_choosing_a_capability_has_its_code_and_the_names_
         offered: names(&["open"]),
     };
     let named = json!({"plugin": "tasks", "capability": "due", "offered": ["open"]});
-    assert_refused(&lacking, Code::PluginNotInstalled, &named, b"");
+    assert_refused(&lacking, Code::PluginNoCapability, &named, b"");
     let near = CallError::NotOffered {
         capability: due(),
         nearest: Some("dew".parse().unwrap()),
     };
     let nearest = json!({"capability": "due", "nearest": "dew"});
-    assert_refused(&near, Code::PluginNotInstalled, &nearest, b"");
+    assert_refused(&near, Code::PluginNoCapability, &nearest, b"");
     let far = CallError::NotOffered {
         capability: due(),
         nearest: None,
     };
     assert_refused(
         &far,
-        Code::PluginNotInstalled,
+        Code::PluginNoCapability,
         &json!({"capability": "due"}),
         b"",
     );
@@ -618,7 +618,7 @@ fn a_plugins_own_refusal_keeps_its_code_and_fields_with_its_stderr_and_no_hint_f
         .refusal()
     };
     let expected = |stderr: &str| Refusal {
-        stderr: stderr.as_bytes().to_vec(),
+        stderr: Some(stderr.as_bytes().to_vec()),
         ..Refusal::plugin(
             PluginCode::parse(&tasks, "tasks::date::bad".to_owned()).unwrap(),
             "no such date".to_owned(),
@@ -642,7 +642,7 @@ fn a_plugins_own_refusal_keeps_its_code_and_fields_with_its_stderr_and_no_hint_f
     .refusal();
     assert_eq!(board.code, Board(Code::PluginFailed));
     assert!(board.hint.is_some());
-    assert_eq!(board.stderr, b"a log line");
+    assert_eq!(board.stderr.as_deref(), Some(&b"a log line"[..]));
     assert_eq!(board.fields["stderr"], "a log line");
 }
 
