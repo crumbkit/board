@@ -49,6 +49,9 @@ const LINES: &[(&str, &[&str], &[&str])] = &[
     ("ui open", &[], &["/bindings/review"]),
     ("skills install", &[], &[]),
     ("skills list", &[], &[]),
+    ("completion install", &[], &[]),
+    ("completion check", &[], &[]),
+    ("completion print", &[], &[]),
     ("commands list", &[], &[]),
     ("schemas list", &[], &[]),
     ("schemas show", &[], &["board/check-report/v2"]),
@@ -79,6 +82,7 @@ const WHOLE: &[&str] = &[
     "serve",
     "ui template",
     "ui open",
+    "completion print",
 ];
 
 /// The command line of the leaf at `path` as a program builds it: the

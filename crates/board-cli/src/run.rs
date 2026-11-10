@@ -54,9 +54,7 @@ the current directory.
 A record is a JSON object whose `$type`, such as runs/suite/v1, names its
 schema at .board/types/runs/suite/v1.schema.json.
 
-Tab completion: in fish, add `BOARD_COMPLETE=fish board | source` to
-~/.config/fish/config.fish; in bash, add `eval \"$(BOARD_COMPLETE=bash board)\"`
-to ~/.bashrc; in zsh, add `eval \"$(BOARD_COMPLETE=zsh board)\"` to ~/.zshrc.";
+Tab completion: run `board completion install` once.";
 
 #[derive(Debug, Parser)]
 #[command(
@@ -381,6 +379,9 @@ Examples:
     /// Install or list the skills Board ships.
     #[command(subcommand, after_help = crate::skills::HELP)]
     Skills(crate::skills::SkillsCommand),
+    /// Set up Board's completion in a shell.
+    #[command(subcommand, after_help = crate::completion::HELP)]
+    Completion(crate::completion::CompletionCommand),
     /// Describe Board's commands.
     #[command(subcommand, after_help = crate::describe::COMMANDS_HELP)]
     Commands(crate::describe::CommandsCommand),
@@ -469,8 +470,8 @@ pub(crate) fn run(
     {
         return render::refused(printer, *refusal);
     }
-    if let Command::Skills(command) = &cli.command {
-        return crate::skills::skills(command, context, printer, cli.chooses_board());
+    if let Command::Completion(_) | Command::Skills(_) = cli.command {
+        return without_a_board(&cli, context, printer);
     }
     let base = cli.personal.then(|| context.personal());
     let base = base.unwrap_or_else(|| Ok(context.start.clone()));
@@ -522,6 +523,17 @@ pub(crate) fn run(
     };
     ran.trace.extend(board.take_trace());
     output
+}
+
+/// Runs completion and skills, which need no board.
+fn without_a_board(cli: &Cli, context: &Context, printer: Printer) -> Output {
+    match &cli.command {
+        Command::Completion(command) => crate::completion::completion(command, printer),
+        Command::Skills(command) => {
+            crate::skills::skills(command, context, printer, cli.chooses_board())
+        }
+        _ => unreachable!("only completion and skills run without a board"),
+    }
 }
 
 /// `board init`, which makes the directory at `start` a board without
@@ -633,13 +645,14 @@ fn command(
         };
     }
     match command {
-        // `run` takes these before this match: init, answer and skills open
+        // `run` takes these before this match: init, answer, completion and skills open
         // no board, and decide is matched there to keep this function short.
         Command::Init
         | Command::Answer(_)
         | Command::Decide(_)
         | Command::Commands(_)
         | Command::Schemas(_)
+        | Command::Completion(_)
         | Command::Skills(_) => unreachable!(),
         Command::Check {
             path,

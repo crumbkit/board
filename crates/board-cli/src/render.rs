@@ -76,6 +76,9 @@ pub(crate) const LEAVES: &[Leaf] = &[
     ui::LEAVES[3].effects(READS.open_world()),
     crate::skills::INSTALL.effects(CHANGES.idempotent()),
     crate::skills::LIST.effects(READS),
+    crate::completion::INSTALL,
+    crate::completion::CHECK,
+    crate::completion::PRINT,
     Leaf::new(&["commands", "list"])
         .document(COMMANDS_LIST)
         .effects(READS),
@@ -139,6 +142,7 @@ pub(crate) const GOALS: Group = Group::new(
             &["decide", "answer"],
         ),
         Goal::new("These commands show the board's pages", &["serve", "ui"]),
+        Goal::new("These commands set up Tab completion", &["completion"]),
         Goal::new(
             "These commands describe Board's commands and documents",
             &["commands", "schemas"],

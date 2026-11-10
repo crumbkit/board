@@ -62,7 +62,7 @@ const ROOT_VERBS: &[&str] = &[
 
 /// The verbs below a resource that crumbkit's own list does not hold.
 const VERBS: &[&str] = &[
-    "update", "find", "enable", "add", "kinds", "template", "open", "install",
+    "update", "find", "enable", "add", "kinds", "template", "open", "install", "check", "print",
 ];
 
 /// Why an option takes repeats but not commas.
