@@ -1,6 +1,6 @@
 ---
 name: github
-description: 'Record a GitHub pull request or issue as a typed record, and push, open or edit pull requests, comment and open issues only after the boundary passes what they send. Use it to name a pull request or issue in a record, and in place of git push and gh for sending. Run `board github ref --ref <owner>/<repo>#<number>`, or `board github push`, `pr-create`, `pr-edit`, `comment` or `issue-create` from the checkout. SKILL.md and README.md in the plugin''s directory say more.'
+description: 'Record a GitHub pull request or issue as a typed record, and push, open or edit pull requests, comment and open issues only after the boundary passes what they send, and merge pull requests once their change's land gate passes. Use it to name a pull request or issue in a record, and in place of git push and gh for sending. Run `board github ref --ref <owner>/<repo>#<number>`, or `board github push`, `pr-create`, `pr-edit`, `comment`, `issue-create` or `merge` from the checkout. SKILL.md and README.md in the plugin''s directory say more.'
 ---
 
 # github
@@ -33,6 +33,10 @@ add `--personal` after `board`.
   or `--body <body>`.
 - Comment: `board github comment --number <n> --body <body>`.
 - Open an issue: `board github issue-create --title <title> --body <body>`.
+- Squash-merge the pull request of a change in its land phase:
+  `board github merge --number <n> --subject <subject> --body <body>
+  --change /changes/<name>`. It merges the change's head and moves the
+  change to its next phase. Without a change, pass `--head <sha>`.
 
 On `github::boundary::refused`, nothing was sent. Read `fields.failures`, the
 message, and the hint after it, which is the boundary's `Next:` step. Change
@@ -72,6 +76,12 @@ its message, change what it names, and push again.
 - `github::gh::failed`: gh is missing, signed out or failed. Run
   `gh auth status`. After a check passed, look on GitHub before you run the
   action again, since the content may have been sent.
+- `github::merge::gate`: the change is not in its land phase, or its land
+  gate misses the checks in `fields.missing`. Run `board changes next`.
+- `github::merge::head`: no head to merge, or `--head` differs from the
+  change's head. Attach the head to the change or pass the right one.
+- `github::merge::advance`: the pull request merged but the change did not
+  move. Do not merge again; run `board changes advance --path <change>`.
 - `github::hook::exists`: the checkout already has a different `pre-push`
   hook. Ask the owner before you move it aside.
 - `github::record::degraded`: the record already there fails its schema.

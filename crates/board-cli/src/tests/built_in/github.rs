@@ -381,6 +381,7 @@ fn board_lists_the_plugin_as_enabled_and_enabling_wrote_the_schemas_it_ships() {
                 "pr-edit",
                 "comment",
                 "issue-create",
+                "merge",
                 "install-hook",
                 "pre-push",
                 "covers"
@@ -403,7 +404,7 @@ fn a_capability_the_plugin_does_not_offer_is_refused_by_board_and_ref_is_answere
     );
     let refused = board
         .board
-        .refusal("github.merge", &["--ref", "octo/widgets#7"]);
+        .refusal("github.fetch", &["--ref", "octo/widgets#7"]);
     assert_eq!(refused["code"], "board::plugin::no_capability", "{refused}");
     assert_eq!(board.call("octo/widgets#7")["written"], false);
 }
@@ -428,5 +429,6 @@ fn ref_answers_from_a_warm_index_as_from_a_cold_one_after_the_record_changes() {
 
 mod desk;
 mod hook;
+mod merge;
 mod push;
 mod send;
