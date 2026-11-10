@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 
 use crumbkit_process::{
     Capture, Escalation, Input, Outcome, OverLimit, RunError, RunOptions, Signal, Status,
-    StopReason,
+    StopReason, Zeroizing,
 };
 
 /// How long a child has to exit after SIGTERM before Board kills it.
@@ -151,7 +151,7 @@ pub(crate) fn run(
     }
     let at = Instant::now();
     let settings = RunOptions::new()
-        .stdin(Input::Bytes(input))
+        .stdin(Input::Bytes(Zeroizing::new(input)))
         .stdout(Capture::Whole {
             limit: limits.stdout,
             over: OverLimit::Stop,
@@ -211,8 +211,10 @@ pub(crate) fn run(
     (Some(spawned), result)
 }
 
-/// Runs as [`run`] does with `Scope::Group`, so a pipe held after the
-/// child exits can keep it up to a second past its deadline.
+/// Runs as [`run`] does with `Scope::Group`, so a process left in the group
+/// or a pipe held after the child exits can keep it up to two seconds past
+/// the child's end: one second while the group empties and one second while
+/// the pipes drain.
 pub(crate) fn run_alone(
     program: &Path,
     arguments: &[String],
