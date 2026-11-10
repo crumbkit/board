@@ -25,9 +25,10 @@ upgrade, so the skills match the binary.
 
 ## Reading Board's output from Rust
 
-A program that reads `board --json` output or writes Board records can use
-the types in [crates/board-types](crates/board-types/README.md), which Board
-prints through.
+A program that reads the JSON Board prints with `--json`, or writes Board
+records, can use the types in
+[crates/board-types](crates/board-types/README.md), which Board prints
+through.
 
 ## Licence
 

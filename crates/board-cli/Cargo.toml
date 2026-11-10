@@ -51,8 +51,8 @@ serde_json.workspace = true
 
 [dev-dependencies]
 board-scenario.workspace = true
-board-validate.workspace = true
 crumbkit-test.workspace = true
+jsonschema.workspace = true
 proptest.workspace = true
 tempfile.workspace = true
 

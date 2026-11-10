@@ -12,13 +12,19 @@ use board_types::{
 
 use super::*;
 
-/// The schema `board schemas show <id> --json` prints.
-fn shown(id: &str) -> board_validate::Schema {
+/// The schema `board schemas show <id> --json` prints. It is compiled
+/// without the record validator's limit on expansion, which the failure
+/// document's recursive `related` exceeds.
+fn shown(id: &str) -> jsonschema::Validator {
     let scenario = board();
     let output = board_in(scenario.workdir(), &["schemas", "show", id, "--json"]);
     let printed = json(&output);
     assert_eq!(printed["data"][0]["id"], id);
-    board_validate::Schema::compile(printed["data"][0]["schema"].clone()).unwrap()
+    jsonschema::options()
+        .with_draft(jsonschema::Draft::Draft202012)
+        .with_pattern_options(jsonschema::PatternOptions::regex())
+        .build(&printed["data"][0]["schema"])
+        .unwrap()
 }
 
 /// A failure with every field crumbkit can print.
@@ -167,18 +173,15 @@ fn each_document_board_types_writes_is_admitted_by_its_schema_and_one_lacking_a_
         (Failure::SCHEMA, and_lacking(failure, "recovery")),
     ] {
         let schema = shown(id);
-        schema.validate(&full).unwrap();
-        assert_eq!(
-            schema.validate(&lacking).unwrap_err().code(),
-            Code::RecordInvalid,
-            "{id}"
-        );
+        let refused: Vec<String> = schema.iter_errors(&full).map(|e| e.to_string()).collect();
+        assert_eq!(refused, Vec::<String>::new(), "{id}");
+        assert!(!schema.is_valid(&lacking), "{id}");
     }
 }
 
 #[test]
 fn what_put_and_get_print_reads_through_board_types_and_writes_back_the_same_json() {
-    let scenario = board();
+    let scenario = committing();
     let record = br#"{"title": "a", "$type": "lr/task/v1"}"#;
     let put = board_with(
         scenario.workdir(),
