@@ -19,12 +19,12 @@ use crate::remote;
 
 /// Where a call sends from and to: the personal board, the checkout's root,
 /// its GitHub repository, and its mount in the personal board, if any.
-struct Origin<'a> {
+pub(crate) struct Origin<'a> {
     host: &'a dyn Host,
-    personal: Box<dyn Host + 'a>,
-    top: PathBuf,
-    owner: String,
-    repo: String,
+    pub(crate) personal: Box<dyn Host + 'a>,
+    pub(crate) top: PathBuf,
+    pub(crate) owner: String,
+    pub(crate) repo: String,
     mount: Option<String>,
 }
 
@@ -35,7 +35,7 @@ impl Origin<'_> {
     }
 
     /// The boundary's check of the parts of `github.<action>`.
-    fn check(&self, action: &str, parts: &Parts) -> Result<Passed, PluginError> {
+    pub(crate) fn check(&self, action: &str, parts: &Parts) -> Result<Passed, PluginError> {
         let action = format!("github.{action}");
         crossing::check(
             &*self.personal,
@@ -48,7 +48,7 @@ impl Origin<'_> {
 
     /// Records `result` on the crossing, and returns the output every action
     /// shares.
-    fn sent(&self, passed: Passed, result: String) -> Result<Delivered, PluginError> {
+    pub(crate) fn sent(&self, passed: Passed, result: String) -> Result<Delivered, PluginError> {
         crossing::record(&*self.personal, &passed.digest, &result)
             .map_err(|error| sent_already(&result, error))?;
         Ok(Delivered::of(passed, result))
@@ -66,7 +66,7 @@ impl Origin<'_> {
 
 /// The checkout Board was started in, its GitHub repository and its mount
 /// in the personal board.
-fn origin(host: &dyn Host) -> Result<Origin<'_>, PluginError> {
+pub(crate) fn origin(host: &dyn Host) -> Result<Origin<'_>, PluginError> {
     origin_at(host, git::top(host)?)
 }
 
@@ -94,10 +94,10 @@ fn origin_at(host: &dyn Host, top: PathBuf) -> Result<Origin<'_>, PluginError> {
 #[serde(deny_unknown_fields)]
 #[schemars(rename = "SentOutput")]
 pub(crate) struct Delivered {
-    digest: String,
-    crossing: String,
-    note: Option<String>,
-    sent: String,
+    pub(crate) digest: String,
+    pub(crate) crossing: String,
+    pub(crate) note: Option<String>,
+    pub(crate) sent: String,
 }
 
 impl Delivered {
@@ -457,7 +457,7 @@ fn sent_already(url: &str, error: PluginError) -> PluginError {
 /// `error`, a failure after content reached GitHub, starting with `lead`,
 /// which says what was sent and whether to run the action again, and
 /// naming what GitHub returned, `sent`, in `fields.sent`.
-fn after_sent(lead: &str, sent: &str, mut error: PluginError) -> PluginError {
+pub(crate) fn after_sent(lead: &str, sent: &str, mut error: PluginError) -> PluginError {
     error.message = format!("{lead}; {}", error.message);
     error.fields.insert("sent".to_owned(), Value::from(sent));
     error

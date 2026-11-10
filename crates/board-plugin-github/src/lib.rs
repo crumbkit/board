@@ -7,6 +7,7 @@ mod crossing;
 mod gh;
 mod git;
 mod hook;
+mod merge;
 mod objects;
 mod parts;
 pub mod records;
@@ -164,7 +165,7 @@ fn output<T: JsonSchema>() -> Value {
 }
 
 /// Every capability, in the order the manifest lists them.
-const CAPABILITIES: [Capability; 9] = [
+const CAPABILITIES: [Capability; 10] = [
     Capability {
         name: "ref",
         description: "Write the record of a pull request or issue, asking gh which it is and its \
@@ -237,6 +238,19 @@ const CAPABILITIES: [Capability; 9] = [
         timeout: Some(SEND_TIMEOUT),
     },
     Capability {
+        name: "merge",
+        description: "Squash-merge a pull request at its head commit, once the change it lands \
+            passes its land gate and the boundary passes the commit's subject and body, then move \
+            the change to its next phase.",
+        run: merge::merge,
+        input: input::<merge::MergeInput>,
+        output: output::<merge::MergeOutput>,
+        effect: Effect::OverwritesEachTime,
+        open_world: true,
+        env: &SEND_ENV,
+        timeout: Some(SEND_TIMEOUT),
+    },
+    Capability {
         name: "install-hook",
         description: "Print the command that installs a git pre-push hook in the checkout, which \
             has the boundary check what each push sends; refuse when a different pre-push hook is \
@@ -302,10 +316,10 @@ fn manifest() -> Value {
         // SKILL.md's description, the callout an agent sees first.
         "description": "Record a GitHub pull request or issue as a typed record, and push, open or \
             edit pull requests, comment and open issues only after the boundary passes what they \
-            send. Use it to name a pull request or issue in a record, and in place of git push and \
-            gh for sending. Run `board github ref --ref <owner>/<repo>#<number>`, or `board \
-            github push`, `pr-create`, `pr-edit`, `comment` or \
-            `issue-create` from the checkout. SKILL.md and README.md in the plugin's \
+            send, and merge pull requests once the land gate of their change passes. Use it to name a \
+            pull request or issue in a record, and in place of git push and gh for sending. Run \
+            `board github ref --ref <owner>/<repo>#<number>`, or `board github push`, \
+            `pr-create`, `pr-edit`, `comment`, `issue-create` or `merge` from the checkout. SKILL.md and README.md in the plugin's \
             directory say more.",
         "metadata": {"area": "delivery"},
         "types": [PullRecord::TYPE, IssueRecord::TYPE],

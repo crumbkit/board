@@ -46,7 +46,7 @@ the boundary plugin passes it. SKILL.md holds the procedure.
 
 ### Sending actions
 
-`push`, `pr-create`, `pr-edit`, `comment` and `issue-create` send content
+`push`, `pr-create`, `pr-edit`, `comment`, `issue-create` and `merge` send content
 from the checkout Board was started in, which Board names in
 `BOARD_CALLER_DIR`. Each action works out where the content goes, collects
 it as named parts, and calls `boundary.check` in the personal board on them
@@ -74,6 +74,21 @@ result it recorded.
 - `comment --number <n> --body <b>` comments on a pull request or issue.
 - `issue-create --title <t> --body <b>` opens an issue, writes its
   `github/issue/v1` record and returns `number` and `path`.
+- `merge --number <n> --subject <s> --body <b> [--change <path>] [--head <sha>]`
+  squash-merges a pull request with `gh pr merge --squash
+  --match-head-commit <sha>`, so GitHub refuses it when the pull request's
+  head has moved. With `--change`, it first runs `changes.next` in the
+  personal board and refuses unless the change is in its land phase with no
+  blocking check missing, and while a run of the change has a stop set. The
+  head is the change's head, which must be a full 40-hex commit; a
+  `--head` that differs is refused. Without `--change`, `--head` is
+  required. After gh exits 0, it records the pull request's URL on the
+  crossing and asks `gh api repos/<owner>/<repo>/pulls/<n>` whether it
+  merged. When it did, it runs `changes.advance` and returns the new phase
+  as `phase`. When a merge queue only queued it, it returns `queued: true`
+  and no `phase`; run `board changes advance --path <change>` once the
+  queue merges it. It returns the merged commit as `head`; `sent` is the
+  pull request's URL.
 
 The destination is `github:<owner>/<repo>` in lower case, from the URL
 configured for the checkout's `origin`. It is read before any `insteadOf`
@@ -119,6 +134,7 @@ The parts, which a boundary's `checks` name by glob:
 | `pr.title`, `pr.body` | `pr-create`, `pr-edit` | The pull request's title and body. `pr-edit` sends only those given. |
 | `comment.body` | `comment` | The comment. |
 | `issue.title`, `issue.body` | `issue-create` | The issue's title and body. |
+| `pr.merge.subject`, `pr.merge.body` | `merge` | The squash commit's subject and body. |
 
 `<sha>` is the commit's first 12 hex digits, so `commit.*.message` names
 every commit's message. A push sends the commits that no ref on origin
@@ -148,6 +164,19 @@ Refusals:
   paths.
 - `github::push::failed`: git refused the push, such as a branch that is
   behind. The crossing passed and keeps no result.
+- `github::merge::gate`: `merge` named a change that is not in its land
+  phase, whose land gate misses a blocking check, or whose run has a stop
+  set. `fields.phase` names its phase, `fields.missing` the checks and
+  `fields.stop` the stop. gh does not run.
+- `github::merge::head`: `merge` has no head to match, because the change
+  records none or one that is not a full 40-hex commit, or neither
+  `--change` nor `--head` was given, or `--head` differs from the change's
+  head. gh does not run.
+- `github::merge::advance`: the pull request merged, but `changes.advance`
+  refused. The message says not to merge again and names the command to
+  move the change; `fields.sent` is the pull request's URL.
+- `github::merge::unreadable`: `changes.next` answered in a shape this
+  plugin does not read.
 - `github::boundary::unreadable`: the boundary answered in a shape this
   plugin does not read, which happens only when the two come from
   different Board builds.

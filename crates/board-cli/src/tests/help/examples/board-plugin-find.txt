@@ -45,6 +45,7 @@ github.pr-create disabled Push the branch checked out and open a pull request fr
 github.pr-edit disabled Change a pull request's title or body, once the boundary passes the new text.
 github.comment disabled Comment on a pull request or issue, once the boundary passes the comment.
 github.issue-create disabled Open an issue, once the boundary passes its title and body, and write the issue's record.
+github.merge disabled Squash-merge a pull request at its head commit, once the change it lands passes its land gate and the boundary passes the commit's subject and body, then move the change to its next phase.
 github.install-hook disabled Print the command that installs a git pre-push hook in the checkout, which has the boundary check what each push sends; refuse when a different pre-push hook is there. It writes nothing.
 github.pre-push disabled Run by the pre-push hook: check the refs git pushes as github.push checks a push, and refuse when the boundary refuses or the check cannot run.
 github.covers disabled Name the boundaries that cover a git push or gh write from the checkout, and where it goes, checking nothing and writing nothing.
