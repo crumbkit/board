@@ -76,12 +76,12 @@ board-validate = { path = "crates/board-validate", version = "0.0.0" }
 clap_complete = { version = "=4.6.11", features = ["unstable-dynamic"] }
 # crumbkit prints every command's reports, failures and help; crumbkit-test's convention
 # checks run against the built binary.
-crumbkit = { version = "0.2", default-features = false }
-crumbkit-test = { version = "0.2", default-features = false }
+crumbkit = { version = "0.3", default-features = false }
+crumbkit-test = { version = "0.3", default-features = false }
 # crumbkit-process runs every child that Board's plugins and sync start, and
 # its `forward` feature, which board-plugin enables, forwards stop signals to
 # their groups.
-crumbkit-process = { version = "0.2", default-features = false }
+crumbkit-process = { version = "0.3", default-features = false }
 clap = { version = "4.6.7", default-features = false, features = ["derive", "error-context", "help", "std", "suggestions", "usage"] }
 # board serve compares the per-launch token in constant time.
 constant_time_eq = "0.6.1"
