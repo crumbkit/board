@@ -29,7 +29,7 @@
       "agent": "lead",
       "instruction": "Start an eval with the evals skill, naming the draft as its subject. Run `board changes run --flow /changes/{name}/draft.json --sandbox --title '<a small sample task>'`, which runs an agent through the draft in a throwaway board and checkout. Check that it stopped where the Stops section says, that each gate refused what it should, and that each remedy was enough to act on. Record the run and conclude the eval.",
       "checks": [
-        {"id": "dry-run", "kind": "records", "type": "changes/run/v1",
+        {"id": "dry-run", "kind": "records", "type": "changes/attempt/v1",
          "where": {"values": {"sandbox": [true], "reason": ["reached", "waiting"]}}},
         {"id": "eval", "kind": "records", "type": "evals/eval/v1",
          "where": {"values": {"status": ["concluded"], "verdict": ["supported"]}}}

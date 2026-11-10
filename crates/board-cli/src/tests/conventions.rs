@@ -25,7 +25,7 @@ const ALLOW: &[Allow] = &[
     Allow::new(
         Rule::Yes,
         "call",
-        "the capability decides what it writes, and a plugin's op that the owner must admit already waits for the owner through decide",
+        "the capability decides what it writes, and a plugin's capability that the owner must admit already waits for the owner through decide",
     ),
     Allow::new(
         Rule::Yes,

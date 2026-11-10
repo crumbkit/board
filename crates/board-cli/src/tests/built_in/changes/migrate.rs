@@ -524,6 +524,7 @@ const SMALL_FLOW: &str = include_str!("../../../../../board-plugin-changes/flows
 /// copy. Everything is committed.
 fn copies_board() -> Changes {
     let board = Changes::new();
+    board.with_old_run_schema();
     board.mount_x(&[("README.md", "x\n")]);
     let mut config = board.read(".board/board.json");
     config["commit_on_put"] = json!(true);
@@ -665,6 +666,127 @@ fn commit_all(board: &Changes) {
     let root = board.root().to_path_buf();
     git(&root, &["add", "-A"]);
     git(&root, &["commit", "-qm", "more"]);
+}
+
+#[test]
+fn attempts_lists_each_old_run_writes_nothing_without_apply_and_apply_retypes_it_once() {
+    let board = copies_board();
+    let before = board.board.head().unwrap().id;
+    // The run of a names its flow by name, which the new schema refuses, so
+    // `attempts` alone leaves it for `flows`.
+    let paths = json!(["/changes/b/runs/1", "/changes/e/runs/1"]);
+    let dry = board.call("migrate", &json!({"attempts": true}));
+    assert_eq!(dry["attempts"], paths);
+    assert_eq!(dry["left"][0]["path"], "/changes/a/runs/1");
+    assert_eq!(board.board.head().unwrap().id, before);
+    assert_eq!(
+        board.read("changes/b/runs/1.json")["$type"],
+        "changes/run/v1"
+    );
+    let applied = board.call("migrate", &json!({"attempts": true, "apply": true}));
+    assert_eq!(applied["attempts"], paths);
+    let head = board.board.head().unwrap();
+    assert_eq!(head.parents, [before]);
+    assert!(
+        head.message.ends_with("\n\nBoard-Bulk: migrate attempts"),
+        "{}",
+        head.message
+    );
+    for name in ["b", "e"] {
+        let run = board.read(&format!("changes/{name}/runs/1.json"));
+        assert_eq!(run["$type"], "changes/attempt/v1", "{name}");
+        assert_eq!(
+            board.code(&format!("/changes/{name}/runs/1")),
+            None,
+            "{name}"
+        );
+    }
+    assert_eq!(
+        board.read("changes/b/runs/1.json")["flow"],
+        "/changes/b/flow"
+    );
+    let again = board.call("migrate", &json!({"attempts": true, "apply": true}));
+    assert_eq!(again["attempts"], json!([]));
+    assert_eq!(board.board.head().unwrap().id, head.id);
+}
+
+#[test]
+fn an_old_run_that_fails_the_new_schema_is_left_and_the_run_beside_it_is_retyped() {
+    let board = copies_board();
+    let mut odd = board.read("changes/b/runs/1.json");
+    odd["sandbox"] = json!("never");
+    board.write("changes/b/runs/1.json", &odd.to_string());
+    commit_all(&board);
+    let dry = board.call("migrate", &json!({"attempts": true}));
+    assert_eq!(dry["attempts"], json!(["/changes/e/runs/1"]));
+    let left: Vec<&str> = dry["left"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|each| each["path"].as_str().unwrap())
+        .collect();
+    assert_eq!(left, ["/changes/a/runs/1", "/changes/b/runs/1"]);
+    let why = dry["left"][1]["why"].as_str().unwrap();
+    assert!(
+        why.starts_with("its rewritten record at /changes/b/runs/1 fails its schema at"),
+        "{why}"
+    );
+}
+
+#[test]
+fn flows_and_attempts_together_write_each_run_once_with_the_new_type_and_flow() {
+    let board = copies_board();
+    let output = board.call(
+        "migrate",
+        &json!({"flows": true, "attempts": true, "apply": true}),
+    );
+    assert_eq!(
+        output["flows"]["runs"],
+        json!(["/changes/a/runs/1", "/changes/b/runs/1"])
+    );
+    assert_eq!(
+        output["attempts"],
+        json!([
+            "/changes/a/runs/1",
+            "/changes/b/runs/1",
+            "/changes/e/runs/1"
+        ])
+    );
+    let head = board.board.head().unwrap();
+    assert!(
+        head.message.ends_with("\n\nBoard-Bulk: migrate flows"),
+        "{}",
+        head.message
+    );
+    let followed = board.read("changes/a.json")["flow"].clone();
+    let run = board.read("changes/a/runs/1.json");
+    assert_eq!(
+        (&run["$type"], &run["flow"]),
+        (&json!("changes/attempt/v1"), &followed)
+    );
+    assert_eq!(
+        board.read("changes/e/runs/1.json")["$type"],
+        "changes/attempt/v1"
+    );
+    assert_eq!(board.code("/changes/a/runs/1"), None);
+}
+
+#[test]
+fn flows_and_attempts_together_list_a_run_naming_a_flow_its_change_does_not_follow_once() {
+    let board = copies_board();
+    let mut named = board.read("changes/e/runs/1.json");
+    named["flow"] = json!("development");
+    board.write("changes/e/runs/2.json", &named.to_string());
+    commit_all(&board);
+    let dry = board.call("migrate", &json!({"flows": true, "attempts": true}));
+    let paths: Vec<&Value> = dry["flows"]["left"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|left| &left["path"])
+        .filter(|path| *path == "/changes/e/runs/2")
+        .collect();
+    assert_eq!(paths.len(), 1, "{}", dry["flows"]["left"]);
 }
 
 #[test]

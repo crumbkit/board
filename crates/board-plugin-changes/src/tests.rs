@@ -34,6 +34,7 @@ fn the_manifest_parses_as_a_built_in_one_with_each_capabilitys_variables_and_tim
     assert_eq!(
         types,
         [
+            "changes/attempt/v1",
             "changes/change/v1",
             "changes/change/v2",
             "changes/flow/v1",
@@ -41,7 +42,6 @@ fn the_manifest_parses_as_a_built_in_one_with_each_capabilitys_variables_and_tim
             "changes/plan/v1",
             "changes/prototype/v1",
             "changes/reopen/v1",
-            "changes/run/v1",
             "changes/stop/v1",
             "changes/understanding/v1"
         ]
@@ -188,6 +188,7 @@ fn every_input_property_carries_a_sentence_that_says_what_it_means() {
         "stop.question",
         "stop.summary",
         "migrate.apply",
+        "migrate.attempts",
         "migrate.flows",
         "migrate.plans",
     ];

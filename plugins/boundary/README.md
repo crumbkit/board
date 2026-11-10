@@ -101,7 +101,7 @@ before a raw `git push` or `gh` write.
 The owner can let one exact content through a failed check without
 changing a rule. Only a failed check asks; a passing check writes no effect.
 
-- A failed check asks Board to decide the op `boundary.override` at
+- A failed check asks Board to decide the capability `boundary.override` at
   `/crossings/<hex>` in the personal board, as plugin `boundary`, showing
   the owner the action, destination and each part. Board writes a pending
   effect in the personal board, and the refusal's `effect` field holds its

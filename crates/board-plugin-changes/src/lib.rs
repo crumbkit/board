@@ -41,7 +41,7 @@ use serde_json::{Map, Value, json};
 
 use lifecycle::LifecycleRecord;
 use records::{
-    ChangeRecord, ChangeV1, PlanRecord, PrototypeRecord, ReopenRecord, RunRecord, StopRecord,
+    AttemptRecord, ChangeRecord, ChangeV1, PlanRecord, PrototypeRecord, ReopenRecord, StopRecord,
     UnderstandingRecord,
 };
 
@@ -409,7 +409,7 @@ impl Plugin for Changes {
                 schema_of::<PrototypeRecord>(settings()),
             ),
             typed(flow::Flow::TYPE, schema_of::<flow::Flow>(settings())),
-            typed(RunRecord::TYPE, schema_of::<RunRecord>(settings())),
+            typed(AttemptRecord::TYPE, schema_of::<AttemptRecord>(settings())),
             typed(StopRecord::TYPE, schema_of::<StopRecord>(settings())),
             typed(ReopenRecord::TYPE, schema_of::<ReopenRecord>(settings())),
         ]
@@ -477,6 +477,7 @@ fn manifest() -> Value {
             directory say more.",
         "metadata": {"area": "delivery"},
         "types": [
+            AttemptRecord::TYPE,
             ChangeV1::TYPE,
             ChangeRecord::TYPE,
             flow::Flow::TYPE,
@@ -484,7 +485,6 @@ fn manifest() -> Value {
             PlanRecord::TYPE,
             PrototypeRecord::TYPE,
             ReopenRecord::TYPE,
-            RunRecord::TYPE,
             StopRecord::TYPE,
             UnderstandingRecord::TYPE,
         ],

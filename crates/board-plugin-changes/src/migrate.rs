@@ -20,7 +20,8 @@
 //! With `flows`, the migration also replaces each change's own copy of its
 //! flow with a reference to the flow's stored version, as `flows.rs` says.
 //! With `plans`, it moves each open change's `Considered` and `Obligations
-//! left owed` sections to its plan's fields, as `sections.rs` says.
+//! left owed` sections to its plan's fields, as `sections.rs` says. With
+//! `attempts`, it rewrites each `changes/run/v1` as a `changes/attempt/v1`.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsStr;
@@ -29,12 +30,13 @@ use std::sync::LazyLock;
 
 use board_model::parse_json;
 use board_ops::{Host, PluginError, literal};
-use board_plugin::shape::{Record, Tag, Url};
+use board_plugin::shape::{Record, Tag};
 use regex::Regex;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 
+use self::left::{Left, unwritten};
 use self::schemas::{compiled, conforms};
 use crate::board::{self, rows, text};
 use crate::change::{OWN, prototypes, record_sync};
@@ -81,6 +83,10 @@ const LISTED: usize = 100;
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 #[schemars(rename = "MigrateInput")]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "the input is the capability's flat flags, each an independent switch"
+)]
 pub(crate) struct Input {
     #[serde(default)]
     #[schemars(description = "Write every rewritten record; without it nothing is written.")]
@@ -98,21 +104,12 @@ pub(crate) struct Input {
                        in a new plan snapshot."
     )]
     plans: bool,
-}
-
-/// A record the migration could not rewrite, and why, with the GitHub page
-/// `github.ref` could not record when that is the reason.
-#[derive(Debug, Serialize, JsonSchema)]
-struct Left {
-    path: String,
-    why: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[schemars(with = "Option<Url>")]
-    page: Option<String>,
-    /// The github records `github.ref` wrote for the change's earlier pages
-    /// before it refused `page`. They stay, and the next run uses them.
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    recorded: Vec<String>,
+    #[serde(default)]
+    #[schemars(
+        description = "Also rewrite each changes/run/v1 record as a changes/attempt/v1, in \
+                       place."
+    )]
+    attempts: bool,
 }
 
 /// What the migration rewrote or would rewrite.
@@ -145,6 +142,11 @@ pub(crate) struct Output {
     /// would write.
     #[serde(skip_serializing_if = "Option::is_none")]
     plan_fields: Option<sections::Output>,
+    /// Given only with `attempts`: the paths of the attempts rewritten as
+    /// `changes/attempt/v1`, or that would be. One that fails its schema is
+    /// in `left`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    attempts: Option<Vec<String>>,
 }
 
 /// One old change: its path, blob and body.
@@ -670,17 +672,6 @@ fn finish(written: &mut [Value], pulls: Vec<String>, tickets: Vec<String>) {
     }
 }
 
-/// The old change at `path`, left as it is because of `why`, with no GitHub
-/// page to blame.
-fn unwritten(path: &str, why: String) -> Left {
-    Left {
-        path: path.to_owned(),
-        why,
-        page: None,
-        recorded: Vec::new(),
-    }
-}
-
 /// Rewrites each old change, and with `flows` each flow copy, or with no
 /// `apply` says what it would write.
 ///
@@ -692,6 +683,7 @@ pub(crate) fn migrate(host: &dyn Host, input: &Value) -> Result<Value, PluginErr
         apply,
         flows,
         plans: plan_sections,
+        attempts,
     } = PluginError::read_input(PLUGIN, "migrate", input)?;
     let record = stamp(host.settings().now);
     let mut changes = Vec::new();
@@ -761,7 +753,12 @@ pub(crate) fn migrate(host: &dyn Host, input: &Value) -> Result<Value, PluginErr
     if let Some((_, blob)) = &sync {
         lines.push(json!({"path": SYNC_PATH, "expect": blob, "remove": true}));
     }
-    let (replaced, plan_fields) = flows::write(host, (apply, flows, plan_sections), &mut lines)?;
+    let (replaced, plan_fields, attempted) = flows::write(
+        host,
+        (apply, flows, plan_sections, attempts),
+        &mut lines,
+        &mut left,
+    )?;
     let unrecorded = match &sync {
         Some((day, _)) if apply => record_sync(host, day)?,
         _ => None,
@@ -781,10 +778,12 @@ pub(crate) fn migrate(host: &dyn Host, input: &Value) -> Result<Value, PluginErr
         unrecorded,
         flows: replaced,
         plan_fields,
+        attempts: attempted,
     }))
 }
 
 mod flows;
+mod left;
 mod schemas;
 mod sections;
 #[cfg(test)]

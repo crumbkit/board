@@ -455,7 +455,14 @@ fn a_refused_command_line_is_an_error_document_when_json_is_asked_for() {
 fn an_op_whose_plugin_or_capability_is_not_a_name_is_refused_and_a_plugins_op_is_admitted() {
     let scenario = board();
     let decide = |op: &str| {
-        let arguments = ["--json", "decide", "--op", op, "--path", "/projects/p"];
+        let arguments = [
+            "--json",
+            "decide",
+            "--capability",
+            op,
+            "--path",
+            "/projects/p",
+        ];
         board_in(scenario.workdir(), &arguments)
     };
     for refused in ["Review.comment", "a_b.c", "a.b.c"] {
@@ -465,7 +472,7 @@ fn an_op_whose_plugin_or_capability_is_not_a_name_is_refused_and_a_plugins_op_is
     }
     let admitted = decide("review.comment");
     assert_eq!(admitted.code, 0, "{}", text(&admitted.stderr));
-    assert_eq!(json(&admitted)["data"]["op"], "review.comment");
+    assert_eq!(json(&admitted)["data"]["capability"], "review.comment");
 }
 
 #[test]

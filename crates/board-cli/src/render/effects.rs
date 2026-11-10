@@ -11,7 +11,7 @@ use crate::report::Output;
 
 pub(crate) const DECIDE: Document<Answer> = prose(
     "decide-report",
-    "The op admitted at a path, and the pending effect whose approval admitted it.",
+    "The capability admitted at a path, and the pending effect whose approval admitted it.",
 );
 pub(crate) const ANSWER: Document<Answer> = prose(
     "answer-report",
@@ -20,11 +20,11 @@ pub(crate) const ANSWER: Document<Answer> = prose(
 
 pub(crate) fn decide(printer: Printer, report: &DecideReport) -> Output {
     let value = json!({
-        "op": report.op,
+        "capability": report.capability,
         "path": report.path.to_string(),
         "effect": report.effect,
     });
-    let mut text = format!("admitted {} {}\n", report.op, report.path);
+    let mut text = format!("admitted {} {}\n", report.capability, report.path);
     if let Some(id) = &report.effect {
         let _ = writeln!(text, "approved {id}");
     }

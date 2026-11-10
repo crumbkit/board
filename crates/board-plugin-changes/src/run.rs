@@ -32,7 +32,7 @@ use crate::flow::{Agent as Doer, Flow, Stop, of_change};
 use crate::gates::remedy::{fill, values};
 use crate::phases::{final_phase, refuse_v1, step_of};
 use crate::plan::{stamp, time_of};
-use crate::records::{PAUSED, Reason, RunRecord, StopRecord, is_final};
+use crate::records::{AttemptRecord, PAUSED, Reason, StopRecord, is_final};
 use crate::stop::{self, Shown, position};
 use crate::{PLUGIN, refusal, to_value};
 
@@ -705,7 +705,7 @@ fn recorded(
     };
     let (mut change, blob) = read(host, path)?;
     let run = format!("{path}/runs/{since}");
-    let record = RunRecord {
+    let record = AttemptRecord {
         tag: Tag::default(),
         flow: told.flow.to_owned(),
         stop: told.stop.clone(),

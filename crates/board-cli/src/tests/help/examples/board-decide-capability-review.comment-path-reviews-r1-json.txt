@@ -1,0 +1,1 @@
+{"schema":"board/decide-report/v2","data":{"capability":"review.comment","effect":null,"path":"/reviews/r1"},"failures":[]}

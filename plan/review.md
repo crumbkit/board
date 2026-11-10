@@ -55,8 +55,8 @@ repositories join as it proves itself.
    patch. `review` runs `git` itself, as `notes` does.
 6. **Anyone may post a report.** A person's GitHub review counts as review
    evidence and is recorded as a report with `source` set to its URL.
-7. **Posting is an effect.** `review.post` asks `board decide --op
-   review.post --path <report path> --text -`, and the ask shows the whole
+7. **Posting is an effect.** `review.post` asks `board decide
+   --capability review.post --path <report path> --text -`, and the ask shows the whole
    comment, since an agent wrote it from an untrusted diff. The comment names
    the pull request, so an approval binds the text and the target. Posting
    sets the report's `source` to the comment's URL, and a report with a

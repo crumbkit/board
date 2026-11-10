@@ -18,8 +18,8 @@ use crate::tests::{TASK_SCHEMA, task};
 
 const CONFIG: &str = r#"{"$type": "board/config/v1", "commit_on_put": false}"#;
 
-/// The op the tests ask for.
-const OP: &str = "review.comment";
+/// The capability the tests ask for.
+const CAPABILITY: &str = "review.comment";
 
 /// The test board, which does not commit.
 fn board() -> Scenario {
@@ -93,14 +93,14 @@ fn rm(board: &Board, at: &str) -> Result<PutReport, EffectError> {
     ))
 }
 
-/// `board decide --op review.comment --path <at>`.
+/// `board decide --capability review.comment --path <at>`.
 fn decide(board: &Board, at: &str) -> Result<DecideReport, EffectError> {
-    board.decide_op(OP, &path(at), None)
+    board.decide_capability(CAPABILITY, &path(at), None)
 }
 
 /// [`decide`] showing `shown`, as `--text` or `--record` gives it.
 fn decide_with(board: &Board, at: &str, shown: &Shown) -> Result<DecideReport, EffectError> {
-    board.decide_op(OP, &path(at), Some(shown))
+    board.decide_capability(CAPABILITY, &path(at), Some(shown))
 }
 
 fn text(text: &str) -> Shown {
@@ -174,7 +174,7 @@ fn a_plugins_decide_with_no_answer_writes_a_pending_effect_and_is_refused_as_ask
     let root = plugin.repository().path().display().to_string();
     assert_eq!(
         effect,
-        json!({"$type": "board/effect/v1", "board": root, "plugin": "review", "op": OP, "path": "/pulls/7"})
+        json!({"$type": "board/effect/v1", "board": root, "plugin": "review", "op": CAPABILITY, "path": "/pulls/7"})
     );
     // Asking again finds the same pending effect and keeps when it was asked.
     let held = std::fs::read(mine.workdir().join(format!("effects/pending/{id}.json"))).unwrap();
@@ -407,7 +407,7 @@ fn an_answer_to_a_pending_effect_that_shows_a_record_and_text_without_a_digest_i
     let effect = Effect::new(
         "/b".to_owned(),
         "review".parse().unwrap(),
-        OP.to_owned(),
+        CAPABILITY.to_owned(),
         "/pulls/7".to_owned(),
     );
     let mut both = effect.clone().showing(Some(record.clone()), None);
@@ -472,7 +472,7 @@ fn an_answer_to_a_pending_effect_that_shows_text_without_its_digest_is_refused_a
     let effect = Effect::new(
         "/b".to_owned(),
         "review".parse().unwrap(),
-        OP.to_owned(),
+        CAPABILITY.to_owned(),
         "/pulls/7".to_owned(),
     );
     let mut bare = effect.clone().showing(None, Some("t".to_owned()));
@@ -536,7 +536,7 @@ fn a_plugins_put_of_an_effect_or_seen_record_is_refused_in_any_board_and_the_own
     let effect = Effect::new(
         "/b".to_owned(),
         "tasks".parse().unwrap(),
-        OP.to_owned(),
+        CAPABILITY.to_owned(),
         "/x".to_owned(),
     );
     let seen = json!({"$type": "board/seen/v1", "effect": format!("sha256:{}", "0".repeat(64)), "answer": "approve"});

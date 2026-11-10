@@ -11,26 +11,26 @@ use crate::render::{self, Printer};
 use crate::report::Output;
 use crate::run::{Given, Prefix, plain, read};
 use crate::timing::Ran;
-use crate::values::op;
+use crate::values::capability;
 
 /// The arguments of `board decide`.
 #[derive(Debug, clap::Args)]
 pub(crate) struct Deciding {
     /// A plugin's `<plugin>.<capability>`, such as review.comment.
-    #[arg(long, value_parser = op)]
-    op: String,
-    /// The logical path the op acts on, such as /tasks/a.
+    #[arg(long, value_name = "NAME", value_parser = capability)]
+    capability: String,
+    /// The logical path it acts on, such as /tasks/a.
     #[arg(long)]
     path: Given,
-    /// The UTF-8 text the op writes: this file, or - for stdin.
+    /// The UTF-8 text it writes: this file, or - for stdin.
     #[arg(long, value_name = "FILE", conflicts_with = "record")]
     text: Option<PathBuf>,
-    /// The JSON object the op writes: this file, or - for stdin.
+    /// The JSON object it writes: this file, or - for stdin.
     #[arg(long, value_name = "FILE")]
     record: Option<PathBuf>,
 }
 
-/// `board decide`: whether the plugin may run its op at its path, read
+/// `board decide`: whether the plugin may run its capability at its path, read
 /// from `prefix`, showing the text or record its file holds.
 pub(crate) fn decide(
     board: &Board,
@@ -46,7 +46,7 @@ pub(crate) fn decide(
     };
     let decided = (shown.transpose()).and_then(|shown| {
         let path = read(prefix, &deciding.path, "decide")?;
-        (board.decide_op(&deciding.op, &path, shown.as_ref()))
+        (board.decide_capability(&deciding.capability, &path, shown.as_ref()))
             .map_err(|error| Box::new(error.refusal()))
     });
     match decided {
@@ -78,7 +78,7 @@ fn shown(file: &Path, what: &str, stdin: &mut dyn Read) -> Result<Vec<u8>, Box<R
 pub(crate) struct Answering {
     /// The pending effect's id, 64 hex digits.
     id: String,
-    /// approve lets the op act, after the owner signs it with Touch ID; refuse refuses it.
+    /// approve admits it, after the owner signs it with Touch ID; refuse refuses it.
     answer: Answer,
     /// Why, kept in the seen record.
     #[arg(long)]

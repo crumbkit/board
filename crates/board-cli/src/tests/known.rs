@@ -217,7 +217,13 @@ fn a_plugins_decide_is_refused_when_the_known_boards_file_cannot_be_read_and_the
             board.workdir(),
             &broken,
             None,
-            &["decide", "--op", "review.comment", "--path", "/notes/n"],
+            &[
+                "decide",
+                "--capability",
+                "review.comment",
+                "--path",
+                "/notes/n",
+            ],
             b"",
         );
         output
@@ -227,10 +233,16 @@ fn a_plugins_decide_is_refused_when_the_known_boards_file_cannot_be_read_and_the
     assert_eq!(admitted.code, 0, "{}", text(&admitted.stderr));
 }
 
-/// `board decide --op review.comment --path /notes/n` with `extra`, as the
+/// `board decide --capability review.comment --path /notes/n` with `extra`, as the
 /// owner, with `stdin`.
 fn decide_showing(board: &Scenario, extra: &[&str], stdin: &[u8]) -> Output {
-    let arguments = ["decide", "--op", "review.comment", "--path", "/notes/n"];
+    let arguments = [
+        "decide",
+        "--capability",
+        "review.comment",
+        "--path",
+        "/notes/n",
+    ];
     let arguments: Vec<&str> = arguments.iter().chain(extra).copied().collect();
     inside(
         None,
@@ -247,7 +259,16 @@ fn decide_showing(board: &Scenario, extra: &[&str], stdin: &[u8]) -> Output {
 fn a_decide_given_both_text_and_a_record_is_refused_as_usage_and_one_given_text_is_admitted() {
     let board = uncommitted();
     let arguments = [
-        "--json", "decide", "--op", "a.b", "--path", "/n", "--text", "-", "--record", "-",
+        "--json",
+        "decide",
+        "--capability",
+        "a.b",
+        "--path",
+        "/n",
+        "--text",
+        "-",
+        "--record",
+        "-",
     ];
     let both = board_with(board.workdir(), None, &arguments, b"{}");
     assert_eq!(both.code, 2);
@@ -277,7 +298,7 @@ fn a_plugins_decide_showing_text_writes_a_pending_effect_that_get_shows_with_its
     let arguments = [
         "--json",
         "decide",
-        "--op",
+        "--capability",
         "review.comment",
         "--path",
         "/notes/n",

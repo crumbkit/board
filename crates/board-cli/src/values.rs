@@ -46,8 +46,8 @@ pub(crate) fn var(text: &str) -> Result<(String, String), String> {
     }
 }
 
-/// A plugin's own op, `<plugin>.<capability>`, each part a name.
-pub(crate) fn op(text: &str) -> Result<String, String> {
+/// A plugin's capability, `<plugin>.<capability>`, each part a name.
+pub(crate) fn capability(text: &str) -> Result<String, String> {
     matches!(text.parse(), Ok(Target::Named { .. }))
         .then(|| text.to_owned())
         .ok_or_else(|| "must be `<plugin>.<capability>`, such as review.comment".to_owned())

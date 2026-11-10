@@ -85,14 +85,14 @@ pub trait Host {
     /// run reads a mount at a checkout, because `--checkout` names a mount
     /// of the board this run opened and no other.
     fn board(&self, elsewhere: &Elsewhere) -> Result<Box<dyn Host + '_>, Box<Refusal>>;
-    /// Whether the plugin may run `op`, `<plugin>.<capability>`, at `path`,
+    /// Whether the plugin may run `capability`, `<plugin>.<capability>`, at `path`,
     /// showing `shown`, as `board decide` answers under `BOARD_PLUGIN`: the
     /// owner's signed approval admits it, their refusal refuses it, and with
     /// no answer the pending effect is written in the personal board and
     /// it is refused as asked.
     fn decide(
         &self,
-        op: &str,
+        capability: &str,
         path: &LogicalPath,
         shown: Option<&Shown>,
     ) -> Result<DecideReport, Box<Refusal>>;
@@ -562,17 +562,17 @@ impl Host for Hosted<'_> {
     /// board and signing `board decide` reads.
     fn decide(
         &self,
-        op: &str,
+        capability: &str,
         path: &LogicalPath,
         shown: Option<&Shown>,
     ) -> Result<DecideReport, Box<Refusal>> {
-        if !matches!(op.parse(), Ok(Target::Named { .. })) {
+        if !matches!(capability.parse(), Ok(Target::Named { .. })) {
             let message = format!(
-                "the op {op:?} to decide must be `<plugin>.<capability>`, such as review.comment"
+                "the capability {capability:?} to decide must be `<plugin>.<capability>`, such as review.comment"
             );
             let refusal = Refusal::new(Code::CliUsage, message, &Fields::default());
             return Err(Box::new(refusal.with_hint(
-                "name the op as the plugin's name, a dot and the capability, as `board decide --op` takes it",
+                "name the capability as the plugin's name, a dot and the capability, as `board decide --capability` takes it",
             )));
         }
         let plugin = self.plugin().map_err(|error| Box::new(error.refusal()))?;
@@ -587,7 +587,8 @@ impl Host for Hosted<'_> {
         )?;
         let mut board = self.again().map_err(|error| Box::new(opened(&error)))?;
         board.ask_as(asker);
-        (board.decide_op(op, path, shown)).map_err(|error| Box::new(error.refusal()))
+        (board.decide_capability(capability, path, shown))
+            .map_err(|error| Box::new(error.refusal()))
     }
 
     fn sync(&self, push: bool, deadline: Duration) -> Result<Synced, SyncError> {
