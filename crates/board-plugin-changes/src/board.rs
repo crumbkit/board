@@ -2,7 +2,7 @@
 //! as `changes::board::refused`, as the Python plugin's helper gave them.
 
 use board_model::{Code, Fields, LogicalPath, Object, PathError, Refusal, parse_json};
-use board_ops::{Absent, Bulk, Host, Limit, PluginError, RefsReport, literal};
+use board_ops::{Absent, Bulk, Host, Limit, PluginError, RefsError, RefsReport, literal};
 use board_plugin::Target;
 use board_plugin::shape::TREE_CODES;
 use serde_json::{Map, Value};
@@ -67,27 +67,81 @@ pub(crate) fn tree_codes() -> String {
     codes.join(", ")
 }
 
-/// Where each of `paths` resolves, in order, or none when nothing is there.
-/// Any other refusal of a path is `changes::board::refused`.
-pub(crate) fn refs(
+/// Board's answer for each of `paths`, in order, read as `board refs` reads
+/// them.
+fn answers(
     host: &dyn Host,
     paths: &[String],
-) -> Result<Vec<Option<RefsReport>>, PluginError> {
+) -> Result<Vec<Result<RefsReport, RefsError>>, PluginError> {
     if paths.is_empty() {
         return Ok(Vec::new());
     }
     let asked = (paths.iter())
         .map(|path| logical(path, "refs"))
         .collect::<Result<Vec<_>, _>>()?;
-    let answers = (host.refs(&asked, Absent::Refuse, &[]))
-        .map_err(|error| refused("refs", &error.refusal()))?;
-    (answers.into_iter())
-        .map(|answer| match answer {
-            Ok(report) => Ok(Some(report)),
-            Err(error) if error.code() == Code::PathNotFound => Ok(None),
-            Err(error) => Err(refused("refs", &error.refusal())),
+    (host.refs(&asked, Absent::Refuse, &[])).map_err(|error| refused("refs", &error.refusal()))
+}
+
+/// `answer`, with a path that names nothing as none.
+fn found(answer: Result<RefsReport, RefsError>) -> Result<Option<RefsReport>, RefsError> {
+    match answer {
+        Ok(report) => Ok(Some(report)),
+        Err(error) if error.code() == Code::PathNotFound => Ok(None),
+        Err(error) => Err(error),
+    }
+}
+
+/// Where each path resolves, in order, or none when nothing is there.
+pub(crate) type Resolved = Result<Vec<Option<RefsReport>>, PluginError>;
+
+/// Where each path a walk asked for resolves, in order: none when nothing is
+/// there, and the code of what stopped it for a path the walk passed over.
+pub(crate) type Walked = Result<Vec<Result<Option<RefsReport>, Code>>, PluginError>;
+
+/// Where each of `paths` resolves, in order, or none when nothing is there.
+/// Any other refusal of a path is `changes::board::refused`, because what
+/// one change depends on must not read as absent.
+pub(crate) fn refs(host: &dyn Host, paths: &[String]) -> Resolved {
+    (answers(host, paths)?.into_iter())
+        .map(|answer| found(answer).map_err(|error| refused("refs", &error.refusal())))
+        .collect()
+}
+
+/// [`refs`], as a walk's answers that pass over no path.
+pub(crate) fn refs_strictly(host: &dyn Host, paths: &[String]) -> Walked {
+    Ok(refs(host, paths)?.into_iter().map(Ok).collect())
+}
+
+/// [`refs`] for a walk over many changes: a path that one record stops, such
+/// as a mount that cannot be read or a dangling link, is passed over with the
+/// code that stopped it and warned of, so that it stops only the changes
+/// that depend on it.
+pub(crate) fn refs_in_walk(host: &dyn Host, paths: &[String]) -> Walked {
+    (answers(host, paths)?.into_iter())
+        .map(|answer| match found(answer) {
+            Err(error) if error.stops_only_this_path() => {
+                host.warn(&error.refusal());
+                Ok(Err(error.code()))
+            }
+            answer => (answer.map(Ok)).map_err(|error| refused("refs", &error.refusal())),
         })
         .collect()
+}
+
+/// Board's refusal of each of `paths` that what the tree holds along that
+/// one path stopped, such as a mount that cannot be read or a dangling link,
+/// in order. A path that resolves or names nothing is left out. Any other
+/// refusal, such as git failing, is `changes::board::refused`.
+pub(crate) fn stopped(host: &dyn Host, paths: &[String]) -> Result<Vec<Refusal>, PluginError> {
+    let mut stopped = Vec::new();
+    for answer in answers(host, paths)? {
+        match found(answer) {
+            Ok(_) => {}
+            Err(error) if error.stops_only_this_path() => stopped.push(error.refusal()),
+            Err(error) => return Err(refused("refs", &error.refusal())),
+        }
+    }
+    Ok(stopped)
 }
 
 /// Where `path` resolves, or none when nothing is there.

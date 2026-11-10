@@ -768,3 +768,46 @@ fn the_write_lock_is_refused_while_a_mount_is_read_at_a_checkout_and_taken_witho
     let refused = repositories.lock(wait).err().unwrap();
     assert_eq!(refused.code(), Code::CliUsage);
 }
+
+#[test]
+fn a_path_that_is_a_mount_that_cannot_be_read_names_its_own_record_and_a_path_beneath_it_refuses() {
+    let inner = Scenario::new();
+    let pinned = inner.commit(&[("x.json", "1")]);
+    let cases = [
+        (
+            mount(&format!("{}/nowhere", inner.path()), pinned),
+            Code::MountRepoMissing,
+        ),
+        (
+            mount(&inner.path(), ObjectId::Sha1([9; 20])),
+            Code::MountCommitMissing,
+        ),
+    ];
+    for (broken, code) in cases {
+        let outer = Scenario::new();
+        outer.write("m.json", Item::File(&broken));
+        let repositories = outer.repositories();
+        let mut view = repositories.snapshot().unwrap();
+        let record = view.resolve_record(&path("/m")).unwrap();
+        assert_eq!(record.path, "m.json");
+        assert!(matches!(record.object, Object::Blob(_)));
+        assert_eq!(view.resolve(&path("/m")).unwrap_err().code(), code);
+        assert_eq!(view.resolve_record(&path("/m/x")).unwrap_err().code(), code);
+    }
+}
+
+#[test]
+fn a_path_that_is_a_mount_that_can_be_read_resolves_into_the_mount() {
+    let inner = Scenario::new();
+    let pinned = inner.commit(&[("x.json", "1")]);
+    let outer = Scenario::new();
+    outer.write("m.json", Item::File(&mount(&inner.path(), pinned)));
+    let repositories = outer.repositories();
+    let location = repositories
+        .snapshot()
+        .unwrap()
+        .resolve_record(&path("/m"))
+        .unwrap();
+    assert_eq!(location.object, Object::Directory);
+    assert_eq!(location.board.source, pinned.source());
+}

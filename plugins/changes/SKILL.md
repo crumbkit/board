@@ -204,6 +204,9 @@ to replace the flow copies changes kept before versions.
   that sync left alone. Run each entry's `command`. For
   `pull_not_found`, check `gh auth status` first, since GitHub answers 404
   for a repository gh cannot see.
+- `changes::sync::unread`: an entry sync left alone because a reference of
+  the change is beneath a mount that cannot be read. It has no `command`;
+  repair the mount as its `detail` says, then sync again.
 - `changes::phase::paused`: `resume` the change first.
 - `changes::pause::not_building`, `changes::resume::not_paused`: only a
   change in `build` is paused, and only a paused one resumed.

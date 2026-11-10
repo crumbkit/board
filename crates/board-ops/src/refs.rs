@@ -350,6 +350,19 @@ pub enum RefsError {
 }
 
 impl RefsError {
+    /// Whether what the tree holds along this one path stopped it, such as
+    /// a mount that cannot be read or a dangling link. A walk over many
+    /// paths passes over such a path. Any other error is git failing or
+    /// the check not running, which every path meets.
+    pub fn stops_only_this_path(&self) -> bool {
+        match self {
+            Self::Read {
+                source: ReadError::Resolve { source } | ReadError::ByFile { source, .. },
+            } => !matches!(source, ResolveError::Git(_)),
+            Self::Read { .. } | Self::Check { .. } => false,
+        }
+    }
+
     pub fn code(&self) -> Code {
         match self {
             Self::Read { source } => source.code(),

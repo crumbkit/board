@@ -415,3 +415,16 @@ fn the_command_round_trips_a_title_with_shell_syntax_through_a_board_root_with_a
         ["gh", "pr", "create", "--title", title, "--body-file"]
     );
 }
+
+#[test]
+fn a_change_whose_pull_request_is_beneath_a_mount_that_cannot_be_read_is_refused_and_writes_no_body()
+ {
+    let board = Changes::new();
+    board.mount_repo(&[("pulls/1.json", "{}")], "repos/notes", "HEAD");
+    board.break_mount("repos/notes", true);
+    landing(&board, "land", &json!({"pulls": ["/repos/notes/pulls/1"]}));
+    let refused = board.refusal("pr", &json!({"path": "/changes/t"}));
+    assert_eq!(refused["code"], "changes::board::refused", "{refused}");
+    assert_eq!(refused["fields"]["code"], "board::mount::repo_missing");
+    assert!(!board.exists("changes/t/pr.md"));
+}

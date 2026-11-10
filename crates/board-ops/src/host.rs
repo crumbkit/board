@@ -1,6 +1,7 @@
 //! Plugins built into Board, and what Board offers them
 //! (docs/plugins/built-in.md).
 
+use std::cell::RefCell;
 use std::ffi::OsString;
 use std::fmt;
 use std::ops::Deref;
@@ -114,6 +115,13 @@ pub trait Host {
         deadline: Duration,
     ) -> Result<MountUpdateReport, MountError>;
     fn settings(&self) -> &Settings;
+    /// Says that a walk passed over a path for what `refusal` names. Each
+    /// distinct warning is printed once after the call, beside its output
+    /// or its refusal.
+    /// A host with nowhere to print it drops it.
+    fn warn(&self, refusal: &Refusal) {
+        let _ = refusal;
+    }
     /// The checkout of a mounted repository the run started in, when Board
     /// found the board through that mount and reads it at its pin, as
     /// [`Board::started_in`] gives it. A host with no such checkout, such
@@ -402,6 +410,18 @@ pub(crate) struct Hosted<'a> {
     pub(crate) plugins: Plugins<'a>,
     /// Where a process plugin's `board` runs: the called board's root.
     pub(crate) root: &'a Path,
+    /// What [`Host::warn`] was told, one line each, without repeats. A host
+    /// [`Host::board`] opens adds to the same list.
+    pub(crate) warnings: &'a RefCell<Vec<String>>,
+}
+
+impl Hosted<'_> {
+    fn add_warning(&self, line: String) {
+        let mut warnings = self.warnings.borrow_mut();
+        if !warnings.contains(&line) {
+            warnings.push(line);
+        }
+    }
 }
 
 /// The board a host acts on: the called one, or one it opened.
@@ -534,7 +554,21 @@ impl Host for Hosted<'_> {
         // The processes it started count in this call's trace.
         let started = board.take_trace().work.get("started").copied();
         (self.board.trace.borrow_mut()).count("started", started.unwrap_or(0));
-        called.map_err(|error| Box::new(error.refusal()))
+        let report = called.map_err(|error| Box::new(error.refusal()))?;
+        report
+            .warnings
+            .iter()
+            .for_each(|line| self.add_warning(line.clone()));
+        Ok(report)
+    }
+
+    fn warn(&self, refusal: &Refusal) {
+        let hint = refusal.hint.as_deref().unwrap_or("no next step is known");
+        self.add_warning(format!(
+            "{}: {}; {hint}",
+            refusal.code.as_str(),
+            refusal.message
+        ));
     }
 
     fn board(&self, elsewhere: &Elsewhere) -> Result<Box<dyn Host + '_>, Box<Refusal>> {
@@ -555,6 +589,7 @@ impl Host for Hosted<'_> {
             plugin: self.plugin.clone(),
             plugins: self.plugins.clone(),
             root: self.root,
+            warnings: self.warnings,
         }))
     }
 

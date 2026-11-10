@@ -626,6 +626,23 @@ impl Changes {
         self.mount_repo(files, "repos/x", "HEAD")
     }
 
+    /// Makes the mount at `<at>` unreadable: with the repository's `.git`
+    /// gone, or with a commit the repository lacks.
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "the test removes the mounted repository's git directory, as happens to a mount"
+    )]
+    fn break_mount(&self, at: &str, losing_git: bool) {
+        if losing_git {
+            std::fs::remove_dir_all(self.repo_root(at).join(".git")).unwrap();
+        } else {
+            let file = format!("{at}.json");
+            let mut pointer = self.read(&file);
+            pointer["commit"] = json!("9".repeat(40));
+            self.write(&file, &pointer.to_string());
+        }
+    }
+
     /// Where the repository mounted at `/<at>` is.
     fn repo_root(&self, at: &str) -> PathBuf {
         self.beside.join(at.replace('/', "-"))
