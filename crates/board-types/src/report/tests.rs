@@ -44,7 +44,6 @@ fn a_report_with_a_field_this_crate_does_not_know_reads() {
     report["data"]["later"] = json!(1);
     report["total"] = json!(0);
     let read: Report<PutReport> = serde_json::from_value(report).unwrap();
-    assert!(read.data.writes.is_empty());
     let known: Report<PutReport> = serde_json::from_value(empty_put()).unwrap();
     assert_eq!(read, known);
 }
