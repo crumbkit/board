@@ -26,7 +26,7 @@ fn changes(scenario: &Scenario) -> Vec<(String, Change)> {
 
 #[test]
 fn an_entry_that_differs_from_head_is_uncommitted() {
-    let scenario = Scenario::new();
+    let scenario = Scenario::board();
     let config = r#"{"$type": "board/config/v1"}"#;
     let commit = scenario.commit(&[
         (".board/board.json", config),
@@ -35,7 +35,6 @@ fn an_entry_that_differs_from_head_is_uncommitted() {
     ]);
     scenario
         .track(commit)
-        .write(".board/board.json", Item::File(config))
         .write("same.md", Item::File("1"))
         .write("edited.md", Item::File("2"))
         .write("new.md", Item::File("1"));

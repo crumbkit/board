@@ -851,10 +851,7 @@ fn two_puts_with_the_same_expect_make_one_write_and_one_stale() {
 fn committing() -> Scenario {
     let scenario = crate::tests::board();
     scenario
-        .write(
-            ".git/config",
-            Item::Appended("[user]\n\tname = Board Test\n\temail = board@example.com\n"),
-        )
+        .identified()
         .write("notes.md", Item::File("not committed"));
     scenario
 }

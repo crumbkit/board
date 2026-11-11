@@ -106,6 +106,16 @@ impl Scenario {
         Self::init(tempfile::tempdir().unwrap())
     }
 
+    /// A repository whose `.board/board.json` holds the bare config.
+    pub fn board() -> Self {
+        let board = Self::new();
+        board.write(
+            ".board/board.json",
+            Item::File(r#"{"$type": "board/config/v1"}"#),
+        );
+        board
+    }
+
     /// A repository in a directory inside `parent`'s working tree.
     pub fn within(parent: &Self) -> Self {
         Self::init(tempfile::tempdir_in(parent.workdir()).unwrap())
@@ -233,6 +243,14 @@ impl Scenario {
             }
         }
         self
+    }
+
+    /// Gives the repository a git identity, so that a put can commit.
+    pub fn identified(&self) -> &Self {
+        self.write(
+            ".git/config",
+            Item::Appended("[user]\n\tname = Board Test\n\temail = board@example.com\n"),
+        )
     }
 
     /// Lets `git push` move the branch this working tree has checked out,

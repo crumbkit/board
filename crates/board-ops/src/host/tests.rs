@@ -476,10 +476,7 @@ fn a_plugin_both_built_in_and_installed_is_refused_and_one_installed_under_anoth
 #[test]
 fn a_built_in_plugin_is_listed_found_and_enabled_as_an_installed_one_is() {
     let scenario = board(&[], &[], Holds::Same);
-    scenario.write(
-        ".git/config",
-        Item::Appended("[user]\n\tname = Board Test\n\temail = board@example.com\n"),
-    );
+    scenario.identified();
     let plugins = built(vec![fixture("fixture")]);
     let mut board = open(&scenario);
     board.build_in(plugins);
@@ -1122,11 +1119,7 @@ fn a_call_that_is_refused_keeps_its_warnings_and_one_that_answers_reports_them()
 
 #[test]
 fn a_warning_given_on_a_board_the_host_opened_reaches_the_call() {
-    let elsewhere = Scenario::new();
-    elsewhere.write(
-        ".board/board.json",
-        Item::File(r#"{"$type": "board/config/v1"}"#),
-    );
+    let elsewhere = Scenario::board();
     let directory = elsewhere.workdir().to_path_buf();
     let report = warned(Box::new(move |host| {
         let opened = host

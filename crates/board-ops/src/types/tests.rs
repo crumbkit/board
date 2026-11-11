@@ -50,16 +50,8 @@ fn adding_a_type_writes_its_schema_in_canonical_form_and_a_record_of_it_then_put
 
 #[test]
 fn a_board_that_commits_on_put_commits_the_added_type() {
-    let board = Scenario::new();
-    board
-        .write(
-            ".board/board.json",
-            Item::File(r#"{"$type": "board/config/v1"}"#),
-        )
-        .write(
-            ".git/config",
-            Item::Appended("[user]\n\tname = Board Test\n\temail = board@example.com\n"),
-        );
+    let board = Scenario::board();
+    board.identified();
     let report = open(&board).type_add(&note(1), SCHEMA.as_bytes()).unwrap();
     let head = board.head().unwrap();
     assert_eq!(Some(head.id), report.commit);
@@ -170,16 +162,9 @@ fn a_type_in_the_board_namespace_is_refused_and_one_in_another_namespace_is_admi
 
 #[test]
 fn an_equal_schema_left_uncommitted_is_committed_and_a_committed_one_is_left_as_it_is() {
-    let board = Scenario::new();
+    let board = Scenario::board();
     board
-        .write(
-            ".git/config",
-            Item::Appended("[user]\n\tname = Board Test\n\temail = board@example.com\n"),
-        )
-        .write(
-            ".board/board.json",
-            Item::File(r#"{"$type": "board/config/v1"}"#),
-        )
+        .identified()
         .write(AT, Item::File(std::str::from_utf8(WRITTEN).unwrap()));
     let committed = open(&board).type_add(&note(1), SCHEMA.as_bytes()).unwrap();
     assert!(committed.writes.is_empty(), "{committed:?}");
@@ -230,14 +215,8 @@ fn a_type_with_a_part_over_255_bytes_is_refused_with_a_hint_to_shorten_it() {
 fn an_equal_schema_in_another_layout_is_kept_as_it_is_committed_or_not() {
     let layout = r#"{ "required" : ["title"], "type" : "object" }"#;
     let config = r#"{"$type": "board/config/v1"}"#;
-    let board = Scenario::new();
-    board
-        .write(
-            ".git/config",
-            Item::Appended("[user]\n\tname = Board Test\n\temail = board@example.com\n"),
-        )
-        .write(".board/board.json", Item::File(config))
-        .write(AT, Item::File(layout));
+    let board = Scenario::board();
+    board.identified().write(AT, Item::File(layout));
     let committed = board.commit(&[(".board/board.json", config), (AT, layout)]);
     let kept = open(&board).type_add(&note(1), SCHEMA.as_bytes()).unwrap();
     assert!(kept.writes.is_empty(), "{kept:?}");
@@ -258,16 +237,9 @@ fn an_equal_schema_in_another_layout_is_kept_as_it_is_committed_or_not() {
 fn an_equal_schema_held_through_a_symlink_is_left_uncommitted_and_a_different_or_dangling_one_is_refused()
  {
     let linked = |held: Option<&str>| {
-        let board = Scenario::new();
+        let board = Scenario::board();
         board
-            .write(
-                ".git/config",
-                Item::Appended("[user]\n\tname = Board Test\n\temail = board@example.com\n"),
-            )
-            .write(
-                ".board/board.json",
-                Item::File(r#"{"$type": "board/config/v1"}"#),
-            )
+            .identified()
             .write(AT, Item::Symlink("../../../../schemas/note.json"));
         if let Some(held) = held {
             board.write("schemas/note.json", Item::File(held));

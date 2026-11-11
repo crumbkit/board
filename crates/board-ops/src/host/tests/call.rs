@@ -325,10 +325,7 @@ fn a_put_in_the_personal_board_is_checked_as_the_plugin_so_an_owner_only_path_is
  {
     let put = |path| {
         let personal = board(BOTH, NESTED.enabled, Holds::Same);
-        personal.write(
-            ".git/config",
-            Item::Appended("[user]\n\tname = Board Test\n\temail = board@example.com\n"),
-        );
+        personal.identified();
         let scenario = board(BOTH, &["outer"], Holds::Same);
         let mut board = open(&scenario);
         board.build_in(built(vec![putting_elsewhere(path)]));

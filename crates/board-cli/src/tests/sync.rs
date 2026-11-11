@@ -20,10 +20,7 @@ pub(super) fn clones() -> (Scenario, Scenario, Scenario) {
     remote.accepting_pushes();
     let clone = || {
         let clone = Scenario::clone_of(&remote);
-        clone.write(
-            ".git/config",
-            Item::Appended("[user]\n\tname = Board Test\n\temail = board@example.com\n"),
-        );
+        clone.identified();
         clone
     };
     let (a, b) = (clone(), clone());

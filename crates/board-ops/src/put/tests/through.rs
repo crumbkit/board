@@ -14,8 +14,6 @@ use crate::put::{Expect, PutError, PutReport};
 
 use crate::tests::{PROJECT_SCHEMA, TASK_SCHEMA, open, task};
 
-const IDENTITY: &str = "[user]\n\tname = Board Test\n\temail = board@example.com\n";
-
 /// A board in a repository of its own, committed and tracked, with an
 /// identity, that commits its puts, and the commit HEAD names.
 fn library() -> (Scenario, ObjectId) {
@@ -30,9 +28,7 @@ fn library() -> (Scenario, ObjectId) {
         library.write(at, Item::File(text));
     }
     let commit = library.commit(&files);
-    library
-        .track(commit)
-        .write(".git/config", Item::Appended(IDENTITY));
+    library.track(commit).identified();
     (library, commit)
 }
 
@@ -163,7 +159,7 @@ fn a_root_that_commits_its_puts_commits_the_moved_pin() {
             ".board/board.json",
             Item::File(r#"{"$type": "board/config/v1"}"#),
         )
-        .write(".git/config", Item::Appended(IDENTITY));
+        .identified();
     let report = put(&scenario, "/vendor/tasks/a", Expect::Any, &task("")).unwrap();
     let root = scenario.head().unwrap();
     assert_eq!(report.commit, Some(root.id));
@@ -819,9 +815,7 @@ fn a_mounted_repository_whose_nearest_board_is_an_enclosing_one_is_refused_and_o
         library.write(at, Item::File(text));
     }
     let commit = library.commit(&files);
-    library
-        .track(commit)
-        .write(".git/config", Item::Appended(IDENTITY));
+    library.track(commit).identified();
     pin(&scenario, &library, commit);
     // Without its own board.json, the nearest board above the mounted
     // repository is the root's, which is not the repository the mount names.
@@ -1017,7 +1011,7 @@ fn after_a_kill_left_the_moved_pin_uncommitted_the_same_put_commits_it_and_then_
             ".board/board.json",
             Item::File(r#"{"$type": "board/config/v1"}"#),
         )
-        .write(".git/config", Item::Appended(IDENTITY));
+        .identified();
     let record = task("");
     let text = String::from_utf8(canonical(&record)).unwrap();
     let killed = commit_in(&library, &[("tasks/a.json", &text)]);
@@ -1064,9 +1058,7 @@ fn linked_library(text: &str) -> (Scenario, ObjectId) {
         .map(|(at, item)| (at.as_bytes(), *item))
         .collect();
     let commit = library.commit_items(&bytes);
-    library
-        .track(commit)
-        .write(".git/config", Item::Appended(IDENTITY));
+    library.track(commit).identified();
     (library, commit)
 }
 

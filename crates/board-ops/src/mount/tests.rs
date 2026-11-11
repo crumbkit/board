@@ -213,10 +213,7 @@ fn a_committing_update_commits_the_pointer() {
             ".board/board.json",
             Item::File(r#"{"$type": "board/config/v1"}"#),
         )
-        .write(
-            ".git/config",
-            Item::Appended("[user]\n\tname = Board Test\n\temail = board@example.com\n"),
-        );
+        .identified();
     assert!(update(&scenario, "/vendor/lib").unwrap().wrote);
     let head = scenario.head().unwrap();
     assert_eq!(

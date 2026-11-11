@@ -450,12 +450,8 @@ fn get(port: u16, host: &str, url: &str, authorization: Option<&str>) -> String 
 }
 
 fn board_scenario() -> Scenario {
-    let scenario = Scenario::new();
+    let scenario = Scenario::board();
     scenario
-        .write(
-            ".board/board.json",
-            Item::File(r#"{"$type": "board/config/v1"}"#),
-        )
         .write(
             "views/v.json",
             Item::File(r#"{"$type": "ui/view/v1", "slots": []}"#),

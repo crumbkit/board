@@ -104,12 +104,9 @@ fn a_put_killed_while_writing_its_temporary_file_leaves_the_old_version() {
     assert_eq!(std::fs::read(root.join("note.json")).unwrap(), old);
 }
 
-/// Starts `board serve` in a new board, and returns it with its server file.
+/// Starts `board serve` in the board `scenario`, and returns it with its
+/// server file.
 fn serve(scenario: &Scenario) -> (Child, std::path::PathBuf) {
-    scenario.write(
-        ".board/board.json",
-        Item::File(r#"{"$type": "board/config/v1"}"#),
-    );
     let cache = scenario.workdir().join(".git/cache");
     let mut server = Command::new(env!("CARGO_BIN_EXE_board"))
         .args(["serve", "--idle", "10m"])
@@ -154,7 +151,7 @@ fn server_file(cache: &Path, server: &mut Child) -> std::path::PathBuf {
 #[test]
 fn a_server_stopped_by_sigint_sigterm_or_sighup_removes_its_server_file_and_exits_cleanly() {
     for signal in ["INT", "TERM", "HUP"] {
-        let scenario = Scenario::new();
+        let scenario = Scenario::board();
         let (mut server, file) = serve(&scenario);
         kill(signal, &server);
         let status = server.wait().unwrap();

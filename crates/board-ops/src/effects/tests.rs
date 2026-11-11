@@ -234,10 +234,7 @@ fn mounted() -> (Scenario, Scenario) {
         library.write(at, Item::File(text));
     }
     let commit = library.commit(&files);
-    library.track(commit).write(
-        ".git/config",
-        Item::Appended("[user]\n\tname = Board Test\n\temail = board@example.com\n"),
-    );
+    library.track(commit).identified();
     let scenario = board();
     scenario.write("m.json", Item::File(&mount_of(&library.path(), commit)));
     (scenario, library)
@@ -681,15 +678,8 @@ fn a_batch_with_a_line_only_the_owner_writes_is_refused_naming_the_line_and_its_
 fn an_answer_moves_its_pending_effect_to_answered_in_the_commit_that_writes_the_seen_record_and_an_unanswered_one_stays()
  {
     let scenario = board();
-    let mine = Scenario::new();
-    mine.write(
-        ".board/board.json",
-        Item::File(r#"{"$type": "board/config/v1"}"#),
-    )
-    .write(
-        ".git/config",
-        Item::Appended("[user]\n\tname = Board Test\n\temail = board@example.com\n"),
-    );
+    let mine = Scenario::board();
+    mine.identified();
     let board = opened(&scenario, Some("review"), Some(&mine));
     let answered = asked(decide(&board, "/pulls/7"));
     let unanswered = asked(decide(&board, "/pulls/8"));

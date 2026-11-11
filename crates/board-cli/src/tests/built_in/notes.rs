@@ -103,7 +103,7 @@ const UTC: Zone = Zone(0);
 
 impl Notes {
     fn new() -> Self {
-        let (board, config) = (Scenario::new(), Scenario::new());
+        let (board, config) = (Scenario::board(), Scenario::new());
         let runner = Runner {
             board: board.workdir().to_path_buf(),
             known: config.workdir().join("board/config.json"),
@@ -131,10 +131,6 @@ impl Notes {
         let board = notes.board.workdir();
         git(board, &["symbolic-ref", "HEAD", "refs/heads/main"]);
         identify(board);
-        (notes.board).write(
-            ".board/board.json",
-            Item::File(r#"{"$type": "board/config/v1"}"#),
-        );
         commit(board);
         let enabled = notes.run(&["plugin", "enable", "notes"], UTC, None);
         assert_eq!(enabled.code, 0, "{}", text(&enabled.stderr));

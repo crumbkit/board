@@ -118,10 +118,7 @@ fn a_plugin_that_ships_no_types_gets_only_the_config() {
 fn a_board_that_commits_on_put_commits_the_enable_once() {
     let (board, _data, plugins) =
         installed_with(r#"{"$type": "board/config/v1"}"#, MANIFEST, SCHEMA);
-    board.write(
-        ".git/config",
-        Item::Appended("[user]\n\tname = Board Test\n\temail = board@example.com\n"),
-    );
+    board.identified();
     let report = open(&board)
         .plugin_enable(Some(&plugins), None, &notes(), &[])
         .unwrap();
@@ -375,10 +372,7 @@ fn a_schema_the_plugin_no_longer_ships_is_kept_while_a_record_has_its_type_and_r
 fn a_removed_schema_leaves_the_commit_with_the_rest_of_the_enable() {
     let config = r#"{"$type": "board/config/v1"}"#;
     let (board, _data, plugins) = orphaned(config, 0);
-    board.write(
-        ".git/config",
-        Item::Appended("[user]\n\tname = Board Test\n\temail = board@example.com\n"),
-    );
+    board.identified();
     board.commit(&[
         (OLD, r#"{"type": "object"}"#),
         (".board/board.json", config),

@@ -46,13 +46,8 @@ fn bash(directory: &Path, cursor: usize, words: &[&str]) -> String {
 }
 
 fn board(directory: &str) -> Scenario {
-    let scenario = Scenario::new();
-    scenario
-        .write(
-            ".board/board.json",
-            Item::File(r#"{"$type": "board/config/v1"}"#),
-        )
-        .write(&format!("{directory}/a.json"), Item::File("{}"));
+    let scenario = Scenario::board();
+    scenario.write(&format!("{directory}/a.json"), Item::File("{}"));
     scenario
 }
 

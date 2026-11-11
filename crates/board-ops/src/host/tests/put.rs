@@ -13,10 +13,7 @@ const NOTE_SCHEMA: &str =
 fn notes() -> Scenario {
     let scenario = board(&[("fixture", true)], &["fixture"], Holds::Same);
     scenario
-        .write(
-            ".git/config",
-            Item::Appended("[user]\n\tname = Board Test\n\temail = board@example.com\n"),
-        )
+        .identified()
         .write(
             ".board/types/fixture/note/v1.schema.json",
             Item::File(NOTE_SCHEMA),

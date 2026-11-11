@@ -37,16 +37,11 @@ fn put(scenario: &Scenario, home: &std::path::Path) -> Output {
 }
 
 fn board() -> Scenario {
-    let scenario = Scenario::new();
-    scenario
-        .write(
-            ".board/board.json",
-            Item::File(r#"{"$type": "board/config/v1"}"#),
-        )
-        .write(
-            ".board/types/lr/note/v1.schema.json",
-            Item::File(r#"{"type": "object"}"#),
-        );
+    let scenario = Scenario::board();
+    scenario.write(
+        ".board/types/lr/note/v1.schema.json",
+        Item::File(r#"{"type": "object"}"#),
+    );
     scenario
 }
 
@@ -61,10 +56,7 @@ fn a_committing_put_without_an_identity_is_refused_before_writing_and_with_one_i
     assert!(!anonymous.workdir().join("note.json").exists());
 
     let known = board();
-    known.write(
-        ".git/config",
-        Item::Appended("[user]\n\tname = Board Test\n\temail = board@example.com\n"),
-    );
+    known.identified();
     let admitted = put(&known, home.path());
     assert_eq!(
         admitted.status.code(),

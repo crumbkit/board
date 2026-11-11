@@ -46,11 +46,6 @@ pub(crate) struct Real {
     pub(crate) puts: RefCell<Vec<Value>>,
 }
 
-fn identify(scenario: &Scenario) {
-    let identity = "[user]\n\tname = Board\n\temail = board@example.com\n";
-    scenario.write(".git/config", Item::Appended(identity));
-}
-
 /// The notes repo's files at its first commit, with `tasks`.
 fn files(tasks: &[(&str, &str)]) -> Vec<(String, String)> {
     let mut files = vec![
@@ -79,12 +74,10 @@ impl Real {
             .collect();
         let started = remote.commit(&pairs);
         let clone = Scenario::clone_of(&remote);
-        identify(&clone);
-        let board = Scenario::new();
-        identify(&board);
-        let config = r#"{"$type": "board/config/v1"}"#;
+        clone.identified();
+        let board = Scenario::board();
         board
-            .write(".board/board.json", Item::File(config))
+            .identified()
             .write(".board/types/tasks/task/v2.schema.json", Item::File(SCHEMA));
         let mount = json!({"$type": "board/mount/v1", "repo": clone.path(), "follow": "main", "commit": started.to_string()});
         board.write("repos/work.json", Item::File(&mount.to_string()));
