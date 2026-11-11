@@ -283,8 +283,8 @@ async function briefNamed($: EngineInterface, agentId: string | undefined): Prom
  * The refusal of an edit of `file` by `agentId`, or null to admit it. The
  * guard chooses no mount: the brief's change names one, in the board that
  * holds the change, and the edit is admitted when that mount's repository is
- * the file's. The mounts the file's origin names are read only when its
- * worktree mounts do not settle that.
+ * the file's, whichever known board is listed first. The mounts the file's
+ * origin names are read only when its worktree mounts do not settle that.
  */
 async function refusal($: EngineInterface, file: string, agentId: string | undefined): Promise<string | null> {
   try {
@@ -300,20 +300,41 @@ async function refusal($: EngineInterface, file: string, agentId: string | undef
     if (mounts.length === 0) return null
     const named = await briefNamed($, agentId)
     if (named === null) return noBrief(file, mounts[0]!, null)
-    for (const board of found.boards) {
-      const ran = await sh($, GET, [board, named])
-      const change = parseChange(ran.stdout)
-      if (change.kind === 'missing') continue
-      if (change.kind === 'failed') {
-        const why = ran.exitCode !== 0 && ran.stdout.trim() === '' ? said(ran) : change.why
-        return unknown(file, `\`board -C ${board} get ${named}\` failed with ${why}`)
+    // The change as each board that mounts the file's repository holds it; null where it holds none.
+    const changes = new Map<string, { mount: string; phase: string } | null>()
+    const mountNamed = (board: string) => {
+      const change = changes.get(board)
+      return change == null ? undefined : mounts.find(m => m.board === board && m.mount === change.mount)
+    }
+    // Reads the change from each such board not read yet, up to the first whose change names a mount of the file's
+    // repository. A change of the same name in a board that mounts the repository nowhere is never read.
+    const read = async (): Promise<{ deny: string } | { board: string | undefined }> => {
+      for (const board of found.boards) {
+        if (!mounts.some(m => m.board === board)) continue
+        if (!changes.has(board)) {
+          const ran = await sh($, GET, [board, named])
+          const change = parseChange(ran.stdout)
+          if (change.kind === 'failed') {
+            const why = ran.exitCode !== 0 && ran.stdout.trim() === '' ? said(ran) : change.why
+            return { deny: unknown(file, `\`board -C ${board} get ${named}\` failed with ${why}`) }
+          }
+          changes.set(board, change.kind === 'found' ? change : null)
+        }
+        if (mountNamed(board) !== undefined) return { board }
       }
-      const names = (m: Mount) => m.board === board && m.mount === change.mount
-      if (!mounts.some(names)) await widen()
-      // With no mount the change names, the refusal names another of its board's mounts.
-      const at = mounts.find(names) ?? mounts.find(m => m.board === board)
-      // A board that mounts the file's repository nowhere holds another change of this name.
-      if (at === undefined) continue
+      return { board: undefined }
+    }
+    let picked = await read()
+    if (!('deny' in picked) && picked.board === undefined && !widened) {
+      await widen()
+      picked = await read()
+    }
+    if ('deny' in picked) return picked.deny
+    // With no change that names a mount of the file's repository, the first board that holds the change refuses.
+    const board = picked.board ?? found.boards.find(b => changes.get(b) != null)
+    const change = board === undefined ? undefined : changes.get(board)
+    if (board !== undefined && change != null) {
+      const at = mountNamed(board) ?? mounts.find(m => m.board === board)!
       const got = await sh($, GET, [board, `${named}/prototype`])
       const kind = parseKind(got.stdout)
       if (kind.kind === 'failed') {
@@ -329,7 +350,7 @@ async function refusal($: EngineInterface, file: string, agentId: string | undef
         }
       }
       const prototype = kind.kind === 'prototype'
-      return judge(file, at, named, { board, ...change }, prototype, prototype ? await branchOf($, file) : '')
+      return judge(file, at, named, change, prototype, prototype ? await branchOf($, file) : '')
     }
     return noBrief(file, mounts[0]!, named)
   } catch (error) {

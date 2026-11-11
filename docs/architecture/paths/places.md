@@ -31,8 +31,11 @@ sorts first. The key has two parts, compared in this order.
    - then, a mount of the same origin whose commit the clone holds;
    - then, any other mount of the same origin.
 
-So a worktree on a change's branch runs as that change's mount, and every
-other checkout of the repository runs as the standing mount.
+So a worktree on a change's branch runs as that change's mount, and another
+checkout of the repository runs as a standing mount when there is one. The
+first part is compared first, so a mount of a separate clone that follows
+the checkout's branch sorts before a standing mount of the checkout's own
+repository.
 
 The same key picks within one board and across every known board. Two
 mounts with the same smallest key are a real tie, such as two standing

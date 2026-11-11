@@ -652,6 +652,30 @@ test('a builder edits a clone that a second board mounts beneath a change, and a
   expect(edits).toEqual(['Edit'])
 })
 
+test('a change of the same name in a board listed first does not refuse the builder of the change that names the mount', async ($, on) => {
+  const file = '/work/clone-ssh/src/lib.rs'
+  // The team board, listed first, mounts the clone's origin and holds a done change of the same name.
+  // The personal board mounts the clone itself and holds the change in build.
+  const done = change({ mount: '/repos/widgets', phase: 'done' })
+  const answers: Answers = {
+    first: { a1: BRIEF },
+    config: JSON.stringify({ boards: [BOARD2, BOARD] }),
+    mounts: { [BOARD]: report('board/query-report/v2', [['/repos/clone', '/work/clone-ssh', 'repos/clone.json']]) },
+    changes: { [BOARD2]: done, [BOARD]: change({ mount: '/repos/clone', phase: 'build' }) },
+  }
+  const { ran, edits } = engine(on, answers)
+  expect((await edit($, file, 'a1')).deny).toBeUndefined()
+  expect(edits).toEqual(['Edit'])
+  expect(ran.filter(r => r.startsWith('get'))).toEqual([
+    `get ${BOARD} /changes/fix-it`,
+    `get ${BOARD} /changes/fix-it/prototype`,
+  ])
+  // With the change in no other board, the done one refuses.
+  answers.changes = { [BOARD2]: done, [BOARD]: MISSING }
+  expect((await edit($, file, 'a1')).deny).toMatch(/^changes::guard::not_building: \/changes\/fix-it is in phase done, /)
+  expect(edits).toEqual(['Edit'])
+})
+
 test('a brief kept for the main conversation does not outlive /clear or /resume', async ($, on) => {
   const answers: Answers = { first: { '': BRIEF }, session: 'before-clear' }
   engine(on, answers)

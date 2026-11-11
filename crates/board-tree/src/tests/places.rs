@@ -158,6 +158,56 @@ fn a_mount_beneath_a_record_is_used_from_another_branch_when_no_standing_mount_h
 }
 
 #[test]
+fn a_detached_worktree_follows_no_mount_and_its_twin_on_the_branch_follows_one() {
+    let repository = Scenario::new();
+    let (board, commit) = with_changes(&repository, &[("fix", "build")]);
+    let linked = worktree(&repository, "fix-it", commit);
+    assert_eq!(
+        places(&board, &linked),
+        [at_change("fix", crate::Choice::Followed)]
+    );
+    // The same worktree after `git switch --detach`: HEAD holds the commit.
+    repository.write(
+        ".git/worktrees/fix-it/HEAD",
+        Item::File(&format!("{commit}\n")),
+    );
+    assert_eq!(places(&board, &linked), [place("/repos/lib", "/")]);
+}
+
+#[test]
+fn a_mount_beneath_a_record_with_no_phase_is_kept_and_its_twin_beneath_a_done_one_is_left_out() {
+    let repository = Scenario::new();
+    let (board, commit) = with_changes(&repository, &[("fix", "done")]);
+    let on_branch = worktree(&repository, "fix-it", commit);
+    assert_eq!(places(&board, &on_branch), [place("/repos/lib", "/")]);
+    let record = r#"{"$type": "changes/change/v2"}"#;
+    board.write("changes/fix.json", Item::File(record));
+    assert_eq!(
+        places(&board, &on_branch),
+        [at_change("fix", crate::Choice::Followed)]
+    );
+}
+
+#[test]
+fn two_standing_mounts_that_follow_the_checkouts_branch_are_both_kept() {
+    let repository = Scenario::new();
+    let commit = repository.commit(&[("x.json", "1")]);
+    let board = Scenario::new();
+    let followed = following(&repository.path(), "fix-it", commit);
+    board
+        .write("repos/a.json", Item::File(&followed))
+        .write("repos/b.json", Item::File(&followed));
+    let on_branch = worktree(&repository, "fix-it", commit);
+    let mut found = places(&board, &on_branch);
+    found.sort_by(|a, b| a.mount.as_str().cmp(b.mount.as_str()));
+    let both = ["/repos/a", "/repos/b"].map(|mount| Place {
+        choice: crate::Choice::Followed,
+        ..place(mount, "/")
+    });
+    assert_eq!(found, both);
+}
+
+#[test]
 fn the_mount_of_a_dropped_or_done_change_is_left_out_and_its_twin_in_build_is_chosen() {
     let repository = Scenario::new();
     let ended = [("dropped", "dropped"), ("done", "done")];

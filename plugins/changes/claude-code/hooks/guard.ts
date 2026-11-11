@@ -237,32 +237,30 @@ export const prototypeBranch = (name: string) => `proto/${name.replace(/\/+$/, '
 
 /**
  * The refusal for a change, or null when its builder may edit `file`, which
- * is checked out on `branch` ('' when detached). `change` is the record with
- * the board that holds it, and `at` is a mount whose repository is the
- * file's: the one the change names when there is one. `prototype` says
- * whether a prototype record sits at `<name>/prototype`.
+ * is checked out on `branch` ('' when detached). `prototype` says whether a
+ * prototype record sits at `<name>/prototype`.
  */
 export function judge(
   file: string,
   at: Mount,
   name: string,
-  change: { board: string; mount: string; phase: string },
+  change: { mount: string; phase: string },
   prototype: boolean,
   branch: string,
 ): string | null {
   if (change.phase === 'paused') {
     return (
       `changes::guard::not_building: ${name} is paused, and its builder may edit ${file} only in build. ` +
-      `Run \`board -C ${change.board} call changes.resume --path ${name}\` when the cap allows.`
+      `Run \`board -C ${at.board} call changes.resume --path ${name}\` when the cap allows.`
     )
   }
   if (change.phase !== 'build') {
     return (
       `changes::guard::not_building: ${name} is in phase ${change.phase}, and its builder may edit ${file} only ` +
-      `in build. Run \`board -C ${change.board} call changes.advance --path ${name}\` once its plan gate passes.`
+      `in build. Run \`board -C ${at.board} call changes.advance --path ${name}\` once its plan gate passes.`
     )
   }
-  if (change.board !== at.board || change.mount !== at.mount) {
+  if (change.mount !== at.mount) {
     return (
       `changes::guard::wrong_mount: ${name} is a change to ${change.mount}, and ${file} is in ${at.mount}. ` +
       `Start a builder from the brief of a change to ${at.mount}.`

@@ -1008,14 +1008,15 @@ every Edit, Write and NotebookEdit. Install it with
    may follow the object. The guard checks that line, and does not
    check that `changes.brief` produced it, so a parent agent can write the
    line itself.
-4. It reads that change from each known board, in the order the config
-   lists them, and takes the first that holds it and mounts the file's
-   repository. It admits the call when the change's `phase` is `build` and
-   its `mount`, in that board, is a mount that holds the file; a paused
-   change is refused and told to resume. The guard chooses no mount
-   itself, so a repository mounted several times, such as at
-   `/repos/<name>` and beneath another change, admits the builder of a
-   change to any of those mounts. It then reads `<change>/prototype` with `board get`, and when a
+4. It reads that change from each known board that mounts the file's
+   repository, and takes the board whose change names, as its `mount`, a
+   mount that holds the file. It admits the call when that change's
+   `phase` is `build`; a paused change is refused and told to resume. When
+   no board's change names such a mount, the first listed board that holds
+   the change refuses the edit. The guard chooses no mount itself, so a
+   repository mounted several times, such as at `/repos/<name>` and
+   beneath another change, admits the builder of a change to any of those
+   mounts. It then reads `<change>/prototype` with `board get`, and when a
    prototype record is there it asks `board check --healthy` whether Board
    reads it, because `board get` prints a degraded record as it prints a
    valid one. When a readable prototype record is there, the file's
