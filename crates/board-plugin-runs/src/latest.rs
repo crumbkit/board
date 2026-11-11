@@ -4,10 +4,10 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use board_ops::{Host, PluginError};
-use board_plugin::shape::Open;
+use board_types::Outcome;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use serde_json::{Map, Value};
+use serde_json::Value;
 
 use crate::qualifying::qualifying;
 use crate::records::MeasureValue;
@@ -52,7 +52,7 @@ struct Latest {
     finished: Option<String>,
     outcome: Verdict,
     #[schemars(with = "BTreeMap<String, MeasureValue>")]
-    measures: Map<String, Value>,
+    measures: BTreeMap<String, board_types::MeasureValue>,
     failed: Vec<String>,
     age_s: u64,
 }
@@ -76,10 +76,11 @@ pub(crate) fn latest(host: &dyn Host, input: &Value) -> Result<Value, PluginErro
         // A case that failed in several trials is listed once.
         let mut listed = BTreeSet::new();
         let failed: Vec<String> = (run.results.iter())
-            .filter(|result| match &result.outcome {
-                Some(Open::Known(outcome)) => outcome.failed(),
-                Some(Open::Other(_)) => true,
-                None => false,
+            .filter(|result| {
+                matches!(
+                    result.outcome,
+                    Some(Outcome::Fail | Outcome::Error | Outcome::Other(_))
+                )
             })
             .filter(|result| listed.insert(result.case.as_str()))
             .map(|result| result.case.clone())

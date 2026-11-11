@@ -6,7 +6,7 @@ use board_ops::{AnswerReport, DecideReport};
 use crumbkit::Document;
 use serde_json::json;
 
-use super::{Answer, Printer, prose, put_json, said};
+use super::{Answer, Printer, prose, put_data, said};
 use crate::report::Output;
 
 pub(crate) const DECIDE: Document<Answer> = prose(
@@ -44,7 +44,7 @@ pub(crate) fn answer(printer: Printer, report: &AnswerReport) -> Output {
     let value = json!({
         "id": report.id,
         "answer": report.answer,
-        "put": put_json(&report.put),
+        "put": put_data(&report.put),
     });
     printer.print(ANSWER, Ok(said(value, text)))
 }

@@ -273,7 +273,7 @@ pub(crate) fn put(printer: Printer, report: &PutReport, note: Option<String>) ->
             written.display
         )))
     });
-    let answer = said(put_json(report), put_text(report));
+    let answer = said(json!(put_data(report)), put_text(report));
     let notes = notes.chain(temporary).chain(note.map(Note::Text));
     printer.noted(PUT, answer, notes.collect())
 }
@@ -297,45 +297,30 @@ fn put_text(report: &PutReport) -> String {
 
 /// What a put wrote and its commit, as `put --json` and `plugin enable
 /// --json` say it.
-fn put_json(report: &PutReport) -> Value {
-    let writes: Vec<Value> = report
-        .writes
-        .iter()
-        .map(|written| {
-            let degraded = written.degraded.as_ref().map(|(code, detail)| {
-                let mut fields = detail_fields(detail);
-                fields.insert("code".to_owned(), json!(code.as_str()));
-                fields
-            });
-            json!({
-                "location": location(&written.location, &written.display.to_string()),
-                "display": written.display.to_string(),
-                "previous": written.previous.map(|blob| blob.to_string()),
-                "blob": written.blob.to_string(),
-                "degraded": degraded,
+fn put_data(report: &PutReport) -> board_types::PutReport {
+    let write = |written: &board_ops::Written| board_types::Write {
+        blob: written.blob.to_string(),
+        degraded: (written.degraded.as_ref()).map(|(code, detail)| board_types::Degraded {
+            code: code.as_str().to_owned(),
+            failures: detail.failures,
+            pointer: detail.pointer.clone(),
+            reason: detail.reason.clone(),
+        }),
+        display: written.display.to_string(),
+        location: location(&written.location, &written.display.to_string()),
+        previous: written.previous.map(|blob| blob.to_string()),
+    };
+    board_types::PutReport {
+        absent: report.absent.iter().map(ToString::to_string).collect(),
+        commit: report.commit.map(|commit| commit.to_string()),
+        removed: (report.removed.iter())
+            .map(|removed| board_types::Removed {
+                blob: removed.blob.to_string(),
+                path: removed.path.to_string(),
             })
-        })
-        .collect();
-    let mut value = json!({
-        "writes": writes,
-        "commit": report.commit.map(|commit| commit.to_string()),
-    });
-    if !report.removed.is_empty() {
-        let removed = report.removed.iter();
-        value["removed"] = removed
-            .map(|removed| json!({"path": removed.path.to_string(), "blob": removed.blob.to_string()}))
-            .collect();
+            .collect(),
+        writes: report.writes.iter().map(write).collect(),
     }
-    if !report.absent.is_empty() {
-        value["absent"] = json!(
-            report
-                .absent
-                .iter()
-                .map(ToString::to_string)
-                .collect::<Vec<_>>()
-        );
-    }
-    value
 }
 
 /// `plugin enable`: what it wrote, as `put` says it, or that nothing was
@@ -347,7 +332,7 @@ pub(crate) fn plugin_enable(printer: Printer, report: &EnableReport) -> Output {
     } else {
         format!("{}enabled {name}\n", put_text(&report.put))
     };
-    let mut value = put_json(&report.put);
+    let mut value = json!(put_data(&report.put));
     value["plugin"] = json!(name);
     value["replaced"] = json!(report.replaced);
     value["removed"] = json!(report.removed);
@@ -633,32 +618,21 @@ pub(crate) fn refused(printer: Printer, refusal: Refusal) -> Output {
     printer.print(INIT, Err(refusal))
 }
 
-fn location(location: &Location, display: &str) -> Value {
-    let mut value = json!({
-        "repository": location.board.repository.to_string_lossy(),
-        "source": source_name(&location.board.source),
-        "path": location.path,
-        "display": display,
-    });
-    if let Some(object) = value.as_object_mut() {
-        let pointers: Vec<Value> = location
-            .pointers
-            .iter()
-            .map(|pointer| {
-                let mut value = json!({
-                    "repository": pointer.board.repository.to_string_lossy(),
-                    "source": source_name(&pointer.board.source),
-                    "path": pointer.path,
-                });
-                if let (Some(follow), Some(object)) = (&pointer.follow, value.as_object_mut()) {
-                    object.insert("follow".to_owned(), json!(follow));
-                }
-                value
-            })
-            .collect();
-        object.insert("pointers".to_owned(), Value::Array(pointers));
+/// `location` as every report prints it, shown as `display`.
+fn location(location: &Location, display: &str) -> board_types::Location {
+    let pointer = |pointer: &Location| board_types::Pointer {
+        follow: pointer.follow.clone(),
+        path: pointer.path.clone(),
+        repository: pointer.board.repository.to_string_lossy().into_owned(),
+        source: source_name(&pointer.board.source),
+    };
+    board_types::Location {
+        display: display.to_owned(),
+        path: location.path.clone(),
+        pointers: location.pointers.iter().map(pointer).collect(),
+        repository: location.board.repository.to_string_lossy().into_owned(),
+        source: source_name(&location.board.source),
     }
-    value
 }
 
 /// How a text listing names an entry: by the logical path every command

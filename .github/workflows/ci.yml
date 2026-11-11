@@ -41,6 +41,10 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: bin/lint rust
       - run: bin/test doc
+      # A program outside Board depends on board-types through git, which
+      # builds it without the rest of the workspace.
+      - name: board-types builds on its own
+        run: cargo build --package board-types --locked
       # The budget controls only record lint.toml; bin/lint checks they agree.
       - name: The repository passes board check with the built-in controls plugin
         run: |

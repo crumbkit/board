@@ -1,13 +1,140 @@
 //! The manifest parses as Board reads it, the committed schemas are what
 //! the record structs generate and keep the bytes the Python plugin
-//! shipped, and a capability the plugin does not offer is refused.
+//! shipped, board-types writes what they admit, and a capability the plugin
+//! does not offer is refused.
 
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 use board_model::{Code, canonical_json};
+use board_types::{
+    Actor, CaseResult, Host, Measure, MeasureValue, Outcome, Run, Scope, Suite, Tag,
+};
 use serde_json::json;
 
 use super::*;
+
+/// A run with every field set, as board-types writes it.
+fn full_run() -> Value {
+    let result = CaseResult {
+        case: "a".to_owned(),
+        outcome: Some(Outcome::Fail),
+        measures: Some(BTreeMap::from([(
+            "ms".to_owned(),
+            MeasureValue::Number(1.5),
+        )])),
+        note: Some("timed out".to_owned()),
+        trial: Some(1),
+        evidence: Some(vec!["/suites/a/runs/1.log".to_owned()]),
+    };
+    serde_json::to_value(Run {
+        tag: Tag::new(),
+        suite: "/suites/a".to_owned(),
+        by: Some(Actor {
+            session: Some("local_0a1b".to_owned()),
+            program: Some("claude-code".to_owned()),
+            person: Some("ana".to_owned()),
+            agent: Some("nightly scheduler".to_owned()),
+        }),
+        started: "2026-10-01T09:00:00Z".to_owned(),
+        scope: Scope::Full,
+        results: vec![result],
+        dirty: Some(false),
+        finished: Some("2026-10-01T09:05:00Z".to_owned()),
+        versions: Some(BTreeMap::from([("gix".to_owned(), "0.88.0".to_owned())])),
+        host: Some(Host {
+            os: "macos".to_owned(),
+            arch: "aarch64".to_owned(),
+            logical_cpus: 8,
+        }),
+        measures: Some(BTreeMap::from([
+            ("tests".to_owned(), MeasureValue::Integer(3)),
+            ("fast".to_owned(), MeasureValue::Flag(true)),
+            ("tier".to_owned(), MeasureValue::Label("a".to_owned())),
+        ])),
+        setup: Some("M4".to_owned()),
+        summary: Some("One failed.".to_owned()),
+        written_by: Some("runs/subagent-stop".to_owned()),
+    })
+    .unwrap()
+}
+
+/// A suite with every field board-types writes set.
+fn full_suite() -> Value {
+    serde_json::to_value(Suite {
+        tag: Tag::new(),
+        subjects: Some(vec!["crumbkit/board".to_owned()]),
+        method: "Run it.".to_owned(),
+        command: Some("bin/test".to_owned()),
+        cases_file: Some("/suites/a/cases.txt".to_owned()),
+        measures: Some(vec![Measure {
+            name: "ms".to_owned(),
+            unit: "ms".to_owned(),
+            description: Some("The median.".to_owned()),
+        }]),
+    })
+    .unwrap()
+}
+
+/// The names of the object `value` holds.
+fn names(value: &Value) -> BTreeSet<&str> {
+    value
+        .as_object()
+        .unwrap()
+        .keys()
+        .map(String::as_str)
+        .collect()
+}
+
+#[test]
+fn board_types_writes_a_run_and_a_suite_the_shipped_schemas_admit_with_every_property() {
+    let schemas = Runs.schemas();
+    for (n, record, nested) in [
+        (0, full_suite(), vec![("Measure", "/measures/0")]),
+        (
+            1,
+            full_run(),
+            vec![
+                ("Actor", "/by"),
+                ("Host", "/host"),
+                ("Result", "/results/0"),
+            ],
+        ),
+    ] {
+        let schema = &schemas[n].1;
+        board_validate::Schema::compile(schema.clone())
+            .unwrap()
+            .validate(&record)
+            .unwrap();
+        let mut properties = names(&schema["properties"]);
+        // board-types leaves out a suite's inline cases, whose input is any JSON.
+        properties.remove("cases");
+        assert_eq!(names(&record), properties, "{}", schemas[n].0.as_str());
+        for (definition, pointer) in nested {
+            let defined = names(&schema["$defs"][definition]["properties"]);
+            assert_eq!(
+                names(record.pointer(pointer).unwrap()),
+                defined,
+                "{definition}"
+            );
+        }
+    }
+}
+
+#[test]
+fn a_run_board_types_writes_without_a_required_field_is_refused_and_the_full_one_admitted() {
+    let schemas = Runs.schemas();
+    for (n, full) in [(0, full_suite()), (1, full_run())] {
+        let schema = board_validate::Schema::compile(schemas[n].1.clone()).unwrap();
+        schema.validate(&full).unwrap();
+        let mut lacking = full;
+        lacking.as_object_mut().unwrap().remove("$type");
+        assert_eq!(
+            schema.validate(&lacking).unwrap_err().code(),
+            Code::RecordInvalid
+        );
+    }
+}
 
 /// Each committed schema file holds, byte for byte, the canonical JSON of
 /// the schema its struct generates. `SNAPSHOTS=overwrite` rewrites the files.

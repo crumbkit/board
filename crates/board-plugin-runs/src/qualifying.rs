@@ -5,11 +5,12 @@ use std::collections::BTreeMap;
 
 use board_model::parse_json;
 use board_ops::{Host, Limit, PluginError, QueryReport, literal};
-use board_plugin::shape::{Actor, Open, Record, TREE_CODES};
+use board_plugin::shape::{Record, TREE_CODES};
+use board_types::{CaseResult, MeasureValue, Outcome, Scope};
 use serde::Deserialize;
-use serde_json::{Map, Number, Value};
+use serde_json::{Map, Value};
 
-use crate::records::{Outcome, RunRecord, Scope, SuiteRecord};
+use crate::records::{RunRecord, SuiteRecord};
 use crate::time::Time;
 
 /// The command a refusal suggests for finding a suite's path.
@@ -24,74 +25,13 @@ pub(crate) struct Qualifying {
     pub(crate) unreadable: usize,
 }
 
-/// A run as the plugin reads it.
+/// A run as the plugin reads it. An outcome this Board does not know is
+/// kept as written and counts as not passed.
 pub(crate) struct Run {
     pub(crate) started: Time,
     pub(crate) finished: Option<Time>,
-    pub(crate) results: Vec<Stored>,
-    pub(crate) measures: Option<Map<String, Value>>,
-}
-
-/// A run as a board's own, possibly looser, schema may admit it, read as
-/// the Python plugin's pydantic model read it. Null stands for a field left
-/// out, and an unknown field is ignored. The fields named with `_` are read
-/// only to check their type.
-///
-/// Pydantic also coerced `"false"`, 0 and 1 to a flag, a string of digits
-/// or a flag to a whole number, and a number to a time. A shipped schema
-/// admits none of them, so only a board's own looser schema lets one
-/// through; such a run is unreadable here. Matching pydantic's coercion
-/// table would replace this.
-#[derive(Deserialize)]
-struct StoredRun {
-    #[serde(rename = "suite")]
-    _suite: String,
-    #[serde(default, rename = "by")]
-    _by: Option<Actor>,
-    started: String,
-    scope: Open<Scope>,
-    results: Vec<Stored>,
-    dirty: Option<bool>,
-    finished: Option<String>,
-    #[serde(rename = "versions")]
-    _versions: Option<BTreeMap<String, String>>,
-    host: Option<StoredHost>,
-    measures: Option<Map<String, Value>>,
-    #[serde(rename = "setup")]
-    _setup: Option<String>,
-    #[serde(rename = "summary")]
-    _summary: Option<String>,
-    written_by: Option<String>,
-}
-
-#[derive(Deserialize)]
-struct StoredHost {
-    #[serde(rename = "os")]
-    _os: String,
-    #[serde(rename = "arch")]
-    _arch: String,
-    logical_cpus: Number,
-}
-
-/// What one case gave in a run. An outcome this Board does not know is
-/// kept as written and counts as not passed.
-#[derive(Deserialize)]
-pub(crate) struct Stored {
-    pub(crate) case: String,
-    pub(crate) outcome: Option<Open<Outcome>>,
-    pub(crate) measures: Option<Map<String, Value>>,
-    note: Option<String>,
-    trial: Option<Number>,
-    #[serde(rename = "evidence")]
-    _evidence: Option<Vec<String>>,
-}
-
-impl Stored {
-    /// The trial's number, 0 when the result gives none, as the Python
-    /// plugin ordered trials.
-    pub(crate) fn trial(&self) -> f64 {
-        self.trial.as_ref().and_then(Number::as_f64).unwrap_or(0.0)
-    }
+    pub(crate) results: Vec<CaseResult>,
+    pub(crate) measures: Option<BTreeMap<String, MeasureValue>>,
 }
 
 /// The runs in `<suite>/runs/` that are full and say they are clean, newest
@@ -159,18 +99,21 @@ pub(crate) fn qualifying(host: &dyn Host, suite: &str) -> Result<Qualifying, Plu
 
 /// The run `body` holds, and whether it is full and says it is clean, or
 /// `None` when the Python plugin's model would have refused it.
+///
+/// A run is read as a board's own, possibly looser, schema may admit it.
+/// Null stands for a field left out, and an unknown field is ignored.
+/// Pydantic also coerced `"false"`, 0 and 1 to a flag, a string of digits
+/// or a flag to a whole number, and a number to a time. A shipped schema
+/// admits none of them, so only a board's own looser schema lets one
+/// through; such a run is unreadable here. Matching pydantic's coercion
+/// table would replace this.
 fn readable(body: &str) -> Option<(Run, bool)> {
     let record = parse_json(body.as_bytes()).ok()?;
-    let run = StoredRun::deserialize(&record).ok()?;
+    let run = board_types::Run::deserialize(&record).ok()?;
     let started = Time::parse(&run.started)?;
     let finished = match &run.finished {
         Some(finished) => Some(Time::parse(finished)?),
         None => None,
-    };
-    let whole = |number: &Number| {
-        number
-            .as_f64()
-            .is_some_and(|n| n >= 1.0 && n.fract() == 0.0)
     };
     let hook = |name: &str| {
         !name.is_empty()
@@ -178,28 +121,23 @@ fn readable(body: &str) -> Option<(Run, bool)> {
     };
     let written = (run.written_by.as_deref())
         .is_none_or(|by| by.split_once('/').is_some_and(|(a, b)| hook(a) && hook(b)));
-    let host = (run.host.as_ref()).is_none_or(|host| whole(&host.logical_cpus));
-    let measured = |measures: &Option<Map<String, Value>>| {
-        (measures.iter().flat_map(Map::values))
-            .all(|value| matches!(value, Value::Number(_) | Value::String(_) | Value::Bool(_)))
-    };
+    let host = (run.host.as_ref()).is_none_or(|host| host.logical_cpus >= 1);
     let results = (run.results.iter()).all(|result| {
         // The board's schema decides whether an outcome this Board does not
         // know needs a note.
         let noted = matches!(
             result.outcome,
-            None | Some(Open::Known(Outcome::Pass) | Open::Other(_))
+            None | Some(Outcome::Pass | Outcome::Other(_))
         ) || result.note.is_some();
         (result.outcome.is_some() || result.measures.is_some())
             && noted
-            && result.trial.as_ref().is_none_or(whole)
-            && measured(&result.measures)
+            && result.trial.is_none_or(|trial| trial >= 1)
     });
-    if !(written && host && results && measured(&run.measures)) {
+    if !(written && host && results) {
         return None;
     }
     // A scope this Board does not know is not known to be full.
-    let clean = run.scope == Open::Known(Scope::Full) && run.dirty == Some(false);
+    let clean = run.scope == Scope::Full && run.dirty == Some(false);
     let run = Run {
         started,
         finished,

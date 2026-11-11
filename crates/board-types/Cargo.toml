@@ -1,0 +1,21 @@
+[package]
+name = "board-types"
+version = "0.0.0"
+description = "Types for the documents `board --json` prints and the records programs write into a board"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+# serde alone, and no other Board crate, so a git dependency on this crate
+# builds nothing else of Board; CI builds it on its own to prove it.
+[dependencies]
+serde.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true

@@ -3,6 +3,7 @@
 
 use board_ops::{Host, PluginError};
 use board_plugin::shape::whole;
+use board_types::{CaseResult, MeasureValue};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -106,15 +107,17 @@ pub(crate) fn trend(host: &dyn Host, input: &Value) -> Result<Value, PluginError
 
 /// The run's own value of `measure`, or the lowest trial's for `case`;
 /// `None` when it gives none.
-fn measured<'a>(run: &'a Run, measure: &str, case: Option<&str>) -> Option<&'a Value> {
+fn measured<'a>(run: &'a Run, measure: &str, case: Option<&str>) -> Option<&'a MeasureValue> {
     let Some(case) = case else {
         return run.measures.as_ref()?.get(measure);
     };
-    // The first of the lowest trials, as Python's `min` picks it.
+    // The first of the lowest trials, as Python's `min` picks it; a result
+    // that gives no trial counts as trial 0.
+    let trial = |result: &CaseResult| result.trial.unwrap_or(0);
     let first = (run.results.iter())
         .filter(|result| result.case == case)
         .reduce(|lowest, result| {
-            if result.trial() < lowest.trial() {
+            if trial(result) < trial(lowest) {
                 result
             } else {
                 lowest

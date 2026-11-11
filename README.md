@@ -22,3 +22,19 @@ Then run `board skills install`, which writes the skills built into `board`
 into `~/.claude/skills`. For an agent that reads `~/.agents/skills`, run
 `board skills install --dir ~/.agents/skills` too. Run them again after each
 upgrade, so the skills match the binary.
+
+## Reading Board's output from Rust
+
+A program that reads the JSON Board prints with `--json`, or writes Board
+records, can use the types in
+[crates/board-types](crates/board-types/README.md), which Board prints
+through.
+
+## Licence
+
+Licensed under either of [Apache License, Version 2.0](LICENSE-APACHE) or
+[MIT license](LICENSE-MIT) at your option.
+
+Unless you explicitly state otherwise, any contribution intentionally submitted
+for inclusion in this project by you, as defined in the Apache-2.0 license,
+shall be dual licensed as above, without any additional terms or conditions.

@@ -33,6 +33,11 @@ impl FailureReader for BoardReader {
             return Vec::new();
         };
         let failures = document["failures"].as_array().into_iter().flatten();
+        let printed = (document["schema"] == "board/failure/v1").then_some(&document);
+        printed
+            .into_iter()
+            .chain(failures.clone())
+            .for_each(super::types::round_trips);
         let rows = document["data"].as_array().into_iter().flatten();
         std::iter::once(&document)
             .chain(failures)

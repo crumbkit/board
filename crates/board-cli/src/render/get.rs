@@ -86,7 +86,8 @@ pub(super) const LEAF: Leaf = Leaf::new(&["get"]).document(GET);
 /// and its `record` or the `code` that says why it is not one.
 #[derive(Serialize, JsonSchema)]
 struct FileAnswer {
-    location: Value,
+    #[schemars(with = "Value")]
+    location: board_types::Location,
     blob: Option<String>,
     #[serde(flatten)]
     content: Bytes,
