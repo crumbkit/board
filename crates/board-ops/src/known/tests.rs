@@ -559,6 +559,33 @@ fn a_mount_of_a_clone_with_its_origin_wins_over_another_boards_repo_record_and_t
     assert_eq!(opened(&docs, &alone, None).unwrap(), "/work/lib");
 }
 
+#[test]
+fn a_checkout_one_board_mounts_beneath_a_done_change_runs_as_the_board_with_a_standing_mount_of_its_origin()
+ {
+    let url = "git@github.com:example-org/lib.git";
+    let (library, commit) = committed(url, &[("y.json", "1")]);
+    let (other, same) = committed(url, &[("y.json", "1")]);
+    let standing = mount_of(&other.path(), same);
+    let (a, b) = (board(), board());
+    a.write("repos/lib.json", Item::File(&standing));
+    let done = json!({"$type": "changes/change/v2", "phase": "done"}).to_string();
+    b.write("changes/old.json", Item::File(&done)).write(
+        "changes/old/source.json",
+        Item::File(&mount_of(&library.path(), commit)),
+    );
+    let both = listing(&[&b, &a]);
+    let (board, prefix) = open(library.workdir(), None, None, || known(&both)).unwrap();
+    assert_eq!(prefix.unwrap().unwrap().as_str(), "/repos/lib");
+    assert_eq!(
+        board.repository().path(),
+        a.workdir().canonicalize().unwrap()
+    );
+    // With a standing mount of that origin in each board, neither wins.
+    b.write("repos/lib.json", Item::File(&standing));
+    let refusal = refused(library.workdir(), &both);
+    assert_eq!(refusal.code.as_str(), "board::config::ambiguous");
+}
+
 /// A board whose `origin` is `url`.
 fn originated(url: &str) -> Scenario {
     let scenario = board();

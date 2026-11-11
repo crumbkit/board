@@ -353,18 +353,16 @@ fn find(
             matches.push((root, board, places));
         }
     }
-    // Across the known boards only the best kind of match counts: a mount of
-    // the directory's own repository, then a mount of a clone with its
-    // origin whose commit it holds, then one whose commit it does not, then
-    // a repo record for its remote.
+    // Across the known boards only the places of the smallest rank count, as
+    // within one board.
     let best = (matches.iter())
-        .flat_map(|(_, _, places)| places.iter().map(|place| place.matched))
+        .flat_map(|(_, _, places)| places.iter().map(Place::rank))
         .min();
     let mut named = Vec::new();
     let mut chosen = None;
     for (root, board, places) in matches {
         let places: Vec<Place> = (places.into_iter())
-            .filter(|place| Some(place.matched) == best)
+            .filter(|place| Some(place.rank()) == best)
             .collect();
         named.extend(places.iter().map(|place| match place.prefix() {
             Ok(prefix) => format!("{} at {prefix}", root.display()),

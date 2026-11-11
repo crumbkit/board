@@ -193,21 +193,29 @@ async function ownRecord(
 }
 
 /**
- * The mounts that hold `file`, across every known board, or the refusal of a
- * board record. A file in a checkout of a known board's own repository, the
- * board's directory or a linked worktree of it, is admitted once its board
- * records are checked. A mount holds the file when the file's repository is
- * a worktree of the mount's `repo`; else when its origin is a local path or
- * `file://` URL of a worktree of it; else when both repositories' origins
- * name one repository. So a separate clone is guarded too. A repository with
- * no origin that is no worktree of a mount stays outside the guard.
+ * The known boards, and their mounts whose repository is the file's: those it
+ * is a worktree of, and `byOrigin`, read only when asked, those its origin
+ * names.
  */
-async function mountsOf($: EngineInterface, file: string): Promise<Mount[] | string> {
+type Held = { boards: string[]; worktree: Mount[]; byOrigin: () => Promise<Mount[]> }
+
+/**
+ * The mounts whose repository is `file`'s, across every known board, the
+ * refusal of a board record, or null for a file outside the guard. A file in
+ * a checkout of a known board's own repository, the board's directory or a
+ * linked worktree of it, is outside it once its board records are checked. A
+ * mount's repository is the file's when the file's repository is a worktree
+ * of the mount's `repo`, when its origin is a local path or `file://` URL of
+ * a worktree of it, or when both repositories' origins name one repository.
+ * So a separate clone is guarded too. A repository with no origin that is no
+ * worktree of a mount stays outside the guard.
+ */
+async function held($: EngineInterface, file: string): Promise<Held | string | null> {
   const placed = await place($, file)
   if (placed.real === (await realOf($, await configPath($)))) return configRecord(file)
   // Every board is a git repository, so a file outside one is no board record either.
   const found = await locate($, placed.dir)
-  if (found === null) return []
+  if (found === null) return null
   const all: Mount[] = []
   const boards: { board: string; real: string; mounts: Mount[] }[] = []
   for (const board of await knownBoards($)) {
@@ -226,22 +234,25 @@ async function mountsOf($: EngineInterface, file: string): Promise<Mount[] | str
   // A known board's repository holds records, which ownRecord guards, and no code.
   const repoReal = await realOf($, found.repo)
   const own = boards.find(b => sameDirectory(repoReal, b.real))
-  if (own !== undefined) return (await ownRecord($, file, placed.real, found, own)) ?? []
+  if (own !== undefined) return ownRecord($, file, placed.real, found, own)
   const worktreeOf = (repo: string) => all.filter(m => m.repo === repo)
-  if (worktreeOf(found.repo).length > 0 || all.length === 0) return worktreeOf(found.repo)
-  const local = localOrigin(found.url, found.repo)
-  if (local !== null) {
-    // An origin directory that is gone, or holds no repository, names no mount.
-    const origin = await locate($, local).catch(() => null)
-    return origin === null ? [] : worktreeOf(origin.repo)
+  const byOrigin = async () => {
+    if (all.length === 0) return []
+    const local = localOrigin(found.url, found.repo)
+    if (local !== null) {
+      // An origin directory that is gone, or holds no repository, names no mount.
+      const origin = await locate($, local).catch(() => null)
+      return origin === null ? [] : worktreeOf(origin.repo)
+    }
+    const origin = originOf(found.url)
+    if (origin === null) return []
+    const repos = [...new Set(all.flatMap(m => (m.repo === null ? [] : [m.repo])))]
+    const ran = await sh($, ORIGINS, repos)
+    if (ran.exitCode !== 0) throw new Unknown(`git could not read the mounted repositories' origins: ${said(ran)}`)
+    const origins = parseOrigins(ran.stdout)
+    return all.filter(m => m.repo !== null && m.repo !== found.repo && origins.get(m.repo) === origin)
   }
-  const origin = originOf(found.url)
-  if (origin === null) return []
-  const repos = [...new Set(all.flatMap(m => (m.repo === null ? [] : [m.repo])))]
-  const ran = await sh($, ORIGINS, repos)
-  if (ran.exitCode !== 0) throw new Unknown(`git could not read the mounted repositories' origins: ${said(ran)}`)
-  const origins = parseOrigins(ran.stdout)
-  return all.filter(m => m.repo !== null && origins.get(m.repo) === origin)
+  return { boards: boards.map(b => b.board), worktree: worktreeOf(found.repo), byOrigin }
 }
 
 /** The branch the checkout that holds `file` is on; '' when HEAD is detached. */
@@ -268,38 +279,57 @@ async function briefNamed($: EngineInterface, agentId: string | undefined): Prom
   return named
 }
 
-/** The refusal of an edit of `file` by `agentId`, or null to admit it. */
+/**
+ * The refusal of an edit of `file` by `agentId`, or null to admit it. The
+ * guard chooses no mount: the brief's change names one, in the board that
+ * holds the change, and the edit is admitted when that mount's repository is
+ * the file's. The mounts the file's origin names are read only when its
+ * worktree mounts do not settle that.
+ */
 async function refusal($: EngineInterface, file: string, agentId: string | undefined): Promise<string | null> {
   try {
-    const mounts = await mountsOf($, file)
-    if (typeof mounts === 'string') return mounts
+    const found = await held($, file)
+    if (found === null || typeof found === 'string') return found
+    let mounts = found.worktree
+    let widened = false
+    const widen = async () => {
+      if (!widened) mounts = [...mounts, ...(await found.byOrigin())]
+      widened = true
+    }
+    if (mounts.length === 0) await widen()
     if (mounts.length === 0) return null
     const named = await briefNamed($, agentId)
     if (named === null) return noBrief(file, mounts[0]!, null)
-    for (const at of mounts) {
-      const ran = await sh($, GET, [at.board, named])
+    for (const board of found.boards) {
+      const ran = await sh($, GET, [board, named])
       const change = parseChange(ran.stdout)
       if (change.kind === 'missing') continue
       if (change.kind === 'failed') {
         const why = ran.exitCode !== 0 && ran.stdout.trim() === '' ? said(ran) : change.why
-        return unknown(file, `\`board -C ${at.board} get ${named}\` failed with ${why}`)
+        return unknown(file, `\`board -C ${board} get ${named}\` failed with ${why}`)
       }
-      const held = await sh($, GET, [at.board, `${named}/prototype`])
-      const kind = parseKind(held.stdout)
+      const names = (m: Mount) => m.board === board && m.mount === change.mount
+      if (!mounts.some(names)) await widen()
+      // With no mount the change names, the refusal names another of its board's mounts.
+      const at = mounts.find(names) ?? mounts.find(m => m.board === board)
+      // A board that mounts the file's repository nowhere holds another change of this name.
+      if (at === undefined) continue
+      const got = await sh($, GET, [board, `${named}/prototype`])
+      const kind = parseKind(got.stdout)
       if (kind.kind === 'failed') {
-        const why = held.exitCode !== 0 && held.stdout.trim() === '' ? said(held) : kind.why
-        return unknown(file, `\`board -C ${at.board} get ${named}/prototype\` failed with ${why}`)
+        const why = got.exitCode !== 0 && got.stdout.trim() === '' ? said(got) : kind.why
+        return unknown(file, `\`board -C ${board} get ${named}/prototype\` failed with ${why}`)
       }
       if (kind.kind === 'prototype') {
-        const checked = await sh($, CHECK, [at.board, `${named}/prototype`])
+        const checked = await sh($, CHECK, [board, `${named}/prototype`])
         const health = parseHealth(checked.stdout)
         if (health.kind === 'failed') {
           const why = checked.stdout.trim() === '' ? said(checked) : health.why
-          return unknown(file, `\`board -C ${at.board} check --healthy ${named}/prototype\` failed with ${why}`)
+          return unknown(file, `\`board -C ${board} check --healthy ${named}/prototype\` failed with ${why}`)
         }
       }
       const prototype = kind.kind === 'prototype'
-      return judge(file, at, named, change, prototype, prototype ? await branchOf($, file) : '')
+      return judge(file, at, named, { board, ...change }, prototype, prototype ? await branchOf($, file) : '')
     }
     return noBrief(file, mounts[0]!, named)
   } catch (error) {
