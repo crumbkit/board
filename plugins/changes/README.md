@@ -84,7 +84,8 @@ that one record.
   "paths": ["/repos/board/plugins/changes/**", "/repos/board/docs/plugins.md"],
   "records": ["/suites/board-tests/runs/20261025T101500Z-a3f9"],
   "considered": [{"records": ["/plans/old-timeout"], "why": "It sets the deploy timeout."}],
-  "owed": [{"control": "/controls/board/docs-owed", "why": "The docs sweep follows the release."}]
+  "owed": [{"control": "/controls/board/docs-owed", "why": "The docs sweep follows the release."}],
+  "answers": {"ux": "none", "data": "stored", "lifecycle": "none"}
 }
 ```
 
@@ -291,7 +292,7 @@ below, which block on more than the gates before flows did:
 
 The build gate's checks were there before flows, under other ids:
 `check-run` is now `suite-run` and `recheck` is now `rechecks`, which
-reads understanding checks only when Data is not "None". A review verdict
+reads understanding checks only when the plan answers `data` stored. A review verdict
 of `changes` still fails `review`.
 
 ## Capabilities
@@ -305,8 +306,10 @@ of `changes` still fails `review`.
   fails, the state it leaves, the recovery, and the order of the check
   against the destructive step it guards. Consumers lists every caller and
   reader of what the change produces or alters, and names the files
-  searched. Lifecycle starts with None and a reason, or names the record
-  `board changes lifecycle` writes and summarises its states in one line. The change points
+  searched. Lifecycle says why nothing changes state, or names the record
+  `board changes lifecycle` writes and summarises its states in one line. Give the plan's
+  `answers` beside its text: `ux` is none or mockups, `data` is none or
+  stored, and `lifecycle` is none or record; each section holds the reason. The change points
   at the stored version of its flow, and `start` writes that version when
   the board lacks it. "Flows" below says how the flow is chosen; `flow` in the output
   names it and its phases. `--task` names the task the change
@@ -360,13 +363,13 @@ of `changes` still fails `review`.
   `detail`, its `actor`, whether it `blocks`, and when missing its
   `remedy`; the instruction, with its placeholders filled; and `sync`.
   An instruction that names `changes plan` or `changes.plan` ends with how
-  to give its input, JSON on stdin with the fields `path`, `text`, `uses`
-  and `paths`, plus `considered` and `owed` when the plan has them, and a
+  to give its input, JSON on stdin with the fields `path`, `text`, `uses`,
+  `paths` and `answers`, plus `considered` and `owed` when the plan has them, and a
   one-line example such as
-  `{"path":"/changes/<name>","text":"<text>","uses":["<use>"],"paths":["<mount>/<path>"]}`.
+  `{"path":"/changes/<name>","text":"<text>","uses":["<use>"],"paths":["<mount>/<path>"],"answers":{"ux":"none","data":"none","lifecycle":"none"}}`.
   Every change that `start` writes has a plan. For a change with a plan,
   the instruction says that `board changes plan` replaces the plan, so all
-  four fields must be resent, with `considered` and `owed` when it has them. When
+  five fields must be resent, with `considered` and `owed` when it has them. When
   every missing check that blocks is the owner's or a reviewer's,
   `waiting_on` names them and `ask` holds the question to put to them,
   built from those checks' details and remedies.
@@ -499,15 +502,21 @@ of `changes` still fails `review`.
   `command`, `pull_request` and `unreadable`. It never opens the pull request, never runs
   `gh` or git, and makes no model calls. See "The pull request body".
 
-- `plan` takes `{path, text, uses, paths}` as JSON on stdin, since `uses`
+- `plan` takes `{path, text, uses, paths, answers}` as JSON on stdin, since `uses`
   and `paths` are lists: `board changes plan` with the JSON piped in.
-  A missing `uses` is an empty list. It keeps each path once. It refuses a build change's
+  A missing `uses` is an empty list. `answers` holds the plan's typed
+  answers, `{"ux": "none" | "mockups", "data": "none" | "stored",
+  "lifecycle": "none" | "record"}`, which the plan record keeps and a
+  flow's checks read in `when.answers`. Under a flow whose checks read an
+  answer, `plan` refuses a plan that leaves that answer out, before it
+  writes anything (`changes::plan::no_answers`, whose `answers` lists each
+  field left out with the words it takes). It keeps each path once. It refuses a build change's
   plan with no paths (`changes::plan::no_paths`) and a path that does not
   start with the change's mount and `/` (`changes::plan::outside_mount`,
   whose `paths` lists them). It writes the plan record and its text and points the change's `plan` at the
   text, in one write, in any phase but `done` and `dropped`
   (`changes::phase::final`). The new plan keeps the `records` of the plan
-  the change named before. A plan whose text, `uses` and `paths` equal
+  the change named before. A plan whose text, `uses`, `paths` and `answers` equal
   those of the plan record the change names writes nothing and returns
   that record with `unchanged: true`; otherwise `unchanged` is false. It keeps each reference in `uses` once. It
   refuses a reference that reaches nothing, or a record Board marks degraded
@@ -535,10 +544,12 @@ of `changes` still fails `review`.
   "The write guard"). The text path of the plan the change names,
   even once a reference in it breaks,
   `lifecycle`, the text path of its lifecycle record, left out when it has
-  none or the plan's Lifecycle section says None, which counts outside the 600 words as the plan's text does,
+  none or the plan answers `lifecycle` none (or, for a plan with no typed
+  answer, its Lifecycle section says None), which counts outside the 600 words as the plan's text does,
   `warnings`, left out when empty, whose `changes::brief::no_control` entry
   says a control a `planned-controlled` check of the change's flow names does
-  not exist, so only the heading guards what it would list,
+  not exist, so only the plan's typed answers guard what it would list,
+  `answers`, the plan's typed answers, left out when it gives none,
   `rules`, each control that applies to the plan's `paths`, once, from
   `controls.for-paths`: its `control`, its `summary` and at most three of
   the planned paths it `matched`, with `matched_left_out` counting the
@@ -747,7 +758,9 @@ order. Each phase has a `name`, the `instruction` that `next` returns, the
 `agent` that does its work (`lead` or `builder`), the `skills` the
 instruction relies on, and its `checks`. A check has an `id`, a `kind`, and
 optionally an `actor` (`agent`, `owner` or `reviewer`), `blocks`, a `when`
-(`route`; `section` or `section_not`, each mapping a plan heading to a
+(`route`; `answers`, with `ux` as `none` or `mockups`, `data` as `none` or
+`stored` and `lifecycle` as `none` or `record`, each equal to the plan's
+typed answer; `section` or `section_not`, each mapping a plan heading to a
 pattern matched without case; and `absent`, with the `path`, placeholders
 filled, and the `type` of a record that Board must not read whole there,
 with no code such as a dangling reference), a `remedy`, `waivable`, and the parameters
@@ -867,27 +880,34 @@ The development flow's gates:
 
 | Leaving | Checks |
 | --- | --- |
-| plan | `plan-sections`, the eight sections; `considered`; `task`; `route`; `owner-approval`, a `plans/decision/v1` the owner signed whose `refs` name the plan or the change, on every route; `mockups`, unless UX starts with "No UI change" and a reason; `data-signed`, an `understood` check of the data, unless Data starts with "None"; `lifecycle-declared`, a `planned-controlled` check of `/controls/{repo}/lifecycle-paths`, when Lifecycle says "None"; `lifecycle-record`, an `exists` check of `/changes/{name}/lifecycle`, unless Lifecycle says "None"; `obligations`, which does not block |
-| build | `head`; `suite-run`, waivable; `tasks`; `rechecks`, two matching rechecks, unless Data starts with "None" |
-| review | `review`, a report on `head` with no critical or high finding; `paths`; `ui-paths` and `data-paths`, `controlled-paths` checks of `/controls/{repo}/ui-paths` when UX says "No UI change" and `/controls/{repo}/data-paths` when Data says "None"; `lifecycle-paths`, the same check of `/controls/{repo}/lifecycle-paths` unless Board reads a `changes/lifecycle/v1` at `/changes/{name}/lifecycle`; `lifecycle-none-paths`, the same check when Lifecycle says "None", whether or not a record exists; `obligations-settled`, with the escape heading `Obligations left owed` |
+| plan | `plan-sections`, the eight sections; `considered`; `task`; `route`; `owner-approval`, a `plans/decision/v1` the owner signed whose `refs` name the plan or the change, on every route; `mockups`, when the plan answers `ux` mockups; `data-signed`, an `understood` check of the data, when it answers `data` stored; `lifecycle-declared`, a `planned-controlled` check of `/controls/{repo}/lifecycle-paths`, when it answers `lifecycle` none; `lifecycle-record`, an `exists` check of `/changes/{name}/lifecycle`, when it answers `lifecycle` record; `obligations`, which does not block |
+| build | `head`; `suite-run`, waivable; `tasks`; `rechecks`, two matching rechecks, when the plan answers `data` stored |
+| review | `review`, a report on `head` with no critical or high finding; `paths`; `ui-paths` and `data-paths`, `controlled-paths` checks of `/controls/{repo}/ui-paths` when the plan answers `ux` none and `/controls/{repo}/data-paths` when it answers `data` none; `lifecycle-paths`, the same check of `/controls/{repo}/lifecycle-paths` unless Board reads a `changes/lifecycle/v1` at `/changes/{name}/lifecycle`; `lifecycle-none-paths`, the same check when the plan answers `lifecycle` none, whether or not a record exists; `obligations-settled`, with the escape heading `Obligations left owed` |
 | land | `test-sections`, What the tests prove and What the tests do not prove; `pull-request`; `lifecycle-paths-at-land` and `lifecycle-none-paths-at-land`, the two review checks of `/controls/{repo}/lifecycle-paths` again, so each re-reads the diff at the recorded head and a record removed after review is gated |
 | build, for a prototype | Never passes: `verdict` ends a prototype instead. |
 
-Three layers identify a lifecycle change. The Lifecycle heading is required,
-so skipping it takes a written None. `lifecycle-declared` refuses that None
+Three layers identify a lifecycle change. The `lifecycle` answer is required,
+so skipping it takes an answer of none. `lifecycle-declared` refuses that answer
 when the plan's paths reach the lifecycle-paths control. `lifecycle-paths`
 refuses a diff that edits such a path until Board reads a
 `changes/lifecycle/v1` at `/changes/<name>/lifecycle`, so rewriting or
 removing the heading after the plan gate does not switch it off, and
-`lifecycle-none-paths` refuses the same diff while the section says None,
+`lifecycle-none-paths` refuses the same diff while the plan answers none,
 even with a record present. Both run again at land. Board does not tie a
 lifecycle record to the plan it describes, so a record written for an earlier
 plan switches off `lifecycle-paths` for a later one; this is an accepted gap. The diff checks trust the head recorded on the
 change, so moving that head or pushing after it is not gated. A repository with no
-lifecycle-paths control has only the heading, and `brief` warns about that.
+lifecycle-paths control has only the answer, and `brief` warns about that.
 
-"No UI change" counts only when a reason follows it, and "None" only as a
-word of its own followed by a full stop, a colon or nothing. Each item of
+A check's `when.answers` holds when each answer it names equals the plan's.
+When the plan record gives no typed answer for one, the check is missing,
+and its detail says to write the plan again with `answers`. A change keeps
+the stored version of the flow it started under, so a change started
+before the development flow named `answers` still follows the version
+whose checks read the plan's prose with `section` and `section_not`, and
+passes or fails as it did. In that version "No UI change" counts only when
+a reason follows it, and "None" only as a word of its own followed by a
+full stop, a colon or nothing. Each item of
 the `### Mockups` list names one mockup, by its first URL or, without one,
 by its first board path in inline code; other links are not mockups. The
 `### Neighbours` list names the open changes and artifacts in the same

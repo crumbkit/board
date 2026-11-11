@@ -95,6 +95,58 @@ fn a_stored_flow_version_still_reads_passes_its_schema_and_keeps_its_version_pat
     assert_ne!(version_path(&development()), version_path(&flow));
 }
 
+/// The `when` of the check `id` of `flow`.
+fn named<'flow>(flow: &'flow Flow, id: &str) -> &'flow When {
+    let mut checks = flow.phases.iter().flat_map(|phase| &phase.checks);
+    let check = checks.find(|each| each.id == id).unwrap();
+    check.when.as_ref().unwrap()
+}
+
+/// The stored version a change started before plans gave typed answers
+/// follows: its checks read the plan's prose. Naming `answers` in the
+/// shipped flow gives that flow a new version and leaves this one as it was.
+#[test]
+fn the_stored_prose_flow_keeps_its_version_path_and_the_shipped_flow_names_answers() {
+    let text = include_str!("flows-md/development-60bd988ebac76d79.json");
+    let value: serde_json::Value = serde_json::from_str(text).unwrap();
+    schema().validate(&value).unwrap();
+    let flow: Flow = serde_json::from_str(text).unwrap();
+    assert_eq!(serde_json::to_value(&flow).unwrap(), value);
+    assert_eq!(problems(&flow, false), []);
+    assert_eq!(version_path(&flow), "/flows/development/60bd988ebac76d79");
+    assert_ne!(version_path(&development()), version_path(&flow));
+    assert!(named(&flow, "data-signed").section_not.is_some());
+    assert_eq!(named(&flow, "data-signed").answers, None);
+    let shipped = development();
+    let when = named(&shipped, "data-signed");
+    assert_eq!(
+        serde_json::to_value(when).unwrap(),
+        json!({"answers": {"data": "stored"}})
+    );
+    assert_eq!(problems(&shipped, false), []);
+}
+
+/// A `when` takes each answer's two words, and the schema and the reader
+/// both refuse another word.
+#[test]
+fn a_when_names_answers_by_their_words_and_refuses_another_word() {
+    let with = |answers: serde_json::Value| {
+        json!({
+            "$type": "changes/flow/v1", "name": "one", "summary": "One phase.",
+            "stop": {"until": "build"},
+            "phases": [{"name": "build", "agent": "lead", "instruction": "Build.",
+                        "checks": [{"id": "x", "kind": "tasks", "when": {"answers": answers}}]}]
+        })
+    };
+    let good = with(json!({"ux": "mockups", "data": "none", "lifecycle": "record"}));
+    schema().validate(&good).unwrap();
+    let flow: Flow = serde_json::from_value(good.clone()).unwrap();
+    assert_eq!(serde_json::to_value(&flow).unwrap(), good);
+    let bad = with(json!({"data": "None:"}));
+    assert!(schema().validate(&bad).is_err());
+    assert!(serde_json::from_value::<Flow>(bad).is_err());
+}
+
 /// A check of a kind this Board does not know still reads, so the flow
 /// reads; the schema refuses it, and admits its twin of a known kind.
 #[test]

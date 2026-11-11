@@ -11,6 +11,7 @@ use serde_json::{Value, json};
 
 use crate::board::{self};
 use crate::change::{Referenced, kind_of, line, plan_at, read, referenced, touch};
+use crate::flow::{Flow, of_change};
 use crate::gates::sections;
 use crate::lifecycle::LifecycleRecord;
 use crate::phases::final_phase;
@@ -65,6 +66,13 @@ pub(crate) struct Input {
                        with why, a list given on stdin."
     )]
     owed: Vec<Owed>,
+    #[serde(default)]
+    #[schemars(
+        description = "The plan's typed answers, which decide the checks that apply: `ux` is \
+                       none or mockups, `data` is none or stored, and `lifecycle` is none or \
+                       record; a flow whose checks read an answer needs it."
+    )]
+    answers: Answers,
 }
 
 /// The headings the gates no longer read from a plan's text, in lower case.
@@ -109,6 +117,7 @@ pub(crate) struct Planned {
     pub(crate) considered: Vec<Considered>,
     pub(crate) owed: Vec<Owed>,
     pub(crate) lifecycle: Option<String>,
+    pub(crate) answers: Option<Answers>,
 }
 
 /// How many whitespace-separated words `text` holds.
@@ -239,6 +248,7 @@ pub(crate) fn plan(host: &dyn Host, input: &Value) -> Result<Value, PluginError>
         paths,
         considered,
         owed,
+        answers,
     } = PluginError::read_input(PLUGIN, "plan", input)?;
     let uses = once(uses);
     let paths = once(paths.unwrap_or_default());
@@ -255,6 +265,9 @@ pub(crate) fn plan(host: &dyn Host, input: &Value) -> Result<Value, PluginError>
         ));
     }
     check_paths(&path, &change.mount, &paths, kind_of(host, &path)?)?;
+    if let Some(flow) = of_change(host, &path, &change)? {
+        check_answers(&path, &flow, answers)?;
+    }
     let counted = words(&text);
     if counted > PLAN_WORDS {
         return Err(refusal(
@@ -277,6 +290,7 @@ pub(crate) fn plan(host: &dyn Host, input: &Value) -> Result<Value, PluginError>
         considered,
         owed,
         lifecycle: kept_lifecycle(host, change.plan.as_deref())?,
+        answers: (answers != Answers::default()).then_some(answers),
     };
     if let Some(same) = unchanged(host, change.plan.as_deref(), &text, &planned)? {
         return Ok(to_value(Output {
@@ -372,6 +386,7 @@ fn unchanged(
         || record.considered.as_deref().unwrap_or_default() != planned.considered
         || record.owed.as_deref().unwrap_or_default() != planned.owed
         || record.lifecycle != planned.lifecycle
+        || record.answers != planned.answers
     {
         return Ok(None);
     }
@@ -418,6 +433,30 @@ pub(crate) fn thousands(count: usize) -> String {
         shown.push(digit);
     }
     shown
+}
+
+/// `changes::plan::no_answers` when a check of `flow` reads an answer that
+/// `answers` leaves out.
+fn check_answers(path: &str, flow: &Flow, answers: Answers) -> Result<(), PluginError> {
+    let wanted = (flow.phases.iter())
+        .flat_map(|phase| &phase.checks)
+        .filter_map(|check| check.when.as_ref()?.answers)
+        .fold(Answers::default(), Answers::or);
+    let left_out = answers.left_out(wanted);
+    if left_out.is_empty() {
+        return Ok(());
+    }
+    Err(refusal(
+        "changes::plan::no_answers",
+        format!(
+            "the plan for {path} leaves out the answers {}, which the checks of its flow {} read; \
+             give them in `answers` on stdin, such as \
+             {{\"ux\": \"none\", \"data\": \"none\", \"lifecycle\": \"none\"}}",
+            left_out.join(", "),
+            flow.name
+        ),
+        [("path", json!(path)), ("answers", json!(left_out))],
+    ))
 }
 
 /// Refuses a build change's plan that declares no paths, and any path
@@ -494,7 +533,8 @@ fn parts(now: SystemTime) -> (board_repos::Date, i64, u32) {
 }
 
 /// A new plan record for the change at `path` that starts with `records`
-/// attached, and the `put` lines that write its text and then the record.
+/// attached and gives no typed answers, and the `put` lines that write its
+/// text and then the record.
 pub(crate) fn plan_lines(
     now: SystemTime,
     path: &str,
@@ -510,6 +550,7 @@ pub(crate) fn plan_lines(
         considered,
         owed,
         lifecycle,
+        answers,
     } = planned;
     let body = PlanRecord {
         tag: Tag::default(),
@@ -520,6 +561,7 @@ pub(crate) fn plan_lines(
         considered: (!considered.is_empty()).then_some(considered),
         owed: (!owed.is_empty()).then_some(owed),
         lifecycle,
+        answers,
     };
     let lines = vec![
         json!({"path": written, "expect": "none", "text": text}),
@@ -527,6 +569,9 @@ pub(crate) fn plan_lines(
     ];
     (record, lines)
 }
+
+pub(crate) mod answers;
+pub(crate) use answers::Answers;
 
 #[cfg(test)]
 mod tests {

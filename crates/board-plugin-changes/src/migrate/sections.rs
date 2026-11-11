@@ -346,6 +346,7 @@ fn moved(host: &dyn Host, path: &str, plan: &str) -> Result<Option<Moved>, Plugi
             considered,
             owed,
             lifecycle: record.lifecycle,
+            answers: record.answers,
         },
         record.records,
     );

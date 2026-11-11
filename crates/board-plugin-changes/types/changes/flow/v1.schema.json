@@ -33,6 +33,37 @@
       ],
       "description": "A value a field may hold: a word or a flag."
     },
+    "Answers": {
+      "additionalProperties": false,
+      "description": "The answers a plan gives, and the answers a check's `when` names; each\nis left out when not given.",
+      "properties": {
+        "data": {
+          "description": "Whether the change stores data.",
+          "enum": [
+            "none",
+            "stored"
+          ],
+          "type": "string"
+        },
+        "lifecycle": {
+          "description": "Whether anything the change makes changes state.",
+          "enum": [
+            "none",
+            "record"
+          ],
+          "type": "string"
+        },
+        "ux": {
+          "description": "Whether the change has a UI.",
+          "enum": [
+            "none",
+            "mockups"
+          ],
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
     "Check": {
       "allOf": [
         {
@@ -718,6 +749,10 @@
         "absent": {
           "$ref": "#/$defs/Absent",
           "description": "No record of this type that Board reads is at this path."
+        },
+        "answers": {
+          "$ref": "#/$defs/Answers",
+          "description": "The plan's typed answers each equal the one given here."
         },
         "route": {
           "description": "The change's route is one of these.",

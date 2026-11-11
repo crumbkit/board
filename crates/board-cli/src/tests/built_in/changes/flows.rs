@@ -76,7 +76,7 @@ fn next_gives_a_planned_controlled_check_missing_with_the_refusal_when_for_paths
     let planned = |paths: &[&str]| {
         board.call_stdin(
             "plan",
-            &json!({"path": "/changes/a", "text": PLAN, "uses": [], "paths": paths}),
+            &json!({"path": "/changes/a", "text": PLAN, "uses": [], "paths": paths, "answers": answers()}),
         );
         let next = board.call("next", &json!({"path": "/changes/a"}));
         next["gate"][0].clone()
@@ -302,7 +302,7 @@ fn on_the_old_flow() -> Changes {
     let (five, _) = PLAN.split_once("## Failure paths").unwrap();
     board.call_stdin(
         "plan",
-        &json!({"path": "/changes/a", "text": five, "uses": [], "paths": PATHS}),
+        &json!({"path": "/changes/a", "text": five, "uses": [], "paths": PATHS, "answers": answers()}),
     );
     board
 }
@@ -330,7 +330,7 @@ fn the_shipped_flows_new_sections_reach_a_change_in_flight_only_when_it_reflows(
         "/flows/development/2bad23722b29b5a8"
     );
     assert_eq!(status(&board, "plan-sections"), Some(json!("missing")));
-    assert_eq!(status(&board, "lifecycle-record"), Some(json!("missing")));
+    assert_eq!(status(&board, "lifecycle-declared"), Some(json!("pass")));
 }
 
 #[test]
@@ -600,6 +600,10 @@ fn next_names_the_owner_and_what_to_ask_when_only_the_owner_can_pass_the_checks_
         .unwrap()
         .to_owned();
     board.write(&format!("{}.md", text.trim_start_matches('/')), PLAN);
+    let held = format!("{}.json", text.trim_start_matches('/'));
+    let mut record = board.read(&held);
+    record["answers"] = answers();
+    board.write(&held, &record.to_string());
     let output = board.call("next", &json!({"path": "/changes/a"}));
     assert_eq!(output["waiting_on"], json!(["owner"]));
     let ask = output["ask"].as_str().unwrap();
@@ -619,7 +623,7 @@ fn plan_takes_a_plan_with_no_uses_as_one_that_uses_nothing() {
     started(&board, "A", &json!({}));
     let written = board.call_stdin(
         "plan",
-        &json!({"path": "/changes/a", "text": PLAN, "paths": PATHS}),
+        &json!({"path": "/changes/a", "text": PLAN, "paths": PATHS, "answers": answers()}),
     );
     let plan = written["path"]
         .as_str()

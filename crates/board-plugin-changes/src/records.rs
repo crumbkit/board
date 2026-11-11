@@ -521,6 +521,9 @@ pub(crate) struct PlanRecord {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "Option<Ref<crate::lifecycle::LifecycleRecord>>")]
     pub(crate) lifecycle: Option<String>,
+    /// The plan's typed answers, which a flow's checks read in `when.answers`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) answers: Option<crate::plan::Answers>,
 }
 
 /// Records a plan does not build on, and why they do not apply.

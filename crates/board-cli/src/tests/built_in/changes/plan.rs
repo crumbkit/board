@@ -17,7 +17,7 @@ fn words(count: usize) -> String {
 /// The input of `changes.plan` for [`CHANGE`] with `text` and `uses`,
 /// declaring [`PATHS`].
 fn given(text: &str, uses: &[&str]) -> Value {
-    json!({"path": CHANGE, "text": text, "uses": uses, "paths": PATHS})
+    json!({"path": CHANGE, "text": text, "uses": uses, "paths": PATHS, "answers": answers()})
 }
 
 /// The files under the change's plans directory.
@@ -60,6 +60,7 @@ fn plan_writes_the_plan_and_its_text_and_points_the_change_at_the_plan() {
             "text": format!("/changes/t/plans/{stamp}.md"),
             "uses": ["/standards/errors.md"],
             "paths": PATHS,
+            "answers": answers(),
         })
     );
     assert_eq!(board.text(&format!("changes/t/plans/{stamp}.md")), PLAN);
@@ -473,4 +474,50 @@ fn a_plan_with_other_considered_or_owed_fields_is_not_unchanged() {
     std::thread::sleep(std::time::Duration::from_millis(2));
     let other = board.call_stdin("plan", &with(PLAN, &owed));
     assert_eq!(other["unchanged"], false);
+}
+
+/// The development flow's checks read all three answers, so its plan gives
+/// each; the refusal comes before anything is written.
+#[test]
+fn a_plan_that_leaves_out_an_answer_the_flow_reads_is_refused_and_one_that_gives_each_is_written() {
+    let board = Changes::new();
+    board.change_at("changes/t.json", "plan", &json!({}));
+    let mut partial = given(PLAN, &[]);
+    partial["answers"] = json!({"data": "stored"});
+    let refused = board.refusal_stdin("plan", &partial);
+    assert_eq!(refused["code"], "changes::plan::no_answers", "{refused}");
+    assert_eq!(
+        refused["fields"]["answers"],
+        json!(["ux (none or mockups)", "lifecycle (none or record)"])
+    );
+    let mut bare = given(PLAN, &[]);
+    bare.as_object_mut().unwrap().remove("answers");
+    let refused = board.refusal_stdin("plan", &bare);
+    assert_eq!(refused["code"], "changes::plan::no_answers", "{refused}");
+    assert!(!board.exists("changes/t/plans"));
+    let mut whole = given(PLAN, &[]);
+    whole["answers"] = json!({"ux": "mockups", "data": "stored", "lifecycle": "record"});
+    let output = board.call_stdin("plan", &whole);
+    assert_eq!(
+        stored(&board, &output)["answers"],
+        json!({"ux": "mockups", "data": "stored", "lifecycle": "record"})
+    );
+}
+
+#[test]
+fn a_plan_whose_answers_alone_differ_is_written_and_the_same_answers_again_write_nothing() {
+    let board = Changes::new();
+    board.change_at("changes/t.json", "plan", &json!({}));
+    let first = board.call_stdin("plan", &given(PLAN, &[]));
+    let mut stored_data = given(PLAN, &[]);
+    stored_data["answers"]["data"] = json!("stored");
+    let second = board.call_stdin("plan", &stored_data);
+    assert_eq!(second["unchanged"], false);
+    assert_ne!(first["path"], second["path"]);
+    assert_eq!(stored(&board, &second)["answers"]["data"], "stored");
+    // The first plan's record is left as it was written.
+    assert_eq!(stored(&board, &first)["answers"]["data"], "none");
+    let again = board.call_stdin("plan", &stored_data);
+    assert_eq!(again["unchanged"], true);
+    assert_eq!(again["path"], second["path"]);
 }

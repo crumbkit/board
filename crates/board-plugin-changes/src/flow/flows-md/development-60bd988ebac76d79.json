@@ -1,0 +1,110 @@
+{
+  "$type": "changes/flow/v1",
+  "name": "development",
+  "summary": "Plan with the owner, build test-first, review with clean context, land through a pull request.",
+  "stop": {"through": "plan"},
+  "phases": [
+    {
+      "name": "plan",
+      "agent": "lead",
+      "skills": ["understanding-check"],
+      "instruction": "Read each record the change surfaced; cite those you build on in the plan's uses and list the rest in the plan's considered field with a line on why they do not apply. Interview the owner and fill in Problem, Outcome, Out of scope, UX, Data, Failure paths, Consumers and Lifecycle. UX starts with No UI change and a reason, or lists each mockup under ### Mockups with a ### Neighbours list; attach the owner's decision naming each mockup. Data starts with None, or run the understanding-check skill and attach its record and the owner's decision that references it. Failure paths has one row per step that can fail: what fails, the state it leaves, the recovery, and the order of the check against the destructive step it guards. Consumers lists every caller and reader of what the change produces or alters, and names the files searched. Lifecycle starts with None and a reason, or names the record `board changes lifecycle` writes and summarises its states in one line. Write the plan with `board changes plan` and attach the owner's signed plans/decision/v1 whose refs name the plan.",
+      "checks": [
+        {"id": "plan-sections", "kind": "sections",
+         "sections": ["Problem", "Outcome", "Out of scope", "UX", "Data", "Failure paths", "Consumers", "Lifecycle"]},
+        {"id": "considered", "kind": "considered"},
+        {"id": "task", "kind": "field", "field": "task"},
+        {"id": "route", "kind": "field", "field": "route"},
+        {"id": "owner-approval", "kind": "records", "actor": "owner",
+         "type": "plans/decision/v1", "where": {"owner_signed": true, "refs": ["plan"]}},
+        {"id": "mockups", "kind": "mockups", "actor": "owner",
+         "when": {"section_not": {"UX": "^no ui change\\b[\\s.:,;-]*\\w"}}},
+        {"id": "data-signed", "kind": "understood", "actor": "owner", "subject": "data",
+         "when": {"section_not": {"Data": "^none\\s*(?:[.:]|\\n?\\z)"}},
+         "remedy": "Run the understanding-check skill with the owner on the plan's Data section, attach its record with `board changes attach --path {change} --ref <record>`, and ask the owner to sign a plans/decision/v1 whose refs name it."},
+        {"id": "lifecycle-declared", "kind": "planned-controlled", "controls": ["/controls/{repo}/lifecycle-paths"],
+         "when": {"section": {"Lifecycle": "^none\\s*(?:[.:]|\\n?\\z)"}},
+         "remedy": "The plan's paths reach what this repository names as lifecycle code, so the plan cannot say None under Lifecycle. Write the states, events and crash points by piping JSON with `path`, `text`, `doc` and `external` to `board changes lifecycle` and name that record under Lifecycle."},
+        {"id": "lifecycle-record", "kind": "exists", "path": "/changes/{name}/lifecycle",
+         "when": {"section_not": {"Lifecycle": "^none\\s*(?:[.:]|\\n?\\z)"}},
+         "remedy": "Write the record the Lifecycle section names by piping JSON with `path`, `text`, `doc` and `external` to `board changes lifecycle`, or start the section with `None:` followed by the reason."},
+        {"id": "obligations", "kind": "obligations", "blocks": false}
+      ]
+    },
+    {
+      "name": "build",
+      "agent": "builder",
+      "instruction": "Start one builder in a fresh agent from `board changes brief --path {change}`; its first message begins with brief_line, then the brief. Read the lifecycle text the brief names, when it names one. Build test-first, commit, and record the head with `board changes attach --path {change} --head <sha>`. Attach each task. Run {suite} on the head and attach the run. Before advancing, ask the owner two of each understanding check's predict or edge questions again, worded differently, and add them to its rechecks.",
+      "checks": [
+        {"id": "head", "kind": "field", "field": "head"},
+        {"id": "suite-run", "kind": "run", "scope": "full", "waivable": true,
+         "remedy": "When {suite} is empty, the repository names no check suite: name one with `board changes attach --path {change} --suite /suites/<name>`, define one with `board runs define`, or ask the owner to waive this check. Otherwise run {suite} on {head} with `board runs run` and attach the run."},
+        {"id": "tasks", "kind": "tasks"},
+        {"id": "rechecks", "kind": "understood", "actor": "owner", "subject": "data", "rechecks": 2,
+         "when": {"section_not": {"Data": "^none\\s*(?:[.:]|\\n?\\z)"}}}
+      ]
+    },
+    {
+      "name": "review",
+      "agent": "lead",
+      "instruction": "Review {head} with clean context: start a reviewer in a fresh agent with tools and a checkout of {head}, because the review plugin's run capability gives its model neither. Write a brief whose subject is the change, so the reviewer reads the plan as the spec, the lifecycle text the plan names and the controls on the plan's paths, and have it write a review/report/v1 at /reviews/<id>/report. Attach the report. The reviewer checks the Failure paths, Consumers and Lifecycle sections against the code as the review skill says: each Failure paths row has code that leaves the stated state and the recovery, and each check runs before the destructive step it guards; each Consumers search finds no reader the list omits; each lifecycle transition has one owner, no `_ =>` arm covers a state enum the record names, each crash point has a test, and the landed doc matches the record. The gate refuses a diff that edits a file outside the plan's paths; add the file with `board changes plan`, or revert the edit. Fix every critical or high finding, record the new head and review again.",
+      "checks": [
+        {"id": "review", "kind": "records", "actor": "reviewer",
+          "remedy": "Only a reviewer can provide this: start one in a fresh agent with tools and a checkout of {head}, have it write a review/report/v1 for the change at /reviews/<id>/report, and attach it with `board changes attach --path {change} --ref /reviews/<id>/report`.", "type": "review/report/v1",
+         "where": {"at_head": "range", "values": {"verdict": ["approve", "comment"]}, "no_findings": ["critical", "high"]}},
+        {"id": "paths", "kind": "paths"},
+        {"id": "ui-paths", "kind": "controlled-paths", "controls": ["/controls/{repo}/ui-paths"],
+         "when": {"section": {"UX": "^no ui change\\b[\\s.:,;-]*\\w"}}},
+        {"id": "data-paths", "kind": "controlled-paths", "controls": ["/controls/{repo}/data-paths"],
+         "when": {"section": {"Data": "^none\\s*(?:[.:]|\\n?\\z)"}}},
+        {"id": "lifecycle-paths", "kind": "controlled-paths", "controls": ["/controls/{repo}/lifecycle-paths"],
+         "when": {
+            "absent": {"path": "/changes/{name}/lifecycle", "type": "changes/lifecycle/v1"}
+          },
+          "remedy": "The change's diff edits what this repository names as lifecycle code and the change has no lifecycle record. Write one by piping JSON with `path`, `text`, `doc` and `external` to `board changes lifecycle`, or revert the edit."},
+        {
+          "id": "lifecycle-none-paths",
+          "kind": "controlled-paths",
+          "controls": [
+            "/controls/{repo}/lifecycle-paths"
+          ],
+          "when": {
+            "section": {
+              "Lifecycle": "^none\\s*(?:[.:]|\\n?\\z)"
+            }
+          },
+          "remedy": "The plan says None under Lifecycle and the change's diff edits what this repository names as lifecycle code. Name the lifecycle record under Lifecycle with `board changes plan --path {change}`, writing it first by piping JSON with `path`, `text`, `doc` and `external` to `board changes lifecycle` if it does not exist, or revert the edit."
+        },
+        {"id": "obligations-settled", "kind": "obligations"}
+      ]
+    },
+    {
+      "name": "land",
+      "agent": "lead",
+      "instruction": "Add What the tests prove and What the tests do not prove to the plan. Draft the pull request with `board changes pr --path {change}`, read pr.md and fix what is wrong, fix each path in `unreadable` and draft again or say why in the body, then run the command it returns in a POSIX shell from a checkout on {head}. Record the pull request with `board github ref --ref <owner>/<repo>#<number>` and attach it with --pull. Merging happens outside Board; advancing from land ends the change in done.",
+      "checks": [
+        {"id": "test-sections", "kind": "sections",
+         "sections": ["What the tests prove", "What the tests do not prove"]},
+        {"id": "pull-request", "kind": "field", "field": "pulls", "types": ["github/pull/v1"]},
+        {"id": "lifecycle-paths-at-land", "kind": "controlled-paths", "controls": ["/controls/{repo}/lifecycle-paths"],
+         "when": {
+            "absent": {"path": "/changes/{name}/lifecycle", "type": "changes/lifecycle/v1"}
+          },
+          "remedy": "The change's diff edits what this repository names as lifecycle code and the change has no lifecycle record. Write one by piping JSON with `path`, `text`, `doc` and `external` to `board changes lifecycle`, or revert the edit."},
+        {
+          "id": "lifecycle-none-paths-at-land",
+          "kind": "controlled-paths",
+          "controls": [
+            "/controls/{repo}/lifecycle-paths"
+          ],
+          "when": {
+            "section": {
+              "Lifecycle": "^none\\s*(?:[.:]|\\n?\\z)"
+            }
+          },
+          "remedy": "The plan says None under Lifecycle and the change's diff edits what this repository names as lifecycle code. Name the lifecycle record under Lifecycle with `board changes plan --path {change}`, writing it first by piping JSON with `path`, `text`, `doc` and `external` to `board changes lifecycle` if it does not exist, or revert the edit."
+        }
+      ]
+    }
+  ]
+}

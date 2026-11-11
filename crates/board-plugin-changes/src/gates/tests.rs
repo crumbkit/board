@@ -52,7 +52,17 @@ struct Given {
     records_held: Vec<&'static str>,
     /// The files a controlled-paths control lists among the edited ones.
     controlled: Vec<(&'static str, Vec<&'static str>)>,
+    /// The plan's typed answers: none to each question, as the fixture
+    /// plan's text says.
+    answers: Value,
+    /// Whether the change follows the stored version of the development
+    /// flow whose checks read the plan's prose.
+    prose: bool,
 }
+
+/// The version of the development flow shipped before plans gave typed
+/// answers, which a change started under it still follows.
+const PROSE_FLOW: &str = include_str!("../flow/flows-md/development-60bd988ebac76d79.json");
 
 fn given(phase: &'static str) -> Given {
     Given {
@@ -71,6 +81,8 @@ fn given(phase: &'static str) -> Given {
         existing: Vec::new(),
         records_held: Vec::new(),
         controlled: Vec::new(),
+        answers: json!({"ux": "none", "data": "none", "lifecycle": "none"}),
+        prose: false,
     }
 }
 
@@ -78,6 +90,19 @@ impl Given {
     fn records(mut self, records: Records) -> Self {
         self.records = records;
         self
+    }
+
+    /// The plan gives these typed answers.
+    fn answers(mut self, answers: Value) -> Self {
+        self.answers = answers;
+        self
+    }
+
+    /// The change follows the stored flow version that reads prose, and its
+    /// plan, written before plans gave typed answers, gives none.
+    fn prose(mut self) -> Self {
+        self.prose = true;
+        self.answers(json!({}))
     }
 
     fn plan(mut self, plan: Option<&str>) -> Self {
@@ -123,7 +148,12 @@ impl Given {
                 .collect(),
         };
         let mut observed = Observed::new(PATH, change, Kind::Build, records);
-        observed.flow = Some(development());
+        observed.flow = Some(if self.prose {
+            serde_json::from_str(PROSE_FLOW).unwrap()
+        } else {
+            development()
+        });
+        observed.answers = serde_json::from_value(self.answers.clone()).unwrap();
         observed.plan.clone_from(&self.plan);
         observed.plan_file = self
             .plan
@@ -530,13 +560,13 @@ fn planned_ux(ux: &str) -> String {
 }
 
 fn plan_checks(plan: &str, records: Records) -> BTreeMap<String, &'static str> {
-    (given("plan").plan(Some(plan)).records(records))
+    (given("plan").prose().plan(Some(plan)).records(records))
         .with(json!({"route": "owner"}))
         .statuses()
 }
 
 fn detail(plan: &str, name: &str, records: Records) -> String {
-    (given("plan").plan(Some(plan)).records(records))
+    (given("plan").prose().plan(Some(plan)).records(records))
         .with(json!({"route": "owner"}))
         .check(name)
         .1
@@ -609,7 +639,7 @@ fn ux_with_no_mockups_list_is_missing_and_one_listing_agreed_mockups_passes() {
         "the UX section neither starts with No UI change and a reason nor lists mockups under a \
          ### Mockups heading"
     );
-    let routed = (given("plan").plan(Some(&vague))).with(json!({"route": "owner"}));
+    let routed = (given("plan").prose().plan(Some(&vague))).with(json!({"route": "owner"}));
     assert_eq!(routed.code("mockups"), "changes::ux::not_agreed");
     let listed = planned_ux(&format!(
         "A new list view.\n\n{}\n{NEIGHBOURS}",
@@ -670,7 +700,8 @@ fn ux_with_mockups_needs_a_neighbours_list_under_it_and_passes_with_one() {
          name the open changes and artifacts in the same area, and the components and flows the \
          design reuses"
     );
-    let routed = (given("plan").plan(Some(&bare)).records(both())).with(json!({"route": "owner"}));
+    let routed =
+        (given("plan").prose().plan(Some(&bare)).records(both())).with(json!({"route": "owner"}));
     assert_eq!(routed.code("mockups"), "changes::ux::no_neighbours");
     let headed = planned_ux(&format!(
         "{}\n### Neighbours\n\nNone found.\n",
@@ -726,7 +757,7 @@ fn data_that_is_not_none_needs_a_decision_referencing_this_changes_understanding
          changes/understanding/v1 of this change's data; run the understanding-check skill, then \
          have the owner sign a decision whose refs name its record"
     );
-    let routed = (given("plan").plan(Some(&plan))).with(json!({"route": "owner"}));
+    let routed = (given("plan").prose().plan(Some(&plan))).with(json!({"route": "owner"}));
     assert_eq!(routed.code("data-signed"), "changes::data::not_signed");
     let unsigned = vec![(UNDERSTOOD, understanding(&json!({})))];
     assert_eq!(plan_checks(&plan, unsigned)["data-signed"], "missing");
@@ -783,7 +814,7 @@ fn rechecked(matches: &[bool]) -> Value {
 fn the_build_gate_needs_two_matching_rechecks_on_each_attached_understanding_check() {
     let stored = planned("No UI change: it is headless.", "One record per call.");
     let built = |understood: (&'static str, Value)| {
-        (given("build").plan(Some(&stored)).records(vec![
+        (given("build").prose().plan(Some(&stored)).records(vec![
             (RUN, run(&json!({}))),
             (UNDERSTOOD, understood),
             ("/d/s", signed(&[UNDERSTOOD])),
@@ -824,7 +855,7 @@ fn an_attached_understanding_check_board_does_not_read_fails_the_recheck_and_ano
     let stored = planned("No UI change: it is headless.", "One record per call.");
     let built = |kind: &'static str| {
         let other = "/changes/t/understanding/other";
-        (given("build").plan(Some(&stored)).records(vec![
+        (given("build").prose().plan(Some(&stored)).records(vec![
             (RUN, run(&json!({}))),
             (
                 other,
@@ -866,7 +897,7 @@ const CONTROL: &str = "/controls/x/lifecycle-paths";
 /// A change in plan whose plan says `section` under Lifecycle and whose
 /// planned paths reach the lifecycle-paths control.
 fn lifecycle_change(phase: &'static str, section: &str) -> Given {
-    let mut change = given(phase).plan(Some(&with_lifecycle(section)));
+    let mut change = given(phase).prose().plan(Some(&with_lifecycle(section)));
     change.on_planned = vec![CONTROL];
     change.held = vec![CONTROL];
     change
@@ -998,7 +1029,7 @@ fn lifecycle_paths_in_review_misses_an_edit_with_no_record_whatever_the_section_
         without_lifecycle(),
     ];
     for plan in &cases {
-        let mut change = given("review").plan(Some(plan));
+        let mut change = given("review").prose().plan(Some(plan));
         change.controlled = vec![(CONTROL, vec!["/repos/x/src/sync.rs"])];
         assert_eq!(
             change.check("lifecycle-paths"),
@@ -1023,7 +1054,7 @@ fn lifecycle_paths_in_review_is_left_out_once_a_lifecycle_record_exists_whatever
         without_lifecycle(),
     ];
     for plan in &cases {
-        let mut change = given("review").plan(Some(plan));
+        let mut change = given("review").prose().plan(Some(plan));
         change.controlled = vec![(CONTROL, vec!["/repos/x/src/sync.rs"])];
         change.records_held = vec!["/changes/t/lifecycle"];
         assert!(!change.statuses().contains_key("lifecycle-paths"), "{plan}");
@@ -1117,7 +1148,7 @@ fn the_lifecycle_record_remedy_says_none_colon_followed_by_the_reason() {
 
 #[test]
 fn the_flow_and_the_brief_read_a_lifecycle_of_none_with_one_pattern() {
-    let flow = development();
+    let flow: crate::flow::Flow = serde_json::from_str(PROSE_FLOW).unwrap();
     let plan = flow.phase("plan").unwrap();
     let when = |id: &str| {
         let check = plan.checks.iter().find(|each| each.id == id).unwrap();
@@ -1206,3 +1237,5 @@ fn a_records_check_reads_an_attempt_whichever_type_it_has_and_not_a_record_of_an
         0
     );
 }
+
+mod answers;

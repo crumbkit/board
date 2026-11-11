@@ -13,6 +13,7 @@ use board_plugin::shape::{Open, PathTemplate, Pattern, Prose, Record, Slug, Tag,
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use crate::plan::Answers;
 use crate::records::{Route, Subject};
 
 pub(crate) use read::{
@@ -302,6 +303,9 @@ pub(crate) struct When {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "Option<BTreeMap<String, Pattern>>")]
     pub(crate) section_not: Option<BTreeMap<String, String>>,
+    /// The plan's typed answers each equal the one given here.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) answers: Option<Answers>,
     /// No record of this type that Board reads is at this path.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) absent: Option<Absent>,

@@ -200,24 +200,24 @@ fn instruction(observed: &Observed) -> String {
 /// `said` with the fields `board changes plan` takes on stdin and a one-line
 /// example, when `said` names `changes plan` or `changes.plan`. The command
 /// replaces the plan, so for a change that has one, `said` says to resend
-/// all four fields and the two optional ones.
+/// all five fields and the two optional ones.
 fn with_plan_usage(observed: &Observed, said: String) -> String {
     if !said.contains("changes plan") && !said.contains("changes.plan") {
         return said;
     }
     let example = format!(
-        r#"{{"path":"{}","text":"<text>","uses":["<use>"],"paths":["{}/<path>"]}}"#,
+        r#"{{"path":"{}","text":"<text>","uses":["<use>"],"paths":["{}/<path>"],"answers":{{"ux":"none","data":"none","lifecycle":"none"}}}}"#,
         observed.path,
         observed.change.mount.trim_end_matches('/')
     );
     if observed.change.plan.is_none() {
         format!(
-            "{said} Pipe `board changes plan` JSON on stdin with the fields `path`, `text`, `uses` and \
-             `paths`, plus any `considered` and `owed`, such as `{example}`."
+            "{said} Pipe `board changes plan` JSON on stdin with the fields `path`, `text`, `uses`, \
+             `paths` and `answers`, plus any `considered` and `owed`, such as `{example}`."
         )
     } else {
         format!(
-            "{said} `board changes plan` reads JSON on stdin and replaces the plan, so resend all four \
+            "{said} `board changes plan` reads JSON on stdin and replaces the plan, so resend all five \
              fields with any `considered` and `owed`, such as `{example}`."
         )
     }
@@ -295,6 +295,9 @@ pub(crate) fn observe(
             None => None,
         };
         found.uses = current(host, change)?.1;
+        if let Some((record, _)) = plan_at(host, change.plan.as_deref().unwrap_or_default())? {
+            found.answers = record.answers.unwrap_or_default();
+        }
         (found.considered, found.owed) = listed(host, change)?;
         found.surfaced_gone = (referenced(host, &change.surfaced)?.unreadable.into_iter())
             .filter(|(_, code)| code == NOT_FOUND)

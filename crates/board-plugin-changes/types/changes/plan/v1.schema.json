@@ -1,5 +1,36 @@
 {
   "$defs": {
+    "Answers": {
+      "additionalProperties": false,
+      "description": "The answers a plan gives, and the answers a check's `when` names; each\nis left out when not given.",
+      "properties": {
+        "data": {
+          "description": "Whether the change stores data.",
+          "enum": [
+            "none",
+            "stored"
+          ],
+          "type": "string"
+        },
+        "lifecycle": {
+          "description": "Whether anything the change makes changes state.",
+          "enum": [
+            "none",
+            "record"
+          ],
+          "type": "string"
+        },
+        "ux": {
+          "description": "Whether the change has a UI.",
+          "enum": [
+            "none",
+            "mockups"
+          ],
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
     "Considered": {
       "additionalProperties": false,
       "description": "Records a plan does not build on, and why they do not apply.",
@@ -56,6 +87,10 @@
       "const": "changes/plan/v1",
       "description": "The record's type.",
       "type": "string"
+    },
+    "answers": {
+      "$ref": "#/$defs/Answers",
+      "description": "The plan's typed answers, which a flow's checks read in `when.answers`."
     },
     "considered": {
       "description": "Records the change surfaced that the plan does not build on, in\ngroups that share one reason.",

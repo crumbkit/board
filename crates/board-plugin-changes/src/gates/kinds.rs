@@ -13,6 +13,7 @@ use super::{
 use board_plugin::shape::Record;
 
 use crate::flow::{self, Field, Flow, Kind, Named, Target, Where, problems};
+use crate::plan::Answers;
 use crate::records::Subject;
 
 /// The most paths a detail names (STANDARDS 23); it counts the rest.
@@ -155,7 +156,15 @@ pub(super) fn planned_controlled_missing(
         .flat_map(|when| when.section.iter().flatten())
         .map(|(heading, _)| heading.clone())
         .collect();
-    Some(if headings.is_empty() {
+    let answered = (each.when.iter().filter_map(|when| when.answers))
+        .flat_map(Answers::said)
+        .collect::<Vec<_>>();
+    Some(if !answered.is_empty() {
+        format!(
+            "the plan's paths reach {reached} while it answers {}",
+            answered.join(" and ")
+        )
+    } else if headings.is_empty() {
         format!("the plan's paths reach {reached}")
     } else {
         format!(

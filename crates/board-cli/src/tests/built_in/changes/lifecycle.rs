@@ -28,7 +28,7 @@ fn planned() -> Changes {
     board.mount_x(&[("src/sync.rs", "a\n")]);
     board.call_stdin(
         "plan",
-        &json!({"path": CHANGE, "text": PLAN, "uses": [], "paths": PATHS}),
+        &json!({"path": CHANGE, "text": PLAN, "uses": [], "paths": PATHS, "answers": answers()}),
     );
     board
 }
@@ -151,7 +151,7 @@ fn a_revised_plan_keeps_the_lifecycle_record_and_one_never_given_stays_unset() {
     board.call_stdin("lifecycle", &lifecycle(TABLE, "/repos/x/docs/states.md"));
     board.call_stdin(
         "plan",
-        &json!({"path": CHANGE, "text": format!("{PLAN}More.\n"), "uses": [], "paths": PATHS}),
+        &json!({"path": CHANGE, "text": format!("{PLAN}More.\n"), "uses": [], "paths": PATHS, "answers": answers()}),
     );
     assert_eq!(plan_record(&board)["lifecycle"], "/changes/t/lifecycle");
 }
@@ -179,9 +179,21 @@ fn gated(enabled: &[&str], section: &str, paths: &[&str], control: bool) -> Chan
     let text = format!("{before}## Lifecycle\n\n{section}\n");
     board.call_stdin(
         "plan",
-        &json!({"path": CHANGE, "text": text, "uses": [], "paths": paths}),
+        &json!({"path": CHANGE, "text": text, "uses": [], "paths": paths, "answers": answering(section)}),
     );
     board
+}
+
+/// The typed answers of the fixture plan with `section` under Lifecycle:
+/// `lifecycle` is none when the section starts with None, and record
+/// otherwise.
+fn answering(section: &str) -> Value {
+    let lifecycle = if section.starts_with("None") {
+        "none"
+    } else {
+        "record"
+    };
+    json!({"ux": "none", "data": "none", "lifecycle": lifecycle})
 }
 
 fn check<'a>(next: &'a Value, id: &str) -> Option<&'a Value> {
@@ -199,8 +211,7 @@ fn a_plan_over_a_lifecycle_path_cannot_say_none_and_its_twins_may() {
     assert_eq!(declared["status"], "missing", "{declared}");
     assert_eq!(
         declared["detail"],
-        "the plan's paths reach /controls/x/lifecycle-paths while its Lifecycle section declares \
-         nothing"
+        "the plan's paths reach /controls/x/lifecycle-paths while it answers lifecycle none"
     );
     assert!(
         declared["remedy"]
@@ -293,7 +304,7 @@ fn reflowed_from_small() -> Changes {
 fn plan_saying(section: &str) -> Value {
     let (before, _) = PLAN.rsplit_once("## Lifecycle").unwrap();
     let text = format!("{before}## Lifecycle\n\n{section}\n");
-    json!({"path": CHANGE, "text": text, "uses": [], "paths": PATHS})
+    json!({"path": CHANGE, "text": text, "uses": [], "paths": PATHS, "answers": answering(section)})
 }
 
 /// The status of check `id` in the change's gate, none when it is left out.
@@ -476,7 +487,7 @@ fn a_revised_plan_drops_a_lifecycle_reference_board_no_longer_reads_and_keeps_on
     let revise = |more: &str| {
         board.call_stdin(
             "plan",
-            &json!({"path": CHANGE, "text": format!("{PLAN}{more}\n"), "uses": [], "paths": PATHS}),
+            &json!({"path": CHANGE, "text": format!("{PLAN}{more}\n"), "uses": [], "paths": PATHS, "answers": answers()}),
         );
     };
     revise("Kept.");
@@ -489,7 +500,8 @@ fn a_revised_plan_drops_a_lifecycle_reference_board_no_longer_reads_and_keeps_on
 #[test]
 fn the_same_plan_resubmitted_after_its_lifecycle_record_is_removed_drops_the_reference() {
     let board = planned();
-    let same = json!({"path": CHANGE, "text": PLAN, "uses": [], "paths": PATHS});
+    let same =
+        json!({"path": CHANGE, "text": PLAN, "uses": [], "paths": PATHS, "answers": answers()});
     board.call_stdin("lifecycle", &lifecycle(TABLE, "/repos/x/docs/states.md"));
     assert_eq!(board.call_stdin("plan", &same)["unchanged"], true);
     assert_eq!(plan_record(&board)["lifecycle"], "/changes/t/lifecycle");

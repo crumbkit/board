@@ -16,7 +16,7 @@ use crate::gates::remedy::values;
 use crate::gates::{HEADING, Observed};
 use crate::lifecycle::{LifecycleRecord, says_none};
 use crate::phases::{PathInput, plan_text, step_of};
-use crate::plan::{documents, words};
+use crate::plan::{Answers, documents, words};
 use crate::{PLUGIN, Warning, refusal, to_value};
 
 /// The most words `brief` returns.
@@ -103,7 +103,8 @@ pub(crate) struct RulesCommand {
 /// What an agent needs to start a change, in at most 600 words.
 ///
 /// `plan` is the path of the text of the plan the change names, or null when the change
-/// has no plan record. `lifecycle` is the path of the text of its lifecycle
+/// has no plan record. `answers` holds the plan's typed answers, left out
+/// when it gives none. `lifecycle` is the path of the text of its lifecycle
 /// record, left out when it has none; the text counts outside the limit, as
 /// the plan's does. `warnings` says when a control a `planned-controlled`
 /// check of the change's flow names does not exist, left out when none is
@@ -132,6 +133,8 @@ pub(crate) struct Output {
     pub(crate) brief_line: String,
     pub(crate) path: String,
     pub(crate) plan: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) answers: Option<Answers>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) lifecycle: Option<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -393,14 +396,18 @@ fn missing_controls(host: &dyn Host, observed: &Observed) -> Result<Vec<Warning>
             .flat_map(|when| when.section.iter().flatten())
             .map(|(heading, _)| heading.as_str())
             .collect();
+        let guard = if headings.is_empty() {
+            "typed answers guard".to_owned()
+        } else {
+            format!("{} heading guards", headings.join(" and "))
+        };
         for control in named_controls(check, &filled) {
             if listed_by(host, &control, &[])?.is_none() {
                 said.push(Warning {
                     code: "changes::brief::no_control",
                     detail: format!(
-                        "no control {control} exists, so only the plan's {} heading guards what \
-                         it would list; write the control to name those paths",
-                        headings.join(" and ")
+                        "no control {control} exists, so only the plan's {guard} what it would \
+                         list; write the control to name those paths"
                     ),
                 });
             }
@@ -421,11 +428,17 @@ pub(crate) fn brief_of(host: &dyn Host, path: &str) -> Result<Output, PluginErro
     let records = referenced(host, &uses)?;
     let texts = documents(host, &uses, &records)?;
     let (step, observed) = step_of(host, path)?;
-    let lifecycle = if plan_text(host, &change)?.as_deref().is_some_and(says_none) {
-        None
-    } else {
-        lifecycle_text(host, change.plan.as_deref())?
+    let answers = match &change.plan {
+        Some(plan) => plan_at(host, plan)?.and_then(|(record, _)| record.answers),
+        None => None,
     };
+    let said = answers.and_then(|answers| answers.lifecycle);
+    let lifecycle =
+        if (plan_text(host, &change)?.as_deref()).is_some_and(|text| says_none(said, text)) {
+            None
+        } else {
+            lifecycle_text(host, change.plan.as_deref())?
+        };
     let warnings = missing_controls(host, &observed)?;
     let controls = format!("board controls check --path {}", change.mount);
     let brief_line = format!("board-brief: {path}");
@@ -493,6 +506,7 @@ pub(crate) fn brief_of(host: &dyn Host, path: &str) -> Result<Output, PluginErro
         brief_line,
         path: path.to_owned(),
         plan: text,
+        answers,
         lifecycle,
         warnings,
         rules,
