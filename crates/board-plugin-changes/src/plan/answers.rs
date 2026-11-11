@@ -33,13 +33,6 @@ pub(crate) enum Lifecycle {
     Record,
 }
 
-/// Each answer's field and the words it takes.
-const WORDS: [(&str, &str); 3] = [
-    ("ux", "none or mockups"),
-    ("data", "none or stored"),
-    ("lifecycle", "none or record"),
-];
-
 /// The answers a plan gives, and the answers a check's `when` names; each
 /// is left out when not given.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -57,75 +50,39 @@ pub(crate) struct Answers {
 }
 
 impl Answers {
-    /// Whether each of the three fields is given, in the order of [`WORDS`].
-    fn given(self) -> [bool; 3] {
+    /// Each field, the words it takes, and whether the answer given is
+    /// `none`.
+    fn fields(self) -> [(&'static str, &'static str, Option<bool>); 3] {
         [
-            self.ux.is_some(),
-            self.data.is_some(),
-            self.lifecycle.is_some(),
+            ("ux", "none or mockups", self.ux.map(|ux| ux == Ux::None)),
+            (
+                "data",
+                "none or stored",
+                self.data.map(|data| data == Data::None),
+            ),
+            (
+                "lifecycle",
+                "none or record",
+                (self.lifecycle).map(|lifecycle| lifecycle == Lifecycle::None),
+            ),
         ]
     }
 
     /// The fields `wanted` names that these answers leave out, each with
     /// the words it takes, such as `ux (none or mockups)`.
     pub(crate) fn left_out(self, wanted: Self) -> Vec<String> {
-        (WORDS.iter().zip(wanted.given()).zip(self.given()))
-            .filter(|(((_, _), wanted), given)| *wanted && !given)
-            .map(|(((field, words), _), _)| format!("{field} ({words})"))
+        (self.fields().into_iter().zip(wanted.fields()))
+            .filter(|((_, _, given), (_, _, wanted))| wanted.is_some() && given.is_none())
+            .map(|((field, words, _), _)| format!("{field} ({words})"))
             .collect()
     }
 
-    /// Each answer given, as its field and its word, such as `data none`.
-    pub(crate) fn said(self) -> Vec<String> {
-        let given = [
-            self.ux
-                .map(|ux| if ux == Ux::None { "none" } else { "mockups" }),
-            self.data
-                .map(|data| if data == Data::None { "none" } else { "stored" }),
-            (self.lifecycle).map(|lifecycle| match lifecycle {
-                Lifecycle::None => "none",
-                Lifecycle::Record => "record",
-            }),
-        ];
-        (WORDS.iter().zip(given))
-            .filter_map(|((field, _), word)| Some(format!("{field} {}", word?)))
-            .collect()
+    /// Whether no answer a plan gives here differs from the one `wanted`
+    /// names; an answer the plan leaves out differs from none.
+    pub(crate) fn meet(self, wanted: Self) -> bool {
+        (self.fields().into_iter().zip(wanted.fields()))
+            .all(|((_, _, given), (_, _, wanted))| given.and(wanted).is_none() || given == wanted)
     }
-
-    /// These answers and those of `other`, where these give none.
-    pub(crate) fn or(self, other: Self) -> Self {
-        Self {
-            ux: self.ux.or(other.ux),
-            data: self.data.or(other.data),
-            lifecycle: self.lifecycle.or(other.lifecycle),
-        }
-    }
-
-    /// Whether a plan with these answers gives each answer `wanted` names:
-    /// false when one differs, and otherwise why it cannot be told when the
-    /// plan leaves one out.
-    pub(crate) fn meet(self, wanted: Self) -> Result<bool, String> {
-        if differ(wanted.ux, self.ux)
-            || differ(wanted.data, self.data)
-            || differ(wanted.lifecycle, self.lifecycle)
-        {
-            return Ok(false);
-        }
-        let left_out = self.left_out(wanted);
-        if left_out.is_empty() {
-            return Ok(true);
-        }
-        Err(format!(
-            "the plan gives no typed answer for {}, which this check reads; write the plan again \
-             with `board changes plan` and `answers` on stdin",
-            left_out.join(" and ")
-        ))
-    }
-}
-
-/// Whether a plan's answer is given and is not the one wanted.
-fn differ<Answer: PartialEq>(wanted: Option<Answer>, given: Option<Answer>) -> bool {
-    matches!((wanted, given), (Some(wanted), Some(given)) if wanted != given)
 }
 
 #[cfg(test)]
@@ -153,29 +110,10 @@ mod tests {
     #[test]
     fn a_plan_meets_the_answers_a_check_names_when_each_is_equal() {
         let plan = answers(json!({"ux": "none", "data": "stored", "lifecycle": "none"}));
-        assert_eq!(plan.meet(answers(json!({"data": "stored"}))), Ok(true));
-        assert_eq!(plan.meet(answers(json!({"data": "none"}))), Ok(false));
-        assert_eq!(
-            plan.meet(answers(json!({"ux": "none", "lifecycle": "none"}))),
-            Ok(true)
-        );
-        assert_eq!(plan.meet(Answers::default()), Ok(true));
-    }
-
-    #[test]
-    fn a_plan_that_leaves_out_a_named_answer_says_to_write_the_plan_again() {
-        let plan = answers(json!({"ux": "none"}));
-        let why = plan.meet(answers(json!({"data": "none"}))).unwrap_err();
-        assert!(why.contains("data (none or stored)"), "{why}");
-        assert!(why.contains("board changes plan"), "{why}");
-        // The twin that gives the answer is told apart.
-        let given = answers(json!({"ux": "none", "data": "none"}));
-        assert_eq!(given.meet(answers(json!({"data": "none"}))), Ok(true));
-        // An answer that differs settles it, whatever else is left out.
-        assert_eq!(
-            plan.meet(answers(json!({"ux": "mockups", "data": "none"}))),
-            Ok(false)
-        );
+        assert!(plan.meet(answers(json!({"data": "stored"}))));
+        assert!(!plan.meet(answers(json!({"data": "none"}))));
+        assert!(plan.meet(answers(json!({"ux": "none", "lifecycle": "none"}))));
+        assert!(plan.meet(Answers::default()));
     }
 
     #[test]
@@ -186,9 +124,10 @@ mod tests {
             plan.left_out(wanted),
             ["ux (none or mockups)", "lifecycle (none or record)"]
         );
-        assert_eq!(
-            Answers::default().or(plan).or(wanted),
-            answers(json!({"ux": "none", "data": "stored", "lifecycle": "none"}))
-        );
+        // An answer that differs settles it, whatever else is left out.
+        assert!(!plan.meet(wanted));
+        // The twin that gives each answer leaves none out.
+        assert_eq!(wanted.left_out(wanted), [""; 0]);
+        assert!(wanted.meet(wanted));
     }
 }

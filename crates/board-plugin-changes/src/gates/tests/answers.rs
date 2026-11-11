@@ -5,9 +5,10 @@
 use serde_json::json;
 
 use super::{
-    CONTROL, Given, HEAD, MOCKUP, NEIGHBOURS, PLAN, RUN, UNDERSTOOD, both, given, mockups_list,
-    planned_ux, rechecked, run, signed, understanding,
+    CONTROL, Given, HEAD, MOCKUP, NEIGHBOURS, PLAN, RUN, UNDERSTOOD, both, gate, given,
+    mockups_list, planned_ux, rechecked, run, signed, understanding,
 };
+use crate::flow::Actor;
 
 fn owned(phase: &'static str, answers: serde_json::Value) -> Given {
     (given(phase).answers(answers)).with(json!({"route": "owner", "head": HEAD}))
@@ -98,8 +99,7 @@ fn a_lifecycle_of_none_is_checked_against_the_planned_paths_and_a_record_must_ex
         none.check("lifecycle-declared"),
         (
             "missing",
-            "the plan's paths reach /controls/x/lifecycle-paths while it answers lifecycle none"
-                .to_owned()
+            "the plan's paths reach /controls/x/lifecycle-paths".to_owned()
         )
     );
     assert!(!none.statuses().contains_key("lifecycle-record"));
@@ -146,7 +146,8 @@ fn the_review_and_land_gates_read_the_controlled_paths_of_each_answer_of_none() 
 }
 
 /// A plan written before plans gave typed answers, on a change that follows
-/// the shipped flow: the check is missing and says how to give the answer.
+/// the shipped flow: the check is missing, and it is the agent's to clear
+/// by writing the plan again, whatever the check's own actor and code.
 #[test]
 fn a_check_that_reads_an_answer_the_plan_leaves_out_is_missing_and_says_to_write_the_plan_again() {
     let untyped = owned("plan", json!({"ux": "none", "lifecycle": "none"}));
@@ -154,9 +155,18 @@ fn a_check_that_reads_an_answer_the_plan_leaves_out_is_missing_and_says_to_write
     assert_eq!(status, "missing");
     assert_eq!(
         detail,
-        "the plan gives no typed answer for data (none or stored), which this check reads; write \
-         the plan again with `board changes plan` and `answers` on stdin"
+        "the plan gives no typed answer for data (none or stored), which this check reads"
     );
+    assert_eq!(untyped.code("data-signed"), "changes::plan::no_answers");
+    assert_eq!(
+        untyped.remedy("data-signed"),
+        "Write the plan again with `board changes plan --path /changes/t` and `answers` on \
+         stdin: `ux` is none or mockups, `data` is none or stored, and `lifecycle` is none or \
+         record."
+    );
+    let found = gate(&untyped.observed());
+    let check = found.iter().find(|each| each.check == "data-signed");
+    assert_eq!(check.unwrap().actor, Actor::Agent);
     // The twin that gives the answer leaves the check out.
     let typed = owned(
         "plan",

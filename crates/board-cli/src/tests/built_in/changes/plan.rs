@@ -488,7 +488,7 @@ fn a_plan_that_leaves_out_an_answer_the_flow_reads_is_refused_and_one_that_gives
     assert_eq!(refused["code"], "changes::plan::no_answers", "{refused}");
     assert_eq!(
         refused["fields"]["answers"],
-        json!(["ux (none or mockups)", "lifecycle (none or record)"])
+        json!(["lifecycle (none or record)", "ux (none or mockups)"])
     );
     let mut bare = given(PLAN, &[]);
     bare.as_object_mut().unwrap().remove("answers");

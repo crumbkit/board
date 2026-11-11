@@ -116,6 +116,11 @@ pub(crate) fn of(each: &flow::Check, values: &Values) -> String {
 }
 
 /// What to attach a record with.
+/// What to do about a check that reads an answer the plan does not give.
+pub(super) const ANSWER: &str = "Write the plan again with `board changes plan --path {change}` \
+    and `answers` on stdin: `ux` is none or mockups, `data` is none or stored, and `lifecycle` is \
+    none or record.";
+
 const ATTACH: &str = "attach it with `board changes attach --path {change} --ref <path>`";
 
 /// A kind's own remedy for `each`.

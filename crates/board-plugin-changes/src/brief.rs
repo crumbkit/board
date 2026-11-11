@@ -396,18 +396,20 @@ fn missing_controls(host: &dyn Host, observed: &Observed) -> Result<Vec<Warning>
             .flat_map(|when| when.section.iter().flatten())
             .map(|(heading, _)| heading.as_str())
             .collect();
-        let guard = if headings.is_empty() {
-            "typed answers guard".to_owned()
+        let guard = if !headings.is_empty() {
+            format!("only the plan's {} heading guards", headings.join(" and "))
+        } else if check.when.iter().any(|when| when.answers.is_some()) {
+            "only the plan's typed answers guard".to_owned()
         } else {
-            format!("{} heading guards", headings.join(" and "))
+            "nothing guards".to_owned()
         };
         for control in named_controls(check, &filled) {
             if listed_by(host, &control, &[])?.is_none() {
                 said.push(Warning {
                     code: "changes::brief::no_control",
                     detail: format!(
-                        "no control {control} exists, so only the plan's {guard} what it would \
-                         list; write the control to name those paths"
+                        "no control {control} exists, so {guard} what it would list; write the \
+                         control to name those paths"
                     ),
                 });
             }

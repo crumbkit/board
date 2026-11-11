@@ -82,6 +82,12 @@ impl Flow {
         self.phases.iter().find(|phase| phase.name == name)
     }
 
+    /// The answers each check's `when` names, in order.
+    pub(crate) fn answers(&self) -> impl Iterator<Item = Answers> + '_ {
+        (self.phases.iter().flat_map(|phase| &phase.checks))
+            .filter_map(|check| check.when.as_ref()?.answers)
+    }
+
     /// The names of its phases, in order.
     pub(crate) fn names(&self) -> Vec<String> {
         self.phases.iter().map(|phase| phase.name.clone()).collect()

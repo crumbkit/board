@@ -333,6 +333,50 @@ fn the_shipped_flows_new_sections_reach_a_change_in_flight_only_when_it_reflows(
     assert_eq!(status(&board, "lifecycle-declared"), Some(json!("pass")));
 }
 
+/// A change in build whose plan was written under the stored version of the
+/// development flow that reads the plan's prose, so the plan gives no typed
+/// answers, and that then reflows to the shipped flow.
+#[test]
+fn a_reflowed_plan_with_no_answers_leaves_its_checks_to_the_agent_and_not_the_owner() {
+    let board = mounted();
+    started(&board, "A", &json!({}));
+    let old = include_str!(
+        "../../../../../board-plugin-changes/src/flow/flows-md/development-60bd988ebac76d79.json"
+    );
+    board.write("flows/development/60bd988ebac76d79.json", old);
+    let mut change = board.read("changes/a.json");
+    change["flow"] = json!("/flows/development/60bd988ebac76d79");
+    board.write("changes/a.json", &change.to_string());
+    board.call_stdin(
+        "plan",
+        &json!({"path": "/changes/a", "text": PLAN, "uses": [], "paths": PATHS}),
+    );
+    let mut change = board.read("changes/a.json");
+    change["phase"] = json!("build");
+    board.write("changes/a.json", &change.to_string());
+    assert_eq!(status(&board, "rechecks"), None);
+    board.call(
+        "reflow",
+        &json!({"path": "/changes/a", "flow": "development"}),
+    );
+    let output = board.call("next", &json!({"path": "/changes/a"}));
+    let rechecks = (output["gate"].as_array().unwrap().iter())
+        .find(|each| each["check"] == "rechecks")
+        .unwrap();
+    assert_eq!(
+        (&rechecks["status"], &rechecks["actor"]),
+        (&json!("missing"), &json!("agent")),
+        "{rechecks}"
+    );
+    assert_eq!(
+        rechecks["detail"],
+        "the plan gives no typed answer for data (none or stored), which this check reads"
+    );
+    let remedy = rechecks["remedy"].as_str().unwrap();
+    assert!(remedy.contains("`answers` on stdin"), "{remedy}");
+    assert_eq!(output["waiting_on"], Value::Null);
+}
+
 #[test]
 fn reflow_refuses_a_flow_without_the_changes_phase_and_admits_one_with_it() {
     let board = mounted();
@@ -700,12 +744,15 @@ fn next_on_a_small_change_in_build_says_to_resend_the_plan_start_wrote() {
     let board = mounted();
     assert_eq!(started(&board, "A", &json!({"flow": "small"})).0, "small");
     let said = board.call("next", &json!({"path": "/changes/a"}))["instruction"].clone();
-    assert!(
-        said.as_str()
-            .unwrap()
-            .contains(&revised_plan_usage("/changes/a", "/repos/x")),
-        "{said}"
-    );
+    // The small flow's checks read no typed answer, so the hint names four
+    // fields and its example gives no answers.
+    let usage = revised_plan_usage("/changes/a", "/repos/x")
+        .replace("five", "four")
+        .replace(
+            r#","answers":{"ux":"none","data":"none","lifecycle":"none"}"#,
+            "",
+        );
+    assert!(said.as_str().unwrap().contains(&usage), "{said}");
 }
 
 #[test]

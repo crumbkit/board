@@ -211,7 +211,7 @@ fn a_plan_over_a_lifecycle_path_cannot_say_none_and_its_twins_may() {
     assert_eq!(declared["status"], "missing", "{declared}");
     assert_eq!(
         declared["detail"],
-        "the plan's paths reach /controls/x/lifecycle-paths while it answers lifecycle none"
+        "the plan's paths reach /controls/x/lifecycle-paths"
     );
     assert!(
         declared["remedy"]

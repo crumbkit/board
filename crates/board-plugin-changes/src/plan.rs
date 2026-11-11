@@ -1,6 +1,8 @@
 //! The `plan` capability: a change's plan, the records it uses and the
 //! paths it will edit.
 
+pub(crate) mod answers;
+
 use std::time::SystemTime;
 
 use board_ops::{Host, PluginError};
@@ -17,6 +19,7 @@ use crate::lifecycle::LifecycleRecord;
 use crate::phases::final_phase;
 use crate::records::{CONTROL_TYPE, Considered, Kind, Owed, PlanRecord, is_final};
 use crate::{PLUGIN, Warning, refusal, to_value};
+pub(crate) use answers::Answers;
 
 /// The most words a plan's text holds, and the most words the documents it
 /// uses hold in all.
@@ -438,11 +441,9 @@ pub(crate) fn thousands(count: usize) -> String {
 /// `changes::plan::no_answers` when a check of `flow` reads an answer that
 /// `answers` leaves out.
 fn check_answers(path: &str, flow: &Flow, answers: Answers) -> Result<(), PluginError> {
-    let wanted = (flow.phases.iter())
-        .flat_map(|phase| &phase.checks)
-        .filter_map(|check| check.when.as_ref()?.answers)
-        .fold(Answers::default(), Answers::or);
-    let left_out = answers.left_out(wanted);
+    let left_out: std::collections::BTreeSet<String> = (flow.answers())
+        .flat_map(|wanted| answers.left_out(wanted))
+        .collect();
     if left_out.is_empty() {
         return Ok(());
     }
@@ -452,7 +453,11 @@ fn check_answers(path: &str, flow: &Flow, answers: Answers) -> Result<(), Plugin
             "the plan for {path} leaves out the answers {}, which the checks of its flow {} read; \
              give them in `answers` on stdin, such as \
              {{\"ux\": \"none\", \"data\": \"none\", \"lifecycle\": \"none\"}}",
-            left_out.join(", "),
+            left_out
+                .iter()
+                .map(String::as_str)
+                .collect::<Vec<_>>()
+                .join(", "),
             flow.name
         ),
         [("path", json!(path)), ("answers", json!(left_out))],
@@ -533,8 +538,7 @@ fn parts(now: SystemTime) -> (board_repos::Date, i64, u32) {
 }
 
 /// A new plan record for the change at `path` that starts with `records`
-/// attached and gives no typed answers, and the `put` lines that write its
-/// text and then the record.
+/// attached, and the `put` lines that write its text and then the record.
 pub(crate) fn plan_lines(
     now: SystemTime,
     path: &str,
@@ -569,9 +573,6 @@ pub(crate) fn plan_lines(
     ];
     (record, lines)
 }
-
-pub(crate) mod answers;
-pub(crate) use answers::Answers;
 
 #[cfg(test)]
 mod tests {

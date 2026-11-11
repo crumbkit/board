@@ -363,13 +363,14 @@ of `changes` still fails `review`.
   `detail`, its `actor`, whether it `blocks`, and when missing its
   `remedy`; the instruction, with its placeholders filled; and `sync`.
   An instruction that names `changes plan` or `changes.plan` ends with how
-  to give its input, JSON on stdin with the fields `path`, `text`, `uses`,
-  `paths` and `answers`, plus `considered` and `owed` when the plan has them, and a
-  one-line example such as
+  to give its input, JSON on stdin with the fields `path`, `text`, `uses`
+  and `paths`, plus `considered` and `owed` when the plan has them, and a
+  one-line example. When a check of the change's flow names `answers`, the
+  fields and the example include `answers`, such as
   `{"path":"/changes/<name>","text":"<text>","uses":["<use>"],"paths":["<mount>/<path>"],"answers":{"ux":"none","data":"none","lifecycle":"none"}}`.
   Every change that `start` writes has a plan. For a change with a plan,
   the instruction says that `board changes plan` replaces the plan, so all
-  five fields must be resent, with `considered` and `owed` when it has them. When
+  fields must be resent, with `considered` and `owed` when it has them. When
   every missing check that blocks is the owner's or a reviewer's,
   `waiting_on` names them and `ask` holds the question to put to them,
   built from those checks' details and remedies.
@@ -900,8 +901,10 @@ change, so moving that head or pushing after it is not gated. A repository with 
 lifecycle-paths control has only the answer, and `brief` warns about that.
 
 A check's `when.answers` holds when each answer it names equals the plan's.
-When the plan record gives no typed answer for one, the check is missing,
-and its detail says to write the plan again with `answers`. A change keeps
+When the plan record gives no typed answer for one, the check is missing
+with the code `changes::plan::no_answers`, its actor is the agent whatever
+the check's own actor, and its remedy says to write the plan again with
+`answers`. A change keeps
 the stored version of the flow it started under, so a change started
 before the development flow named `answers` still follows the version
 whose checks read the plan's prose with `section` and `section_not`, and
@@ -917,6 +920,23 @@ check Board does not read fails an `understood` check. A repeating task
 never reaches `done`, so drop it to release the `tasks` check. A run counts
 toward `run` when it sits under `<suite>/runs/`, has no `fail` or `error`,
 and names `head` in `versions`.
+
+The typed answers of a plan snapshot move through these states:
+
+| State | Event | Next state | Owner |
+| --- | --- | --- | --- |
+| no plan | `changes.plan` with answers, under a flow that names answers | snapshot with answers | the agent |
+| no plan | `changes.plan` without answers, under a flow that names answers | no snapshot; refused with `changes::plan::no_answers` | the agent |
+| snapshot without answers | the change is on a stored flow version that matches prose | unchanged; gates read the prose | Board |
+| snapshot without answers | `changes.migrate` moves the change to the new flow version | snapshot copy without answers; checks that name an answer report missing | the agent writes the plan again |
+| snapshot with answers | `changes.migrate` copies the plan | snapshot copy with the same answers | Board |
+| snapshot | `changes.plan` again | a new snapshot; the old one is kept | the agent |
+
+`changes.plan` checks the answers before it writes, and writes a snapshot in
+one commit, so a crash leaves the previous snapshot or the new one. A
+snapshot is never edited after it is written. A plan a migration writes
+fresh has no answers, and a migration's copy of a plan carries the source's
+answers unchanged, so a migration never invents an answer.
 
 The review gate's `paths` check reads the whole change's diff, whatever
 range a review report covers: `git diff --name-only --no-renames
