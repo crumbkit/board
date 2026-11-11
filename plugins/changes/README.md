@@ -974,7 +974,7 @@ every Edit, Write and NotebookEdit. Install it with
    mounts of each board in `boards` of `$XDG_CONFIG_HOME/board/config.json`
    (by default `~/.config/board/config.json`). A mount holds the file when
    the file's repository is a worktree of the mount's `repo`, compared as
-   spelled. Otherwise, when the repository's `origin` is a local path or a
+   spelled. When the repository's `origin` is a local path or a
    `file://` URL, a mount holds the file when that origin is a worktree of
    the mount's `repo`. Otherwise a mount holds the file when both
    repositories' `origin` remotes name the same repository; ssh and https
@@ -1008,10 +1008,15 @@ every Edit, Write and NotebookEdit. Install it with
    may follow the object. The guard checks that line, and does not
    check that `changes.brief` produced it, so a parent agent can write the
    line itself.
-4. It reads that change from each board that mounts the repository. It
-   admits the call when the change's `phase` is `build` and its `mount` is the
-   mount that holds the file; a paused change is refused and told to
-   resume. It then reads `<change>/prototype` with `board get`, and when a
+4. It reads that change from each known board that mounts the file's
+   repository, and takes the board whose change names, as its `mount`, a
+   mount that holds the file. It admits the call when that change's
+   `phase` is `build`; a paused change is refused and told to resume. When
+   no board's change names such a mount, the first listed board that holds
+   the change refuses the edit. The guard chooses no mount itself, so a
+   repository mounted several times, such as at `/repos/<name>` and
+   beneath another change, admits the builder of a change to any of those
+   mounts. It then reads `<change>/prototype` with `board get`, and when a
    prototype record is there it asks `board check --healthy` whether Board
    reads it, because `board get` prints a degraded record as it prints a
    valid one. When a readable prototype record is there, the file's

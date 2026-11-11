@@ -610,6 +610,72 @@ test('with two boards the change is read from the one that holds it', async ($, 
   ])
 })
 
+test("a builder edits a worktree that another change's own mount also holds, and a brief for another repository is refused", async ($, on) => {
+  // The board mounts the repository twice: beneath another change, listed first, and at /repos/widgets.
+  const mounts = report('board/query-report/v2', [
+    ['/changes/other/source', REPO, 'changes/other/source.json'],
+    ['/repos/widgets', REPO, 'repos/widgets.json'],
+    ['/repos/gadgets', '/work/gadgets', 'repos/gadgets.json'],
+  ])
+  const answers: Answers = { first: { a1: BRIEF }, mounts: { [BOARD]: mounts } }
+  const { edits } = engine(on, answers)
+  expect((await edit($, FILE, 'a1')).deny).toBeUndefined()
+  expect(edits).toEqual(['Edit'])
+  answers.change = change({ mount: '/repos/gadgets', phase: 'build' })
+  expect((await edit($, FILE, 'a1')).deny).toMatch(
+    /^changes::guard::wrong_mount: \/changes\/fix-it is a change to \/repos\/gadgets, and /,
+  )
+  expect(edits).toEqual(['Edit'])
+})
+
+test('a builder edits a clone that a second board mounts beneath a change, and a brief for another repository is refused', async ($, on) => {
+  const file = '/work/clone-ssh/src/lib.rs'
+  // The team board holds only a change's own mount of the clone. The personal
+  // board, which holds the brief's change, mounts the clone's origin.
+  const answers: Answers = {
+    first: { '': 'Coordinate the work.', a1: BRIEF },
+    config: JSON.stringify({ boards: [BOARD2, BOARD] }),
+    mounts: {
+      [BOARD2]: report('board/query-report/v2', [['/changes/old/source', '/work/clone-ssh', 'changes/old/source.json']]),
+    },
+    changes: { [BOARD2]: MISSING, [BOARD]: BUILDING },
+  }
+  const { edits } = engine(on, answers)
+  expect((await edit($, file, 'a1')).deny).toBeUndefined()
+  expect(edits).toEqual(['Edit'])
+  expect((await edit($, file)).deny).toMatch(/^changes::guard::no_brief: .* is in \/changes\/old\/source, /)
+  answers.changes = { [BOARD2]: MISSING, [BOARD]: change({ mount: '/repos/gadgets', phase: 'build' }) }
+  expect((await edit($, file, 'a1')).deny).toBe(
+    `changes::guard::wrong_mount: /changes/fix-it is a change to /repos/gadgets, and ${file} is in ` +
+      '/repos/widgets. Start a builder from the brief of a change to /repos/widgets.',
+  )
+  expect(edits).toEqual(['Edit'])
+})
+
+test('a change of the same name in a board listed first does not refuse the builder of the change that names the mount', async ($, on) => {
+  const file = '/work/clone-ssh/src/lib.rs'
+  // The team board, listed first, mounts the clone's origin and holds a done change of the same name.
+  // The personal board mounts the clone itself and holds the change in build.
+  const done = change({ mount: '/repos/widgets', phase: 'done' })
+  const answers: Answers = {
+    first: { a1: BRIEF },
+    config: JSON.stringify({ boards: [BOARD2, BOARD] }),
+    mounts: { [BOARD]: report('board/query-report/v2', [['/repos/clone', '/work/clone-ssh', 'repos/clone.json']]) },
+    changes: { [BOARD2]: done, [BOARD]: change({ mount: '/repos/clone', phase: 'build' }) },
+  }
+  const { ran, edits } = engine(on, answers)
+  expect((await edit($, file, 'a1')).deny).toBeUndefined()
+  expect(edits).toEqual(['Edit'])
+  expect(ran.filter(r => r.startsWith('get'))).toEqual([
+    `get ${BOARD} /changes/fix-it`,
+    `get ${BOARD} /changes/fix-it/prototype`,
+  ])
+  // With the change in no other board, the done one refuses.
+  answers.changes = { [BOARD2]: done, [BOARD]: MISSING }
+  expect((await edit($, file, 'a1')).deny).toMatch(/^changes::guard::not_building: \/changes\/fix-it is in phase done, /)
+  expect(edits).toEqual(['Edit'])
+})
+
 test('a brief kept for the main conversation does not outlive /clear or /resume', async ($, on) => {
   const answers: Answers = { first: { '': BRIEF }, session: 'before-clear' }
   engine(on, answers)

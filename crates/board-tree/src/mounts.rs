@@ -17,8 +17,10 @@ use crate::trees::{TreeRow, TreeRows, walk_stored};
 use crate::walk::{Entry, Status};
 use crate::write::{Target, WriteError};
 
+mod choice;
 mod keys;
 
+pub use choice::Choice;
 use keys::{Probe, scan};
 
 /// What a cache, such as the index, holds about trees and blobs, so a walk
@@ -304,9 +306,10 @@ pub struct Place {
     pub pointer: String,
     pub within: LogicalPath,
     pub matched: Matched,
+    pub choice: Choice,
 }
 
-/// How a place was found, best first: a mount of the directory's
+/// How a place was found, best first within one [`Choice`]: a mount of the directory's
 /// repository; a mount of another clone with the same origin whose commit
 /// the directory's repository holds; one whose commit it does not hold; or
 /// a repo record whose `remote` is that repository's origin.
@@ -327,17 +330,17 @@ impl Place {
 }
 
 impl Repositories {
-    /// Each mount among `entries`, the working tree's, whose repository is
-    /// the one holding `directory`. Repositories are compared by the git
-    /// directory a linked worktree shares with its main one, so a linked
-    /// worktree matches too. When no mount holds it, each mount whose
-    /// repository has the same `origin` in its stored form, so a separate
-    /// clone matches its mount; when the clone holds the commit of some of
-    /// them, only those. When no mount has that origin either, each repo record whose
-    /// `remote` is the stored form of that repository's `origin`, at its
-    /// own path. `is_pointer` says, from a cache, which physical paths hold
-    /// a pointer that parses, and `is_repo` which hold a valid repo record.
-    /// Each call opens and compares every mounted repository again.
+    /// The mounts among `entries`, the working tree's, that hold
+    /// `directory`, of the smallest [`Place::rank`]. A mount holds it when
+    /// its repository is the directory's, compared by the git directory a
+    /// linked worktree shares with its main one, or is a separate clone
+    /// with the same `origin` in its stored form. A mount beneath a record
+    /// whose `phase` is `done` or `dropped` is left out. When no mount
+    /// holds it, each repo record whose `remote` is the stored form of that
+    /// `origin`, at its own path. `is_pointer` says, from a cache, which
+    /// physical paths hold a pointer that parses, and `is_repo` which hold
+    /// a valid repo record. Each call opens and compares every mounted
+    /// repository again.
     pub fn places(
         &self,
         entries: &[Entry],
@@ -349,59 +352,48 @@ impl Repositories {
             return Vec::new();
         };
         let root = self.root();
-        let shares = |mount: &Mount| {
-            let mounted = self.mounted(root.path(), mount);
-            mounted.and_then(|mounted| mounted.git().common_dir().canonicalize().ok())
-                == Some(common.clone())
-        };
-        let mounts = pointers(root, &Source::WorkingTree, entries, is_pointer);
-        let place = |mount: &LogicalPath, pointer: &String| Place {
-            mount: mount.clone(),
-            pointer: pointer.clone(),
-            within: within.clone(),
-            matched: Matched::Mount,
-        };
-        let mounted: Vec<Place> = (mounts.iter())
-            .filter(|(_, _, mount)| shares(mount))
-            .map(|(mount, pointer, _)| place(mount, pointer))
-            .collect();
-        if !mounted.is_empty() {
-            return mounted;
-        }
-        let Origin::Url(origin) = origin(directory) else {
-            return Vec::new();
-        };
-        let remote = board_model::shown_remote(&origin);
-        let same_origin = |mount: &Mount| {
-            let mounted = self.mounted(root.path(), mount);
-            let url = mounted.and_then(|mounted| remote_url(mounted.git()).ok());
-            url.is_some_and(|url| board_model::shown_remote(&url) == remote)
+        let remote = match origin(directory) {
+            Origin::Url(origin) => Some(board_model::shown_remote(&origin)),
+            Origin::Outside | Origin::Unread(_) => None,
         };
         let clone = gix::discover(directory).ok();
-        let holds = |mount: &Mount| {
+        let branch = clone.as_ref().and_then(choice::branch);
+        let matched = |mount: &Mount| {
+            let mounted = self.mounted(root.path(), mount)?;
+            if mounted.git().common_dir().canonicalize().ok().as_ref() == Some(&common) {
+                return Some(Matched::Mount);
+            }
+            let url = remote_url(mounted.git()).ok()?;
+            (Some(board_model::shown_remote(&url)) == remote).then_some(())?;
             let id = gix::ObjectId::try_from(mount.commit.as_bytes()).ok();
-            (clone.as_ref().zip(id)).is_some_and(|(git, id)| git.has_object(id))
+            let holds = (clone.as_ref().zip(id)).is_some_and(|(git, id)| git.has_object(id));
+            Some(if holds {
+                Matched::OriginWithCommit
+            } else {
+                Matched::Origin
+            })
         };
-        let cloned: Vec<Place> = (mounts.iter())
-            .filter(|(_, _, mount)| same_origin(mount))
-            .map(|(path, pointer, mount)| Place {
-                matched: if holds(mount) {
-                    Matched::OriginWithCommit
-                } else {
-                    Matched::Origin
-                },
-                ..place(path, pointer)
+        let reader = &mut root.reader();
+        let mounts = pointers(root, &Source::WorkingTree, entries, is_pointer);
+        let mounted: Vec<Place> = (mounts.iter())
+            .filter_map(|(at, pointer, mount)| {
+                let matched = matched(mount)?;
+                let choice = choice::of(entries, reader, at, &mount.follow, branch.as_deref())?;
+                Some(Place {
+                    mount: at.clone(),
+                    pointer: pointer.clone(),
+                    within: within.clone(),
+                    matched,
+                    choice,
+                })
             })
             .collect();
-        if !cloned.is_empty() {
-            let held = cloned
-                .iter()
-                .any(|place| place.matched == Matched::OriginWithCommit);
-            return (cloned.into_iter())
-                .filter(|place| !held || place.matched == Matched::OriginWithCommit)
-                .collect();
+        if !mounted.is_empty() {
+            return choice::best(mounted);
         }
-        let reader = &mut root.reader();
+        let Some(remote) = remote else {
+            return Vec::new();
+        };
         let named = |entry: &Entry| {
             let blob = entry
                 .blob
@@ -416,6 +408,7 @@ impl Repositories {
                 pointer: entry.path.clone(),
                 within: LogicalPath::root(),
                 matched: Matched::Remote,
+                choice: Choice::Other,
             })
         };
         entries.iter().filter_map(named).collect()

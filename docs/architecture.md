@@ -32,10 +32,12 @@ is the argv `changes.run` starts, which a plugin receives as
 known board's index and reads the mounts in its working tree. A board
 listed under several spellings counts once. A mount
 matches when its repository has the same git common directory as the
-directory's repository, so a linked worktree matches too. Failing that,
-a mount matches when its repository has the same origin, so a separate clone
-matches, ranked below a mount of the directory's own repository; of several,
-those whose commit the clone holds rank first. With exactly one
+directory's repository, so a linked worktree matches too. A mount also
+matches when its repository has the same origin, so a separate clone
+matches. Of several matches Board takes the mount whose `follow` is the
+checkout's branch, then a mount beneath no record, such as `/repos/<name>`,
+and leaves out a mount beneath a record whose `phase` is `done` or
+`dropped` (architecture/paths/places.md). With exactly one
 match, Board runs as that board, as git runs from a subdirectory. The prefix
 is the mount's path joined with the directory's path beneath the
 repository's root, such as `/repos/crumbkit/docs`, and the timing log
@@ -46,7 +48,7 @@ matches nothing. No match is `board::config::not_found`. When the file lists
 boards, the message says they were read and none has a mount or repo record
 for the repository, and the hint says to add a repo record; otherwise the
 hint says to list a board. More
-than one match of the best kind, counting every known board, is
+than one match that sorts first, counting every known board, is
 `board::config::ambiguous`; `-C` then picks a board. A known board that
 cannot be opened or refreshed is passed over, and a `not_found` message
 names it. `-C` into a mounted repository finds its board the same way.

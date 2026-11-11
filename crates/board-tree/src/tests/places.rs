@@ -7,9 +7,15 @@ use std::path::Path;
 use super::*;
 use crate::Place;
 
+/// A mount that follows `trunk`, a branch no fixture is on, so that only a
+/// test that names a branch has a followed mount.
 fn mount(repo: &str, commit: ObjectId) -> String {
+    following(repo, "trunk", commit)
+}
+
+fn following(repo: &str, follow: &str, commit: ObjectId) -> String {
     format!(
-        r#"{{"$type": "board/mount/v1", "repo": "{repo}", "follow": "main", "commit": "{commit}"}}"#
+        r#"{{"$type": "board/mount/v1", "repo": "{repo}", "follow": "{follow}", "commit": "{commit}"}}"#
     )
 }
 
@@ -41,6 +47,7 @@ fn place(mount: &str, within: &str) -> Place {
         pointer: format!("{}.json", &mount[1..]),
         within: path(within),
         matched: crate::Matched::Mount,
+        choice: crate::Choice::Standing,
     }
 }
 
@@ -48,8 +55,171 @@ fn place(mount: &str, within: &str) -> Place {
 fn by_remote(record: &str) -> Place {
     Place {
         matched: crate::Matched::Remote,
+        choice: crate::Choice::Other,
         ..place(record, "/")
     }
+}
+
+/// A linked worktree of `repository` on `branch` at `commit`, as `git
+/// worktree add -b` lays it out, and its directory.
+fn worktree(repository: &Scenario, branch: &str, commit: ObjectId) -> std::path::PathBuf {
+    let linked = format!("{}/{branch}", repository.path());
+    let git_dir = format!("{}/.git/worktrees/{branch}", repository.path());
+    let inside = |file: &str| format!(".git/worktrees/{branch}/{file}");
+    repository
+        .write(
+            &format!(".git/refs/heads/{branch}"),
+            Item::File(&format!("{commit}\n")),
+        )
+        .write(
+            &inside("HEAD"),
+            Item::File(&format!("ref: refs/heads/{branch}\n")),
+        )
+        .write(&inside("commondir"), Item::File("../..\n"))
+        .write(&inside("gitdir"), Item::File(&format!("{linked}/.git\n")))
+        .write(
+            &format!("{branch}/.git"),
+            Item::File(&format!("gitdir: {git_dir}\n")),
+        )
+        .write(&format!("{branch}/a.md"), Item::File("a"));
+    linked.into()
+}
+
+/// A board with a standing mount of `repository` at `/repos/lib` and, for
+/// each of `changes`, a name and a phase, a record `/changes/<name>` in
+/// that phase with its own mount beneath it that follows `fix-it`.
+fn with_changes(repository: &Scenario, changes: &[(&str, &str)]) -> (Scenario, ObjectId) {
+    let commit = repository.commit(&[("x.json", "1")]);
+    let board = Scenario::new();
+    board.write(
+        "repos/lib.json",
+        Item::File(&mount(&repository.path(), commit)),
+    );
+    for (name, phase) in changes {
+        let record = format!(r#"{{"$type": "changes/change/v2", "phase": "{phase}"}}"#);
+        let source = following(&repository.path(), "fix-it", commit);
+        board
+            .write(&format!("changes/{name}.json"), Item::File(&record))
+            .write(&format!("changes/{name}/source.json"), Item::File(&source));
+    }
+    (board, commit)
+}
+
+/// The place at a change's own mount, of the kind `choice`.
+fn at_change(name: &str, choice: crate::Choice) -> Place {
+    Place {
+        choice,
+        ..place(&format!("/changes/{name}/source"), "/")
+    }
+}
+
+#[test]
+fn a_worktree_is_placed_at_the_mount_that_follows_its_branch_and_one_on_another_branch_at_the_standing_mount()
+ {
+    let repository = Scenario::new();
+    let (board, commit) = with_changes(&repository, &[("fix", "build")]);
+    let followed = worktree(&repository, "fix-it", commit);
+    assert_eq!(
+        places(&board, &followed),
+        [at_change("fix", crate::Choice::Followed)]
+    );
+    let elsewhere = worktree(&repository, "other", commit);
+    assert_eq!(places(&board, &elsewhere), [place("/repos/lib", "/")]);
+}
+
+#[test]
+fn a_full_follow_ref_names_the_branch_as_its_short_name_does() {
+    let repository = Scenario::new();
+    let commit = repository.commit(&[("x.json", "1")]);
+    let board = Scenario::new();
+    let full = following(&repository.path(), "refs/heads/fix-it", commit);
+    board
+        .write("a.json", Item::File(&full))
+        .write("b.json", Item::File(&mount(&repository.path(), commit)));
+    let followed = Place {
+        choice: crate::Choice::Followed,
+        ..place("/a", "/")
+    };
+    let on_branch = worktree(&repository, "fix-it", commit);
+    assert_eq!(places(&board, &on_branch), [followed]);
+}
+
+#[test]
+fn a_mount_beneath_a_record_is_used_from_another_branch_when_no_standing_mount_holds_the_directory()
+{
+    let repository = Scenario::new();
+    let (board, commit) = with_changes(&repository, &[("fix", "build")]);
+    board.write("repos/lib.json", Item::Deleted);
+    let elsewhere = worktree(&repository, "other", commit);
+    assert_eq!(
+        places(&board, &elsewhere),
+        [at_change("fix", crate::Choice::Other)]
+    );
+}
+
+#[test]
+fn a_detached_worktree_follows_no_mount_and_its_twin_on_the_branch_follows_one() {
+    let repository = Scenario::new();
+    let (board, commit) = with_changes(&repository, &[("fix", "build")]);
+    let linked = worktree(&repository, "fix-it", commit);
+    assert_eq!(
+        places(&board, &linked),
+        [at_change("fix", crate::Choice::Followed)]
+    );
+    // The same worktree after `git switch --detach`: HEAD holds the commit.
+    repository.write(
+        ".git/worktrees/fix-it/HEAD",
+        Item::File(&format!("{commit}\n")),
+    );
+    assert_eq!(places(&board, &linked), [place("/repos/lib", "/")]);
+}
+
+#[test]
+fn a_mount_beneath_a_record_with_no_phase_is_kept_and_its_twin_beneath_a_done_one_is_left_out() {
+    let repository = Scenario::new();
+    let (board, commit) = with_changes(&repository, &[("fix", "done")]);
+    let on_branch = worktree(&repository, "fix-it", commit);
+    assert_eq!(places(&board, &on_branch), [place("/repos/lib", "/")]);
+    let record = r#"{"$type": "changes/change/v2"}"#;
+    board.write("changes/fix.json", Item::File(record));
+    assert_eq!(
+        places(&board, &on_branch),
+        [at_change("fix", crate::Choice::Followed)]
+    );
+}
+
+#[test]
+fn two_standing_mounts_that_follow_the_checkouts_branch_are_both_kept() {
+    let repository = Scenario::new();
+    let commit = repository.commit(&[("x.json", "1")]);
+    let board = Scenario::new();
+    let followed = following(&repository.path(), "fix-it", commit);
+    board
+        .write("repos/a.json", Item::File(&followed))
+        .write("repos/b.json", Item::File(&followed));
+    let on_branch = worktree(&repository, "fix-it", commit);
+    let mut found = places(&board, &on_branch);
+    found.sort_by(|a, b| a.mount.as_str().cmp(b.mount.as_str()));
+    let both = ["/repos/a", "/repos/b"].map(|mount| Place {
+        choice: crate::Choice::Followed,
+        ..place(mount, "/")
+    });
+    assert_eq!(found, both);
+}
+
+#[test]
+fn the_mount_of_a_dropped_or_done_change_is_left_out_and_its_twin_in_build_is_chosen() {
+    let repository = Scenario::new();
+    let ended = [("dropped", "dropped"), ("done", "done")];
+    let (board, commit) = with_changes(&repository, &ended);
+    let on_branch = worktree(&repository, "fix-it", commit);
+    assert_eq!(places(&board, &on_branch), [place("/repos/lib", "/")]);
+    let live = [("dropped", "dropped"), ("done", "done"), ("live", "build")];
+    let (board, _) = with_changes(&repository, &live);
+    assert_eq!(
+        places(&board, &on_branch),
+        [at_change("live", crate::Choice::Followed)]
+    );
 }
 
 #[test]
@@ -234,7 +404,7 @@ fn a_second_clone_of_a_mounted_repository_is_placed_at_its_repo_record_by_its_or
     let commit = mounted.commit(&[("x.json", "1")]);
     originating(&clone, "git@github.com:example-org/lib.git");
     let record = format!(
-        r#"{{"$type": "board/repo/v1", "remote": "example-org/lib", "checkout": {{"repo": "{}", "follow": "main", "commit": "{commit}"}}}}"#,
+        r#"{{"$type": "board/repo/v1", "remote": "example-org/lib", "checkout": {{"repo": "{}", "follow": "trunk", "commit": "{commit}"}}}}"#,
         mounted.path()
     );
     let board = Scenario::new();
