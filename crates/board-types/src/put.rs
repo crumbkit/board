@@ -6,8 +6,9 @@ use serde::{Deserialize, Serialize, Serializer};
 
 use crate::report::Data;
 
-/// The data of a `board/put-report/v2`. `put`, `rm`, `type add` and
-/// `plugin enable` print it; `plugin enable` adds fields of its own.
+/// The data of a `board/put-report/v2`, which `put`, `rm` and `type add`
+/// print. `plugin enable` prints `board/plugin-enable-report/v2`, which this
+/// type does not read.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PutReport {
     /// The paths a removal that ignores what names nothing found absent.
@@ -120,7 +121,6 @@ struct RawLine<R> {
     new: Option<String>,
     #[serde(default)]
     expect: Option<String>,
-    #[serde(default = "none")]
     record: Option<R>,
     #[serde(default)]
     text: Option<String>,
@@ -128,10 +128,6 @@ struct RawLine<R> {
     remove: bool,
     #[serde(default)]
     ignore_unmatch: bool,
-}
-
-fn none<R>() -> Option<R> {
-    None
 }
 
 /// A batch line as it is written: only the fields its form holds.

@@ -39,6 +39,39 @@ fn a_failure_reads_every_field_and_writes_back_the_same_json() {
 }
 
 #[test]
+fn a_terminal_recovery_reads_as_terminal_and_writes_back_the_same_json() {
+    let value = json!({"kind": "terminal", "call": "board login"});
+    let recovery: Recovery = serde_json::from_value(value.clone()).unwrap();
+    assert_eq!(
+        recovery,
+        Recovery::Terminal {
+            call: "board login".to_owned()
+        }
+    );
+    assert_eq!(serde_json::to_value(&recovery).unwrap(), value);
+}
+
+#[test]
+fn a_recovery_kind_or_severity_this_crate_does_not_know_reads_as_other_and_writes_back() {
+    let value = json!({"kind": "wait", "seconds": 5, "until": "ready"});
+    let recovery: Recovery = serde_json::from_value(value.clone()).unwrap();
+    assert_eq!(
+        recovery,
+        Recovery::Other {
+            kind: "wait".to_owned(),
+            fields: BTreeMap::from([
+                ("seconds".to_owned(), FieldValue::Integer(5)),
+                ("until".to_owned(), FieldValue::Text("ready".to_owned())),
+            ]),
+        }
+    );
+    assert_eq!(serde_json::to_value(&recovery).unwrap(), value);
+    let severity: Severity = serde_json::from_value(json!("note")).unwrap();
+    assert_eq!(severity, Severity::Other("note".to_owned()));
+    assert_eq!(serde_json::to_value(&severity).unwrap(), json!("note"));
+}
+
+#[test]
 fn a_report_with_a_field_this_crate_does_not_know_reads() {
     let mut report = empty_put();
     report["data"]["later"] = json!(1);

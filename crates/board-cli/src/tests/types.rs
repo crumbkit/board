@@ -3,7 +3,7 @@
 //! prints reads through them and writes back the same JSON, and so does
 //! every failure the recoveries check provokes.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use board_types::{
     Content, Degraded, Excerpt, Failure, FieldValue, File, Label, Location, Pointer, Printed,
@@ -67,13 +67,25 @@ fn every_failure() -> Failure {
             help: Some("e".to_owned()),
             url: Some("https://example.com/r".to_owned()),
             labels: vec![label],
-            related: Vec::new(),
+            related: vec![Related {
+                message: "below".to_owned(),
+                severity: Severity::Advice,
+                code: None,
+                cause: None,
+                help: None,
+                url: None,
+                labels: Vec::new(),
+                related: Vec::new(),
+            }],
         }],
         recovery: Recovery::Run {
-            call: "board ls /".to_owned(),
-            all: None,
+            call: "board ls <PATH>...".to_owned(),
+            all: Some("path".to_owned()),
         },
         alternatives: vec![
+            Recovery::Terminal {
+                call: "board login".to_owned(),
+            },
             Recovery::Retry,
             Recovery::Hint {
                 text: "look".to_owned(),
@@ -84,6 +96,24 @@ fn every_failure() -> Failure {
         ],
         url: Some("https://example.com/".to_owned()),
     }
+}
+
+/// `every_failure` once with each recovery kind this crate knows, each
+/// offering every kind as an alternative.
+fn every_recovery() -> Vec<Failure> {
+    let failure = every_failure();
+    let kinds: Vec<Recovery> = [failure.recovery.clone()]
+        .into_iter()
+        .chain(failure.alternatives.clone())
+        .collect();
+    kinds
+        .iter()
+        .map(|recovery| Failure {
+            recovery: recovery.clone(),
+            alternatives: kinds.clone(),
+            ..failure.clone()
+        })
+        .collect()
 }
 
 /// A location reached through a mount.
@@ -135,7 +165,7 @@ fn each_document_board_types_writes_is_admitted_by_its_schema_and_one_lacking_a_
                 previous: None,
             }],
         },
-        failures: Some(vec![every_failure()]),
+        failures: Some(every_recovery()),
     };
     let file = |content, record, code: Option<&str>| File {
         location: mounted(),
@@ -159,7 +189,7 @@ fn each_document_board_types_writes_is_admitted_by_its_schema_and_one_lacking_a_
                 Some("board::record::not_a_record"),
             ),
         ],
-        failures: Some(vec![every_failure()]),
+        failures: Some(every_recovery()),
     };
     let failure = Printed::<PutReport>::Failure(Box::new(every_failure()));
     for (id, (full, lacking)) in [
@@ -177,6 +207,122 @@ fn each_document_board_types_writes_is_admitted_by_its_schema_and_one_lacking_a_
             "{id}"
         );
     }
+}
+
+/// Each object `schema` describes, by where it is, with the properties the
+/// schema names and the keys `document` holds there across every array
+/// element. A branch of a `oneOf` whose `kind` is a constant is the place
+/// `/|<kind>`, and holds only the values of that kind. A reference into
+/// `$defs` is followed; an anchor reference, which recurses, is not.
+fn coverage(
+    root: &Value,
+    schema: &Value,
+    document: Option<&Value>,
+    at: &str,
+    found: &mut BTreeMap<String, (BTreeSet<String>, BTreeSet<String>)>,
+) {
+    if let Some(name) = schema["$ref"]
+        .as_str()
+        .and_then(|reference| reference.strip_prefix("#/$defs/"))
+    {
+        return coverage(root, &root["$defs"][name], document, at, found);
+    }
+    if let Some(properties) = schema["properties"].as_object() {
+        let place = found.entry(at.to_owned()).or_default();
+        place.0.extend(properties.keys().cloned());
+        if let Some(object) = document.and_then(Value::as_object) {
+            place.1.extend(object.keys().cloned());
+        }
+        for (name, property) in properties {
+            let value = document.and_then(|document| document.get(name));
+            coverage(root, property, value, &format!("{at}/{name}"), found);
+        }
+    }
+    if let Some(items) = schema.get("items") {
+        let elements = document.and_then(Value::as_array).map(Vec::as_slice);
+        match elements {
+            Some(elements) if !elements.is_empty() => {
+                for element in elements {
+                    coverage(root, items, Some(element), &format!("{at}[]"), found);
+                }
+            }
+            _ => coverage(root, items, None, &format!("{at}[]"), found),
+        }
+    }
+    for (n, branch) in schema["oneOf"].as_array().into_iter().flatten().enumerate() {
+        match branch["properties"]["kind"]["const"].as_str() {
+            Some(kind) => {
+                let value = document.filter(|document| document["kind"] == kind);
+                coverage(root, branch, value, &format!("{at}|{kind}"), found);
+            }
+            None => coverage(root, branch, document, &format!("{at}|{n}"), found),
+        }
+    }
+}
+
+#[test]
+fn board_types_covers_every_property_and_recovery_kind_the_report_schemas_name() {
+    let put = Report {
+        schema: PutReport::SCHEMA.to_owned(),
+        dry_run: true,
+        data: PutReport {
+            absent: Vec::new(),
+            commit: None,
+            removed: Vec::new(),
+            writes: Vec::new(),
+        },
+        failures: Some(every_recovery()),
+    };
+    let file = |content| File::<Value> {
+        location: mounted(),
+        blob: None,
+        content,
+        record: Some(json!({"$type": "lr/task/v1"})),
+        code: Some("board::record::invalid".to_owned()),
+    };
+    let get = Report {
+        schema: File::SCHEMA.to_owned(),
+        dry_run: true,
+        data: vec![
+            file(Content::Text("{}".to_owned())),
+            file(Content::Base64("/wBh".to_owned())),
+        ],
+        failures: Some(every_recovery()),
+    };
+    for (id, document) in [
+        (PutReport::SCHEMA, serde_json::to_value(put).unwrap()),
+        (File::SCHEMA, serde_json::to_value(get).unwrap()),
+    ] {
+        let scenario = board();
+        let output = board_in(scenario.workdir(), &["schemas", "show", id, "--json"]);
+        let schema = json(&output)["data"][0]["schema"].clone();
+        let mut found = BTreeMap::new();
+        coverage(&schema, &schema, Some(&document), "", &mut found);
+        assert!(found.contains_key("/failures[]/recovery|terminal"), "{id}");
+        for (at, (named, held)) in found {
+            assert_eq!(held, named, "{id} at {at:?}");
+        }
+    }
+    let failure = Printed::<PutReport>::Failure(Box::new(every_failure()));
+    let written = serde_json::to_value(failure).unwrap();
+    let held: BTreeSet<&str> = written
+        .as_object()
+        .unwrap()
+        .keys()
+        .map(String::as_str)
+        .collect();
+    let shown = board_in(
+        board().workdir(),
+        &["schemas", "show", Failure::SCHEMA, "--json"],
+    );
+    let schema = json(&shown)["data"][0]["schema"].clone();
+    let named: BTreeSet<&str> = schema["properties"]
+        .as_object()
+        .unwrap()
+        .keys()
+        .map(String::as_str)
+        .collect();
+    assert_eq!(held, named);
 }
 
 #[test]

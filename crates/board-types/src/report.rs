@@ -72,7 +72,8 @@ impl Failure {
     pub const SCHEMA: &'static str = "board/failure/v1";
 }
 
-/// What the caller can do next, tagged by `kind`.
+/// What the caller can do next, tagged by `kind`. A kind a later Board
+/// adds reads as `Other`, holding the recovery as written.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "lowercase")]
 pub enum Recovery {
@@ -82,12 +83,22 @@ pub enum Recovery {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         all: Option<String>,
     },
+    /// A person must run `call` in a terminal, so a program hands the step
+    /// to a person.
+    Terminal { call: String },
     /// Run the same command again later.
     Retry,
     /// Follow this advice.
     Hint { text: String },
     /// There is no next step, for this reason.
     None { reason: String },
+    /// A kind this crate does not know: its `kind` and its other fields.
+    #[serde(untagged)]
+    Other {
+        kind: String,
+        #[serde(flatten)]
+        fields: BTreeMap<String, FieldValue>,
+    },
 }
 
 /// A value at fault: crumbkit's `field_value`.
@@ -148,13 +159,16 @@ pub struct Related {
     pub related: Vec<Related>,
 }
 
-/// How severe a related diagnostic is.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+/// How severe a related diagnostic is. A severity a later Board adds reads
+/// as `Other`, holding it as written.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Severity {
     Error,
     Warning,
     Advice,
+    #[serde(untagged)]
+    Other(String),
 }
 
 /// The failure document as printed: `schema`, then the failure's fields.
@@ -171,17 +185,12 @@ struct Either<D> {
     schema: String,
     #[serde(default)]
     dry_run: bool,
-    #[serde(default = "none")]
     data: Option<D>,
     #[serde(default)]
     failures: Option<Vec<Failure>>,
     /// The failure the other fields make, if they make one.
     #[serde(flatten)]
     failure: Option<Failure>,
-}
-
-fn none<D>() -> Option<D> {
-    None
 }
 
 impl<D: Serialize> Serialize for Printed<D> {

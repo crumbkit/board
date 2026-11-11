@@ -18,7 +18,7 @@ pub struct File<R = IgnoredAny> {
     pub blob: Option<String>,
     #[serde(flatten)]
     pub content: Content,
-    #[serde(default = "none", skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub record: Option<R>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub code: Option<String>,
@@ -40,10 +40,6 @@ impl<R> Data for Vec<File<R>> {
 pub enum Content {
     Text(String),
     Base64(String),
-}
-
-fn none<R>() -> Option<R> {
-    None
 }
 
 #[cfg(test)]
