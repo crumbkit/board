@@ -373,8 +373,7 @@ fn waived_by<'a>(observed: &'a Observed, each: &flow::Check) -> Option<&'a str> 
         return None;
     }
     let named = format!("{}#{}", observed.path, each.id);
-    (observed.records.of_type(DECISION_TYPE))
-        .filter(|(_, body)| !truthy(body.get("written_by")))
+    (signed_decisions(observed))
         .find(|(_, body)| strings(body, "refs").any(|each| each == named))
         .map(|(path, _)| path)
 }
@@ -566,10 +565,9 @@ fn mockups(found: &BTreeMap<String, String>) -> Vec<String> {
 
 /// The attached decisions the owner signed; a stub a hook wrote names
 /// itself in `written_by`.
-fn signed_decisions(observed: &Observed) -> impl Iterator<Item = &Map<String, Value>> {
+fn signed_decisions(observed: &Observed) -> impl Iterator<Item = (&str, &Map<String, Value>)> {
     (observed.records.of_type(DECISION_TYPE))
-        .map(|(_, body)| body)
-        .filter(|body| !truthy(body.get("written_by")))
+        .filter(|(_, body)| kinds::verdict(body, &kinds::SIGNED, None, |_, _| true))
 }
 
 /// Whether a value is set as Python reads it: not null, false, zero or
@@ -597,7 +595,7 @@ fn strings<'a>(body: &'a Map<String, Value>, key: &str) -> impl Iterator<Item = 
 
 fn named_by_decisions(observed: &Observed) -> BTreeSet<&str> {
     (signed_decisions(observed))
-        .flat_map(|body| strings(body, "urls").chain(strings(body, "refs")))
+        .flat_map(|(_, body)| strings(body, "urls").chain(strings(body, "refs")))
         .collect()
 }
 
@@ -722,7 +720,7 @@ fn run_missing(observed: &Observed, scope: Scope) -> Option<String> {
         path.starts_with(&runs)
             && body.get("scope").and_then(Value::as_str) == Some(scope.as_str())
             && body.get("dirty") == Some(&Value::Bool(false))
-            && ran_on(body, head)
+            && kinds::verdict(body, &kinds::ANY, Some(head), |_, _| true)
             && !objects(body, "results").any(|result| {
                 matches!(
                     result.get("outcome").and_then(Value::as_str),

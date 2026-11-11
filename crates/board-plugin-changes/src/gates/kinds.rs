@@ -7,12 +7,12 @@ use std::collections::BTreeSet;
 
 use super::remedy::{Values, fill, unfilled};
 use super::{
-    NO_HEAD, Observed, UNDERSTANDING_TYPE, objects, reviewed_head, route_missing, same_commit,
-    signed_decisions, strings, task_missing, truthy, unset,
+    DECISION_TYPE, NO_HEAD, Observed, UNDERSTANDING_TYPE, objects, ran_on, reviewed_head,
+    route_missing, same_commit, strings, task_missing, truthy, unset,
 };
 use board_plugin::shape::Record;
 
-use crate::flow::{self, Field, Flow, Kind, Named, Target, Where, problems};
+use crate::flow::{self, AtHead, Field, Flow, Kind, Named, Target, Where, problems};
 use crate::records::Subject;
 
 /// The most paths a detail names (STANDARDS 23); it counts the rest.
@@ -247,19 +247,34 @@ fn names(observed: &Observed, target: &Target, each: &str) -> bool {
     }
 }
 
-/// Whether the record `body` meets every condition of `rules`, with the
-/// change's `head` when they name one.
-fn meets(
-    observed: &Observed,
+/// A `where` that asks nothing, and one that asks the owner's signature.
+pub(super) const ANY: Where = Where {
+    at_head: None,
+    values: None,
+    no_findings: None,
+    owner_signed: None,
+    refs: None,
+};
+pub(super) const SIGNED: Where = Where {
+    owner_signed: Some(true),
+    ..ANY
+};
+
+/// Whether the record `body` is a passing verdict under `rules`: it covers
+/// `head` when one is given, in the field `at_head` names or else in its
+/// `versions` as a run does, holds the allowed values, has no finding of a
+/// named severity, is owner-signed when asked, and has a ref that `names`
+/// each target.
+pub(super) fn verdict(
     body: &Map<String, Value>,
     rules: &Where,
     head: Option<&str>,
+    names: impl Fn(&Target, &str) -> bool,
 ) -> bool {
-    if let Some(head) = head
-        && !same_commit(reviewed_head(body).as_ref(), head)
-    {
-        return false;
-    }
+    let covers = head.is_none_or(|head| match rules.at_head {
+        Some(AtHead::Range) => same_commit(reviewed_head(body).as_ref(), head),
+        None => ran_on(body, head),
+    });
     let values = (rules.values.iter().flatten()).all(|(field, allowed)| {
         (allowed.iter()).any(|value| body.get(field) == Some(&value.json()))
     });
@@ -270,8 +285,8 @@ fn meets(
     });
     let signed = rules.owner_signed != Some(true) || !truthy(body.get("written_by"));
     let refs = (rules.refs.iter().flatten())
-        .all(|target| strings(body, "refs").any(|each| names(observed, target, each)));
-    values && clean && signed && refs
+        .all(|target| strings(body, "refs").any(|each| names(target, each)));
+    covers && values && clean && signed && refs
 }
 
 /// `items` joined as a reader says a choice: `a`, `a or b`, `a, b or c`.
@@ -289,21 +304,17 @@ pub(super) fn records_missing(observed: &Observed, each: &flow::Check) -> Option
     let Some(kind) = &each.record_type else {
         return Some(unset(each, "type"));
     };
-    let none = Where {
-        at_head: None,
-        values: None,
-        no_findings: None,
-        owner_signed: None,
-        refs: None,
-    };
-    let rules = each.conditions.as_ref().unwrap_or(&none);
+    let rules = each.conditions.as_ref().unwrap_or(&ANY);
     let head = match (rules.at_head, &observed.change.head) {
         (None, _) => None,
         (Some(_), None) => return Some(NO_HEAD.to_owned()),
         (Some(_), Some(head)) => Some(head.as_str()),
     };
-    let passing =
-        (observed.records.of_type(kind)).filter(|(_, body)| meets(observed, body, rules, head));
+    let passing = (observed.records.of_type(kind)).filter(|(_, body)| {
+        verdict(body, rules, head, |target, each| {
+            names(observed, target, each)
+        })
+    });
     let count = match each.distinct {
         None => passing.count(),
         Some(part) => (passing
@@ -428,8 +439,14 @@ pub(super) fn understood_missing(observed: &Observed, each: &flow::Check) -> Opt
         (observed.records.of_type(UNDERSTANDING_TYPE))
             .filter(|(_, body)| understands(observed, body, subject))
             .collect();
-    let signed = (signed_decisions(observed)).any(|body| {
-        strings(body, "refs").any(|named| understood.iter().any(|(path, _)| *path == named))
+    let rules = Where {
+        refs: Some(vec![Target::Type(UNDERSTANDING_TYPE.to_owned())]),
+        ..SIGNED
+    };
+    let signed = (observed.records.of_type(DECISION_TYPE)).any(|(_, body)| {
+        verdict(body, &rules, None, |_, named| {
+            understood.iter().any(|(path, _)| *path == named)
+        })
     });
     if !signed {
         return Some(format!(

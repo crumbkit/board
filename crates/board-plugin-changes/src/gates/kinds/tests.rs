@@ -491,3 +491,144 @@ fn an_exists_check_with_a_when_condition_fills_change_in_its_path() {
     let (_, status, detail) = run(&applied, list).remove(0);
     assert_eq!((status, detail.as_str()), (Status::Pass, ""));
 }
+
+/// The status and detail the one check of `list` gives with each of
+/// `records` attached in turn beside `beside`, and a suite at /s.
+fn verdicts(
+    list: &Value,
+    beside: &[(&str, &str, Value)],
+    records: Vec<(&str, &str, Value)>,
+) -> Vec<(Status, String)> {
+    (records.into_iter())
+        .map(|record| {
+            let attached = [beside, &[record]].concat();
+            let mut found = observed(&json!({"head": HEAD}), &attached);
+            found.suite = Some("/s".to_owned());
+            let (_, status, detail) = run(&found, list.clone()).remove(0);
+            (status, detail)
+        })
+        .collect()
+}
+
+fn passes() -> (Status, String) {
+    (Status::Pass, String::new())
+}
+
+#[test]
+fn a_records_check_counts_a_record_that_meets_every_condition_and_none_that_fails_one() {
+    let list = json!([{
+        "id": "r", "kind": "records", "type": "review/report/v1",
+        "where": {
+            "at_head": "range", "values": {"verdict": ["approve"]}, "no_findings": ["high"],
+            "owner_signed": true, "refs": ["plan"]
+        }
+    }]);
+    let report = |changed: Value| {
+        let mut body = json!({
+            "range": format!("b..{HEAD}"), "verdict": "approve",
+            "findings": [{"severity": "low"}], "refs": ["/changes/t/plans/1"]
+        });
+        for (key, value) in changed.as_object().unwrap() {
+            body[key] = value.clone();
+        }
+        ("/r", "review/report/v1", body)
+    };
+    let missing = (
+        Status::Missing,
+        format!(
+            "no attached review/report/v1 that the owner signed covers {HEAD} whose refs name \
+             the plan or the change with a verdict of approve and no high finding"
+        ),
+    );
+    assert_eq!(
+        verdicts(
+            &list,
+            &[],
+            vec![
+                report(json!({})),
+                report(json!({"range": format!("b..{}", &HEAD[..7])})),
+                report(json!({"refs": ["/changes/t"]})),
+                report(json!({"range": "b..0000000"})),
+                report(json!({"range": null, "versions": {"repo": HEAD}})),
+                report(json!({"verdict": "reject"})),
+                report(json!({"findings": [{"severity": "high"}]})),
+                report(json!({"written_by": "hook"})),
+                report(json!({"refs": ["/elsewhere"]})),
+            ]
+        ),
+        [vec![passes(); 3], vec![missing; 6]].concat()
+    );
+}
+
+#[test]
+fn a_run_check_passes_a_run_whose_versions_name_the_head_and_no_other() {
+    let list = json!([{"id": "s", "kind": "run", "scope": "full"}]);
+    let ran = |changed: Value| {
+        let mut body = json!({
+            "scope": "full", "dirty": false, "versions": {"repo": &HEAD[..7]}, "results": []
+        });
+        for (key, value) in changed.as_object().unwrap() {
+            body[key] = value.clone();
+        }
+        ("/s/runs/1", "runs/run/v1", body)
+    };
+    let missing = (
+        Status::Missing,
+        format!("no attached run of /s on {HEAD} is full, clean and passing"),
+    );
+    assert_eq!(
+        verdicts(
+            &list,
+            &[],
+            vec![
+                ran(json!({})),
+                ran(json!({"written_by": "hook", "findings": [{"severity": "high"}]})),
+                ran(json!({"versions": {"repo": "0000000"}})),
+                ran(json!({"versions": {}, "range": format!("b..{HEAD}")})),
+                ran(json!({"results": [{"outcome": "fail"}]})),
+            ]
+        ),
+        [vec![passes(); 2], vec![missing; 3]].concat()
+    );
+}
+
+#[test]
+fn an_understood_check_needs_an_owner_signed_decision_naming_a_check_of_its_subject() {
+    let list = json!([{"id": "u", "kind": "understood", "subject": "data"}]);
+    let understanding = |path: &'static str, subject: &str, change: &str| {
+        (
+            path,
+            "changes/understanding/v1",
+            json!({"change": change, "subject": subject}),
+        )
+    };
+    let beside = [
+        understanding("/u/data", "data", PATH),
+        understanding("/u/ux", "ux", PATH),
+        understanding("/u/other", "data", "/changes/other"),
+    ];
+    let decision = |body: Value| ("/d", "plans/decision/v1", body);
+    let missing = (
+        Status::Missing,
+        "no attached plans/decision/v1 the owner signed references an attached \
+         changes/understanding/v1 of this change's data; run the understanding-check skill, \
+         then have the owner sign a decision whose refs name its record"
+            .to_owned(),
+    );
+    assert_eq!(
+        verdicts(
+            &list,
+            &beside,
+            vec![
+                decision(json!({"refs": ["/u/data"]})),
+                decision(json!({"refs": ["/elsewhere", "/u/data"], "range": "b..0000000"})),
+                decision(json!({"refs": ["/u/data"], "written_by": "hook"})),
+                decision(json!({"refs": ["/u/ux"]})),
+                decision(json!({"refs": ["/u/other"]})),
+                decision(json!({"refs": [PATH]})),
+                decision(json!({})),
+            ]
+        ),
+        [vec![passes(); 2], vec![missing; 5]].concat()
+    );
+}
