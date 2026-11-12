@@ -284,7 +284,7 @@ fn a_boundary_naming_a_missing_control_passes_on_the_controls_code_and_with_the_
         (1, &json!("github::boundary::refused"))
     );
     assert_eq!(failure["fields"]["code"], "boundary::board::refused");
-    assert_eq!(failure["fields"]["cause"], "controls::control::not_found");
+    assert_eq!(failure["fields"]["cause"], "rules::rule::not_found");
     assert_eq!(desk.gh_calls(), 0);
     desk.write("controls/names.json", &control);
     let url = format!("{ISSUE_URL}#issuecomment-1");

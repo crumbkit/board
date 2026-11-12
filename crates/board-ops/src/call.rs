@@ -154,17 +154,10 @@ impl Board {
                 fields,
                 hint,
             }) => {
-                // A renamed built-in plugin may still give a former name's codes.
-                let owner = (chosen.manifest.former_names.iter())
-                    .find(|former| {
-                        code.strip_prefix(former.as_str())
-                            .is_some_and(|rest| rest.starts_with("::"))
-                    })
-                    .unwrap_or(plugin);
                 return Err(CallError::Plugin {
                     plugin: plugin.clone(),
                     failure: Box::new(
-                        PluginFailure::parse(owner, code, message, fields, hint).map_err(bad)?,
+                        PluginFailure::parse(plugin, code, message, fields, hint).map_err(bad)?,
                     ),
                     stderr: (warnings.borrow().iter())
                         .flat_map(|line| format!("warning: {line}\n").into_bytes())

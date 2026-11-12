@@ -213,14 +213,14 @@ fn evaluate(
     for (controls, texts) in groups {
         let input = json!({"controls": controls, "parts": texts});
         let report = (host.call(&target, &input)).map_err(|refusal| refused("call", &refusal))?;
-        // `Verdict` repeats controls' result type, so a field added there
-        // refuses the check instead of letting the content through. A rule
-        // or status boundary does not know refuses it the same way.
+        // `Verdict` repeats the rules plugin's result type, so a field added
+        // there refuses the check instead of letting the content through. A
+        // rule or status boundary does not know refuses it the same way.
         let unreadable = |error: String| PluginError {
             code: "boundary::evaluate::unreadable".to_owned(),
-            message: format!("controls.evaluate gave results this plugin cannot read: {error}"),
+            message: format!("rules.evaluate gave results this plugin cannot read: {error}"),
             fields: Map::new(),
-            hint: Some("update Board so its boundary and controls plugins agree".to_owned()),
+            hint: Some("update Board so its boundary and rules plugins agree".to_owned()),
         };
         let results = Vec::<Verdict>::deserialize(&report.output["results"])
             .map_err(|error| unreadable(error.to_string()))?;

@@ -55,7 +55,7 @@ fn a_parser_message_never_reaches_a_match_only_error_and_a_shown_one_quotes_the_
             format!("ok\n{line}\n").into_bytes(),
         )]);
         let hidden = expressions("/controls/names", &rule(Quote::MatchOnly), &sources).unwrap_err();
-        assert_eq!(hidden.code, "controls::pattern::invalid", "{line}");
+        assert_eq!(hidden.code, "rules::pattern::invalid", "{line}");
         assert!(!hidden.message.contains("acme"), "{}", hidden.message);
         assert!(!hidden.message.contains(line), "{}", hidden.message);
         assert!(

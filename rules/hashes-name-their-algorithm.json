@@ -1,0 +1,14 @@
+{
+  "$type": "rules/rule/v1",
+  "applies_to": [
+    "/crates/board-plugin/shapes"
+  ],
+  "paths": [
+    "crates/*/types/**",
+    "plugins/*/types/**",
+    "crates/*/src/**",
+    "crates/board-plugin/shapes.json"
+  ],
+  "purpose": "Board can move to another hash algorithm later by widening one pattern, with records from the old and new algorithms valid side by side and no new type version or migration. The owner set this standard on 2026-11-05.",
+  "requirement": "A hash that Board computes and stores names its algorithm in the value, written `<algorithm>:<lowercase hex>`, such as `sha256:` followed by 64 hex characters, and uses the shared digest shape rather than a local pattern or a bare string. An id that another system computes and Board only carries, such as a git commit SHA or patch-id, is an opaque string and stays as that system prints it."
+}

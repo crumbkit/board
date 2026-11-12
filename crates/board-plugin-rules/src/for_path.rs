@@ -60,7 +60,7 @@ struct Applying {
 /// written, is matched as asked, where Board would place a file there. A
 /// path beneath a file, where nothing can be, matches no pattern.
 pub(crate) fn for_path(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
-    let Input { path } = PluginError::read_input("controls", "for-path", input)?;
+    let Input { path } = PluginError::read_input("rules", "for-path", input)?;
     let applying = applying(host, &path)?;
     let mut controls = index::controls(host)?;
     let controls = (applying.into_iter())
@@ -88,7 +88,7 @@ pub(crate) fn for_path(host: &dyn Host, input: &Value) -> Result<Value, PluginEr
 pub(crate) fn applying(host: &dyn Host, path: &str) -> Result<BTreeSet<String>, PluginError> {
     let asked = [logical(path)?];
     let refused = |error: &board_ops::RefsError| {
-        PluginError::board_refused("controls", "refs", &error.refusal())
+        PluginError::board_refused("rules", "refs", &error.refusal())
     };
     let answers = host
         .refs(&asked, Absent::Locate, &[])

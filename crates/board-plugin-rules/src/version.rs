@@ -17,7 +17,7 @@ pub(crate) struct Behind {
 }
 
 /// The rule's expression, compiled with `^` and `$` matching at each line,
-/// or `controls::capture::invalid` when it does not compile or has no group.
+/// or `rules::capture::invalid` when it does not compile or has no group.
 pub(crate) fn compile(control: &str, rule: &Version) -> Result<Regex, PluginError> {
     let built = RegexBuilder::new(&rule.capture).multi_line(true).build();
     let why = match built {
@@ -26,7 +26,7 @@ pub(crate) fn compile(control: &str, rule: &Version) -> Result<Regex, PluginErro
         Err(error) => error.to_string(),
     };
     Err(PluginError {
-        code: "controls::capture::invalid".to_owned(),
+        code: "rules::capture::invalid".to_owned(),
         message: format!(
             "{control}'s capture {:?} cannot find a version: {why}; give it one group, such as \
              `channel = \"([0-9.]+)\"`",

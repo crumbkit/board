@@ -77,12 +77,12 @@ pub(crate) fn from_standards(host: &dyn Host, input: &Value) -> Result<Value, Pl
         standards,
         map,
         into,
-    } = PluginError::read_input("controls", "from-standards", input)?;
+    } = PluginError::read_input("rules", "from-standards", input)?;
     let [(map_display, map_text)] = read(host, &[map.as_str()])?
         .try_into()
         .expect("read answers each path it is asked once");
     let adopted: AdoptionMap = toml::from_str(&map_text).map_err(|error| PluginError {
-        code: "controls::standards::map_invalid".to_owned(),
+        code: "rules::standards::map_invalid".to_owned(),
         message: format!(
             "{map} is not an adoption map with a `profiles` list of names: {error}; \
              check it against the standards' adoption.md"
@@ -170,12 +170,12 @@ pub(crate) fn from_standards(host: &dyn Host, input: &Value) -> Result<Value, Pl
     Ok(serde_json::to_value(output).expect("Output holds only strings, numbers and lists"))
 }
 
-/// `controls::standards::duplicate_rule` with `message`, naming what
+/// `rules::standards::duplicate_rule` with `message`, naming what
 /// repeats, as `(field, value)` such as `("rule", "BASE-31")`, and the
 /// `files` that repeat it.
 fn duplicate(message: String, (field, value): (&str, &str), files: &[&str]) -> PluginError {
     PluginError {
-        code: "controls::standards::duplicate_rule".to_owned(),
+        code: "rules::standards::duplicate_rule".to_owned(),
         message,
         fields: Map::from_iter([
             (field.to_owned(), json!(value)),
@@ -186,13 +186,13 @@ fn duplicate(message: String, (field, value): (&str, &str), files: &[&str]) -> P
 }
 
 /// Each of `paths` read through one `get_each`: its display path and text,
-/// or `controls::standards::unreadable` for the first that cannot be read.
+/// or `rules::standards::unreadable` for the first that cannot be read.
 fn read(host: &dyn Host, paths: &[&str]) -> Result<Vec<(LogicalPath, String)>, PluginError> {
     let asked = (paths.iter())
         .map(|path| logical(path))
         .collect::<Result<Vec<_>, _>>()?;
     let answers = (host.get_each(&asked))
-        .map_err(|error| PluginError::board_refused("controls", "get", &error.refusal("get")))?;
+        .map_err(|error| PluginError::board_refused("rules", "get", &error.refusal("get")))?;
     (paths.iter().zip(answers))
         .map(|(path, answer)| match answer {
             Ok(report) => Ok((
@@ -200,7 +200,7 @@ fn read(host: &dyn Host, paths: &[&str]) -> Result<Vec<(LogicalPath, String)>, P
                 String::from_utf8_lossy(&report.bytes).into_owned(),
             )),
             Err(error) => Err(PluginError {
-                code: "controls::standards::unreadable".to_owned(),
+                code: "rules::standards::unreadable".to_owned(),
                 message: format!(
                     "{path} cannot be read ({}); check the standards mount and the profile names \
                      the map adopts with `board ls`",
@@ -232,9 +232,9 @@ fn held(host: &dyn Host, into: &str) -> Result<BTreeMap<String, String>, PluginE
 /// The rows of every table in `text` whose header has an ID, a Rule and a
 /// "Where it applies" column, read as `CommonMark` with GitHub's tables. A
 /// pattern is a span of inline code in the Where it applies cell. A rule
-/// with none is `controls::standards::no_pattern`, one whose Rule cell
-/// is empty is `controls::standards::empty_rule`, and one whose ID is not a
-/// record name is `controls::standards::bad_id`.
+/// with none is `rules::standards::no_pattern`, one whose Rule cell
+/// is empty is `rules::standards::empty_rule`, and one whose ID is not a
+/// record name is `rules::standards::bad_id`.
 pub(crate) fn rules(file: &str, text: &str) -> Result<Vec<Row>, PluginError> {
     let mut rows = Vec::new();
     for table in tables(text) {
@@ -261,7 +261,7 @@ pub(crate) fn rules(file: &str, text: &str) -> Result<Vec<Row>, PluginError> {
             };
             if !record_name(&id) {
                 return Err(refused(
-                    "controls::standards::bad_id",
+                    "rules::standards::bad_id",
                     format!(
                         "the rule ID {id:?} in {file} cannot name a control's record; give the rule \
                          an ID of letters, digits, `-` and `_`, such as BASE-31"
@@ -270,13 +270,13 @@ pub(crate) fn rules(file: &str, text: &str) -> Result<Vec<Row>, PluginError> {
             }
             if rule.is_empty() {
                 return Err(refused(
-                    "controls::standards::empty_rule",
+                    "rules::standards::empty_rule",
                     format!("{id} in {file} has an empty Rule cell; write the rule there"),
                 ));
             }
             if place.is_empty() {
                 return Err(refused(
-                    "controls::standards::no_pattern",
+                    "rules::standards::no_pattern",
                     format!(
                         "{id} in {file} has no pattern in its Where it applies cell; give it one in \
                          inline code, such as `**` for every file"

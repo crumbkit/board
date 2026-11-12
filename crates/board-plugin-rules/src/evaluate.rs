@@ -117,7 +117,7 @@ type Expressions = Vec<(String, Regex)>;
 pub(crate) fn evaluate(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
     // The judged rules' time starts with the call, as the manifest's timeout does.
     let mut judge = Judge::new(host);
-    let Input { controls, parts } = PluginError::read_input("controls", "evaluate", input)?;
+    let Input { controls, parts } = PluginError::read_input("rules", "evaluate", input)?;
     let mut seen = BTreeSet::new();
     let named: Vec<String> = (controls.into_iter())
         .filter(|control| seen.insert(control.clone()))
@@ -215,7 +215,7 @@ pub(crate) fn evaluate(host: &dyn Host, input: &Value) -> Result<Value, PluginEr
 }
 
 /// The bytes of each pattern file and rubric the rules name, by the path
-/// the rule gives, or `controls::rule::unreadable`.
+/// the rule gives, or `rules::rule::unreadable`.
 fn sources(
     host: &dyn Host,
     rules: &[(String, Option<Checker>)],
@@ -236,7 +236,7 @@ fn sources(
         .map(|file| logical(file))
         .collect::<Result<Vec<LogicalPath>, PluginError>>()?;
     let answers = (host.get_each(&paths))
-        .map_err(|error| PluginError::board_refused("controls", "get", &error.refusal("get")))?;
+        .map_err(|error| PluginError::board_refused("rules", "get", &error.refusal("get")))?;
     let mut sources = BTreeMap::new();
     for ((file, control), answer) in named.into_iter().zip(answers) {
         match answer {
@@ -343,7 +343,7 @@ fn floored(control: &str, part: &str, text: &str, expression: &Regex, rule: &Ver
 /// skipped, compiled once for every part with `^` and `$` matching at each
 /// line.
 ///
-/// An invalid one is `controls::pattern::invalid`. With `quote` `match-only`
+/// An invalid one is `rules::pattern::invalid`. With `quote` `match-only`
 /// the error names the line and, for a syntax error, the column of the
 /// fault, and nothing the expression holds, since the parser's own message
 /// can quote part of it.
@@ -502,7 +502,7 @@ fn hits(expressions: &Expressions, text: &str) -> (Vec<Hit>, usize) {
 fn not_found(missing: &[&String]) -> PluginError {
     let names: Vec<&str> = missing.iter().map(|path| path.as_str()).collect();
     PluginError {
-        code: "controls::control::not_found".to_owned(),
+        code: "rules::rule::not_found".to_owned(),
         message: format!(
             "no valid control is in the board's own tree at {}; run `board get` on the path and \
              `board check` to see what is there",
@@ -515,7 +515,7 @@ fn not_found(missing: &[&String]) -> PluginError {
 
 fn unreadable(control: &str, file: &str, code: &str) -> PluginError {
     PluginError {
-        code: "controls::rule::unreadable".to_owned(),
+        code: "rules::rule::unreadable".to_owned(),
         message: format!(
             "{control} names {file} in its rule, which Board cannot read as a file ({code}); write \
              the file, or change the control's rule"
@@ -529,7 +529,7 @@ fn unreadable(control: &str, file: &str, code: &str) -> PluginError {
     }
 }
 
-/// `controls::pattern::invalid` for line `number` of `file`. Only with
+/// `rules::pattern::invalid` for line `number` of `file`. Only with
 /// `quote` `pattern` does it quote the line and the parser's message.
 fn invalid(
     control: &str,
@@ -545,7 +545,7 @@ fn invalid(
         (false, None) => String::new(),
     };
     PluginError {
-        code: "controls::pattern::invalid".to_owned(),
+        code: "rules::pattern::invalid".to_owned(),
         message: format!(
             "line {number} of {file}, which {control} names, is not a valid regular expression\
              {detail}; fix that line"

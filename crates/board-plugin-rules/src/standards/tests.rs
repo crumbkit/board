@@ -46,7 +46,7 @@ fn only_rows_of_tables_with_a_where_it_applies_column_are_rules_and_code_spans_k
 fn a_rule_without_a_pattern_is_refused_and_one_with_a_pattern_is_read() {
     let table = "| ID | Rule | Where it applies |\n| --- | --- | --- |\n";
     let refused = rules("base.md", &format!("{table}| BASE-31 | A rule. |  |\n")).unwrap_err();
-    assert_eq!(refused.code, "controls::standards::no_pattern");
+    assert_eq!(refused.code, "rules::standards::no_pattern");
     assert_eq!(refused.fields["rule"], json!("BASE-31"));
     let admitted = rules("base.md", &format!("{table}| BASE-31 | A rule. | `**` |\n"));
     assert_eq!(admitted.unwrap().len(), 1);
@@ -56,7 +56,7 @@ fn a_rule_without_a_pattern_is_refused_and_one_with_a_pattern_is_read() {
 fn a_rule_whose_rule_cell_is_empty_is_refused_and_one_with_text_is_read() {
     let table = "| ID | Rule | Where it applies |\n| --- | --- | --- |\n";
     let refused = rules("base.md", &format!("{table}| BASE-31 |  | `**` |\n")).unwrap_err();
-    assert_eq!(refused.code, "controls::standards::empty_rule");
+    assert_eq!(refused.code, "rules::standards::empty_rule");
     assert_eq!(refused.fields["rule"], json!("BASE-31"));
     let admitted = rules("base.md", &format!("{table}| BASE-31 | A rule. | `**` |\n"));
     assert_eq!(admitted.unwrap().len(), 1);
@@ -84,7 +84,7 @@ fn a_rule_id_that_is_not_a_record_name_is_refused_and_one_that_is_is_read() {
     let table = "| ID | Rule | Where it applies |\n| --- | --- | --- |\n";
     for id in ["", "BASE/31", "..", "BASE 31"] {
         let refused = rules("base.md", &format!("{table}| {id} | A rule. | `**` |\n")).unwrap_err();
-        assert_eq!(refused.code, "controls::standards::bad_id", "{id:?}");
+        assert_eq!(refused.code, "rules::standards::bad_id", "{id:?}");
     }
     let admitted = rules("base.md", &format!("{table}| BASE-31 | A rule. | `**` |\n"));
     assert_eq!(admitted.unwrap()[0].id, "BASE-31");

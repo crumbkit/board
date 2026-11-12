@@ -72,7 +72,7 @@ impl<'a> Judge<'a> {
             let value = (self.host.settings().environment.0.iter())
                 .find(|(name, _)| name == AGENT_VARIABLE)
                 .map(|(_, value)| value);
-            self.agent = Some(Agent::named("controls", AGENT_VARIABLE, value)?);
+            self.agent = Some(Agent::named("rules", AGENT_VARIABLE, value)?);
         }
         let agent = (self.agent.as_ref()).expect("the agent was read above");
         let prompt = prompt(text, rubric);
@@ -136,13 +136,13 @@ fn key(prompt: &str, argv: &[String]) -> Vec<u8> {
 }
 
 /// The findings in the last JSON object of the agent's answer that holds
-/// them, or `controls::agent::bad_output`.
+/// them, or `rules::agent::bad_output`.
 fn found(stdout: &str) -> Result<Vec<Finding>, PluginError> {
     let answer = agent::answer(stdout);
     let findings =
         agent::last_object(&answer, "findings").and_then(|object| checked(&object["findings"]));
     findings.ok_or_else(|| PluginError {
-        code: "controls::agent::bad_output".to_owned(),
+        code: "rules::agent::bad_output".to_owned(),
         message: "the agent's answer does not end with a JSON object holding findings, each with \
                       a text and a rewrite; change the agent's command"
             .to_owned(),

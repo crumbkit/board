@@ -366,7 +366,7 @@ fn a_source_that_names_nothing_degrades_its_control_and_one_naming_a_source_note
         ("controls/cites.json", &dangling),
     ]);
     let refused = check(&host, &json!({})).unwrap_err();
-    assert_eq!(refused.code, "controls::control::degraded");
+    assert_eq!(refused.code, "rules::rule::degraded");
     assert_eq!(
         refused.fields["controls"],
         json!([{"control": "/controls/cites", "code": "board::ref::dangling"}])

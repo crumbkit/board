@@ -255,15 +255,15 @@ struct Changes {
 }
 
 impl Changes {
-    /// The fixture board, with changes and controls enabled.
+    /// The fixture board, with changes and rules enabled.
     fn new() -> Self {
-        Self::enabling(&["changes", "controls"])
+        Self::enabling(&["changes", "rules"])
     }
 
     /// The fixture board with Board's built-in tasks plugin enabled too, so
     /// `tasks.add` writes tasks to its own tree.
     fn with_tasks() -> Self {
-        Self::enabling(&["changes", "controls", "tasks"])
+        Self::enabling(&["changes", "rules", "tasks"])
     }
 
     fn enabling(plugins: &[&str]) -> Self {

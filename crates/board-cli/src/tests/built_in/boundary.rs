@@ -11,9 +11,9 @@ mod overrides;
 mod verify;
 
 impl Personal {
-    /// The personal board, enabling controls and boundary.
+    /// The personal board, enabling rules and boundary.
     fn new() -> Self {
-        Self::enabling(&["controls", "boundary"])
+        Self::enabling(&["rules", "boundary"])
     }
 
     /// `board --json call boundary.<capability>` in `directory` with
@@ -340,7 +340,7 @@ fn a_judged_rule_with_a_part_to_read_refuses_while_no_agent_is_set() {
     let (ran, document) = personal.call("check", &pr(&json!({"pr.body": "Clever."})));
     assert_eq!(ran.code, 1);
     assert_eq!(document["code"], "boundary::board::refused");
-    assert_eq!(document["fields"]["code"], "controls::agent::not_set");
+    assert_eq!(document["fields"]["code"], "rules::agent::not_set");
     assert_eq!(document["fields"]["variable"], "BOARD_CONTROLS_AGENT");
 }
 
@@ -499,7 +499,7 @@ fn a_boundary_naming_a_missing_control_refuses_with_the_controls_code() {
     let (ran, document) = personal.call("check", &pr(&json!({"pr.body": "Fine."})));
     assert_eq!(ran.code, 1);
     assert_eq!(document["code"], "boundary::board::refused");
-    assert_eq!(document["fields"]["code"], "controls::control::not_found");
+    assert_eq!(document["fields"]["code"], "rules::rule::not_found");
     names_boundary(&personal, &json!({}));
     let (ran, _) = personal.call("check", &pr(&json!({"pr.body": "Fine."})));
     assert_eq!(ran.code, 0, "{}", printed(&ran));

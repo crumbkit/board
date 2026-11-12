@@ -93,7 +93,7 @@ own effects.
 
 ## Owners and gates
 
-STANDARDS.md 29 states the rule; `controls/rules/signing-one-owner.json`
+STANDARDS.md 29 states the rule; `rules/signing-one-owner.json`
 records it.
 
 - `board_model::effect` builds the statements and names the namespaces.

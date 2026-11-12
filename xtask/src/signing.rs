@@ -39,7 +39,7 @@ const EXTENSIONS: [&str; 5] = ["rs", "py", "sh", "ts", "tsx"];
 const SCRIPTS: [&str; 2] = ["bin", "plugins"];
 
 /// Whether the check reads the file at `relative`: source code, never docs,
-/// controls or the vectors, which are Markdown, JSON or data.
+/// rules or the vectors, which are Markdown, JSON or data.
 fn scanned(relative: &Path) -> bool {
     match relative.extension() {
         Some(extension) => EXTENSIONS.iter().any(|wanted| extension == *wanted),

@@ -1,6 +1,6 @@
 //! Repository lints that clippy cannot express: the word budgets, the
 //! source file length cap, the `#[expect]` ratchet, the signing literals'
-//! owners, and the budget controls' agreement with lint.toml. `bin/lint` runs it as
+//! owners, and the budget rules' agreement with lint.toml. `bin/lint` runs it as
 //! `cargo xtask lint`; `lint.toml` holds every number it enforces. It also
 //! times Board, profiles it, migrates question records, and migrates a
 //! board's records to the shared shapes.
@@ -8,13 +8,13 @@
 mod bench;
 mod budgets;
 mod config;
-mod controls;
 mod files;
 mod migrate;
 mod process;
 mod profile;
 mod questions;
 mod report;
+mod rules;
 mod signing;
 mod source;
 mod words;
@@ -128,7 +128,7 @@ fn lint(root: &Path) -> Result<Report, LintError> {
     checks.push(signing::check(&root, &config.signing)?);
     Ok(Report {
         checks,
-        controls: controls::check(&root, &config)?,
+        rules: rules::check(&root, &config)?,
     })
 }
 
@@ -179,8 +179,8 @@ enum LintError {
     Files(#[from] FilesError),
     #[error(transparent)]
     Config(#[from] ConfigError),
-    #[error("{path} is not a control with a requirement; see controls/control/v1")]
-    Control {
+    #[error("{path} is not a rule with a requirement; see rules/rule/v1")]
+    Rule {
         path: String,
         #[source]
         source: serde_json::Error,
@@ -192,7 +192,7 @@ impl LintError {
         match self {
             Self::Files(error) => error.code(),
             Self::Config(error) => error.code(),
-            Self::Control { .. } => "xtask::control::invalid",
+            Self::Rule { .. } => "xtask::rule::invalid",
         }
     }
 }

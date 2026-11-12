@@ -6,8 +6,8 @@ use std::time::Duration;
 
 use crate::bench::against::{Arm, Compared, Verdict};
 use crate::bench::{Timed, Took};
-use crate::controls::Divergence;
 use crate::questions::Migrated;
+use crate::rules::Divergence;
 
 /// How many parts a report line names before summarising the rest.
 const SHOWN_PARTS: usize = 5;
@@ -22,12 +22,12 @@ const USAGE: &str = "usage: cargo xtask lint
 #[derive(Debug)]
 pub(crate) struct Report {
     pub(crate) checks: Vec<Check>,
-    pub(crate) controls: Vec<Divergence>,
+    pub(crate) rules: Vec<Divergence>,
 }
 
 impl Report {
     pub(crate) fn passed(&self) -> bool {
-        self.checks.iter().all(Check::passed) && self.controls.is_empty()
+        self.checks.iter().all(Check::passed) && self.rules.is_empty()
     }
 }
 
@@ -284,11 +284,11 @@ pub(crate) fn render(report: &Report) -> String {
             let _ = writeln!(text, "      {}: {}", check.kind.code(), advice(check));
         }
     }
-    if report.controls.is_empty() {
-        text.push_str("pass  controls   controls/budgets/ agrees with lint.toml\n");
+    if report.rules.is_empty() {
+        text.push_str("pass  rules      rules/budgets/ agrees with lint.toml\n");
     }
-    for divergence in &report.controls {
-        let _ = writeln!(text, "FAIL  controls   {}: {divergence}", Divergence::CODE);
+    for divergence in &report.rules {
+        let _ = writeln!(text, "FAIL  rules      {}: {divergence}", Divergence::CODE);
     }
     text
 }

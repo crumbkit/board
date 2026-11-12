@@ -6,7 +6,7 @@
   "plugins": [
     {
       "name": "board-controls",
-      "source": "./plugins/controls/claude-code"
+      "source": "./plugins/rules/claude-code"
     },
     {
       "name": "board-runs",

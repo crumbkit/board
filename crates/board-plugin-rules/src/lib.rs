@@ -1,5 +1,5 @@
 //! The rules plugin built into Board, formerly the controls plugin
-//! (plugins/controls/README.md).
+//! (plugins/rules/README.md).
 
 mod check;
 mod evaluate;
@@ -75,7 +75,7 @@ impl Plugin for Rules {
             "from-standards" => standards::from_standards(host, &input),
             "migrate" => migrate::migrate(host, &input),
             other => Err(PluginError {
-                code: "controls::call::unknown_capability".to_owned(),
+                code: "rules::call::unknown_capability".to_owned(),
                 message: format!(
                     "rules offers no capability {other}; it offers for-path, for-paths, check, evaluate, from-standards and migrate"
                 ),
@@ -91,7 +91,7 @@ impl Plugin for Rules {
 fn logical(path: &str) -> Result<LogicalPath, PluginError> {
     path.parse().map_err(|error| {
         let refusal = Refusal::new(Code::CliUsage, error, &Fields::default());
-        PluginError::board_refused("controls", "refs", &refusal)
+        PluginError::board_refused("rules", "refs", &refusal)
     })
 }
 

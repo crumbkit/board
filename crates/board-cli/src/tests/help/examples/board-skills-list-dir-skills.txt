@@ -3,7 +3,6 @@ missing  artifacts            skills/artifacts
 missing  attention            skills/attention
 missing  boundary             skills/boundary
 missing  changes              skills/changes
-missing  controls             skills/controls
 missing  evals                skills/evals
 missing  flow                 skills/flow
 missing  github               skills/github
@@ -13,6 +12,7 @@ missing  params               skills/params
 missing  plans                skills/plans
 missing  prompts              skills/prompts
 missing  review               skills/review
+missing  rules                skills/rules
 missing  share                skills/share
 missing  tasks                skills/tasks
 missing  understanding-check  skills/understanding-check

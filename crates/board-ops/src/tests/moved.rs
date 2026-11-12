@@ -9,8 +9,8 @@ use board_tree::Status;
 use serde_json::Value;
 
 use super::{MANIFEST, board, open};
-use crate::Board;
 use crate::host::{Host, Plugin, PluginError};
+use crate::{Board, Plugins};
 
 /// A built-in plugin whose records moved between the prefixes it holds.
 struct Renamed(&'static [(&'static str, &'static str)]);
@@ -85,7 +85,8 @@ fn a_reference_under_a_built_in_plugins_moved_prefix_checks_as_resolved_and_with
 }
 
 /// A built-in plugin `rules`, formerly `controls`, shipping
-/// `rules/rule/v1`, and `controls/control/v1` which it replaces.
+/// `rules/rule/v1`, and `controls/control/v1` which it replaces. Its one
+/// capability fails with the code its input names.
 struct Retyped;
 
 const OLD: &str = "controls/control/v1";
@@ -107,8 +108,13 @@ impl Plugin for Retyped {
             .into()
     }
 
-    fn call(&self, _: &dyn Host, _: &CapabilityName, _: Value) -> Result<Value, PluginError> {
-        Ok(Value::Null)
+    fn call(&self, _: &dyn Host, _: &CapabilityName, input: Value) -> Result<Value, PluginError> {
+        Err(PluginError {
+            code: input["code"].as_str().unwrap().to_owned(),
+            message: "failed".to_owned(),
+            fields: serde_json::Map::new(),
+            hint: None,
+        })
     }
 
     fn renamed_types(&self) -> &'static [(&'static str, &'static str)] {
@@ -188,4 +194,28 @@ fn enabling_a_renamed_plugin_by_either_name_keeps_the_one_name_the_board_lists()
         let config: Value = serde_json::from_str(&config).unwrap();
         assert_eq!(config["plugins"], serde_json::json!([listed]), "{given}");
     }
+}
+
+#[test]
+fn a_renamed_plugins_code_under_its_former_name_is_bad_output_and_under_its_name_is_its_own() {
+    let scenario = board();
+    scenario.identified();
+    let mut board = open(&scenario);
+    board.build_in(&RETYPED);
+    board
+        .plugin_enable(None, None, &"rules".parse().unwrap(), &[])
+        .unwrap();
+    let mut board = open(&scenario);
+    board.build_in(&RETYPED);
+    let code = |given: &str| {
+        let input = serde_json::json!({ "code": given }).to_string();
+        let called = board.call(
+            &"rules.c".parse().unwrap(),
+            input.as_bytes(),
+            &Plugins::default(),
+        );
+        called.unwrap_err().refusal().code.as_str().to_owned()
+    };
+    assert_eq!(code("controls::c::old"), Code::PluginBadOutput.as_str());
+    assert_eq!(code("rules::c::new"), "rules::c::new");
 }

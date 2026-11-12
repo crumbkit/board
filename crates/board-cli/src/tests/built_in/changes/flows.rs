@@ -63,7 +63,7 @@ fn started(board: &Changes, title: &str, fields: &Value) -> (Value, Value) {
 
 #[test]
 fn next_gives_a_planned_controlled_check_missing_with_the_refusal_when_for_paths_refuses() {
-    let board = Changes::enabling(&["changes", "controls"]);
+    let board = Changes::enabling(&["changes", "rules"]);
     board.mount_x(&[("src/a.rs", "a\n")]);
     let mut own: Value = serde_json::from_str(&flow("own", &["draft", "land"])).unwrap();
     own["phases"][0]["checks"] = json!([{
@@ -87,7 +87,7 @@ fn next_gives_a_planned_controlled_check_missing_with_the_refusal_when_for_paths
         declared["detail"]
             .as_str()
             .unwrap()
-            .contains("controls::board::refused"),
+            .contains("rules::board::refused"),
         "{declared}"
     );
     assert_eq!(planned(&["/repos/x/src/a.rs"])["status"], "pass");
@@ -587,7 +587,7 @@ fn start_stores_the_suite_and_surfaces_the_open_records_on_the_mount_and_its_obl
     // Each obligation carries the close line controls gives it, and a
     // standing control on the mount is no obligation, so start lists none.
     let given = board.json_with(
-        &["call", "controls.for-paths"],
+        &["call", "rules.for-paths"],
         &json!({"paths": ["/repos/x/**"]}).to_string(),
     );
     let controls = &given["data"]["output"]["controls"];

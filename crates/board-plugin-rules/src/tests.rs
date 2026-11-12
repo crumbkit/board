@@ -22,7 +22,7 @@ const TYPES: [&str; 4] = [
 /// The `description` of SKILL.md's frontmatter, a single-quoted YAML
 /// scalar on one line.
 fn skill_description() -> String {
-    let skill = include_str!("../../../plugins/controls/SKILL.md");
+    let skill = include_str!("../../../plugins/rules/SKILL.md");
     let line = (skill.lines())
         .find_map(|line| line.strip_prefix("description: "))
         .unwrap();
@@ -379,6 +379,12 @@ fn a_rule_names_its_checker_checker_and_its_source_has_its_own_type_and_the_old_
 }
 
 #[test]
+fn the_sql_list_of_rule_types_names_the_type_constants() {
+    let listed = format!("('{}', '{}')", RuleRecord::TYPE, CONTROL_TYPE);
+    assert_eq!(records::RULE_TYPES, listed);
+}
+
+#[test]
 fn a_rules_pattern_file_and_rubric_are_references_and_its_other_strings_are_not() {
     let schema = shipped(CONTROL_TYPE);
     let control = |rule: Value| json!({"$type": "controls/control/v1", "requirement": "R.", "purpose": "P.", "rule": rule});
@@ -406,7 +412,7 @@ fn a_capability_the_plugin_does_not_offer_is_refused_and_check_is_answered() {
     let (_scenario, host) = recording(&[]);
     let other: CapabilityName = "budgets".parse().unwrap();
     let refused = Rules.call(&host, &other, json!({})).unwrap_err();
-    assert_eq!(refused.code, "controls::call::unknown_capability");
+    assert_eq!(refused.code, "rules::call::unknown_capability");
     assert_eq!(
         refused.message,
         "rules offers no capability budgets; it offers for-path, for-paths, check, evaluate, from-standards and migrate"
@@ -424,7 +430,7 @@ fn a_malformed_path_is_refused_as_board_refs_refuses_it_and_a_well_formed_one_is
     let (_scenario, host) = recording(&[]);
     let for_path: CapabilityName = "for-path".parse().unwrap();
     let refused = (Rules.call(&host, &for_path, json!({"path": "/docs/../x"}))).unwrap_err();
-    assert_eq!(refused.code, "controls::board::refused");
+    assert_eq!(refused.code, "rules::board::refused");
     assert_eq!(refused.fields["code"], json!("board::cli::usage"));
     let answered = Rules.call(&host, &for_path, json!({"path": "/docs/x"}));
     assert_eq!(answered.unwrap(), json!({"controls": []}));

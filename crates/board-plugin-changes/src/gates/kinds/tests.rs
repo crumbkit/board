@@ -456,10 +456,10 @@ fn planned_controlled_says_no_control_exists_when_the_board_holds_none() {
 #[test]
 fn planned_controlled_is_missing_with_the_refusal_when_for_paths_fails() {
     let mut found = observed(&json!({}), &[]);
-    found.on_planned_unread = Some("controls.for-paths refused the call".to_owned());
+    found.on_planned_unread = Some("rules.for-paths refused the call".to_owned());
     let (_, status, detail) = run(&found, planned_controlled()).remove(0);
     assert_eq!(status, Status::Missing);
-    assert_eq!(detail, "controls.for-paths refused the call");
+    assert_eq!(detail, "rules.for-paths refused the call");
 }
 
 #[test]

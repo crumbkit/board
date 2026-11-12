@@ -238,14 +238,12 @@ impl Board {
             }
             Origin::Directory(_) => &[],
         };
-        let problems: Vec<SchemaProblem> = (schemas.iter())
+        let mut problems: Vec<SchemaProblem> = (schemas.iter())
             .filter_map(|(record_type, shipped)| Self::problem(reader, record_type, shipped))
             .collect();
-        let held = |name: &str| {
-            !problems
-                .iter()
-                .any(|problem| problem.record_type.as_str() == name)
-        };
+        let flagged: Vec<String> = (problems.iter())
+            .map(|problem| problem.record_type.as_str().to_owned())
+            .collect();
         let twin = |name: &str| {
             (renamed.iter()).find_map(|&(old, new)| match name {
                 _ if name == old => Some(new),
@@ -253,15 +251,12 @@ impl Board {
                 _ => None,
             })
         };
-        let excused: Vec<bool> = (problems.iter())
-            .map(|problem| {
-                problem.code == Code::PluginSchemaMissing
-                    && twin(problem.record_type.as_str()).is_some_and(held)
-            })
-            .collect();
-        (problems.into_iter().zip(excused))
-            .filter_map(|(problem, excused)| (!excused).then_some(problem))
-            .collect()
+        problems.retain(|problem| {
+            !(problem.code == Code::PluginSchemaMissing
+                && twin(problem.record_type.as_str())
+                    .is_some_and(|twin| !flagged.iter().any(|name| name == twin)))
+        });
+        problems
     }
 
     /// What is wrong with how the board holds `shipped`, the schema a

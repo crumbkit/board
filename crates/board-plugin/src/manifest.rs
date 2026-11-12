@@ -315,6 +315,12 @@ impl Manifest {
         if manifest.run.is_empty() {
             return Err(ManifestError::EmptyRun);
         }
+        // Only a built-in plugin ships types in a former name's namespace.
+        let foreign = (manifest.types.iter()).find(|t| t.namespace() != manifest.name.as_str());
+        if let Some(record_type) = foreign {
+            let record_type = record_type.clone();
+            return Err(ManifestError::ForeignType { record_type });
+        }
         Ok(manifest)
     }
 
