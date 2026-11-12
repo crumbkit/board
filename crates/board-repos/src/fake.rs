@@ -27,12 +27,9 @@ pub(crate) struct Local {
 
 /// A board that commits on put, holding `files`.
 pub(crate) fn local(files: &[(&str, &str)]) -> Local {
-    let scenario = Scenario::new();
-    let config = r#"{"$type": "board/config/v1"}"#;
-    scenario.write(".board/board.json", Item::File(config));
+    let scenario = Scenario::board();
     // A committing put needs an identity, which CI's git does not have.
-    let identity = "[user]\n\tname = Board\n\temail = board@example.com\n";
-    scenario.write(".git/config", Item::Appended(identity));
+    scenario.identified();
     for (path, text) in files {
         scenario.write(path, Item::File(text));
     }

@@ -32,24 +32,15 @@ struct Notes {
     started: ObjectId,
 }
 
-fn identify(scenario: &Scenario, name: &str) {
-    scenario.write(
-        ".git/config",
-        Item::Appended(&format!(
-            "[user]\n\tname = {name}\n\temail = board@example.com\n"
-        )),
-    );
-}
-
 impl Notes {
     fn new() -> Self {
         let remote = Scenario::new();
         let started = remote.commit(&BASE);
         remote.accepting_pushes();
         let clone = Scenario::clone_of(&remote);
-        identify(&clone, "Board Clone");
+        clone.identified();
         let board = super::board(&[("fixture", true)], &["fixture"], Holds::Same);
-        identify(&board, "Board Test");
+        board.identified();
         board.write(
             "notes.json",
             Item::File(&format!(

@@ -49,11 +49,6 @@ struct Mounted {
     puts: RefCell<Vec<String>>,
 }
 
-fn identify(scenario: &Scenario) {
-    let identity = "[user]\n\tname = Board\n\temail = board@example.com\n";
-    scenario.write(".git/config", Item::Appended(identity));
-}
-
 impl Mounted {
     fn new(race: Race, other: &str) -> Self {
         let remote = Scenario::new();
@@ -62,13 +57,9 @@ impl Mounted {
             ("daily/.gitkeep", ""),
         ]);
         let clone = Scenario::clone_of(&remote);
-        identify(&clone);
-        let board = Scenario::new();
-        board.write(
-            ".board/board.json",
-            Item::File(r#"{"$type": "board/config/v1"}"#),
-        );
-        identify(&board);
+        clone.identified();
+        let board = Scenario::board();
+        board.identified();
         let mount = json!({"$type": "board/mount/v1", "repo": clone.path(), "follow": "main", "commit": started.to_string()});
         board.write("repos/notes.json", Item::File(&mount.to_string()));
         Self {

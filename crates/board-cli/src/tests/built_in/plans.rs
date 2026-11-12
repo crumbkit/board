@@ -405,9 +405,7 @@ fn an_answer_written_through_a_mount_names_its_question_in_that_board() {
     }
     let tree: Vec<(&str, &str)> = files.iter().map(|(p, t)| (*p, t.as_str())).collect();
     let commit = library.commit(&tree);
-    library
-        .track(commit)
-        .write(".git/config", Item::Appended(IDENTITY));
+    library.track(commit).identified();
     mount(&board, "lib.json", &library, commit);
     let flags = [
         "--path",

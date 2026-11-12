@@ -710,9 +710,6 @@ fn repository(plugins: &[&str], files: &[(&str, String)]) -> (Scenario, ObjectId
     (repository, commit)
 }
 
-/// A git identity, so a mounted board can commit its puts.
-const IDENTITY: &str = "[user]\n\tname = Board Test\n\temail = board@example.com\n";
-
 /// Mounts `repository` at `commit` at `path` in `fixture`.
 fn mount(fixture: &Fixture, path: &str, repository: &Scenario, commit: ObjectId) {
     fixture.write(path, &mount_of(&repository.path(), commit));

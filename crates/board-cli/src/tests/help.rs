@@ -151,10 +151,7 @@ fn every_help_example_runs_on_a_fixture_board_and_prints_its_golden_output() {
             "vendor/lib.json",
             Item::File(&mount_of(&library.path(), old)),
         )
-        .write(
-            ".git/config",
-            Item::Appended("[user]\n\tname = Board Test\n\temail = board@example.com\n"),
-        );
+        .identified();
     // The board follows a remote that holds its files in one commit, which
     // `sync` checks out; the mount pointer names a directory of this run,
     // so it stays out of the commit and the commit id stays the same.

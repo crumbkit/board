@@ -422,16 +422,12 @@ fn the_index_keeps_each_entrys_address_code_blob_and_metadata() {
 
 #[test]
 fn head_s_trees_are_listed_once_and_after_a_commit_only_the_changed_ones() {
-    let scenario = Scenario::new();
+    let scenario = Scenario::board();
     scenario.commit(&[
         (".board/board.json", r#"{"$type": "board/config/v1"}"#),
         ("a/x.md", "1"),
         ("b/y.md", "1"),
     ]);
-    scenario.write(
-        ".board/board.json",
-        Item::File(r#"{"$type": "board/config/v1"}"#),
-    );
     let cache = tempfile::tempdir().unwrap();
     assert_eq!(
         build(&scenario, cache.path()).trees,

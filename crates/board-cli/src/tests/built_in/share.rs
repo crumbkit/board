@@ -73,8 +73,7 @@ fn boards() -> Boards {
     let config = r#"{"$type": "board/config/v1", "commit_on_put": true}"#;
     team.write(".board/board.json", Item::File(config));
     let first = team.commit(&[(".board/board.json", config)]);
-    team.track(first)
-        .write(".git/config", Item::Appended(IDENTITY));
+    team.track(first).identified();
     mount(&personal, "team.json", &team, first);
     Boards { personal, team }
 }

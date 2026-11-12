@@ -18,9 +18,8 @@ const CONFIG: &str = r#"{"$type": "board/config/v1"}"#;
 
 /// A board with the task and project types and one project.
 pub(crate) fn board() -> Scenario {
-    let scenario = Scenario::new();
+    let scenario = Scenario::board();
     scenario
-        .write(".board/board.json", Item::File(CONFIG))
         .write(
             ".board/types/lr/task/v1.schema.json",
             Item::File(TASK_SCHEMA),
@@ -236,8 +235,7 @@ fn opening_a_board_opens_only_its_configuration_and_an_unreadable_one_is_invalid
 
 #[test]
 fn a_board_directory_spelled_in_another_case_is_no_board() {
-    let scenario = Scenario::new();
-    scenario.write(".board/board.json", Item::File(CONFIG));
+    let scenario = Scenario::board();
     assert!(Board::open(scenario.workdir(), None).is_ok());
     scenario
         .write(".board", Item::Deleted)

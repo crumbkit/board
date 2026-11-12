@@ -5,10 +5,7 @@ use crate::{LOCK_WAIT, WriteError};
 
 fn identified() -> Scenario {
     let scenario = Scenario::new();
-    scenario.write(
-        ".git/config",
-        Item::Appended("[user]\n\tname = Board Test\n\temail = board@example.com\n"),
-    );
+    scenario.identified();
     scenario.commit(&[("a.json", "{}")]);
     scenario
 }

@@ -25,9 +25,8 @@ const TASK_SCHEMA: &str = r#"{
 }"#;
 
 fn board() -> Scenario {
-    let scenario = Scenario::new();
+    let scenario = Scenario::board();
     scenario
-        .write(".board/board.json", Item::File(CONFIG))
         .write(
             ".board/types/lr/task/v1.schema.json",
             Item::File(TASK_SCHEMA),
@@ -1464,10 +1463,7 @@ fn put_batch_writes_every_line_or_lists_the_refused_ones() {
 #[test]
 fn put_batch_bulk_ends_the_commit_message_in_its_trailer_and_an_empty_reason_is_refused() {
     let scenario = board();
-    scenario.write(
-        ".git/config",
-        Item::Appended("[user]\n\tname = Board Test\n\temail = board@example.com\n"),
-    );
+    scenario.identified();
     let line = r#"{"path": "/tasks/a", "record": {"$type": "lr/task/v1", "title": "a"}}"#;
     let refused = board_with(
         scenario.workdir(),
@@ -1502,15 +1498,10 @@ fn put_batch_bulk_ends_the_commit_message_in_its_trailer_and_an_empty_reason_is_
 #[test]
 fn put_file_writes_stdin_as_given_and_a_batch_of_a_record_and_files_makes_one_commit() {
     let scenario = board();
-    scenario
-        .write(
-            ".git/config",
-            Item::Appended("[user]\n\tname = Board Test\n\temail = board@example.com\n"),
-        )
-        .write(
-            ".board/types/lr/task/v1.schema.json",
-            Item::File(board_scenario::generated::TASK_SCHEMA),
-        );
+    scenario.identified().write(
+        ".board/types/lr/task/v1.schema.json",
+        Item::File(board_scenario::generated::TASK_SCHEMA),
+    );
     let wrote = board_with(
         scenario.workdir(),
         None,
@@ -1893,10 +1884,7 @@ fn mount_update_of_a_missing_path_says_nothing_is_there_and_of_a_mount_runs() {
 /// A board that commits each put as a test identity.
 fn committing() -> Scenario {
     let scenario = board();
-    scenario.write(
-        ".git/config",
-        Item::Appended("[user]\n\tname = Board Test\n\temail = board@example.com\n"),
-    );
+    scenario.identified();
     scenario
 }
 

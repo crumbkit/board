@@ -108,10 +108,7 @@ fn crumbkit_code(code: Code) -> crumbkit::Code {
 /// `scenario`, given an identity to commit as in its own git config, so
 /// that what a put does never depends on the machine's git config.
 fn identified(scenario: &Scenario) -> &Scenario {
-    scenario.write(
-        ".git/config",
-        Item::Appended("[user]\n\tname = Board Test\n\temail = board@example.com\n"),
-    )
+    scenario.identified()
 }
 
 /// The starts of chains, or the twins, and the directories they run in,

@@ -15,12 +15,8 @@ use board_scenario::{Item, Scenario};
 use serde_json::Value;
 
 fn board() -> Scenario {
-    let scenario = Scenario::new();
+    let scenario = Scenario::board();
     scenario
-        .write(
-            ".board/board.json",
-            Item::File(r#"{"$type": "board/config/v1"}"#),
-        )
         .write(
             ".board/types/lr/note/v1.schema.json",
             Item::File(r#"{"type": "object"}"#),

@@ -68,3 +68,36 @@ fn a_locked_searchable_or_read_only_directory_has_its_own_mode() {
         assert_eq!(held.permissions().mode() & 0o777, mode, "{item:?}");
     }
 }
+
+#[test]
+fn a_board_holds_the_bare_config_and_nothing_else_in_it() {
+    let scenario = Scenario::board();
+    let bytes = fs::read(scenario.workdir().join(".board/board.json")).unwrap();
+    let classified = board_model::classify(".board/board.json", Some(&bytes));
+    assert_eq!(classified.code, None);
+    let board_model::Content::Record { record_type, value } = classified.content else {
+        panic!("the config is no record: {classified:?}");
+    };
+    assert_eq!(record_type.as_str(), board_model::CONFIG_TYPE);
+    assert_eq!(value.as_object().unwrap().len(), 1, "{value}");
+}
+
+/// The repository's own configuration, without the machine's, as CI reads it.
+fn isolated(scenario: &Scenario) -> gix::Repository {
+    gix::open_opts(scenario.workdir(), gix::open::Options::isolated()).unwrap()
+}
+
+#[test]
+fn an_identified_repository_commits_as_board_test_and_its_twin_has_nobody_to_commit_as() {
+    let scenario = Scenario::new();
+    assert!(isolated(&scenario).committer().is_none());
+    let git = isolated(scenario.identified());
+    let tree = gix::ObjectId::empty_tree(git.object_hash());
+    let none: [gix::ObjectId; 0] = [];
+    let commit = git.commit("HEAD", "first", tree, none).unwrap();
+    let commit = git.find_commit(commit).unwrap();
+    let author = commit.author().unwrap();
+    assert_eq!(author.name, "Board Test");
+    assert_eq!(author.email, "board@example.com");
+    assert_eq!(scenario.head().unwrap().id, model(commit.id));
+}

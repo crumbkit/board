@@ -666,16 +666,8 @@ fn a_query_on_a_board_enabling_a_failing_plugin_answers_as_with_a_working_one() 
 /// A board that commits on put, as whom it says, and a plugins directory
 /// holding journal, which ships `journal/note/v1`.
 pub(super) fn shipping() -> (Scenario, Scenario) {
-    let board = Scenario::new();
-    board
-        .write(
-            ".board/board.json",
-            Item::File(r#"{"$type": "board/config/v1"}"#),
-        )
-        .write(
-            ".git/config",
-            Item::Appended("[user]\n\tname = Board Test\n\temail = board@example.com\n"),
-        );
+    let board = Scenario::board();
+    board.identified();
     let data = Scenario::new();
     data.write(
         "plugins/journal/plugin.json",
@@ -732,10 +724,7 @@ pub(super) fn holding(held: &str) -> (Scenario, Scenario) {
         );
     board
         .write(".board/types/tasks/note/v1.schema.json", Item::File(held))
-        .write(
-            ".git/config",
-            Item::Appended("[user]\n\tname = Board Test\n\temail = board@example.com\n"),
-        );
+        .identified();
     (board, data)
 }
 

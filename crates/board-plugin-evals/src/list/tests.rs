@@ -508,8 +508,7 @@ fn text() -> impl Strategy<Value = String> {
 thread_local! {
     /// An empty board, whose query runs SQL in Board's bundled SQLite.
     static EMPTY: (Scenario, Board) = {
-        let scenario = Scenario::new();
-        scenario.write(".board/board.json", Item::File(r#"{"$type": "board/config/v1"}"#));
+        let scenario = Scenario::board();
         let board = Board::open(scenario.workdir(), None).unwrap();
         (scenario, board)
     };
