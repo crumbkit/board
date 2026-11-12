@@ -23,14 +23,20 @@ fn schema() -> Schema {
     Schema::compile(schema_of::<Flow>(SchemaSettings::draft2020_12())).unwrap()
 }
 
-/// `value`, a flow, with each check's `controls` named `rules`, as Board
-/// writes a flow stored before the rename.
+/// `value`, a flow, with each check's `controls` named `rules` and each
+/// former check kind under its new name, as Board writes a flow stored
+/// before the rename.
 fn renamed(mut value: serde_json::Value) -> serde_json::Value {
     for phase in value["phases"].as_array_mut().unwrap() {
         for check in phase["checks"].as_array_mut().unwrap() {
             let check = check.as_object_mut().unwrap();
             if let Some(rules) = check.remove("controls") {
                 check.insert("rules".to_owned(), rules);
+            }
+            for (former, kind) in FORMER_KINDS {
+                if check.get("kind") == Some(&json!(former)) {
+                    check.insert("kind".to_owned(), json!(kind.as_str()));
+                }
             }
         }
     }
@@ -68,7 +74,7 @@ fn a_flow_stored_before_the_rename_reads_its_controls_as_rules_and_keeps_its_ver
     let flow: Flow = serde_json::from_str(text).unwrap();
     assert_eq!(serde_json::to_value(&flow).unwrap(), renamed(value.clone()));
     assert_eq!(problems(&flow, false), []);
-    let stored = read::version_of("development", &value);
+    let stored = board_model::flow_version("development", &value);
     assert_eq!(stored, "/flows/development/a9df0910bd037be9");
     assert_ne!(version_path(&development()), stored);
     let check = (flow.phases.iter().flat_map(|phase| &phase.checks))
@@ -176,7 +182,7 @@ fn a_stored_flow_version_still_reads_passes_its_schema_and_keeps_its_version_pat
     let flow: Flow = serde_json::from_str(text).unwrap();
     assert_eq!(serde_json::to_value(&flow).unwrap(), renamed(value.clone()));
     assert_eq!(problems(&flow, false), []);
-    let stored = read::version_of("development", &value);
+    let stored = board_model::flow_version("development", &value);
     assert_eq!(stored, "/flows/development/2bad23722b29b5a8");
     assert_ne!(version_path(&development()), stored);
 }
@@ -199,7 +205,7 @@ fn the_stored_prose_flow_keeps_its_version_path_and_the_shipped_flow_names_answe
     let flow: Flow = serde_json::from_str(text).unwrap();
     assert_eq!(serde_json::to_value(&flow).unwrap(), renamed(value.clone()));
     assert_eq!(problems(&flow, false), []);
-    let stored = read::version_of("development", &value);
+    let stored = board_model::flow_version("development", &value);
     assert_eq!(stored, "/flows/development/60bd988ebac76d79");
     assert_ne!(version_path(&development()), stored);
     assert!(named(&flow, "data-signed").section_not.is_some());

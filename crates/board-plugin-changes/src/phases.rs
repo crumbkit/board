@@ -390,12 +390,12 @@ fn records_held(host: &dyn Host, found: &mut Observed) -> Result<(), PluginError
     Ok(())
 }
 
-/// What `planned-controlled` checks read: which rules they name the board
+/// What `planned-rule-paths` checks read: which rules they name the board
 /// holds, and the rules on the plan's paths, or why those cannot be read.
 fn planned_rules(host: &dyn Host, found: &mut Observed) -> Result<(), PluginError> {
     let filled = values(found);
     let named: Vec<String> = (found.checks().iter())
-        .filter(|each| each.kind.known() == Some(&CheckKind::PlannedControlled))
+        .filter(|each| each.kind.known() == Some(&CheckKind::PlannedRulePaths))
         .flat_map(|each| named_rules(each, &filled))
         .collect();
     for rule in named {

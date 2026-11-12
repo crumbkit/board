@@ -91,7 +91,7 @@ pub(crate) enum Status {
 /// those no planned path matches, and `diff_unread` why the diff could not
 /// be read. `obligations` lists the obligations on the planned paths, none
 /// when the rules plugin is not enabled; `controlled` maps each rule a
-/// `controlled-paths` check names to the edited files it lists, or none
+/// `rule-paths` check names to the edited files it lists, or none
 /// when no such rule exists. `ticket_types` holds the type of each of
 /// the change's tickets Board reads, `board` the board's root, and
 /// `existing` whether something is at each path an `exists` check names,
@@ -134,11 +134,11 @@ pub(crate) struct Observed {
     /// it means, so the check does not apply.
     pub(crate) records_held: BTreeSet<String>,
     /// The rules `rules.for-paths` finds on the plan's paths, which a
-    /// `planned-controlled` check reads.
+    /// `planned-rule-paths` check reads.
     pub(crate) on_planned: Vec<String>,
     /// Why `rules.for-paths` could not be read for the plan's paths.
     pub(crate) on_planned_unread: Option<String>,
-    /// Which rules a `planned-controlled` check names the board holds.
+    /// Which rules a `planned-rule-paths` check names the board holds.
     pub(crate) held: BTreeSet<String>,
 }
 
@@ -306,8 +306,8 @@ pub(crate) fn reads(checks: &[flow::Check]) -> BTreeSet<Read> {
             CheckKind::Run => &[Read::Suite, Read::References],
             CheckKind::Paths => &[Read::Diff],
             CheckKind::Obligations => &[Read::Plan, Read::Obligations],
-            CheckKind::ControlledPaths => &[Read::Diff, Read::Controlled],
-            CheckKind::PlannedControlled => &[Read::PlannedRules],
+            CheckKind::RulePaths => &[Read::Diff, Read::Controlled],
+            CheckKind::PlannedRulePaths => &[Read::PlannedRules],
             CheckKind::Field if each.field == Some(Field::Pulls) => &[Read::Pull],
             CheckKind::Field if each.field == Some(Field::Tickets) && each.types.is_some() => {
                 &[Read::Tickets]
@@ -488,8 +488,8 @@ fn evaluate(
         },
         CheckKind::Considered => kinds::considered_missing(observed),
         CheckKind::Obligations => kinds::obligations_missing(observed),
-        CheckKind::ControlledPaths => kinds::controlled_missing(observed, each),
-        CheckKind::PlannedControlled => kinds::planned_controlled_missing(observed, each),
+        CheckKind::RulePaths => kinds::controlled_missing(observed, each),
+        CheckKind::PlannedRulePaths => kinds::planned_controlled_missing(observed, each),
         CheckKind::FlowValid => kinds::flow_valid_missing(observed),
         CheckKind::Exists => kinds::exists_missing(observed, each),
     }

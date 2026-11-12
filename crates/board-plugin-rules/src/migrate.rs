@@ -23,8 +23,8 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 
-use crate::logical;
 use crate::records::{CONTROL_TYPE, FORMER_SCHEMAS, OWED_BY_TYPES};
+use crate::{logical, rename};
 
 /// The reason the migration's commit gives in its `Board-Bulk:` trailer.
 const BULK: &str = "migrate controls";
@@ -72,6 +72,14 @@ pub(crate) struct Input {
     /// Set each obligation's `owed_by`; without it nothing is read or written.
     #[serde(default)]
     owed_by: bool,
+    /// Rename what the board calls a control to a rule, history included;
+    /// not with `owed_by`.
+    #[serde(default)]
+    rename: bool,
+    /// With `rename` and `apply`, the digest the dry run gave; a rename whose
+    /// writes differ from the dry run's writes nothing.
+    #[serde(default)]
+    digest: Option<String>,
 }
 
 /// What the migration set or would set.
@@ -81,6 +89,11 @@ pub(crate) struct Input {
 /// record the board lacks. `ambiguous` lists each obligation two records
 /// match under one rule, `unmatched` each that names no record, and `unread`
 /// each Board could not read.
+///
+/// With `rename`, `writes` lists each path rewritten, with `to` where it
+/// moves, at most 100, with `total` and `truncated`; `digest` is what
+/// `apply` takes; `signed` lists the signed records that hold an old name,
+/// left as they are; and `kept` lists each path left for a person to move.
 #[derive(Debug, Default, Serialize, JsonSchema)]
 #[schemars(rename = "ControlsMigrateOutput")]
 pub(crate) struct Output {
@@ -92,6 +105,14 @@ pub(crate) struct Output {
     ambiguous: Vec<Ambiguous>,
     unmatched: Vec<String>,
     unread: Vec<Unread>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    writes: Option<Vec<rename::Write>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    digest: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    signed: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    kept: Option<Vec<rename::Kept>>,
 }
 
 /// An obligation, and what it is owed by.
@@ -153,7 +174,7 @@ impl Pull {
 }
 
 /// The rows of `sql`, or the refusal of a query Board cut short.
-fn rows(host: &dyn Host, sql: &str) -> Result<Vec<Vec<Value>>, PluginError> {
+pub(crate) fn rows(host: &dyn Host, sql: &str) -> Result<Vec<Vec<Value>>, PluginError> {
     let report = (host.query(sql, Limit::ALL))
         .map_err(|error| PluginError::board_refused("rules", "query", &error.refusal()))?;
     if report.truncated {
@@ -303,11 +324,38 @@ fn strings(body: &Map<String, Value>, key: &str) -> Vec<String> {
 }
 
 pub(crate) fn migrate(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
-    let Input { apply, owed_by } = PluginError::read_input("rules", "migrate", input)?;
+    let Input {
+        apply,
+        owed_by,
+        rename,
+        digest,
+    } = PluginError::read_input("rules", "migrate", input)?;
     let mut output = Output {
         applied: apply,
         ..Output::default()
     };
+    if rename {
+        if owed_by {
+            return Err(PluginError {
+                code: "rules::migrate::both".to_owned(),
+                message: "rename and owed_by are two migrations; run one at a time".to_owned(),
+                fields: Map::new(),
+                hint: None,
+            });
+        }
+        let renamed = rename::rename(host, apply, digest.as_deref())?;
+        let mut writes = renamed.writes;
+        output.total = writes.len();
+        output.truncated = output.total > LISTED;
+        writes.truncate(LISTED);
+        output.writes = Some(writes);
+        output.digest = Some(renamed.digest);
+        output.signed = Some(renamed.signed);
+        output.kept = Some(renamed.kept);
+        return Ok(
+            serde_json::to_value(output).expect("Output holds only strings, numbers and bools")
+        );
+    }
     if owed_by {
         let lines = owed_by_lines(host, &mut output)?;
         if apply && !lines.is_empty() {

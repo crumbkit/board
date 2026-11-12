@@ -347,7 +347,7 @@ of `changes` still fails `review`.
   repository, so `start` reads no CODEOWNERS, contributing docs, suite or
   obligations on a mount, its route is `unowned`, and `note` says so. Its
   agent runs in the board's root, with no worktree. A flow with a `paths`,
-  `run` or `controlled-paths` check reads a repository, so `--mount /`
+  `run` or `rule-paths` check reads a repository, so `--mount /`
   refuses it with `changes::mount::needs_repository`, naming those checks;
   `reflow` refuses moving such a change to one too.
 - `run (--path /changes/<name> | --mount (/repos/<name> | /) --title '<title>' [--task <path>] [--name <name>] [--flow <name or path>] [--over_limit '<why>']) [--through <phase> | --until <phase>] [--inline true] [--budget <usd>] [--sandbox true [--for /changes/<name>]]`
@@ -550,7 +550,7 @@ of `changes` still fails `review`.
   none or the plan answers `lifecycle` none (or, for a plan with no typed
   answer, its Lifecycle section says None), which counts outside the 600 words as the plan's text does,
   `warnings`, left out when empty, whose `changes::brief::no_rule` entry
-  says a rule a `planned-controlled` check of the change's flow names does
+  says a rule a `planned-rule-paths` check of the change's flow names does
   not exist, so only the plan's typed answers guard what it would list,
   `answers`, the plan's typed answers, left out when it gives none,
   `rules`, each rule that applies to the plan's `paths`, once, from
@@ -844,18 +844,20 @@ evaluated by kind:
 | `mockups` | the `agreed` part: each mockup under UX is named by a signed decision; the `neighbours` part: UX lists its neighbours; both when `part` is left out |
 | `considered` | each path in the change's `surfaced` that still reaches something is in the plan's `uses` or its `considered` field |
 | `obligations` | no obligation rule applies to the plan's paths, except those in the plan's `owed` field; a board without the rules plugin enabled has none |
-| `controlled-paths` | the diff edits no file that the rules in `rules` list in their `paths` or `applies_to`; the detail names at most ten such files and counts the rest |
-| `planned-controlled` | `rules.for-paths` on the plan's paths reaches none of the rules in `rules`; `when` says which plans the check asks this of |
+| `rule-paths` | the diff edits no file that the rules in `rules` list in their `paths` or `applies_to`; the detail names at most ten such files and counts the rest |
+| `planned-rule-paths` | `rules.for-paths` on the plan's paths reaches none of the rules in `rules`; `when` says which plans the check asks this of |
 | `flow-valid` | at least one `changes/flow/v1` is attached, and each can run and gives a `remedy` to every check whose actor is the owner or a reviewer; the detail lists each problem with its phase and check id |
 | `exists` | something is at `path`, its placeholders filled; a placeholder with no value yet leaves it missing |
 
-A `controlled-paths` or `planned-controlled` check whose rules the board
+A `rule-paths` or `planned-rule-paths` check whose rules the board
 does not hold passes, and its detail says that no such rule exists. When
-`rules.for-paths` fails, a `planned-controlled` check is missing with its
+`rules.for-paths` fails, a `planned-rule-paths` check is missing with its
 refusal as the detail. A kind Board does not
 know reads but is always missing. A flow stored before the rename names
-these rules in `controls`, under `/controls/`; it reads as `rules`, each
-path in its `/rules/` form, and keeps its version path. A rule is found at
+these rules in `controls`, under `/controls/`, and names the kinds
+`controlled-paths` and `planned-controlled`; it reads as `rules`, each path
+in its `/rules/` form, with the new kind names, and keeps its version path.
+`rules.migrate --rename` stores it again under the new names. A rule is found at
 either prefix and of either type, `rules/rule/v1` or `controls/control/v1`.
 
 A check's `actor` (`agent`, the default, `owner` or `reviewer`) says who
@@ -867,8 +869,8 @@ its kind's own. A `waivable` check passes when an attached
 with `written_by` set is an agent's stub and signs nothing, here and in
 every check.
 
-Instructions, remedies and the rules of a `controlled-paths` or
-`planned-controlled` check may name
+Instructions, remedies and the rules of a `rule-paths` or
+`planned-rule-paths` check may name
 `{change}`, `{name}`, `{mount}`, `{repo}`, `{plan}`, `{head}`, `{suite}`,
 `{draft}` (the name of the first attached `changes/flow/v1`) and `{board}`
 (the board's root). A placeholder with no value is left out cleanly: the
@@ -886,9 +888,9 @@ The development flow's gates:
 
 | Leaving | Checks |
 | --- | --- |
-| plan | `plan-sections`, the eight sections; `considered`; `task`; `route`; `owner-approval`, a `plans/decision/v1` the owner signed whose `refs` name the plan or the change, on every route; `mockups`, when the plan answers `ux` mockups; `data-signed`, an `understood` check of the data, when it answers `data` stored; `lifecycle-declared`, a `planned-controlled` check of `/rules/{repo}/lifecycle-paths`, when it answers `lifecycle` none; `lifecycle-record`, an `exists` check of `/changes/{name}/lifecycle`, when it answers `lifecycle` record; `obligations`, which does not block |
+| plan | `plan-sections`, the eight sections; `considered`; `task`; `route`; `owner-approval`, a `plans/decision/v1` the owner signed whose `refs` name the plan or the change, on every route; `mockups`, when the plan answers `ux` mockups; `data-signed`, an `understood` check of the data, when it answers `data` stored; `lifecycle-declared`, a `planned-rule-paths` check of `/rules/{repo}/lifecycle-paths`, when it answers `lifecycle` none; `lifecycle-record`, an `exists` check of `/changes/{name}/lifecycle`, when it answers `lifecycle` record; `obligations`, which does not block |
 | build | `head`; `suite-run`, waivable; `tasks`; `rechecks`, two matching rechecks, when the plan answers `data` stored |
-| review | `review`, a report on `head` with no critical or high finding; `paths`; `ui-paths` and `data-paths`, `controlled-paths` checks of `/rules/{repo}/ui-paths` when the plan answers `ux` none and `/rules/{repo}/data-paths` when it answers `data` none; `lifecycle-paths`, the same check of `/rules/{repo}/lifecycle-paths` unless Board reads a `changes/lifecycle/v1` at `/changes/{name}/lifecycle`; `lifecycle-none-paths`, the same check when the plan answers `lifecycle` none, whether or not a record exists; `obligations-settled`, with the escape heading `Obligations left owed` |
+| review | `review`, a report on `head` with no critical or high finding; `paths`; `ui-paths` and `data-paths`, `rule-paths` checks of `/rules/{repo}/ui-paths` when the plan answers `ux` none and `/rules/{repo}/data-paths` when it answers `data` none; `lifecycle-paths`, the same check of `/rules/{repo}/lifecycle-paths` unless Board reads a `changes/lifecycle/v1` at `/changes/{name}/lifecycle`; `lifecycle-none-paths`, the same check when the plan answers `lifecycle` none, whether or not a record exists; `obligations-settled`, with the escape heading `Obligations left owed` |
 | land | `test-sections`, What the tests prove and What the tests do not prove; `pull-request`; `lifecycle-paths-at-land` and `lifecycle-none-paths-at-land`, the two review checks of `/rules/{repo}/lifecycle-paths` again, so each re-reads the diff at the recorded head and a record removed after review is gated |
 | build, for a prototype | Never passes: `verdict` ends a prototype instead. |
 

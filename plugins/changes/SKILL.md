@@ -153,7 +153,7 @@ to replace the flow copies changes kept before versions.
 - `changes::flow::invalid`: fix each of the flow's `problems`, or name
   another flow.
 - `changes::mount::needs_repository`: name the repository's mount, or a
-  flow without `paths`, `run` or `controlled-paths` checks.
+  flow without `paths`, `run` or `rule-paths` checks.
 - `changes::sandbox::no_change`, `changes::sandbox::inline`,
   `changes::sandbox::resume`, `changes::sandbox::setup`: a sandboxed run
   starts a new change, with `--for` naming the change that asked for it.

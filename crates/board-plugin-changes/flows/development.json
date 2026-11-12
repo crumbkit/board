@@ -23,7 +23,7 @@
         {"id": "data-signed", "kind": "understood", "actor": "owner", "subject": "data",
          "when": {"answers": {"data": "stored"}},
          "remedy": "Run the understanding-check skill with the owner on the plan's Data section, attach its record with `board changes attach --path {change} --ref <record>`, and ask the owner to sign a plans/decision/v1 whose refs name it."},
-        {"id": "lifecycle-declared", "kind": "planned-controlled", "rules": ["/rules/{repo}/lifecycle-paths"],
+        {"id": "lifecycle-declared", "kind": "planned-rule-paths", "rules": ["/rules/{repo}/lifecycle-paths"],
          "when": {"answers": {"lifecycle": "none"}},
          "remedy": "The plan's paths reach what this repository names as lifecycle code, so the plan cannot answer `lifecycle` none. Write the states, events and crash points by piping JSON with `path`, `text`, `doc` and `external` to `board changes lifecycle`, name that record under Lifecycle and answer `lifecycle` record."},
         {"id": "lifecycle-record", "kind": "exists", "path": "/changes/{name}/lifecycle",
@@ -54,18 +54,18 @@
           "remedy": "Only a reviewer can provide this: start one in a fresh agent with tools and a checkout of {head}, have it write a review/report/v1 for the change at /reviews/<id>/report, and attach it with `board changes attach --path {change} --ref /reviews/<id>/report`.", "type": "review/report/v1",
          "where": {"at_head": "range", "values": {"verdict": ["approve", "comment"]}, "no_findings": ["critical", "high"]}},
         {"id": "paths", "kind": "paths"},
-        {"id": "ui-paths", "kind": "controlled-paths", "rules": ["/rules/{repo}/ui-paths"],
+        {"id": "ui-paths", "kind": "rule-paths", "rules": ["/rules/{repo}/ui-paths"],
          "when": {"answers": {"ux": "none"}}},
-        {"id": "data-paths", "kind": "controlled-paths", "rules": ["/rules/{repo}/data-paths"],
+        {"id": "data-paths", "kind": "rule-paths", "rules": ["/rules/{repo}/data-paths"],
          "when": {"answers": {"data": "none"}}},
-        {"id": "lifecycle-paths", "kind": "controlled-paths", "rules": ["/rules/{repo}/lifecycle-paths"],
+        {"id": "lifecycle-paths", "kind": "rule-paths", "rules": ["/rules/{repo}/lifecycle-paths"],
          "when": {
             "absent": {"path": "/changes/{name}/lifecycle", "type": "changes/lifecycle/v1"}
           },
           "remedy": "The change's diff edits what this repository names as lifecycle code and the change has no lifecycle record. Write one by piping JSON with `path`, `text`, `doc` and `external` to `board changes lifecycle`, or revert the edit."},
         {
           "id": "lifecycle-none-paths",
-          "kind": "controlled-paths",
+          "kind": "rule-paths",
           "rules": [
             "/rules/{repo}/lifecycle-paths"
           ],
@@ -87,14 +87,14 @@
         {"id": "test-sections", "kind": "sections",
          "sections": ["What the tests prove", "What the tests do not prove"]},
         {"id": "pull-request", "kind": "field", "field": "pulls", "types": ["github/pull/v1"]},
-        {"id": "lifecycle-paths-at-land", "kind": "controlled-paths", "rules": ["/rules/{repo}/lifecycle-paths"],
+        {"id": "lifecycle-paths-at-land", "kind": "rule-paths", "rules": ["/rules/{repo}/lifecycle-paths"],
          "when": {
             "absent": {"path": "/changes/{name}/lifecycle", "type": "changes/lifecycle/v1"}
           },
           "remedy": "The change's diff edits what this repository names as lifecycle code and the change has no lifecycle record. Write one by piping JSON with `path`, `text`, `doc` and `external` to `board changes lifecycle`, or revert the edit."},
         {
           "id": "lifecycle-none-paths-at-land",
-          "kind": "controlled-paths",
+          "kind": "rule-paths",
           "rules": [
             "/rules/{repo}/lifecycle-paths"
           ],

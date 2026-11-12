@@ -419,6 +419,12 @@ fn a_change_reflowed_from_small_at_build_faces_lifecycle_paths_until_it_has_a_re
 /// `stored` is set, on its version stored before the rename, which names
 /// `controls` under `/controls/`.
 fn lifecycle_gate(stored: bool, prefix: &str, rule_type: &str, phase: &str) -> Value {
+    let (board, head) = lifecycle_change(stored, prefix, rule_type, phase);
+    gate_naming(&board, &head)
+}
+
+/// The board of [`lifecycle_gate`] and its head.
+fn lifecycle_change(stored: bool, prefix: &str, rule_type: &str, phase: &str) -> (Changes, String) {
     let board = Changes::enabling(&["changes", "rules"]);
     let (_, head) = board.edited(&[("src/sync.rs", "a\n")]);
     lifecycle_rule(&board, prefix, rule_type);
@@ -439,14 +445,66 @@ fn lifecycle_gate(stored: bool, prefix: &str, rule_type: &str, phase: &str) -> V
     plan["paths"] = json!(["/repos/x/src/sync.rs"]);
     board.call_stdin("plan", &plan);
     moved(&board, phase, &head);
-    // Each board commits its own head and stamps its own plan, so the gate
-    // names them as HEAD and PLAN.
+    (board, head)
+}
+
+/// The gate of the change at [`CHANGE`]. Each board commits its own head
+/// and stamps its own plan, so the gate names them as HEAD and PLAN.
+fn gate_naming(board: &Changes, head: &str) -> Value {
     let plan = board.read("changes/t.json")["plan"]
         .as_str()
         .unwrap()
         .to_owned();
     let gate = board.call("next", &json!({"path": CHANGE}))["gate"].to_string();
-    serde_json::from_str(&gate.replace(&head, "HEAD").replace(&plan, "PLAN")).unwrap()
+    serde_json::from_str(&gate.replace(head, "HEAD").replace(&plan, "PLAN")).unwrap()
+}
+
+#[test]
+fn renaming_stores_an_old_flow_again_under_the_new_names_and_its_change_gates_as_before() {
+    const OLD: &str = "/flows/development/a9df0910bd037be9";
+    for phase in ["plan", "land"] {
+        let (board, head) = lifecycle_change(true, "controls", "controls/control/v1", phase);
+        let before = gate_naming(&board, &head);
+        let renamed = board.run(&["--json", "call", "rules.migrate", "--rename", "true"], "");
+        let digest = json(&renamed)["data"]["output"]["digest"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        let applied = board.run(
+            &[
+                "--json",
+                "call",
+                "rules.migrate",
+                "--rename",
+                "true",
+                "--apply",
+                "true",
+                "--digest",
+                &digest,
+            ],
+            "",
+        );
+        assert_eq!(applied.code, 0, "{}", text(&applied.stdout));
+        let flow = board.read("changes/t.json")["flow"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        assert!(
+            flow.starts_with("/flows/development/") && flow != OLD,
+            "{flow}"
+        );
+        let stored = board.read(&format!("{}.json", &flow[1..])).to_string();
+        assert!(
+            !stored.contains("\"controls\"")
+                && !stored.contains("/controls/")
+                && !stored.contains("controlled")
+                && stored.contains("\"rule-paths\""),
+            "{stored}"
+        );
+        assert!(!board.exists(&format!("{}.json", &OLD[1..])), "{phase}");
+        assert!(board.exists("rules/x/lifecycle-paths.json"), "{phase}");
+        assert_eq!(gate_naming(&board, &head), before, "{phase}");
+    }
 }
 
 #[test]

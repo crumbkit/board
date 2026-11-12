@@ -5,6 +5,7 @@ mod attachment;
 mod code;
 mod effect;
 mod fields;
+mod flow;
 mod frontmatter;
 mod json;
 mod location;
@@ -28,6 +29,7 @@ pub use crate::effect::{
     is_effect_id, shown_digest, signature_namespace, utc,
 };
 pub use crate::fields::{Fields, Found, Known, Lined};
+pub use crate::flow::flow_version;
 pub use crate::frontmatter::{Feature, FrontmatterError, frontmatter};
 pub use crate::json::{Canonical, JsonError, canonical_json, parse_json};
 pub use crate::location::{Board, Location, Object, ObjectId, Source};

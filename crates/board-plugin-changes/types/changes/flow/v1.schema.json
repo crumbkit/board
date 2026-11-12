@@ -88,10 +88,10 @@
           "$ref": "#/$defs/ObligationsCheck"
         },
         {
-          "$ref": "#/$defs/ControlledPathsCheck"
+          "$ref": "#/$defs/RulePathsCheck"
         },
         {
-          "$ref": "#/$defs/PlannedControlledCheck"
+          "$ref": "#/$defs/PlannedRulePathsCheck"
         },
         {
           "$ref": "#/$defs/ExistsCheck"
@@ -130,10 +130,12 @@
             "mockups",
             "considered",
             "obligations",
-            "controlled-paths",
-            "planned-controlled",
+            "rule-paths",
+            "planned-rule-paths",
             "flow-valid",
-            "exists"
+            "exists",
+            "controlled-paths",
+            "planned-controlled"
           ],
           "type": "string"
         },
@@ -159,91 +161,6 @@
       "type": "object",
       "unevaluatedProperties": false
     },
-    "ControlledPathsCheck": {
-      "description": "The parameters of a check of kind `controlled-paths`.",
-      "else": {
-        "not": {
-          "anyOf": [
-            {
-              "not": {
-                "properties": {
-                  "kind": {
-                    "enum": [
-                      "planned-controlled"
-                    ]
-                  }
-                },
-                "required": [
-                  "kind"
-                ]
-              },
-              "required": [
-                "rules"
-              ]
-            },
-            {
-              "not": {
-                "properties": {
-                  "kind": {
-                    "enum": [
-                      "planned-controlled"
-                    ]
-                  }
-                },
-                "required": [
-                  "kind"
-                ]
-              },
-              "required": [
-                "controls"
-              ]
-            }
-          ]
-        }
-      },
-      "if": {
-        "properties": {
-          "kind": {
-            "const": "controlled-paths"
-          }
-        },
-        "required": [
-          "kind"
-        ]
-      },
-      "properties": {
-        "controls": {
-          "description": "`controlled-paths`: the rules whose paths the diff must not touch.\n`planned-controlled`: the rules the plan's paths must not reach. A\nflow stored before the rename names it `controls`.",
-          "items": {
-            "pattern": "^/\\S*$",
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "rules": {
-          "description": "`controlled-paths`: the rules whose paths the diff must not touch.\n`planned-controlled`: the rules the plan's paths must not reach. A\nflow stored before the rename names it `controls`.",
-          "items": {
-            "pattern": "^/\\S*$",
-            "type": "string"
-          },
-          "type": "array"
-        }
-      },
-      "then": {
-        "oneOf": [
-          {
-            "required": [
-              "rules"
-            ]
-          },
-          {
-            "required": [
-              "controls"
-            ]
-          }
-        ]
-      }
-    },
     "ExistsCheck": {
       "description": "The parameters of a check of kind `exists`.",
       "else": {
@@ -260,7 +177,9 @@
       "if": {
         "properties": {
           "kind": {
-            "const": "exists"
+            "enum": [
+              "exists"
+            ]
           }
         },
         "required": [
@@ -318,7 +237,9 @@
       "if": {
         "properties": {
           "kind": {
-            "const": "field"
+            "enum": [
+              "field"
+            ]
           }
         },
         "required": [
@@ -374,7 +295,9 @@
       "if": {
         "properties": {
           "kind": {
-            "const": "mockups"
+            "enum": [
+              "mockups"
+            ]
           }
         },
         "required": [
@@ -408,7 +331,9 @@
       "if": {
         "properties": {
           "kind": {
-            "const": "obligations"
+            "enum": [
+              "obligations"
+            ]
           }
         },
         "required": [
@@ -471,8 +396,8 @@
       ],
       "type": "object"
     },
-    "PlannedControlledCheck": {
-      "description": "The parameters of a check of kind `planned-controlled`.",
+    "PlannedRulePathsCheck": {
+      "description": "The parameters of a check of kind `planned-rule-paths`.",
       "else": {
         "not": {
           "anyOf": [
@@ -481,6 +406,7 @@
                 "properties": {
                   "kind": {
                     "enum": [
+                      "rule-paths",
                       "controlled-paths"
                     ]
                   }
@@ -498,6 +424,7 @@
                 "properties": {
                   "kind": {
                     "enum": [
+                      "rule-paths",
                       "controlled-paths"
                     ]
                   }
@@ -516,7 +443,10 @@
       "if": {
         "properties": {
           "kind": {
-            "const": "planned-controlled"
+            "enum": [
+              "planned-rule-paths",
+              "planned-controlled"
+            ]
           }
         },
         "required": [
@@ -525,7 +455,7 @@
       },
       "properties": {
         "controls": {
-          "description": "`controlled-paths`: the rules whose paths the diff must not touch.\n`planned-controlled`: the rules the plan's paths must not reach. A\nflow stored before the rename names it `controls`.",
+          "description": "`rule-paths`: the rules whose paths the diff must not touch.\n`planned-rule-paths`: the rules the plan's paths must not reach. A\nflow stored before the rename names it `controls`.",
           "items": {
             "pattern": "^/\\S*$",
             "type": "string"
@@ -533,7 +463,7 @@
           "type": "array"
         },
         "rules": {
-          "description": "`controlled-paths`: the rules whose paths the diff must not touch.\n`planned-controlled`: the rules the plan's paths must not reach. A\nflow stored before the rename names it `controls`.",
+          "description": "`rule-paths`: the rules whose paths the diff must not touch.\n`planned-rule-paths`: the rules the plan's paths must not reach. A\nflow stored before the rename names it `controls`.",
           "items": {
             "pattern": "^/\\S*$",
             "type": "string"
@@ -599,7 +529,9 @@
       "if": {
         "properties": {
           "kind": {
-            "const": "records"
+            "enum": [
+              "records"
+            ]
           }
         },
         "required": [
@@ -638,6 +570,96 @@
         ]
       }
     },
+    "RulePathsCheck": {
+      "description": "The parameters of a check of kind `rule-paths`.",
+      "else": {
+        "not": {
+          "anyOf": [
+            {
+              "not": {
+                "properties": {
+                  "kind": {
+                    "enum": [
+                      "planned-rule-paths",
+                      "planned-controlled"
+                    ]
+                  }
+                },
+                "required": [
+                  "kind"
+                ]
+              },
+              "required": [
+                "rules"
+              ]
+            },
+            {
+              "not": {
+                "properties": {
+                  "kind": {
+                    "enum": [
+                      "planned-rule-paths",
+                      "planned-controlled"
+                    ]
+                  }
+                },
+                "required": [
+                  "kind"
+                ]
+              },
+              "required": [
+                "controls"
+              ]
+            }
+          ]
+        }
+      },
+      "if": {
+        "properties": {
+          "kind": {
+            "enum": [
+              "rule-paths",
+              "controlled-paths"
+            ]
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "properties": {
+        "controls": {
+          "description": "`rule-paths`: the rules whose paths the diff must not touch.\n`planned-rule-paths`: the rules the plan's paths must not reach. A\nflow stored before the rename names it `controls`.",
+          "items": {
+            "pattern": "^/\\S*$",
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "rules": {
+          "description": "`rule-paths`: the rules whose paths the diff must not touch.\n`planned-rule-paths`: the rules the plan's paths must not reach. A\nflow stored before the rename names it `controls`.",
+          "items": {
+            "pattern": "^/\\S*$",
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "then": {
+        "oneOf": [
+          {
+            "required": [
+              "rules"
+            ]
+          },
+          {
+            "required": [
+              "controls"
+            ]
+          }
+        ]
+      }
+    },
     "RunCheck": {
       "description": "The parameters of a check of kind `run`.",
       "else": {
@@ -654,7 +676,9 @@
       "if": {
         "properties": {
           "kind": {
-            "const": "run"
+            "enum": [
+              "run"
+            ]
           }
         },
         "required": [
@@ -688,7 +712,9 @@
       "if": {
         "properties": {
           "kind": {
-            "const": "sections"
+            "enum": [
+              "sections"
+            ]
           }
         },
         "required": [
@@ -782,7 +808,9 @@
       "if": {
         "properties": {
           "kind": {
-            "const": "understood"
+            "enum": [
+              "understood"
+            ]
           }
         },
         "required": [

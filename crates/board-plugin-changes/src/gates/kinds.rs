@@ -1,5 +1,5 @@
 //! The `field`, `records`, `understood`, `considered`, `obligations`,
-//! `controlled-paths`, `planned-controlled`, `flow-valid` and `exists` check
+//! `rule-paths`, `planned-rule-paths`, `flow-valid` and `exists` check
 //! kinds.
 
 use serde_json::{Map, Value};
@@ -33,17 +33,17 @@ fn bounded(paths: &[&str]) -> String {
     }
 }
 
-/// What a passing check says: for a `controlled-paths` or
-/// `planned-controlled` check whose rules the board does not hold, that
+/// What a passing check says: for a `rule-paths` or
+/// `planned-rule-paths` check whose rules the board does not hold, that
 /// none exists, and otherwise nothing.
 pub(super) fn passed(observed: &Observed, each: &flow::Check, values: &Values) -> String {
     let kind = each.kind.known().copied();
     let named = named_rules(each, values);
     let held = |rule: &String| match kind {
-        Some(Kind::ControlledPaths) => (observed.controlled.get(rule)).is_some_and(Option::is_some),
+        Some(Kind::RulePaths) => (observed.controlled.get(rule)).is_some_and(Option::is_some),
         _ => observed.held.contains(rule),
     };
-    if !matches!(kind, Some(Kind::ControlledPaths | Kind::PlannedControlled))
+    if !matches!(kind, Some(Kind::RulePaths | Kind::PlannedRulePaths))
         || named.is_empty()
         || named.iter().any(held)
     {
@@ -55,7 +55,7 @@ pub(super) fn passed(observed: &Observed, each: &flow::Check, values: &Values) -
     )
 }
 
-/// The rules a `controlled-paths` check names, with their placeholders
+/// The rules a `rule-paths` check names, with their placeholders
 /// filled, each in its `/rules/` form.
 pub(crate) fn named_rules(each: &flow::Check, values: &Values) -> Vec<String> {
     (each.rules.iter().flatten())
