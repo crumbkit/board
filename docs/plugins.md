@@ -75,8 +75,8 @@ holds only MCP's five hint keys. Board acts on none of them, and
 `board commands list` reports four of them as the capability's effects. `_meta`
 is any JSON object. `icons` and `execution` are refused. `types` lists the
 types whose schemas the plugin ships, at `types/<namespace>/<kind>/v<n>.schema.json`
-in its directory. Each type's namespace is the plugin's name, never
-`board`. The manifest refuses
+in its directory. Each type's namespace is the plugin's name (or, for a
+built-in plugin, a former name), never `board`. The manifest refuses
 unknown fields. An installed plugin's `name` equals its directory's name, and
 ships each type's schema; `check` and `put` check only the content.
 `version` is `MAJOR.MINOR.PATCH` in digits. The optional `alias` is one

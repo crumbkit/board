@@ -9,6 +9,15 @@ use serde_json::json;
 
 use super::*;
 use crate::check::tests::recording;
+use crate::records::CONTROL_TYPE;
+
+/// The types the plugin ships: its own, then those before the rename.
+const TYPES: [&str; 4] = [
+    "rules/rule/v1",
+    "rules/source/v1",
+    "controls/control/v1",
+    "controls/source/v1",
+];
 
 /// The `description` of SKILL.md's frontmatter, a single-quoted YAML
 /// scalar on one line.
@@ -23,14 +32,15 @@ fn skill_description() -> String {
 
 #[test]
 fn the_manifest_parses_as_a_built_in_one_and_describes_the_plugin_with_the_skills_description() {
-    let manifest = Controls.manifest();
+    let manifest = Rules.manifest();
     assert_eq!(
         (manifest.name.as_str(), manifest.version.as_str()),
-        ("controls", "0.1.0")
+        ("rules", "0.1.0")
     );
+    assert_eq!(manifest.former_names, ["controls".parse().unwrap()]);
     assert_eq!(manifest.run, Vec::<String>::new());
     let types: Vec<&str> = manifest.types.iter().map(RecordType::as_str).collect();
-    assert_eq!(types, [ControlRecord::TYPE, SourceRecord::TYPE]);
+    assert_eq!(types, TYPES);
     let names: Vec<&str> = (manifest.capabilities.iter())
         .map(|capability| capability.name.as_str())
         .collect();
@@ -72,7 +82,7 @@ fn every_input_property_carries_a_sentence_and_names_a_board_path() {
 
 #[test]
 fn the_check_output_schema_admits_a_null_or_string_largest_and_refuses_a_number() {
-    let manifest = Controls.manifest();
+    let manifest = Rules.manifest();
     let output = &manifest.capabilities[2].output;
     let measured = |largest: Value| {
         json!({
@@ -104,8 +114,9 @@ fn the_check_output_schema_admits_a_null_or_string_largest_and_refuses_a_number(
 
 /// Each committed schema file, the plugin's golden under `types/` and the
 /// copy in this repository's own board, holds, byte for byte, the canonical
-/// JSON of the schema its struct generates, so `board controls check`
-/// in a Board checkout finds its copy equal to the shipped one.
+/// JSON of the schema the plugin ships, so `board rules check` in a Board
+/// checkout finds its copy equal to the shipped one. A `rules/*` schema is
+/// what its struct generates; a `controls/*` one is the committed file.
 /// `SNAPSHOTS=overwrite` rewrites both.
 #[expect(
     clippy::disallowed_methods,
@@ -114,9 +125,9 @@ fn the_check_output_schema_admits_a_null_or_string_largest_and_refuses_a_number(
 #[test]
 fn each_committed_schema_and_the_boards_own_copy_is_what_its_struct_generates() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let schemas = Controls.schemas();
+    let schemas = Rules.schemas();
     let names: Vec<&str> = schemas.iter().map(|(name, _)| name.as_str()).collect();
-    assert_eq!(names, [ControlRecord::TYPE, SourceRecord::TYPE]);
+    assert_eq!(names, TYPES);
     for (record_type, schema) in &schemas {
         let generated = canonical_json(schema);
         for top in [
@@ -139,9 +150,9 @@ fn each_committed_schema_and_the_boards_own_copy_is_what_its_struct_generates() 
     }
 }
 
-/// The compiled schema `Controls` ships for `record_type`.
+/// The compiled schema `Rules` ships for `record_type`.
 fn shipped(record_type: &str) -> board_validate::Schema {
-    let schemas = Controls.schemas();
+    let schemas = Rules.schemas();
     let (_, schema) = (schemas.iter())
         .find(|(name, _)| name.as_str() == record_type)
         .unwrap();
@@ -190,7 +201,7 @@ fn the_control_schema_refuses_a_bad_kind_show_or_sources_and_admits_their_twins(
     };
     let fields = |name: &str, value: Value| json!({ name: value });
     pairs(
-        &shipped(ControlRecord::TYPE),
+        &shipped(CONTROL_TYPE),
         &[
             (
                 control(fields("kind", json!("sometimes"))),
@@ -234,7 +245,7 @@ fn the_source_schema_refuses_a_bad_url_or_date_or_a_missing_field_and_admits_the
     };
     let fields = |name: &str, value: Value| json!({ name: value });
     pairs(
-        &shipped(SourceRecord::TYPE),
+        &shipped("controls/source/v1"),
         &[
             (
                 source(fields("url", json!("ftp://example.com/x"))),
@@ -259,7 +270,7 @@ fn the_source_schema_refuses_a_bad_url_or_date_or_a_missing_field_and_admits_the
 
 #[test]
 fn the_shipped_schema_refuses_a_bad_rule_or_purpose_and_admits_its_twin() {
-    let schema = shipped(ControlRecord::TYPE);
+    let schema = shipped(CONTROL_TYPE);
     let control = |rule: Value| {
         json!({
             "$type": "controls/control/v1",
@@ -333,8 +344,43 @@ fn the_shipped_schema_refuses_a_bad_rule_or_purpose_and_admits_its_twin() {
 }
 
 #[test]
+fn a_rule_names_its_checker_checker_and_its_source_has_its_own_type_and_the_old_names_are_refused()
+{
+    let rubric = json!({"check": "judged", "rubric": "/rubrics/plain.md"});
+    let rule = |field: &str, tag: &str| json!({"$type": tag, "requirement": "R.", "purpose": "P.", field: rubric.clone()});
+    let schema = shipped(RuleRecord::TYPE);
+    assert_eq!(
+        schema
+            .validate(&rule("rule", RuleRecord::TYPE))
+            .unwrap_err()
+            .code(),
+        Code::RecordInvalid
+    );
+    let references = schema.references(&rule("checker", RuleRecord::TYPE));
+    assert_eq!(
+        references
+            .into_iter()
+            .map(|each| each.pointer)
+            .collect::<Vec<_>>(),
+        ["/checker/rubric"]
+    );
+    assert!(
+        shipped(CONTROL_TYPE)
+            .validate(&rule("rule", CONTROL_TYPE))
+            .is_ok()
+    );
+    let source = |tag: &str| json!({"$type": tag, "url": "https://example.com/p", "title": "T.", "read_on": "2026-11-01", "why": "W."});
+    let (new, old) = (shipped(SourceRecord::TYPE), "controls/source/v1");
+    assert!(new.validate(&source(SourceRecord::TYPE)).is_ok());
+    assert_eq!(
+        new.validate(&source(old)).unwrap_err().code(),
+        Code::RecordInvalid
+    );
+}
+
+#[test]
 fn a_rules_pattern_file_and_rubric_are_references_and_its_other_strings_are_not() {
-    let schema = shipped(ControlRecord::TYPE);
+    let schema = shipped(CONTROL_TYPE);
     let control = |rule: Value| json!({"$type": "controls/control/v1", "requirement": "R.", "purpose": "P.", "rule": rule});
     let pointers = |rule: Value| -> Vec<String> {
         (schema.references(&control(rule)).into_iter())
@@ -359,14 +405,14 @@ fn a_rules_pattern_file_and_rubric_are_references_and_its_other_strings_are_not(
 fn a_capability_the_plugin_does_not_offer_is_refused_and_check_is_answered() {
     let (_scenario, host) = recording(&[]);
     let other: CapabilityName = "budgets".parse().unwrap();
-    let refused = Controls.call(&host, &other, json!({})).unwrap_err();
+    let refused = Rules.call(&host, &other, json!({})).unwrap_err();
     assert_eq!(refused.code, "controls::call::unknown_capability");
     assert_eq!(
         refused.message,
-        "controls offers no capability budgets; it offers for-path, for-paths, check, evaluate, from-standards and migrate"
+        "rules offers no capability budgets; it offers for-path, for-paths, check, evaluate, from-standards and migrate"
     );
     let check: CapabilityName = "check".parse().unwrap();
-    let answered = Controls.call(&host, &check, json!({})).unwrap();
+    let answered = Rules.call(&host, &check, json!({})).unwrap();
     assert_eq!(
         answered,
         json!({"passed": true, "measured": [], "versions": [], "stated": [], "read": [], "warnings": []})
@@ -377,16 +423,16 @@ fn a_capability_the_plugin_does_not_offer_is_refused_and_check_is_answered() {
 fn a_malformed_path_is_refused_as_board_refs_refuses_it_and_a_well_formed_one_is_answered() {
     let (_scenario, host) = recording(&[]);
     let for_path: CapabilityName = "for-path".parse().unwrap();
-    let refused = (Controls.call(&host, &for_path, json!({"path": "/docs/../x"}))).unwrap_err();
+    let refused = (Rules.call(&host, &for_path, json!({"path": "/docs/../x"}))).unwrap_err();
     assert_eq!(refused.code, "controls::board::refused");
     assert_eq!(refused.fields["code"], json!("board::cli::usage"));
-    let answered = Controls.call(&host, &for_path, json!({"path": "/docs/x"}));
+    let answered = Rules.call(&host, &for_path, json!({"path": "/docs/x"}));
     assert_eq!(answered.unwrap(), json!({"controls": []}));
 }
 
 #[test]
 fn evaluate_takes_at_least_one_control_by_path_and_one_named_part_each_with_a_sentence() {
-    let parsed = Controls.manifest();
+    let parsed = Rules.manifest();
     let input = &parsed.capabilities[3].input;
     let given = |controls: Value, parts: Value| json!({"controls": controls, "parts": parts});
     for (refused, admitted) in [
@@ -419,7 +465,7 @@ fn evaluate_takes_at_least_one_control_by_path_and_one_named_part_each_with_a_se
 
 #[test]
 fn the_for_path_output_schema_admits_each_kind_of_rule_or_null_and_refuses_it_left_out() {
-    let manifest = Controls.manifest();
+    let manifest = Rules.manifest();
     let output = &manifest.capabilities[0].output;
     let applying = |rule: Option<Value>| {
         let mut item = json!({
@@ -454,9 +500,9 @@ fn the_for_path_output_schema_admits_each_kind_of_rule_or_null_and_refuses_it_le
 
 #[test]
 fn a_rule_whose_check_is_not_a_string_is_an_invalid_type_and_one_left_out_is_missing() {
-    use records::Rule;
+    use records::Checker;
     let read =
-        |rule: Value| serde_json::from_value::<Rule>(rule).map_err(|error| error.to_string());
+        |rule: Value| serde_json::from_value::<Checker>(rule).map_err(|error| error.to_string());
     let number = read(json!({"check": 5})).unwrap_err();
     assert!(
         number.starts_with("invalid type: integer `5`, expected a string"),
@@ -467,7 +513,7 @@ fn a_rule_whose_check_is_not_a_string_is_an_invalid_type_and_one_left_out_is_mis
     let unknown = read(json!({"check": "later", "at": 5})).unwrap();
     assert_eq!(
         unknown,
-        Rule::Other(
+        Checker::Other(
             json!({"check": "later", "at": 5})
                 .as_object()
                 .unwrap()

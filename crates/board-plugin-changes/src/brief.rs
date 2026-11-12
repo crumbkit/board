@@ -217,7 +217,7 @@ fn rules_for(host: &dyn Host, paths: &[String]) -> Result<Vec<Map<String, Value>
     if paths.is_empty() {
         return Ok(Vec::new());
     }
-    let output = call_or_refusal(host, "controls.for-paths", &json!({"paths": paths})).map_err(
+    let output = call_or_refusal(host, "rules.for-paths", &json!({"paths": paths})).map_err(
         |refusal_of| {
             let error = refused("call", &refusal_of);
             if CONTROLS_UNAVAILABLE.contains(&refusal_of.code.as_str()) {

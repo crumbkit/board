@@ -16,10 +16,12 @@ pub(super) enum Kind {
 use Kind::{Local, UntilAdopted};
 
 #[rustfmt::skip]
-pub(super) const UNSHARED: [(&str, &str, Kind, &str); 86] = [
-    // This repository's board's copy of the controls schema.
+pub(super) const UNSHARED: [(&str, &str, Kind, &str); 90] = [
+    // This repository's board's copies of the rules plugin's schemas.
     (".board/controls/control/v1", "/rule/at_least", Local, "a version floor of dotted numbers, which only a version rule compares"),
     (".board/controls/control/v1", "/rule/capture", Local, "a regular expression in the syntax of Rust's regex crate, which only a version rule compiles"),
+    (".board/rules/rule/v1", "/checker/at_least", Local, "a version floor of dotted numbers, which only a version checker compares"),
+    (".board/rules/rule/v1", "/checker/capture", Local, "a regular expression in the syntax of Rust's regex crate, which only a version checker compiles"),
     // The schemas the plugins ship.
     ("artifacts/artifact/v1", "/area/-", Local, "an area tag groups only artifacts, for finding neighbouring work"),
     ("artifacts/artifact/v1", "/first_seen", UntilAdopted, "Timestamp, as plans' (audit rows 37 to 41)"),
@@ -84,6 +86,8 @@ pub(super) const UNSHARED: [(&str, &str, Kind, &str); 86] = [
     ("review/report/v1", "/patch_ids/-", UntilAdopted, "ObjectId (audit row 6)"),
     ("review/report/v1", "/range", UntilAdopted, "CommitRange (audit row 5)"),
     ("review/report/v1", "/source", UntilAdopted, "Url (audit row 13)"),
+    ("rules/rule/v1", "/checker/at_least", Local, "a version floor of dotted numbers, which only a version checker compares"),
+    ("rules/rule/v1", "/checker/capture", Local, "a regular expression in the syntax of Rust's regex crate, which only a version checker compiles"),
     ("runs/run/v1", "/finished", UntilAdopted, "Timestamp (audit row 41)"),
     ("runs/run/v1", "/host/arch", UntilAdopted, "an inline enum (audit row 54)"),
     ("runs/run/v1", "/host/os", UntilAdopted, "an inline enum (audit row 53)"),

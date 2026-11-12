@@ -19,11 +19,6 @@ impl Repositories {
         self.moved = moved;
     }
 
-    /// The moved prefixes this run follows.
-    pub fn moved(&self) -> &[Moved] {
-        &self.moved
-    }
-
     /// Resolves `remaining` from the root of `tree` as
     /// [`Repositories::walk`] does. When that names nothing, `trail` allows
     /// moved prefixes and `remaining` begins with one, it resolves

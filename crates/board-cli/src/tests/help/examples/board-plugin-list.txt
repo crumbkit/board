@@ -2,7 +2,6 @@ ok artifacts 0.1.0 disabled offers list, import, record, set, agree
 ok attention 0.2.0 disabled offers verify, pinned, sign
 ok boundary 0.1.0 disabled offers check, covers, verify, record
 ok changes 0.1.0 disabled offers start, next, attach, advance, open, pr, plan, lifecycle, brief, prototype, verdict, pause, resume, reopen, reflow, sync, drop, migrate, run, stop
-ok controls 0.1.0 disabled offers for-path, for-paths, check, evaluate, from-standards, migrate
 ok evals 0.1.0 disabled offers about, open, migrate
 ok github 0.1.0 disabled offers ref, push, pr-create, pr-edit, comment, issue-create, merge, install-hook, pre-push, covers
 ok jira 0.1.0 disabled offers ref
@@ -12,6 +11,7 @@ ok plans 0.1.0 disabled offers open, answer, withdraw, migrate
 ok prompts 0.1.0 disabled offers get, list
 ok requests 0.1.0 disabled offers thread
 ok review 0.2.0 disabled offers run, post, covered
+ok rules 0.1.0 disabled offers for-path, for-paths, check, evaluate, from-standards, migrate
 ok runs 0.1.0 disabled offers latest, trend
 ok share 0.1.0 disabled offers to
 ok tasks 0.4.0 disabled offers available, tree, add, claim, done, defer, drop, reviewed, move

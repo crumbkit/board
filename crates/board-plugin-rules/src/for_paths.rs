@@ -14,7 +14,7 @@ use crate::check::read;
 use crate::for_path;
 use crate::index::{self, Control, FILES};
 use crate::overlap::overlap;
-use crate::records::Rule;
+use crate::records::{Checker, RULE_TYPES};
 use crate::summary::summary;
 use crate::version;
 
@@ -126,10 +126,10 @@ fn globbed(host: &dyn Host, pattern: &str) -> Result<BTreeSet<String>, PluginErr
     let sql = format!(
         "WITH planned AS MATERIALIZED (SELECT full FROM {FILES} WHERE full GLOB {pattern}) \
          SELECT r.logical FROM records r, json_each(r.body, '$.paths') p \
-         WHERE r.type = 'controls/control/v1' AND r.source = 'worktree' \
+         WHERE r.type IN {RULE_TYPES} AND r.source = 'worktree' \
          AND EXISTS (SELECT 1 FROM planned WHERE full GLOB p.value) \
          UNION SELECT r.logical FROM records r, json_each(r.body, '$.applies_to') a \
-         WHERE r.type = 'controls/control/v1' AND r.source = 'worktree' \
+         WHERE r.type IN {RULE_TYPES} AND r.source = 'worktree' \
          AND substr(a.value, 2) GLOB {pattern}"
     );
     index::first_strings(host, &sql)
@@ -151,7 +151,8 @@ fn versions_found(
     let mut unknown: BTreeSet<&str> = BTreeSet::new();
     let mut empty: BTreeMap<&str, bool> = BTreeMap::new();
     for (logical, matched) in reached {
-        let Some(Rule::Version(_)) = controls.get(logical).and_then(|each| each.rule.as_ref())
+        let Some(Checker::Version(_)) =
+            controls.get(logical).and_then(|each| each.checker.as_ref())
         else {
             continue;
         };
@@ -176,7 +177,7 @@ fn versions_found(
     let reads = read(host, files.values().flatten().collect())?;
     let mut found = BTreeMap::new();
     for (logical, reaching) in &files {
-        let Some(Rule::Version(rule)) = &controls[*logical].rule else {
+        let Some(Checker::Version(rule)) = &controls[*logical].checker else {
             continue;
         };
         let texts: Option<Vec<&Vec<u8>>> = (reaching.iter())
@@ -216,10 +217,10 @@ fn matched_files(
         "WITH planned AS MATERIALIZED (SELECT logical, full FROM {FILES} \
          WHERE full GLOB {pattern} AND logical IS NOT NULL) \
          SELECT f.logical FROM records r, json_each(r.body, '$.paths') p, planned f \
-         WHERE r.logical = {control} AND r.type = 'controls/control/v1' \
+         WHERE r.logical = {control} AND r.type IN {RULE_TYPES} \
          AND r.source = 'worktree' AND f.full GLOB p.value \
          UNION SELECT a.value FROM records r, json_each(r.body, '$.applies_to') a \
-         WHERE r.logical = {control} AND r.type = 'controls/control/v1' \
+         WHERE r.logical = {control} AND r.type IN {RULE_TYPES} \
          AND r.source = 'worktree' AND substr(a.value, 2) GLOB {pattern}"
     );
     let found: Vec<String> = index::first_strings(host, &sql)?;

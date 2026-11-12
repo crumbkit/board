@@ -15,7 +15,7 @@ use crate::check::measure;
 use crate::index;
 use crate::judged::Judge;
 use crate::logical;
-use crate::records::{Check, Measure, Pattern, Quote, Rule, Version};
+use crate::records::{Check, Checker, Measure, Pattern, Quote, Version};
 use crate::version;
 
 /// The findings a result shows; the rest are counted in `omitted`, so
@@ -129,10 +129,11 @@ pub(crate) fn evaluate(host: &dyn Host, input: &Value) -> Result<Value, PluginEr
     if !missing.is_empty() {
         return Err(not_found(&missing));
     }
-    let rules: Vec<(String, Option<Rule>)> = (named.into_iter())
+    let rules: Vec<(String, Option<Checker>)> = (named.into_iter())
         .map(|path| {
             // A rule holding a value this Board does not know is stated.
-            let rule = (known.remove(&path).and_then(|control| control.rule)).filter(Rule::applies);
+            let rule =
+                (known.remove(&path).and_then(|control| control.checker)).filter(Checker::applies);
             (path, rule)
         })
         .collect();
@@ -140,19 +141,19 @@ pub(crate) fn evaluate(host: &dyn Host, input: &Value) -> Result<Value, PluginEr
     let mut results: BTreeMap<(&str, &str), Evaluated> = BTreeMap::new();
     for (control, rule) in &rules {
         let expressions = match rule {
-            Some(Rule::Pattern(pattern)) => expressions(control, pattern, &sources)?,
+            Some(Checker::Pattern(pattern)) => expressions(control, pattern, &sources)?,
             _ => Vec::new(),
         };
         let floor = match rule {
-            Some(Rule::Version(rule)) => Some((version::compile(control, rule)?, rule)),
+            Some(Checker::Version(rule)) => Some((version::compile(control, rule)?, rule)),
             _ => None,
         };
         for (part, text) in &parts {
             let result = match rule {
                 None => Some(stated(control, part)),
-                Some(Rule::Budget(budget)) => (budget.known())
+                Some(Checker::Budget(budget)) => (budget.known())
                     .map(|(measure, _)| budgeted(control, part, text, measure, budget.max)),
-                Some(Rule::Pattern(pattern)) => {
+                Some(Checker::Pattern(pattern)) => {
                     let (found, total) = matches(
                         &expressions,
                         pattern.quote == Open::Known(Quote::Pattern),
@@ -168,10 +169,10 @@ pub(crate) fn evaluate(host: &dyn Host, input: &Value) -> Result<Value, PluginEr
                         total,
                     ))
                 }
-                Some(Rule::Version(_)) => floor
+                Some(Checker::Version(_)) => floor
                     .as_ref()
                     .map(|(expression, rule)| floored(control, part, text, expression, rule)),
-                Some(Rule::Judged(_) | Rule::Other(_)) => None,
+                Some(Checker::Judged(_) | Checker::Other(_)) => None,
             };
             if let Some(result) = result {
                 results.insert((control, part), result);
@@ -183,7 +184,7 @@ pub(crate) fn evaluate(host: &dyn Host, input: &Value) -> Result<Value, PluginEr
         .map(|((_, part), _)| *part)
         .collect();
     for (control, rule) in &rules {
-        let Some(Rule::Judged(judged)) = rule else {
+        let Some(Checker::Judged(judged)) = rule else {
             continue;
         };
         for (part, text) in &parts {
@@ -217,13 +218,13 @@ pub(crate) fn evaluate(host: &dyn Host, input: &Value) -> Result<Value, PluginEr
 /// the rule gives, or `controls::rule::unreadable`.
 fn sources(
     host: &dyn Host,
-    rules: &[(String, Option<Rule>)],
+    rules: &[(String, Option<Checker>)],
 ) -> Result<BTreeMap<String, Vec<u8>>, PluginError> {
     let mut named: BTreeMap<&str, &str> = BTreeMap::new();
     for (control, rule) in rules {
         let file = match rule {
-            Some(Rule::Pattern(pattern)) => &pattern.file,
-            Some(Rule::Judged(judged)) => &judged.rubric,
+            Some(Checker::Pattern(pattern)) => &pattern.file,
+            Some(Checker::Judged(judged)) => &judged.rubric,
             _ => continue,
         };
         named.entry(file).or_insert(control);

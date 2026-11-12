@@ -1,0 +1,322 @@
+{
+  "$defs": {
+    "BudgetChecker": {
+      "description": "A budget rule: a limit on the words or bytes of the files the control\napplies to, or of the text `evaluate` is given.",
+      "else": {
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "max"
+              ]
+            },
+            {
+              "required": [
+                "per"
+              ]
+            },
+            {
+              "required": [
+                "unit"
+              ]
+            }
+          ]
+        }
+      },
+      "if": {
+        "properties": {
+          "check": {
+            "const": "budget"
+          }
+        },
+        "required": [
+          "check"
+        ]
+      },
+      "properties": {
+        "max": {
+          "description": "The most words or bytes allowed.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "per": {
+          "default": "total",
+          "description": "`total`, the default, to sum the files' usage, or `file` to hold\neach file on its own within `max`.",
+          "enum": [
+            "total",
+            "file"
+          ],
+          "type": "string"
+        },
+        "unit": {
+          "description": "What the budget counts: `words`, separated by any whitespace, or\n`bytes`.",
+          "enum": [
+            "words",
+            "bytes"
+          ],
+          "type": "string"
+        }
+      },
+      "then": {
+        "required": [
+          "unit",
+          "max"
+        ]
+      }
+    },
+    "Checker": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/BudgetChecker"
+        },
+        {
+          "$ref": "#/$defs/PatternChecker"
+        },
+        {
+          "$ref": "#/$defs/JudgedChecker"
+        },
+        {
+          "$ref": "#/$defs/VersionChecker"
+        }
+      ],
+      "description": "What a program checks: a budget, a pattern file, a judged rubric or a version floor, named by `check`.",
+      "properties": {
+        "check": {
+          "description": "The kind of rule, which decides its other fields.",
+          "enum": [
+            "budget",
+            "pattern",
+            "judged",
+            "version"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "check"
+      ],
+      "type": "object",
+      "unevaluatedProperties": false
+    },
+    "JudgedChecker": {
+      "description": "A judged rule: a rubric that a clean-context model reads text against.",
+      "else": {
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "rubric"
+              ]
+            }
+          ]
+        }
+      },
+      "if": {
+        "properties": {
+          "check": {
+            "const": "judged"
+          }
+        },
+        "required": [
+          "check"
+        ]
+      },
+      "properties": {
+        "rubric": {
+          "description": "The rubric the model reads.",
+          "format": "board-ref",
+          "type": "string"
+        }
+      },
+      "then": {
+        "required": [
+          "rubric"
+        ]
+      }
+    },
+    "PatternChecker": {
+      "description": "A pattern rule: a file of regular expressions, one per line, that text\nmust not match.",
+      "else": {
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "file"
+              ]
+            },
+            {
+              "required": [
+                "quote"
+              ]
+            }
+          ]
+        }
+      },
+      "if": {
+        "properties": {
+          "check": {
+            "const": "pattern"
+          }
+        },
+        "required": [
+          "check"
+        ]
+      },
+      "properties": {
+        "file": {
+          "description": "The file of regular expressions.",
+          "format": "board-ref",
+          "type": "string"
+        },
+        "quote": {
+          "description": "What a finding quotes: `match-only` quotes what matched and never\nthe expression, and `pattern` names the expression too.",
+          "enum": [
+            "match-only",
+            "pattern"
+          ],
+          "type": "string"
+        }
+      },
+      "then": {
+        "required": [
+          "file",
+          "quote"
+        ]
+      }
+    },
+    "VersionChecker": {
+      "description": "A version rule: every version the first group of `capture` finds is at\nleast `at_least`, compared over the numbers the version names.",
+      "else": {
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "at_least"
+              ]
+            },
+            {
+              "required": [
+                "capture"
+              ]
+            }
+          ]
+        }
+      },
+      "if": {
+        "properties": {
+          "check": {
+            "const": "version"
+          }
+        },
+        "required": [
+          "check"
+        ]
+      },
+      "properties": {
+        "at_least": {
+          "description": "The oldest version a file may pin, as numbers separated by dots,\nsuch as `1.99.1`.",
+          "pattern": "^[0-9]+(\\.[0-9]+)*$",
+          "type": "string"
+        },
+        "capture": {
+          "description": "A regular expression in the syntax of Rust's regex crate, whose\nfirst group finds each version a file pins.",
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "then": {
+        "required": [
+          "at_least",
+          "capture"
+        ]
+      }
+    }
+  },
+  "additionalProperties": false,
+  "description": "`rules/rule/v1`: a requirement on files, why it exists, and optionally\na checker a program runs.\n\nIt applies to the entries `applies_to` references and to every entry of\nthe board whose path matches one of `paths`.",
+  "properties": {
+    "$type": {
+      "const": "rules/rule/v1",
+      "description": "The record's type.",
+      "type": "string"
+    },
+    "applies_to": {
+      "description": "The entries the control applies to, by reference.",
+      "items": {
+        "format": "board-ref",
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "checker": {
+      "$ref": "#/$defs/Checker",
+      "description": "What a program checks of the files; left out for a requirement only\na reader can judge, which `check` reports as described."
+    },
+    "kind": {
+      "description": "`standing`, the default, for a rule that stays until it is changed,\nor `obligation` for work a landed change left owed, which the work\nthat discharges it deletes.",
+      "enum": [
+        "standing",
+        "obligation"
+      ],
+      "type": "string"
+    },
+    "owed_by": {
+      "description": "For an obligation, what left the work owed: the pull request whose\nmerge owes it, the review report that found it, or the decision that\naccepted it.",
+      "format": "board-ref",
+      "type": "string",
+      "x-board-type": [
+        "github/pull/v1",
+        "review/report/v1",
+        "plans/decision/v1"
+      ]
+    },
+    "paths": {
+      "description": "The paths the control applies to, as `SQLite` GLOB patterns from the\nboard's root, such as `docs/*.md`, where `*` also matches `/`.",
+      "items": {
+        "minLength": 1,
+        "type": "string",
+        "x-board-glob": true
+      },
+      "type": "array"
+    },
+    "purpose": {
+      "description": "Why the requirement exists.",
+      "type": "string",
+      "x-board-prose": true
+    },
+    "requirement": {
+      "description": "What the files must do, in sentences a person reads.",
+      "type": "string",
+      "x-board-prose": true
+    },
+    "show": {
+      "description": "When to show the control: `start` at session start, `edit` before\nthe first edit of a file it covers, or `failing` only when `check`\nreports it failing. Left out, an obligation shows at `start`, a\ncontrol with a budget when `failing`, and any other at `edit`.",
+      "enum": [
+        "start",
+        "edit",
+        "failing"
+      ],
+      "type": "string"
+    },
+    "sources": {
+      "description": "What justifies the rule, such as a source note (`rules/source/v1`)\nor an eval.",
+      "items": {
+        "format": "board-ref",
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "summary": {
+      "description": "The requirement in one line of at most 25 words, which a change's\nbrief shows in its place.",
+      "pattern": "^\\S+( \\S+){0,24}$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "$type",
+    "requirement",
+    "purpose"
+  ],
+  "title": "RuleRecord",
+  "type": "object"
+}

@@ -13,8 +13,6 @@ pub const BUILT_IN: BuiltIn = BuiltIn(&[
     &board_plugin_boundary::Boundary,
     #[cfg(feature = "changes")]
     &board_plugin_changes::Changes,
-    #[cfg(feature = "controls")]
-    &board_plugin_controls::Controls,
     #[cfg(feature = "evals")]
     &board_plugin_evals::Evals,
     #[cfg(feature = "github")]
@@ -33,6 +31,8 @@ pub const BUILT_IN: BuiltIn = BuiltIn(&[
     &board_plugin_requests::Requests,
     #[cfg(feature = "review")]
     &board_plugin_review::Review,
+    #[cfg(feature = "rules")]
+    &board_plugin_rules::Rules,
     #[cfg(feature = "runs")]
     &board_plugin_runs::Runs,
     #[cfg(feature = "share")]

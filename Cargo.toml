@@ -9,7 +9,6 @@ members = [
     "crates/board-plugin-attention",
     "crates/board-plugin-boundary",
     "crates/board-plugin-changes",
-    "crates/board-plugin-controls",
     "crates/board-plugin-evals",
     "crates/board-plugin-github",
     "crates/board-plugin-jira",
@@ -19,6 +18,7 @@ members = [
     "crates/board-plugin-prompts",
     "crates/board-plugin-requests",
     "crates/board-plugin-review",
+    "crates/board-plugin-rules",
     "crates/board-plugin-runs",
     "crates/board-plugin-share",
     "crates/board-plugin-tasks",
@@ -54,7 +54,6 @@ board-plugin-artifacts = { path = "crates/board-plugin-artifacts", version = "0.
 board-plugin-attention = { path = "crates/board-plugin-attention", version = "0.0.0" }
 board-plugin-boundary = { path = "crates/board-plugin-boundary", version = "0.0.0" }
 board-plugin-changes = { path = "crates/board-plugin-changes", version = "0.0.0" }
-board-plugin-controls = { path = "crates/board-plugin-controls", version = "0.0.0" }
 board-plugin-evals = { path = "crates/board-plugin-evals", version = "0.0.0" }
 board-plugin-github = { path = "crates/board-plugin-github", version = "0.0.0" }
 board-plugin-jira = { path = "crates/board-plugin-jira", version = "0.0.0" }
@@ -64,6 +63,7 @@ board-plugin-plans = { path = "crates/board-plugin-plans", version = "0.0.0" }
 board-plugin-prompts = { path = "crates/board-plugin-prompts", version = "0.0.0" }
 board-plugin-requests = { path = "crates/board-plugin-requests", version = "0.0.0" }
 board-plugin-review = { path = "crates/board-plugin-review", version = "0.0.0" }
+board-plugin-rules = { path = "crates/board-plugin-rules", version = "0.0.0" }
 board-plugin-runs = { path = "crates/board-plugin-runs", version = "0.0.0" }
 board-plugin-share = { path = "crates/board-plugin-share", version = "0.0.0" }
 board-plugin-tasks = { path = "crates/board-plugin-tasks", version = "0.0.0" }

@@ -25,14 +25,14 @@ pub(crate) struct Found {
     pub(crate) close: Option<String>,
 }
 
-/// The controls `controls.for-paths` finds on `paths`; none when the
-/// controls plugin is not installed or not enabled, since a board without
+/// The controls `rules.for-paths` finds on `paths`; none when the
+/// rules plugin is not installed or not enabled, since a board without
 /// it records no obligations.
 fn for_paths(host: &dyn Host, paths: &[String]) -> Result<Vec<Found>, PluginError> {
     if paths.is_empty() {
         return Ok(Vec::new());
     }
-    let output = match call_or_refusal(host, "controls.for-paths", &json!({"paths": paths})) {
+    let output = match call_or_refusal(host, "rules.for-paths", &json!({"paths": paths})) {
         Ok(output) => output,
         Err(refusal) if CONTROLS_UNAVAILABLE.contains(&refusal.code.as_str()) => {
             return Ok(Vec::new());

@@ -17,16 +17,14 @@ use std::sync::LazyLock;
 
 use board_model::parse_json;
 use board_ops::{Absent, Bulk, Host, Limit, Origin, PluginError, literal};
-use board_plugin::shape::{Record, schema_of};
 use board_validate::Schema;
 use regex::Regex;
 use schemars::JsonSchema;
-use schemars::generate::SchemaSettings;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 
 use crate::logical;
-use crate::records::{ControlRecord, OWED_BY_TYPES};
+use crate::records::{CONTROL_TYPE, FORMER_SCHEMAS, OWED_BY_TYPES};
 
 /// The reason the migration's commit gives in its `Board-Bulk:` trailer.
 const BULK: &str = "migrate controls";
@@ -329,14 +327,17 @@ pub(crate) fn migrate(host: &dyn Host, input: &Value) -> Result<Value, PluginErr
 /// The lines that set `owed_by` on each obligation that lacks it, with
 /// `output` filled in.
 fn owed_by_lines(host: &dyn Host, output: &mut Output) -> Result<Vec<Value>, PluginError> {
-    let schema = Schema::compile(schema_of::<ControlRecord>(SchemaSettings::draft2020_12()))
-        .expect("the control's schema is generated from its struct; a test compiles it");
+    // Only rules of the type before the rename predate owed_by, so only they
+    // are read, against that type's schema.
+    let schema = serde_json::from_str(FORMER_SCHEMAS[0]).map(Schema::compile);
+    let schema = (schema.ok().and_then(Result::ok))
+        .expect("the former rule schema is committed JSON; a test compiles it");
     let kinds = kinds(host)?;
     let mounts = mounts(host)?;
     let sql = format!(
         "SELECT e.logical, e.blob, b.body FROM entries AS e JOIN bodies AS b ON b.blob = e.blob \
          WHERE e.type = {} AND e.source = 'worktree' ORDER BY e.logical",
-        literal(ControlRecord::TYPE)
+        literal(CONTROL_TYPE)
     );
     let mut lines = Vec::new();
     for row in rows(host, &sql)? {

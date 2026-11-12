@@ -55,18 +55,20 @@ fn board_lists_the_plugin_as_enabled_and_enabling_wrote_the_schema_it_ships() {
     let board = board();
     let report = board.json(&["plugin", "list"]);
     let plugin = (report["data"].as_array().unwrap().iter())
-        .find(|plugin| plugin["name"] == "controls")
+        .find(|plugin| plugin["name"] == "rules")
         .unwrap();
     assert_eq!(
         (&plugin["status"], &plugin["enabled"]),
         (&json!("ok"), &json!(true))
     );
     assert!(plugin.get("run").is_none(), "{plugin}");
-    let shipped = shipped("controls");
+    let shipped = shipped("rules");
     let paths: Vec<&str> = shipped.iter().map(|(path, _)| path.as_str()).collect();
     assert_eq!(
         paths,
         [
+            ".board/types/rules/rule/v1.schema.json",
+            ".board/types/rules/source/v1.schema.json",
             ".board/types/controls/control/v1.schema.json",
             ".board/types/controls/source/v1.schema.json",
         ]

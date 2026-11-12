@@ -9,7 +9,7 @@ use board_plugin::shape::Open;
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::records::{Kind, Rule, ShowAt};
+use crate::records::{Checker, Kind, ShowAt, rule_types};
 
 /// Each file a pattern can match, with `full`: its display path without the
 /// leading `/`, with `.json` put back when the display path dropped it. A
@@ -25,9 +25,12 @@ pub(crate) const FILES: &str = "(SELECT *, COALESCE(substr(logical, 2) \
 /// Each pattern of each readable control in the board's own tree.
 /// MATERIALIZED parses each control's body once, not once for every file a
 /// pattern is compared with.
-const PATTERNS: &str = "patterns AS MATERIALIZED (SELECT r.logical, r.path, p.value AS pattern \
-    FROM records r, json_each(r.body, '$.paths') p \
-    WHERE r.type = 'controls/control/v1' AND r.status = 'ok' AND r.source = 'worktree')";
+const PATTERNS: &str = concat!(
+    "patterns AS MATERIALIZED (SELECT r.logical, r.path, p.value AS pattern \
+     FROM records r, json_each(r.body, '$.paths') p WHERE r.type IN ",
+    rule_types!(),
+    " AND r.status = 'ok' AND r.source = 'worktree')"
+);
 
 /// The first two columns of each row of `sql` that holds a string in both.
 pub(crate) fn string_pairs<C: FromIterator<(String, String)>>(
@@ -45,17 +48,24 @@ pub(crate) fn string_pairs<C: FromIterator<(String, String)>>(
 /// Every valid control in the board's own tree. That includes one Board
 /// marks degraded only because a reference dangles or reaches the wrong
 /// type, which Board checks only of a valid record.
-const CONTROLS: &str = "SELECT logical, body FROM records \
-    WHERE type = 'controls/control/v1' AND source = 'worktree' \
-    AND (status = 'ok' OR code IN ('board::ref::dangling', 'board::ref::wrong_type'))";
+const CONTROLS: &str = concat!(
+    "SELECT logical, body FROM records WHERE type IN ",
+    rule_types!(),
+    " AND source = 'worktree' \
+     AND (status = 'ok' OR code IN ('board::ref::dangling', 'board::ref::wrong_type'))"
+);
 
 /// Each control in the board's own tree that Board marks degraded, by its
 /// logical path, or by its path when it has none.
-const DEGRADED: &str = "SELECT COALESCE(logical, path), code FROM records \
-    WHERE type = 'controls/control/v1' AND status != 'ok' AND source = 'worktree' ORDER BY logical";
+const DEGRADED: &str = concat!(
+    "SELECT COALESCE(logical, path), code FROM records WHERE type IN ",
+    rule_types!(),
+    " AND status != 'ok' AND source = 'worktree' ORDER BY logical"
+);
 
-/// A control as the board's own copy of the schema admits it, which equals
-/// the shipped one, or Board refuses the call.
+/// A rule as the board's own copy of the schema admits it, which equals
+/// the shipped one, or Board refuses the call. A rule of the type before
+/// the rename names its checker `rule`.
 #[derive(Deserialize)]
 pub(crate) struct Control {
     pub(crate) requirement: String,
@@ -63,7 +73,8 @@ pub(crate) struct Control {
     pub(crate) summary: Option<String>,
     pub(crate) applies_to: Option<Vec<String>>,
     pub(crate) paths: Option<Vec<String>>,
-    pub(crate) rule: Option<Rule>,
+    #[serde(alias = "rule")]
+    pub(crate) checker: Option<Checker>,
     kind: Option<Open<Kind>>,
     show: Option<Open<ShowAt>>,
     owed_by: Option<String>,
@@ -101,8 +112,8 @@ impl Control {
     /// Whether `check` measures the control's files: it has a budget or a
     /// version rule this Board can apply.
     pub(crate) fn measured(&self) -> bool {
-        (self.rule.as_ref()).is_some_and(|rule| {
-            matches!(rule, Rule::Budget(_) | Rule::Version(_)) && rule.applies()
+        (self.checker.as_ref()).is_some_and(|checker| {
+            matches!(checker, Checker::Budget(_) | Checker::Version(_)) && checker.applies()
         })
     }
 }
