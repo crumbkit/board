@@ -92,7 +92,7 @@ fn compiled(record_type: &str) -> board_validate::Schema {
 #[test]
 fn the_boundary_schema_refuses_a_boundary_without_checks_or_with_a_bad_field_and_admits_its_twin() {
     let schema = compiled(BoundaryRecord::TYPE);
-    let check = json!({"control": "/controls/names", "parts": ["*"]});
+    let check = json!({"rule": "/rules/names", "parts": ["*"]});
     let boundary = json!({
         "$type": "boundary/boundary/v1",
         "to": "github:octo/*",
@@ -108,10 +108,15 @@ fn the_boundary_schema_refuses_a_boundary_without_checks_or_with_a_bad_field_and
         ),
         (json!({"to": ""}), json!({"to": "*"})),
         (
-            json!({"checks": [{"control": "/controls/names", "parts": []}]}),
-            json!({"checks": [{"control": "/controls/names", "parts": ["pr.*"]}]}),
+            json!({"checks": [{"rule": "/rules/names", "parts": []}]}),
+            json!({"checks": [{"rule": "/rules/names", "parts": ["pr.*"]}]}),
         ),
         (json!({"to": null}), json!({"from": null})),
+        // A boundary written before the rename names its rule `control`.
+        (
+            json!({"checks": [{"rule": "/rules/names", "control": "/controls/names", "parts": ["*"]}]}),
+            json!({"checks": [{"control": "/controls/names", "parts": ["*"]}]}),
+        ),
     ] {
         let (refused, admitted) = (
             with(boundary.clone(), &refused),
@@ -137,9 +142,9 @@ fn the_crossing_schema_refuses_a_bad_digest_null_or_unknown_field_and_admits_its
         "to": "github:octo/board",
         "boundaries": ["/boundaries/octo"],
         "verdicts": [{
-            "control": "/controls/names",
+            "rule": "/rules/names",
             "part": "pr.body",
-            "rule": "pattern",
+            "checker": "pattern",
             "status": "failed",
             "findings": [{"text": "acme-123", "line": 1}],
         }],
@@ -152,8 +157,8 @@ fn the_crossing_schema_refuses_a_bad_digest_null_or_unknown_field_and_admits_its
         ),
         (json!({"override": "x"}), json!({"override": digest})),
         (
-            json!({"verdicts": [{"control": "/controls/names", "part": "p", "status": "late", "findings": []}]}),
-            json!({"verdicts": [{"control": "/controls/names", "part": "p", "status": "stated", "findings": []}]}),
+            json!({"verdicts": [{"rule": "/rules/names", "part": "p", "status": "late", "findings": []}]}),
+            json!({"verdicts": [{"rule": "/rules/names", "part": "p", "status": "stated", "findings": []}]}),
         ),
         (
             json!({"from": null, "via": "/repos/board"}),
@@ -161,8 +166,18 @@ fn the_crossing_schema_refuses_a_bad_digest_null_or_unknown_field_and_admits_its
         ),
         (json!({"passed": true}), json!({})),
         (
+            json!({"verdicts": [{"rule": "/rules/names", "part": "p", "checker": "rubric", "status": "passed", "findings": []}]}),
+            json!({"verdicts": [{"rule": "/rules/names", "part": "p", "checker": "version", "status": "passed", "findings": []}]}),
+        ),
+        // A crossing written before the rename names the rule `control` and
+        // its checker `rule`, and mixes neither name into the other form.
+        (
             json!({"verdicts": [{"control": "/controls/names", "part": "p", "rule": "rubric", "status": "passed", "findings": []}]}),
             json!({"verdicts": [{"control": "/controls/names", "part": "p", "rule": "version", "status": "passed", "findings": []}]}),
+        ),
+        (
+            json!({"verdicts": [{"control": "/controls/names", "part": "p", "checker": "version", "status": "passed", "findings": []}]}),
+            json!({"verdicts": [{"control": "/controls/names", "part": "p", "status": "passed", "findings": []}]}),
         ),
     ] {
         let (refused, admitted) = (
@@ -176,6 +191,35 @@ fn the_crossing_schema_refuses_a_bad_digest_null_or_unknown_field_and_admits_its
         );
         schema.validate(&admitted).unwrap();
     }
+}
+
+/// A verdict that names its rule `control` and its checker `rule`, as a
+/// crossing written before the rename and `rules.evaluate` do, reads as the
+/// one with the new names, and a boundary's `control` reads as `rule`.
+#[test]
+fn a_verdict_and_a_check_with_the_former_names_read_as_their_twins_with_the_new() {
+    let fields = |rule: &str, checker: &str| json!([{rule: "/rules/names", "part": "p", checker: "pattern", "status": "failed", "findings": [{"text": "x"}]}]);
+    let before = records::verdicts(&fields("control", "rule")).unwrap();
+    let now = records::verdicts(&fields("rule", "checker")).unwrap();
+    assert_eq!(
+        serde_json::to_value(&before).unwrap(),
+        serde_json::to_value(&now).unwrap()
+    );
+    assert_eq!(
+        serde_json::to_value(&now).unwrap(),
+        fields("rule", "checker")
+    );
+    let check = |name: &str| {
+        let record: BoundaryRecord = serde_json::from_value(json!({
+            "$type": "boundary/boundary/v1",
+            "to": "*",
+            "actions": ["*"],
+            "checks": [{name: "/rules/names", "parts": ["*"]}],
+        }))
+        .unwrap();
+        record.checks[0].rule.clone()
+    };
+    assert_eq!(check("control"), check("rule"));
 }
 
 #[test]

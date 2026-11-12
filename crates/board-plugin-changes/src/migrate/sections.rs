@@ -5,7 +5,7 @@
 //! section, it writes a new plan snapshot: the same uses, paths and attached
 //! records, the sections cut from the text, and their lines in `considered`
 //! and `owed`. A line it cannot read as paths and a reason, a path that
-//! reaches nothing, or an owed path that is no control is listed under
+//! reaches nothing, or an owed path that is no rule is listed under
 //! `unread`, and that change keeps its old plan. A path that exists but is
 //! degraded is accepted, so this migration can run before the others.
 //!
@@ -30,7 +30,8 @@ use crate::board;
 use crate::change::{NOT_FOUND, plan_at, referenced};
 use crate::gates::{FENCES, HEADING};
 use crate::plan::{MOVED_HEADINGS, Planned, plan_lines};
-use crate::records::{CONTROL_TYPE, ChangeRecord, ChangeV1, Considered, Owed, is_final};
+use crate::records::{ChangeRecord, ChangeV1, Considered, Owed, is_final};
+use crate::rules::RULE_TYPES;
 
 /// The code of a change the migration leaves as it is.
 const UNREAD: &str = "changes::migrate::unread";
@@ -314,8 +315,10 @@ fn moved(host: &dyn Host, path: &str, plan: &str) -> Result<Option<Moved>, Plugi
         for each in paths {
             let kind = (found.get(each).map(|(kind, _)| kind))
                 .or_else(|| found.unreadable_types.get(each));
-            if !reaches_nothing(each) && kind.map(String::as_str) != Some(CONTROL_TYPE) {
-                unread.push((each.clone(), format!("it is no {CONTROL_TYPE}")));
+            if !reaches_nothing(each)
+                && !kind.is_some_and(|kind| RULE_TYPES.contains(&kind.as_str()))
+            {
+                unread.push((each.clone(), format!("it is no {}", RULE_TYPES[0])));
             }
         }
     }
@@ -330,8 +333,8 @@ fn moved(host: &dyn Host, path: &str, plan: &str) -> Result<Option<Moved>, Plugi
     );
     let mut owed = record.owed.clone().unwrap_or_default();
     for (paths, why) in owed_groups {
-        owed.extend(paths.into_iter().map(|control| Owed {
-            control,
+        owed.extend(paths.into_iter().map(|rule| Owed {
+            rule,
             why: why.clone(),
         }));
     }

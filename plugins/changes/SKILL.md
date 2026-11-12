@@ -33,10 +33,10 @@ blocks is missing.
    brief as `changes.brief` prints it, or starts with its `brief_line`. Put
    the brief in as plain text, not inside a code fence, which the guard does
    not read. The brief's `rules_left_out` gives each rule it left out a
-   `reason`: the rule had no room, or it is a version control whose capture
+   `reason`: the rule had no room, or it is a version rule whose capture
    finds no version in the planned files. A missing or unreadable planned
-   file keeps a version control. A rule with no room still applies, so read
-   it with `controls.for-path`.
+   file keeps a version rule. A rule with no room still applies, so read
+   it with `rules.for-path`.
 3. Attach every record you make with
    `board -C <board> changes attach --path /changes/<name> --ref <path>`.
    The records go on the plan the change names, so write the plan first:
@@ -49,7 +49,7 @@ blocks is missing.
    (`changes::plan::no_answers`). Records the change surfaced that you
    read and do not rely on go in `considered`, as
    `[{"records": ["<path>"], "why": "<reason>"}]`. Obligations the change
-   leaves owed go in `owed`, as `[{"control": "<path>", "why": "<reason>"}]`.
+   leaves owed go in `owed`, as `[{"rule": "<path>", "why": "<reason>"}]`.
    Both fields take paths, and the gates do not read paths in the text.
    Failure paths has one row per step that can fail: what fails, the state
    it leaves, the recovery, and the order of the check against the
@@ -57,7 +57,7 @@ blocks is missing.
    what the change produces or alters, and names the files searched.
    Lifecycle says why nothing changes state, or names the record
    `board changes lifecycle` writes and summarises its states in one line.
-   When the plan's paths reach `/controls/<repo>/lifecycle-paths`, the gate
+   When the plan's paths reach `/rules/<repo>/lifecycle-paths`, the gate
    refuses a `lifecycle` answer of none. Write the record by piping `path`, `text` (at most 1,500
    words: the state table, the crash points and the invariants), `doc` (the
    repository file where the table lands) and `external` to
@@ -191,8 +191,8 @@ to replace the flow copies changes kept before versions.
   mount and `/`.
 - `changes::paths::outside_plan`: the diff edits the files named outside
   the plan's paths. Add them with `changes.plan`, or revert the edit.
-- `changes::brief::controls_missing`: the Board running the plugin has no
-  `controls.for-paths`. Run `board plugin enable controls`.
+- `changes::brief::rules_missing`: the Board running the plugin has no
+  `rules.for-paths`. Run `board plugin enable rules`.
 - `changes::data::not_signed`: run the understanding check and attach its
   record and the sign-off decision.
 - `changes::prototype::never_lands`: a prototype ends with `verdict`.

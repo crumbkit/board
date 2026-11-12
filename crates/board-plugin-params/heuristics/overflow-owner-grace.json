@@ -1,5 +1,5 @@
 {
-  "summary": "The further changed lines a control may run over before the owner decides.",
+  "summary": "The further changed lines a rule may run over before the owner decides.",
   "unit": "changed-lines",
   "inputs": [
     {
@@ -36,5 +36,5 @@
     "fails_above": 0.5
   },
   "recheck_after": 30,
-  "consumer": "controls"
+  "consumer": "rules"
 }

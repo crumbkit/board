@@ -169,7 +169,7 @@ fn unread(failed: Failed, head: &str, follow: &str) -> String {
 }
 
 /// The files no planned path matches, compared with SQLite's GLOB as
-/// controls match their paths.
+/// rules match their paths.
 pub(crate) fn outside(
     host: &dyn Host,
     files: &[String],

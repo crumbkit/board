@@ -13,7 +13,7 @@
         {"id": "head", "kind": "field", "field": "head"},
         {"id": "suite-run", "kind": "run", "scope": "full", "waivable": true},
         {"id": "not-small", "kind": "controlled-paths",
-         "controls": ["/controls/{repo}/ui-paths", "/controls/{repo}/data-paths", "/controls/{repo}/lifecycle-paths"],
+         "rules": ["/rules/{repo}/ui-paths", "/rules/{repo}/data-paths", "/rules/{repo}/lifecycle-paths"],
          "remedy": "This change touches a UI, data or lifecycle path, so it needs the development flow: run `board changes reflow --path {change} --flow development`."}
       ]
     },
@@ -25,7 +25,7 @@
         {"id": "review", "kind": "records", "actor": "reviewer", "type": "review/report/v1",
          "where": {"at_head": "range", "values": {"verdict": ["approve", "comment"]}, "no_findings": ["critical", "high"]}},
         {"id": "lifecycle-paths", "kind": "controlled-paths",
-         "controls": ["/controls/{repo}/lifecycle-paths"],
+         "rules": ["/rules/{repo}/lifecycle-paths"],
          "remedy": "This change touches a lifecycle path, so it needs the development flow: run `board changes reflow --path {change} --flow development`."}
       ]
     },
@@ -36,7 +36,7 @@
       "checks": [
         {"id": "pull-request", "kind": "field", "field": "pulls", "types": ["github/pull/v1"]},
         {"id": "lifecycle-paths-at-land", "kind": "controlled-paths",
-         "controls": ["/controls/{repo}/lifecycle-paths"],
+         "rules": ["/rules/{repo}/lifecycle-paths"],
          "remedy": "This change touches a lifecycle path, so it needs the development flow: run `board changes reflow --path {change} --flow development`."}
       ]
     }

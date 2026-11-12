@@ -26,7 +26,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use crate::board::{self, rows, text};
-use crate::brief::{LeftOut, Rule, RulesCommand, brief_of};
+use crate::brief::{LeftOut, RuleLine, RulesCommand, brief_of};
 use crate::change::{line, read, touch};
 use crate::flow::{Agent as Doer, Flow, Stop, of_change};
 use crate::gates::remedy::{fill, values};
@@ -172,11 +172,11 @@ pub(crate) struct RunBrief {
     steps: Vec<Step>,
     surfaced: Vec<String>,
     surfaced_left_out: usize,
-    rules: Vec<Rule>,
+    rules: Vec<RuleLine>,
     rules_left_out: Vec<LeftOut>,
     rules_unnamed: usize,
     rules_command: Option<RulesCommand>,
-    controls: String,
+    rules_check: String,
     stopping: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     budget_usd: Option<f64>,
@@ -432,7 +432,7 @@ fn brief_for(
         rules_left_out: builder.rules_left_out,
         rules_unnamed: builder.rules_unnamed,
         rules_command: builder.rules_command,
-        controls: builder.controls,
+        rules_check: builder.rules_check,
         stopping: stopping(path, &mount, budget),
         budget_usd: budget,
     };

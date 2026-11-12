@@ -929,6 +929,59 @@ fn review_finds_no_obligations_while_the_controls_plugin_is_not_enabled() {
     assert_eq!(advanced(&board), "land");
 }
 
+/// The `obligations` check of a change in plan whose planned paths an
+/// obligation at `stored` of `rule_type` reaches, and whose plan owes it
+/// under `field` as `owed`, or owes nothing when `field` is empty.
+fn obligations_owing(stored: &str, rule_type: &str, field: &str, owed: &str) -> Value {
+    let board = Changes::new();
+    board.change_at("changes/t.json", "plan", &json!({}));
+    board.mount_x(&[("src/a.rs", "a\n")]);
+    let rule = json!({
+        "$type": rule_type,
+        "kind": "obligation",
+        "requirement": "Sweep the docs.",
+        "purpose": "p",
+        "paths": ["repos/x/**"],
+    });
+    board.write(&format!("{stored}.json"), &rule.to_string());
+    let mut plan = planning(&["/repos/x/src/**"]);
+    if !field.is_empty() {
+        plan["owed"] = json!([{field: owed, "why": "The next step does it."}]);
+    }
+    board.call_stdin("plan", &plan);
+    let next = board.call("next", &path());
+    (next["gate"].as_array().unwrap().iter())
+        .find(|each| each["check"] == "obligations")
+        .unwrap()
+        .clone()
+}
+
+#[test]
+fn a_plan_owing_an_obligation_under_control_gates_as_one_owing_it_under_rule() {
+    let unowed = obligations_owing("rules/x/docs", "rules/rule/v1", "", "");
+    assert_eq!(unowed["status"], "missing", "{unowed}");
+    let now = obligations_owing("rules/x/docs", "rules/rule/v1", "rule", "/rules/x/docs");
+    assert_eq!(now["status"], "pass", "{now}");
+    // A plan names each rule where it is stored.
+    for (stored, rule_type, owed) in [
+        ("rules/x/docs", "rules/rule/v1", "/rules/x/docs"),
+        ("controls/x/docs", "controls/control/v1", "/controls/x/docs"),
+    ] {
+        for field in ["rule", "control"] {
+            assert_eq!(
+                obligations_owing(stored, rule_type, field, owed),
+                now,
+                "{stored} {field} {owed}"
+            );
+        }
+        assert_eq!(
+            obligations_owing(stored, rule_type, "", ""),
+            unowed,
+            "{stored}"
+        );
+    }
+}
+
 /// The reason the reopen tests give.
 const REASON: &str = "The review asked for a test of the empty case.";
 /// The phases of the shipped development flow.

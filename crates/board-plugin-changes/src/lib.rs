@@ -2,13 +2,12 @@
 //! walks one change to a mounted repository from its plan to its pull
 //! request, gates each phase on the records the change references, keeps
 //! work in progress under a soft limit, and ends a change when its pull
-//! request closes. Tasks are written through the tasks plugin and controls
-//! read through the controls plugin, each by a nested call.
+//! request closes. Tasks are written through the tasks plugin and rules read
+//! through the rules plugin, each by a nested call.
 
 mod board;
 mod brief;
 mod change;
-mod controls;
 mod diff;
 mod flow;
 mod gates;
@@ -21,6 +20,7 @@ mod pr;
 mod prototype;
 mod records;
 mod repo;
+mod rules;
 mod run;
 mod start;
 mod stop;
@@ -217,8 +217,8 @@ const CAPABILITIES: [Capability; 20] = [
     Capability {
         name: "brief",
         description: "What an agent needs to start: the change's plan, its lifecycle text, any \
-            warning, a one-line summary of each control on its paths, one line per record it uses, the next step and the command \
-            that lists the repository's controls, in at most 600 words.",
+            warning, a one-line summary of each rule on its paths, one line per record it uses, the next step and the command \
+            that lists the repository's rules, in at most 600 words.",
         run: brief::brief,
         input: input::<phases::PathInput>,
         output: output::<brief::Output>,

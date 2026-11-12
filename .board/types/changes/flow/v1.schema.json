@@ -178,6 +178,23 @@
                 ]
               },
               "required": [
+                "rules"
+              ]
+            },
+            {
+              "not": {
+                "properties": {
+                  "kind": {
+                    "enum": [
+                      "planned-controlled"
+                    ]
+                  }
+                },
+                "required": [
+                  "kind"
+                ]
+              },
+              "required": [
                 "controls"
               ]
             }
@@ -196,7 +213,15 @@
       },
       "properties": {
         "controls": {
-          "description": "`controlled-paths`: the controls whose paths the diff must not touch.\n`planned-controlled`: the controls the plan's paths must not reach.",
+          "description": "`controlled-paths`: the rules whose paths the diff must not touch.\n`planned-controlled`: the rules the plan's paths must not reach. A\nflow stored before the rename names it `controls`.",
+          "items": {
+            "pattern": "^/\\S*$",
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "rules": {
+          "description": "`controlled-paths`: the rules whose paths the diff must not touch.\n`planned-controlled`: the rules the plan's paths must not reach. A\nflow stored before the rename names it `controls`.",
           "items": {
             "pattern": "^/\\S*$",
             "type": "string"
@@ -205,8 +230,17 @@
         }
       },
       "then": {
-        "required": [
-          "controls"
+        "oneOf": [
+          {
+            "required": [
+              "rules"
+            ]
+          },
+          {
+            "required": [
+              "controls"
+            ]
+          }
         ]
       }
     },
@@ -456,6 +490,23 @@
                 ]
               },
               "required": [
+                "rules"
+              ]
+            },
+            {
+              "not": {
+                "properties": {
+                  "kind": {
+                    "enum": [
+                      "controlled-paths"
+                    ]
+                  }
+                },
+                "required": [
+                  "kind"
+                ]
+              },
+              "required": [
                 "controls"
               ]
             }
@@ -474,7 +525,15 @@
       },
       "properties": {
         "controls": {
-          "description": "`controlled-paths`: the controls whose paths the diff must not touch.\n`planned-controlled`: the controls the plan's paths must not reach.",
+          "description": "`controlled-paths`: the rules whose paths the diff must not touch.\n`planned-controlled`: the rules the plan's paths must not reach. A\nflow stored before the rename names it `controls`.",
+          "items": {
+            "pattern": "^/\\S*$",
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "rules": {
+          "description": "`controlled-paths`: the rules whose paths the diff must not touch.\n`planned-controlled`: the rules the plan's paths must not reach. A\nflow stored before the rename names it `controls`.",
           "items": {
             "pattern": "^/\\S*$",
             "type": "string"
@@ -483,8 +542,17 @@
         }
       },
       "then": {
-        "required": [
-          "controls"
+        "oneOf": [
+          {
+            "required": [
+              "rules"
+            ]
+          },
+          {
+            "required": [
+              "controls"
+            ]
+          }
         ]
       }
     },

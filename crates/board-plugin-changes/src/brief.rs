@@ -9,14 +9,14 @@ use serde_json::{Map, Value, json};
 
 use crate::board::{call_or_refusal, refused};
 use crate::change::{current, plan_at, read, referenced};
-use crate::controls::{CONTROLS_UNAVAILABLE, listed_by};
 use crate::flow::Kind;
-use crate::gates::kinds::named_controls;
+use crate::gates::kinds::named_rules;
 use crate::gates::remedy::values;
 use crate::gates::{HEADING, Observed};
 use crate::lifecycle::{LifecycleRecord, says_none};
 use crate::phases::{PathInput, plan_text, step_of};
 use crate::plan::{Answers, documents, words};
+use crate::rules::{RULE_TYPES, RULES_UNAVAILABLE, listed_by};
 use crate::{PLUGIN, Warning, refusal, to_value};
 
 /// The most words `brief` returns.
@@ -30,9 +30,6 @@ const LEFT_OUT_NAMED: usize = 20;
 /// The share of the word limit kept for the lines of the records the plan
 /// uses, when they need it.
 const USES_SHARE: usize = 4;
-/// The codes Board refuses a call with when the controls plugin or its
-/// capability is missing.
-const CONTROL_TYPE: &str = "controls/control/v1";
 const DECISION_TYPE: &str = "plans/decision/v1";
 const EVAL_TYPE: &str = "evals/eval/v1";
 /// The command that lists every rule on the planned paths; it reads
@@ -47,14 +44,15 @@ pub(crate) struct Use {
     line: String,
 }
 
-/// One control that applies to the planned paths, and its summary.
+/// One rule that applies to the planned paths, by the path it is stored
+/// at, and its summary.
 ///
 /// `matched` lists at most three of the planned paths that reached it, and
 /// `matched_left_out` counts the rest; both are left out when every planned
 /// path reached it.
 #[derive(Clone, Debug, Serialize, JsonSchema)]
-pub(crate) struct Rule {
-    control: String,
+pub(crate) struct RuleLine {
+    rule: String,
     summary: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     matched: Option<Vec<String>>,
@@ -63,7 +61,7 @@ pub(crate) struct Rule {
 }
 
 /// Why the brief left a rule out: it did not fit in the word limit, or it
-/// is a version control whose capture finds no version in the files the
+/// is a version rule whose capture finds no version in the files the
 /// planned paths reach.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, JsonSchema)]
 pub(crate) enum Reason {
@@ -76,7 +74,7 @@ pub(crate) enum Reason {
 /// A rule the brief left out, and why.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
 pub(crate) struct LeftOut {
-    control: String,
+    rule: String,
     reason: Reason,
 }
 
@@ -86,7 +84,7 @@ impl LeftOut {
         let reason = serde_json::to_value(self.reason).expect("a reason is a string");
         words(&format!(
             "{} {}",
-            self.control,
+            self.rule,
             reason.as_str().unwrap_or_default()
         ))
     }
@@ -106,24 +104,24 @@ pub(crate) struct RulesCommand {
 /// has no plan record. `answers` holds the plan's typed answers, left out
 /// when it gives none. `lifecycle` is the path of the text of its lifecycle
 /// record, left out when it has none; the text counts outside the limit, as
-/// the plan's does. `warnings` says when a control a `planned-controlled`
+/// the plan's does. `warnings` says when a rule a `planned-controlled`
 /// check of the change's flow names does not exist, left out when none is
-/// missing. `rules` lists each control on the plan's paths once,
-/// as `controls.for-paths` finds them: those that matched only some planned
-/// paths first, then the others, each group by control path. Each rule's
+/// missing. `rules` lists each rule on the plan's paths once,
+/// as `rules.for-paths` finds them: those that matched only some planned
+/// paths first, then the others, each group by rule path. Each rule's
 /// path and summary are fitted first, skipping any that do not fit, and its
-/// matched paths after, while room remains. A version control whose
+/// matched paths after, while room remains. A version rule whose
 /// capture finds no version in the files the planned paths reach is left
 /// out of `rules`; a missing or unreadable planned file, or a pattern that
 /// matches no file yet, keeps it. `rules_left_out` names up to 20 rules left out, as many
 /// as fit, each with its `reason`: those the word limit left out first,
-/// then those version controls. `rules_unnamed` counts the rest.
+/// then those version rules. `rules_unnamed` counts the rest.
 /// `rules_command` is the command that lists every rule, as an `argv` to
 /// run and the `stdin` to give it; it is null when the plan has no paths.
 /// Rules are counted before uses, but the uses keep up to a quarter of the
 /// limit. `uses` gives one line per record it uses, in order, skipping any
 /// that do not fit, and `left_out` counts those the word limit left out.
-/// `controls` is the command that lists the controls on the change's
+/// `rules_check` is the command that lists the rules on the change's
 /// repository. `brief_line`, `board-brief: <path>`, comes first in the
 /// output; a builder's first message starts with it, and the write guard
 /// reads it.
@@ -139,7 +137,7 @@ pub(crate) struct Output {
     pub(crate) lifecycle: Option<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub(crate) warnings: Vec<Warning>,
-    pub(crate) rules: Vec<Rule>,
+    pub(crate) rules: Vec<RuleLine>,
     pub(crate) rules_left_out: Vec<LeftOut>,
     pub(crate) rules_unnamed: usize,
     pub(crate) rules_command: Option<RulesCommand>,
@@ -147,10 +145,10 @@ pub(crate) struct Output {
     pub(crate) left_out: usize,
     pub(crate) phase: String,
     pub(crate) instruction: String,
-    pub(crate) controls: String,
+    pub(crate) rules_check: String,
 }
 
-/// The input `controls.for-paths` takes for `paths`, as JSON written as
+/// The input `rules.for-paths` takes for `paths`, as JSON written as
 /// Python's `json.dumps` writes it, with a space after each separator.
 fn for_paths_input(paths: &[String]) -> String {
     let listed: Vec<String> = paths
@@ -172,7 +170,7 @@ fn line_of(found: Option<&(String, Map<String, Value>)>, text: Option<&str>) -> 
         return "unreadable: reaches nothing or is degraded".to_owned();
     };
     match found.as_str() {
-        CONTROL_TYPE => {
+        kind if RULE_TYPES.contains(&kind) => {
             let summary = field(body, "summary");
             if summary.is_empty() {
                 field(body, "requirement").to_owned()
@@ -212,7 +210,7 @@ fn line_of(found: Option<&(String, Map<String, Value>)>, text: Option<&str>) -> 
 /// answers; none for no paths.
 ///
 /// A Board without the rules plugin enabled is
-/// `changes::brief::controls_missing`.
+/// `changes::brief::rules_missing`.
 fn rules_for(host: &dyn Host, paths: &[String]) -> Result<Vec<Map<String, Value>>, PluginError> {
     if paths.is_empty() {
         return Ok(Vec::new());
@@ -220,9 +218,9 @@ fn rules_for(host: &dyn Host, paths: &[String]) -> Result<Vec<Map<String, Value>
     let output = call_or_refusal(host, "rules.for-paths", &json!({"paths": paths})).map_err(
         |refusal_of| {
             let error = refused("call", &refusal_of);
-            if CONTROLS_UNAVAILABLE.contains(&refusal_of.code.as_str()) {
+            if RULES_UNAVAILABLE.contains(&refusal_of.code.as_str()) {
                 refusal(
-                    "changes::brief::controls_missing",
+                    "changes::brief::rules_missing",
                     format!(
                         "the brief lists the rules on the planned paths with rules.for-paths, \
                          which this Board refused: {}; enable it with `board plugin enable \
@@ -241,13 +239,13 @@ fn rules_for(host: &dyn Host, paths: &[String]) -> Result<Vec<Map<String, Value>
         .and_then(Value::as_array)
         .into_iter()
         .flatten())
-    .filter_map(|control| control.as_object().cloned())
+    .filter_map(|rule| rule.as_object().cloned())
     .collect())
 }
 
 /// `rule` as the brief lists it: `matched` left out when it is every
 /// planned path, and cut to `MATCHED_SHOWN`.
-fn rule_line(rule: &Map<String, Value>, paths: &[String]) -> Rule {
+fn rule_line(rule: &Map<String, Value>, paths: &[String]) -> RuleLine {
     let matched: Vec<String> = (rule
         .get("matched")
         .and_then(Value::as_array)
@@ -255,8 +253,8 @@ fn rule_line(rule: &Map<String, Value>, paths: &[String]) -> Rule {
         .flatten())
     .filter_map(|each| each.as_str().map(str::to_owned))
     .collect();
-    let mut line = Rule {
-        control: field(rule, "control").to_owned(),
+    let mut line = RuleLine {
+        rule: field(rule, "control").to_owned(),
         summary: field(rule, "summary").to_owned(),
         matched: None,
         matched_left_out: None,
@@ -275,29 +273,29 @@ fn rule_line(rule: &Map<String, Value>, paths: &[String]) -> Rule {
 /// reasons, how many more were, and the words used.
 ///
 /// Rules that matched only some of the planned paths come first, then the
-/// others, each group by control path. `dropped` names the version controls
+/// others, each group by rule path. `dropped` names the version rules
 /// left out because they find no version; they are named after the rules
 /// the word limit left out. When nothing is left out, the rules take the
 /// whole room. Otherwise the words the entries need when every rule has
 /// the whole room are kept back first, and the entries are named in order
 /// while they fit, so the rules and entries never pass `room`.
 pub(crate) fn fit_rules(
-    found: &[Rule],
+    found: &[RuleLine],
     dropped: &[String],
     room: i64,
-) -> (Vec<Rule>, Vec<LeftOut>, usize, usize) {
+) -> (Vec<RuleLine>, Vec<LeftOut>, usize, usize) {
     let mut ordered = found.to_vec();
     ordered.sort_by(|one, other| {
-        (one.matched.is_none(), &one.control).cmp(&(other.matched.is_none(), &other.control))
+        (one.matched.is_none(), &one.rule).cmp(&(other.matched.is_none(), &other.rule))
     });
     let entries = |left_out: Vec<String>| -> Vec<LeftOut> {
         (left_out.into_iter())
-            .map(|control| LeftOut {
-                control,
+            .map(|rule| LeftOut {
+                rule,
                 reason: Reason::NoRoom,
             })
-            .chain(dropped.iter().map(|control| LeftOut {
-                control: control.clone(),
+            .chain(dropped.iter().map(|rule| LeftOut {
+                rule: rule.clone(),
                 reason: Reason::NoVersion,
             }))
             .collect()
@@ -331,18 +329,18 @@ pub(crate) fn fit_rules(
 /// Each rule's path and summary come first, in order, skipping any that do
 /// not fit, so one long rule leaves room for the shorter ones after it.
 /// Matched paths are added after, in order, while room remains.
-fn fill(ordered: &[Rule], room: i64) -> (Vec<Rule>, Vec<String>, usize) {
+fn fill(ordered: &[RuleLine], room: i64) -> (Vec<RuleLine>, Vec<String>, usize) {
     let fits = |spent: usize, cost: usize| i64::try_from(spent + cost).unwrap_or(i64::MAX) <= room;
     let mut spent = 0;
-    let mut fitted: Vec<(Rule, &Rule)> = Vec::new();
+    let mut fitted: Vec<(RuleLine, &RuleLine)> = Vec::new();
     let mut left_out = Vec::new();
     for rule in ordered {
-        let cost = words(&format!("{} {}", rule.control, rule.summary));
+        let cost = words(&format!("{} {}", rule.rule, rule.summary));
         if !fits(spent, cost) {
-            left_out.push(rule.control.clone());
+            left_out.push(rule.rule.clone());
             continue;
         }
-        let bare = Rule {
+        let bare = RuleLine {
             matched: None,
             matched_left_out: None,
             ..rule.clone()
@@ -381,10 +379,10 @@ fn lifecycle_text(host: &dyn Host, plan: Option<&str>) -> Result<Option<String>,
         .and_then(|(_, body)| Some(field(body, "text").to_owned()).filter(|text| !text.is_empty())))
 }
 
-/// The warning for each control a `planned-controlled` check of the change's
+/// The warning for each rule a `planned-controlled` check of the change's
 /// flow names and the board does not hold, in which case the gate has only
 /// the section heading to go on.
-fn missing_controls(host: &dyn Host, observed: &Observed) -> Result<Vec<Warning>, PluginError> {
+fn missing_rules(host: &dyn Host, observed: &Observed) -> Result<Vec<Warning>, PluginError> {
     let filled = values(observed);
     let mut said = Vec::new();
     for check in (observed.flow.iter())
@@ -403,13 +401,13 @@ fn missing_controls(host: &dyn Host, observed: &Observed) -> Result<Vec<Warning>
         } else {
             "nothing guards".to_owned()
         };
-        for control in named_controls(check, &filled) {
-            if listed_by(host, &control, &[])?.is_none() {
+        for rule in named_rules(check, &filled) {
+            if listed_by(host, &rule, &[])?.is_none() {
                 said.push(Warning {
-                    code: "changes::brief::no_control",
+                    code: "changes::brief::no_rule",
                     detail: format!(
-                        "no control {control} exists, so {guard} what it would list; write the \
-                         control to name those paths"
+                        "no rule {rule} exists, so {guard} what it would list; write the rule \
+                         to name those paths"
                     ),
                 });
             }
@@ -441,8 +439,8 @@ pub(crate) fn brief_of(host: &dyn Host, path: &str) -> Result<Output, PluginErro
         } else {
             lifecycle_text(host, change.plan.as_deref())?
         };
-    let warnings = missing_controls(host, &observed)?;
-    let controls = format!("board controls check --path {}", change.mount);
+    let warnings = missing_rules(host, &observed)?;
+    let rules_check = format!("board rules check --path {}", change.mount);
     let brief_line = format!("board-brief: {path}");
     let mut spent = words(
         &[
@@ -451,7 +449,7 @@ pub(crate) fn brief_of(host: &dyn Host, path: &str) -> Result<Output, PluginErro
             text.as_deref().unwrap_or_default(),
             step.phase.as_str(),
             &step.instruction,
-            &controls,
+            &rules_check,
             lifecycle.as_deref().unwrap_or_default(),
         ]
         .join(" "),
@@ -480,11 +478,11 @@ pub(crate) fn brief_of(host: &dyn Host, path: &str) -> Result<Output, PluginErro
         .map(|(each, line)| words(&format!("{each} {line}")))
         .sum();
     let kept = needed.min(BRIEF_WORDS / USES_SHARE);
-    // A version control that finds no version in the matched files does
-    // not apply there, so it is named as dropped and costs no rule line.
+    // A version rule that finds no version in the matched files does not
+    // apply there, so it is named as dropped and costs no rule line.
     let (found, dropped): (Vec<_>, Vec<_>) = (rules_for(host, &paths)?.into_iter())
         .partition(|rule| rule.get("versions_found").and_then(Value::as_u64) != Some(0));
-    let found: Vec<Rule> = (found.iter()).map(|rule| rule_line(rule, &paths)).collect();
+    let found: Vec<RuleLine> = (found.iter()).map(|rule| rule_line(rule, &paths)).collect();
     let dropped: Vec<String> = (dropped.iter())
         .map(|rule| field(rule, "control").to_owned())
         .collect();
@@ -519,7 +517,7 @@ pub(crate) fn brief_of(host: &dyn Host, path: &str) -> Result<Output, PluginErro
         uses: shown,
         phase: step.phase,
         instruction: step.instruction,
-        controls,
+        rules_check,
     })
 }
 

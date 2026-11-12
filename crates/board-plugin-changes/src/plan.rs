@@ -17,7 +17,8 @@ use crate::flow::{Flow, of_change};
 use crate::gates::sections;
 use crate::lifecycle::LifecycleRecord;
 use crate::phases::final_phase;
-use crate::records::{CONTROL_TYPE, Considered, Kind, Owed, PlanRecord, is_final};
+use crate::records::{Considered, Kind, Owed, PlanRecord, is_final};
+use crate::rules::RULE_TYPES;
 use crate::{PLUGIN, Warning, refusal, to_value};
 pub(crate) use answers::Answers;
 
@@ -164,7 +165,7 @@ pub(crate) fn documents(
 }
 
 /// What each path the plan names is, or a refusal when one reaches nothing
-/// or an owed path is no control.
+/// or an owed path is no rule.
 fn check_named(
     host: &dyn Host,
     path: &str,
@@ -178,7 +179,7 @@ fn check_named(
             .iter()
             .flat_map(|each| each.records.iter().cloned()),
     );
-    named.extend(owed.iter().map(|each| each.control.clone()));
+    named.extend(owed.iter().map(|each| each.rule.clone()));
     let records = referenced(host, &named)?;
     let dangling: Vec<&String> = named
         .iter()
@@ -319,14 +320,14 @@ pub(crate) fn plan(host: &dyn Host, input: &Value) -> Result<Value, PluginError>
     }))
 }
 
-/// `changes::ref::wrong_type` for an `owed` entry that is no control.
+/// `changes::ref::wrong_type` for an `owed` entry that is no rule.
 fn check_owed(path: &str, owed: &[Owed], records: &Referenced) -> Result<(), PluginError> {
     let wrong: Vec<&str> = (owed.iter())
-        .map(|each| each.control.as_str())
+        .map(|each| each.rule.as_str())
         .filter(|each| {
             records
                 .get(each)
-                .is_none_or(|(found, _)| found != CONTROL_TYPE)
+                .is_none_or(|(found, _)| !RULE_TYPES.contains(&found.as_str()))
         })
         .collect();
     if wrong.is_empty() {
@@ -335,9 +336,10 @@ fn check_owed(path: &str, owed: &[Owed], records: &Referenced) -> Result<(), Plu
     Err(refusal(
         "changes::ref::wrong_type",
         format!(
-            "the plan for {path} leaves owed {}, and owed accepts only {CONTROL_TYPE} records; \
-             name each obligation by its path, or check its `$type` with `board get`",
-            wrong.join(", ")
+            "the plan for {path} leaves owed {}, and owed accepts only {} records; name each \
+             obligation by its path, or check its `$type` with `board get`",
+            wrong.join(", "),
+            RULE_TYPES[0]
         ),
         [("path", json!(path)), ("refs", json!(wrong))],
     ))

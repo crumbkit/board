@@ -184,7 +184,7 @@ fn default(each: &flow::Check) -> String {
                 .to_owned()
         }
         Kind::ControlledPaths => {
-            "Revert the edits to the controlled paths, or move the change to a flow that allows \
+            "Revert the edits to the paths those rules list, or move the change to a flow that allows \
              them with `board changes reflow --path {change} --flow <flow>`."
                 .to_owned()
         }

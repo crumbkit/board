@@ -1,16 +1,16 @@
 # boundary
 
 A Board plugin, built into the `board` binary, that checks content before it
-leaves a checkout. A boundary names the controls that content must pass to
+leaves a checkout. A boundary names the rules that content must pass to
 go to a destination by an action. `boundary.check` evaluates the content
-through `controls.evaluate` and records the verdicts as a crossing. The
+through `rules.evaluate` and records the verdicts as a crossing. The
 plugin knows no destination and sends nothing; the action that sends
 content calls it first and sends only on a pass.
 
-Boundaries, the controls they name and crossings all live in the personal
+Boundaries, the rules they name and crossings all live in the personal
 board, the one `personal` names in `$XDG_CONFIG_HOME/board/config.json`.
 Each capability reads, calls, asks and writes there, whichever board calls
-it. Enable `controls` and `boundary` in the personal board, and `boundary`
+it. Enable `rules` and `boundary` in the personal board, and `boundary`
 in any board that calls it.
 
 ## The boundary record
@@ -22,8 +22,8 @@ in any board that calls it.
   "to": "github:octo/*",
   "actions": ["github.*"],
   "checks": [
-    {"control": "/controls/plain-prose", "parts": ["pr.*", "comment.body"]},
-    {"control": "/controls/private-names", "parts": ["*"]}
+    {"rule": "/rules/plain-prose", "parts": ["pr.*", "comment.body"]},
+    {"rule": "/rules/private-names", "parts": ["*"]}
   ]
 }
 ```
@@ -34,7 +34,7 @@ in any board that calls it.
   read. A file git ignores is not read.
 - `to` is a glob of destinations, and `actions` holds globs of action
   names, such as `github.pr-create`. Globs are SQLite GLOB patterns, as
-  controls' `paths` are: `*` matches any characters, `/` and `.` included,
+  rules' `paths` are: `*` matches any characters, `/` and `.` included,
   `?` one character, and `[...]` one of a set, `[^...]` its complement.
   Destinations match without case, as GitHub names do; action and part
   names match with case.
@@ -43,11 +43,12 @@ in any board that calls it.
   named through a link is not matched. Without `from`, the boundary covers
   any checkout, including one no board mounts. A check that names no
   checkout is covered by every boundary, `from` or not.
-- Each check names a control in the personal board and globs of the part
-  names it applies to. Board checks the reference, so a deleted control
-  makes the boundary `board::ref::dangling`. Each control must have a rule.
-  A control without one cannot check content, so its verdict, `stated`,
-  fails the check.
+- Each check names a rule in the personal board, in `rule`, and globs of
+  the part names it applies to. A boundary written before the rename names
+  the rule in `control`, which reads the same. Board checks the reference,
+  so a deleted rule makes the boundary `board::ref::dangling`. Each rule
+  must have a checker. A rule without one cannot check content, so its
+  verdict, `stated`, fails the check.
 - A part whose name no check's globs match is not checked. Write `*` to
   check every part.
 
@@ -55,16 +56,16 @@ in any board that calls it.
 
 `boundary.check` takes `action`, `to`, optional `from` and `parts`, a map
 from part name to text, on stdin. It finds every boundary that matches, and
-gathers for each part the controls whose globs name it. Parts with the same
-controls go to one `controls.evaluate`, so a part's budget and pattern rules
-run before its judged rules, and a judged rule skips a part that failed a
-free one. A refusal from `controls.evaluate`, such as
+gathers for each part the rules whose globs name it. Parts with the same
+rules go to one `rules.evaluate`, so a part's budget and pattern checkers
+run before its judged ones, and a judged checker skips a part that failed a
+free one. A refusal from `rules.evaluate`, such as
 `rules::rule::not_found`, is `boundary::board::refused` carrying that
 code. A judged rule with a part to read is refused that way with
 `rules::agent::not_set` when `BOARD_CONTROLS_AGENT` names no agent.
 Results that the plugin cannot read refuse the check with
 `boundary::evaluate::unreadable`. That happens when the boundary and
-controls plugins come from different Board builds.
+rules plugins come from different Board builds.
 
 Any entry under `/boundaries/` that is not a valid boundary, because it does
 not parse, has another type or fails its schema, a boundary elsewhere that
@@ -81,11 +82,11 @@ Then it writes the crossing and returns `digest`, `crossing`, `boundaries`,
 `note` says why nothing was checked when no boundary matched or no check
 named a part; otherwise it is null. When any verdict failed, the check
 refuses with `boundary::check::failed`. Its message names each failing
-control, part and line with the quoted text and any rewrite, the first 20
+rule, part and line with the quoted text and any rewrite, the first 20
 of them. Its fields hold `digest`, `crossing` and every failure in
-`failures` (`control`, `part`, `text`, and `line` and `rewrite` when
+`failures` (`rule`, `part`, `text`, and `line` and `rewrite` when
 known). Its hint starts `Next:`, says what to change, including giving a
-control without a rule a rule, and names `board call <action>` and
+rule without a checker a checker, and names `board call <action>` and
 `board --personal boundary check` to run again. A pattern rule whose
 `quote` is `match-only` never reveals its expression here either.
 
@@ -125,8 +126,8 @@ changing a rule. Only a failed check asks; a passing check writes no effect.
   with `board::json::too_large`, and the check fails as usual, with no
   `effect`, its hint ending that the owner cannot approve content this
   large.
-- The text shows the content, not the failed controls, so an approval keeps
-  covering the content if a later control also fails it.
+- The text shows the content, not the failed rules, so an approval keeps
+  covering the content if a later rule also fails it.
 - An approval does not expire and covers one crossing. The owner withdraws
   one by deleting its seen record from `/effects/seen/`.
 
@@ -136,7 +137,7 @@ and returns `digest`, `crossing` (null when there is none), `passed`,
 `passed` is true only while the boundaries that match the crossing's
 action, destination and checkout are the ones it was checked
 against. It does not notice an edit to a matched boundary's checks or to a
-control's rule, so a gate that must see those runs `check` again. Giving
+rule's checker, so a gate that must see those runs `check` again. Giving
 both, or a part of the content, is `boundary::verify::bad_input`.
 
 `boundary.record --digest <digest> --result <text>` sets `result` on a
@@ -153,16 +154,20 @@ and characters unescaped, as Python's
 `json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)`
 writes it. The record holds the `digest`, `action`, `to`, `from` when
 given, the matching `boundaries`, each verdict in `verdicts` as
-`controls.evaluate` gave it with its nulls left out, `override` when the
+`rules.evaluate` gave it, renamed, with its nulls left out, `override` when the
 owner's approval let it through, and `result` once recorded. A verdict's
-`rule` is `budget`, `pattern`, `judged` or `version`, as the control's rule
-names it in `check`. The record stores no `passed`: `verify` and `record`
+`rule` is the rule's path, and its `checker` is `budget`, `pattern`,
+`judged` or `version`, as the rule's checker names it in `check`. A
+crossing written before the rename names the path `control` and the
+checker `rule`, and reads the same. The record stores no `passed`: `verify` and `record`
 derive it. A crossing passes when no verdict failed, or when it holds an
 `override`. A verdict passes when its status is `passed` or `skipped`. A
 verdict whose status is `failed`, `stated` or one this Board does not know
 fails. The crossing holds no part's text, but it keeps each finding's
-quoted text. `from`, `boundaries` and each verdict's `control` are
-references, so deleting a boundary or control leaves an old crossing
+quoted text. `from`, `boundaries` and an old verdict's `control` are
+references, and a verdict's `rule` is a plain string until the former
+names are dropped, because it holds a checker in an old crossing. Deleting
+a boundary or rule leaves an old crossing
 degraded but still read. Checking the same content again replaces the
 crossing; a re-check that passes keeps its `result`, and one that fails
 drops it.

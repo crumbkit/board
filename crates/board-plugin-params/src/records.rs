@@ -47,7 +47,7 @@ pub struct HeuristicRecord {
     /// the frecency change switches them to active days.
     #[schemars(range(min = 1))]
     pub recheck_after: u64,
-    /// The plugin that reads the value, such as `controls`.
+    /// The plugin that reads the value, such as `rules`.
     #[schemars(with = "Slug")]
     pub consumer: String,
 }

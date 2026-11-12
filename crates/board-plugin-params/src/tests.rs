@@ -102,7 +102,7 @@ fn the_shipped_heuristics_are_admitted_with_the_start_default_bounds_and_check_t
             heuristic.validate(&record).unwrap();
             assert_eq!(
                 (&record["unit"], &record["consumer"]),
-                (&json!("changed-lines"), &json!("controls")),
+                (&json!("changed-lines"), &json!("rules")),
                 "{name}"
             );
             let method = record["method"].as_str().unwrap();

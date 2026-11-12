@@ -395,11 +395,11 @@ fn owed_control(board: &Changes) {
 }
 
 #[test]
-fn an_owed_control_that_is_a_task_is_refused_and_one_that_is_an_obligation_is_written() {
+fn an_owed_rule_that_is_a_task_is_refused_and_one_that_is_an_obligation_is_written() {
     let board = Changes::new();
     board.change_at("changes/t.json", "plan", &json!({}));
     owed_control(&board);
-    let owe = |path: &str| json!({"owed": [{"control": path, "why": "The next step does it."}]});
+    let owe = |path: &str| json!({"owed": [{"rule": path, "why": "The next step does it."}]});
     let refused = board.refusal_stdin("plan", &with(PLAN, &owe(TASK)));
     assert_eq!(refused["code"], "changes::ref::wrong_type");
     assert_eq!(plans(&board), 0);

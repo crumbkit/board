@@ -156,24 +156,30 @@ fn a_revised_plan_keeps_the_lifecycle_record_and_one_never_given_stays_unset() {
     assert_eq!(plan_record(&board)["lifecycle"], "/changes/t/lifecycle");
 }
 
+/// The lifecycle-paths rule, listing src/sync.rs, of `rule_type` at
+/// `<prefix>/x/lifecycle-paths`.
+fn lifecycle_rule(board: &Changes, prefix: &str, rule_type: &str) {
+    board.write(
+        &format!("{prefix}/x/lifecycle-paths.json"),
+        &typed(
+            rule_type,
+            &json!({
+                "requirement": "This code changes state.",
+                "purpose": "p",
+                "paths": ["repos/x/src/sync.rs"],
+            }),
+        ),
+    );
+}
+
 /// The fixture with a change whose plan says `section` under Lifecycle over
-/// `paths`, and with the lifecycle-paths control when `control` is set.
-fn gated(enabled: &[&str], section: &str, paths: &[&str], control: bool) -> Changes {
+/// `paths`, and with the lifecycle-paths rule when `rule` is set.
+fn gated(enabled: &[&str], section: &str, paths: &[&str], rule: bool) -> Changes {
     let board = Changes::enabling(enabled);
     board.change_at("changes/t.json", "plan", &json!({"route": "owner"}));
     board.mount_x(&[("src/sync.rs", "a\n"), ("src/a.rs", "a\n")]);
-    if control {
-        board.write(
-            "controls/x/lifecycle-paths.json",
-            &typed(
-                "controls/control/v1",
-                &json!({
-                    "requirement": "This code changes state.",
-                    "purpose": "p",
-                    "paths": ["repos/x/src/sync.rs"],
-                }),
-            ),
-        );
+    if rule {
+        lifecycle_rule(&board, "rules", "rules/rule/v1");
     }
     let (before, _) = PLAN.rsplit_once("## Lifecycle").unwrap();
     let text = format!("{before}## Lifecycle\n\n{section}\n");
@@ -211,7 +217,7 @@ fn a_plan_over_a_lifecycle_path_cannot_say_none_and_its_twins_may() {
     assert_eq!(declared["status"], "missing", "{declared}");
     assert_eq!(
         declared["detail"],
-        "the plan's paths reach /controls/x/lifecycle-paths"
+        "the plan's paths reach /rules/x/lifecycle-paths"
     );
     assert!(
         declared["remedy"]
@@ -246,8 +252,8 @@ fn a_plan_over_a_lifecycle_path_cannot_say_none_and_its_twins_may() {
 }
 
 #[test]
-fn with_no_lifecycle_paths_control_none_passes_and_the_check_says_none_exists() {
-    let said = "no control /controls/x/lifecycle-paths exists, so the board names no such paths \
+fn with_no_lifecycle_paths_rule_none_passes_and_the_check_says_none_exists() {
+    let said = "no rule /rules/x/lifecycle-paths exists, so the board names no such paths \
                 and the check passes";
     let none = "None: nothing changes state.";
     for enabled in [&["changes", "rules"][..], &["changes"][..]] {
@@ -260,21 +266,11 @@ fn with_no_lifecycle_paths_control_none_passes_and_the_check_says_none_exists() 
 }
 
 /// A change started on `flow` whose head edits `file`, in a board with a
-/// lifecycle-paths control that lists src/sync.rs, and that head.
+/// lifecycle-paths rule that lists src/sync.rs, and that head.
 fn started_over(flow: &str, file: &str) -> (Changes, String) {
     let board = Changes::enabling(&["changes", "rules"]);
     let (_, head) = board.edited(&[(file, "a\n")]);
-    board.write(
-        "controls/x/lifecycle-paths.json",
-        &typed(
-            "controls/control/v1",
-            &json!({
-                "requirement": "This code changes state.",
-                "purpose": "p",
-                "paths": ["repos/x/src/sync.rs"],
-            }),
-        ),
-    );
+    lifecycle_rule(&board, "rules", "rules/rule/v1");
     board.call(
         "start",
         &json!({"mount": "/repos/x", "task": TASK, "title": "T", "name": "t", "flow": flow}),
@@ -410,11 +406,75 @@ fn a_change_reflowed_from_small_at_build_faces_lifecycle_paths_until_it_has_a_re
     assert_eq!(paths["status"], "missing", "{paths}");
     assert_eq!(
         paths["detail"],
-        "the change's diff edits files that /controls/x/lifecycle-paths list: /repos/x/src/sync.rs"
+        "the change's diff edits files that /rules/x/lifecycle-paths list: /repos/x/src/sync.rs"
     );
     board.call_stdin("lifecycle", &lifecycle(TABLE, "/repos/x/docs/states.md"));
     let found = next(&board);
     assert!(check(&found, "lifecycle-paths").is_none(), "{found}");
+}
+
+/// The gate of a change in `phase` whose head edits src/sync.rs and whose
+/// plan says None under Lifecycle, with the lifecycle-paths rule of
+/// `rule_type` under `prefix`, on the shipped development flow or, when
+/// `stored` is set, on its version stored before the rename, which names
+/// `controls` under `/controls/`.
+fn lifecycle_gate(stored: bool, prefix: &str, rule_type: &str, phase: &str) -> Value {
+    let board = Changes::enabling(&["changes", "rules"]);
+    let (_, head) = board.edited(&[("src/sync.rs", "a\n")]);
+    lifecycle_rule(&board, prefix, rule_type);
+    board.call(
+        "start",
+        &json!({"mount": "/repos/x", "task": TASK, "title": "T", "name": "t", "flow": "development"}),
+    );
+    if stored {
+        let old = include_str!(
+            "../../../../../board-plugin-changes/src/flow/flows-md/development-a9df0910bd037be9.json"
+        );
+        board.write("flows/development/a9df0910bd037be9.json", old);
+        let mut change = board.read("changes/t.json");
+        change["flow"] = json!("/flows/development/a9df0910bd037be9");
+        board.write("changes/t.json", &change.to_string());
+    }
+    let mut plan = plan_saying("None: nothing changes state.");
+    plan["paths"] = json!(["/repos/x/src/sync.rs"]);
+    board.call_stdin("plan", &plan);
+    moved(&board, phase, &head);
+    // Each board commits its own head and stamps its own plan, so the gate
+    // names them as HEAD and PLAN.
+    let plan = board.read("changes/t.json")["plan"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let gate = board.call("next", &json!({"path": CHANGE}))["gate"].to_string();
+    serde_json::from_str(&gate.replace(&head, "HEAD").replace(&plan, "PLAN")).unwrap()
+}
+
+#[test]
+fn a_change_on_a_flow_stored_before_the_rename_gates_as_one_on_the_flow_with_the_new_names() {
+    for phase in ["plan", "review", "land"] {
+        let now = lifecycle_gate(false, "rules", "rules/rule/v1", phase);
+        let lifecycle_checks: Vec<&Value> = (now.as_array().unwrap().iter())
+            .filter(|each| each["check"].as_str().unwrap().starts_with("lifecycle"))
+            .collect();
+        assert!(
+            !lifecycle_checks.is_empty()
+                && lifecycle_checks
+                    .iter()
+                    .all(|each| each["status"] == "missing"),
+            "{phase}: {now}"
+        );
+        for (stored, prefix, rule_type) in [
+            (true, "rules", "rules/rule/v1"),
+            (false, "controls", "controls/control/v1"),
+            (true, "controls", "controls/control/v1"),
+        ] {
+            assert_eq!(
+                lifecycle_gate(stored, prefix, rule_type, phase),
+                now,
+                "{phase} {stored} {prefix}"
+            );
+        }
+    }
 }
 
 /// The shipped plan phase also has the `obligations` check, which reads the

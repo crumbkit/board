@@ -1,5 +1,5 @@
 //! The boundary plugin built into Board (plugins/boundary/README.md): it
-//! checks content against the controls that boundaries in the personal
+//! checks content against the rules that boundaries in the personal
 //! board name for where the content goes, before it leaves a checkout.
 
 mod boundaries;
@@ -18,10 +18,10 @@ use serde_json::{Map, Value, json};
 
 use records::{BoundaryRecord, CrossingRecord};
 
-/// How long `check` may take, in seconds: as long as `controls.evaluate`,
-/// whose judged rules wait on a model.
+/// How long `check` may take, in seconds: as long as `rules.evaluate`,
+/// whose judged checkers wait on a model.
 const CHECK_TIMEOUT: u64 = 1800;
-/// The variables `controls.evaluate` reads for a judged rule, passed through
+/// The variables `rules.evaluate` reads for a judged checker, passed through
 /// to it.
 const AGENT_VARIABLES: [&str; 3] = [
     "BOARD_CONTROLS_AGENT",
@@ -81,7 +81,7 @@ fn record_schema<T: schemars::JsonSchema>() -> Value {
     schema_of::<T>(SchemaSettings::draft2020_12())
 }
 
-/// The personal board, which holds the boundaries, their controls and the
+/// The personal board, which holds the boundaries, their rules and the
 /// crossings, whichever board called.
 fn personal(host: &dyn Host) -> Result<Box<dyn Host + '_>, PluginError> {
     host.board(&Elsewhere::Personal)
@@ -100,7 +100,7 @@ fn manifest() -> Value {
         "name": "boundary",
         "version": "0.1.0",
         "description": "The boundary plugin checks content, such as a pull request body, before it \
-            leaves a checkout, against the controls that boundaries in the personal board name for \
+            leaves a checkout, against the rules that boundaries in the personal board name for \
             its destination. Use it before you send anything a boundary may cover. Run `board \
             --personal boundary check` with the action, destination, checkout and parts on \
             stdin; on `boundary::check::failed`, change what it names and check again. SKILL.md and \
@@ -110,7 +110,7 @@ fn manifest() -> Value {
         "capabilities": [{
             "name": "check",
             "description": "Check content against every boundary that matches where it goes, and \
-                record the crossing in the personal board. Fails naming each failing control, part \
+                record the crossing in the personal board. Fails naming each failing rule, part \
                 and line.",
             "inputSchema": schema_of::<check::Input>(SchemaSettings::draft2020_12()),
             "outputSchema": schema_of::<check::Output>(settings()),

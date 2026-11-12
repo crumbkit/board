@@ -12,7 +12,6 @@ use serde_json::{Value, json};
 
 use crate::board::{self, get};
 use crate::change::{line, touch};
-use crate::controls::{Found, on_mount};
 use crate::flow::{
     Flow, FlowSummary, chosen, refuse_invalid, refuse_without_repository, version_line,
 };
@@ -21,6 +20,7 @@ use crate::plan::{Planned, plan_lines};
 use crate::pr::quote;
 use crate::records::{BOARD_ITSELF, BUILD, ChangeRecord, Kind, Route, SUITE_TYPE, TASK_TYPE};
 use crate::repo::{CODEOWNERS, DOCS, Rule, ask_first, exists, files, owners, route, suite_in};
+use crate::rules::{Found, on_mount};
 use crate::surfaced::{Surfaced, surfaced};
 use crate::tasks::{add_task, routing};
 use crate::wip::{Limit, Move, active_days, admit};
@@ -101,13 +101,13 @@ pub(crate) struct Input {
     over_limit: Option<String>,
 }
 
-/// An obligation on the mount: the control, its summary and how to close
-/// it, as `controls.for-paths` gives them.
+/// An obligation on the mount: the rule, its summary and how to close it,
+/// as `rules.for-paths` gives them.
 #[derive(Debug, Serialize, JsonSchema)]
 struct Owed {
-    control: String,
+    rule: String,
     summary: String,
-    /// How to close the obligation; left out when controls gives no line.
+    /// How to close the obligation; left out when the rule gives no line.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[schemars(with = "Option<Prose>")]
     close: Option<String>,
@@ -116,7 +116,7 @@ struct Owed {
 impl From<Found> for Owed {
     fn from(found: Found) -> Self {
         Self {
-            control: found.control,
+            rule: found.rule,
             summary: found.summary,
             close: found.close,
         }
@@ -133,7 +133,7 @@ impl From<Found> for Owed {
 /// `runs/suite/v1` path, or null when none is given and the docs name
 /// none. `surfaced` lists the open tasks, decisions and evals on the mount,
 /// which the change records and its plan cites or dismisses, and
-/// `obligations` at most ten of the obligation controls on the mount, by
+/// `obligations` at most ten of the obligations on the mount, by
 /// path, with `obligations_left_out` counting the rest. `warning` is set
 /// when a change that starts in build went past the WIP limit. `note` says
 /// what a change on `/`, the board itself, leaves out because it has no

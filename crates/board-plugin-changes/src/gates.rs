@@ -79,7 +79,8 @@ pub(crate) enum Status {
 }
 
 /// What a gate reads: the change, its flow, its records, the plan and the
-/// suite, the diff and the controls that bear on them.
+/// suite, the diff and the rules that bear on them. Every rule's path is in
+/// its `/rules/` form.
 ///
 /// A referenced record Board marks degraded is left out of `records`, so
 /// it satisfies nothing. `plan` is none when no file is at the plan's
@@ -88,10 +89,10 @@ pub(crate) enum Status {
 /// repository's contributing docs name. `planned` is the paths the change's
 /// plan declares, `edited` each file the change's diff edits, `outside`
 /// those no planned path matches, and `diff_unread` why the diff could not
-/// be read. `obligations` lists the obligation controls on the planned
-/// paths, none when the controls plugin is not enabled; `controlled` maps each control a
+/// be read. `obligations` lists the obligations on the planned paths, none
+/// when the rules plugin is not enabled; `controlled` maps each rule a
 /// `controlled-paths` check names to the edited files it lists, or none
-/// when no such control exists. `ticket_types` holds the type of each of
+/// when no such rule exists. `ticket_types` holds the type of each of
 /// the change's tickets Board reads, `board` the board's root, and
 /// `existing` whether something is at each path an `exists` check names,
 /// with its placeholders filled.
@@ -132,12 +133,12 @@ pub(crate) struct Observed {
     /// The paths a check's `when.absent` names, filled, that hold the record
     /// it means, so the check does not apply.
     pub(crate) records_held: BTreeSet<String>,
-    /// The controls `controls.for-paths` finds on the plan's paths, which a
+    /// The rules `rules.for-paths` finds on the plan's paths, which a
     /// `planned-controlled` check reads.
     pub(crate) on_planned: Vec<String>,
-    /// Why `controls.for-paths` could not be read for the plan's paths.
+    /// Why `rules.for-paths` could not be read for the plan's paths.
     pub(crate) on_planned_unread: Option<String>,
-    /// Which controls a `planned-controlled` check names the board holds.
+    /// Which rules a `planned-controlled` check names the board holds.
     pub(crate) held: BTreeSet<String>,
 }
 
@@ -251,9 +252,9 @@ pub(crate) fn sections(text: &str) -> BTreeMap<String, String> {
 
 /// Something the gate of a phase reads beyond the change: the records the
 /// change references, the plan, the change's check suite, the change's
-/// diff, whether its newest pull request reads, the obligation controls on
-/// its paths, the controls a check names, its tickets' types, the paths an
-/// `exists` check names, or the controls on the plan's paths.
+/// diff, whether its newest pull request reads, the obligations on its
+/// paths, the rules a check names, its tickets' types, the paths an
+/// `exists` check names, or the rules on the plan's paths.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) enum Read {
     References,
@@ -266,7 +267,7 @@ pub(crate) enum Read {
     Tickets,
     Exists,
     Absent,
-    PlannedControls,
+    PlannedRules,
 }
 
 /// What `checks` read, by their kinds. A waivable check reads the
@@ -306,7 +307,7 @@ pub(crate) fn reads(checks: &[flow::Check]) -> BTreeSet<Read> {
             CheckKind::Paths => &[Read::Diff],
             CheckKind::Obligations => &[Read::Plan, Read::Obligations],
             CheckKind::ControlledPaths => &[Read::Diff, Read::Controlled],
-            CheckKind::PlannedControlled => &[Read::PlannedControls],
+            CheckKind::PlannedControlled => &[Read::PlannedRules],
             CheckKind::Field if each.field == Some(Field::Pulls) => &[Read::Pull],
             CheckKind::Field if each.field == Some(Field::Tickets) && each.types.is_some() => {
                 &[Read::Tickets]

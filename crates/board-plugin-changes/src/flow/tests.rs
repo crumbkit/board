@@ -23,6 +23,20 @@ fn schema() -> Schema {
     Schema::compile(schema_of::<Flow>(SchemaSettings::draft2020_12())).unwrap()
 }
 
+/// `value`, a flow, with each check's `controls` named `rules`, as Board
+/// writes a flow stored before the rename.
+fn renamed(mut value: serde_json::Value) -> serde_json::Value {
+    for phase in value["phases"].as_array_mut().unwrap() {
+        for check in phase["checks"].as_array_mut().unwrap() {
+            let check = check.as_object_mut().unwrap();
+            if let Some(rules) = check.remove("controls") {
+                check.insert("rules".to_owned(), rules);
+            }
+        }
+    }
+    value
+}
+
 #[test]
 fn each_designed_flow_reads_as_a_flow_and_passes_its_schema() {
     let schema = schema();
@@ -34,7 +48,78 @@ fn each_designed_flow_reads_as_a_flow_and_passes_its_schema() {
         schema
             .validate(&value)
             .unwrap_or_else(|error| panic!("{name}: {error:?}"));
-        assert_eq!(serde_json::to_value(&flow).unwrap(), value, "{name}");
+        assert_eq!(
+            serde_json::to_value(&flow).unwrap(),
+            renamed(value),
+            "{name}"
+        );
+    }
+}
+
+/// The version of the shipped development flow from before the rename,
+/// which changes started then follow. It names its rules `controls`, under
+/// `/controls/`; it reads with them as `rules` and keeps its version path,
+/// and the shipped flow names `/rules/` and has a new version.
+#[test]
+fn a_flow_stored_before_the_rename_reads_its_controls_as_rules_and_keeps_its_version_path() {
+    let text = include_str!("flows-md/development-a9df0910bd037be9.json");
+    let value: serde_json::Value = serde_json::from_str(text).unwrap();
+    schema().validate(&value).unwrap();
+    let flow: Flow = serde_json::from_str(text).unwrap();
+    assert_eq!(serde_json::to_value(&flow).unwrap(), renamed(value.clone()));
+    assert_eq!(problems(&flow, false), []);
+    let stored = read::version_of("development", &value);
+    assert_eq!(stored, "/flows/development/a9df0910bd037be9");
+    assert_ne!(version_path(&development()), stored);
+    let check = (flow.phases.iter().flat_map(|phase| &phase.checks))
+        .find(|each| each.id == "lifecycle-declared")
+        .unwrap();
+    assert_eq!(
+        check.rules.as_deref().unwrap(),
+        ["/controls/{repo}/lifecycle-paths"]
+    );
+    let shipped = development();
+    let check = (shipped.phases.iter().flat_map(|phase| &phase.checks))
+        .find(|each| each.id == "lifecycle-declared")
+        .unwrap();
+    assert_eq!(
+        check.rules.as_deref().unwrap(),
+        ["/rules/{repo}/lifecycle-paths"]
+    );
+}
+
+/// A check names its rules under `rules` or under `controls`, the name a
+/// flow stored before the rename gives them, and the schema refuses both
+/// at once, or neither.
+#[test]
+fn a_check_names_its_rules_under_one_name_and_the_schema_refuses_both_or_neither() {
+    let schema = schema();
+    let value: serde_json::Value =
+        serde_json::from_str(include_str!("../../flows/small.json")).unwrap();
+    let check = || value["phases"][1]["checks"][1].as_object().unwrap().clone();
+    let rules = check()["rules"].clone();
+    for (field, both, admitted) in [
+        (Some("rules"), false, true),
+        (Some("controls"), false, true),
+        (Some("rules"), true, false),
+        (None, false, false),
+    ] {
+        let mut shaped = check();
+        shaped.remove("rules");
+        if let Some(field) = field {
+            shaped.insert(field.to_owned(), rules.clone());
+        }
+        if both {
+            shaped.insert("controls".to_owned(), rules.clone());
+        }
+        let mut flow = value.clone();
+        flow["phases"][1]["checks"][1] = serde_json::Value::Object(shaped);
+        let said = format!("{field:?} both {both}");
+        assert_eq!(schema.validate(&flow).is_ok(), admitted, "{said}");
+        // serde refuses both names at once; a check with neither reads, and
+        // flow-valid names the missing parameter.
+        let read = serde_json::from_value::<Flow>(flow);
+        assert_eq!(read.is_ok(), !both, "{said}");
     }
 }
 
@@ -89,10 +174,11 @@ fn a_stored_flow_version_still_reads_passes_its_schema_and_keeps_its_version_pat
     let value: serde_json::Value = serde_json::from_str(text).unwrap();
     schema().validate(&value).unwrap();
     let flow: Flow = serde_json::from_str(text).unwrap();
-    assert_eq!(serde_json::to_value(&flow).unwrap(), value);
+    assert_eq!(serde_json::to_value(&flow).unwrap(), renamed(value.clone()));
     assert_eq!(problems(&flow, false), []);
-    assert_eq!(version_path(&flow), "/flows/development/2bad23722b29b5a8");
-    assert_ne!(version_path(&development()), version_path(&flow));
+    let stored = read::version_of("development", &value);
+    assert_eq!(stored, "/flows/development/2bad23722b29b5a8");
+    assert_ne!(version_path(&development()), stored);
 }
 
 /// The `when` of the check `id` of `flow`.
@@ -111,10 +197,11 @@ fn the_stored_prose_flow_keeps_its_version_path_and_the_shipped_flow_names_answe
     let value: serde_json::Value = serde_json::from_str(text).unwrap();
     schema().validate(&value).unwrap();
     let flow: Flow = serde_json::from_str(text).unwrap();
-    assert_eq!(serde_json::to_value(&flow).unwrap(), value);
+    assert_eq!(serde_json::to_value(&flow).unwrap(), renamed(value.clone()));
     assert_eq!(problems(&flow, false), []);
-    assert_eq!(version_path(&flow), "/flows/development/60bd988ebac76d79");
-    assert_ne!(version_path(&development()), version_path(&flow));
+    let stored = read::version_of("development", &value);
+    assert_eq!(stored, "/flows/development/60bd988ebac76d79");
+    assert_ne!(version_path(&development()), stored);
     assert!(named(&flow, "data-signed").section_not.is_some());
     assert_eq!(named(&flow, "data-signed").answers, None);
     let shipped = development();

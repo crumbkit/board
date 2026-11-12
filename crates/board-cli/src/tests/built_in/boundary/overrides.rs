@@ -182,7 +182,7 @@ fn failing_content_too_large_to_show_the_owner_still_fails_with_its_findings_and
     let fields = &document["fields"];
     assert_eq!(
         fields["failures"],
-        json!([{"control": "/controls/names", "part": "pr.body", "text": "acme-123", "line": 1}])
+        json!([{"rule": "/controls/names", "part": "pr.body", "text": "acme-123", "line": 1}])
     );
     assert_eq!(fields.get("effect"), None);
     let ending = "This content is over 1 MiB as the owner would see it, so the owner cannot approve it; shorten it.";

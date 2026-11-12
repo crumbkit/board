@@ -1,5 +1,5 @@
 {
-  "summary": "The changed lines a control may run over before an agent drafts a step.",
+  "summary": "The changed lines a rule may run over before an agent drafts a step.",
   "unit": "changed-lines",
   "inputs": [
     {
@@ -32,9 +32,9 @@
   },
   "enough": "At least 10 closed proposals or 5 owner decisions in the last 60 days.",
   "check": {
-    "measure": "The share of agent-draft proposals in the last 60 days that closed because the control passed again before the step was taken, read with `board query`. A high share means the agent was asked too soon.",
+    "measure": "The share of agent-draft proposals in the last 60 days that closed because the rule passed again before the step was taken, read with `board query`. A high share means the agent was asked too soon.",
     "fails_above": 0.3
   },
   "recheck_after": 30,
-  "consumer": "controls"
+  "consumer": "rules"
 }

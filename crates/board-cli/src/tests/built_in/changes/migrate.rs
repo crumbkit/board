@@ -1040,7 +1040,7 @@ fn migrate_with_plans_writes_a_new_snapshot_in_one_bulk_commit_and_a_second_appl
     );
     assert_eq!(
         plan["owed"],
-        json!([{"control": "/controls/x/owed", "why": "owed to the next step."}])
+        json!([{"rule": "/controls/x/owed", "why": "owed to the next step."}])
     );
     assert_eq!(plan["uses"], json!(["/notes/a.md"]));
     assert_eq!(plan["paths"], json!(["/repos/x/**"]));
@@ -1135,7 +1135,7 @@ fn migrate_with_plans_leaves_a_change_whose_owed_line_names_a_note_and_moves_one
     let (plan, _) = current_plan(&board, "control");
     assert_eq!(
         plan["owed"],
-        json!([{"control": "/controls/x/owed", "why": "owed to the next step."}])
+        json!([{"rule": "/controls/x/owed", "why": "owed to the next step."}])
     );
 }
 

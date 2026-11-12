@@ -696,3 +696,47 @@ fn a_commit_name_of_7_to_40_hex_digits_is_admitted_and_a_shorter_or_upper_case_o
         schema.validate(&head(admitted)).unwrap();
     }
 }
+
+/// A shape whose fields were renamed: `task` was `job`, and `note` was
+/// `remark`.
+#[derive(JsonSchema)]
+#[serde(deny_unknown_fields)]
+#[schemars(transform = renamed)]
+struct Renamed {
+    /// The task.
+    task: Ref<Task>,
+    /// A note.
+    note: Option<String>,
+}
+
+fn renamed(schema: &mut Schema) {
+    or_former_names(schema, &[("task", "job"), ("note", "remark")]);
+}
+
+#[test]
+fn a_shape_with_former_names_admits_each_field_under_either_name_and_not_both() {
+    let schema = schema_of::<Renamed>(SchemaSettings::draft2020_12());
+    assert_eq!(schema["properties"]["job"], schema["properties"]["task"]);
+    let schema = board_validate::Schema::compile(schema).unwrap();
+    for admitted in [
+        json!({"task": "/tasks/a", "note": "n"}),
+        json!({"job": "/tasks/a", "remark": "n"}),
+        json!({"job": "/tasks/a", "note": "n"}),
+        json!({"task": "/tasks/a"}),
+    ] {
+        schema
+            .validate(&admitted)
+            .unwrap_or_else(|_| panic!("{admitted}"));
+    }
+    for refused in [
+        json!({"task": "/tasks/a", "job": "/tasks/a"}),
+        json!({"task": "/tasks/a", "note": "n", "remark": "n"}),
+        json!({"note": "n"}),
+    ] {
+        assert_eq!(
+            schema.validate(&refused).unwrap_err().code(),
+            board_model::Code::RecordInvalid,
+            "{refused}"
+        );
+    }
+}

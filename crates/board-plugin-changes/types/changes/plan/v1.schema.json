@@ -59,10 +59,31 @@
     },
     "Owed": {
       "additionalProperties": false,
-      "description": "An obligation a change leaves owed.",
+      "allOf": [
+        {
+          "oneOf": [
+            {
+              "required": [
+                "rule"
+              ]
+            },
+            {
+              "required": [
+                "control"
+              ]
+            }
+          ]
+        }
+      ],
+      "description": "An obligation a change leaves owed. A plan written before the rename\nnames its path `control`.",
       "properties": {
         "control": {
-          "description": "The path of the obligation left owed. Board's check does not follow\nit, because an obligation is deleted once its work is done and a plan\nsnapshot never changes. `changes.plan` and the migration check that\nthe path holds a control when they write it.",
+          "description": "The path of the obligation left owed. Board's check does not follow\nit, because an obligation is deleted once its work is done and a plan\nsnapshot never changes. `changes.plan` and the migration check that\nthe path holds a rule when they write it.",
+          "pattern": "^/[^\\s{}]*$",
+          "type": "string"
+        },
+        "rule": {
+          "description": "The path of the obligation left owed. Board's check does not follow\nit, because an obligation is deleted once its work is done and a plan\nsnapshot never changes. `changes.plan` and the migration check that\nthe path holds a rule when they write it.",
           "pattern": "^/[^\\s{}]*$",
           "type": "string"
         },
@@ -74,7 +95,6 @@
         }
       },
       "required": [
-        "control",
         "why"
       ],
       "type": "object"

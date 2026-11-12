@@ -16,11 +16,10 @@ use crate::change::{
     LastSync, NOT_FOUND, attached, branch_of, current, kind_of, last_sync, line, listed, plan_at,
     pull_of, read, referenced, sync_reads, touch, whole_record_at,
 };
-use crate::controls::{listed_by, obligations, on_paths};
 use crate::diff::{edited, outside};
 use crate::flow::Kind as CheckKind;
 use crate::flow::{Actor, FlowSummary, of_change};
-use crate::gates::kinds::named_controls;
+use crate::gates::kinds::named_rules;
 use crate::gates::remedy::{fill, unfilled, values};
 use crate::gates::{Check, Observed, Read, gate, reads};
 use crate::records::{
@@ -28,6 +27,7 @@ use crate::records::{
     TICKET_TYPES, is_final,
 };
 use crate::repo::check_suite;
+use crate::rules::{listed_by, obligations, on_paths};
 use crate::stop::{Shown, holds, reached, stop_reached};
 use crate::wip::{Limit, Move, active_days, admit};
 use crate::{PLUGIN, refusal, to_value};
@@ -335,11 +335,11 @@ pub(crate) fn observe(
     if wanted.contains(&Read::Controlled) {
         let filled = values(&found);
         let named: Vec<String> = (found.checks().iter())
-            .flat_map(|each| named_controls(each, &filled))
+            .flat_map(|each| named_rules(each, &filled))
             .collect();
-        for control in named {
-            let listed = listed_by(host, &control, &found.edited)?;
-            found.controlled.insert(control, listed);
+        for rule in named {
+            let listed = listed_by(host, &rule, &found.edited)?;
+            found.controlled.insert(rule, listed);
         }
     }
     if wanted.contains(&Read::Tickets) {
@@ -364,8 +364,8 @@ pub(crate) fn observe(
     if wanted.contains(&Read::Absent) {
         records_held(host, &mut found)?;
     }
-    if wanted.contains(&Read::PlannedControls) {
-        planned_controls(host, &mut found)?;
+    if wanted.contains(&Read::PlannedRules) {
+        planned_rules(host, &mut found)?;
     }
     Ok(found)
 }
@@ -390,21 +390,21 @@ fn records_held(host: &dyn Host, found: &mut Observed) -> Result<(), PluginError
     Ok(())
 }
 
-/// What `planned-controlled` checks read: which controls they name the board
-/// holds, and the controls on the plan's paths, or why those cannot be read.
-fn planned_controls(host: &dyn Host, found: &mut Observed) -> Result<(), PluginError> {
+/// What `planned-controlled` checks read: which rules they name the board
+/// holds, and the rules on the plan's paths, or why those cannot be read.
+fn planned_rules(host: &dyn Host, found: &mut Observed) -> Result<(), PluginError> {
     let filled = values(found);
     let named: Vec<String> = (found.checks().iter())
         .filter(|each| each.kind.known() == Some(&CheckKind::PlannedControlled))
-        .flat_map(|each| named_controls(each, &filled))
+        .flat_map(|each| named_rules(each, &filled))
         .collect();
-    for control in named {
-        if listed_by(host, &control, &[])?.is_some() {
-            found.held.insert(control);
+    for rule in named {
+        if listed_by(host, &rule, &[])?.is_some() {
+            found.held.insert(rule);
         }
     }
     match on_paths(host, &current(host, &found.change)?.2) {
-        Ok(controls) => found.on_planned = controls,
+        Ok(rules) => found.on_planned = rules,
         Err(error) => found.on_planned_unread = Some(error.message),
     }
     Ok(())

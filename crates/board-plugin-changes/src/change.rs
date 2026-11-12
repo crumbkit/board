@@ -406,7 +406,8 @@ pub(crate) fn current(host: &dyn Host, change: &ChangeRecord) -> Result<Current,
 }
 
 /// The records the change's current plan lists in `considered` and the
-/// obligations it lists in `owed`, none when it names no plan Board reads.
+/// obligations it lists in `owed`, in their `/rules/` form, none when it
+/// names no plan Board reads.
 pub(crate) fn listed(
     host: &dyn Host,
     change: &ChangeRecord,
@@ -421,7 +422,7 @@ pub(crate) fn listed(
                     .flat_map(|each| each.records)
                     .collect(),
                 (record.owed.into_iter().flatten())
-                    .map(|each| each.control)
+                    .map(|each| crate::rules::current(&each.rule))
                     .collect(),
             )
         }),
