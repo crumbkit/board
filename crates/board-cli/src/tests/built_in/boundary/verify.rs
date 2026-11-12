@@ -165,15 +165,15 @@ fn record_refuses_a_failed_crossing_and_one_never_checked() {
     assert_eq!(ran.code, 0, "{}", printed(&ran));
 }
 
-/// A crossing can hold a verdict whose rule and status this Board does not
+/// A crossing can hold a verdict whose checker and status this Board does not
 /// know. `verify`, called from another board so that the personal board's
 /// widened schema is not compared with this Board's, still reads that
-/// crossing. A rule it does not know passes as its twin with a known rule
-/// does, and a status it does not know is not known to pass, so the
+/// crossing. A checker it does not know passes as its twin with a known
+/// checker does, and a status it does not know is not known to pass, so the
 /// crossing fails.
 #[test]
-fn a_verdict_holding_a_rule_or_status_this_board_does_not_know_verifies_like_its_twin() {
-    for (rule, status, passed) in [
+fn a_verdict_holding_a_checker_or_status_this_board_does_not_know_verifies_like_its_twin() {
+    for (checker, status, passed) in [
         ("pattern", "passed", true),
         ("rubric", "passed", true),
         ("pattern", "waived", false),
@@ -184,7 +184,7 @@ fn a_verdict_holding_a_rule_or_status_this_board_does_not_know_verifies_like_its
         let digest = checked(&personal, "Fine.", None);
         let held = "/.board/types/boundary/crossing/v1.schema";
         let mut schema = personal.record(held).unwrap();
-        for (property, value) in [("rule", "rubric"), ("status", "waived")] {
+        for (property, value) in [("checker", "rubric"), ("status", "waived")] {
             let values = &mut schema["$defs"]["Verdict"]["properties"][property]["enum"];
             values.as_array_mut().unwrap().push(json!(value));
         }
@@ -194,14 +194,14 @@ fn a_verdict_holding_a_rule_or_status_this_board_does_not_know_verifies_like_its
         );
         let path = format!("/crossings/{}", &digest[7..]);
         let mut crossing = personal.record(&path).unwrap();
-        crossing["verdicts"][0]["rule"] = json!(rule);
+        crossing["verdicts"][0]["checker"] = json!(checker);
         crossing["verdicts"][0]["status"] = json!(status);
         personal.write(&format!("{}.json", &path[1..]), &crossing.to_string());
         let arguments = ["--json", "call", "boundary.verify", "--digest", &digest];
         let ran = personal.run_in(work.workdir(), &arguments, "");
         assert_eq!(ran.code, 0, "{}", printed(&ran));
         let verified = output(&json(&ran)).clone();
-        assert_eq!(verified["crossing"], json!(path), "{rule} {status}");
-        assert_eq!(verified["passed"], passed, "{rule} {status}");
+        assert_eq!(verified["crossing"], json!(path), "{checker} {status}");
+        assert_eq!(verified["passed"], passed, "{checker} {status}");
     }
 }

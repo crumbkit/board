@@ -42,15 +42,15 @@ struct Given {
     unreadable: Vec<(&'static str, &'static str, &'static str)>,
     /// Whether the newest pull request reads as a github/pull/v1 record.
     pull_read: bool,
-    /// The controls `controls.for-paths` finds on the plan's paths.
+    /// The rules `rules.for-paths` finds on the plan's paths.
     on_planned: Vec<&'static str>,
-    /// The controls the board holds.
+    /// The rules the board holds.
     held: Vec<&'static str>,
     /// What is at each path an `exists` check names.
     existing: Vec<(&'static str, bool)>,
     /// The paths a `when.absent` names that hold the record it means.
     records_held: Vec<&'static str>,
-    /// The files a controlled-paths control lists among the edited ones.
+    /// The files a controlled-paths rule lists among the edited ones.
     controlled: Vec<(&'static str, Vec<&'static str>)>,
     /// The plan's typed answers: none to each question, as the fixture
     /// plan's text says.
@@ -177,9 +177,9 @@ impl Given {
             .map(|path| (*path).to_owned())
             .collect();
         observed.controlled = (self.controlled.iter())
-            .map(|(control, files)| {
+            .map(|(rule, files)| {
                 let files = files.iter().map(|each| (*each).to_owned()).collect();
-                ((*control).to_owned(), Some(files))
+                ((*rule).to_owned(), Some(files))
             })
             .collect();
         observed
@@ -892,14 +892,14 @@ fn with_lifecycle(section: &str) -> String {
     format!("{before}## Lifecycle\n\n{section}\n")
 }
 
-const CONTROL: &str = "/controls/x/lifecycle-paths";
+const LIFECYCLE_RULE: &str = "/rules/x/lifecycle-paths";
 
 /// A change in plan whose plan says `section` under Lifecycle and whose
-/// planned paths reach the lifecycle-paths control.
+/// planned paths reach the lifecycle-paths rule.
 fn lifecycle_change(phase: &'static str, section: &str) -> Given {
     let mut change = given(phase).prose().plan(Some(&with_lifecycle(section)));
-    change.on_planned = vec![CONTROL];
-    change.held = vec![CONTROL];
+    change.on_planned = vec![LIFECYCLE_RULE];
+    change.held = vec![LIFECYCLE_RULE];
     change
 }
 
@@ -949,12 +949,12 @@ fn the_plan_gate_misses_each_new_section_when_left_out_or_empty_and_passes_none_
 }
 
 #[test]
-fn lifecycle_declared_misses_none_when_the_planned_paths_reach_the_control_and_its_twins_pass() {
+fn lifecycle_declared_misses_none_when_the_planned_paths_reach_the_rule_and_its_twins_pass() {
     assert_eq!(
         lifecycle_change("plan", "None: nothing changes state.").check("lifecycle-declared"),
         (
             "missing",
-            "the plan's paths reach /controls/x/lifecycle-paths while its Lifecycle section \
+            "the plan's paths reach /rules/x/lifecycle-paths while its Lifecycle section \
              declares nothing"
                 .to_owned()
         )
@@ -973,7 +973,7 @@ fn lifecycle_declared_misses_none_when_the_planned_paths_reach_the_control_and_i
 }
 
 #[test]
-fn lifecycle_declared_passes_and_says_no_control_exists_when_the_board_holds_none() {
+fn lifecycle_declared_passes_and_says_no_rule_exists_when_the_board_holds_none() {
     let mut change = lifecycle_change("plan", "None: nothing changes state.");
     change.on_planned = Vec::new();
     change.held = Vec::new();
@@ -981,7 +981,7 @@ fn lifecycle_declared_passes_and_says_no_control_exists_when_the_board_holds_non
         change.check("lifecycle-declared"),
         (
             "pass",
-            "no control /controls/x/lifecycle-paths exists, so the board names no such paths and \
+            "no rule /rules/x/lifecycle-paths exists, so the board names no such paths and \
              the check passes"
                 .to_owned()
         )
@@ -1014,7 +1014,7 @@ fn lifecycle_none_reads_as_data_none_does_so_a_sentence_that_starts_with_none_is
 }
 
 const LIFECYCLE_EDIT: &str =
-    "the change's diff edits files that /controls/x/lifecycle-paths list: /repos/x/src/sync.rs";
+    "the change's diff edits files that /rules/x/lifecycle-paths list: /repos/x/src/sync.rs";
 
 /// The plan text with the Lifecycle heading left out.
 fn without_lifecycle() -> String {
@@ -1030,13 +1030,13 @@ fn lifecycle_paths_in_review_misses_an_edit_with_no_record_whatever_the_section_
     ];
     for plan in &cases {
         let mut change = given("review").prose().plan(Some(plan));
-        change.controlled = vec![(CONTROL, vec!["/repos/x/src/sync.rs"])];
+        change.controlled = vec![(LIFECYCLE_RULE, vec!["/repos/x/src/sync.rs"])];
         assert_eq!(
             change.check("lifecycle-paths"),
             ("missing", LIFECYCLE_EDIT.to_owned()),
             "{plan}"
         );
-        change.controlled = vec![(CONTROL, Vec::new())];
+        change.controlled = vec![(LIFECYCLE_RULE, Vec::new())];
         assert_eq!(
             change.check("lifecycle-paths"),
             ("pass", String::new()),
@@ -1055,7 +1055,7 @@ fn lifecycle_paths_in_review_is_left_out_once_a_lifecycle_record_exists_whatever
     ];
     for plan in &cases {
         let mut change = given("review").prose().plan(Some(plan));
-        change.controlled = vec![(CONTROL, vec!["/repos/x/src/sync.rs"])];
+        change.controlled = vec![(LIFECYCLE_RULE, vec!["/repos/x/src/sync.rs"])];
         change.records_held = vec!["/changes/t/lifecycle"];
         assert!(!change.statuses().contains_key("lifecycle-paths"), "{plan}");
         if *plan == cases[0] {
@@ -1079,7 +1079,7 @@ fn a_check_with_absent_and_a_section_applies_only_when_both_hold() {
     let observed = |plan: &str, held: Vec<&'static str>| {
         let mut change = given("review").plan(Some(plan));
         change.records_held = held;
-        change.controlled = vec![(CONTROL, Vec::new())];
+        change.controlled = vec![(LIFECYCLE_RULE, Vec::new())];
         let mut observed = change.observed();
         let flow = observed.flow.as_mut().unwrap();
         let review = (flow.phases.iter_mut())
@@ -1109,7 +1109,7 @@ fn a_check_with_absent_and_a_section_applies_only_when_both_hold() {
 #[test]
 fn the_lifecycle_paths_remedy_says_to_write_the_record_or_revert_the_edit() {
     let mut change = lifecycle_change("review", "None: nothing changes state.");
-    change.controlled = vec![(CONTROL, vec!["/repos/x/src/sync.rs"])];
+    change.controlled = vec![(LIFECYCLE_RULE, vec!["/repos/x/src/sync.rs"])];
     let remedy = change.remedy("lifecycle-paths");
     assert!(remedy.contains("`board changes lifecycle`"), "{remedy}");
     assert!(remedy.contains("revert the edit"), "{remedy}");

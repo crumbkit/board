@@ -492,7 +492,7 @@ pub(crate) struct PlanRecord {
     /// The plan's Markdown text.
     #[schemars(with = "Ref")]
     pub(crate) text: String,
-    /// The standards documents, controls, decisions, evals and other changes
+    /// The standards documents, rules, decisions, evals and other changes
     /// the plan relies on.
     #[schemars(with = "Vec<Ref>")]
     pub(crate) uses: Vec<String>,
@@ -538,23 +538,27 @@ pub(crate) struct Considered {
     pub(crate) why: String,
 }
 
-/// An obligation a change leaves owed.
+/// An obligation a change leaves owed. A plan written before the rename
+/// names its path `control`.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
+#[schemars(transform = owed_or_former)]
 pub(crate) struct Owed {
     /// The path of the obligation left owed. Board's check does not follow
     /// it, because an obligation is deleted once its work is done and a plan
     /// snapshot never changes. `changes.plan` and the migration check that
-    /// the path holds a control when they write it.
+    /// the path holds a rule when they write it.
+    #[serde(alias = "control")]
     #[schemars(with = "PathKey")]
-    pub(crate) control: String,
+    pub(crate) rule: String,
     /// Why this change does not discharge it, and what will.
     #[schemars(with = "Prose", length(min = 1))]
     pub(crate) why: String,
 }
 
-/// The record type of a control; the controls plugin owns it.
-pub(crate) const CONTROL_TYPE: &str = "controls/control/v1";
+fn owed_or_former(schema: &mut schemars::Schema) {
+    board_plugin::shape::or_former_names(schema, &[("rule", "control")]);
+}
 
 impl Record for PlanRecord {
     const TYPE: &'static str = "changes/plan/v1";

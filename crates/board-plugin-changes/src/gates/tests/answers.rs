@@ -5,7 +5,7 @@
 use serde_json::json;
 
 use super::{
-    CONTROL, Given, HEAD, MOCKUP, NEIGHBOURS, PLAN, RUN, UNDERSTOOD, both, gate, given,
+    Given, HEAD, LIFECYCLE_RULE, MOCKUP, NEIGHBOURS, PLAN, RUN, UNDERSTOOD, both, gate, given,
     mockups_list, planned_ux, rechecked, run, signed, understanding,
 };
 use crate::flow::Actor;
@@ -87,8 +87,8 @@ fn lifecycle(phase: &'static str, answer: &str) -> Given {
         phase,
         json!({"ux": "none", "data": "none", "lifecycle": answer}),
     );
-    change.on_planned = vec![CONTROL];
-    change.held = vec![CONTROL];
+    change.on_planned = vec![LIFECYCLE_RULE];
+    change.held = vec![LIFECYCLE_RULE];
     change
 }
 
@@ -99,7 +99,7 @@ fn a_lifecycle_of_none_is_checked_against_the_planned_paths_and_a_record_must_ex
         none.check("lifecycle-declared"),
         (
             "missing",
-            "the plan's paths reach /controls/x/lifecycle-paths".to_owned()
+            "the plan's paths reach /rules/x/lifecycle-paths".to_owned()
         )
     );
     assert!(!none.statuses().contains_key("lifecycle-record"));
@@ -137,11 +137,11 @@ fn the_review_and_land_gates_read_the_controlled_paths_of_each_answer_of_none() 
     }
     let mut edited = lifecycle("land", "none");
     edited.records_held = vec!["/changes/t/lifecycle"];
-    edited.controlled = vec![(CONTROL, vec!["/repos/x/src/sync.rs"])];
+    edited.controlled = vec![(LIFECYCLE_RULE, vec!["/repos/x/src/sync.rs"])];
     assert_eq!(edited.statuses()["lifecycle-none-paths-at-land"], "missing");
     let mut record = lifecycle("land", "record");
     record.records_held = vec!["/changes/t/lifecycle"];
-    record.controlled = vec![(CONTROL, vec!["/repos/x/src/sync.rs"])];
+    record.controlled = vec![(LIFECYCLE_RULE, vec!["/repos/x/src/sync.rs"])];
     assert!(!(record.statuses()).contains_key("lifecycle-none-paths-at-land"));
 }
 

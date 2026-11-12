@@ -34,7 +34,8 @@ impl Personal {
 /// of a match never reveals it.
 const PRIVATE: &str = r"acme-\d{3}";
 
-/// A `controls/control/v1` record with `rule`.
+/// A `controls/control/v1` record with `rule`, as a board holds one before
+/// the rename.
 fn control(rule: &Value) -> String {
     json!({"$type": "controls/control/v1", "requirement": "A test.", "purpose": "A test.", "rule": rule})
         .to_string()
@@ -47,7 +48,7 @@ fn boundary(fields: &Value) -> String {
 
 /// A check of every part against `/controls/names`.
 fn names_check() -> Value {
-    json!([{"control": "/controls/names", "parts": ["*"]}])
+    json!([{"rule": "/controls/names", "parts": ["*"]}])
 }
 
 /// A pattern control at `/controls/names`, shown match-only, whose file
@@ -135,7 +136,7 @@ fn a_private_match_refuses_naming_control_part_and_line_and_never_the_pattern() 
     let fields = &document["fields"];
     assert_eq!(
         fields["failures"],
-        json!([{"control": "/controls/names", "part": "pr.body", "text": "acme-123", "line": 2}])
+        json!([{"rule": "/controls/names", "part": "pr.body", "text": "acme-123", "line": 2}])
     );
     assert_eq!(fields.get("recovery"), None);
     let hint = document["recovery"]["text"].as_str().unwrap();
@@ -223,13 +224,13 @@ fn a_check_applies_only_to_the_parts_its_globs_name() {
     assert_eq!(output(&document)["boundaries"], json!(["/boundaries/octo"]));
     assert_eq!(
         output(&document)["note"],
-        "the boundaries that match name no control for these parts; nothing was checked"
+        "the boundaries that match name no rule for these parts; nothing was checked"
     );
     let (ran, document) = personal.call("check", &pr(&json!({"pr.title": "Three words here"})));
     assert_eq!(ran.code, 1);
     assert_eq!(
         document["fields"]["failures"],
-        json!([{"control": "/controls/short", "part": "pr.title", "text": "3 words, more than the 2 allowed"}])
+        json!([{"rule": "/controls/short", "part": "pr.title", "text": "3 words, more than the 2 allowed"}])
     );
 }
 
@@ -317,7 +318,7 @@ fn a_judged_rule_is_skipped_for_a_part_another_boundary_fails_on_a_pattern() {
     let verdicts: BTreeMap<&str, &str> = (crossing["verdicts"].as_array().unwrap().iter())
         .map(|verdict| {
             (
-                verdict["control"].as_str().unwrap(),
+                verdict["rule"].as_str().unwrap(),
                 verdict["status"].as_str().unwrap(),
             )
         })
@@ -463,7 +464,7 @@ fn a_symlink_at_boundaries_refuses_and_the_same_files_in_a_directory_pass() {
 }
 
 #[test]
-fn a_control_without_a_rule_fails_the_crossing_and_the_same_control_with_a_rule_passes() {
+fn a_rule_without_a_checker_fails_the_crossing_and_the_same_rule_with_a_checker_passes() {
     let personal = Personal::new();
     let written =
         json!({"$type": "controls/control/v1", "requirement": "Names.", "purpose": "A test."});
@@ -474,15 +475,15 @@ fn a_control_without_a_rule_fails_the_crossing_and_the_same_control_with_a_rule_
     assert_eq!(document["code"], "boundary::check::failed");
     let failures = document["fields"]["failures"].as_array().unwrap();
     assert_eq!(failures.len(), 1);
-    assert_eq!(failures[0]["control"], "/controls/names");
+    assert_eq!(failures[0]["rule"], "/controls/names");
     let finding = failures[0]["text"].as_str().unwrap();
     assert!(
-        finding.starts_with("this control has no rule, so it cannot check content"),
+        finding.starts_with("this rule has no checker, so it cannot check content"),
         "{finding}"
     );
     let hint = document["recovery"]["text"].as_str().unwrap();
     assert!(
-        hint.starts_with("Next: give each control without a rule a rule"),
+        hint.starts_with("Next: give each rule without a checker a checker"),
         "{hint}"
     );
     private_names(&personal);
@@ -520,7 +521,7 @@ fn a_boundary_naming_a_version_rule_control_writes_its_crossing_and_fails_only_a
     assert_eq!(passed, true);
     assert_eq!(
         (
-            &record["verdicts"][0]["rule"],
+            &record["verdicts"][0]["checker"],
             &record["verdicts"][0]["status"]
         ),
         (&json!("version"), &json!("passed"))
@@ -532,11 +533,96 @@ fn a_boundary_naming_a_version_rule_control_writes_its_crossing_and_fails_only_a
     assert_eq!(passed, false);
     assert_eq!(
         (
-            &record["verdicts"][0]["rule"],
+            &record["verdicts"][0]["checker"],
             &record["verdicts"][0]["status"]
         ),
         (&json!("version"), &json!("failed"))
     );
+}
+
+/// The verdicts and failures of a check of `body` against a boundary that
+/// names `/controls/names` under `field`.
+fn checked_naming_under(field: &str, body: &str) -> Value {
+    let personal = Personal::new();
+    private_names(&personal);
+    names_boundary(
+        &personal,
+        &json!({"checks": [{field: "/controls/names", "parts": ["*"]}]}),
+    );
+    let (_, document) = personal.call("check", &pr(&json!({"pr.body": body})));
+    let (crossing, passed) = match document.get("data") {
+        Some(_) => crossing(&personal, output(&document)["crossing"].as_str().unwrap()),
+        None => crossing(&personal, document["fields"]["crossing"].as_str().unwrap()),
+    };
+    json!({"verdicts": crossing["verdicts"], "passed": passed, "failures": document["fields"]["failures"]})
+}
+
+#[test]
+fn a_boundary_naming_its_rule_under_control_gives_the_verdicts_of_one_naming_it_under_rule() {
+    for body in ["Fine.", "See acme-123."] {
+        assert_eq!(
+            checked_naming_under("control", body),
+            checked_naming_under("rule", body),
+            "{body}"
+        );
+    }
+}
+
+#[test]
+fn a_crossing_written_before_the_rename_verifies_as_its_twin_with_the_new_names() {
+    for body in ["Fine.", "See acme-123."] {
+        let personal = Personal::new();
+        private_names(&personal);
+        names_boundary(&personal, &json!({}));
+        let (_, document) = personal.call("check", &pr(&json!({"pr.body": body})));
+        let path = (document
+            .get("data")
+            .map_or(
+                &document["fields"]["crossing"],
+                |_| &output(&document)["crossing"],
+            ))
+        .as_str()
+        .unwrap()
+        .to_owned();
+        let (now, passed) = crossing(&personal, &path);
+        let mut before = now.clone();
+        for verdict in before["verdicts"].as_array_mut().unwrap() {
+            let fields = verdict.as_object_mut().unwrap();
+            let rule = fields.remove("rule").unwrap();
+            if let Some(checker) = fields.remove("checker") {
+                fields.insert("rule".to_owned(), checker);
+            }
+            fields.insert("control".to_owned(), rule);
+        }
+        personal.write(
+            &format!("{}.json", path.trim_start_matches('/')),
+            &before.to_string(),
+        );
+        let (_, passed_before) = crossing(&personal, &path);
+        assert_eq!(passed_before, passed, "{body}");
+        let record = personal.run(&[
+            "--json",
+            "call",
+            "boundary.record",
+            "--digest",
+            &format!("sha256:{}", path.trim_start_matches("/crossings/")),
+            "--result",
+            "https://example.com/1",
+        ]);
+        if passed == true {
+            assert_eq!(record.code, 0, "{body}: {}", printed(&record));
+            let rewritten = personal.record(&path).unwrap();
+            assert_eq!(rewritten["verdicts"], now["verdicts"], "{body}");
+            assert_eq!(rewritten["result"], "https://example.com/1");
+        } else {
+            assert_eq!(
+                json(&record)["code"],
+                "boundary::crossing::failed",
+                "{body}: {}",
+                printed(&record)
+            );
+        }
+    }
 }
 
 #[test]

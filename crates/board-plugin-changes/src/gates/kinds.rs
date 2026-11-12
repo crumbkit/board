@@ -14,6 +14,7 @@ use board_plugin::shape::Record;
 
 use crate::flow::{self, Field, Flow, Kind, Named, Target, Where, problems};
 use crate::records::Subject;
+use crate::rules::current;
 
 /// The most paths a detail names (STANDARDS 23); it counts the rest.
 const SHOWN: usize = 10;
@@ -33,16 +34,14 @@ fn bounded(paths: &[&str]) -> String {
 }
 
 /// What a passing check says: for a `controlled-paths` or
-/// `planned-controlled` check whose controls the board does not hold, that
+/// `planned-controlled` check whose rules the board does not hold, that
 /// none exists, and otherwise nothing.
 pub(super) fn passed(observed: &Observed, each: &flow::Check, values: &Values) -> String {
     let kind = each.kind.known().copied();
-    let named = named_controls(each, values);
-    let held = |control: &String| match kind {
-        Some(Kind::ControlledPaths) => {
-            (observed.controlled.get(control)).is_some_and(Option::is_some)
-        }
-        _ => observed.held.contains(control),
+    let named = named_rules(each, values);
+    let held = |rule: &String| match kind {
+        Some(Kind::ControlledPaths) => (observed.controlled.get(rule)).is_some_and(Option::is_some),
+        _ => observed.held.contains(rule),
     };
     if !matches!(kind, Some(Kind::ControlledPaths | Kind::PlannedControlled))
         || named.is_empty()
@@ -51,16 +50,16 @@ pub(super) fn passed(observed: &Observed, each: &flow::Check, values: &Values) -
         return String::new();
     }
     format!(
-        "no control {} exists, so the board names no such paths and the check passes",
+        "no rule {} exists, so the board names no such paths and the check passes",
         named.join(" or ")
     )
 }
 
-/// The controls a `controlled-paths` check names, with their placeholders
-/// filled.
-pub(crate) fn named_controls(each: &flow::Check, values: &Values) -> Vec<String> {
-    (each.controls.iter().flatten())
-        .map(|control| fill(control, values))
+/// The rules a `controlled-paths` check names, with their placeholders
+/// filled, each in its `/rules/` form.
+pub(crate) fn named_rules(each: &flow::Check, values: &Values) -> Vec<String> {
+    (each.rules.iter().flatten())
+        .map(|rule| current(&fill(rule, values)))
         .collect()
 }
 
@@ -84,11 +83,12 @@ pub(super) fn considered_missing(observed: &Observed) -> Option<String> {
     })
 }
 
-/// No obligation control applies to the plan's paths, except those the
-/// plan's `owed` names.
+/// No obligation applies to the plan's paths, except those the plan's
+/// `owed` names. Each obligation is compared in its `/rules/` form and
+/// named where it is stored.
 pub(super) fn obligations_missing(observed: &Observed) -> Option<String> {
     let left: Vec<&str> = (observed.obligations.iter().map(String::as_str))
-        .filter(|control| !observed.owed.iter().any(|owed| owed == control))
+        .filter(|rule| !observed.owed.iter().any(|owed| *owed == current(rule)))
         .collect();
     (!left.is_empty()).then(|| {
         format!(
@@ -98,15 +98,15 @@ pub(super) fn obligations_missing(observed: &Observed) -> Option<String> {
     })
 }
 
-/// The change's diff touches no path the named controls list. A control
-/// the board does not hold lists nothing.
+/// The change's diff touches no path the named rules list. A rule the
+/// board does not hold lists nothing.
 pub(super) fn controlled_missing(observed: &Observed, each: &flow::Check) -> Option<String> {
-    if each.controls.is_none() {
-        return Some(unset(each, "controls"));
+    if each.rules.is_none() {
+        return Some(unset(each, "rules"));
     }
-    let named = named_controls(each, &super::remedy::values(observed));
+    let named = named_rules(each, &super::remedy::values(observed));
     let held: Vec<&Vec<String>> = (named.iter())
-        .filter_map(|control| observed.controlled.get(control)?.as_ref())
+        .filter_map(|rule| observed.controlled.get(rule)?.as_ref())
         .collect();
     if held.is_empty() {
         return None;
@@ -125,22 +125,22 @@ pub(super) fn controlled_missing(observed: &Observed, each: &flow::Check) -> Opt
     })
 }
 
-/// The plan's paths reach none of the named controls, which only a check
-/// whose `when` holds asks of them. A board without the control, or without
-/// the controls plugin, finds none.
+/// The plan's paths reach none of the named rules, which only a check whose
+/// `when` holds asks of them. A board without the rule, or without the
+/// rules plugin, finds none.
 pub(super) fn planned_controlled_missing(
     observed: &Observed,
     each: &flow::Check,
 ) -> Option<String> {
-    if each.controls.is_none() {
-        return Some(unset(each, "controls"));
+    if each.rules.is_none() {
+        return Some(unset(each, "rules"));
     }
     if let Some(unread) = &observed.on_planned_unread {
         return Some(unread.clone());
     }
-    let named = named_controls(each, &super::remedy::values(observed));
+    let named = named_rules(each, &super::remedy::values(observed));
     let reached: Vec<&str> = (named.iter().map(String::as_str))
-        .filter(|control| observed.on_planned.iter().any(|on| on == control))
+        .filter(|rule| observed.on_planned.iter().any(|on| on == rule))
         .collect();
     if reached.is_empty() {
         return None;

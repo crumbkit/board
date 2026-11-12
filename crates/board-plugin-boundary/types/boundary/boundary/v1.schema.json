@@ -2,13 +2,32 @@
   "$defs": {
     "Check": {
       "additionalProperties": false,
-      "description": "A control, and the names of the parts it applies to.",
+      "allOf": [
+        {
+          "oneOf": [
+            {
+              "required": [
+                "rule"
+              ]
+            },
+            {
+              "required": [
+                "control"
+              ]
+            }
+          ]
+        }
+      ],
+      "description": "A rule, and the names of the parts it applies to. A boundary written\nbefore the rename names the rule `control`.",
       "properties": {
         "control": {
-          "description": "The control to check the parts against, in the personal board's own\ntree.",
+          "description": "The rule to check the parts against, in the personal board's own\ntree.",
           "format": "board-ref",
           "type": "string",
-          "x-board-type": "controls/control/v1"
+          "x-board-type": [
+            "rules/rule/v1",
+            "controls/control/v1"
+          ]
         },
         "parts": {
           "description": "Globs of the part names it applies to, such as pr.* or *.",
@@ -19,17 +38,25 @@
           },
           "minItems": 1,
           "type": "array"
+        },
+        "rule": {
+          "description": "The rule to check the parts against, in the personal board's own\ntree.",
+          "format": "board-ref",
+          "type": "string",
+          "x-board-type": [
+            "rules/rule/v1",
+            "controls/control/v1"
+          ]
         }
       },
       "required": [
-        "control",
         "parts"
       ],
       "type": "object"
     }
   },
   "additionalProperties": false,
-  "description": "`boundary/boundary/v1`: the controls content must pass to leave a\ncheckout for a destination by an action.\n\nBoundaries belong under `/boundaries/` in the personal board. Globs are\n`SQLite` GLOB patterns: `*` matches any characters, `/` and `.` included.\nDestinations match without case; action and part names match with case.",
+  "description": "`boundary/boundary/v1`: the rules content must pass to leave a checkout\nfor a destination by an action.\n\nBoundaries belong under `/boundaries/` in the personal board. Globs are\n`SQLite` GLOB patterns: `*` matches any characters, `/` and `.` included.\nDestinations match without case; action and part names match with case.",
   "properties": {
     "$type": {
       "const": "boundary/boundary/v1",
@@ -47,7 +74,7 @@
       "type": "array"
     },
     "checks": {
-      "description": "The controls to check and the parts each applies to.",
+      "description": "The rules to check and the parts each applies to.",
       "items": {
         "$ref": "#/$defs/Check"
       },

@@ -120,7 +120,7 @@ pub(crate) fn verify(host: &dyn Host, input: &Value) -> Result<Value, PluginErro
         }));
     };
     // The crossing passes only while the same boundaries match. This misses
-    // an edit to a matched boundary's checks or to a control's rule, until
+    // an edit to a matched boundary's checks or to a rule's checker, until
     // the crossing records the blob of each record it was checked against.
     let boundaries = boundaries::read(personal)?;
     let (action, to) = (record.action.as_str(), record.to.as_str());

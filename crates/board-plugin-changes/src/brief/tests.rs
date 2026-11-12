@@ -1,12 +1,12 @@
 //! The pure parts of the brief: fitting rules into the word limit and the
-//! input of `controls.for-paths`. The capability runs through the binary in
+//! input of `rules.for-paths`. The capability runs through the binary in
 //! board-cli's changes tests.
 
-use super::{LeftOut, Reason, Rule, fill, fit_rules, for_paths_input};
+use super::{LeftOut, Reason, RuleLine, fill, fit_rules, for_paths_input};
 
-fn rule(control: &str, summary: &str, matched: Option<&[&str]>) -> Rule {
-    Rule {
-        control: control.to_owned(),
+fn rule(path: &str, summary: &str, matched: Option<&[&str]>) -> RuleLine {
+    RuleLine {
+        rule: path.to_owned(),
         summary: summary.to_owned(),
         matched: matched.map(|paths| paths.iter().map(|each| (*each).to_owned()).collect()),
         matched_left_out: None,
@@ -23,14 +23,14 @@ fn the_input_of_for_paths_is_written_as_python_wrote_it() {
 }
 
 #[test]
-fn rules_that_matched_some_paths_come_first_and_each_group_is_by_control() {
+fn rules_that_matched_some_paths_come_first_and_each_group_is_by_rule() {
     let found = [
         rule("/c/b", "B.", None),
         rule("/c/a", "A.", None),
         rule("/c/z", "Z.", Some(&["/repos/x/a"])),
     ];
     let (rules, named, unnamed, _) = fit_rules(&found, &[], 100);
-    let order: Vec<&str> = rules.iter().map(|each| each.control.as_str()).collect();
+    let order: Vec<&str> = rules.iter().map(|each| each.rule.as_str()).collect();
     assert_eq!(order, ["/c/z", "/c/a", "/c/b"]);
     assert_eq!(named, Vec::<LeftOut>::new());
     assert_eq!(unnamed, 0);
@@ -42,7 +42,7 @@ fn a_rule_too_long_to_fit_leaves_room_for_the_shorter_rules_after_it() {
     let found = [rule("/c/a", &long, None), rule("/c/b", "Short.", None)];
     let (rules, left_out, spent) = fill(&found, 5);
     assert_eq!(rules.len(), 1);
-    assert_eq!(rules[0].control, "/c/b");
+    assert_eq!(rules[0].rule, "/c/b");
     assert_eq!(left_out, ["/c/a"]);
     assert_eq!(spent, 2);
 }
@@ -64,14 +64,14 @@ fn every_rule_gets_its_summary_before_any_rule_gets_its_matched_paths() {
 }
 
 #[test]
-fn dropped_version_controls_are_named_after_the_rules_with_no_room_within_the_room() {
+fn dropped_version_rules_are_named_after_the_rules_with_no_room_within_the_room() {
     let found = [
         rule("/c/a", "word word word.", None),
         rule("/c/b", "B.", None),
     ];
     let dropped = ["/c/v".to_owned()];
-    let left = |control: &str, reason| LeftOut {
-        control: control.to_owned(),
+    let left = |rule: &str, reason| LeftOut {
+        rule: rule.to_owned(),
         reason,
     };
     // Each entry is 8 words, "/c/a word word word." 4 and "/c/b B." 2.
@@ -82,7 +82,7 @@ fn dropped_version_controls_are_named_after_the_rules_with_no_room_within_the_ro
     // The words kept for the dropped entry leave no room for /c/a, which is
     // named first and leaves no room for the dropped entry.
     let (rules, named, unnamed, spent) = fit_rules(&found, &dropped, 10);
-    let shown: Vec<&str> = rules.iter().map(|each| each.control.as_str()).collect();
+    let shown: Vec<&str> = rules.iter().map(|each| each.rule.as_str()).collect();
     assert_eq!(shown, ["/c/b"]);
     assert_eq!(named, [left("/c/a", Reason::NoRoom)]);
     assert_eq!((unnamed, spent), (1, 10));

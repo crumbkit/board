@@ -22,6 +22,10 @@ struct Parameters {
     required: &'static [&'static str],
 }
 
+/// A parameter and the name a flow stored before the rename gives it,
+/// which the schema admits in its place until every board has migrated.
+const FORMER: [(&str, &str); 1] = [("rules", "controls")];
+
 /// The parameters of each kind that takes any. `paths`, `tasks`,
 /// `considered` and `flow-valid` take none.
 const PARAMETERS: [Parameters; 10] = [
@@ -70,14 +74,14 @@ const PARAMETERS: [Parameters; 10] = [
     Parameters {
         kind: Kind::ControlledPaths,
         entry: "ControlledPathsCheck",
-        named: &["controls"],
-        required: &["controls"],
+        named: &["rules", "controls"],
+        required: &["rules"],
     },
     Parameters {
         kind: Kind::PlannedControlled,
         entry: "PlannedControlledCheck",
-        named: &["controls"],
-        required: &["controls"],
+        named: &["rules", "controls"],
+        required: &["rules"],
     },
     Parameters {
         kind: Kind::Exists,
@@ -107,6 +111,10 @@ impl JsonSchema for Checked {
             if let Some(property) = properties.remove(*parameter) {
                 moved.insert((*parameter).to_owned(), property);
             }
+        }
+        for (parameter, former) in FORMER {
+            let property = moved.get(parameter).cloned().unwrap_or_default();
+            moved.insert(former.to_owned(), property);
         }
         let kinds: Vec<Value> = (PARAMETERS.iter())
             .map(|kind| entry(generator, kind, &moved))
@@ -138,7 +146,11 @@ fn entry(generator: &mut SchemaGenerator, kind: &Parameters, moved: &Map<String,
         "if": {"properties": {"kind": {"const": name}}, "required": ["kind"]},
         "else": {"not": {"anyOf": refused}},
     });
-    if !kind.required.is_empty() {
+    if let Some((parameter, former)) =
+        (FORMER.iter()).find(|(each, _)| kind.required.contains(each))
+    {
+        schema["then"] = json!({"oneOf": [{"required": [parameter]}, {"required": [former]}]});
+    } else if !kind.required.is_empty() {
         schema["then"] = json!({"required": kind.required});
     }
     generator

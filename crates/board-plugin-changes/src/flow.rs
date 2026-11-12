@@ -229,11 +229,12 @@ pub(crate) struct Check {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "Option<Prose>", extend("minLength" = 1))]
     pub(crate) escape_section: Option<String>,
-    /// `controlled-paths`: the controls whose paths the diff must not touch.
-    /// `planned-controlled`: the controls the plan's paths must not reach.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// `controlled-paths`: the rules whose paths the diff must not touch.
+    /// `planned-controlled`: the rules the plan's paths must not reach. A
+    /// flow stored before the rename names it `controls`.
+    #[serde(default, alias = "controls", skip_serializing_if = "Option::is_none")]
     #[schemars(with = "Option<Vec<PathTemplate>>")]
-    pub(crate) controls: Option<Vec<String>>,
+    pub(crate) rules: Option<Vec<String>>,
     /// `exists`: where a record must exist.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "Option<PathTemplate>")]

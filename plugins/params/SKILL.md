@@ -6,7 +6,7 @@ description: 'Calibrated values, such as overflow''s graces, each with the heuri
 # params
 
 A calibrated value is a number a plugin uses, such as how many changed
-lines a control may run over before an agent drafts a step. Each value has a
+lines a rule may run over before an agent drafts a step. Each value has a
 heuristic, either shipped with Board or at `/params/heuristics/<name>`, and,
 once an agent has run it, a value record at `/params/values/<name>`. A record
 at `/params/heuristics/<name>` overrides the shipped heuristic of that name.

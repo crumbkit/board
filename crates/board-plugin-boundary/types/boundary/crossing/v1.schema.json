@@ -2,7 +2,7 @@
   "$defs": {
     "Finding": {
       "additionalProperties": false,
-      "description": "What a control found wrong in a part: the text at fault, and its line\nwhen it has one.",
+      "description": "What a rule found wrong in a part: the text at fault, and its line\nwhen it has one.",
       "properties": {
         "line": {
           "description": "The line of the part the text starts on.",
@@ -10,7 +10,7 @@
           "type": "integer"
         },
         "pattern": {
-          "description": "The expression that matched, when its control shows it.",
+          "description": "The expression that matched, when its rule shows it.",
           "type": "string",
           "x-board-prose": true
         },
@@ -32,16 +32,68 @@
     },
     "Verdict": {
       "additionalProperties": false,
-      "description": "One control's verdict on one part, as `controls.evaluate` gave it, with\neach null left out.",
+      "description": "One rule's verdict on one part, as `rules.evaluate` gave it, with each\nnull left out. A crossing written before the rename, and the result of\n`rules.evaluate`, name the rule's path `control` and its checker `rule`;\n[`verdicts`] reads both.",
+      "oneOf": [
+        {
+          "not": {
+            "required": [
+              "control"
+            ]
+          },
+          "properties": {
+            "rule": {
+              "pattern": "^/"
+            }
+          },
+          "required": [
+            "rule"
+          ]
+        },
+        {
+          "not": {
+            "required": [
+              "checker"
+            ]
+          },
+          "properties": {
+            "rule": {
+              "description": "The kind of the rule's checker; left out for a written requirement.",
+              "enum": [
+                "budget",
+                "pattern",
+                "judged",
+                "version"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "control"
+          ]
+        }
+      ],
       "properties": {
+        "checker": {
+          "description": "The kind of the rule's checker; left out for a written requirement.",
+          "enum": [
+            "budget",
+            "pattern",
+            "judged",
+            "version"
+          ],
+          "type": "string"
+        },
         "control": {
-          "description": "The control's path.",
+          "description": "The rule's path.",
           "format": "board-ref",
           "type": "string",
-          "x-board-type": "controls/control/v1"
+          "x-board-type": [
+            "rules/rule/v1",
+            "controls/control/v1"
+          ]
         },
         "findings": {
-          "description": "What the control found wrong, at most 20.",
+          "description": "What the rule found wrong, at most 20.",
           "items": {
             "$ref": "#/$defs/Finding"
           },
@@ -62,13 +114,7 @@
           "type": "string"
         },
         "rule": {
-          "description": "The kind of the control's rule; left out for a written requirement.",
-          "enum": [
-            "budget",
-            "pattern",
-            "judged",
-            "version"
-          ],
+          "description": "The rule's path; before the rename, its checker.",
           "type": "string"
         },
         "status": {
@@ -88,7 +134,6 @@
         }
       },
       "required": [
-        "control",
         "part",
         "status",
         "findings"

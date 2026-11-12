@@ -23,7 +23,7 @@ fn spent(brief: &Value) -> usize {
         "plan",
         "phase",
         "instruction",
-        "controls",
+        "rules_check",
     ]
     .iter()
     .map(|key| shown(&brief[*key]))
@@ -54,7 +54,7 @@ fn spent(brief: &Value) -> usize {
             .collect();
         counted.push(format!(
             "{} {} {}",
-            shown(&rule["control"]),
+            shown(&rule["rule"]),
             shown(&rule["summary"]),
             matched.join(" ")
         ));
@@ -62,7 +62,7 @@ fn spent(brief: &Value) -> usize {
     for left in brief["rules_left_out"].as_array().unwrap() {
         counted.push(format!(
             "{} {}",
-            shown(&left["control"]),
+            shown(&left["rule"]),
             shown(&left["reason"])
         ));
     }
@@ -93,11 +93,16 @@ fn brief(board: &Changes) -> Value {
     board.call("brief", &json!({"path": CHANGE}))
 }
 
-/// The controls named in `rules`.
-fn named(rules: &Value) -> Vec<String> {
+/// The rules named in `rules` under `field`.
+fn named_under(rules: &Value, field: &str) -> Vec<String> {
     (rules.as_array().unwrap().iter())
-        .map(|rule| rule["control"].as_str().unwrap().to_owned())
+        .map(|rule| rule[field].as_str().unwrap().to_owned())
         .collect()
+}
+
+/// The rules named in a brief's `rules`.
+fn named(rules: &Value) -> Vec<String> {
+    named_under(rules, "rule")
 }
 
 /// A control on `paths` with `requirement` and `fields`.
@@ -120,15 +125,15 @@ fn with_source() -> Changes {
     board
 }
 
-/// The controls `board controls for-paths` lists when run as the
-/// brief's `rules_command` says.
+/// The rules `board call rules.for-paths` lists when run as the brief's
+/// `rules_command` says.
 fn listed(board: &Changes, command: &Value) -> Vec<String> {
     let argv: Vec<&str> = (command["argv"].as_array().unwrap().iter())
         .map(|part| part.as_str().unwrap())
         .collect();
     assert_eq!(argv[0], "board");
     let report = board.json_with(&argv[1..], command["stdin"].as_str().unwrap());
-    named(&report["data"]["output"]["controls"])
+    named_under(&report["data"]["output"]["controls"], "control")
 }
 
 #[test]
@@ -196,7 +201,7 @@ fn brief_gives_one_line_for_each_record_the_newest_plan_uses() {
         (&brief["left_out"], &brief["phase"]),
         (&json!(0), &json!("plan"))
     );
-    assert_eq!(brief["controls"], "board controls check --path /repos/x");
+    assert_eq!(brief["rules_check"], "board rules check --path /repos/x");
 }
 
 #[test]
@@ -312,15 +317,15 @@ fn the_brief_leaves_out_the_lifecycle_text_of_a_plan_revised_to_none_and_names_i
 }
 
 #[test]
-fn the_brief_warns_when_the_board_holds_no_lifecycle_paths_control_and_is_silent_when_it_does() {
+fn the_brief_warns_when_the_board_holds_no_lifecycle_paths_rule_and_is_silent_when_it_does() {
     let board = with_source();
     board.call_stdin("plan", &planned(&[], &PATHS));
     let found = brief(&board);
-    assert_eq!(found["warnings"][0]["code"], "changes::brief::no_control");
+    assert_eq!(found["warnings"][0]["code"], "changes::brief::no_rule");
     assert_eq!(
         found["warnings"][0]["detail"],
-        "no control /controls/x/lifecycle-paths exists, so only the plan's typed answers guard \
-         what it would list; write the control to name those paths"
+        "no rule /rules/x/lifecycle-paths exists, so only the plan's typed answers guard \
+         what it would list; write the rule to name those paths"
     );
     assert!(spent(&found) <= BRIEF_WORDS, "{}: {found}", spent(&found));
     board.write(
@@ -348,7 +353,7 @@ fn the_brief_of_a_change_on_a_flow_with_no_lifecycle_check_gives_no_warning() {
     assert_eq!(start("small-one", "small").get("warnings"), None);
     assert_eq!(
         start("development-one", "development")["warnings"][0]["code"],
-        "changes::brief::no_control"
+        "changes::brief::no_rule"
     );
 }
 
@@ -399,7 +404,7 @@ fn the_brief_an_agent_runs_is_the_golden_the_write_guard_tests_read() {
 }
 
 #[test]
-fn brief_lists_each_control_on_the_planned_paths_once_matched_ones_first_and_what_they_matched() {
+fn brief_lists_each_rule_on_the_planned_paths_once_matched_ones_first_and_what_they_matched() {
     let board = Changes::new();
     board.change_at("changes/t.json", "plan", &json!({}));
     board.mount_x(&[("src/a.rs", "a\n"), ("docs/a.md", "a\n")]);
@@ -431,9 +436,9 @@ fn brief_lists_each_control_on_the_planned_paths_once_matched_ones_first_and_wha
     assert_eq!(
         brief["rules"],
         json!([
-            {"control": "/controls/docs", "summary": "Say what exists.", "matched": ["/repos/x/docs/new.md"]},
-            {"control": "/controls/rust", "summary": "Errors are typed.", "matched": ["/repos/x/src/**"]},
-            {"control": "/controls/all", "summary": "Write the test first."},
+            {"rule": "/controls/docs", "summary": "Say what exists.", "matched": ["/repos/x/docs/new.md"]},
+            {"rule": "/controls/rust", "summary": "Errors are typed.", "matched": ["/repos/x/src/**"]},
+            {"rule": "/controls/all", "summary": "Write the test first."},
         ])
     );
     assert_eq!(
@@ -443,7 +448,7 @@ fn brief_lists_each_control_on_the_planned_paths_once_matched_ones_first_and_wha
 }
 
 #[test]
-fn a_version_control_whose_matched_files_pin_no_version_is_left_out_and_says_why() {
+fn a_version_rule_whose_matched_files_pin_no_version_is_left_out_and_says_why() {
     let board = Changes::new();
     board.change_at("changes/t.json", "plan", &json!({}));
     board.mount_x(&[
@@ -470,7 +475,7 @@ fn a_version_control_whose_matched_files_pin_no_version_is_left_out_and_says_why
     assert_eq!(
         (&left["rules_left_out"], &left["rules_unnamed"]),
         (
-            &json!([{"control": "/controls/rust", "reason": NO_VERSION}]),
+            &json!([{"rule": "/controls/rust", "reason": NO_VERSION}]),
             &json!(0)
         )
     );
@@ -485,8 +490,8 @@ fn a_version_control_whose_matched_files_pin_no_version_is_left_out_and_says_why
 }
 
 #[test]
-fn a_version_control_is_kept_when_a_planned_file_is_new_or_unreadable_and_dropped_when_it_holds_none()
- {
+fn a_version_rule_is_kept_when_a_planned_file_is_new_or_unreadable_and_dropped_when_it_holds_none()
+{
     let board = Changes::new();
     board.change_at("changes/t.json", "plan", &json!({}));
     // dir/mise.toml is a directory, which Board cannot read as a file.
@@ -510,7 +515,7 @@ fn a_version_control_is_kept_when_a_planned_file_is_new_or_unreadable_and_droppe
         rules_for(&["/repos/x/mise.toml"]),
         (
             Vec::<String>::new(),
-            json!([{"control": "/controls/rust", "reason": NO_VERSION}])
+            json!([{"rule": "/controls/rust", "reason": NO_VERSION}])
         )
     );
 }
@@ -585,16 +590,16 @@ fn brief_stays_within_600_words_with_100_rules_names_20_it_left_out_and_counts_t
 
 /// The reason a rule left out for want of room carries.
 const NO_ROOM: &str = "no room in the brief's 600 words";
-/// The reason a version control whose matched files pin no version carries.
+/// The reason a version rule whose matched files pin no version carries.
 const NO_VERSION: &str = "no version found in the matched files";
 
-/// The controls of the left-out rules `left_out`, each of which was left
+/// The paths of the left-out rules `left_out`, each of which was left
 /// out for want of room.
 fn named_paths(left_out: &Value) -> Vec<String> {
     (left_out.as_array().unwrap().iter())
         .map(|left| {
             assert_eq!(left["reason"], NO_ROOM, "{left}");
-            left["control"].as_str().unwrap().to_owned()
+            left["rule"].as_str().unwrap().to_owned()
         })
         .collect()
 }
@@ -717,7 +722,7 @@ fn many_rules_leave_room_for_the_lines_of_the_records_the_plan_uses() {
 }
 
 #[test]
-fn brief_without_the_controls_plugin_is_refused_and_with_it_is_admitted() {
+fn brief_without_the_rules_plugin_is_refused_and_with_it_is_admitted() {
     let board = Changes::new();
     board.change_at("changes/t.json", "plan", &json!({}));
     board.call_stdin("plan", &planned(&[], &PATHS));
@@ -728,7 +733,7 @@ fn brief_without_the_controls_plugin_is_refused_and_with_it_is_admitted() {
     );
     let refusal = board.refusal("brief", &json!({"path": CHANGE}));
     assert_eq!(
-        refusal["code"], "changes::brief::controls_missing",
+        refusal["code"], "changes::brief::rules_missing",
         "{refusal}"
     );
     board.write(".board/board.json", &config.to_string());

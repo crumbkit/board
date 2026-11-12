@@ -127,7 +127,7 @@ fn a_private_name_in_a_commit_message_is_refused_with_the_boundarys_next_step_an
     assert!(message.ends_with(hint), "{message}");
     assert_eq!(
         fields["failures"],
-        json!([{"control": NAMES, "part": format!("commit.{}.message", &sha[..12]), "text": "acme-123", "line": 1}])
+        json!([{"rule": NAMES, "part": format!("commit.{}.message", &sha[..12]), "text": "acme-123", "line": 1}])
     );
     assert_eq!(desk.remote_head("main"), before);
     desk.git(

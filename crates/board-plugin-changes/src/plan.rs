@@ -17,7 +17,8 @@ use crate::flow::{Flow, of_change};
 use crate::gates::sections;
 use crate::lifecycle::LifecycleRecord;
 use crate::phases::final_phase;
-use crate::records::{CONTROL_TYPE, Considered, Kind, Owed, PlanRecord, is_final};
+use crate::records::{Considered, Kind, Owed, PlanRecord, is_final};
+use crate::rules::RULE_TYPES;
 use crate::{PLUGIN, Warning, refusal, to_value};
 pub(crate) use answers::Answers;
 
@@ -164,7 +165,7 @@ pub(crate) fn documents(
 }
 
 /// What each path the plan names is, or a refusal when one reaches nothing
-/// or an owed path is no control.
+/// or an owed path is no rule.
 fn check_named(
     host: &dyn Host,
     path: &str,
@@ -178,11 +179,19 @@ fn check_named(
             .iter()
             .flat_map(|each| each.records.iter().cloned()),
     );
-    named.extend(owed.iter().map(|each| each.control.clone()));
+    named.extend(owed.iter().map(|each| each.rule.clone()));
     let records = referenced(host, &named)?;
+    // An owed rule may be stored under the other prefix until the board
+    // is migrated.
+    let mut rules = Vec::new();
+    for each in owed {
+        if crate::rules::exists(host, &each.rule)? {
+            rules.push(each.rule.as_str());
+        }
+    }
     let dangling: Vec<&String> = named
         .iter()
-        .filter(|each| records.get(each).is_none())
+        .filter(|each| records.get(each).is_none() && !rules.contains(&each.as_str()))
         .collect();
     if !dangling.is_empty() {
         let listed: Vec<&str> = dangling.iter().map(|each| each.as_str()).collect();
@@ -196,7 +205,7 @@ fn check_named(
             [("path", json!(path)), ("refs", json!(listed))],
         ));
     }
-    check_owed(path, owed, &records)?;
+    check_owed(path, owed, &rules)?;
     Ok(records)
 }
 
@@ -319,15 +328,12 @@ pub(crate) fn plan(host: &dyn Host, input: &Value) -> Result<Value, PluginError>
     }))
 }
 
-/// `changes::ref::wrong_type` for an `owed` entry that is no control.
-fn check_owed(path: &str, owed: &[Owed], records: &Referenced) -> Result<(), PluginError> {
+/// `changes::ref::wrong_type` for an `owed` entry that is none of `rules`,
+/// the owed paths a rule is stored at under either prefix.
+fn check_owed(path: &str, owed: &[Owed], rules: &[&str]) -> Result<(), PluginError> {
     let wrong: Vec<&str> = (owed.iter())
-        .map(|each| each.control.as_str())
-        .filter(|each| {
-            records
-                .get(each)
-                .is_none_or(|(found, _)| found != CONTROL_TYPE)
-        })
+        .map(|each| each.rule.as_str())
+        .filter(|each| !rules.contains(each))
         .collect();
     if wrong.is_empty() {
         return Ok(());
@@ -335,9 +341,10 @@ fn check_owed(path: &str, owed: &[Owed], records: &Referenced) -> Result<(), Plu
     Err(refusal(
         "changes::ref::wrong_type",
         format!(
-            "the plan for {path} leaves owed {}, and owed accepts only {CONTROL_TYPE} records; \
-             name each obligation by its path, or check its `$type` with `board get`",
-            wrong.join(", ")
+            "the plan for {path} leaves owed {}, and owed accepts only {} records; name each \
+             obligation by its path, or check its `$type` with `board get`",
+            wrong.join(", "),
+            RULE_TYPES[0]
         ),
         [("path", json!(path)), ("refs", json!(wrong))],
     ))

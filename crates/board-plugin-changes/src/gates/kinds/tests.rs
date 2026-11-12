@@ -232,12 +232,12 @@ fn a_surfaced_record_listed_only_under_a_considered_heading_in_the_text_is_missi
 fn an_obligation_on_the_plans_paths_is_missing_and_one_in_owed_passes() {
     let list = json!([{"id": "settled", "kind": "obligations"}]);
     let mut found = observed(&json!({}), &[]);
-    found.obligations = vec!["/controls/x/docs-owed".to_owned()];
+    found.obligations = vec!["/rules/x/docs-owed".to_owned()];
     let check = first(&found, list.clone());
     assert_eq!(check.status, Status::Missing);
     assert_eq!(
         check.detail,
-        "these obligations apply to the plan's paths: /controls/x/docs-owed"
+        "these obligations apply to the plan's paths: /rules/x/docs-owed"
     );
     assert_eq!(
         check.remedy.unwrap(),
@@ -245,7 +245,7 @@ fn an_obligation_on_the_plans_paths_is_missing_and_one_in_owed_passes() {
          with `board rm <path> -m '<message naming the work>'`; merging the work does not \
          clear it. List an obligation the change leaves owed in the plan's owed field."
     );
-    found.owed = vec!["/controls/x/docs-owed".to_owned()];
+    found.owed = vec!["/rules/x/docs-owed".to_owned()];
     assert_eq!(first(&found, list).status, Status::Pass);
 }
 
@@ -253,9 +253,9 @@ fn an_obligation_on_the_plans_paths_is_missing_and_one_in_owed_passes() {
 fn an_obligation_listed_only_under_the_old_escape_heading_is_missing_even_with_escape_section() {
     let list = json!([{"id": "settled", "kind": "obligations", "escape_section": "Obligations left owed"}]);
     let mut found = observed(&json!({}), &[]);
-    found.obligations = vec!["/controls/x/docs-owed".to_owned()];
+    found.obligations = vec!["/rules/x/docs-owed".to_owned()];
     found.plan = Some(
-        "# T\n\n## Obligations left owed\n\n- /controls/x/docs-owed, owed to the next step.\n"
+        "# T\n\n## Obligations left owed\n\n- /rules/x/docs-owed, owed to the next step.\n"
             .to_owned(),
     );
     assert_eq!(first(&found, list).status, Status::Missing);
@@ -266,22 +266,20 @@ fn an_obligations_detail_names_ten_obligations_and_counts_the_rest() {
     let list = json!([{"id": "o", "kind": "obligations"}]);
     let mut found = observed(&json!({}), &[]);
     let owed = |count: usize| -> Vec<String> {
-        (0..count)
-            .map(|at| format!("/controls/x/o{at:02}"))
-            .collect()
+        (0..count).map(|at| format!("/rules/x/o{at:02}")).collect()
     };
     found.obligations = owed(10);
     let ten = first(&found, list.clone()).detail;
-    assert!(ten.ends_with("/controls/x/o09"), "{ten}");
+    assert!(ten.ends_with("/rules/x/o09"), "{ten}");
     found.obligations = owed(12);
     let twelve = first(&found, list).detail;
-    assert!(twelve.ends_with("/controls/x/o09, and 2 more"), "{twelve}");
+    assert!(twelve.ends_with("/rules/x/o09, and 2 more"), "{twelve}");
 }
 
 #[test]
 fn a_missing_check_with_blocks_false_never_blocks_and_its_blocking_twin_does() {
     let mut found = observed(&json!({}), &[]);
-    found.obligations = vec!["/controls/x/docs-owed".to_owned()];
+    found.obligations = vec!["/rules/x/docs-owed".to_owned()];
     let quiet = first(
         &found,
         json!([{"id": "o", "kind": "obligations", "blocks": false}]),
@@ -310,39 +308,37 @@ fn a_check_reports_its_actor_and_an_agent_one_by_default() {
 }
 
 #[test]
-fn controlled_paths_pass_when_no_named_control_exists_and_say_so_and_miss_an_edit_a_control_lists()
-{
-    let list = json!([{"id": "ui-paths", "kind": "controlled-paths", "controls": ["/controls/{repo}/ui-paths"]}]);
+fn controlled_paths_pass_when_no_named_rule_exists_and_say_so_and_miss_an_edit_a_rule_lists() {
+    let list = json!([{"id": "ui-paths", "kind": "controlled-paths", "rules": ["/rules/{repo}/ui-paths"]}]);
     let mut found = observed(&json!({}), &[]);
     found.edited = vec!["/repos/x/ui/a.rs".to_owned()];
     let none = first(&found, list.clone());
     assert_eq!(none.status, Status::Pass);
     assert_eq!(
         none.detail,
-        "no control /controls/x/ui-paths exists, so the board names no such paths and the check \
+        "no rule /rules/x/ui-paths exists, so the board names no such paths and the check \
          passes"
     );
     found.controlled.insert(
-        "/controls/x/ui-paths".to_owned(),
+        "/rules/x/ui-paths".to_owned(),
         Some(vec!["/repos/x/ui/a.rs".to_owned()]),
     );
     let touched = first(&found, list.clone());
     assert_eq!(touched.status, Status::Missing);
     assert_eq!(
         touched.detail,
-        "the change's diff edits files that /controls/x/ui-paths list: /repos/x/ui/a.rs"
+        "the change's diff edits files that /rules/x/ui-paths list: /repos/x/ui/a.rs"
     );
     found
         .controlled
-        .insert("/controls/x/ui-paths".to_owned(), Some(Vec::new()));
+        .insert("/rules/x/ui-paths".to_owned(), Some(Vec::new()));
     let clear = first(&found, list);
     assert_eq!((clear.status, clear.detail), (Status::Pass, String::new()));
 }
 
 #[test]
 fn a_controlled_paths_detail_names_ten_touched_files_and_counts_the_rest() {
-    let list =
-        json!([{"id": "ui-paths", "kind": "controlled-paths", "controls": ["/controls/x/ui"]}]);
+    let list = json!([{"id": "ui-paths", "kind": "controlled-paths", "rules": ["/rules/x/ui"]}]);
     let mut found = observed(&json!({}), &[]);
     let files = |count: usize| -> Vec<String> {
         (0..count)
@@ -351,12 +347,12 @@ fn a_controlled_paths_detail_names_ten_touched_files_and_counts_the_rest() {
     };
     found
         .controlled
-        .insert("/controls/x/ui".to_owned(), Some(files(10)));
+        .insert("/rules/x/ui".to_owned(), Some(files(10)));
     let ten = first(&found, list.clone()).detail;
     assert!(ten.ends_with("/repos/x/ui/09.rs"), "{ten}");
     found
         .controlled
-        .insert("/controls/x/ui".to_owned(), Some(files(13)));
+        .insert("/rules/x/ui".to_owned(), Some(files(13)));
     let thirteen = first(&found, list).detail;
     assert!(
         thirteen.ends_with("/repos/x/ui/09.rs, and 3 more"),
@@ -423,32 +419,49 @@ fn a_check_that_is_not_waivable_ignores_a_decision_naming_it() {
     assert_eq!(found.status, Status::Missing);
 }
 
-/// The kind `planned-controlled` over one control, applied unconditionally.
+/// The kind `planned-controlled` over one rule, applied unconditionally.
 fn planned_controlled() -> Value {
-    json!([{"id": "declared", "kind": "planned-controlled", "controls": ["/controls/{repo}/lifecycle-paths"]}])
+    json!([{"id": "declared", "kind": "planned-controlled", "rules": ["/rules/{repo}/lifecycle-paths"]}])
 }
 
 #[test]
-fn planned_controlled_misses_a_control_the_planned_paths_reach_and_passes_one_they_do_not() {
+fn planned_controlled_misses_a_rule_the_planned_paths_reach_and_passes_one_they_do_not() {
     let mut found = observed(&json!({}), &[]);
-    found.held.insert("/controls/x/lifecycle-paths".to_owned());
-    found.on_planned = vec!["/controls/x/lifecycle-paths".to_owned()];
+    found.held.insert("/rules/x/lifecycle-paths".to_owned());
+    found.on_planned = vec!["/rules/x/lifecycle-paths".to_owned()];
     let (_, status, detail) = run(&found, planned_controlled()).remove(0);
     assert_eq!(status, Status::Missing, "{detail}");
-    assert_eq!(detail, "the plan's paths reach /controls/x/lifecycle-paths");
-    found.on_planned = vec!["/controls/x/other".to_owned()];
+    assert_eq!(detail, "the plan's paths reach /rules/x/lifecycle-paths");
+    found.on_planned = vec!["/rules/x/other".to_owned()];
     let (_, status, detail) = run(&found, planned_controlled()).remove(0);
     assert_eq!((status, detail.as_str()), (Status::Pass, ""));
 }
 
+/// A flow stored before the rename names `controls` under `/controls/`,
+/// and its check reads the rules the board found as the new flow does.
 #[test]
-fn planned_controlled_says_no_control_exists_when_the_board_holds_none() {
+fn a_check_naming_controls_under_controls_gates_as_one_naming_rules_under_rules() {
+    let before = json!([{"id": "declared", "kind": "planned-controlled", "controls": ["/controls/{repo}/lifecycle-paths"]}]);
+    let mut found = observed(&json!({}), &[]);
+    found.held.insert("/rules/x/lifecycle-paths".to_owned());
+    for on in ["/rules/x/lifecycle-paths", "/rules/x/other"] {
+        found.on_planned = vec![on.to_owned()];
+        assert_eq!(
+            run(&found, before.clone()),
+            run(&found, planned_controlled()),
+            "{on}"
+        );
+    }
+}
+
+#[test]
+fn planned_controlled_says_no_rule_exists_when_the_board_holds_none() {
     let found = observed(&json!({}), &[]);
     let (_, status, detail) = run(&found, planned_controlled()).remove(0);
     assert_eq!(status, Status::Pass);
     assert_eq!(
         detail,
-        "no control /controls/x/lifecycle-paths exists, so the board names no such paths and the \
+        "no rule /rules/x/lifecycle-paths exists, so the board names no such paths and the \
          check passes"
     );
 }
@@ -463,11 +476,11 @@ fn planned_controlled_is_missing_with_the_refusal_when_for_paths_fails() {
 }
 
 #[test]
-fn planned_controlled_with_no_controls_says_it_cannot_pass() {
+fn planned_controlled_with_no_rules_says_it_cannot_pass() {
     let list = json!([{"id": "declared", "kind": "planned-controlled"}]);
     let (_, status, detail) = run(&observed(&json!({}), &[]), list).remove(0);
     assert_eq!(status, Status::Missing);
-    assert!(detail.contains("names no controls"), "{detail}");
+    assert!(detail.contains("names no rules"), "{detail}");
 }
 
 /// The unsure fact the plan marked: an `exists` check takes a `when` and

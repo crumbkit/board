@@ -201,14 +201,20 @@ const VERSION_DIGITS: usize = 16;
 /// version being the first 16 hex digits of the SHA-256 of the flow's
 /// canonical JSON, so identical flows share one path.
 pub(crate) fn version_path(flow: &Flow) -> String {
-    let value = serde_json::to_value(flow).unwrap_or_default();
-    let digest = Sha256::digest(canonical_json(&value).as_str().as_bytes());
+    version_of(&flow.name, &serde_json::to_value(flow).unwrap_or_default())
+}
+
+/// Where the flow named `name` whose JSON is `value` is stored, as
+/// [`version_path`] says. A flow stored before a field was renamed keeps
+/// the path of the JSON it was stored as.
+pub(crate) fn version_of(name: &str, value: &Value) -> String {
+    let digest = Sha256::digest(canonical_json(value).as_str().as_bytes());
     let hex: String =
         (digest.iter().take(VERSION_DIGITS / 2)).fold(String::new(), |mut hex, byte| {
             let _ = write!(hex, "{byte:02x}");
             hex
         });
-    format!("{FLOWS}{}/{hex}", flow.name)
+    format!("{FLOWS}{name}/{hex}")
 }
 
 /// The path of `flow`'s version, and the `put` line that writes it when

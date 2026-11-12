@@ -68,7 +68,7 @@ its message, change what it names, and push again.
   gh's account cannot see it. Check it with `gh issue view`.
 - `github::boundary::refused`: the boundary refused the content; see above.
 - `github::board::refused`: the check could not run, such as when no
-  personal board is named. Enable boundary and controls in the personal
+  personal board is named. Enable boundary and rules in the personal
   board.
 - `github::checkout::not_found`, `github::remote::not_github`,
   `github::checkout::detached`: run the action in a checkout on a branch

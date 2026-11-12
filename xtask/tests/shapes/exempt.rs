@@ -16,7 +16,7 @@ pub(super) enum Kind {
 use Kind::{Local, UntilAdopted};
 
 #[rustfmt::skip]
-pub(super) const UNSHARED: [(&str, &str, Kind, &str); 90] = [
+pub(super) const UNSHARED: [(&str, &str, Kind, &str); 91] = [
     // This repository's board's copies of the rules plugin's schemas.
     (".board/controls/control/v1", "/rule/at_least", Local, "a version floor of dotted numbers, which only a version rule compares"),
     (".board/controls/control/v1", "/rule/capture", Local, "a regular expression in the syntax of Rust's regex crate, which only a version rule compiles"),
@@ -35,6 +35,7 @@ pub(super) const UNSHARED: [(&str, &str, Kind, &str); 90] = [
     ("boundary/crossing/v1", "/action", Local, "the action that sends content names itself, and only boundaries match it"),
     ("boundary/crossing/v1", "/to", Local, "a destination is named by the action that sends to it, and only boundaries match it"),
     ("boundary/crossing/v1", "/verdicts/-/part", Local, "a part is named by the action that sends it, and only boundaries match it"),
+    ("boundary/crossing/v1", "/verdicts/-/rule", UntilAdopted, "a reference to the rule, once crossings no longer hold the checker under rule (PR 8 of /changes/control-becomes-rule)"),
     ("controls/control/v1", "/rule/at_least", Local, "a version floor of dotted numbers, which only a version rule compares"),
     ("controls/control/v1", "/rule/capture", Local, "a regular expression in the syntax of Rust's regex crate, which only a version rule compiles"),
     ("evals/eval/v1", "/conclusion", UntilAdopted, "Prose"),

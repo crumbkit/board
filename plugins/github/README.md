@@ -326,7 +326,7 @@ GitHub's controls stay:
   submodule's own hooks directory, where no hook is installed.
 - A hand-set `BOARD_GITHUB_PASSED` that replays an earlier passing check
   of the same content. `boundary.verify` compares only the boundaries'
-  paths, so the replay passes after a control's rule, a pattern file or a
+  paths, so the replay passes after a rule's checker, a pattern file or a
   boundary's checks has been tightened, at any time after that check ran.
 - Pointing Board's config at an empty board, or at none: the hook lets the
   push go on `board::config::not_found`.
@@ -415,7 +415,7 @@ their paths and their writing, and `records.rs` the record types.
 
 It is built into Board. `board plugin enable github` writes the schemas to
 `.board/types/github/` and names the plugin in `.board/board.json`. The
-sending actions need the boundary and controls plugins enabled in the
+sending actions need the boundary and rules plugins enabled in the
 personal board. An older install at
 `${XDG_DATA_HOME:-$HOME/.local/share}/board/plugins/github` makes `call` and
 `plugin enable` fail with `board::plugin::duplicate`. Remove it; it is
@@ -431,7 +431,7 @@ through the binary are in `crates/board-cli/src/tests/built_in/github.rs`
 and the files beside it. They put a stub gh first on the PATH the plugin's
 process sees, so no test reaches GitHub. The sending actions' tests run
 against a temporary personal board named in a temporary known boards file,
-with boundary and controls enabled. Their checkout's origin names GitHub,
+with boundary and rules enabled. Their checkout's origin names GitHub,
 and its git config sends every fetch and push to a local bare repository
 instead. The hook tests install the hook with the command `install-hook`
 prints and push with git, which runs the `board` cargo built.

@@ -87,7 +87,7 @@
       "description": "The measure that says when the value is wrong."
     },
     "consumer": {
-      "description": "The plugin that reads the value, such as `controls`.",
+      "description": "The plugin that reads the value, such as `rules`.",
       "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
       "type": "string"
     },

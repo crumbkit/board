@@ -14,17 +14,18 @@ use serde_json::{Map, Value, json};
 use crate::boundaries::{self, Boundary, Globs};
 use crate::content::{Content, quoted};
 use crate::crossing::{self, output};
-use crate::records::{BoundaryRecord, CrossingRecord, Finding, Status, Verdict};
+use crate::records::{self, BoundaryRecord, CrossingRecord, Finding, Status, Verdict};
 use crate::{personal, refused};
 
 /// The failures a refusal's message names; its `failures` field holds them
 /// all.
 const NAMED: usize = 20;
-/// The finding of a control without a rule, which cannot check content, so
+/// The finding of a rule without a checker, which cannot check content, so
 /// its verdict fails the crossing; and the step that fixes it.
-const NO_RULE: &str = "this control has no rule, so it cannot check content; give it a rule, \
-                       or remove it from the boundary";
-const GIVE_RULE: &str = "give each control without a rule a rule, or remove it from the boundary";
+const NO_CHECKER: &str = "this rule has no checker, so it cannot check content; give it a \
+                          checker, or remove it from the boundary";
+const GIVE_CHECKER: &str =
+    "give each rule without a checker a checker, or remove it from the boundary";
 /// The capability the owner approves to let one failed crossing through, and how
 /// Board refuses a decide it has not admitted.
 const OVERRIDE: &str = "boundary.override";
@@ -90,7 +91,7 @@ enum Answer {
     TooLarge,
 }
 
-/// Evaluate the parts against each matching boundary's controls, write the
+/// Evaluate the parts against each matching boundary's rules, write the
 /// crossing, and refuse on a failure.
 pub(crate) fn check(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
     let Input {
@@ -162,7 +163,7 @@ pub(crate) fn check(host: &dyn Host, input: &Value) -> Result<Value, PluginError
         ))
     } else if verdicts.is_empty() {
         Some(
-            "the boundaries that match name no control for these parts; nothing was checked"
+            "the boundaries that match name no rule for these parts; nothing was checked"
                 .to_owned(),
         )
     } else {
@@ -179,12 +180,12 @@ pub(crate) fn check(host: &dyn Host, input: &Value) -> Result<Value, PluginError
     }))
 }
 
-/// Every verdict of the matched boundaries' controls on the parts, sorted
-/// by control and part, and the parts no check names.
+/// Every verdict of the matched boundaries' rules on the parts, sorted by
+/// rule and part, and the parts no check names.
 ///
-/// Parts are grouped by the controls that apply to them, and each group is
-/// one `controls.evaluate` in the personal board, so a part's budget and
-/// pattern rules run before its judged rules.
+/// Parts are grouped by the rules that apply to them, and each group is
+/// one `rules.evaluate` in the personal board, so a part's budget and
+/// pattern checkers run before its judged ones.
 fn evaluate(
     host: &dyn Host,
     matched: &[&Boundary],
@@ -194,15 +195,15 @@ fn evaluate(
     let mut groups: BTreeMap<Vec<&str>, Map<String, Value>> = BTreeMap::new();
     let mut unchecked = Vec::new();
     for (name, text) in parts {
-        let controls: BTreeSet<&str> = (matched.iter())
+        let rules: BTreeSet<&str> = (matched.iter())
             .flat_map(|boundary| &boundary.record.checks)
             .filter(|check| check.parts.iter().any(|glob| globs.matches(name, glob)))
-            .map(|check| check.control.as_str())
+            .map(|check| check.rule.as_str())
             .collect();
-        if controls.is_empty() {
+        if rules.is_empty() {
             unchecked.push(name.clone());
         } else {
-            let group = groups.entry(controls.into_iter().collect()).or_default();
+            let group = groups.entry(rules.into_iter().collect()).or_default();
             group.insert(name.clone(), json!(text));
         }
     }
@@ -210,31 +211,32 @@ fn evaluate(
         .parse()
         .expect("rules.evaluate is <plugin>.<capability>");
     let mut verdicts = Vec::new();
-    for (controls, texts) in groups {
-        let input = json!({"controls": controls, "parts": texts});
+    for (rules, texts) in groups {
+        let input = json!({"controls": rules, "parts": texts});
         let report = (host.call(&target, &input)).map_err(|refusal| refused("call", &refusal))?;
         // `Verdict` repeats the rules plugin's result type, so a field added
         // there refuses the check instead of letting the content through. A
-        // rule or status boundary does not know refuses it the same way.
+        // checker or status boundary does not know refuses it the same way.
         let unreadable = |error: String| PluginError {
             code: "boundary::evaluate::unreadable".to_owned(),
             message: format!("rules.evaluate gave results this plugin cannot read: {error}"),
             fields: Map::new(),
             hint: Some("update Board so its boundary and rules plugins agree".to_owned()),
         };
-        let results = Vec::<Verdict>::deserialize(&report.output["results"])
+        let results = records::verdicts(&report.output["results"])
             .map_err(|error| unreadable(error.to_string()))?;
         if let Some(verdict) = (results.iter()).find(|verdict| {
-            matches!(verdict.rule, Some(Open::Other(_))) || matches!(verdict.status, Open::Other(_))
+            matches!(verdict.checker, Some(Open::Other(_)))
+                || matches!(verdict.status, Open::Other(_))
         }) {
             return Err(unreadable(format!(
-                "{} gave a rule or status this plugin does not know",
-                verdict.control
+                "{} gave a checker or status this plugin does not know",
+                verdict.rule
             )));
         }
         verdicts.extend(results);
     }
-    verdicts.sort_by(|a, b| (&a.control, &a.part).cmp(&(&b.control, &b.part)));
+    verdicts.sort_by(|a, b| (&a.rule, &a.part).cmp(&(&b.rule, &b.part)));
     Ok((verdicts, unchecked))
 }
 
@@ -267,26 +269,26 @@ fn ask(host: &dyn Host, path: &str, content: &Content<'_>) -> Result<Answer, Plu
     }
 }
 
-/// `boundary::check::failed`, naming each failing control, part and line,
+/// `boundary::check::failed`, naming each failing rule, part and line,
 /// with the next step and what the owner may do about it.
 fn refusal(action: &str, digest: &str, failed: &[&Verdict], answer: &Answer) -> PluginError {
     let mut failures = Vec::new();
     let mut named = Vec::new();
-    let no_rule = [Finding {
-        text: NO_RULE.to_owned(),
+    let no_checker = [Finding {
+        text: NO_CHECKER.to_owned(),
         line: None,
         pattern: None,
         rewrite: None,
     }];
     for verdict in failed {
         let findings = if verdict.findings.is_empty() {
-            &no_rule[..]
+            &no_checker[..]
         } else {
             &verdict.findings[..]
         };
         for finding in findings {
             let mut failure = json!({
-                "control": verdict.control,
+                "rule": verdict.rule,
                 "part": verdict.part,
                 "text": finding.text,
             });
@@ -302,7 +304,7 @@ fn refusal(action: &str, digest: &str, failed: &[&Verdict], answer: &Answer) -> 
             failures.push(failure);
             named.push(format!(
                 "{} on {}{line}: {}{rewrite}",
-                verdict.control,
+                verdict.rule,
                 verdict.part,
                 quoted(&finding.text)
             ));
@@ -316,7 +318,7 @@ fn refusal(action: &str, digest: &str, failed: &[&Verdict], answer: &Answer) -> 
         .iter()
         .any(|verdict| verdict.status == Open::Known(Status::Stated))
     {
-        steps.push(GIVE_RULE.to_owned());
+        steps.push(GIVE_CHECKER.to_owned());
     }
     let parts: BTreeSet<&str> = (failed.iter())
         .filter(|verdict| verdict.status != Open::Known(Status::Stated))

@@ -607,7 +607,7 @@ fn start_stores_the_suite_and_surfaces_the_open_records_on_the_mount_and_its_obl
     );
     assert_eq!(
         output["obligations"],
-        json!([{"control": "/controls/x/docs", "summary": "Sweep the docs.", "close": closing}])
+        json!([{"rule": "/controls/x/docs", "summary": "Sweep the docs.", "close": closing}])
     );
     assert_eq!(output["obligations_left_out"], 0);
     let change = board.read("changes/a.json");

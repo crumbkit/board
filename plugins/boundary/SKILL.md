@@ -1,6 +1,6 @@
 ---
 name: boundary
-description: 'The boundary plugin checks content, such as a pull request body, before it leaves a checkout, against the controls that boundaries in the personal board name for its destination. Use it before you send anything a boundary may cover. Run `board --personal boundary check` with the action, destination, checkout and parts on stdin; on `boundary::check::failed`, change what it names and check again. SKILL.md and README.md in the plugin''s directory say more.'
+description: 'The boundary plugin checks content, such as a pull request body, before it leaves a checkout, against the rules that boundaries in the personal board name for its destination. Use it before you send anything a boundary may cover. Run `board --personal boundary check` with the action, destination, checkout and parts on stdin; on `boundary::check::failed`, change what it names and check again. SKILL.md and README.md in the plugin''s directory say more.'
 ---
 
 # boundary
@@ -25,7 +25,7 @@ Then follow that action's refusal the same way.
    boundaries that matched, every verdict and the crossing it wrote. A
    `note` says when nothing was checked.
 2. On `boundary::check::failed`, read the message or `fields.failures`.
-   Each failure names a control, a part, a line and the text at fault.
+   Each failure names a rule, a part, a line and the text at fault.
    Remove or reword quoted matches, shorten parts over budget, and follow
    each `rewrite`. Then check again. The refusal's hint, which starts
    `Next:`, says the same.
