@@ -1,8 +1,8 @@
 # The controls mod for Claude Code
 
 This file holds detail for docs/plugins.md. It says why the Claude Code mod in
-`plugins/controls/claude-code/` tells a session about controls the way it
-does. `plugins/controls/README.md` says how to install it.
+`plugins/rules/claude-code/` tells a session about controls the way it
+does. `plugins/rules/README.md` says how to install it.
 
 A session that edits a file a control governs should know the control before
 the edit. The controls skill asks the agent to run `controls.check` itself,
@@ -43,6 +43,6 @@ stops lets the edit run as it would without the mod.
 
 ## Testing
 
-`claude plugin test plugins/controls/claude-code` runs the mod's tests, which
+`claude plugin test plugins/rules/claude-code` runs the mod's tests, which
 stand in for git and Board. CI does not run them yet. The tests in
 `crates/board-cli/src/tests/built_in/controls.rs` prove what `controls.check` and `controls.for-path` answer.

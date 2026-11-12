@@ -142,7 +142,7 @@ pub(crate) enum Health {
 /// The rows of `sql`, every one of them.
 pub(crate) fn rows(host: &dyn Host, sql: &str) -> Result<QueryReport, PluginError> {
     (host.query(sql, Limit::ALL))
-        .map_err(|error| PluginError::board_refused("controls", "query", &error.refusal()))
+        .map_err(|error| PluginError::board_refused("rules", "query", &error.refusal()))
 }
 
 /// The first column of each row of `sql` that holds a string there.

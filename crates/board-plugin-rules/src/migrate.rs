@@ -30,8 +30,8 @@ use crate::records::{CONTROL_TYPE, FORMER_SCHEMAS, OWED_BY_TYPES};
 const BULK: &str = "migrate controls";
 /// The most rewritten paths the output lists (STANDARDS 23).
 const LISTED: usize = 100;
-const UNREAD: &str = "controls::migrate::unread";
-const AMBIGUOUS: &str = "controls::migrate::ambiguous";
+const UNREAD: &str = "rules::migrate::unread";
+const AMBIGUOUS: &str = "rules::migrate::ambiguous";
 const MOUNT_TYPE: &str = "board/mount/v1";
 const PULL_TYPE: &str = OWED_BY_TYPES[0];
 const REPORT_TYPE: &str = OWED_BY_TYPES[1];
@@ -155,10 +155,10 @@ impl Pull {
 /// The rows of `sql`, or the refusal of a query Board cut short.
 fn rows(host: &dyn Host, sql: &str) -> Result<Vec<Vec<Value>>, PluginError> {
     let report = (host.query(sql, Limit::ALL))
-        .map_err(|error| PluginError::board_refused("controls", "query", &error.refusal()))?;
+        .map_err(|error| PluginError::board_refused("rules", "query", &error.refusal()))?;
     if report.truncated {
         return Err(PluginError {
-            code: "controls::migrate::over_budget".to_owned(),
+            code: "rules::migrate::over_budget".to_owned(),
             message: "the board's controls passed the output budget of one board run; migrate a \
                       smaller board, or raise the budget"
                 .to_owned(),
@@ -206,7 +206,7 @@ fn mounts(host: &dyn Host) -> Result<BTreeMap<String, (String, String)>, PluginE
         return Ok(BTreeMap::new());
     }
     let answers = (host.refs(&asked, Absent::Locate, &[]))
-        .map_err(|error| PluginError::board_refused("controls", "refs", &error.refusal()))?;
+        .map_err(|error| PluginError::board_refused("rules", "refs", &error.refusal()))?;
     let mut found = BTreeMap::new();
     for (mount, answer) in mounts.into_iter().zip(answers) {
         let Ok(report) = answer else {
@@ -303,7 +303,7 @@ fn strings(body: &Map<String, Value>, key: &str) -> Vec<String> {
 }
 
 pub(crate) fn migrate(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
-    let Input { apply, owed_by } = PluginError::read_input("controls", "migrate", input)?;
+    let Input { apply, owed_by } = PluginError::read_input("rules", "migrate", input)?;
     let mut output = Output {
         applied: apply,
         ..Output::default()
@@ -312,7 +312,7 @@ pub(crate) fn migrate(host: &dyn Host, input: &Value) -> Result<Value, PluginErr
         let lines = owed_by_lines(host, &mut output)?;
         if apply && !lines.is_empty() {
             let refused = |refusal: &board_model::Refusal| {
-                PluginError::board_refused("controls", "put --batch --bulk", refusal)
+                PluginError::board_refused("rules", "put --batch --bulk", refusal)
             };
             let bulk = Bulk::new(BULK).map_err(|error| refused(&error.refusal()))?;
             (host.put_bulk(&lines, &bulk)).map_err(|error| refused(&error.refusal()))?;

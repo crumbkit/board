@@ -86,33 +86,33 @@ literals = ["ns/sign/v1"]
 owners = ["src/sign.rs"]
 "#;
 
-/// The controls that record `CONFIG`'s word budgets, by path.
-pub(crate) const CONTROLS: [(&str, &str); 5] = [
+/// The rules that record `CONFIG`'s word budgets, by path.
+pub(crate) const RULES: [(&str, &str); 5] = [
     (
-        "controls/budgets/context.json",
+        "rules/budgets/context.json",
         r#"{"applies_to": ["/AGENTS.md", "/CLAUDE.md"], "requirement": "At most 10 words."}"#,
     ),
     (
-        "controls/budgets/docs_index.json",
+        "rules/budgets/docs_index.json",
         r#"{"applies_to": ["/DOCS.md"], "requirement": "At most 5 words."}"#,
     ),
     (
-        "controls/budgets/docs.json",
+        "rules/budgets/docs.json",
         r#"{"paths": ["docs/*.md"], "requirement": "At most 20 words."}"#,
     ),
     (
-        "controls/budgets/plan.json",
+        "rules/budgets/plan.json",
         r#"{"applies_to": ["/PLAN.md"], "requirement": "At most 6 words."}"#,
     ),
     (
-        "controls/budgets/plan_leaves.json",
+        "rules/budgets/plan_leaves.json",
         r#"{"paths": ["plan/*.md"], "requirement": "At most 8 words."}"#,
     ),
 ];
 
 fn within_every_budget() -> Fixture {
     let fixture = Fixture::new();
-    for (path, text) in CONTROLS {
+    for (path, text) in RULES {
         fixture.write(path, text);
     }
     fixture
@@ -195,10 +195,10 @@ fn the_lint_fails_a_repository_with_a_plan_leaf_that_plan_md_does_not_link_and_p
 }
 
 #[test]
-fn the_lint_fails_a_repository_whose_control_disagrees_with_lint_toml_and_passes_its_twin() {
+fn the_lint_fails_a_repository_whose_rule_disagrees_with_lint_toml_and_passes_its_twin() {
     let fixture = within_every_budget();
     fixture.write(
-        "controls/budgets/plan.json",
+        "rules/budgets/plan.json",
         r#"{"applies_to": ["/PLAN.md"], "requirement": "At most 7 words."}"#,
     );
     let report = crate::lint(fixture.path()).unwrap();
@@ -207,14 +207,14 @@ fn the_lint_fails_a_repository_whose_control_disagrees_with_lint_toml_and_passes
     let text = crate::report::render(&report);
     assert!(
         text.contains(
-            "FAIL  controls   xtask::control::differs: controls/budgets/plan.json: requirement = "
+            "FAIL  rules      xtask::rule::differs: rules/budgets/plan.json: requirement = "
         ),
         "{text}"
     );
 
     let twin = within_every_budget();
     twin.write(
-        "controls/budgets/plan.json",
+        "rules/budgets/plan.json",
         r#"{"applies_to": ["/PLAN.md"], "requirement": "At most 6 words."}"#,
     );
     assert!(crate::lint(twin.path()).unwrap().passed());

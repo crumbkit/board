@@ -273,12 +273,12 @@ fn path_or_null(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
 /// a link or mount is checked where it leads. A budget over its max, a pin
 /// older than a version rule's and a file Board cannot read are reported in
 /// the output, and `passed` is false; none fails the call. A control Board
-/// marks degraded is `controls::control::degraded` under any path, since
+/// marks degraded is `rules::rule::degraded` under any path, since
 /// what it applies to is unknown. A file reached by a reference and a
 /// pattern, or through a link, counts once, and each file is read once,
 /// however many controls reach it.
 pub(crate) fn check(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
-    let Input { path } = PluginError::read_input("controls", "check", input)?;
+    let Input { path } = PluginError::read_input("rules", "check", input)?;
     let broken = index::degraded(host)?;
     if !broken.is_empty() {
         return Err(degraded(&broken));
@@ -336,7 +336,7 @@ pub(crate) fn check(host: &dyn Host, input: &Value) -> Result<Value, PluginError
     let warnings = (applying.iter())
         .filter(|logical| controls[**logical].owed_though_standing())
         .map(|logical| Warning {
-            code: "controls::control::owed_by_standing",
+            code: "rules::rule::owed_by_standing",
             detail: format!(
                 "the control {logical} is standing and names owed_by, which only an obligation \
                  uses; set its kind to obligation or delete owed_by"
@@ -457,8 +457,7 @@ fn scope(host: &dyn Host, path: &str) -> Result<LogicalPath, PluginError> {
     if path == "/" {
         return Ok(LogicalPath::root());
     }
-    let refused =
-        |error: &RefsError| PluginError::board_refused("controls", "refs", &error.refusal());
+    let refused = |error: &RefsError| PluginError::board_refused("rules", "refs", &error.refusal());
     let answers = host
         .refs(&[logical(path)?], Absent::Refuse, &[])
         .map_err(|e| refused(&e))?;
@@ -479,8 +478,7 @@ fn referenced(
     let paths = (controls.iter())
         .map(|control| logical(control))
         .collect::<Result<Vec<LogicalPath>, PluginError>>()?;
-    let refused =
-        |error: &RefsError| PluginError::board_refused("controls", "refs", &error.refusal());
+    let refused = |error: &RefsError| PluginError::board_refused("rules", "refs", &error.refusal());
     let answers = host
         .refs(&paths, Absent::Refuse, &[])
         .map_err(|e| refused(&e))?;
@@ -514,7 +512,7 @@ pub(crate) fn read(
     }
     let asked: Vec<LogicalPath> = paths.into_iter().cloned().collect();
     let answers = (host.get_each(&asked))
-        .map_err(|error| PluginError::board_refused("controls", "get", &error.refusal("get")))?;
+        .map_err(|error| PluginError::board_refused("rules", "get", &error.refusal("get")))?;
     Ok((asked.into_iter().zip(answers))
         .map(|(path, answer)| {
             let read = answer
@@ -748,7 +746,7 @@ fn degraded(broken: &[(String, Value)]) -> PluginError {
         .map(|(logical, code)| json!({"control": logical, "code": code}))
         .collect();
     PluginError {
-        code: "controls::control::degraded".to_owned(),
+        code: "rules::rule::degraded".to_owned(),
         message: format!(
             "controls Board cannot use: {}; run `board check` for why",
             names.join(", ")

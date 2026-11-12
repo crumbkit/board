@@ -202,7 +202,7 @@ fn check<'a>(next: &'a Value, id: &str) -> Option<&'a Value> {
 
 #[test]
 fn a_plan_over_a_lifecycle_path_cannot_say_none_and_its_twins_may() {
-    let enabled = ["changes", "controls"];
+    let enabled = ["changes", "rules"];
     let next = |board: &Changes| board.call("next", &json!({"path": CHANGE}));
     let none = "None: nothing changes state.";
     let reached = gated(&enabled, none, &["/repos/x/src/sync.rs"], true);
@@ -250,7 +250,7 @@ fn with_no_lifecycle_paths_control_none_passes_and_the_check_says_none_exists() 
     let said = "no control /controls/x/lifecycle-paths exists, so the board names no such paths \
                 and the check passes";
     let none = "None: nothing changes state.";
-    for enabled in [&["changes", "controls"][..], &["changes"][..]] {
+    for enabled in [&["changes", "rules"][..], &["changes"][..]] {
         let board = gated(enabled, none, &["/repos/x/src/sync.rs"], false);
         let found = board.call("next", &json!({"path": CHANGE}));
         let declared = check(&found, "lifecycle-declared").unwrap();
@@ -262,7 +262,7 @@ fn with_no_lifecycle_paths_control_none_passes_and_the_check_says_none_exists() 
 /// A change started on `flow` whose head edits `file`, in a board with a
 /// lifecycle-paths control that lists src/sync.rs, and that head.
 fn started_over(flow: &str, file: &str) -> (Changes, String) {
-    let board = Changes::enabling(&["changes", "controls"]);
+    let board = Changes::enabling(&["changes", "rules"]);
     let (_, head) = board.edited(&[(file, "a\n")]);
     board.write(
         "controls/x/lifecycle-paths.json",
@@ -421,12 +421,12 @@ fn a_change_reflowed_from_small_at_build_faces_lifecycle_paths_until_it_has_a_re
 /// same capability and propagates its refusal, so `next` refuses there.
 #[test]
 fn next_on_the_shipped_flow_refuses_with_the_controls_refusal_when_for_paths_refuses() {
-    let enabled = ["changes", "controls"];
+    let enabled = ["changes", "rules"];
     let none = "None: nothing changes state.";
     let refusing = gated(&enabled, none, &["/repos/x/../y"], true);
     let refused = refusing.refusal("next", &json!({"path": CHANGE}));
     assert_eq!(refused["code"], "changes::board::refused");
-    assert_eq!(refused["fields"]["code"], "controls::board::refused");
+    assert_eq!(refused["fields"]["code"], "rules::board::refused");
     let reading = gated(&enabled, none, &["/repos/x/src/a.rs"], true);
     let found = reading.call("next", &json!({"path": CHANGE}));
     assert_eq!(

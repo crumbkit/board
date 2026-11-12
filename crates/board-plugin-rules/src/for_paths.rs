@@ -77,7 +77,7 @@ struct Applying {
 /// file that cannot be read, or a pattern that matches no file yet, leaves
 /// the count unknown.
 pub(crate) fn for_paths(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
-    let Input { paths } = PluginError::read_input("controls", "for-paths", input)?;
+    let Input { paths } = PluginError::read_input("rules", "for-paths", input)?;
     let mut controls = index::controls(host)?;
     let mut reached: BTreeMap<String, Vec<String>> = BTreeMap::new();
     let mut seen = BTreeSet::new();

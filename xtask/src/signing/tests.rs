@@ -13,7 +13,7 @@ fn repository() -> SigningConfig {
 fn rendered(check: Check) -> String {
     render(&Report {
         checks: vec![check],
-        controls: Vec::new(),
+        rules: Vec::new(),
     })
 }
 
@@ -35,7 +35,7 @@ fn a_namespace_literal_outside_the_owners_is_refused_with_the_file_line_and_lite
              xtask::signing::outside_owner: only the files signing.owners in lint.toml lists may name a \
              signing literal; use board_model's headers or the vectors, or move the code into an owner \
              (docs/architecture/writes/signing.md)\n\
-             pass  controls   controls/budgets/ agrees with lint.toml\n"
+             pass  rules      rules/budgets/ agrees with lint.toml\n"
         )
     );
 }
@@ -59,7 +59,7 @@ fn the_same_literal_in_an_owner_is_admitted() {
     assert_eq!(
         rendered(check),
         "pass  signing      0 = 0     literals    \n\
-         pass  controls   controls/budgets/ agrees with lint.toml\n"
+         pass  rules      rules/budgets/ agrees with lint.toml\n"
     );
 }
 
@@ -76,7 +76,7 @@ fn a_file_whose_name_only_starts_like_an_owner_is_not_an_owner() {
 }
 
 #[test]
-fn a_literal_in_a_python_shell_typescript_or_bin_script_is_refused_and_in_docs_controls_or_data_is_admitted()
+fn a_literal_in_a_python_shell_typescript_or_bin_script_is_refused_and_in_docs_rules_or_data_is_admitted()
  {
     let config = SigningConfig {
         literals: vec!["ns/a".to_owned()],
@@ -109,7 +109,7 @@ fn a_literal_in_a_python_shell_typescript_or_bin_script_is_refused_and_in_docs_c
     let admitted = Fixture::new();
     for path in [
         "docs/a.md",
-        "controls/rules/a.json",
+        "rules/a.json",
         "vectors/signing/v1/approval.statement",
         "crates/c/README",
         "ui/node_modules/m/a.ts",

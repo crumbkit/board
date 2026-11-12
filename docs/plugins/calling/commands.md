@@ -29,9 +29,9 @@ which names the new name. A manifest that lists its own name is
 as a former name, or that two plugins list, is refused with
 `board::plugin::ambiguous`, naming the plugins that list it first.
 `board plugin enable <former>` enables the plugin under the former name.
-A built-in plugin may still ship types in a former name's namespace and
-give codes that start with a former name. Its
-`renamed_types` method pairs each old type with the type that replaces it;
+A built-in plugin may still ship types in a former name's namespace; an
+installed plugin's manifest that does is `board::plugin::bad_manifest`. Its
+codes start with its own name. Its `renamed_types` method pairs each old type with the type that replaces it;
 a board that holds the schema of one type of a pair lacks no schema for the
 other, so a call and `plugin list` pass before and after the board migrates.
 

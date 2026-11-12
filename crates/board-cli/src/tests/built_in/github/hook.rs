@@ -562,7 +562,7 @@ fn the_hook_reuses_the_check_an_action_passed_so_an_agent_without_a_model_or_cre
     ] {
         let (code, stderr) = desk.push(&["origin", "feature"], &extra);
         assert_ne!(code, 0, "{stderr}");
-        assert!(stderr.contains("controls::agent::failed"), "{stderr}");
+        assert!(stderr.contains("rules::agent::failed"), "{stderr}");
     }
     assert_eq!(runs_now(), opened);
     assert!(pushed < opened);

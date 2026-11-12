@@ -12,14 +12,11 @@ name = "board"
 path = "src/main.rs"
 
 [features]
-default = ["artifacts", "attention", "boundary", "changes", "controls", "evals", "github", "jira", "notes", "params", "plans", "prompts", "requests", "review", "rules", "runs", "share", "tasks", "topics"]
+default = ["artifacts", "attention", "boundary", "changes", "evals", "github", "jira", "notes", "params", "plans", "prompts", "requests", "review", "rules", "runs", "share", "tasks", "topics"]
 artifacts = ["board-plugins/artifacts"]
 attention = ["board-plugins/attention"]
 boundary = ["board-plugins/boundary"]
 changes = ["board-plugins/changes"]
-# The rules plugin's skill is still in plugins/controls/, whose name build.rs
-# reads as this feature's, until that directory is renamed.
-controls = ["rules"]
 evals = ["board-plugins/evals"]
 github = ["board-plugins/github"]
 jira = ["board-plugins/jira"]

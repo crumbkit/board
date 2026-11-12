@@ -149,7 +149,7 @@ Refusals:
   boundary's, followed by its `Next:` step, which is also the hint. The
   other fields are the boundary's own, unchanged: `failures`, `digest`,
   `crossing` and `effect`. A code the
-  boundary's refusal carried, such as `controls::control::not_found` inside
+  boundary's refusal carried, such as `rules::rule::not_found` inside
   `boundary::board::refused`, is in `cause`. Nothing is sent.
 - Any other refusal of the check, such as boundary not being enabled in the
   personal board, is `github::board::refused` with Board's code.

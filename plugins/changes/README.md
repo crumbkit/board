@@ -80,7 +80,7 @@ that one record.
 {
   "$type": "changes/plan/v1",
   "text": "/changes/suite-timeout/plans/20261101T120000000000Z.md",
-  "uses": ["/repos/board/STANDARDS.md", "/controls/rules/pair-refusals", "/evals/board-standards-selection"],
+  "uses": ["/repos/board/STANDARDS.md", "/rules/pair-refusals", "/evals/board-standards-selection"],
   "paths": ["/repos/board/plugins/changes/**", "/repos/board/docs/plugins.md"],
   "records": ["/suites/board-tests/runs/20261025T101500Z-a3f9"],
   "considered": [{"records": ["/plans/old-timeout"], "why": "It sets the deploy timeout."}],

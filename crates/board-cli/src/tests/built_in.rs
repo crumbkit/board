@@ -1,4 +1,4 @@
-//! The plugins built into the binary, run in-process: boundary, controls,
+//! The plugins built into the binary, run in-process: boundary, rules,
 //! plans, prompts, requests, evals, review, runs and share, beside installed
 //! plugins.
 
@@ -393,6 +393,8 @@ fn docs_budget(max: u64) -> String {
     control.to_string()
 }
 
+/// The rules plugin's former name and an old record, as a board that has not
+/// migrated holds and calls them.
 #[test]
 fn call_controls_check_answers_from_a_warm_index_as_from_a_cold_one_after_a_control_changes() {
     let board = Scenario::new();
@@ -832,7 +834,6 @@ mod artifacts;
 mod attention;
 mod boundary;
 mod changes;
-mod controls;
 mod evals;
 mod github;
 mod jira;
@@ -841,6 +842,7 @@ mod params;
 mod plans;
 mod prompts;
 mod review;
+mod rules;
 mod runs;
 mod share;
 mod tasks;

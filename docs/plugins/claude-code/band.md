@@ -44,7 +44,7 @@ band draws nothing. While a survey holds the band, no mod draws in it.
   requirement. The pane ends by saying that editing a file adds a reminder
   for each control on that file the session was not told about. A failed
   check shows the button in red with its code, such as `Controls:
-  controls::control::degraded`.
+  rules::rule::degraded`.
 - **Waiting button**, from `board-plans`: `Waiting <total> · <blocking>
   blocking` from `board --json call plans.waiting`, or `Waiting <total>`
   when nothing blocks. While the plans plugin has no `waiting` capability,

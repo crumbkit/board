@@ -72,7 +72,7 @@ Board is called. `artifacts`, `attention`, `boundary`, `controls`, `plans`, `eva
 - `board_ops::agent` starts a clean-context model agent, the argv a person
   names in a variable, through `Host::run` in an empty directory, and
   refuses each way it fails in the plugin's namespace, such as
-  `controls::agent::timeout`.
+  `rules::agent::timeout`.
 
 ## Registration
 

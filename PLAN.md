@@ -122,8 +122,8 @@ on main (`git show 226829b:PLAN.md`), as is the deleted HANDOFF.md.
 3. A limit that refuses a write, such as a file-size limit, is a setting that
    `put` and `check` apply. A requirement on files is a control (2026-10-05).
    A control that code already enforces only records it: `lint.toml` sets the
-   word budgets, `cargo xtask lint` enforces them, and it fails when a control
-   in `controls/budgets/` disagrees with `lint.toml` (2026-10-06).
+   word budgets, `cargo xtask lint` enforces them, and it fails when a rule
+   in `rules/budgets/` disagrees with `lint.toml` (2026-10-06).
 4. Adopting a repository is gentle: after the owner follows what `check` says,
    `check` exits 0. A test fixture carries only a type Board or one of its
    tools supports (2026-10-05).

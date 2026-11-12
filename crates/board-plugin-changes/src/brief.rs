@@ -37,7 +37,7 @@ const DECISION_TYPE: &str = "plans/decision/v1";
 const EVAL_TYPE: &str = "evals/eval/v1";
 /// The command that lists every rule on the planned paths; it reads
 /// `for_paths_input` on stdin.
-const RULES_ARGV: [&str; 3] = ["board", "call", "controls.for-paths"];
+const RULES_ARGV: [&str; 3] = ["board", "call", "rules.for-paths"];
 
 /// One record the plan uses, and one line saying what it holds.
 #[derive(Debug, Serialize, JsonSchema)]
@@ -208,10 +208,10 @@ fn line_of(found: Option<&(String, Map<String, Value>)>, text: Option<&str>) -> 
     }
 }
 
-/// Each control that applies to `paths`, once, as `controls.for-paths`
+/// Each rule that applies to `paths`, once, as `rules.for-paths`
 /// answers; none for no paths.
 ///
-/// A Board without the controls plugin enabled is
+/// A Board without the rules plugin enabled is
 /// `changes::brief::controls_missing`.
 fn rules_for(host: &dyn Host, paths: &[String]) -> Result<Vec<Map<String, Value>>, PluginError> {
     if paths.is_empty() {
@@ -224,9 +224,9 @@ fn rules_for(host: &dyn Host, paths: &[String]) -> Result<Vec<Map<String, Value>
                 refusal(
                     "changes::brief::controls_missing",
                     format!(
-                        "the brief lists the rules on the planned paths with controls.for-paths, \
+                        "the brief lists the rules on the planned paths with rules.for-paths, \
                          which this Board refused: {}; enable it with `board plugin enable \
-                         controls`, or run a Board that offers it",
+                         rules`, or run a Board that offers it",
                         error.message
                     ),
                     [],

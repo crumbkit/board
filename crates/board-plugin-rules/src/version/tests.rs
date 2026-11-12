@@ -62,14 +62,14 @@ fn every_capture_in_a_file_is_compared() {
 #[test]
 fn a_capture_without_a_group_is_refused() {
     let refused = compile("/controls/rust", &rule(r"channel = .*")).unwrap_err();
-    assert_eq!(refused.code, "controls::capture::invalid");
+    assert_eq!(refused.code, "rules::capture::invalid");
     assert!(compile("/controls/rust", &rule(r"channel = (.*)")).is_ok());
 }
 
 #[test]
 fn a_capture_that_does_not_compile_is_refused() {
     let refused = compile("/controls/rust", &rule(r"channel = (")).unwrap_err();
-    assert_eq!(refused.code, "controls::capture::invalid");
+    assert_eq!(refused.code, "rules::capture::invalid");
     assert!(compile("/controls/rust", &rule(r"channel = ()")).is_ok());
 }
 

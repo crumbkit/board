@@ -576,7 +576,7 @@ fn brief_stays_within_600_words_with_100_rules_names_20_it_left_out_and_counts_t
     assert_eq!(
         *command,
         json!({
-            "argv": ["board", "call", "controls.for-paths"],
+            "argv": ["board", "call", "rules.for-paths"],
             "stdin": r#"{"paths": ["/repos/x/**"]}"#,
         })
     );

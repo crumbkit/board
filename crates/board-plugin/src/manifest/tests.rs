@@ -360,6 +360,17 @@ fn a_shipped_type_outside_the_plugins_namespace_is_refused() {
 }
 
 #[test]
+fn only_a_built_in_plugin_ships_a_type_in_a_former_names_namespace() {
+    let mut renamed = shipping("tasks", &["tasks/task/v1", "chores/chore/v1"]);
+    renamed["former_names"] = json!(["chores"]);
+    assert!(matches!(
+        refused(&renamed),
+        ManifestError::ForeignType { .. }
+    ));
+    assert!(Manifest::built_in(renamed).is_ok());
+}
+
+#[test]
 fn a_plugin_named_board_ships_no_board_type() {
     let error = Manifest::from_value(shipping("board", &["board/x/v1"])).unwrap_err();
     assert!(matches!(error, ManifestError::BoardType { .. }));

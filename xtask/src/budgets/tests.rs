@@ -197,7 +197,7 @@ fn a_docs_node_one_word_over_its_budget_fails_naming_the_node_and_where_detail_g
     assert!(!checks[0].passed());
     let text = render(&Report {
         checks,
-        controls: Vec::new(),
+        rules: Vec::new(),
     });
     let advice = text.lines().nth(1).unwrap();
     assert_eq!(
@@ -304,7 +304,7 @@ fn a_plan_leaf_at_its_budget_passes_and_one_word_over_fails_naming_the_leaf() {
     assert!(!over[0].passed());
     let text = render(&Report {
         checks: over,
-        controls: Vec::new(),
+        rules: Vec::new(),
     });
     assert!(text.contains("split plan/a.md"), "{text}");
 }

@@ -34,7 +34,7 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
       # The exact version the mods' tests were last run with locally. The
-      # controls mod needs `$.session.append`, which 2.1.289 lacks.
+      # rules mod needs `$.session.append`, which 2.1.289 lacks.
       - run: npm install --global @anthropic-ai/claude-code@2.1.308 # zizmor: ignore[adhoc-packages]
       - name: claude plugin test, for each mod
         run: |
