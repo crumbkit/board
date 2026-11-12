@@ -2,7 +2,8 @@ use board_model::PluginCode;
 use board_model::RefusalCode::{self, Board};
 use serde_json::json;
 
-use crate::installed::Installed;
+use crate::choose::{choose, nearest};
+use crate::installed::{Installed, Origin};
 
 use super::*;
 
@@ -700,4 +701,96 @@ fn every_variable_board_passes_a_plugin_is_one_a_capability_s_env_may_not_name()
             "{key} is passed to every plugin but a capability's env may name it"
         );
     }
+}
+
+/// An install of `name`, formerly `former`, offering `check`.
+fn renamed(name: &str, former: &str) -> Installed {
+    let mut installed = plugin(name, &["check"], &json!({"type": "object"}));
+    let mut manifest = installed.manifest.unwrap();
+    manifest.former_names = vec![former.parse().unwrap()];
+    installed.manifest = Ok(manifest);
+    installed
+}
+
+#[test]
+fn a_former_name_calls_the_renamed_plugin_and_warns_and_its_name_calls_it_quietly() {
+    let call = |target: &str| {
+        choose(
+            vec![renamed("rules", "controls")],
+            &names(&["rules"]),
+            &target.parse().unwrap(),
+        )
+        .unwrap()
+    };
+    let chosen = call("controls.check");
+    assert_eq!(chosen.manifest.name.as_str(), "rules");
+    assert_eq!(
+        chosen.warnings,
+        [
+            "board::plugin::former_name: controls is the former name of the rules plugin; call it as `board call rules.check`"
+        ]
+    );
+    assert_eq!(call("rules.check").warnings, Vec::<String>::new());
+}
+
+#[test]
+fn a_board_enabling_a_former_name_enables_the_renamed_plugin_and_warns() {
+    let warning = "board::plugin::former_name: the board's .board/board.json enables controls, the former name of the rules plugin; `board plugin enable rules` adds its name";
+    for target in [
+        "rules.check".parse().unwrap(),
+        Target::Capability("check".parse().unwrap()),
+    ] {
+        let chosen = choose(
+            vec![renamed("rules", "controls")],
+            &names(&["controls"]),
+            &target,
+        )
+        .unwrap();
+        assert_eq!(chosen.warnings, [warning], "{target:?}");
+        let quiet = choose(
+            vec![renamed("rules", "controls")],
+            &names(&["controls", "rules"]),
+            &target,
+        )
+        .unwrap();
+        assert_eq!(quiet.warnings, Vec::<String>::new(), "{target:?}");
+    }
+}
+
+#[test]
+fn a_former_name_that_another_plugin_has_is_refused_naming_both_and_alone_admitted() {
+    let target = "controls.check".parse().unwrap();
+    let both = vec![
+        plugin("controls", &["check"], &json!({"type": "object"})),
+        renamed("rules", "controls"),
+    ];
+    assert_eq!(
+        refusal(choose(both, &names(&["controls", "rules"]), &target)),
+        (
+            Board(Code::PluginAmbiguous),
+            "controls names more than one plugin, as a former name or a name: rules, controls"
+                .to_owned(),
+            json!({"capability": "check", "plugins": ["rules", "controls"]}),
+        )
+    );
+    let twice = vec![renamed("rules", "controls"), renamed("laws", "controls")];
+    assert_eq!(
+        refusal(choose(twice, &names(&["laws", "rules"]), &target)).0,
+        Board(Code::PluginAmbiguous)
+    );
+    let alone = vec![renamed("rules", "controls")];
+    assert!(choose(alone, &names(&["rules"]), &target).is_ok());
+}
+
+#[test]
+fn a_former_name_the_board_does_not_enable_is_refused_by_the_plugins_name() {
+    assert_eq!(
+        refusal(choose(
+            vec![renamed("rules", "controls")],
+            &[],
+            &"controls.check".parse().unwrap()
+        ))
+        .2,
+        json!({"plugin": "rules"})
+    );
 }

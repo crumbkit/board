@@ -10,6 +10,7 @@ use crate::{Board, CheckReport, OpenError};
 mod complete;
 mod frontmatter;
 mod markdown;
+mod moved;
 mod repos;
 mod symlinks;
 pub(crate) mod verdicts;

@@ -6,6 +6,7 @@ mod commits;
 mod kept;
 mod links;
 mod mounts;
+mod moved;
 // The mount tests again, each mount written as a repo record with a checkout.
 mod places;
 mod planned;

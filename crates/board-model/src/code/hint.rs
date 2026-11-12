@@ -555,6 +555,9 @@ fn generic(code: Code) -> &'static str {
         Code::PluginBadInput => {
             "give the input as the flags that `board call <plugin>.<capability> -h` lists, or as JSON on stdin that matches the capability's `inputSchema`; `board plugin find --capability <name> --json` shows the schema"
         }
+        Code::PluginFormerName => {
+            "name the plugin by the new name the message gives; `board plugin list` lists each plugin by its name"
+        }
         Code::PluginBadOutput => {
             "the plugin answered outside its contract; report it to the plugin's author"
         }

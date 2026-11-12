@@ -22,7 +22,7 @@ pub struct Exhibit {
 /// Codes the CLI's recovery and twin checks cannot provoke through the
 /// `board` command line, why, and where each is tested instead. The checks
 /// provoke every other code, from the seed board or another small fixture.
-pub const NOT_REPRODUCED: [(Code, &str); 19] = [
+pub const NOT_REPRODUCED: [(Code, &str); 20] = [
     (
         Code::AttachmentMissing,
         "the store must lose an object between the put and the fetch; \
@@ -90,6 +90,11 @@ pub const NOT_REPRODUCED: [(Code, &str); 19] = [
         "serve fails only when the system refuses a port, a file or random bytes; \
          board-serve/src/tests.rs runs the server",
     ),
+    (
+        Code::PluginFormerName,
+        "a call prints it as a warning beside its output and refuses nothing; \
+         board-cli/src/tests/aliases.rs runs a former name and the plugin's own name",
+    ),
 ];
 
 const SERVED: &str = "the server gives it to an HTTP request, never to a command line; \
@@ -107,7 +112,7 @@ const OPEN: &str = "ui open or the server gives it; check opens and serves nothi
 
 /// Codes `check` never gives an entry, and why. The seed board has an
 /// exhibit for every other code, so a new code needs one or a line here.
-pub const NOT_CHECKED: [(Code, &str); 78] = [
+pub const NOT_CHECKED: [(Code, &str); 79] = [
     (
         Code::AttachmentMissing,
         "only get --fetch gives it; check reads the attachment record and never the store",
@@ -197,6 +202,7 @@ pub const NOT_CHECKED: [(Code, &str); 78] = [
     (Code::PluginAmbiguous, PLUGIN),
     (Code::PluginDuplicate, PLUGIN),
     (Code::PluginAliasConflict, PLUGIN),
+    (Code::PluginFormerName, PLUGIN),
     (Code::PluginBadInput, PLUGIN),
     (Code::PluginBadOutput, PLUGIN),
     (Code::PluginFailed, PLUGIN),

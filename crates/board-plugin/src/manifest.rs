@@ -212,6 +212,8 @@ struct RawManifest {
     #[serde(default)]
     alias: Option<Alias>,
     #[serde(default)]
+    former_names: Vec<PluginName>,
+    #[serde(default)]
     run: Vec<String>,
     #[serde(default)]
     metadata: Map<String, Value>,
@@ -267,6 +269,9 @@ pub struct Manifest {
     pub description: String,
     /// The word that runs its capabilities, as `board <alias> <capability>`.
     pub alias: Option<Alias>,
+    /// The names the plugin had before it was renamed, which `board call`,
+    /// the plugin's word and a board's `plugins` still reach it by.
+    pub former_names: Vec<PluginName>,
     /// The program and its arguments; empty only for a built-in plugin.
     pub run: Vec<String>,
     pub metadata: Map<String, Value>,
@@ -338,6 +343,9 @@ impl Manifest {
                 });
             }
         }
+        if raw.former_names.contains(&raw.name) {
+            return Err(ManifestError::FormerName { name: raw.name });
+        }
         let mut capabilities: Vec<Capability> = Vec::with_capacity(raw.capabilities.len());
         for capability in raw.capabilities {
             if capabilities.iter().any(|seen| seen.name == capability.name) {
@@ -377,11 +385,19 @@ impl Manifest {
             version: raw.version,
             description: raw.description,
             alias: raw.alias,
+            former_names: raw.former_names,
             run: raw.run,
             metadata: raw.metadata,
             types: raw.types,
             capabilities,
         })
+    }
+
+    /// The entry of `enabled`, a board's `plugins`, that enables this
+    /// plugin: its name, or else a former name.
+    pub fn enabling<'e>(&self, enabled: &'e [PluginName]) -> Option<&'e PluginName> {
+        (enabled.iter().find(|name| **name == self.name))
+            .or_else(|| (enabled.iter()).find(|name| self.former_names.contains(name)))
     }
 
     /// Keeps only the capabilities named `capability`, when given, that
@@ -478,6 +494,8 @@ pub enum ManifestError {
     DuplicateType { record_type: RecordType },
     #[error("the manifest offers capability {name} twice")]
     DuplicateCapability { name: CapabilityName },
+    #[error("the manifest lists its own name {name} among its former_names")]
+    FormerName { name: PluginName },
     #[error("the manifest capability {capability} has an {side} whose root is not an object type")]
     NotObject {
         capability: CapabilityName,
@@ -526,6 +544,7 @@ impl ManifestError {
             | Self::BoardType { .. }
             | Self::DuplicateType { .. }
             | Self::DuplicateCapability { .. }
+            | Self::FormerName { .. }
             | Self::NotObject { .. }
             | Self::Schema { .. }
             | Self::ShippedMissing { .. }

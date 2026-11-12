@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
-use board_model::{Board, Location, Mount, ObjectId, Source};
+use board_model::{Board, Location, Mount, Moved, ObjectId, Source};
 
 use crate::git::{Contents, GitError, ObjectReads, Repository};
 use crate::worktree::Reader;
@@ -31,6 +31,9 @@ pub struct Repositories {
     /// The working tree's mount pointer read at another commit for this
     /// run: see [`Repositories::read_at`].
     checkout: Option<Checkout>,
+    /// The moved prefixes a resolution that names nothing tries: see
+    /// [`Repositories::moving`].
+    pub(crate) moved: Vec<Moved>,
 }
 
 /// A mount pointer in the working tree that one run reads at a checkout's
@@ -94,6 +97,7 @@ impl Repositories {
             open: Mutex::new(open),
             opened: AtomicUsize::new(0),
             checkout: None,
+            moved: Vec::new(),
         })
     }
 

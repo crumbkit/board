@@ -21,8 +21,8 @@ impl Board {
         let enabled = &self.config().plugins;
         (offered.into_iter())
             .filter(|installed| installed.origin.shadows().is_none())
-            .filter(|installed| enabled.iter().any(|name| name.as_str() == installed.name))
             .filter_map(|installed| installed.manifest.ok())
+            .filter(|manifest| manifest.enabling(enabled).is_some())
             .collect()
     }
 }

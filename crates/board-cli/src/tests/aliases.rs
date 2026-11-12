@@ -505,3 +505,53 @@ fn enable_refuses_an_alias_that_is_another_enabled_plugins_name_and_admits_anoth
         }
     }
 }
+
+/// A board enabling `enabled`, and a plugins directory holding tasks,
+/// formerly chores.
+fn renamed(enabled: &[&str]) -> (Scenario, Scenario) {
+    let (board, data) = aliased(enabled, "");
+    let mut manifest: Value = serde_json::from_str(&manifest("tasks", "")).unwrap();
+    manifest["former_names"] = json!(["chores"]);
+    data.write(
+        "plugins/tasks/plugin.json",
+        Item::File(&manifest.to_string()),
+    );
+    (board, data)
+}
+
+/// The `board::plugin::former_name` warnings `output` printed.
+fn former(output: &Output) -> Vec<String> {
+    (text(&output.stderr).lines())
+        .filter_map(|line| line.strip_prefix("warning: board::plugin::former_name: "))
+        .map(str::to_owned)
+        .collect()
+}
+
+#[test]
+fn a_former_name_runs_the_renamed_plugin_through_call_and_its_word_and_warns() {
+    let (board, data) = renamed(&["tasks"]);
+    let called = "chores is the former name of the tasks plugin; call it as `board call tasks.due`";
+    for words in [&["call", "chores.due"][..], &["chores", "due"]] {
+        let output = run_in(&board, &data, words);
+        assert_eq!(output.code, 0, "{words:?}: {}", text(&output.stderr));
+        assert_eq!(former(&output), [called], "{words:?}");
+        assert!(taken(&data).is_some(), "{words:?}");
+    }
+    let output = run_in(&board, &data, &["tasks", "due"]);
+    assert_eq!((output.code, former(&output)), (0, Vec::new()));
+}
+
+#[test]
+fn a_board_enabling_a_former_name_runs_the_renamed_plugin_and_warns_and_one_enabling_its_name_does_not()
+ {
+    let enabled_by = "the board's .board/board.json enables chores, the former name of the tasks plugin; `board plugin enable tasks` adds its name";
+    let (board, data) = renamed(&["chores"]);
+    let output = run_in(&board, &data, &["tasks", "due"]);
+    assert_eq!(output.code, 0, "{}", text(&output.stderr));
+    assert_eq!(former(&output), [enabled_by]);
+    let listed = run_in(&board, &data, &["--json", "plugin", "list"]);
+    assert_eq!(listed.code, 0, "{}", text(&listed.stdout));
+    let (board, data) = renamed(&["tasks"]);
+    let output = run_in(&board, &data, &["tasks", "due"]);
+    assert_eq!((output.code, former(&output)), (0, Vec::new()));
+}

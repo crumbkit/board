@@ -80,7 +80,8 @@ in its directory. Each type's namespace is the plugin's name, never
 unknown fields. An installed plugin's `name` equals its directory's name, and
 ships each type's schema; `check` and `put` check only the content.
 `version` is `MAJOR.MINOR.PATCH` in digits. The optional `alias` is one
-word of lowercase ASCII letters, described under Plugin commands. The schemas compile under a mounted
+word of lowercase ASCII letters, described under Plugin commands, as are the
+optional `former_names` of a renamed plugin. The schemas compile under a mounted
 board's rules. Breaking any of these is `board::plugin::bad_manifest`.
 
 ## Finding plugins
@@ -216,7 +217,7 @@ folder.
 `board::plugin::` `not_installed`, `no_capability`, `not_enabled`, `bad_manifest`,
 `schema_missing`, `schema_differs`, `ambiguous`, `duplicate`, `alias_conflict`,
 `bad_input`, `bad_output`, `failed`, `not_started`, `timeout`,
-`too_large`, `too_deep`.
+`too_large`, `too_deep`, and the warning `former_name`.
 
 ## Writing a plugin
 

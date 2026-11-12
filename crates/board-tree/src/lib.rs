@@ -5,6 +5,7 @@
 mod address;
 mod git;
 mod mounts;
+mod moved;
 mod repositories;
 mod resolve;
 mod symlink;

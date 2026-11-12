@@ -17,3 +17,28 @@ enabled plugin's alias; that plugin's name then wins. Running an alias two
 enabled plugins share is refused with the same code; the hint names the
 `board call` line. The capability comes right after the plugin's word; a flag
 in its place is a usage error.
+
+## Renamed plugins
+
+A manifest's `former_names` lists the names a plugin had before it was
+renamed, such as `["controls"]`. A former name reaches the plugin in
+`board call <former>.<capability>`, as the first word, and in a board's
+`plugins`. The call runs and prints the warning `board::plugin::former_name`,
+which names the new name. A manifest that lists its own name is
+`board::plugin::bad_manifest`. A name that one plugin has and another lists
+as a former name, or that two plugins list, is refused with
+`board::plugin::ambiguous`, naming the plugins that list it first.
+
+A built-in plugin's `moved` method lists prefixes its records moved between,
+such as `[("/controls", "/rules")]`. Neither may be `/`, and neither may lie
+beneath the other; Board skips a pair that breaks this. An installed
+plugin's manifest that names `moved` is `board::plugin::bad_manifest`. Board
+reads the pairs when the plugins are built into it. A record read by a path
+that names nothing is resolved again under the other prefix, in either
+direction, at the root of the board and at the root of each mounted board,
+so `/repos/x/controls/a` reaches `/repos/x/rules/a`. The first miss stands
+when the other names nothing too. A path under neither prefix is resolved
+once, as before. Writes, removals, `resolve_pointer` (which stops at a
+pointer at the end) and the resolution inside one mount's tree use the path
+exactly as written, so a write lands where its path says. Segments a link's
+target gives are not swapped.

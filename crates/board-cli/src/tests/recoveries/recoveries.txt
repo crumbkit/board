@@ -911,6 +911,7 @@ codes that no start provokes:
   board::serve::code_expired: the server gives it to an HTTP request, never to a command line; board-serve/src/tests.rs pairs each refused request with an admitted twin
   board::serve::unknown_route: the server gives it to an HTTP request, never to a command line; board-serve/src/tests.rs pairs each refused request with an admitted twin
   board::serve::failed: serve fails only when the system refuses a port, a file or random bytes; board-serve/src/tests.rs runs the server
+  board::plugin::former_name: a call prints it as a warning beside its output and refuses nothing; board-cli/src/tests/aliases.rs runs a former name and the plugin's own name
   board::settings::asked: its message names the pending effect's id, which hashes the board's temporary directory, so a golden chain cannot pin it; an_approved_effect_admits_the_same_decide_and_a_refused_one_is_refused_naming_it in board-ops/src/effects/tests.rs answers the effect the hint names and decides again
   board::settings::refused: its message names the pending effect's id, which hashes the board's temporary directory, so a golden chain cannot pin it; an_approved_effect_admits_the_same_decide_and_a_refused_one_is_refused_naming_it in board-ops/src/effects/tests.rs answers the effect the hint names and decides again
 

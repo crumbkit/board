@@ -460,3 +460,52 @@ fn a_variable_board_sets_is_refused_in_env_and_one_it_does_not_admitted() {
         "BOARD_REVIEW_AGENT"
     );
 }
+
+#[test]
+fn former_names_are_read_and_default_to_none() {
+    let manifest = parse(&set("former_names", json!(["chores"]))).unwrap();
+    assert_eq!(
+        manifest.former_names,
+        [PluginName::from_str("chores").unwrap()]
+    );
+    let plain = parse(&self::manifest()).unwrap();
+    assert_eq!(plain.former_names.len(), 0);
+}
+
+#[test]
+fn a_former_name_that_is_the_plugins_own_is_refused_and_another_admitted() {
+    let error = refused(&set("former_names", json!(["tasks"])));
+    assert_eq!(
+        error.to_string(),
+        "the manifest lists its own name tasks among its former_names"
+    );
+    assert!(parse(&set("former_names", json!(["chores"]))).is_ok());
+}
+
+#[test]
+fn an_installed_manifest_that_declares_moved_prefixes_is_refused_and_one_without_admitted() {
+    // Only a built-in plugin moves its records, through `Plugin::moved`.
+    let error = refused(&set("moved", json!([{"from": "/chores", "to": "/tasks"}])));
+    assert!(matches!(error, ManifestError::Shape { .. }), "{error}");
+    assert!(parse(&set("former_names", json!(["chores"]))).is_ok());
+}
+
+#[test]
+fn a_board_enables_a_plugin_by_its_name_first_and_else_by_a_former_name() {
+    let manifest = parse(&set("former_names", json!(["chores"]))).unwrap();
+    let names = |names: &[&str]| -> Vec<PluginName> {
+        names.iter().map(|name| name.parse().unwrap()).collect()
+    };
+    let both = names(&["chores", "tasks"]);
+    assert_eq!(manifest.enabling(&both).unwrap().as_str(), "tasks");
+    let former = names(&["chores"]);
+    assert_eq!(manifest.enabling(&former).unwrap().as_str(), "chores");
+    assert_eq!(manifest.enabling(&names(&["notes"])), None);
+}
+
+/// The manifest with the top-level `key` set to `value`.
+fn set(key: &str, value: Value) -> Value {
+    let mut manifest = manifest();
+    manifest[key] = value;
+    manifest
+}
