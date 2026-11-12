@@ -11,7 +11,7 @@ use serde_json::Value;
 
 use crate::index::{self, FILES};
 use crate::logical;
-use crate::records::{Kind, Rule, ShowAt, rule_output_schema};
+use crate::records::{Checker, Kind, RULE_TYPES, ShowAt, rule_output_schema};
 
 /// The controls that apply to this logical path.
 #[derive(Deserialize, JsonSchema)]
@@ -39,7 +39,7 @@ struct Applying {
     requirement: String,
     purpose: String,
     #[schemars(schema_with = "rule_output_schema")]
-    rule: Option<Rule>,
+    rule: Option<Checker>,
     kind: Kind,
     show: ShowAt,
     /// How to close an obligation; left out for a standing control.
@@ -74,7 +74,7 @@ pub(crate) fn for_path(host: &dyn Host, input: &Value) -> Result<Value, PluginEr
                 control: logical,
                 requirement: control.requirement,
                 purpose: control.purpose,
-                rule: control.rule,
+                rule: control.checker,
             })
         })
         .collect();
@@ -127,7 +127,7 @@ fn matching(host: &dyn Host, report: &RefsReport) -> Result<Vec<String>, PluginE
     };
     let sql = format!(
         "WITH files AS {FILES} SELECT DISTINCT r.logical FROM records r, json_each(r.body, '$.paths') p \
-         WHERE r.type = 'controls/control/v1' AND r.source = 'worktree' AND COALESCE(\
+         WHERE r.type IN {RULE_TYPES} AND r.source = 'worktree' AND COALESCE(\
          (SELECT full FROM files WHERE source = {} AND path = {}), {}) GLOB p.value",
         literal(&source),
         literal(place),

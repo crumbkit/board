@@ -332,7 +332,10 @@ impl Manifest {
                     record_type: record_type.clone(),
                 });
             }
-            if record_type.namespace() != raw.name.as_str() {
+            // A renamed plugin still ships the types it had under a former name.
+            let former =
+                (raw.former_names.iter()).any(|name| name.as_str() == record_type.namespace());
+            if record_type.namespace() != raw.name.as_str() && !former {
                 return Err(ManifestError::ForeignType {
                     record_type: record_type.clone(),
                 });

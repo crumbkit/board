@@ -1,4 +1,5 @@
-//! The controls plugin built into Board (plugins/controls/README.md).
+//! The rules plugin built into Board, formerly the controls plugin
+//! (plugins/controls/README.md).
 
 mod check;
 mod evaluate;
@@ -20,12 +21,12 @@ use board_plugin::shape::{Record, schema_of};
 use schemars::generate::SchemaSettings;
 use serde_json::{Map, Value, json};
 
-use records::{ControlRecord, SourceRecord};
+use records::{FORMER_SCHEMAS, RENAMED, RuleRecord, SourceRecord};
 
 #[derive(Clone, Copy, Debug)]
-pub struct Controls;
+pub struct Rules;
 
-impl Plugin for Controls {
+impl Plugin for Rules {
     fn manifest(&self) -> Manifest {
         Manifest::built_in(manifest()).expect(
             "the manifest is built from constants and its inputs' schemas; a test parses it",
@@ -39,10 +40,25 @@ impl Plugin for Controls {
             (name, schema)
         };
         let settings = SchemaSettings::draft2020_12;
-        vec![
-            schema(ControlRecord::TYPE, schema_of::<ControlRecord>(settings())),
+        let shipped = [
+            schema(RuleRecord::TYPE, schema_of::<RuleRecord>(settings())),
             schema(SourceRecord::TYPE, schema_of::<SourceRecord>(settings())),
-        ]
+        ];
+        let former = (RENAMED.iter().zip(FORMER_SCHEMAS)).map(|((old, _), text)| {
+            schema(
+                old,
+                serde_json::from_str(text).expect("a committed schema; a test reads it"),
+            )
+        });
+        shipped.into_iter().chain(former).collect()
+    }
+
+    fn moved(&self) -> &'static [(&'static str, &'static str)] {
+        &[("/controls", "/rules")]
+    }
+
+    fn renamed_types(&self) -> &'static [(&'static str, &'static str)] {
+        &RENAMED
     }
 
     fn call(
@@ -61,7 +77,7 @@ impl Plugin for Controls {
             other => Err(PluginError {
                 code: "controls::call::unknown_capability".to_owned(),
                 message: format!(
-                    "controls offers no capability {other}; it offers for-path, for-paths, check, evaluate, from-standards and migrate"
+                    "rules offers no capability {other}; it offers for-path, for-paths, check, evaluate, from-standards and migrate"
                 ),
                 fields: Map::new(),
                 hint: None,
@@ -83,20 +99,21 @@ fn manifest() -> Value {
     let settings = || SchemaSettings::draft2020_12().for_serialize();
     json!({
         "$type": "board/plugin-manifest/v1",
-        "name": "controls",
+        "name": "rules",
+        "former_names": ["controls"],
         "version": "0.1.0",
-        "description": "The controls plugin keeps requirements on files as records in the board that \
-            holds the files. Use it when you start work in a board or a repository it mounts, and before \
-            you edit a file a control may govern. Start with `board -C <board> controls check --path \
-            /<directory>`, which lists the budgets it measures and the written requirements under that \
-            path. `board -C <board> controls for-path --path /<file>` lists the controls on one file. \
-            `board -C <board> controls evaluate` checks text, such as a draft, against the rules of \
-            the controls it names before the text is written. SKILL.md and README.md in the plugin's directory say more.",
+        "description": "The rules plugin, formerly controls, keeps requirements on files as records in \
+            the board that holds the files. Use it when you start work in a board or a repository it \
+            mounts, and before you edit a file a rule may govern. Start with `board -C <board> rules \
+            check --path /<directory>`, which lists the budgets it measures and the written requirements \
+            under that path. `board -C <board> rules for-path --path /<file>` lists the rules on one \
+            file. `board -C <board> rules evaluate` checks text, such as a draft, against the checkers \
+            of the rules it names before the text is written. SKILL.md and README.md in the plugin's directory say more.",
         "metadata": {"area": "governance"},
-        "types": [ControlRecord::TYPE, SourceRecord::TYPE],
+        "types": [RuleRecord::TYPE, SourceRecord::TYPE, RENAMED[0].0, RENAMED[1].0],
         "capabilities": [{
             "name": "for-path",
-            "description": "The controls that apply to a path.",
+            "description": "The rules that apply to a path.",
             "inputSchema": schema_of::<for_path::Input>(SchemaSettings::draft2020_12()),
             "outputSchema": schema_of::<for_path::Output>(settings()),
             "annotations": {
@@ -108,7 +125,7 @@ fn manifest() -> Value {
             "_meta": {},
         }, {
             "name": "for-paths",
-            "description": "The controls that apply to any of several files and SQLite GLOB patterns, \
+            "description": "The rules that apply to any of several files and SQLite GLOB patterns, \
                 each once with its summary and the paths that reached it.",
             "inputSchema": schema_of::<for_paths::Input>(SchemaSettings::draft2020_12()),
             "outputSchema": schema_of::<for_paths::Output>(settings()),
@@ -121,10 +138,10 @@ fn manifest() -> Value {
             "_meta": {},
         }, {
             "name": "check",
-            "description": "Check the controls under a path, `/` when left out, measuring only \
-                the files under it. `passed` is false when a budget is over, a pin is behind \
-                or a file is unreadable; fails when a control is degraded or a version rule's \
-                capture is invalid.",
+            "description": "Check the rules under a path, `/` when left out, measuring only \
+                the files under it. A rule with no checker is described. `passed` is false \
+                when a budget is over, a pin is behind or a file is unreadable; fails when a \
+                rule is degraded or a version checker's capture is invalid.",
             "inputSchema": schema_of::<check::Input>(SchemaSettings::draft2020_12()),
             "outputSchema": schema_of::<check::Output>(settings()),
             "annotations": {
@@ -136,8 +153,8 @@ fn manifest() -> Value {
             "_meta": {},
         }, {
             "name": "evaluate",
-            "description": "Check named parts of text against controls' budget, pattern, version and \
-                judged rules, and return each control's verdict on each part with its findings.",
+            "description": "Check named parts of text against rules' budget, pattern, version and \
+                judged checkers, and return each rule's verdict on each part with its findings.",
             "inputSchema": schema_of::<evaluate::Input>(SchemaSettings::draft2020_12()),
             "outputSchema": schema_of::<evaluate::Output>(settings()),
             "annotations": {
@@ -151,7 +168,7 @@ fn manifest() -> Value {
             "env": [judged::AGENT_VARIABLE, "ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN"],
         }, {
             "name": "from-standards",
-            "description": "The controls a standards repository's rule tables give a repository that \
+            "description": "The rules a standards repository's rule tables give a repository that \
                 adopts its profiles, as `board put --batch` lines that make a directory hold exactly them.",
             "inputSchema": schema_of::<standards::Input>(SchemaSettings::draft2020_12()),
             "outputSchema": schema_of::<standards::Output>(settings()),

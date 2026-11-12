@@ -11,7 +11,7 @@ use board_ops::{
 use board_scenario::{Item, Scenario};
 
 use super::*;
-use crate::Controls;
+use crate::Rules;
 use crate::for_path::for_path;
 use crate::for_paths::for_paths;
 
@@ -132,7 +132,7 @@ pub(crate) fn recording(files: &[(&str, &str)]) -> (Scenario, Recording) {
     let config = r#"{"$type": "board/config/v1", "commit_on_put": false}"#;
     scenario.write(".board/board.json", Item::File(config));
     let mut board = Board::open(scenario.workdir(), None).unwrap();
-    board.build_in(&[&Controls]);
+    board.build_in(&[&Rules]);
     (board.plugin_enable(None, None, &"controls".parse().unwrap(), &[])).unwrap();
     for (path, text) in files {
         scenario.write(path, Item::File(text));
@@ -164,6 +164,49 @@ fn control(fields: &Value) -> String {
 
 fn words(max: u64) -> Value {
     json!({"check": "budget", "unit": "words", "max": max})
+}
+
+#[test]
+fn a_rule_of_either_type_is_checked_alike_and_one_with_no_checker_is_described() {
+    let old = |mut fields: Value| {
+        fields["paths"] = json!(["docs/*"]);
+        control(&fields)
+    };
+    let rule = |fields: Value| old(fields).replace("controls/control/v1", "rules/rule/v1");
+    let (_scenario, host) = recording(&[
+        ("docs/a.md", "one two"),
+        ("rules/budget.json", &rule(json!({"checker": words(1)}))),
+        ("rules/plain.json", &rule(json!({}))),
+        ("controls/budget.json", &old(json!({"rule": words(1)}))),
+        ("controls/plain.json", &old(json!({}))),
+        (
+            "controls/judged.json",
+            &old(json!({"rule": {"check": "judged", "rubric": "/docs/a.md"}})),
+        ),
+    ]);
+    let output = check(&host, &json!({})).unwrap();
+    let over: Vec<(&Value, &Value)> = (output["measured"].as_array().unwrap().iter())
+        .map(|each| (&each["control"], &each["used"]))
+        .collect();
+    assert_eq!(
+        over,
+        [
+            (&json!("/controls/budget"), &json!(2)),
+            (&json!("/rules/budget"), &json!(2))
+        ]
+    );
+    let stated: Vec<(&Value, Option<&Value>)> = (output["stated"].as_array().unwrap().iter())
+        .map(|each| (&each["control"], each.get("state")))
+        .collect();
+    let described = json!("described");
+    assert_eq!(
+        stated,
+        [
+            (&json!("/controls/judged"), None),
+            (&json!("/controls/plain"), Some(&described)),
+            (&json!("/rules/plain"), Some(&described)),
+        ]
+    );
 }
 
 #[test]

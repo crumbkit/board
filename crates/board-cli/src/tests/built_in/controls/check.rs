@@ -376,6 +376,7 @@ fn a_path_reports_the_controls_under_it_and_leaves_out_their_twins_elsewhere() {
             "files": 1,
             "kind": "standing",
             "show": "edit",
+            "state": "described",
         }])
     );
     assert_eq!(each(&output, "used"), [json!(2)], "the words in docs/a.md");

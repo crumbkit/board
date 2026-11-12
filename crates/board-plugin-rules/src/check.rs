@@ -12,7 +12,7 @@ use serde_json::{Map, Value, json};
 
 use crate::index::{self, Control, File, Health};
 use crate::logical;
-use crate::records::{Kind, Measure, Per, Rule, ShowAt, Version};
+use crate::records::{Checker, Kind, Measure, Per, ShowAt, Version};
 use crate::version;
 
 /// Check the controls that apply to a file at or under `path`, `/` when left out.
@@ -242,6 +242,19 @@ struct Stated {
     /// What left an obligation owed; left out when it names nothing.
     #[serde(skip_serializing_if = "Option::is_none")]
     owed_by: Option<String>,
+    /// `described` for a rule with no checker, which only a reader judges;
+    /// left out for one with a checker `check` does not measure.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    state: Option<State>,
+}
+
+// A stated rule's state. No doc comment, which would describe the inlined
+// enum in the output schema.
+#[derive(Serialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+#[schemars(inline)]
+enum State {
+    Described,
 }
 
 fn path_or_null(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
@@ -335,6 +348,7 @@ pub(crate) fn check(host: &dyn Host, input: &Value) -> Result<Value, PluginError
         .map(|logical| {
             let control = &controls[logical];
             Stated {
+                state: control.checker.is_none().then_some(State::Described),
                 control: logical.clone(),
                 requirement: control.requirement.clone(),
                 purpose: control.purpose.clone(),
@@ -397,13 +411,13 @@ fn measure_files(
         let (control, reached) = (&controls[logical], &files[logical]);
         let marked = unreadable.get(logical).map_or(&[][..], Vec::as_slice);
         let (texts, failed) = texts(reached, marked, &skipped, &reads);
-        match &control.rule {
-            Some(Rule::Budget(budget)) => {
+        match &control.checker {
+            Some(Checker::Budget(budget)) => {
                 if let Some(known) = budget.known() {
                     budgets.push(checked(logical, control, known, budget.max, &texts, failed));
                 }
             }
-            Some(Rule::Version(rule)) => {
+            Some(Checker::Version(rule)) => {
                 versions.push(pinned(logical, control, rule, &texts, failed)?);
             }
             _ => {}

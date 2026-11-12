@@ -28,10 +28,16 @@ which names the new name. A manifest that lists its own name is
 `board::plugin::bad_manifest`. A name that one plugin has and another lists
 as a former name, or that two plugins list, is refused with
 `board::plugin::ambiguous`, naming the plugins that list it first.
+`board plugin enable <former>` enables the plugin under the former name.
+A built-in plugin may still ship types in a former name's namespace and
+give codes that start with a former name. Its
+`renamed_types` method pairs each old type with the type that replaces it;
+a board that holds the schema of one type of a pair lacks no schema for the
+other, so a call and `plugin list` pass before and after the board migrates.
 
 A built-in plugin's `moved` method lists prefixes its records moved between,
 such as `[("/controls", "/rules")]`. Neither may be `/`, and neither may lie
-beneath the other; Board skips a pair that breaks this. An installed
+beneath the other; building in a plugin that breaks this panics. An installed
 plugin's manifest that names `moved` is `board::plugin::bad_manifest`. Board
 reads the pairs when the plugins are built into it. A record read by a path
 that names nothing is resolved again under the other prefix, in either

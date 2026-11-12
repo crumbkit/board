@@ -1214,7 +1214,7 @@ fn every_released_type_report_and_code_is_as_it_was_released() {
     });
     // What a release would list reaches every plugin's types and codes and
     // every report, and leaves the changes plugin's types out.
-    let built_in = "crates/board-plugin-controls/types/controls/control/v1.schema.json";
+    let built_in = "crates/board-plugin-rules/types/rules/rule/v1.schema.json";
     assert!(
         present.types.contains_key(built_in),
         "{:?}",
@@ -1255,7 +1255,7 @@ fn every_released_type_report_and_code_is_as_it_was_released() {
     assert!(enable.contains("data.writes[].degraded.code"), "{enable:?}");
     assert!(enable.contains("data.kept[].records"), "{enable:?}");
     assert!(present.reports["board/check-report/v2"].contains("summary.degraded"));
-    let check = &present.capabilities["controls.check"];
+    let check = &present.capabilities["rules.check"];
     assert!(
         check.contains_key("input.path") && check.contains_key("output.measured"),
         "{check:?}"

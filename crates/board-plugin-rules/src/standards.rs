@@ -12,6 +12,7 @@ use serde_json::{Map, Value, json};
 
 use crate::index;
 use crate::logical;
+use crate::records::{CONTROL_TYPE, RULE_TYPES};
 use crate::summary::summary;
 
 /// The heading of the column that makes a table's rows rules a control
@@ -119,8 +120,10 @@ pub(crate) fn from_standards(host: &dyn Host, input: &Value) -> Result<Value, Pl
             let paths: Vec<String> = (row.patterns.iter())
                 .flat_map(|pattern| globs(anchor, pattern))
                 .collect();
+            // The type before the rename, which every board holds the
+            // schema of until it migrates.
             let record = json!({
-                "$type": "controls/control/v1",
+                "$type": CONTROL_TYPE,
                 "requirement": row.rule,
                 "purpose": format!(
                     "{} is a rule of the {profile} profile of the standards at {standards}, \
@@ -219,7 +222,7 @@ fn held(host: &dyn Host, into: &str) -> Result<BTreeMap<String, String>, PluginE
     let prefix = format!("{}/", into.trim_end_matches('/'));
     let sql = format!(
         "SELECT logical, blob FROM entries WHERE source = 'worktree' \
-         AND type = 'controls/control/v1' AND substr(logical, 1, {}) = {}",
+         AND type IN {RULE_TYPES} AND substr(logical, 1, {}) = {}",
         prefix.chars().count(),
         literal(&prefix),
     );

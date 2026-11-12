@@ -114,7 +114,7 @@ Each capability's tests run through a real board. They build a fixture with
 `board.call(&target, input.as_bytes(), &Plugins::default())` and assert that
 `take_trace().work` counts no `started` process. A test that counts the
 work a capability does uses a recording `Host`, as
-`board-plugin-controls/src/check/tests.rs` does. In board-cli,
+`board-plugin-rules/src/check/tests.rs` does. In board-cli,
 `src/tests/built_in.rs` calls each capability through the binary and shows
 that it answers the same from a warm index as from a cold one (STANDARDS.md
 19), and the help goldens under `src/tests/help/examples/` list the plugin

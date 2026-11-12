@@ -186,13 +186,7 @@ impl Board {
                     Err(_) => enabled.iter().any(|name| name.as_str() == installed.name),
                 };
                 let schemas = if enabled {
-                    installed
-                        .schemas
-                        .iter()
-                        .filter_map(|(record_type, shipped)| {
-                            Self::problem(reader, record_type, shipped)
-                        })
-                        .collect()
+                    self.problems(reader, &installed.origin, &installed.schemas)
                 } else {
                     Vec::new()
                 };
@@ -226,6 +220,48 @@ impl Board {
         }));
         listed.sort_by(|a, b| a.name.cmp(&b.name));
         Ok(PluginListReport { plugins: listed })
+    }
+
+    /// What is wrong with how the board holds each of `schemas`, those the
+    /// plugin at `origin` ships, as [`Board::problem`] finds it. A schema
+    /// the board lacks is no problem when it holds the other type of the
+    /// pair a built-in plugin's [`crate::Plugin::renamed_types`] names.
+    pub(crate) fn problems(
+        &self,
+        reader: &mut Reader<'_>,
+        origin: &Origin,
+        schemas: &[(RecordType, Value)],
+    ) -> Vec<SchemaProblem> {
+        let renamed = match origin {
+            Origin::BuiltIn { index, .. } => {
+                (self.built_in.0.get(*index)).map_or(&[][..], |plugin| plugin.renamed_types())
+            }
+            Origin::Directory(_) => &[],
+        };
+        let problems: Vec<SchemaProblem> = (schemas.iter())
+            .filter_map(|(record_type, shipped)| Self::problem(reader, record_type, shipped))
+            .collect();
+        let held = |name: &str| {
+            !problems
+                .iter()
+                .any(|problem| problem.record_type.as_str() == name)
+        };
+        let twin = |name: &str| {
+            (renamed.iter()).find_map(|&(old, new)| match name {
+                _ if name == old => Some(new),
+                _ if name == new => Some(old),
+                _ => None,
+            })
+        };
+        let excused: Vec<bool> = (problems.iter())
+            .map(|problem| {
+                problem.code == Code::PluginSchemaMissing
+                    && twin(problem.record_type.as_str()).is_some_and(held)
+            })
+            .collect();
+        (problems.into_iter().zip(excused))
+            .filter_map(|(problem, excused)| (!excused).then_some(problem))
+            .collect()
     }
 
     /// What is wrong with how the board holds `shipped`, the schema a

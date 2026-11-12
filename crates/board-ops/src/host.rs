@@ -48,6 +48,13 @@ pub trait Plugin: Sync {
     fn moved(&self) -> &'static [(&'static str, &'static str)] {
         &[]
     }
+    /// Each type it shipped under a former name, and the type that replaces
+    /// it. A board may hold the schema of either one of a pair alone: one
+    /// that has not taken the new schemas yet holds the old, and one that
+    /// has migrated may hold only the new.
+    fn renamed_types(&self) -> &'static [(&'static str, &'static str)] {
+        &[]
+    }
 }
 
 /// What Board offers a built-in plugin while it runs a capability.

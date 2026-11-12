@@ -6,7 +6,7 @@ use std::path::Path;
 
 use board_model::{Code, LogicalPath};
 use board_ops::{Board, BuiltIn, PluginState};
-use board_plugin::{Capability, Target};
+use board_plugin::{Capability, Manifest, Target};
 use clap::builder::{BoolValueParser, PossibleValue, StringValueParser};
 use clap::builder::{TypedValueParser, ValueParser};
 use clap::{Arg, ArgMatches, Command, FromArgMatches};
@@ -122,13 +122,15 @@ pub(crate) fn find(
         Ok(Target::Named { plugin, capability }) => Some((word, plugin, capability)),
         _ => None,
     })?;
+    // A former name reaches the renamed plugin, as `call` does.
+    let answers =
+        |manifest: &Manifest| manifest.name == plugin || manifest.former_names.contains(&plugin);
     let manifest = (built_in.0.iter().map(|built| built.manifest()))
-        .find(|manifest| manifest.name == plugin)
+        .find(answers)
         .or_else(|| {
             (board_plugin::installed(plugins?).ok()?.into_iter())
-                .find(|entry| entry.name == plugin.as_str())?
-                .manifest
-                .ok()
+                .filter_map(|entry| entry.manifest.ok())
+                .find(answers)
         });
     let offered = (manifest.iter().flat_map(|manifest| &manifest.capabilities))
         .find(|offered| offered.name == capability);

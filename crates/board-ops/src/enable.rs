@@ -62,8 +62,15 @@ impl Board {
         name: &PluginName,
         commands: &[&str],
     ) -> Result<EnableReport, EnableError> {
-        let (found, others): (Vec<_>, Vec<_>) = (self.offered(plugins)?.into_iter())
-            .partition(|installed| installed.name == name.as_str());
+        // A former name enables the renamed plugin under the name given, which
+        // a board's `plugins` reaches it by (docs/plugins/calling/commands.md).
+        let named = |installed: &Installed| {
+            installed.name == name.as_str()
+                || (installed.manifest.as_ref())
+                    .is_ok_and(|manifest| manifest.former_names.contains(name))
+        };
+        let (found, others): (Vec<_>, Vec<_>) =
+            (self.offered(plugins)?.into_iter()).partition(named);
         let found = (found.into_iter().next())
             .ok_or_else(|| EnableError::NotInstalled { name: name.clone() })?;
         if let Some(directory) = found.origin.shadows() {

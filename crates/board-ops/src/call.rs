@@ -43,10 +43,9 @@ impl Board {
         }
         // A record Board admits must be one the plugin's own schema admits.
         let reader = &mut self.repository().reader();
-        if let Some(problem) = chosen
-            .schemas
-            .iter()
-            .find_map(|(record_type, shipped)| Self::problem(reader, record_type, shipped))
+        if let Some(problem) = (self.problems(reader, &chosen.origin, &chosen.schemas))
+            .into_iter()
+            .next()
         {
             return Err(CallFailed::Schema {
                 plugin: chosen.manifest.name,
@@ -155,10 +154,17 @@ impl Board {
                 fields,
                 hint,
             }) => {
+                // A renamed built-in plugin may still give a former name's codes.
+                let owner = (chosen.manifest.former_names.iter())
+                    .find(|former| {
+                        code.strip_prefix(former.as_str())
+                            .is_some_and(|rest| rest.starts_with("::"))
+                    })
+                    .unwrap_or(plugin);
                 return Err(CallError::Plugin {
                     plugin: plugin.clone(),
                     failure: Box::new(
-                        PluginFailure::parse(plugin, code, message, fields, hint).map_err(bad)?,
+                        PluginFailure::parse(owner, code, message, fields, hint).map_err(bad)?,
                     ),
                     stderr: (warnings.borrow().iter())
                         .flat_map(|line| format!("warning: {line}\n").into_bytes())

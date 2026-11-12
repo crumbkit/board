@@ -83,3 +83,91 @@ fn a_reference_under_a_built_in_plugins_moved_prefix_checks_as_resolved_and_with
         );
     }
 }
+
+/// A built-in plugin `rules`, formerly `controls`, shipping
+/// `rules/rule/v1`, and `controls/control/v1` which it replaces.
+struct Retyped;
+
+const OLD: &str = "controls/control/v1";
+const NEW: &str = "rules/rule/v1";
+
+impl Plugin for Retyped {
+    fn manifest(&self) -> Manifest {
+        let mut manifest: Value = serde_json::from_str(MANIFEST).unwrap();
+        manifest["name"] = "rules".into();
+        manifest["former_names"] = serde_json::json!(["controls"]);
+        manifest["types"] = serde_json::json!([NEW, OLD]);
+        manifest.as_object_mut().unwrap().remove("run");
+        Manifest::built_in(manifest).unwrap()
+    }
+
+    fn schemas(&self) -> Vec<(RecordType, Value)> {
+        [NEW, OLD]
+            .map(|name| (name.parse().unwrap(), serde_json::json!({"type": "object"})))
+            .into()
+    }
+
+    fn call(&self, _: &dyn Host, _: &CapabilityName, _: Value) -> Result<Value, PluginError> {
+        Ok(Value::Null)
+    }
+
+    fn renamed_types(&self) -> &'static [(&'static str, &'static str)] {
+        &[(OLD, NEW)]
+    }
+}
+
+static RETYPED: [&dyn Plugin; 1] = [&Retyped];
+
+/// The schemas `plugin list` finds missing for the plugin, by type.
+fn missing(scenario: &Scenario) -> Vec<String> {
+    let mut board = open(scenario);
+    board.build_in(&RETYPED);
+    let report = board.plugin_list(None).unwrap();
+    (report.plugins[0].schemas.iter())
+        .map(|problem| format!("{} {}", problem.record_type, problem.code.as_str()))
+        .collect()
+}
+
+#[test]
+fn a_board_holding_either_type_of_a_renamed_pair_lacks_no_schema_and_one_holding_neither_lacks_both()
+ {
+    let enabling = || {
+        let scenario = board();
+        let config = r#"{"$type": "board/config/v1", "plugins": ["controls"]}"#;
+        scenario.write(".board/board.json", Item::File(config));
+        scenario
+    };
+    let missing_code = Code::PluginSchemaMissing.as_str();
+    assert_eq!(
+        missing(&enabling()),
+        [
+            format!("{NEW} {missing_code}"),
+            format!("{OLD} {missing_code}")
+        ]
+    );
+    for held in [OLD, NEW] {
+        let scenario = enabling();
+        let schema = format!(".board/types/{held}.schema.json");
+        scenario.write(&schema, Item::File(r#"{"type":"object"}"#));
+        assert_eq!(missing(&scenario), Vec::<String>::new(), "{held}");
+    }
+}
+
+#[test]
+fn a_former_name_enables_the_renamed_plugin_under_that_name_with_every_schema_it_ships() {
+    let scenario = board();
+    let mut board = open(&scenario);
+    board.build_in(&RETYPED);
+    let former = "controls".parse().unwrap();
+    let report = board.plugin_enable(None, None, &former, &[]).unwrap();
+    assert_eq!(report.name, former);
+    let config = std::fs::read_to_string(scenario.workdir().join(".board/board.json")).unwrap();
+    let config: Value = serde_json::from_str(&config).unwrap();
+    assert_eq!(config["plugins"], serde_json::json!(["controls"]));
+    for name in [NEW, OLD] {
+        let schema = scenario
+            .workdir()
+            .join(format!(".board/types/{name}.schema.json"));
+        assert!(schema.exists(), "{name}");
+    }
+}
