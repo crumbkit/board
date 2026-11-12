@@ -48,11 +48,9 @@ export function contextText(pinned: Pinned): string | null {
   if (pinned.orders.length === 0 && pinned.leftOut.length === 0) return null
   const parts = [
     'The owner signed each order below with Touch ID, and `board call attention.verify` checked it as this ' +
-      'session started. Each one binds you until it expires. Its context is non-binding background that says ' +
-      'what the owner meant.',
-    ...pinned.orders.map(
-      d => `## ${d.path}, until ${d.expires}\n\n${d.order}\n\nContext (non-binding):\n\n${d.context_text}`,
-    ),
+      'session started. Each one binds you until it expires. When you need to interpret an order, read its ' +
+      'non-binding context with `board --personal attention verify --path <order>`.',
+    ...pinned.orders.map(d => `## ${d.path}, until ${d.expires}\n\n${d.order}`),
   ]
   if (pinned.leftOut.length > 0) {
     parts.push(

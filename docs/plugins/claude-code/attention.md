@@ -14,7 +14,10 @@ the session. It reads the pinned orders once per session start either way.
 As a session starts, the mod runs `board --personal --json call
 attention.pinned`, which verifies each pinned order. It adds the verified
 orders, and the path and code of each one left out, to the session's first
-message as one context block, `attentionOrders`. Claude Code sends that
+message as one context block, `attentionOrders`. The block gives each order's
+path, expiry and signed text, not its context; it tells the agent to read
+the context with `board --personal attention verify --path <order>` when it
+needs to interpret the order. Claude Code sends that
 block once and again after a compaction. The band above the prompt shows
 one Orders button with the count of verified orders; [band.md](band.md) says
 what it shows. The button opens a pane that lists the orders, and each one

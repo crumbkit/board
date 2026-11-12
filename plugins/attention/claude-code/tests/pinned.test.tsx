@@ -78,14 +78,13 @@ function engine(on: On, answer: { exitCode: number; stdout: string; stderr?: str
 const start = ($: Engine) =>
   $.session.start({ cwd: CWD, surface: 'terminal', isInteractive: true })
 
-test('the context block holds each verified order with its expiry, and names each one left out', () => {
+test('the context block holds each verified order with its expiry but not its context, and names each one left out', () => {
   const pinned = parsePinned(BOARD, 0, JSON.stringify(REPORT), '')
   expect(contextText(pinned)).toBe(
     'The owner signed each order below with Touch ID, and `board call attention.verify` checked it as this ' +
-      'session started. Each one binds you until it expires. Its context is non-binding background that says ' +
-      'what the owner meant.\n\n' +
+      'session started. Each one binds you until it expires. When you need to interpret an order, read its ' +
+      'non-binding context with `board --personal attention verify --path <order>`.\n\n' +
       '## /orders/evals, until 2026-12-31\n\nRecord every test as an eval.\n\n' +
-      'Context (non-binding):\n\nAna asked for this on 2026-10-20.\n\n' +
       '## Pinned orders not shown\n\n- /orders/old: attention::order::expired. the order expired on 2026-10-01',
   )
 })
