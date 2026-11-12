@@ -536,7 +536,7 @@ fn a_rule_file_that_is_missing_is_refused_and_one_that_is_there_is_admitted() {
     board.write("controls/names.json", &names("pattern"));
     let (ran, document) = evaluate(&board, &["/controls/names"], &parts);
     assert_eq!(ran.code, 1, "{document}");
-    assert_eq!(document["code"], "rules::rule::unreadable");
+    assert_eq!(document["code"], "rules::checker::unreadable");
     assert_eq!(document["fields"]["file"], "/private/names.txt");
     board.write("private/names.txt", "acme\n");
     let (ran, _) = evaluate(&board, &["/controls/names"], &parts);
@@ -565,7 +565,7 @@ fn a_rubric_that_is_missing_is_refused_before_any_part_is_judged() {
     let parts = json!({"pr.body": "Too long."});
     let (ran, document) = evaluate(&board, &both, &parts);
     assert_eq!(ran.code, 1, "{document}");
-    assert_eq!(document["code"], "rules::rule::unreadable");
+    assert_eq!(document["code"], "rules::checker::unreadable");
     assert_eq!(document["fields"]["file"], "/rubrics/plain.md");
     board.write("rubrics/plain.md", "Write plainly.\n");
     let (ran, _) = evaluate(&board, &both, &parts);

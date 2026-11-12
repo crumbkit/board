@@ -254,7 +254,7 @@ The plugin ships both schemas. `board plugin enable controls` writes them to
 
   A failed part is an answer, so the call still exits 0. It fails with
   `rules::rule::not_found` when a named control is not a valid
-  control in the board's own tree, `rules::rule::unreadable` when a
+  control in the board's own tree, `rules::checker::unreadable` when a
   pattern file or rubric cannot be read, and `rules::pattern::invalid`
   when a line of a pattern file is not a valid expression. That error names
   the line by its number. With `quote` `match-only` it adds only the column

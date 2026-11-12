@@ -215,7 +215,7 @@ pub(crate) fn evaluate(host: &dyn Host, input: &Value) -> Result<Value, PluginEr
 }
 
 /// The bytes of each pattern file and rubric the rules name, by the path
-/// the rule gives, or `rules::rule::unreadable`.
+/// the rule gives, or `rules::checker::unreadable`.
 fn sources(
     host: &dyn Host,
     rules: &[(String, Option<Checker>)],
@@ -515,7 +515,7 @@ fn not_found(missing: &[&String]) -> PluginError {
 
 fn unreadable(control: &str, file: &str, code: &str) -> PluginError {
     PluginError {
-        code: "rules::rule::unreadable".to_owned(),
+        code: "rules::checker::unreadable".to_owned(),
         message: format!(
             "{control} names {file} in its rule, which Board cannot read as a file ({code}); write \
              the file, or change the control's rule"
