@@ -113,8 +113,8 @@ session reads nothing outside the board to learn what was in flight.
 Two pull requests.
 
 1. The runs mod: agent records, `works_on`, brief injection, the pull
-   request gate, the `opened` record, the end of the decision stub with the
-   second migration run (plan/decisions.md). Its
+   request gate, the `opened` record, the end of the decision stub
+   (plan/decisions.md). Its
    tests cover each hook with a twin that is refused or left out.
 2. The `inflight` plugin. Its fixture is a board holding four changes
    stopped at different steps, with running subagents, a waiting question

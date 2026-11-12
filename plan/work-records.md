@@ -43,7 +43,9 @@ A check that a rule adds (plan/rules.md), such as `security-review`, joins
 the phase its `transition` run names, or the last phase when the flow lacks
 that one. A change whose route is `ask-first` gains the `approve` phase if
 its flow lacks one, and so does a change whose route is `unread` unless its
-flow is `development`.
+flow is `development`. A rule adds a check only once a file rule can join a
+phase, which waits with the deferred move of flow checks; until then a
+change's checks are its flow's own.
 
 ## Records of a change
 

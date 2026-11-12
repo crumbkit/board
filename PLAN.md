@@ -32,11 +32,12 @@ daily view of what is due, failing and waiting on him. "Control" becomes
 "rule", and rules record their state. [plan/map.md](plan/map.md) holds the
 design.
 
-## Then: rules that flows run
+## Then: rules with a second shape
 
-Rules gain subjects, triggers, checkers and failure actions. Flows name the
-rules they run. Every board migrates, and 0.1.0 is tagged when every
-kind is built. A file rule's `transition` run replaces `adds_check`.
+Rules gain subjects, triggers, checkers and failure actions, and a rule's
+`on_failure` alone sets how strict Board is. Every board migrates in place,
+and 0.1.0 is tagged when every kind is built. Flow checks stay in flows until
+a later plan moves them.
 [plan/rules.md](plan/rules.md) holds the design.
 
 ## Then: runs
@@ -102,10 +103,9 @@ on main (`git show 226829b:PLAN.md`), as is the deleted HANDOFF.md.
   through plugins, and a reconciler plugin settles the difference between the
   source and Board's copy. The owner agreed it on 2026-10-05; its first step is
   a spike importing one existing store into a scratch board.
-- **Owner policies for effects.** Policies that make a plugin's put ask or
-  refuse, cut until two plugins need them (`git show
-  5a34ac92:docs/architecture/writes/effects.md`), then offers, attention
-  levels, read gating, learning from corrections and the mandate layer.
+- **After effects.** Offers, attention levels, read gating, learning from
+  corrections and the mandate layer. A policy that makes a put ask or refuse
+  is a rule (plan/rules.md).
 - **A repository's own rules.** `rules.check` reads a mounted repository's
   own rules as data at its pinned commit, checks the caller's repository
   without a path, and takes a branch's files on stdin with `--limit`. Full
