@@ -14,62 +14,45 @@ pub struct Moved {
 }
 
 impl Moved {
-    pub fn new(from: LogicalPath, to: LogicalPath) -> Result<Self, MovedError> {
+    /// The moved prefix from `from` to `to`; `None` when either is the root
+    /// or one lies beneath the other.
+    pub fn new(from: LogicalPath, to: LogicalPath) -> Option<Self> {
         let beneath = |inner: &LogicalPath, outer: &LogicalPath| {
             inner.segments().count() >= outer.segments().count()
                 && inner.segments().zip(outer.segments()).all(|(a, b)| a == b)
         };
-        if from == LogicalPath::root() || to == LogicalPath::root() {
-            return Err(MovedError::Root);
-        }
-        if beneath(&from, &to) || beneath(&to, &from) {
-            return Err(MovedError::Overlap { from, to });
-        }
-        Ok(Self { from, to })
+        let root = LogicalPath::root();
+        let apart = from != root && to != root && !beneath(&from, &to) && !beneath(&to, &from);
+        apart.then_some(Self { from, to })
     }
+}
 
-    pub fn from(&self) -> &LogicalPath {
-        &self.from
-    }
-
-    pub fn to(&self) -> &LogicalPath {
-        &self.to
-    }
-
-    /// `segments`, a path from a board's root, with the prefix it begins
-    /// with replaced by the other one, in either direction; `None` when it
-    /// begins with neither.
-    pub fn swap<S: AsRef<str>>(&self, segments: &[S]) -> Option<Vec<String>> {
-        [(&self.from, &self.to), (&self.to, &self.from)]
+/// `segments`, a path from a board's root, with the prefix it begins with
+/// replaced by the other one, in either direction, for the first of `moved`
+/// that applies; `None` when it begins with none of them. A path under no
+/// prefix costs only the comparisons, with nothing allocated.
+pub fn swapped<S: AsRef<str>>(moved: &[Moved], segments: &[S]) -> Option<Vec<String>> {
+    let starts = |prefix: &LogicalPath| {
+        let count = prefix.segments().count();
+        (segments.len() >= count
+            && prefix
+                .segments()
+                .zip(segments)
+                .all(|(a, b)| a == b.as_ref()))
+        .then_some(count)
+    };
+    moved.iter().find_map(|moved| {
+        [(&moved.from, &moved.to), (&moved.to, &moved.from)]
             .into_iter()
             .find_map(|(old, new)| {
-                let old: Vec<&str> = old.segments().collect();
-                let starts = segments.len() >= old.len()
-                    && old.iter().zip(segments).all(|(a, b)| *a == b.as_ref());
-                starts.then(|| {
+                let count = starts(old)?;
+                Some(
                     (new.segments().map(str::to_owned))
-                        .chain(segments[old.len()..].iter().map(|s| s.as_ref().to_owned()))
-                        .collect()
-                })
+                        .chain(segments[count..].iter().map(|s| s.as_ref().to_owned()))
+                        .collect(),
+                )
             })
-    }
-}
-
-/// `segments` with the first of `moved` that applies swapped, as
-/// [`Moved::swap`] swaps it.
-pub fn swapped<S: AsRef<str>>(moved: &[Moved], segments: &[S]) -> Option<Vec<String>> {
-    moved.iter().find_map(|moved| moved.swap(segments))
-}
-
-/// A moved prefix Board refuses.
-#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
-pub enum MovedError {
-    #[error("a moved prefix cannot be the root, which holds every path")]
-    Root,
-    #[error(
-        "the moved prefixes {from} and {to} overlap; name two prefixes neither of which lies beneath the other"
-    )]
-    Overlap { from: LogicalPath, to: LogicalPath },
+    })
 }
 
 #[cfg(test)]

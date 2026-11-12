@@ -32,7 +32,7 @@ pub use crate::frontmatter::{Feature, FrontmatterError, frontmatter};
 pub use crate::json::{Canonical, JsonError, canonical_json, parse_json};
 pub use crate::location::{Board, Location, Object, ObjectId, Source};
 pub use crate::markdown::{links, reached};
-pub use crate::moved::{Moved, MovedError, swapped};
+pub use crate::moved::{Moved, swapped};
 pub use crate::name::{CapabilityName, NameError, PluginCode, PluginCodeError, PluginName};
 pub use crate::path::{
     LogicalPath, MAX_PATH_BYTES, MAX_SEGMENT_BYTES, MAX_SYMLINKS, Malformation, PathError, escaped,

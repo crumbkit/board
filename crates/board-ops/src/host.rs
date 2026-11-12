@@ -682,14 +682,19 @@ impl Board {
     /// Its resolutions follow the moved prefixes these plugins'
     /// [`Plugin::moved`] gives. An installed plugin declares none, since its
     /// manifest may not name `moved`.
+    ///
+    /// # Panics
+    ///
+    /// When a plugin's moved pair is not two logical paths `Moved::new`
+    /// admits. The pairs are constants, so every test that builds the
+    /// plugins in fails on such a bug before a binary ships it.
     pub fn build_in(&mut self, plugins: &'static [&'static dyn Plugin]) {
         self.built_in = BuiltIn(plugins);
-        // A pair that is not two logical paths `Moved::new` admits is a bug
-        // in the built-in plugin; it is skipped, so a read never fails on it.
         let moved = (plugins.iter().flat_map(|plugin| plugin.moved()))
-            .filter_map(|(from, to)| {
-                let (from, to) = (from.parse().ok()?, to.parse().ok()?);
-                Moved::new(from, to).ok()
+            .map(|(from, to)| {
+                let (from, to) = (from.parse().ok(), to.parse().ok());
+                (from.zip(to).and_then(|(from, to)| Moved::new(from, to)))
+                    .expect("a built-in plugin declares a valid moved prefix")
             })
             .collect();
         self.moving(moved);

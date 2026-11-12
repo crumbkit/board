@@ -12,9 +12,8 @@ use super::{MANIFEST, board, open};
 use crate::Board;
 use crate::host::{Host, Plugin, PluginError};
 
-/// A built-in plugin whose records moved from `/controls` to `/rules`. Its
-/// pair naming the root is one `Moved::new` refuses, which is skipped.
-struct Renamed;
+/// A built-in plugin whose records moved between the prefixes it holds.
+struct Renamed(&'static [(&'static str, &'static str)]);
 
 impl Plugin for Renamed {
     fn manifest(&self) -> Manifest {
@@ -31,11 +30,18 @@ impl Plugin for Renamed {
     }
 
     fn moved(&self) -> &'static [(&'static str, &'static str)] {
-        &[("/", "/rules"), ("/controls", "/rules")]
+        self.0
     }
 }
 
-static RENAMED: [&dyn Plugin; 1] = [&Renamed];
+static RENAMED: [&dyn Plugin; 1] = [&Renamed(&[("/controls", "/rules")])];
+
+#[test]
+#[should_panic(expected = "a built-in plugin declares a valid moved prefix")]
+fn a_built_in_plugin_declaring_the_root_as_a_moved_prefix_fails_as_it_is_built_in() {
+    static ROOT: [&dyn Plugin; 1] = [&Renamed(&[("/", "/rules")])];
+    open(&board()).build_in(&ROOT);
+}
 
 /// A board holding `/rules/p`, and the library it mounts at `/lib`, which
 /// holds `/rules/q`.
