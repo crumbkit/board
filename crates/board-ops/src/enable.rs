@@ -113,7 +113,11 @@ impl Board {
         let changed = || EnableError::Changed { name: name.clone() };
         let (blob, mut config, current) =
             config_file(self.repositories()).map_err(|_| changed())?;
-        if !current.plugins.contains(name) {
+        // A board that lists the plugin by its name or a former name keeps
+        // that one entry.
+        let listed = (found.manifest.as_ref())
+            .is_ok_and(|manifest| manifest.enabling(&current.plugins).is_some());
+        if !listed {
             let fields = config.as_object_mut().ok_or_else(changed)?;
             let mut enabled = current.plugins;
             enabled.push(name.clone());

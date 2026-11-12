@@ -206,9 +206,9 @@ fn evaluate(
             group.insert(name.clone(), json!(text));
         }
     }
-    let target: Target = "controls.evaluate"
+    let target: Target = "rules.evaluate"
         .parse()
-        .expect("controls.evaluate is <plugin>.<capability>");
+        .expect("rules.evaluate is <plugin>.<capability>");
     let mut verdicts = Vec::new();
     for (controls, texts) in groups {
         let input = json!({"controls": controls, "parts": texts});

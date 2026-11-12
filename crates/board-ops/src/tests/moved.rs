@@ -156,6 +156,7 @@ fn a_board_holding_either_type_of_a_renamed_pair_lacks_no_schema_and_one_holding
 #[test]
 fn a_former_name_enables_the_renamed_plugin_under_that_name_with_every_schema_it_ships() {
     let scenario = board();
+    scenario.identified();
     let mut board = open(&scenario);
     board.build_in(&RETYPED);
     let former = "controls".parse().unwrap();
@@ -169,5 +170,22 @@ fn a_former_name_enables_the_renamed_plugin_under_that_name_with_every_schema_it
             .workdir()
             .join(format!(".board/types/{name}.schema.json"));
         assert!(schema.exists(), "{name}");
+    }
+}
+
+#[test]
+fn enabling_a_renamed_plugin_by_either_name_keeps_the_one_name_the_board_lists() {
+    for (listed, given) in [("controls", "rules"), ("rules", "controls")] {
+        let scenario = board();
+        scenario.identified();
+        let config = format!(r#"{{"$type": "board/config/v1", "plugins": ["{listed}"]}}"#);
+        scenario.write(".board/board.json", Item::File(&config));
+        let mut board = open(&scenario);
+        board.build_in(&RETYPED);
+        let given = given.parse().unwrap();
+        board.plugin_enable(None, None, &given, &[]).unwrap();
+        let config = std::fs::read_to_string(scenario.workdir().join(".board/board.json")).unwrap();
+        let config: Value = serde_json::from_str(&config).unwrap();
+        assert_eq!(config["plugins"], serde_json::json!([listed]), "{given}");
     }
 }
