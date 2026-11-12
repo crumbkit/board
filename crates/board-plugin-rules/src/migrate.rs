@@ -29,8 +29,8 @@ use crate::{logical, rename};
 /// The reason the migration's commit gives in its `Board-Bulk:` trailer.
 const BULK: &str = "migrate controls";
 /// The most rewritten paths the output lists (STANDARDS 23).
-const LISTED: usize = 100;
-const UNREAD: &str = "rules::migrate::unread";
+pub(crate) const LISTED: usize = 100;
+pub(crate) const UNREAD: &str = "rules::migrate::unread";
 const AMBIGUOUS: &str = "rules::migrate::ambiguous";
 const MOUNT_TYPE: &str = "board/mount/v1";
 const PULL_TYPE: &str = OWED_BY_TYPES[0];
@@ -99,20 +99,20 @@ pub(crate) struct Input {
 pub(crate) struct Output {
     applied: bool,
     rewritten: Vec<Rewritten>,
-    total: usize,
-    truncated: bool,
+    pub(crate) total: usize,
+    pub(crate) truncated: bool,
     commands: Vec<String>,
     ambiguous: Vec<Ambiguous>,
     unmatched: Vec<String>,
     unread: Vec<Unread>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    writes: Option<Vec<rename::Write>>,
+    pub(crate) writes: Option<Vec<rename::Write>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    digest: Option<String>,
+    pub(crate) digest: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    signed: Option<Vec<String>>,
+    pub(crate) signed: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    kept: Option<Vec<rename::Kept>>,
+    pub(crate) kept: Option<Vec<rename::Kept>>,
 }
 
 /// An obligation, and what it is owed by.
@@ -343,15 +343,7 @@ pub(crate) fn migrate(host: &dyn Host, input: &Value) -> Result<Value, PluginErr
                 hint: None,
             });
         }
-        let renamed = rename::rename(host, apply, digest.as_deref())?;
-        let mut writes = renamed.writes;
-        output.total = writes.len();
-        output.truncated = output.total > LISTED;
-        writes.truncate(LISTED);
-        output.writes = Some(writes);
-        output.digest = Some(renamed.digest);
-        output.signed = Some(renamed.signed);
-        output.kept = Some(renamed.kept);
+        rename::rename(host, apply, digest.as_deref(), &mut output)?;
         return Ok(
             serde_json::to_value(output).expect("Output holds only strings, numbers and bools")
         );

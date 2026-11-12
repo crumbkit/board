@@ -76,11 +76,6 @@ fn a_record_takes_its_new_type_and_field_names() {
         rewritten(Some(FLOW_TYPE), flow, &none),
         json!({"phases": [{"checks": [{"kind": "planned-rule-paths", "rules": ["/rules/{repo}/x"]}, {"kind": "paths"}]}]})
     );
-    let config = json!({"$type": CONFIG_TYPE, "plugins": ["tasks", "controls"]});
-    assert_eq!(
-        rewritten(Some(CONFIG_TYPE), config, &none),
-        json!({"$type": CONFIG_TYPE, "plugins": ["tasks", "rules"]})
-    );
 }
 
 #[test]

@@ -1,27 +1,13 @@
 //! `rules.migrate --rename true`: rewrites the board's own records from the
 //! names before the rename to the names after it, history included, in one
-//! commit with a `Board-Bulk:` trailer.
+//! commit with a `Board-Bulk:` trailer. The plugin's README says what moves,
+//! what is renamed and what is kept.
 //!
-//! Each rule and source moves from `/controls/` to `/rules/` under its new
-//! type, and a rule's `rule` becomes its `checker`. A boundary's
-//! `checks[].control`, a crossing verdict's `control` and `rule`, a plan's
-//! `owed[].control` and a flow check's `controls` and former kinds take
-//! their new names. Every string in a record, and every Markdown file, has
-//! each `/controls/` path, `controls.<capability>` and old type name
-//! rewritten. A flow version stored at the hash of its JSON is stored again
-//! at the hash of its rewritten JSON, and every record that names the old
-//! version names the new one, so each change is pinned to it.
-//!
-//! Signed records, attention orders and effects, and the files they name,
-//! are never rewritten; those that hold an old name are listed. A mount
-//! pointer under `/controls/`, and a board config that names `controls`,
-//! which only the owner may write, are listed for a person to change. Only
-//! the board's own working tree is read and written, never a mount.
-//!
-//! The dry run lists every write and a digest of them. `--apply true` takes
-//! that digest and refuses with `rules::migrate::stale`, writing nothing,
-//! when the writes it would make differ, as when a record changed since the
-//! dry run; each line also expects the blob it read.
+//! Signed records (attention orders and effects) and each order's context
+//! are never rewritten. Only the board's own working tree is read and
+//! written, never a mount. `--apply true` takes the dry run's digest and
+//! refuses with `rules::migrate::stale`, writing nothing, when the writes
+//! differ; each line also expects the blob it read.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
@@ -37,31 +23,43 @@ use serde::Serialize;
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
 
+use crate::migrate::{LISTED, Output, UNREAD};
 use crate::records::{CONTROL_TYPE, RENAMED};
 
 /// The reason the commit gives in its `Board-Bulk:` trailer.
 const BULK: &str = "rename controls to rules";
 const STALE: &str = "rules::migrate::stale";
 const FLOW_TYPE: &str = "changes/flow/v1";
+/// Why a config that names `controls` is kept.
+const CONFIG: &str = "the board's config names controls; only the owner may write it, so name \
+                      rules in its place in .board/board.json";
+/// Each old field name in a record and the name it takes.
+type Renames = &'static [(&'static str, &'static str)];
+/// The records of the change that renames controls to rules, which describe
+/// the rename in the old names and so keep them.
+const RENAMING: &str = "/changes/control-becomes-rule/";
 /// Each former check kind of a flow, and its name now.
 const KINDS: [(&str, &str); 2] = [
     ("controlled-paths", "rule-paths"),
     ("planned-controlled", "planned-rule-paths"),
+];
+/// Each old name renamed wherever it appears, before [`PATHS`]: first
+/// crumbkit/board's inner `rules/` folder, which its own tree dropped.
+const WORDS: [(&str, &str); 4] = [
+    ("/repos/board/controls/rules/", "/repos/board/rules/"),
+    ("board controls ", "board rules "),
+    ("controls/control/v1", "rules/rule/v1"),
+    ("controls/source/v1", "rules/source/v1"),
 ];
 
 fn compiled(pattern: &str) -> Regex {
     Regex::new(pattern).expect("each pattern is a constant; the rename tests compile it")
 }
 
-/// Each rewrite of text, in order: crumbkit/board's inner `rules/` folder,
-/// which its own tree dropped, then a `/controls/` path in this board or a
-/// mounted one, a capability, the command word and the old types.
-static TEXT: LazyLock<[(Regex, &str); 7]> = LazyLock::new(|| {
+/// Each rewrite of a path, in order: the inner `rules/` folder, a
+/// `/controls/` path in this board or a mounted one, and a capability.
+static PATHS: LazyLock<[(Regex, &str); 3]> = LazyLock::new(|| {
     [
-        (
-            compiled(r"/repos/board/controls/rules/"),
-            "/repos/board/rules/",
-        ),
         (
             compiled(r"(^|[^A-Za-z0-9_./-])controls/rules/"),
             "${1}rules/",
@@ -76,9 +74,6 @@ static TEXT: LazyLock<[(Regex, &str); 7]> = LazyLock::new(|| {
             compiled(r"\bcontrols\.(check|for-paths|for-path|evaluate|from-standards|migrate)\b"),
             "rules.${1}",
         ),
-        (compiled(r"\bboard controls "), "board rules "),
-        (compiled(r"\bcontrols/control/v1\b"), "rules/rule/v1"),
-        (compiled(r"\bcontrols/source/v1\b"), "rules/source/v1"),
     ]
 });
 
@@ -94,58 +89,60 @@ pub(crate) struct Write {
 #[derive(Debug, Serialize, JsonSchema)]
 pub(crate) struct Kept {
     path: String,
-    why: String,
+    why: &'static str,
 }
 
-/// What the rename writes or would write.
-#[derive(Debug, Default)]
-pub(crate) struct Renamed {
-    pub(crate) writes: Vec<Write>,
-    pub(crate) digest: String,
-    pub(crate) signed: Vec<String>,
-    pub(crate) kept: Vec<Kept>,
-}
-
-/// One entry of the board's own tree, with its text.
+/// One entry of the board's own tree, with its text, or `None` when it is
+/// not UTF-8.
 struct Entry {
     logical: String,
     blob: String,
     kind: String,
     role: Option<String>,
     record_type: Option<String>,
-    text: String,
+    text: Option<String>,
 }
 
-/// Lists the rename's writes and, with `apply`, writes them when `digest`
-/// is the dry run's.
+/// Fills `output` with the rename's writes and, with `apply`, writes them
+/// when `digest` is the dry run's.
 pub(crate) fn rename(
     host: &dyn Host,
     apply: bool,
     digest: Option<&str>,
-) -> Result<Renamed, PluginError> {
+    output: &mut Output,
+) -> Result<(), PluginError> {
     let entries = entries(host)?;
     let held: BTreeSet<&str> = entries.iter().map(|entry| entry.logical.as_str()).collect();
-    let mut renamed = Renamed::default();
-    let mut lines = Vec::new();
-    let skipped = signed(&entries, &mut renamed.signed);
-    let flows = flows(&entries);
+    let (mut signed, mut kept) = (Vec::new(), Vec::new());
+    let skipped = unsigned(&entries, &mut signed);
+    let flows = flows(&entries, &mut kept);
+    let versions: BTreeMap<String, String> = (flows.iter())
+        .map(|(old, (new, _))| (old.clone(), new.clone()))
+        .collect();
+    let (mut stored, mut writes, mut lines) = (BTreeSet::new(), Vec::new(), Vec::new());
     for entry in &entries {
-        if skipped.contains(entry.logical.as_str())
+        if skipped.contains(&entry.logical)
             || entry.logical.starts_with("/.board/types/")
-            || matches!(entry.kind.as_str(), "schema" | "json")
+            || entry.kind == "schema"
         {
             continue;
         }
-        if entry.record_type.as_deref() == Some(CONFIG_TYPE) || entry.kind == "pointer" {
-            renamed.kept.extend(left_for_a_person(entry, &flows));
-            continue;
-        }
-        let to = flows
-            .get(&entry.logical)
-            .cloned()
-            .or_else(|| moved(&entry.logical));
-        let Some(content) = content(entry, to.is_some(), &flows) else {
-            continue;
+        let flow = flows.get(&entry.logical);
+        let to = (flow.map(|(new, _)| new.clone())).or_else(|| moved(&entry.logical));
+        let mut keep = |why| {
+            kept.push(Kept {
+                path: entry.logical.clone(),
+                why,
+            });
+        };
+        let record = flow.map(|(_, record)| record);
+        let content = match content(entry, record, to.as_ref(), &versions) {
+            Ok(Some(content)) => content,
+            Ok(None) => continue,
+            Err(why) => {
+                keep(why);
+                continue;
+            }
         };
         let line = |path: &str, expect: &str| {
             let mut line = content.clone();
@@ -154,12 +151,14 @@ pub(crate) fn rename(
             line
         };
         match &to {
-            Some(to) if held.contains(to.as_str()) && flows.contains_key(&entry.logical) => {}
+            // Two versions may rewrite to one; it is stored once.
+            Some(to) if flow.is_some() => {
+                if !held.contains(to.as_str()) && stored.insert(to.clone()) {
+                    lines.push(line(to, "none"));
+                }
+            }
             Some(to) if held.contains(to.as_str()) => {
-                renamed.kept.push(Kept {
-                    path: entry.logical.clone(),
-                    why: format!("{to} already holds a file; move or remove one by hand"),
-                });
+                keep("its new path already holds a file; move or remove one by hand");
                 continue;
             }
             Some(to) => lines.push(line(to, "none")),
@@ -168,69 +167,91 @@ pub(crate) fn rename(
         if to.is_some() {
             lines.push(json!({"path": entry.logical, "expect": entry.blob, "remove": true}));
         }
-        renamed.writes.push(Write {
+        writes.push(Write {
             path: entry.logical.clone(),
             to,
         });
     }
-    renamed.digest = digest_of(&lines);
+    let current = digest_of(&lines);
     if apply {
-        write(host, &lines, digest == Some(renamed.digest.as_str()))?;
+        write(host, &lines, digest == Some(current.as_str()))?;
     }
-    Ok(renamed)
+    output.total = writes.len();
+    output.truncated = output.total > LISTED;
+    writes.truncate(LISTED);
+    output.writes = Some(writes);
+    output.digest = Some(current);
+    output.signed = Some(signed);
+    output.kept = Some(kept);
+    Ok(())
 }
 
-/// What a config or a pointer leaves for a person to change: a config that
-/// names `controls`, which only the owner may write, or a pointer under
-/// `/controls/`.
-fn left_for_a_person(entry: &Entry, flows: &BTreeMap<String, String>) -> Option<Kept> {
-    let why = if entry.kind == "pointer" {
-        moved(&entry.logical)?;
-        "a mount pointer; move it to /rules/ with board put once its target board has migrated"
+/// What a line writes for `entry`, which moves to `to`: the flow `flow` it
+/// is stored again as, its rewritten record, or its rewritten text; none
+/// when nothing changes. Why it is kept when only a person may change it.
+fn content(
+    entry: &Entry,
+    flow: Option<&Value>,
+    to: Option<&String>,
+    flows: &BTreeMap<String, String>,
+) -> Result<Option<Value>, &'static str> {
+    let kept = |why| if to.is_some() { Err(why) } else { Ok(None) };
+    let record_type = entry.record_type.as_deref();
+    let content = if let Some(record) = flow {
+        json!({"record": record})
+    } else if entry.kind == "pointer" {
+        return kept(
+            "a mount pointer; move it to /rules/ with board put once its target board has migrated",
+        );
+    } else if record_type == Some(CONFIG_TYPE) {
+        let config = parse_json(entry.text.as_deref().unwrap_or_default().as_bytes());
+        let plugins = config.unwrap_or_default()["plugins"].clone();
+        let names =
+            (plugins.as_array()).is_some_and(|each| each.iter().any(|one| one == "controls"));
+        return if names { Err(CONFIG) } else { Ok(None) };
+    } else if record_type == Some(FLOW_TYPE) {
+        return Ok(None);
+    } else if let Some(text) = &entry.text {
+        if entry.role.as_deref() == Some("json") {
+            let body = (parse_json(text.as_bytes()).ok())
+                .filter(|body| entry.kind == "record" && body.is_object());
+            let Some(body) = body else {
+                return kept(
+                    "its JSON does not parse as a record; fix it and run the rename again",
+                );
+            };
+            let record = rewritten(record_type, body.clone(), flows);
+            if to.is_none() && record == body {
+                return Ok(None);
+            }
+            json!({"record": record})
+        } else if entry.role.as_deref() == Some("markdown") || to.is_some() {
+            let renamed = self::text(text, flows);
+            if to.is_none() && renamed == *text {
+                return Ok(None);
+            }
+            json!({"text": renamed})
+        } else {
+            return Ok(None);
+        }
     } else {
-        let config = parse_json(entry.text.as_bytes()).unwrap_or_default();
-        (rewritten(Some(CONFIG_TYPE), config.clone(), flows) != config).then_some(())?;
-        "the board's config names controls; only the owner may write it, so name rules in its \
-         place in .board/board.json"
+        return kept("it is not UTF-8 text, and a batch line moves only text; move it with git mv");
     };
-    Some(Kept {
-        path: entry.logical.clone(),
-        why: why.to_owned(),
-    })
-}
-
-/// What a line writes for `entry`: its rewritten record, or its rewritten
-/// text for Markdown or a file that moves; none when nothing changes.
-fn content(entry: &Entry, moves: bool, flows: &BTreeMap<String, String>) -> Option<Value> {
-    if entry.kind == "record" && entry.role.as_deref() == Some("json") {
-        let Ok(Value::Object(body)) = parse_json(entry.text.as_bytes()) else {
-            return None;
-        };
-        let body = Value::Object(body);
-        let record = rewritten(entry.record_type.as_deref(), body.clone(), flows);
-        (moves || record != body).then(|| json!({"record": record}))
-    } else if entry.role.as_deref() == Some("markdown") || moves {
-        let text = text(&entry.text, flows);
-        (moves || text != entry.text).then(|| json!({"text": text}))
-    } else {
-        None
+    if entry.logical.starts_with(RENAMING) {
+        return Err("it describes the rename itself, so it keeps the names it was written in");
     }
+    Ok(Some(content))
 }
 
 /// Writes `lines` in one bulk commit, or refuses with
 /// [`STALE`] when the digest given is not theirs.
 fn write(host: &dyn Host, lines: &[Value], current: bool) -> Result<(), PluginError> {
     if !current {
-        return Err(PluginError {
-            code: STALE.to_owned(),
-            message: "the writes differ from those the dry run listed, so a record changed since \
-                      it ran; nothing was written"
-                .to_owned(),
-            fields: Map::new(),
-            hint: Some(
-                "run rules.migrate --rename true again and apply with its digest".to_owned(),
-            ),
-        });
+        return Err(refusal(
+            STALE,
+            "the writes differ from those the dry run listed, so a record changed since it ran",
+            "run rules.migrate --rename true again and apply with its digest",
+        ));
     }
     if !lines.is_empty() {
         let refused = |refusal: &board_model::Refusal| {
@@ -242,12 +263,23 @@ fn write(host: &dyn Host, lines: &[Value], current: bool) -> Result<(), PluginEr
     Ok(())
 }
 
+/// The rename's refusal `code`, saying that nothing was written.
+fn refusal(code: &str, why: &str, hint: &str) -> PluginError {
+    PluginError {
+        code: code.to_owned(),
+        message: format!("{why}; nothing was written"),
+        fields: Map::new(),
+        hint: Some(hint.to_owned()),
+    }
+}
+
 /// The board's own records, Markdown files, pointers and files under
-/// `/controls/`, with their text.
+/// `/controls/`, each with its own text; refuses with [`UNREAD`] when one
+/// cannot be read, so the rename never writes from a partial read.
 fn entries(host: &dyn Host) -> Result<Vec<Entry>, PluginError> {
     let sql = "SELECT e.logical, e.blob, e.kind, e.role, e.type, b.body FROM entries AS e \
                LEFT JOIN bodies AS b ON b.blob = e.blob WHERE e.source = 'worktree' \
-               AND e.kind IN ('record', 'file', 'pointer') ORDER BY e.logical";
+               AND e.kind IN ('record', 'json', 'file', 'pointer') ORDER BY e.logical";
     let rows = crate::migrate::rows(host, sql)?;
     let text = |value: Option<&Value>| value.and_then(Value::as_str).map(str::to_owned);
     let mut entries: Vec<Entry> = (rows.iter())
@@ -258,91 +290,92 @@ fn entries(host: &dyn Host) -> Result<Vec<Entry>, PluginError> {
                 kind: text(row.get(2))?,
                 role: text(row.get(3)),
                 record_type: text(row.get(4)),
-                text: text(row.get(5)).unwrap_or_default(),
+                text: Some(text(row.get(5)).unwrap_or_default()),
             })
         })
         .filter(|entry| {
-            entry.kind != "file"
-                || entry.role.as_deref() == Some("markdown")
+            !matches!(entry.kind.as_str(), "file" | "json")
+                || (entry.kind == "file" && entry.role.as_deref() == Some("markdown"))
                 || moved(&entry.logical).is_some()
         })
         .collect();
-    let unread: Vec<usize> = (entries.iter().enumerate())
-        .filter(|(_, entry)| entry.kind != "pointer" && entry.role.as_deref() != Some("json"))
-        .map(|(at, _)| at)
+    let unread = |path: &str, why: &str| {
+        let why = format!("Board could not read {path}: {why}");
+        refusal(
+            UNREAD,
+            &why,
+            "fix or remove the file, then run the rename again",
+        )
+    };
+    let files: Vec<usize> = (0..entries.len())
+        .filter(|at| entries[*at].kind != "pointer" && entries[*at].role.as_deref() != Some("json"))
         .collect();
-    let paths: Vec<LogicalPath> = (unread.iter())
-        .filter_map(|at| entries[*at].logical.parse().ok())
-        .collect();
+    let paths = (files.iter())
+        .map(|at| (entries[*at].logical.parse::<LogicalPath>()).map_err(|_| *at))
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|at| unread(&entries[at].logical, "its path is not a logical path"))?;
     let read = (host.get_each(&paths))
         .map_err(|error| PluginError::board_refused("rules", "get", &error.refusal("get")))?;
-    for (at, got) in unread.into_iter().zip(read) {
-        if let Ok(got) = got {
-            entries[at].text = String::from_utf8_lossy(&got.bytes).into_owned();
-        }
+    for (at, got) in files.into_iter().zip(read) {
+        let got =
+            got.map_err(|error| unread(&entries[at].logical, &error.refusal("get").message))?;
+        entries[at].text = String::from_utf8(got.bytes).ok();
     }
     Ok(entries)
 }
 
-/// The paths of the signed records and of every file they name, which the
-/// rename never rewrites; each signed record that holds an old name goes in
+/// The paths the rename never rewrites: each signed record and each
+/// order's context. Each signed record that holds an old name goes in
 /// `listed`.
-fn signed<'entries>(
-    entries: &'entries [Entry],
-    listed: &mut Vec<String>,
-) -> BTreeSet<&'entries str> {
+fn unsigned(entries: &[Entry], listed: &mut Vec<String>) -> BTreeSet<String> {
     let mut skipped = BTreeSet::new();
-    let named: BTreeSet<String> = (entries.iter())
-        .filter(|entry| {
-            let record_type = entry.record_type.as_deref().unwrap_or_default();
-            record_type == ORDER_TYPE || EFFECT_TYPES.contains(&record_type)
-        })
-        .flat_map(|entry| {
-            skipped.insert(entry.logical.as_str());
-            if text(&entry.text, &BTreeMap::new()) != entry.text {
-                listed.push(entry.logical.clone());
-            }
-            let strings = parse_json(entry.text.as_bytes())
-                .map(strings)
-                .unwrap_or_default();
-            strings.into_iter().filter(|each| each.starts_with('/'))
-        })
-        .collect();
-    skipped.extend(
-        (entries.iter())
-            .filter(|entry| named.contains(&entry.logical))
-            .map(|entry| entry.logical.as_str()),
-    );
+    for entry in entries {
+        let record_type = entry.record_type.as_deref().unwrap_or_default();
+        if record_type != ORDER_TYPE && !EFFECT_TYPES.contains(&record_type) {
+            continue;
+        }
+        skipped.insert(entry.logical.clone());
+        let body = entry.text.as_deref().unwrap_or_default();
+        if text(body, &BTreeMap::new()) != body {
+            listed.push(entry.logical.clone());
+        }
+        if let Ok(record) = parse_json(body.as_bytes())
+            && let Some(context) = record.get("context").and_then(Value::as_str)
+            && record_type == ORDER_TYPE
+        {
+            skipped.insert(context.to_owned());
+        }
+    }
     skipped
 }
 
-/// Every string in `value`.
-fn strings(value: Value) -> Vec<String> {
-    match value {
-        Value::String(text) => vec![text],
-        Value::Array(each) => each.into_iter().flat_map(strings).collect(),
-        Value::Object(fields) => fields
-            .into_iter()
-            .flat_map(|(_, each)| strings(each))
-            .collect(),
-        _ => Vec::new(),
-    }
-}
-
 /// Each flow version stored at the hash of its JSON whose rewritten JSON
-/// has another hash, and that hash's path.
-fn flows(entries: &[Entry]) -> BTreeMap<String, String> {
-    let none = BTreeMap::new();
-    (entries.iter())
-        .filter(|entry| entry.record_type.as_deref() == Some(FLOW_TYPE))
-        .filter_map(|entry| {
-            let value = parse_json(entry.text.as_bytes()).ok()?;
-            let name = value.get("name")?.as_str()?.to_owned();
-            (flow_version(&name, &value) == entry.logical).then_some(())?;
-            let stored = flow_version(&name, &rewritten(Some(FLOW_TYPE), value, &none));
-            (stored != entry.logical).then(|| (entry.logical.clone(), stored))
-        })
-        .collect()
+/// has another hash, with that hash's path and the record written there.
+/// A version that would change but is not stored at its hash goes in
+/// `kept`.
+fn flows(entries: &[Entry], kept: &mut Vec<Kept>) -> BTreeMap<String, (String, Value)> {
+    let mut flows = BTreeMap::new();
+    for entry in entries {
+        let text = entry.text.as_deref().unwrap_or_default();
+        let parsed = (entry.record_type.as_deref() == Some(FLOW_TYPE))
+            .then(|| parse_json(text.as_bytes()).ok());
+        let Some(Some(value)) = parsed else {
+            continue;
+        };
+        let record = rewritten(Some(FLOW_TYPE), value.clone(), &BTreeMap::new());
+        let name = value["name"].as_str().unwrap_or_default();
+        let (stored, at_hash) = (flow_version(name, &record), flow_version(name, &value));
+        if at_hash == entry.logical && stored != entry.logical {
+            flows.insert(entry.logical.clone(), (stored, record));
+        } else if at_hash != entry.logical && record != value {
+            kept.push(Kept {
+                path: entry.logical.clone(),
+                why: "a flow not stored at the hash of its JSON; store its new version with the \
+                      changes plugin and re-pin its changes by hand",
+            });
+        }
+    }
+    flows
 }
 
 /// Where a path under `/controls/` moves: the same path under `/rules/`.
@@ -355,7 +388,10 @@ fn moved(path: &str) -> Option<String> {
 /// version in `flows` replaced by its new one.
 pub(crate) fn text(text: &str, flows: &BTreeMap<String, String>) -> String {
     let mut text = text.to_owned();
-    for (pattern, replacement) in TEXT.iter() {
+    for (old, new) in WORDS {
+        text = text.replace(old, new);
+    }
+    for (pattern, replacement) in PATHS.iter() {
         // A path may follow another directly, so each match's leading
         // character is left for the next.
         loop {
@@ -379,63 +415,54 @@ pub(crate) fn rewritten(
     mut record: Value,
     flows: &BTreeMap<String, String>,
 ) -> Value {
-    match record_type {
-        Some(CONTROL_TYPE) => {
-            if let Some(fields) = record.as_object_mut() {
-                key(fields, "rule", "checker");
-            }
-        }
-        Some("boundary/boundary/v1") => {
-            for check in objects(record.get_mut("checks")) {
-                key(check, "control", "rule");
-            }
-        }
-        Some("boundary/crossing/v1") => {
-            for verdict in objects(record.get_mut("verdicts")) {
-                if verdict.contains_key("control") {
-                    key(verdict, "rule", "checker");
-                    key(verdict, "control", "rule");
-                }
-            }
-        }
-        Some("changes/plan/v1") => {
-            for owed in objects(record.get_mut("owed")) {
-                key(owed, "control", "rule");
-            }
-        }
-        Some(FLOW_TYPE) => {
-            let phases = objects(record.get_mut("phases"));
-            for phase in phases {
-                for check in objects(phase.get_mut("checks")) {
-                    key(check, "controls", "rules");
-                    if let Some(kind) = check.get_mut("kind")
-                        && let Some((_, now)) = KINDS
-                            .iter()
-                            .find(|(former, _)| kind.as_str() == Some(former))
-                    {
-                        *kind = json!(now);
-                    }
-                }
-            }
-        }
-        Some(CONFIG_TYPE) => {
-            for plugin in record
-                .get_mut("plugins")
-                .and_then(Value::as_array_mut)
-                .into_iter()
-                .flatten()
+    let (holders, renames): (Vec<_>, Renames) = match record_type {
+        Some(CONTROL_TYPE) => (
+            record.as_object_mut().into_iter().collect(),
+            &[("rule", "checker")],
+        ),
+        Some("boundary/boundary/v1") => (objects(record.get_mut("checks")), &[("control", "rule")]),
+        // A verdict's kind moves from `rule` to `checker` before its path
+        // takes `rule`.
+        Some("boundary/crossing/v1") => (
+            objects(record.get_mut("verdicts")),
+            &[("rule", "checker"), ("control", "rule")],
+        ),
+        Some("changes/plan/v1") => (objects(record.get_mut("owed")), &[("control", "rule")]),
+        Some(FLOW_TYPE) => (
+            (objects(record.get_mut("phases")).into_iter())
+                .flat_map(|phase| objects(phase.get_mut("checks")))
+                .collect(),
+            &[("controls", "rules")],
+        ),
+        _ => (Vec::new(), &[]),
+    };
+    for holder in holders {
+        // Only a holder with the last old name is renamed, so a verdict
+        // already in the new names keeps them.
+        let old = renames
+            .last()
+            .is_some_and(|(from, _)| holder.contains_key(*from));
+        for (from, to) in renames.iter().filter(|_| old) {
+            if !holder.contains_key(*to)
+                && let Some(value) = holder.remove(*from)
             {
-                if plugin.as_str() == Some("controls") {
-                    *plugin = json!("rules");
-                }
+                holder.insert((*to).to_owned(), value);
             }
         }
-        _ => {}
+        if let Some(kind) = holder.get_mut("kind")
+            && let Some((_, now)) = KINDS
+                .iter()
+                .find(|(former, _)| kind.as_str() == Some(former))
+            && record_type == Some(FLOW_TYPE)
+        {
+            *kind = json!(now);
+        }
     }
     if let Some((_, now)) = RENAMED.iter().find(|(old, _)| Some(*old) == record_type) {
         record["$type"] = json!(now);
     }
-    strings_rewritten(record, flows)
+    strings_rewritten(&mut record, flows);
+    record
 }
 
 /// The objects in the array `value` holds, if it holds one.
@@ -445,27 +472,17 @@ fn objects(value: Option<&mut Value>) -> Vec<&mut Map<String, Value>> {
         .collect()
 }
 
-/// `value` with every string rewritten by [`text`].
-fn strings_rewritten(value: Value, flows: &BTreeMap<String, String>) -> Value {
+/// Rewrites every string in `value` by [`text`].
+fn strings_rewritten(value: &mut Value, flows: &BTreeMap<String, String>) {
     match value {
-        Value::String(string) => Value::String(text(&string, flows)),
+        Value::String(string) => *string = text(string, flows),
         Value::Array(each) => each
-            .into_iter()
-            .map(|one| strings_rewritten(one, flows))
-            .collect(),
-        Value::Object(fields) => (fields.into_iter())
-            .map(|(name, one)| (name, strings_rewritten(one, flows)))
-            .collect(),
-        other => other,
-    }
-}
-
-/// Renames `from` to `to` in `fields` when `to` is not there already.
-fn key(fields: &mut Map<String, Value>, from: &str, to: &str) {
-    if !fields.contains_key(to)
-        && let Some(value) = fields.remove(from)
-    {
-        fields.insert(to.to_owned(), value);
+            .iter_mut()
+            .for_each(|one| strings_rewritten(one, flows)),
+        Value::Object(fields) => fields
+            .values_mut()
+            .for_each(|one| strings_rewritten(one, flows)),
+        _ => {}
     }
 }
 

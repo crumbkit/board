@@ -425,16 +425,24 @@ become the new ones. crumbkit/board's own `controls/rules/<name>` becomes
 again at the hash of its new JSON, the old version is removed, and every
 record that named it names the new one, so each change is pinned to it.
 
-Attention orders, effects and the files they name are never rewritten, since
-they carry a signature; those that hold an old name are listed under
-`signed`. A mount pointer under `/controls/` and a board config that names
-`controls` are listed under `kept`, because a plugin may not write the config;
-a person changes them. A reference into a mounted board that has not migrated
-yet resolves through the moved prefix until it does.
+Attention orders, effects and each order's context are never rewritten,
+since they carry a signature; the records they name are rewritten as any
+other. The orders and effects that hold an old name are listed under
+`signed`. Each of these is listed under `kept`, with why, and left for a
+person to change: a mount pointer under `/controls/`; a board config that
+names `controls`, since a plugin may not write the config; a file under
+`/controls/` that is not UTF-8 text, or whose JSON does not parse as a
+record; a flow that would change but is not stored at the hash of its JSON;
+and the records under `/changes/control-becomes-rule/`, which describe the
+rename in the old names. Two flow versions that rename to the same JSON are
+stored once, and both are re-pointed to it. A reference into a mounted board
+that has not migrated yet resolves through the moved prefix until it does.
 
 The dry run lists each write under `writes`, with `to` for a move, and gives
 a `digest`. `--apply true --digest <digest>` writes them in one commit whose
 trailer is `Board-Bulk: rename controls to rules`, or refuses with
 `rules::migrate::stale` and writes nothing when its writes differ from the dry
-run's, as when a record changed since. A second run lists no writes. It reads
-and writes only the board's own tree, so each board runs it itself.
+run's, as when a record changed since. A file Board cannot read refuses the
+whole rename with `rules::migrate::unread`, before any write. A second run
+lists no writes. It reads and writes only the board's own tree, so each board
+runs it itself.

@@ -16,12 +16,23 @@ fn order() -> String {
     .to_string()
 }
 
+/// A pending effect on the crossing, holding an old capability name; it is
+/// signed when answered, so the rename leaves it as it is.
+fn effect() -> String {
+    json!({
+        "$type": board_model::EFFECT_TYPE, "board": "/b", "plugin": "boundary",
+        "op": "controls.evaluate", "path": format!("/crossings/{}", "a".repeat(64)),
+    })
+    .to_string()
+}
+
 const ORDER_CONTEXT: &str = "# Why\n\nSee /controls/x/a.\n";
 const NOTE: &str = "# A note\n\nRun `board call controls.check`, then read /controls/x/a and /repos/board/controls/rules/agents.\n";
 
 /// A board enabling the rules plugin under its former name, holding a rule
 /// and a source under `/controls/`, a boundary and a crossing that name the
-/// rule under their old fields, a note, and a signed order.
+/// rule under their old fields, a note, a signed order, and an effect on
+/// the crossing.
 fn old_board() -> Fixture {
     let board = Fixture::enabling(&["controls", "boundary", "attention"]);
     let rule = json!({
@@ -57,7 +68,8 @@ fn old_board() -> Fixture {
         )
         .write("notes/n.md", NOTE)
         .write("orders/o.json", &order())
-        .write("orders/o.md", ORDER_CONTEXT);
+        .write("orders/o.md", ORDER_CONTEXT)
+        .write("effects/pending/e.json", &effect());
     board
 }
 
@@ -104,7 +116,7 @@ fn renaming_moves_rules_renames_fields_rewrites_mentions_and_leaves_signed_recor
             ("/controls/x/a", "/rules/x/a")
         ]
     );
-    assert_eq!(listed["signed"], json!(["/orders/o"]));
+    assert_eq!(listed["signed"], json!(["/effects/pending/e", "/orders/o"]));
     assert_eq!(listed["kept"][0]["path"], "/.board/board");
     let ran = applied(&board, listed["digest"].as_str().unwrap());
     assert_eq!(ran.code, 0, "{}", text(&ran.stdout));
@@ -136,9 +148,12 @@ fn renaming_moves_rules_renames_fields_rewrites_mentions_and_leaves_signed_recor
     );
     assert_eq!(board.read("orders/o.json"), order());
     assert_eq!(board.read("orders/o.md"), ORDER_CONTEXT);
+    assert_eq!(board.read("effects/pending/e.json"), effect());
 
     let whole: BTreeMap<String, Option<String>> = (board.checked("/").into_iter())
-        .filter(|(path, code)| code.is_some() && !path.starts_with("/orders/"))
+        .filter(|(path, code)| {
+            code.is_some() && !path.starts_with("/orders/") && !path.starts_with("/effects/")
+        })
         .collect();
     assert_eq!(whole, BTreeMap::new());
     let again = dry_run(&board);
@@ -168,6 +183,77 @@ fn a_reference_renamed_into_a_mounted_board_not_yet_migrated_resolves_through_th
         board.checked("/boundaries/"),
         codes(&[("/boundaries/octo", None), ("/boundaries/other", None)])
     );
+}
+
+#[test]
+fn a_mount_pointer_under_controls_is_kept_and_a_reference_renamed_through_it_still_resolves() {
+    let board = old_board();
+    let (other, commit) = repository(&["rules"], &[("x.json", control("There.", &json!({})))]);
+    mount(&board, "controls/auth.json", &other, commit);
+    let boundary = json!({
+        "$type": "boundary/boundary/v1", "to": "github:octo/*", "actions": ["github.pr-*"],
+        "checks": [{"control": "/controls/auth/x", "parts": ["*"]}],
+    });
+    board.write("boundaries/auth.json", &boundary.to_string());
+    let listed = dry_run(&board);
+    let kept: Vec<&str> = (listed["kept"].as_array().unwrap().iter())
+        .filter_map(|each| each["path"].as_str())
+        .collect();
+    assert_eq!(kept, ["/.board/board", "/controls/auth"], "{listed}");
+    let ran = applied(&board, listed["digest"].as_str().unwrap());
+    assert_eq!(ran.code, 0, "{}", text(&ran.stdout));
+    let renamed: Value = serde_json::from_str(&board.read("boundaries/auth.json")).unwrap();
+    assert_eq!(renamed["checks"][0]["rule"], "/rules/auth/x");
+    assert!(board.read("controls/auth.json").contains("board/mount/v1"));
+    assert_eq!(
+        board.checked("/boundaries/auth"),
+        codes(&[("/boundaries/auth", None)])
+    );
+}
+
+/// The bytes of a PNG's signature and more, which are not UTF-8 and hold no
+/// NUL.
+const PNG: &[u8] = &[0x89, b'P', b'N', b'G', 0xff, 0xfe, b'\n'];
+
+#[test]
+fn a_file_that_cannot_move_as_text_and_the_renaming_change_are_kept_as_they_are() {
+    let board = old_board();
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "the fixture holds a file that is not UTF-8, which Fixture::write cannot write"
+    )]
+    std::fs::write(board.board.workdir().join("controls/x/img.png"), PNG).unwrap();
+    board
+        .write(
+            "controls/x/broken.json",
+            "{\"$type\": \"controls/control/v1\",",
+        )
+        .write("changes/control-becomes-rule/details.md", NOTE);
+    let listed = dry_run(&board);
+    let kept: Vec<&str> = (listed["kept"].as_array().unwrap().iter())
+        .filter_map(|each| each["path"].as_str())
+        .collect();
+    assert_eq!(
+        kept,
+        [
+            "/.board/board",
+            "/changes/control-becomes-rule/details.md",
+            "/controls/x/broken",
+            "/controls/x/img.png"
+        ],
+        "{listed}"
+    );
+    let ran = applied(&board, listed["digest"].as_str().unwrap());
+    assert_eq!(ran.code, 0, "{}", text(&ran.stdout));
+    let bytes = std::fs::read(board.board.workdir().join("controls/x/img.png")).unwrap();
+    assert_eq!(bytes, PNG);
+    assert!(!board.board.workdir().join("rules/x/img.png").exists());
+    assert_eq!(
+        board.read("controls/x/broken.json"),
+        "{\"$type\": \"controls/control/v1\","
+    );
+    assert_eq!(board.read("changes/control-becomes-rule/details.md"), NOTE);
+    assert!(board.read("rules/x/a.json").contains("rules/rule/v1"));
 }
 
 #[test]
