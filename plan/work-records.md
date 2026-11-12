@@ -39,9 +39,9 @@ organisation, when no repository link names one. `board changes seed`
 writes the `work` flow, development with an `approve` phase after plan, at
 `/flows/work` when it is missing.
 
-A check that a control adds (plan/control-scope.md), such as
-`security-review`, joins the phase its `adds_check` names, or the last
-phase when the flow lacks that one. A change whose route is `ask-first` gains the `approve` phase if
+A check that a rule adds (plan/rules.md), such as `security-review`, joins
+the phase its `transition` run names, or the last phase when the flow lacks
+that one. A change whose route is `ask-first` gains the `approve` phase if
 its flow lacks one, and so does a change whose route is `unread` unless its
 flow is `development`.
 
