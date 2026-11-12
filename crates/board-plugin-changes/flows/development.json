@@ -8,7 +8,7 @@
       "name": "plan",
       "agent": "lead",
       "skills": ["understanding-check"],
-      "instruction": "Read each record the change surfaced; cite those you build on in the plan's uses and list the rest in the plan's considered field with a line on why they do not apply. Interview the owner and fill in Problem, Outcome, Out of scope, UX, Data, Failure paths, Consumers and Lifecycle. UX starts with No UI change and a reason, or lists each mockup under ### Mockups with a ### Neighbours list; attach the owner's decision naming each mockup. Data starts with None, or run the understanding-check skill and attach its record and the owner's decision that references it. Failure paths has one row per step that can fail: what fails, the state it leaves, the recovery, and the order of the check against the destructive step it guards. Consumers lists every caller and reader of what the change produces or alters, and names the files searched. Lifecycle starts with None and a reason, or names the record `board changes lifecycle` writes and summarises its states in one line. Write the plan with `board changes plan` and attach the owner's signed plans/decision/v1 whose refs name the plan.",
+      "instruction": "Read each record the change surfaced; cite those you build on in the plan's uses and list the rest in the plan's considered field with a line on why they do not apply. Interview the owner and fill in Problem, Outcome, Out of scope, UX, Data, Failure paths, Consumers and Lifecycle. Give the plan's `answers` beside its text: `ux` is none or mockups, `data` is none or stored, and `lifecycle` is none or record; each section holds the reason. UX says why there is no UI, or lists each mockup under ### Mockups with a ### Neighbours list; attach the owner's decision naming each mockup. Data says why nothing is stored, or run the understanding-check skill and attach its record and the owner's decision that references it. Failure paths has one row per step that can fail: what fails, the state it leaves, the recovery, and the order of the check against the destructive step it guards. Consumers lists every caller and reader of what the change produces or alters, and names the files searched. Lifecycle says why nothing changes state, or names the record `board changes lifecycle` writes and summarises its states in one line. Write the plan with `board changes plan` and attach the owner's signed plans/decision/v1 whose refs name the plan.",
       "checks": [
         {"id": "plan-sections", "kind": "sections",
          "sections": ["Problem", "Outcome", "Out of scope", "UX", "Data", "Failure paths", "Consumers", "Lifecycle"]},
@@ -18,16 +18,17 @@
         {"id": "owner-approval", "kind": "records", "actor": "owner",
          "type": "plans/decision/v1", "where": {"owner_signed": true, "refs": ["plan"]}},
         {"id": "mockups", "kind": "mockups", "actor": "owner",
-         "when": {"section_not": {"UX": "^no ui change\\b[\\s.:,;-]*\\w"}}},
+         "when": {"answers": {"ux": "mockups"}},
+         "remedy": "List each mockup by URL or board path under ### Mockups in UX, with a ### Neighbours list, and attach the owner's plans/decision/v1 that names each in its urls or refs; or answer `ux` none in the plan and give the reason under UX."},
         {"id": "data-signed", "kind": "understood", "actor": "owner", "subject": "data",
-         "when": {"section_not": {"Data": "^none\\s*(?:[.:]|\\n?\\z)"}},
+         "when": {"answers": {"data": "stored"}},
          "remedy": "Run the understanding-check skill with the owner on the plan's Data section, attach its record with `board changes attach --path {change} --ref <record>`, and ask the owner to sign a plans/decision/v1 whose refs name it."},
         {"id": "lifecycle-declared", "kind": "planned-controlled", "controls": ["/controls/{repo}/lifecycle-paths"],
-         "when": {"section": {"Lifecycle": "^none\\s*(?:[.:]|\\n?\\z)"}},
-         "remedy": "The plan's paths reach what this repository names as lifecycle code, so the plan cannot say None under Lifecycle. Write the states, events and crash points by piping JSON with `path`, `text`, `doc` and `external` to `board changes lifecycle` and name that record under Lifecycle."},
+         "when": {"answers": {"lifecycle": "none"}},
+         "remedy": "The plan's paths reach what this repository names as lifecycle code, so the plan cannot answer `lifecycle` none. Write the states, events and crash points by piping JSON with `path`, `text`, `doc` and `external` to `board changes lifecycle`, name that record under Lifecycle and answer `lifecycle` record."},
         {"id": "lifecycle-record", "kind": "exists", "path": "/changes/{name}/lifecycle",
-         "when": {"section_not": {"Lifecycle": "^none\\s*(?:[.:]|\\n?\\z)"}},
-         "remedy": "Write the record the Lifecycle section names by piping JSON with `path`, `text`, `doc` and `external` to `board changes lifecycle`, or start the section with `None:` followed by the reason."},
+         "when": {"answers": {"lifecycle": "record"}},
+         "remedy": "Write the record the Lifecycle section names by piping JSON with `path`, `text`, `doc` and `external` to `board changes lifecycle`, or answer `lifecycle` none in the plan and give the reason under Lifecycle."},
         {"id": "obligations", "kind": "obligations", "blocks": false}
       ]
     },
@@ -41,7 +42,7 @@
          "remedy": "When {suite} is empty, the repository names no check suite: name one with `board changes attach --path {change} --suite /suites/<name>`, define one with `board runs define`, or ask the owner to waive this check. Otherwise run {suite} on {head} with `board runs run` and attach the run."},
         {"id": "tasks", "kind": "tasks"},
         {"id": "rechecks", "kind": "understood", "actor": "owner", "subject": "data", "rechecks": 2,
-         "when": {"section_not": {"Data": "^none\\s*(?:[.:]|\\n?\\z)"}}}
+         "when": {"answers": {"data": "stored"}}}
       ]
     },
     {
@@ -54,9 +55,9 @@
          "where": {"at_head": "range", "values": {"verdict": ["approve", "comment"]}, "no_findings": ["critical", "high"]}},
         {"id": "paths", "kind": "paths"},
         {"id": "ui-paths", "kind": "controlled-paths", "controls": ["/controls/{repo}/ui-paths"],
-         "when": {"section": {"UX": "^no ui change\\b[\\s.:,;-]*\\w"}}},
+         "when": {"answers": {"ux": "none"}}},
         {"id": "data-paths", "kind": "controlled-paths", "controls": ["/controls/{repo}/data-paths"],
-         "when": {"section": {"Data": "^none\\s*(?:[.:]|\\n?\\z)"}}},
+         "when": {"answers": {"data": "none"}}},
         {"id": "lifecycle-paths", "kind": "controlled-paths", "controls": ["/controls/{repo}/lifecycle-paths"],
          "when": {
             "absent": {"path": "/changes/{name}/lifecycle", "type": "changes/lifecycle/v1"}
@@ -69,11 +70,11 @@
             "/controls/{repo}/lifecycle-paths"
           ],
           "when": {
-            "section": {
-              "Lifecycle": "^none\\s*(?:[.:]|\\n?\\z)"
+            "answers": {
+              "lifecycle": "none"
             }
           },
-          "remedy": "The plan says None under Lifecycle and the change's diff edits what this repository names as lifecycle code. Name the lifecycle record under Lifecycle with `board changes plan --path {change}`, writing it first by piping JSON with `path`, `text`, `doc` and `external` to `board changes lifecycle` if it does not exist, or revert the edit."
+          "remedy": "The plan answers `lifecycle` none and the change's diff edits what this repository names as lifecycle code. Answer `lifecycle` record and name the lifecycle record under Lifecycle with `board changes plan --path {change}`, writing it first by piping JSON with `path`, `text`, `doc` and `external` to `board changes lifecycle` if it does not exist, or revert the edit."
         },
         {"id": "obligations-settled", "kind": "obligations"}
       ]
@@ -98,11 +99,11 @@
             "/controls/{repo}/lifecycle-paths"
           ],
           "when": {
-            "section": {
-              "Lifecycle": "^none\\s*(?:[.:]|\\n?\\z)"
+            "answers": {
+              "lifecycle": "none"
             }
           },
-          "remedy": "The plan says None under Lifecycle and the change's diff edits what this repository names as lifecycle code. Name the lifecycle record under Lifecycle with `board changes plan --path {change}`, writing it first by piping JSON with `path`, `text`, `doc` and `external` to `board changes lifecycle` if it does not exist, or revert the edit."
+          "remedy": "The plan answers `lifecycle` none and the change's diff edits what this repository names as lifecycle code. Answer `lifecycle` record and name the lifecycle record under Lifecycle with `board changes plan --path {change}`, writing it first by piping JSON with `path`, `text`, `doc` and `external` to `board changes lifecycle` if it does not exist, or revert the edit."
         }
       ]
     }

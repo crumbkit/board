@@ -74,7 +74,7 @@ fn spent(brief: &Value) -> usize {
 
 /// The input of `changes.plan` for [`CHANGE`] with `uses` and `paths`.
 fn planned(uses: &[&str], paths: &[&str]) -> Value {
-    json!({"path": CHANGE, "text": PLAN, "uses": uses, "paths": paths})
+    json!({"path": CHANGE, "text": PLAN, "uses": uses, "paths": paths, "answers": answers()})
 }
 
 /// The fixture plan with a Lifecycle section that names a record.
@@ -83,9 +83,10 @@ fn lifecycle_named() -> String {
     format!("{before}## Lifecycle\n\nSee the change's lifecycle record: open, closed.\n")
 }
 
-/// The input of `plan` for `text`.
+/// The input of `plan` for `text`, which names a lifecycle record.
 fn naming(text: &str) -> Value {
-    json!({"path": CHANGE, "text": text, "uses": [], "paths": PATHS})
+    let answers = json!({"ux": "none", "data": "none", "lifecycle": "record"});
+    json!({"path": CHANGE, "text": text, "uses": [], "paths": PATHS, "answers": answers})
 }
 
 fn brief(board: &Changes) -> Value {
@@ -318,8 +319,8 @@ fn the_brief_warns_when_the_board_holds_no_lifecycle_paths_control_and_is_silent
     assert_eq!(found["warnings"][0]["code"], "changes::brief::no_control");
     assert_eq!(
         found["warnings"][0]["detail"],
-        "no control /controls/x/lifecycle-paths exists, so only the plan's Lifecycle heading \
-         guards what it would list; write the control to name those paths"
+        "no control /controls/x/lifecycle-paths exists, so only the plan's typed answers guard \
+         what it would list; write the control to name those paths"
     );
     assert!(spent(&found) <= BRIEF_WORDS, "{}: {found}", spent(&found));
     board.write(
@@ -851,4 +852,13 @@ fn a_use_too_long_to_fit_leaves_room_for_the_shorter_uses_after_it() {
     assert_eq!(refs, ["/standards/a.md", "/standards/b.md"]);
     assert_eq!(brief["left_out"], 1);
     assert!(spent(&brief) <= BRIEF_WORDS, "{}", spent(&brief));
+}
+
+#[test]
+fn the_brief_shows_the_typed_answers_of_the_plan_the_change_names() {
+    let board = with_source();
+    board.call_stdin("plan", &planned(&[], &PATHS));
+    assert_eq!(brief(&board)["answers"], answers());
+    board.call_stdin("plan", &naming(&lifecycle_named()));
+    assert_eq!(brief(&board)["answers"]["lifecycle"], "record");
 }

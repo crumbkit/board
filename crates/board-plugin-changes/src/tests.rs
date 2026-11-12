@@ -139,6 +139,7 @@ fn every_input_property_carries_a_sentence_that_says_what_it_means() {
         "plan.considered",
         "plan.owed",
         "plan.paths",
+        "plan.answers",
         "brief.path",
         "prototype.mount",
         "prototype.question",
@@ -290,13 +291,15 @@ fn flat(text: &str) -> String {
 
 /// What the flow's plan instruction says each of the new sections holds,
 /// sentence by sentence, which the skill and the README repeat word for word.
-const SECTION_RULES: [&str; 3] = [
+const SECTION_RULES: [&str; 4] = [
     "Failure paths has one row per step that can fail: what fails, the state it leaves, the \
      recovery, and the order of the check against the destructive step it guards.",
     "Consumers lists every caller and reader of what the change produces or alters, and names \
      the files searched.",
-    "Lifecycle starts with None and a reason, or names the record `board changes lifecycle` \
+    "Lifecycle says why nothing changes state, or names the record `board changes lifecycle` \
      writes and summarises its states in one line.",
+    "Give the plan's `answers` beside its text: `ux` is none or mockups, `data` is none or \
+     stored, and `lifecycle` is none or record; each section holds the reason.",
 ];
 
 #[test]

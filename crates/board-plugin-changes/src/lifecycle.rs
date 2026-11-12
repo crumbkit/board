@@ -13,6 +13,7 @@ use crate::change::{line, plan_at, read, touch};
 use crate::flow::blob_at;
 use crate::gates::sections;
 use crate::phases::final_phase;
+use crate::plan::answers::Lifecycle;
 use crate::plan::{thousands, words};
 use crate::records::is_final;
 use crate::{PLUGIN, board, refusal, to_value};
@@ -163,9 +164,12 @@ pub(crate) fn lifecycle(host: &dyn Host, input: &Value) -> Result<Value, PluginE
     }))
 }
 
-/// Whether the Lifecycle section of the plan `text` says nothing changes
-/// state.
-pub(crate) fn says_none(text: &str) -> bool {
+/// Whether a plan says nothing changes state: by its typed `answer` when
+/// it gives one, or else by the Lifecycle section of its `text`.
+pub(crate) fn says_none(answer: Option<Lifecycle>, text: &str) -> bool {
+    if let Some(answer) = answer {
+        return answer == Lifecycle::None;
+    }
     let none = Regex::new(&format!("(?i){NONE}")).expect("the pattern is a regular expression");
     (sections(text).get("lifecycle")).is_some_and(|section| none.is_match(section))
 }
@@ -205,4 +209,24 @@ fn check_doc(path: &str, mount: &str, doc: &str) -> Result<(), PluginError> {
         ),
         [("path", json!(path)), ("doc", json!(doc))],
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Lifecycle, says_none};
+
+    const NAMED: &str = "# T\n\n## Lifecycle\n\nSee `/changes/t/lifecycle`: three states.\n";
+    const NONE: &str = "# T\n\n## Lifecycle\n\nNone: nothing changes state.\n";
+
+    #[test]
+    fn a_typed_answer_decides_whether_nothing_changes_state_whatever_the_section_says() {
+        assert!(says_none(Some(Lifecycle::None), NAMED));
+        assert!(!says_none(Some(Lifecycle::Record), NONE));
+    }
+
+    #[test]
+    fn a_plan_with_no_typed_answer_is_read_by_its_lifecycle_section() {
+        assert!(says_none(None, NONE));
+        assert!(!says_none(None, NAMED));
+    }
 }

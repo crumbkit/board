@@ -1233,3 +1233,39 @@ fn migrating_a_v1_change_keeps_its_plans_lifecycle_record_and_one_never_given_st
     assert_eq!(current_plan(&board, "named").0["lifecycle"], json!(record));
     assert_eq!(current_plan(&board, "bare").0.get("lifecycle"), None);
 }
+
+/// A migration copies the plan record a v1 change names when it moves the
+/// change's records onto it, and the copy keeps the plan's typed answers.
+#[test]
+fn a_migration_s_copy_of_a_plan_carries_the_plan_s_typed_answers() {
+    let board = Changes::new();
+    board.mount_x(&[("README.md", "x\n")]);
+    board.write("changes/t/plans/1.md", PLAN);
+    let given = json!({"ux": "none", "data": "stored", "lifecycle": "none"});
+    board.write(
+        "changes/t/plans/1.json",
+        &typed(
+            "changes/plan/v1",
+            &json!({"text": "/changes/t/plans/1.md", "uses": [], "answers": given}),
+        ),
+    );
+    board.write(
+        "changes/t.json",
+        &change(
+            "build",
+            &json!({"plan": "/changes/t/plans/1", "records": [TASK]}),
+        ),
+    );
+    let output = board.call("migrate", &json!({"apply": true}));
+    assert_eq!(output["changes"], json!(["/changes/t"]));
+    assert_eq!(
+        board.read("changes/t/plans/1.json"),
+        json!({
+            "$type": "changes/plan/v1",
+            "text": "/changes/t/plans/1.md",
+            "uses": [],
+            "records": [TASK],
+            "answers": given,
+        })
+    );
+}

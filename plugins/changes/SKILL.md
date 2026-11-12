@@ -40,8 +40,13 @@ blocks is missing.
 3. Attach every record you make with
    `board -C <board> changes attach --path /changes/<name> --ref <path>`.
    The records go on the plan the change names, so write the plan first:
-   pipe a JSON object with `path`, `text`, `uses` and `paths` to
-   `board -C <board> changes plan`. Records the change surfaced that you
+   pipe a JSON object with `path`, `text`, `uses`, `paths` and `answers` to
+   `board -C <board> changes plan`. Give the plan's `answers` beside its
+   text: `ux` is none or mockups, `data` is none or stored, and `lifecycle`
+   is none or record; each section holds the reason. The gates read the
+   answers to decide which checks apply, and under a flow whose checks read
+   one, `plan` refuses a plan that leaves it out
+   (`changes::plan::no_answers`). Records the change surfaced that you
    read and do not rely on go in `considered`, as
    `[{"records": ["<path>"], "why": "<reason>"}]`. Obligations the change
    leaves owed go in `owed`, as `[{"control": "<path>", "why": "<reason>"}]`.
@@ -50,10 +55,10 @@ blocks is missing.
    it leaves, the recovery, and the order of the check against the
    destructive step it guards. Consumers lists every caller and reader of
    what the change produces or alters, and names the files searched.
-   Lifecycle starts with None and a reason, or names the record
+   Lifecycle says why nothing changes state, or names the record
    `board changes lifecycle` writes and summarises its states in one line.
    When the plan's paths reach `/controls/<repo>/lifecycle-paths`, the gate
-   refuses None. Write the record by piping `path`, `text` (at most 1,500
+   refuses a `lifecycle` answer of none. Write the record by piping `path`, `text` (at most 1,500
    words: the state table, the crash points and the invariants), `doc` (the
    repository file where the table lands) and `external` to
    `board -C <board> changes lifecycle`. The builder's brief names its text.
@@ -174,7 +179,11 @@ to replace the flow copies changes kept before versions.
   `--inline true`.
 - `changes::change::not_migrated`: run `changes.migrate --apply true`.
 - `changes::ux::not_agreed`: a mockup has no owner decision naming it, or
-  UX lists none and does not say "No UI change".
+  the plan answers `ux` mockups and UX lists none.
+- `changes::plan::no_answers`: send the plan again with the `answers` the
+  message names, such as `{"ux": "none", "data": "none", "lifecycle": "none"}`.
+- A check whose detail says the plan gives no typed answer: the plan was
+  written before plans gave answers; write it again with `answers`.
 - `changes::ux::no_neighbours`: add a Neighbours list under UX.
 - `changes::plan::no_paths`: give the plan `paths`, the files and patterns
   it will edit.

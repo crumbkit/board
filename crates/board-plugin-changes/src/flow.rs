@@ -13,6 +13,7 @@ use board_plugin::shape::{Open, PathTemplate, Pattern, Prose, Record, Slug, Tag,
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use crate::plan::Answers;
 use crate::records::{Route, Subject};
 
 pub(crate) use read::{
@@ -79,6 +80,12 @@ impl Flow {
     /// The phase named `name`, or none when the flow has no such phase.
     pub(crate) fn phase(&self, name: &str) -> Option<&Phase> {
         self.phases.iter().find(|phase| phase.name == name)
+    }
+
+    /// The answers each check's `when` names, in order.
+    pub(crate) fn answers(&self) -> impl Iterator<Item = Answers> + '_ {
+        (self.phases.iter().flat_map(|phase| &phase.checks))
+            .filter_map(|check| check.when.as_ref()?.answers)
     }
 
     /// The names of its phases, in order.
@@ -302,6 +309,9 @@ pub(crate) struct When {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "Option<BTreeMap<String, Pattern>>")]
     pub(crate) section_not: Option<BTreeMap<String, String>>,
+    /// The plan's typed answers each equal the one given here.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) answers: Option<Answers>,
     /// No record of this type that Board reads is at this path.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) absent: Option<Absent>,

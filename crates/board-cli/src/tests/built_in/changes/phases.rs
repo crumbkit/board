@@ -81,9 +81,7 @@ fn next_reads_the_gate_from_the_plan_file_and_says_what_to_do() {
             ("task", "pass"),
             ("route", "pass"),
             ("owner-approval", "pass"),
-            ("mockups", "missing"),
-            ("data-signed", "missing"),
-            ("lifecycle-record", "missing"),
+            ("lifecycle-declared", "pass"),
             ("obligations", "pass"),
         ])
     );
@@ -117,16 +115,10 @@ fn advance_refuses_an_unmet_gate_naming_what_is_missing_and_moves_on_once_it_is_
     assert_eq!(refused["code"], "changes::gate::unmet");
     assert_eq!(
         refused["fields"]["missing"],
-        json!([
-            "plan-sections",
-            "owner-approval",
-            "mockups",
-            "data-signed",
-            "lifecycle-record"
-        ])
+        json!(["plan-sections", "owner-approval"])
     );
     let remedies = refused["fields"]["remedies"].as_array().unwrap();
-    assert_eq!(remedies.len(), 5);
+    assert_eq!(remedies.len(), 2);
     assert!(
         remedies[1]
             .as_str()
@@ -618,7 +610,12 @@ fn a_change_with_no_task_blocks_the_plan_gate_and_attaching_one_clears_it() {
         "changes/t/plans/1.json",
         &typed(
             "changes/plan/v1",
-            &json!({"text": "/changes/t/plan.md", "uses": [], "records": [board.approved()]}),
+            &json!({
+                "text": "/changes/t/plan.md",
+                "uses": [],
+                "answers": answers(),
+                "records": [board.approved()],
+            }),
         ),
     );
     board.write(
@@ -655,14 +652,18 @@ fn ux_plan(ux: &str, data: &str) -> String {
     format!("{before}## UX\n\n{ux}\n\n## Data\n\n{data}\n\n## Failure paths{after}")
 }
 
-/// An owner-routed change in plan whose plan file holds `plan`.
-fn planned_change(board: &Changes, plan: &str) {
+/// An owner-routed change in plan whose plan file holds `plan` and whose
+/// plan answers `ux` and `data` with these words.
+fn planned_change(board: &Changes, plan: &str, ux: &str, data: &str) {
     board.change_at(
         "changes/t.json",
         "plan",
         &json!({"plan": "/changes/t/plan.md", "route": "owner", "records": [board.approved()]}),
     );
     board.write("changes/t/plan.md", plan);
+    let mut record = board.read("changes/t/plans/1.json");
+    record["answers"] = json!({"ux": ux, "data": data, "lifecycle": "none"});
+    board.write("changes/t/plans/1.json", &record.to_string());
 }
 
 /// A decision with these refs or urls.
@@ -686,6 +687,8 @@ fn advance_refuses_a_mockup_the_owner_has_not_agreed_and_moves_on_once_a_decisio
             &format!("### Mockups\n\n- {MOCKUP}\n\n### Neighbours\n\n- /changes/other\n"),
             "None.",
         ),
+        "mockups",
+        "none",
     );
     assert_eq!(
         board.refusal("advance", &path())["code"],
@@ -703,6 +706,8 @@ fn advance_refuses_mockups_with_no_neighbours_list_and_moves_on_once_one_is_writ
     planned_change(
         &board,
         &ux_plan(&format!("### Mockups\n\n- {MOCKUP}"), "None."),
+        "mockups",
+        "none",
     );
     board.call("attach", &at(&json!({"ref": "/decisions/ux"})));
     assert_eq!(
@@ -747,6 +752,8 @@ fn advance_refuses_unsigned_data_and_moves_on_once_a_decision_references_the_und
             "No UI change: it is headless.",
             "One record per call, in the calls table.",
         ),
+        "none",
+        "stored",
     );
     assert_eq!(
         board.refusal("advance", &path())["code"],

@@ -213,7 +213,13 @@ fn change(phase: &str, fields: &Value) -> String {
 /// The input of `changes.plan` for the change at `path`, declaring
 /// `paths`, with the fixture plan.
 fn plan_input(path: &str, paths: &[&str]) -> Value {
-    json!({"path": path, "text": PLAN, "uses": [], "paths": paths})
+    json!({"path": path, "text": PLAN, "uses": [], "paths": paths, "answers": answers()})
+}
+
+/// The typed answers of the fixture plan, whose text says there is no UI,
+/// no stored data and no change of state.
+fn answers() -> Value {
+    json!({"ux": "none", "data": "none", "lifecycle": "none"})
 }
 
 /// `given` as the flags of `board call`: each string as it is, each number
@@ -349,7 +355,7 @@ impl Changes {
                     self.write(written.trim_start_matches('/'), "# Plan\n");
                     written
                 });
-                let mut plan = json!({"text": written, "uses": []});
+                let mut plan = json!({"text": written, "uses": [], "answers": answers()});
                 if let Some(records) = records {
                     plan["records"] = records;
                 }
@@ -1027,7 +1033,7 @@ fn refs_finds_the_changes_that_reference_a_ticket_and_not_one_that_does_not() {
 /// at `path` on `mount`, given without its trailing slash, that has none.
 fn new_plan_usage(path: &str, mount: &str) -> String {
     format!(
-        "Pipe `board changes plan` JSON on stdin with the fields `path`, `text`, `uses` and `paths`, \
+        "Pipe `board changes plan` JSON on stdin with the fields `path`, `text`, `uses`, `paths` and `answers`, \
          plus any `considered` and `owed`, such as `{}`.",
         plan_example(path, mount)
     )
@@ -1037,7 +1043,7 @@ fn new_plan_usage(path: &str, mount: &str) -> String {
 /// at `path` on `mount` that already has one.
 fn revised_plan_usage(path: &str, mount: &str) -> String {
     format!(
-        "`board changes plan` reads JSON on stdin and replaces the plan, so resend all four fields \
+        "`board changes plan` reads JSON on stdin and replaces the plan, so resend all five fields \
          with any `considered` and `owed`, such as `{}`.",
         plan_example(path, mount)
     )
@@ -1045,5 +1051,7 @@ fn revised_plan_usage(path: &str, mount: &str) -> String {
 
 /// The one-line input of `changes.plan` the hints show.
 fn plan_example(path: &str, mount: &str) -> String {
-    format!(r#"{{"path":"{path}","text":"<text>","uses":["<use>"],"paths":["{mount}/<path>"]}}"#)
+    format!(
+        r#"{{"path":"{path}","text":"<text>","uses":["<use>"],"paths":["{mount}/<path>"],"answers":{{"ux":"none","data":"none","lifecycle":"none"}}}}"#
+    )
 }

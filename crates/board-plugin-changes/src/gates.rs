@@ -13,6 +13,7 @@ use serde_json::{Map, Value};
 
 use crate::change::Referenced;
 use crate::flow::{self, Actor, Field, Kind as CheckKind, Part, Scope};
+use crate::plan::answers::{Answers, Ux};
 use crate::records::{BUILD, ChangeRecord, Kind, Subject, TASK_TYPE};
 
 pub(crate) const RUN_TYPE: &str = "runs/run/v1";
@@ -107,6 +108,8 @@ pub(crate) struct Observed {
     /// The Markdown file the change's plan record names as its text.
     pub(crate) plan_file: Option<String>,
     pub(crate) uses: Vec<String>,
+    /// The typed answers the plan record gives.
+    pub(crate) answers: Answers,
     /// The records the plan's `considered` field lists.
     pub(crate) considered: Vec<String>,
     /// The change's surfaced paths that no longer reach anything.
@@ -150,6 +153,7 @@ impl Observed {
             plan: None,
             plan_file: None,
             uses: Vec::new(),
+            answers: Answers::default(),
             considered: Vec::new(),
             surfaced_gone: Vec::new(),
             owed: Vec::new(),
@@ -270,9 +274,9 @@ pub(crate) enum Read {
 pub(crate) fn reads(checks: &[flow::Check]) -> BTreeSet<Read> {
     let mut reads = BTreeSet::new();
     for each in checks {
-        if (each.when.as_ref())
-            .is_some_and(|when| when.section.is_some() || when.section_not.is_some())
-        {
+        if (each.when.as_ref()).is_some_and(|when| {
+            when.section.is_some() || when.section_not.is_some() || when.answers.is_some()
+        }) {
             reads.insert(Read::Plan);
         }
         if let Some(absent) = each.when.as_ref().and_then(|when| when.absent.as_ref()) {
@@ -339,8 +343,16 @@ pub(crate) fn interpret(observed: &Observed, checks: &[flow::Check]) -> Vec<Chec
     let values = remedy::values(observed);
     (checks.iter())
         .filter_map(|each| {
+            // A check that reads an answer the plan does not give is the
+            // agent's to clear, by writing the plan again.
+            let left_out = (each.when.as_ref().and_then(|when| when.answers))
+                .map_or_else(Vec::new, |wanted| observed.answers.left_out(wanted));
             let missing = match applies(observed, &plan, each) {
                 Ok(false) => return None,
+                Ok(true) if !left_out.is_empty() => Some(format!(
+                    "the plan gives no typed answer for {}, which this check reads",
+                    left_out.join(" and ")
+                )),
                 Ok(true) => evaluate(observed, &plan, each),
                 Err(detail) => Some(detail),
             };
@@ -352,15 +364,21 @@ pub(crate) fn interpret(observed: &Observed, checks: &[flow::Check]) -> Vec<Chec
                 (Some(detail), None) => (Status::Missing, detail),
                 (None, _) => (Status::Pass, kinds::passed(observed, each, &values)),
             };
-            let remedy = (status == Status::Missing).then(|| remedy::of(each, &values));
+            let (code, actor, said) = if left_out.is_empty() {
+                let (code, said) = (code_of(observed, &plan, each), remedy::of(each, &values));
+                (code, each.actor.unwrap_or(Actor::Agent), said)
+            } else {
+                let said = remedy::fill(remedy::ANSWER, &values);
+                ("changes::plan::no_answers", Actor::Agent, said)
+            };
             Some(Check {
                 check: each.id.clone(),
-                code: code_of(observed, &plan, each),
+                code,
                 status,
                 detail,
-                actor: each.actor.unwrap_or(Actor::Agent),
+                actor,
                 blocks: each.blocks.unwrap_or(true),
-                remedy,
+                remedy: (status == Status::Missing).then_some(said),
             })
         })
         .collect()
@@ -380,7 +398,7 @@ fn waived_by<'a>(observed: &'a Observed, each: &flow::Check) -> Option<&'a str> 
 }
 
 /// Whether every condition of the check's `when` holds, or why a pattern
-/// in it cannot be read.
+/// in it cannot be read. An answer the plan leaves out counts as holding.
 fn applies(
     observed: &Observed,
     plan: &BTreeMap<String, String>,
@@ -403,6 +421,11 @@ fn applies(
         if matches_section(plan, heading, text)? {
             return Ok(false);
         }
+    }
+    if let Some(wanted) = when.answers
+        && !observed.answers.meet(wanted)
+    {
+        return Ok(false);
     }
     if let Some(absent) = &when.absent
         && observed
@@ -602,16 +625,22 @@ fn named_by_decisions(observed: &Observed) -> BTreeSet<&str> {
 }
 
 fn ux_missing(observed: &Observed, found: &BTreeMap<String, String>) -> Option<String> {
-    if NO_UI.is_match(found.get("ux").map_or("", String::as_str)) {
+    // A plan whose typed answer is mockups lists them, whatever its text says.
+    if observed.answers.ux != Some(Ux::Mockups)
+        && NO_UI.is_match(found.get("ux").map_or("", String::as_str))
+    {
         return None;
     }
     let items = under_ux(found, "mockups");
     if items.is_empty() {
-        return Some(
+        return Some(if observed.answers.ux == Some(Ux::Mockups) {
+            "the plan answers `ux` mockups and its UX section lists none under a ### Mockups \
+             heading"
+        } else {
             "the UX section neither starts with No UI change and a reason nor lists mockups under \
              a ### Mockups heading"
-                .to_owned(),
-        );
+        }
+        .to_owned());
     }
     if let Some(unnamed) = items.iter().find(|item| named_in(item).is_none()) {
         return Some(format!(

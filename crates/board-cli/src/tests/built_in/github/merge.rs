@@ -26,6 +26,7 @@ fn change(desk: &Desk, phase: &str, head: &str, plan: &str) {
         "text": "/changes/lever/plan.md",
         "uses": [],
         "records": [],
+        "answers": {"ux": "none", "data": "none", "lifecycle": "none"},
     });
     desk.write("changes/lever/plans/1.json", &planned.to_string());
     let pull = json!({
