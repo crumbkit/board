@@ -104,7 +104,7 @@ pub(crate) struct RulesCommand {
 /// has no plan record. `answers` holds the plan's typed answers, left out
 /// when it gives none. `lifecycle` is the path of the text of its lifecycle
 /// record, left out when it has none; the text counts outside the limit, as
-/// the plan's does. `warnings` says when a rule a `planned-controlled`
+/// the plan's does. `warnings` says when a rule a `planned-rule-paths`
 /// check of the change's flow names does not exist, left out when none is
 /// missing. `rules` lists each rule on the plan's paths once,
 /// as `rules.for-paths` finds them: those that matched only some planned
@@ -379,7 +379,7 @@ fn lifecycle_text(host: &dyn Host, plan: Option<&str>) -> Result<Option<String>,
         .and_then(|(_, body)| Some(field(body, "text").to_owned()).filter(|text| !text.is_empty())))
 }
 
-/// The warning for each rule a `planned-controlled` check of the change's
+/// The warning for each rule a `planned-rule-paths` check of the change's
 /// flow names and the board does not hold, in which case the gate has only
 /// the section heading to go on.
 fn missing_rules(host: &dyn Host, observed: &Observed) -> Result<Vec<Warning>, PluginError> {
@@ -388,7 +388,7 @@ fn missing_rules(host: &dyn Host, observed: &Observed) -> Result<Vec<Warning>, P
     for check in (observed.flow.iter())
         .flat_map(|flow| &flow.phases)
         .flat_map(|phase| &phase.checks)
-        .filter(|each| each.kind.known() == Some(&Kind::PlannedControlled))
+        .filter(|each| each.kind.known() == Some(&Kind::PlannedRulePaths))
     {
         let headings: Vec<&str> = (check.when.iter())
             .flat_map(|when| when.section.iter().flatten())

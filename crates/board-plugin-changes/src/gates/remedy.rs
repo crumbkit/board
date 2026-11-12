@@ -183,12 +183,12 @@ fn default(each: &flow::Check) -> String {
              clear it. List an obligation the change leaves owed in the plan's owed field."
                 .to_owned()
         }
-        Kind::ControlledPaths => {
+        Kind::RulePaths => {
             "Revert the edits to the paths those rules list, or move the change to a flow that allows \
              them with `board changes reflow --path {change} --flow <flow>`."
                 .to_owned()
         }
-        Kind::PlannedControlled => {
+        Kind::PlannedRulePaths => {
             "Give the section this check reads what it needs in place of None, or narrow the \
              plan's paths with `board changes plan --path {change}`."
                 .to_owned()

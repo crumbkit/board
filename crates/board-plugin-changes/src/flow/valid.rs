@@ -73,7 +73,7 @@ fn required(each: &Check, kind: Kind) -> Option<&'static str> {
         Kind::Field => ("field", each.field.is_some()),
         Kind::Records => ("type", each.record_type.is_some()),
         Kind::Understood => ("subject", each.subject.is_some()),
-        Kind::ControlledPaths | Kind::PlannedControlled => ("rules", each.rules.is_some()),
+        Kind::RulePaths | Kind::PlannedRulePaths => ("rules", each.rules.is_some()),
         Kind::Exists => ("path", each.path.is_some()),
         _ => return None,
     };
@@ -265,7 +265,7 @@ pub(crate) fn refuse_without_repository(flow: &Flow, mount: &str) -> Result<(), 
         .filter(|each| {
             matches!(
                 each.kind.known(),
-                Some(Kind::Paths | Kind::Run | Kind::ControlledPaths)
+                Some(Kind::Paths | Kind::Run | Kind::RulePaths)
             )
         })
         .map(|each| each.id.as_str())

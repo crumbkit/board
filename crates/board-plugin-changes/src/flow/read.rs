@@ -13,15 +13,12 @@
 //! board lacks it, and the change's `flow` references it. The gates read
 //! that version, so editing a board's flow never moves a change in flight.
 
-use std::fmt::Write as _;
-
-use board_model::canonical_json;
+use board_model::flow_version;
 use board_ops::{Host, PluginError, literal};
 use board_plugin::shape::Record;
 use schemars::JsonSchema;
 use serde::Serialize;
 use serde_json::{Value, json};
-use sha2::{Digest, Sha256};
 
 use super::{DEFAULT, Flow, shipped};
 use crate::board::{body, logical, readable, refused, rows, text};
@@ -194,27 +191,9 @@ pub(crate) fn chosen(
     asked_for(host, DEFAULT)
 }
 
-/// How many hex digits of the SHA-256 a version keeps.
-const VERSION_DIGITS: usize = 16;
-
-/// Where the version of `flow` is stored: `/flows/<name>/<version>`, the
-/// version being the first 16 hex digits of the SHA-256 of the flow's
-/// canonical JSON, so identical flows share one path.
+/// Where the version of `flow` is stored, as [`flow_version`] says.
 pub(crate) fn version_path(flow: &Flow) -> String {
-    version_of(&flow.name, &serde_json::to_value(flow).unwrap_or_default())
-}
-
-/// Where the flow named `name` whose JSON is `value` is stored, as
-/// [`version_path`] says. A flow stored before a field was renamed keeps
-/// the path of the JSON it was stored as.
-pub(crate) fn version_of(name: &str, value: &Value) -> String {
-    let digest = Sha256::digest(canonical_json(value).as_str().as_bytes());
-    let hex: String =
-        (digest.iter().take(VERSION_DIGITS / 2)).fold(String::new(), |mut hex, byte| {
-            let _ = write!(hex, "{byte:02x}");
-            hex
-        });
-    format!("{FLOWS}{name}/{hex}")
+    flow_version(&flow.name, &serde_json::to_value(flow).unwrap_or_default())
 }
 
 /// The path of `flow`'s version, and the `put` line that writes it when

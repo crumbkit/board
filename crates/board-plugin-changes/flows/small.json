@@ -12,7 +12,7 @@
         {"id": "considered", "kind": "considered"},
         {"id": "head", "kind": "field", "field": "head"},
         {"id": "suite-run", "kind": "run", "scope": "full", "waivable": true},
-        {"id": "not-small", "kind": "controlled-paths",
+        {"id": "not-small", "kind": "rule-paths",
          "rules": ["/rules/{repo}/ui-paths", "/rules/{repo}/data-paths", "/rules/{repo}/lifecycle-paths"],
          "remedy": "This change touches a UI, data or lifecycle path, so it needs the development flow: run `board changes reflow --path {change} --flow development`."}
       ]
@@ -24,7 +24,7 @@
       "checks": [
         {"id": "review", "kind": "records", "actor": "reviewer", "type": "review/report/v1",
          "where": {"at_head": "range", "values": {"verdict": ["approve", "comment"]}, "no_findings": ["critical", "high"]}},
-        {"id": "lifecycle-paths", "kind": "controlled-paths",
+        {"id": "lifecycle-paths", "kind": "rule-paths",
          "rules": ["/rules/{repo}/lifecycle-paths"],
          "remedy": "This change touches a lifecycle path, so it needs the development flow: run `board changes reflow --path {change} --flow development`."}
       ]
@@ -35,7 +35,7 @@
       "instruction": "Draft and open the pull request with `board changes pr --path {change}`, record it with `board github ref` and attach it with --pull.",
       "checks": [
         {"id": "pull-request", "kind": "field", "field": "pulls", "types": ["github/pull/v1"]},
-        {"id": "lifecycle-paths-at-land", "kind": "controlled-paths",
+        {"id": "lifecycle-paths-at-land", "kind": "rule-paths",
          "rules": ["/rules/{repo}/lifecycle-paths"],
          "remedy": "This change touches a lifecycle path, so it needs the development flow: run `board changes reflow --path {change} --flow development`."}
       ]

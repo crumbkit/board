@@ -50,7 +50,7 @@ struct Given {
     existing: Vec<(&'static str, bool)>,
     /// The paths a `when.absent` names that hold the record it means.
     records_held: Vec<&'static str>,
-    /// The files a controlled-paths rule lists among the edited ones.
+    /// The files a rule-paths rule lists among the edited ones.
     controlled: Vec<(&'static str, Vec<&'static str>)>,
     /// The plan's typed answers: none to each question, as the fixture
     /// plan's text says.

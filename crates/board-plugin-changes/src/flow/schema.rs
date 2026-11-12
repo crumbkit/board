@@ -11,7 +11,7 @@ use std::borrow::Cow;
 use schemars::{JsonSchema, Schema, SchemaGenerator};
 use serde_json::{Map, Value, json};
 
-use super::{Check, Kind};
+use super::{Check, FORMER_KINDS, Kind};
 
 /// One kind that takes parameters: the kind, its `$defs` entry, its
 /// parameters, and those it requires.
@@ -72,14 +72,14 @@ const PARAMETERS: [Parameters; 10] = [
         required: &[],
     },
     Parameters {
-        kind: Kind::ControlledPaths,
-        entry: "ControlledPathsCheck",
+        kind: Kind::RulePaths,
+        entry: "RulePathsCheck",
         named: &["rules", "controls"],
         required: &["rules"],
     },
     Parameters {
-        kind: Kind::PlannedControlled,
-        entry: "PlannedControlledCheck",
+        kind: Kind::PlannedRulePaths,
+        entry: "PlannedRulePathsCheck",
         named: &["rules", "controls"],
         required: &["rules"],
     },
@@ -106,6 +106,11 @@ impl JsonSchema for Checked {
         schema.remove("additionalProperties");
         let properties = (schema.get_mut("properties").and_then(Value::as_object_mut))
             .expect("a check's schema names its properties");
+        let kinds = (properties.get_mut("kind"))
+            .and_then(|kind| kind.get_mut("enum"))
+            .and_then(Value::as_array_mut)
+            .expect("a check's kind is an enum");
+        kinds.extend(FORMER_KINDS.iter().map(|(former, _)| json!(former)));
         let mut moved = Map::new();
         for parameter in PARAMETERS.iter().flat_map(|kind| kind.named) {
             if let Some(property) = properties.remove(*parameter) {
@@ -140,10 +145,15 @@ fn entry(generator: &mut SchemaGenerator, kind: &Parameters, moved: &Map<String,
     let refused: Vec<Value> = (kind.named.iter())
         .map(|parameter| refused_unless_other_kind(kind.kind, parameter))
         .collect();
+    let names: Vec<&str> = std::iter::once(name)
+        .chain(
+            (FORMER_KINDS.iter()).filter_map(|(former, of)| (*of == kind.kind).then_some(*former)),
+        )
+        .collect();
     let mut schema = json!({
         "description": format!("The parameters of a check of kind `{name}`."),
         "properties": properties,
-        "if": {"properties": {"kind": {"const": name}}, "required": ["kind"]},
+        "if": {"properties": {"kind": {"enum": names}}, "required": ["kind"]},
         "else": {"not": {"anyOf": refused}},
     });
     if let Some((parameter, former)) =
@@ -164,7 +174,12 @@ fn entry(generator: &mut SchemaGenerator, kind: &Parameters, moved: &Map<String,
 fn refused_unless_other_kind(kind: Kind, parameter: &str) -> Value {
     let others: Vec<&str> = (PARAMETERS.iter())
         .filter(|other| other.kind != kind && other.named.contains(&parameter))
-        .map(|other| other.kind.as_str())
+        .flat_map(|other| {
+            let former = (FORMER_KINDS.iter())
+                .filter(move |(_, of)| *of == other.kind)
+                .map(|(name, _)| *name);
+            std::iter::once(other.kind.as_str()).chain(former)
+        })
         .collect();
     if others.is_empty() {
         return json!({"required": [parameter]});

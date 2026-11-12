@@ -10,6 +10,7 @@ mod judged;
 mod migrate;
 mod overlap;
 pub mod records;
+mod rename;
 mod standards;
 mod summary;
 mod version;
@@ -181,10 +182,10 @@ fn manifest() -> Value {
             "_meta": {},
         }, {
             "name": "migrate",
-            "description": "With owed_by, set each obligation's owed_by to the one record that left \
-                it owed: the pull request its requirement names, else the review report among its \
-                sources, else the decision among them. apply writes every line in one commit with \
-                a Board-Bulk trailer; without it nothing is written.",
+            "description": "owed_by sets each obligation's owed_by from what its text and sources \
+                name; rename moves rules to /rules/ and rewrites every old name in the board's own \
+                unsigned records. apply writes in one bulk commit, a rename only with its dry run's \
+                digest; without apply nothing is written.",
             "inputSchema": schema_of::<migrate::Input>(SchemaSettings::draft2020_12()),
             "outputSchema": schema_of::<migrate::Output>(settings()),
             "annotations": {

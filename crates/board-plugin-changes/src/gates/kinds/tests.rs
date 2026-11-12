@@ -309,7 +309,8 @@ fn a_check_reports_its_actor_and_an_agent_one_by_default() {
 
 #[test]
 fn controlled_paths_pass_when_no_named_rule_exists_and_say_so_and_miss_an_edit_a_rule_lists() {
-    let list = json!([{"id": "ui-paths", "kind": "controlled-paths", "rules": ["/rules/{repo}/ui-paths"]}]);
+    let list =
+        json!([{"id": "ui-paths", "kind": "rule-paths", "rules": ["/rules/{repo}/ui-paths"]}]);
     let mut found = observed(&json!({}), &[]);
     found.edited = vec!["/repos/x/ui/a.rs".to_owned()];
     let none = first(&found, list.clone());
@@ -338,7 +339,7 @@ fn controlled_paths_pass_when_no_named_rule_exists_and_say_so_and_miss_an_edit_a
 
 #[test]
 fn a_controlled_paths_detail_names_ten_touched_files_and_counts_the_rest() {
-    let list = json!([{"id": "ui-paths", "kind": "controlled-paths", "rules": ["/rules/x/ui"]}]);
+    let list = json!([{"id": "ui-paths", "kind": "rule-paths", "rules": ["/rules/x/ui"]}]);
     let mut found = observed(&json!({}), &[]);
     let files = |count: usize| -> Vec<String> {
         (0..count)
@@ -419,9 +420,9 @@ fn a_check_that_is_not_waivable_ignores_a_decision_naming_it() {
     assert_eq!(found.status, Status::Missing);
 }
 
-/// The kind `planned-controlled` over one rule, applied unconditionally.
+/// The kind `planned-rule-paths` over one rule, applied unconditionally.
 fn planned_controlled() -> Value {
-    json!([{"id": "declared", "kind": "planned-controlled", "rules": ["/rules/{repo}/lifecycle-paths"]}])
+    json!([{"id": "declared", "kind": "planned-rule-paths", "rules": ["/rules/{repo}/lifecycle-paths"]}])
 }
 
 #[test]
@@ -437,8 +438,9 @@ fn planned_controlled_misses_a_rule_the_planned_paths_reach_and_passes_one_they_
     assert_eq!((status, detail.as_str()), (Status::Pass, ""));
 }
 
-/// A flow stored before the rename names `controls` under `/controls/`,
-/// and its check reads the rules the board found as the new flow does.
+/// A flow stored before the rename names `controls` under `/controls/` in a
+/// check of the former kind `planned-controlled`, and its check reads the
+/// rules the board found as the new flow does.
 #[test]
 fn a_check_naming_controls_under_controls_gates_as_one_naming_rules_under_rules() {
     let before = json!([{"id": "declared", "kind": "planned-controlled", "controls": ["/controls/{repo}/lifecycle-paths"]}]);
@@ -477,7 +479,7 @@ fn planned_controlled_is_missing_with_the_refusal_when_for_paths_fails() {
 
 #[test]
 fn planned_controlled_with_no_rules_says_it_cannot_pass() {
-    let list = json!([{"id": "declared", "kind": "planned-controlled"}]);
+    let list = json!([{"id": "declared", "kind": "planned-rule-paths"}]);
     let (_, status, detail) = run(&observed(&json!({}), &[]), list).remove(0);
     assert_eq!(status, Status::Missing);
     assert!(detail.contains("names no rules"), "{detail}");

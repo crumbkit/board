@@ -229,8 +229,8 @@ pub(crate) struct Check {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "Option<Prose>", extend("minLength" = 1))]
     pub(crate) escape_section: Option<String>,
-    /// `controlled-paths`: the rules whose paths the diff must not touch.
-    /// `planned-controlled`: the rules the plan's paths must not reach. A
+    /// `rule-paths`: the rules whose paths the diff must not touch.
+    /// `planned-rule-paths`: the rules the plan's paths must not reach. A
     /// flow stored before the rename names it `controls`.
     #[serde(default, alias = "controls", skip_serializing_if = "Option::is_none")]
     #[schemars(with = "Option<Vec<PathTemplate>>")]
@@ -256,11 +256,20 @@ pub(crate) enum Kind {
     Mockups,
     Considered,
     Obligations,
-    ControlledPaths,
-    PlannedControlled,
+    #[serde(alias = "controlled-paths")]
+    RulePaths,
+    #[serde(alias = "planned-controlled")]
+    PlannedRulePaths,
     FlowValid,
     Exists,
 }
+
+/// The name a flow stored before the rename gives a kind, which Board reads
+/// as the kind until every board has migrated.
+pub(crate) const FORMER_KINDS: [(&str, Kind); 2] = [
+    ("controlled-paths", Kind::RulePaths),
+    ("planned-controlled", Kind::PlannedRulePaths),
+];
 
 impl Kind {
     pub(crate) fn as_str(self) -> &'static str {
@@ -275,8 +284,8 @@ impl Kind {
             Self::Mockups => "mockups",
             Self::Considered => "considered",
             Self::Obligations => "obligations",
-            Self::ControlledPaths => "controlled-paths",
-            Self::PlannedControlled => "planned-controlled",
+            Self::RulePaths => "rule-paths",
+            Self::PlannedRulePaths => "planned-rule-paths",
             Self::FlowValid => "flow-valid",
             Self::Exists => "exists",
         }

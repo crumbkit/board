@@ -409,3 +409,40 @@ nothing is set. Two records under one rule are listed under `ambiguous` with
 `--owed_by` it neither reads nor writes. With both, every rewrite lands in one
 commit whose trailer is `Board-Bulk: migrate controls`. Each nested board runs
 it itself.
+
+`rules.migrate --rename true` renames what a board calls a control to a rule,
+history included. It moves each `controls/control/v1` and
+`controls/source/v1` from `/controls/` to `/rules/` as a `rules/rule/v1` or
+`rules/source/v1`, and a rule's `rule` becomes its `checker`. A boundary's
+`checks[].control`, a crossing verdict's `control` and `rule`, a plan's
+`owed[].control` and a flow check's `controls` take their new names, and a
+flow's `controlled-paths` and `planned-controlled` checks become `rule-paths`
+and `planned-rule-paths`. In every record's strings and every Markdown file,
+each `/controls/` path, in this board or under a mount, becomes `/rules/`;
+`controls.<capability>` becomes `rules.<capability>`; and the old type names
+become the new ones. crumbkit/board's own `controls/rules/<name>` becomes
+`rules/<name>`. A flow version stored at the hash of its JSON is stored
+again at the hash of its new JSON, the old version is removed, and every
+record that named it names the new one, so each change is pinned to it.
+
+Attention orders, effects and each order's context are never rewritten,
+since they carry a signature; the records they name are rewritten as any
+other. The orders and effects that hold an old name are listed under
+`signed`. Each of these is listed under `kept`, with why, and left for a
+person to change: a mount pointer under `/controls/`; a board config that
+names `controls`, since a plugin may not write the config; a file under
+`/controls/` that is not UTF-8 text, or whose JSON does not parse as a
+record; a flow that would change but is not stored at the hash of its JSON;
+and the records under `/changes/control-becomes-rule/`, which describe the
+rename in the old names. Two flow versions that rename to the same JSON are
+stored once, and both are re-pointed to it. A reference into a mounted board
+that has not migrated yet resolves through the moved prefix until it does.
+
+The dry run lists each write under `writes`, with `to` for a move, and gives
+a `digest`. `--apply true --digest <digest>` writes them in one commit whose
+trailer is `Board-Bulk: rename controls to rules`, or refuses with
+`rules::migrate::stale` and writes nothing when its writes differ from the dry
+run's, as when a record changed since. A file Board cannot read refuses the
+whole rename with `rules::migrate::unread`, before any write. A second run
+lists no writes. It reads and writes only the board's own tree, so each board
+runs it itself.
