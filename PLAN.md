@@ -22,8 +22,8 @@ steps left are the owner's:
 2. Enable `tasks` and use Board daily.
 3. Route what daily use finds to builders as small fixes.
 
-M7 is done when the owner says so. Compiling manifest schemas once per run
-would save `call` 3 to 4 ms, in its own pull request.
+M7 ends when the owner says so. Compiling manifest schemas once per run
+would save `call` 3 to 4 ms.
 
 ## Next: the map of facts, rules and work
 
@@ -34,10 +34,10 @@ design.
 
 ## Then: rules that flows run
 
-Rules gain subjects, triggers, checkers and failure actions, flows name the
-rules they run, and every board migrates before 0.1.0. A file rule's
-`transition` run replaces `adds_check`. [plan/rules.md](plan/rules.md) holds
-the design.
+Rules gain subjects, triggers, checkers and failure actions. Flows name the
+rules they run. Every board migrates, and 0.1.0 is tagged when every
+kind is built. A file rule's `transition` run replaces `adds_check`.
+[plan/rules.md](plan/rules.md) holds the design.
 
 ## Then: runs
 

@@ -29,9 +29,9 @@ never for one reached through a mount, because mounting brings data and never
 code. A model, person, ci-test or suite checker reads a verdict record, such
 as a signed decision, a review report or a run, through one filter. A
 judged check stores the pinned model and a hash of its rubric. `on_failure`
-is optional when every checker is `none`. Rule v2's schema declares every
-subject, trigger and value kind from the start, and `rules.check` reports a
-kind that is not built yet as unsupported.
+is optional when every checker is `none`. Each subject, trigger and value
+kind joins the schema in the step that builds it, so 0.1.0 ships every kind
+built.
 
 ## The control scope fields
 
@@ -116,11 +116,8 @@ the steps in plan/map.md.
     `adds_check` asked for.
 25. `changes.migrate --to flow-v2`.
 26. Flow v1's inline checks are deleted.
-27. **The first tagged release.** `released.json` lists the shipped types,
-    reports and codes, the version becomes 0.1.0, and a changelog starts.
-    After it, a changed type is a new version, reached through `migrate`.
-
-After the release:
+Steps 28 to 34 build the remaining kinds. Step 27, the first tagged
+release, follows them.
 
 28. **Schedules.** `rules.due` lists rules whose schedule has passed with no
     check since. The session-start mod runs due checks whose checker is
@@ -140,3 +137,8 @@ After the release:
     `threshold` trigger fires when the lines changed since the last audit
     pass a limit.
 34. Crossing and host subjects.
+
+**The first tagged release** comes after step 34, once every kind is built.
+`released.json` lists the shipped types, reports and codes, the version
+becomes 0.1.0, and a changelog starts. After it, a changed type is a new
+version, reached through `migrate`.
