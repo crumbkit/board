@@ -36,6 +36,10 @@ fn text_renames_old_paths_capabilities_commands_and_types_and_nothing_else() {
             "a rules/rule/v1 and a rules/source/v1",
         ),
         ("the controls plugin", "the controls plugin"),
+        (
+            "The Dashboard controls check failed",
+            "The Dashboard controls check failed",
+        ),
         ("/changes/x/controls/a", "/changes/x/controls/a"),
         (
             "https://github.com/o/controls/pull/1",
@@ -82,7 +86,10 @@ fn a_record_takes_its_new_type_and_field_names() {
 fn a_flow_version_named_anywhere_becomes_its_new_version() {
     let flows = BTreeMap::from([(
         "/flows/development/a9df0910bd037be9".to_owned(),
-        "/flows/development/0123456789abcdef".to_owned(),
+        (
+            "/flows/development/0123456789abcdef".to_owned(),
+            json!(null),
+        ),
     )]);
     let change = json!({"flow": "/flows/development/a9df0910bd037be9"});
     assert_eq!(
