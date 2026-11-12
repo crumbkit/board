@@ -48,12 +48,6 @@ The scope fields once planned for control v1 become parts of rule v2:
   joins that phase's gate. The lifecycle-paths controls become such rules.
 - `summary` stays, one line that `changes.brief` shows.
 
-`rules.check` also reads the rules in a mounted repository's own board, as
-data at the mount's pinned commit, and lists each rule with the board that
-holds it. With no path it checks the caller's repository, found by the repo
-record whose `remote` matches the caller's. The caller passes a branch's
-files on stdin, and `--limit` cuts each list and reports its total.
-
 ## Flows name rules
 
 The changes plugin binds the change subject at a transition: the plan text,

@@ -86,17 +86,16 @@ on main (`git show 226829b:PLAN.md`), as is the deleted HANDOFF.md.
   the `git` executable, that remote mounts change `board/mount/v1` in place,
   that Board fetches only remotes the root board names, and that Board detects
   a colocated jj repository automatically with no setting. After M7, turn the
-  sketch into a list of design gaps for a builder.
+  sketch into design gaps for a builder.
 - **Repositories across boards.** References into another board's
   repository read `name:/path`; repo records are the declaration
   (docs/architecture/paths/repos.md). The
-  owner agreed it on 2026-10-05; it refines M8, and #55's content-addressed
-  records are dropped.
+  owner agreed it on 2026-10-05; it refines M8.
 - **M9 SHA-256 repositories.** Board reads and writes repositories in git's
   SHA-256 object format. Its standing rule is settled decision 5 below.
 - **Views from schemas.** Every record type gets a view and a form derived
-  from its schema. The owner's acceptance test is that views can express the
-  UI of an existing tool the owner will name.
+  from its schema. Its acceptance test is that views can express the UI of
+  an existing tool the owner names.
 - **Serving beyond the UI.** `board serve` keeps the index warm for an agent
   loop, and a `board mcp` adapter serves each capability as an MCP tool.
 - **Adoption.** Board imports records from other systems, such as JIRA,
@@ -107,6 +106,9 @@ on main (`git show 226829b:PLAN.md`), as is the deleted HANDOFF.md.
   refuse, cut until two plugins need them (`git show
   5a34ac92:docs/architecture/writes/effects.md`), then offers, attention
   levels, read gating, learning from corrections and the mandate layer.
+- **A repository's own rules.** `rules.check` reads a mounted repository's
+  own rules as data at its pinned commit, checks the caller's repository
+  without a path, and takes a branch's files on stdin with `--limit`.
 - **Docs as a tree.** Still open are how the review of each docs change runs
   and a tool check that each docs leaf is linked once.
 

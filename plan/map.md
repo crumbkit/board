@@ -129,7 +129,8 @@ steps in plan/rules.md wait for a revised design.
 5. Mount paths are stored as `~/` paths.
 6. A second user tries Board only after the owner's trial.
 7. Board commits use the owner's personal address.
-8. Capture, whose notes that fit no node go to the one inbox the weekly
-   review empties, the approval pane, packs, connectors and a teach and
-   refine vocabulary come later, each after its screen is tried.
-   Connectors will speak versioned JSON on stdin and stdout.
+8. Capture, the approval pane, packs, connectors and a teach and refine
+   vocabulary come later, each after its screen is tried. Connectors will
+   speak versioned JSON on stdin and stdout.
+9. Capture sends a note that fits no node to the one inbox, which the
+   weekly review empties.

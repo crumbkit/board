@@ -50,6 +50,8 @@ mounts are read in order.
   pointers for it, to find its mounts.
 - On a copy of the owner's board with 24 mounts, a warm `check /controls`
   takes about 38 ms. It took 59 ms when a scoped run walked every source.
+  On the same copy, a warm `call plans.open --limit 20` takes about 47 ms,
+  down from 96 ms, which meets the 50 ms target in budgets.md.
 
 ## What is never kept
 
