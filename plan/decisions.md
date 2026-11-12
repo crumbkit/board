@@ -14,9 +14,9 @@ decision that binds nothing, such as "merge this pull request", needs no
 control.
 
 The control schema forbids unknown fields, so the decisions pull request
-adds `basis` to it: an optional list of board references. The control scope
-step, built later, adds the other new control fields and reports a control
-whose decision is superseded.
+adds `basis` to it: an optional list of board references. Rule v2
+(plan/rules.md) renames `basis` to `taught_by` and reports a rule whose
+decision is superseded.
 
 ## The record
 

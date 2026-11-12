@@ -22,15 +22,22 @@ steps left are the owner's:
 2. Enable `tasks` and use Board daily.
 3. Route what daily use finds to builders as small fixes.
 
-M7 is done when the owner says so.
+M7 ends when the owner says so. Compiling manifest schemas once per run
+would save `call` 3 to 4 ms.
 
-The index keeps each mounted source's decision
-([docs](docs/architecture/performance/decisions.md)). On a copy of the
-owner's board with 24 mounts, a warm `call plans.open --limit 20` takes
-about 47 ms, down from 96 ms, which meets the 50 ms target.
+## Next: the map of facts, rules and work
 
-Compiling manifest schemas once per run would save `call` 3 to 4 ms, in
-its own pull request.
+A session sees a view of its node chosen for its task, and the owner sees one
+daily view of what is due, failing and waiting on him. "Control" becomes
+"rule", and rules record their state. [plan/map.md](plan/map.md) holds the
+design.
+
+## Then: rules that flows run
+
+Rules gain subjects, triggers, checkers and failure actions. Flows name the
+rules they run. Every board migrates, and 0.1.0 is tagged when every
+kind is built. A file rule's `transition` run replaces `adds_check`.
+[plan/rules.md](plan/rules.md) holds the design.
 
 ## Then: runs
 
@@ -57,58 +64,54 @@ this order.
 
 1. [Decisions](plan/decisions.md).
 
-2. [Control scope](plan/control-scope.md).
-
-3. [Work records](plan/work-records.md), then [inflight](plan/inflight.md).
+2. [Work records](plan/work-records.md), then [inflight](plan/inflight.md).
 
 ## Out of scope
 
 Each of these waits until a real need has its own plan: effects beyond the
-first slice in plan/board-ui.md; scheduling;
+first slice in plan/board-ui.md; a scheduler inside Board;
 pinned or relative references (a review's `subject` pins only its own
 field); remote mounts (a mount names a local clone);
 any query language beyond SQL; daemons and watchers other than `board serve`;
 sync beyond git; Windows CI (the code
-stays portable); and the old Board's ControlTree groups, assessments,
-paged reports and control status.
+stays portable); and the old Board's ControlTree groups, assessments
+and paged reports.
 
 ## Deferred
 
 These sketches are not built. Their full text is in PLAN.md at commit 226829b
 on main (`git show 226829b:PLAN.md`), as is the deleted HANDOFF.md.
 
-- **M8 Sharing.** A put of one record or a batch through a local mount and
-  `board sync` of the root board are built (docs/architecture/writes.md). The owner decided that transport runs
+- **M8 Sharing.** The owner decided that transport runs
   the `git` executable, that remote mounts change `board/mount/v1` in place,
   that Board fetches only remotes the root board names, and that Board detects
   a colocated jj repository automatically with no setting. After M7, turn the
-  sketch into a list of design gaps for a builder.
+  sketch into design gaps for a builder.
 - **Repositories across boards.** References into another board's
   repository read `name:/path`; repo records are the declaration
   (docs/architecture/paths/repos.md). The
-  owner agreed it on 2026-10-05; it refines M8, and #55's content-addressed
-  records are dropped. The `share` plugin, built in place of the `board copy`
-  and `board share` it named, copies a record and what it needs into a
-  mounted board (docs/plugins/share.md).
+  owner agreed it on 2026-10-05.
 - **M9 SHA-256 repositories.** Board reads and writes repositories in git's
   SHA-256 object format. Its standing rule is settled decision 5 below.
 - **Views from schemas.** Every record type gets a view and a form derived
-  from its schema. The owner's acceptance test is that views can express the
-  UI of an existing tool the owner will name.
+  from its schema. Its acceptance test: views express the UI of
+  an existing tool the owner names.
 - **Serving beyond the UI.** `board serve` keeps the index warm for an agent
   loop, and a `board mcp` adapter serves each capability as an MCP tool.
 - **Adoption.** Board imports records from other systems, such as JIRA,
   through plugins, and a reconciler plugin settles the difference between the
   source and Board's copy. The owner agreed it on 2026-10-05; its first step is
-  a spike that imports one existing store into a scratch board.
-- **Owner rules for effects.** Rules that make a plugin's put ask or
+  a spike importing one existing store into a scratch board.
+- **Owner policies for effects.** Policies that make a plugin's put ask or
   refuse, cut until two plugins need them (`git show
   5a34ac92:docs/architecture/writes/effects.md`), then offers, attention
   levels, read gating, learning from corrections and the mandate layer.
-- **Docs as a tree.** The per-directory word budget is built (STANDARDS.md 22),
-  and docs/architecture.md has split into docs/architecture/. Still open are
-  how the review of each docs change runs and a tool check that each leaf is
-  linked once.
+- **A repository's own rules.** `rules.check` reads a mounted repository's
+  own rules as data at its pinned commit, checks the caller's repository
+  without a path, and takes a branch's files on stdin with `--limit`. Full
+  text: `git show c48b2856:plan/rules.md`.
+- **Docs as a tree.** Still open are how the review of each docs change runs
+  and a tool check that each docs leaf is linked once.
 
 ## Settled decisions
 

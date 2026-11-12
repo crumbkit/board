@@ -17,8 +17,8 @@ is written.
 2. `evals` refers to suites and lists runs (decisions 4 and 9). The evals
    skill changes in the same step. Built: plugins/evals/README.md describes
    it.
-3. `controls` gains a measure rule kind, and `controls.check` calls
-   `runs.latest` (decision 5).
+3. Rule v2's suite checker reads `runs.latest` (decision 5). It is built
+   as step 14 of plan/rules.md.
 4. `cargo xtask bench --record` (decision 13).
 5. The `github` plugin in `board-github` and the CI board (decisions 14 and
    15).
@@ -28,7 +28,7 @@ is written.
 
 1. **Composition.** Each record has one purpose. Schemas stay close to first
    normal form. An eval stays an eval; standing requirements belong in
-   controls.
+   rules.
 2. **No version bumps until a second user exists.** Schemas change in place.
    Each change updates the plugin's schemas, the copies in every board that
    enabled it (the personal board at ~/Code/board and this repository on
@@ -41,15 +41,14 @@ is written.
      results, and `setup` and `summary` prose. `dirty` is optional, because
      an eval's earlier runs never said; a run without it never counts as
      clean.
-   `evals` and `controls` both refer to it. `runs` knows nothing about either.
+   `evals` and rules both refer to it. `runs` knows nothing about either.
 4. **`evals/eval/v1` loses `method`, `cases` and `measures`** (they move to
    the suite) and refers to suites. It keeps the question, decision, verdict
    and conclusion. Decision 10 lists the suite's fields.
-5. **`controls/control/v1` gains rule kinds that point at a suite**, for
-   example "the latest run passes" or "measure `get_ms` is at most 5".
-   `controls.check` judges only the latest full run of a clean revision and
-   reports its outcome and age, or says no run qualifies. There is no filter
-   on a control (AGENTS.md rule 6).
+5. **A rule's suite checker points at a suite**, for example "the latest
+   run passes" or "measure `get_ms` is at most 5". `rules.check` judges only
+   the latest full run of a clean revision and reports its outcome and age,
+   or says no run qualifies. There is no filter on a rule (AGENTS.md rule 6).
 6. **Results.** A run records the cases that did not pass, each with a
    short curated `note`, and the cases that measured something, such as a
    bench operation, plus run-level measures `tests`, `failures`,
@@ -62,7 +61,7 @@ is written.
    plus a short random suffix, such as `20261018T101500Z-a3f9`.
 8. **Where adopter X writes.** A dedicated board in adopter X's state
    directory, mounted into the personal board (~/Code/board), so its churn stays in its own history
-   while evals and controls can read it.
+   while evals and rules can read it.
 
 9. **An eval lists the runs its verdict rests on.** `evals/eval/v1` gets
    `runs` (refs to `runs/run/v1`) beside `suites`. A run knows only its
@@ -90,7 +89,7 @@ is written.
 12. **`runs` offers two capabilities.** Both consider only full runs of clean
     revisions, so the rule for which run counts lives only in `runs`.
     - `latest {suite}` returns the latest such run, with its outcome,
-      measures and age, or says no run qualifies. `controls.check` calls it
+      measures and age, or says no run qualifies. `rules.check` calls it
       through `board call`.
     - `trend {suite, measure, case, limit}` returns one point per such run,
       newest first: the run's path, its `started` time and the measure's
@@ -125,8 +124,8 @@ is written.
 
 16. **The bench budgets stay in
     docs/architecture/performance/budgets.md.** The bench keeps enforcing
-    them in CI, and `runs.trend` shows the history. Controls with measure
-    rules get their first use from CI timings or the adopter's suites.
+    them in CI, and `runs.trend` shows the history. Rules with suite
+    checkers get their first use from CI timings or the adopter's suites.
 
 ## Still to decide
 
