@@ -155,10 +155,9 @@ impl Board {
         self.repositories.read_at(checkout);
     }
 
-    /// Follows the moved prefixes `read` gives once a resolution names
-    /// nothing.
-    pub(crate) fn moving(&mut self, read: impl Fn() -> Vec<board_model::Moved> + Send + 'static) {
-        self.repositories.moving(read);
+    /// Follows `moved` when a resolution names nothing.
+    pub(crate) fn moving(&mut self, moved: Vec<board_model::Moved>) {
+        self.repositories.moving(moved);
     }
 
     /// Records that this run started in `directory`, in a checkout of the

@@ -1,16 +1,41 @@
-use board_model::{Code, LogicalPath, Moved};
+//! A built-in plugin's moved prefixes: a reference under either prefix
+//! resolves while the board holds its target under the other
+//! (docs/plugins/calling/commands.md, Renamed plugins).
+
+use board_model::{CapabilityName, Code, RecordType};
+use board_plugin::Manifest;
 use board_scenario::{Item, Scenario};
 use board_tree::Status;
+use serde_json::Value;
 
+use super::{MANIFEST, board, open};
 use crate::Board;
-use crate::tests::{board, open};
+use crate::host::{Host, Plugin, PluginError};
 
-fn moving(scenario: &Scenario) -> Board {
-    let mut board = open(scenario);
-    let path = |text: &str| text.parse::<LogicalPath>().unwrap();
-    board.moving(move || vec![Moved::new(path("/controls"), path("/rules")).unwrap()]);
-    board
+/// A built-in plugin whose records moved from `/controls` to `/rules`. Its
+/// pair naming the root is one `Moved::new` refuses, which is skipped.
+struct Renamed;
+
+impl Plugin for Renamed {
+    fn manifest(&self) -> Manifest {
+        let manifest = MANIFEST.replace(r#""run": ["./run"], "#, "");
+        Manifest::built_in(serde_json::from_str(&manifest).unwrap()).unwrap()
+    }
+
+    fn schemas(&self) -> Vec<(RecordType, Value)> {
+        Vec::new()
+    }
+
+    fn call(&self, _: &dyn Host, _: &CapabilityName, _: Value) -> Result<Value, PluginError> {
+        Ok(Value::Null)
+    }
+
+    fn moved(&self) -> &'static [(&'static str, &'static str)] {
+        &[("/", "/rules"), ("/controls", "/rules")]
+    }
 }
+
+static RENAMED: [&dyn Plugin; 1] = [&Renamed];
 
 /// A board holding `/rules/p`, and the library it mounts at `/lib`, which
 /// holds `/rules/q`.
@@ -29,27 +54,7 @@ fn mounting() -> (Scenario, Scenario) {
 }
 
 #[test]
-fn a_glob_under_a_moved_prefix_swaps_at_the_root_and_at_a_mounted_root_and_nowhere_else() {
-    let (scenario, _library) = mounting();
-    let board = moving(&scenario);
-    let swapped = |pattern: &str| board.moved_glob(pattern);
-    assert_eq!(
-        swapped("/controls/board/*"),
-        Some("/rules/board/*".to_owned())
-    );
-    assert_eq!(swapped("/rules/*"), Some("/controls/*".to_owned()));
-    assert_eq!(
-        swapped("/lib/controls/*.json"),
-        Some("/lib/rules/*.json".to_owned())
-    );
-    assert_eq!(swapped("/projects/controls/*"), None);
-    assert_eq!(swapped("/control*/x"), None);
-    assert_eq!(swapped("controls/*"), None);
-    assert_eq!(open(&scenario).moved_glob("/controls/*"), None);
-}
-
-#[test]
-fn a_reference_under_a_moved_prefix_checks_as_resolved_and_without_the_prefix_dangles() {
+fn a_reference_under_a_built_in_plugins_moved_prefix_checks_as_resolved_and_without_it_dangles() {
     let (scenario, _library) = mounting();
     for project in ["/controls/p", "/lib/controls/q"] {
         let task = format!(r#"{{"$type": "lr/task/v1", "title": "t", "project": "{project}"}}"#);
@@ -62,7 +67,9 @@ fn a_reference_under_a_moved_prefix_checks_as_resolved_and_without_the_prefix_da
                 .find(|entry| entry.path == "tasks/t.json");
             entry.unwrap().status
         };
-        assert_eq!(status(&moving(&scenario)), Status::Ok, "{project}");
+        let mut moving = open(&scenario);
+        moving.build_in(&RENAMED);
+        assert_eq!(status(&moving), Status::Ok, "{project}");
         assert_eq!(
             status(&open(&scenario)),
             Status::Degraded(Code::RefDangling),

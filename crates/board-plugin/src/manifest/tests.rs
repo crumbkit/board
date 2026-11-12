@@ -462,18 +462,14 @@ fn a_variable_board_sets_is_refused_in_env_and_one_it_does_not_admitted() {
 }
 
 #[test]
-fn former_names_and_moved_prefixes_are_read_and_default_to_none() {
-    let mut value = manifest();
-    value["former_names"] = json!(["chores"]);
-    value["moved"] = json!([{"from": "/chores", "to": "/tasks"}]);
-    let manifest = parse(&value).unwrap();
+fn former_names_are_read_and_default_to_none() {
+    let manifest = parse(&set("former_names", json!(["chores"]))).unwrap();
     assert_eq!(
         manifest.former_names,
         [PluginName::from_str("chores").unwrap()]
     );
-    assert_eq!(manifest.moved[0].to().as_str(), "/tasks");
     let plain = parse(&self::manifest()).unwrap();
-    assert_eq!((plain.former_names.len(), plain.moved.len()), (0, 0));
+    assert_eq!(plain.former_names.len(), 0);
 }
 
 #[test]
@@ -487,13 +483,11 @@ fn a_former_name_that_is_the_plugins_own_is_refused_and_another_admitted() {
 }
 
 #[test]
-fn a_moved_prefix_that_overlaps_is_refused_and_one_apart_admitted() {
-    let error = refused(&set(
-        "moved",
-        json!([{"from": "/tasks/old", "to": "/tasks"}]),
-    ));
+fn an_installed_manifest_that_declares_moved_prefixes_is_refused_and_one_without_admitted() {
+    // Only a built-in plugin moves its records, through `Plugin::moved`.
+    let error = refused(&set("moved", json!([{"from": "/chores", "to": "/tasks"}])));
     assert!(matches!(error, ManifestError::Shape { .. }), "{error}");
-    assert!(parse(&set("moved", json!([{"from": "/chores", "to": "/tasks"}]))).is_ok());
+    assert!(parse(&set("former_names", json!(["chores"]))).is_ok());
 }
 
 #[test]

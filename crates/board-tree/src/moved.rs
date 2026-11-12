@@ -3,9 +3,7 @@
 //! another, and a reference written under either prefix still resolves
 //! while a board holds them under the other.
 
-use std::cell::OnceCell;
 use std::collections::VecDeque;
-use std::fmt;
 
 use board_model::{Location, Moved, swapped};
 
@@ -15,40 +13,15 @@ use crate::resolve::{ResolveError, Trail};
 use crate::symlink::Chains;
 use crate::tree::Tree;
 
-/// The moved prefixes of one run, read from `read` the first time a
-/// resolution names nothing, so a run whose paths all resolve never reads
-/// them.
-#[derive(Default)]
-pub(crate) struct Moving {
-    read: Option<Box<dyn Fn() -> Vec<Moved> + Send>>,
-    moved: OnceCell<Vec<Moved>>,
-}
-
-impl fmt::Debug for Moving {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter
-            .debug_struct("Moving")
-            .field("moved", &self.moved.get())
-            .finish_non_exhaustive()
-    }
-}
-
 impl Repositories {
-    /// Reads the moved prefixes from `read` when a resolution first names
-    /// nothing, in place of none.
-    pub fn moving(&mut self, read: impl Fn() -> Vec<Moved> + Send + 'static) {
-        self.moving = Moving {
-            read: Some(Box::new(read)),
-            moved: OnceCell::new(),
-        };
+    /// Follows `moved` when a resolution names nothing, in place of none.
+    pub fn moving(&mut self, moved: Vec<Moved>) {
+        self.moved = moved;
     }
 
     /// The moved prefixes this run follows.
     pub fn moved(&self) -> &[Moved] {
-        let moving = &self.moving;
-        moving
-            .moved
-            .get_or_init(|| moving.read.as_ref().map(|read| read()).unwrap_or_default())
+        &self.moved
     }
 
     /// Resolves `remaining` from the root of `tree` as
@@ -62,21 +35,25 @@ impl Repositories {
     pub(crate) fn follow<T: Tree>(
         &self,
         tree: &mut T,
-        remaining: VecDeque<String>,
+        mut remaining: VecDeque<String>,
         from_link: usize,
         trail: &mut Trail,
         (pointers, chains): (&mut Pointers, &mut Chains<T::Directory>),
     ) -> Result<Location, ResolveError> {
-        if !trail.moved || from_link > 0 {
+        // The swap is computed before the walk, and is `None` without a
+        // copy unless `remaining` begins with a moved prefix, so a board
+        // with no moved prefixes, or a path under neither, walks as before
+        // with nothing copied or kept.
+        let other = (trail.moved && from_link == 0)
+            .then(|| swapped(&self.moved, remaining.make_contiguous()))
+            .flatten();
+        let Some(other) = other else {
             return self.walk(tree, remaining, from_link, trail, (pointers, chains));
-        }
-        let (link, hops, kept) = (trail.link.clone(), trail.pointers.len(), remaining.clone());
+        };
+        let (link, hops) = (trail.link.clone(), trail.pointers.len());
         let missed = match self.walk(tree, remaining, 0, trail, (&mut *pointers, &mut *chains)) {
             Err(missed @ ResolveError::NotFound { .. }) => missed,
             resolved => return resolved,
-        };
-        let Some(other) = swapped(self.moved(), Vec::from(kept).as_slice()) else {
-            return Err(missed);
         };
         trail.link = link;
         trail.pointers.truncate(hops);

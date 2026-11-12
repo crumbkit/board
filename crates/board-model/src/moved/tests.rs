@@ -1,5 +1,3 @@
-use serde_json::json;
-
 use super::*;
 
 fn moved(from: &str, to: &str) -> Result<Moved, MovedError> {
@@ -44,15 +42,6 @@ fn a_root_or_overlapping_prefix_is_refused_and_two_apart_are_admitted() {
         Err(MovedError::Overlap { .. })
     ));
     assert!(moved("/rules-old", "/rules").is_ok());
-}
-
-#[test]
-fn a_moved_prefix_reads_from_json_with_both_fields_and_no_others() {
-    let read = |value| serde_json::from_value::<Moved>(value);
-    let moved = read(json!({"from": "/controls", "to": "/rules"})).unwrap();
-    assert_eq!(moved.from().as_str(), "/controls");
-    assert!(read(json!({"from": "/controls", "to": "/rules", "x": 1})).is_err());
-    assert!(read(json!({"from": "/", "to": "/rules"})).is_err());
 }
 
 #[test]

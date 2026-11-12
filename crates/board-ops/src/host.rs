@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
 use board_model::{
-    CapabilityName, Code, Fields, LogicalPath, Order, PluginName, RecordType, Refusal,
+    CapabilityName, Code, Fields, LogicalPath, Moved, Order, PluginName, RecordType, Refusal,
 };
 use board_plugin::child::{Exited, Process, ProcessError};
 use board_plugin::{CallReport, Manifest, Target};
@@ -42,6 +42,12 @@ pub trait Plugin: Sync {
         capability: &CapabilityName,
         input: Value,
     ) -> Result<Value, PluginError>;
+    /// The prefixes its records moved from, and to, as logical paths, which
+    /// a resolution that names nothing follows (docs/plugins/calling/
+    /// commands.md, Renamed plugins). Each pair must pass `Moved::new`.
+    fn moved(&self) -> &'static [(&'static str, &'static str)] {
+        &[]
+    }
 }
 
 /// What Board offers a built-in plugin while it runs a capability.
@@ -121,13 +127,6 @@ pub trait Host {
     /// A host with nowhere to print it drops it.
     fn warn(&self, refusal: &Refusal) {
         let _ = refusal;
-    }
-    /// `pattern`, a glob by logical path, under the other moved prefix, as
-    /// [`Board::moved_glob`] gives it, for a query to match when `pattern`
-    /// matches nothing. A host that follows no moved prefix gives none.
-    fn moved_glob(&self, pattern: &str) -> Option<String> {
-        let _ = pattern;
-        None
     }
     /// The checkout of a mounted repository the run started in, when Board
     /// found the board through that mount and reads it at its pin, as
@@ -578,10 +577,6 @@ impl Host for Hosted<'_> {
         ));
     }
 
-    fn moved_glob(&self, pattern: &str) -> Option<String> {
-        self.board.moved_glob(pattern)
-    }
-
     fn board(&self, elsewhere: &Elsewhere) -> Result<Box<dyn Host + '_>, Box<Refusal>> {
         let home = self.board.repositories().home();
         let known = self.plugins.known.cloned().unwrap_or_default();
@@ -684,16 +679,20 @@ impl Host for Hosted<'_> {
 
 impl Board {
     /// Builds `plugins` into this board's calls, ahead of installed ones.
-    /// Its resolutions follow the moved prefixes these plugins' manifests
-    /// declare; an installed plugin's are not followed, since a resolution
-    /// reads no plugins directory.
+    /// Its resolutions follow the moved prefixes these plugins'
+    /// [`Plugin::moved`] gives. An installed plugin declares none, since its
+    /// manifest may not name `moved`.
     pub fn build_in(&mut self, plugins: &'static [&'static dyn Plugin]) {
         self.built_in = BuiltIn(plugins);
-        self.moving(move || {
-            (plugins.iter())
-                .flat_map(|plugin| plugin.manifest().moved)
-                .collect()
-        });
+        // A pair that is not two logical paths `Moved::new` admits is a bug
+        // in the built-in plugin; it is skipped, so a read never fails on it.
+        let moved = (plugins.iter().flat_map(|plugin| plugin.moved()))
+            .filter_map(|(from, to)| {
+                let (from, to) = (from.parse().ok()?, to.parse().ok()?);
+                Moved::new(from, to).ok()
+            })
+            .collect();
+        self.moving(moved);
     }
 }
 

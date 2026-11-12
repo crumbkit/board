@@ -29,15 +29,16 @@ which names the new name. A manifest that lists its own name is
 as a former name, or that two plugins list, is refused with
 `board::plugin::ambiguous`, naming the plugins that list it first.
 
-A manifest's `moved` lists prefixes the plugin's records moved between, such
-as `[{"from": "/controls", "to": "/rules"}]`. Neither may be `/`, and neither
-may lie beneath the other. A reference that names nothing is resolved again
-under the other prefix, in either direction, at the root of the board and at
-the root of each mounted board, so `/repos/x/controls/a` reaches
-`/repos/x/rules/a`. The first miss stands when the other names nothing too.
-A write never swaps a prefix: it lands where its path says. Segments a link's
-target gives are not swapped. A plugin's own query matches globs, so
-`Board::moved_glob` gives a glob under the other prefix, which the plugin
-matches only when the first matches nothing. Board follows the moved prefixes
-of the plugins built into it, and reads them the first time a resolution
-names nothing.
+A built-in plugin's `moved` method lists prefixes its records moved between,
+such as `[("/controls", "/rules")]`. Neither may be `/`, and neither may lie
+beneath the other; Board skips a pair that breaks this. An installed
+plugin's manifest that names `moved` is `board::plugin::bad_manifest`. Board
+reads the pairs when the plugins are built into it. A record read by a path
+that names nothing is resolved again under the other prefix, in either
+direction, at the root of the board and at the root of each mounted board,
+so `/repos/x/controls/a` reaches `/repos/x/rules/a`. The first miss stands
+when the other names nothing too. A path under neither prefix is resolved
+once, as before. Writes, removals, `resolve_pointer` (which stops at a
+pointer at the end) and the resolution inside one mount's tree use the path
+exactly as written, so a write lands where its path says. Segments a link's
+target gives are not swapped.

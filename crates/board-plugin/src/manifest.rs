@@ -7,7 +7,7 @@ use std::str::FromStr;
 use std::time::Duration;
 
 pub use board_model::MANIFEST_TYPE;
-use board_model::{CapabilityName, Code, JsonError, Moved, PluginName, RecordType, parse_json};
+use board_model::{CapabilityName, Code, JsonError, PluginName, RecordType, parse_json};
 use board_validate::{Schema, SchemaError};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
@@ -214,8 +214,6 @@ struct RawManifest {
     #[serde(default)]
     former_names: Vec<PluginName>,
     #[serde(default)]
-    moved: Vec<Moved>,
-    #[serde(default)]
     run: Vec<String>,
     #[serde(default)]
     metadata: Map<String, Value>,
@@ -274,9 +272,6 @@ pub struct Manifest {
     /// The names the plugin had before it was renamed, which `board call`,
     /// the plugin's word and a board's `plugins` still reach it by.
     pub former_names: Vec<PluginName>,
-    /// The prefixes its records moved from, and to, which a reference that
-    /// names nothing follows (docs/plugins/calling/commands.md).
-    pub moved: Vec<Moved>,
     /// The program and its arguments; empty only for a built-in plugin.
     pub run: Vec<String>,
     pub metadata: Map<String, Value>,
@@ -391,7 +386,6 @@ impl Manifest {
             description: raw.description,
             alias: raw.alias,
             former_names: raw.former_names,
-            moved: raw.moved,
             run: raw.run,
             metadata: raw.metadata,
             types: raw.types,

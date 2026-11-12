@@ -16,7 +16,6 @@ mod index;
 mod init;
 mod known;
 mod mount;
-mod moved;
 mod plugins;
 mod put;
 mod query;

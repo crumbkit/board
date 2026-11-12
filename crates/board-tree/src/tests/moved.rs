@@ -1,9 +1,6 @@
 //! Moved prefixes: a path that names nothing resolves under the other prefix
 //! (docs/plugins/calling/commands.md, Renamed plugins).
 
-use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
-
 use board_model::Moved;
 
 use super::*;
@@ -11,7 +8,7 @@ use super::*;
 /// The scenario's repositories, following `/controls` moved to `/rules`.
 fn moving(scenario: &Scenario) -> Repositories {
     let mut repositories = scenario.repositories();
-    repositories.moving(|| vec![Moved::new(path("/controls"), path("/rules")).unwrap()]);
+    repositories.moving(vec![Moved::new(path("/controls"), path("/rules")).unwrap()]);
     repositories
 }
 
@@ -98,23 +95,4 @@ fn a_write_lands_where_its_path_says_and_not_under_the_other_prefix() {
         .target(&path("/rules/x"), false)
         .unwrap();
     assert_eq!(target.path, "rules/x.json");
-}
-
-#[test]
-fn the_moved_prefixes_are_read_once_and_only_when_a_path_names_nothing() {
-    let scenario = Scenario::new();
-    let commit = scenario.commit(&[("rules/x.json", "1")]);
-    let reads = Arc::new(AtomicUsize::new(0));
-    let mut repositories = scenario.repositories();
-    let counted = Arc::clone(&reads);
-    repositories.moving(move || {
-        counted.fetch_add(1, Ordering::Relaxed);
-        Vec::new()
-    });
-    assert!(physical(&repositories, commit, "/rules/x").is_ok());
-    assert_eq!(reads.load(Ordering::Relaxed), 0);
-    for _ in 0..2 {
-        assert!(physical(&repositories, commit, "/controls/x").is_err());
-    }
-    assert_eq!(reads.load(Ordering::Relaxed), 1);
 }

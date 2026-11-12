@@ -2,33 +2,15 @@
 //! keeps under another prefix (docs/plugins/calling/commands.md, Renamed
 //! plugins).
 
-use serde::Deserialize;
-
 use crate::path::LogicalPath;
 
 /// A prefix records moved from, and the prefix they moved to. Neither is the
 /// root, and neither lies beneath the other, so a path is under one of them
 /// at most.
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
-#[serde(try_from = "RawMoved")]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Moved {
     from: LogicalPath,
     to: LogicalPath,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct RawMoved {
-    from: LogicalPath,
-    to: LogicalPath,
-}
-
-impl TryFrom<RawMoved> for Moved {
-    type Error = MovedError;
-
-    fn try_from(raw: RawMoved) -> Result<Self, MovedError> {
-        Self::new(raw.from, raw.to)
-    }
 }
 
 impl Moved {
