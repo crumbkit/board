@@ -116,8 +116,9 @@ the steps in plan/map.md.
     `adds_check` asked for.
 25. `changes.migrate --to flow-v2`.
 26. Flow v1's inline checks are deleted.
-Steps 28 to 34 build the remaining kinds. Step 27, the first tagged
-release, follows them.
+
+Steps 28 to 34 build the remaining kinds. The first tagged release follows
+step 34.
 
 28. **Schedules.** `rules.due` lists rules whose schedule has passed with no
     check since. The session-start mod runs due checks whose checker is

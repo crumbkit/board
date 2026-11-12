@@ -90,25 +90,26 @@ on main (`git show 226829b:PLAN.md`), as is the deleted HANDOFF.md.
 - **Repositories across boards.** References into another board's
   repository read `name:/path`; repo records are the declaration
   (docs/architecture/paths/repos.md). The
-  owner agreed it on 2026-10-05; it refines M8.
+  owner agreed it on 2026-10-05.
 - **M9 SHA-256 repositories.** Board reads and writes repositories in git's
   SHA-256 object format. Its standing rule is settled decision 5 below.
 - **Views from schemas.** Every record type gets a view and a form derived
-  from its schema. Its acceptance test is that views can express the UI of
+  from its schema. Its acceptance test: views express the UI of
   an existing tool the owner names.
 - **Serving beyond the UI.** `board serve` keeps the index warm for an agent
   loop, and a `board mcp` adapter serves each capability as an MCP tool.
 - **Adoption.** Board imports records from other systems, such as JIRA,
   through plugins, and a reconciler plugin settles the difference between the
   source and Board's copy. The owner agreed it on 2026-10-05; its first step is
-  a spike that imports one existing store into a scratch board.
+  a spike importing one existing store into a scratch board.
 - **Owner policies for effects.** Policies that make a plugin's put ask or
   refuse, cut until two plugins need them (`git show
   5a34ac92:docs/architecture/writes/effects.md`), then offers, attention
   levels, read gating, learning from corrections and the mandate layer.
 - **A repository's own rules.** `rules.check` reads a mounted repository's
   own rules as data at its pinned commit, checks the caller's repository
-  without a path, and takes a branch's files on stdin with `--limit`.
+  without a path, and takes a branch's files on stdin with `--limit`. Full
+  text: `git show c48b2856:plan/rules.md`.
 - **Docs as a tree.** Still open are how the review of each docs change runs
   and a tool check that each docs leaf is linked once.
 
