@@ -61,11 +61,11 @@ impl Board {
         }
         let _timed = self.timed("plugin.call");
         let input = board_plugin::input(&chosen, input);
-        match &chosen.origin {
+        let mut report = match &chosen.origin {
             Origin::Directory(_) if self.repositories().checkout().is_some() => {
-                Err(CallFailed::AtCheckout {
+                return Err(CallFailed::AtCheckout {
                     plugin: chosen.manifest.name.clone(),
-                })
+                });
             }
             Origin::Directory(directory) => {
                 let spawned = RefCell::default();
@@ -84,13 +84,15 @@ impl Board {
                     )
                 });
                 self.trace.borrow_mut().started(spawned.take());
-                Ok(report?)
+                report?
             }
             Origin::BuiltIn { index, .. } => {
                 self.trace.borrow_mut().started(Vec::new());
-                Ok(self.hosted(&chosen, *index, input?, plugins)?)
+                self.hosted(&chosen, *index, input?, plugins)?
             }
-        }
+        };
+        report.warnings.splice(0..0, chosen.warnings);
+        Ok(report)
     }
 
     /// Runs the chosen capability of the built-in plugin at `index` in this

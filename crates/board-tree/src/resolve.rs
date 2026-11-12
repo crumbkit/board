@@ -121,11 +121,25 @@ impl Repositories {
         })
     }
 
+    /// Resolves `path` in `tree` as written, with no moved prefix swapped,
+    /// as a write must.
     pub(crate) fn resolve_tree<T: Tree>(
         &self,
         tree: &mut T,
         path: &LogicalPath,
         follow_last: bool,
+        found: (&mut Pointers, &mut Chains<T::Directory>),
+    ) -> Result<Location, ResolveError> {
+        self.resolve_as(tree, path, (follow_last, false), found)
+    }
+
+    /// Resolves `path` in `tree`; with `moved`, a path that names nothing
+    /// is tried under a moved prefix, as [`Repositories::follow`] says.
+    pub(crate) fn resolve_as<T: Tree>(
+        &self,
+        tree: &mut T,
+        path: &LogicalPath,
+        (follow_last, moved): (bool, bool),
         (pointers, chains): (&mut Pointers, &mut Chains<T::Directory>),
     ) -> Result<Location, ResolveError> {
         let mut trail = Trail {
@@ -134,6 +148,7 @@ impl Repositories {
             visited: HashSet::new(),
             link: None,
             follow_last,
+            moved,
         };
         let segments = path.segments().map(str::to_owned).collect();
         self.follow(tree, segments, 0, &mut trail, (pointers, chains))
@@ -144,7 +159,7 @@ impl Repositories {
     /// continues in the mounted repository with what remains. The first
     /// `from_link` segments came from the last link's target, so a miss
     /// among them is that link dangling.
-    fn follow<T: Tree>(
+    pub(crate) fn walk<T: Tree>(
         &self,
         tree: &mut T,
         mut remaining: VecDeque<String>,
@@ -367,8 +382,19 @@ impl<'k> Resolver<'_, 'k> {
     }
 
     /// Resolves `path` as [`Repositories::resolve`] does in the working
-    /// tree.
+    /// tree, trying a moved prefix when `path` names nothing.
     pub fn resolve(&mut self, path: &LogicalPath) -> Result<Location, ResolveError> {
+        self.repositories.resolve_as(
+            &mut self.tree,
+            path,
+            (true, true),
+            (&mut self.pointers, &mut self.chains),
+        )
+    }
+
+    /// Resolves `path` as [`Resolver::resolve`] does, with no moved prefix
+    /// tried, so a write lands where its path says.
+    pub(crate) fn resolve_exact(&mut self, path: &LogicalPath) -> Result<Location, ResolveError> {
         self.repositories.resolve_tree(
             &mut self.tree,
             path,
@@ -438,7 +464,7 @@ impl<'k> Resolver<'_, 'k> {
         let segments: Vec<&str> = path.segments().collect();
         for depth in (0..segments.len()).rev() {
             let ancestor = path.prefix(depth);
-            match self.resolve(&ancestor) {
+            match self.resolve_exact(&ancestor) {
                 Ok(location) => {
                     return Ok(Ancestor {
                         location,
@@ -490,27 +516,31 @@ impl<'r> InCommit<'r> {
         std::mem::take(&mut self.pointers.crossed)
     }
 
+    /// Resolves `path` in the commit, trying a moved prefix when `path`
+    /// names nothing.
     pub fn resolve(&mut self, path: &LogicalPath) -> Result<Location, ResolveError> {
-        self.repositories.resolve_tree(
+        self.repositories.resolve_as(
             &mut self.tree,
             path,
-            true,
+            (true, true),
             (&mut self.pointers, &mut self.chains),
         )
     }
 }
 
 /// What one resolution carries across links and mounts.
-struct Trail {
+pub(crate) struct Trail {
     /// The path being resolved, for errors.
     path: LogicalPath,
-    pointers: Vec<Location>,
+    pub(crate) pointers: Vec<Location>,
     /// Each board and path resolution restarted at.
     visited: HashSet<(Board, VecDeque<String>)>,
     /// The display path of the last link followed, and its target.
-    link: Option<(LogicalPath, LogicalPath)>,
+    pub(crate) link: Option<(LogicalPath, LogicalPath)>,
     /// Whether a pointer at the end is followed.
     follow_last: bool,
+    /// Whether a path that names nothing is tried under a moved prefix.
+    pub(crate) moved: bool,
 }
 
 impl Trail {

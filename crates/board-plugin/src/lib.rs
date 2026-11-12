@@ -3,6 +3,8 @@
 
 mod call;
 pub mod child;
+mod choose;
+mod former;
 mod installed;
 mod manifest;
 mod process;
@@ -11,9 +13,10 @@ pub mod shape;
 mod sign;
 
 pub use crate::call::{
-    CallError, CallReport, Chosen, Context, Environment, Inherited, MAX_DEPTH, PLUGIN_VARIABLE,
-    Target, TargetError, choose, input, invoke, output, passed,
+    CallError, CallReport, Context, Environment, Inherited, MAX_DEPTH, PLUGIN_VARIABLE, Target,
+    TargetError, input, invoke, output, passed,
 };
+pub use crate::choose::{Chosen, choose};
 pub use crate::installed::{
     DiscoveryError, Installed, MANIFEST_FILE, Origin, built_in, installed, shipped_schema_path,
 };

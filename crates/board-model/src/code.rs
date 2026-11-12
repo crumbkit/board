@@ -108,6 +108,7 @@ codes! {
     PluginAmbiguous => "board::plugin::ambiguous",
     PluginDuplicate => "board::plugin::duplicate",
     PluginAliasConflict => "board::plugin::alias_conflict",
+    PluginFormerName => "board::plugin::former_name",
     PluginBadInput => "board::plugin::bad_input",
     PluginBadOutput => "board::plugin::bad_output",
     PluginFailed => "board::plugin::failed",

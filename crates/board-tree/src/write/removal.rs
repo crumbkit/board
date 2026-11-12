@@ -24,7 +24,7 @@ impl Resolver<'_, '_> {
             return Err(WriteError::Directory { path: path.clone() });
         };
         self.repository().refuse_symlink(path, &location.path)?;
-        let removes = if self.resolve(path).ok().as_ref() == Some(&location) {
+        let removes = if self.resolve_exact(path).ok().as_ref() == Some(&location) {
             Removes::File
         } else {
             Removes::Pointer

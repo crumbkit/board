@@ -181,7 +181,10 @@ impl Board {
         let mut listed: Vec<PluginEntry> = installed
             .into_iter()
             .map(|installed| {
-                let enabled = enabled.iter().any(|name| name.as_str() == installed.name);
+                let enabled = match &installed.manifest {
+                    Ok(manifest) => manifest.enabling(enabled).is_some(),
+                    Err(_) => enabled.iter().any(|name| name.as_str() == installed.name),
+                };
                 let schemas = if enabled {
                     installed
                         .schemas
@@ -205,9 +208,14 @@ impl Board {
                 }
             })
             .collect();
+        // A former name an installed plugin lists is that plugin, not a missing one.
+        let reached = |plugin: &PluginEntry, name: &PluginName| {
+            plugin.name == name.as_str()
+                || matches!(&plugin.state, PluginState::Installed(manifest) if manifest.former_names.contains(name))
+        };
         let missing: Vec<&PluginName> = enabled
             .iter()
-            .filter(|name| !listed.iter().any(|plugin| plugin.name == name.as_str()))
+            .filter(|name| !listed.iter().any(|plugin| reached(plugin, name)))
             .collect();
         listed.extend(missing.into_iter().map(|name| PluginEntry {
             name: name.to_string(),

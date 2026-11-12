@@ -122,6 +122,13 @@ pub trait Host {
     fn warn(&self, refusal: &Refusal) {
         let _ = refusal;
     }
+    /// `pattern`, a glob by logical path, under the other moved prefix, as
+    /// [`Board::moved_glob`] gives it, for a query to match when `pattern`
+    /// matches nothing. A host that follows no moved prefix gives none.
+    fn moved_glob(&self, pattern: &str) -> Option<String> {
+        let _ = pattern;
+        None
+    }
     /// The checkout of a mounted repository the run started in, when Board
     /// found the board through that mount and reads it at its pin, as
     /// [`Board::started_in`] gives it. A host with no such checkout, such
@@ -571,6 +578,10 @@ impl Host for Hosted<'_> {
         ));
     }
 
+    fn moved_glob(&self, pattern: &str) -> Option<String> {
+        self.board.moved_glob(pattern)
+    }
+
     fn board(&self, elsewhere: &Elsewhere) -> Result<Box<dyn Host + '_>, Box<Refusal>> {
         let home = self.board.repositories().home();
         let known = self.plugins.known.cloned().unwrap_or_default();
@@ -673,8 +684,16 @@ impl Host for Hosted<'_> {
 
 impl Board {
     /// Builds `plugins` into this board's calls, ahead of installed ones.
+    /// Its resolutions follow the moved prefixes these plugins' manifests
+    /// declare; an installed plugin's are not followed, since a resolution
+    /// reads no plugins directory.
     pub fn build_in(&mut self, plugins: &'static [&'static dyn Plugin]) {
         self.built_in = BuiltIn(plugins);
+        self.moving(move || {
+            (plugins.iter())
+                .flat_map(|plugin| plugin.manifest().moved)
+                .collect()
+        });
     }
 }
 

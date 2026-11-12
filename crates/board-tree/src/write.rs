@@ -75,7 +75,7 @@ impl Resolver<'_, '_> {
     /// a write that would leave its own path degraded is refused with that
     /// path's code.
     pub fn target(&mut self, path: &LogicalPath, is_pointer: bool) -> Result<Target, WriteError> {
-        let (location, physical, reached) = match self.resolve(path) {
+        let (location, physical, reached) = match self.resolve_exact(path) {
             Ok(location) => {
                 let physical = record_file(&location);
                 (location, physical, path.clone())
@@ -104,7 +104,7 @@ impl Resolver<'_, '_> {
     /// that names a directory, or a JSON file, which is read as a record,
     /// is refused.
     pub fn file_target(&mut self, path: &LogicalPath) -> Result<Target, WriteError> {
-        let (location, physical, reached) = match self.resolve(path) {
+        let (location, physical, reached) = match self.resolve_exact(path) {
             Ok(location) => {
                 let physical = match location.object {
                     Object::Blob(_) => Some(location.path.clone()),

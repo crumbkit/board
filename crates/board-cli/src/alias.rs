@@ -115,7 +115,7 @@ pub(crate) fn after(
 fn built_in(arguments: &[OsString], external: &External, context: &Context) -> Option<Resolved> {
     let capability = external.rest.first()?.to_str()?;
     let named =
-        (context.built_in.0.iter()).any(|plugin| plugin.manifest().name.as_str() == external.alias);
+        (context.built_in.0.iter()).any(|plugin| answers_to(&plugin.manifest(), &external.alias));
     if !named || capability.starts_with('-') {
         return None;
     }
@@ -232,7 +232,13 @@ fn resolve(
         Some("-h" | "--help") => None,
         Some(capability) if !capability.starts_with('-') => {
             let mut called = arguments.to_vec();
-            let target = format!("{plugin}.{capability}");
+            // A former name stays in the call, so the call warns of it.
+            let word = if answers_to(manifest, alias) {
+                alias
+            } else {
+                plugin.as_str()
+            };
+            let target = format!("{word}.{capability}");
             called.splice(external.at..external.at + 2, ["call".into(), target.into()]);
             Some(Ok(called))
         }
@@ -273,10 +279,18 @@ fn manifest_alias(manifest: &Manifest) -> Option<&str> {
     manifest.alias.as_ref().map(board_plugin::Alias::as_str)
 }
 
-/// The plugins among `manifests` that `word` runs: the one it names, or
-/// else each whose alias it is.
+/// Whether `word` is `manifest`'s name or one of its former names.
+fn answers_to(manifest: &Manifest, word: &str) -> bool {
+    manifest.name.as_str() == word
+        || (manifest.former_names.iter()).any(|name| name.as_str() == word)
+}
+
+/// The plugins among `manifests` that `word` runs: the one whose name or
+/// former name it is, or else each whose alias it is.
 fn named<'m>(manifests: &'m [Manifest], word: &str) -> Vec<&'m Manifest> {
     let by_name = (manifests.iter()).find(|manifest| manifest.name.as_str() == word);
+    let by_name =
+        by_name.or_else(|| (manifests.iter()).find(|manifest| answers_to(manifest, word)));
     by_name.map_or_else(
         || {
             (manifests.iter())
@@ -315,9 +329,11 @@ fn help(manifests: &[Manifest]) -> Vec<Command> {
             .long_about(manifest.description.clone())
             .subcommand_required(true)
             .subcommands(capabilities);
-        Some(words.fold(command, |command, word| {
+        let command = words.fold(command, |command, word| {
             command.visible_alias(word.to_owned())
-        }))
+        });
+        let former = (manifest.former_names.iter()).filter(|word| runs(manifest, word.as_str()));
+        Some(former.fold(command, |command, word| command.alias(word.to_string())))
     });
     commands.collect()
 }

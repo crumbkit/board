@@ -155,6 +155,12 @@ impl Board {
         self.repositories.read_at(checkout);
     }
 
+    /// Follows the moved prefixes `read` gives once a resolution names
+    /// nothing.
+    pub(crate) fn moving(&mut self, read: impl Fn() -> Vec<board_model::Moved> + Send + 'static) {
+        self.repositories.moving(read);
+    }
+
     /// Records that this run started in `directory`, in a checkout of the
     /// repository the mount at `mount` reads.
     pub(crate) fn started_from(&mut self, mount: LogicalPath, directory: PathBuf) {
