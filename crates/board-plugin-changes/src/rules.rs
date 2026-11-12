@@ -110,17 +110,35 @@ fn obligations_among(host: &dyn Host, rules: &[String]) -> Result<Vec<String>, P
     Ok(owed)
 }
 
-/// The obligations on `paths`, a plan's files and patterns, by path in its
-/// `/rules/` form; none when the rules plugin is not enabled.
+/// The obligations on `paths`, a plan's files and patterns, each by the path
+/// it is stored at; none when the rules plugin is not enabled.
 pub(crate) fn obligations(host: &dyn Host, paths: &[String]) -> Result<Vec<String>, PluginError> {
-    obligations_among(host, &on_paths(host, paths)?)
+    Ok(obligations_in(host, for_paths(host, paths)?)?
+        .into_iter()
+        .map(|found| found.rule)
+        .collect())
+}
+
+/// Whether a rule of either type that Board reads is stored at `path` under
+/// either prefix.
+pub(crate) fn exists(host: &dyn Host, path: &str) -> Result<bool, PluginError> {
+    let sql = format!(
+        "SELECT code FROM records WHERE type IN ({}) AND logical IN ({})",
+        rule_types(),
+        stored_at(path).join(", ")
+    );
+    Ok(rows(host, &sql)?.iter().any(|row| readable(row.first())))
 }
 
 /// The obligations on anything under `mount`, by path, with each one's
 /// summary and close line; none when the rules plugin is not enabled.
 pub(crate) fn on_mount(host: &dyn Host, mount: &str) -> Result<Vec<Found>, PluginError> {
     let pattern = format!("{}/**", mount.trim_end_matches('/'));
-    let found = for_paths(host, &[pattern])?;
+    obligations_in(host, for_paths(host, &[pattern])?)
+}
+
+/// The obligations among the rules `found`.
+fn obligations_in(host: &dyn Host, found: Vec<Found>) -> Result<Vec<Found>, PluginError> {
     let rules: Vec<String> = found.iter().map(|each| current(&each.rule)).collect();
     let owed = obligations_among(host, &rules)?;
     Ok(found

@@ -958,25 +958,28 @@ fn obligations_owing(stored: &str, rule_type: &str, field: &str, owed: &str) -> 
 
 #[test]
 fn a_plan_owing_an_obligation_under_control_gates_as_one_owing_it_under_rule() {
-    let unowed = obligations_owing("rules/x/docs", "rules/rule/v1", "", "");
-    assert_eq!(unowed["status"], "missing", "{unowed}");
     let now = obligations_owing("rules/x/docs", "rules/rule/v1", "rule", "/rules/x/docs");
     assert_eq!(now["status"], "pass", "{now}");
-    // A plan names each rule where it is stored.
-    for (stored, rule_type, owed) in [
-        ("rules/x/docs", "rules/rule/v1", "/rules/x/docs"),
-        ("controls/x/docs", "controls/control/v1", "/controls/x/docs"),
+    // A plan may name a rule under either prefix, wherever it is stored,
+    // and the gate names an obligation where it is stored.
+    for (stored, rule_type) in [
+        ("rules/x/docs", "rules/rule/v1"),
+        ("controls/x/docs", "controls/control/v1"),
     ] {
         for field in ["rule", "control"] {
-            assert_eq!(
-                obligations_owing(stored, rule_type, field, owed),
-                now,
-                "{stored} {field} {owed}"
-            );
+            for owed in ["/rules/x/docs", "/controls/x/docs"] {
+                assert_eq!(
+                    obligations_owing(stored, rule_type, field, owed),
+                    now,
+                    "{stored} {field} {owed}"
+                );
+            }
         }
+        let unowed = obligations_owing(stored, rule_type, "", "");
+        assert_eq!(unowed["status"], "missing", "{unowed}");
         assert_eq!(
-            obligations_owing(stored, rule_type, "", ""),
-            unowed,
+            unowed["detail"],
+            format!("these obligations apply to the plan's paths: /{stored}"),
             "{stored}"
         );
     }

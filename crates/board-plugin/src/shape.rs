@@ -693,13 +693,13 @@ fn absent_not_null(schema: &mut Schema) {
     }
 }
 
-/// An object's `schema` that also admits each field of `renamed`, a
-/// `(name, former)` pair, under the name it had before a rename, as a
-/// serde alias reads it, and never under both. The former name gets the
-/// field's own schema in `properties`, where Board searches references, so
-/// a reference keeps its type. A former name must not be the name of
-/// another field. Used with `#[schemars(transform)]` until every board has
-/// migrated.
+/// An object's `schema` that also admits each required field of `renamed`,
+/// a `(name, former)` pair, under the name it had before a rename, as a
+/// serde alias reads it, and requires exactly one of the two. The former
+/// name gets the field's own schema in `properties`, where Board searches
+/// references, so a reference keeps its type. A former name must not be
+/// the name of another field. Used with `#[schemars(transform)]` until
+/// every board has migrated.
 pub fn or_former_names(schema: &mut Schema, renamed: &[(&str, &str)]) {
     let Some(object) = schema.as_object_mut() else {
         return;
@@ -713,19 +713,10 @@ pub fn or_former_names(schema: &mut Schema, renamed: &[(&str, &str)]) {
         if let Some(Value::Object(properties)) = object.get_mut("properties") {
             properties.insert((*former).to_owned(), property);
         }
-        let required = match object.get_mut("required") {
-            Some(Value::Array(required)) => {
-                let before = required.len();
-                required.retain(|each| each != name);
-                required.len() < before
-            }
-            _ => false,
-        };
-        either.push(if required {
-            json!({"oneOf": [{"required": [name]}, {"required": [former]}]})
-        } else {
-            json!({"not": {"required": [name, former]}})
-        });
+        if let Some(Value::Array(required)) = object.get_mut("required") {
+            required.retain(|each| each != name);
+        }
+        either.push(json!({"oneOf": [{"required": [name]}, {"required": [former]}]}));
     }
     if let Some(Value::Array(all)) = object.get_mut("allOf") {
         all.extend(either);

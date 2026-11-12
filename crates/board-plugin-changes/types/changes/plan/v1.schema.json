@@ -156,7 +156,7 @@
       "type": "string"
     },
     "uses": {
-      "description": "The standards documents, controls, decisions, evals and other changes\nthe plan relies on.",
+      "description": "The standards documents, rules, decisions, evals and other changes\nthe plan relies on.",
       "items": {
         "format": "board-ref",
         "type": "string"

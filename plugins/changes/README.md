@@ -268,7 +268,7 @@ an attempt of either type.
 `board plugin enable` writes the new schemas, and from then on a question or
 eval that still holds words in `blocks` or `decision` is degraded and drops
 out of `plans.open` and `evals.open`. So apply `plans.migrate`,
-`evals.migrate` and `controls.migrate --owed_by true` in the same step as
+`evals.migrate` and `rules.migrate --owed_by true` in the same step as
 `plugin enable`, with `changes.migrate --plans true`. Read the dry runs first
 on a throwaway copy of the board, where enabling the plugins changes nothing
 that anyone else reads.
@@ -287,7 +287,7 @@ below, which block on more than the gates before flows did:
   passed, a rejection or an agent's stub included. `considered` is new, and
   passes for a migrated change, whose `surfaced` is empty;
 - leaving review, `ui-paths`, `data-paths` and `obligations-settled` are
-  new. Before flows the reviewer read the UI-path and data-path controls,
+  new. Before flows the reviewer read the UI-path and data-path rules,
   and no gate read obligations;
 - leaving land, `test-sections` is new: the plan needs text under What the
   tests prove and What the tests do not prove.
@@ -894,7 +894,7 @@ The development flow's gates:
 
 Three layers identify a lifecycle change. The `lifecycle` answer is required,
 so skipping it takes an answer of none. `lifecycle-declared` refuses that answer
-when the plan's paths reach the lifecycle-paths control. `lifecycle-paths`
+when the plan's paths reach the lifecycle-paths rule. `lifecycle-paths`
 refuses a diff that edits such a path until Board reads a
 `changes/lifecycle/v1` at `/changes/<name>/lifecycle`, so rewriting or
 removing the heading after the plan gate does not switch it off, and
@@ -903,7 +903,7 @@ even with a record present. Both run again at land. Board does not tie a
 lifecycle record to the plan it describes, so a record written for an earlier
 plan switches off `lifecycle-paths` for a later one; this is an accepted gap. The diff checks trust the head recorded on the
 change, so moving that head or pushing after it is not gated. A repository with no
-lifecycle-paths control has only the answer, and `brief` warns about that.
+lifecycle-paths rule has only the answer, and `brief` warns about that.
 
 A check's `when.answers` holds when each answer it names equals the plan's.
 When the plan record gives no typed answer for one, the check is missing

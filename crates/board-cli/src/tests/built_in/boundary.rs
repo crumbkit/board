@@ -609,12 +609,19 @@ fn a_crossing_written_before_the_rename_verifies_as_its_twin_with_the_new_names(
             "--result",
             "https://example.com/1",
         ]);
-        assert_eq!(
-            record.code,
-            u8::from(passed != true),
-            "{body}: {}",
-            printed(&record)
-        );
+        if passed == true {
+            assert_eq!(record.code, 0, "{body}: {}", printed(&record));
+            let rewritten = personal.record(&path).unwrap();
+            assert_eq!(rewritten["verdicts"], now["verdicts"], "{body}");
+            assert_eq!(rewritten["result"], "https://example.com/1");
+        } else {
+            assert_eq!(
+                json(&record)["code"],
+                "boundary::crossing::failed",
+                "{body}: {}",
+                printed(&record)
+            );
+        }
     }
 }
 

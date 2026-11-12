@@ -492,7 +492,7 @@ pub(crate) struct PlanRecord {
     /// The plan's Markdown text.
     #[schemars(with = "Ref")]
     pub(crate) text: String,
-    /// The standards documents, controls, decisions, evals and other changes
+    /// The standards documents, rules, decisions, evals and other changes
     /// the plan relies on.
     #[schemars(with = "Vec<Ref>")]
     pub(crate) uses: Vec<String>,

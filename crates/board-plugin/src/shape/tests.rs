@@ -697,8 +697,7 @@ fn a_commit_name_of_7_to_40_hex_digits_is_admitted_and_a_shorter_or_upper_case_o
     }
 }
 
-/// A shape whose fields were renamed: `task` was `job`, and `note` was
-/// `remark`.
+/// A shape whose required field was renamed: `task` was `job`.
 #[derive(JsonSchema)]
 #[serde(deny_unknown_fields)]
 #[schemars(transform = renamed)]
@@ -710,17 +709,16 @@ struct Renamed {
 }
 
 fn renamed(schema: &mut Schema) {
-    or_former_names(schema, &[("task", "job"), ("note", "remark")]);
+    or_former_names(schema, &[("task", "job")]);
 }
 
 #[test]
-fn a_shape_with_former_names_admits_each_field_under_either_name_and_not_both() {
+fn a_shape_with_a_former_name_admits_the_field_under_either_name_and_not_both() {
     let schema = schema_of::<Renamed>(SchemaSettings::draft2020_12());
     assert_eq!(schema["properties"]["job"], schema["properties"]["task"]);
     let schema = board_validate::Schema::compile(schema).unwrap();
     for admitted in [
         json!({"task": "/tasks/a", "note": "n"}),
-        json!({"job": "/tasks/a", "remark": "n"}),
         json!({"job": "/tasks/a", "note": "n"}),
         json!({"task": "/tasks/a"}),
     ] {
@@ -730,7 +728,6 @@ fn a_shape_with_former_names_admits_each_field_under_either_name_and_not_both() 
     }
     for refused in [
         json!({"task": "/tasks/a", "job": "/tasks/a"}),
-        json!({"task": "/tasks/a", "note": "n", "remark": "n"}),
         json!({"note": "n"}),
     ] {
         assert_eq!(

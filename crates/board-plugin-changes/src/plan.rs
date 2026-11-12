@@ -181,9 +181,17 @@ fn check_named(
     );
     named.extend(owed.iter().map(|each| each.rule.clone()));
     let records = referenced(host, &named)?;
+    // An owed rule may be stored under the other prefix until the board
+    // is migrated.
+    let mut rules = Vec::new();
+    for each in owed {
+        if crate::rules::exists(host, &each.rule)? {
+            rules.push(each.rule.as_str());
+        }
+    }
     let dangling: Vec<&String> = named
         .iter()
-        .filter(|each| records.get(each).is_none())
+        .filter(|each| records.get(each).is_none() && !rules.contains(&each.as_str()))
         .collect();
     if !dangling.is_empty() {
         let listed: Vec<&str> = dangling.iter().map(|each| each.as_str()).collect();
@@ -197,7 +205,7 @@ fn check_named(
             [("path", json!(path)), ("refs", json!(listed))],
         ));
     }
-    check_owed(path, owed, &records)?;
+    check_owed(path, owed, &rules)?;
     Ok(records)
 }
 
@@ -320,15 +328,12 @@ pub(crate) fn plan(host: &dyn Host, input: &Value) -> Result<Value, PluginError>
     }))
 }
 
-/// `changes::ref::wrong_type` for an `owed` entry that is no rule.
-fn check_owed(path: &str, owed: &[Owed], records: &Referenced) -> Result<(), PluginError> {
+/// `changes::ref::wrong_type` for an `owed` entry that is none of `rules`,
+/// the owed paths a rule is stored at under either prefix.
+fn check_owed(path: &str, owed: &[Owed], rules: &[&str]) -> Result<(), PluginError> {
     let wrong: Vec<&str> = (owed.iter())
         .map(|each| each.rule.as_str())
-        .filter(|each| {
-            records
-                .get(each)
-                .is_none_or(|(found, _)| !RULE_TYPES.contains(&found.as_str()))
-        })
+        .filter(|each| !rules.contains(each))
         .collect();
     if wrong.is_empty() {
         return Ok(());

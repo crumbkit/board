@@ -84,10 +84,11 @@ pub(super) fn considered_missing(observed: &Observed) -> Option<String> {
 }
 
 /// No obligation applies to the plan's paths, except those the plan's
-/// `owed` names.
+/// `owed` names. Each obligation is compared in its `/rules/` form and
+/// named where it is stored.
 pub(super) fn obligations_missing(observed: &Observed) -> Option<String> {
     let left: Vec<&str> = (observed.obligations.iter().map(String::as_str))
-        .filter(|rule| !observed.owed.iter().any(|owed| owed == rule))
+        .filter(|rule| !observed.owed.iter().any(|owed| *owed == current(rule)))
         .collect();
     (!left.is_empty()).then(|| {
         format!(
