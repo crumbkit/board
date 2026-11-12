@@ -20,6 +20,8 @@ Inputs are flags. `board --personal call attention.<capability> -h` lists
 them.
 
 - Pinned orders normally arrive in your context when a session starts.
+  That block holds each order's path, expiry and signed text without its
+  context; `attention verify` shows the context.
   Only when that section is missing, run
   `board --personal attention pinned`. It lists only the board's own
   orders, not orders in boards it mounts.
