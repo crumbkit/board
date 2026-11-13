@@ -25,10 +25,6 @@ mod entries;
 pub(crate) mod outside;
 mod removal;
 pub use removal::Removes;
-#[cfg(feature = "testing")]
-mod hook;
-#[cfg(feature = "testing")]
-pub use hook::{HookGuard, before_head_moves};
 mod locks;
 mod retry;
 pub(crate) mod sync;
@@ -474,8 +470,6 @@ impl Repository {
     fn finish(&self, _lock: &Lock, mut staged: Staged, log: &str) -> Result<ObjectId, WriteError> {
         use gix::refs::Target as RefTarget;
         use gix::refs::transaction::{Change, LogChange, PreviousValue, RefEdit, RefLog};
-        #[cfg(feature = "testing")]
-        hook::run();
         let commit = gix::ObjectId::try_from(staged.commit.as_bytes()).map_err(|error| {
             WriteError::Commit {
                 source: error.into(),

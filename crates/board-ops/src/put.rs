@@ -26,6 +26,7 @@ use crate::ui::fitted;
 use crate::verdict::{self, Admitted, Fault, SchemaFound};
 
 mod bulk;
+mod commit;
 pub use bulk::Bulk;
 
 /// What a put expects to find where it writes.
@@ -286,6 +287,10 @@ impl Board {
     ) -> Result<PutReport, Failure> {
         let _timed = self.timed("put.write");
         let repository = self.repository();
+        // The HEAD every --expect below is checked against.
+        let seen = repository
+            .head()
+            .map_err(|error| Failure::Error(WriteError::from(error).into()))?;
         let mut writes = Vec::with_capacity(prepared.len());
         let mut stale = Vec::new();
         for (at, item) in prepared.iter().enumerate() {
@@ -354,17 +359,7 @@ impl Board {
         };
         Self::apply(repository, &lock, prepared, removed)
             .map_err(|error| Failure::Error(error.into()))?;
-        let commit = match staged {
-            None => None,
-            Some(staged) => match repository.finish_commit_retrying(&lock, staged, &files, message)
-            {
-                Ok(commit) => commit,
-                Err(WriteError::HeadMoved) => {
-                    return Err(Failure::Error(PutError::HeadMoved { writes }));
-                }
-                Err(error) => return Err(Failure::Error(error.into())),
-            },
-        };
+        let commit = self.finish_put(&lock, staged, seen, &files, message, writes.clone())?;
         drop(lock);
         let mut view = self.repositories().snapshot().map_err(ResolveError::Git);
         let root = &mut self.repositories().root().reader();

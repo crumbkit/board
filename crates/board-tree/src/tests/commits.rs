@@ -268,13 +268,14 @@ fn an_unrelated_commit_under_a_put_is_admitted_on_the_new_head() {
     let repository = scenario.open();
     let lock = repository.lock(LOCK_WAIT).unwrap();
     let writes: &[(&str, Option<&[u8]>)] = &[("b.json", Some(b"{}\n"))];
+    let seen = scenario.head().map(|head| head.id);
     let staged = repository
         .stage_commit(&lock, writes, "board put /b")
         .unwrap()
         .unwrap();
     let moved = scenario.commit(&[("a.json", "{}"), ("c.json", "{}")]);
     let commit = repository
-        .finish_commit_retrying(&lock, staged, writes, "board put /b")
+        .finish_commit_retrying(&lock, staged, seen, writes, "board put /b", &|_| {})
         .unwrap()
         .unwrap();
     let head = scenario.head().unwrap();
@@ -292,13 +293,14 @@ fn a_commit_to_a_written_path_under_a_put_refuses_head_moved() {
     let repository = scenario.open();
     let lock = repository.lock(LOCK_WAIT).unwrap();
     let writes: &[(&str, Option<&[u8]>)] = &[("a.json", Some(b"{\"n\":1}\n"))];
+    let seen = scenario.head().map(|head| head.id);
     let staged = repository
         .stage_commit(&lock, writes, "board put /a")
         .unwrap()
         .unwrap();
     let moved = scenario.commit(&[("a.json", "{\"n\":2}")]);
     let error = repository
-        .finish_commit_retrying(&lock, staged, writes, "board put /a")
+        .finish_commit_retrying(&lock, staged, seen, writes, "board put /a", &|_| {})
         .unwrap_err();
     assert!(matches!(error, WriteError::HeadMoved), "{error}");
     assert_eq!(scenario.head().unwrap().id, moved);

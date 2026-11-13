@@ -19,7 +19,6 @@ serde_json.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
-board-tree = { workspace = true, features = ["testing"] }
 board-scenario.workspace = true
 proptest.workspace = true
 tempfile.workspace = true

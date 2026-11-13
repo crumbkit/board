@@ -483,7 +483,7 @@ fn generic(code: Code) -> &'static str {
             "set `git config user.name` and `git config user.email`, or set `commit_on_put` to false in `.board/board.json`"
         }
         Code::PutHeadMoved => {
-            "the files are written but not committed; check them with `git status` and commit them"
+            "another program changed a path this put wrote, or kept moving HEAD, so the files are written but not committed; compare them with `git diff`, then run the put again or commit them"
         }
         Code::PutNotAFolder => {
             "give --new a folder that ends in `/`, such as /projects/board/questions/"
