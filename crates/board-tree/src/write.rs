@@ -12,7 +12,6 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use board_model::{BINARY_NAME, Code, Fields, Location, LogicalPath, Object, ObjectId, Source};
-use gix::lock::acquire::Fail;
 
 use crate::git::{GitError, Repository, model_id};
 use crate::repositories::Repositories;
@@ -26,6 +25,8 @@ mod entries;
 pub(crate) mod outside;
 mod removal;
 pub use removal::Removes;
+mod locks;
+mod retry;
 pub(crate) mod sync;
 
 /// How long a put waits for another put's lock.
@@ -49,6 +50,9 @@ pub struct Target {
 #[derive(Debug)]
 pub struct Lock {
     _held: gix::lock::Marker,
+    /// When this put stops waiting: the one wait covers `board.lock` and
+    /// every wait for git's `index.lock`.
+    deadline: Instant,
 }
 
 impl Repositories {
@@ -258,22 +262,6 @@ impl Repository {
         self.git().git_dir()
     }
 
-    /// Takes `board.lock` in the git directory with gix's lock files, trying
-    /// again every `LOCK_POLL` until `wait` has passed.
-    pub fn lock(&self, wait: Duration) -> Result<Lock, WriteError> {
-        let resource = self.git_dir().join("board");
-        let started = Instant::now();
-        loop {
-            match gix::lock::Marker::acquire_to_hold_resource(&resource, Fail::Immediately, None) {
-                Ok(held) => return Ok(Lock { _held: held }),
-                Err(error) if error.is_retryable() && started.elapsed() < wait => {
-                    std::thread::sleep(LOCK_POLL);
-                }
-                Err(error) => return Err(lock_refused(error, resource.with_extension("lock"))),
-            }
-        }
-    }
-
     /// The id git gives a blob holding `bytes`.
     pub fn blob_id(&self, bytes: &[u8]) -> ObjectId {
         blob_id(self.git().object_hash(), bytes)
@@ -389,12 +377,12 @@ impl Repository {
     /// will hold, or `None` when it is removed, onto HEAD as `git commit
     /// <paths>` would, without moving
     /// HEAD: checks there is an identity to commit as, takes git's
-    /// `index.lock` without waiting, and writes the blobs, trees and commit
+    /// `index.lock`, waiting for it as long as the board lock waited, and writes the blobs, trees and commit
     /// object. The board lock must be held, so HEAD is read under it.
     /// `None` when HEAD already holds every write, as git commits nothing.
     pub fn stage_commit(
         &self,
-        _lock: &Lock,
+        lock: &Lock,
         writes: &[(&str, Option<&[u8]>)],
         message: &str,
     ) -> Result<Option<Staged>, WriteError> {
@@ -416,7 +404,7 @@ impl Repository {
         if let Some(operation) = operation {
             return Err(WriteError::InProgress { operation });
         }
-        let (index_lock, index) = self.lock_index()?;
+        let (index_lock, index) = self.lock_index(lock.deadline)?;
         let mut staged = Staged {
             commit: ObjectId::Sha1([0; 20]),
             parent: self.head()?,
@@ -548,23 +536,6 @@ impl Repository {
             })?;
         Ok(staged.commit)
     }
-
-    /// Takes git's `index.lock` without waiting, then reads git's index for
-    /// this working tree, or an empty one before the first `git add`.
-    fn lock_index(&self) -> Result<(gix::lock::File, gix::index::File), WriteError> {
-        let git = self.git();
-        let index = git.index_path();
-        let lock = gix::lock::File::acquire_to_update_resource(&index, Fail::Immediately, None)
-            .map_err(|error| lock_refused(error, index.with_extension("lock")))?;
-        let read = if index.exists() {
-            git.open_index().map_err(|error| WriteError::Commit {
-                source: error.into(),
-            })?
-        } else {
-            gix::index::File::from_state(gix::index::State::new(git.object_hash()), index)
-        };
-        Ok((lock, read))
-    }
 }
 
 /// Writes and fsyncs the temporary file, with the target's permissions when
@@ -588,19 +559,6 @@ fn write_temporary(temporary: &Path, target: &Path, bytes: &[u8]) -> io::Result<
         file.set_permissions(metadata.permissions())?;
     }
     file.sync_all()
-}
-
-/// The refusal for a lock gix could not take: `Locked` when another holds
-/// `lock`, and an I/O failure otherwise.
-fn lock_refused(error: gix::Exn, lock: PathBuf) -> WriteError {
-    if error.is_retryable() {
-        WriteError::Locked { lock }
-    } else {
-        WriteError::Io {
-            path: lock,
-            source: io::Error::other(error.into_error()),
-        }
-    }
 }
 
 /// The record file a resolved Location writes to: the file itself, or the

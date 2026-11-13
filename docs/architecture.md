@@ -244,9 +244,7 @@ tables and views, how a refresh decides what to redo, and `board query` and
 
 1. takes `board.lock` in the worktree's git directory, trying every 20
    milliseconds for 5 seconds, or for as long as `--wait` says (`500ms`,
-   `30s`, `2m`, `1h`), and then refusing with `board::put::locked`. That wait
-   is the only retry: concurrent puts each land in their own commit without
-   the caller retrying. The steps below
+   `30s`, `2m`, `1h`), and then refusing with `board::put::locked`. Concurrent puts each land in their own commit. The steps below
    run under the lock, so a record is checked against the board it is written
    to, and other writers wait while it is checked;
 2. checks it with the codes `check` uses: size and strict parse, `$type`,
@@ -265,8 +263,9 @@ tables and views, how a refresh decides what to redo, and `board query` and
    written paths, onto HEAD. The author is git's `user.name` and `user.email`;
    without them the put is refused before writing with
    `board::put::no_identity`. During a merge, cherry-pick, revert or rebase it
-   is refused before writing with `board::put::locked`. No hooks run. If HEAD
-   moved meanwhile, the files are written and not committed, with
+   is refused before writing with `board::put::locked`. No hooks run. [commit.md](architecture/writes/commit.md) says how it waits for
+   `index.lock` and stages again when HEAD moved. If a written path
+   changed meanwhile, the files stay uncommitted, with
    `board::put::head_moved`. Any other failure is `board::put::failed`, and
    says whether the commit was made.
 

@@ -17,6 +17,7 @@ use crate::tests::{MANIFEST, open, task};
 mod batch;
 mod file;
 mod folder;
+mod moved;
 mod new;
 mod parity;
 mod removing;
@@ -848,7 +849,7 @@ fn two_puts_with_the_same_expect_make_one_write_and_one_stale() {
 
 /// The test board, committing on put, with an identity in the repository's
 /// own configuration and an uncommitted note beside the records.
-fn committing() -> Scenario {
+pub(super) fn committing() -> Scenario {
     let scenario = crate::tests::board();
     scenario
         .identified()

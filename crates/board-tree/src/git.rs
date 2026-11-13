@@ -277,7 +277,7 @@ impl Repository {
     }
 
     /// The commit `HEAD` names, or `None` before the first commit.
-    pub(crate) fn head(&self) -> Result<Option<ObjectId>, GitError> {
+    pub fn head(&self) -> Result<Option<ObjectId>, GitError> {
         let unreadable = |source: Box<dyn Error + Send + Sync>| GitError::Unreadable {
             repository: self.path.clone(),
             source,

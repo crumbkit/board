@@ -82,6 +82,35 @@ pub struct Board {
     /// Why this run's commits touch many files, which each commit gives in
     /// a `Board-Bulk:` trailer: see [`Board::mark_bulk`].
     pub(crate) bulk: Option<crate::Bulk>,
+    /// Runs before each attempt to move HEAD for a put's commit. Nothing in
+    /// production; a test uses it to move HEAD at that moment.
+    pub(crate) between: Between,
+}
+
+/// What a put runs, given the attempt number, after staging its commit and
+/// before moving HEAD to it.
+pub(crate) struct Between(Box<dyn Fn(usize) + Send>);
+
+impl Between {
+    pub(crate) fn new(run: impl Fn(usize) + Send + 'static) -> Self {
+        Self(Box::new(run))
+    }
+
+    pub(crate) fn run(&self) -> &dyn Fn(usize) {
+        &*self.0
+    }
+}
+
+impl Default for Between {
+    fn default() -> Self {
+        Self::new(|_| {})
+    }
+}
+
+impl std::fmt::Debug for Between {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Between")
+    }
 }
 
 // Board must stay `Send` so that a caller can move it to another thread, as
@@ -131,6 +160,7 @@ impl Board {
             build: "",
             started: None,
             bulk: None,
+            between: Between::default(),
         })
     }
 
