@@ -10,6 +10,7 @@ use board_ops::{Host, PluginError, literal};
 use serde_json::{Value, json};
 
 use crate::board::{body, call_or_refusal, readable, refused, rows, text};
+use crate::refusal;
 
 /// The record types of a rule, the second from before the rename.
 pub(crate) const RULE_TYPES: [&str; 2] = ["rules/rule/v1", "controls/control/v1"];
@@ -67,19 +68,49 @@ fn for_paths(host: &dyn Host, paths: &[String]) -> Result<Vec<Found>, PluginErro
         }
         Err(refusal) => return Err(refused("call", &refusal)),
     };
-    Ok((output
-        .get("controls")
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten())
-    .filter_map(|rule| {
-        Some(Found {
-            rule: rule.get("control")?.as_str()?.to_owned(),
-            summary: rule.get("summary")?.as_str()?.to_owned(),
-            close: (rule.get("close").and_then(Value::as_str)).map(str::to_owned),
+    found_in(&output)
+}
+
+/// The `rules` of a `rules.for-paths` or `rules.evaluate` output, or
+/// `changes::rules::unreadable` when the output has none, as output in the
+/// names from before the rename has `controls`. A refusal, since reading
+/// such an output as no rules would drop every obligation.
+pub(crate) fn listed(output: &Value) -> Result<&[Value], PluginError> {
+    (output.get("rules").and_then(Value::as_array))
+        .map(Vec::as_slice)
+        .ok_or_else(|| {
+            refusal(
+                "changes::rules::unreadable",
+                "the rules plugin's output names no `rules`; update Board so its changes and rules plugins agree"
+                    .to_owned(),
+                [],
+            )
         })
-    })
-    .collect())
+}
+
+/// The rules in a `rules.for-paths` output, each with its `rule`.
+fn found_in(output: &Value) -> Result<Vec<Found>, PluginError> {
+    listed(output)?
+        .iter()
+        .map(|rule| {
+            let text = |key: &str| rule.get(key).and_then(Value::as_str).map(str::to_owned);
+            Ok(Found {
+                rule: text("rule").ok_or_else(|| unreadable("rule"))?,
+                summary: text("summary").ok_or_else(|| unreadable("summary"))?,
+                close: text("close"),
+            })
+        })
+        .collect()
+}
+
+fn unreadable(field: &str) -> PluginError {
+    refusal(
+        "changes::rules::unreadable",
+        format!(
+            "a rule in the rules plugin's output has no `{field}`; update Board so its changes and rules plugins agree"
+        ),
+        [],
+    )
 }
 
 /// Every rule on `paths`, a plan's files and patterns, by its path in its
@@ -203,3 +234,6 @@ pub(crate) fn listed_by(
     }
     Ok(Some(touched))
 }
+
+#[cfg(test)]
+mod tests;

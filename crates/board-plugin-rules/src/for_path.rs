@@ -27,7 +27,7 @@ pub(crate) struct Input {
 #[serde(deny_unknown_fields)]
 #[schemars(rename = "ForPathOutput")]
 pub(crate) struct Output {
-    controls: Vec<Applying>,
+    rules: Vec<Applying>,
 }
 
 /// A control that applies to the path asked about, and its rule, null when
@@ -35,11 +35,11 @@ pub(crate) struct Output {
 #[derive(Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 struct Applying {
-    control: String,
+    rule: String,
     requirement: String,
     purpose: String,
     #[schemars(schema_with = "rule_output_schema")]
-    rule: Option<Checker>,
+    checker: Option<Checker>,
     kind: Kind,
     show: ShowAt,
     /// How to close an obligation; left out for a standing control.
@@ -71,14 +71,14 @@ pub(crate) fn for_path(host: &dyn Host, input: &Value) -> Result<Value, PluginEr
                 kind: control.kind(),
                 close: control.kind().close(&logical),
                 owed_by: control.owed(),
-                control: logical,
+                rule: logical,
                 requirement: control.requirement,
                 purpose: control.purpose,
-                rule: control.checker,
+                checker: control.checker,
             })
         })
         .collect();
-    let output = Output { controls };
+    let output = Output { rules: controls };
     Ok(serde_json::to_value(output).expect("Output holds only strings, numbers and lists"))
 }
 

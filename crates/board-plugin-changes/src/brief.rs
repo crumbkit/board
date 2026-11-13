@@ -16,7 +16,7 @@ use crate::gates::{HEADING, Observed};
 use crate::lifecycle::{LifecycleRecord, says_none};
 use crate::phases::{PathInput, plan_text, step_of};
 use crate::plan::{Answers, documents, words};
-use crate::rules::{RULE_TYPES, RULES_UNAVAILABLE, listed_by};
+use crate::rules::{RULE_TYPES, RULES_UNAVAILABLE, listed, listed_by};
 use crate::{PLUGIN, Warning, refusal, to_value};
 
 /// The most words `brief` returns.
@@ -234,13 +234,9 @@ fn rules_for(host: &dyn Host, paths: &[String]) -> Result<Vec<Map<String, Value>
             }
         },
     )?;
-    Ok((output
-        .get("controls")
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten())
-    .filter_map(|rule| rule.as_object().cloned())
-    .collect())
+    Ok((listed(&output)?.iter())
+        .filter_map(|rule| rule.as_object().cloned())
+        .collect())
 }
 
 /// `rule` as the brief lists it: `matched` left out when it is every
@@ -254,7 +250,7 @@ fn rule_line(rule: &Map<String, Value>, paths: &[String]) -> RuleLine {
     .filter_map(|each| each.as_str().map(str::to_owned))
     .collect();
     let mut line = RuleLine {
-        rule: field(rule, "control").to_owned(),
+        rule: field(rule, "rule").to_owned(),
         summary: field(rule, "summary").to_owned(),
         matched: None,
         matched_left_out: None,
@@ -484,7 +480,7 @@ pub(crate) fn brief_of(host: &dyn Host, path: &str) -> Result<Output, PluginErro
         .partition(|rule| rule.get("versions_found").and_then(Value::as_u64) != Some(0));
     let found: Vec<RuleLine> = (found.iter()).map(|rule| rule_line(rule, &paths)).collect();
     let dropped: Vec<String> = (dropped.iter())
-        .map(|rule| field(rule, "control").to_owned())
+        .map(|rule| field(rule, "rule").to_owned())
         .collect();
     let signed = |count: usize| i64::try_from(count).unwrap_or(i64::MAX);
     let room = signed(BRIEF_WORDS) - signed(spent) - signed(kept);

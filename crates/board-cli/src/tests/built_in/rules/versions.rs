@@ -40,7 +40,7 @@ fn a_pin_older_than_the_rule_does_not_pass_and_one_at_the_rule_passes() {
     assert_eq!(
         output["versions"],
         json!([{
-            "control": "/controls/rust",
+            "rule": "/controls/rust",
             "requirement": "Pin the latest Rust.",
             "at_least": "1.99.1",
             "files": ["/app/rust-toolchain.toml"],
@@ -138,7 +138,7 @@ fn evaluate_reports_each_older_pin_in_a_part_and_passes_a_current_one() {
     let board = board();
     board.write("controls/rust.json", &floor("1.99.1", &[]));
     let input = json!({
-        "controls": ["/controls/rust"],
+        "rules": ["/controls/rust"],
         "parts": {"old": toolchain("1.97.1"), "new": toolchain("1.99.1")},
     });
     let ran = board.run_with(&["--json", "call", "rules.evaluate"], &input.to_string());
@@ -147,7 +147,7 @@ fn evaluate_reports_each_older_pin_in_a_part_and_passes_a_current_one() {
     assert_eq!(output["passed"], false);
     assert_eq!(
         (results.iter())
-            .map(|result| json!([result["part"], result["rule"], result["status"]]))
+            .map(|result| json!([result["part"], result["checker"], result["status"]]))
             .collect::<Vec<_>>(),
         [
             json!(["new", "version", "passed"]),

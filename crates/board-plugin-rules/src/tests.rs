@@ -88,7 +88,7 @@ fn the_check_output_schema_admits_a_null_or_string_largest_and_refuses_a_number(
         json!({
             "passed": true,
             "measured": [{
-                "control": "/controls/c",
+                "rule": "/controls/c",
                 "requirement": "Small.",
                 "budget": "words",
                 "max": 1,
@@ -433,14 +433,14 @@ fn a_malformed_path_is_refused_as_board_refs_refuses_it_and_a_well_formed_one_is
     assert_eq!(refused.code, "rules::board::refused");
     assert_eq!(refused.fields["code"], json!("board::cli::usage"));
     let answered = Rules.call(&host, &for_path, json!({"path": "/docs/x"}));
-    assert_eq!(answered.unwrap(), json!({"controls": []}));
+    assert_eq!(answered.unwrap(), json!({"rules": []}));
 }
 
 #[test]
 fn evaluate_takes_at_least_one_control_by_path_and_one_named_part_each_with_a_sentence() {
     let parsed = Rules.manifest();
     let input = &parsed.capabilities[3].input;
-    let given = |controls: Value, parts: Value| json!({"controls": controls, "parts": parts});
+    let given = |controls: Value, parts: Value| json!({"rules": controls, "parts": parts});
     for (refused, admitted) in [
         (
             given(json!([]), json!({"a": "x"})),
@@ -463,7 +463,7 @@ fn evaluate_takes_at_least_one_control_by_path_and_one_named_part_each_with_a_se
         input.validate(&admitted).unwrap();
     }
     let schema = &manifest()["capabilities"][3]["inputSchema"];
-    for name in ["controls", "parts"] {
+    for name in ["rules", "parts"] {
         let description = schema["properties"][name]["description"].as_str().unwrap();
         assert!(description.ends_with('.'), "{description}");
     }
@@ -475,16 +475,16 @@ fn the_for_path_output_schema_admits_each_kind_of_rule_or_null_and_refuses_it_le
     let output = &manifest.capabilities[0].output;
     let applying = |rule: Option<Value>| {
         let mut item = json!({
-            "control": "/controls/c",
+            "rule": "/controls/c",
             "requirement": "R.",
             "purpose": "P.",
             "kind": "standing",
             "show": "edit",
         });
         if let Some(rule) = rule {
-            item["rule"] = rule;
+            item["checker"] = rule;
         }
-        json!({"controls": [item]})
+        json!({"rules": [item]})
     };
     for rule in [
         Value::Null,

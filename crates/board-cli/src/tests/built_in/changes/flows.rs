@@ -590,10 +590,10 @@ fn start_stores_the_suite_and_surfaces_the_open_records_on_the_mount_and_its_obl
         &["call", "rules.for-paths"],
         &json!({"paths": ["/repos/x/**"]}).to_string(),
     );
-    let controls = &given["data"]["output"]["controls"];
+    let controls = &given["data"]["output"]["rules"];
     let close = |control: &str| {
         (controls.as_array().unwrap().iter())
-            .find(|each| each["control"] == control)
+            .find(|each| each["rule"] == control)
             .map(|each| each.get("close").cloned())
             .unwrap()
     };

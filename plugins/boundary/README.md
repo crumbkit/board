@@ -62,7 +62,7 @@ run before its judged ones, and a judged checker skips a part that failed a
 free one. A refusal from `rules.evaluate`, such as
 `rules::rule::not_found`, is `boundary::board::refused` carrying that
 code. A judged rule with a part to read is refused that way with
-`rules::agent::not_set` when `BOARD_CONTROLS_AGENT` names no agent.
+`rules::agent::not_set` when `BOARD_RULES_AGENT` names no agent.
 Results that the plugin cannot read refuse the check with
 `boundary::evaluate::unreadable`. That happens when the boundary and
 rules plugins come from different Board builds.
@@ -74,7 +74,7 @@ refuse every check with `boundary::boundary::invalid`. Its `boundaries`
 field maps each entry to its code, `not a boundary` or `is not a directory`,
 and the hint says to fix the record, move the entry out of `/boundaries/`,
 or make `/boundaries/` a directory. The capability declares
-`BOARD_CONTROLS_AGENT`, `ANTHROPIC_API_KEY` and `CLAUDE_CODE_OAUTH_TOKEN`,
+`BOARD_RULES_AGENT`, `ANTHROPIC_API_KEY` and `CLAUDE_CODE_OAUTH_TOKEN`,
 which a judged rule reads, and a timeout of 1,800 seconds.
 
 Then it writes the crossing and returns `digest`, `crossing`, `boundaries`,

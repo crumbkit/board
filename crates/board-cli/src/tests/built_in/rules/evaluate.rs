@@ -10,7 +10,7 @@ const PRIVATE: &str = r"acme-\d{3}";
 /// The run of `board --json call controls.evaluate` with `controls` and
 /// `parts` on its standard input, and its one document.
 fn evaluate(board: &Fixture, controls: &[&str], parts: &Value) -> (Output, Value) {
-    let stdin = json!({"controls": controls, "parts": parts}).to_string();
+    let stdin = json!({"rules": controls, "parts": parts}).to_string();
     let ran = board.run_with(&["--json", "call", "rules.evaluate"], &stdin);
     let document = json(&ran);
     (ran, document)
@@ -42,7 +42,7 @@ fn by_part(document: &Value) -> BTreeMap<String, Value> {
 /// The controls each result of `document` names, in order.
 fn checked(document: &Value) -> Vec<Value> {
     (output(document)["results"].as_array().unwrap().iter())
-        .map(|result| result["control"].clone())
+        .map(|result| result["rule"].clone())
         .collect()
 }
 
@@ -76,9 +76,9 @@ fn a_part_over_a_budget_fails_and_one_within_it_passes() {
     assert_eq!(
         results["pr.title"],
         json!({
-            "control": "/controls/short",
+            "rule": "/controls/short",
             "part": "pr.title",
-            "rule": "budget",
+            "checker": "budget",
             "status": "passed",
             "findings": [],
             "used": 3,
@@ -252,7 +252,7 @@ cat "$here/answer.txt"
 "#;
 
 /// The stub agent in a directory of its own, which `evaluate` starts
-/// through `BOARD_CONTROLS_AGENT`. It answers with no findings until told
+/// through `BOARD_RULES_AGENT`. It answers with no findings until told
 /// otherwise.
 struct Agent {
     directory: tempfile::TempDir,
@@ -311,14 +311,14 @@ impl Agent {
     }
 }
 
-/// [`evaluate`] with `argv` as `BOARD_CONTROLS_AGENT`.
+/// [`evaluate`] with `argv` as `BOARD_RULES_AGENT`.
 fn judging(board: &Fixture, controls: &[&str], parts: &Value, argv: &[String]) -> (Output, Value) {
-    let stdin = json!({"controls": controls, "parts": parts}).to_string();
+    let stdin = json!({"rules": controls, "parts": parts}).to_string();
     let argv = serde_json::to_string(argv).unwrap();
     let ran = board.run_inheriting(
         &["--json", "call", "rules.evaluate"],
         &stdin,
-        &[("BOARD_CONTROLS_AGENT", &argv)],
+        &[("BOARD_RULES_AGENT", &argv)],
     );
     let document = json(&ran);
     (ran, document)
@@ -342,7 +342,7 @@ fn judged() -> Fixture {
 
 /// Where judged verdicts are kept under `board`'s cache home.
 fn verdicts(board: &Fixture) -> std::path::PathBuf {
-    board.cache.path().join("board-controls")
+    board.cache.path().join("board-rules")
 }
 
 #[test]
@@ -356,7 +356,7 @@ fn a_judged_part_fails_with_the_models_findings_and_passes_without_them() {
     assert_eq!(ran.code, 0, "{}", text(&ran.stderr));
     let result = &by_part(&document)["pr.body"];
     assert_eq!(
-        (&result["rule"], &result["status"]),
+        (&result["checker"], &result["status"]),
         (&json!("judged"), &json!("failed"))
     );
     assert_eq!(
@@ -454,7 +454,7 @@ fn a_judged_rule_skips_a_part_that_failed_a_free_rule_whatever_order_the_control
     );
     assert_eq!(ran.code, 0, "{}", text(&ran.stderr));
     let statuses: Vec<Value> = (output(&document)["results"].as_array().unwrap().iter())
-        .map(|result| json!([result["control"], result["part"], result["status"]]))
+        .map(|result| json!([result["rule"], result["part"], result["status"]]))
         .collect();
     assert_eq!(
         statuses,
@@ -492,6 +492,44 @@ fn free_rules_run_without_an_agent_and_a_judged_rule_with_a_part_to_read_needs_o
     assert_eq!(document["code"], "rules::agent::not_set");
     let (ran, _) = judging(&board, &both, &short, &agent.argv());
     assert_eq!(ran.code, 0, "{}", text(&ran.stderr));
+}
+
+#[test]
+fn a_judged_rule_reads_its_agent_from_board_rules_agent_and_not_from_the_former_variable() {
+    let (board, agent) = (judged(), Agent::new());
+    let parts = json!({"pr.body": "Text."});
+    let argv = serde_json::to_string(&agent.argv()).unwrap();
+    let stdin = json!({"rules": ["/controls/plain"], "parts": parts}).to_string();
+    let ran = board.run_inheriting(
+        &["--json", "call", "rules.evaluate"],
+        &stdin,
+        &[("BOARD_CONTROLS_AGENT", &argv)],
+    );
+    let document = json(&ran);
+    assert_eq!(ran.code, 1, "{document}");
+    assert_eq!(document["code"], "rules::agent::not_set");
+    assert_eq!(document["fields"]["variable"], "BOARD_RULES_AGENT");
+    assert_eq!(agent.calls(), 0);
+    let (ran, _) = judging(&board, &["/controls/plain"], &parts, &agent.argv());
+    assert_eq!(ran.code, 0, "{}", text(&ran.stderr));
+    assert_eq!(agent.calls(), 1);
+}
+
+#[test]
+fn evaluate_refuses_an_input_that_names_its_rules_controls() {
+    let board = judged();
+    let stdin = json!({"controls": ["/controls/plain"], "parts": {"pr.body": "Text."}}).to_string();
+    let ran = board.run_with(&["--json", "call", "rules.evaluate"], &stdin);
+    let document = json(&ran);
+    assert_eq!(ran.code, 1, "{document}");
+    assert_eq!(document["code"], "board::plugin::bad_input");
+    assert!(
+        document["message"]
+            .as_str()
+            .unwrap()
+            .contains("\"rules\" is a required property"),
+        "{document}"
+    );
 }
 
 #[test]
@@ -582,9 +620,9 @@ fn a_control_without_a_rule_is_stated_and_never_fails() {
         &json!({
             "passed": true,
             "results": [{
-                "control": "/controls/written",
+                "rule": "/controls/written",
                 "part": "pr.body",
-                "rule": null,
+                "checker": null,
                 "status": "stated",
                 "findings": [],
                 "used": null,

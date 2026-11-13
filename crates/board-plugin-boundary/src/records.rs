@@ -118,9 +118,9 @@ impl CrossingRecord {
 }
 
 /// One rule's verdict on one part, as `rules.evaluate` gave it, with each
-/// null left out. A crossing written before the rename, and the result of
-/// `rules.evaluate`, name the rule's path `control` and its checker `rule`;
-/// [`verdicts`] reads both.
+/// null left out. A crossing written before the rename names the rule's
+/// path `control` and its checker `rule`; [`verdicts`] reads both forms, and
+/// [`evaluated`] only the current one.
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 #[schemars(transform = verdict_or_former)]
@@ -198,6 +198,13 @@ pub fn verdicts<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Vec<Verdic
             Verdict::deserialize(Value::Object(fields)).map_err(serde::de::Error::custom)
         })
         .collect()
+}
+
+/// The results of `rules.evaluate`, read in its names alone: a result that
+/// names its rule `control` is refused. Only a stored crossing, through
+/// [`verdicts`], still reads the former names.
+pub fn evaluated(results: &Value) -> Result<Vec<Verdict>, serde_json::Error> {
+    Vec::<Verdict>::deserialize(results)
 }
 
 /// The kind of checker a verdict comes from, as a rule's checker names it

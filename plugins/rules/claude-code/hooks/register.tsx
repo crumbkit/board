@@ -1,8 +1,8 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, RenderElement } from 'claude-code'
 
-import type { Checked, Control, StateBadge } from '../types'
-import type { Configured } from './controls'
+import type { Checked, Rule, StateBadge } from '../types'
+import type { Configured } from './rules'
 import { SLOT, joinBand } from './band'
 import {
   BLOCK,
@@ -10,7 +10,7 @@ import {
   badgeValue,
   boardName,
   contextText,
-  controlsBadge,
+  rulesBadge,
   paneTitle,
   parseCheck,
   badgesProblem,
@@ -20,25 +20,25 @@ import {
   reminder,
   sections,
   stateBadges,
-} from './controls'
+} from './rules'
 
-// The mod reads the controls plugin and writes nothing to the board. It shares
+// The mod reads the rules plugin and writes nothing to the board. It shares
 // nothing with other mods but the band, which each mod draws a part of: the
-// session's state badges and the Controls button.
+// session's state badges and the Rules button.
 
-const checked = atom({ plugin: 'board-controls', key: 'checked' } as const, null as Checked | null)
-const told = atom({ plugin: 'board-controls', key: 'told' } as const, {} as Record<string, string[]>)
-const state = atom({ plugin: 'board-controls', key: 'state' } as const, [] as StateBadge[])
+const checked = atom({ plugin: 'board-rules', key: 'checked' } as const, null as Checked | null)
+const told = atom({ plugin: 'board-rules', key: 'told' } as const, {} as Record<string, string[]>)
+const state = atom({ plugin: 'board-rules', key: 'state' } as const, [] as StateBadge[])
 
 const PATH = '"$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"'
-const CHECK = `PATH=${PATH} exec board --json call controls.check --path .`
-const FOR_PATH = `PATH=${PATH} exec board --json call controls.for-path --path "$1"`
+const CHECK = `PATH=${PATH} exec board --json call rules.check --path .`
+const FOR_PATH = `PATH=${PATH} exec board --json call rules.for-path --path "$1"`
 // The board that holds the directory names its repository in the listing's summary.
 const WHERE = `PATH=${PATH} exec board --json ls / --limit 1 < /dev/null`
 // A configured badge's command runs with the PATH the board calls use, each
 // value of its argv its own argument through "$@".
 const BADGE = `PATH=${PATH} exec "$@" < /dev/null`
-const PANE = 'board-controls'
+const PANE = 'board-rules'
 
 // A slow or hung board holds the session start or the edit no longer than this.
 const TIMEOUT_MS = 5000
@@ -114,10 +114,10 @@ async function readState($: EngineInterface, cwd: string, root: string) {
   await update($, state, () => stateBadges(shown, board))
 }
 
-/** The controls the context block names. */
-const toldBy = (answer: Checked | null) => (answer?.kind === 'read' ? answer.controls.map(c => c.control) : [])
+/** The rules the context block names. */
+const toldBy = (answer: Checked | null) => (answer?.kind === 'read' ? answer.rules.map(c => c.rule) : [])
 
-/** Runs controls.check at the repository root and keeps the answer for the session. */
+/** Runs rules.check at the repository root and keeps the answer for the session. */
 async function check($: EngineInterface, root: string): Promise<Checked | null> {
   let answer: Checked | null
   try {
@@ -131,12 +131,12 @@ async function check($: EngineInterface, root: string): Promise<Checked | null> 
   return answer
 }
 
-// A file's controls depend on its own path, since a pattern such as *.rs
+// A file's rules depend on its own path, since a pattern such as *.rs
 // differs between files of one directory, so the cache is per file. It starts
 // over when the module reloads.
-const forPath = new Map<string, Control[] | null>()
+const forPath = new Map<string, Rule[] | null>()
 
-/** Appends a hidden row naming each control on `file` the conversation was not told about. */
+/** Appends a hidden row naming each rule on `file` the conversation was not told about. */
 // The path goes to board relative to the root, so a file in a directory that
 // does not exist yet is looked up too. A file outside the root, or a session
 // in a repository no board holds, runs nothing.
@@ -150,13 +150,13 @@ async function beforeEdit($: EngineInterface, file: string, agentId: string | un
   }
   const key = agentId ?? ''
   const known = new Set((await read($, told))[key] ?? [])
-  const fresh = (forPath.get(file) ?? []).filter(c => !known.has(c.control))
+  const fresh = (forPath.get(file) ?? []).filter(c => !known.has(c.rule))
   if (fresh.length === 0) return
   await $.session.append({
     message: { type: 'user', content: [{ type: 'text', text: reminder(file, fresh) }] },
     ...(agentId === undefined ? {} : { agentId }),
   })
-  await update($, told, all => ({ ...all, [key]: [...(all[key] ?? []), ...fresh.map(c => c.control)] }))
+  await update($, told, all => ({ ...all, [key]: [...(all[key] ?? []), ...fresh.map(c => c.rule)] }))
 }
 
 export const register: Register = on => {
@@ -170,7 +170,7 @@ export const register: Register = on => {
   })
 
   // One block, which the engine sends in the first request and again after a
-  // compaction or /clear. The rows that named other controls are gone then, so
+  // compaction or /clear. The rows that named other rules are gone then, so
   // the main conversation counts as told only what the block says.
   on('prompt.context', async ($, e, next) => {
     const context = await next(e)
@@ -196,7 +196,7 @@ export const register: Register = on => {
     if (e.props.hasSurvey) return below
     const answer = await read($, checked)
     const badges = await read($, state)
-    const button = answer === null ? null : controlsBadge(answer)
+    const button = answer === null ? null : rulesBadge(answer)
     const { Box, Button, Text } = $.ui.resolve(e)
     const parts: RenderElement[] = []
     if (badges.length > 0) {
@@ -221,7 +221,7 @@ export const register: Register = on => {
       parts.push(
         (
           <Box key={SLOT.controls}>
-            <Button key="controls" label={button.label} onPress={() => void $.ui.open({ id: PANE, title: paneTitle(answer) })}>
+            <Button key="rules" label={button.label} onPress={() => void $.ui.open({ id: PANE, title: paneTitle(answer) })}>
               {button.problem ? <Text color="red">{button.label}</Text> : button.label}
             </Button>
           </Box>
@@ -234,11 +234,11 @@ export const register: Register = on => {
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const { Box, Text } = $.ui.resolve(e)
     const answer = await read($, checked)
-    if (answer === null) return <Text dimColor>No board holds this session's repository, so it has no controls.</Text>
+    if (answer === null) return <Text dimColor>No board holds this session's repository, so it has no rules.</Text>
     if (answer.kind === 'failed') {
       return (
         <Box flexDirection="column">
-          <Text color="red">board call controls.check failed for {answer.root}, so its controls are unknown.</Text>
+          <Text color="red">board call rules.check failed for {answer.root}, so its rules are unknown.</Text>
           <Text>
             {answer.code}: {answer.message}
           </Text>
@@ -248,19 +248,20 @@ export const register: Register = on => {
     return (
       <Box flexDirection="column">
         <Text bold>{paneTitle(answer)}</Text>
-        {sections(answer.controls).map(section => (
+        {sections(answer.rules).map(section => (
           <Box key={section.heading} flexDirection="column" marginTop={1}>
             <Text dimColor bold>
               {section.heading}
             </Text>
-            {section.controls.length === 0 ? (
+            {section.rules.length === 0 ? (
               <Text dimColor>None.</Text>
             ) : (
-              section.controls.map(c => (
-                <Box key={c.control} flexDirection="column">
+              section.rules.map(c => (
+                <Box key={c.rule} flexDirection="column">
                   <Text>
-                    <Text color="suggestion">{c.control}</Text>: {c.requirement}
+                    <Text color="suggestion">{c.rule}</Text>: {c.requirement}
                     {c.usage ? ` (now ${c.usage})` : ''}
+                    {c.described ? ' (described)' : ''}
                   </Text>
                   {c.close ? <Text dimColor>{`  ${c.close}`}</Text> : null}
                 </Box>

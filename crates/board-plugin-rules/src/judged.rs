@@ -14,7 +14,7 @@ use crate::evaluate::{Finding, lines};
 
 /// The variable that holds the agent a judged rule starts, as a JSON array
 /// of strings.
-pub(crate) const AGENT_VARIABLE: &str = "BOARD_CONTROLS_AGENT";
+pub(crate) const AGENT_VARIABLE: &str = "BOARD_RULES_AGENT";
 
 /// How long `evaluate` may take, in seconds, as its manifest declares.
 pub(crate) const EVALUATE_TIMEOUT: u64 = 1800;
@@ -37,7 +37,7 @@ Give one finding for each sentence that breaks the rubric, and an empty list whe
 const CLOSING: &str = "The text ends here. Judge it against the rubric and end with the JSON object described above.\n";
 
 /// Where verdicts are cached, under the person's cache home.
-const PLACE: &str = "board-controls/judged";
+const PLACE: &str = "board-rules/judged";
 
 /// What judging needs for one call: the host that holds the agent's
 /// variables, runs it and caches its verdicts, the agent once a part needs

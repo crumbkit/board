@@ -1,13 +1,16 @@
-// What the controls capabilities answered, and the words a session and the
+// What the rules capabilities answered, and the words a session and the
 // owner read from them. Pure functions, so the tests can pin every word.
 
-import type { Checked, Control, Kind, StateBadge } from '../types'
+import type { Checked, Kind, Rule, StateBadge } from '../types'
 
 /** The name of the context block the session's first message carries. */
-export const BLOCK = 'boardControls'
+export const BLOCK = 'boardRules'
 
 /** Board's code for a directory that no known board holds. */
 const NO_BOARD = 'board::config::not_found'
+
+/** The code of a check whose answer this mod cannot read. */
+const UNREADABLE = 'board-rules::output::unreadable'
 
 type Report = Record<string, unknown>
 
@@ -36,73 +39,82 @@ function failure(exitCode: number, stdout: string, stderr: string): { code: stri
   return { code: `exit ${exitCode}`, message: text || 'board printed nothing' }
 }
 
-type Stated = { control: string; requirement: string; kind?: string; close?: string }
+type Stated = { rule: string; requirement: string; kind?: string; state?: string; close?: string }
 type Measured = Stated & { budget: string; used: number; max: number; unreadable?: unknown[] }
 type Pinned = Stated & { at_least: string; behind?: unknown[]; unreadable?: unknown[] }
 
-/** `, N unreadable` when a measured control could not read N of its files. */
+/** `, N unreadable` when a measured rule could not read N of its files. */
 function unread(list: unknown[] | undefined): string {
   return Array.isArray(list) && list.length > 0 ? `, ${list.length} unreadable` : ''
 }
 
-/** How a version control's files stand against its floor. */
+/** How a version rule's files stand against its floor. */
 function pins(v: Pinned): string {
   const behind = Array.isArray(v.behind) ? v.behind.length : 0
   return behind > 0 ? `${behind} older than ${v.at_least}` : `every pin at least ${v.at_least}`
 }
 
-/** An obligation's `close` line, as the controls plugin gives it; nothing for a standing control. */
+/** An obligation's `close` line, as the rules plugin gives it; nothing for a standing rule. */
 function closing(c: Stated): { close?: string } {
   return typeof c.close === 'string' ? { close: c.close } : {}
 }
 
-/** A control's line in a list, with an obligation's close line indented beneath it. */
-function line(c: Control): string {
-  const head = `- ${c.control}: ${c.requirement}${c.usage ? ` (now ${c.usage})` : ''}`
+/** A rule's line in a list, with an obligation's close line indented beneath it. */
+function line(c: Rule): string {
+  const head = `- ${c.rule}: ${c.requirement}${c.usage ? ` (now ${c.usage})` : ''}${c.described ? ' (described)' : ''}`
   return c.close ? `${head}\n  ${c.close}` : head
 }
 
 /**
- * Reads `board --json call controls.check --path .` run at `root`. `null`
- * when no board holds the repository, which is no failure: it has no controls.
+ * Reads `board --json call rules.check --path .` run at `root`. `null`
+ * when no board holds the repository, which is no failure: it has no rules.
+ * An answer in the former names (`control` for `rule`) is a failure.
  */
 export function parseCheck(root: string, exitCode: number, stdout: string, stderr: string): Checked | null {
   const found = exitCode === 0 ? output(stdout) : null
   if (found !== null && Array.isArray(found.stated) && Array.isArray(found.measured)) {
+    const versionList = Array.isArray(found.versions) ? (found.versions as Pinned[]) : []
+    const all = [...(found.measured as Measured[]), ...versionList, ...(found.stated as Stated[])]
+    if (!all.every(item => typeof item.rule === 'string')) {
+      return { kind: 'failed', root, code: UNREADABLE, message: 'rules.check named a rule in a way this mod does not read; update the mod and Board together' }
+    }
     const measured = (found.measured as Measured[]).map(m => ({
       kind: 'budget' as const,
-      control: m.control,
+      rule: m.rule,
       requirement: m.requirement,
       usage: `${m.used} of ${m.max} ${m.budget}${m.used > m.max ? ', over budget' : ''}${unread(m.unreadable)}`,
       ...closing(m),
     }))
-    const versions = (Array.isArray(found.versions) ? (found.versions as Pinned[]) : []).map(v => ({
+    const versions = versionList.map(v => ({
       kind: 'standing' as const,
-      control: v.control,
+      rule: v.rule,
       requirement: v.requirement,
       usage: `${pins(v)}${unread(v.unreadable)}`,
       ...closing(v),
     }))
     const stated = (found.stated as Stated[]).map(s => ({
       kind: (s.kind === 'obligation' ? 'obligation' : 'standing') as Kind,
-      control: s.control,
+      rule: s.rule,
       requirement: s.requirement,
+      ...(s.state === 'described' ? { described: true } : {}),
       ...closing(s),
     }))
-    return { kind: 'read', root, controls: [...measured, ...versions, ...stated] }
+    return { kind: 'read', root, rules: [...measured, ...versions, ...stated] }
   }
   const failed = failure(exitCode, stdout, stderr)
   if (failed.code === NO_BOARD) return null
   return { kind: 'failed', root, ...failed }
 }
 
-/** Reads `board --json call controls.for-path`; `null` when no board holds the file. */
-export function parseForPath(exitCode: number, stdout: string): Control[] | null {
+/** Reads `board --json call rules.for-path`; `null` when no board holds the file or it answers in the former names. */
+export function parseForPath(exitCode: number, stdout: string): Rule[] | null {
   const found = exitCode === 0 ? output(stdout) : null
-  if (found === null || !Array.isArray(found.controls)) return null
-  return (found.controls as Stated[]).map(c => ({
+  if (found === null || !Array.isArray(found.rules)) return null
+  const listed = found.rules as Stated[]
+  if (!listed.every(c => typeof c.rule === 'string')) return null
+  return listed.map(c => ({
     kind: (c.kind === 'obligation' ? 'obligation' : 'standing') as Kind,
-    control: c.control,
+    rule: c.rule,
     requirement: c.requirement,
     ...closing(c),
   }))
@@ -112,44 +124,44 @@ export function parseForPath(exitCode: number, stdout: string): Control[] | null
 export function contextText(checked: Checked): string | null {
   if (checked.kind === 'failed') {
     return (
-      `\`board call controls.check\` failed for ${checked.root}, so the controls on its files are unknown:\n\n` +
+      `\`board call rules.check\` failed for ${checked.root}, so the rules on its files are unknown:\n\n` +
       `${checked.code}: ${checked.message}\n\n` +
-      'Before you edit a file, run `board call controls.for-path --path <file>` in its directory.'
+      'Before you edit a file, run `board call rules.for-path --path <file>` in its directory.'
     )
   }
-  if (checked.controls.length === 0) return null
-  const lines = checked.controls.map(line)
+  if (checked.rules.length === 0) return null
+  const lines = checked.rules.map(line)
   return (
-    `The board's controls state requirements on files in ${checked.root}. Follow each one that applies to a ` +
-    `file you change. \`board get <control>\` shows which files a control names.\n\n${lines.join('\n')}`
+    `The board's rules state requirements on files in ${checked.root}. Follow each one that applies to a ` +
+    `file you change. \`board get <rule>\` shows which files a rule names.\n\n${lines.join('\n')}`
   )
 }
 
 /** The last segment of a path, such as `crumbkit` for `/work/crumbkit`. */
 const lastSegment = (path: string) => path.split('/').filter(Boolean).at(-1) ?? path
 
-/** The Controls button's label, and whether it is drawn in red; null when there are no controls. */
-export function controlsBadge(checked: Checked): { label: string; problem: boolean } | null {
-  if (checked.kind === 'failed') return { label: `Controls: ${checked.code}`, problem: true }
-  return checked.controls.length === 0 ? null : { label: `Controls ${checked.controls.length}`, problem: false }
+/** The Rules button's label, and whether it is drawn in red; null when there are no rules. */
+export function rulesBadge(checked: Checked): { label: string; problem: boolean } | null {
+  if (checked.kind === 'failed') return { label: `Rules: ${checked.code}`, problem: true }
+  return checked.rules.length === 0 ? null : { label: `Rules ${checked.rules.length}`, problem: false }
 }
 
 /** The pane's heading. */
-export const paneTitle = (checked: Checked) => `Controls on ${lastSegment(checked.root)}`
+export const paneTitle = (checked: Checked) => `Rules on ${lastSegment(checked.root)}`
 
-/** The pane's sections, in order, each with the controls of its kind. */
-export function sections(controls: readonly Control[]): { heading: string; controls: Control[] }[] {
-  const of = (kind: Kind) => controls.filter(c => c.kind === kind)
+/** The pane's sections, in order, each with the rules of its kind. */
+export function sections(rules: readonly Rule[]): { heading: string; rules: Rule[] }[] {
+  const of = (kind: Kind) => rules.filter(c => c.kind === kind)
   return [
-    { heading: 'Standing rules', controls: of('standing') },
-    { heading: 'Obligations owed', controls: of('obligation') },
-    { heading: 'Budgets', controls: of('budget') },
+    { heading: 'Standing rules', rules: of('standing') },
+    { heading: 'Obligations owed', rules: of('obligation') },
+    { heading: 'Budgets', rules: of('budget') },
   ]
 }
 
 /** What the pane says under its sections. */
 export const REMINDER_NOTE =
-  'Editing a file adds a reminder for each control on that file that this session was not told about.'
+  'Editing a file adds a reminder for each rule on that file that this session was not told about.'
 
 /** A state badge the owner configured: its label and the command whose first line of output is its value. */
 export type Configured = { label: string; argv: string[] }
@@ -207,9 +219,9 @@ export const badgesProblem = (file: string, problem: string): StateBadge => ({ p
 export const stateBadges = (configured: readonly StateBadge[], board: string | null): StateBadge[] =>
   board === null ? [...configured] : [...configured, { label: 'Board', value: board, problem: null }]
 
-/** The hidden row that names controls on `file` the conversation was not told about. */
-export function reminder(file: string, controls: readonly Control[]): string {
-  const lines = controls.map(line)
-  const these = controls.length === 1 ? 'This board control applies' : 'These board controls apply'
+/** The hidden row that names rules on `file` the conversation was not told about. */
+export function reminder(file: string, rules: readonly Rule[]): string {
+  const lines = rules.map(line)
+  const these = rules.length === 1 ? 'This board rule applies' : 'These board rules apply'
   return `${these} to ${file}, which you are editing now. Follow each one in this edit and any that follows.\n\n${lines.join('\n')}`
 }

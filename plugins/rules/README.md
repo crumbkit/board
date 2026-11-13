@@ -263,7 +263,7 @@ The plugin ships both schemas. `board plugin enable controls` writes them to
   The call reads every pattern file and rubric once, and compiles each
   pattern file once per control.
 
-  A judged rule starts the agent `BOARD_CONTROLS_AGENT` names, a JSON array
+  A judged rule starts the agent `BOARD_RULES_AGENT` names, a JSON array
   of strings, as `review.run` starts `BOARD_REVIEW_AGENT` (the review
   plugin's README explains the variable and how to run the agent without
   tools). The agent runs in a new empty directory, leads its own process
@@ -282,13 +282,13 @@ The plugin ships both schemas. `board plugin enable controls` writes them to
   declares, never in the argv.
 
   When the argv names the model with `--model` and a full model id, each
-  verdict is kept in `$XDG_CACHE_HOME/board-controls/judged/` (else
-  `~/.cache/board-controls/judged/`), in a file named by the SHA-256 of the
+  verdict is kept in `$XDG_CACHE_HOME/board-rules/judged/` (else
+  `~/.cache/board-rules/judged/`), in a file named by the SHA-256 of the
   whole prompt, which holds the rubric and the text, and the argv. A retry
   then judges only text that changed. Pin the model like this:
 
   ```sh
-  export BOARD_CONTROLS_AGENT='["claude", "-p", "--model", "claude-sonnet-4-5-20250929", "--output-format", "json", "--tools", ""]'
+  export BOARD_RULES_AGENT='["claude", "-p", "--model", "claude-sonnet-4-5-20250929", "--output-format", "json", "--tools", ""]'
   ```
 
   A model alias such as `sonnet`, or a model set in

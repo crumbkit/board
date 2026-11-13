@@ -350,13 +350,7 @@ fn the_push_sends_the_commit_checked_even_when_the_branch_moves_during_the_check
     );
     let agent = desk.judged(&["push.branch"], &later);
     let checked = desk.commit("Add a gear");
-    let (ran, document) = desk.call_at(
-        None,
-        false,
-        "push",
-        &[],
-        &[("BOARD_CONTROLS_AGENT", &agent)],
-    );
+    let (ran, document) = desk.call_at(None, false, "push", &[], &[("BOARD_RULES_AGENT", &agent)]);
     assert_eq!(ran.code, 0, "{document}");
     assert_eq!(document["data"]["output"]["commits"], json!([checked]));
     assert_eq!(desk.remote_head("main"), Some(checked));
@@ -603,7 +597,7 @@ fn git_hooks_never_see_the_model_credentials_or_gh_tokens_gh_sees_only_its_token
         ("CLAUDE_CODE_OAUTH_TOKEN", "model-token-1"),
         ("GH_TOKEN", "gh-token-1"),
         ("GITHUB_TOKEN", "github-token-1"),
-        ("BOARD_CONTROLS_AGENT", &agent),
+        ("BOARD_RULES_AGENT", &agent),
     ];
     desk.commit("Add a gear");
     let (ran, document) = desk.call_at(None, false, "push", &[], &keys);

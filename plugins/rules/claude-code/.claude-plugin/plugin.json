@@ -1,7 +1,7 @@
 {
-  "name": "board-controls",
-  "version": "0.3.1",
-  "description": "Tells each Claude Code session the board controls on its repository, and names a control on a file before an edit of it lands.",
+  "name": "board-rules",
+  "version": "0.4.0",
+  "description": "Tells each Claude Code session the board rules on its repository, and names a rule on a file before an edit of it lands.",
   "types": "./types/index.d.ts",
   "author": {
     "name": "crumbkit"
