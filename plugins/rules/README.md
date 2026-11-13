@@ -435,8 +435,8 @@ person to change: a mount pointer under `/controls/`; a board config that
 names `controls`, since a plugin may not write the config; a file under
 `/controls/` that is not UTF-8 text, or whose JSON does not parse as a
 record; a flow that would change but is not stored at the hash of its JSON;
-and the records under `/changes/control-becomes-rule/`, which describe the
-rename in the old names. Two flow versions that rename to the same JSON are
+and the records under `/changes/control-becomes-rule/` and
+`/changes/rule-rename-rest/`, which describe the rename in the old names. Two flow versions that rename to the same JSON are
 stored once, and both are re-pointed to it. A reference into a mounted board
 that has not migrated yet resolves through the moved prefix until it does.
 
