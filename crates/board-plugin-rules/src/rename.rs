@@ -134,7 +134,10 @@ pub(crate) fn rename(
             continue;
         }
         let flow = flows.get(&entry.logical);
-        let to = (flow.map(|(new, _)| new.clone())).or_else(|| moved(&entry.logical));
+        // A flow rewritten in place has no new path.
+        let to = (flow.map(|(new, _)| new.clone()))
+            .filter(|new| *new != entry.logical)
+            .or_else(|| moved(&entry.logical));
         let mut keep = |why| {
             kept.push(Kept {
                 path: entry.logical.clone(),
@@ -187,6 +190,10 @@ pub(crate) fn rename(
     let current = digest_of(&lines);
     if apply {
         write(host, &lines, digest == Some(current.as_str()))?;
+    } else {
+        // The refusal the apply would give, so a dry run that lists writes
+        // is one whose apply the schemas admit.
+        (host.check(&lines)).map_err(|error| refused_put(&error.refusal()))?;
     }
     output.total = writes.len();
     output.truncated = output.total > LISTED;
@@ -266,13 +273,15 @@ fn write(host: &dyn Host, lines: &[Value], current: bool) -> Result<(), PluginEr
         ));
     }
     if !lines.is_empty() {
-        let refused = |refusal: &board_model::Refusal| {
-            PluginError::board_refused("rules", "put --batch --bulk", refusal)
-        };
-        let bulk = Bulk::new(BULK).map_err(|error| refused(&error.refusal()))?;
-        (host.put_bulk(lines, &bulk)).map_err(|error| refused(&error.refusal()))?;
+        let bulk = Bulk::new(BULK).map_err(|error| refused_put(&error.refusal()))?;
+        (host.put_bulk(lines, &bulk)).map_err(|error| refused_put(&error.refusal()))?;
     }
     Ok(())
+}
+
+/// Board's `refusal` of the batch the rename writes.
+fn refused_put(refusal: &board_model::Refusal) -> PluginError {
+    PluginError::board_refused("rules", "put --batch --bulk", refusal)
 }
 
 /// The rename's refusal `code`, saying that nothing was written.
@@ -380,11 +389,18 @@ fn flows(entries: &[Entry], kept: &mut Vec<Kept>) -> Flows {
         if at_hash == entry.logical && stored != entry.logical {
             flows.insert(entry.logical.clone(), (stored, record));
         } else if at_hash != entry.logical && record != value {
-            kept.push(Kept {
-                path: entry.logical.clone(),
-                why: "a flow not stored at the hash of its JSON; store its new version with the \
-                      changes plugin and re-pin its changes by hand",
-            });
+            // A flow held in a change is pinned by its path, not its hash, so
+            // it is rewritten where it is. One under /flows/ off its hash is
+            // a version a change may pin by a hash that is not its own.
+            if entry.logical.starts_with("/flows/") {
+                kept.push(Kept {
+                    path: entry.logical.clone(),
+                    why: "a flow not stored at the hash of its JSON; store its new version with \
+                          the changes plugin and re-pin its changes by hand",
+                });
+            } else {
+                flows.insert(entry.logical.clone(), (entry.logical.clone(), record));
+            }
         }
     }
     flows

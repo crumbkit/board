@@ -163,6 +163,16 @@ impl Board {
         }
     }
 
+    /// Checks the lines of `input` as [`Board::put_batch`] does, with its
+    /// refusals, and writes nothing.
+    pub fn check_batch(&self, input: &mut dyn BufRead) -> Result<(), PutError> {
+        let lines = Self::read_lines(input)?;
+        let lock = self.repositories().lock(LOCK_WAIT)?;
+        let mut view = self.repositories().snapshot().map_err(WriteError::from)?;
+        self.check_lines(&lock, &mut view, lines, &mut Schemas::default())
+            .map(|_| ())
+    }
+
     /// Writes `lines` as [`Board::put_batch_waiting`] says.
     fn write_lines(&self, lines: Vec<ReadLine>, wait: Duration) -> Result<PutReport, PutError> {
         let lock = self.repositories().lock(wait)?;

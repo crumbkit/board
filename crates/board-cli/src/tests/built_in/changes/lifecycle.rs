@@ -517,6 +517,51 @@ fn renaming_stores_an_old_flow_again_under_the_new_names_and_its_change_gates_as
 }
 
 #[test]
+fn renaming_rewrites_a_flow_held_in_a_change_in_place_and_the_change_gates_as_before() {
+    const INLINE: &str = "/changes/t/flow";
+    for phase in ["plan", "land"] {
+        let (board, head) = lifecycle_change(true, "controls", "controls/control/v1", phase);
+        let old = board.read("flows/development/a9df0910bd037be9.json");
+        board.write("changes/t/flow.json", &old.to_string());
+        let mut change = board.read("changes/t.json");
+        change["flow"] = json!(INLINE);
+        board.write("changes/t.json", &change.to_string());
+        let before = gate_naming(&board, &head);
+        let args = ["--json", "call", "rules.migrate", "--rename", "true"];
+        let listed = json(&board.run(&args, ""))["data"]["output"].clone();
+        let kept: Vec<&str> = (listed["kept"].as_array().unwrap().iter())
+            .filter_map(|each| each["path"].as_str())
+            .collect();
+        assert!(!kept.contains(&INLINE), "{phase}: {listed}");
+        let at = (listed["writes"].as_array().unwrap().iter())
+            .find(|each| each["path"] == INLINE)
+            .unwrap_or_else(|| panic!("{phase}: {listed}"));
+        assert_eq!(at.get("to"), None, "{phase}");
+        let digest = listed["digest"].as_str().unwrap().to_owned();
+        let applied = board.run(
+            &[args.as_slice(), &["--apply", "true", "--digest", &digest]].concat(),
+            "",
+        );
+        assert_eq!(applied.code, 0, "{}", text(&applied.stdout));
+        assert_eq!(board.read("changes/t.json")["flow"], json!(INLINE));
+        let stored = board.read("changes/t/flow.json").to_string();
+        assert!(
+            stored.contains("\"rule-paths\"")
+                && !stored.contains("controlled")
+                && !stored.contains("\"controls\""),
+            "{stored}"
+        );
+        assert_eq!(gate_naming(&board, &head), before, "{phase}");
+        let again = json(&board.run(&args, ""))["data"]["output"].clone();
+        assert_eq!(again["total"], 0, "{phase}: {again}");
+        assert!(
+            (again["kept"].as_array().unwrap().iter()).all(|each| each["path"] != INLINE),
+            "{phase}: {again}"
+        );
+    }
+}
+
+#[test]
 fn a_change_is_re_pinned_when_the_renamed_flow_version_is_already_stored() {
     const OLD: &str = "/flows/development/a9df0910bd037be9";
     let migrate = |board: &Changes| {

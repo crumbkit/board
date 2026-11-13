@@ -309,3 +309,36 @@ fn applying_after_a_record_changed_since_the_dry_run_refuses_and_writes_nothing(
     );
     assert!(board.read("notes/n.md").contains("/controls/x/a"));
 }
+
+#[test]
+fn the_dry_run_refuses_a_record_whose_type_has_no_schema_as_the_apply_would() {
+    let board = old_board();
+    let page = json!({"$type": "sites/page/v1", "title": "See /controls/x/a."}).to_string();
+    board.write("sites/p.json", &page);
+    let dry = rename(&board, &[]);
+    assert_ne!(dry.code, 0, "{}", text(&dry.stdout));
+    let shown = text(&dry.stdout);
+    assert!(
+        shown.contains("/sites/p") && shown.contains("sites/page/v1"),
+        "{shown}"
+    );
+    assert_eq!(json(&dry)["code"], "rules::board::refused", "{shown}");
+    assert_eq!(
+        json(&dry)["fields"]["code"],
+        "board::put::invalid",
+        "{shown}"
+    );
+    assert!(
+        board
+            .read("controls/x/a.json")
+            .contains("controls/control/v1")
+    );
+    assert_eq!(board.read("sites/p.json"), page);
+}
+
+#[test]
+fn the_dry_run_passes_a_record_whose_type_has_a_schema() {
+    let board = old_board();
+    let listed = dry_run(&board);
+    assert!(listed["digest"].is_string(), "{listed}");
+}
