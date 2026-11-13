@@ -368,7 +368,10 @@ fn generic(code: Code) -> &'static str {
             "a board needs `.board/board.json` at its repository root, spelled exactly so; in a git repository, `board init` makes it a board; outside one, run `git init` first; for a board elsewhere, run `board -C <dir> check`"
         }
         Code::ConfigInvalid => {
-            "`.board/board.json` holds `$type` `board/config/v1`, and may hold `commit_on_put` (true or false), `plugins` (distinct plugin names) and `store` (a `backend` and a `location`), nothing else"
+            "`.board/board.json` holds `$type` `board/config/v1`, and may hold `commit_on_put` (true or false), `min_board` (a version such as 0.4.0), `plugins` (distinct plugin names) and `store` (a `backend` and a `location`), nothing else"
+        }
+        Code::ConfigBoardTooOld => {
+            "reads still work; upgrade Board to the version the message names, or ask whoever set `min_board` in `.board/board.json` whether it can be lowered"
         }
         Code::ConfigAmbiguous => {
             "choose a board with `board -C <dir> check`, naming one of the boards listed, or leave one mount or repo record of this repository among the boards in `$XDG_CONFIG_HOME/board/config.json`"

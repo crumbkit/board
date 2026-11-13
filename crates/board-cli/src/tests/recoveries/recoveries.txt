@@ -896,6 +896,7 @@ codes that no start provokes:
   board::attachment::mismatch: the store must hold other bytes under the digest between the put and the fetch; board-ops/src/attachment/tests.rs alters one
   board::index::failed: the index fails only when SQLite does, even in memory; board-index/src/tests.rs maps SQLite's failures to it
   board::put::no_identity: whether git has an identity depends on the machine's configuration; board-cli/tests/identity.rs runs board in a child process with an empty HOME
+  board::config::board_too_old: the running Board must be older than the board's min_board, and a build from source is never refused; board-ops/src/version/tests.rs names an older version
   board::put::head_moved: HEAD must move in the middle of a put; board-tree/src/tests/commits.rs moves it between staging and commit
   board::put::name_taken: every name a put draws must be taken, and the CLI draws from the clock and a random source; board-ops/src/put/tests/new.rs draws fixed names
   board::refs::target_changed: a target must change between the check and the read of its fields; board-cli/src/tests/refs.rs changes one between two answers
