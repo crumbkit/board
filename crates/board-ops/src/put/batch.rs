@@ -11,7 +11,7 @@ use board_model::{
     BINARY_NAME, Code, Fields, Lined, LogicalPath, MAX_RECORD_BYTES, ObjectId, RecordType,
     parse_json,
 };
-use board_tree::{LOCK_WAIT, Lock, Resolver, WriteError};
+use board_tree::{LOCK_WAIT, Lock, Resolver, Working, WriteError};
 use board_types::BatchLine;
 use serde_json::Value;
 
@@ -201,6 +201,36 @@ impl Board {
         } else {
             Err(refused_lines(&stale))
         }
+    }
+
+    /// The blob the file `item` writes holds now, and the stale refusal
+    /// when it is not what `item` expects.
+    pub(crate) fn compared(
+        &self,
+        item: &Prepared,
+    ) -> Result<(Option<ObjectId>, Option<PutError>), Failure> {
+        let repository = self.repository();
+        let path = &item.target.path;
+        let found = (repository.read_working(path)).map_err(|error| WriteError::from(error).into());
+        let found = found.map_err(Failure::Error)?;
+        let previous = match &found {
+            Working::Missing => None,
+            Working::Read(contents) => Some(contents.blob),
+            Working::TooLarge => Some(
+                (repository.working_blob(path))
+                    .map_err(|error| Failure::Error(WriteError::from(error).into()))?,
+            ),
+        };
+        let mismatch = match item.expect {
+            Expect::Any => false,
+            Expect::Absent => found != Working::Missing,
+            Expect::Blob(blob) => previous != Some(blob),
+        }
+        .then(|| PutError::Stale {
+            path: item.path.clone(),
+            found: previous,
+        });
+        Ok((previous, mismatch))
     }
 
     /// Writes `lines` as [`Board::put_batch_waiting`] says.

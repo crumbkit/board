@@ -338,7 +338,7 @@ fn the_dry_run_refuses_a_record_whose_type_has_no_schema_as_the_apply_would() {
 
 /// A source that mentions an old path, so the rename rewrites it, with
 /// `extra` fields.
-fn source_with(extra: Value) -> String {
+fn source_with(extra: &Value) -> String {
     let mut source = json!({
         "$type": "controls/source/v1", "url": "https://example.com/t", "title": "T",
         "read_on": "2026-11-01", "why": "See /controls/x/a.",
@@ -355,7 +355,7 @@ fn the_dry_run_refuses_a_rewritten_record_its_schema_does_not_admit_and_passes_o
     let board = old_board();
     board.write(
         "controls/sources/bad.json",
-        &source_with(json!({"extra": 1})),
+        &source_with(&json!({"extra": 1})),
     );
     let dry = rename(&board, &[]);
     assert_ne!(dry.code, 0, "{}", text(&dry.stdout));
@@ -364,7 +364,7 @@ fn the_dry_run_refuses_a_rewritten_record_its_schema_does_not_admit_and_passes_o
         "{}",
         text(&dry.stdout)
     );
-    board.write("controls/sources/bad.json", &source_with(json!({})));
+    board.write("controls/sources/bad.json", &source_with(&json!({})));
     let listed = dry_run(&board);
     let ran = applied(&board, listed["digest"].as_str().unwrap());
     assert_eq!(ran.code, 0, "{}", text(&ran.stdout));
