@@ -444,7 +444,8 @@ that has not migrated yet resolves through the moved prefix until it does.
 
 The rename, dry run and apply alike, refuses with
 `rules::migrate::config_first` and writes nothing while `.board/board.json`
-does not name `rules` in `plugins`, since a plugin may not write the config.
+does not name `rules` in `plugins` or still names `controls`, since a plugin
+may not write the config.
 Edit the config to name `rules` in place of `controls`, commit it, and run the
 rename again.
 

@@ -586,6 +586,38 @@ fn a_flow_off_its_hash_under_controls_moves_to_rules_and_leaves_no_old_copy() {
 }
 
 #[test]
+fn a_flow_under_controls_with_no_old_names_still_moves_to_rules_and_its_references_resolve() {
+    let args = ["--json", "call", "rules.migrate", "--rename", "true"];
+    let migrate = |board: &Changes| {
+        let listed = json(&board.run(&args, ""))["data"]["output"].clone();
+        let digest = listed["digest"].as_str().unwrap().to_owned();
+        let applied = board.run(
+            &[args.as_slice(), &["--apply", "true", "--digest", &digest]].concat(),
+            "",
+        );
+        assert_eq!(applied.code, 0, "{}", text(&applied.stdout));
+    };
+    // A flow already in its new form: the first board's migrated copy.
+    let (first, _) = lifecycle_change(true, "controls", "controls/control/v1", "plan");
+    migrate(&first);
+    let new = first.read("changes/t.json")["flow"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let renamed = first.read(&format!("{}.json", &new[1..]));
+    let (board, _) = lifecycle_change(true, "controls", "controls/control/v1", "plan");
+    board.write("controls/x/flow.json", &renamed.to_string());
+    board.write("notes/n.md", "The flow is /controls/x/flow.\n");
+    migrate(&board);
+    assert!(!board.exists("controls/x/flow.json"));
+    assert_eq!(board.read("rules/x/flow.json"), renamed);
+    assert!(board.exists("rules/x/flow.json"));
+    assert_eq!(board.text("notes/n.md"), "The flow is /rules/x/flow.\n");
+    let again = json(&board.run(&args, ""))["data"]["output"].clone();
+    assert_eq!(again["total"], 0, "{again}");
+}
+
+#[test]
 fn a_change_is_re_pinned_when_the_renamed_flow_version_is_already_stored() {
     const OLD: &str = "/flows/development/a9df0910bd037be9";
     let migrate = |board: &Changes| {
