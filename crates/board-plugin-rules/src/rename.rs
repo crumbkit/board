@@ -80,7 +80,8 @@ static PATHS: LazyLock<[(Regex, &str); 4]> = LazyLock::new(|| {
     ]
 });
 
-/// One write: the path rewritten, and where it moves when it moves.
+/// One write: the path rewritten, and where it moves when it moves. For a
+/// flow version, `to` is where its new version is stored; the old version stays.
 #[derive(Debug, PartialEq, Serialize, JsonSchema)]
 pub(crate) struct Write {
     path: String,
@@ -153,11 +154,15 @@ pub(crate) fn rename(
             line
         };
         match &to {
-            // Two versions may rewrite to one; it is stored once.
+            // Two versions may rewrite to one, and the new version may be
+            // stored already; it is stored once, and a version with no
+            // line to write is not listed. Records naming the old version
+            // are re-pinned either way.
             Some(to) if flow.is_some() => {
-                if held.insert(to.clone()) {
-                    lines.push(line(to, "none"));
+                if !held.insert(to.clone()) {
+                    continue;
                 }
+                lines.push(line(to, "none"));
             }
             Some(to) if held.contains(to) => {
                 keep("its new path already holds a file; move or remove one by hand");
@@ -370,10 +375,6 @@ fn flows(entries: &[Entry], kept: &mut Vec<Kept>) -> Flows {
         let name = value["name"].as_str().unwrap_or_default();
         let (stored, at_hash) = (flow_version(name, &record), flow_version(name, &value));
         if at_hash == entry.logical && stored != entry.logical {
-            // A kept old version is listed again by a later run; its new one is stored.
-            if entries.iter().any(|one| one.logical == stored) {
-                continue;
-            }
             flows.insert(entry.logical.clone(), (stored, record));
         } else if at_hash != entry.logical && record != value {
             kept.push(Kept {
