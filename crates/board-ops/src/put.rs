@@ -340,13 +340,14 @@ impl Board {
         }
         // The commit is made ready before anything is renamed, so a put
         // with no identity to commit as writes nothing.
+        let message = &self.marked(message);
+        let files: Vec<_> = (prepared.iter())
+            .map(|item| (item.target.path.as_str(), Some(item.canonical.as_slice())))
+            .chain(removed.iter().map(|removal| (removal.file.as_str(), None)))
+            .collect();
         let staged = if self.config().commit_on_put {
-            let files: Vec<_> = (prepared.iter())
-                .map(|item| (item.target.path.as_str(), Some(item.canonical.as_slice())))
-                .chain(removed.iter().map(|removal| (removal.file.as_str(), None)))
-                .collect();
             repository
-                .stage_commit(&lock, &files, &self.marked(message))
+                .stage_commit(&lock, &files, message)
                 .map_err(|error| Failure::Error(error.into()))?
         } else {
             None
@@ -355,8 +356,9 @@ impl Board {
             .map_err(|error| Failure::Error(error.into()))?;
         let commit = match staged {
             None => None,
-            Some(staged) => match repository.finish_commit(&lock, staged) {
-                Ok(commit) => Some(commit),
+            Some(staged) => match repository.finish_commit_retrying(&lock, staged, &files, message)
+            {
+                Ok(commit) => commit,
                 Err(WriteError::HeadMoved) => {
                     return Err(Failure::Error(PutError::HeadMoved { writes }));
                 }

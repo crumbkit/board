@@ -2,6 +2,7 @@
 
 use super::*;
 use crate::{LOCK_WAIT, WriteError};
+use std::time::{Duration, Instant};
 
 fn identified() -> Scenario {
     let scenario = Scenario::new();
@@ -193,7 +194,7 @@ fn a_held_index_lock_refuses_a_commit_before_the_index_is_read_and_a_free_one_is
         .write(".git/index", Item::File("not an index"))
         .write(".git/index.lock", Item::File(""));
     let repository = scenario.open();
-    let lock = repository.lock(LOCK_WAIT).unwrap();
+    let lock = repository.lock(Duration::from_millis(100)).unwrap();
     let error = repository
         .stage_commit(&lock, &[("b.json", Some(b"{}\n"))], "board put /b")
         .unwrap_err();
@@ -211,4 +212,95 @@ fn a_held_index_lock_refuses_a_commit_before_the_index_is_read_and_a_free_one_is
             .stage_commit(&lock, &[("b.json", Some(b"{}\n"))], "board put /b")
             .is_ok()
     );
+}
+
+/// A lock another process drops while the put waits is taken, within the
+/// same wait that `board.lock` has.
+#[test]
+#[expect(
+    clippy::disallowed_methods,
+    reason = "another process drops git's lock, which the scenario cannot do from a thread"
+)]
+fn an_index_lock_released_after_a_second_admits_the_commit() {
+    let scenario = identified();
+    scenario.write(".git/index.lock", Item::File(""));
+    let repository = scenario.open();
+    let held = repository.git_dir().join("index.lock");
+    let lock = repository.lock(LOCK_WAIT).unwrap();
+    let releaser = std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_secs(1));
+        std::fs::remove_file(held).unwrap();
+    });
+    let started = Instant::now();
+    let staged = repository
+        .stage_commit(&lock, &[("b.json", Some(b"{}\n"))], "board put /b")
+        .unwrap();
+    releaser.join().unwrap();
+    assert!(staged.is_some());
+    assert!(started.elapsed() >= Duration::from_millis(900));
+}
+
+/// The twin of the test above: the lock outlasts the wait, so the put is
+/// refused naming the file, and nothing is written.
+#[test]
+fn an_index_lock_held_past_the_wait_refuses_naming_the_file_and_writes_nothing() {
+    let scenario = identified();
+    scenario.write(".git/index.lock", Item::File(""));
+    let repository = scenario.open();
+    let parent = scenario.head().unwrap().id;
+    let lock = repository.lock(Duration::from_millis(300)).unwrap();
+    let started = Instant::now();
+    let error = repository
+        .stage_commit(&lock, &[("b.json", Some(b"{}\n"))], "board put /b")
+        .unwrap_err();
+    assert!(started.elapsed() >= Duration::from_millis(250));
+    assert_eq!(error.code(), Code::PutLocked, "{error}");
+    assert!(error.to_string().contains("index.lock"), "{error}");
+    assert_eq!(scenario.head().unwrap().id, parent);
+    assert!(!scenario.index().contains_key("b.json"));
+}
+
+/// A put whose HEAD moved to a commit that leaves its paths alone stages
+/// again on the new HEAD and commits.
+#[test]
+fn an_unrelated_commit_under_a_put_is_admitted_on_the_new_head() {
+    let scenario = identified();
+    let repository = scenario.open();
+    let lock = repository.lock(LOCK_WAIT).unwrap();
+    let writes: &[(&str, Option<&[u8]>)] = &[("b.json", Some(b"{}\n"))];
+    let staged = repository
+        .stage_commit(&lock, writes, "board put /b")
+        .unwrap()
+        .unwrap();
+    let moved = scenario.commit(&[("a.json", "{}"), ("c.json", "{}")]);
+    let commit = repository
+        .finish_commit_retrying(&lock, staged, writes, "board put /b")
+        .unwrap()
+        .unwrap();
+    let head = scenario.head().unwrap();
+    assert_eq!((head.id, head.parents.as_slice()), (commit, &[moved][..]));
+    assert_eq!(head.files["b.json"], b"{}\n");
+    assert_eq!(head.files["c.json"], b"{}", "the other commit is kept");
+    assert_eq!(scenario.index()["b.json"], scenario.blob("{}\n"));
+}
+
+/// The twin: the other commit wrote one of the put's paths, so the put
+/// would commit over a change its caller never saw.
+#[test]
+fn a_commit_to_a_written_path_under_a_put_refuses_head_moved() {
+    let scenario = identified();
+    let repository = scenario.open();
+    let lock = repository.lock(LOCK_WAIT).unwrap();
+    let writes: &[(&str, Option<&[u8]>)] = &[("a.json", Some(b"{\"n\":1}\n"))];
+    let staged = repository
+        .stage_commit(&lock, writes, "board put /a")
+        .unwrap()
+        .unwrap();
+    let moved = scenario.commit(&[("a.json", "{\"n\":2}")]);
+    let error = repository
+        .finish_commit_retrying(&lock, staged, writes, "board put /a")
+        .unwrap_err();
+    assert!(matches!(error, WriteError::HeadMoved), "{error}");
+    assert_eq!(scenario.head().unwrap().id, moved);
+    assert!(!repository.git_dir().join("index.lock").exists());
 }
