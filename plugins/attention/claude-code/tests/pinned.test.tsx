@@ -66,8 +66,8 @@ function engine(on: On, answer: { exitCode: number; stdout: string; stderr?: str
   on('ui.render', ($, e) => {
     const { Box, Button } = $.ui.resolve(e)
     if (beneath === undefined || e.component !== 'AbovePrompt') return Box({})
-    // Another mod's part, as the controls mod beneath this one draws it.
-    const part = Box({ key: SLOT.controls, children: [Button({ key: 'controls', label: 'Controls 5', onPress: () => void pressed.push('controls') })] })
+    // Another mod's part, as the rules mod beneath this one draws it.
+    const part = Box({ key: SLOT.controls, children: [Button({ key: 'rules', label: 'Rules 5', onPress: () => void pressed.push('rules') })] })
     return joinBand(Box({}), [part])
   })
   on('prompt.context', (_, e) => ({ blocks: e.blocks }))
@@ -181,10 +181,10 @@ test('the Orders button joins the buttons other mods draw beneath, in the same s
   expect(typeof row === 'object' && row.type === 'Box' ? row.props?.key : null).toBe('board-band')
   const keys = typeof row === 'object' && row.type === 'Box' ? row.children?.map(c => (typeof c === 'object' && c.type === 'Box' ? c.props?.key : 'text')) : []
   expect(keys).toEqual([SLOT.orders, SLOT.controls])
-  expect((await band.find({ key: 'controls' }))?.text).toBe('Controls 5')
+  expect((await band.find({ key: 'rules' }))?.text).toBe('Rules 5')
   // The other mod's button, moved into this mod's row, still reaches that mod's handler.
-  await band.press({ key: 'controls', plugin: 'test' })
-  expect(pressed).toEqual(['controls'])
+  await band.press({ key: 'rules', plugin: 'test' })
+  expect(pressed).toEqual(['rules'])
 })
 
 test('a board that cannot be read shows the button with its code, and the pane says what failed', async ($, on) => {

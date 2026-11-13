@@ -71,12 +71,13 @@ fn for_paths(host: &dyn Host, paths: &[String]) -> Result<Vec<Found>, PluginErro
     found_in(&output)
 }
 
-/// The `rules` of a `rules.for-paths` or `rules.evaluate` output, or
+/// The `rules` of a `rules.for-paths` output, or
 /// `changes::rules::unreadable` when the output has none, as output in the
-/// names from before the rename has `controls`. A refusal, since reading
-/// such an output as no rules would drop every obligation.
+/// names from before the rename has `controls`, or when a rule lacks a
+/// string `rule` or `summary`. A refusal, since reading such an output as
+/// no rules, or as rules with empty names, would drop every obligation.
 pub(crate) fn listed(output: &Value) -> Result<&[Value], PluginError> {
-    (output.get("rules").and_then(Value::as_array))
+    let rules = (output.get("rules").and_then(Value::as_array))
         .map(Vec::as_slice)
         .ok_or_else(|| {
             refusal(
@@ -85,7 +86,15 @@ pub(crate) fn listed(output: &Value) -> Result<&[Value], PluginError> {
                     .to_owned(),
                 [],
             )
-        })
+        })?;
+    for rule in rules {
+        for field in ["rule", "summary"] {
+            if rule.get(field).and_then(Value::as_str).is_none() {
+                return Err(unreadable(field));
+            }
+        }
+    }
+    Ok(rules)
 }
 
 /// The rules in a `rules.for-paths` output, each with its `rule`.

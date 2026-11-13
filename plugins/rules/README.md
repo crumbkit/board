@@ -127,7 +127,7 @@ The plugin ships both schemas. `board plugin enable controls` writes them to
 
 - `board controls for-path --path /AGENTS.md` returns
   each control that applies to that path, by reference or by pattern, with
-  its requirement, purpose and rule as the record holds it, `check`
+  its requirement, purpose and checker as the record holds it, `check`
   included, which is null when it has none, its
   `kind`, and its effective `show`, with the default applied. An
   obligation also carries `close`, which says how to close it: "Once the
@@ -224,16 +224,16 @@ The plugin ships both schemas. `board plugin enable controls` writes them to
   title and body, against controls' rules. It reads its input on stdin:
 
   ```sh
-  echo '{"controls": ["/controls/short-title"], "parts": {"pr.title": "..."}}' \
+  echo '{"rules": ["/controls/short-title"], "parts": {"pr.title": "..."}}' \
     | board controls evaluate
   ```
 
-  `controls` lists the controls by their paths in the board's own tree, and
-  `parts` maps each part's name to its text. Every control applies to every
-  part, and a control named twice is checked once. The output is `passed`,
-  false when any result failed, and `results`, one per control and part,
-  ordered by control as given and then by part name. Each result holds
-  `control`, `part`, `rule` (the rule's `check`: `budget`, `pattern`,
+  `rules` lists the rules by their paths in the board's own tree, and
+  `parts` maps each part's name to its text. Every rule applies to every
+  part, and a rule named twice is checked once. The output is `passed`,
+  false when any result failed, and `results`, one per rule and part,
+  ordered by rule as given and then by part name. Each result holds
+  `rule`, `part`, `checker` (the rule's `check`: `budget`, `pattern`,
   `judged` or `version`, or null),
   `status` and `findings`:
   - `status` is `passed` or `failed`; `stated` for a control without a rule

@@ -37,3 +37,18 @@ fn output_in_the_former_names_is_refused_and_never_read_as_no_rules() {
         "changes::rules::unreadable"
     );
 }
+
+#[test]
+fn the_brief_refuses_a_half_renamed_rule_and_lists_a_whole_one() {
+    let whole = json!({"rules": [{"rule": "/rules/docs", "summary": "Say what exists."}]});
+    assert_eq!(listed(&whole).unwrap().len(), 1);
+    for half in [
+        json!({"rules": [{"control": "/controls/docs", "summary": "Say what exists."}]}),
+        json!({"rules": [{"rule": "/rules/docs"}]}),
+    ] {
+        assert_eq!(
+            listed(&half).unwrap_err().code,
+            "changes::rules::unreadable"
+        );
+    }
+}
