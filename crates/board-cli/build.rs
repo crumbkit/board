@@ -1,4 +1,5 @@
-//! Sets `BOARD_BUILD`, the suffix the timing log adds to Board's version:
+//! Sets `BOARD_BUILD_DATE`, the commit date of the source in seconds (empty
+//! when neither `SOURCE_DATE_EPOCH` nor git gives one), and `BOARD_BUILD`, the suffix the timing log adds to Board's version:
 //! `+<commit>`, with `.dirty.<hash>` when the source differs from it.
 //! `BOARD_BUILD_COMMIT` names the commit in place of git's, and asserts that
 //! the source is that commit: a copy whose own repository committed the
@@ -20,6 +21,8 @@ use std::hash::{DefaultHasher, Hasher};
 use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 
+#[path = "build/built.rs"]
+mod built;
 #[path = "build/commit.rs"]
 mod commit;
 
@@ -86,6 +89,21 @@ fn main() {
         Err(message) => fail(&message),
     }
     println!("cargo::rerun-if-env-changed=BOARD_BUILD_COMMIT");
+    let epoch = std::env::var_os("SOURCE_DATE_EPOCH");
+    match built::seconds(epoch.as_deref(), || text(&["log", "-1", "--format=%ct"])) {
+        Ok(date) => {
+            println!(
+                "cargo::rustc-env=BOARD_BUILD_DATE={}",
+                date.map_or_else(String::new, |date| date.to_string())
+            );
+            println!(
+                "cargo::rustc-env=BOARD_BUILD_SHOWN={}",
+                date.map_or_else(String::new, |date| format!(" (built {})", built::utc(date)))
+            );
+        }
+        Err(message) => fail(&message),
+    }
+    println!("cargo::rerun-if-env-changed=SOURCE_DATE_EPOCH");
     // A commit appends to HEAD's reflog, or moves HEAD where git keeps no
     // reflog; an edit changes the source.
     let path = |name| text(&["rev-parse", "--path-format=absolute", "--git-path", name]);

@@ -660,7 +660,7 @@ pub enum WriteError {
     AtCheckout { pointer: String },
     /// The board's `min_board` is newer than the Board running.
     #[error(
-        "this board needs Board {min_board} or newer to write it, and this is Board {running}; reads still work"
+        "this board needs a Board with {min_board} to write it, and this is {running}; reads still work"
     )]
     BoardTooOld { min_board: String, running: String },
     #[error("{path:?} could not be written")]

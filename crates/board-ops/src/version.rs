@@ -1,7 +1,6 @@
 //! The Board versions a board's `min_board` compares
-//! (docs/architecture/writes.md, Minimum version).
+//! (docs/architecture/writes/minimum.md).
 
-use std::cmp::Ordering;
 use std::fmt;
 use std::str::FromStr;
 
@@ -11,19 +10,6 @@ use serde::{Deserialize, Deserializer};
 /// `+<commit>` that `board --version` appends, is read and ignored.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Version([u64; 3]);
-
-impl Version {
-    /// The number every build made from source carries until a release
-    /// stamps its own.
-    const UNRELEASED: Self = Self([0, 0, 0]);
-
-    /// Whether a board that names `minimum` refuses writes from this
-    /// version. An unreleased build, `0.0.0`, is never refused: it is
-    /// built from source, and nothing says which release it follows.
-    pub(crate) fn too_old_for(self, minimum: Self) -> bool {
-        self != Self::UNRELEASED && self.cmp(&minimum) == Ordering::Less
-    }
-}
 
 impl FromStr for Version {
     type Err = String;
@@ -52,10 +38,130 @@ impl fmt::Display for Version {
     }
 }
 
-impl<'de> Deserialize<'de> for Version {
+/// When a build's source was committed, in whole seconds since the Unix
+/// epoch. In a config it is an RFC 3339 timestamp such as
+/// `2026-11-13T10:00:00Z`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) struct Built(i64);
+
+impl Built {
+    pub(crate) fn from_seconds(seconds: i64) -> Self {
+        Self(seconds)
+    }
+}
+
+impl FromStr for Built {
+    type Err = String;
+
+    fn from_str(text: &str) -> Result<Self, String> {
+        let at: jiff::Timestamp = text
+            .parse()
+            .map_err(|_| format!("{text:?} is not an RFC 3339 timestamp"))?;
+        Ok(Self(at.as_second()))
+    }
+}
+
+impl fmt::Display for Built {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match jiff::Timestamp::from_second(self.0) {
+            Ok(at) => write!(f, "{at}"),
+            Err(_) => write!(f, "{}", self.0),
+        }
+    }
+}
+
+/// The Board that is running: its version, and the date of its source's
+/// commit when the build embedded one.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct Running {
+    pub(crate) version: Version,
+    pub(crate) built: Option<Built>,
+}
+
+impl fmt::Display for Running {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.built {
+            Some(built) => write!(f, "Board {} (built {built})", self.version),
+            None => write!(f, "Board {} (no build date)", self.version),
+        }
+    }
+}
+
+/// A board's `min_board`: the oldest Board that may write it. It is a
+/// version string (`"0.4.0"`), a UTC timestamp (`"2026-11-13T10:00:00Z"`),
+/// or an object with `version` and `built`, either or both. A Board older
+/// on a count that is named is refused; a build with no date is judged by
+/// the version alone.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct MinBoard {
+    version: Option<Version>,
+    built: Option<Built>,
+}
+
+impl MinBoard {
+    /// Whether a board that names this refuses writes from `running`.
+    pub(crate) fn refuses(&self, running: &Running) -> bool {
+        let old_version = self.version.is_some_and(|min| running.version < min);
+        let old_build =
+            matches!((self.built, running.built), (Some(min), Some(built)) if built < min);
+        old_version || old_build
+    }
+}
+
+impl fmt::Display for MinBoard {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut parts = Vec::new();
+        if let Some(version) = self.version {
+            parts.push(format!("version {version} or newer"));
+        }
+        if let Some(built) = self.built {
+            parts.push(format!("a build dated {built} or later"));
+        }
+        write!(f, "{}", parts.join(" and "))
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum Shape {
+    Text(String),
+    Both(Pair),
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Pair {
+    #[serde(default)]
+    version: Option<String>,
+    #[serde(default)]
+    built: Option<String>,
+}
+
+impl<'de> Deserialize<'de> for MinBoard {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let text = String::deserialize(deserializer)?;
-        text.parse().map_err(serde::de::Error::custom)
+        use serde::de::Error;
+        let (version, built) = match Shape::deserialize(deserializer)? {
+            Shape::Text(text) => match text.parse::<Version>() {
+                Ok(version) => (Some(version), None),
+                Err(_) => (None, Some(text.parse::<Built>().map_err(Error::custom)?)),
+            },
+            Shape::Both(Pair { version, built }) => (
+                version
+                    .map(|text| text.parse())
+                    .transpose()
+                    .map_err(Error::custom)?,
+                built
+                    .map(|text| text.parse())
+                    .transpose()
+                    .map_err(Error::custom)?,
+            ),
+        };
+        if version.is_none() && built.is_none() {
+            return Err(Error::custom(
+                "min_board names neither a version nor a build date",
+            ));
+        }
+        Ok(Self { version, built })
     }
 }
 

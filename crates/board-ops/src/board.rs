@@ -16,7 +16,7 @@ use serde_json::Value;
 use crate::effects::Asker;
 use crate::host::BuiltIn;
 use crate::trace::Trace;
-use crate::version::Version;
+use crate::version::{Built, MinBoard, Running, Version};
 
 /// `.board/board.json`, a `board/config/v1` record.
 #[derive(Debug, Deserialize)]
@@ -34,7 +34,7 @@ pub struct Config {
     /// The oldest Board that may write this board, which every older Board
     /// refuses to write or sync (docs/architecture/writes.md).
     #[serde(default)]
-    pub min_board: Option<Version>,
+    pub min_board: Option<MinBoard>,
 }
 
 /// The object store a board uploads large and binary files to.
@@ -82,8 +82,8 @@ pub struct Board {
     /// What built the code that decides, which keys the decisions the index
     /// keeps.
     pub(crate) build: &'static str,
-    /// The Board version this run is, which `min_board` is compared with.
-    pub(crate) running: Version,
+    /// The Board this run is, which `min_board` is compared with.
+    pub(crate) running: Running,
     /// The mount whose checkout this run started in, when Board found the
     /// board through it: see [`Board::started_in`].
     started: Option<(LogicalPath, PathBuf)>,
@@ -166,7 +166,10 @@ impl Board {
             asker: Asker::default(),
             built_in: BuiltIn::default(),
             build: "",
-            running: Version::from_str(env!("CARGO_PKG_VERSION")).unwrap_or_default(),
+            running: Running {
+                version: Version::from_str(env!("CARGO_PKG_VERSION")).unwrap_or_default(),
+                built: None,
+            },
             started: None,
             bulk: None,
             between: Between::default(),
@@ -175,20 +178,24 @@ impl Board {
         Ok(board)
     }
 
-    /// Names the Board version this run is, such as board-cli's, as
-    /// `major.minor.patch` with an optional `-` or `+` suffix. A board whose
-    /// `min_board` is newer refuses every write and sync from now on.
-    /// Text that is no version leaves the running version as it was.
-    pub fn running(&mut self, version: &str) {
+    /// Names the Board this run is: its version, as `major.minor.patch`
+    /// with an optional `-` or `+` suffix, and the commit date of its
+    /// source in seconds since the Unix epoch, when the build embedded one.
+    /// A board whose `min_board` this Board is older than refuses every
+    /// write and sync from now on. Text that is no version leaves the
+    /// running version as it was.
+    pub fn running(&mut self, version: &str, built: Option<i64>) {
         if let Ok(version) = version.parse() {
-            self.running = version;
-            self.gate_writes();
+            self.running_as(Running {
+                version,
+                built: built.map(Built::from_seconds),
+            });
         }
     }
 
-    /// [`Board::running`] for a version already parsed.
-    pub(crate) fn running_as(&mut self, version: Version) {
-        self.running = version;
+    /// [`Board::running`] for a Board already parsed.
+    pub(crate) fn running_as(&mut self, running: Running) {
+        self.running = running;
         self.gate_writes();
     }
 
@@ -198,7 +205,7 @@ impl Board {
         let refusal = self
             .config
             .min_board
-            .filter(|minimum| self.running.too_old_for(*minimum))
+            .filter(|minimum| minimum.refuses(&self.running))
             .map(|minimum| (minimum.to_string(), self.running.to_string()));
         self.repositories.refuse_writes(refusal);
     }
