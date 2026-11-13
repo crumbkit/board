@@ -28,6 +28,7 @@ use crate::records::{CONTROL_TYPE, RENAMED};
 /// The reason the commit gives in its `Board-Bulk:` trailer.
 const BULK: &str = "rename controls to rules";
 const STALE: &str = "rules::migrate::stale";
+const CONFIG_FIRST: &str = "rules::migrate::config_first";
 const FLOW_TYPE: &str = "changes/flow/v1";
 /// Why a config that names `controls` is kept.
 const CONFIG: &str = "the board's config names controls; only the owner may write it, so name \
@@ -119,6 +120,18 @@ pub(crate) fn rename(
     output: &mut Output,
 ) -> Result<(), PluginError> {
     let entries = entries(host)?;
+    // Only the owner writes the config, so it names `rules` before the
+    // rename, and a binary that predates the rename refuses `controls.*`
+    // from the first commit after the apply.
+    if !(entries.iter())
+        .any(|entry| entry.record_type.as_deref() == Some(CONFIG_TYPE) && names(entry, "rules"))
+    {
+        return Err(refusal(
+            CONFIG_FIRST,
+            "the board's config does not name rules in its plugins",
+            "name rules in place of controls in .board/board.json, then run the rename again",
+        ));
+    }
     let mut held: BTreeSet<String> = (entries.iter())
         .map(|entry| entry.logical.clone())
         .collect();
@@ -223,11 +236,11 @@ fn content(
             "a mount pointer; move it to /rules/ with board put once its target board has migrated",
         );
     } else if record_type == Some(CONFIG_TYPE) {
-        let config = parse_json(entry.text.as_deref().unwrap_or_default().as_bytes());
-        let plugins = config.unwrap_or_default()["plugins"].clone();
-        let names =
-            (plugins.as_array()).is_some_and(|each| each.iter().any(|one| one == "controls"));
-        return if names { Err(CONFIG) } else { Ok(None) };
+        return if names(entry, "controls") {
+            Err(CONFIG)
+        } else {
+            Ok(None)
+        };
     } else if record_type == Some(FLOW_TYPE) {
         return Ok(None);
     } else if let Some(text) = &entry.text {
@@ -260,6 +273,13 @@ fn content(
         return Err("it describes the rename itself, so it keeps the names it was written in");
     }
     Ok(Some(content))
+}
+
+/// Whether the config `entry` holds enables the plugin `plugin`.
+fn names(entry: &Entry, plugin: &str) -> bool {
+    let config = parse_json(entry.text.as_deref().unwrap_or_default().as_bytes());
+    let plugins = config.unwrap_or_default()["plugins"].clone();
+    (plugins.as_array()).is_some_and(|each| each.iter().any(|one| one == plugin))
 }
 
 /// Writes `lines` in one bulk commit, or refuses with
