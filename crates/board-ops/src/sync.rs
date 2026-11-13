@@ -18,11 +18,22 @@ impl Board {
     /// while one runs is refused at once. git still fetching or pushing
     /// `deadline` after the sync began is stopped.
     pub fn sync(&self, push: bool, deadline: Duration) -> Result<Synced, SyncError> {
+        self.sync_waiting(push, deadline, Duration::ZERO)
+    }
+
+    /// As [`Self::sync`], but a sync already running is waited for up to
+    /// `wait`, within `deadline`, before this one is refused as busy.
+    pub fn sync_waiting(
+        &self,
+        push: bool,
+        deadline: Duration,
+        wait: Duration,
+    ) -> Result<Synced, SyncError> {
         let deadline = Deadline::after(deadline);
         (self.repositories())
             .writable()
             .map_err(board_tree::SyncError::from)?;
-        Ok(self.repository().sync(push, deadline)?)
+        Ok(self.repository().sync(push, deadline, wait)?)
     }
 }
 

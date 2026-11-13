@@ -1,6 +1,6 @@
 //! Syncing clones of one remote.
 
-use board_model::{Code, LogicalPath, ObjectId};
+use board_model::{Code, Fields, LogicalPath, ObjectId};
 use board_scenario::{Item, Scenario};
 use board_tree::{ATTEMPTS, Replayed, Synced};
 
@@ -538,4 +538,74 @@ fn a_file_edited_during_the_push_stays_as_edited() {
         std::fs::read_to_string(a.workdir().join("projects/p.json")).unwrap(),
         "edited"
     );
+}
+
+/// A file the remote added that is edited after the sync compared it and
+/// before it writes it is kept as edited. The edit is made while the sync
+/// is held at an earlier file: a FIFO stands where its temporary file goes,
+/// so opening it for writing waits for this test to read it.
+#[test]
+fn a_file_edited_inside_the_integrate_step_is_kept_and_reported() {
+    let remote = remote();
+    let a = clone(&remote);
+    remote_commit(
+        &remote,
+        &[("projects/a.json", PROJECT), ("projects/z.json", PROJECT)],
+    );
+    a.write("projects/.a.json.board-tmp", Item::Fifo);
+    let dir = a.workdir().to_path_buf();
+    let syncing = std::thread::spawn({
+        let dir = dir.clone();
+        move || {
+            let mut board = crate::Board::open(&dir, None).unwrap();
+            board.built_by("test");
+            board.sync(false, board_tree::GIT_DEADLINE)
+        }
+    });
+    let until = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    while !dir.join(".git/index.lock").exists() {
+        assert!(std::time::Instant::now() < until, "the sync never began");
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    a.write("projects/z.json", Item::File("edited"));
+    let mut sink = Vec::new();
+    std::io::Read::read_to_end(
+        &mut std::fs::File::open(dir.join("projects/.a.json.board-tmp")).unwrap(),
+        &mut sink,
+    )
+    .unwrap();
+    let synced = syncing.join().unwrap().unwrap();
+    assert_eq!(synced.kept, [Fields::at(&path("/projects/z"))]);
+    assert_eq!(
+        std::fs::read_to_string(dir.join("projects/z.json")).unwrap(),
+        "edited"
+    );
+    assert_eq!(a.index()["projects/z.json"], a.blob(PROJECT));
+    assert_eq!(a.head().unwrap().id, synced.new);
+}
+
+#[test]
+fn a_second_sync_waits_for_the_first_within_its_wait_and_is_refused_busy_after_it() {
+    let remote = remote();
+    let a = clone(&remote);
+    holding_fetch(&a);
+    let syncing = syncing_in_background(&a, false);
+    let dir = a.workdir().to_path_buf();
+    let waiting = |wait| {
+        let started = std::time::Instant::now();
+        let mut board = crate::Board::open(&dir, None).unwrap();
+        board.built_by("test");
+        let result = board.sync_waiting(false, board_tree::GIT_DEADLINE, wait);
+        (result, started.elapsed())
+    };
+    let (refused, took) = waiting(std::time::Duration::from_millis(300));
+    assert_eq!(refused.unwrap_err().code(), Code::SyncBusy);
+    assert!(took >= std::time::Duration::from_millis(300), "{took:?}");
+    std::thread::scope(|scope| {
+        let admitted = scope.spawn(|| waiting(std::time::Duration::from_secs(10)).0);
+        std::thread::sleep(std::time::Duration::from_millis(200));
+        release(&a);
+        assert!(admitted.join().unwrap().is_ok());
+    });
+    syncing.join().unwrap().unwrap();
 }

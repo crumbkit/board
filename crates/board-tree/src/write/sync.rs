@@ -118,12 +118,17 @@ impl Repository {
     /// the result. A rejected push, or HEAD moved by another program during
     /// integrate, starts the next round from the fetch. A file the remote
     /// changed that is edited here stops the sync before it writes. One
-    /// sync runs per clone: `sync.lock` refuses a second at once with
-    /// [`SyncError::Busy`]. Every fetch, push and wait for the board lock
+    /// sync runs per clone: `sync.lock` refuses a second with
+    /// [`SyncError::Busy`] once `wait` has passed; zero refuses at once. Every fetch, push and wait for the board lock
     /// shares `deadline`, and the git run at it is stopped.
-    pub fn sync(&self, push: bool, deadline: Deadline) -> Result<Synced, SyncError> {
+    pub fn sync(
+        &self,
+        push: bool,
+        deadline: Deadline,
+        wait: Duration,
+    ) -> Result<Synced, SyncError> {
         let upstream = self.upstream()?;
-        let _only = self.sync_lock()?;
+        let _only = self.sync_lock(wait.min(deadline.left()))?;
         let ssh = self.ssh();
         let mut summary: Option<Integrated> = None;
         let mut reason = String::new();
@@ -166,22 +171,30 @@ impl Repository {
     }
 
     /// Takes `sync.lock` in the git directory, which admits one sync at a
-    /// time, or refuses at once with [`SyncError::Busy`].
-    fn sync_lock(&self) -> Result<gix::lock::Marker, SyncError> {
+    /// time, trying again until `wait` has passed, then refuses with
+    /// [`SyncError::Busy`].
+    fn sync_lock(&self, wait: Duration) -> Result<gix::lock::Marker, SyncError> {
         let resource = self.git_dir().join("sync");
-        gix::lock::Marker::acquire_to_hold_resource(&resource, Fail::Immediately, None).map_err(
-            |error| {
-                let lock = resource.with_extension("lock");
-                if error.is_retryable() {
-                    SyncError::Busy { lock }
-                } else {
-                    SyncError::Write(WriteError::Io {
-                        path: lock,
-                        source: io::Error::other(error.into_error()),
-                    })
+        let started = std::time::Instant::now();
+        loop {
+            match gix::lock::Marker::acquire_to_hold_resource(&resource, Fail::Immediately, None) {
+                Ok(held) => return Ok(held),
+                Err(error) if error.is_retryable() && started.elapsed() < wait => {
+                    std::thread::sleep(Duration::from_millis(20));
                 }
-            },
-        )
+                Err(error) => {
+                    let lock = resource.with_extension("lock");
+                    return Err(if error.is_retryable() {
+                        SyncError::Busy { lock }
+                    } else {
+                        SyncError::Write(WriteError::Io {
+                            path: lock,
+                            source: io::Error::other(error.into_error()),
+                        })
+                    });
+                }
+            }
+        }
     }
 
     /// The local step of a sync, under the board lock: replays the commits

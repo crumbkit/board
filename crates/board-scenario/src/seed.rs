@@ -65,7 +65,8 @@ pub const NOT_REPRODUCED: [(Code, &str); 21] = [
     ),
     (
         Code::SyncKept,
-        "a file must be edited inside the sync's integrate step, between its check and its write",
+        "a file must be edited inside the sync's integrate step, between its check and its write; \
+         board-ops/src/sync/tests.rs holds the write at an earlier file with a FIFO",
     ),
     (
         Code::SyncBusy,

@@ -310,6 +310,28 @@ fn a_push_refused_after_the_note_is_committed_is_reported_and_the_note_is_kept_o
     );
 }
 
+/// A sync that holds `sync.lock` past the add's five-second wait leaves the
+/// note committed, parked in its sibling file because the clone could not be
+/// brought up to date, and unpushed; the twin above waits it out and pushes.
+#[test]
+fn a_note_added_while_a_sync_outlasts_the_wait_is_committed_and_reported_unpushed() {
+    let notes = Notes::new();
+    notes.clone.write(".git/sync.lock", Item::File(""));
+    let output = notes.call("add", &["--text", "Waited."]).unwrap();
+    assert_eq!(
+        (&output["parked"], &output["unpushed"]),
+        (&json!("board::sync::busy"), &json!("board::sync::busy"))
+    );
+    assert_eq!(output["commit"], json!(notes.head()));
+    assert_eq!(
+        notes.read(&Notes::note(&output)).matches("Waited.").count(),
+        1
+    );
+    notes.clone.write(".git/sync.lock", Item::Deleted);
+    let output = notes.call("add", &["--text", "Pushed."]).unwrap();
+    assert_eq!(output["unpushed"], Value::Null);
+}
+
 #[test]
 fn notes_added_at_once_each_land_exactly_once() {
     let notes = Notes::new();

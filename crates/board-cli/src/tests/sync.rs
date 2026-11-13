@@ -108,24 +108,21 @@ fn a_refused_push_ends_with_gits_reason_and_the_fetch_failure_carries_gits_stder
     );
 }
 
-/// A pre-push hook edits `projects/p.json` after the sync compared it, so
-/// the sync keeps the edit and says so; a hook that edits another file
-/// leaves nothing to keep.
+/// A pre-push hook edits `projects/p.json` while the sync pushes. The push
+/// follows the working-tree move, so the edit is an ordinary uncommitted
+/// edit: the sync exits 0 and keeps nothing.
 #[test]
-fn sync_reports_a_file_edited_during_the_push_as_kept_and_exits_0() {
-    for (edits, json_output) in [(true, true), (true, false), (false, true)] {
+fn sync_leaves_a_file_edited_during_the_push_as_an_ordinary_edit_and_exits_0() {
+    for json_output in [true, false] {
         let (remote, a, _) = clones();
-        let target = if edits {
-            "projects/p.json"
-        } else {
-            "other.txt"
-        };
-        let hook = format!("#!/bin/sh\necho edited > {target}\n");
         a.write(
             ".git/config",
             Item::Appended("[core]\n\thooksPath = .git/hooks\n"),
         )
-        .write(".git/hooks/pre-push", Item::Executable(&hook));
+        .write(
+            ".git/hooks/pre-push",
+            Item::Executable("#!/bin/sh\necho edited > projects/p.json\n"),
+        );
         board_with(
             a.workdir(),
             None,
@@ -147,27 +144,11 @@ fn sync_reports_a_file_edited_during_the_push_as_kept_and_exits_0() {
         };
         let output = board_in(a.workdir(), arguments);
         assert_eq!(output.code, 0, "{}", text(&output.stderr));
-        if !json_output {
-            let stdout = text(&output.stdout);
-            let line = "kept /projects/p as edited, without the remote's change: board::sync::kept";
-            assert!(stdout.contains(line), "{stdout}");
-            let stderr = text(&output.stderr);
-            assert!(stderr.starts_with("hint: /projects/p: "), "{stderr}");
-            continue;
+        if json_output {
+            assert_eq!(json(&output)["data"]["kept"], json!([]));
+        } else {
+            assert!(!text(&output.stdout).contains("kept"));
         }
-        let kept = &json(&output)["data"]["kept"];
-        if !edits {
-            assert_eq!(*kept, json!([]));
-            continue;
-        }
-        assert_eq!(kept[0]["path"], "/projects/p", "{kept}");
-        assert_eq!(kept[0]["code"], "board::sync::kept");
-        assert!(
-            kept[0]["hint"]
-                .as_str()
-                .unwrap()
-                .contains("`git diff -- <file>`")
-        );
         let edited = std::fs::read_to_string(a.workdir().join("projects/p.json")).unwrap();
         assert_eq!(edited, "edited\n");
     }
