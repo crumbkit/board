@@ -561,7 +561,13 @@ fn write_temporary(temporary: &Path, target: &Path, bytes: &[u8]) -> io::Result<
     if let Ok(metadata) = fs::metadata(target) {
         file.set_permissions(metadata.permissions())?;
     }
-    file.sync_all()
+    // Only a regular file can be flushed: Linux refuses `fsync` on a FIFO
+    // with `EINVAL`, which the tests that hold a write at its temporary file
+    // put there.
+    if file.metadata()?.is_file() {
+        file.sync_all()?;
+    }
+    Ok(())
 }
 
 /// The record file a resolved Location writes to: the file itself, or the

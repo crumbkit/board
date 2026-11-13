@@ -331,3 +331,24 @@ fn an_index_of_thousands_of_entries_reaches_the_file_in_a_few_writes() {
     );
     assert!(out.bytes.len() > 2000 * 60, "the whole index is written");
 }
+
+/// Tests hold a write at its temporary file by making that file a FIFO. A
+/// FIFO cannot be flushed: Linux refuses `fsync` on one with `EINVAL`,
+/// where macOS accepts it, so the write must not ask.
+#[test]
+fn a_temporary_file_that_is_a_fifo_is_written_without_asking_to_flush_it() {
+    let scenario = board_scenario::Scenario::new();
+    scenario.write(".t.board-tmp", board_scenario::Item::Fifo);
+    let directory = scenario.workdir().to_path_buf();
+    let reading = std::thread::spawn({
+        let fifo = directory.join(".t.board-tmp");
+        move || fs::read(fifo).unwrap()
+    });
+    write_temporary(
+        &directory.join(".t.board-tmp"),
+        &directory.join("t.json"),
+        b"bytes",
+    )
+    .unwrap();
+    assert_eq!(reading.join().unwrap(), b"bytes");
+}
