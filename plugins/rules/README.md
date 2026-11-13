@@ -422,8 +422,10 @@ each `/controls/` path, in this board or under a mount, becomes `/rules/`;
 `controls.<capability>` becomes `rules.<capability>`; and the old type names
 become the new ones. crumbkit/board's own `controls/rules/<name>` becomes
 `rules/<name>`. A flow version stored at the hash of its JSON is stored
-again at the hash of its new JSON, the old version is removed, and every
-record that named it names the new one, so each change is pinned to it.
+again at the hash of its new JSON and the old version is kept, so a change
+in a mounted board that still names it keeps reading. Every record in this
+board that named the old version names the new one, so each change is pinned
+to it.
 
 Attention orders, effects and each order's context are never rewritten,
 since they carry a signature; the records they name are rewritten as any
