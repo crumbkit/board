@@ -17,9 +17,8 @@ fn a_clone_without_a_commit_checks_out_the_remote_branch_without_pushing() {
     clone.write("a.json", Item::Deleted);
     clone.write("d/b.json", Item::Deleted);
     let repository = clone.open();
-    let lock = repository.lock(LOCK_WAIT).unwrap();
     let synced = repository
-        .sync(&lock, true, Deadline::after(GIT_DEADLINE))
+        .sync(true, Deadline::after(GIT_DEADLINE))
         .unwrap();
     assert_eq!(
         synced,
@@ -60,9 +59,8 @@ fn a_held_index_lock_stops_a_sync_before_the_index_is_read_and_a_free_one_is_adm
         .write(".git/index", Item::File("not an index"))
         .write(".git/index.lock", Item::File(""));
     let repository = clone.open();
-    let lock = repository.lock(LOCK_WAIT).unwrap();
     let error = repository
-        .sync(&lock, false, Deadline::after(GIT_DEADLINE))
+        .sync(false, Deadline::after(GIT_DEADLINE))
         .unwrap_err();
     assert_eq!(error.code(), Code::PutLocked, "{error}");
     assert_eq!(clone.head().unwrap().id, before);
@@ -71,7 +69,7 @@ fn a_held_index_lock_stops_a_sync_before_the_index_is_read_and_a_free_one_is_adm
         .write(".git/index.lock", Item::Deleted);
     assert!(
         repository
-            .sync(&lock, false, Deadline::after(GIT_DEADLINE))
+            .sync(false, Deadline::after(GIT_DEADLINE))
             .is_ok()
     );
 }
@@ -115,10 +113,9 @@ fn a_sync_removes_a_file_the_remote_deleted_and_keeps_the_rest() {
     let clone = Scenario::clone_of(&remote);
     let tip = remote.commit(&[("d/b.json", "[]")]);
     let repository = clone.open();
-    let lock = repository.lock(LOCK_WAIT).unwrap();
     assert_eq!(
         repository
-            .sync(&lock, false, Deadline::after(GIT_DEADLINE))
+            .sync(false, Deadline::after(GIT_DEADLINE))
             .unwrap()
             .new,
         tip
@@ -140,9 +137,8 @@ fn a_sync_stops_at_a_path_it_cannot_read() {
     remote.commit(&[("a.json", "{}"), ("d", "x")]);
     clone.write("d/x.json", Item::File("{}"));
     let repository = clone.open();
-    let lock = repository.lock(LOCK_WAIT).unwrap();
     let refused = repository
-        .sync(&lock, false, Deadline::after(GIT_DEADLINE))
+        .sync(false, Deadline::after(GIT_DEADLINE))
         .unwrap_err();
     assert!(
         matches!(&refused, crate::SyncError::Git(crate::git::GitError::File { path, .. }) if path.ends_with("d")),
@@ -176,9 +172,8 @@ fn a_remote_that_stalls_past_the_deadline_times_out_and_one_that_answers_syncs()
         let tip = remote.commit(&[("a.json", "[]")]);
         clone.delayed_origin(delay);
         let repository = clone.open();
-        let lock = repository.lock(LOCK_WAIT).unwrap();
         let started = Instant::now();
-        let synced = repository.sync(&lock, false, Deadline::after(deadline));
+        let synced = repository.sync(false, Deadline::after(deadline));
         let took = started.elapsed();
         (synced, took, tip)
     };
@@ -233,9 +228,8 @@ fn a_sync_past_its_deadline_leaves_nothing_the_stalled_remote_started_running() 
     remote.commit(&[("a.json", "[]")]);
     recording_origin(&clone, 30);
     let repository = clone.open();
-    let lock = repository.lock(LOCK_WAIT).unwrap();
     let refused = repository
-        .sync(&lock, false, Deadline::after(Duration::from_secs(1)))
+        .sync(false, Deadline::after(Duration::from_secs(1)))
         .unwrap_err();
     assert_eq!(refused.code(), Code::SyncTimeout, "{refused}");
     let ids = recorded(&clone.workdir().join(".git/delayed-ssh.pid"));
@@ -263,8 +257,7 @@ fn a_push_after_a_slow_fetch_is_stopped_by_what_is_left_of_the_deadline_and_a_lo
         clone.write("a.json", Item::File("[]")).track(made);
         clone.delayed_origin(4);
         let repository = clone.open();
-        let lock = repository.lock(LOCK_WAIT).unwrap();
-        let synced = repository.sync(&lock, true, Deadline::after(deadline));
+        let synced = repository.sync(true, Deadline::after(deadline));
         (synced, remote.head().unwrap().id, first, made)
     };
     let (refused, tip, first, _) = push(Duration::from_secs(6));
@@ -325,9 +318,8 @@ fn a_remote_that_needs_a_prompt_fails_at_once_and_one_that_asks_nothing_syncs() 
     let sync = |prompts| {
         let (_remote, clone, tip) = asking(prompts);
         let repository = clone.open();
-        let lock = repository.lock(LOCK_WAIT).unwrap();
         let started = Instant::now();
-        let synced = repository.sync(&lock, false, Deadline::after(Duration::from_secs(20)));
+        let synced = repository.sync(false, Deadline::after(Duration::from_secs(20)));
         let seen = std::fs::read_to_string(clone.workdir().join(".git/delayed-ssh.seen")).unwrap();
         (synced, started.elapsed(), seen, tip)
     };

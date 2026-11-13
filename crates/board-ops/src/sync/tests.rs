@@ -1,6 +1,6 @@
 //! Syncing clones of one remote.
 
-use board_model::{Code, Fields, LogicalPath, ObjectId};
+use board_model::{Code, LogicalPath, ObjectId};
 use board_scenario::{Item, Scenario};
 use board_tree::{ATTEMPTS, Replayed, Synced};
 
@@ -414,102 +414,128 @@ fn a_file_the_remote_changes_that_is_a_symlink_on_disk_stops_the_sync_and_one_th
     }
 }
 
-/// The remote's change to `projects/p.json`.
-const CHANGED: &str = r#"{"$type": "lr/project/v1", "x": 1}"#;
-/// The edit a pre-push hook makes to `projects/p.json`.
-const EDITED: &str = r#"{"$type": "lr/project/v1", "y": 2}"#;
+/// A sync holds no lock across its fetch: `clone`'s fetch stops at a
+/// stand-in for ssh that writes `.git/delayed-ssh.started` and waits for
+/// `.git/delayed-ssh.release`. Returns once a sync can be started.
+fn holding_fetch(clone: &Scenario) {
+    clone.delayed_origin(0);
+    clone.write(
+        ".git/delayed-ssh",
+        Item::Executable(
+            "#!/bin/sh\ntouch \"$0.started\"\nwhile [ ! -e \"$0.release\" ]; do sleep 0.05; done\n\
+             for last; do :; done\nexec sh -c \"$last\"\n",
+        ),
+    );
+}
 
-/// A clone with a put to push while the remote changed `projects/p.json` to
-/// `remote_p`, or removed it for `None`, whose pre-push hook writes `EDITED`
-/// to `file`, so the edit lands after
-/// the sync compared the working tree and before it writes.
-fn editing_during_push(remote: &Scenario, file: &str, remote_p: Option<&str>) -> Scenario {
-    let a = clone(remote);
+/// Starts a sync of `clone` on another thread and waits until its fetch is
+/// held open.
+fn syncing_in_background(
+    clone: &Scenario,
+    push: bool,
+) -> std::thread::JoinHandle<Result<Synced, SyncError>> {
+    let dir = clone.workdir().to_path_buf();
+    let started = dir.join(".git/delayed-ssh.started");
+    let handle = std::thread::spawn(move || {
+        let mut board = crate::Board::open(&dir, None).unwrap();
+        board.built_by("test");
+        board.sync(push, board_tree::GIT_DEADLINE)
+    });
+    let until = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    while !started.exists() {
+        assert!(std::time::Instant::now() < until, "the fetch never began");
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    handle
+}
+
+fn release(clone: &Scenario) {
+    clone.write(".git/delayed-ssh.release", Item::File(""));
+}
+
+#[test]
+fn a_put_finishes_within_a_second_while_a_fetch_is_held_open_and_the_sync_keeps_it() {
+    let remote = remote();
+    let a = clone(&remote);
+    remote_commit(&remote, &[("projects/r.json", PROJECT)]);
+    holding_fetch(&a);
+    let syncing = syncing_in_background(&a, true);
+    let started = std::time::Instant::now();
+    let made = put(&a, "/projects/during");
+    let took = started.elapsed();
+    assert!(took < std::time::Duration::from_secs(1), "{took:?}");
+    release(&a);
+    let synced = syncing.join().unwrap().unwrap();
+    assert!(synced.pushed, "{synced:?}");
+    assert_eq!(synced.old, Some(made));
+    let head = a.head().unwrap();
+    assert!(
+        head.files.contains_key("projects/during.json")
+            && head.files.contains_key("projects/r.json")
+    );
+    assert_eq!(remote.head().unwrap().id, synced.new);
+}
+
+#[test]
+fn a_second_sync_while_one_runs_exits_at_once_and_one_after_it_is_admitted() {
+    let remote = remote();
+    let a = clone(&remote);
+    holding_fetch(&a);
+    let syncing = syncing_in_background(&a, false);
+    let started = std::time::Instant::now();
+    let (code, message) = refused(&a, false);
+    let took = started.elapsed();
+    assert_eq!(code, Code::SyncBusy);
+    assert!(message.contains("sync.lock"), "{message}");
+    assert!(took < std::time::Duration::from_secs(1), "{took:?}");
+    release(&a);
+    syncing.join().unwrap().unwrap();
+    assert!(sync(&a, false).is_ok());
+}
+
+#[test]
+fn a_rejected_push_fetches_again_and_the_second_push_succeeds() {
+    let remote = remote();
+    let refusal = remote.workdir().join("refused-once");
+    remote.write(
+        ".git/hooks/pre-receive",
+        Item::Executable(&format!(
+            "#!/bin/sh\n[ -e '{0}' ] && exit 0\ntouch '{0}'\nexit 1\n",
+            refusal.display()
+        )),
+    );
+    let a = clone(&remote);
+    let made = put(&a, "/projects/a");
+    let synced = sync(&a, true).unwrap();
+    assert_eq!((synced.pushed, synced.attempts), (true, 2));
+    assert_eq!(synced.new, made);
+    assert_eq!(remote.head().unwrap().id, made);
+}
+
+/// A file edited during the push is not the sync's to keep: the push
+/// comes after the working tree moved, so the edit stays beside the new
+/// HEAD.
+#[test]
+fn a_file_edited_during_the_push_stays_as_edited() {
+    let remote = remote();
+    let a = clone(&remote);
     put(&a, "/projects/a");
-    match remote_p {
-        Some(text) => remote_commit(remote, &[("projects/p.json", text)]),
-        None => remote.commit(&BASE[..3]),
-    };
+    remote_commit(
+        &remote,
+        &[("projects/p.json", r#"{"$type": "lr/project/v1", "x": 1}"#)],
+    );
     a.write(
         ".git/config",
         Item::Appended("[core]\n\thooksPath = .git/hooks\n"),
     )
     .write(
         ".git/hooks/pre-push",
-        Item::Executable(&format!("#!/bin/sh\nprintf '%s' '{EDITED}' > {file}\n")),
+        Item::Executable("#!/bin/sh\nprintf '%s' 'edited' > projects/p.json\n"),
     );
-    a
-}
-
-#[test]
-fn a_file_edited_during_the_push_is_kept_and_reported_and_an_untouched_one_is_written() {
-    let (remote, untouched) = (remote(), remote());
-    let a = editing_during_push(&remote, "projects/p.json", Some(CHANGED));
     let synced = sync(&a, true).unwrap();
-    assert!(synced.pushed, "{synced:?}");
-    assert_eq!(synced.kept, [Fields::at(&path("/projects/p"))]);
-    assert_eq!(a.head().unwrap().id, synced.new);
-    assert_eq!(remote.head().unwrap().id, synced.new);
+    assert!(synced.pushed && synced.kept.is_empty(), "{synced:?}");
     assert_eq!(
         std::fs::read_to_string(a.workdir().join("projects/p.json")).unwrap(),
-        EDITED
-    );
-    assert_eq!(a.index()["projects/p.json"], a.blob(CHANGED));
-    let b = editing_during_push(&untouched, "elsewhere.txt", Some(CHANGED));
-    let synced = sync(&b, true).unwrap();
-    assert!(synced.pushed && synced.kept.is_empty(), "{synced:?}");
-    assert_eq!(
-        std::fs::read_to_string(b.workdir().join("projects/p.json")).unwrap(),
-        CHANGED
-    );
-}
-
-/// A file the remote removed leaves HEAD and the index even when it is
-/// kept, so the kept edit is an untracked file.
-#[test]
-fn a_file_the_remote_removes_that_is_edited_during_the_push_is_kept_untracked_and_an_untouched_one_is_removed()
- {
-    for edits in [true, false] {
-        let remote = remote();
-        let file = if edits {
-            "projects/p.json"
-        } else {
-            "elsewhere.txt"
-        };
-        let a = editing_during_push(&remote, file, None);
-        let synced = sync(&a, true).unwrap();
-        assert!(synced.pushed, "{synced:?}");
-        assert!(!a.head().unwrap().files.contains_key("projects/p.json"));
-        assert!(!a.index().contains_key("projects/p.json"));
-        let held = std::fs::read_to_string(a.workdir().join("projects/p.json")).ok();
-        if edits {
-            assert_eq!(synced.kept, [Fields::at(&path("/projects/p"))]);
-            assert_eq!(held.as_deref(), Some(EDITED));
-            let hint = Code::SyncKept.hint(&synced.kept[0]);
-            assert!(hint.contains("untracked, the remote removed it"), "{hint}");
-        } else {
-            assert!(synced.kept.is_empty(), "{synced:?}");
-            assert_eq!(held, None);
-        }
-    }
-}
-
-/// A kept edit was made on the old version, so committing it undoes the
-/// remote's change, and the next sync pushes that without a conflict.
-#[test]
-fn a_kept_edit_put_after_the_sync_replaces_the_remotes_change_on_the_next_sync() {
-    let remote = remote();
-    let a = editing_during_push(&remote, "projects/p.json", Some(CHANGED));
-    assert_eq!(sync(&a, true).unwrap().kept.len(), 1);
-    a.write(".git/hooks/pre-push", Item::Deleted);
-    open(&a)
-        .put(&path("/projects/p"), crate::Expect::Any, EDITED.as_bytes())
-        .unwrap();
-    let synced = sync(&a, true).unwrap();
-    assert!(synced.pushed && synced.kept.is_empty(), "{synced:?}");
-    let pushed = &remote.head().unwrap().files["projects/p.json"];
-    assert_eq!(
-        serde_json::from_slice::<serde_json::Value>(pushed).unwrap(),
-        serde_json::from_str::<serde_json::Value>(EDITED).unwrap()
+        "edited"
     );
 }
