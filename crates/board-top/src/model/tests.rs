@@ -478,3 +478,19 @@ fn no_realm_heading_appears_twice() {
     headings.dedup();
     assert_eq!(headings.len(), count, "{headings:?}");
 }
+
+#[test]
+fn a_refresh_that_adds_rows_after_the_selection_drops_the_bottom_pin() {
+    let mut old = long_view(5);
+    old.end();
+    old.reveal(4);
+    assert_eq!(old.scroll, usize::MAX);
+    let mut fresh = long_view(5);
+    fresh.keep_selection(&old);
+    assert_eq!(fresh.scroll, usize::MAX);
+
+    let mut more = long_view(9);
+    more.keep_selection(&old);
+    assert_eq!(more.scroll, old.shown);
+    assert!(more.selected < 8);
+}

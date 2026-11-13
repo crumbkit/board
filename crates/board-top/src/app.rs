@@ -70,8 +70,9 @@ struct Held {
     at: Instant,
 }
 
-/// Drops the reload requests that piled up, so key presses made during a load
-/// are answered by that load and a held key does not queue a load per press.
+/// Drops the reload requests that piled up before a load starts, so a held key
+/// does not queue a load per press. A press made during a load stays queued and
+/// causes exactly one more load, which reads any change made after that load began.
 fn drain(reload: &mpsc::Receiver<()>) {
     while reload.try_recv().is_ok() {}
 }
@@ -130,9 +131,9 @@ fn work<L, K>(
         }
         let begin = Instant::now();
         started = Some(begin);
+        drain(reload);
         let result = load();
         last_load = begin.elapsed();
-        drain(reload);
         let message = match result {
             Ok((inputs, view)) => {
                 let at = Instant::now();
@@ -357,7 +358,7 @@ mod tests {
     }
 
     #[test]
-    fn presses_made_during_a_load_are_answered_by_that_load() {
+    fn any_number_of_presses_during_a_load_cause_one_more_load() {
         let (sender, messages) = mpsc::channel::<Message>();
         let (reload, requests) = mpsc::channel::<()>();
         let calls = std::sync::atomic::AtomicUsize::new(0);
@@ -384,15 +385,18 @@ mod tests {
             while count() < 1 {
                 std::thread::sleep(Duration::from_millis(5));
             }
-            std::thread::sleep(Duration::from_millis(200));
-            assert_eq!(count(), 1, "held presses queued more loads");
-            reload.send(()).unwrap();
             while count() < 2 {
+                std::thread::sleep(Duration::from_millis(5));
+            }
+            std::thread::sleep(Duration::from_millis(200));
+            assert_eq!(count(), 2, "held presses queued more than one load");
+            reload.send(()).unwrap();
+            while count() < 3 {
                 std::thread::sleep(Duration::from_millis(5));
             }
             drop(messages);
         });
-        assert_eq!(count(), 2);
+        assert_eq!(count(), 3);
     }
 
     #[test]

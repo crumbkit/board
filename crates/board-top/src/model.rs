@@ -202,7 +202,11 @@ impl View {
             .selected_path()
             .and_then(|path| self.rows().position(|row| row.path == path))
             .unwrap_or_else(|| old.selected.min(last));
-        self.scroll = old.scroll;
+        self.scroll = if old.scroll == usize::MAX && self.selected != last {
+            old.shown
+        } else {
+            old.scroll
+        };
         self.shown = old.shown;
     }
 
