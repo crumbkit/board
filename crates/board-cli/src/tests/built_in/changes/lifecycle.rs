@@ -465,6 +465,7 @@ fn renaming_stores_an_old_flow_again_under_the_new_names_and_its_change_gates_as
     for phase in ["plan", "land"] {
         let (board, head) = lifecycle_change(true, "controls", "controls/control/v1", phase);
         let before = gate_naming(&board, &head);
+        let old = board.read(&format!("{}.json", &OLD[1..]));
         let renamed = board.run(&["--json", "call", "rules.migrate", "--rename", "true"], "");
         let digest = json(&renamed)["data"]["output"]["digest"]
             .as_str()
@@ -501,9 +502,17 @@ fn renaming_stores_an_old_flow_again_under_the_new_names_and_its_change_gates_as
                 && stored.contains("\"rule-paths\""),
             "{stored}"
         );
-        assert!(!board.exists(&format!("{}.json", &OLD[1..])), "{phase}");
+        assert_eq!(board.read(&format!("{}.json", &OLD[1..])), old, "{phase}");
         assert!(board.exists("rules/x/lifecycle-paths.json"), "{phase}");
         assert_eq!(gate_naming(&board, &head), before, "{phase}");
+        let again = board.run(&["--json", "call", "rules.migrate", "--rename", "true"], "");
+        assert_eq!(json(&again)["data"]["output"]["total"], 0, "{phase}");
+        // A change in a mounted board that cannot be re-pinned still names
+        // the old version, which is kept, so it still reads.
+        let mut change = board.read("changes/t.json");
+        change["flow"] = json!(OLD);
+        board.write("changes/t.json", &change.to_string());
+        assert_eq!(gate_naming(&board, &head), before, "{phase} pinned to old");
     }
 }
 
@@ -548,8 +557,8 @@ fn two_old_flow_versions_that_rename_alike_are_stored_once_and_a_flow_off_its_ha
         .unwrap()
         .to_owned();
     assert_eq!(board.text("notes/n.md"), format!("Pinned to {flow}.\n"));
-    for gone in [OLD, twin_path.as_str()] {
-        assert!(!board.exists(&format!("{}.json", &gone[1..])), "{gone}");
+    for kept in [OLD, twin_path.as_str()] {
+        assert!(board.exists(&format!("{}.json", &kept[1..])), "{kept}");
     }
     assert_eq!(board.read(&format!("{}.json", &OFF[1..])), old);
 }

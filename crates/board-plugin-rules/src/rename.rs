@@ -166,7 +166,9 @@ pub(crate) fn rename(
             Some(to) => lines.push(line(to, "none")),
             None => lines.push(line(&entry.logical, &entry.blob)),
         }
-        if to.is_some() {
+        // An old flow version stays: a change in a mounted board that this
+        // migration cannot re-pin still names it.
+        if to.is_some() && flow.is_none() {
             lines.push(json!({"path": entry.logical, "expect": entry.blob, "remove": true}));
         }
         writes.push(Write {
@@ -368,6 +370,10 @@ fn flows(entries: &[Entry], kept: &mut Vec<Kept>) -> Flows {
         let name = value["name"].as_str().unwrap_or_default();
         let (stored, at_hash) = (flow_version(name, &record), flow_version(name, &value));
         if at_hash == entry.logical && stored != entry.logical {
+            // A kept old version is listed again by a later run; its new one is stored.
+            if entries.iter().any(|one| one.logical == stored) {
+                continue;
+            }
             flows.insert(entry.logical.clone(), (stored, record));
         } else if at_hash != entry.logical && record != value {
             kept.push(Kept {
