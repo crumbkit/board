@@ -128,7 +128,7 @@ fn hex<S: serde::Serializer>(
 #[derive(Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Pinned {
-    control: String,
+    rule: String,
     requirement: String,
     at_least: String,
     files: Vec<String>,
@@ -160,7 +160,7 @@ struct FileBehind {
 /// could not read, which counts nothing toward `used`.
 #[derive(Serialize, JsonSchema)]
 pub(crate) struct Checked {
-    control: String,
+    rule: String,
     requirement: String,
     budget: Measure,
     max: u64,
@@ -228,7 +228,7 @@ struct FileUsed {
 #[derive(Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 struct Stated {
-    control: String,
+    rule: String,
     requirement: String,
     purpose: String,
     paths: Vec<String>,
@@ -349,7 +349,7 @@ pub(crate) fn check(host: &dyn Host, input: &Value) -> Result<Value, PluginError
             let control = &controls[logical];
             Stated {
                 state: control.checker.is_none().then_some(State::Described),
-                control: logical.clone(),
+                rule: logical.clone(),
                 requirement: control.requirement.clone(),
                 purpose: control.purpose.clone(),
                 kind: control.kind(),
@@ -606,7 +606,7 @@ fn unmeasured(
         )
     };
     Some(Unmeasured {
-        run: format!("board --checkout controls check --path {path}"),
+        run: format!("board --checkout rules check --path {path}"),
         mount,
         read: pinned,
         head: started.head,
@@ -657,7 +657,7 @@ fn checked(
         .map(|(path, data)| (path.to_string(), measure(data, budget)))
         .collect();
     let mut checked = Checked {
-        control: logical.to_owned(),
+        rule: logical.to_owned(),
         requirement: control.requirement.clone(),
         budget,
         max,
@@ -725,7 +725,7 @@ fn pinned(
         }));
     }
     Ok(Pinned {
-        control: logical.to_owned(),
+        rule: logical.to_owned(),
         requirement: control.requirement.clone(),
         at_least: rule.at_least.clone(),
         files: listed(texts, &unreadable),
@@ -743,7 +743,7 @@ fn degraded(broken: &[(String, Value)]) -> PluginError {
         .map(|(logical, code)| format!("{logical} ({})", code.as_str().unwrap_or("None")))
         .collect();
     let controls: Vec<Value> = (broken.iter())
-        .map(|(logical, code)| json!({"control": logical, "code": code}))
+        .map(|(logical, code)| json!({"rule": logical, "code": code}))
         .collect();
     PluginError {
         code: "rules::rule::degraded".to_owned(),
@@ -751,7 +751,7 @@ fn degraded(broken: &[(String, Value)]) -> PluginError {
             "controls Board cannot use: {}; run `board check` for why",
             names.join(", ")
         ),
-        fields: Map::from_iter([("controls".to_owned(), Value::from(controls))]),
+        fields: Map::from_iter([("rules".to_owned(), Value::from(controls))]),
         hint: None,
     }
 }

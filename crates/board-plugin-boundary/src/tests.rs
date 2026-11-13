@@ -222,6 +222,22 @@ fn a_verdict_and_a_check_with_the_former_names_read_as_their_twins_with_the_new(
     assert_eq!(check("control"), check("rule"));
 }
 
+/// `rules.evaluate` names a result's rule `rule` and its checker `checker`.
+/// The boundary reads its output in those names alone, while a stored
+/// crossing written before the rename still reads in either.
+#[test]
+fn the_results_of_rules_evaluate_read_in_the_new_names_and_are_refused_in_the_former() {
+    let result = |rule: &str, checker: &str| json!([{rule: "/rules/names", "part": "p", checker: "pattern", "status": "failed", "findings": [{"text": "x"}]}]);
+    let now = records::evaluated(&result("rule", "checker")).unwrap();
+    assert_eq!(
+        serde_json::to_value(&now).unwrap(),
+        result("rule", "checker")
+    );
+    assert!(records::evaluated(&result("control", "rule")).is_err());
+    assert!(records::evaluated(&result("control", "checker")).is_err());
+    assert!(records::verdicts(&result("control", "rule")).is_ok());
+}
+
 #[test]
 fn every_input_property_carries_a_sentence() {
     let manifest = manifest();

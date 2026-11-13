@@ -41,7 +41,7 @@ mod tests {
     #[test]
     fn a_cached_is_read_back_and_a_missing_one_is_none() {
         let root = tempfile::tempdir().unwrap();
-        let directory = root.path().join("controls").join("judged");
+        let directory = root.path().join("rules").join("judged");
         assert_eq!(cached(&directory, b"abc"), None);
         cache(&directory, b"abc", b"[]").unwrap();
         assert_eq!(cached(&directory, b"abc"), Some(b"[]".to_vec()));

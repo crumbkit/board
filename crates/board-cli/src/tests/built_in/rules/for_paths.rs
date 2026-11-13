@@ -17,7 +17,7 @@ fn for_paths(board: &Fixture, paths: &[&str]) -> (Output, Value) {
 fn matched(board: &Fixture, paths: &[&str]) -> Vec<(String, Vec<String>)> {
     let (ran, document) = for_paths(board, paths);
     assert_eq!(ran.code, 0, "{document}");
-    (document["data"]["output"]["controls"]
+    (document["data"]["output"]["rules"]
         .as_array()
         .unwrap()
         .iter())
@@ -25,7 +25,7 @@ fn matched(board: &Fixture, paths: &[&str]) -> Vec<(String, Vec<String>)> {
         let matched = (item["matched"].as_array().unwrap().iter())
             .map(|path| path.as_str().unwrap().to_owned())
             .collect();
-        (item["control"].as_str().unwrap().to_owned(), matched)
+        (item["rule"].as_str().unwrap().to_owned(), matched)
     })
     .collect()
 }
@@ -213,15 +213,15 @@ fn each_control_carries_its_summary_or_else_its_requirements_first_sentence() {
         );
     let (_, document) = for_paths(&board, &["/docs/a.md"]);
     assert_eq!(
-        document["data"]["output"]["controls"],
+        document["data"]["output"]["rules"],
         json!([
             {
-                "control": "/controls/long",
+                "rule": "/controls/long",
                 "summary": "Say what exists.",
                 "matched": ["/docs/a.md"],
             },
             {
-                "control": "/controls/short",
+                "rule": "/controls/short",
                 "summary": "Be kind.",
                 "matched": ["/docs/a.md"],
             },
@@ -241,7 +241,7 @@ fn no_paths_are_refused_and_one_path_is_answered() {
     );
     let (admitted, document) = for_paths(&board, &["/docs/a.md"]);
     assert_eq!(admitted.code, 0, "{document}");
-    assert_eq!(document["data"]["output"]["controls"], json!([]));
+    assert_eq!(document["data"]["output"]["rules"], json!([]));
 }
 
 #[test]
@@ -266,11 +266,11 @@ fn a_version_control_counts_the_versions_its_capture_finds_in_the_files_the_path
     let found = |paths: &[&str]| {
         let (ran, document) = for_paths(&board, paths);
         assert_eq!(ran.code, 0, "{document}");
-        (document["data"]["output"]["controls"]
+        (document["data"]["output"]["rules"]
             .as_array()
             .unwrap()
             .iter())
-        .map(|item| (item["control"].clone(), item.get("versions_found").cloned()))
+        .map(|item| (item["rule"].clone(), item.get("versions_found").cloned()))
         .collect::<Vec<_>>()
     };
     let docs = (json!("/controls/docs"), None);

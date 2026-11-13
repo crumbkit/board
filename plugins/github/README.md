@@ -297,7 +297,7 @@ The hook reuses that check only when all of these hold:
 Otherwise the hook runs `boundary.check` on the ref's parts. A handed value
 stands for a check that applied every boundary this push meets to exactly
 the content it sends, under the rules in force when that check ran. The
-hook then asks no agent again, even when `BOARD_CONTROLS_AGENT` names no
+hook then asks no agent again, even when `BOARD_RULES_AGENT` names no
 `--model` and the hook, like every git hook, runs without the model
 credentials. A raw `git push` hands nothing and is checked. It returns
 `checked`, each ref's `ref`, `to`, `digest` and `note`.

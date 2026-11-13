@@ -105,11 +105,11 @@ fn for_path_and_for_paths_return_what_an_obligation_is_owed_by() {
         ),
     );
     let one = board.call("rules.for-path", &["--path", "/notes/task.md"]);
-    assert_eq!(one["controls"][0]["owed_by"], DECISION);
+    assert_eq!(one["rules"][0]["owed_by"], DECISION);
     let arguments = ["--json", "call", "rules.for-paths"];
     let output = board.run_with(&arguments, r#"{"paths": ["/notes/task.md"]}"#);
     assert_eq!(
-        json(&output)["data"]["output"]["controls"][0]["owed_by"],
+        json(&output)["data"]["output"]["rules"][0]["owed_by"],
         DECISION
     );
 }

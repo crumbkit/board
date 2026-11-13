@@ -133,7 +133,7 @@ fn listed(board: &Changes, command: &Value) -> Vec<String> {
         .collect();
     assert_eq!(argv[0], "board");
     let report = board.json_with(&argv[1..], command["stdin"].as_str().unwrap());
-    named_under(&report["data"]["output"]["controls"], "control")
+    named_under(&report["data"]["output"]["rules"], "rule")
 }
 
 #[test]

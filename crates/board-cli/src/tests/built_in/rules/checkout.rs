@@ -331,7 +331,7 @@ fn unmeasured(read: ObjectId, head: ObjectId, note: &str) -> Value {
         "mount": "/repos/lib",
         "read": read.to_string(),
         "head": head.to_string(),
-        "run": "board --checkout controls check --path /repos/lib",
+        "run": "board --checkout rules check --path /repos/lib",
         "note": note,
     });
     if read == head {

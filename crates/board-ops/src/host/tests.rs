@@ -972,14 +972,14 @@ fn a_cache_place_is_plain_names_under_the_cache_home_and_none_without_one() {
         cache_home: Some(std::path::PathBuf::from("/cache")),
     };
     assert_eq!(
-        cache_place(&settings, "board-controls/judged"),
-        Some(std::path::PathBuf::from("/cache/board-controls/judged"))
+        cache_place(&settings, "board-rules/judged"),
+        Some(std::path::PathBuf::from("/cache/board-rules/judged"))
     );
     for place in ["", "/abs", "a/../b", "a//b", "./a", "a/"] {
         assert_eq!(cache_place(&settings, place), None, "{place}");
     }
     settings.cache_home = None;
-    assert_eq!(cache_place(&settings, "board-controls/judged"), None);
+    assert_eq!(cache_place(&settings, "board-rules/judged"), None);
 }
 
 mod call;

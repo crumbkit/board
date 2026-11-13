@@ -33,7 +33,7 @@ pub(crate) struct Input {
 #[serde(deny_unknown_fields)]
 #[schemars(rename = "ForPathsOutput")]
 pub(crate) struct Output {
-    controls: Vec<Applying>,
+    rules: Vec<Applying>,
 }
 
 /// A control, its summary, or else its requirement's first sentence cut
@@ -42,7 +42,7 @@ pub(crate) struct Output {
 #[derive(Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 struct Applying {
-    control: String,
+    rule: String,
     summary: String,
     matched: Vec<String>,
     /// For a version control, how many versions its capture finds, older
@@ -108,13 +108,13 @@ pub(crate) fn for_paths(host: &dyn Host, input: &Value) -> Result<Value, PluginE
                 close: control.kind().close(&logical),
                 owed_by: control.owed(),
                 versions_found: found.remove(&logical),
-                control: logical,
+                rule: logical,
                 summary: (control.summary).unwrap_or_else(|| summary(&control.requirement)),
                 matched,
             })
         })
         .collect();
-    let output = Output { controls };
+    let output = Output { rules: controls };
     Ok(serde_json::to_value(output).expect("Output holds only strings, numbers and lists"))
 }
 

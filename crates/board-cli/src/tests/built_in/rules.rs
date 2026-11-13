@@ -46,8 +46,8 @@ fn library(board: &Fixture, path: &str, files: &[(&str, &str)]) -> (Scenario, Ob
 /// The paths of the controls `controls.for-path` returns for `path`.
 fn applying(board: &Fixture, path: &str) -> Vec<String> {
     let output = board.call("rules.for-path", &["--path", path]);
-    (output["controls"].as_array().unwrap().iter())
-        .map(|item| item["control"].as_str().unwrap().to_owned())
+    (output["rules"].as_array().unwrap().iter())
+        .map(|item| item["rule"].as_str().unwrap().to_owned())
         .collect()
 }
 
@@ -248,21 +248,21 @@ fn the_output_carries_the_requirement_purpose_and_rule_and_null_for_a_missing_ru
         );
     let output = board.call("rules.for-path", &["--path", "/AGENTS.md"]);
     assert_eq!(
-        output["controls"],
+        output["rules"],
         json!([
             {
-                "control": "/controls/agents",
+                "rule": "/controls/agents",
                 "requirement": "Stay short.",
                 "purpose": "A test.",
-                "rule": {"check": "budget", "unit": "words", "max": 10},
+                "checker": {"check": "budget", "unit": "words", "max": 10},
                 "kind": "standing",
                 "show": "failing",
             },
             {
-                "control": "/controls/kind",
+                "rule": "/controls/kind",
                 "requirement": "Be kind.",
                 "purpose": "A test.",
-                "rule": null,
+                "checker": null,
                 "kind": "standing",
                 "show": "edit",
             },
@@ -420,7 +420,7 @@ fn a_file_in_a_commit_mounted_twice_is_matched_by_the_path_check_counts_it_under
         );
     let measured = board.call("rules.check", &[])["measured"].clone();
     let pairs: Vec<Value> = (measured.as_array().unwrap().iter())
-        .map(|item| json!([item["control"], item["files"]]))
+        .map(|item| json!([item["rule"], item["files"]]))
         .collect();
     assert_eq!(
         pairs,

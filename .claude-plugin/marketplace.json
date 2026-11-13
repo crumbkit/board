@@ -5,7 +5,7 @@
   },
   "plugins": [
     {
-      "name": "board-controls",
+      "name": "board-rules",
       "source": "./plugins/rules/claude-code"
     },
     {

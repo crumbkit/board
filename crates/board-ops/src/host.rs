@@ -216,7 +216,7 @@ pub trait Host {
         Ok(Vec::new())
     }
     /// The value cached under `digest` in `place`, a directory under the
-    /// cache home such as `board-controls/judged`, or none when there is
+    /// cache home such as `board-rules/judged`, or none when there is
     /// none, it cannot be read, or the cache home is unknown.
     fn cached(&self, place: &str, digest: &[u8]) -> Option<Vec<u8>> {
         board_index::cached(&cache_place(self.settings(), place)?, digest)

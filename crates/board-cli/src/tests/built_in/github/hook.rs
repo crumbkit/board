@@ -246,13 +246,7 @@ fn a_push_through_github_push_judges_each_part_once_with_the_hook_installed() {
         &format!("echo run >> '{}'", runs.display()),
     );
     desk.commit("Add a gear");
-    let (ran, document) = desk.call_at(
-        None,
-        false,
-        "push",
-        &[],
-        &[("BOARD_CONTROLS_AGENT", &agent)],
-    );
+    let (ran, document) = desk.call_at(None, false, "push", &[], &[("BOARD_RULES_AGENT", &agent)]);
     assert_eq!(ran.code, 0, "{document}");
     let commits = document["data"]["output"]["commits"].as_array().unwrap();
     assert_eq!(
@@ -528,7 +522,7 @@ fn the_hook_reuses_the_check_an_action_passed_so_an_agent_without_a_model_or_cre
     let agent = json!([named[0]]).to_string();
     let keys = [
         ("ANTHROPIC_API_KEY", "model-key-1"),
-        ("BOARD_CONTROLS_AGENT", agent.as_str()),
+        ("BOARD_RULES_AGENT", agent.as_str()),
     ];
     let runs_now = || std::fs::read_to_string(&runs).map_or(0, |text| text.lines().count());
     let sha = desk.commit("Add a gear");

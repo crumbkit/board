@@ -186,7 +186,7 @@ fn a_rule_of_either_type_is_checked_alike_and_one_with_no_checker_is_described()
     ]);
     let output = check(&host, &json!({})).unwrap();
     let over: Vec<(&Value, &Value)> = (output["measured"].as_array().unwrap().iter())
-        .map(|each| (&each["control"], &each["used"]))
+        .map(|each| (&each["rule"], &each["used"]))
         .collect();
     assert_eq!(
         over,
@@ -196,7 +196,7 @@ fn a_rule_of_either_type_is_checked_alike_and_one_with_no_checker_is_described()
         ]
     );
     let stated: Vec<(&Value, Option<&Value>)> = (output["stated"].as_array().unwrap().iter())
-        .map(|each| (&each["control"], each.get("state")))
+        .map(|each| (&each["rule"], each.get("state")))
         .collect();
     let described = json!("described");
     assert_eq!(
@@ -310,8 +310,8 @@ fn for_path_makes_one_refs_call_and_reads_no_file() {
         2,
         "controls and the patterns matching the path"
     );
-    let controls: Vec<&Value> = (output["controls"].as_array().unwrap().iter())
-        .map(|item| &item["control"])
+    let controls: Vec<&Value> = (output["rules"].as_array().unwrap().iter())
+        .map(|item| &item["rule"])
         .collect();
     assert_eq!(
         controls,
@@ -368,8 +368,8 @@ fn a_source_that_names_nothing_degrades_its_control_and_one_naming_a_source_note
     let refused = check(&host, &json!({})).unwrap_err();
     assert_eq!(refused.code, "rules::rule::degraded");
     assert_eq!(
-        refused.fields["controls"],
-        json!([{"control": "/controls/cites", "code": "board::ref::dangling"}])
+        refused.fields["rules"],
+        json!([{"rule": "/controls/cites", "code": "board::ref::dangling"}])
     );
     let cited = citing("/controls/sources/paper");
     let (_scenario, host) = recording(&[
@@ -378,7 +378,7 @@ fn a_source_that_names_nothing_degrades_its_control_and_one_naming_a_source_note
         ("controls/cites.json", &cited),
     ]);
     let output = check(&host, &json!({})).unwrap();
-    assert_eq!(output["stated"][0]["control"], "/controls/cites");
+    assert_eq!(output["stated"][0]["rule"], "/controls/cites");
 }
 
 /// Six controls on `docs/a.md`: an obligation, a budget and a stated
@@ -418,7 +418,7 @@ fn kinds(items: &Value) -> Vec<(String, String, String)> {
     (items.as_array().unwrap().iter())
         .map(|item| {
             let field = |name: &str| item[name].as_str().unwrap().to_owned();
-            (field("control"), field("kind"), field("show"))
+            (field("rule"), field("kind"), field("show"))
         })
         .collect()
 }
@@ -451,7 +451,7 @@ fn check_and_for_path_give_each_control_its_kind_and_the_show_it_defaults_to_or_
     assert_eq!(kinds(&output["stated"]), stated);
     let output = for_path(&host, &json!({"path": "/docs/a.md"})).unwrap();
     assert_eq!(
-        kinds(&output["controls"]),
+        kinds(&output["rules"]),
         [
             stated[0].clone(),
             stated[1].clone(),
@@ -486,7 +486,7 @@ fn owed() -> (Scenario, Recording) {
 fn closes(items: &Value) -> Vec<(String, Value)> {
     (items.as_array().unwrap().iter())
         .map(|item| {
-            let control = item["control"].as_str().unwrap().to_owned();
+            let control = item["rule"].as_str().unwrap().to_owned();
             (control, item.get("close").cloned().unwrap_or(Value::Null))
         })
         .collect()
@@ -544,9 +544,9 @@ fn check_for_path_and_for_paths_tell_how_to_close_an_obligation_and_give_a_stand
         versions[1].clone(),
     ];
     let output = for_path(&host, &json!({"path": "/docs/a.md"})).unwrap();
-    assert_eq!(closes(&output["controls"]), all);
+    assert_eq!(closes(&output["rules"]), all);
     let output = for_paths(&host, &json!({"paths": ["/docs/a.md", "/docs/**"]})).unwrap();
-    assert_eq!(closes(&output["controls"]), all);
+    assert_eq!(closes(&output["rules"]), all);
 }
 
 #[test]
@@ -609,7 +609,7 @@ fn a_kind_this_board_does_not_know_reads_as_standing_like_its_standing_twin() {
         );
         let output = for_path(&host, &json!({"path": "/docs/a.md"})).unwrap();
         assert_eq!(
-            kinds(&output["controls"]),
+            kinds(&output["rules"]),
             [row("a", "standing", "edit")],
             "{kind}"
         );
@@ -668,12 +668,12 @@ fn a_rule_holding_a_value_this_board_does_not_know_is_stated_and_its_twin_is_app
         );
         let output = check(&host, &json!({})).unwrap();
         let stated: Vec<&Value> = (output["stated"].as_array().unwrap().iter())
-            .filter(|item| item["control"] == "/controls/unknown")
+            .filter(|item| item["rule"] == "/controls/unknown")
             .collect();
         assert_eq!(stated.len(), 1, "{unknown}: {output}");
         assert_eq!(stated[0]["requirement"], "R.");
         let measured = |items: &Value, control: &str| {
-            (items.as_array().unwrap().iter()).any(|item| item["control"] == control)
+            (items.as_array().unwrap().iter()).any(|item| item["rule"] == control)
         };
         assert!(
             !measured(&output["measured"], "/controls/unknown"),
@@ -684,22 +684,22 @@ fn a_rule_holding_a_value_this_board_does_not_know_is_stated_and_its_twin_is_app
             verdict == "budget"
         );
         let input =
-            json!({"controls": ["/controls/known", "/controls/unknown"], "parts": {"body": "one"}});
+            json!({"rules": ["/controls/known", "/controls/unknown"], "parts": {"body": "one"}});
         let output = crate::evaluate::evaluate(&host, &input).unwrap();
         let results = &output["results"];
         assert_eq!(
-            (&results[0]["rule"], &results[0]["status"]),
+            (&results[0]["checker"], &results[0]["status"]),
             (&json!(verdict), &json!("passed")),
             "{known}"
         );
         assert_eq!(
-            (&results[1]["rule"], &results[1]["status"]),
+            (&results[1]["checker"], &results[1]["status"]),
             (&Value::Null, &json!("stated")),
             "{unknown}"
         );
         let output = for_path(&host, &json!({"path": "/docs/a.md"})).unwrap();
-        let rules: Vec<&Value> = (output["controls"].as_array().unwrap().iter())
-            .map(|item| &item["rule"])
+        let rules: Vec<&Value> = (output["rules"].as_array().unwrap().iter())
+            .map(|item| &item["checker"])
             .collect();
         assert_eq!(
             rules,

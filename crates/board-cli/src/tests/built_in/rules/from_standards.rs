@@ -134,8 +134,8 @@ fn each_rule_of_a_table_with_where_it_applies_becomes_a_control_anchored_at_the_
         ])
     );
     let found = board.call("rules.for-path", &["--path", "/repos/app/web/app.ts"]);
-    let controls: Vec<&str> = (found["controls"].as_array().unwrap().iter())
-        .map(|c| c["control"].as_str().unwrap())
+    let controls: Vec<&str> = (found["rules"].as_array().unwrap().iter())
+        .map(|c| c["rule"].as_str().unwrap())
         .collect();
     assert_eq!(controls, ["/controls/app/standards/base-53"]);
 }

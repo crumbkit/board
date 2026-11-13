@@ -58,7 +58,7 @@ fn a_control_spanning_two_mounts_passes_the_mount_within_it_and_reports_the_othe
     assert_eq!(
         new["measured"],
         json!([{
-            "control": "/controls/readme",
+            "rule": "/controls/readme",
             "requirement": "Short READMEs.",
             "budget": "words",
             "max": 3,

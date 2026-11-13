@@ -43,7 +43,7 @@ fn each(output: &Value, field: &str) -> Vec<Value> {
 /// The control, files and words used of each measured control of `output`.
 fn triples(output: &Value) -> Vec<Value> {
     (output["measured"].as_array().unwrap().iter())
-        .map(|item| json!([item["control"], item["files"], item["used"]]))
+        .map(|item| json!([item["rule"], item["files"], item["used"]]))
         .collect()
 }
 
@@ -51,7 +51,7 @@ fn triples(output: &Value) -> Vec<Value> {
 fn names(output: &Value) -> (Vec<String>, Vec<String>) {
     let paths = |list: &Value| {
         (list.as_array().unwrap().iter())
-            .map(|item| item["control"].as_str().unwrap().to_owned())
+            .map(|item| item["rule"].as_str().unwrap().to_owned())
             .collect()
     };
     (paths(&output["measured"]), paths(&output["stated"]))
@@ -96,7 +96,7 @@ fn check_measures_each_budget_control_over_its_files() {
         check(&board, &[])["measured"],
         json!([
             {
-                "control": "/controls/context",
+                "rule": "/controls/context",
                 "requirement": "Short.",
                 "budget": "words",
                 "max": 3,
@@ -107,7 +107,7 @@ fn check_measures_each_budget_control_over_its_files() {
                 "show": "failing",
             },
             {
-                "control": "/controls/docs",
+                "rule": "/controls/docs",
                 "requirement": "Small.",
                 "budget": "bytes",
                 "max": 12,
@@ -163,8 +163,8 @@ fn a_control_whose_file_is_missing_fails_the_check_and_one_whose_file_exists_pas
     let refused = board.refusal("rules.check", &[]);
     assert_eq!(refused["code"], "rules::rule::degraded", "{refused}");
     assert_eq!(
-        refused["fields"]["controls"],
-        json!([{"control": "/controls/context", "code": "board::ref::dangling"}])
+        refused["fields"]["rules"],
+        json!([{"rule": "/controls/context", "code": "board::ref::dangling"}])
     );
     board.write("AGENTS.md", "x");
     assert_eq!(each(&check(&board, &[]), "used"), [json!(1)]);
@@ -247,7 +247,7 @@ fn a_pattern_matching_a_degraded_file_does_not_pass_and_one_matching_a_whole_fil
             &budget("Small.", &["docs/*"], &words(WORDS)),
         );
     let output = failing(&board, &[]);
-    assert_eq!(output["measured"][0]["control"], "/controls/docs");
+    assert_eq!(output["measured"][0]["rule"], "/controls/docs");
     assert_eq!(
         output["measured"][0]["unreadable"],
         json!([{"file": "/docs/a", "code": "board::path::shadowed"}])
@@ -369,7 +369,7 @@ fn a_path_reports_the_controls_under_it_and_leaves_out_their_twins_elsewhere() {
     assert_eq!(
         output["stated"],
         json!([{
-            "control": "/controls/docs-style",
+            "rule": "/controls/docs-style",
             "requirement": "Plain docs.",
             "purpose": "A test.",
             "paths": [],
@@ -440,7 +440,7 @@ fn a_budget_over_its_max_does_not_pass_a_path_it_applies_under_and_passes_one_it
     let output = failing(&board, &["--path", "/src"]);
     let over: Vec<&Value> = (output["measured"].as_array().unwrap().iter())
         .filter(|item| item["used"].as_u64() > item["max"].as_u64())
-        .map(|item| &item["control"])
+        .map(|item| &item["rule"])
         .collect();
     assert_eq!(over, [&json!("/controls/src-budget")]);
     let docs_output = at(&board, "/docs");
@@ -458,8 +458,8 @@ fn a_degraded_control_fails_a_path_it_does_not_reach_and_the_same_control_whole_
     let refused = board.refusal("rules.check", &["--path", "/docs"]);
     assert_eq!(refused["code"], "rules::rule::degraded", "{refused}");
     assert_eq!(
-        refused["fields"]["controls"],
-        json!([{"control": "/controls/src-file", "code": "board::ref::dangling"}])
+        refused["fields"]["rules"],
+        json!([{"rule": "/controls/src-file", "code": "board::ref::dangling"}])
     );
     board.write("src/b.rs", "five");
     assert_eq!(names(&at(&board, "/docs")), docs());
@@ -492,7 +492,7 @@ fn a_stated_control_reaching_an_unreadable_file_passes_and_a_budget_reaching_it_
 /// The `fields` of the item of `output`'s `list` that is `control`.
 fn of(output: &Value, list: &str, control: &str, fields: &[&str]) -> Vec<Value> {
     (output[list].as_array().unwrap().iter())
-        .filter(|item| item["control"] == control)
+        .filter(|item| item["rule"] == control)
         .map(|item| fields.iter().map(|field| item[*field].clone()).collect())
         .collect()
 }
@@ -605,7 +605,7 @@ fn a_per_file_control_passes_when_each_file_is_within_it_and_a_total_one_sums_th
     assert_eq!(
         check(&board, &[])["measured"],
         json!([{
-            "control": "/controls/docs",
+            "rule": "/controls/docs",
             "requirement": "Small.",
             "budget": "words",
             "max": WORDS,
@@ -687,11 +687,11 @@ fn a_control_naming_per_total_measures_exactly_as_one_naming_no_per() {
         keys,
         [
             "budget",
-            "control",
             "files",
             "kind",
             "max",
             "requirement",
+            "rule",
             "show",
             "unreadable",
             "used"
@@ -735,8 +735,8 @@ fn a_control_at_a_malformed_path_fails_the_check_naming_its_file_and_its_twin_at
     let refused = board.refusal("rules.check", &[]);
     assert_eq!(refused["code"], "rules::rule::degraded", "{refused}");
     assert_eq!(
-        refused["fields"]["controls"],
-        json!([{"control": malformed, "code": "board::path::malformed"}])
+        refused["fields"]["rules"],
+        json!([{"rule": malformed, "code": "board::path::malformed"}])
     );
     board.delete(malformed);
     board.write("controls/name.json", &short);

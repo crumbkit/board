@@ -32,7 +32,7 @@ pub(crate) fn compile(control: &str, rule: &Version) -> Result<Regex, PluginErro
              `channel = \"([0-9.]+)\"`",
             rule.capture
         ),
-        fields: Map::from_iter([("control".to_owned(), Value::from(control))]),
+        fields: Map::from_iter([("rule".to_owned(), Value::from(control))]),
         hint: None,
     })
 }
