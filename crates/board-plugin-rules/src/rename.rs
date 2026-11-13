@@ -34,9 +34,12 @@ const CONFIG: &str = "the board's config names controls; only the owner may writ
                       rules in its place in .board/board.json";
 /// Each old field name in a record and the name it takes.
 type Renames = &'static [(&'static str, &'static str)];
-/// The records of the change that renames controls to rules, which describe
+/// The records of the changes that rename controls to rules, which describe
 /// the rename in the old names and so keep them.
-const RENAMING: &str = "/changes/control-becomes-rule/";
+const RENAMING: [&str; 2] = [
+    "/changes/control-becomes-rule/",
+    "/changes/rule-rename-rest/",
+];
 /// Each flow version that moves, with the version it becomes and the
 /// record stored there.
 type Flows = BTreeMap<String, (String, Value)>;
@@ -80,7 +83,8 @@ static PATHS: LazyLock<[(Regex, &str); 4]> = LazyLock::new(|| {
     ]
 });
 
-/// One write: the path rewritten, and where it moves when it moves.
+/// One write: the path rewritten, and where it moves when it moves. For a
+/// flow version, `to` is where its new version is stored; the old version stays.
 #[derive(Debug, PartialEq, Serialize, JsonSchema)]
 pub(crate) struct Write {
     path: String,
@@ -153,11 +157,15 @@ pub(crate) fn rename(
             line
         };
         match &to {
-            // Two versions may rewrite to one; it is stored once.
+            // Two versions may rewrite to one, and the new version may be
+            // stored already; it is stored once, and a version with no
+            // line to write is not listed. Records naming the old version
+            // are re-pinned either way.
             Some(to) if flow.is_some() => {
-                if held.insert(to.clone()) {
-                    lines.push(line(to, "none"));
+                if !held.insert(to.clone()) {
+                    continue;
                 }
+                lines.push(line(to, "none"));
             }
             Some(to) if held.contains(to) => {
                 keep("its new path already holds a file; move or remove one by hand");
@@ -166,7 +174,9 @@ pub(crate) fn rename(
             Some(to) => lines.push(line(to, "none")),
             None => lines.push(line(&entry.logical, &entry.blob)),
         }
-        if to.is_some() {
+        // An old flow version stays: a change in a mounted board that this
+        // migration cannot re-pin still names it.
+        if to.is_some() && flow.is_none() {
             lines.push(json!({"path": entry.logical, "expect": entry.blob, "remove": true}));
         }
         writes.push(Write {
@@ -239,7 +249,7 @@ fn content(
     if same && to.is_none() {
         return Ok(None);
     }
-    if entry.logical.starts_with(RENAMING) {
+    if (RENAMING.iter()).any(|prefix| entry.logical.starts_with(prefix)) {
         return Err("it describes the rename itself, so it keeps the names it was written in");
     }
     Ok(Some(content))

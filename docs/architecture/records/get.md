@@ -23,5 +23,5 @@ the output, counted in the format being printed, is under 64 MiB; the first
 path is always read. One `board::output::over_budget` failure names the later
 paths in `left_out`, to ask for in another run. So a run holds at most
 64 MiB, one more answer, and the short errors of the paths it left. The plugin
-library's `Board.get` does that. `controls.check` reads every
-file its measured controls reach this way.
+library's `Board.get` does that. `rules.check` reads every
+file its measured rules reach this way.

@@ -342,7 +342,7 @@ fn a_judged_rule_with_a_part_to_read_refuses_while_no_agent_is_set() {
     assert_eq!(ran.code, 1);
     assert_eq!(document["code"], "boundary::board::refused");
     assert_eq!(document["fields"]["code"], "rules::agent::not_set");
-    assert_eq!(document["fields"]["variable"], "BOARD_CONTROLS_AGENT");
+    assert_eq!(document["fields"]["variable"], "BOARD_RULES_AGENT");
 }
 
 #[test]

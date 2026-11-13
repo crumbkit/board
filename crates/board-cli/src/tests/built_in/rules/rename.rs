@@ -257,6 +257,44 @@ fn a_file_that_cannot_move_as_text_and_the_renaming_change_are_kept_as_they_are(
 }
 
 #[test]
+fn the_records_and_files_of_the_continuing_change_keep_the_names_they_were_written_in() {
+    let board = old_board();
+    let record = json!({
+        "$type": "boundary/boundary/v1", "to": "github:octo/*", "actions": ["github.pr-*"],
+        "checks": [{"control": "/controls/x/a", "parts": ["*"]}],
+    })
+    .to_string();
+    board
+        .write("changes/rule-rename-rest/procedure.json", &record)
+        .write("changes/rule-rename-rest/procedure.md", NOTE);
+    let listed = dry_run(&board);
+    let kept: Vec<&str> = (listed["kept"].as_array().unwrap().iter())
+        .filter_map(|each| each["path"].as_str())
+        .collect();
+    assert!(
+        kept.contains(&"/changes/rule-rename-rest/procedure"),
+        "{listed}"
+    );
+    assert!(
+        kept.contains(&"/changes/rule-rename-rest/procedure.md"),
+        "{listed}"
+    );
+    let ran = applied(&board, listed["digest"].as_str().unwrap());
+    assert_eq!(ran.code, 0, "{}", text(&ran.stdout));
+    assert_eq!(board.read("changes/rule-rename-rest/procedure.md"), NOTE);
+    assert_eq!(
+        board.read("changes/rule-rename-rest/procedure.json"),
+        record
+    );
+    let again = dry_run(&board);
+    assert_eq!(
+        (&again["writes"], &again["total"]),
+        (&json!([]), &json!(0)),
+        "{again}"
+    );
+}
+
+#[test]
 fn applying_after_a_record_changed_since_the_dry_run_refuses_and_writes_nothing() {
     let board = old_board();
     let listed = dry_run(&board);

@@ -248,7 +248,7 @@ fn a_clone_without_a_remote_is_refused_with_its_code_and_its_twin_with_one_syncs
 }
 
 /// The wait for the clone's board lock comes out of the sync's deadline: a
-/// lock held past a one-second deadline is `board::put::locked`, soon after
+/// lock held past a one-second deadline is `board::sync::timeout`, soon after
 /// the deadline rather than after `board sync`'s five seconds, and the same
 /// sync with the lock free syncs.
 #[test]
@@ -264,7 +264,7 @@ fn a_held_lock_that_uses_up_the_deadline_is_refused_and_its_twin_with_the_lock_f
         (synced, started.elapsed(), fetched)
     };
     let (refused, took, _) = sync(true);
-    assert_eq!(code(&refused.unwrap_err()), "board::put::locked");
+    assert_eq!(code(&refused.unwrap_err()), "board::sync::timeout");
     assert!(took < Duration::from_secs(4), "{took:?}");
     let (synced, _, fetched) = sync(false);
     assert_eq!(synced.unwrap()["pinned"], json!(fetched.to_string()));

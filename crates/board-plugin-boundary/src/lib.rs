@@ -24,7 +24,7 @@ const CHECK_TIMEOUT: u64 = 1800;
 /// The variables `rules.evaluate` reads for a judged checker, passed through
 /// to it.
 const AGENT_VARIABLES: [&str; 3] = [
-    "BOARD_CONTROLS_AGENT",
+    "BOARD_RULES_AGENT",
     "ANTHROPIC_API_KEY",
     "CLAUDE_CODE_OAUTH_TOKEN",
 ];

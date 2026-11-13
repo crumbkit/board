@@ -63,47 +63,47 @@ new commit and whether it wrote.
 
 `board sync` brings a clone of a board up to date with the remote branch
 HEAD's branch follows, as git configures it in `branch.<name>.remote` and
-`branch.<name>.merge`, and pushes what the clone committed. It takes the
-board's lock, so no put runs meanwhile, and then:
+`branch.<name>.merge`, and pushes what the clone committed. It works in
+rounds of three phases; only the second takes the board's lock. `sync.lock` in the git directory
+admits one sync per clone: a second exits at once with `board::sync::busy`.
 
-1. fetches that branch into its remote-tracking ref by running the `git`
+1. Fetch the branch into its remote-tracking ref by running the `git`
    executable, so git's remotes, credentials and SSH settings apply, with
-   `fetch.fsckObjects` on;
-2. replays each commit only this clone has, oldest first, onto the fetched
-   commit, as a new commit with the same author and message, with the
-   committer git is configured with. A commit whose every change the remote
-   already holds makes no commit. A file that a replayed commit changed from
-   one blob to another, when the remote holds a third, is refused with
-   `board::sync::conflict`; Board never merges contents;
-3. pushes the result with `git push --atomic`, and when the remote moved
-   meanwhile fetches and replays again, up to three times
-   (`board::sync::gave_up`). `--no-push` leaves the push for later;
-4. moves HEAD, git's index and the working tree to the result, writing each
-   file the remote changed, as a put writes. A file whose working-tree bytes
-   are neither its old blob nor its new one is an edit, and the sync stops
-   before it pushes or writes, with `board::sync::edited`. A symlink on disk
-   at or above a file stops it the same way, with `board::put::symlink`.
-   Each file is compared again just before its write. One edited since,
-   such as during the push, keeps its edit and is listed in `kept` with
+   `fetch.fsckObjects` on.
+2. Integrate, under the board lock. Replay each commit only this clone has,
+   oldest first, onto the fetched commit, as a new commit with the same
+   author and message, with git's committer. A commit whose every change the
+   remote already holds makes no commit. A file that
+   a replayed commit changed from one blob to another, when the remote holds
+   a third, is refused with `board::sync::conflict`; Board never merges
+   contents. Then move HEAD, the index and the working tree to the result,
+   writing each file as a put writes. A file whose
+   working-tree bytes are neither its old blob nor its new one is an edit;
+   the sync stops before it writes, with `board::sync::edited`. A
+   symlink on disk at or above a file stops it the same way, with
+   `board::put::symlink`. Each file is compared again just before its
+   write; one edited since keeps its edit and is listed in `kept` with
    `board::sync::kept`. The index takes the new blob; a file the remote
    removed is left untracked. Committing the edit undoes the remote's
-   change. This breaks STANDARDS.md 17, since the push cannot be undone. An
-   edit after the second compare is overwritten. A kept file the remote
-   made a directory fails the sync after the push, and the next sync
-   refuses with `board::sync::edited`.
+   change. An edit after the second compare is overwritten. If another
+   program moves HEAD, the next round fetches again.
+3. Push, unless `--no-push`, with `git push --atomic`, never forced. When
+   the remote moved meanwhile, the push is rejected and the next round
+   starts from the fetch. After three rounds the sync stops
+   (`board::sync::gave_up`).
 
 A branch that follows no remote branch is `board::sync::no_remote`, and a
-fetch or push git itself refuses is `board::sync::failed`, which carries the
-end of git's stderr. Neither git nor ssh may ask anything: git runs with
+fetch or push git refuses is `board::sync::failed`, with the end of git's
+stderr. Neither git nor ssh may ask anything: git runs with
 `GIT_TERMINAL_PROMPT=0`, and the owner's ssh command with `-o BatchMode=yes`
 for OpenSSH, so a remote that needs a passphrase, host key or password fails
-at once. A sync still running after 60 seconds is `board::sync::timeout`;
-the 60 seconds start before the wait for the board lock and cover every
-fetch, push and replay. Board then sends git's group SIGTERM, on which git
+at once. A sync running after 60 seconds, counting every fetch, push, replay and
+wait for the board lock, is `board::sync::timeout`. Board then sends git's group SIGTERM, on which git
 removes its lock files, kills the group, ssh included, up to a second later,
 and frees the board lock. On Ctrl-C, SIGTERM or SIGHUP, git's group gets
 that signal, then SIGKILL once git exits or a second later, and Board frees
-the board lock and stops. When git exits, Board kills its group, so a helper
+the board lock and stops. `sync.lock` is a kernel file lock, so SIGKILL frees it
+too and a leftover file blocks nothing. When git exits, Board kills its group, so a helper
 there, such as git-credential-cache's daemon, ends with it. The commits here
 stay for the next sync. The report is
 `board/sync-report/v2`: `remote`, `branch`, `fetched`, `old` (null before

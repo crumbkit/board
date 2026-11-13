@@ -24,10 +24,10 @@ fn evaluate_reads_every_rule_file_once_in_one_get_each_call_and_none_without_one
         ("private/names.txt", "acme\n"),
     ]);
     let parts = json!({"a": "acme", "b": "fine"});
-    let given = json!({"controls": ["/controls/short"], "parts": parts});
+    let given = json!({"rules": ["/controls/short"], "parts": parts});
     evaluate(&host, &given).unwrap();
     assert_eq!(host.resolved(), []);
-    let given = json!({"controls": ["/controls/names", "/controls/again"], "parts": parts});
+    let given = json!({"rules": ["/controls/names", "/controls/again"], "parts": parts});
     let output = evaluate(&host, &given).unwrap();
     assert_eq!(
         host.resolved(),

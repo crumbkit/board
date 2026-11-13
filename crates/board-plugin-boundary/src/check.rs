@@ -212,7 +212,7 @@ fn evaluate(
         .expect("rules.evaluate is <plugin>.<capability>");
     let mut verdicts = Vec::new();
     for (rules, texts) in groups {
-        let input = json!({"controls": rules, "parts": texts});
+        let input = json!({"rules": rules, "parts": texts});
         let report = (host.call(&target, &input)).map_err(|refusal| refused("call", &refusal))?;
         // `Verdict` repeats the rules plugin's result type, so a field added
         // there refuses the check instead of letting the content through. A
@@ -223,7 +223,7 @@ fn evaluate(
             fields: Map::new(),
             hint: Some("update Board so its boundary and rules plugins agree".to_owned()),
         };
-        let results = records::verdicts(&report.output["results"])
+        let results = records::evaluated(&report.output["results"])
             .map_err(|error| unreadable(error.to_string()))?;
         if let Some(verdict) = (results.iter()).find(|verdict| {
             matches!(verdict.checker, Some(Open::Other(_)))

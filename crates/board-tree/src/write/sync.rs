@@ -12,9 +12,12 @@ use gix::bstr::{BString, ByteSlice};
 use gix::object::tree::EntryKind;
 
 use super::entries::{stage_entry, unstage_entry};
-use super::{Lock, Staged, WriteError};
+use super::{LOCK_WAIT, Lock, Staged, WriteError};
 use crate::git::{GitError, Repository, model_id};
 use crate::transport::{self, Deadline, Pushed, Upstream};
+
+#[expect(dead_code, reason = "integrate merges through it from step S3")]
+mod merge;
 
 /// How many times a sync fetches and pushes before it gives up.
 pub const ATTEMPTS: u32 = 3;
@@ -43,6 +46,31 @@ pub struct Synced {
 pub struct Replayed {
     pub from: ObjectId,
     pub to: Option<ObjectId>,
+}
+
+/// What one integrate did, or the rounds of a sync added together.
+struct Integrated {
+    old: Option<ObjectId>,
+    new: ObjectId,
+    replayed: Vec<Replayed>,
+    kept: Vec<Fields>,
+}
+
+impl Integrated {
+    /// This round followed by `next`, which replayed the commits this round
+    /// left: each commit `next` replayed that this round made is traced
+    /// back to the commit it came from.
+    fn then(mut self, next: Self) -> Self {
+        for replay in next.replayed {
+            match self.replayed.iter_mut().find(|r| r.to == Some(replay.from)) {
+                Some(earlier) => earlier.to = replay.to,
+                None => self.replayed.push(replay),
+            }
+        }
+        self.new = next.new;
+        self.kept.extend(next.kept);
+        self
+    }
 }
 
 /// A tree's files by `/`-separated path, each with its object and kind.
@@ -83,55 +111,131 @@ impl Repository {
         })
     }
 
-    /// Fetches the upstream, replays the commits only this clone has onto
-    /// it, and, with `push`, pushes the result, fetching again when the
-    /// remote moved meanwhile, up to [`ATTEMPTS`] times. Then HEAD, the
-    /// index and the working tree move to the result. A file the remote
-    /// changed that is edited here stops the sync before it pushes or
-    /// writes; one edited after that, such as during the push, is kept as
-    /// edited and listed in `kept`. `lock` is the board lock. Every fetch
-    /// and push shares `deadline`, and the one running when it passes is
-    /// stopped.
-    pub fn sync(&self, lock: &Lock, push: bool, deadline: Deadline) -> Result<Synced, SyncError> {
+    /// Brings this clone up to date with the upstream in rounds of fetch,
+    /// integrate and, with `push`, push, up to [`ATTEMPTS`] rounds.
+    /// Fetch and push run without the board lock, so puts continue while
+    /// they wait on the network. Integrate takes the board lock for its
+    /// local step only: it replays the commits only this clone has onto the
+    /// fetched commit, then HEAD, the index and the working tree move to
+    /// the result. A rejected push, or HEAD moved by another program during
+    /// integrate, starts the next round from the fetch. A file the remote
+    /// changed that is edited here stops the sync before it writes. One
+    /// sync runs per clone: `sync.lock` refuses a second with
+    /// [`SyncError::Busy`] once `wait` has passed; zero refuses at once. Every fetch, push and wait for the board lock
+    /// shares `deadline`, and the git run at it is stopped.
+    pub fn sync(
+        &self,
+        push: bool,
+        deadline: Deadline,
+        wait: Duration,
+    ) -> Result<Synced, SyncError> {
         let upstream = self.upstream()?;
+        let _only = self.sync_lock(wait.min(deadline.left()))?;
         let ssh = self.ssh();
-        let old = self.head()?;
-        let old_files = self.files_of(old)?;
+        let mut summary: Option<Integrated> = None;
         let mut reason = String::new();
-        let (attempts, fetched, new, replayed, pushed, changes) = 'synced: {
-            for attempts in 1..=ATTEMPTS {
-                transport::fetch(self.path(), &upstream, &ssh, deadline)?;
-                let fetched = self.tracking(&upstream)?;
-                let (new, replayed) = self.replay(old, fetched)?;
-                let changes = self.changes(&old_files, &self.files_of(Some(new))?)?;
-                if !push || new == fetched {
-                    break 'synced (attempts, fetched, new, replayed, false, changes);
+        for attempts in 1..=ATTEMPTS {
+            transport::fetch(self.path(), &upstream, &ssh, deadline)?;
+            let fetched = self.tracking(&upstream)?;
+            let round = match self.integrate(fetched, deadline) {
+                Ok(round) => round,
+                Err(SyncError::Write(WriteError::HeadMoved)) if attempts < ATTEMPTS => continue,
+                // A board lock still held when the deadline is spent is the
+                // deadline running out, not a put in the way.
+                Err(SyncError::Write(error))
+                    if error.code() == Code::PutLocked && deadline.left().is_zero() =>
+                {
+                    return Err(SyncError::TimedOut {
+                        operation: "integrate",
+                        remote: upstream.remote.clone(),
+                        left: Duration::ZERO,
+                        deadline: deadline.given,
+                    });
                 }
-                match transport::push(self.path(), &upstream, &new.to_string(), &ssh, deadline)? {
-                    Pushed::Done => {
-                        break 'synced (attempts, fetched, new, replayed, true, changes);
-                    }
-                    Pushed::Rejected(why) => reason = why,
-                }
+                Err(error) => return Err(error),
+            };
+            let new = round.new;
+            let total = match summary.take() {
+                Some(before) => before.then(round),
+                None => round,
+            };
+            let done = |pushed, total: Integrated| Synced {
+                upstream: upstream.clone(),
+                fetched,
+                old: total.old,
+                new,
+                replayed: total.replayed,
+                pushed,
+                attempts,
+                kept: total.kept,
+            };
+            if !push || new == fetched {
+                return Ok(done(false, total));
             }
-            return Err(SyncError::GaveUp {
-                attempts: ATTEMPTS,
-                reason,
-            });
+            match transport::push(self.path(), &upstream, &new.to_string(), &ssh, deadline)? {
+                Pushed::Done => return Ok(done(true, total)),
+                Pushed::Rejected(why) => reason = why,
+            }
+            summary = Some(total);
+        }
+        Err(SyncError::GaveUp {
+            attempts: ATTEMPTS,
+            reason,
+        })
+    }
+
+    /// Takes an exclusive file lock on `sync.lock` in the git directory, which
+    /// admits one sync at a time, trying again until `wait` has passed, then
+    /// refuses with [`SyncError::Busy`]. The kernel drops the lock when the
+    /// process ends, however it ends, so a file left behind by a killed sync
+    /// does not hold anything.
+    fn sync_lock(&self, wait: Duration) -> Result<std::fs::File, SyncError> {
+        let lock = self.git_dir().join("sync.lock");
+        let failed = |source| {
+            SyncError::Write(WriteError::Io {
+                path: lock.clone(),
+                source,
+            })
         };
+        let file = std::fs::OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .write(true)
+            .open(&lock)
+            .map_err(failed)?;
+        let started = std::time::Instant::now();
+        loop {
+            match file.try_lock() {
+                Ok(()) => return Ok(file),
+                Err(std::fs::TryLockError::WouldBlock) if started.elapsed() < wait => {
+                    std::thread::sleep(Duration::from_millis(20));
+                }
+                Err(std::fs::TryLockError::WouldBlock) => return Err(SyncError::Busy { lock }),
+                Err(std::fs::TryLockError::Error(source)) => return Err(failed(source)),
+            }
+        }
+    }
+
+    /// The local step of a sync, under the board lock: replays the commits
+    /// only this clone has onto `fetched`, then moves HEAD, the index and
+    /// the working tree to the result. The lock is not held across any
+    /// network call.
+    fn integrate(&self, fetched: ObjectId, deadline: Deadline) -> Result<Integrated, SyncError> {
+        let lock = self
+            .lock(deadline.left().min(LOCK_WAIT))
+            .map_err(SyncError::from)?;
+        let old = self.head()?;
+        let (new, replayed) = self.replay(old, fetched)?;
         let kept = if old == Some(new) {
             Vec::new()
         } else {
-            self.check_out(lock, old, new, changes)?
+            let changes = self.changes(&self.files_of(old)?, &self.files_of(Some(new))?)?;
+            self.check_out(&lock, old, new, changes)?
         };
-        Ok(Synced {
-            upstream,
-            fetched,
+        Ok(Integrated {
             old,
             new,
             replayed,
-            pushed,
-            attempts,
             kept,
         })
     }
@@ -453,6 +557,8 @@ pub enum SyncError {
     Edited { path: String },
     #[error("{path} cannot be written: {symlink} is a symlink")]
     Symlink { path: String, symlink: String },
+    #[error("another sync of this clone is running; {} is held", lock.display())]
+    Busy { lock: std::path::PathBuf },
     #[error("the remote refused the push {attempts} times, the last time with {reason}")]
     GaveUp { attempts: u32, reason: String },
     #[error(transparent)]
@@ -469,6 +575,7 @@ impl SyncError {
             Self::Conflict { .. } => Code::SyncConflict,
             Self::Edited { .. } => Code::SyncEdited,
             Self::Symlink { .. } => Code::PutSymlink,
+            Self::Busy { .. } => Code::SyncBusy,
             Self::GaveUp { .. } => Code::SyncGaveUp,
             Self::TimedOut { .. } => Code::SyncTimeout,
             Self::Write(error) => error.code(),

@@ -21,9 +21,10 @@ pub const MOVED: [Code; 2] = [Code::PutStale, Code::PutHeadMoved];
 /// no new read clears.
 pub const EDITED: Code = Code::MountStale;
 pub const ATTEMPTS: usize = 3;
-/// The sync refusals that leave the clone's HEAD where it was, so a write
-/// there can still be made.
-const UNSYNCED: [Code; 2] = [Code::SyncConflict, Code::SyncEdited];
+/// The sync refusals after which a write can still be made: the clone is
+/// left as it was or as an earlier round of the sync made it, and either
+/// way the write parks beside it.
+const UNSYNCED: [Code; 3] = [Code::SyncConflict, Code::SyncEdited, Code::SyncBusy];
 
 /// What landing a write needs of Board beyond what [`Host`] has on main:
 /// `board -C <clone> sync` and `board mount update`, each within a
@@ -53,7 +54,7 @@ impl std::fmt::Debug for Through<'_> {
 impl Clones for Through<'_> {
     fn sync(&self, clone: &Path, push: bool, deadline: Duration) -> Result<(), Box<Refusal>> {
         let board = self.0.board(&Elsewhere::Directory(clone.to_path_buf()))?;
-        (board.sync(push, deadline))
+        (board.sync_waiting(push, deadline, board_ops::LOCK_WAIT))
             .map(drop)
             .map_err(|error| Box::new(error.refusal()))
     }

@@ -46,9 +46,9 @@ preference that only instructs is a rule with a `none` checker, and one that
 confirms or blocks an action is a rule on that action. No plugin adds a mode, a
 ladder, a friction setting or an override type of its own.
 
-## The control scope fields
+## The rule scope fields
 
-The scope fields once planned for control v1 become parts of rule v2:
+The scope fields once planned for rule v1 become parts of rule v2:
 
 - `repos` becomes `subject.repos`. Each pattern in the subject's paths is
   matched from the root of each listed repository, and the rule reaches

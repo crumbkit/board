@@ -26,9 +26,9 @@ const SHOWN: usize = 20;
 #[derive(Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Input {
-    /// The controls to check the parts against, by their logical paths in the board's own tree.
+    /// The rules to check the parts against, by their logical paths in the board's own tree.
     #[schemars(length(min = 1), inner(regex(pattern = "^/")))]
-    controls: Vec<String>,
+    rules: Vec<String>,
     /// Each part of text to check, by its name, such as pr.body.
     #[schemars(extend("minProperties" = 1))]
     parts: BTreeMap<String, String>,
@@ -53,9 +53,9 @@ pub(crate) struct Output {
 #[derive(Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 struct Evaluated {
-    control: String,
+    rule: String,
     part: String,
-    rule: Option<Check>,
+    checker: Option<Check>,
     status: Status,
     findings: Vec<Finding>,
     used: Option<u64>,
@@ -117,9 +117,9 @@ type Expressions = Vec<(String, Regex)>;
 pub(crate) fn evaluate(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
     // The judged rules' time starts with the call, as the manifest's timeout does.
     let mut judge = Judge::new(host);
-    let Input { controls, parts } = PluginError::read_input("rules", "evaluate", input)?;
+    let Input { rules, parts } = PluginError::read_input("rules", "evaluate", input)?;
     let mut seen = BTreeSet::new();
-    let named: Vec<String> = (controls.into_iter())
+    let named: Vec<String> = (rules.into_iter())
         .filter(|control| seen.insert(control.clone()))
         .collect();
     let mut known = index::controls(host)?;
@@ -261,9 +261,9 @@ fn result(
 ) -> Evaluated {
     findings.truncate(SHOWN);
     Evaluated {
-        control: control.to_owned(),
+        rule: control.to_owned(),
         part: part.to_owned(),
-        rule,
+        checker: rule,
         status,
         findings,
         used: None,
@@ -508,7 +508,7 @@ fn not_found(missing: &[&String]) -> PluginError {
              `board check` to see what is there",
             names.join(", ")
         ),
-        fields: Map::from_iter([("controls".to_owned(), Value::from(names))]),
+        fields: Map::from_iter([("rules".to_owned(), Value::from(names))]),
         hint: None,
     }
 }
@@ -521,7 +521,7 @@ fn unreadable(control: &str, file: &str, code: &str) -> PluginError {
              the file, or change the control's rule"
         ),
         fields: Map::from_iter([
-            ("control".to_owned(), Value::from(control)),
+            ("rule".to_owned(), Value::from(control)),
             ("file".to_owned(), Value::from(file)),
             ("code".to_owned(), Value::from(code)),
         ]),
@@ -551,7 +551,7 @@ fn invalid(
              {detail}; fix that line"
         ),
         fields: Map::from_iter([
-            ("control".to_owned(), Value::from(control)),
+            ("rule".to_owned(), Value::from(control)),
             ("file".to_owned(), Value::from(file)),
             ("line".to_owned(), Value::from(number)),
         ]),

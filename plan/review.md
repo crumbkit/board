@@ -2,7 +2,7 @@
 
 The `review` plugin records which commits a review covered, what it found and
 what it cost. A pull request carries a review report as its review evidence,
-and a per-repository control checks that evidence in CI. PLAN.md links this
+and a per-repository rule checks that evidence in CI. PLAN.md links this
 leaf; when the milestone lands, its settled design moves into docs/ and this
 file is deleted.
 
@@ -76,8 +76,8 @@ repositories join as it proves itself.
      too, can commit an approving report, and the workflow that runs the
      check is part of the pull request. The check is evidence for the owner,
      not a merge gate.
-   - Each repository that uses review states this as a written control, so
-     `controls.check` names it. A controls rule would fail every session
+   - Each repository that uses review states this as a written rule, so
+     `rules.check` names it. A rule with a budget or version checker would fail every session
      start on an unreviewed branch.
 9. **The agent command.** `review.run` starts the argv list in
    `BOARD_REVIEW_AGENT`, an environment variable the user sets and the

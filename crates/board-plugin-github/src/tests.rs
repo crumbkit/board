@@ -193,14 +193,14 @@ fn the_manifest_parses_as_a_built_in_one_and_describes_the_plugin_with_the_skill
         "GH_TOKEN",
         "GITHUB_TOKEN",
         "GH_CONFIG_DIR",
-        "BOARD_CONTROLS_AGENT",
+        "BOARD_RULES_AGENT",
         "ANTHROPIC_API_KEY",
         "CLAUDE_CODE_OAUTH_TOKEN",
         "SSH_AUTH_SOCK"
     ]);
     let pre_push = json!([
         "GH_CONFIG_DIR",
-        "BOARD_CONTROLS_AGENT",
+        "BOARD_RULES_AGENT",
         "ANTHROPIC_API_KEY",
         "CLAUDE_CODE_OAUTH_TOKEN",
         "SSH_AUTH_SOCK",

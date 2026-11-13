@@ -32,7 +32,7 @@
     },
     "Verdict": {
       "additionalProperties": false,
-      "description": "One rule's verdict on one part, as `rules.evaluate` gave it, with each\nnull left out. A crossing written before the rename, and the result of\n`rules.evaluate`, name the rule's path `control` and its checker `rule`;\n[`verdicts`] reads both.",
+      "description": "One rule's verdict on one part, as `rules.evaluate` gave it, with each\nnull left out. A crossing written before the rename names the rule's\npath `control` and its checker `rule`; [`verdicts`] reads both forms, and\n[`evaluated`] only the current one.",
       "oneOf": [
         {
           "not": {

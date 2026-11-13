@@ -41,7 +41,7 @@ listed as unattached.
 When `works_on` is set and the pairing is certain, the mod adds the output
 of `changes.brief` for that change to the subagent's context, so an agent
 starts with the plan, the summaries of what the plan uses and the command
-that checks the controls. The changes skill also tells every subagent whose
+that checks the rules. The changes skill also tells every subagent whose
 prompt ends with a `Board:` line to run `changes.brief` for it first when
 no brief is in its context, so an agent whose start could not be paired
 still gets one.

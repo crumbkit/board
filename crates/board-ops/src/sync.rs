@@ -4,25 +4,36 @@
 use std::time::Duration;
 
 use board_model::{Code, Refusal};
+use board_tree::Deadline;
 pub use board_tree::Synced;
-use board_tree::{Deadline, LOCK_WAIT};
 
 use crate::board::Board;
 
 impl Board {
     /// Fetches the branch HEAD follows, replays the commits only this
-    /// board has onto it, pushes the result when `push`, and moves HEAD,
-    /// the index and the working tree to it, under the board lock so no
-    /// put runs meanwhile. It waits for the lock up to [`LOCK_WAIT`], and
-    /// git still fetching or pushing `deadline` after the sync began is
-    /// stopped.
+    /// board has onto it, moves HEAD, the index and the working tree to
+    /// the result, and pushes it when `push`. Only the local step takes the
+    /// board lock, waiting for it up to [`board_tree::LOCK_WAIT`], so puts
+    /// run while git fetches and pushes. A second sync of this board
+    /// while one runs is refused at once. git still fetching or pushing
+    /// `deadline` after the sync began is stopped.
     pub fn sync(&self, push: bool, deadline: Duration) -> Result<Synced, SyncError> {
+        self.sync_waiting(push, deadline, Duration::ZERO)
+    }
+
+    /// As [`Self::sync`], but a sync already running is waited for up to
+    /// `wait`, within `deadline`, before this one is refused as busy.
+    pub fn sync_waiting(
+        &self,
+        push: bool,
+        deadline: Duration,
+        wait: Duration,
+    ) -> Result<Synced, SyncError> {
         let deadline = Deadline::after(deadline);
-        let repository = self.repository();
-        let lock = (self.repositories())
-            .lock(deadline.left().min(LOCK_WAIT))
+        (self.repositories())
+            .writable()
             .map_err(board_tree::SyncError::from)?;
-        Ok(repository.sync(&lock, push, deadline)?)
+        Ok(self.repository().sync(push, deadline, wait)?)
     }
 }
 

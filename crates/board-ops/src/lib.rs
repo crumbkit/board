@@ -64,6 +64,7 @@ pub use crate::trace::{Phase, Trace};
 pub use crate::types::TypeError;
 pub use crate::ui::{BindingError, Drawn, Failed, Page, PageError};
 pub use crate::verdict::{Fault, SchemaFound};
+pub use board_tree::LOCK_WAIT;
 
 #[cfg(test)]
 mod tests;

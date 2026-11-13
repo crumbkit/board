@@ -348,7 +348,7 @@ impl Desk {
     /// A judged control on `parts` of every github action, and a stub agent
     /// in the desk's home that reads its prompt, runs `script` and then
     /// answers with no findings. Returns the agent's argv as
-    /// `BOARD_CONTROLS_AGENT` takes it, naming a model so verdicts are kept.
+    /// `BOARD_RULES_AGENT` takes it, naming a model so verdicts are kept.
     pub(super) fn judged(&self, parts: &[&str], script: &str) -> String {
         self.write("rubrics/plain.md", "Write plainly.\n");
         let control = json!({

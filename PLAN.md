@@ -43,7 +43,7 @@ a later plan moves them.
 ## Then: runs
 
 Board records test, perf and eval results. A new `runs` plugin holds suites
-and their runs, `evals` and `controls` refer to it, `cargo xtask bench
+and their runs, `evals` and `rules` refer to it, `cargo xtask bench
 --record` writes runs, and a `github` plugin imports CI timings across
 repositories. [plan/runs.md](plan/runs.md) holds the decisions and the build
 order.
@@ -120,8 +120,8 @@ on main (`git show 226829b:PLAN.md`), as is the deleted HANDOFF.md.
    config and the reserved `board` namespace (2026-10-30).
 2. The code is proprietary and unpublished.
 3. A limit that refuses a write, such as a file-size limit, is a setting that
-   `put` and `check` apply. A requirement on files is a control (2026-10-05).
-   A control that code already enforces only records it: `lint.toml` sets the
+   `put` and `check` apply. A requirement on files is a rule (2026-10-05).
+   A rule that code already enforces only records it: `lint.toml` sets the
    word budgets, `cargo xtask lint` enforces them, and it fails when a rule
    in `rules/budgets/` disagrees with `lint.toml` (2026-10-06).
 4. Adopting a repository is gentle: after the owner follows what `check` says,

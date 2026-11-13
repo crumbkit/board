@@ -9,8 +9,8 @@ moves into docs/ and this leaf is deleted.
 
 ## Problem
 
-A session that opens a node cannot see what matters there. No control records
-whether it passed, 37 of 79 controls have no checker that runs, no record
+A session that opens a node cannot see what matters there. No rule records
+whether it passed, 37 of 79 rules have no checker that runs, no record
 describes a node, and nothing collects what is due, failing or waiting.
 
 ## Outcome
@@ -73,7 +73,7 @@ pane and the daily loop.
    board's records from `/controls/` to `/rules/` in one commit per board and
    rewrites the paths that boundaries, plan `owed` fields and flow checks
    name. Signed attention orders are never rewritten. The owner signs a new
-   order, each board migrates at a stop point, and rename PR 8
+   order, each board migrates at a stop point, and a later pull request of the rename
    deletes every reader of the old name. The rename goes before every new
    record type, so new types are born with the final name.
 4. **Rules record their state.** A check appends a `rules/check/v1` under

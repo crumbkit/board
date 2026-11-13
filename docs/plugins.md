@@ -225,5 +225,5 @@ A new plugin is a built-in crate, never a Python program
 ([plugins/built-in/writing.md](plugins/built-in/writing.md)). Each `plugins/<name>/` README describes its records and
 capabilities. [plugins/share.md](plugins/share.md) explains `share`, and
 [plugins/claude-code.md](plugins/claude-code.md) covers Claude Code mods,
-with [the controls mod](plugins/controls-claude-code.md) and
+with [the rules mod](plugins/rules-claude-code.md) and
 [the plans mod](plugins/plans-claude-code.md).
