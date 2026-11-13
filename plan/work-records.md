@@ -43,7 +43,9 @@ A check that a rule adds (plan/rules.md), such as `security-review`, joins
 the phase its `transition` run names, or the last phase when the flow lacks
 that one. A change whose route is `ask-first` gains the `approve` phase if
 its flow lacks one, and so does a change whose route is `unread` unless its
-flow is `development`.
+flow is `development`. A rule adds a check only once a file rule can join a
+phase, which waits with the deferred move of flow checks; until then a
+change's checks are its flow's own.
 
 ## Records of a change
 
@@ -78,11 +80,12 @@ refuses with `changes::suite::unknown`.
 ## What is derived
 
 - **Checks**: the flow's checks, plus each check that a matching rule
-  adds.
+  adds (the rule-added part is deferred with the move of flow checks).
 - **Next step**: the first phase with a failing check, and its actor.
 - **Done**: `landed` or `dropped` exists.
 
-Files touched decide which rules add checks. The agent records them once
+Deferred with the move of flow checks: files touched decide which rules add
+checks. The agent records them once
 per head with `changes.files`, from the same `git diff --name-only` it
 passes to `rules.check`, so every reader, `inflight.now` included,
 derives the same checks. Until a files record exists at the head, the checks
@@ -135,8 +138,8 @@ One pull request in the changes, review and runs plugins. The tests:
 - A claim from a subdirectory records its worktree's root.
 - `start` in an unmounted clone creates the repo record once, and a second
   start reuses it.
-- A rule's added check appears only when the files record at the head
-  includes a match.
+- Deferred with the move of flow checks: a rule's added check appears only
+  when the files record at the head includes a match.
 
 Done when a change in the owner's board goes from `start` to `landed` with
 `next` reporting each check correctly.

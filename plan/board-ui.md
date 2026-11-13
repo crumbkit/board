@@ -89,12 +89,14 @@ listener, so they also get an adversarial security review.
    - `gate`: a pending effect, deferred until a page needs it (decision 11).
 9. **Effects.** A plugin asks the owner with `board decide` before an op,
    and a plugin's put is refused only where the owner alone writes.
-   docs/architecture/writes/effects.md has the design. Owner rules that make
-   a put ask were cut on 2026-10-28 until two plugins need them.
+   docs/architecture/writes/effects.md has the design. An owner rule that makes
+   a put ask or refuse is a rule whose `on_failure` is `ask` or `refuse`
+   (plan/rules.md, decided 2026-11-12), and this milestone builds none.
 10. **No rules yet.** The 2026-10-05 sketch ("Settings and the gentle slope"
     in `git show 226829b:PLAN.md`) and the first slice's rules are
     background; the rules are in
-    `git show 5a34ac92:docs/architecture/writes/effects.md`.
+    `git show 5a34ac92:docs/architecture/writes/effects.md`. They are planned
+    again as rules, never as a second policy type.
 11. **No `Gate` trait.** It would have one implementation. The signer's
     native window is the gate. The pending-effect and seen records stay
     stable and documented for the Claude Code mod.

@@ -3,17 +3,15 @@
 Board becomes a map of what the owner and his agents record. A session that
 opens a node sees what matters there, and the owner sees one daily view of
 what is due, failing, waiting on him and in flight. PLAN.md links this leaf.
-The milestone after it, in plan/rules.md, gives rules their second shape,
-moves flow checks into rules and migrates every board. When this milestone
-lands, its design moves into docs/ and this leaf is deleted.
+The milestone after it, in plan/rules.md, gives rules their second shape
+and migrates every board in place. When this milestone lands, its design
+moves into docs/ and this leaf is deleted.
 
 ## Problem
 
 A session that opens a node cannot see what matters there. No control records
 whether it passed, 37 of 79 controls have no checker that runs, no record
-describes a node, and nothing collects what is due, failing or waiting. Flow
-gates hold their own check logic in about 5,500 lines of flow, gate and phase
-code, and no other trigger can reuse it.
+describes a node, and nothing collects what is due, failing or waiting.
 
 ## Outcome
 
@@ -22,8 +20,7 @@ description, the latest handoff, facts, rules with their last-checked state,
 work, and the records that name the node. The owner sees one daily view of
 what is due, failing, waiting on him and in flight. Rules gain expectations,
 checkers, triggers and a failure action, and one fact can hold a value that
-many repositories must match. A flow holds states, transitions and the paths
-of the rules each transition runs, and holds no checks.
+many repositories must match.
 
 ## The model
 
@@ -44,9 +41,8 @@ Board holds three kinds of record.
   `rules/rule/v2`, `rules/fact/v1`, `rules/waiver/v1` and `rules/check/v1`,
   and serves `rules.check` and `rules.evaluate`.
 - The **changes plugin** keeps phases, transitions, the change record and
-  waivers. At a transition it calls `rules.evaluate` with the rules the phase
-  names, as the boundary plugin calls `controls.evaluate` today
-  (plan/rules.md).
+  waivers. Its flows keep their inline checks, and moving them into rules is
+  deferred (plan/rules.md).
 - The **map plugin** is a new Rust built-in. It owns `map/node/v1` and the
   read-only capabilities `map.view` and `map.today`.
 - **Claude Code mods** deliver the views. Once the map mod shows the landing
@@ -57,8 +53,8 @@ The boundary plugin reads rule v2 and keeps its own record. Tasks, evals,
 runs, review and attention are unchanged: their records are the work and the
 verdicts that rules read, and attention signs waivers and approvals. A
 `plans/answer/v1` stores the text of the option it chose. Nothing retires
-except rule v1 and flow v1's inline checks. A rule that only instructs stays
-a rule with a `none` checker.
+except rule v1. A rule that only instructs stays a rule with a `none`
+checker.
 
 ## Build order
 
@@ -76,10 +72,10 @@ pane and the daily loop.
    with no checker shows as "described". `rules.migrate --rename` moves each
    board's records from `/controls/` to `/rules/` in one commit per board and
    rewrites the paths that boundaries, plan `owed` fields and flow checks
-   name. Signed attention orders are never rewritten, so `controls.check`
-   stays a manifest alias of `rules.check` until the owner re-signs the
-   order that names it. The rename goes before every new record type, so new
-   types are born with the final name.
+   name. Signed attention orders are never rewritten. The owner signs a new
+   order, each board migrates at a stop point, and rename PR 8
+   deletes every reader of the old name. The rename goes before every new
+   record type, so new types are born with the final name.
 4. **Rules record their state.** A check appends a `rules/check/v1` under
    `/rules/<name>/checks/` with the expectation's index, the outcome, the
    observed value and the commit it read. A session-start run writes only
