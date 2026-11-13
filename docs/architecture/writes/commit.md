@@ -1,10 +1,11 @@
 # Committing a put
 
 A put commits after its files are written. It takes git's `index.lock` when
-it stages the commit, polling every 20 milliseconds for the wait that
-`board.lock` had. A lock still held then refuses with `board::put::locked`
-before any file is written. The two waits are separate, so a put that waits
-the full time for both refuses after twice that time.
+it stages the commit, polling every 20 milliseconds. `board.lock` and every
+`index.lock` wait, including the waits for staging again, share one deadline
+that starts when the put begins, so a put refuses by that wait and never later.
+A lock still held then refuses with `board::put::locked`; the first staging
+does so before any file is written.
 
 Before it checks `--expect`, the put notes the HEAD it sees. If HEAD moved by
 the time it moves HEAD itself, the put stages the same writes again on the new

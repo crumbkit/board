@@ -268,6 +268,35 @@ fn an_index_lock_held_past_the_wait_refuses_naming_the_file_and_writes_nothing()
     assert!(!scenario.index().contains_key("b.json"));
 }
 
+/// `board.lock` and `index.lock` draw on one wait, measured from when the
+/// put began: a put that spent most of it on `board.lock` has little left.
+#[test]
+#[expect(
+    clippy::disallowed_methods,
+    reason = "another process drops git's lock, which the scenario cannot do from a thread"
+)]
+fn the_board_lock_and_the_index_lock_share_one_wait() {
+    let scenario = identified();
+    scenario.write(".git/board.lock", Item::File(""));
+    scenario.write(".git/index.lock", Item::File(""));
+    let repository = scenario.open();
+    let held = repository.git_dir().join("board.lock");
+    let releaser = std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(700));
+        std::fs::remove_file(held).unwrap();
+    });
+    let started = Instant::now();
+    let lock = repository.lock(Duration::from_secs(1)).unwrap();
+    releaser.join().unwrap();
+    let error = repository
+        .stage_commit(&lock, &[("b.json", Some(b"{}\n"))], "board put /b")
+        .unwrap_err();
+    let spent = started.elapsed();
+    assert_eq!(error.code(), Code::PutLocked, "{error}");
+    assert!(spent >= Duration::from_millis(900), "{spent:?}");
+    assert!(spent < Duration::from_millis(1400), "{spent:?}, not two waits");
+}
+
 /// A put whose HEAD moved to a commit that leaves its paths alone stages
 /// again on the new HEAD and commits.
 #[test]

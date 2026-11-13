@@ -9,7 +9,7 @@
 use std::fs::{self, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use board_model::{BINARY_NAME, Code, Fields, Location, LogicalPath, Object, ObjectId, Source};
 
@@ -54,9 +54,9 @@ pub struct Target {
 #[derive(Debug)]
 pub struct Lock {
     _held: gix::lock::Marker,
-    /// How long this put waited for `board.lock`; it waits as long for
-    /// git's `index.lock`.
-    wait: Duration,
+    /// When this put stops waiting: the one wait covers `board.lock` and
+    /// every wait for git's `index.lock`.
+    deadline: Instant,
 }
 
 impl Repositories {
@@ -408,7 +408,7 @@ impl Repository {
         if let Some(operation) = operation {
             return Err(WriteError::InProgress { operation });
         }
-        let (index_lock, index) = self.lock_index(lock.wait)?;
+        let (index_lock, index) = self.lock_index(lock.deadline)?;
         let mut staged = Staged {
             commit: ObjectId::Sha1([0; 20]),
             parent: self.head()?,
