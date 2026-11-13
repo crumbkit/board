@@ -121,29 +121,37 @@ fn a_held_branch_lock_is_a_failure_and_not_head_moved() {
     assert!(repository.finish_commit(&lock, staged).is_ok());
 }
 
+/// Git reads HEAD and then the index, so a HEAD that moves before the index
+/// does lets a commit made at that moment take a tree without the put's files.
+/// The index is therefore replaced first, while the branch is locked.
 #[test]
-fn an_index_that_cannot_be_written_after_head_moved_names_the_commit() {
+fn an_index_that_cannot_be_written_leaves_head_where_it_was() {
     let scenario = identified();
     let repository = scenario.open();
+    let parent = scenario.head().unwrap().id;
     let lock = repository.lock(LOCK_WAIT).unwrap();
     let staged = repository
         .stage_commit(&lock, &[("b.json", Some(b"{}\n"))], "board put /b")
         .unwrap()
         .unwrap();
     // The index is written into the held lock file, so with it gone the
-    // write fails after HEAD has moved.
+    // write fails.
     scenario.write(".git/index.lock", Item::Deleted);
     let error = repository.finish_commit(&lock, staged).unwrap_err();
-    let head = scenario.head().unwrap().id;
-    assert!(
-        matches!(error, WriteError::IndexNotUpdated { commit, .. } if commit == head),
-        "{error}"
-    );
+    assert!(matches!(error, WriteError::IndexNotWritten { .. }), "{error}");
     assert_eq!(error.code(), Code::PutFailed);
-    assert!(error.to_string().starts_with(&format!(
-        "committed {head}, but git's index was not updated"
-    )));
+    assert!(
+        error
+            .to_string()
+            .starts_with("git's index could not be written, so the files are written but not committed")
+    );
+    assert_eq!(scenario.head().unwrap().id, parent, "HEAD did not move");
     assert!(!scenario.index().contains_key("b.json"));
+    let branch_lock = format!(".git/{}.lock", branch(&scenario));
+    assert!(
+        !scenario.workdir().join(branch_lock).exists(),
+        "the branch lock is released"
+    );
 }
 
 #[test]

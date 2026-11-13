@@ -19,7 +19,7 @@ use crate::resolve::{ResolveError, Resolver};
 use crate::through::{Inside, Through, through_mount};
 use crate::tree::Tree;
 use crate::walk::{Beneath, Planned, Tense, reason};
-use entries::{stage_entry, unstage_entry};
+use entries::{stage_entry, unstage_entry, write_index};
 
 mod entries;
 pub(crate) mod outside;
@@ -33,6 +33,10 @@ pub(crate) mod sync;
 pub const LOCK_WAIT: Duration = Duration::from_secs(5);
 /// How often a waiting put tries the lock again.
 const LOCK_POLL: Duration = Duration::from_millis(20);
+
+/// How long the branch lock is awaited, which is the default of git's
+/// `core.filesRefLockTimeout`.
+const REF_LOCK_WAIT: Duration = Duration::from_millis(100);
 
 /// Where a put writes: the record file a logical path names, or the file
 /// whose whole name it is, existing or not, in the working tree.
@@ -509,30 +513,39 @@ impl Repository {
             .map_err(|error| WriteError::Uncommitted {
                 source: error.into(),
             })?;
-        if let Err(error) = git.edit_reference(edit) {
-            use gix::refs::file::transaction::prepare::{MustNotExist, ReferenceOutOfDate};
-            if error.downcast_any_ref::<ReferenceOutOfDate>().is_some()
-                || error.downcast_any_ref::<MustNotExist>().is_some()
-            {
-                return Err(WriteError::HeadMoved);
+        // The branch is locked and checked first, so a HEAD that moved is
+        // found before git's index changes. The index is then replaced
+        // before the branch moves, because git reads HEAD and then the
+        // index: a commit that sees the new HEAD must see the new index.
+        let lock_wait = gix::lock::acquire::Fail::AfterDurationWithBackoff(REF_LOCK_WAIT);
+        let prepared = git.refs.transaction().prepare([edit], lock_wait, lock_wait);
+        let prepared = match prepared {
+            Ok(prepared) => prepared,
+            Err(error) => {
+                use gix::refs::file::transaction::prepare::{MustNotExist, ReferenceOutOfDate};
+                if error.downcast_any_ref::<ReferenceOutOfDate>().is_some()
+                    || error.downcast_any_ref::<MustNotExist>().is_some()
+                {
+                    return Err(WriteError::HeadMoved);
+                }
+                return Err(WriteError::Uncommitted {
+                    source: error.into(),
+                });
             }
-            return Err(WriteError::Uncommitted {
-                source: error.into(),
-            });
-        }
+        };
         let index = &staged.index;
         staged
             .index_lock
             .with_mut(|file| {
-                index
-                    .write_to(&mut *file, gix::index::write::Options::default())
-                    .map_err(io::Error::other)?;
+                write_index(index, &mut *file)?;
                 file.sync_all()
             })
             .and_then(|()| staged.index_lock.commit().map_err(|error| error.error))
-            .map_err(|source| WriteError::IndexNotUpdated {
-                commit: staged.commit,
-                source,
+            .map_err(|source| WriteError::IndexNotWritten { source })?;
+        prepared
+            .commit(git.committer().transpose().ok().flatten())
+            .map_err(|error| WriteError::Uncommitted {
+                source: error.into(),
             })?;
         Ok(staged.commit)
     }
@@ -671,10 +684,9 @@ pub enum WriteError {
         source: Box<dyn std::error::Error + Send + Sync>,
     },
     #[error(
-        "committed {commit}, but git's index was not updated, so git status shows the written files as changed: {source}"
+        "git's index could not be written, so the files are written but not committed: {source}"
     )]
-    IndexNotUpdated {
-        commit: ObjectId,
+    IndexNotWritten {
         #[source]
         source: io::Error,
     },
@@ -717,7 +729,7 @@ impl WriteError {
             | Self::Unsynced { .. }
             | Self::Commit { .. }
             | Self::Uncommitted { .. }
-            | Self::IndexNotUpdated { .. } => Code::PutFailed,
+            | Self::IndexNotWritten { .. } => Code::PutFailed,
             Self::NoIdentity => Code::PutNoIdentity,
             Self::HeadMoved => Code::PutHeadMoved,
             Self::Git(error) => error.code(),

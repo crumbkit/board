@@ -287,3 +287,47 @@ fn a_write_refused_by_an_error_that_does_not_start_with_its_path_keeps_the_messa
         );
     }
 }
+
+/// Counts the writes that reach it, as each one is a system call on a file.
+struct Counting {
+    calls: usize,
+    bytes: Vec<u8>,
+}
+
+impl Write for Counting {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.calls += 1;
+        self.bytes.extend_from_slice(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+#[test]
+fn an_index_of_thousands_of_entries_reaches_the_file_in_a_few_writes() {
+    let scenario = board_scenario::Scenario::new();
+    let files: Vec<(String, &str)> = (0..2000)
+        .map(|at| (format!("tasks/t{at}.json"), "{}"))
+        .collect();
+    let borrowed: Vec<(&str, &str)> = files.iter().map(|(p, c)| (p.as_str(), *c)).collect();
+    let commit = scenario.commit(&borrowed);
+    let git = gix::open(scenario.workdir()).unwrap();
+    let commit = gix::ObjectId::try_from(commit.as_bytes()).unwrap();
+    let tree = git.find_commit(commit).unwrap().tree_id().unwrap();
+    let index = git.index_from_tree(&tree).unwrap();
+    let mut out = Counting {
+        calls: 0,
+        bytes: Vec::new(),
+    };
+    entries::write_index(&index, &mut out).unwrap();
+    assert!(
+        out.calls <= 4,
+        "{} writes for {} entries; each is a system call on a file",
+        out.calls,
+        index.entries().len()
+    );
+    assert!(out.bytes.len() > 2000 * 60, "the whole index is written");
+}

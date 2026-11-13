@@ -17,3 +17,9 @@ The put also refuses with `board::put::head_moved` when HEAD still moves
 after the third retry, and when the commit cannot be staged again, for example
 because a merge began. In each case the files are already written and stay
 uncommitted for the next sync to adopt.
+
+To move HEAD, the put locks the branch and checks it still holds the commit
+the put staged on. It then replaces git's index and only then moves the
+branch, because git reads HEAD and then the index: a commit that sees the new
+HEAD must also see the new index. A failure to write the index leaves HEAD
+where it was, with `board::put::failed`.
