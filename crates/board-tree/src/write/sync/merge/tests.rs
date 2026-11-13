@@ -2,7 +2,7 @@ use board_model::{ObjectId, TYPES_DIRECTORY};
 use gix::object::tree::EntryKind;
 
 use super::*;
-use crate::git::Repository;
+use crate::git::{Repository, model_id};
 
 struct Fixture {
     _directory: tempfile::TempDir,
@@ -70,10 +70,10 @@ impl Fixture {
     }
 
     /// Every file beneath `tree` with its content, in path order.
-    fn files(&self, tree: gix::ObjectId) -> Vec<(String, String)> {
+    fn files(&self, tree: ObjectId) -> Vec<(String, String)> {
         let git = self.repository.git();
         let mut found = Vec::new();
-        let mut pending = vec![(String::new(), tree)];
+        let mut pending = vec![(String::new(), self.repository.gix_id(tree).unwrap())];
         while let Some((prefix, id)) = pending.pop() {
             let tree = git.find_tree(id).unwrap();
             for entry in tree.decode().unwrap().entries {
@@ -168,10 +168,11 @@ fn a_file_both_sides_edited_differently_takes_the_remote_and_records_a_conflict(
         merged.conflicts,
         [Conflict {
             path: "a.json".to_owned(),
-            kind: ConflictKind::BothChanged,
             base: Some(fixture.blob("1")),
-            local: Some(fixture.blob("local")),
-            remote: Some(fixture.blob("remote")),
+            kind: ConflictKind::BothChanged {
+                local: fixture.blob("local"),
+                remote: fixture.blob("remote"),
+            },
         }]
     );
 }
@@ -182,7 +183,10 @@ fn a_file_both_sides_added_differently_takes_the_remote_and_records_a_conflict()
     let (merged, files) = fixture.merge(&[], &[("a.json", "local")], &[("a.json", "remote")]);
     assert_eq!(files, [file("a.json", "remote")]);
     assert_eq!(merged.conflicts.len(), 1);
-    assert_eq!(merged.conflicts[0].kind, ConflictKind::BothChanged);
+    assert!(matches!(
+        merged.conflicts[0].kind,
+        ConflictKind::BothChanged { .. }
+    ));
     assert_eq!(merged.conflicts[0].base, None);
 }
 
@@ -208,10 +212,11 @@ fn an_edit_wins_over_a_delete_from_the_local_side_and_records_a_conflict() {
         merged.conflicts,
         [Conflict {
             path: "a.json".to_owned(),
-            kind: ConflictKind::EditDelete,
             base: Some(fixture.blob("1")),
-            local: Some(fixture.blob("edited")),
-            remote: None,
+            kind: ConflictKind::EditDelete {
+                edited: fixture.blob("edited"),
+                by: Side::Local,
+            },
         }]
     );
 }
@@ -222,9 +227,13 @@ fn an_edit_wins_over_a_delete_from_the_remote_side_and_records_a_conflict() {
     let (merged, files) = fixture.merge(&[("a.json", "1")], &[], &[("a.json", "edited")]);
     assert_eq!(files, [file("a.json", "edited")]);
     assert_eq!(merged.conflicts.len(), 1);
-    assert_eq!(merged.conflicts[0].kind, ConflictKind::EditDelete);
-    assert_eq!(merged.conflicts[0].local, None);
-    assert_eq!(merged.conflicts[0].remote, Some(fixture.blob("edited")));
+    assert_eq!(
+        merged.conflicts[0].kind,
+        ConflictKind::EditDelete {
+            edited: fixture.blob("edited"),
+            by: Side::Remote
+        }
+    );
 }
 
 #[test]
@@ -236,10 +245,11 @@ fn a_file_against_a_directory_takes_the_remote_and_records_a_conflict() {
         merged.conflicts,
         [Conflict {
             path: "a".to_owned(),
-            kind: ConflictKind::FileDirectory,
             base: None,
-            local: Some(fixture.blob("file")),
-            remote: None,
+            kind: ConflictKind::FileDirectory {
+                file: fixture.blob("file"),
+                by: Side::Local,
+            },
         }]
     );
 }
@@ -250,8 +260,13 @@ fn a_directory_against_a_file_takes_the_remote_file() {
     let (merged, files) = fixture.merge(&[], &[("a/b.json", "inside")], &[("a", "file")]);
     assert_eq!(files, [file("a", "file")]);
     assert_eq!(merged.conflicts.len(), 1);
-    assert_eq!(merged.conflicts[0].kind, ConflictKind::FileDirectory);
-    assert_eq!(merged.conflicts[0].remote, Some(fixture.blob("file")));
+    assert_eq!(
+        merged.conflicts[0].kind,
+        ConflictKind::FileDirectory {
+            file: fixture.blob("file"),
+            by: Side::Remote
+        }
+    );
 }
 
 #[test]
@@ -279,7 +294,7 @@ fn a_pin_the_remote_moved_forward_of_the_local_one_takes_the_remote_pin() {
             path: "mount.json".to_owned(),
             local: id(LOCAL),
             remote: id(REMOTE),
-            taken: PinSide::Remote,
+            taken: Side::Remote,
             basis: PinBasis::Descendant,
         }]
     );
@@ -296,7 +311,7 @@ fn a_pin_the_local_side_moved_forward_of_the_remote_one_keeps_the_local_pin() {
     );
     assert_eq!(files, [file("mount.json", &pin(LOCAL))]);
     assert_eq!(merged.conflicts, Vec::new());
-    assert_eq!(merged.pins[0].taken, PinSide::Local);
+    assert_eq!(merged.pins[0].taken, Side::Local);
 }
 
 #[test]
@@ -309,7 +324,7 @@ fn two_pins_with_neither_descending_from_the_other_take_the_remote_pin_without_a
     );
     assert_eq!(files, [file("mount.json", &pin(REMOTE))]);
     assert_eq!(merged.conflicts, Vec::new());
-    assert_eq!(merged.pins[0].taken, PinSide::Remote);
+    assert_eq!(merged.pins[0].taken, Side::Remote);
 }
 
 #[test]
@@ -325,7 +340,10 @@ fn a_mount_pointer_that_changed_more_than_its_pin_is_an_ordinary_conflict() {
     assert_eq!(files, [file("mount.json", &pin(REMOTE))]);
     assert_eq!(merged.pins, Vec::new());
     assert_eq!(merged.conflicts.len(), 1);
-    assert_eq!(merged.conflicts[0].kind, ConflictKind::BothChanged);
+    assert!(matches!(
+        merged.conflicts[0].kind,
+        ConflictKind::BothChanged { .. }
+    ));
 }
 
 #[test]
@@ -382,8 +400,8 @@ fn a_merge_writes_no_ref_and_leaves_both_inputs_unchanged() {
         Ancestry::DoesNot
     })
     .unwrap();
-    assert_ne!(merged.tree, local);
-    assert_eq!(fixture.files(local), [file("a.json", "1")]);
+    assert_ne!(merged.tree, model_id(&local));
+    assert_eq!(fixture.files(model_id(&local)), [file("a.json", "1")]);
     assert!(fixture.repository.head().unwrap().is_none());
 }
 
@@ -393,7 +411,10 @@ fn a_merge_that_leaves_nothing_is_the_empty_tree() {
     let base = [("a.json", "1")];
     let (merged, files) = fixture.merge(&base, &[], &[]);
     assert_eq!(files, Vec::new());
-    assert_eq!(merged.tree, fixture.repository.git().empty_tree().id);
+    assert_eq!(
+        merged.tree,
+        model_id(&fixture.repository.git().empty_tree().id)
+    );
 }
 
 #[test]
@@ -407,7 +428,7 @@ fn a_pin_whose_ancestry_cannot_be_read_keeps_the_local_pin_and_says_so() {
     );
     assert_eq!(files, [file("mount.json", &pin(LOCAL))]);
     assert_eq!(merged.conflicts, Vec::new());
-    assert_eq!(merged.pins[0].taken, PinSide::Local);
+    assert_eq!(merged.pins[0].taken, Side::Local);
     assert_eq!(merged.pins[0].basis, PinBasis::Unknown);
 }
 
@@ -419,7 +440,7 @@ fn a_pin_with_unrelated_ancestry_takes_the_remote_and_says_unrelated() {
         &[("mount.json", &pin(LOCAL))],
         &[("mount.json", &pin(REMOTE))],
     );
-    assert_eq!(merged.pins[0].taken, PinSide::Remote);
+    assert_eq!(merged.pins[0].taken, Side::Remote);
     assert_eq!(merged.pins[0].basis, PinBasis::Unrelated);
 }
 
@@ -438,7 +459,7 @@ fn a_pin_unknown_only_in_the_second_question_still_keeps_the_local_pin() {
             }
         },
     );
-    assert_eq!(merged.pins[0].taken, PinSide::Local);
+    assert_eq!(merged.pins[0].taken, Side::Local);
     assert_eq!(merged.pins[0].basis, PinBasis::Unknown);
 }
 
@@ -465,7 +486,10 @@ fn a_directory_one_side_replaced_with_a_file_and_the_other_deleted_keeps_the_fil
         let (merged, files) = fixture.merge(&base, local, remote);
         assert_eq!(files, [file("a", "file")]);
         assert_eq!(merged.conflicts.len(), 1);
-        assert_eq!(merged.conflicts[0].kind, ConflictKind::EditDelete);
+        assert!(matches!(
+            merged.conflicts[0].kind,
+            ConflictKind::EditDelete { .. }
+        ));
         assert_eq!(merged.conflicts[0].path, "a");
     }
 }
@@ -480,7 +504,10 @@ fn a_directory_one_side_deleted_and_the_other_edited_inside_keeps_the_edit_as_a_
     );
     assert_eq!(files, [file("d/a.json", "edited")]);
     assert_eq!(merged.conflicts.len(), 1);
-    assert_eq!(merged.conflicts[0].kind, ConflictKind::EditDelete);
+    assert!(matches!(
+        merged.conflicts[0].kind,
+        ConflictKind::EditDelete { .. }
+    ));
     assert_eq!(merged.conflicts[0].path, "d/a.json");
 }
 
@@ -503,7 +530,7 @@ fn an_executable_bit_set_on_both_sides_or_on_one_is_not_a_conflict() {
         &|_, _| Ancestry::DoesNot,
     )
     .unwrap();
-    assert_eq!(merged.tree, executable);
+    assert_eq!(merged.tree, model_id(&executable));
     // Both sides changed the same blob differently in mode only.
     let other = fixture.tree(&[("run", "#!/bin/sh")]);
     let merged = merge_trees(&fixture.repository, None, other, executable, &|_, _| {
@@ -511,7 +538,7 @@ fn an_executable_bit_set_on_both_sides_or_on_one_is_not_a_conflict() {
     })
     .unwrap();
     assert_eq!(merged.conflicts, Vec::new());
-    assert_eq!(merged.tree, executable);
+    assert_eq!(merged.tree, model_id(&executable));
 }
 
 #[test]
@@ -534,8 +561,13 @@ fn a_submodule_entry_is_never_read_as_a_blob_and_conflicts_without_blob_ids() {
     .unwrap();
     assert_eq!(merged.pins, Vec::new());
     assert_eq!(merged.conflicts.len(), 1);
-    assert_eq!(merged.conflicts[0].local, None);
-    assert_eq!(merged.conflicts[0].remote, None);
+    assert_eq!(
+        merged.conflicts[0].kind,
+        ConflictKind::BothChanged {
+            local: model_id(&gix::ObjectId::from_hex(LOCAL.as_bytes()).unwrap()),
+            remote: model_id(&gix::ObjectId::from_hex(REMOTE.as_bytes()).unwrap()),
+        }
+    );
 }
 
 #[test]
@@ -568,7 +600,7 @@ fn both_sides_adding_the_same_pin_path_with_different_commits_resolve_as_pins() 
     );
     assert_eq!(files, [file("mount.json", &pin(LOCAL))]);
     assert_eq!(merged.conflicts, Vec::new());
-    assert_eq!(merged.pins[0].taken, PinSide::Local);
+    assert_eq!(merged.pins[0].taken, Side::Local);
 }
 
 #[test]

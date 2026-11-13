@@ -14,7 +14,7 @@ use crate::git::{GitError, Repository, model_id};
 /// What a merge made.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Merged {
-    pub(crate) tree: gix::ObjectId,
+    pub(crate) tree: ObjectId,
     pub(crate) conflicts: Vec<Conflict>,
     pub(crate) pins: Vec<PinResolution>,
     /// Schemas both sides changed; the remote one is in `tree`, and a later
@@ -22,26 +22,32 @@ pub(crate) struct Merged {
     pub(crate) schemas: Vec<SchemaClash>,
 }
 
-/// A path both sides changed in ways that cannot both stand.
+/// A path both sides changed in ways that cannot both stand. The ids are
+/// those of the entries held (a blob, link or submodule commit).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Conflict {
     /// Relative to the tree's root, `/`-separated.
     pub(crate) path: String,
-    pub(crate) kind: ConflictKind,
+    /// The blob the common ancestor held, if it held one.
     pub(crate) base: Option<ObjectId>,
-    /// The blob each side held, or `None` where it held nothing or a directory.
-    pub(crate) local: Option<ObjectId>,
-    pub(crate) remote: Option<ObjectId>,
+    pub(crate) kind: ConflictKind,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum ConflictKind {
     /// Both edited, or both added, different content. The remote wins.
-    BothChanged,
-    /// One edited and the other deleted. The edit wins.
-    EditDelete,
-    /// A file on one side and a directory on the other. The remote wins.
-    FileDirectory,
+    BothChanged { local: ObjectId, remote: ObjectId },
+    /// One side edited and the other deleted; the edit wins.
+    EditDelete { edited: ObjectId, by: Side },
+    /// One side holds a file and the other a directory. The remote wins,
+    /// which is the directory when `by` is the local side.
+    FileDirectory { file: ObjectId, by: Side },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Side {
+    Local,
+    Remote,
 }
 
 /// A mount pointer both sides moved, with nothing else changed.
@@ -50,7 +56,7 @@ pub(crate) struct PinResolution {
     pub(crate) path: String,
     pub(crate) local: ObjectId,
     pub(crate) remote: ObjectId,
-    pub(crate) taken: PinSide,
+    pub(crate) taken: Side,
     pub(crate) basis: PinBasis,
 }
 
@@ -74,12 +80,6 @@ pub(crate) enum PinBasis {
     Unknown,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum PinSide {
-    Local,
-    Remote,
-}
-
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct SchemaClash {
     pub(crate) path: String,
@@ -97,6 +97,10 @@ struct Slot {
 impl Slot {
     fn is_tree(self) -> bool {
         self.mode.is_tree()
+    }
+
+    fn object(self) -> ObjectId {
+        model_id(&self.id)
     }
 
     /// The blob the slot holds, if it holds a file or a link.
@@ -127,6 +131,7 @@ pub(crate) fn merge_trees(
         Some(tree) => tree,
         None => merge.write(Vec::new())?,
     };
+    let tree = model_id(&tree);
     Ok(Merged {
         tree,
         conflicts: merge.conflicts,
@@ -216,17 +221,21 @@ impl Merge<'_> {
                 mode: EntryKind::Tree.into(),
             }));
         }
-        let conflict = |kind| Conflict {
-            path: path.to_owned(),
-            kind,
-            base: base.and_then(Slot::blob),
-            local: local.and_then(Slot::blob),
-            remote: remote.and_then(Slot::blob),
-        };
         let (kept, kind) = match (local, remote) {
-            (Some(local), Some(remote)) if local.is_tree() || remote.is_tree() => {
-                (Some(remote), ConflictKind::FileDirectory)
-            }
+            (Some(file), Some(remote)) if remote.is_tree() => (
+                Some(remote),
+                ConflictKind::FileDirectory {
+                    file: file.object(),
+                    by: Side::Local,
+                },
+            ),
+            (Some(local), Some(file)) if local.is_tree() => (
+                Some(file),
+                ConflictKind::FileDirectory {
+                    file: file.object(),
+                    by: Side::Remote,
+                },
+            ),
             (Some(local), Some(remote)) if local.id == remote.id && !local.mode.is_commit() => {
                 return Ok(Some(remote));
             }
@@ -235,11 +244,33 @@ impl Merge<'_> {
                     return Ok(Some(taken));
                 }
                 self.flag_schema(path, local, remote);
-                (Some(remote), ConflictKind::BothChanged)
+                let kind = ConflictKind::BothChanged {
+                    local: local.object(),
+                    remote: remote.object(),
+                };
+                (Some(remote), kind)
             }
-            (kept, None) | (None, kept) => (kept, ConflictKind::EditDelete),
+            (Some(edited), None) => (
+                Some(edited),
+                ConflictKind::EditDelete {
+                    edited: edited.object(),
+                    by: Side::Local,
+                },
+            ),
+            (None, Some(edited)) => (
+                Some(edited),
+                ConflictKind::EditDelete {
+                    edited: edited.object(),
+                    by: Side::Remote,
+                },
+            ),
+            (None, None) => return Ok(None),
         };
-        self.conflicts.push(conflict(kind));
+        self.conflicts.push(Conflict {
+            path: path.to_owned(),
+            base: base.and_then(Slot::blob),
+            kind,
+        });
         Ok(kept)
     }
 
@@ -262,12 +293,12 @@ impl Merge<'_> {
             return Ok(None);
         }
         let (taken, basis) = match (self.descends)(remote_commit, local_commit) {
-            Ancestry::Descends => (PinSide::Remote, PinBasis::Descendant),
-            Ancestry::Unknown => (PinSide::Local, PinBasis::Unknown),
+            Ancestry::Descends => (Side::Remote, PinBasis::Descendant),
+            Ancestry::Unknown => (Side::Local, PinBasis::Unknown),
             Ancestry::DoesNot => match (self.descends)(local_commit, remote_commit) {
-                Ancestry::Descends => (PinSide::Local, PinBasis::Descendant),
-                Ancestry::DoesNot => (PinSide::Remote, PinBasis::Unrelated),
-                Ancestry::Unknown => (PinSide::Local, PinBasis::Unknown),
+                Ancestry::Descends => (Side::Local, PinBasis::Descendant),
+                Ancestry::DoesNot => (Side::Remote, PinBasis::Unrelated),
+                Ancestry::Unknown => (Side::Local, PinBasis::Unknown),
             },
         };
         self.pins.push(PinResolution {
@@ -278,8 +309,8 @@ impl Merge<'_> {
             basis,
         });
         Ok(Some(match taken {
-            PinSide::Local => local,
-            PinSide::Remote => remote,
+            Side::Local => local,
+            Side::Remote => remote,
         }))
     }
 
