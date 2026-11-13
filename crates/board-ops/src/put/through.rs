@@ -61,6 +61,8 @@ impl Board {
         // The mounted board checks the put against its own settings, at the
         // path the put lands in there.
         mounted.ask_as(self.asker.clone());
+        // ...and refuses it when its own `min_board` is newer than this run.
+        mounted.running_as(self.running);
         mounted.bulk.clone_from(&self.bulk);
         // Refuses a `follow` that names nothing, as `mount update` does.
         let pin = self.repositories().pin(mount)?;

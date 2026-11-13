@@ -157,7 +157,10 @@ impl Board {
             Err(Some(source @ ResolveError::Symlink { .. })) => {
                 return Err(OpenError::Symlink { root, source });
             }
-            Err(_) => return Err(OpenError::Config { root }),
+            Err(_) => {
+                let detail = config_problem(&repositories);
+                return Err(OpenError::Config { root, detail });
+            }
         };
         let mut board = Self {
             repositories,
@@ -325,6 +328,26 @@ pub(crate) fn config_file(
     }
 }
 
+/// What is wrong with the configuration that `config_file` refused, as
+/// serde reports it, such as the `min_board` that is not a version, or
+/// empty when the file is not a record that parses as the configuration.
+fn config_problem(repositories: &Repositories) -> String {
+    let problem = || -> Option<String> {
+        let path: LogicalPath = CONFIG_PATH.parse().ok()?;
+        let location = repositories.resolve(&Source::WorkingTree, &path).ok()?;
+        let Object::Blob(blob) = location.object else {
+            return None;
+        };
+        let root = &mut repositories.root().reader();
+        let contents = latest(repositories.read(root, &location, blob)).ok()??;
+        let value: Value = serde_json::from_slice(&contents.bytes).ok()?;
+        Config::deserialize(&value)
+            .err()
+            .map(|error| error.to_string())
+    };
+    problem().map_or_else(String::new, |text| format!(": {text}"))
+}
+
 /// A board that cannot be opened.
 #[derive(Debug, thiserror::Error)]
 pub enum OpenError {
@@ -332,8 +355,10 @@ pub enum OpenError {
     NotFound { start: PathBuf },
     #[error("no board at or above {start:?}: no git repository holds it")]
     NoRepository { start: PathBuf },
-    #[error("the board at {root:?} has a .board/board.json that is not a valid board/config/v1")]
-    Config { root: PathBuf },
+    #[error(
+        "the board at {root:?} has a .board/board.json that is not a valid board/config/v1{detail}"
+    )]
+    Config { root: PathBuf, detail: String },
     #[error("the board at {root:?} cannot read its configuration: {source}")]
     Symlink { root: PathBuf, source: ResolveError },
     #[error(transparent)]

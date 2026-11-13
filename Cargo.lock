@@ -174,7 +174,6 @@ dependencies = [
  "board-tree",
  "board-types",
  "board-validate",
- "jiff",
  "proptest",
  "serde",
  "serde_json",

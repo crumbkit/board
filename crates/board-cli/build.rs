@@ -23,6 +23,12 @@ use std::path::{Path, PathBuf};
 
 #[path = "build/built.rs"]
 mod built;
+#[path = "../board-ops/src/version/civil.rs"]
+#[expect(
+    dead_code,
+    reason = "the build script prints dates and never reads one"
+)]
+mod civil;
 #[path = "build/commit.rs"]
 mod commit;
 
@@ -90,7 +96,13 @@ fn main() {
     }
     println!("cargo::rerun-if-env-changed=BOARD_BUILD_COMMIT");
     let epoch = std::env::var_os("SOURCE_DATE_EPOCH");
-    match built::seconds(epoch.as_deref(), || text(&["log", "-1", "--format=%ct"])) {
+    let log = |commit: Option<&str>| {
+        let mut arguments = vec!["log", "-1", "--format=%ct"];
+        arguments.extend(commit);
+        arguments.push("--");
+        text(&arguments)
+    };
+    match built::seconds(epoch.as_deref(), given.as_deref(), log) {
         Ok(date) => {
             println!(
                 "cargo::rustc-env=BOARD_BUILD_DATE={}",
@@ -98,7 +110,7 @@ fn main() {
             );
             println!(
                 "cargo::rustc-env=BOARD_BUILD_SHOWN={}",
-                date.map_or_else(String::new, |date| format!(" (built {})", built::utc(date)))
+                date.map_or_else(String::new, |date| format!(" (built {})", civil::utc(date)))
             );
         }
         Err(message) => fail(&message),

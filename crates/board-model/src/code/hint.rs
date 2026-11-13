@@ -371,7 +371,7 @@ fn generic(code: Code) -> &'static str {
             "`.board/board.json` holds `$type` `board/config/v1`, and may hold `commit_on_put` (true or false), `min_board` (a version such as \"0.4.0\", a UTC timestamp such as \"2026-11-13T10:00:00Z\", or an object with `version` and `built`), `plugins` (distinct plugin names) and `store` (a `backend` and a `location`), nothing else"
         }
         Code::ConfigBoardTooOld => {
-            "reads still work; upgrade Board to a build the message allows (`git pull` and rebuild, for a source build), or ask whoever set `min_board` in `.board/board.json` whether it can be lowered"
+            "reads still work; a release build needs the version the message names, and a build from source is numbered 0.0.0 so it needs a source whose commit date is at or after the date the message names (`git pull` and rebuild); or ask whoever set `min_board` in `.board/board.json` (the board's own, or for a write through a mount, the mounted board's) whether it can be lowered"
         }
         Code::ConfigAmbiguous => {
             "choose a board with `board -C <dir> check`, naming one of the boards listed, or leave one mount or repo record of this repository among the boards in `$XDG_CONFIG_HOME/board/config.json`"

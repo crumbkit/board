@@ -6,6 +6,8 @@ use std::str::FromStr;
 
 use serde::{Deserialize, Deserializer};
 
+mod civil;
+
 /// A release number, `major.minor.patch`. A `-` or `+` suffix, such as the
 /// `+<commit>` that `board --version` appends, is read and ignored.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
@@ -24,11 +26,15 @@ impl FromStr for Version {
         match parts[..] {
             [major, minor, patch] => match (number(major), number(minor), number(patch)) {
                 (Some(major), Some(minor), Some(patch)) => Ok(Self([major, minor, patch])),
-                _ => Err(format!("{text:?} is not major.minor.patch")),
+                _ => Err(not_a_version(text)),
             },
-            _ => Err(format!("{text:?} is not major.minor.patch")),
+            _ => Err(not_a_version(text)),
         }
     }
+}
+
+fn not_a_version(text: &str) -> String {
+    format!("{text:?} is not a version: a version is major.minor.patch, such as 0.4.0")
 }
 
 impl fmt::Display for Version {
@@ -54,19 +60,15 @@ impl FromStr for Built {
     type Err = String;
 
     fn from_str(text: &str) -> Result<Self, String> {
-        let at: jiff::Timestamp = text
-            .parse()
-            .map_err(|_| format!("{text:?} is not an RFC 3339 timestamp"))?;
-        Ok(Self(at.as_second()))
+        civil::parse_utc(text)
+            .map(Self)
+            .ok_or_else(|| format!("{text:?} is not an RFC 3339 timestamp"))
     }
 }
 
 impl fmt::Display for Built {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match jiff::Timestamp::from_second(self.0) {
-            Ok(at) => write!(f, "{at}"),
-            Err(_) => write!(f, "{}", self.0),
-        }
+        f.write_str(&civil::utc(self.0))
     }
 }
 
@@ -143,7 +145,14 @@ impl<'de> Deserialize<'de> for MinBoard {
         let (version, built) = match Shape::deserialize(deserializer)? {
             Shape::Text(text) => match text.parse::<Version>() {
                 Ok(version) => (Some(version), None),
-                Err(_) => (None, Some(text.parse::<Built>().map_err(Error::custom)?)),
+                Err(_) => match text.parse::<Built>() {
+                    Ok(built) => (None, Some(built)),
+                    Err(_) => {
+                        return Err(Error::custom(format!(
+                            "{text:?} is neither a version (major.minor.patch, such as 0.4.0) nor an RFC 3339 UTC timestamp (such as 2026-11-13T00:00:00Z)"
+                        )));
+                    }
+                },
             },
             Shape::Both(Pair { version, built }) => (
                 version

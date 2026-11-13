@@ -98,6 +98,38 @@ fn a_build_date_is_an_rfc_3339_timestamp_that_prints_in_utc() {
 }
 
 #[test]
+fn a_leap_day_build_date_reads_and_prints_the_same_in_every_zone() {
+    let built: Built = "2024-02-29T23:30:00-05:00".parse().unwrap();
+    assert_eq!(built.to_string(), "2024-03-01T04:30:00Z");
+    let built: Built = "2024-02-29T00:00:00Z".parse().unwrap();
+    assert_eq!(built, Built::from_seconds(1_709_164_800));
+    assert!("2023-02-29T00:00:00Z".parse::<Built>().is_err());
+}
+
+#[test]
+fn a_version_written_as_two_numbers_or_with_a_v_is_explained() {
+    for bad in ["1.0", "v0.4.0"] {
+        let error = bad.parse::<Version>().unwrap_err();
+        assert!(error.contains("a version is major.minor.patch"), "{error}");
+        let text = serde_json::from_str::<super::MinBoard>(&format!("\"{bad}\""))
+            .unwrap_err()
+            .to_string();
+        assert!(
+            text.contains("neither a version (major.minor.patch"),
+            "{text}"
+        );
+        let text = serde_json::from_str::<super::MinBoard>(&format!(r#"{{"version": "{bad}"}}"#))
+            .unwrap_err()
+            .to_string();
+        assert!(text.contains("a version is major.minor.patch"), "{text}");
+        let scenario = gated(Some(&format!("\"{bad}\"")));
+        let error = crate::Board::open(scenario.workdir(), None).unwrap_err();
+        assert_eq!(error.code(), Code::ConfigInvalid, "{bad}");
+        assert!(error.to_string().contains("major.minor.patch"), "{error}");
+    }
+}
+
+#[test]
 fn an_older_version_is_refused_a_put_and_an_equal_or_newer_one_is_admitted() {
     let scenario = gated(Some(r#""1.2.0""#));
     assert_eq!(put_as(&scenario, "1.1.9", None), REFUSED);
@@ -216,4 +248,72 @@ fn the_refusal_names_what_the_board_needs_and_what_is_running() {
         error.to_string(),
         "this board needs a Board with version 1.2.0 or newer and a build dated 2026-11-13T00:00:00Z or later to write it, and this is Board 1.1.0 (no build date); reads still work"
     );
+}
+
+/// A board in a repository of its own that sets `min_board`, committed and
+/// tracked, and a test board that mounts it at `/vendor`. The test board
+/// itself sets no `min_board`.
+fn nested(min_board: &str) -> (Scenario, Scenario) {
+    let library = Scenario::new();
+    let config = format!(r#"{{"$type": "board/config/v1", "min_board": {min_board}}}"#);
+    let files = [
+        (".board/board.json", config.as_str()),
+        (
+            ".board/types/lr/task/v1.schema.json",
+            crate::tests::TASK_SCHEMA,
+        ),
+        (
+            ".board/types/lr/project/v1.schema.json",
+            crate::tests::PROJECT_SCHEMA,
+        ),
+        ("projects/p.json", r#"{"$type": "lr/project/v1"}"#),
+    ];
+    for (at, text) in files {
+        library.write(at, Item::File(text));
+    }
+    let commit = library.commit(&files);
+    library.track(commit).identified();
+    let root = board();
+    root.write(
+        "vendor.json",
+        Item::File(&board_scenario::seed::mount_of(&library.path(), commit)),
+    );
+    root.identified();
+    (root, library)
+}
+
+fn put_through(root: &Scenario, version: &str, built: Option<i64>) -> Result<(), crate::PutError> {
+    let record = task(r#", "project": "/projects/p""#);
+    running(root, version, built)
+        .put(
+            &"/vendor/tasks/a".parse().unwrap(),
+            Expect::Any,
+            record.as_bytes(),
+        )
+        .map(|_| ())
+}
+
+#[test]
+fn a_put_through_a_mount_obeys_the_min_board_of_the_mounted_board() {
+    let (root, library) = nested(r#""1.2.0""#);
+    let head = library.head().unwrap().id;
+    let error = put_through(&root, "1.1.0", None).unwrap_err();
+    assert_eq!(error.code(), Code::ConfigBoardTooOld);
+    assert!(
+        error.to_string().contains("version 1.2.0 or newer"),
+        "{error}"
+    );
+    assert_eq!(library.head().unwrap().id, head, "the mounted board moved");
+    assert!(put_through(&root, "1.2.0", None).is_ok());
+    assert_ne!(library.head().unwrap().id, head);
+}
+
+#[test]
+fn a_put_through_a_mount_obeys_a_build_date_in_the_mounted_boards_min_board() {
+    let (root, library) = nested(r#"{"built": "2026-11-13T00:00:00Z"}"#);
+    let head = library.head().unwrap().id;
+    let error = put_through(&root, "0.0.0", Some(NOV_13 - 1)).unwrap_err();
+    assert_eq!(error.code(), Code::ConfigBoardTooOld);
+    assert_eq!(library.head().unwrap().id, head);
+    assert!(put_through(&root, "0.0.0", Some(NOV_13)).is_ok());
 }

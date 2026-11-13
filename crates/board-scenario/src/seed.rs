@@ -45,8 +45,8 @@ pub const NOT_REPRODUCED: [(Code, &str); 22] = [
     ),
     (
         Code::ConfigBoardTooOld,
-        "the running Board must be older than the board's min_board, and a build from source is never refused; \
-         board-ops/src/version/tests.rs names an older version",
+        "the running Board must be older than the board's min_board, by version or by build date, which is \
+         a build from source's only gate; board-ops/src/version/tests.rs names an older version and date",
     ),
     (
         Code::PutHeadMoved,
