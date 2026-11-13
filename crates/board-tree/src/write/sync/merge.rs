@@ -6,7 +6,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use board_model::{
-    Mount, ObjectId, Pointer, Side, TYPES_DIRECTORY, can_hold_pointer, pointer, repinned,
+    Mount, ObjectId, Pointer, Side, TYPES_DIRECTORY, can_hold_pointer, is_json_file, pointer,
+    repinned,
 };
 use gix::bstr::BString;
 use gix::objs::tree::{Entry, EntryKind, EntryMode};
@@ -250,6 +251,9 @@ impl Merge<'_> {
                 if let Some(taken) = self.pin(path, local, remote)? {
                     return Ok(Some(taken));
                 }
+                if let Some(merged) = self.text(path, base, local, remote)? {
+                    return Ok(Some(merged));
+                }
                 self.flag_schema(path, local, remote);
                 let kind = ConflictKind::BothChanged {
                     local: local.object(),
@@ -279,6 +283,62 @@ impl Merge<'_> {
             kind,
         });
         Ok(kept)
+    }
+
+    /// The text file both sides changed, merged line by line from `base`,
+    /// when no hunk of one side overlaps a hunk of the other. A JSON file,
+    /// a file that is not text and a merge with overlapping hunks give
+    /// `None`.
+    fn text(
+        &self,
+        path: &str,
+        base: Option<Slot>,
+        local: Slot,
+        remote: Slot,
+    ) -> Result<Option<Slot>, GitError> {
+        if is_json_file(path)
+            || local.mode != remote.mode
+            || !local.mode.is_blob()
+            || base.is_some_and(|base| !base.mode.is_blob())
+        {
+            return Ok(None);
+        }
+        let read = |id: gix::ObjectId| self.repository.read_blob(model_id(&id));
+        let (Some(ours), Some(theirs)) = (read(local.id)?, read(remote.id)?) else {
+            return Ok(None);
+        };
+        let Some(ancestor) = base.map_or(Ok(Some(Vec::new())), |base| read(base.id))? else {
+            return Ok(None);
+        };
+        if [&ours, &theirs, &ancestor]
+            .iter()
+            .any(|bytes| bytes.contains(&0))
+        {
+            return Ok(None);
+        }
+        let mut merged = Vec::new();
+        let mut input = gix::diff::blob::InternedInput::new(&[][..], &[]);
+        let outcome = gix::merge::blob::builtin_driver::text(
+            &mut merged,
+            &mut input,
+            gix::merge::blob::builtin_driver::text::Labels::default(),
+            &ours,
+            &ancestor,
+            &theirs,
+            gix::merge::blob::builtin_driver::text::Options::default(),
+        );
+        if outcome != gix::merge::blob::Resolution::Complete {
+            return Ok(None);
+        }
+        let id = self
+            .repository
+            .git()
+            .write_blob(&merged)
+            .map_err(|e| self.unreadable(e))?;
+        Ok(Some(Slot {
+            id: id.detach(),
+            mode: local.mode,
+        }))
     }
 
     /// The pin to keep when `local` and `remote` are mount pointers that

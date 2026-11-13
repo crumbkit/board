@@ -265,3 +265,33 @@ fn local_records_that_fail_a_schema_the_remote_changed_are_reported() {
     let synced = sync(&two, false);
     assert_eq!(synced.failing, ["r.json"]);
 }
+
+#[test]
+fn a_text_file_both_sides_changed_in_different_places_keeps_both_changes_without_a_record() {
+    let (_remote, one, two) = pair(&[("daily.md", "a\nb\nc\nd\ne\nf\ng\n")]);
+    commit_here(&one, &[("daily.md", "a\nb\nc\nd\ne\nf\ng\nphone\n")]);
+    sync(&one, true);
+    commit_here(&two, &[("daily.md", "agent\na\nb\nc\nd\ne\nf\ng\n")]);
+    let synced = sync(&two, false);
+    assert!(synced.merged);
+    assert_eq!(synced.conflicts, Vec::new());
+    assert_eq!(records(&two).len(), 0);
+    let merged = "agent\na\nb\nc\nd\ne\nf\ng\nphone\n";
+    assert_eq!(text(&two, "daily.md"), merged);
+    assert_eq!(
+        std::fs::read_to_string(two.workdir().join("daily.md")).unwrap(),
+        merged
+    );
+}
+
+#[test]
+fn a_text_file_both_sides_changed_on_one_line_takes_the_remote_and_records_it() {
+    let (_remote, one, two) = pair(&[("daily.md", "a\nb\nc\n")]);
+    commit_here(&one, &[("daily.md", "a\nphone\nc\n")]);
+    sync(&one, true);
+    commit_here(&two, &[("daily.md", "a\nagent\nc\n")]);
+    let synced = sync(&two, false);
+    assert_eq!(synced.conflicts.len(), 1);
+    assert_eq!(text(&two, "daily.md"), "a\nphone\nc\n");
+    assert_eq!(records(&two).len(), 1);
+}

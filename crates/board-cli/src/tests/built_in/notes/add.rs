@@ -266,6 +266,27 @@ fn a_desktop_commit_and_a_phone_push_to_one_note_merge_with_a_recorded_conflict_
 }
 
 #[test]
+fn a_desktop_commit_and_a_phone_push_to_different_parts_of_one_note_both_survive() {
+    let notes = Notes::new();
+    let path = Notes::note(&notes.call("add", &["--text", "First."]).unwrap());
+    notes.call("add", &["--text", "Second."]).unwrap();
+    let kept = notes.read(&path);
+    notes
+        .clone
+        .write(&path, Item::File(&format!("From the desktop.\n{kept}")));
+    commit(notes.clone.workdir());
+    notes.phone_appends(&path, "\nFrom the phone.\n");
+    let output = notes.call("add", &["--text", "From the agent."]).unwrap();
+    assert_eq!(output["parked"], Value::Null);
+    assert_eq!(output["unpushed"], Value::Null);
+    let merged = notes.read(&path);
+    for text in ["From the desktop.", "From the phone.", "From the agent."] {
+        assert!(merged.contains(text), "{text}: {merged}");
+    }
+    assert_eq!(git(notes.clone.workdir(), &["status", "--porcelain"]), "");
+}
+
+#[test]
 fn a_phone_push_over_an_uncommitted_edit_parks_the_note_and_leaves_the_edit() {
     let notes = Notes::new();
     let path = Notes::note(&notes.call("add", &["--text", "First."]).unwrap());

@@ -173,10 +173,11 @@ twice.
 
 Board's sync merges with a commit of its own and leaves no merge or rebase
 in progress. When the phone pushes a change to the same note between step 1
-and step 4, the push sync merges the two: the note holds the phone's text,
-the plugin's text stays in the commit it made, and a `board/conflict/v1`
-record under `/conflicts/` names both versions. The call reports nothing
-parked or unpushed, so the appended text has to be recovered from the record.
+and step 4, the push sync merges the two line by line. Changes to different
+parts of the note both survive. When both changed the same lines, the note
+holds the phone's text, the plugin's text stays in the commit it made, and a
+`board/conflict/v1` record under `/conflicts/` names both versions. The call
+reports nothing parked or unpushed in either case.
 
 Each sync and pin has git's deadline of 60 seconds.
 

@@ -299,3 +299,18 @@ proptest! {
         }
     }
 }
+
+#[test]
+fn a_conflict_record_is_admitted_without_a_schema_and_its_twin_with_a_bad_blob_is_refused() {
+    let blob = "ab".repeat(20);
+    let side =
+        format!(r#"{{"blob": "{blob}", "commit": "{blob}", "author": "A <a@example.com>"}}"#);
+    let conflict = format!(
+        r#"{{"$type": "board/conflict/v1", "path": "a.json", "kind": "both_changed", "kept": "remote", "base": null, "local": {side}, "remote": {side}}}"#
+    );
+    assert_eq!(code(Role::Json, &conflict), None);
+    assert_eq!(
+        code(Role::Json, &conflict.replace(&blob, "zz")),
+        Some(Code::RecordInvalid)
+    );
+}

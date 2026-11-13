@@ -173,8 +173,12 @@ const ENABLE: Document<Answer> = prose("plugin-enable-report", "What enabling a 
 const MOUNT_UPDATE: Document<Answer> =
     prose("mount-update-report", "Where a mount moved from and to.");
 const URI: Document<Answer> = prose("uri-report", "A record's board:// URI and its path.");
-const SYNC: Document<Answer> = prose(
+/// The sync report is at version 3: `replayed` gave way to `merged`,
+/// `conflicts`, `pins` and `failing`. Nothing reads version 2.
+const SYNC: Document<Answer> = Document::new(
+    "board",
     "sync-report",
+    3,
     "What a sync fetched, merged and pushed, and where HEAD moved.",
 );
 

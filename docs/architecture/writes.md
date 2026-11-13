@@ -106,7 +106,7 @@ the board lock and stops. `sync.lock` is a kernel file lock, so SIGKILL frees it
 too and a leftover file blocks nothing. When git exits, Board kills its group, so a helper
 there, such as git-credential-cache's daemon, ends with it. The commits here
 stay for the next sync. The report is
-`board/sync-report/v2`: `remote`, `branch`, `fetched`, `old` (null before
+`board/sync-report/v3`: `remote`, `branch`, `fetched`, `old` (null before
 the first commit), `new`, `merged`, `conflicts`, `pins`, `failing` (these four
 are in [merging.md](writes/merging.md)), `pushed`, `attempts` and `kept` (each
 kept file's `path`, `code` and `hint`).

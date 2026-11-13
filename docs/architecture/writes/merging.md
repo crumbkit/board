@@ -6,8 +6,10 @@ moves to it. Otherwise the merge is computed in memory, and its commit is
 written before any file is touched.
 
 When one side changed a path, that change is taken, and so is a change both
-made. When both edited a file, or added different content, the remote's content
-is in the merge. When one side edited a file and the other deleted it, the edit
+made. When both edited a text file (any file that is not `.json`), a line-level
+three-way merge from the ancestor runs first, and its result is taken with no
+conflict when no changed hunks overlap. Otherwise, and when both edited a JSON
+record or added different content, the remote's content is in the merge. When one side edited a file and the other deleted it, the edit
 is. When one side holds a file where the other holds a directory, the remote's
 is. The other version stays in history.
 
