@@ -19,8 +19,11 @@ after the third retry, and when the commit cannot be staged again, for example
 because a merge began. In each case the files are already written and stay
 uncommitted for the next sync to adopt.
 
-To move HEAD, the put locks the branch and checks it still holds the commit
-the put staged on. It then replaces git's index and only then moves the
-branch, because git reads HEAD and then the index: a commit that sees the new
-HEAD must also see the new index. A failure to write the index leaves HEAD
-where it was, with `board::put::failed`.
+To move HEAD, the put locks the branch, waiting within the same deadline if
+another process holds it, and checks the branch still holds the commit the put
+staged on. It then replaces git's index and only then moves the branch. An
+index that cannot be written therefore leaves HEAD where it was, with
+`board::put::failed` and the files for sync to adopt. A plain `git commit`
+reads the index before it takes `index.lock` and HEAD after, so one that
+straddles a put can still commit a tree without the put's files; this order
+does not change that.

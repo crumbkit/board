@@ -34,10 +34,6 @@ pub const LOCK_WAIT: Duration = Duration::from_secs(5);
 /// How often a waiting put tries the lock again.
 const LOCK_POLL: Duration = Duration::from_millis(20);
 
-/// How long the branch lock is awaited, which is the default of git's
-/// `core.filesRefLockTimeout`.
-const REF_LOCK_WAIT: Duration = Duration::from_millis(100);
-
 /// Where a put writes: the record file a logical path names, or the file
 /// whose whole name it is, existing or not, in the working tree.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -471,7 +467,7 @@ impl Repository {
 
     /// Finishes `staged` as [`Self::finish_commit`] does, writing `log` to
     /// the reflog.
-    fn finish(&self, _lock: &Lock, mut staged: Staged, log: &str) -> Result<ObjectId, WriteError> {
+    fn finish(&self, lock: &Lock, mut staged: Staged, log: &str) -> Result<ObjectId, WriteError> {
         use gix::refs::Target as RefTarget;
         use gix::refs::transaction::{Change, LogChange, PreviousValue, RefEdit, RefLog};
         let commit = gix::ObjectId::try_from(staged.commit.as_bytes()).map_err(|error| {
@@ -515,24 +511,18 @@ impl Repository {
             })?;
         // The branch is locked and checked first, so a HEAD that moved is
         // found before git's index changes. The index is then replaced
-        // before the branch moves, because git reads HEAD and then the
-        // index: a commit that sees the new HEAD must see the new index.
-        let lock_wait = gix::lock::acquire::Fail::AfterDurationWithBackoff(REF_LOCK_WAIT);
-        let prepared = git.refs.transaction().prepare([edit], lock_wait, lock_wait);
-        let prepared = match prepared {
-            Ok(prepared) => prepared,
-            Err(error) => {
-                use gix::refs::file::transaction::prepare::{MustNotExist, ReferenceOutOfDate};
-                if error.downcast_any_ref::<ReferenceOutOfDate>().is_some()
-                    || error.downcast_any_ref::<MustNotExist>().is_some()
-                {
-                    return Err(WriteError::HeadMoved);
-                }
-                return Err(WriteError::Uncommitted {
-                    source: error.into(),
-                });
-            }
-        };
+        // before the branch moves, so an index that cannot be written leaves
+        // HEAD where it was and the files for the next sync to adopt. A
+        // plain `git commit` still reads the index before it takes
+        // `index.lock` and HEAD after, so one that straddles a put can
+        // commit a tree without the put's files.
+        let prepared = Self::lock_branch(&git, &edit, lock.deadline)?;
+        let committer = git
+            .committer()
+            .transpose()
+            .map_err(|error| WriteError::Uncommitted {
+                source: error.into(),
+            })?;
         let index = &staged.index;
         staged
             .index_lock
@@ -543,7 +533,7 @@ impl Repository {
             .and_then(|()| staged.index_lock.commit().map_err(|error| error.error))
             .map_err(|source| WriteError::IndexNotWritten { source })?;
         prepared
-            .commit(git.committer().transpose().ok().flatten())
+            .commit(committer)
             .map_err(|error| WriteError::Uncommitted {
                 source: error.into(),
             })?;
