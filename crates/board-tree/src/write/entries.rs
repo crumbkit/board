@@ -1,5 +1,7 @@
 //! Changing git's index for the paths a commit wrote or removed.
 
+use std::io::Write;
+
 /// Points the index entry for `path` at `blob`, adding it when new. Its
 /// stat is cleared, so git hashes the file again before trusting it.
 pub(super) fn stage_entry(index: &mut gix::index::File, path: &str, blob: gix::ObjectId) {
@@ -25,4 +27,18 @@ pub(super) fn stage_entry(index: &mut gix::index::File, path: &str, blob: gix::O
 pub(super) fn unstage_entry(index: &mut gix::index::File, path: &str) {
     index.remove_tree();
     index.remove_entries(|_, at, _| at == path.as_bytes());
+}
+
+/// Writes `index` to `out`. The index writer makes about fifteen small
+/// writes per entry, which on a file are system calls, so it writes into a
+/// buffer that reaches `out` in large blocks.
+pub(super) fn write_index(
+    index: &gix::index::File,
+    out: &mut dyn std::io::Write,
+) -> std::io::Result<()> {
+    let mut buffered = std::io::BufWriter::with_capacity(1 << 20, out);
+    index
+        .write_to(&mut buffered, gix::index::write::Options::default())
+        .map_err(std::io::Error::other)?;
+    buffered.flush()
 }

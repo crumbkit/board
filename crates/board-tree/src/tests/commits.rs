@@ -95,25 +95,32 @@ fn branch(scenario: &Scenario) -> String {
     head.trim().strip_prefix("ref: ").unwrap().to_owned()
 }
 
+/// A branch lock another process holds past the deadline is `locked`, not a
+/// failure and not `head_moved`; the index is untouched.
 #[test]
-fn a_held_branch_lock_is_a_failure_and_not_head_moved() {
+fn a_branch_lock_held_past_the_deadline_is_locked_and_leaves_the_index_alone() {
     let scenario = identified();
     let lock_file = format!(".git/{}.lock", branch(&scenario));
     scenario.write(&lock_file, Item::File(""));
     let repository = scenario.open();
     let parent = scenario.head().unwrap().id;
-    let lock = repository.lock(LOCK_WAIT).unwrap();
+    let lock = repository.lock(Duration::from_millis(300)).unwrap();
     let staged = repository
         .stage_commit(&lock, &[("b.json", Some(b"{}\n"))], "board put /b")
         .unwrap()
         .unwrap();
+    let started = Instant::now();
     let error = repository.finish_commit(&lock, staged).unwrap_err();
-    assert!(matches!(error, WriteError::Uncommitted { .. }), "{error}");
-    assert_eq!(error.code(), Code::PutFailed);
-    assert!(error.to_string().contains("written but not committed"));
+    assert!(matches!(error, WriteError::Locked { .. }), "{error}");
+    assert_eq!(error.code(), Code::PutLocked);
+    assert!(error.to_string().contains(".lock"), "{error}");
+    assert!(started.elapsed() < Duration::from_millis(400));
     assert_eq!(scenario.head().unwrap().id, parent);
+    assert!(!scenario.index().contains_key("b.json"));
     assert!(!repository.git_dir().join("index.lock").exists());
     scenario.write(&lock_file, Item::Deleted);
+    drop(lock);
+    let lock = repository.lock(LOCK_WAIT).unwrap();
     let staged = repository
         .stage_commit(&lock, &[("b.json", Some(b"{}\n"))], "board put /b")
         .unwrap()
@@ -121,29 +128,91 @@ fn a_held_branch_lock_is_a_failure_and_not_head_moved() {
     assert!(repository.finish_commit(&lock, staged).is_ok());
 }
 
+/// A branch lock another process drops before the deadline is waited out.
 #[test]
-fn an_index_that_cannot_be_written_after_head_moved_names_the_commit() {
+#[expect(
+    clippy::disallowed_methods,
+    reason = "another process drops git's lock, which the scenario cannot do from a thread"
+)]
+fn a_branch_lock_released_before_the_deadline_admits_the_commit() {
+    let scenario = identified();
+    let lock_file = format!(".git/{}.lock", branch(&scenario));
+    scenario.write(&lock_file, Item::File(""));
+    let repository = scenario.open();
+    let held = repository
+        .git_dir()
+        .join(format!("{}.lock", branch(&scenario)));
+    let lock = repository.lock(LOCK_WAIT).unwrap();
+    let staged = repository
+        .stage_commit(&lock, &[("b.json", Some(b"{}\n"))], "board put /b")
+        .unwrap()
+        .unwrap();
+    let releaser = std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(500));
+        std::fs::remove_file(held).unwrap();
+    });
+    let result = repository.finish_commit(&lock, staged);
+    releaser.join().unwrap();
+    assert!(result.is_ok(), "{result:?}");
+    assert!(scenario.index().contains_key("b.json"));
+}
+
+/// The ref cannot be written after the index was renamed (crash point 3): the
+/// put fails, HEAD is where it was, and git's index already holds the file,
+/// so `git status` shows it as staged.
+#[test]
+fn a_ref_that_cannot_be_written_after_the_index_leaves_the_file_staged() {
     let scenario = identified();
     let repository = scenario.open();
+    let parent = scenario.head().unwrap().id;
+    let lock = repository.lock(LOCK_WAIT).unwrap();
+    let staged = repository
+        .stage_commit(&lock, &[("b.json", Some(b"{}\n"))], "board put /b")
+        .unwrap()
+        .unwrap();
+    // The reflog is written when the ref is, so a directory where its file
+    // belongs fails that write only after the branch is locked.
+    let reflog = format!(".git/logs/{}", branch(&scenario));
+    scenario.write(&reflog, Item::Deleted);
+    scenario.write(&format!("{reflog}/in-the-way"), Item::File(""));
+    let error = repository.finish_commit(&lock, staged).unwrap_err();
+    assert!(matches!(error, WriteError::Uncommitted { .. }), "{error}");
+    assert_eq!(error.code(), Code::PutFailed);
+    assert_eq!(scenario.head().unwrap().id, parent);
+    assert!(scenario.index().contains_key("b.json"));
+}
+
+/// The index is replaced first, while the branch is locked, so an index that
+/// cannot be written leaves HEAD unmoved and the files for sync to adopt.
+#[test]
+fn an_index_that_cannot_be_written_leaves_head_where_it_was() {
+    let scenario = identified();
+    let repository = scenario.open();
+    let parent = scenario.head().unwrap().id;
     let lock = repository.lock(LOCK_WAIT).unwrap();
     let staged = repository
         .stage_commit(&lock, &[("b.json", Some(b"{}\n"))], "board put /b")
         .unwrap()
         .unwrap();
     // The index is written into the held lock file, so with it gone the
-    // write fails after HEAD has moved.
+    // write fails.
     scenario.write(".git/index.lock", Item::Deleted);
     let error = repository.finish_commit(&lock, staged).unwrap_err();
-    let head = scenario.head().unwrap().id;
     assert!(
-        matches!(error, WriteError::IndexNotUpdated { commit, .. } if commit == head),
+        matches!(error, WriteError::IndexNotWritten { .. }),
         "{error}"
     );
     assert_eq!(error.code(), Code::PutFailed);
-    assert!(error.to_string().starts_with(&format!(
-        "committed {head}, but git's index was not updated"
-    )));
+    assert!(error.to_string().starts_with(
+        "git's index could not be written, so the files are written but not committed"
+    ));
+    assert_eq!(scenario.head().unwrap().id, parent, "HEAD did not move");
     assert!(!scenario.index().contains_key("b.json"));
+    let branch_lock = format!(".git/{}.lock", branch(&scenario));
+    assert!(
+        !scenario.workdir().join(branch_lock).exists(),
+        "the branch lock is released"
+    );
 }
 
 #[test]

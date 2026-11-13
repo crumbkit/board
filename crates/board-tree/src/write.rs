@@ -19,7 +19,7 @@ use crate::resolve::{ResolveError, Resolver};
 use crate::through::{Inside, Through, through_mount};
 use crate::tree::Tree;
 use crate::walk::{Beneath, Planned, Tense, reason};
-use entries::{stage_entry, unstage_entry};
+use entries::{stage_entry, unstage_entry, write_index};
 
 mod entries;
 pub(crate) mod outside;
@@ -467,7 +467,7 @@ impl Repository {
 
     /// Finishes `staged` as [`Self::finish_commit`] does, writing `log` to
     /// the reflog.
-    fn finish(&self, _lock: &Lock, mut staged: Staged, log: &str) -> Result<ObjectId, WriteError> {
+    fn finish(&self, lock: &Lock, mut staged: Staged, log: &str) -> Result<ObjectId, WriteError> {
         use gix::refs::Target as RefTarget;
         use gix::refs::transaction::{Change, LogChange, PreviousValue, RefEdit, RefLog};
         let commit = gix::ObjectId::try_from(staged.commit.as_bytes()).map_err(|error| {
@@ -509,30 +509,33 @@ impl Repository {
             .map_err(|error| WriteError::Uncommitted {
                 source: error.into(),
             })?;
-        if let Err(error) = git.edit_reference(edit) {
-            use gix::refs::file::transaction::prepare::{MustNotExist, ReferenceOutOfDate};
-            if error.downcast_any_ref::<ReferenceOutOfDate>().is_some()
-                || error.downcast_any_ref::<MustNotExist>().is_some()
-            {
-                return Err(WriteError::HeadMoved);
-            }
-            return Err(WriteError::Uncommitted {
+        // The branch is locked and checked first, so a HEAD that moved is
+        // found before git's index changes. The index is then replaced
+        // before the branch moves, so an index that cannot be written leaves
+        // HEAD where it was and the files for the next sync to adopt. A
+        // plain `git commit` still reads the index before it takes
+        // `index.lock` and HEAD after, so one that straddles a put can
+        // commit a tree without the put's files.
+        let prepared = Self::lock_branch(&git, &edit, lock.deadline)?;
+        let committer = git
+            .committer()
+            .transpose()
+            .map_err(|error| WriteError::Uncommitted {
                 source: error.into(),
-            });
-        }
+            })?;
         let index = &staged.index;
         staged
             .index_lock
             .with_mut(|file| {
-                index
-                    .write_to(&mut *file, gix::index::write::Options::default())
-                    .map_err(io::Error::other)?;
+                write_index(index, &mut *file)?;
                 file.sync_all()
             })
             .and_then(|()| staged.index_lock.commit().map_err(|error| error.error))
-            .map_err(|source| WriteError::IndexNotUpdated {
-                commit: staged.commit,
-                source,
+            .map_err(|source| WriteError::IndexNotWritten { source })?;
+        prepared
+            .commit(committer)
+            .map_err(|error| WriteError::Uncommitted {
+                source: error.into(),
             })?;
         Ok(staged.commit)
     }
@@ -671,10 +674,9 @@ pub enum WriteError {
         source: Box<dyn std::error::Error + Send + Sync>,
     },
     #[error(
-        "committed {commit}, but git's index was not updated, so git status shows the written files as changed: {source}"
+        "git's index could not be written, so the files are written but not committed: {source}"
     )]
-    IndexNotUpdated {
-        commit: ObjectId,
+    IndexNotWritten {
         #[source]
         source: io::Error,
     },
@@ -717,7 +719,7 @@ impl WriteError {
             | Self::Unsynced { .. }
             | Self::Commit { .. }
             | Self::Uncommitted { .. }
-            | Self::IndexNotUpdated { .. } => Code::PutFailed,
+            | Self::IndexNotWritten { .. } => Code::PutFailed,
             Self::NoIdentity => Code::PutNoIdentity,
             Self::HeadMoved => Code::PutHeadMoved,
             Self::Git(error) => error.code(),

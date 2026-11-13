@@ -63,6 +63,52 @@ impl Repository {
     }
 }
 
+impl Repository {
+    /// Locks the branch `edit` updates and checks its expected value,
+    /// trying again every `LOCK_POLL` until `deadline` while another process
+    /// holds the lock. A branch that no longer holds the expected value is
+    /// [`WriteError::HeadMoved`]; a lock still held at the deadline is
+    /// [`WriteError::Locked`].
+    pub(super) fn lock_branch<'a>(
+        git: &'a gix::Repository,
+        edit: &gix::refs::transaction::RefEdit,
+        deadline: Instant,
+    ) -> Result<gix::refs::file::Transaction<'a, 'a>, WriteError> {
+        use gix::refs::file::transaction::prepare::{MustNotExist, ReferenceOutOfDate};
+        loop {
+            match git.refs.transaction().prepare(
+                [edit.clone()],
+                Fail::Immediately,
+                Fail::Immediately,
+            ) {
+                Ok(prepared) => return Ok(prepared),
+                Err(error) => {
+                    if error.downcast_any_ref::<ReferenceOutOfDate>().is_some()
+                        || error.downcast_any_ref::<MustNotExist>().is_some()
+                    {
+                        return Err(WriteError::HeadMoved);
+                    }
+                    if !error.is_retryable() {
+                        return Err(WriteError::Uncommitted {
+                            source: error.into(),
+                        });
+                    }
+                    if Instant::now() >= deadline {
+                        let branch = git
+                            .head_name()
+                            .ok()
+                            .flatten()
+                            .map_or_else(|| "HEAD".to_owned(), |name| name.to_string());
+                        let lock = git.common_dir().join(format!("{branch}.lock"));
+                        return Err(WriteError::Locked { lock });
+                    }
+                    std::thread::sleep(LOCK_POLL);
+                }
+            }
+        }
+    }
+}
+
 /// The refusal for a lock gix could not take: `Locked` when another holds
 /// `lock`, and an I/O failure otherwise.
 fn lock_refused(error: gix::Exn, lock: PathBuf) -> WriteError {
