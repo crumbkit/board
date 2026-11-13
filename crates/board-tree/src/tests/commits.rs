@@ -286,7 +286,10 @@ fn the_board_lock_and_the_index_lock_share_one_wait() {
     let spent = started.elapsed();
     assert_eq!(error.code(), Code::PutLocked, "{error}");
     assert!(spent >= Duration::from_millis(900), "{spent:?}");
-    assert!(spent < Duration::from_millis(1400), "{spent:?}, not two waits");
+    assert!(
+        spent < Duration::from_millis(1400),
+        "{spent:?}, not two waits"
+    );
 }
 
 /// A put whose HEAD moved to a commit that leaves its paths alone stages
