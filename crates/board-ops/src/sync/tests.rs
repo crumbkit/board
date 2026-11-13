@@ -565,13 +565,8 @@ fn a_file_edited_inside_the_integrate_step_is_kept_and_reported() {
         std::thread::sleep(std::time::Duration::from_millis(20));
     }
     a.write("projects/z.json", Item::File("edited"));
-    let mut sink = Vec::new();
-    std::io::Read::read_to_end(
-        &mut std::fs::File::open(dir.join("projects/.a.json.board-tmp")).unwrap(),
-        &mut sink,
-    )
-    .unwrap();
-    let synced = syncing.join().unwrap().unwrap();
+    release_writer(&dir.join("projects/.a.json.board-tmp"));
+    let synced = finished(syncing).unwrap();
     assert_eq!(synced.kept, [Fields::at(&path("/projects/z"))]);
     assert_eq!(
         std::fs::read_to_string(dir.join("projects/z.json")).unwrap(),
@@ -642,6 +637,57 @@ fn holding_push(clone: &Scenario) {
                  while [ ! -e .git/pre-push.release ]; do sleep 0.05; done\n",
             ),
         );
+}
+
+/// How long a test waits on a seam before it fails: a seam that never
+/// opens means a broken test, which should fail and not hang the suite.
+const SEAM_WAIT: std::time::Duration = std::time::Duration::from_secs(20);
+
+/// Opens the read end of the FIFO at `fifo`, which the sync's writer is
+/// blocked opening, and reads what it writes to its end. Panics when no
+/// writer comes within `SEAM_WAIT`.
+fn release_writer(fifo: &std::path::Path) {
+    let (done, finished) = std::sync::mpsc::channel();
+    let fifo = fifo.to_path_buf();
+    // The open waits for a writer, so it runs where a timeout can abandon it.
+    std::thread::spawn(move || {
+        let mut sink = Vec::new();
+        let read = std::fs::File::open(&fifo)
+            .and_then(|mut file| std::io::Read::read_to_end(&mut file, &mut sink));
+        let _ = done.send(read.map(|_| ()));
+    });
+    finished
+        .recv_timeout(SEAM_WAIT)
+        .expect("the sync never opened the FIFO to write")
+        .unwrap();
+}
+
+/// The result of the sync on `syncing`, waiting at most `SEAM_WAIT` for it.
+fn finished(
+    syncing: std::thread::JoinHandle<Result<Synced, SyncError>>,
+) -> Result<Synced, SyncError> {
+    let until = std::time::Instant::now() + SEAM_WAIT;
+    while !syncing.is_finished() {
+        assert!(std::time::Instant::now() < until, "the sync never finished");
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    syncing.join().unwrap()
+}
+
+/// Lets the first fetch of a sync through and holds the second, which
+/// touches `.git/delayed-ssh.started` and waits for `.git/delayed-ssh.release`.
+fn holding_second_fetch(clone: &Scenario) {
+    clone.delayed_origin(0);
+    clone.write(
+        ".git/delayed-ssh",
+        Item::Executable(
+            "#!/bin/sh\nfor last; do :; done\n\
+             case \"$last\" in *upload-pack*) \
+             if [ -e \"$0.first\" ]; then touch \"$0.started\"; \
+             while [ ! -e \"$0.release\" ]; do sleep 0.05; done; \
+             else touch \"$0.first\"; fi;; esac\nexec sh -c \"$last\"\n",
+        ),
+    );
 }
 
 fn wait_for(file: &std::path::Path) {
@@ -772,23 +818,21 @@ fn a_head_moved_by_another_program_during_integrate_starts_another_round_that_fi
         &[("projects/a.json", PROJECT), ("projects/z.json", PROJECT)],
     );
     a.write("projects/.a.json.board-tmp", Item::Fifo);
+    holding_second_fetch(&a);
     let dir = a.workdir().to_path_buf();
     let syncing = syncing_pushing_to(&dir, false);
     wait_for(&dir.join(".git/index.lock"));
     // Another program's commit on the clone's branch.
     let other = a.commit(&BASE).to_string();
-    let mut sink = Vec::new();
-    std::io::Read::read_to_end(
-        &mut std::fs::File::open(dir.join("projects/.a.json.board-tmp")).unwrap(),
-        &mut sink,
-    )
-    .unwrap();
-    // The writer renamed the FIFO onto a.json, which the next round would
-    // block reading; z.json is written after it, so put the content back.
-    wait_for(&dir.join("projects/z.json"));
+    release_writer(&dir.join("projects/.a.json.board-tmp"));
+    // The writer renamed the FIFO onto a.json, which a read would wait on
+    // for ever. The next round's fetch is held, so the content goes back
+    // before that round reads a.json.
+    wait_for(&dir.join(".git/delayed-ssh.started"));
     a.write("projects/a.json", Item::Deleted)
-        .write("projects/a.json", Item::File(PROJECT));
-    let synced = syncing.join().unwrap().unwrap();
+        .write("projects/a.json", Item::File(PROJECT))
+        .write(".git/delayed-ssh.release", Item::File(""));
+    let synced = finished(syncing).unwrap();
     assert_eq!(synced.attempts, 2, "{synced:?}");
     assert!(synced.kept.is_empty(), "{synced:?}");
     assert_eq!(synced.fetched, tip);
@@ -816,13 +860,8 @@ fn a_file_the_remote_removes_that_is_edited_inside_the_integrate_step_is_kept_un
     let syncing = syncing_pushing_to(&dir, false);
     wait_for(&dir.join(".git/index.lock"));
     a.write("projects/z.json", Item::File("edited"));
-    let mut sink = Vec::new();
-    std::io::Read::read_to_end(
-        &mut std::fs::File::open(dir.join("projects/.a.json.board-tmp")).unwrap(),
-        &mut sink,
-    )
-    .unwrap();
-    let synced = syncing.join().unwrap().unwrap();
+    release_writer(&dir.join("projects/.a.json.board-tmp"));
+    let synced = finished(syncing).unwrap();
     assert_eq!(synced.kept, [Fields::at(&path("/projects/z"))]);
     assert!(!a.head().unwrap().files.contains_key("projects/z.json"));
     assert!(!a.index().contains_key("projects/z.json"));

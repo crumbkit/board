@@ -27,6 +27,7 @@ members = [
     "crates/board-repos",
     "crates/board-scenario",
     "crates/board-serve",
+    "crates/board-top",
     "crates/board-tree",
     "crates/board-types",
     "crates/board-validate",

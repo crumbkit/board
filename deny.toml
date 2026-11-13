@@ -22,11 +22,14 @@ deny = [
     # board-tree's tests check that a stopped sync leaves no process running;
     # board-plugin's sign module checks who owns the allowed signers file.
     # crumbkit-process starts, signals and reaps every child Board runs.
-    { crate = "rustix", wrappers = ["board-plugin", "board-tree", "crumbkit", "crumbkit-process", "gix-index", "tempfile"] },
+    # crossterm, under board-top's ratatui, puts the terminal in raw mode.
+    { crate = "rustix", wrappers = ["board-plugin", "board-tree", "crossterm", "crumbkit", "crumbkit-process", "gix-index", "tempfile"] },
     # board-plugin's process module sets the flag `board ui` stops on, and
     # crumbkit-process's forward feature forwards stop signals to every
     # child group Board runs.
-    { crate = "signal-hook", wrappers = ["board-plugin", "crumbkit-process"] },
+    # crossterm and its signal-hook-mio read the terminal resize signal for
+    # board-top.
+    { crate = "signal-hook", wrappers = ["board-plugin", "crossterm", "crumbkit-process", "signal-hook-mio"] },
     # board-cli's config module reads the passwd entry's home. process-wrap,
     # crumbkit-process's dependency on Windows only, runs a child in a job
     # object.
