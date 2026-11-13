@@ -38,4 +38,6 @@ pub use crate::worktree::{
 };
 pub use crate::write::outside::write_outside;
 pub use crate::write::sync::{ATTEMPTS, Replayed, SyncError, Synced};
+#[cfg(feature = "testing")]
+pub use crate::write::{HookGuard, before_head_moves};
 pub use crate::write::{LOCK_WAIT, Lock, Removes, Staged, Target, WriteError};

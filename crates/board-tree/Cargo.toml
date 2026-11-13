@@ -20,5 +20,10 @@ proptest.workspace = true
 rustix.workspace = true
 tempfile.workspace = true
 
+[features]
+# A seam for tests of other crates: code that runs between staging a put and
+# moving HEAD.
+testing = []
+
 [lints]
 workspace = true
