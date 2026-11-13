@@ -5,14 +5,14 @@ band above the Claude Code prompt shows and how four mods draw it together.
 
 The band is one row of badges, which wraps on a narrow terminal:
 
-`Home work Board personal | [Orders 4] [Controls 5] [Questions 3] [Effects 2]`
+`Home work Board personal | [Orders 4] [Rules 5] [Questions 3] [Effects 2]`
 
 A badge with nothing to show is left out. When every badge is left out, the
 band draws nothing. While a survey holds the band, no mod draws in it.
 
 ## Badges
 
-- **State badges**, from `board-controls`. Each is a dim label and its value
+- **State badges**, from `board-rules`. Each is a dim label and its value
   drawn as a chip, and none can be pressed. The owner lists them in an optional file,
   `~/.config/board/badges.json` (or under `$XDG_CONFIG_HOME`), such as
   `{"badges": [{"label": "Home", "argv": ["home-name", "--short"]}]}`.
@@ -28,7 +28,7 @@ band draws nothing. While a survey holds the band, no mod draws in it.
   repository it mounts, else the
   name of the directory of the board that holds it. The mod reads that
   board from `board --json ls / --limit 1` at the repository root, because
-  `controls.check` does not report its board. With no such board, it is
+  `rules.check` does not report its board. With no such board, it is
   left out.
 - **Orders button**, from `board-attention`: `Orders <n>`, the number of
   pinned orders that verified. It opens the pinned-orders pane, which lists
@@ -38,12 +38,12 @@ band draws nothing. While a survey holds the band, no mod draws in it.
   one's code and message. When the personal board cannot be read, the button
   shows in red with Board's code, such as `Orders:
   attention::signers::missing`, and the pane gives the message.
-- **Controls button**, from `board-controls`: `Controls <n>`, the number of
-  controls `controls.check` returned. It opens a pane that lists them as
+- **Rules button**, from `board-rules`: `Rules <n>`, the number of
+  rules `rules.check` returned. It opens a pane that lists them as
   standing rules, obligations owed and budgets, each with its path and
-  requirement. The pane ends by saying that editing a file adds a reminder
-  for each control on that file the session was not told about. A failed
-  check shows the button in red with its code, such as `Controls:
+  requirement. A rule with no checker is marked described. The pane ends by saying that editing a file adds a reminder
+  for each rule on that file the session was not told about. A failed
+  check shows the button in red with its code, such as `Rules:
   rules::rule::degraded`.
 - **Waiting button**, from `board-plans`: `Waiting <total> · <blocking>
   blocking` from `board --json call plans.waiting`, or `Waiting <total>`

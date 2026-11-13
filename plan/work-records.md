@@ -58,7 +58,7 @@ All live under `/changes/<name>/`, except the change itself at
 | `plans/<stamp>` + `.md` | Built: `changes/plan/v1` (plugins/changes/README.md). The newest plan is the current one. |
 | `claims/<stamp>` | `session`, and `worktree`: the root of the caller's clone. The newest claim names the holder and where the work is. |
 | `checks/<stamp>` | `run`: the check run at a head |
-| `files/<head>` | `files`: the repository-relative paths the branch touches at that head |
+| `files/<head>` | Deferred. `files`: the repository-relative paths the branch touches at that head |
 | `opened` | the pull request URL |
 | `landed` | the merge commit |
 | `dropped` | why the change stopped |
@@ -109,8 +109,8 @@ board, Board finds its `.board/board.json` first and runs as that board.
   moves `brief`'s next step to the derived checks.
 - `claim --session <s>` writes a claim, reading `worktree` from
   `BOARD_CALLER_DIR`.
-- `files` writes the files record from `{path, head, files}` on stdin, and
-  `check --run <r>` writes a check.
+- `files` writes the files record from `{path, head, files}` on stdin
+  (deferred with the move of flow checks), and `check --run <r>` writes a check.
 - `next`: read-only. Checks, each passing or not with the record that
   passed it, the next step and its actor.
 - `landed --commit <sha>` and `drop --why '<text>'` end the change.

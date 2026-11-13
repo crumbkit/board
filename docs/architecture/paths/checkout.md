@@ -23,7 +23,7 @@ board, is read at its pins.
 A run without `--checkout` that finds its board through a mount of the
 directory's own repository records that mount and the directory. Board
 reads nothing more from the checkout until a built-in plugin asks.
-`controls.check` asks when it reads that mount, or checks a path under
+`rules.check` asks when it reads that mount, or checks a path under
 it. It compares the checkout's HEAD with the commit the pointer pins.
 When they match, it also asks whether a tracked file differs from HEAD.
 When either differs, its output carries `checkout`, which names both

@@ -7,13 +7,13 @@ as well as plans. Board's built-in types describe how a board is stored
 and read, so a workflow record such as a decision belongs in a plugin.
 
 A decision does not say what it binds. When a decision governs future work,
-the agent that records it also writes a control whose `basis` names the
-decision. The control says which repositories and files the rule covers, and
-`controls.check` is the one command an agent runs before it works. A
+the agent that records it also writes a rule whose `basis` names the
+decision. The rule says which repositories and files it covers, and
+`rules.check` is the one command an agent runs before it works. A
 decision that binds nothing, such as "merge this pull request", needs no
-control.
+rule.
 
-The control schema forbids unknown fields, so the decisions pull request
+The rule schema forbids unknown fields, so the decisions pull request
 adds `basis` to it: an optional list of board references. Rule v2
 (plan/rules.md) renames `basis` to `taught_by` and reports a rule whose
 decision is superseded.
@@ -114,7 +114,7 @@ inflight step ends the stub.
 ## Build
 
 Two pull requests. The first holds the plugin, the eval changes, `basis` on
-controls, the migration script, the runs mod's stub and the readers that move
+rules, the migration script, the runs mod's stub and the readers that move
 to the new type. The second deletes the script and removes `plans/decision/v1`
 from the plans plugin. The tests below belong to the first:
 
@@ -122,7 +122,7 @@ from the plans plugin. The tests below belong to the first:
   not reach it.
 - `board check` reports a `basis` or `supersedes` reference that reaches
   nothing, and a reference of the wrong type in `supersedes`.
-- A control with `basis` is admitted, and `board check` reports one whose
+- A rule with `basis` is admitted, and `board check` reports one whose
   `basis` reaches nothing.
 - The plans hook lists a stub the runs mod wrote after the migration, and no
   reader accepts `plans/decision/v1`.

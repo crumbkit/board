@@ -43,7 +43,7 @@ a later plan moves them.
 ## Then: runs
 
 Board records test, perf and eval results. A new `runs` plugin holds suites
-and their runs, `evals` and `controls` refer to it, `cargo xtask bench
+and their runs, `evals` and `rules` refer to it, `cargo xtask bench
 --record` writes runs, and a `github` plugin imports CI timings across
 repositories. [plan/runs.md](plan/runs.md) holds the decisions and the build
 order.
@@ -74,7 +74,7 @@ first slice in plan/board-ui.md; a scheduler inside Board;
 pinned or relative references (a review's `subject` pins only its own
 field); remote mounts (a mount names a local clone);
 any query language beyond SQL; daemons and watchers other than `board serve`;
-sync beyond git; Windows CI; and the old Board's ControlTree groups, assessments
+sync beyond git; Windows CI (the code stays portable); and the old Board's ControlTree groups, assessments
 and paged reports.
 
 ## Deferred
@@ -100,7 +100,7 @@ on main (`git show 226829b:PLAN.md`), as is the deleted HANDOFF.md.
   loop, and a `board mcp` adapter serves each capability as an MCP tool.
 - **Adoption.** Board imports records from other systems, such as JIRA,
   through plugins, and a reconciler plugin settles the difference between the
-  source and Board's copy. The owner agreed it on 2026-10-05; its first step is
+  source and Board's copy. The owner agreed it 2026-10-05; first step:
   a spike importing one existing store into a scratch board.
 - **Later effects.** Offers, attention levels, read gating, learning from
   corrections and the mandate layer. A policy that makes a put ask or refuse
@@ -108,8 +108,8 @@ on main (`git show 226829b:PLAN.md`), as is the deleted HANDOFF.md.
   `git show 5a34ac92:docs/architecture/writes/effects.md`.
 - **A repository's own rules.** `rules.check` reads a mounted repository's
   own rules as data at its pinned commit, checks the caller's repository
-  without a path, and takes a branch's files on stdin with `--limit`. Full
-  text: `git show c48b2856:plan/rules.md`.
+  without a path, and takes a branch's files on stdin with `--limit`. Text:
+  `git show c48b2856:plan/rules.md`.
 - **Docs as a tree.** Still open are how the review of each docs change runs
   and a tool check that each docs leaf is linked once.
 
@@ -120,8 +120,8 @@ on main (`git show 226829b:PLAN.md`), as is the deleted HANDOFF.md.
    config and the reserved `board` namespace (2026-10-30).
 2. The code is proprietary and unpublished.
 3. A limit that refuses a write, such as a file-size limit, is a setting that
-   `put` and `check` apply. A requirement on files is a control (2026-10-05).
-   A control that code already enforces only records it: `lint.toml` sets the
+   `put` and `check` apply. A requirement on files is a rule (2026-10-05).
+   A rule that code already enforces only records it: `lint.toml` sets the
    word budgets, `cargo xtask lint` enforces them, and it fails when a rule
    in `rules/budgets/` disagrees with `lint.toml` (2026-10-06).
 4. Adopting a repository is gentle: after the owner follows what `check` says,

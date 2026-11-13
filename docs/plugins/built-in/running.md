@@ -33,7 +33,7 @@ keeps a small value between calls.
   finds none.
 - `cached(place, digest)` and `cache(place, digest, value)` read and
   write a small value under `place`, plain names under the cache home
-  such as `board-controls/judged`, in a file named by the hex of
+  such as `board-rules/judged`, in a file named by the hex of
   `digest`, a content hash the plugin derives from what the value
   answers. board-index owns the files. Deleting them loses only the time
   to compute the values again.

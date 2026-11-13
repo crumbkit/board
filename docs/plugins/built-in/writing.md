@@ -1,8 +1,8 @@
 # Writing a built-in plugin
 
 This file holds detail for docs/plugins/built-in.md. `artifacts`, `attention`, `boundary`,
-`changes`, `controls`, `evals`, `github`, `jira`, `notes`, `params`, `plans`, `prompts`, `requests`, `review`, `runs`,
-`share`, `tasks` and `topics` are built-in crates; `controls` (#48) shows a Python plugin ported
+`changes`, `evals`, `github`, `jira`, `notes`, `params`, `plans`, `prompts`, `requests`, `review`, `rules`, `runs`,
+`share`, `tasks` and `topics` are built-in crates; `rules` (#48) shows a Python plugin ported
 with its output, messages and codes unchanged.
 
 ## What a built-in plugin can do
@@ -92,7 +92,7 @@ may be given relative to the run's prefix (docs/plugins.md, Calling a
 capability).
 
 A plugin's skill, README and any Claude Code mod live in `plugins/<name>/`,
-as for `controls` and `evals`. When it has a skill, the manifest's
+as for `rules` and `evals`. When it has a skill, the manifest's
 `description` equals the skill's frontmatter `description`, and a test reads
 the skill with `include_str!` and compares them.
 
@@ -124,8 +124,8 @@ in `plugin list` and `plugin find`.
 
 - Keep the schema's bytes. A board that already enables the plugin then
   needs no `plugin enable`. When `schema_of` cannot produce the old bytes,
-  write the type's own generator, as `controls`'s `record_schema` does to
-  keep null in `rule`. Keeping the bytes may put `$type` after the other
+  write the type's own generator, as `attention`'s `record_schema` does.
+  Keeping the bytes may put `$type` after the other
   fields.
 - Keep each capability's output, messages and codes. Drop codes that only a
   subprocess could give, such as `<name>::board::failed`.
