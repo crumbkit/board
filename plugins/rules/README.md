@@ -241,7 +241,7 @@ The plugin ships both schemas. `board plugin enable controls` writes them to
     this Board does not know;
     `skipped` for a judged rule when the part failed a budget or pattern
     rule. Budget and pattern rules always run first, whatever the order of
-    `controls`.
+    `rules`.
   - A finding holds `text`, the words at fault, `line`, `pattern` and
     `rewrite`. A pattern finding quotes the match and gives its line, and
     names the expression in `pattern` only with `quote` `pattern`. A judged

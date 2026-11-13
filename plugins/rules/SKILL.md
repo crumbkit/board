@@ -20,7 +20,7 @@ To run a command in a board other than the one you are in, add `-C <path>`.
 
 1. When you start work, check the directory you will work in:
 
-       board -C <board> controls check --path /<directory>
+       board -C <board> rules check --path /<directory>
 
    `measured` lists the controls with a budget, with `used`, `max` and every
    file the budget counts under the path. A budget with `per: "file"` limits each file on
@@ -39,7 +39,7 @@ To run a command in a board other than the one you are in, add `-C <path>`.
    repository's main branch. On a branch, commit your edits and run the
    check from your checkout with `--checkout`, so it reads your HEAD:
 
-       board --checkout controls check --path .
+       board --checkout rules check --path .
 
    `read` names each mount the files came from and the commit it read.
    When you run the check from a checkout without `--checkout`, and its
@@ -52,13 +52,13 @@ To run a command in a board other than the one you are in, add `-C <path>`.
    commit them and run the command in `run`.
 2. Before you edit a file, ask which controls apply to it:
 
-       board -C <board> controls for-path --path /<file>
+       board -C <board> rules for-path --path /<file>
 
    Follow each requirement it returns. A new file is asked about by the
    path it will have. For several files or a pattern, such as
    `/repos/<name>/crates/store/**`, pass them on stdin:
 
-       echo '{"paths": ["/<pattern>", "/<file>"]}' | board -C <board> controls for-paths
+       echo '{"paths": ["/<pattern>", "/<file>"]}' | board -C <board> rules for-paths
 3. Some controls are obligations, with `kind: obligation`: work that a
    landed change left owed, and the output gives each its `close` line.
    Once the work one names is committed, delete it with
@@ -72,7 +72,7 @@ To run a command in a board other than the one you are in, add `-C <path>`.
 4. To check text before it leaves the checkout, such as a pull request
    body, pass the controls and the named parts on stdin:
 
-       echo '{"controls": ["/<control>"], "parts": {"pr.body": "<text>"}}' | board -C <board> controls evaluate
+       echo '{"rules": ["/<rule>"], "parts": {"pr.body": "<text>"}}' | board -C <board> rules evaluate
 
    Each result says whether that part passed that control, with the line
    and text of each finding. Fix each failed part and evaluate it again.
