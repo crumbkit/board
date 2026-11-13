@@ -114,8 +114,8 @@ Two pull requests.
 
 1. The runs mod: agent records, `works_on`, brief injection, the pull
    request gate, the `opened` record, the end of the decision stub
-   (plan/decisions.md). Its
-   tests cover each hook with a twin that is refused or left out.
+   (plan/decisions.md). Its tests cover each hook with a twin that is
+   refused or left out.
 2. The `inflight` plugin. Its fixture is a board holding four changes
    stopped at different steps, with running subagents, a waiting question
    and an open pull request. The test asserts that `inflight.now

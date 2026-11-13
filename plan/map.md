@@ -4,7 +4,8 @@ Board becomes a map of what the owner and his agents record. A session that
 opens a node sees what matters there, and the owner sees one daily view of
 what is due, failing, waiting on him and in flight. PLAN.md links this leaf.
 The milestone after it, in plan/rules.md, gives rules their second shape
-and migrates every board in place. When this milestone lands, its design moves into docs/ and this leaf is deleted.
+and migrates every board in place. When this milestone lands, its design
+moves into docs/ and this leaf is deleted.
 
 ## Problem
 
@@ -52,8 +53,8 @@ The boundary plugin reads rule v2 and keeps its own record. Tasks, evals,
 runs, review and attention are unchanged: their records are the work and the
 verdicts that rules read, and attention signs waivers and approvals. A
 `plans/answer/v1` stores the text of the option it chose. Nothing retires
-except rule v1. A rule that only instructs stays
-a rule with a `none` checker.
+except rule v1. A rule that only instructs stays a rule with a `none`
+checker.
 
 ## Build order
 
@@ -72,9 +73,9 @@ pane and the daily loop.
    board's records from `/controls/` to `/rules/` in one commit per board and
    rewrites the paths that boundaries, plan `owed` fields and flow checks
    name. Signed attention orders are never rewritten. The owner signs a new
-   order, each board migrates at a stop point, and the last pull request
-   deletes every reader of the old name. The rename goes before every new record type, so new
-   types are born with the final name.
+   order, each board migrates at a stop point, and rename PR 8
+   deletes every reader of the old name. The rename goes before every new
+   record type, so new types are born with the final name.
 4. **Rules record their state.** A check appends a `rules/check/v1` under
    `/rules/<name>/checks/` with the expectation's index, the outcome, the
    observed value and the commit it read. A session-start run writes only

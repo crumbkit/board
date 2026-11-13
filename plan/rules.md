@@ -2,19 +2,19 @@
 
 Rules gain a second shape that says what they govern, when they run, how
 each expectation is checked and what a failure does. Every board migrates in
-place, and Board tags its first release. This milestone starts only if the owner's trial
-in plan/map.md passes. PLAN.md links this leaf; when the milestone lands, its
-design moves into docs/ and this leaf is deleted.
+place, and Board tags its first release. This milestone starts only if the
+owner's trial in plan/map.md passes. PLAN.md links this leaf; when the
+milestone lands, its design moves into docs/ and this leaf is deleted.
 
 ## Rule v2
 
 ```
 RULE = why + subject + when + expectations + runs + on_failure
-  subject:     files, repos, pathspec area, change, plan, diff,
-               plan-paths, path; later crossing and host
-  when:        section, answers, absent, route (moved from flow checks)
-  runs:        navigation, edit, crossing, transition, schedule,
-               threshold, demand
+  subject:     files, repos, pathspec area, path; later crossing and host;
+               change, plan, diff, plan-paths (deferred with flow checks)
+  when:        section, answers, absent, route (deferred with flow checks)
+  runs:        navigation, edit, crossing, schedule, threshold, demand;
+               transition (deferred with flow checks)
   expectation: statement, value (literal, fact or command),
                optional subject, checkers
   checkers:    program, model, person, ci-test, suite or none
@@ -57,8 +57,8 @@ The scope fields once planned for control v1 become parts of rule v2:
   An `applies_to` entry that the paths do not cover moves to
   `taught_by.stated_in`. A rule whose decision is superseded is reported.
 - `adds_check` waits with the move of flow checks. Until then the
-  lifecycle-paths rules join a gate through the flow's `rule-paths` check, as
-  they do today.
+  lifecycle-paths rules join a gate through the flow's `rule-paths` and
+  `planned-rule-paths` checks, as they do today.
 - `summary` stays, one line that `changes.brief` shows.
 
 ## Flow checks stay in flows for now
@@ -106,11 +106,12 @@ the steps in plan/map.md.
 16. Every reader moves to rule v2 in one pull request: the rules plugin
     (check, for-path, evaluate and the index), the boundary, the changes gates
     and brief, which find obligations by `owed_by`, and the mods.
-20. The boards migrate at a stop point, in records-only commits.
-21. Rule v1 and `rules.migrate --to v2` are deleted.
 
 Steps 17 to 19 are now part of step 16. Steps 22 to 26, the move of flow
 checks, are deferred. The numbers are not used again.
+
+20. The boards migrate at a stop point, in records-only commits.
+21. Rule v1 and `rules.migrate --to v2` are deleted.
 
 Steps 28 to 34 build the remaining kinds. The first tagged release follows
 step 34.
@@ -121,8 +122,8 @@ step 34.
     `rules.check --due` each morning, model checkers included. Board runs no
     scheduler itself.
 29. **Failure actions.** `report` puts the rule in the daily loop, and
-    `opens_task` adds one task per failing rule, once. `ask` asks the owner through `host.decide` and keeps his signed
-    answer.
+    `opens_task` adds one task per failing rule, once. `ask` asks the owner
+    through `host.decide` and keeps his signed answer.
 30. **A fact holds a version, and a rule compares for equality,** so one
     fact holds every repository to one version.
 31. **Waivers.** An agent writes a `rules/waiver/v1` with a reason and an

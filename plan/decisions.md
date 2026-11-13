@@ -113,9 +113,10 @@ inflight step ends the stub.
 
 ## Build
 
-One pull request: the plugin, the eval changes, `basis` on controls, the
-migration script, the runs mod's stub and the readers that move to the new
-type. The tests:
+Two pull requests. The first holds the plugin, the eval changes, `basis` on
+controls, the migration script, the runs mod's stub and the readers that move
+to the new type. The second deletes the script and removes `plans/decision/v1`
+from the plans plugin. The tests below belong to the first:
 
 - Each derived state, from records written in order, with a twin that does
   not reach it.
@@ -129,5 +130,5 @@ type. The tests:
   section drops or renames, checked by `board check` on a copy of the
   board, and it prints each eval whose derived state changes.
 
-Done when the owner's board has migrated and `decisions.open` lists the
+Done when the owner's boards have migrated and `decisions.open` lists the
 decisions that still wait on the owner.
