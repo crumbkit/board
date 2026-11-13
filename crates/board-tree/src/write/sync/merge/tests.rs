@@ -47,7 +47,7 @@ impl Fixture {
         local: &[(&str, &str)],
         remote: &[(&str, &str)],
     ) -> (Merged, Vec<(String, String)>) {
-        self.merge_with(base, local, remote, &|_, _| false)
+        self.merge_with(base, local, remote, &|_, _| Ancestry::DoesNot)
     }
 
     fn merge_with(
@@ -55,7 +55,7 @@ impl Fixture {
         base: &[(&str, &str)],
         local: &[(&str, &str)],
         remote: &[(&str, &str)],
-        descends: &dyn Fn(ObjectId, ObjectId) -> bool,
+        descends: &dyn Fn(ObjectId, ObjectId) -> Ancestry,
     ) -> (Merged, Vec<(String, String)>) {
         let merged = merge_trees(
             &self.repository,
@@ -103,6 +103,14 @@ fn pin(commit: &str) -> String {
     format!(
         r#"{{"$type": "board/mount/v1", "repo": "../other", "follow": "main", "commit": "{commit}"}}"#
     )
+}
+
+fn ancestry(descends: bool) -> Ancestry {
+    if descends {
+        Ancestry::Descends
+    } else {
+        Ancestry::DoesNot
+    }
 }
 
 fn id(hex: &str) -> ObjectId {
@@ -261,7 +269,7 @@ fn a_pin_the_remote_moved_forward_of_the_local_one_takes_the_remote_pin() {
         &[("mount.json", &pin(OLD))],
         &[("mount.json", &pin(LOCAL))],
         &[("mount.json", &pin(REMOTE))],
-        &|candidate, of| candidate == id(REMOTE) && of == id(LOCAL),
+        &|candidate, of| ancestry(candidate == id(REMOTE) && of == id(LOCAL)),
     );
     assert_eq!(files, [file("mount.json", &pin(REMOTE))]);
     assert_eq!(merged.conflicts, Vec::new());
@@ -272,6 +280,7 @@ fn a_pin_the_remote_moved_forward_of_the_local_one_takes_the_remote_pin() {
             local: id(LOCAL),
             remote: id(REMOTE),
             taken: PinSide::Remote,
+            basis: PinBasis::Descendant,
         }]
     );
 }
@@ -283,7 +292,7 @@ fn a_pin_the_local_side_moved_forward_of_the_remote_one_keeps_the_local_pin() {
         &[("mount.json", &pin(OLD))],
         &[("mount.json", &pin(LOCAL))],
         &[("mount.json", &pin(REMOTE))],
-        &|candidate, of| candidate == id(LOCAL) && of == id(REMOTE),
+        &|candidate, of| ancestry(candidate == id(LOCAL) && of == id(REMOTE)),
     );
     assert_eq!(files, [file("mount.json", &pin(LOCAL))]);
     assert_eq!(merged.conflicts, Vec::new());
@@ -311,7 +320,7 @@ fn a_mount_pointer_that_changed_more_than_its_pin_is_an_ordinary_conflict() {
         &[("mount.json", &pin(OLD))],
         &[("mount.json", &other)],
         &[("mount.json", &pin(REMOTE))],
-        &|_, _| true,
+        &|_, _| Ancestry::Descends,
     );
     assert_eq!(files, [file("mount.json", &pin(REMOTE))]);
     assert_eq!(merged.pins, Vec::new());
@@ -369,7 +378,10 @@ fn a_merge_writes_no_ref_and_leaves_both_inputs_unchanged() {
         fixture.tree(&[("a.json", "1")]),
         fixture.tree(&[("a.json", "2")]),
     );
-    let merged = merge_trees(&fixture.repository, None, local, remote, &|_, _| false).unwrap();
+    let merged = merge_trees(&fixture.repository, None, local, remote, &|_, _| {
+        Ancestry::DoesNot
+    })
+    .unwrap();
     assert_ne!(merged.tree, local);
     assert_eq!(fixture.files(local), [file("a.json", "1")]);
     assert!(fixture.repository.head().unwrap().is_none());
@@ -382,4 +394,191 @@ fn a_merge_that_leaves_nothing_is_the_empty_tree() {
     let (merged, files) = fixture.merge(&base, &[], &[]);
     assert_eq!(files, Vec::new());
     assert_eq!(merged.tree, fixture.repository.git().empty_tree().id);
+}
+
+#[test]
+fn a_pin_whose_ancestry_cannot_be_read_keeps_the_local_pin_and_says_so() {
+    let fixture = Fixture::new();
+    let (merged, files) = fixture.merge_with(
+        &[("mount.json", &pin(OLD))],
+        &[("mount.json", &pin(LOCAL))],
+        &[("mount.json", &pin(REMOTE))],
+        &|_, _| Ancestry::Unknown,
+    );
+    assert_eq!(files, [file("mount.json", &pin(LOCAL))]);
+    assert_eq!(merged.conflicts, Vec::new());
+    assert_eq!(merged.pins[0].taken, PinSide::Local);
+    assert_eq!(merged.pins[0].basis, PinBasis::Unknown);
+}
+
+#[test]
+fn a_pin_with_unrelated_ancestry_takes_the_remote_and_says_unrelated() {
+    let fixture = Fixture::new();
+    let (merged, _) = fixture.merge(
+        &[("mount.json", &pin(OLD))],
+        &[("mount.json", &pin(LOCAL))],
+        &[("mount.json", &pin(REMOTE))],
+    );
+    assert_eq!(merged.pins[0].taken, PinSide::Remote);
+    assert_eq!(merged.pins[0].basis, PinBasis::Unrelated);
+}
+
+#[test]
+fn a_pin_unknown_only_in_the_second_question_still_keeps_the_local_pin() {
+    let fixture = Fixture::new();
+    let (merged, _) = fixture.merge_with(
+        &[("mount.json", &pin(OLD))],
+        &[("mount.json", &pin(LOCAL))],
+        &[("mount.json", &pin(REMOTE))],
+        &|candidate, _| {
+            if candidate == id(REMOTE) {
+                Ancestry::DoesNot
+            } else {
+                Ancestry::Unknown
+            }
+        },
+    );
+    assert_eq!(merged.pins[0].taken, PinSide::Local);
+    assert_eq!(merged.pins[0].basis, PinBasis::Unknown);
+}
+
+#[test]
+fn a_file_one_side_deleted_and_the_other_replaced_with_a_directory_becomes_the_directory() {
+    let fixture = Fixture::new();
+    let base = [("a", "file")];
+    let directory = [("a/b.json", "inside")];
+    for (local, remote) in [(&directory[..], &[][..]), (&[][..], &directory[..])] {
+        let (merged, files) = fixture.merge(&base, local, remote);
+        assert_eq!(files, [file("a/b.json", "inside")]);
+        assert_eq!(merged.conflicts, Vec::new());
+    }
+}
+
+#[test]
+fn a_directory_one_side_replaced_with_a_file_and_the_other_deleted_keeps_the_file_as_a_conflict() {
+    let fixture = Fixture::new();
+    let base = [("a/b.json", "inside")];
+    for (local, remote) in [
+        (&[("a", "file")][..], &[][..]),
+        (&[][..], &[("a", "file")][..]),
+    ] {
+        let (merged, files) = fixture.merge(&base, local, remote);
+        assert_eq!(files, [file("a", "file")]);
+        assert_eq!(merged.conflicts.len(), 1);
+        assert_eq!(merged.conflicts[0].kind, ConflictKind::EditDelete);
+        assert_eq!(merged.conflicts[0].path, "a");
+    }
+}
+
+#[test]
+fn a_directory_one_side_deleted_and_the_other_edited_inside_keeps_the_edit_as_a_conflict() {
+    let fixture = Fixture::new();
+    let (merged, files) = fixture.merge(
+        &[("d/a.json", "1"), ("d/b.json", "1")],
+        &[("d/a.json", "edited"), ("d/b.json", "1")],
+        &[],
+    );
+    assert_eq!(files, [file("d/a.json", "edited")]);
+    assert_eq!(merged.conflicts.len(), 1);
+    assert_eq!(merged.conflicts[0].kind, ConflictKind::EditDelete);
+    assert_eq!(merged.conflicts[0].path, "d/a.json");
+}
+
+#[test]
+fn an_executable_bit_set_on_both_sides_or_on_one_is_not_a_conflict() {
+    let fixture = Fixture::new();
+    let git = fixture.repository.git();
+    let blob = git.write_blob(b"#!/bin/sh").unwrap().detach();
+    let tree = |kind: EntryKind| {
+        let mut editor = git.edit_tree(git.empty_tree().id).unwrap();
+        editor.upsert("run", kind, blob).unwrap();
+        editor.write().unwrap().detach()
+    };
+    let (plain, executable) = (tree(EntryKind::Blob), tree(EntryKind::BlobExecutable));
+    let merged = merge_trees(
+        &fixture.repository,
+        Some(plain),
+        plain,
+        executable,
+        &|_, _| Ancestry::DoesNot,
+    )
+    .unwrap();
+    assert_eq!(merged.tree, executable);
+    // Both sides changed the same blob differently in mode only.
+    let other = fixture.tree(&[("run", "#!/bin/sh")]);
+    let merged = merge_trees(&fixture.repository, None, other, executable, &|_, _| {
+        Ancestry::DoesNot
+    })
+    .unwrap();
+    assert_eq!(merged.conflicts, Vec::new());
+    assert_eq!(merged.tree, executable);
+}
+
+#[test]
+fn a_submodule_entry_is_never_read_as_a_blob_and_conflicts_without_blob_ids() {
+    let fixture = Fixture::new();
+    let git = fixture.repository.git();
+    let tree = |oid: &str| {
+        let mut editor = git.edit_tree(git.empty_tree().id).unwrap();
+        let oid = gix::ObjectId::from_hex(oid.as_bytes()).unwrap();
+        editor.upsert("sub.json", EntryKind::Commit, oid).unwrap();
+        editor.write().unwrap().detach()
+    };
+    let merged = merge_trees(
+        &fixture.repository,
+        None,
+        tree(LOCAL),
+        tree(REMOTE),
+        &|_, _| panic!("a submodule is no pin"),
+    )
+    .unwrap();
+    assert_eq!(merged.pins, Vec::new());
+    assert_eq!(merged.conflicts.len(), 1);
+    assert_eq!(merged.conflicts[0].local, None);
+    assert_eq!(merged.conflicts[0].remote, None);
+}
+
+#[test]
+fn a_repo_record_whose_checkout_commit_moved_is_a_pin() {
+    let fixture = Fixture::new();
+    let record = |commit: &str| {
+        format!(
+            r#"{{"$type": "board/repo/v1", "remote": "crumbkit/board", "checkout": {{"repo": "~/src/board", "follow": "origin/main", "commit": "{commit}"}}}}"#
+        )
+    };
+    let (merged, files) = fixture.merge_with(
+        &[("repo.json", &record(OLD))],
+        &[("repo.json", &record(LOCAL))],
+        &[("repo.json", &record(REMOTE))],
+        &|candidate, _| ancestry(candidate == id(REMOTE)),
+    );
+    assert_eq!(files, [file("repo.json", &record(REMOTE))]);
+    assert_eq!(merged.conflicts, Vec::new());
+    assert_eq!(merged.pins.len(), 1);
+}
+
+#[test]
+fn both_sides_adding_the_same_pin_path_with_different_commits_resolve_as_pins() {
+    let fixture = Fixture::new();
+    let (merged, files) = fixture.merge_with(
+        &[],
+        &[("mount.json", &pin(LOCAL))],
+        &[("mount.json", &pin(REMOTE))],
+        &|candidate, _| ancestry(candidate == id(LOCAL)),
+    );
+    assert_eq!(files, [file("mount.json", &pin(LOCAL))]);
+    assert_eq!(merged.conflicts, Vec::new());
+    assert_eq!(merged.pins[0].taken, PinSide::Local);
+}
+
+#[test]
+fn a_pointer_at_a_path_that_cannot_hold_one_is_an_ordinary_conflict() {
+    let fixture = Fixture::new();
+    let (merged, _) = fixture.merge(
+        &[],
+        &[("mount.txt", &pin(LOCAL))],
+        &[("mount.txt", &pin(REMOTE))],
+    );
+    assert_eq!(merged.pins, Vec::new());
+    assert_eq!(merged.conflicts.len(), 1);
 }

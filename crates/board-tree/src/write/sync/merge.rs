@@ -51,6 +51,27 @@ pub(crate) struct PinResolution {
     pub(crate) local: ObjectId,
     pub(crate) remote: ObjectId,
     pub(crate) taken: PinSide,
+    pub(crate) basis: PinBasis,
+}
+
+/// Whether commit `candidate` has `of` among its ancestors.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Ancestry {
+    Descends,
+    DoesNot,
+    /// A commit could not be read, so nothing can be said.
+    Unknown,
+}
+
+/// Why a pin side was taken.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum PinBasis {
+    /// The side taken descends from the other.
+    Descendant,
+    /// Neither descends from the other, so the remote was taken.
+    Unrelated,
+    /// Ancestry could not be read, so the local pin stayed.
+    Unknown,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -80,7 +101,7 @@ impl Slot {
 
     /// The blob the slot holds, if it holds a file or a link.
     fn blob(self) -> Option<ObjectId> {
-        (!self.is_tree()).then(|| model_id(&self.id))
+        self.mode.is_blob_or_symlink().then(|| model_id(&self.id))
     }
 }
 
@@ -92,7 +113,7 @@ pub(crate) fn merge_trees(
     base: Option<gix::ObjectId>,
     local: gix::ObjectId,
     remote: gix::ObjectId,
-    descends: &dyn Fn(ObjectId, ObjectId) -> bool,
+    descends: &dyn Fn(ObjectId, ObjectId) -> Ancestry,
 ) -> Result<Merged, GitError> {
     let mut merge = Merge {
         repository,
@@ -116,7 +137,7 @@ pub(crate) fn merge_trees(
 
 struct Merge<'a> {
     repository: &'a Repository,
-    descends: &'a dyn Fn(ObjectId, ObjectId) -> bool,
+    descends: &'a dyn Fn(ObjectId, ObjectId) -> Ancestry,
     conflicts: Vec<Conflict>,
     pins: Vec<PinResolution>,
     schemas: Vec<SchemaClash>,
@@ -206,6 +227,9 @@ impl Merge<'_> {
             (Some(local), Some(remote)) if local.is_tree() || remote.is_tree() => {
                 (Some(remote), ConflictKind::FileDirectory)
             }
+            (Some(local), Some(remote)) if local.id == remote.id && !local.mode.is_commit() => {
+                return Ok(Some(remote));
+            }
             (Some(local), Some(remote)) => {
                 if let Some(taken) = self.pin(path, local, remote)? {
                     return Ok(Some(taken));
@@ -237,18 +261,21 @@ impl Merge<'_> {
         if !same_but_commit {
             return Ok(None);
         }
-        let taken = if (self.descends)(local_commit, remote_commit)
-            && !(self.descends)(remote_commit, local_commit)
-        {
-            PinSide::Local
-        } else {
-            PinSide::Remote
+        let (taken, basis) = match (self.descends)(remote_commit, local_commit) {
+            Ancestry::Descends => (PinSide::Remote, PinBasis::Descendant),
+            Ancestry::Unknown => (PinSide::Local, PinBasis::Unknown),
+            Ancestry::DoesNot => match (self.descends)(local_commit, remote_commit) {
+                Ancestry::Descends => (PinSide::Local, PinBasis::Descendant),
+                Ancestry::DoesNot => (PinSide::Remote, PinBasis::Unrelated),
+                Ancestry::Unknown => (PinSide::Local, PinBasis::Unknown),
+            },
         };
         self.pins.push(PinResolution {
             path: path.to_owned(),
             local: local_commit,
             remote: remote_commit,
             taken,
+            basis,
         });
         Ok(Some(match taken {
             PinSide::Local => local,
