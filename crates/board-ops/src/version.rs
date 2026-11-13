@@ -6,8 +6,6 @@ use std::str::FromStr;
 
 use serde::{Deserialize, Deserializer};
 
-mod civil;
-
 /// A release number, `major.minor.patch`. A `-` or `+` suffix, such as the
 /// `+<commit>` that `board --version` appends, is read and ignored.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
@@ -60,15 +58,19 @@ impl FromStr for Built {
     type Err = String;
 
     fn from_str(text: &str) -> Result<Self, String> {
-        civil::parse_utc(text)
-            .map(Self)
-            .ok_or_else(|| format!("{text:?} is not an RFC 3339 timestamp"))
+        let at: jiff::Timestamp = text
+            .parse()
+            .map_err(|_| format!("{text:?} is not an RFC 3339 timestamp"))?;
+        Ok(Self(at.as_second()))
     }
 }
 
 impl fmt::Display for Built {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&civil::utc(self.0))
+        match jiff::Timestamp::from_second(self.0) {
+            Ok(at) => write!(f, "{at}"),
+            Err(_) => write!(f, "{}", self.0),
+        }
     }
 }
 

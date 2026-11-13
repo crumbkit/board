@@ -32,8 +32,9 @@ deny = [
     # object.
     { crate = "nix", wrappers = ["board-cli", "process-wrap"] },
     # board-cli's config module reads the local time zone, and gix dates
-    # commits; a plugin gets the UTC offset in Settings.
-    { crate = "jiff", wrappers = ["board-cli", "gix-date"] },
+    # commits; a plugin gets the UTC offset in Settings. board-ops parses and
+    # prints the build timestamps of a board's min_board.
+    { crate = "jiff", wrappers = ["board-cli", "board-ops", "gix-date"] },
     { crate = "tiny_http", wrappers = ["board-serve"] },
     # board-plugin's process module runs plugin, signer and built-in children
     # and forwards signals through crumbkit-process; board-tree's transport

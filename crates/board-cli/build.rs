@@ -23,12 +23,6 @@ use std::path::{Path, PathBuf};
 
 #[path = "build/built.rs"]
 mod built;
-#[path = "../board-ops/src/version/civil.rs"]
-#[expect(
-    dead_code,
-    reason = "the build script prints dates and never reads one"
-)]
-mod civil;
 #[path = "build/commit.rs"]
 mod commit;
 
@@ -110,7 +104,7 @@ fn main() {
             );
             println!(
                 "cargo::rustc-env=BOARD_BUILD_SHOWN={}",
-                date.map_or_else(String::new, |date| format!(" (built {})", civil::utc(date)))
+                date.map_or_else(String::new, |date| format!(" (built {})", utc(date)))
             );
         }
         Err(message) => fail(&message),
@@ -229,4 +223,10 @@ fn skills() {
 /// Fails the build with `message`, which cargo prints as an error.
 fn fail(message: &str) {
     println!("cargo::error={message}");
+}
+
+/// `seconds` since the Unix epoch as a UTC timestamp, such as
+/// `2026-11-13T10:00:00Z`.
+fn utc(seconds: i64) -> String {
+    jiff::Timestamp::from_second(seconds).map_or_else(|_| seconds.to_string(), |at| at.to_string())
 }
