@@ -13,6 +13,7 @@ use ratatui::widgets::Paragraph;
 
 use crate::model::{
     BodyLine, End, Group, Kind, Panel, Row, Segment, Tone, View, WINDOW_DAYS, WINDOW_SECONDS,
+    Window,
 };
 use crate::time::DAY;
 
@@ -371,6 +372,25 @@ fn panel_lines(panel: &Panel, lane: usize) -> Vec<Line<'static>> {
     lines
 }
 
+/// The position line: which rows show, and the filter when one is on.
+fn position_text(view: &View, window: &Window) -> String {
+    let hint = "  ↑↓ PgUp PgDn Home End scroll";
+    if view.filter.is_empty() {
+        return match window.rows {
+            Some((first, last)) => format!("rows {first}-{last} of {}{hint}", window.total),
+            None => format!("no rows shown of {}", window.total),
+        };
+    }
+    let query = &view.filter;
+    match window.rows {
+        Some((first, last)) => format!(
+            "rows {first}-{last} of {} matching \"{query}\" (of {}){hint}",
+            window.total, window.unfiltered
+        ),
+        None => format!("no rows match \"{query}\" (of {})", window.unfiltered),
+    }
+}
+
 /// The lines of the body for `capacity` lines: the window of rows, headings
 /// and ended lines, and the position line when they do not all fit.
 fn body_lines(view: &View, capacity: usize, lane: usize) -> Vec<Line<'static>> {
@@ -386,10 +406,11 @@ fn body_lines(view: &View, capacity: usize, lane: usize) -> Vec<Line<'static>> {
             BodyLine::Row {
                 group,
                 offset,
+                first,
                 index,
             } => {
                 let group = &view.groups[*group];
-                let label = if *offset == 0 || at == 0 {
+                let label = if *first || at == 0 {
                     group.project.as_str()
                 } else {
                     ""
@@ -400,12 +421,8 @@ fn body_lines(view: &View, capacity: usize, lane: usize) -> Vec<Line<'static>> {
         });
     }
     if !window.whole {
-        let text = window.rows.map_or_else(
-            || format!("no rows shown of {}", window.total),
-            |(first, last)| format!("rows {first}-{last} of {}", window.total),
-        );
         body.push(Line::from(Span::styled(
-            format!("{text}  ↑↓ PgUp PgDn Home End scroll"),
+            position_text(view, &window),
             Style::new().fg(DIM),
         )));
     }
@@ -466,12 +483,21 @@ fn lines_for(view: &View, area: Rect) -> Vec<Line<'static>> {
         format!(" {}", view.panel.why),
         Style::new().fg(why_color),
     )));
-    let mut keys = vec![
-        Span::styled(" q", Style::new().fg(ACCENT)),
-        Span::styled(" quit", Style::new().fg(DIM)),
-        Span::styled("  r", Style::new().fg(ACCENT)),
-        Span::styled(" reload", Style::new().fg(DIM)),
-    ];
+    let mut keys = if view.typing {
+        vec![
+            Span::styled(format!(" / {}▏", view.filter), Style::new().fg(ACCENT)),
+            Span::styled("  enter keep · esc clear", Style::new().fg(DIM)),
+        ]
+    } else {
+        vec![
+            Span::styled(" q", Style::new().fg(ACCENT)),
+            Span::styled(" quit", Style::new().fg(DIM)),
+            Span::styled("  r", Style::new().fg(ACCENT)),
+            Span::styled(" reload", Style::new().fg(DIM)),
+            Span::styled("  /", Style::new().fg(ACCENT)),
+            Span::styled(" search", Style::new().fg(DIM)),
+        ]
+    };
     if !view.freshness.is_empty() {
         keys.push(Span::styled(
             format!("   {}", view.freshness),
@@ -618,6 +644,24 @@ mod tests {
             .unwrap();
         assert!(
             lines[own + 1].contains("+1 landed, 0 dropped in 14d"),
+            "{text}"
+        );
+    }
+
+    #[test]
+    fn the_search_prompt_and_the_position_line_show_the_filter() {
+        let mut view = sample();
+        view.start_search();
+        for c in "title".chars() {
+            view.type_char(c);
+        }
+        let text = render_text(&view, 110, 26);
+        assert!(text.contains("/ title▏  enter keep · esc clear"), "{text}");
+        assert!(text.contains("matching \"title\" (of 2)"), "{text}");
+        view.keep_search();
+        let text = render_text(&view, 110, 26);
+        assert!(
+            text.contains("q quit") && text.contains("/ search"),
             "{text}"
         );
     }

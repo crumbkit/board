@@ -14,6 +14,8 @@ pub enum BodyLine {
         group: usize,
         /// The position in the group.
         offset: usize,
+        /// Whether it is the first row the group shows.
+        first: bool,
         /// The index among all rows.
         index: usize,
     },
@@ -31,9 +33,12 @@ pub struct Window {
     /// The rows among those lines, as the one-based first and last row, or
     /// `None` when no row is drawn.
     pub rows: Option<(usize, usize)>,
-    /// The number of rows in all.
+    /// The number of rows that pass the filter.
     pub total: usize,
-    /// Whether the whole body is drawn, so no position line is needed.
+    /// The number of rows before the filter.
+    pub unfiltered: usize,
+    /// Whether the whole body is drawn, so no position line is needed. A
+    /// filter always needs the line.
     pub whole: bool,
 }
 
@@ -45,18 +50,27 @@ impl View {
         let mut index = 0;
         let mut last_realm: Option<&str> = None;
         for (at, group) in self.groups.iter().enumerate() {
+            if !self.group_shows(group) {
+                continue;
+            }
             if self.mapped && last_realm != group.realm.as_deref() {
                 if let Some(realm) = &group.realm {
                     lines.push(BodyLine::Realm(realm.clone()));
                 }
                 last_realm = group.realm.as_deref();
             }
-            for offset in 0..group.rows.len() {
+            let mut first = true;
+            for (offset, row) in group.rows.iter().enumerate() {
+                if !self.passes(group, row) {
+                    continue;
+                }
                 lines.push(BodyLine::Row {
                     group: at,
                     offset,
+                    first,
                     index,
                 });
+                first = false;
                 index += 1;
             }
             if group.has_ended() {
@@ -73,7 +87,7 @@ impl View {
     pub fn window(&self, capacity: usize) -> Window {
         let body = self.body();
         let total = self.rows().count();
-        let whole = body.len() <= capacity;
+        let whole = body.len() <= capacity && self.filter.is_empty();
         let room = if whole {
             capacity
         } else {
@@ -84,7 +98,11 @@ impl View {
         );
         let mut start = self.scroll.min(body.len().saturating_sub(room));
         let at_bottom = self.scroll == usize::MAX;
-        if let Some(at) = selected.filter(|_| !at_bottom) {
+        if at_bottom {
+            if let Some(at) = selected {
+                start = start.min(at);
+            }
+        } else if let Some(at) = selected {
             if at < start {
                 start = at;
                 while start > 0 && matches!(body[start - 1], BodyLine::Realm(_)) {
@@ -108,6 +126,7 @@ impl View {
             end,
             rows,
             total,
+            unfiltered: self.unfiltered_rows(),
             whole,
         }
     }

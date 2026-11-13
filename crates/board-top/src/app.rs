@@ -200,6 +200,32 @@ fn draw_loading(frame: &mut ratatui::Frame) {
     );
 }
 
+/// Applies one key to the view: text while the search prompt is open,
+/// scrolling and `/` otherwise. No key changes a record.
+fn handle_key(view: &mut View, code: KeyCode, modifiers: KeyModifiers, capacity: usize) {
+    if view.typing {
+        match code {
+            KeyCode::Char(c) if !modifiers.contains(KeyModifiers::CONTROL) => view.type_char(c),
+            KeyCode::Backspace => view.backspace(),
+            KeyCode::Enter => view.keep_search(),
+            KeyCode::Esc => view.clear_search(),
+            _ => {}
+        }
+        return;
+    }
+    match code {
+        KeyCode::Up => view.move_by(-1),
+        KeyCode::Down => view.move_by(1),
+        KeyCode::PageUp => view.page(capacity, false),
+        KeyCode::PageDown => view.page(capacity, true),
+        KeyCode::Home => view.home(),
+        KeyCode::End => view.end(),
+        KeyCode::Char('/') => view.start_search(),
+        KeyCode::Esc => view.clear_search(),
+        _ => {}
+    }
+}
+
 /// Runs the full-screen view until `q` or Ctrl-C.
 pub fn live(source: &Source) -> Result<(), String> {
     let mut terminal =
@@ -221,7 +247,6 @@ pub fn live(source: &Source) -> Result<(), String> {
     let mut view: Option<View> = None;
     let mut loaded: Option<Instant> = None;
     let mut loading = true;
-    let mut stopped = false;
     loop {
         loop {
             match receiver.try_recv() {
@@ -240,18 +265,13 @@ pub fn live(source: &Source) -> Result<(), String> {
                 }
                 Err(mpsc::TryRecvError::Empty) => break,
                 Err(mpsc::TryRecvError::Disconnected) => {
-                    stopped = true;
-                    loading = false;
-                    break;
+                    // The panic hook has already restored the terminal.
+                    return Err("the refresh thread stopped".to_owned());
                 }
             }
         }
         if let Some(shown) = &mut view {
             shown.freshness = freshness(loaded, loading);
-            if stopped {
-                shown.status =
-                    vec!["refresh has stopped; the data is no longer updated".to_owned()];
-            }
         }
         let capacity = terminal.size().map_or(0, |size| body_capacity(size.height));
         if let Some(shown) = &mut view {
@@ -267,25 +287,17 @@ pub fn live(source: &Source) -> Result<(), String> {
         match event::poll(Duration::from_millis(200)) {
             Ok(true) => match event::read() {
                 Ok(Event::Key(key)) if key.kind == KeyEventKind::Press => {
-                    let quit = key.code == KeyCode::Char('q')
-                        || (key.code == KeyCode::Char('c')
-                            && key.modifiers.contains(KeyModifiers::CONTROL));
-                    if quit {
+                    let control_c = key.code == KeyCode::Char('c')
+                        && key.modifiers.contains(KeyModifiers::CONTROL);
+                    let typing = view.as_ref().is_some_and(|shown| shown.typing);
+                    if control_c || (!typing && key.code == KeyCode::Char('q')) {
                         return Ok(());
                     }
                     if let Some(shown) = &mut view {
-                        match key.code {
-                            KeyCode::Up => shown.move_by(-1),
-                            KeyCode::Down => shown.move_by(1),
-                            KeyCode::PageUp => shown.page(capacity, false),
-                            KeyCode::PageDown => shown.page(capacity, true),
-                            KeyCode::Home => shown.home(),
-                            KeyCode::End => shown.end(),
-                            _ => {}
-                        }
+                        handle_key(shown, key.code, key.modifiers, capacity);
                     }
-                    if key.code == KeyCode::Char('r') {
-                        // The worker may have ended; the screen says so already.
+                    if !typing && key.code == KeyCode::Char('r') {
+                        // The worker may have ended; the next frame returns the error.
                         let _ = reload.send(());
                     }
                 }
@@ -433,5 +445,19 @@ mod tests {
             drop(messages);
         });
         assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn while_typing_q_and_r_are_text_and_enter_returns_the_keys() {
+        let mut view = build(&Inputs::default());
+        let none = KeyModifiers::NONE;
+        handle_key(&mut view, KeyCode::Char('/'), none, 10);
+        handle_key(&mut view, KeyCode::Char('q'), none, 10);
+        handle_key(&mut view, KeyCode::Char('r'), none, 10);
+        assert_eq!(view.filter, "qr");
+        handle_key(&mut view, KeyCode::Enter, none, 10);
+        assert!(!view.typing);
+        handle_key(&mut view, KeyCode::Esc, none, 10);
+        assert_eq!(view.filter, "");
     }
 }

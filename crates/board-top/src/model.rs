@@ -191,12 +191,18 @@ pub struct View {
     pub scroll: usize,
     /// The first body line the last `reveal` showed.
     pub shown: usize,
+    /// The search query; empty when no filter is on.
+    pub filter: String,
+    /// Whether the search prompt is open and keys are text.
+    pub typing: bool,
 }
 
 impl View {
     /// Keeps the highlight on the record it was on in `old`, or at the same
     /// place when that record has gone.
     pub fn keep_selection(&mut self, old: &View) {
+        self.filter.clone_from(&old.filter);
+        self.typing = old.typing;
         let last = self.rows().count().saturating_sub(1);
         self.selected = old
             .selected_path()
@@ -210,9 +216,11 @@ impl View {
         self.shown = old.shown;
     }
 
-    /// Every row in display order.
+    /// Every row that passes the filter, in display order.
     pub fn rows(&self) -> impl Iterator<Item = &Row> {
-        self.groups.iter().flat_map(|group| group.rows.iter())
+        self.groups
+            .iter()
+            .flat_map(move |group| group.rows.iter().filter(move |row| self.passes(group, row)))
     }
 
     /// The record path of the highlighted row.
@@ -509,6 +517,8 @@ pub fn build(inputs: &Inputs) -> View {
         selected: 0,
         scroll: 0,
         shown: 0,
+        filter: String::new(),
+        typing: false,
     }
 }
 
@@ -533,7 +543,10 @@ fn collapse(groups: Vec<Group>) -> Vec<Group> {
 }
 
 fn panel_for(inputs: &Inputs, groups: &[Group]) -> Panel {
-    let rows: Vec<&Row> = groups.iter().flat_map(|group| group.rows.iter()).collect();
+    let rows: Vec<&Row> = groups
+        .iter()
+        .flat_map(move |group| group.rows.iter())
+        .collect();
     let in_play = rows.iter().filter(|row| row.in_play()).count();
     let plan_count = rows
         .iter()
@@ -680,6 +693,7 @@ fn group(map: Option<&WorkMap>, placed: Vec<(Row, String)>) -> Vec<Group> {
 }
 
 mod scroll;
+mod search;
 pub use scroll::{BodyLine, Window};
 
 #[cfg(test)]

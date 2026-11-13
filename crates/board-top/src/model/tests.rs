@@ -444,22 +444,22 @@ fn end_scrolls_to_the_last_body_line_even_when_it_is_an_ended_line() {
     let body = view.body();
     assert!(matches!(body.last(), Some(BodyLine::Ended(_))));
     view.end();
-    view.reveal(3);
-    assert_eq!(view.window(3).end, body.len());
+    view.reveal(5);
+    assert_eq!(view.window(5).end, body.len());
     view.move_by(-1);
-    view.reveal(3);
-    assert!(view.window(3).start < body.len() - 2);
+    view.reveal(5);
+    assert!(view.window(5).start < body.len() - 3);
 
     let mut again = view_with_trailing_ended_lines();
     again.end();
-    again.reveal(3);
+    again.reveal(5);
     again.home();
     again.move_by(1);
     for _ in 0..20 {
         again.move_by(1);
     }
     assert_eq!(again.scroll, usize::MAX);
-    assert_eq!(again.window(3).end, body.len());
+    assert_eq!(again.window(5).end, body.len());
 }
 
 #[test]
@@ -493,4 +493,120 @@ fn a_refresh_that_adds_rows_after_the_selection_drops_the_bottom_pin() {
     more.keep_selection(&old);
     assert_eq!(more.scroll, old.shown);
     assert!(more.selected < 8);
+}
+
+#[test]
+fn pinned_to_the_bottom_the_selected_row_stays_visible_under_a_long_run_of_ended_lines() {
+    let mut view = view_with_trailing_ended_lines();
+    view.end();
+    let window = view.window(3);
+    let at = view
+        .body()
+        .iter()
+        .position(|line| matches!(line, BodyLine::Row { index, .. } if *index == view.selected))
+        .unwrap();
+    assert!(window.start <= at && at < window.end, "{window:?} {at}");
+}
+
+fn searchable() -> View {
+    let mut input = mapped_input();
+    input.closed = vec![change("/changes/z", "done", "/repos/zed", None)];
+    input.history.insert(
+        "/changes/z".to_owned(),
+        vec![event(3, Some("land"), "done")],
+    );
+    build(&input)
+}
+
+fn type_text(view: &mut View, text: &str) {
+    view.start_search();
+    for c in text.chars() {
+        view.type_char(c);
+    }
+}
+
+#[test]
+fn typing_narrows_rows_by_project_title_or_path_ignoring_case() {
+    let mut view = searchable();
+    let all = view.rows().count();
+    type_text(&mut view, "DASH");
+    assert!(view.rows().count() < all);
+    assert!(
+        view.rows()
+            .all(|row| row.path.contains('b') || view.groups.iter().any(|g| g.project == "dash"))
+    );
+    view.clear_search();
+    type_text(&mut view, "/CHANGES/A");
+    assert_eq!(view.rows().count(), 1);
+}
+
+#[test]
+fn backspace_edits_the_query_and_widens_the_rows() {
+    let mut view = searchable();
+    type_text(&mut view, "/changes/ax");
+    assert_eq!(view.rows().count(), 0);
+    view.backspace();
+    assert_eq!(view.rows().count(), 1);
+}
+
+#[test]
+fn groups_without_a_match_lose_their_heading_and_ended_line() {
+    let mut view = searchable();
+    assert!(view.body().iter().any(|l| matches!(l, BodyLine::Ended(_))));
+    type_text(&mut view, "nothing like this");
+    assert_eq!(view.body(), vec![]);
+    assert_eq!(view.window(10).rows, None);
+    assert_eq!(view.window(10).total, 0);
+    assert!(!view.window(10).whole);
+    view.clear_search();
+    type_text(&mut view, "/changes/a");
+    assert!(
+        !view
+            .body()
+            .iter()
+            .any(|line| matches!(line, BodyLine::Ended(_)))
+    );
+    let realms = view
+        .body()
+        .iter()
+        .filter(|line| matches!(line, BodyLine::Realm(_)))
+        .count();
+    assert_eq!(realms, 1);
+}
+
+#[test]
+fn the_highlight_stays_on_its_record_while_the_query_narrows() {
+    let mut view = searchable();
+    let target = view.rows().last().unwrap().path.clone();
+    let at = view.rows().count() - 1;
+    view.selected = at;
+    type_text(&mut view, &target);
+    assert_eq!(view.selected_path(), Some(target.as_str()));
+}
+
+#[test]
+fn enter_keeps_the_query_and_escape_clears_it_in_either_mode() {
+    let mut view = searchable();
+    type_text(&mut view, "/changes/a");
+    view.keep_search();
+    assert!(!view.typing);
+    assert_eq!(view.rows().count(), 1);
+    view.clear_search();
+    assert_eq!(view.filter, "");
+    assert!(view.rows().count() > 1);
+
+    type_text(&mut view, "dash");
+    view.clear_search();
+    assert!(view.filter.is_empty() && !view.typing);
+}
+
+#[test]
+fn the_query_survives_a_refresh() {
+    let mut old = searchable();
+    type_text(&mut old, "/changes/a");
+    old.keep_search();
+    let mut fresh = searchable();
+    fresh.keep_selection(&old);
+    assert_eq!(fresh.filter, "/changes/a");
+    assert_eq!(fresh.rows().count(), 1);
 }
