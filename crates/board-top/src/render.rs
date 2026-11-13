@@ -222,6 +222,23 @@ fn group_lines(group: &Group, view: &View, first_index: usize, lane: usize) -> V
         .collect()
 }
 
+/// One dim line that stands for a project's ended changes.
+fn ended_line(group: &Group) -> Line<'static> {
+    Line::from(vec![
+        Span::styled(
+            format!("{} ", fit(&group.project, PROJECT_WIDTH)),
+            Style::new().fg(DIM),
+        ),
+        Span::styled(
+            format!(
+                "+{} landed, {} dropped in {WINDOW_DAYS}d",
+                group.landed, group.dropped
+            ),
+            Style::new().fg(DIM),
+        ),
+    ])
+}
+
 fn stat(label: &str, value: &str, color: Color, width: usize) -> Vec<Span<'static>> {
     vec![
         Span::styled(format!("{label:<width$}"), Style::new().fg(DIM)),
@@ -407,7 +424,7 @@ fn lines_for(view: &View, area: Rect) -> Vec<Line<'static>> {
     let mut body: Vec<Line<'static>> = Vec::new();
     let mut first_index = 0;
     let mut last_realm: Option<&str> = None;
-    for group in &view.groups {
+    for group in view.groups.iter().filter(|group| !group.rows.is_empty()) {
         if view.mapped && last_realm != group.realm.as_deref() {
             if let Some(realm) = &group.realm {
                 body.push(Line::from(Span::styled(
@@ -420,6 +437,12 @@ fn lines_for(view: &View, area: Rect) -> Vec<Line<'static>> {
         body.extend(group_lines(group, view, first_index, lane));
         first_index += group.rows.len();
     }
+    body.extend(
+        view.groups
+            .iter()
+            .filter(|group| group.has_ended())
+            .map(ended_line),
+    );
     let shown_rows = body.len();
     if shown_rows > capacity {
         let hidden = shown_rows - capacity.saturating_sub(1);
@@ -449,6 +472,12 @@ fn lines_for(view: &View, area: Rect) -> Vec<Line<'static>> {
         Span::styled(" q", Style::new().fg(ACCENT)),
         Span::styled(" quit", Style::new().fg(DIM)),
     ];
+    if !view.freshness.is_empty() {
+        keys.push(Span::styled(
+            format!("   {}", view.freshness),
+            Style::new().fg(DIM),
+        ));
+    }
     if let Some(problem) = view.status.first() {
         keys.push(Span::styled(format!("   {problem}"), Style::new().fg(WARN)));
     }
@@ -555,20 +584,28 @@ mod tests {
         );
         assert!(text.contains("board") && text.contains("title of /changes/a"));
         assert!(text.contains("build 3d"), "{text}");
-        assert!(text.contains("landed 5d") && text.contains('✓'), "{text}");
+        assert!(text.contains("+1 landed, 0 dropped in 14d"), "{text}");
         assert!(
             text.contains("in play") && text.contains("waiting on you"),
             "{text}"
         );
         assert!(text.contains("limit 1"), "{text}");
         assert!(
-            text.contains("over because: 2 changes are in play across 2 projects"),
+            text.contains("over because: 2 changes are in play,"),
             "{text}"
         );
         assert!(
             lines.last().unwrap().trim_start().starts_with("q quit"),
             "{text}"
         );
+    }
+
+    #[test]
+    fn the_status_line_shows_how_old_the_data_is() {
+        let mut view = sample();
+        view.freshness = "updated 40s ago · loading".to_owned();
+        let text = render_text(&view, 110, 26);
+        assert!(text.contains("updated 40s ago · loading"), "{text}");
     }
 
     #[test]

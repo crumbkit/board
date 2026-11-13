@@ -95,7 +95,7 @@ fn a_move_inside_the_window_keeps_the_phase_before_it() {
 }
 
 #[test]
-fn landed_and_dropped_changes_keep_their_row_with_an_end_mark() {
+fn landed_and_dropped_changes_collapse_into_counts_but_stay_in_the_panel() {
     let mut input = inputs();
     input.closed = vec![
         change("/changes/l", "done", "/repos/board", None),
@@ -110,10 +110,9 @@ fn landed_and_dropped_changes_keep_their_row_with_an_end_mark() {
         vec![event(9, None, "plan"), event(2, Some("plan"), "dropped")],
     );
     let view = build(&input);
-    assert_eq!(row(&view, "/changes/l").end, End::Landed(11 * DAY));
-    assert_eq!(row(&view, "/changes/l").state, "landed 3d");
-    assert!(matches!(row(&view, "/changes/d").end, End::Dropped(_)));
-    assert_eq!(row(&view, "/changes/d").state, "dropped 2d");
+    assert_eq!(view.rows().count(), 0);
+    assert_eq!(view.groups.len(), 1);
+    assert_eq!((view.groups[0].landed, view.groups[0].dropped), (1, 1));
     assert_eq!(view.panel.landed, 1);
     assert_eq!(view.panel.in_play, 0);
     assert_eq!(view.panel.started, 2);
@@ -136,7 +135,7 @@ fn ended_paths_are_history_entries_that_are_not_open() {
             vec![event(1, Some("plan"), "build")],
         ),
     ]);
-    assert_eq!(ended_paths(&open, &history), ["/changes/l"]);
+    assert_eq!(ended_paths(&open, &history, NOW - 14 * DAY), ["/changes/l"]);
 }
 
 #[test]
@@ -251,7 +250,7 @@ fn the_panel_says_why_the_board_is_over_the_limit() {
     assert!(view.panel.over());
     assert_eq!(
         view.panel.why,
-        "over because: 3 changes are in play across 2 projects, over the limit of 2. 2 of them have not left plan."
+        "over because: 3 changes are in play, over the limit of 2. 2 of them have not left plan."
     );
     input.limit = 3;
     let view = build(&input);
@@ -297,4 +296,53 @@ fn every_row_carries_its_record_path_and_one_is_selected() {
     let paths: Vec<&str> = view.rows().map(|row| row.path.as_str()).collect();
     assert_eq!(paths.len(), 3);
     assert_eq!(view.selected_path(), Some(paths[0]));
+}
+
+#[test]
+fn ended_rows_keep_their_marks_when_ended_rows_are_switched_on() {
+    let mut input = inputs();
+    input.closed = vec![change("/changes/l", "done", "/repos/board", None)];
+    input.history.insert(
+        "/changes/l".to_owned(),
+        vec![event(9, None, "plan"), event(3, Some("plan"), "done")],
+    );
+    let groups = group(
+        None,
+        vec![(
+            row_for(&input, &input.closed[0], true, None),
+            "/repos/board".to_owned(),
+        )],
+    );
+    assert_eq!(groups[0].rows[0].end, End::Landed(11 * DAY));
+    assert_eq!(groups[0].rows[0].state, "landed 3d");
+}
+
+#[test]
+fn a_change_that_ended_before_the_window_is_not_fetched() {
+    let history = HashMap::from([(
+        "/changes/old".to_owned(),
+        vec![event(20, Some("land"), "done")],
+    )]);
+    assert_eq!(
+        ended_paths(&[], &history, NOW - 14 * DAY),
+        Vec::<String>::new()
+    );
+}
+
+#[test]
+fn collapsed_lines_come_after_every_row() {
+    let mut input = mapped_input();
+    input.closed = vec![change("/changes/z", "done", "/repos/zed", None)];
+    input.history.insert(
+        "/changes/z".to_owned(),
+        vec![event(3, Some("land"), "done")],
+    );
+    let view = build(&input);
+    let last = view.groups.last().unwrap();
+    assert!(last.rows.is_empty() && last.landed == 1);
+    assert!(
+        view.groups[..view.groups.len() - 1]
+            .iter()
+            .all(|g| !g.rows.is_empty())
+    );
 }

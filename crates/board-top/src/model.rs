@@ -125,7 +125,23 @@ pub struct Group {
     pub project: String,
     /// The rows, longest-unmoved first.
     pub rows: Vec<Row>,
+    /// Changes of this project that landed in the window and have no row.
+    pub landed: usize,
+    /// Changes of this project that were dropped in the window and have no row.
+    pub dropped: usize,
 }
+
+impl Group {
+    /// Whether the group has ended changes to show as one line.
+    #[must_use]
+    pub fn has_ended(&self) -> bool {
+        self.landed + self.dropped > 0
+    }
+}
+
+/// Whether ended changes keep a row of their own. A change here is a small
+/// edit: with `true` every landed and dropped change shows as a row again.
+pub const ENDED_ROWS: bool = false;
 
 /// The panel under the rows.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -169,6 +185,8 @@ pub struct View {
     pub panel: Panel,
     /// Problems to show on the status line.
     pub status: Vec<String>,
+    /// How old the data is and whether a load runs, for the status line.
+    pub freshness: String,
     /// Whether groups come from a work map.
     pub mapped: bool,
     /// The index of the highlighted row among all rows.
@@ -219,13 +237,16 @@ pub struct Inputs {
 pub fn ended_paths<'a>(
     open: &[OpenChange],
     history: impl IntoIterator<Item = (&'a String, &'a Vec<PhaseEvent>)>,
+    window_start: i64,
 ) -> Vec<String> {
     let open: HashSet<&str> = open.iter().map(|change| change.path.as_str()).collect();
     let mut ended: Vec<String> = history
         .into_iter()
         .filter(|(path, events)| {
             !open.contains(path.as_str())
-                && events.last().is_some_and(|event| is_terminal(&event.to))
+                && events
+                    .last()
+                    .is_some_and(|event| is_terminal(&event.to) && event.at >= window_start)
         })
         .map(|(path, _)| path.clone())
         .collect();
@@ -465,11 +486,33 @@ pub fn build(inputs: &Inputs) -> View {
     let panel = panel_for(inputs, &groups);
     View {
         mapped: inputs.map.is_some(),
-        groups,
+        groups: if ENDED_ROWS { groups } else { collapse(groups) },
         panel,
         status: inputs.status.clone(),
+        freshness: String::new(),
         selected: 0,
     }
+}
+
+/// Takes each group's ended changes out of its rows and counts them. Groups
+/// with rows come first, so a collapsed line never pushes a row down.
+fn collapse(groups: Vec<Group>) -> Vec<Group> {
+    let mut groups: Vec<Group> = groups
+        .into_iter()
+        .map(|mut group| {
+            for row in &group.rows {
+                match row.end {
+                    End::Landed(_) => group.landed += 1,
+                    End::Dropped(_) => group.dropped += 1,
+                    End::Open => {}
+                }
+            }
+            group.rows.retain(|row| matches!(row.end, End::Open));
+            group
+        })
+        .collect();
+    groups.sort_by_key(|group| group.rows.is_empty());
+    groups
 }
 
 fn panel_for(inputs: &Inputs, groups: &[Group]) -> Panel {
@@ -526,7 +569,7 @@ fn panel_for(inputs: &Inputs, groups: &[Group]) -> Panel {
         .collect();
     let why = if in_play > inputs.limit {
         format!(
-            "over because: {in_play} changes are in play across {play_groups} projects, over the limit of {}. {plan_count} of them have not left plan.",
+            "over because: {in_play} changes are in play, over the limit of {}. {plan_count} of them have not left plan.",
             inputs.limit
         )
     } else {
@@ -581,6 +624,8 @@ fn group(map: Option<&WorkMap>, placed: Vec<(Row, String)>) -> Vec<Group> {
                         realm: Some(realm.title.clone()),
                         project: project.id.clone(),
                         rows,
+                        landed: 0,
+                        dropped: 0,
                     });
                 }
             }
@@ -609,6 +654,8 @@ fn group(map: Option<&WorkMap>, placed: Vec<(Row, String)>) -> Vec<Group> {
                 realm,
                 project: name,
                 rows: vec![row],
+                landed: 0,
+                dropped: 0,
             }),
         }
     }

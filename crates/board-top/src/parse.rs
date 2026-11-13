@@ -100,6 +100,40 @@ pub fn parse_change_record(text: &str, path: &str) -> Result<OpenChange, ParseEr
     Ok(change)
 }
 
+/// The code and message of a `board/failure/v1` document, or `None` when the
+/// text is anything else.
+#[must_use]
+pub fn describe_failure(text: &str) -> Option<String> {
+    let value: Value = serde_json::from_str(text.trim()).ok()?;
+    if value.get("schema").and_then(Value::as_str) != Some("board/failure/v1") {
+        return None;
+    }
+    let field = |name: &str| value.get(name).and_then(Value::as_str).unwrap_or("");
+    Some(format!("{}: {}", field("code"), field("message")))
+}
+
+/// The change records in a `board get --json` report, each with the path it
+/// was read from. A path the report refused is left out.
+pub fn parse_change_records(text: &str) -> Result<Vec<OpenChange>, ParseError> {
+    let value: Value = serde_json::from_str(text).map_err(|error| shape("a get report", &error))?;
+    let mut changes = Vec::new();
+    for file in value
+        .get("data")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+    {
+        let path = file
+            .pointer("/location/display")
+            .and_then(Value::as_str)
+            .unwrap_or("");
+        if let Some(record) = file.get("text").and_then(Value::as_str) {
+            changes.push(parse_change_record(record, path)?);
+        }
+    }
+    Ok(changes)
+}
+
 /// An open question that blocks work, from `board plans open`.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 pub struct Question {
@@ -487,6 +521,28 @@ diff --git a/changes/unknown.json b/changes/unknown.json
         let added = parse_added_log(text);
         assert_eq!(added["tasks/a.md"], 1_793_491_200);
         assert_eq!(added["tasks/b.md"], 1_793_577_600);
+    }
+
+    #[test]
+    fn a_failure_document_gives_its_code_and_message() {
+        let text =
+            r#"{"schema":"board/failure/v1","code":"board::query::timeout","message":"too slow"}"#;
+        assert_eq!(
+            describe_failure(text).as_deref(),
+            Some("board::query::timeout: too slow")
+        );
+        assert_eq!(describe_failure("{\"a\":1}"), None);
+        assert_eq!(describe_failure("not json"), None);
+    }
+
+    #[test]
+    fn reads_several_change_records_from_one_get_report() {
+        let text = r#"{"schema":"board/get-report/v2","data":[{"location":{"display":"/changes/a"},"text":"{\"phase\":\"done\",\"title\":\"A\"}"},{"location":{"display":"/repos/other/changes/b"},"text":"{\"phase\":\"dropped\"}"}],"failures":[]}"#;
+        let changes = parse_change_records(text).unwrap();
+        assert_eq!(changes.len(), 2);
+        assert_eq!(changes[0].path, "/changes/a");
+        assert_eq!(changes[0].phase, "done");
+        assert_eq!(changes[1].path, "/repos/other/changes/b");
     }
 
     #[test]

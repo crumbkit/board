@@ -7,8 +7,9 @@ use std::process::Command;
 
 use crate::model::{Inputs, WINDOW_SECONDS, ended_paths};
 use crate::parse::{
-    Config, OpenChange, PhaseEvent, parse_added_log, parse_change_record, parse_changes_open,
-    parse_config, parse_map, parse_open_tasks, parse_phase_log, parse_questions,
+    Config, OpenChange, PhaseEvent, describe_failure, parse_added_log, parse_change_records,
+    parse_changes_open, parse_config, parse_map, parse_open_tasks, parse_phase_log,
+    parse_questions,
 };
 use crate::time::DAY;
 
@@ -48,10 +49,16 @@ fn run(program: &str, args: &[String]) -> Result<String, String> {
     }
     let error_text = String::from_utf8_lossy(&output.stderr);
     let out_text = String::from_utf8_lossy(&output.stdout);
-    let first = [&error_text, &out_text]
-        .iter()
-        .find_map(|text| text.lines().find(|line| !line.trim().is_empty()))
-        .unwrap_or("no error text");
+    let first = describe_failure(&out_text)
+        .or_else(|| describe_failure(&error_text))
+        .or_else(|| {
+            [&error_text, &out_text].iter().find_map(|text| {
+                text.lines()
+                    .find(|line| !line.trim().is_empty())
+                    .map(|line| line.chars().take(200).collect())
+            })
+        })
+        .unwrap_or_else(|| "no error text".to_owned());
     let code = output
         .status
         .code()
@@ -195,6 +202,55 @@ impl Source {
         created
     }
 
+    /// Reads the records of ended changes, a hundred paths to a `board get`.
+    fn closed_changes(&self, paths: &[String], status: &mut Vec<String>) -> Vec<OpenChange> {
+        let mut closed = Vec::new();
+        for chunk in paths.chunks(100) {
+            let mut rest = vec!["get", "--json"];
+            rest.extend(chunk.iter().map(String::as_str));
+            match self
+                .board(&rest)
+                .and_then(|text| parse_change_records(&text).map_err(|error| error.to_string()))
+            {
+                Ok(mut changes) => closed.append(&mut changes),
+                Err(error) => status.push(error),
+            }
+        }
+        closed
+    }
+
+    /// The commit each checkout the board reads is on: the board and every
+    /// mount's checkout. Two equal answers mean no record can have changed.
+    #[must_use]
+    pub fn heads(&self) -> Vec<String> {
+        let mut directories = vec![self.board.clone()];
+        if let Ok(entries) = std::fs::read_dir(self.board.join("repos")) {
+            let mut names: Vec<String> = entries
+                .filter_map(Result::ok)
+                .filter_map(|entry| entry.file_name().into_string().ok())
+                .filter_map(|name| name.strip_suffix(".json").map(str::to_owned))
+                .collect();
+            names.sort();
+            directories.extend(
+                names
+                    .iter()
+                    .filter_map(|name| self.directory(&format!("/repos/{name}"))),
+            );
+        }
+        directories
+            .iter()
+            .map(|directory| {
+                let args = vec![
+                    "-C".to_owned(),
+                    directory.display().to_string(),
+                    "rev-parse".to_owned(),
+                    "HEAD".to_owned(),
+                ];
+                run("git", &args).unwrap_or_default()
+            })
+            .collect()
+    }
+
     /// Gathers everything one frame needs. Only the list of open changes is
     /// required; the rest degrades to a note on the status line.
     pub fn load(&self, now: i64) -> Result<Inputs, String> {
@@ -242,15 +298,10 @@ impl Source {
         let since = now - WINDOW_SECONDS - DAY;
         let history = self.phase_history(&prefixes, since, &mut status);
 
-        let mut closed: Vec<OpenChange> = Vec::new();
-        for path in ended_paths(&open, &history) {
-            match self.board(&["get", &path]).and_then(|text| {
-                parse_change_record(&text, &path).map_err(|error| error.to_string())
-            }) {
-                Ok(change) => closed.push(change),
-                Err(error) => status.push(error),
-            }
-        }
+        let closed = self.closed_changes(
+            &ended_paths(&open, &history, now - WINDOW_SECONDS),
+            &mut status,
+        );
         let tasks: BTreeSet<String> = open
             .iter()
             .chain(&closed)
