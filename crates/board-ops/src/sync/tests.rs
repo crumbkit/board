@@ -609,3 +609,245 @@ fn a_second_sync_waits_for_the_first_within_its_wait_and_is_refused_busy_after_i
     });
     syncing.join().unwrap().unwrap();
 }
+
+/// The commit on the remote with `subject`, which must be there once.
+fn once(remote: &Scenario, subject: &str) -> String {
+    let found: Vec<_> = remote
+        .history()
+        .into_iter()
+        .filter(|(_, got)| got == subject)
+        .collect();
+    assert_eq!(found.len(), 1, "{subject}: {found:?}");
+    found[0].0.to_string()
+}
+
+/// Every put in `made` is on the remote once, and `synced.replayed` maps
+/// the commit of each to the commit the remote holds for it.
+fn assert_each_landed_once(remote: &Scenario, synced: &Synced, made: &[(&str, ObjectId)]) {
+    for (at, original) in made {
+        let landed = once(remote, &format!("board put {at}"));
+        let mapped: Vec<_> = synced
+            .replayed
+            .iter()
+            .filter(|replay| replay.from == *original)
+            .collect();
+        assert_eq!(mapped.len(), 1, "{at}: {:?}", synced.replayed);
+        assert_eq!(
+            mapped[0].to.map(|to| to.to_string()),
+            Some(landed),
+            "{at}: {:?}",
+            synced.replayed
+        );
+    }
+    assert_eq!(synced.replayed.len(), made.len(), "{:?}", synced.replayed);
+}
+
+/// A hook of `clone` that runs just before its push connects, writes
+/// `.git/pre-push.started`, and waits for `.git/pre-push.release`.
+fn holding_push(clone: &Scenario) {
+    clone
+        .write(
+            ".git/config",
+            Item::Appended("[core]\n\thooksPath = .git/hooks\n"),
+        )
+        .write(
+            ".git/hooks/pre-push",
+            Item::Executable(
+                "#!/bin/sh\ntouch .git/pre-push.started\n\
+                 while [ ! -e .git/pre-push.release ]; do sleep 0.05; done\n",
+            ),
+        );
+}
+
+fn wait_for(file: &std::path::Path) {
+    let until = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    while !file.exists() {
+        assert!(
+            std::time::Instant::now() < until,
+            "{} never came",
+            file.display()
+        );
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+}
+
+fn syncing_pushing(clone: &Scenario) -> std::thread::JoinHandle<Result<Synced, SyncError>> {
+    syncing_pushing_to(clone.workdir(), true)
+}
+
+fn syncing_pushing_to(
+    dir: &std::path::Path,
+    push: bool,
+) -> std::thread::JoinHandle<Result<Synced, SyncError>> {
+    let dir = dir.to_path_buf();
+    std::thread::spawn(move || {
+        let mut board = crate::Board::open(&dir, None).unwrap();
+        board.built_by("test");
+        board.sync(push, board_tree::GIT_DEADLINE)
+    })
+}
+
+/// The remote moves, and a put lands, after integrate replayed the local
+/// commits and before the push: the push is refused, the second round
+/// replays the first round's commits and the put again, and each lands once
+/// with `replayed` tracing it from its original commit to its final one.
+#[test]
+fn a_remote_that_moves_and_a_put_that_lands_between_integrate_and_push_each_land_once() {
+    let remote = remote();
+    let a = clone(&remote);
+    let first = put(&a, "/projects/one");
+    let second = put(&a, "/projects/two");
+    remote_commit(&remote, &[("projects/r1.json", PROJECT)]);
+    holding_push(&a);
+    let syncing = syncing_pushing(&a);
+    wait_for(&a.workdir().join(".git/pre-push.started"));
+    remote_commit(
+        &remote,
+        &[("projects/r1.json", PROJECT), ("projects/r2.json", PROJECT)],
+    );
+    let between = put(&a, "/projects/between");
+    a.write(".git/pre-push.release", Item::File(""));
+    let synced = syncing.join().unwrap().unwrap();
+    assert_eq!((synced.pushed, synced.attempts), (true, 2), "{synced:?}");
+    assert_each_landed_once(
+        &remote,
+        &synced,
+        &[
+            ("/projects/one", first),
+            ("/projects/two", second),
+            ("/projects/between", between),
+        ],
+    );
+    assert_eq!(remote.head().unwrap().id, synced.new);
+    assert_eq!(a.head().unwrap().id, synced.new);
+    assert_eq!(synced.old, Some(second));
+}
+
+/// A put lands after a push was refused and while the next round's fetch is
+/// held, and the remote moved too: the second round replays the first
+/// round's commit and the new put together.
+#[test]
+fn a_put_between_rounds_is_replayed_with_the_first_rounds_commits_and_lands_once() {
+    let remote = remote();
+    let refusal = remote.workdir().join("refused-once");
+    remote.write(
+        ".git/hooks/pre-receive",
+        Item::Executable(&format!(
+            "#!/bin/sh\n[ -e '{0}' ] && exit 0\ntouch '{0}'\nexit 1\n",
+            refusal.display()
+        )),
+    );
+    let a = clone(&remote);
+    let first = put(&a, "/projects/one");
+    remote_commit(&remote, &[("projects/r1.json", PROJECT)]);
+    let hold = a.workdir().join(".git/delayed-ssh.hold");
+    a.delayed_origin(0);
+    a.write(
+        ".git/delayed-ssh",
+        Item::Executable(&format!(
+            "#!/bin/sh\nfor last; do :; done\n\
+             case \"$last\" in *upload-pack*) if [ -e '{0}' ]; then touch \"$0.started\"; \
+             while [ -e '{0}' ]; do sleep 0.05; done; fi;; esac\nexec sh -c \"$last\"\n",
+            hold.display()
+        )),
+    )
+    .write(
+        ".git/config",
+        Item::Appended("[core]\n\thooksPath = .git/hooks\n"),
+    )
+    .write(
+        ".git/hooks/pre-push",
+        Item::Executable(&format!("#!/bin/sh\ntouch '{}'\n", hold.display())),
+    );
+    let syncing = syncing_pushing(&a);
+    wait_for(&a.workdir().join(".git/delayed-ssh.started"));
+    remote_commit(
+        &remote,
+        &[("projects/r1.json", PROJECT), ("projects/r2.json", PROJECT)],
+    );
+    let between = put(&a, "/projects/between");
+    a.write(".git/delayed-ssh.hold", Item::Deleted);
+    let synced = syncing.join().unwrap().unwrap();
+    assert_eq!((synced.pushed, synced.attempts), (true, 2), "{synced:?}");
+    assert_each_landed_once(
+        &remote,
+        &synced,
+        &[("/projects/one", first), ("/projects/between", between)],
+    );
+    assert_eq!(remote.head().unwrap().id, synced.new);
+}
+
+/// Another program moves HEAD while integrate writes the working tree, held
+/// at an earlier file by a FIFO. The write of HEAD is refused, the files
+/// already written stay, and the next round fetches again, replays the other
+/// program's commit and accepts the files already at their new content.
+#[test]
+fn a_head_moved_by_another_program_during_integrate_starts_another_round_that_finishes() {
+    let remote = remote();
+    let a = clone(&remote);
+    let tip = remote_commit(
+        &remote,
+        &[("projects/a.json", PROJECT), ("projects/z.json", PROJECT)],
+    );
+    a.write("projects/.a.json.board-tmp", Item::Fifo);
+    let dir = a.workdir().to_path_buf();
+    let syncing = syncing_pushing_to(&dir, false);
+    wait_for(&dir.join(".git/index.lock"));
+    // Another program's commit on the clone's branch.
+    let other = a.commit(&BASE).to_string();
+    let mut sink = Vec::new();
+    std::io::Read::read_to_end(
+        &mut std::fs::File::open(dir.join("projects/.a.json.board-tmp")).unwrap(),
+        &mut sink,
+    )
+    .unwrap();
+    // The writer renamed the FIFO onto a.json, which the next round would
+    // block reading; z.json is written after it, so put the content back.
+    wait_for(&dir.join("projects/z.json"));
+    a.write("projects/a.json", Item::Deleted)
+        .write("projects/a.json", Item::File(PROJECT));
+    let synced = syncing.join().unwrap().unwrap();
+    assert_eq!(synced.attempts, 2, "{synced:?}");
+    assert!(synced.kept.is_empty(), "{synced:?}");
+    assert_eq!(synced.fetched, tip);
+    assert_eq!(a.head().unwrap().id, synced.new);
+    assert_eq!(synced.replayed.len(), 1, "{synced:?}");
+    assert_eq!(synced.replayed[0].from.to_string(), other);
+    let head = a.head().unwrap();
+    assert!(
+        head.files.contains_key("projects/a.json") && head.files.contains_key("projects/z.json")
+    );
+    assert_eq!(a.index()["projects/z.json"], a.blob(PROJECT));
+    assert_eq!(a.index()["projects/a.json"], a.blob(PROJECT));
+}
+
+/// A file the remote removed that is edited inside the integrate step is
+/// kept as an untracked file: HEAD and the index drop it.
+#[test]
+fn a_file_the_remote_removes_that_is_edited_inside_the_integrate_step_is_kept_untracked() {
+    let remote = remote();
+    remote_commit(&remote, &[("projects/z.json", PROJECT)]);
+    let a = clone(&remote);
+    remote_commit(&remote, &[("projects/a.json", PROJECT)]);
+    a.write("projects/.a.json.board-tmp", Item::Fifo);
+    let dir = a.workdir().to_path_buf();
+    let syncing = syncing_pushing_to(&dir, false);
+    wait_for(&dir.join(".git/index.lock"));
+    a.write("projects/z.json", Item::File("edited"));
+    let mut sink = Vec::new();
+    std::io::Read::read_to_end(
+        &mut std::fs::File::open(dir.join("projects/.a.json.board-tmp")).unwrap(),
+        &mut sink,
+    )
+    .unwrap();
+    let synced = syncing.join().unwrap().unwrap();
+    assert_eq!(synced.kept, [Fields::at(&path("/projects/z"))]);
+    assert!(!a.head().unwrap().files.contains_key("projects/z.json"));
+    assert!(!a.index().contains_key("projects/z.json"));
+    assert_eq!(
+        std::fs::read_to_string(dir.join("projects/z.json")).unwrap(),
+        "edited"
+    );
+    let hint = Code::SyncKept.hint(&synced.kept[0]);
+    assert!(hint.contains("untracked, the remote removed it"), "{hint}");
+}

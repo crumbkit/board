@@ -316,7 +316,7 @@ fn a_push_refused_after_the_note_is_committed_is_reported_and_the_note_is_kept_o
 #[test]
 fn a_note_added_while_a_sync_outlasts_the_wait_is_committed_and_reported_unpushed() {
     let notes = Notes::new();
-    notes.clone.write(".git/sync.lock", Item::File(""));
+    let held = notes.clone.flocked(".git/sync.lock");
     let output = notes.call("add", &["--text", "Waited."]).unwrap();
     assert_eq!(
         (&output["parked"], &output["unpushed"]),
@@ -327,7 +327,7 @@ fn a_note_added_while_a_sync_outlasts_the_wait_is_committed_and_reported_unpushe
         notes.read(&Notes::note(&output)).matches("Waited.").count(),
         1
     );
-    notes.clone.write(".git/sync.lock", Item::Deleted);
+    drop(held);
     let output = notes.call("add", &["--text", "Pushed."]).unwrap();
     assert_eq!(output["unpushed"], Value::Null);
 }

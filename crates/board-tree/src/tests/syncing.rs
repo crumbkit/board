@@ -375,3 +375,54 @@ fn the_ssh_command_keeps_the_owners_and_adds_batch_mode_only_for_openssh() {
         command("plink -batch")
     );
 }
+
+/// A `sync.lock` file left by a process that was killed holds nothing: the
+/// kernel dropped its lock with the process.
+#[test]
+fn a_sync_lock_file_left_by_a_dead_process_does_not_make_the_next_sync_busy() {
+    let remote = Scenario::new();
+    remote.commit(&[("a.json", "{}")]);
+    let clone = Scenario::clone_of(&remote);
+    clone.write(".git/sync.lock", Item::File("999999\n"));
+    let synced = clone
+        .open()
+        .sync(false, Deadline::after(GIT_DEADLINE), Duration::ZERO)
+        .unwrap();
+    assert_eq!(synced.attempts, 1);
+}
+
+/// A lock held by a live sync refuses a second at once and is admitted
+/// once the first lets go.
+#[test]
+fn a_held_sync_lock_refuses_a_second_sync_busy_until_it_is_released() {
+    let remote = Scenario::new();
+    remote.commit(&[("a.json", "{}")]);
+    let clone = Scenario::clone_of(&remote);
+    let held = clone.flocked(".git/sync.lock");
+    let busy = clone
+        .open()
+        .sync(false, Deadline::after(GIT_DEADLINE), Duration::ZERO)
+        .unwrap_err();
+    assert!(matches!(busy, crate::SyncError::Busy { .. }), "{busy:?}");
+    drop(held);
+    assert!(
+        clone
+            .open()
+            .sync(false, Deadline::after(GIT_DEADLINE), Duration::ZERO)
+            .is_ok()
+    );
+}
+
+/// A board lock held past a spent deadline is the sync timing out.
+#[test]
+fn a_sync_whose_deadline_is_spent_while_a_put_holds_the_board_lock_times_out() {
+    let remote = Scenario::new();
+    remote.commit(&[("a.json", "{}")]);
+    let clone = Scenario::clone_of(&remote);
+    let repository = clone.open();
+    let _held = repository.lock(LOCK_WAIT).unwrap();
+    let error = repository
+        .sync(false, Deadline::after(Duration::ZERO), Duration::ZERO)
+        .unwrap_err();
+    assert_eq!(error.code(), Code::SyncTimeout, "{error}");
+}

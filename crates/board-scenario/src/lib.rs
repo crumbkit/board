@@ -456,6 +456,33 @@ impl Scenario {
     }
 }
 
+impl Scenario {
+    /// `(commit, subject)` of every commit reachable from HEAD, newest first.
+    pub fn history(&self) -> Vec<(ObjectId, String)> {
+        let head = self.git.head_id().unwrap().detach();
+        self.git
+            .rev_walk([head])
+            .all()
+            .unwrap()
+            .map(|info| {
+                let id = info.unwrap().id;
+                let commit = self.git.find_commit(id).unwrap();
+                let message = commit.message_raw_sloppy().to_string();
+                (model(id), message.lines().next().unwrap_or("").to_owned())
+            })
+            .collect()
+    }
+
+    /// Takes an exclusive `flock` on the file at `path`, as a running
+    /// process does, and holds it until the file is dropped.
+    pub fn flocked(&self, path: &str) -> fs::File {
+        self.write(path, Item::File(""));
+        let file = fs::File::open(self.workdir().join(path)).unwrap();
+        file.try_lock().unwrap();
+        file
+    }
+}
+
 /// The commit HEAD names, as a test reads it.
 #[derive(Debug)]
 pub struct HeadCommit {

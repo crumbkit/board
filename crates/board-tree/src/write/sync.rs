@@ -9,7 +9,6 @@ use std::time::Duration;
 
 use board_model::{Code, Fields, LogicalPath, ObjectId};
 use gix::bstr::{BString, ByteSlice};
-use gix::lock::acquire::Fail;
 use gix::object::tree::EntryKind;
 
 use super::entries::{stage_entry, unstage_entry};
@@ -138,6 +137,18 @@ impl Repository {
             let round = match self.integrate(fetched, deadline) {
                 Ok(round) => round,
                 Err(SyncError::Write(WriteError::HeadMoved)) if attempts < ATTEMPTS => continue,
+                // A board lock still held when the deadline is spent is the
+                // deadline running out, not a put in the way.
+                Err(SyncError::Write(error))
+                    if error.code() == Code::PutLocked && deadline.left().is_zero() =>
+                {
+                    return Err(SyncError::TimedOut {
+                        operation: "integrate",
+                        remote: upstream.remote.clone(),
+                        left: Duration::ZERO,
+                        deadline: deadline.given,
+                    });
+                }
                 Err(error) => return Err(error),
             };
             let new = round.new;
@@ -170,29 +181,34 @@ impl Repository {
         })
     }
 
-    /// Takes `sync.lock` in the git directory, which admits one sync at a
-    /// time, trying again until `wait` has passed, then refuses with
-    /// [`SyncError::Busy`].
-    fn sync_lock(&self, wait: Duration) -> Result<gix::lock::Marker, SyncError> {
-        let resource = self.git_dir().join("sync");
+    /// Takes an exclusive file lock on `sync.lock` in the git directory, which
+    /// admits one sync at a time, trying again until `wait` has passed, then
+    /// refuses with [`SyncError::Busy`]. The kernel drops the lock when the
+    /// process ends, however it ends, so a file left behind by a killed sync
+    /// does not hold anything.
+    fn sync_lock(&self, wait: Duration) -> Result<std::fs::File, SyncError> {
+        let lock = self.git_dir().join("sync.lock");
+        let failed = |source| {
+            SyncError::Write(WriteError::Io {
+                path: lock.clone(),
+                source,
+            })
+        };
+        let file = std::fs::OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .write(true)
+            .open(&lock)
+            .map_err(failed)?;
         let started = std::time::Instant::now();
         loop {
-            match gix::lock::Marker::acquire_to_hold_resource(&resource, Fail::Immediately, None) {
-                Ok(held) => return Ok(held),
-                Err(error) if error.is_retryable() && started.elapsed() < wait => {
+            match file.try_lock() {
+                Ok(()) => return Ok(file),
+                Err(std::fs::TryLockError::WouldBlock) if started.elapsed() < wait => {
                     std::thread::sleep(Duration::from_millis(20));
                 }
-                Err(error) => {
-                    let lock = resource.with_extension("lock");
-                    return Err(if error.is_retryable() {
-                        SyncError::Busy { lock }
-                    } else {
-                        SyncError::Write(WriteError::Io {
-                            path: lock,
-                            source: io::Error::other(error.into_error()),
-                        })
-                    });
-                }
+                Err(std::fs::TryLockError::WouldBlock) => return Err(SyncError::Busy { lock }),
+                Err(std::fs::TryLockError::Error(source)) => return Err(failed(source)),
             }
         }
     }

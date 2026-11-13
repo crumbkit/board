@@ -21,8 +21,9 @@ pub const MOVED: [Code; 2] = [Code::PutStale, Code::PutHeadMoved];
 /// no new read clears.
 pub const EDITED: Code = Code::MountStale;
 pub const ATTEMPTS: usize = 3;
-/// The sync refusals that leave the clone's HEAD where it was, so a write
-/// there can still be made.
+/// The sync refusals after which a write can still be made: the clone is
+/// left as it was or as an earlier round of the sync made it, and either
+/// way the write parks beside it.
 const UNSYNCED: [Code; 3] = [Code::SyncConflict, Code::SyncEdited, Code::SyncBusy];
 
 /// What landing a write needs of Board beyond what [`Host`] has on main:
