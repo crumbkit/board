@@ -2,7 +2,7 @@
 
 use board_model::{Code, Fields, LogicalPath, ObjectId};
 use board_scenario::{Item, Scenario};
-use board_tree::{ATTEMPTS, Replayed, Synced};
+use board_tree::{ATTEMPTS, Synced};
 
 use crate::sync::SyncError;
 use crate::tests::{PROJECT_SCHEMA, TASK_SCHEMA, open};
@@ -79,36 +79,32 @@ fn two_clones_that_each_put_a_record_both_hold_both_after_syncing() {
     let from_b = put(&b, "/projects/b");
     let synced_a = sync(&a, true).unwrap();
     assert_eq!(synced_a.new, from_a);
-    assert!(
-        synced_a.pushed && synced_a.replayed.is_empty(),
-        "{synced_a:?}"
-    );
+    assert!(!synced_a.merged && synced_a.pushed, "{synced_a:?}");
     assert_eq!(remote.head().unwrap().id, from_a);
     let synced_b = sync(&b, true).unwrap();
-    let replayed = synced_b.replayed[0].to.unwrap();
-    assert_eq!(
-        synced_b.replayed,
-        [Replayed {
-            from: from_b,
-            to: Some(replayed)
-        }]
+    assert!(
+        synced_b.merged && synced_b.conflicts.is_empty(),
+        "{synced_b:?}"
     );
-    assert_eq!(
-        (synced_b.fetched, synced_b.old, synced_b.new),
-        (from_a, Some(from_b), replayed)
-    );
+    let merged = synced_b.new;
+    assert_eq!((synced_b.fetched, synced_b.old), (from_a, Some(from_b)));
     assert!(synced_b.pushed, "{synced_b:?}");
     let head = b.head().unwrap();
-    assert_eq!((head.id, head.parents), (replayed, vec![from_a]));
-    assert_eq!(head.message, "board put /projects/b");
+    assert_eq!((head.id, head.parents), (merged, vec![from_b, from_a]));
+    assert!(
+        head.message.starts_with("board sync: merge"),
+        "{}",
+        head.message
+    );
     assert!(
         head.files.contains_key("projects/a.json") && head.files.contains_key("projects/b.json")
     );
-    assert_eq!(remote.head().unwrap().id, replayed);
+    assert!(b.history().iter().any(|(id, _)| *id == from_b));
+    assert_eq!(remote.head().unwrap().id, merged);
     let synced_a = sync(&a, true).unwrap();
     assert_eq!(
-        (synced_a.old, synced_a.new, synced_a.pushed),
-        (Some(from_a), replayed, false)
+        (synced_a.old, synced_a.new, synced_a.pushed, synced_a.merged),
+        (Some(from_a), merged, false, false)
     );
     assert_eq!(
         std::fs::read(a.workdir().join("projects/b.json")).unwrap(),
@@ -121,22 +117,19 @@ fn two_clones_that_each_put_a_record_both_hold_both_after_syncing() {
 }
 
 #[test]
-fn a_record_whose_bytes_the_remote_already_holds_makes_no_commit() {
+fn a_record_whose_bytes_the_remote_already_holds_merges_without_a_conflict() {
     let remote = remote();
     let (a, b) = (clone(&remote), clone(&remote));
     put(&a, "/projects/same");
     let from_b = put(&b, "/projects/same");
     sync(&a, true).unwrap();
     let synced = sync(&b, true).unwrap();
+    assert!(synced.conflicts.is_empty(), "{synced:?}");
+    assert_eq!(b.head().unwrap().parents, [from_b, synced.fetched]);
     assert_eq!(
-        synced.replayed,
-        [Replayed {
-            from: from_b,
-            to: None
-        }]
+        b.head().unwrap().files["projects/same.json"],
+        a.head().unwrap().files["projects/same.json"]
     );
-    assert_eq!((synced.new, synced.pushed), (synced.fetched, false));
-    assert_eq!(b.head().unwrap().id, synced.fetched);
 }
 
 #[test]
@@ -150,34 +143,38 @@ fn a_sync_without_push_moves_head_and_pushes_nothing() {
         (synced.fetched, synced.old, synced.pushed),
         (moved, Some(from_a), false)
     );
-    assert_eq!(a.head().unwrap().parents, [moved]);
+    assert_eq!(a.head().unwrap().parents, [from_a, moved]);
     assert_eq!(remote.head().unwrap().id, moved);
     assert!(a.workdir().join("projects/r.json").exists());
     let again = sync(&a, false).unwrap();
     assert_eq!(
-        (again.old, again.new, again.replayed.len()),
-        (Some(synced.new), synced.new, 0)
+        (again.old, again.new, again.merged),
+        (Some(synced.new), synced.new, false)
     );
 }
 
 #[test]
-fn a_file_changed_here_and_on_the_remote_is_refused_and_one_changed_here_alone_is_admitted() {
+fn a_file_changed_here_and_on_the_remote_takes_the_remotes_version_and_records_the_conflict() {
     let remote = remote();
     let a = clone(&remote);
     let b = clone(&remote);
-    put(&a, "/projects/a");
-    remote_commit(
-        &remote,
-        &[("projects/a.json", r#"{"$type": "lr/project/v1", "x": 1}"#)],
-    );
-    let (code, message) = refused(&a, true);
-    assert_eq!(code, Code::SyncConflict);
+    let from_a = put(&a, "/projects/a");
+    let theirs = r#"{"$type": "lr/project/v1", "x": 1}"#;
+    let from_remote = remote_commit(&remote, &[("projects/a.json", theirs)]);
+    let synced = sync(&a, true).unwrap();
+    assert!(synced.merged && synced.pushed, "{synced:?}");
+    assert_eq!(synced.conflicts.len(), 1, "{synced:?}");
+    assert_eq!(synced.conflicts[0].path, "projects/a.json");
+    let head = a.head().unwrap();
+    assert_eq!(head.parents, [from_a, from_remote]);
+    assert_eq!(head.files["projects/a.json"], theirs.as_bytes());
     assert_eq!(
-        message,
-        "projects/a.json changed on the remote and in a commit here that is not pushed"
+        head.files
+            .keys()
+            .filter(|path| path.starts_with("conflicts/"))
+            .count(),
+        1
     );
-    let refusal = sync(&a, true).unwrap_err().refusal();
-    assert_eq!(refusal.fields["path"], "/projects/a");
     put(&b, "/projects/b");
     assert!(sync(&b, true).unwrap().pushed);
 }
@@ -621,25 +618,13 @@ fn once(remote: &Scenario, subject: &str) -> String {
     found[0].0.to_string()
 }
 
-/// Every put in `made` is on the remote once, and `synced.replayed` maps
-/// the commit of each to the commit the remote holds for it.
-fn assert_each_landed_once(remote: &Scenario, synced: &Synced, made: &[(&str, ObjectId)]) {
+/// Every put in `made` is on the remote once, under the commit id it had
+/// here: a merge never rewrites a local commit.
+fn assert_each_landed_once(remote: &Scenario, made: &[(&str, ObjectId)]) {
     for (at, original) in made {
         let landed = once(remote, &format!("board put {at}"));
-        let mapped: Vec<_> = synced
-            .replayed
-            .iter()
-            .filter(|replay| replay.from == *original)
-            .collect();
-        assert_eq!(mapped.len(), 1, "{at}: {:?}", synced.replayed);
-        assert_eq!(
-            mapped[0].to.map(|to| to.to_string()),
-            Some(landed),
-            "{at}: {:?}",
-            synced.replayed
-        );
+        assert_eq!(landed, original.to_string(), "{at}");
     }
-    assert_eq!(synced.replayed.len(), made.len(), "{:?}", synced.replayed);
 }
 
 /// A hook of `clone` that runs just before its push connects, writes
@@ -687,10 +672,9 @@ fn syncing_pushing_to(
     })
 }
 
-/// The remote moves, and a put lands, after integrate replayed the local
+/// The remote moves, and a put lands, after integrate merged the remote's
 /// commits and before the push: the push is refused, the second round
-/// replays the first round's commits and the put again, and each lands once
-/// with `replayed` tracing it from its original commit to its final one.
+/// merges the remote again, and each put lands once under its own commit.
 #[test]
 fn a_remote_that_moves_and_a_put_that_lands_between_integrate_and_push_each_land_once() {
     let remote = remote();
@@ -711,7 +695,6 @@ fn a_remote_that_moves_and_a_put_that_lands_between_integrate_and_push_each_land
     assert_eq!((synced.pushed, synced.attempts), (true, 2), "{synced:?}");
     assert_each_landed_once(
         &remote,
-        &synced,
         &[
             ("/projects/one", first),
             ("/projects/two", second),
@@ -724,10 +707,10 @@ fn a_remote_that_moves_and_a_put_that_lands_between_integrate_and_push_each_land
 }
 
 /// A put lands after a push was refused and while the next round's fetch is
-/// held, and the remote moved too: the second round replays the first
-/// round's commit and the new put together.
+/// held, and the remote moved too: the second round merges the remote's
+/// new commit and the push carries the new put with the first round's commit.
 #[test]
-fn a_put_between_rounds_is_replayed_with_the_first_rounds_commits_and_lands_once() {
+fn a_put_between_rounds_is_pushed_with_the_first_rounds_commits_and_lands_once() {
     let remote = remote();
     let refusal = remote.workdir().join("refused-once");
     remote.write(
@@ -771,7 +754,6 @@ fn a_put_between_rounds_is_replayed_with_the_first_rounds_commits_and_lands_once
     assert_eq!((synced.pushed, synced.attempts), (true, 2), "{synced:?}");
     assert_each_landed_once(
         &remote,
-        &synced,
         &[("/projects/one", first), ("/projects/between", between)],
     );
     assert_eq!(remote.head().unwrap().id, synced.new);
@@ -779,7 +761,7 @@ fn a_put_between_rounds_is_replayed_with_the_first_rounds_commits_and_lands_once
 
 /// Another program moves HEAD while integrate writes the working tree, held
 /// at an earlier file by a FIFO. The write of HEAD is refused, the files
-/// already written stay, and the next round fetches again, replays the other
+/// already written stay, and the next round fetches again, merges the other
 /// program's commit and accepts the files already at their new content.
 #[test]
 fn a_head_moved_by_another_program_during_integrate_starts_another_round_that_finishes() {
@@ -811,8 +793,8 @@ fn a_head_moved_by_another_program_during_integrate_starts_another_round_that_fi
     assert!(synced.kept.is_empty(), "{synced:?}");
     assert_eq!(synced.fetched, tip);
     assert_eq!(a.head().unwrap().id, synced.new);
-    assert_eq!(synced.replayed.len(), 1, "{synced:?}");
-    assert_eq!(synced.replayed[0].from.to_string(), other);
+    assert!(synced.merged, "{synced:?}");
+    assert!(a.history().iter().any(|(id, _)| id.to_string() == other));
     let head = a.head().unwrap();
     assert!(
         head.files.contains_key("projects/a.json") && head.files.contains_key("projects/z.json")

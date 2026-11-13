@@ -238,25 +238,24 @@ fn a_desktop_commit_beside_a_phone_push_to_another_note_syncs_and_is_not_parked(
 }
 
 #[test]
-fn a_notes_repo_that_cannot_sync_parks_the_note_and_leaves_no_merge_or_rebase_behind() {
+fn a_desktop_commit_and_a_phone_push_to_one_note_merge_with_a_recorded_conflict_and_the_note_is_not_parked()
+ {
     let notes = Notes::new();
     let path = Notes::note(&notes.call("add", &["--text", "First."]).unwrap());
     notes
         .clone
         .write(&path, Item::Appended("\nFrom the desktop.\n"));
-    let desktop = notes.read(&path);
     commit(notes.clone.workdir());
     notes.phone_appends(&path, "\nFrom the phone.\n");
     let output = notes.call("add", &["--text", "From the agent."]).unwrap();
-    assert_eq!(output["parked"], "board::sync::conflict");
-    assert_eq!(output["unpushed"], "board::sync::conflict");
-    assert_eq!(
-        output["path"],
-        format!("/repos/notes-personal/{}", sibling(&path))
-    );
+    assert_eq!(output["parked"], Value::Null);
+    assert_eq!(output["unpushed"], Value::Null);
+    assert_eq!(output["path"], format!("/repos/notes-personal/{path}"));
     assert_eq!(output["commit"], json!(notes.head()));
     assert_eq!(notes.pin(), notes.head());
-    assert_eq!(notes.read(&path), desktop);
+    let kept = notes.read(&path);
+    assert!(kept.contains("From the phone."), "{kept}");
+    assert!(!kept.contains("From the desktop."), "{kept}");
     assert_eq!(git(notes.clone.workdir(), &["status", "--porcelain"]), "");
     let branch = git(notes.clone.workdir(), &["symbolic-ref", "--short", "HEAD"]);
     assert_eq!(branch, "main");

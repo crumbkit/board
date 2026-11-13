@@ -221,10 +221,10 @@ fn a_failed_push_gives_the_code_of_its_refusal() {
     clones
         .syncs
         .borrow_mut()
-        .extend([refusal(Code::SyncConflict), refusal(Code::SyncFailed)]);
+        .extend([refusal(Code::SyncEdited), refusal(Code::SyncFailed)]);
     assert_eq!(
         push(writer(&host, &clones), &mounted()).as_deref(),
-        Some("board::sync::conflict")
+        Some("board::sync::edited")
     );
     assert_eq!(
         push(writer(&host, &clones), &mounted()).as_deref(),

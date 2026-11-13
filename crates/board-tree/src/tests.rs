@@ -5,6 +5,7 @@ mod address;
 mod commits;
 mod kept;
 mod links;
+mod merging;
 mod mounts;
 mod moved;
 // The mount tests again, each mount written as a repo record with a checkout.

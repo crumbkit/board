@@ -8,7 +8,7 @@ board refs           List the references each entry makes and the entries that r
 board uri            Print the board:// URI that names a record from any known board's clone
 board put            Write the record on stdin at a path or --new name, or a file with --file
 board rm             Remove the file at a path
-board sync           Fetch the remote branch, replay this board's commits onto it, and push
+board sync           Fetch the remote branch, merge it into this board, and push
 board mount          Work with mounts
 board mount update   Advance the mount at a path, which is not followed, to its `follow` ref
 board plugin         Work with plugins

@@ -100,7 +100,7 @@ fn syncing(clone: PathBuf, push: bool, deadline: Duration) -> Fixture {
             let pinned = (host.mount_update(&at, deadline))
                 .map_err(|error| refused("mount update", &error.refusal()))?;
             Ok(json!({
-                "count": synced.replayed.len(),
+                "count": synced.conflicts.len(),
                 "synced": synced.new.to_string(),
                 "pushed": synced.pushed,
                 "pinned": pinned.new.to_string(),
@@ -192,11 +192,11 @@ fn a_sync_past_its_deadline_is_refused_as_a_timeout_and_one_within_it_syncs() {
     assert_eq!(output["pinned"], json!(fetched.to_string()));
 }
 
-/// A file changed in an unpushed commit of the clone and on the remote is
-/// `board::sync::conflict`, and the mount stays; the same commit changing
-/// another file syncs.
+/// A file changed in an unpushed commit of the clone and on the remote
+/// syncs by merging, with one conflict recorded, and the mount follows the
+/// merge commit; the same commit changing another file syncs with none.
 #[test]
-fn a_sync_conflict_is_refused_with_its_code_and_a_commit_of_another_file_syncs() {
+fn a_sync_conflict_is_merged_and_recorded_and_a_commit_of_another_file_has_none() {
     let conflicting = Notes::new();
     open(&conflicting.clone)
         .put(
@@ -211,19 +211,20 @@ fn a_sync_conflict_is_refused_with_its_code_and_a_commit_of_another_file_syncs()
         BASE[2],
         ("projects/a.json", r#"{"$type": "lr/project/v1", "x": 1}"#),
     ]);
-    let refusal = conflicting.sync(Duration::from_secs(30)).unwrap_err();
-    assert_eq!(code(&refusal), "board::sync::conflict");
-    let replaying = Notes::new();
-    open(&replaying.clone)
+    let output = conflicting.sync(Duration::from_secs(30)).unwrap();
+    assert_eq!(output["count"], json!(1));
+    assert_eq!(output["pinned"], output["synced"]);
+    let merging = Notes::new();
+    open(&merging.clone)
         .put(
             &"/projects/a".parse().unwrap(),
             Expect::Absent,
             PROJECT.as_bytes(),
         )
         .unwrap();
-    replaying.remote_writes("two");
-    let output = replaying.sync(Duration::from_secs(30)).unwrap();
-    assert_eq!(output["count"], json!(1));
+    merging.remote_writes("two");
+    let output = merging.sync(Duration::from_secs(30)).unwrap();
+    assert_eq!(output["count"], json!(0));
 }
 
 /// A clone whose branch follows no remote branch is `board::sync::no_remote`;

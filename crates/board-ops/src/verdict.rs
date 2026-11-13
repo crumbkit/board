@@ -3,8 +3,8 @@
 //! (docs/architecture.md, Records).
 
 use board_model::{
-    ATTACHMENT_TYPE, Attachment, BINDING_TYPE, Binding, CONFIG_TYPE, Classified, Code, Content,
-    Fields, MANIFEST_TYPE, RecordType, Role, UiError, effect_record,
+    ATTACHMENT_TYPE, Attachment, BINDING_TYPE, Binding, CONFIG_TYPE, CONFLICT_TYPE, Classified,
+    Code, Conflict, Content, Fields, MANIFEST_TYPE, RecordType, Role, UiError, effect_record,
 };
 use board_plugin::{Manifest, ManifestError};
 use board_tree::Refused;
@@ -141,6 +141,11 @@ pub(crate) fn judge(classified: &Classified) -> Result<Option<Schema>, Fault> {
         }
         Content::Record { record_type, value } if record_type.as_str() == ATTACHMENT_TYPE => {
             Attachment::from_value(value)
+                .map(|_| None)
+                .map_err(|_| Fault::Code(Code::RecordInvalid))
+        }
+        Content::Record { record_type, value } if record_type.as_str() == CONFLICT_TYPE => {
+            Conflict::from_value(value)
                 .map(|_| None)
                 .map_err(|_| Fault::Code(Code::RecordInvalid))
         }

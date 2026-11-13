@@ -7,7 +7,7 @@ board/ls-report/v2              output  document  The entries of one directory.
 board/refs-report/v2            output  document  The references of each path asked for.
 board/uri-report/v2             output  document  A record's board:// URI and its path.
 board/put-report/v2             output  document  What each write wrote or removed, and its commit.
-board/sync-report/v2            output  document  What a sync fetched, replayed and pushed, and where HEAD moved.
+board/sync-report/v2            output  document  What a sync fetched, merged and pushed, and where HEAD moved.
 board/mount-update-report/v2    output  document  Where a mount moved from and to.
 board/plugin-list-report/v2     output  document  The installed and enabled plugins.
 board/plugin-find-report/v2     output  document  The installed capabilities, or those that match every filter given.

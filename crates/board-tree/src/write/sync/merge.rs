@@ -5,7 +5,9 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use board_model::{ObjectId, Pointer, TYPES_DIRECTORY, can_hold_pointer, pointer, repinned};
+use board_model::{
+    Mount, ObjectId, Pointer, Side, TYPES_DIRECTORY, can_hold_pointer, pointer, repinned,
+};
 use gix::bstr::BString;
 use gix::objs::tree::{Entry, EntryKind, EntryMode};
 
@@ -44,20 +46,24 @@ pub(crate) enum ConflictKind {
     FileDirectory { file: ObjectId, by: Side },
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Side {
-    Local,
-    Remote,
-}
-
 /// A mount pointer both sides moved, with nothing else changed.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct PinResolution {
-    pub(crate) path: String,
-    pub(crate) local: ObjectId,
-    pub(crate) remote: ObjectId,
-    pub(crate) taken: Side,
-    pub(crate) basis: PinBasis,
+pub struct PinResolution {
+    pub path: String,
+    pub local: ObjectId,
+    pub remote: ObjectId,
+    pub taken: Side,
+    pub basis: PinBasis,
+}
+
+impl PinBasis {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Descendant => "descendant",
+            Self::Unrelated => "unrelated",
+            Self::Unknown => "unknown",
+        }
+    }
 }
 
 /// Whether commit `candidate` has `of` among its ancestors.
@@ -71,7 +77,7 @@ pub(crate) enum Ancestry {
 
 /// Why a pin side was taken.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum PinBasis {
+pub enum PinBasis {
     /// The side taken descends from the other.
     Descendant,
     /// Neither descends from the other, so the remote was taken.
@@ -110,14 +116,15 @@ impl Slot {
 }
 
 /// Merges the trees `local` and `remote` against their common ancestor
-/// `base`, `None` when they have none. `descends(a, b)` says whether commit
-/// `a` has `b` among its ancestors; it settles two moved mount pins.
+/// `base`, `None` when they have none. `descends(mount, a, b)` says whether commit
+/// `a` has `b` among its ancestors in the repository `mount` names; it
+/// settles two moved mount pins.
 pub(crate) fn merge_trees(
     repository: &Repository,
     base: Option<gix::ObjectId>,
     local: gix::ObjectId,
     remote: gix::ObjectId,
-    descends: &dyn Fn(ObjectId, ObjectId) -> Ancestry,
+    descends: &dyn Fn(&Mount, ObjectId, ObjectId) -> Ancestry,
 ) -> Result<Merged, GitError> {
     let mut merge = Merge {
         repository,
@@ -142,7 +149,7 @@ pub(crate) fn merge_trees(
 
 struct Merge<'a> {
     repository: &'a Repository,
-    descends: &'a dyn Fn(ObjectId, ObjectId) -> Ancestry,
+    descends: &'a dyn Fn(&Mount, ObjectId, ObjectId) -> Ancestry,
     conflicts: Vec<Conflict>,
     pins: Vec<PinResolution>,
     schemas: Vec<SchemaClash>,
@@ -280,11 +287,12 @@ impl Merge<'_> {
         if !can_hold_pointer(path) {
             return Ok(None);
         }
-        let (Some((local_commit, local_bytes)), Some((remote_commit, remote_bytes))) =
+        let (Some((local_mount, local_bytes)), Some((remote_mount, remote_bytes))) =
             (self.pinned(local)?, self.pinned(remote)?)
         else {
             return Ok(None);
         };
+        let (local_commit, remote_commit) = (local_mount.commit, remote_mount.commit);
         let same_but_commit = matches!(
             (repinned(&local_bytes, local_commit), repinned(&remote_bytes, local_commit)),
             (Ok(local), Ok(remote)) if local == remote
@@ -292,10 +300,10 @@ impl Merge<'_> {
         if !same_but_commit {
             return Ok(None);
         }
-        let (taken, basis) = match (self.descends)(remote_commit, local_commit) {
+        let (taken, basis) = match (self.descends)(&remote_mount, remote_commit, local_commit) {
             Ancestry::Descends => (Side::Remote, PinBasis::Descendant),
             Ancestry::Unknown => (Side::Local, PinBasis::Unknown),
-            Ancestry::DoesNot => match (self.descends)(local_commit, remote_commit) {
+            Ancestry::DoesNot => match (self.descends)(&local_mount, local_commit, remote_commit) {
                 Ancestry::Descends => (Side::Local, PinBasis::Descendant),
                 Ancestry::DoesNot => (Side::Remote, PinBasis::Unrelated),
                 Ancestry::Unknown => (Side::Local, PinBasis::Unknown),
@@ -314,8 +322,8 @@ impl Merge<'_> {
         }))
     }
 
-    /// The commit and bytes of the mount pointer in `slot`.
-    fn pinned(&self, slot: Slot) -> Result<Option<(ObjectId, Vec<u8>)>, GitError> {
+    /// The mount and bytes of the mount pointer in `slot`.
+    fn pinned(&self, slot: Slot) -> Result<Option<(Mount, Vec<u8>)>, GitError> {
         let Some(blob) = slot.blob() else {
             return Ok(None);
         };
@@ -323,7 +331,7 @@ impl Merge<'_> {
             return Ok(None);
         };
         Ok(match pointer(&bytes) {
-            Ok(Some(Pointer::Mount(mount))) => Some((mount.commit, bytes)),
+            Ok(Some(Pointer::Mount(mount))) => Some((mount, bytes)),
             _ => None,
         })
     }

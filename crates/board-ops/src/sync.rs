@@ -10,8 +10,8 @@ pub use board_tree::Synced;
 use crate::board::Board;
 
 impl Board {
-    /// Fetches the branch HEAD follows, replays the commits only this
-    /// board has onto it, moves HEAD, the index and the working tree to
+    /// Fetches the branch HEAD follows, merges the commits only this
+    /// board has with it, moves HEAD, the index and the working tree to
     /// the result, and pushes it when `push`. Only the local step takes the
     /// board lock, waiting for it up to [`board_tree::LOCK_WAIT`], so puts
     /// run while git fetches and pushes. A second sync of this board

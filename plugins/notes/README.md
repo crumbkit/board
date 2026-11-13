@@ -139,9 +139,9 @@ Board itself never merges contents. Every call to a mounted repo runs,
 through Board:
 
 1. `board -C <clone> sync` (with `--no-push` for `daily`), which fetches the
-   remote branch, replays this clone's own commits onto it, pushes and moves
-   the working tree. Commits Reflect's desktop app made in the same clone
-   are replayed and pushed like any other.
+   remote branch, merges it into this clone, pushes and moves the working
+   tree. Commits Reflect's desktop app made in the same clone are pushed
+   like any other.
 2. `board mount update <mount>`, which pins the mount to the clone's HEAD,
    so `board get` through the mount reads what the sync brought in. This
    commits the pin in the board, for a read too.
@@ -163,7 +163,7 @@ moved after the read (`board::put::stale` or `board::put::head_moved`), the
 plugin pins, reads and appends again, up to three times. Three things park
 the text: a note that keeps moving, a note holding an edit Reflect has not
 committed (`board::mount::stale`, which no new read clears), and a first
-sync refused with `board::sync::conflict` or `board::sync::edited`. The
+sync refused with `board::sync::edited`. The
 text is then appended to the sibling `<name>.agent.md`, such as
 `daily/2026-10-24.agent.md`, and `parked` names the code. Any other refusal
 of the first sync, such as no network, refuses the call before anything is
@@ -171,15 +171,12 @@ written. Once the text is committed, a refused push in step 4 never refuses
 the call: `unpushed` names the code, because a retry would add the text
 twice.
 
-Board's sync never merges, so a call leaves no merge or rebase behind.
-One race remains: when the phone pushes a change to the same note between
-step 1 and step 4, the push sync refuses with `board::sync::conflict`, and
-the commit stays in this clone with `unpushed` naming the code. Board cannot
-drop an unpushed commit, so the plugin cannot redo it. Reflect's desktop
-app merges it on its next pull, as it merges daily notes appended on two
-devices, and pushes it. Replacing this needs Board to report the remote's
-blob on a conflict and to let a sync drop a commit, which no other plugin
-needs yet.
+Board's sync merges with a commit of its own and leaves no merge or rebase
+in progress. When the phone pushes a change to the same note between step 1
+and step 4, the push sync merges the two: the note holds the phone's text,
+the plugin's text stays in the commit it made, and a `board/conflict/v1`
+record under `/conflicts/` names both versions. The call reports nothing
+parked or unpushed, so the appended text has to be recovered from the record.
 
 Each sync and pin has git's deadline of 60 seconds.
 

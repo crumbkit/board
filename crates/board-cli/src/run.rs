@@ -259,20 +259,21 @@ Examples:
   board rm -r /tasks
   board rm /tasks/zz --ignore-unmatch")]
     Rm(remove::Removal),
-    /// Fetch the remote branch, replay this board's commits onto it, and push.
+    /// Fetch the remote branch, merge it into this board, and push.
     #[command(after_help = "\
-Board fetches the remote branch HEAD's branch follows, replays each commit
-only this board has onto it, pushes the result, and moves HEAD, git's index
-and the working tree to it. A commit that changed a file the remote also
-changed is refused. A file edited during the sync keeps its edit and is
-listed as kept. A fetch runs the `git` executable, so git's remotes,
+Board fetches the remote branch HEAD's branch follows, merges it into HEAD
+with a merge commit, pushes the result, and moves HEAD, git's index and the
+working tree to it. Commits made here keep their ids. A file both sides
+changed takes the remote's content, and a board/conflict/v1 record under
+/conflicts/ names both versions, which stay in history. A file edited
+during the sync keeps its edit and is listed as kept. A fetch runs the `git` executable, so git's remotes,
 credentials and SSH settings apply.
 
 Examples:
   board sync
   board sync --no-push")]
     Sync {
-        /// Fetch and replay, and leave the push for later.
+        /// Fetch and merge, and leave the push for later.
         #[arg(long)]
         no_push: bool,
     },

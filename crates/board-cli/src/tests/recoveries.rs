@@ -834,8 +834,7 @@ fn syncing(starts: &mut Starts) {
     let no_remote = enabling("");
     let unreachable = clone();
     unreachable.unreachable_origin();
-    let (conflicting, edited) = (clone(), clone());
-    assert_eq!(put(&conflicting, "/projects/c").code, 0);
+    let edited = clone();
     remote.commit(&[files[0], files[1], ("projects/c.json", changed)]);
     edited.write("projects/p.json", Item::File(changed));
     let refusing = Scenario::new();
@@ -849,10 +848,9 @@ fn syncing(starts: &mut Starts) {
     assert_eq!(put(&refused, "/projects/r").code, 0);
     let line = |dir: &Path| format!("-C {} sync", dir.display());
     let admitted = line(good.workdir());
-    let clones: [(Code, &Scenario); 4] = [
+    let clones: [(Code, &Scenario); 3] = [
         (Code::SyncNoRemote, &no_remote),
         (Code::SyncFailed, &unreachable),
-        (Code::SyncConflict, &conflicting),
         (Code::SyncEdited, &edited),
     ];
     for (code, clone) in clones {
@@ -869,7 +867,6 @@ fn syncing(starts: &mut Starts) {
         good,
         no_remote,
         unreachable,
-        conflicting,
         edited,
         refusing,
         refused,

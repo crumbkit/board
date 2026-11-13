@@ -24,7 +24,7 @@ pub const ATTEMPTS: usize = 3;
 /// The sync refusals after which a write can still be made: the clone is
 /// left as it was or as an earlier round of the sync made it, and either
 /// way the write parks beside it.
-const UNSYNCED: [Code; 3] = [Code::SyncConflict, Code::SyncEdited, Code::SyncBusy];
+const UNSYNCED: [Code; 2] = [Code::SyncEdited, Code::SyncBusy];
 
 /// What landing a write needs of Board beyond what [`Host`] has on main:
 /// `board -C <clone> sync` and `board mount update`, each within a

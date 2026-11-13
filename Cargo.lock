@@ -536,10 +536,12 @@ dependencies = [
  "board-model",
  "board-plugin",
  "board-scenario",
+ "board-validate",
  "crumbkit-process",
  "gix",
  "proptest",
  "rustix",
+ "serde_json",
  "tempfile",
  "thiserror",
 ]
@@ -1686,13 +1688,16 @@ version = "0.50.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d8438d38e197fa3ea7bb297302db1701879a64a343f23a3d150a602a609a8751"
 dependencies = [
+ "bitflags 2.13.2",
  "bstr",
  "gix-commitgraph",
  "gix-date",
  "gix-error",
  "gix-hash",
+ "gix-hashtable",
  "gix-object",
  "gix-revwalk",
+ "gix-trace",
  "nonempty",
 ]
 

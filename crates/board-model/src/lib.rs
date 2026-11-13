@@ -3,6 +3,7 @@
 mod app;
 mod attachment;
 mod code;
+mod conflict;
 mod effect;
 mod fields;
 mod flow;
@@ -23,6 +24,9 @@ mod ui;
 pub use crate::app::{BINARY_NAME, DISPLAY_NAME};
 pub use crate::attachment::{ATTACHMENT_TYPE, Attachment, Digest, media_type};
 pub use crate::code::Code;
+pub use crate::conflict::{
+    CONFLICT_TYPE, CONFLICTS_DIRECTORY, Conflict, ConflictKind, Side, Version,
+};
 pub use crate::effect::{
     APPROVAL_HEADER, Answer, EFFECT_TYPE, EFFECT_TYPES, Effect, Expiry, MAX_DECIDE_BYTES,
     ORDER_TYPE, Order, PUT_OP, Pinned, RM_OP, SEEN_TYPE, Seen, WRITE_HEADER, effect_record,
