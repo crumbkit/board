@@ -67,7 +67,7 @@ for one run ([architecture/paths/checkout.md](architecture/paths/checkout.md)).
 
 A path given to `get`, `ls`, `refs`, `check` or `put` that does not start
 with `/` is relative to the prefix. In a board, the prefix is the directory's
-path beneath the board's root, such as `/controls`, and the timing log
+path beneath the board's root, such as `/rules`, and the timing log
 records it. `-C` sets the directory, as in git, so `board -C ~/Code/board ls .`
 lists `/`. A run with no prefix reads from `/`. `.` and `./` are the prefix
 itself, and `x` and `./x` are `x` beneath it. One trailing `/` on a relative
@@ -371,7 +371,7 @@ STANDARDS.md 23 to 26 hold the rules.
 | `board-plugin` | manifests, discovery, child processes, signals, schema shapes | board-model, board-validate, schemars, rustix and signal-hook (Unix) |
 | `board-ops` | every operation as a typed function returning its report; opening the board a directory is in, or the known board that mounts it; who asks for an effect; the host of built-in plugins | all of the above |
 | `board-plugins` | plugins built into the binary, each behind a feature | board-ops, each `board-plugin-<name>` |
-| `board-plugin-<name>` | one built-in plugin, such as controls; [plugins/built-in.md](plugins/built-in.md) lists them | board-model, board-ops, board-plugin, schemars |
+| `board-plugin-<name>` | one built-in plugin, such as rules; [plugins/built-in.md](plugins/built-in.md) lists them | board-model, board-ops, board-plugin, schemars |
 | `board-serve` | the local web server and the app it embeds ([architecture/ui/serve.md](architecture/ui/serve.md)) | board-index, board-model, board-ops, tiny_http |
 | `board-cli` | the `board` binary: arguments (clap), configuration, the one printer | board-model, board-ops, board-plugin, board-plugins, board-serve, board-tree, board-types |
 

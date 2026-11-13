@@ -57,7 +57,7 @@ its own path, from any directory in the clone. A mount in any known board outran
 another. Remote matches count across all known boards, so two boards with a record for one `remote` are
 `board::config::ambiguous`. When nothing matches, the run is
 `board::config::not_found`, so a check there still means the repository has
-no controls.
+no rules.
 
 A checkout of a repository that is itself a board runs as that board,
 because Board finds `.board/board.json` first. A plugin that needs the
