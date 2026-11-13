@@ -135,5 +135,9 @@ fn ctrl_c_on_a_stalled_sync_stops_git_and_what_it_started_and_leaves_the_board_a
         tracking
     );
     assert!(!clone.workdir().join("a.md").exists());
-    assert_eq!(locks(&clone.workdir().join(".git")), Vec::<String>::new());
+    // sync.lock stays as a file; the kernel dropped its lock with the process.
+    let mut left = locks(&clone.workdir().join(".git"));
+    left.retain(|lock| !lock.ends_with("/sync.lock"));
+    assert_eq!(left, Vec::<String>::new());
+    drop(clone.flocked(".git/sync.lock"));
 }

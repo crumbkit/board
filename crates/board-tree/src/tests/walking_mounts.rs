@@ -355,3 +355,26 @@ fn repositories_whose_relative_origins_name_different_directories_are_two_and_th
     assert!(identity(&a).same(&identity(&b)), "both name first/upstream");
     assert!(!identity(&a).same(&identity(&c)), "c names second/upstream");
 }
+
+/// A pointer another process rewrites between the walk and the read of its
+/// bytes is a mount at its new pin, not a missing mount: a notes repo that
+/// each of several concurrent `notes add` calls re-pins would otherwise
+/// vanish from the others' listings while it is rewritten.
+#[test]
+fn a_pointer_rewritten_after_the_walk_is_a_mount_at_its_new_pin() {
+    let (board, library) = mounting();
+    let entries = board.open().walk(&Source::WorkingTree).unwrap();
+    let newer = library.commit(&[("p.json", "{}"), ("q.json", "{}")]);
+    board.write("m.json", Item::File(&mount_of(&library.path(), newer)));
+    let facts = Facts::from(["m.json".to_owned()]);
+    let reached = (board.repositories())
+        .walk_mounts(
+            &entries,
+            &facts,
+            &mut Memory::default(),
+            ("test", false),
+            None,
+        )
+        .unwrap();
+    assert_eq!(routes(&reached), [("/m".to_owned(), newer)]);
+}

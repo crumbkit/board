@@ -764,7 +764,10 @@ fn mounts_in(
     let found = held
         .iter()
         .filter_map(|held| {
-            let read = reader.read(source, &held.path, held.blob);
+            // A pointer rewritten since the walk is the mount it now says;
+            // only a commit's pointers cannot change, so only the working
+            // tree's can differ.
+            let read = latest(reader.read(source, &held.path, held.blob));
             unread |= read.is_err();
             match board_model::pointer(&read.ok()??.bytes) {
                 Ok(Some(Pointer::Mount(mount))) => {

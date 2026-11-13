@@ -214,7 +214,7 @@ impl Host for Real {
         panic!("tasks calls no plugin")
     }
     fn board(&self, _: &Elsewhere) -> Result<Box<dyn Host + '_>, Box<Refusal>> {
-        panic!("a call through this host syncs through `Pinning`")
+        Ok(Box::new(Cloned(self)))
     }
     fn decide(
         &self,
@@ -252,5 +252,66 @@ impl Clones for Pinning<'_> {
         (self.0.mount_update(path, deadline))
             .map(|report| report.new.to_string())
             .map_err(|error| Box::new(error.refusal()))
+    }
+}
+
+/// The host a call gets for the notes clone: it only syncs, as `board -C
+/// <clone> sync` does.
+struct Cloned<'a>(&'a Real);
+
+impl Host for Cloned<'_> {
+    fn query(&self, _: &str, _: Limit) -> Result<QueryReport, QueryError> {
+        panic!("only a sync is asked of the clone")
+    }
+    fn refs(
+        &self,
+        _: &[LogicalPath],
+        _: Absent,
+        _: &[String],
+    ) -> Result<Vec<Result<RefsReport, RefsError>>, RefsError> {
+        panic!("only a sync is asked of the clone")
+    }
+    fn get_each(&self, _: &[LogicalPath]) -> Result<Vec<Result<GetReport, ReadError>>, ReadError> {
+        panic!("only a sync is asked of the clone")
+    }
+    fn put(&self, _: &[Value]) -> Result<PutReport, PutError> {
+        panic!("only a sync is asked of the clone")
+    }
+    fn call(
+        &self,
+        _: &board_plugin::Target,
+        _: &Value,
+    ) -> Result<board_plugin::CallReport, Box<Refusal>> {
+        panic!("only a sync is asked of the clone")
+    }
+    fn board(&self, _: &Elsewhere) -> Result<Box<dyn Host + '_>, Box<Refusal>> {
+        panic!("only a sync is asked of the clone")
+    }
+    fn decide(
+        &self,
+        _: &str,
+        _: &LogicalPath,
+        _: Option<&Shown>,
+    ) -> Result<DecideReport, Box<Refusal>> {
+        panic!("only a sync is asked of the clone")
+    }
+    fn sync(&self, push: bool, deadline: Duration) -> Result<Synced, SyncError> {
+        self.sync_waiting(push, deadline, Duration::ZERO)
+    }
+    fn sync_waiting(
+        &self,
+        push: bool,
+        deadline: Duration,
+        wait: Duration,
+    ) -> Result<Synced, SyncError> {
+        let mut board = Board::open(self.0.clone.workdir(), None).unwrap();
+        board.built_by("test");
+        board.sync_waiting(push, deadline, wait)
+    }
+    fn mount_update(&self, _: &LogicalPath, _: Duration) -> Result<MountUpdateReport, MountError> {
+        panic!("only a sync is asked of the clone")
+    }
+    fn settings(&self) -> &Settings {
+        &self.0.settings
     }
 }

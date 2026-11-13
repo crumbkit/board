@@ -94,6 +94,7 @@ codes! {
     SyncConflict => "board::sync::conflict",
     SyncEdited => "board::sync::edited",
     SyncKept => "board::sync::kept",
+    SyncBusy => "board::sync::busy",
     SyncGaveUp => "board::sync::gave_up",
     SyncTimeout => "board::sync::timeout",
     RefsTargetChanged => "board::refs::target_changed",

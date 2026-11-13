@@ -31,7 +31,7 @@ const STDERR: usize = 64 * 1024;
 #[derive(Clone, Copy, Debug)]
 pub struct Deadline {
     started: Instant,
-    given: Duration,
+    pub(crate) given: Duration,
 }
 
 impl Deadline {

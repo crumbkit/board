@@ -246,7 +246,7 @@ pub(crate) fn available(host: &dyn Host, input: &Value) -> Result<Value, PluginE
 fn sync(host: &dyn Host, clone: &str) -> Result<String, String> {
     let board = (host.board(&Elsewhere::Directory(PathBuf::from(clone))))
         .map_err(|refusal| refusal.code.as_str().to_owned())?;
-    match board.sync(false, SYNC_DEADLINE) {
+    match board.sync_waiting(false, SYNC_DEADLINE, board_ops::LOCK_WAIT) {
         Ok(synced) => Ok(synced.new.to_string()),
         Err(error) if error.code() == Code::SyncTimeout => Err(SYNC_TIMEOUT.to_owned()),
         Err(error) => Err(error.code().as_str().to_owned()),

@@ -118,6 +118,17 @@ pub trait Host {
     /// [`Host::board`] gives for the clone's directory, as `board -C <clone>
     /// sync` does.
     fn sync(&self, push: bool, deadline: Duration) -> Result<Synced, SyncError>;
+    /// As [`Host::sync`], but a sync of the same clone already running is
+    /// waited for up to `wait` before this one is refused as
+    /// `board::sync::busy`. A host with no such lock ignores `wait`.
+    fn sync_waiting(
+        &self,
+        push: bool,
+        deadline: Duration,
+        _wait: Duration,
+    ) -> Result<Synced, SyncError> {
+        self.sync(push, deadline)
+    }
     /// Moves the mount at `path` to the commit its `follow` names, as
     /// `board mount update` does, waiting for the board lock no longer than
     /// `deadline` or that command, whichever is shorter; past it, the update
@@ -641,6 +652,15 @@ impl Host for Hosted<'_> {
 
     fn sync(&self, push: bool, deadline: Duration) -> Result<Synced, SyncError> {
         self.board.sync(push, deadline)
+    }
+
+    fn sync_waiting(
+        &self,
+        push: bool,
+        deadline: Duration,
+        wait: Duration,
+    ) -> Result<Synced, SyncError> {
+        self.board.sync_waiting(push, deadline, wait)
     }
 
     fn mount_update(

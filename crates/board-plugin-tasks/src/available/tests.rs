@@ -391,3 +391,20 @@ fn an_owner_keeps_the_tasks_it_or_nobody_holds_and_held_lists_its_tasks_that_are
         (titles(&["mine", "nobodys", "theirs"]), Vec::new())
     );
 }
+
+/// A clone whose `sync.lock` another sync holds is waited for: a sync that
+/// ends within the wait leaves the repo synced.
+#[test]
+fn a_repo_whose_clone_is_being_synced_is_waited_for_and_synced_once_the_other_sync_ends() {
+    let real = crate::tests::real::Real::new(crate::tests::real::Race::Alone, &[], &[]);
+    let held = real.clone.flocked(".git/sync.lock");
+    let release = std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(400));
+        drop(held);
+    });
+    let started = std::time::Instant::now();
+    let synced = sync(&real, &real.clone.path());
+    assert!(synced.is_ok(), "{synced:?}");
+    assert!(started.elapsed() >= Duration::from_millis(300));
+    release.join().unwrap();
+}

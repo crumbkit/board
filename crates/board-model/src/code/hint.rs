@@ -518,6 +518,9 @@ fn generic(code: Code) -> &'static str {
         Code::SyncKept => {
             "the file was edited here during the sync, so it holds that edit without the remote's change. If `git status` shows it modified, `git diff -- <file>` shows the edit against HEAD, undoing the remote's change, so merge that change into it before you commit, or discard the edit with `git checkout -- <file>`. If it shows it untracked, the remote removed it: delete the file, or `git add` it to keep it"
         }
+        Code::SyncBusy => {
+            "another `board sync` of this clone is running, so this one stopped at once; wait for it and run this again. The lock is released when its sync ends, even one that is killed, so a leftover lock file does not block it"
+        }
         Code::SyncGaveUp => {
             "the remote refused every push; `board sync --no-push` brings this board up to date without pushing, and the commits stay for the next sync"
         }
