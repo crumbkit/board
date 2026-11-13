@@ -35,8 +35,8 @@ pub fn once(source: &Source, width: u16, height: u16) -> Result<String, String> 
 enum Message {
     /// A load started.
     Loading,
-    /// A load finished, or the data was still current.
-    Loaded(Box<View>),
+    /// A view of the newest load, and when that load finished.
+    Loaded(Box<View>, Instant),
     /// A load failed.
     Failed(String),
 }
@@ -61,37 +61,63 @@ fn reload_due(forced: bool, held: bool, moved: bool, since: Duration, floor: Dur
     forced || (since >= floor && (!held || moved))
 }
 
-/// Loads at once, then checks every `CHECK` whether the board changed and
-/// reloads when it did. A load whose status holds an error is not kept, so
-/// the next check retries it. Ends when the screen stops listening.
-fn work(source: &Source, sender: &mpsc::Sender<Message>, reload: &mpsc::Receiver<()>) {
-    let mut held: Option<(Inputs, String)> = None;
+/// The newest load that returned data.
+struct Held {
+    inputs: Inputs,
+    /// The board's key when the load ran.
+    key: String,
+    /// When the load finished.
+    at: Instant,
+}
+
+/// Drops the reload requests that piled up, so key presses made during a load
+/// are answered by that load and a held key does not queue a load per press.
+fn drain(reload: &mpsc::Receiver<()>) {
+    while reload.try_recv().is_ok() {}
+}
+
+/// Loads at once, then checks every `check` whether the board's key moved and
+/// reloads when it did. Every load that returns data is held, degraded or not,
+/// and a degraded one is retried only when the key moves or `r` is pressed.
+/// A failed load keeps the held data on screen with the failure on the status
+/// line. Ends when the screen stops listening.
+fn work<L, K>(
+    sender: &mpsc::Sender<Message>,
+    reload: &mpsc::Receiver<()>,
+    check: Duration,
+    mut load: L,
+    key: K,
+) where
+    L: FnMut() -> Result<(Inputs, View), String>,
+    K: Fn() -> String,
+{
+    let mut held: Option<Held> = None;
+    let mut failure: Option<String> = None;
     let mut started: Option<Instant> = None;
     let mut last_load = Duration::ZERO;
     loop {
         let forced = match reload.recv_timeout(if started.is_none() {
             Duration::ZERO
         } else {
-            CHECK
+            check
         }) {
             Ok(()) => true,
             Err(mpsc::RecvTimeoutError::Timeout) => false,
             Err(mpsc::RecvTimeoutError::Disconnected) => return,
         };
-        let key = source.key();
-        let moved = held.as_ref().is_none_or(|(_, seen)| *seen != key);
+        let current = key();
+        let moved = held.as_ref().is_none_or(|kept| kept.key != current);
         let since = started.map_or(Duration::MAX, |at| at.elapsed());
-        if !reload_due(
-            forced,
-            held.is_some(),
-            moved,
-            since,
-            reload_floor(last_load),
-        ) {
-            if let Some((inputs, _)) = &mut held {
-                inputs.now = now();
+        let usable = held.is_some() && failure.is_none();
+        if !reload_due(forced, usable, moved, since, reload_floor(last_load)) {
+            if let Some(kept) = &mut held {
+                kept.inputs.now = now();
+                let mut view = build(&kept.inputs);
+                if let Some(error) = &failure {
+                    view.status = vec![error.clone()];
+                }
                 if sender
-                    .send(Message::Loaded(Box::new(build(inputs))))
+                    .send(Message::Loaded(Box::new(view), kept.at))
                     .is_err()
                 {
                     return;
@@ -104,16 +130,31 @@ fn work(source: &Source, sender: &mpsc::Sender<Message>, reload: &mpsc::Receiver
         }
         let begin = Instant::now();
         started = Some(begin);
-        let message = match load(source) {
-            Ok((inputs, view)) => {
-                if inputs.status.is_empty() {
-                    held = Some((inputs, key));
-                }
-                Message::Loaded(Box::new(view))
-            }
-            Err(error) => Message::Failed(error),
-        };
+        let result = load();
         last_load = begin.elapsed();
+        drain(reload);
+        let message = match result {
+            Ok((inputs, view)) => {
+                let at = Instant::now();
+                held = Some(Held {
+                    inputs,
+                    key: current,
+                    at,
+                });
+                failure = None;
+                Message::Loaded(Box::new(view), at)
+            }
+            Err(error) => match &mut held {
+                Some(kept) => {
+                    kept.inputs.now = now();
+                    let mut view = build(&kept.inputs);
+                    view.status = vec![error.clone()];
+                    failure = Some(error);
+                    Message::Loaded(Box::new(view), kept.at)
+                }
+                None => Message::Failed(error),
+            },
+        };
         if sender.send(message).is_err() {
             return;
         }
@@ -167,7 +208,15 @@ pub fn live(source: &Source) -> Result<(), String> {
     let worker_source = source.clone();
     let (reload, reload_requests) = mpsc::channel::<()>();
     // The worker is not joined: quitting must not wait for a load.
-    std::thread::spawn(move || work(&worker_source, &sender, &reload_requests));
+    std::thread::spawn(move || {
+        work(
+            &sender,
+            &reload_requests,
+            CHECK,
+            || load(&worker_source),
+            || worker_source.key(),
+        );
+    });
     let mut view: Option<View> = None;
     let mut loaded: Option<Instant> = None;
     let mut loading = true;
@@ -176,21 +225,17 @@ pub fn live(source: &Source) -> Result<(), String> {
         loop {
             match receiver.try_recv() {
                 Ok(Message::Loading) => loading = true,
-                Ok(Message::Loaded(fresh)) => {
+                Ok(Message::Loaded(fresh, at)) => {
                     let mut fresh = *fresh;
                     if let Some(old) = &view {
                         fresh.keep_selection(old);
                     }
                     view = Some(fresh);
-                    loaded = Some(Instant::now());
+                    loaded = Some(at);
                     loading = false;
                 }
                 Ok(Message::Failed(error)) => {
-                    loading = false;
-                    match &mut view {
-                        Some(shown) => shown.status = vec![error],
-                        None => return Err(error),
-                    }
+                    return Err(error);
                 }
                 Err(mpsc::TryRecvError::Empty) => break,
                 Err(mpsc::TryRecvError::Disconnected) => {
@@ -303,5 +348,86 @@ mod tests {
     #[test]
     fn the_reload_key_ignores_the_floor_and_the_board() {
         assert!(reload_due(true, true, false, Duration::ZERO, MINUTE));
+    }
+
+    fn loaded() -> (Inputs, View) {
+        let inputs = Inputs::default();
+        let view = build(&inputs);
+        (inputs, view)
+    }
+
+    #[test]
+    fn presses_made_during_a_load_are_answered_by_that_load() {
+        let (sender, messages) = mpsc::channel::<Message>();
+        let (reload, requests) = mpsc::channel::<()>();
+        let calls = std::sync::atomic::AtomicUsize::new(0);
+        let count = || calls.load(std::sync::atomic::Ordering::SeqCst);
+        std::thread::scope(|scope| {
+            let presses = reload.clone();
+            let calls = &calls;
+            scope.spawn(move || {
+                work(
+                    &sender,
+                    &requests,
+                    Duration::from_millis(10),
+                    || {
+                        if calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst) == 0 {
+                            for _ in 0..30 {
+                                presses.send(()).unwrap();
+                            }
+                        }
+                        Ok(loaded())
+                    },
+                    String::new,
+                );
+            });
+            while count() < 1 {
+                std::thread::sleep(Duration::from_millis(5));
+            }
+            std::thread::sleep(Duration::from_millis(200));
+            assert_eq!(count(), 1, "held presses queued more loads");
+            reload.send(()).unwrap();
+            while count() < 2 {
+                std::thread::sleep(Duration::from_millis(5));
+            }
+            drop(messages);
+        });
+        assert_eq!(count(), 2);
+    }
+
+    #[test]
+    fn a_degraded_load_is_held_and_not_retried_until_the_board_moves() {
+        let (sender, messages) = mpsc::channel::<Message>();
+        let (_reload, requests) = mpsc::channel::<()>();
+        let calls = std::sync::atomic::AtomicUsize::new(0);
+        std::thread::scope(|scope| {
+            let calls = &calls;
+            scope.spawn(move || {
+                work(
+                    &sender,
+                    &requests,
+                    Duration::from_millis(10),
+                    || {
+                        calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                        let inputs = Inputs {
+                            status: vec!["questions unavailable".to_owned()],
+                            ..Inputs::default()
+                        };
+                        let view = build(&inputs);
+                        Ok((inputs, view))
+                    },
+                    String::new,
+                );
+            });
+            let mut seen = 0;
+            while seen < 4 {
+                if let Ok(Message::Loaded(view, _)) = messages.recv() {
+                    assert_eq!(view.status, ["questions unavailable"]);
+                    seen += 1;
+                }
+            }
+            drop(messages);
+        });
+        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 1);
     }
 }

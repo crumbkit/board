@@ -189,6 +189,8 @@ pub struct View {
     pub selected: usize,
     /// The first body line drawn when the rows do not all fit.
     pub scroll: usize,
+    /// The first body line the last `reveal` showed.
+    pub shown: usize,
 }
 
 impl View {
@@ -201,6 +203,7 @@ impl View {
             .and_then(|path| self.rows().position(|row| row.path == path))
             .unwrap_or_else(|| old.selected.min(last));
         self.scroll = old.scroll;
+        self.shown = old.shown;
     }
 
     /// Every row in display order.
@@ -501,13 +504,15 @@ pub fn build(inputs: &Inputs) -> View {
         freshness: String::new(),
         selected: 0,
         scroll: 0,
+        shown: 0,
     }
 }
 
 /// Takes each group's ended changes out of its rows and counts them. Groups
-/// with rows come first, so a collapsed line never pushes a row down.
+/// keep their order, so each realm's heading appears once and a group with
+/// only ended changes passes by as the list scrolls.
 fn collapse(groups: Vec<Group>) -> Vec<Group> {
-    let mut groups: Vec<Group> = groups
+    groups
         .into_iter()
         .map(|mut group| {
             for row in &group.rows {
@@ -520,9 +525,7 @@ fn collapse(groups: Vec<Group>) -> Vec<Group> {
             group.rows.retain(|row| matches!(row.end, End::Open));
             group
         })
-        .collect();
-    groups.sort_by_key(|group| group.rows.is_empty());
-    groups
+        .collect()
 }
 
 fn panel_for(inputs: &Inputs, groups: &[Group]) -> Panel {
@@ -669,8 +672,6 @@ fn group(map: Option<&WorkMap>, placed: Vec<(Row, String)>) -> Vec<Group> {
             }),
         }
     }
-    // Groups that still have changes in play come first, in map order.
-    groups.sort_by_key(|group| !group.rows.iter().any(Row::in_play));
     groups
 }
 

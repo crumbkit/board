@@ -423,3 +423,58 @@ fn scrolling_keeps_a_realm_heading_with_its_first_row() {
     assert!(matches!(lines[0], BodyLine::Realm(_)));
     assert_eq!(view.window(3).start, 0);
 }
+
+fn view_with_trailing_ended_lines() -> View {
+    let mut input = mapped_input();
+    input.closed = vec![
+        change("/changes/z", "done", "/repos/zed", None),
+        change("/changes/y", "done", "/repos/yak", None),
+    ];
+    for path in ["/changes/z", "/changes/y"] {
+        input
+            .history
+            .insert(path.to_owned(), vec![event(3, Some("land"), "done")]);
+    }
+    build(&input)
+}
+
+#[test]
+fn end_scrolls_to_the_last_body_line_even_when_it_is_an_ended_line() {
+    let mut view = view_with_trailing_ended_lines();
+    let body = view.body();
+    assert!(matches!(body.last(), Some(BodyLine::Ended(_))));
+    view.end();
+    view.reveal(3);
+    assert_eq!(view.window(3).end, body.len());
+    view.move_by(-1);
+    view.reveal(3);
+    assert!(view.window(3).start < body.len() - 2);
+
+    let mut again = view_with_trailing_ended_lines();
+    again.end();
+    again.reveal(3);
+    again.home();
+    again.move_by(1);
+    for _ in 0..20 {
+        again.move_by(1);
+    }
+    assert_eq!(again.scroll, usize::MAX);
+    assert_eq!(again.window(3).end, body.len());
+}
+
+#[test]
+fn no_realm_heading_appears_twice() {
+    let view = view_with_trailing_ended_lines();
+    let mut headings: Vec<String> = view
+        .body()
+        .into_iter()
+        .filter_map(|line| match line {
+            BodyLine::Realm(name) => Some(name),
+            _ => None,
+        })
+        .collect();
+    let count = headings.len();
+    headings.sort();
+    headings.dedup();
+    assert_eq!(headings.len(), count, "{headings:?}");
+}

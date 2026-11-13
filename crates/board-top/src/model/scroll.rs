@@ -83,7 +83,8 @@ impl View {
             |line| matches!(line, BodyLine::Row { index, .. } if *index == self.selected),
         );
         let mut start = self.scroll.min(body.len().saturating_sub(room));
-        if let Some(at) = selected {
+        let at_bottom = self.scroll == usize::MAX;
+        if let Some(at) = selected.filter(|_| !at_bottom) {
             if at < start {
                 start = at;
                 while start > 0 && matches!(body[start - 1], BodyLine::Realm(_)) {
@@ -114,12 +115,22 @@ impl View {
     /// Remembers the window for `capacity`, so a later change in the list
     /// starts from where the screen was.
     pub fn reveal(&mut self, capacity: usize) {
-        self.scroll = self.window(capacity).start;
+        self.shown = self.window(capacity).start;
+        if self.scroll != usize::MAX {
+            self.scroll = self.shown;
+        }
     }
 
     /// Moves the highlight by `delta` rows and stops at the ends.
+    /// Moving down from the last row scrolls to the very bottom of the body,
+    /// where a project's closing "landed, dropped" line may wait.
     pub fn move_by(&mut self, delta: isize) {
         let last = self.rows().count().saturating_sub(1);
+        if delta > 0 && self.selected >= last {
+            self.scroll = usize::MAX;
+        } else if delta < 0 && self.scroll == usize::MAX {
+            self.scroll = self.shown;
+        }
         self.selected = self.selected.saturating_add_signed(delta).min(last);
     }
 
@@ -138,5 +149,6 @@ impl View {
     /// Highlights the last row.
     pub fn end(&mut self) {
         self.selected = self.rows().count().saturating_sub(1);
+        self.scroll = usize::MAX;
     }
 }
