@@ -11,7 +11,7 @@ use board_model::{
     BINARY_NAME, Code, Fields, Lined, LogicalPath, MAX_RECORD_BYTES, ObjectId, RecordType,
     parse_json,
 };
-use board_tree::{LOCK_WAIT, Lock, Resolver, WriteError};
+use board_tree::{LOCK_WAIT, Lock, Resolver, Working, WriteError};
 use board_types::BatchLine;
 use serde_json::Value;
 
@@ -161,6 +161,76 @@ impl Board {
             }
             put => put,
         }
+    }
+
+    /// Checks the lines of `input` as [`Board::put_batch`] does before it
+    /// writes: every line, and every expect and removed blob against the
+    /// working tree, with the same refusals; and writes nothing. It takes
+    /// the board's lock for the check, and must run as a plugin, as
+    /// [`Board::put_batch`] must, or a gate may ask the owner to sign. A
+    /// batch that crosses a mount is refused, since it would be checked in
+    /// the mounted board.
+    pub(crate) fn check_batch(&self, input: &mut dyn BufRead) -> Result<(), PutError> {
+        let lines = Self::read_lines(input)?;
+        let lock = self.repositories().lock(LOCK_WAIT)?;
+        let mut view = self.repositories().snapshot().map_err(WriteError::from)?;
+        let checked = self.check_lines(&lock, &mut view, lines, &mut Schemas::default())?;
+        let Checked::Here(prepared, removals, _, _) = checked else {
+            return Err(PutError::Line {
+                code: Code::PutInvalid,
+                reason: "the batch writes through a mount, which a check does not follow"
+                    .to_owned(),
+            });
+        };
+        let mut stale = Vec::new();
+        for (at, item) in prepared.iter().enumerate() {
+            let (_, mismatch) = self.compared(item).map_err(|failure| match failure {
+                Failure::Stale(mut stale) => stale.remove(0).1,
+                Failure::Error(error) => error,
+            })?;
+            stale.extend(mismatch.map(|error| (at, error)));
+        }
+        let repository = self.repository();
+        stale.extend(
+            (removals.iter().enumerate()).filter_map(|(at, removal)| {
+                Some((prepared.len() + at, removal.stale(repository)?))
+            }),
+        );
+        if stale.is_empty() {
+            Ok(())
+        } else {
+            Err(refused_lines(&stale))
+        }
+    }
+
+    /// The blob the file `item` writes holds now, and the stale refusal
+    /// when it is not what `item` expects.
+    pub(crate) fn compared(
+        &self,
+        item: &Prepared,
+    ) -> Result<(Option<ObjectId>, Option<PutError>), Failure> {
+        let repository = self.repository();
+        let path = &item.target.path;
+        let found = (repository.read_working(path)).map_err(|error| WriteError::from(error).into());
+        let found = found.map_err(Failure::Error)?;
+        let previous = match &found {
+            Working::Missing => None,
+            Working::Read(contents) => Some(contents.blob),
+            Working::TooLarge => Some(
+                (repository.working_blob(path))
+                    .map_err(|error| Failure::Error(WriteError::from(error).into()))?,
+            ),
+        };
+        let mismatch = match item.expect {
+            Expect::Any => false,
+            Expect::Absent => found != Working::Missing,
+            Expect::Blob(blob) => previous != Some(blob),
+        }
+        .then(|| PutError::Stale {
+            path: item.path.clone(),
+            found: previous,
+        });
+        Ok((previous, mismatch))
     }
 
     /// Writes `lines` as [`Board::put_batch_waiting`] says.
