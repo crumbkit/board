@@ -272,6 +272,37 @@ impl Board {
         }
     }
 
+    /// The blob the file `item` writes holds now, and the stale refusal
+    /// when it is not what `item` expects.
+    pub(crate) fn compared(
+        &self,
+        item: &Prepared,
+    ) -> Result<(Option<ObjectId>, Option<PutError>), Failure> {
+        let repository = self.repository();
+        let found = repository
+            .read_working(&item.target.path)
+            .map_err(|error| Failure::Error(WriteError::from(error).into()))?;
+        let previous = match &found {
+            Working::Missing => None,
+            Working::Read(contents) => Some(contents.blob),
+            Working::TooLarge => Some(
+                repository
+                    .working_blob(&item.target.path)
+                    .map_err(|error| Failure::Error(WriteError::from(error).into()))?,
+            ),
+        };
+        let matches = match item.expect {
+            Expect::Any => true,
+            Expect::Absent => found == Working::Missing,
+            Expect::Blob(blob) => previous == Some(blob),
+        };
+        let mismatch = (!matches).then(|| PutError::Stale {
+            path: item.path.clone(),
+            found: previous,
+        });
+        Ok((previous, mismatch))
+    }
+
     /// Compares every expect under `lock`, the lock the records were
     /// prepared under, and writes every prepared record in order, then
     /// removes each of `removed`, with one commit when `commit_on_put` is
@@ -289,31 +320,9 @@ impl Board {
         let mut writes = Vec::with_capacity(prepared.len());
         let mut stale = Vec::new();
         for (at, item) in prepared.iter().enumerate() {
-            let found = repository
-                .read_working(&item.target.path)
-                .map_err(|error| Failure::Error(WriteError::from(error).into()))?;
-            let previous = match &found {
-                Working::Missing => None,
-                Working::Read(contents) => Some(contents.blob),
-                Working::TooLarge => Some(
-                    repository
-                        .working_blob(&item.target.path)
-                        .map_err(|error| Failure::Error(WriteError::from(error).into()))?,
-                ),
-            };
-            let matches = match item.expect {
-                Expect::Any => true,
-                Expect::Absent => found == Working::Missing,
-                Expect::Blob(blob) => previous == Some(blob),
-            };
-            if !matches {
-                stale.push((
-                    at,
-                    PutError::Stale {
-                        path: item.path.clone(),
-                        found: previous,
-                    },
-                ));
+            let (previous, mismatch) = self.compared(item)?;
+            if let Some(error) = mismatch {
+                stale.push((at, error));
             }
             let blob = repository.blob_id(&item.canonical);
             let location = Location {

@@ -164,7 +164,7 @@ pub(crate) fn rename(
             // stored already; it is stored once, and a version with no
             // line to write is not listed. Records naming the old version
             // are re-pinned either way.
-            Some(to) if flow.is_some() => {
+            Some(to) if flow.is_some() && entry.logical.starts_with("/flows/") => {
                 if !held.insert(to.clone()) {
                     continue;
                 }
@@ -179,7 +179,7 @@ pub(crate) fn rename(
         }
         // An old flow version stays: a change in a mounted board that this
         // migration cannot re-pin still names it.
-        if to.is_some() && flow.is_none() {
+        if to.is_some() && (flow.is_none() || !entry.logical.starts_with("/flows/")) {
             lines.push(json!({"path": entry.logical, "expect": entry.blob, "remove": true}));
         }
         writes.push(Write {
@@ -389,9 +389,11 @@ fn flows(entries: &[Entry], kept: &mut Vec<Kept>) -> Flows {
         if at_hash == entry.logical && stored != entry.logical {
             flows.insert(entry.logical.clone(), (stored, record));
         } else if at_hash != entry.logical && record != value {
-            // A flow held in a change is pinned by its path, not its hash, so
-            // it is rewritten where it is. One under /flows/ off its hash is
-            // a version a change may pin by a hash that is not its own.
+            // A flow outside /flows/, such as one a change holds, is pinned
+            // by its path, not its hash, so every such flow off its hash is
+            // rewritten in place, or moved with the other files under
+            // /controls/. One under /flows/ off its hash is a version a
+            // change may pin by a hash that is not its own.
             if entry.logical.starts_with("/flows/") {
                 kept.push(Kept {
                     path: entry.logical.clone(),
@@ -399,7 +401,8 @@ fn flows(entries: &[Entry], kept: &mut Vec<Kept>) -> Flows {
                           the changes plugin and re-pin its changes by hand",
                 });
             } else {
-                flows.insert(entry.logical.clone(), (entry.logical.clone(), record));
+                let new = moved(&entry.logical).unwrap_or_else(|| entry.logical.clone());
+                flows.insert(entry.logical.clone(), (new, record));
             }
         }
     }

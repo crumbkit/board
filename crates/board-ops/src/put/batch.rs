@@ -163,14 +163,44 @@ impl Board {
         }
     }
 
-    /// Checks the lines of `input` as [`Board::put_batch`] does, with its
-    /// refusals, and writes nothing.
-    pub fn check_batch(&self, input: &mut dyn BufRead) -> Result<(), PutError> {
+    /// Checks the lines of `input` as [`Board::put_batch`] does before it
+    /// writes: every line, and every expect and removed blob against the
+    /// working tree, with the same refusals; and writes nothing. It takes
+    /// the board's lock for the check, and must run as a plugin, as
+    /// [`Board::put_batch`] must, or a gate may ask the owner to sign. A
+    /// batch that crosses a mount is refused, since it would be checked in
+    /// the mounted board.
+    pub(crate) fn check_batch(&self, input: &mut dyn BufRead) -> Result<(), PutError> {
         let lines = Self::read_lines(input)?;
         let lock = self.repositories().lock(LOCK_WAIT)?;
         let mut view = self.repositories().snapshot().map_err(WriteError::from)?;
-        self.check_lines(&lock, &mut view, lines, &mut Schemas::default())
-            .map(|_| ())
+        let checked = self.check_lines(&lock, &mut view, lines, &mut Schemas::default())?;
+        let Checked::Here(prepared, removals, _, _) = checked else {
+            return Err(PutError::Line {
+                code: Code::PutInvalid,
+                reason: "the batch writes through a mount, which a check does not follow"
+                    .to_owned(),
+            });
+        };
+        let mut stale = Vec::new();
+        for (at, item) in prepared.iter().enumerate() {
+            let (_, mismatch) = self.compared(item).map_err(|failure| match failure {
+                Failure::Stale(mut stale) => stale.remove(0).1,
+                Failure::Error(error) => error,
+            })?;
+            stale.extend(mismatch.map(|error| (at, error)));
+        }
+        let repository = self.repository();
+        stale.extend(
+            (removals.iter().enumerate()).filter_map(|(at, removal)| {
+                Some((prepared.len() + at, removal.stale(repository)?))
+            }),
+        );
+        if stale.is_empty() {
+            Ok(())
+        } else {
+            Err(refused_lines(&stale))
+        }
     }
 
     /// Writes `lines` as [`Board::put_batch_waiting`] says.

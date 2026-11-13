@@ -336,9 +336,50 @@ fn the_dry_run_refuses_a_record_whose_type_has_no_schema_as_the_apply_would() {
     assert_eq!(board.read("sites/p.json"), page);
 }
 
+/// A source that mentions an old path, so the rename rewrites it, with
+/// `extra` fields.
+fn source_with(extra: Value) -> String {
+    let mut source = json!({
+        "$type": "controls/source/v1", "url": "https://example.com/t", "title": "T",
+        "read_on": "2026-11-01", "why": "See /controls/x/a.",
+    });
+    source
+        .as_object_mut()
+        .unwrap()
+        .extend(extra.as_object().unwrap().clone());
+    source.to_string()
+}
+
 #[test]
-fn the_dry_run_passes_a_record_whose_type_has_a_schema() {
+fn the_dry_run_refuses_a_rewritten_record_its_schema_does_not_admit_and_passes_one_it_does() {
     let board = old_board();
+    board.write(
+        "controls/sources/bad.json",
+        &source_with(json!({"extra": 1})),
+    );
+    let dry = rename(&board, &[]);
+    assert_ne!(dry.code, 0, "{}", text(&dry.stdout));
+    assert!(
+        text(&dry.stdout).contains("/rules/sources/bad"),
+        "{}",
+        text(&dry.stdout)
+    );
+    board.write("controls/sources/bad.json", &source_with(json!({})));
     let listed = dry_run(&board);
-    assert!(listed["digest"].is_string(), "{listed}");
+    let ran = applied(&board, listed["digest"].as_str().unwrap());
+    assert_eq!(ran.code, 0, "{}", text(&ran.stdout));
+}
+
+#[test]
+fn the_dry_run_refuses_a_move_whose_target_file_is_taken_as_the_apply_would() {
+    let board = old_board();
+    board.write("controls/x/notes.txt", "see /controls/x/a\n");
+    board.write("rules/x/notes.txt", "already here\n");
+    let dry = rename(&board, &[]);
+    assert_ne!(dry.code, 0, "{}", text(&dry.stdout));
+    assert!(
+        text(&dry.stdout).contains("/rules/x/notes.txt"),
+        "{}",
+        text(&dry.stdout)
+    );
 }
