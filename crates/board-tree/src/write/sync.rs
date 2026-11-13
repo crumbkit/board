@@ -354,7 +354,7 @@ impl Repository {
         new: ObjectId,
         changes: Vec<Change>,
     ) -> Result<Vec<Fields>, SyncError> {
-        let (index_lock, index) = self.lock_index(lock.wait)?;
+        let (index_lock, index) = self.lock_index(lock.deadline)?;
         let mut staged = Staged {
             commit: new,
             parent: old,
