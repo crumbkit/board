@@ -16,6 +16,9 @@ use super::{Lock, Staged, WriteError};
 use crate::git::{GitError, Repository, model_id};
 use crate::transport::{self, Deadline, Pushed, Upstream};
 
+#[expect(dead_code, reason = "integrate merges through it from step S3")]
+mod merge;
+
 /// How many times a sync fetches and pushes before it gives up.
 pub const ATTEMPTS: u32 = 3;
 
