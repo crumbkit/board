@@ -139,10 +139,6 @@ impl Group {
     }
 }
 
-/// Whether ended changes keep a row of their own. A change here is a small
-/// edit: with `true` every landed and dropped change shows as a row again.
-pub const ENDED_ROWS: bool = false;
-
 /// The panel under the rows.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Panel {
@@ -191,9 +187,22 @@ pub struct View {
     pub mapped: bool,
     /// The index of the highlighted row among all rows.
     pub selected: usize,
+    /// The first body line drawn when the rows do not all fit.
+    pub scroll: usize,
 }
 
 impl View {
+    /// Keeps the highlight on the record it was on in `old`, or at the same
+    /// place when that record has gone.
+    pub fn keep_selection(&mut self, old: &View) {
+        let last = self.rows().count().saturating_sub(1);
+        self.selected = old
+            .selected_path()
+            .and_then(|path| self.rows().position(|row| row.path == path))
+            .unwrap_or_else(|| old.selected.min(last));
+        self.scroll = old.scroll;
+    }
+
     /// Every row in display order.
     pub fn rows(&self) -> impl Iterator<Item = &Row> {
         self.groups.iter().flat_map(|group| group.rows.iter())
@@ -486,11 +495,12 @@ pub fn build(inputs: &Inputs) -> View {
     let panel = panel_for(inputs, &groups);
     View {
         mapped: inputs.map.is_some(),
-        groups: if ENDED_ROWS { groups } else { collapse(groups) },
+        groups: collapse(groups),
         panel,
         status: inputs.status.clone(),
         freshness: String::new(),
         selected: 0,
+        scroll: 0,
     }
 }
 
@@ -663,6 +673,9 @@ fn group(map: Option<&WorkMap>, placed: Vec<(Row, String)>) -> Vec<Group> {
     groups.sort_by_key(|group| !group.rows.iter().any(Row::in_play));
     groups
 }
+
+mod scroll;
+pub use scroll::{BodyLine, Window};
 
 #[cfg(test)]
 mod tests;

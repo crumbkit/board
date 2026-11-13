@@ -12,7 +12,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 
 use crate::model::{
-    End, Group, Kind, Panel, Row, Segment, Tone, View, WINDOW_DAYS, WINDOW_SECONDS,
+    BodyLine, End, Group, Kind, Panel, Row, Segment, Tone, View, WINDOW_DAYS, WINDOW_SECONDS,
 };
 use crate::time::DAY;
 
@@ -25,6 +25,12 @@ const PROJECT_WIDTH: usize = 14;
 const TITLE_WIDTH: usize = 30;
 const STATE_WIDTH: usize = 14;
 const FIXED_LINES: usize = 12;
+
+/// How many body lines a terminal of this height has.
+#[must_use]
+pub fn body_capacity(height: u16) -> usize {
+    usize::from(height).saturating_sub(FIXED_LINES)
+}
 const CHART_LINES: usize = 6;
 
 const FG: Color = Color::Rgb(0xc9, 0xd4, 0xd6);
@@ -206,22 +212,6 @@ fn row_line(row: &Row, label: &str, selected: bool, lane: usize) -> Line<'static
     Line::from(spans).style(Style::new().bg(background))
 }
 
-fn group_lines(group: &Group, view: &View, first_index: usize, lane: usize) -> Vec<Line<'static>> {
-    group
-        .rows
-        .iter()
-        .enumerate()
-        .map(|(offset, row)| {
-            let label = if offset == 0 {
-                group.project.as_str()
-            } else {
-                ""
-            };
-            row_line(row, label, first_index + offset == view.selected, lane)
-        })
-        .collect()
-}
-
 /// One dim line that stands for a project's ended changes.
 fn ended_line(group: &Group) -> Line<'static> {
     Line::from(vec![
@@ -381,6 +371,47 @@ fn panel_lines(panel: &Panel, lane: usize) -> Vec<Line<'static>> {
     lines
 }
 
+/// The lines of the body for `capacity` lines: the window of rows, headings
+/// and ended lines, and the position line when they do not all fit.
+fn body_lines(view: &View, capacity: usize, lane: usize) -> Vec<Line<'static>> {
+    let window = view.window(capacity);
+    let all = view.body();
+    let mut body: Vec<Line<'static>> = Vec::new();
+    for (at, line) in all[window.start..window.end].iter().enumerate() {
+        body.push(match line {
+            BodyLine::Realm(realm) => Line::from(Span::styled(
+                format!("── {realm} "),
+                Style::new().fg(DIM).add_modifier(Modifier::BOLD),
+            )),
+            BodyLine::Row {
+                group,
+                offset,
+                index,
+            } => {
+                let group = &view.groups[*group];
+                let label = if *offset == 0 || at == 0 {
+                    group.project.as_str()
+                } else {
+                    ""
+                };
+                row_line(&group.rows[*offset], label, *index == view.selected, lane)
+            }
+            BodyLine::Ended(group) => ended_line(&view.groups[*group]),
+        });
+    }
+    if !window.whole {
+        let text = window.rows.map_or_else(
+            || format!("no rows shown of {}", window.total),
+            |(first, last)| format!("rows {first}-{last} of {}", window.total),
+        );
+        body.push(Line::from(Span::styled(
+            format!("{text}  ↑↓ PgUp PgDn Home End scroll"),
+            Style::new().fg(DIM),
+        )));
+    }
+    body
+}
+
 fn lines_for(view: &View, area: Rect) -> Vec<Line<'static>> {
     let width = usize::from(area.width);
     let lane = width
@@ -419,41 +450,8 @@ fn lines_for(view: &View, area: Rect) -> Vec<Line<'static>> {
     ]));
     lines.push(axis_line(lane));
 
-    let total_rows: usize = view.groups.iter().map(|group| group.rows.len()).sum();
-    let capacity = usize::from(area.height).saturating_sub(FIXED_LINES);
-    let mut body: Vec<Line<'static>> = Vec::new();
-    let mut first_index = 0;
-    let mut last_realm: Option<&str> = None;
-    for group in view.groups.iter().filter(|group| !group.rows.is_empty()) {
-        if view.mapped && last_realm != group.realm.as_deref() {
-            if let Some(realm) = &group.realm {
-                body.push(Line::from(Span::styled(
-                    format!("── {realm} "),
-                    Style::new().fg(DIM).add_modifier(Modifier::BOLD),
-                )));
-            }
-            last_realm = group.realm.as_deref();
-        }
-        body.extend(group_lines(group, view, first_index, lane));
-        first_index += group.rows.len();
-    }
-    body.extend(
-        view.groups
-            .iter()
-            .filter(|group| group.has_ended())
-            .map(ended_line),
-    );
-    let shown_rows = body.len();
-    if shown_rows > capacity {
-        let hidden = shown_rows - capacity.saturating_sub(1);
-        body.truncate(capacity.saturating_sub(1));
-        body.push(Line::from(Span::styled(
-            format!(
-                "… {hidden} more lines of {total_rows} changes do not fit; make the terminal taller"
-            ),
-            Style::new().fg(DIM),
-        )));
-    }
+    let capacity = body_capacity(area.height);
+    let body = body_lines(view, capacity, lane);
     let blank = capacity.saturating_sub(body.len());
     lines.extend(body);
     lines.extend(std::iter::repeat_with(Line::default).take(blank));
@@ -471,6 +469,8 @@ fn lines_for(view: &View, area: Rect) -> Vec<Line<'static>> {
     let mut keys = vec![
         Span::styled(" q", Style::new().fg(ACCENT)),
         Span::styled(" quit", Style::new().fg(DIM)),
+        Span::styled("  r", Style::new().fg(ACCENT)),
+        Span::styled(" reload", Style::new().fg(DIM)),
     ];
     if !view.freshness.is_empty() {
         keys.push(Span::styled(
@@ -609,13 +609,27 @@ mod tests {
     }
 
     #[test]
+    fn each_projects_ended_line_follows_its_own_rows() {
+        let text = render_text(&sample(), 110, 26);
+        let lines: Vec<&str> = text.lines().collect();
+        let own = lines
+            .iter()
+            .position(|l| l.contains("title of /changes/a"))
+            .unwrap();
+        assert!(
+            lines[own + 1].contains("+1 landed, 0 dropped in 14d"),
+            "{text}"
+        );
+    }
+
+    #[test]
     fn a_small_terminal_gets_one_line() {
         let text = render_text(&sample(), 60, 15);
         assert!(text.starts_with("terminal too small"), "{text}");
     }
 
     #[test]
-    fn rows_that_do_not_fit_are_counted() {
+    fn rows_that_do_not_fit_get_a_position_line_that_follows_the_highlight() {
         let mut input = Inputs {
             now: NOW,
             limit: 12,
@@ -625,7 +639,10 @@ mod tests {
             .map(|n| change(&format!("/changes/c{n}"), "plan", "/repos/board"))
             .collect();
         let text = render_text(&build(&input), 110, 20);
-        assert!(text.contains("do not fit"), "{text}");
-        assert!(text.contains("of 12 changes"), "{text}");
+        assert!(text.contains("rows 1-7 of 12"), "{text}");
+        let mut view = build(&input);
+        view.end();
+        let text = render_text(&view, 110, 20);
+        assert!(text.contains("rows 6-12 of 12"), "{text}");
     }
 }

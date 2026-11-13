@@ -113,8 +113,9 @@ pub fn describe_failure(text: &str) -> Option<String> {
 }
 
 /// The change records in a `board get --json` report, each with the path it
-/// was read from. A path the report refused is left out.
-pub fn parse_change_records(text: &str) -> Result<Vec<OpenChange>, ParseError> {
+/// was read from, and the number of paths the report refused. `board get`
+/// exits 1 when it refuses a path, and its report still holds the others.
+pub fn parse_change_records(text: &str) -> Result<(Vec<OpenChange>, usize), ParseError> {
     let value: Value = serde_json::from_str(text).map_err(|error| shape("a get report", &error))?;
     let mut changes = Vec::new();
     for file in value
@@ -131,7 +132,11 @@ pub fn parse_change_records(text: &str) -> Result<Vec<OpenChange>, ParseError> {
             changes.push(parse_change_record(record, path)?);
         }
     }
-    Ok(changes)
+    let refused = value
+        .get("failures")
+        .and_then(Value::as_array)
+        .map_or(0, Vec::len);
+    Ok((changes, refused))
 }
 
 /// An open question that blocks work, from `board plans open`.
@@ -538,11 +543,19 @@ diff --git a/changes/unknown.json b/changes/unknown.json
     #[test]
     fn reads_several_change_records_from_one_get_report() {
         let text = r#"{"schema":"board/get-report/v2","data":[{"location":{"display":"/changes/a"},"text":"{\"phase\":\"done\",\"title\":\"A\"}"},{"location":{"display":"/repos/other/changes/b"},"text":"{\"phase\":\"dropped\"}"}],"failures":[]}"#;
-        let changes = parse_change_records(text).unwrap();
+        let (changes, refused) = parse_change_records(text).unwrap();
+        assert_eq!(refused, 0);
         assert_eq!(changes.len(), 2);
         assert_eq!(changes[0].path, "/changes/a");
         assert_eq!(changes[0].phase, "done");
         assert_eq!(changes[1].path, "/repos/other/changes/b");
+    }
+
+    #[test]
+    fn a_get_report_with_a_refused_path_keeps_the_good_records() {
+        let text = r#"{"schema":"board/get-report/v2","data":[{"location":{"display":"/changes/a"},"text":"{\"phase\":\"done\"}"}],"failures":[{"index":1,"code":"board::get::not_found","message":"nothing is at /changes/zz"}]}"#;
+        let (changes, refused) = parse_change_records(text).unwrap();
+        assert_eq!((changes.len(), refused), (1, 1));
     }
 
     #[test]

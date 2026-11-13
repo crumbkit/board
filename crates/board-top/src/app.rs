@@ -9,11 +9,8 @@ use ratatui::crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers
 use ratatui::widgets::Paragraph;
 
 use crate::model::{Inputs, View, build};
-use crate::render::{draw, render_text};
+use crate::render::{body_capacity, draw, render_text};
 use crate::source::Source;
-
-/// How often the view reloads.
-pub const REFRESH: Duration = Duration::from_secs(10);
 
 fn now() -> i64 {
     SystemTime::now()
@@ -44,34 +41,82 @@ enum Message {
     Failed(String),
 }
 
-/// Loads at once, then every `REFRESH`, skipping the reload when no checkout
-/// has moved since the last one. Ends when the screen stops listening.
-fn work(source: &Source, sender: &mpsc::Sender<Message>) {
-    let mut last: Option<(Inputs, Vec<String>)> = None;
+/// How often the worker looks at the board for changes.
+const CHECK: Duration = Duration::from_secs(10);
+
+/// The shortest time between two loads that read the board.
+const FLOOR: Duration = Duration::from_secs(60);
+
+/// How soon after the last load a reload may start: no sooner than 60 s and
+/// no sooner than three times the last load took, so loading stays a small
+/// share of the machine.
+fn reload_floor(last_load: Duration) -> Duration {
+    FLOOR.max(last_load * 3)
+}
+
+/// Whether a check should start a load. A forced reload (the `r` key) always
+/// does. Otherwise the floor must have passed, and then a load runs when none
+/// is held or the board's key moved.
+fn reload_due(forced: bool, held: bool, moved: bool, since: Duration, floor: Duration) -> bool {
+    forced || (since >= floor && (!held || moved))
+}
+
+/// Loads at once, then checks every `CHECK` whether the board changed and
+/// reloads when it did. A load whose status holds an error is not kept, so
+/// the next check retries it. Ends when the screen stops listening.
+fn work(source: &Source, sender: &mpsc::Sender<Message>, reload: &mpsc::Receiver<()>) {
+    let mut held: Option<(Inputs, String)> = None;
+    let mut started: Option<Instant> = None;
+    let mut last_load = Duration::ZERO;
     loop {
-        let heads = source.heads();
-        let message = match &mut last {
-            Some((inputs, seen)) if *seen == heads => {
+        let forced = match reload.recv_timeout(if started.is_none() {
+            Duration::ZERO
+        } else {
+            CHECK
+        }) {
+            Ok(()) => true,
+            Err(mpsc::RecvTimeoutError::Timeout) => false,
+            Err(mpsc::RecvTimeoutError::Disconnected) => return,
+        };
+        let key = source.key();
+        let moved = held.as_ref().is_none_or(|(_, seen)| *seen != key);
+        let since = started.map_or(Duration::MAX, |at| at.elapsed());
+        if !reload_due(
+            forced,
+            held.is_some(),
+            moved,
+            since,
+            reload_floor(last_load),
+        ) {
+            if let Some((inputs, _)) = &mut held {
                 inputs.now = now();
-                Message::Loaded(Box::new(build(inputs)))
-            }
-            _ => {
-                if sender.send(Message::Loading).is_err() {
+                if sender
+                    .send(Message::Loaded(Box::new(build(inputs))))
+                    .is_err()
+                {
                     return;
                 }
-                match load(source) {
-                    Ok((inputs, view)) => {
-                        last = Some((inputs, heads));
-                        Message::Loaded(Box::new(view))
-                    }
-                    Err(error) => Message::Failed(error),
-                }
             }
+            continue;
+        }
+        if sender.send(Message::Loading).is_err() {
+            return;
+        }
+        let begin = Instant::now();
+        started = Some(begin);
+        let message = match load(source) {
+            Ok((inputs, view)) => {
+                if inputs.status.is_empty() {
+                    held = Some((inputs, key));
+                }
+                Message::Loaded(Box::new(view))
+            }
+            Err(error) => Message::Failed(error),
         };
+        last_load = begin.elapsed();
         if sender.send(message).is_err() {
             return;
         }
-        std::thread::sleep(REFRESH);
     }
 }
 
@@ -120,8 +165,9 @@ pub fn live(source: &Source) -> Result<(), String> {
     let _restore = Restore;
     let (sender, receiver) = mpsc::channel::<Message>();
     let worker_source = source.clone();
+    let (reload, reload_requests) = mpsc::channel::<()>();
     // The worker is not joined: quitting must not wait for a load.
-    std::thread::spawn(move || work(&worker_source, &sender));
+    std::thread::spawn(move || work(&worker_source, &sender, &reload_requests));
     let mut view: Option<View> = None;
     let mut loaded: Option<Instant> = None;
     let mut loading = true;
@@ -133,12 +179,7 @@ pub fn live(source: &Source) -> Result<(), String> {
                 Ok(Message::Loaded(fresh)) => {
                     let mut fresh = *fresh;
                     if let Some(old) = &view {
-                        fresh.selected = old
-                            .selected_path()
-                            .and_then(|path| fresh.rows().position(|row| row.path == path))
-                            .unwrap_or_else(|| {
-                                old.selected.min(fresh.rows().count().saturating_sub(1))
-                            });
+                        fresh.keep_selection(old);
                     }
                     view = Some(fresh);
                     loaded = Some(Instant::now());
@@ -166,6 +207,10 @@ pub fn live(source: &Source) -> Result<(), String> {
                     vec!["refresh has stopped; the data is no longer updated".to_owned()];
             }
         }
+        let capacity = terminal.size().map_or(0, |size| body_capacity(size.height));
+        if let Some(shown) = &mut view {
+            shown.reveal(capacity);
+        }
         let drawn = terminal.draw(|frame| match &view {
             Some(shown) => draw(frame, shown),
             None => draw_loading(frame),
@@ -181,6 +226,21 @@ pub fn live(source: &Source) -> Result<(), String> {
                             && key.modifiers.contains(KeyModifiers::CONTROL));
                     if quit {
                         return Ok(());
+                    }
+                    if let Some(shown) = &mut view {
+                        match key.code {
+                            KeyCode::Up => shown.move_by(-1),
+                            KeyCode::Down => shown.move_by(1),
+                            KeyCode::PageUp => shown.page(capacity, false),
+                            KeyCode::PageDown => shown.page(capacity, true),
+                            KeyCode::Home => shown.home(),
+                            KeyCode::End => shown.end(),
+                            _ => {}
+                        }
+                    }
+                    if key.code == KeyCode::Char('r') {
+                        // The worker may have ended; the screen says so already.
+                        let _ = reload.send(());
                     }
                 }
                 Ok(_) => {}
@@ -211,4 +271,37 @@ pub fn emit(stream: Stream, text: &str) {
         Stream::Out => writeln!(std::io::stdout().lock(), "{text}"),
         Stream::Err => writeln!(std::io::stderr().lock(), "{text}"),
     };
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const MINUTE: Duration = Duration::from_secs(60);
+
+    #[test]
+    fn the_floor_is_a_minute_or_three_load_times() {
+        assert_eq!(reload_floor(Duration::from_secs(5)), MINUTE);
+        assert_eq!(
+            reload_floor(Duration::from_secs(40)),
+            Duration::from_secs(120)
+        );
+    }
+
+    #[test]
+    fn a_reload_waits_for_the_floor_and_for_a_moved_board() {
+        let floor = MINUTE;
+        let early = Duration::from_secs(20);
+        let late = Duration::from_secs(70);
+        assert!(!reload_due(false, true, true, early, floor));
+        assert!(reload_due(false, true, true, late, floor));
+        assert!(!reload_due(false, true, false, late, floor));
+        assert!(reload_due(false, false, false, late, floor));
+        assert!(!reload_due(false, false, false, early, floor));
+    }
+
+    #[test]
+    fn the_reload_key_ignores_the_floor_and_the_board() {
+        assert!(reload_due(true, true, false, Duration::ZERO, MINUTE));
+    }
 }

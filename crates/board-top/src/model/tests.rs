@@ -299,25 +299,6 @@ fn every_row_carries_its_record_path_and_one_is_selected() {
 }
 
 #[test]
-fn ended_rows_keep_their_marks_when_ended_rows_are_switched_on() {
-    let mut input = inputs();
-    input.closed = vec![change("/changes/l", "done", "/repos/board", None)];
-    input.history.insert(
-        "/changes/l".to_owned(),
-        vec![event(9, None, "plan"), event(3, Some("plan"), "done")],
-    );
-    let groups = group(
-        None,
-        vec![(
-            row_for(&input, &input.closed[0], true, None),
-            "/repos/board".to_owned(),
-        )],
-    );
-    assert_eq!(groups[0].rows[0].end, End::Landed(11 * DAY));
-    assert_eq!(groups[0].rows[0].state, "landed 3d");
-}
-
-#[test]
 fn a_change_that_ended_before_the_window_is_not_fetched() {
     let history = HashMap::from([(
         "/changes/old".to_owned(),
@@ -345,4 +326,100 @@ fn collapsed_lines_come_after_every_row() {
             .iter()
             .all(|g| !g.rows.is_empty())
     );
+}
+
+#[test]
+fn the_highlight_follows_its_record_when_rows_move() {
+    let mut input = inputs();
+    input.open = vec![
+        change("/changes/a", "build", "/repos/board", None),
+        change("/changes/b", "build", "/repos/board", None),
+    ];
+    let mut old = build(&input);
+    let at = old.rows().position(|row| row.path == "/changes/b").unwrap();
+    old.selected = at;
+
+    input
+        .open
+        .insert(0, change("/changes/new", "plan", "/repos/board", None));
+    let mut fresh = build(&input);
+    fresh.keep_selection(&old);
+    assert_eq!(fresh.selected_path(), Some("/changes/b"));
+
+    input.open.retain(|c| c.path != "/changes/b");
+    let mut gone = build(&input);
+    gone.keep_selection(&old);
+    assert!(gone.selected < gone.rows().count());
+}
+
+fn long_view(count: usize) -> View {
+    let mut input = inputs();
+    input.open = (0..count)
+        .map(|n| change(&format!("/changes/c{n:02}"), "build", "/repos/board", None))
+        .collect();
+    build(&input)
+}
+
+#[test]
+fn the_highlight_stops_at_both_ends() {
+    let mut view = long_view(5);
+    view.move_by(-1);
+    assert_eq!(view.selected, 0);
+    view.move_by(100);
+    assert_eq!(view.selected, 4);
+    view.home();
+    assert_eq!(view.selected, 0);
+    view.end();
+    assert_eq!(view.selected, 4);
+}
+
+#[test]
+fn a_page_moves_by_the_height_less_one_and_the_window_follows() {
+    let mut view = long_view(40);
+    view.page(10, true);
+    assert_eq!(view.selected, 9);
+    let window = view.window(10);
+    assert!(window.start <= 9 && 9 < window.end, "{window:?}");
+    assert_eq!(window.rows.map(|(_, last)| last >= 10), Some(true));
+    view.page(10, false);
+    assert_eq!(view.selected, 0);
+    assert_eq!(view.window(10).start, 0);
+}
+
+#[test]
+fn a_list_that_fits_has_no_position_line_and_one_that_does_not_reserves_one() {
+    let view = long_view(5);
+    assert!(view.window(10).whole);
+    let mut view = long_view(40);
+    let window = view.window(10);
+    assert!(!window.whole);
+    assert_eq!(window.end - window.start, 9);
+    assert_eq!(window.rows, Some((1, 9)));
+    assert_eq!(window.total, 40);
+    view.end();
+    assert_eq!(view.window(10).rows, Some((32, 40)));
+}
+
+#[test]
+fn the_selection_stays_visible_after_a_refresh_that_shrinks_the_list() {
+    let mut view = long_view(40);
+    view.end();
+    view.reveal(10);
+    assert!(view.scroll > 0);
+    let mut fresh = long_view(6);
+    fresh.keep_selection(&view);
+    assert!(fresh.selected < 6);
+    let window = fresh.window(10);
+    assert!(window.whole && window.start == 0, "{window:?}");
+}
+
+#[test]
+fn scrolling_keeps_a_realm_heading_with_its_first_row() {
+    let mut input = mapped_input();
+    input.map.as_mut().unwrap();
+    let mut view = build(&input);
+    view.home();
+    let lines = view.body();
+    assert!(matches!(lines[0], BodyLine::Realm(_)));
+    assert_eq!(view.window(3).start, 0);
 }

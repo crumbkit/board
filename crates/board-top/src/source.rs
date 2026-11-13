@@ -34,11 +34,17 @@ pub fn load_config(path: &Path) -> Result<Config, String> {
 
 /// Runs a command and returns its output, or a one-line account of why not:
 /// the command, its exit code and the first line of its error.
+fn run(program: &str, args: &[String]) -> Result<String, String> {
+    run_with(program, args, false)
+}
+
+/// Like `run`; with `keep_report` a non-zero exit still returns stdout when it
+/// is a JSON report and not a failure document.
 #[expect(
     clippy::disallowed_methods,
     reason = "this module is the one place board-top starts the board and git commands it reads"
 )]
-fn run(program: &str, args: &[String]) -> Result<String, String> {
+fn run_with(program: &str, args: &[String], keep_report: bool) -> Result<String, String> {
     let shown = format!("{program} {}", args.join(" "));
     let output = Command::new(program)
         .args(args)
@@ -49,6 +55,12 @@ fn run(program: &str, args: &[String]) -> Result<String, String> {
     }
     let error_text = String::from_utf8_lossy(&output.stderr);
     let out_text = String::from_utf8_lossy(&output.stdout);
+    if keep_report
+        && out_text.trim_start().starts_with('{')
+        && describe_failure(&out_text).is_none()
+    {
+        return Ok(out_text.into_owned());
+    }
     let first = describe_failure(&out_text)
         .or_else(|| describe_failure(&error_text))
         .or_else(|| {
@@ -205,50 +217,41 @@ impl Source {
     /// Reads the records of ended changes, a hundred paths to a `board get`.
     fn closed_changes(&self, paths: &[String], status: &mut Vec<String>) -> Vec<OpenChange> {
         let mut closed = Vec::new();
+        let mut refused = 0;
         for chunk in paths.chunks(100) {
             let mut rest = vec!["get", "--json"];
             rest.extend(chunk.iter().map(String::as_str));
-            match self
-                .board(&rest)
+            match run_with("board", &self.board_args(&rest), true)
                 .and_then(|text| parse_change_records(&text).map_err(|error| error.to_string()))
             {
-                Ok(mut changes) => closed.append(&mut changes),
+                Ok((mut changes, failed)) => {
+                    closed.append(&mut changes);
+                    refused += failed;
+                }
                 Err(error) => status.push(error),
             }
+        }
+        if refused > 0 {
+            status.push(format!("{refused} ended changes could not be read"));
         }
         closed
     }
 
-    /// The commit each checkout the board reads is on: the board and every
-    /// mount's checkout. Two equal answers mean no record can have changed.
+    /// What the board directory holds: its commit and its uncommitted edits.
+    /// Board reads mounts at the commit its mount records pin, so only the
+    /// board's own state decides whether a reload can show anything new.
     #[must_use]
-    pub fn heads(&self) -> Vec<String> {
-        let mut directories = vec![self.board.clone()];
-        if let Ok(entries) = std::fs::read_dir(self.board.join("repos")) {
-            let mut names: Vec<String> = entries
-                .filter_map(Result::ok)
-                .filter_map(|entry| entry.file_name().into_string().ok())
-                .filter_map(|name| name.strip_suffix(".json").map(str::to_owned))
-                .collect();
-            names.sort();
-            directories.extend(
-                names
-                    .iter()
-                    .filter_map(|name| self.directory(&format!("/repos/{name}"))),
-            );
-        }
-        directories
-            .iter()
-            .map(|directory| {
-                let args = vec![
-                    "-C".to_owned(),
-                    directory.display().to_string(),
-                    "rev-parse".to_owned(),
-                    "HEAD".to_owned(),
-                ];
-                run("git", &args).unwrap_or_default()
-            })
-            .collect()
+    pub fn key(&self) -> String {
+        let git = |rest: &[&str]| {
+            let mut args = vec!["-C".to_owned(), self.board.display().to_string()];
+            args.extend(strings(rest));
+            run("git", &args).unwrap_or_default()
+        };
+        format!(
+            "{}\n{}",
+            git(&["rev-parse", "HEAD"]),
+            git(&["status", "--porcelain=v1", "-z"])
+        )
     }
 
     /// Gathers everything one frame needs. Only the list of open changes is
