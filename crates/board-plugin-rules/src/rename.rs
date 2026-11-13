@@ -30,9 +30,8 @@ const BULK: &str = "rename controls to rules";
 const STALE: &str = "rules::migrate::stale";
 const CONFIG_FIRST: &str = "rules::migrate::config_first";
 const FLOW_TYPE: &str = "changes/flow/v1";
-/// Why a config that names `controls` is kept.
-const CONFIG: &str = "the board's config names controls; only the owner may write it, so name \
-                      rules in its place in .board/board.json";
+/// The board's config, which the rename never writes.
+const CONFIG_PATH: &str = "/.board/board";
 /// Each old field name in a record and the name it takes.
 type Renames = &'static [(&'static str, &'static str)];
 /// The records of the changes that rename controls to rules, which describe
@@ -120,15 +119,15 @@ pub(crate) fn rename(
     output: &mut Output,
 ) -> Result<(), PluginError> {
     let entries = entries(host)?;
-    // Only the owner writes the config, so it names `rules` before the
-    // rename, and a binary that predates the rename refuses `controls.*`
-    // from the first commit after the apply.
-    if !(entries.iter())
-        .any(|entry| entry.record_type.as_deref() == Some(CONFIG_TYPE) && names(entry, "rules"))
-    {
+    // Only the owner writes the config, so it names `rules` and no longer
+    // `controls` before the rename. A binary that predates the rename then
+    // refuses `controls.*` from the first commit after the apply, and a
+    // config that names both would leave it reading an emptied `/controls/`.
+    let config = (entries.iter()).find(|entry| entry.logical == CONFIG_PATH);
+    if !config.is_some_and(|entry| names(entry, "rules") && !names(entry, "controls")) {
         return Err(refusal(
             CONFIG_FIRST,
-            "the board's config does not name rules in its plugins",
+            "the board's config does not name rules, or still names controls, in its plugins",
             "name rules in place of controls in .board/board.json, then run the rename again",
         ));
     }
@@ -235,13 +234,9 @@ fn content(
         return kept(
             "a mount pointer; move it to /rules/ with board put once its target board has migrated",
         );
-    } else if record_type == Some(CONFIG_TYPE) {
-        return if names(entry, "controls") {
-            Err(CONFIG)
-        } else {
-            Ok(None)
-        };
-    } else if record_type == Some(FLOW_TYPE) {
+    } else if matches!(record_type, Some(CONFIG_TYPE | FLOW_TYPE)) {
+        // The config is the owner's to write; a flow is in `flows` or needs
+        // no change.
         return Ok(None);
     } else if let Some(text) = &entry.text {
         if entry.role.as_deref() == Some("json") {
@@ -408,7 +403,7 @@ fn flows(entries: &[Entry], kept: &mut Vec<Kept>) -> Flows {
         let (stored, at_hash) = (flow_version(name, &record), flow_version(name, &value));
         if at_hash == entry.logical && stored != entry.logical {
             flows.insert(entry.logical.clone(), (stored, record));
-        } else if at_hash != entry.logical && record != value {
+        } else if at_hash != entry.logical && (record != value || moved(&entry.logical).is_some()) {
             // A flow outside /flows/, such as one a change holds, is pinned
             // by its path, not its hash, so every such flow off its hash is
             // rewritten in place, or moved with the other files under

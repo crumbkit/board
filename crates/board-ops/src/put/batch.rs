@@ -175,7 +175,7 @@ impl Board {
         let lock = self.repositories().lock(LOCK_WAIT)?;
         let mut view = self.repositories().snapshot().map_err(WriteError::from)?;
         let checked = self.check_lines(&lock, &mut view, lines, &mut Schemas::default())?;
-        let Checked::Here(prepared, removals, _, _) = checked else {
+        let Checked::Here(prepared, removals, _, numbers) = checked else {
             return Err(PutError::Line {
                 code: Code::PutInvalid,
                 reason: "the batch writes through a mount, which a check does not follow"
@@ -199,7 +199,11 @@ impl Board {
         if stale.is_empty() {
             Ok(())
         } else {
-            Err(refused_lines(&stale))
+            // The line numbers the apply names, not indexes into the writes.
+            let numbered: Vec<_> = (stale.into_iter())
+                .map(|(at, error)| (numbers[at], error))
+                .collect();
+            Err(refused_lines(&numbered))
         }
     }
 

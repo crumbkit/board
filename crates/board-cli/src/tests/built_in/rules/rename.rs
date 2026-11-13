@@ -382,6 +382,9 @@ fn the_dry_run_refuses_a_move_whose_target_file_is_taken_as_the_apply_would() {
         "{}",
         text(&dry.stdout)
     );
+    // The line the apply would name: the file's move is the sixth line of
+    // the batch, after two moves of two lines each and the boundary.
+    assert_eq!(json(&dry)["fields"]["refusals"][0]["line"], 6);
 }
 
 /// The config of `board`, naming `plugins`.
@@ -410,4 +413,20 @@ fn the_rename_is_refused_until_the_config_names_rules_and_then_applies() {
     let ran = applied(&board, listed["digest"].as_str().unwrap());
     assert_eq!(ran.code, 0, "{}", text(&ran.stdout));
     assert!(board.read("rules/x/a.json").contains("rules/rule/v1"));
+}
+
+#[test]
+fn the_rename_is_refused_while_the_config_names_both_rules_and_controls() {
+    let board = old_board();
+    config_naming(&board, &["rules", "controls", "boundary", "attention"]);
+    let before = board.read("controls/x/a.json");
+    for flags in [
+        &[][..],
+        &["--apply", "true", "--digest", &"0".repeat(64)][..],
+    ] {
+        let ran = rename(&board, flags);
+        assert_ne!(ran.code, 0, "{}", text(&ran.stdout));
+        assert_eq!(json(&ran)["code"], "rules::migrate::config_first");
+    }
+    assert_eq!(board.read("controls/x/a.json"), before);
 }
