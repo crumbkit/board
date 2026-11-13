@@ -541,6 +541,8 @@ fn a_change_is_re_pinned_when_the_renamed_flow_version_is_already_stored() {
     board.write(&format!("{}.json", &new[1..]), &stored.to_string());
     migrate(&board);
     assert_eq!(board.read("changes/t.json")["flow"], json!(new));
+    let again = board.run(&["--json", "call", "rules.migrate", "--rename", "true"], "");
+    assert_eq!(json(&again)["data"]["output"]["total"], 0);
     assert!(board.exists(&format!("{}.json", &OLD[1..])));
     assert_eq!(gate_naming(&board, &head), before);
 }

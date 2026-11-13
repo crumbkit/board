@@ -34,9 +34,12 @@ const CONFIG: &str = "the board's config names controls; only the owner may writ
                       rules in its place in .board/board.json";
 /// Each old field name in a record and the name it takes.
 type Renames = &'static [(&'static str, &'static str)];
-/// The records of the change that renames controls to rules, which describe
+/// The records of the changes that rename controls to rules, which describe
 /// the rename in the old names and so keep them.
-const RENAMING: &str = "/changes/control-becomes-rule/";
+const RENAMING: [&str; 2] = [
+    "/changes/control-becomes-rule/",
+    "/changes/rule-rename-rest/",
+];
 /// Each flow version that moves, with the version it becomes and the
 /// record stored there.
 type Flows = BTreeMap<String, (String, Value)>;
@@ -246,7 +249,7 @@ fn content(
     if same && to.is_none() {
         return Ok(None);
     }
-    if entry.logical.starts_with(RENAMING) {
+    if (RENAMING.iter()).any(|prefix| entry.logical.starts_with(prefix)) {
         return Err("it describes the rename itself, so it keeps the names it was written in");
     }
     Ok(Some(content))
