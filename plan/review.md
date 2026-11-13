@@ -77,7 +77,7 @@ repositories join as it proves itself.
      check is part of the pull request. The check is evidence for the owner,
      not a merge gate.
    - Each repository that uses review states this as a written rule, so
-     `rules.check` names it. A rule with a checker would fail every session
+     `rules.check` names it. A rule with a budget or version checker would fail every session
      start on an unreviewed branch.
 9. **The agent command.** `review.run` starts the argv list in
    `BOARD_REVIEW_AGENT`, an environment variable the user sets and the

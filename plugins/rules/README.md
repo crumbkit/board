@@ -121,7 +121,10 @@ host, and `read_on` is a date.
 
 The plugin ships both schemas. `board plugin enable rules` writes them to
 `.board/types/rules/rule/v1.schema.json` and
-`.board/types/rules/source/v1.schema.json`.
+`.board/types/rules/source/v1.schema.json`. It also writes the former
+`controls/control` and `controls/source` schemas under
+`.board/types/controls/`, which Board still reads until a later pull request
+of the rename deletes them.
 
 ## Capabilities
 
@@ -384,8 +387,8 @@ which a test compares with what the structs generate; `SNAPSHOTS=overwrite`
 rewrites them. The same test keeps this repository's own copies under
 `.board/types/rules/` equal to them. A rule's properties carry titles,
 as the former Python plugin generated them.
-`checker` is one object listing every kind's fields, with a `oneOf` that picks
-the kind, because Board checks no reference under `anyOf` or `oneOf`.
+`checker` is one object listing every kind's fields, with an `allOf` of the kinds, each required when `check` names it,
+because Board checks no reference under `anyOf` or `oneOf`.
 
 This directory keeps `SKILL.md` and the mod. The tests of the plugin through
 the binary are in `crates/board-cli/src/tests/built_in/rules.rs` and the

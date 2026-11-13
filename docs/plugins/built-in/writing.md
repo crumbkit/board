@@ -2,8 +2,8 @@
 
 This file holds detail for docs/plugins/built-in.md. `artifacts`, `attention`, `boundary`,
 `changes`, `evals`, `github`, `jira`, `notes`, `params`, `plans`, `prompts`, `requests`, `review`, `rules`, `runs`,
-`share`, `tasks` and `topics` are built-in crates; `rules` (#48) shows a Python plugin ported
-with its output, messages and codes unchanged.
+`share`, `tasks` and `topics` are built-in crates; `controls`, now `rules`, shows a Python plugin
+ported in #48 with its output, messages and codes unchanged then.
 
 ## What a built-in plugin can do
 
