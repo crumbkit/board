@@ -213,8 +213,8 @@ pub(crate) struct Check {
     /// `understood`: what the understanding check covers.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) subject: Option<Subject>,
-    /// `understood`: the fewest rechecks matching the plan that each
-    /// attached understanding check holds.
+    /// `understood`: the fewest points whose latest recheck matches the
+    /// plan that each attached understanding check holds.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(range(min = 1))]
     pub(crate) rechecks: Option<u32>,

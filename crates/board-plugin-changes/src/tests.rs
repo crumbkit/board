@@ -358,3 +358,41 @@ fn the_skill_description_covers_starting_resuming_and_listing_work_within_the_sk
     // Agent Skills cap a skill's description at 1,024 characters.
     assert!(description.chars().count() <= 1024, "{description}");
 }
+
+/// An understanding check holding one recheck with `fields` added to a
+/// complete one.
+fn understanding_with_recheck(fields: &Value) -> Value {
+    let mut recheck = json!({"question": "Q?", "answer": "A.", "design": "A.", "matches": true});
+    for (key, value) in fields.as_object().unwrap() {
+        recheck[key] = value.clone();
+    }
+    json!({
+        "$type": "changes/understanding/v1",
+        "change": "/changes/t",
+        "subject": "data",
+        "questions": [{"question": "Q?", "answer": "A.", "design": "A."}],
+        "rechecks": [recheck],
+    })
+}
+
+#[test]
+fn the_understanding_schema_wants_each_recheck_to_name_its_point_as_a_slug() {
+    let schema = board_validate::Schema::compile(
+        serde_json::from_str(include_str!(
+            "../types/changes/understanding/v1.schema.json"
+        ))
+        .unwrap(),
+    )
+    .unwrap();
+    let named = understanding_with_recheck(&json!({"point": "flow-version"}));
+    assert!(schema.validate(&named).is_ok());
+    let unnamed = understanding_with_recheck(&json!({}));
+    let refused = schema.validate(&unnamed).unwrap_err().reason();
+    assert!(refused.contains("point"), "{refused}");
+    let spelled = understanding_with_recheck(&json!({"point": "Flow Version"}));
+    let refused = schema.validate(&spelled).unwrap_err().reason();
+    assert!(
+        refused.contains("\"Flow Version\" does not match"),
+        "{refused}"
+    );
+}

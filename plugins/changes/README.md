@@ -190,8 +190,17 @@ records how the owner showed he understands a change's `data` or `ux`.
 Each of `questions` holds the `question`, the owner's `answer` in his own
 words, and the `design`'s answer, and may say its `kind` (`predict`,
 `choose`, `explain` or `edge`) and whether the answers `matches`.
-`rechecks` holds the questions asked again before review. The
-`understanding-check` skill in `skills/understanding-check/` runs the check.
+`rechecks` holds the questions asked again before review. Each recheck
+names its `point`, a slug. The gate reads only the latest recheck of each
+point, so a missed recheck stays in the record and passes once a later
+recheck of its point matches.
+
+A board that holds understanding checks written before `point` existed
+refuses them until each stored recheck has a `point`. Run
+`board plugin enable changes`, then give every stored recheck its `point`
+in one batch.
+
+The `understanding-check` skill in `skills/understanding-check/` runs the check.
 
 The day of the last sync lives in Board's cache, keyed by the path of the
 board's checkout, so the stale warning is per checkout: another clone or
@@ -840,7 +849,7 @@ evaluated by kind:
 | `run` | an attached run of the change's suite with `scope` is clean, passing and on `head` |
 | `paths` | the diff edits only the plan's paths |
 | `tasks` | every attached task but the change's own is done or dropped |
-| `understood` | a decision the owner signed references an attached understanding check of this change's `subject`; with `rechecks`, each such check also holds that many matching rechecks |
+| `understood` | a decision the owner signed references an attached understanding check of this change's `subject`; with `rechecks`, each such check also holds rechecks of that many points, and the latest recheck of every point matches |
 | `mockups` | the `agreed` part: each mockup under UX is named by a signed decision; the `neighbours` part: UX lists its neighbours; both when `part` is left out |
 | `considered` | each path in the change's `surfaced` that still reaches something is in the plan's `uses` or its `considered` field |
 | `obligations` | no obligation rule applies to the plan's paths, except those in the plan's `owed` field; a board without the rules plugin enabled has none |
@@ -889,7 +898,7 @@ The development flow's gates:
 | Leaving | Checks |
 | --- | --- |
 | plan | `plan-sections`, the eight sections; `considered`; `task`; `route`; `owner-approval`, a `plans/decision/v1` the owner signed whose `refs` name the plan or the change, on every route; `mockups`, when the plan answers `ux` mockups; `data-signed`, an `understood` check of the data, when it answers `data` stored; `lifecycle-declared`, a `planned-rule-paths` check of `/rules/{repo}/lifecycle-paths`, when it answers `lifecycle` none; `lifecycle-record`, an `exists` check of `/changes/{name}/lifecycle`, when it answers `lifecycle` record; `obligations`, which does not block |
-| build | `head`; `suite-run`, waivable; `tasks`; `rechecks`, two matching rechecks, when the plan answers `data` stored |
+| build | `head`; `suite-run`, waivable; `tasks`; `rechecks`, rechecks of two points whose latest recheck of each matches, when the plan answers `data` stored |
 | review | `review`, a report on `head` with no critical or high finding; `paths`; `ui-paths` and `data-paths`, `rule-paths` checks of `/rules/{repo}/ui-paths` when the plan answers `ux` none and `/rules/{repo}/data-paths` when it answers `data` none; `lifecycle-paths`, the same check of `/rules/{repo}/lifecycle-paths` unless Board reads a `changes/lifecycle/v1` at `/changes/{name}/lifecycle`; `lifecycle-none-paths`, the same check when the plan answers `lifecycle` none, whether or not a record exists; `obligations-settled`, with the escape heading `Obligations left owed` |
 | land | `test-sections`, What the tests prove and What the tests do not prove; `pull-request`; `lifecycle-paths-at-land` and `lifecycle-none-paths-at-land`, the two review checks of `/rules/{repo}/lifecycle-paths` again, so each re-reads the diff at the recorded head and a record removed after review is gated |
 | build, for a prototype | Never passes: `verdict` ends a prototype instead. |

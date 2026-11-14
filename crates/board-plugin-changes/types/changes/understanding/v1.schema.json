@@ -44,6 +44,57 @@
       ],
       "title": "Asked",
       "type": "object"
+    },
+    "Recheck": {
+      "additionalProperties": false,
+      "description": "One question asked again before review: the owner's answer and the\ndesign's, and the point of the design it checks.",
+      "properties": {
+        "answer": {
+          "description": "The owner's answer, in his own words.",
+          "minLength": 1,
+          "type": "string",
+          "x-board-prose": true
+        },
+        "design": {
+          "description": "What the design says the answer is.",
+          "minLength": 1,
+          "type": "string",
+          "x-board-prose": true
+        },
+        "kind": {
+          "description": "The kind of question.",
+          "enum": [
+            "predict",
+            "choose",
+            "explain",
+            "edge"
+          ],
+          "type": "string"
+        },
+        "matches": {
+          "description": "Whether the owner's answer matches the design.",
+          "type": "boolean"
+        },
+        "point": {
+          "description": "A short name for the part of the design the recheck checks, such as\n`flow-version`. Rechecks of one point carry the same value, and the\nbuild gate reads only the latest of each point.",
+          "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+          "type": "string"
+        },
+        "question": {
+          "description": "The question, as asked.",
+          "minLength": 1,
+          "type": "string",
+          "x-board-prose": true
+        }
+      },
+      "required": [
+        "question",
+        "answer",
+        "design",
+        "point"
+      ],
+      "title": "Recheck",
+      "type": "object"
     }
   },
   "additionalProperties": false,
@@ -72,9 +123,9 @@
       "type": "array"
     },
     "rechecks": {
-      "description": "Predict or edge questions asked again, worded differently, before\nreview; the build gate wants two that match.",
+      "description": "Predict or edge questions asked again, worded differently, before\nreview. The build gate reads the latest recheck of each point and\nwants the flow's number of points, each matching.",
       "items": {
-        "$ref": "#/$defs/Asked"
+        "$ref": "#/$defs/Recheck"
       },
       "type": "array"
     },

@@ -819,7 +819,7 @@
       },
       "properties": {
         "rechecks": {
-          "description": "`understood`: the fewest rechecks matching the plan that each\nattached understanding check holds.",
+          "description": "`understood`: the fewest points whose latest recheck matches the\nplan that each attached understanding check holds.",
           "minimum": 1,
           "type": "integer"
         },

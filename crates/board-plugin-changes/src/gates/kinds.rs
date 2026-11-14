@@ -403,7 +403,9 @@ fn count_word(count: usize) -> String {
 
 /// An attached understanding check of the change's `subject` that the
 /// owner signed off in a decision referencing it, and with `rechecks`, that
-/// many matching rechecks on each attached understanding check of it.
+/// many points on each attached understanding check of it. Rechecks are
+/// grouped by point and only the last of each point counts, so a missed
+/// recheck passes once a later recheck of its point matches.
 pub(super) fn understood_missing(observed: &Observed, each: &flow::Check) -> Option<String> {
     let Some(subject) = each.subject else {
         return Some(unset(each, "subject"));
@@ -440,20 +442,57 @@ pub(super) fn understood_missing(observed: &Observed, each: &flow::Check) -> Opt
         ));
     }
     let wanted = each.rechecks? as usize;
-    for (path, body) in understood {
-        let matching = objects(body, "rechecks")
-            .filter(|recheck| recheck.get("matches") == Some(&Value::Bool(true)))
-            .count();
-        if matching < wanted {
-            let wanted = count_word(wanted);
-            return Some(format!(
-                "the understanding check at {path} holds fewer than {wanted} rechecks that match \
-                 the plan; before review, ask {wanted} of its predict or edge questions again, \
-                 worded differently, and add them to its rechecks"
-            ));
+    understood
+        .into_iter()
+        .find_map(|(path, body)| rechecks_missing(path, body, wanted))
+}
+
+/// Why the understanding check at `path` fails the `rechecks` check, or
+/// none when it holds `wanted` points and the latest recheck of each
+/// matched. Of several reasons it gives the first of: a recheck with no
+/// point, points whose latest recheck missed, too few points.
+fn rechecks_missing(path: &str, body: &Map<String, Value>, wanted: usize) -> Option<String> {
+    // Each point once, in the order it first appears, with whether its
+    // latest recheck matched. A `matches` that is absent is a miss.
+    let mut points: Vec<(&str, bool)> = Vec::new();
+    let mut unnamed = false;
+    for recheck in objects(body, "rechecks") {
+        let matched = recheck.get("matches") == Some(&Value::Bool(true));
+        let Some(point) = recheck.get("point").and_then(Value::as_str) else {
+            unnamed = true;
+            continue;
+        };
+        match points.iter_mut().find(|(named, _)| *named == point) {
+            Some(latest) => latest.1 = matched,
+            None => points.push((point, matched)),
         }
     }
-    None
+    if unnamed {
+        return Some(format!(
+            "the understanding check at {path} holds a recheck with no point; give each of its \
+             rechecks a point in the board that holds it, then update the mount"
+        ));
+    }
+    let missed: Vec<&str> = (points.iter())
+        .filter(|(_, matched)| !matched)
+        .map(|(point, _)| *point)
+        .collect();
+    if !missed.is_empty() {
+        return Some(format!(
+            "the understanding check at {path} has points whose latest recheck does not match \
+             the plan: {}; settle each mismatch, then ask each point again, worded differently, \
+             and add the recheck with the same point",
+            missed.join(", ")
+        ));
+    }
+    (points.len() < wanted).then(|| {
+        let wanted = count_word(wanted);
+        format!(
+            "the understanding check at {path} holds rechecks of fewer than {wanted} points; \
+             before review, ask {wanted} of its predict or edge questions again, worded \
+             differently, and add each to its rechecks with its own point"
+        )
+    })
 }
 
 /// Something is at the path the check names, with its placeholders
