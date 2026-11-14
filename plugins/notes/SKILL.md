@@ -35,7 +35,8 @@ their daily note back.
    - `commit` is null when the note was written but not committed. Tell the
      person.
    - `conflicts` lists the `board/conflict/v1` records that name the note
-     written. When it is not empty, a sync kept one side's text of the note
+     written, from the sync that pushed it after the write. When it is not
+     empty, a sync kept one side's text of the note
      where both changed the same lines, so your text may be missing from the
      note: read the record, and tell the person.
    - `unpushed` is null when the commit reached the repo's remote.

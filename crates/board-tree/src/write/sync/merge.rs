@@ -539,7 +539,11 @@ fn insertions_together(ancestor: &[u8], ours: &[u8], theirs: &[u8]) -> Option<Ve
             }
             copy(&base, &(at..mine.before.start), &mut merged);
             copy(&theirs_lines, &other.after, &mut merged);
-            copy(&ours_lines, &mine.after, &mut merged);
+            let same = theirs_lines[other.after.start as usize..other.after.end as usize]
+                == ours_lines[mine.after.start as usize..mine.after.end as usize];
+            if !same {
+                copy(&ours_lines, &mine.after, &mut merged);
+            }
             at = mine.before.start;
             inserted = true;
             o += 1;

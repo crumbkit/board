@@ -738,3 +738,18 @@ fn a_conflict_record_one_side_changed_and_the_other_deleted_is_kept_without_a_ne
     );
     assert_eq!(merged.conflicts, Vec::new());
 }
+
+#[test]
+fn an_insertion_both_sides_made_identically_stays_once_beside_other_insertions() {
+    let fixture = Fixture::new();
+    let (merged, files) = fixture.merge(
+        &[("n.md", "a\nb\nc\nd\ne\nf\n")],
+        &[("n.md", "a\nSAME\nb\nc\nd\ne\nf\nagent\n")],
+        &[("n.md", "a\nSAME\nb\nc\nd\ne\nf\nphone\n")],
+    );
+    assert_eq!(
+        files,
+        [file("n.md", "a\nSAME\nb\nc\nd\ne\nf\nphone\nagent\n")]
+    );
+    assert_eq!(merged.conflicts, Vec::new());
+}

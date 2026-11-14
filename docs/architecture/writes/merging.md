@@ -11,7 +11,8 @@ made. When both edited a text file (any file that is not `.json` or
 and its result is taken with no conflict when no changed hunks overlap. Two
 changes that only insert lines at the same point of the ancestor, and delete
 nothing there, both stay, the remote's lines first and then the local ones,
-and no record is written. This covers a phone and an agent each appending to
+and no record is written; when both inserted the same lines, one copy stays.
+This covers a phone and an agent each appending to
 the end of a daily note. Changes that overlap or touch in any other way, for
 example an insertion next to lines the other side deleted, are a conflict.
 A remote insertion that does not end in a newline is also a conflict, since
@@ -24,7 +25,9 @@ is. The other version stays in history.
 
 For each such path the merge commit also holds a `board/conflict/v1` record at
 `conflicts/<name>.json`, where `<name>` is the hash of the path and of the
-three blobs in dispute (the ancestor's and each side's, or `-` for none). The
+three blobs in dispute (the ancestor's and each side's, or `-` for none),
+with the two sides' ids in sorted order, so two clones that merge the same
+pair with the sides swapped make one name. The
 same conflict has the same name, so a record already in the merge is kept as
 it is, and a later conflict at the same path, over other content, has a record
 of its own that leaves the earlier one alone. The record holds:

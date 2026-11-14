@@ -250,7 +250,8 @@ code, such as `board::sync::failed`. The write is committed in the clone and
 pushed by a later call. A sync that finds the same task changed here and on the remote merges
 them, keeps the remote's version and records a `board/conflict/v1` under
 `/conflicts/`. `conflicts` in the call's result lists the paths of the
-records that name the task written, empty when none does. The call writes with `board put` and the blob it read, reads again and retries when the
+records that name the task written, from the sync that pushes it after the
+write, empty when none does. The call writes with `board put` and the blob it read, reads again and retries when the
 task or the clone moved, and refuses with `tasks::task::busy` when the task
 holds an edit not committed in its clone or kept changing. A new read that
 finds the text the refused write sent counts as that write. It then pushes and

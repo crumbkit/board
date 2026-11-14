@@ -41,6 +41,9 @@ pub trait Clones {
     /// The conflicts the syncs made so far found: each file whose merge
     /// kept one side's content.
     fn conflicts(&self) -> Vec<Conflicted>;
+    /// Forgets the conflicts found so far, so [`Clones::conflicts`] holds
+    /// only those of the syncs made after.
+    fn forget_conflicts(&self);
 }
 
 /// The clones Board syncs and pins for a call, through its host: a sync
@@ -85,6 +88,10 @@ impl Clones for Through<'_> {
 
     fn conflicts(&self) -> Vec<Conflicted> {
         self.found.borrow().clone()
+    }
+
+    fn forget_conflicts(&self) {
+        self.found.borrow_mut().clear();
     }
 }
 
@@ -265,6 +272,10 @@ pub fn landed_with(
     commit: Option<String>,
     push: bool,
 ) -> Result<(Option<String>, Option<String>), PluginError> {
+    // A conflict an earlier sync found came before the write, which landed
+    // after that merge, so only the syncs from here on can have kept
+    // another side's text of it.
+    writer.clones.forget_conflicts();
     let unpushed = if push || repo.clone.is_none() {
         synced(writer, repo, true)
     } else {

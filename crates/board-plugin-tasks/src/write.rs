@@ -45,7 +45,7 @@ const NAMES: usize = 10;
 /// failed, or `tasks::repo::not_pushed` when `done --push false` skipped
 /// it; both are `tasks::repo::not_synced` for the board's own tree, which
 /// is never synced. `conflicts` lists the paths of the `board/conflict/v1`
-/// records that name the task: a sync's merge kept one side's text of it,
+/// records, from the sync after the write, that name the task: its merge kept one side's text of it,
 /// which may not be this call's.
 #[derive(Debug, Serialize, JsonSchema)]
 #[schemars(deny_unknown_fields)]

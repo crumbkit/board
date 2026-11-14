@@ -373,3 +373,40 @@ fn the_conflict_records_that_name_a_written_file_are_listed_once_with_their_logi
         Vec::<String>::new()
     );
 }
+
+#[test]
+fn a_landed_write_lists_only_the_conflicts_of_the_syncs_after_the_write() {
+    let host = local(&[]);
+    let clones = Recorded::default();
+    let conflicted = |record: &str| board_ops::Conflicted {
+        path: "daily/d.md".to_owned(),
+        kind: board_model::ConflictKind::BothChanged,
+        record: record.to_owned(),
+    };
+    // The sync before the write found one conflict at the note.
+    clones
+        .next
+        .borrow_mut()
+        .push(conflicted("conflicts/before.json"));
+    let writer = writer(&host, &clones);
+    assert_eq!(synced(writer, &mounted(), true), None);
+    assert_eq!(
+        writer.conflicts_at(&mounted(), &["daily/d.md"]),
+        ["/repos/work/conflicts/before.json"]
+    );
+    landed(writer, &mounted(), Some("c0ffee".to_owned())).unwrap();
+    assert_eq!(
+        writer.conflicts_at(&mounted(), &["daily/d.md"]),
+        Vec::<String>::new()
+    );
+    // The sync that lands the write found another one.
+    clones
+        .next
+        .borrow_mut()
+        .push(conflicted("conflicts/after.json"));
+    landed(writer, &mounted(), Some("c0ffee".to_owned())).unwrap();
+    assert_eq!(
+        writer.conflicts_at(&mounted(), &["daily/d.md"]),
+        ["/repos/work/conflicts/after.json"]
+    );
+}

@@ -180,8 +180,10 @@ conflict. When both changed or deleted the same lines, the note holds the
 phone's text, the plugin's text stays in the commit it made, and a
 `board/conflict/v1` record under `/conflicts/` names both versions. The call
 reports nothing parked or unpushed in either case, and `conflicts` lists the
-paths of the records that name the note written (an empty list when none
-does), so a caller sees when its text lost.
+paths of the records that name the note written by the sync that pushes it
+(an empty list when none does), so a caller sees when its text lost. A
+conflict the sync before the write recorded is not listed, because the text
+was appended after that merge.
 
 Each sync and pin has git's deadline of 60 seconds.
 
@@ -212,7 +214,8 @@ Each sync and pin has git's deadline of 60 seconds.
 repo's bare remote, and a second clone standing in for the phone. They show
 that the phone's push is merged before the append, that a commit Reflect
 made in the clone is kept and pushed, that two appends at the end of one
-note both survive, that an overlapping edit is named in `conflicts`, that
+note both survive, that a conflict recorded before the append is not
+listed in `conflicts`, that
 an uncommitted edit and a phone push over an uncommitted edit each park the
 text, and that a refused push after the commit is reported. They show the routing
 rules above, the inbox's names and frontmatter, and the day across UTC

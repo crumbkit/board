@@ -393,3 +393,19 @@ fn two_appends_at_the_end_of_a_text_file_both_stay_remote_first_and_record_nothi
         "a\nb\nphone\nagent\n"
     );
 }
+
+#[test]
+fn the_same_conflict_with_the_sides_swapped_has_one_record_name() {
+    // `second` is the clone that merges: its commit is the local side.
+    let merged_with = |local: &str, remote: &str| {
+        let (_remote, first, second) = pair(&[("a.json", "0")]);
+        commit_here(&first, &[("a.json", remote)]);
+        sync(&first, true);
+        commit_here(&second, &[("a.json", local)]);
+        sync(&second, false);
+        record_files(&second).into_keys().collect::<Vec<_>>()
+    };
+    let names = merged_with("1", "2");
+    assert_eq!(names.len(), 1);
+    assert_eq!(names, merged_with("2", "1"));
+}

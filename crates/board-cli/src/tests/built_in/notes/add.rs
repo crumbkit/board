@@ -279,7 +279,8 @@ fn a_desktop_commit_and_a_phone_push_that_both_append_to_one_note_both_survive_w
 }
 
 #[test]
-fn a_desktop_and_a_phone_edit_of_one_line_are_reported_as_a_conflict_in_the_result() {
+fn a_conflict_the_sync_before_the_append_recorded_is_not_reported_because_the_text_landed_after_it()
+{
     let notes = Notes::new();
     let path = Notes::note(&notes.call("add", &["--text", "First."]).unwrap());
     let before = notes.read(&path);
@@ -298,17 +299,12 @@ fn a_desktop_and_a_phone_edit_of_one_line_are_reported_as_a_conflict_in_the_resu
     git(phone, &["push", "-q"]);
     let output = notes.call("add", &["--text", "From the agent."]).unwrap();
     assert_eq!(output["parked"], Value::Null);
-    let [record] = output["conflicts"].as_array().unwrap().as_slice() else {
-        panic!("{output}");
-    };
-    let record = record.as_str().unwrap();
-    let held = record.strip_prefix("/repos/notes-personal/").unwrap();
+    assert_eq!(output["conflicts"], json!([]));
+    let records = notes.clone.head().unwrap().files;
     assert!(
-        held.starts_with("conflicts/") && held.contains(".json"),
-        "{record}"
+        records.keys().any(|path| path.starts_with("conflicts/")),
+        "the sync before the append recorded the conflict"
     );
-    let text = notes.read(held);
-    assert!(text.contains(&path), "{text}");
     let kept = notes.read(&path);
     assert!(kept.contains("First, phone."), "{kept}");
     assert!(!kept.contains("First, desktop."), "{kept}");

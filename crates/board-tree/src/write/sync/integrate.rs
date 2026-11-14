@@ -166,17 +166,21 @@ impl Repository {
 
     /// A name for the record of a conflict: the hash of its path and the
     /// three blobs in dispute (the ancestor's and each side's, or `-` for
-    /// none). The same conflict always has the same name, and a later
+    /// none), the sides in order of id. The same conflict always has the same name, and a later
     /// conflict at the same path, over other content, has another.
     fn name_of(&self, record: &Conflict) -> String {
         let blob =
             |blob: Option<ObjectId>| blob.map_or_else(|| "-".to_owned(), |id| id.to_string());
+        // The two sides in order of id, so the same pair merged with the
+        // sides swapped, by two clones each the other's remote, is one name.
+        let mut sides = [blob(record.local.blob), blob(record.remote.blob)];
+        sides.sort();
         let key = format!(
             "{}\n{}\n{}\n{}",
             record.path,
             blob(record.base),
-            blob(record.local.blob),
-            blob(record.remote.blob)
+            sides[0],
+            sides[1]
         );
         self.blob_id(key.as_bytes()).to_string()
     }
