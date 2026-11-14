@@ -525,7 +525,7 @@ pub(crate) fn run(
         },
     };
     ran.trace.extend(board.take_trace());
-    output.warned_by(&board)
+    output.warned()
 }
 
 /// Runs completion and skills, which need no board.

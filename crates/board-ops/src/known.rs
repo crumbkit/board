@@ -339,6 +339,7 @@ fn find(
     let listed = &known.known.boards;
     let shown = shown(file);
     let (mut seen, mut skipped, mut matches) = (HashSet::new(), vec![], vec![]);
+    let mut unopenable = None;
     for root in listed.iter().map(|root| against(file, root)) {
         let board = match Board::open(&root, home.map(Path::to_path_buf)) {
             Ok(board) => board,
@@ -348,10 +349,12 @@ fn find(
                 continue;
             }
             // One that is a board this Board cannot open must not read as a
-            // repository with no board, and so no controls: say why.
+            // repository with no board, and so no controls: remember why, and
+            // refuse with it only when no other board matches.
             Err(error) => {
-                let refusal = Refusal::new(error.code(), &error, &Fields::default());
-                return Err(Box::new(refusal));
+                unopenable
+                    .get_or_insert_with(|| Refusal::new(error.code(), &error, &Fields::default()));
+                continue;
             }
         };
         let Ok(places) = board.places(start, cache) else {
@@ -395,6 +398,11 @@ fn find(
         );
         let refusal = Refusal::new(Code::ConfigAmbiguous, message, &Fields::default());
         return Err(Box::new(refusal.with_hint(hint)));
+    }
+    if chosen.is_none()
+        && let Some(refusal) = unopenable
+    {
+        return Err(Box::new(refusal));
     }
     chosen.ok_or_else(|| Box::new(unmounted(lost, &shown, listed.is_empty(), &skipped)))
 }

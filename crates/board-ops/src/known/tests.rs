@@ -282,6 +282,11 @@ fn a_known_board_that_is_there_but_cannot_be_opened_is_named_and_not_read_as_no_
         "{}",
         refusal.message
     );
+    // It stops nothing when a later board matches.
+    assert_eq!(
+        opened(library.workdir(), &listing(&[&broken, &board]), None).unwrap(),
+        "/repos/lib"
+    );
     // The same board does not stop the repository it mounts from finding its
     // own, since that one is found before the list is read.
     assert_eq!(

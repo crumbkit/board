@@ -113,9 +113,11 @@ impl Running {
     }
 
     /// Whether this is a build from a source checkout, which no release
-    /// replaces: one that names its commit, or is numbered 0.0.0.
+    /// replaces. A published release is numbered above 0.0.0 and prints
+    /// `+<commit>` as well, so the number decides: a source checkout is
+    /// numbered 0.0.0 until a release is cut.
     fn is_source(&self) -> bool {
-        self.source.is_some() || self.version == Version::default()
+        self.version.numbers == [0, 0, 0]
     }
 }
 
@@ -130,6 +132,13 @@ impl fmt::Display for Running {
             None => write!(f, " (no build date)"),
         }
     }
+}
+
+/// Takes the notes of the writes this thread made, to any board, without
+/// checking the build date that the board's `min_board` names because this
+/// build has none, since the last call.
+pub fn take_undated_gate_notes() -> Vec<String> {
+    board_tree::take_unchecked_notes()
 }
 
 /// The build a binary declared with [`declare_build`].

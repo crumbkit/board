@@ -212,13 +212,6 @@ impl Board {
         self.repositories.gate_writes(gate);
     }
 
-    /// The note for a write this run made without checking the build date
-    /// that `min_board` names, because this build has none, when it made
-    /// one.
-    pub fn undated_gate_passed(&self) -> Option<String> {
-        self.repositories.passed_unchecked().map(str::to_owned)
-    }
-
     /// Marks every commit this board makes from now on as a bulk one,
     /// whose message ends in the trailer `Board-Bulk: <reason>`.
     pub fn mark_bulk(&mut self, bulk: crate::Bulk) {

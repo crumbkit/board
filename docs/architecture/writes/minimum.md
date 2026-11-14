@@ -28,7 +28,9 @@ otherwise `SOURCE_DATE_EPOCH` when it is set, otherwise none. `board
 build is refused when it is older than the version named, or when its date is
 before the timestamp named. A build with no date is judged by the version
 alone, and writes a board with a date gate anyway. It prints a warning on
-stderr when it does, saying that it could not check the date.
+stderr when it does, whichever board it wrote: the root, one through a mount,
+the personal board or one a plugin opened. The warning says that it could not
+check the date.
 
 Source builds are numbered `0.0.0`, so a `min_board` version above `0.0.0`
 refuses them; use a timestamp to gate them by date. A version needs a release
@@ -48,6 +50,10 @@ named commit is an ancestor of its HEAD; no build does yet.
 ## The refusal's install step
 
 The message ends with what to do, chosen from the build and the gate:
+
+A published release is numbered above `0.0.0` and also prints
+`+<commit>`; a build numbered `0.0.0`, with or without a commit, is a source
+build.
 
 - a release build older than a version: install a release of that version or
   newer (README.md, "Installing a release");
@@ -72,8 +78,9 @@ the field as an unknown one, so it loses reads too. Run from a repository that
 a board mounts, such a Board skips a known board it cannot open and may
 report `board::config::not_found`. Before setting `min_board` in a board,
 every Board on every machine that reads it must be at or after the merge that
-added the field. This Board does not skip a known board it cannot open: it
-refuses with that board's own code.
+added the field. This Board does not read a known board it cannot open as
+no board: it goes on to the others, and when none mounts the repository it
+refuses with the first such board's own code.
 
 ## Where the build comes from
 

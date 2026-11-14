@@ -379,7 +379,7 @@ fn the_refusal_for_a_source_build_names_a_checkout_at_the_version_or_date_not_a_
 fn a_date_gate_met_by_a_build_with_no_date_is_admitted_and_noted() {
     let scenario = gated(Some(r#""2026-11-13T00:00:00Z""#));
     let board = running(&scenario, "0.0.0+abc", None);
-    assert!(board.undated_gate_passed().is_none());
+    assert_eq!(crate::take_undated_gate_notes(), Vec::<String>::new());
     board
         .put(
             &"/tasks/a".parse().unwrap(),
@@ -387,9 +387,8 @@ fn a_date_gate_met_by_a_build_with_no_date_is_admitted_and_noted() {
             task(r#", "project": "/projects/p""#).as_bytes(),
         )
         .unwrap();
-    let note = board
-        .undated_gate_passed()
-        .expect("the gate was passed unchecked");
+    let notes = crate::take_undated_gate_notes();
+    let note = notes.first().expect("the gate was passed unchecked");
     assert!(note.contains("no build date"), "{note}");
     assert!(note.contains("2026-11-13T00:00:00Z"), "{note}");
     // A dated build, and a version gate, are checked and say nothing.
@@ -401,7 +400,37 @@ fn a_date_gate_met_by_a_build_with_no_date_is_admitted_and_noted() {
             task(r#", "project": "/projects/p""#).as_bytes(),
         )
         .unwrap();
-    assert!(dated.undated_gate_passed().is_none());
+    assert_eq!(crate::take_undated_gate_notes(), Vec::<String>::new());
+}
+
+#[test]
+fn a_date_gate_met_without_a_build_date_in_a_mounted_board_is_noted() {
+    let (root, _library) = nested(r#"{"built": "2026-11-13T00:00:00Z"}"#);
+    assert_eq!(crate::take_undated_gate_notes(), Vec::<String>::new());
+    put_through(&root, "0.0.0+abc", None).unwrap();
+    let notes = crate::take_undated_gate_notes();
+    assert_eq!(notes.len(), 1, "{notes:?}");
+    assert!(notes[0].contains("no build date"), "{notes:?}");
+}
+
+#[test]
+fn a_zero_build_with_no_commit_is_a_source_build() {
+    let message = refusal(r#""1.2.0""#, "0.0.0", None);
+    assert!(
+        message.contains("tag v1.2.0 or a later commit"),
+        "{message}"
+    );
+    assert!(!message.contains("install a release"), "{message}");
+}
+
+#[test]
+fn a_release_that_prints_its_commit_is_a_release_build() {
+    let message = refusal(r#""1.2.0""#, "1.1.0+45aafa9", None);
+    assert!(
+        message.contains("install a release of version 1.2.0 or newer"),
+        "{message}"
+    );
+    assert!(!message.contains("cargo install"), "{message}");
 }
 
 /// A board in a repository of its own that sets `min_board`, committed and
@@ -491,4 +520,13 @@ fn the_min_board_of_the_root_board_also_refuses_a_write_through_its_mounts() {
     let error = put_through(&root, "1.1.0", None).unwrap_err();
     assert_eq!(error.code(), Code::ConfigBoardTooOld);
     assert_eq!(library.head().unwrap().id, head);
+}
+
+#[test]
+fn a_put_through_a_mount_whose_config_is_invalid_is_refused_as_invalid() {
+    let (root, library) = nested(r#""0.0.0""#);
+    let broken = r#"{"$type": "board/config/v1", "later_field": 1}"#;
+    library.write(".board/board.json", Item::File(broken));
+    let error = put_through(&root, "0.0.0", None).unwrap_err();
+    assert_eq!(error.code(), Code::ConfigInvalid, "{error}");
 }

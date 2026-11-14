@@ -3,7 +3,7 @@
 
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
@@ -37,8 +37,20 @@ pub struct Repositories {
     /// What the board's `min_board` makes of writes: see
     /// [`Repositories::gate_writes`].
     gate: Option<WriteGate>,
-    /// Whether a write was admitted past a [`WriteGate::Unchecked`] gate.
-    passed_unchecked: AtomicBool,
+}
+
+std::thread_local! {
+    /// The notes of the writes this thread admitted past a
+    /// [`WriteGate::Unchecked`] gate, from every board it wrote, whichever
+    /// [`Repositories`] held the gate.
+    static UNCHECKED: std::cell::RefCell<Vec<String>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// Takes the notes of the writes this thread admitted without checking a
+/// build date, because the build has none, from every board it wrote since
+/// the last call. Each note is there once.
+pub fn take_unchecked_notes() -> Vec<String> {
+    UNCHECKED.with(|notes| std::mem::take(&mut *notes.borrow_mut()))
 }
 
 /// What a board's `min_board` makes of this Board's writes, when it makes
@@ -59,8 +71,7 @@ pub enum WriteGate {
     Unreadable { detail: String },
     /// `min_board` names a build date and this build has none, so the date
     /// cannot be checked: writes are admitted, and
-    /// [`Repositories::passed_unchecked`] says so. Holds the text of the
-    /// note to show.
+    /// [`take_unchecked_notes`] says so. Holds the text of the note to show.
     Unchecked { note: String },
 }
 
@@ -127,7 +138,6 @@ impl Repositories {
             checkout: None,
             moved: Vec::new(),
             gate: None,
-            passed_unchecked: AtomicBool::new(false),
         })
     }
 
@@ -172,20 +182,6 @@ impl Repositories {
     /// lifts the earlier setting when `gate` is `None`.
     pub fn gate_writes(&mut self, gate: Option<WriteGate>) {
         self.gate = gate;
-        self.passed_unchecked.store(false, Ordering::Relaxed);
-    }
-
-    /// The note for a write admitted without checking `min_board`'s build
-    /// date, because this build has none, when one was admitted.
-    pub fn passed_unchecked(&self) -> Option<&str> {
-        match &self.gate {
-            Some(WriteGate::Unchecked { note })
-                if self.passed_unchecked.load(Ordering::Relaxed) =>
-            {
-                Some(note)
-            }
-            _ => None,
-        }
     }
 
     /// Whether this run may write: it may not while a mount is read at a
@@ -208,9 +204,12 @@ impl Repositories {
                     detail: detail.clone(),
                 });
             }
-            Some(WriteGate::Unchecked { .. }) => {
-                self.passed_unchecked.store(true, Ordering::Relaxed);
-            }
+            Some(WriteGate::Unchecked { note }) => UNCHECKED.with(|notes| {
+                let mut notes = notes.borrow_mut();
+                if !notes.contains(note) {
+                    notes.push(note.clone());
+                }
+            }),
             None => {}
         }
         match &self.checkout {

@@ -14,11 +14,12 @@ pub(crate) struct Output {
 }
 
 impl Output {
-    /// This output, with a warning on stderr when the run wrote a board whose
-    /// `min_board` names a build date that this build, having none, could
-    /// not check.
-    pub(crate) fn warned_by(mut self, board: &board_ops::Board) -> Self {
-        if let Some(note) = board.undated_gate_passed() {
+    /// This output, with a warning on stderr for each board the run wrote,
+    /// the root, one through a mount, the personal board or one a hosted
+    /// plugin opened, whose `min_board` names a build date that this build,
+    /// having none, could not check.
+    pub(crate) fn warned(mut self) -> Self {
+        for note in board_ops::take_undated_gate_notes() {
             self.stderr
                 .extend(format!("warning: {note}\n").into_bytes());
         }
