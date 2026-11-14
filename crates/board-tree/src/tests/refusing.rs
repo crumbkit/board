@@ -121,17 +121,39 @@ fn a_shallow_clone_refuses_even_when_a_rewrite_is_accepted_and_a_full_twin_syncs
 }
 
 #[test]
-fn a_partial_clone_refuses_as_shallow() {
-    let (remote, clone) = pair();
-    remote.commit(&[("a.json", "{}"), ("b.json", "[]")]);
-    clone.write(
-        ".git/config",
-        Item::Appended("[remote \"origin\"]\n\tpromisor = true\n"),
-    );
-    let error = sync(&clone, false, false).unwrap_err();
-    assert_eq!(error.code(), Code::SyncShallow, "{error}");
-    let before = state(&clone);
-    assert_eq!(state(&clone), before);
+fn a_partial_clone_refuses_as_shallow_and_leaves_the_clone_as_it_was() {
+    for config in [
+        "[remote \"origin\"]\n\tpromisor = true\n",
+        "[extensions]\n\tpartialclone = origin\n",
+    ] {
+        let (remote, clone) = pair();
+        remote.commit(&[("a.json", "{}"), ("b.json", "[]")]);
+        let before = state(&clone);
+        clone.write(".git/config", Item::Appended(config));
+        let error = sync(&clone, false, false).unwrap_err();
+        assert_eq!(error.code(), Code::SyncShallow, "{config}: {error}");
+        assert_eq!(state(&clone), before);
+    }
+}
+
+#[test]
+fn a_remote_rewritten_during_a_merge_or_shallow_refusal_still_refuses_as_rewound_afterwards() {
+    for blocker in [".git/MERGE_HEAD", ".git/shallow"] {
+        let (remote, clone) = pair();
+        let tracking = tracking_ref(&clone);
+        let contents = format!("{}\n", clone.head().unwrap().id);
+        clone.write(blocker, Item::File(&contents));
+        rewrite(&remote);
+        let error = sync(&clone, false, false).unwrap_err();
+        assert!(
+            matches!(error.code(), Code::SyncMerging | Code::SyncShallow),
+            "{blocker}: {error}"
+        );
+        assert_eq!(tracking_ref(&clone), tracking, "{blocker}");
+        clone.write(blocker, Item::Deleted);
+        let error = sync(&clone, false, false).unwrap_err();
+        assert_eq!(error.code(), Code::SyncRewound, "{blocker}: {error}");
+    }
 }
 
 #[test]

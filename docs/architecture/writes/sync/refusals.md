@@ -2,7 +2,8 @@
 
 Integrate checks these three things, in this order, after the fetch and
 before it takes the board lock or writes any file, object, index entry or
-HEAD. Each refusal leaves the clone as it was.
+HEAD. Each refusal leaves the working tree, index and HEAD as they were and
+puts the remote-tracking ref back to the commit it held before the fetch.
 
 | Code | When | Way out |
 | --- | --- | --- |
@@ -10,11 +11,14 @@ HEAD. Each refusal leaves the clone as it was.
 | `board::sync::shallow` | the clone has a `shallow` file, or git's `extensions.partialclone` or `remote.<name>.promisor` is set | `git fetch --unshallow`, or clone again in full |
 | `board::sync::rewound` | the fetched commit does not contain the remote-tracking commit read just before the fetch, as after a force push or a branch reset | inspect the remote, then `board sync --accept-rewrite` |
 
-A rewound refusal puts the remote-tracking ref back to the commit it held
-before the fetch, so every later run refuses too until a person passes
-`--accept-rewrite`, which skips this one check and no other. A clone with no
-tracking ref has nothing to compare and is not refused. A tracking commit the
-object store no longer holds counts as rewound. The previous commit is read
+Because the ref goes back, every later run refuses a rewritten remote too
+until a person passes `--accept-rewrite`, which skips the rewound check and no
+other. A clone with no tracking ref has nothing to compare and is not
+refused; a tracking ref that exists but cannot be read is an error. A
+previous commit the object store no longer holds counts as rewound. When the
+ref cannot be put back (that commit is missing, or the ref changed during the
+sync), the refusal text says so, and a plain rerun then compares the remote
+with the fetched commit and will not refuse. The previous commit is read
 again before each round of a sync, so a round that follows a rejected push
 compares with the commit the earlier round fetched.
 

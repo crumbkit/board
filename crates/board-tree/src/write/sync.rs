@@ -161,7 +161,7 @@ impl Repository {
         let mut summary: Option<Integrated> = None;
         let mut reason = String::new();
         for attempts in 1..=ATTEMPTS {
-            let previous = self.tracking(&upstream).ok();
+            let previous = self.tracking_before(&upstream)?;
             transport::fetch(self.path(), &upstream, &ssh, deadline)?;
             let fetched = self.tracking(&upstream)?;
             let before = refuse::Before {
@@ -248,6 +248,23 @@ impl Repository {
                 Err(std::fs::TryLockError::Error(source)) => return Err(failed(source)),
             }
         }
+    }
+
+    /// The commit `upstream`'s tracking ref names before a fetch, or `None`
+    /// when the ref does not exist yet (a first sync). A ref that exists and
+    /// cannot be read is an error, so it is never taken for a first sync.
+    fn tracking_before(&self, upstream: &Upstream) -> Result<Option<ObjectId>, SyncError> {
+        let found = self
+            .git()
+            .try_find_reference(upstream.tracking.as_str())
+            .map_err(|source| self.unreadable(source))?;
+        let Some(mut found) = found else {
+            return Ok(None);
+        };
+        let id = found
+            .peel_to_id()
+            .map_err(|source| self.unreadable(source))?;
+        Ok(Some(model_id(&id)))
     }
 
     /// The commit `upstream`'s tracking ref names after a fetch.
@@ -457,18 +474,26 @@ pub enum SyncError {
     Symlink { path: String, symlink: String },
     #[error("another sync of this clone is running; {} is held", lock.display())]
     Busy { lock: std::path::PathBuf },
-    #[error("a git {operation} is in progress in this clone")]
-    Merging { operation: &'static str },
-    #[error("this clone is {kind}, so the history a merge needs may be missing")]
-    Shallow { kind: &'static str },
+    #[error("a git {operation} is in progress in this clone{}", unrestored_note(*unrestored))]
+    Merging {
+        operation: &'static str,
+        unrestored: bool,
+    },
+    #[error("this clone is {kind}, so the history a merge needs may be missing{}", unrestored_note(*unrestored))]
+    Shallow {
+        kind: &'static str,
+        unrestored: bool,
+    },
     #[error(
-        "{remote}/{branch} is at {fetched}, which does not contain {previous}, the commit this clone fetched last time"
+        "{remote}/{branch} is at {fetched}, which does not contain {previous}, the commit this clone fetched last time{}",
+        unrestored_note(*unrestored)
     )]
     Rewound {
         remote: String,
         branch: String,
         previous: ObjectId,
         fetched: ObjectId,
+        unrestored: bool,
     },
     #[error("the remote refused the push {attempts} times, the last time with {reason}")]
     GaveUp { attempts: u32, reason: String },
@@ -476,6 +501,16 @@ pub enum SyncError {
     Write(#[from] WriteError),
     #[error(transparent)]
     Git(#[from] GitError),
+}
+
+/// The sentence a refusal adds when the remote-tracking ref could not be
+/// put back where it was before the fetch.
+fn unrestored_note(unrestored: bool) -> &'static str {
+    if unrestored {
+        "; the remote-tracking ref could not be put back to its earlier commit, so a plain rerun will not refuse a rewritten remote, and a person who expected no rewrite should check the remote before syncing"
+    } else {
+        ""
+    }
 }
 
 impl SyncError {
