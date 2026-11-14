@@ -163,7 +163,7 @@ pub(crate) fn available(host: &dyn Host, input: &Value) -> Result<Value, PluginE
     let (remote, unread) = chosen_by(host, name, remote);
     let (found, mut rows) = listing(host)?;
     let roots = scope(PLUGIN, &found, name, remote.as_deref(), unread.as_deref())?;
-    let clones = Through(host);
+    let clones = Through::new(host);
     let writer = writer(host, &clones);
     let mut unsynced = Vec::new();
     let mut moved = false;

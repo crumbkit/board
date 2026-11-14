@@ -344,3 +344,32 @@ fn the_moved_codes_are_stale_and_head_moved() {
     assert_eq!(codes, ["board::put::stale", "board::put::head_moved"]);
     assert_eq!(Value::from(EDITED.as_str()), json!("board::mount::stale"));
 }
+
+#[test]
+fn the_conflict_records_that_name_a_written_file_are_listed_once_with_their_logical_paths() {
+    let host = local(&[]);
+    let clones = Recorded::default();
+    let conflicted = |path: &str, record: &str| board_ops::Conflicted {
+        path: path.to_owned(),
+        kind: board_model::ConflictKind::BothChanged,
+        record: record.to_owned(),
+    };
+    clones.found.borrow_mut().extend([
+        conflicted("daily/d.md", "conflicts/b.json"),
+        conflicted("daily/other.md", "conflicts/c.json"),
+        conflicted("daily/d.md", "conflicts/a.json"),
+        conflicted("daily/d.md", "conflicts/b.json"),
+    ]);
+    let writer = writer(&host, &clones);
+    assert_eq!(
+        writer.conflicts_at(&mounted(), &["daily/d.md"]),
+        [
+            "/repos/work/conflicts/a.json",
+            "/repos/work/conflicts/b.json"
+        ]
+    );
+    assert_eq!(
+        writer.conflicts_at(&mounted(), &["daily/d.agent.md"]),
+        Vec::<String>::new()
+    );
+}

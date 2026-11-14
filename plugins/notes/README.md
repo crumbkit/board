@@ -119,7 +119,7 @@ indentation kept. With `--topic`, it appends to `notes/<slug>.md`, the slug
 derived from the title as Reflect's `slugForTitle` derives it, and starts a
 missing note with `# <title>`. It finds no note by title in any other file.
 It prints the `repo`, the logical `path` written, the repo's `commit` that
-holds it, `candidates`, `parked` and `unpushed`. `commit` is null when the
+holds it, `candidates`, `parked`, `unpushed` and `conflicts`. `commit` is null when the
 note is in the working tree but not committed: the board sets
 `commit_on_put` to false, HEAD moved during a put to the board's own tree,
 or HEAD kept moving during an inbox put through a mount.
@@ -174,10 +174,14 @@ twice.
 Board's sync merges with a commit of its own and leaves no merge or rebase
 in progress. When the phone pushes a change to the same note between step 1
 and step 4, the push sync merges the two line by line. Changes to different
-parts of the note both survive. When both changed the same lines, the note
-holds the phone's text, the plugin's text stays in the commit it made, and a
+parts of the note both survive, and so do two appends at the end of the
+note: the phone's text comes first and the plugin's after it, with no
+conflict. When both changed or deleted the same lines, the note holds the
+phone's text, the plugin's text stays in the commit it made, and a
 `board/conflict/v1` record under `/conflicts/` names both versions. The call
-reports nothing parked or unpushed in either case.
+reports nothing parked or unpushed in either case, and `conflicts` lists the
+paths of the records that name the note written (an empty list when none
+does), so a caller sees when its text lost.
 
 Each sync and pin has git's deadline of 60 seconds.
 
@@ -207,9 +211,10 @@ Each sync and pin has git's deadline of 60 seconds.
 `board` binary in process against a board that mounts a notes repo, the
 repo's bare remote, and a second clone standing in for the phone. They show
 that the phone's push is merged before the append, that a commit Reflect
-made in the clone is kept and pushed, that an uncommitted edit, a sync
-conflict and a phone push over an uncommitted edit each park the text, and
-that a refused push after the commit is reported. They show the routing
+made in the clone is kept and pushed, that two appends at the end of one
+note both survive, that an overlapping edit is named in `conflicts`, that
+an uncommitted edit and a phone push over an uncommitted edit each park the
+text, and that a refused push after the commit is reported. They show the routing
 rules above, the inbox's names and frontmatter, and the day across UTC
 offsets and `day_start`. The crate's own tests write through a real mount
 that a second Board writes to between the read and the put.

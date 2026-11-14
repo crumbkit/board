@@ -2,11 +2,12 @@
 //! the sync and pin that land it. plugins/notes/README.md says how a
 //! note's write is retried.
 
+use std::cell::RefCell;
 use std::path::Path;
 use std::time::Duration;
 
 use board_model::{Code, Fields, LogicalPath, PathError, Refusal};
-use board_ops::{Elsewhere, Host, PluginError, PutError};
+use board_ops::{Conflicted, Elsewhere, Host, PluginError, PutError};
 use serde_json::json;
 
 use crate::refusal;
@@ -37,13 +38,27 @@ pub trait Clones {
     /// Moves the mount at `path` to its clone's HEAD and returns that
     /// commit.
     fn mount_update(&self, path: &LogicalPath, deadline: Duration) -> Result<String, Box<Refusal>>;
+    /// The conflicts the syncs made so far found: each file whose merge
+    /// kept one side's content.
+    fn conflicts(&self) -> Vec<Conflicted>;
 }
 
 /// The clones Board syncs and pins for a call, through its host: a sync
 /// on the host `board -C <clone>` opens, and the pin as `board mount
 /// update` moves it.
-#[derive(Clone, Copy)]
-pub struct Through<'a>(pub &'a dyn Host);
+pub struct Through<'a> {
+    host: &'a dyn Host,
+    found: RefCell<Vec<Conflicted>>,
+}
+
+impl<'a> Through<'a> {
+    pub fn new(host: &'a dyn Host) -> Self {
+        Self {
+            host,
+            found: RefCell::new(Vec::new()),
+        }
+    }
+}
 
 impl std::fmt::Debug for Through<'_> {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -53,16 +68,23 @@ impl std::fmt::Debug for Through<'_> {
 
 impl Clones for Through<'_> {
     fn sync(&self, clone: &Path, push: bool, deadline: Duration) -> Result<(), Box<Refusal>> {
-        let board = self.0.board(&Elsewhere::Directory(clone.to_path_buf()))?;
-        (board.sync_waiting(push, deadline, board_ops::LOCK_WAIT))
-            .map(drop)
-            .map_err(|error| Box::new(error.refusal()))
+        let board = self
+            .host
+            .board(&Elsewhere::Directory(clone.to_path_buf()))?;
+        let synced = (board.sync_waiting(push, deadline, board_ops::LOCK_WAIT))
+            .map_err(|error| Box::new(error.refusal()))?;
+        self.found.borrow_mut().extend(synced.conflicts);
+        Ok(())
     }
 
     fn mount_update(&self, path: &LogicalPath, deadline: Duration) -> Result<String, Box<Refusal>> {
-        (self.0.mount_update(path, deadline))
+        (self.host.mount_update(path, deadline))
             .map(|report| report.new.to_string())
             .map_err(|error| Box::new(error.refusal()))
+    }
+
+    fn conflicts(&self) -> Vec<Conflicted> {
+        self.found.borrow().clone()
     }
 }
 
@@ -92,6 +114,23 @@ pub fn refused(error: &PutError) -> Code {
     match error {
         PutError::Batch { refusals, .. } if refusals.len() == 1 => refusals[0].code,
         other => other.code(),
+    }
+}
+
+impl Writer<'_> {
+    /// The paths, logical in `repo`, of the conflict records that name a
+    /// file of `wrote` (paths in the clone), once each, in path order, from
+    /// every sync made through this writer's clones. Such a record says a
+    /// merge kept one side's content of a file the call wrote, which may
+    /// not be the call's.
+    pub fn conflicts_at(&self, repo: &Repo, wrote: &[&str]) -> Vec<String> {
+        let mut found: Vec<String> = (self.clones.conflicts().iter())
+            .filter(|conflict| wrote.contains(&conflict.path.as_str()))
+            .map(|conflict| repo.logical(&conflict.record))
+            .collect();
+        found.sort();
+        found.dedup();
+        found
     }
 }
 

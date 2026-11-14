@@ -175,7 +175,7 @@ const SECTION: &str = "## 09:00\n\nMine.\n";
 fn an_append_whose_note_another_writer_changed_is_appended_again_after_theirs() {
     for race in [Race::Puts, Race::PutsAndHeadMoves] {
         let host = Mounted::new(race, "Theirs.\n");
-        let clones = Through(&host);
+        let clones = Through::new(&host);
         let written = append(
             writer(&host, &clones),
             &Mounted::repo(),
@@ -198,7 +198,7 @@ fn an_append_whose_note_another_writer_changed_is_appended_again_after_theirs() 
 #[test]
 fn an_append_with_no_other_writer_lands_at_the_first_put() {
     let host = Mounted::new(Race::Alone, "");
-    let clones = Through(&host);
+    let clones = Through::new(&host);
     let (why, commit) = append(
         writer(&host, &clones),
         &Mounted::repo(),
@@ -215,7 +215,7 @@ fn an_append_with_no_other_writer_lands_at_the_first_put() {
 #[test]
 fn a_new_inbox_note_whose_name_another_writer_took_takes_the_next_name() {
     let host = Mounted::new(Race::Puts, "Theirs.\n");
-    let clones = Through(&host);
+    let clones = Through::new(&host);
     let (path, commit) = create(
         writer(&host, &clones),
         &Mounted::repo(),
@@ -234,7 +234,7 @@ fn a_new_inbox_note_whose_name_another_writer_took_takes_the_next_name() {
 #[test]
 fn a_new_inbox_note_with_no_other_writer_takes_its_own_name() {
     let host = Mounted::new(Race::Alone, "");
-    let clones = Through(&host);
+    let clones = Through::new(&host);
     let (path, commit) = create(
         writer(&host, &clones),
         &Mounted::repo(),
@@ -258,7 +258,7 @@ fn a_new_inbox_note_with_no_other_writer_takes_its_own_name() {
 #[test]
 fn an_inbox_put_whose_head_moved_reads_a_name_another_writer_took_as_its_own() {
     let host = Mounted::new(Race::PutsAndHeadMoves, "Theirs.\n");
-    let clones = Through(&host);
+    let clones = Through::new(&host);
     let written = create(
         writer(&host, &clones),
         &Mounted::repo(),
@@ -277,7 +277,7 @@ fn an_inbox_put_whose_head_moved_reads_a_name_another_writer_took_as_its_own() {
 fn an_append_to_the_boards_own_tree_whose_head_moved_is_written_once_and_one_through_a_mount_is_retried()
  {
     let host = Mounted::new(Race::HeadMovesEveryTime, "");
-    let clones = Through(&host);
+    let clones = Through::new(&host);
     let own = Repo {
         root: "/".to_owned(),
         clone: None,
@@ -286,7 +286,7 @@ fn an_append_to_the_boards_own_tree_whose_head_moved_is_written_once_and_one_thr
     assert_eq!(written, (None, None), "written, not committed");
     assert_eq!(*host.puts.borrow(), ["/daily/d.md"]);
     let host = Mounted::new(Race::HeadMovesEveryTime, "");
-    let clones = Through(&host);
+    let clones = Through::new(&host);
     let written = append(
         writer(&host, &clones),
         &Mounted::repo(),

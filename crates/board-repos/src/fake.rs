@@ -123,6 +123,8 @@ pub(crate) enum Cloned {
 pub(crate) struct Recorded {
     pub(crate) calls: RefCell<Vec<Cloned>>,
     pub(crate) syncs: RefCell<VecDeque<Refusal>>,
+    /// The conflicts the syncs found.
+    pub(crate) found: RefCell<Vec<board_ops::Conflicted>>,
     pub(crate) head: String,
 }
 
@@ -134,6 +136,9 @@ impl crate::Clones for Recorded {
             .borrow_mut()
             .pop_front()
             .map_or(Ok(()), |refusal| Err(Box::new(refusal)))
+    }
+    fn conflicts(&self) -> Vec<board_ops::Conflicted> {
+        self.found.borrow().clone()
     }
     fn mount_update(&self, path: &LogicalPath, _: Duration) -> Result<String, Box<Refusal>> {
         self.calls.borrow_mut().push(Cloned::Pin(path.to_string()));

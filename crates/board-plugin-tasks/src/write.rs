@@ -44,7 +44,9 @@ const NAMES: usize = 10;
 /// the clone where it was, and `unpushed` the code of a push after it that
 /// failed, or `tasks::repo::not_pushed` when `done --push false` skipped
 /// it; both are `tasks::repo::not_synced` for the board's own tree, which
-/// is never synced.
+/// is never synced. `conflicts` lists the paths of the `board/conflict/v1`
+/// records that name the task: a sync's merge kept one side's text of it,
+/// which may not be this call's.
 #[derive(Debug, Serialize, JsonSchema)]
 #[schemars(deny_unknown_fields)]
 pub(crate) struct Written {
@@ -57,6 +59,7 @@ pub(crate) struct Written {
     pub(crate) commit: Option<String>,
     pub(crate) unsynced: Option<String>,
     pub(crate) unpushed: Option<String>,
+    pub(crate) conflicts: Vec<String>,
 }
 
 /// The task as `move` left it: `parent` as given, or null once cleared.
@@ -70,6 +73,7 @@ pub(crate) struct Moved {
     pub(crate) commit: Option<String>,
     pub(crate) unsynced: Option<String>,
     pub(crate) unpushed: Option<String>,
+    pub(crate) conflicts: Vec<String>,
 }
 
 /// The fields a call sets, each to a value or, as none, removed.
@@ -147,7 +151,7 @@ pub(crate) fn add(host: &dyn Host, input: &Value) -> Result<Value, PluginError> 
     if let Some(body) = &given.text {
         text.extend(["\n", trimmed(body), "\n"]);
     }
-    let clones = Through(host);
+    let clones = Through::new(host);
     let writer = writer(host, &clones);
     let synced = push(writer, &repo);
     if let Some(parent) = &given.parent {
@@ -160,11 +164,13 @@ pub(crate) fn add(host: &dyn Host, input: &Value) -> Result<Value, PluginError> 
         .map(|(key, value)| (key.to_owned(), value))
         .collect();
     let (commit, unpushed) = landed(writer, &repo, commit)?;
+    let conflicts = writer.conflicts_at(&repo, &[&path]);
     Ok(json!(written(
         &repo,
         &path,
         &record,
-        (commit, synced, unpushed)
+        (commit, synced, unpushed),
+        conflicts
     )))
 }
 
@@ -276,15 +282,17 @@ pub(crate) fn stamped(
         values.push(("reviewed", Some(day.to_string().into())));
         Ok(values)
     };
-    let clones = Through(host);
+    let clones = Through::new(host);
     let writer = writer(host, &clones);
     let edited = edit(writer, &repo, logical, &stamp, landing)?;
     let (commit, unpushed) = landed_with(writer, &repo, edited.commit, landing.push)?;
+    let conflicts = writer.conflicts_at(&repo, &[&edited.path]);
     Ok(json!(written(
         &repo,
         &edited.path,
         &edited.record,
-        (commit, edited.synced, unpushed)
+        (commit, edited.synced, unpushed),
+        conflicts
     )))
 }
 
@@ -323,7 +331,7 @@ pub(crate) fn move_task(host: &dyn Host, input: &Value) -> Result<Value, PluginE
         }
         Ok(vec![("parent", written_as.clone().map(Value::from))])
     };
-    let clones = Through(host);
+    let clones = Through::new(host);
     let writer = writer(host, &clones);
     let landing = Landing {
         finished: true,
@@ -338,6 +346,7 @@ pub(crate) fn move_task(host: &dyn Host, input: &Value) -> Result<Value, PluginE
         commit,
         unsynced: edited.synced,
         unpushed,
+        conflicts: writer.conflicts_at(&repo, &[&edited.path]),
     }))
 }
 
@@ -642,6 +651,7 @@ fn written(
     path: &str,
     record: &Map<String, Value>,
     (commit, synced, unpushed): (Option<String>, Option<String>, Option<String>),
+    conflicts: Vec<String>,
 ) -> Written {
     let text = |key: &str| {
         (record.get(key))
@@ -662,6 +672,7 @@ fn written(
         commit,
         unsynced: synced,
         unpushed,
+        conflicts,
     }
 }
 

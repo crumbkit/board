@@ -30,6 +30,7 @@ fn add_writes_an_open_task_named_by_its_title_reviewed_today_and_a_second_one_be
         "commit": null,
         "unsynced": NOT_SYNCED,
         "unpushed": NOT_SYNCED,
+        "conflicts": [],
     });
     assert_eq!(output, expected);
     assert_eq!(
@@ -752,6 +753,7 @@ fn move_sets_the_parent_of_any_task_and_keeps_every_other_byte_and_none_clears_i
         "commit": null,
         "unsynced": NOT_SYNCED,
         "unpushed": NOT_SYNCED,
+        "conflicts": [],
     });
     assert_eq!(output.unwrap(), expected);
     let moved = PIECE.replace(

@@ -33,6 +33,7 @@ fn a_note_lands_in_todays_daily_note_under_a_time_heading_and_reaches_the_remote
             "candidates": null,
             "parked": null,
             "unpushed": null,
+            "conflicts": [],
         })
     );
     assert!(section(&notes.read(&path), "Call the bank.\n"));
@@ -238,8 +239,8 @@ fn a_desktop_commit_beside_a_phone_push_to_another_note_syncs_and_is_not_parked(
 }
 
 #[test]
-fn a_desktop_commit_and_a_phone_push_to_one_note_merge_with_a_recorded_conflict_and_the_note_is_not_parked()
- {
+fn a_desktop_commit_and_a_phone_push_that_both_append_to_one_note_both_survive_without_a_conflict()
+{
     let notes = Notes::new();
     let path = Notes::note(&notes.call("add", &["--text", "First."]).unwrap());
     notes
@@ -250,19 +251,68 @@ fn a_desktop_commit_and_a_phone_push_to_one_note_merge_with_a_recorded_conflict_
     let output = notes.call("add", &["--text", "From the agent."]).unwrap();
     assert_eq!(output["parked"], Value::Null);
     assert_eq!(output["unpushed"], Value::Null);
+    assert_eq!(output["conflicts"], json!([]));
     assert_eq!(output["path"], format!("/repos/notes-personal/{path}"));
     assert_eq!(output["commit"], json!(notes.head()));
     assert_eq!(notes.pin(), notes.head());
     let kept = notes.read(&path);
-    assert!(kept.contains("From the phone."), "{kept}");
-    assert!(!kept.contains("From the desktop."), "{kept}");
+    let at = |text: &str| kept.find(text).unwrap_or_else(|| panic!("{text}: {kept}"));
+    assert!(at("From the phone.") < at("From the desktop."), "{kept}");
+    assert!(at("From the desktop.") < at("From the agent."), "{kept}");
     assert_eq!(git(notes.clone.workdir(), &["status", "--porcelain"]), "");
+    assert!(
+        !notes
+            .clone
+            .head()
+            .unwrap()
+            .files
+            .keys()
+            .any(|path| path.starts_with("conflicts/")),
+        "no record is written"
+    );
     let branch = git(notes.clone.workdir(), &["symbolic-ref", "--short", "HEAD"]);
     assert_eq!(branch, "main");
     let gitdir = notes.clone.workdir().join(".git");
     for name in ["MERGE_HEAD", "REBASE_HEAD", "rebase-merge", "rebase-apply"] {
         assert!(!gitdir.join(name).exists(), "{name}");
     }
+}
+
+#[test]
+fn a_desktop_and_a_phone_edit_of_one_line_are_reported_as_a_conflict_in_the_result() {
+    let notes = Notes::new();
+    let path = Notes::note(&notes.call("add", &["--text", "First."]).unwrap());
+    let before = notes.read(&path);
+    notes.clone.write(
+        &path,
+        Item::File(&before.replace("First.", "First, desktop.")),
+    );
+    commit(notes.clone.workdir());
+    let phone = notes.phone.workdir();
+    git(phone, &["pull", "-q"]);
+    notes.phone.write(
+        &path,
+        Item::File(&before.replace("First.", "First, phone.")),
+    );
+    commit(phone);
+    git(phone, &["push", "-q"]);
+    let output = notes.call("add", &["--text", "From the agent."]).unwrap();
+    assert_eq!(output["parked"], Value::Null);
+    let [record] = output["conflicts"].as_array().unwrap().as_slice() else {
+        panic!("{output}");
+    };
+    let record = record.as_str().unwrap();
+    let held = record.strip_prefix("/repos/notes-personal/").unwrap();
+    assert!(
+        held.starts_with("conflicts/") && held.contains(".json"),
+        "{record}"
+    );
+    let text = notes.read(held);
+    assert!(text.contains(&path), "{text}");
+    let kept = notes.read(&path);
+    assert!(kept.contains("First, phone."), "{kept}");
+    assert!(!kept.contains("First, desktop."), "{kept}");
+    assert!(kept.contains("From the agent."), "{kept}");
 }
 
 #[test]

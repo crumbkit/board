@@ -61,6 +61,10 @@ pub(crate) struct Input {
 /// went to the sibling `<name>.agent.md` instead. `unpushed` is null when the
 /// commit reached the repo's remote, or the code of the sync that did not
 /// push it: `notes::repo::not_synced` for the board's own tree.
+/// `conflicts` lists the paths of the `board/conflict/v1` records that name
+/// the note written: a sync's merge kept one side's text of it, the remote's
+/// where both changed the same lines, so the text of this call may not be in
+/// the note, and the record names the commits that hold each version.
 #[derive(Debug, Serialize, JsonSchema)]
 #[schemars(rename = "AddOutput", deny_unknown_fields)]
 pub(crate) struct Output {
@@ -70,6 +74,7 @@ pub(crate) struct Output {
     pub(crate) candidates: Option<Vec<String>>,
     pub(crate) parked: Option<String>,
     pub(crate) unpushed: Option<String>,
+    pub(crate) conflicts: Vec<String>,
 }
 
 /// The local date and time of `now`, `offset` seconds east of UTC: the
@@ -94,7 +99,7 @@ pub(crate) fn add(host: &dyn Host, input: &Value) -> Result<Value, PluginError> 
     let settings = host.settings();
     let (date, hours, minutes, seconds) = clock(settings.now, settings.utc_offset);
     let section = format!("## {hours:02}:{minutes:02}\n\n{}\n", trimmed(&given.text));
-    let clones = Through(host);
+    let clones = Through::new(host);
     let writer = writer(host, &clones);
     let synced = repo.sync(writer, true)?;
     let mut parked = None;
@@ -147,6 +152,7 @@ pub(crate) fn add(host: &dyn Host, input: &Value) -> Result<Value, PluginError> 
         candidates: choice.candidates,
         parked,
         unpushed,
+        conflicts: writer.conflicts_at(repo, &[&path]),
     };
     Ok(json!(output))
 }

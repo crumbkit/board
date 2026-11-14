@@ -79,7 +79,7 @@ pub(crate) fn daily(host: &dyn Host, input: &Value) -> Result<Value, PluginError
         today(settings.now, settings.utc_offset, start).to_string()
     });
     let path = format!("daily/{date}.md");
-    let clones = Through(host);
+    let clones = Through::new(host);
     let writer = writer(host, &clones);
     let unsynced = match &repo.clone {
         None => Some(format!("{PLUGIN}::repo::not_synced")),

@@ -34,6 +34,10 @@ their daily note back.
      person, so they can move it into the note.
    - `commit` is null when the note was written but not committed. Tell the
      person.
+   - `conflicts` lists the `board/conflict/v1` records that name the note
+     written. When it is not empty, a sync kept one side's text of the note
+     where both changed the same lines, so your text may be missing from the
+     note: read the record, and tell the person.
    - `unpushed` is null when the commit reached the repo's remote.
      `notes::repo::not_synced` means the note is in the board's own tree,
      which `board sync` pushes with the rest of the board. Any other code

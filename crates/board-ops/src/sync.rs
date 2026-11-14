@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use board_model::{Code, Refusal};
 use board_tree::Deadline;
-pub use board_tree::Synced;
+pub use board_tree::{Conflicted, Synced};
 
 use crate::board::Board;
 
