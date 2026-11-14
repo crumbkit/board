@@ -666,9 +666,18 @@ pub enum WriteError {
     AtCheckout { pointer: String },
     /// The board's `min_board` is newer than the Board running.
     #[error(
-        "this board needs a Board with {min_board} to write it, and this is {running}; reads still work"
+        "this board needs a Board with {min_board} to write it, and this is {running}; reads still work. To satisfy it, {install}"
     )]
-    BoardTooOld { min_board: String, running: String },
+    BoardTooOld {
+        min_board: String,
+        running: String,
+        install: String,
+    },
+    /// The board's `min_board` is a value this Board cannot read.
+    #[error(
+        "`min_board` in `.board/board.json` is a value this Board cannot read ({detail}), so it cannot tell whether this Board may write the board; reads still work, and to write it install a newer Board"
+    )]
+    MinBoardUnreadable { detail: String },
     #[error("{path:?} could not be written")]
     Io {
         path: PathBuf,
@@ -727,6 +736,7 @@ impl WriteError {
             Self::Locked { .. } | Self::InProgress { .. } => Code::PutLocked,
             Self::AtCheckout { .. } => Code::CliUsage,
             Self::BoardTooOld { .. } => Code::ConfigBoardTooOld,
+            Self::MinBoardUnreadable { .. } => Code::ConfigMinBoardUnreadable,
             Self::Io { .. }
             | Self::Unsynced { .. }
             | Self::Commit { .. }

@@ -263,6 +263,39 @@ fn a_board_that_cannot_be_opened_is_passed_over() {
 }
 
 #[test]
+fn a_known_board_that_is_there_but_cannot_be_opened_is_named_and_not_read_as_no_board() {
+    let library = library();
+    let board = mounting(&library);
+    let broken = Scenario::new();
+    broken.write(
+        ".board/board.json",
+        Item::File(r#"{"$type": "board/config/v1", "later_field": 1}"#),
+    );
+    let unmounted = Scenario::new();
+    let xdg = listing(&[&broken, &board]);
+    let refusal = refused(unmounted.workdir(), &xdg);
+    assert_eq!(refusal.code.as_str(), "board::config::invalid");
+    assert!(
+        refusal
+            .message
+            .contains(&broken.workdir().display().to_string()),
+        "{}",
+        refusal.message
+    );
+    // It stops nothing when a later board matches.
+    assert_eq!(
+        opened(library.workdir(), &listing(&[&broken, &board]), None).unwrap(),
+        "/repos/lib"
+    );
+    // The same board does not stop the repository it mounts from finding its
+    // own, since that one is found before the list is read.
+    assert_eq!(
+        opened(library.workdir(), &listing(&[&board]), None).unwrap(),
+        "/repos/lib"
+    );
+}
+
+#[test]
 fn discovery_answers_from_a_warm_index_as_from_a_cold_one_after_the_mount_moves() {
     let library = library();
     let board = mounting(&library);

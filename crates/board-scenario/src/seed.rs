@@ -22,7 +22,7 @@ pub struct Exhibit {
 /// Codes the CLI's recovery and twin checks cannot provoke through the
 /// `board` command line, why, and where each is tested instead. The checks
 /// provoke every other code, from the seed board or another small fixture.
-pub const NOT_REPRODUCED: [(Code, &str); 22] = [
+pub const NOT_REPRODUCED: [(Code, &str); 23] = [
     (
         Code::AttachmentMissing,
         "the store must lose an object between the put and the fetch; \
@@ -47,6 +47,11 @@ pub const NOT_REPRODUCED: [(Code, &str); 22] = [
         Code::ConfigBoardTooOld,
         "the running Board must be older than the board's min_board, by version or by build date, which is \
          a build from source's only gate; board-ops/src/version/tests.rs names an older version and date",
+    ),
+    (
+        Code::ConfigMinBoardUnreadable,
+        "the board's min_board must be a value this Board cannot read, which a newer Board wrote; \
+         board-ops/src/version/tests.rs reads a key and a form it does not know",
     ),
     (
         Code::PutHeadMoved,
@@ -122,7 +127,7 @@ const OPEN: &str = "ui open or the server gives it; check opens and serves nothi
 
 /// Codes `check` never gives an entry, and why. The seed board has an
 /// exhibit for every other code, so a new code needs one or a line here.
-pub const NOT_CHECKED: [(Code, &str); 80] = [
+pub const NOT_CHECKED: [(Code, &str); 81] = [
     (
         Code::AttachmentMissing,
         "only get --fetch gives it; check reads the attachment record and never the store",
@@ -153,6 +158,10 @@ pub const NOT_CHECKED: [(Code, &str); 80] = [
     ),
     (
         Code::ConfigBoardTooOld,
+        "a write and a sync give it; a check reads the board and writes nothing",
+    ),
+    (
+        Code::ConfigMinBoardUnreadable,
         "a write and a sync give it; a check reads the board and writes nothing",
     ),
     (

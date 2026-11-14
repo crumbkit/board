@@ -417,7 +417,6 @@ impl Command {
     }
 }
 
-/// `none`, or a blob id in hex.
 /// Runs one command line against the board found from `context`, reading a
 /// record from `stdin` when the command takes one, and traces it in `ran`.
 pub(crate) fn run(
@@ -426,6 +425,20 @@ pub(crate) fn run(
     stdin: &mut dyn Stdin,
     ran: &mut Ran,
 ) -> Output {
+    // Every exit prints the warnings for the undated writes it made.
+    board_ops::take_undated_gate_notes();
+    run_command(arguments, context, stdin, ran).warned()
+}
+
+fn run_command(
+    arguments: impl IntoIterator<Item = OsString>,
+    context: &Context,
+    stdin: &mut dyn Stdin,
+    ran: &mut Ran,
+) -> Output {
+    // The one place the binary names its build: every board opened after
+    // this, by whatever code, gates its writes as it.
+    board_ops::declare_build(crate::timing::BUILD, crate::timing::built());
     let mut arguments: Vec<OsString> = arguments.into_iter().collect();
     if let Some(completed) = crate::complete::complete(&arguments, context) {
         return completed;

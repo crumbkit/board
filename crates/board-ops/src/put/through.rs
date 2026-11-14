@@ -9,7 +9,7 @@ use board_tree::{Inside, Lock, PinError, Through, WriteError};
 
 use super::batch::{message, refused_lines, shown_as};
 use super::{Checked, Expect, Failure, Prepared, PutError, PutReport, ReadLine, Schemas, Written};
-use crate::board::Board;
+use crate::board::{Board, OpenError};
 
 /// A line that leads through a mount: its number, its path from the root,
 /// the mount it passes and where it lands in the mounted board.
@@ -38,6 +38,23 @@ struct Mounted<'a> {
 }
 
 impl Board {
+    /// The board in the mounted repository at `repository`, opened as this
+    /// Board is running, for a put to `path` through `mount`. A repository
+    /// whose configuration is invalid is refused as that, and one with no
+    /// board as a repository with no working tree with a board.
+    pub(super) fn open_mounted(
+        &self,
+        repository: &std::path::Path,
+        path: &LogicalPath,
+        mount: &LogicalPath,
+    ) -> Result<Board, PutError> {
+        match self.open_beside(repository) {
+            Ok(mounted) if mounted.repository().path() == repository => Ok(mounted),
+            Err(error @ OpenError::Config { .. }) => Err(PutError::Open(Box::new(error))),
+            _ => Err(refused(path, mount, Through::NotABoard)),
+        }
+    }
+
     /// Puts what `sent` holds through the mount every one of `crossings`
     /// passes, holding this board's `lock`, and waiting up to `wait` for
     /// the mounted board's. Each expect is compared with the pinned blob.
@@ -53,16 +70,10 @@ impl Board {
         if inside.repository == self.repository().path() {
             return Err(refused(&first.path, mount, Through::Own));
         }
-        let home = self.repositories().home().map(Into::into);
-        let mut mounted = match Board::open(&inside.repository, home) {
-            Ok(mounted) if mounted.repository().path() == inside.repository => mounted,
-            _ => return Err(refused(&first.path, mount, Through::NotABoard)),
-        };
+        let mut mounted = self.open_mounted(&inside.repository, &first.path, mount)?;
         // The mounted board checks the put against its own settings, at the
         // path the put lands in there.
         mounted.ask_as(self.asker.clone());
-        // ...and refuses it when its own `min_board` is newer than this run.
-        mounted.running_as(self.running);
         mounted.bulk.clone_from(&self.bulk);
         // Refuses a `follow` that names nothing, as `mount update` does.
         let pin = self.repositories().pin(mount)?;
