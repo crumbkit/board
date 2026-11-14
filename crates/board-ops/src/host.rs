@@ -482,6 +482,7 @@ impl Hosted<'_> {
         let mut board = Board::open(self.board.repository().path(), home)?;
         board.build_in(self.board.built_in.0);
         board.built_by(self.board.build);
+        board.running_as(self.board.running);
         if let Some(checkout) = self.board.repositories().checkout() {
             board.read_checkout(checkout.clone());
         }
@@ -629,6 +630,7 @@ impl Host for Hosted<'_> {
         let (mut board, _) = known::open(&start, home, self.plugins.cache, || Ok(known))?;
         board.build_in(self.board.built_in.0);
         board.built_by(self.board.build);
+        board.running_as(self.board.running);
         Ok(Box::new(Hosted {
             board: HostBoard::Opened(Box::new(board)),
             settings: self.settings.clone(),

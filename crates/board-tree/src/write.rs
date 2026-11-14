@@ -664,6 +664,11 @@ pub enum WriteError {
         "this run reads the mount at {pointer} at its checkout's HEAD (--checkout), so it writes nothing; run the write again without --checkout"
     )]
     AtCheckout { pointer: String },
+    /// The board's `min_board` is newer than the Board running.
+    #[error(
+        "this board needs a Board with {min_board} to write it, and this is {running}; reads still work"
+    )]
+    BoardTooOld { min_board: String, running: String },
     #[error("{path:?} could not be written")]
     Io {
         path: PathBuf,
@@ -721,6 +726,7 @@ impl WriteError {
             Self::Symlink { .. } => Code::PutSymlink,
             Self::Locked { .. } | Self::InProgress { .. } => Code::PutLocked,
             Self::AtCheckout { .. } => Code::CliUsage,
+            Self::BoardTooOld { .. } => Code::ConfigBoardTooOld,
             Self::Io { .. }
             | Self::Unsynced { .. }
             | Self::Commit { .. }

@@ -59,7 +59,7 @@ Tab completion: run `board completion install` once.";
 #[derive(Debug, Parser)]
 #[command(
     name = BINARY_NAME,
-    version = crate::timing::BUILD,
+    version = crate::timing::VERSION,
     about = format!("{DISPLAY_NAME}: a fast, validated view of a git tree."),
     after_help = ROOT_EXAMPLES,
 )]

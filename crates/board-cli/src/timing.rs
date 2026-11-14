@@ -13,6 +13,20 @@ use crate::report::Output;
 /// and `board --version` prints.
 pub(crate) const BUILD: &str = concat!(env!("CARGO_PKG_VERSION"), env!("BOARD_BUILD"));
 
+/// What `board --version` prints: [`BUILD`] and, when the build embedded the
+/// commit date of its source, ` (built <UTC timestamp>)`.
+pub(crate) const VERSION: &str = concat!(
+    env!("CARGO_PKG_VERSION"),
+    env!("BOARD_BUILD"),
+    env!("BOARD_BUILD_SHOWN")
+);
+
+/// The commit date of this build's source, in seconds since the Unix epoch,
+/// when the build embedded one.
+pub(crate) fn built() -> Option<i64> {
+    env!("BOARD_BUILD_DATE").parse().ok()
+}
+
 /// What keys the decisions an index keeps: [`BUILD`], or nothing, which
 /// keeps none, for a build that does not know its commit.
 pub(crate) const DECIDER: &str = if env!("BOARD_BUILD").is_empty() {

@@ -27,6 +27,7 @@ mod trace;
 mod types;
 mod ui;
 mod verdict;
+mod version;
 
 pub use board_index::{Budget, Fallback, append_timing, source_name};
 
@@ -64,6 +65,7 @@ pub use crate::trace::{Phase, Trace};
 pub use crate::types::TypeError;
 pub use crate::ui::{BindingError, Drawn, Failed, Page, PageError};
 pub use crate::verdict::{Fault, SchemaFound};
+pub use crate::version::{MinBoard, Version};
 pub use board_tree::LOCK_WAIT;
 
 #[cfg(test)]

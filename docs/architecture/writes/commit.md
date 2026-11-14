@@ -27,3 +27,5 @@ index that cannot be written therefore leaves HEAD where it was, with
 reads the index before it takes `index.lock` and HEAD after, so one that
 straddles a put can still commit a tree without the put's files; this order
 does not change that.
+
+A board can name the oldest Board that may write it: [minimum.md](minimum.md).

@@ -1154,7 +1154,7 @@ fn version_prints_the_binary_name_and_the_build_the_timing_log_records() {
     assert_eq!(output.code, 0);
     assert_eq!(
         text(&output.stdout),
-        format!("{BINARY_NAME} {}\n", crate::timing::BUILD)
+        format!("{BINARY_NAME} {}\n", crate::timing::VERSION)
     );
     // A build in a git checkout names its commit after a `+`, and the hash of
     // its changes after `.dirty.`; one outside a checkout, such as a mutants

@@ -2,6 +2,7 @@
 
 use std::cell::RefCell;
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 
 use board_model::{
     CONFIG_TYPE, Classified, Code, Content, Fields, LogicalPath, Object, ObjectId, PluginName,
@@ -15,6 +16,7 @@ use serde_json::Value;
 use crate::effects::Asker;
 use crate::host::BuiltIn;
 use crate::trace::Trace;
+use crate::version::{Built, MinBoard, Running, Version};
 
 /// `.board/board.json`, a `board/config/v1` record.
 #[derive(Debug, Deserialize)]
@@ -29,6 +31,10 @@ pub struct Config {
     /// Where bytes held outside the tree go (docs/architecture/attachments.md).
     #[serde(default)]
     pub store: Option<Store>,
+    /// The oldest Board that may write this board, which every older Board
+    /// refuses to write or sync (docs/architecture/writes.md).
+    #[serde(default)]
+    pub min_board: Option<MinBoard>,
 }
 
 /// The object store a board uploads large and binary files to.
@@ -76,6 +82,8 @@ pub struct Board {
     /// What built the code that decides, which keys the decisions the index
     /// keeps.
     pub(crate) build: &'static str,
+    /// The Board this run is, which `min_board` is compared with.
+    pub(crate) running: Running,
     /// The mount whose checkout this run started in, when Board found the
     /// board through it: see [`Board::started_in`].
     started: Option<(LogicalPath, PathBuf)>,
@@ -149,19 +157,60 @@ impl Board {
             Err(Some(source @ ResolveError::Symlink { .. })) => {
                 return Err(OpenError::Symlink { root, source });
             }
-            Err(_) => return Err(OpenError::Config { root }),
+            Err(_) => {
+                let detail = config_problem(&repositories);
+                return Err(OpenError::Config { root, detail });
+            }
         };
-        Ok(Self {
+        let mut board = Self {
             repositories,
             config,
             trace: RefCell::default(),
             asker: Asker::default(),
             built_in: BuiltIn::default(),
             build: "",
+            running: Running {
+                version: Version::from_str(env!("CARGO_PKG_VERSION")).unwrap_or_default(),
+                built: None,
+            },
             started: None,
             bulk: None,
             between: Between::default(),
-        })
+        };
+        board.gate_writes();
+        Ok(board)
+    }
+
+    /// Names the Board this run is: its version, as `major.minor.patch`
+    /// with an optional `-` or `+` suffix, and the commit date of its
+    /// source in seconds since the Unix epoch, when the build embedded one.
+    /// A board whose `min_board` this Board is older than refuses every
+    /// write and sync from now on. Text that is no version leaves the
+    /// running version as it was.
+    pub fn running(&mut self, version: &str, built: Option<i64>) {
+        if let Ok(version) = version.parse() {
+            self.running_as(Running {
+                version,
+                built: built.map(Built::from_seconds),
+            });
+        }
+    }
+
+    /// [`Board::running`] for a Board already parsed.
+    pub(crate) fn running_as(&mut self, running: Running) {
+        self.running = running;
+        self.gate_writes();
+    }
+
+    /// Refuses writes in the repositories when `min_board` is newer than
+    /// the running version, and lifts the refusal when it is not.
+    fn gate_writes(&mut self) {
+        let refusal = self
+            .config
+            .min_board
+            .filter(|minimum| minimum.refuses(&self.running))
+            .map(|minimum| (minimum.to_string(), self.running.to_string()));
+        self.repositories.refuse_writes(refusal);
     }
 
     /// Marks every commit this board makes from now on as a bulk one,
@@ -279,6 +328,26 @@ pub(crate) fn config_file(
     }
 }
 
+/// What is wrong with the configuration that `config_file` refused, as
+/// serde reports it, such as the `min_board` that is not a version, or
+/// empty when the file is not a record that parses as the configuration.
+fn config_problem(repositories: &Repositories) -> String {
+    let problem = || -> Option<String> {
+        let path: LogicalPath = CONFIG_PATH.parse().ok()?;
+        let location = repositories.resolve(&Source::WorkingTree, &path).ok()?;
+        let Object::Blob(blob) = location.object else {
+            return None;
+        };
+        let root = &mut repositories.root().reader();
+        let contents = latest(repositories.read(root, &location, blob)).ok()??;
+        let value: Value = serde_json::from_slice(&contents.bytes).ok()?;
+        Config::deserialize(&value)
+            .err()
+            .map(|error| error.to_string())
+    };
+    problem().map_or_else(String::new, |text| format!(": {text}"))
+}
+
 /// A board that cannot be opened.
 #[derive(Debug, thiserror::Error)]
 pub enum OpenError {
@@ -286,8 +355,10 @@ pub enum OpenError {
     NotFound { start: PathBuf },
     #[error("no board at or above {start:?}: no git repository holds it")]
     NoRepository { start: PathBuf },
-    #[error("the board at {root:?} has a .board/board.json that is not a valid board/config/v1")]
-    Config { root: PathBuf },
+    #[error(
+        "the board at {root:?} has a .board/board.json that is not a valid board/config/v1{detail}"
+    )]
+    Config { root: PathBuf, detail: String },
     #[error("the board at {root:?} cannot read its configuration: {source}")]
     Symlink { root: PathBuf, source: ResolveError },
     #[error(transparent)]
