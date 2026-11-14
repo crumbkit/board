@@ -469,7 +469,7 @@ fn rechecks_missing(path: &str, body: &Map<String, Value>, wanted: usize) -> Opt
     }
     if unnamed {
         return Some(format!(
-            "the understanding check at {path} holds a recheck with no point; give each of its \
+            "the understanding check at {path} holds a recheck with no point or a point that is not a name; give each of its \
              rechecks a point in the board that holds it, then update the mount"
         ));
     }

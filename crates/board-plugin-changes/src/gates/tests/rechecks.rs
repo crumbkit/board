@@ -123,8 +123,17 @@ fn a_recheck_with_no_point_refuses_and_names_the_record() {
     assert_eq!(
         found.1,
         "the understanding check at /changes/t/understanding/data holds a recheck with no \
-         point; give each of its rechecks a point in the board that holds it, then update the \
+         point or a point that is not a name; give each of its rechecks a point in the board that holds it, then update the \
          mount"
+    );
+    // A point that is not a string is no name either.
+    let mut numbered = single(&[of("a", true), of("b", true)]);
+    numbered.records[1].1.1["rechecks"][1]["point"] = json!(7);
+    assert!(
+        numbered
+            .check("rechecks")
+            .1
+            .contains("a point that is not a name")
     );
     // A recheck with no point comes before a missed point, and a missed
     // point before too few points.

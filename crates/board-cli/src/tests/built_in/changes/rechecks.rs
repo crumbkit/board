@@ -72,7 +72,7 @@ fn a_stored_understanding_check_with_two_points_passes_the_rechecks_check() {
 
 #[test]
 fn a_stored_recheck_with_no_point_is_degraded_and_the_gate_says_so_with_its_remedy() {
-    let board = built(&[Some("first-point"), None]);
+    let board = built(&[None, None]);
     assert_eq!(
         board.code(RECORD).as_deref(),
         Some("board::record::invalid")
