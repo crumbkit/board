@@ -263,11 +263,10 @@ Examples:
     #[command(after_help = "\
 Board fetches the remote branch HEAD's branch follows, merges it into HEAD
 with a merge commit, pushes the result, and moves HEAD, git's index and the
-working tree to it. Commits made here keep their ids. A file both sides
-changed takes the remote's content, and a board/conflict/v1 record under
-/conflicts/ names both versions, which stay in history. A file edited
-during the sync keeps its edit and is listed as kept. A fetch runs the `git` executable, so git's remotes,
-credentials and SSH settings apply.
+working tree to it. A file both sides changed takes the remote's content, and
+a board/conflict/v1 record names both versions. A file edited during the sync
+keeps its edit and is listed as kept. A fetch runs the `git` executable, so
+git's remotes, credentials and SSH settings apply.
 
 Examples:
   board sync
