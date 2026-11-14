@@ -28,7 +28,7 @@ pub(super) fn clones() -> (Scenario, Scenario, Scenario) {
 }
 
 #[test]
-fn sync_prints_what_it_fetched_replayed_and_pushed_and_where_head_moved() {
+fn sync_prints_what_it_fetched_merged_and_pushed_and_where_head_moved() {
     let (remote, a, b) = clones();
     let put = |clone: &Scenario, at: &str| {
         let output = board_with(
@@ -48,7 +48,7 @@ fn sync_prints_what_it_fetched_replayed_and_pushed_and_where_head_moved() {
     );
     let output = board_in(b.workdir(), &["sync", "--json"]);
     let data = &json(&output)["data"];
-    let replayed = data["replayed"][0]["to"].as_str().unwrap().to_owned();
+    let merged = data["new"].as_str().unwrap().to_owned();
     assert_eq!(
         *data,
         json!({
@@ -56,18 +56,21 @@ fn sync_prints_what_it_fetched_replayed_and_pushed_and_where_head_moved() {
             "branch": "main",
             "fetched": from_a,
             "old": from_b,
-            "new": replayed,
-            "replayed": [{"from": from_b, "to": replayed}],
+            "new": merged,
+            "merged": true,
+            "conflicts": [],
+            "pins": [],
+            "failing": [],
             "pushed": true,
             "attempts": 1,
             "kept": [],
         })
     );
-    assert_eq!(remote.head().unwrap().id.to_string(), replayed);
+    assert_eq!(remote.head().unwrap().id.to_string(), merged);
     let output = board_in(a.workdir(), &["sync"]);
     assert_eq!(
         text(&output.stdout),
-        format!("fetched origin/main {replayed}\nmoved HEAD {from_a} -> {replayed}\n")
+        format!("fetched origin/main {merged}\nmoved HEAD {from_a} -> {merged}\n")
     );
     assert!(a.workdir().join("projects/b.json").exists());
 }

@@ -16,7 +16,7 @@ Board: a fast, validated view of a git tree.
 - [`board uri`](#board-uri): Print the board:// URI that names a record from any known board's clone
 - [`board put`](#board-put): Write the record on stdin at a path or --new name, or a file with --file
 - [`board rm`](#board-rm): Remove the file at a path
-- [`board sync`](#board-sync): Fetch the remote branch, replay this board's commits onto it, and push
+- [`board sync`](#board-sync): Fetch the remote branch, merge it into this board, and push
 - [`board mount`](#board-mount): Work with mounts
 - [`board plugin`](#board-plugin): Work with plugins
 - [`board type`](#board-type): Add types
@@ -183,11 +183,11 @@ Effects: destructive, not idempotent, closed-world.
 
 ## `board sync`
 
-Fetch the remote branch, replay this board's commits onto it, and push
+Fetch the remote branch, merge it into this board, and push
 
 ### Arguments
 
-- `--no-push`: Fetch and replay, and leave the push for later
+- `--no-push`: Fetch and merge, and leave the push for later
 
 Effects: additive, not idempotent, open-world.
 

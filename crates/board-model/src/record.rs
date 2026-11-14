@@ -10,6 +10,7 @@ use serde_json::Value;
 
 use crate::attachment::ATTACHMENT_TYPE;
 use crate::code::Code;
+use crate::conflict::CONFLICT_TYPE;
 use crate::effect::EFFECT_TYPES;
 use crate::frontmatter::frontmatter;
 use crate::json::{JsonError, parse_commented_json, parse_json};
@@ -60,6 +61,7 @@ impl RecordType {
             CONFIG_TYPE
                 | MANIFEST_TYPE
                 | ATTACHMENT_TYPE
+                | CONFLICT_TYPE
                 | VIEW_TYPE
                 | BINDING_TYPE
                 | DERIVED_TYPE

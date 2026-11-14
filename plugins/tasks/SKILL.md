@@ -121,9 +121,6 @@ it.
 
 ## Results
 
-- `unsynced` or `unpushed` set to `board::sync::conflict` means the clone
-  conflicts with its remote, and nothing is pushed until the person fixes
-  it: `git pull --rebase` in the clone, then `board mount update <mount>`.
   `tasks::repo::not_pushed` means `--push false` kept the write on this
   machine. Any other code but `tasks::repo::not_synced` means the write is
   committed on this machine only, and a later call pushes it. Tell the

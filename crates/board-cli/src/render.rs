@@ -173,9 +173,13 @@ const ENABLE: Document<Answer> = prose("plugin-enable-report", "What enabling a 
 const MOUNT_UPDATE: Document<Answer> =
     prose("mount-update-report", "Where a mount moved from and to.");
 const URI: Document<Answer> = prose("uri-report", "A record's board:// URI and its path.");
-const SYNC: Document<Answer> = prose(
+/// The sync report is at version 3: `replayed` gave way to `merged`,
+/// `conflicts`, `pins` and `failing`. Nothing reads version 2.
+const SYNC: Document<Answer> = Document::new(
+    "board",
     "sync-report",
-    "What a sync fetched, replayed and pushed, and where HEAD moved.",
+    3,
+    "What a sync fetched, merged and pushed, and where HEAD moved.",
 );
 
 /// `value` as prose that prints `text`.
@@ -547,7 +551,7 @@ pub(crate) fn mount_update(printer: Printer, report: &MountUpdateReport) -> Outp
     printer.print(MOUNT_UPDATE, Ok(said(value, text)))
 }
 
-/// `sync`: as text, a line for the fetch, each replayed commit, the push
+/// `sync`: as text, a line for the fetch, the merge, each conflict and pin, the push
 /// where HEAD moved and each file kept as edited, with its hint on stderr.
 pub(crate) fn sync(printer: Printer, report: &Synced) -> Output {
     let upstream = &report.upstream;
@@ -555,15 +559,29 @@ pub(crate) fn sync(printer: Printer, report: &Synced) -> Output {
         "fetched {}/{} {}\n",
         upstream.remote, upstream.branch, report.fetched
     );
-    for replayed in &report.replayed {
-        let _ = match replayed.to {
-            Some(to) => writeln!(text, "replayed {} -> {to}", replayed.from),
-            None => writeln!(
-                text,
-                "dropped {}: the remote holds its changes",
-                replayed.from
-            ),
-        };
+    if report.merged {
+        let _ = writeln!(text, "merged into {}", report.new);
+    }
+    for conflict in &report.conflicts {
+        let _ = writeln!(
+            text,
+            "conflict in {} ({}): the remote's version is kept, both are in history, see {}",
+            conflict.path,
+            conflict.kind.as_str(),
+            conflict.record
+        );
+    }
+    for pin in &report.pins {
+        let _ = writeln!(
+            text,
+            "pin {} moved by both sides: kept the {} one ({})",
+            pin.path,
+            pin.taken.as_str(),
+            pin.basis.as_str()
+        );
+    }
+    for path in &report.failing {
+        let _ = writeln!(text, "{path} fails the remote's schema");
     }
     if report.pushed {
         let after = match report.attempts {
@@ -589,13 +607,23 @@ pub(crate) fn sync(printer: Printer, report: &Synced) -> Output {
         hints.push(Note::Text(format!("hint: {path}: {hint}")));
         kept.push(json!({"path": path, "code": code.as_str(), "hint": hint}));
     }
-    let replayed: Vec<Value> = report
-        .replayed
-        .iter()
-        .map(|replayed| {
+    let conflicts: Vec<Value> = (report.conflicts.iter())
+        .map(|conflict| {
             json!({
-                "from": replayed.from.to_string(),
-                "to": replayed.to.map(|to| to.to_string()),
+                "path": conflict.path,
+                "kind": conflict.kind.as_str(),
+                "record": conflict.record,
+            })
+        })
+        .collect();
+    let pins: Vec<Value> = (report.pins.iter())
+        .map(|pin| {
+            json!({
+                "path": pin.path,
+                "local": pin.local.to_string(),
+                "remote": pin.remote.to_string(),
+                "taken": pin.taken.as_str(),
+                "basis": pin.basis.as_str(),
             })
         })
         .collect();
@@ -605,7 +633,10 @@ pub(crate) fn sync(printer: Printer, report: &Synced) -> Output {
         "fetched": report.fetched.to_string(),
         "old": report.old.map(|old| old.to_string()),
         "new": report.new.to_string(),
-        "replayed": replayed,
+        "merged": report.merged,
+        "conflicts": conflicts,
+        "pins": pins,
+        "failing": report.failing,
         "pushed": report.pushed,
         "attempts": report.attempts,
         "kept": kept,

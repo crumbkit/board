@@ -196,14 +196,31 @@ fn every_output_property_is_required_so_a_null_is_never_left_out() {
         json!(["tree", "roots", "total", "repos", "cycles", "cross_repo"])
     );
     let written = json!([
-        "repo", "path", "status", "defer", "owner", "reviewed", "commit", "unsynced", "unpushed"
+        "repo",
+        "path",
+        "status",
+        "defer",
+        "owner",
+        "reviewed",
+        "commit",
+        "unsynced",
+        "unpushed",
+        "conflicts"
     ]);
     for name in ["add", "claim", "done", "defer", "drop", "reviewed"] {
         assert_eq!(required(name), written, "{name}");
     }
     assert_eq!(
         required("move"),
-        json!(["repo", "path", "parent", "commit", "unsynced", "unpushed"])
+        json!([
+            "repo",
+            "path",
+            "parent",
+            "commit",
+            "unsynced",
+            "unpushed",
+            "conflicts"
+        ])
     );
 }
 

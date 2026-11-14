@@ -412,7 +412,7 @@
     {
       "declaration": "document-name",
       "applies_to": "board sync",
-      "declares": "The command prints board/sync-report/v2, where its path gives the name sync."
+      "declares": "The command prints board/sync-report/v3, where its path gives the name sync."
     },
     {
       "declaration": "document-name",

@@ -1,23 +1,25 @@
-//! `board sync`: fetching the branch HEAD follows, replaying the commits
-//! only this clone has onto what was fetched, pushing the result, and
-//! moving HEAD, the index and the working tree to it (docs/architecture.md,
-//! Writes). The lock the caller holds keeps puts out while it runs.
+//! `board sync`: fetching the branch HEAD follows, merging it into HEAD,
+//! pushing the result, and moving HEAD, the index and the working tree to
+//! it (docs/architecture/writes.md, Sync). The board lock keeps puts out
+//! while the merge is written.
 
 use std::collections::BTreeMap;
 use std::io;
 use std::time::Duration;
 
-use board_model::{Code, Fields, LogicalPath, ObjectId};
-use gix::bstr::{BString, ByteSlice};
+use board_model::{Code, ConflictKind, Fields, LogicalPath, ObjectId};
+use gix::bstr::BString;
 use gix::object::tree::EntryKind;
 
 use super::entries::{stage_entry, unstage_entry};
-use super::{LOCK_WAIT, Lock, Staged, WriteError};
+use super::{Lock, Staged, WriteError};
 use crate::git::{GitError, Repository, model_id};
 use crate::transport::{self, Deadline, Pushed, Upstream};
 
-#[expect(dead_code, reason = "integrate merges through it from step S3")]
+mod integrate;
 mod merge;
+
+pub use merge::{PinBasis, PinResolution};
 
 /// How many times a sync fetches and pushes before it gives up.
 pub const ATTEMPTS: u32 = 3;
@@ -30,44 +32,53 @@ pub struct Synced {
     pub fetched: ObjectId,
     /// HEAD before, or `None` for an unborn branch.
     pub old: Option<ObjectId>,
-    /// HEAD after: the fetched commit, or the last commit replayed onto it.
+    /// HEAD after: the fetched commit, or the merge commit that joins it
+    /// to the commits only this clone had.
     pub new: ObjectId,
-    /// Each commit only this clone had, oldest first, and what it became.
-    pub replayed: Vec<Replayed>,
+    /// Whether `new` is a merge commit this sync made.
+    pub merged: bool,
+    /// Each file both sides changed, with the record that names it.
+    pub conflicts: Vec<Conflicted>,
+    /// Each mount pointer both sides moved, and the pin taken.
+    pub pins: Vec<PinResolution>,
+    /// Records this clone added or changed that fail a schema both sides
+    /// changed, as the remote's schema reads them: their paths.
+    pub failing: Vec<String>,
     pub pushed: bool,
     pub attempts: u32,
     /// Each file edited during the sync, kept without the remote's change.
     pub kept: Vec<Fields>,
 }
 
-/// A commit replayed onto the fetched branch: `to` is its new id, or
-/// `None` when the remote already held every change it made.
+/// A file both sides changed. The merge kept one side's content, as the
+/// record `board/conflict/v1` at `record` says.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Replayed {
-    pub from: ObjectId,
-    pub to: Option<ObjectId>,
+pub struct Conflicted {
+    pub path: String,
+    pub kind: ConflictKind,
+    /// The record's path in the repository.
+    pub record: String,
 }
 
 /// What one integrate did, or the rounds of a sync added together.
 struct Integrated {
     old: Option<ObjectId>,
     new: ObjectId,
-    replayed: Vec<Replayed>,
+    merged: bool,
+    conflicts: Vec<Conflicted>,
+    pins: Vec<PinResolution>,
+    failing: Vec<String>,
     kept: Vec<Fields>,
 }
 
 impl Integrated {
-    /// This round followed by `next`, which replayed the commits this round
-    /// left: each commit `next` replayed that this round made is traced
-    /// back to the commit it came from.
+    /// This round followed by `next`, which merged what this round left.
     fn then(mut self, next: Self) -> Self {
-        for replay in next.replayed {
-            match self.replayed.iter_mut().find(|r| r.to == Some(replay.from)) {
-                Some(earlier) => earlier.to = replay.to,
-                None => self.replayed.push(replay),
-            }
-        }
         self.new = next.new;
+        self.merged |= next.merged;
+        self.conflicts.extend(next.conflicts);
+        self.pins.extend(next.pins);
+        self.failing.extend(next.failing);
         self.kept.extend(next.kept);
         self
     }
@@ -115,9 +126,8 @@ impl Repository {
     /// integrate and, with `push`, push, up to [`ATTEMPTS`] rounds.
     /// Fetch and push run without the board lock, so puts continue while
     /// they wait on the network. Integrate takes the board lock for its
-    /// local step only: it replays the commits only this clone has onto the
-    /// fetched commit, then HEAD, the index and the working tree move to
-    /// the result. A rejected push, or HEAD moved by another program during
+    /// local step only: it merges the fetched commit into HEAD, then HEAD,
+    /// the index and the working tree move to the result. A rejected push, or HEAD moved by another program during
     /// integrate, starts the next round from the fetch. A file the remote
     /// changed that is edited here stops the sync before it writes. One
     /// sync runs per clone: `sync.lock` refuses a second with
@@ -137,7 +147,7 @@ impl Repository {
         for attempts in 1..=ATTEMPTS {
             transport::fetch(self.path(), &upstream, &ssh, deadline)?;
             let fetched = self.tracking(&upstream)?;
-            let round = match self.integrate(fetched, deadline) {
+            let round = match self.integrate(&upstream, fetched, deadline) {
                 Ok(round) => round,
                 Err(SyncError::Write(WriteError::HeadMoved)) if attempts < ATTEMPTS => continue,
                 // A board lock still held when the deadline is spent is the
@@ -164,7 +174,10 @@ impl Repository {
                 fetched,
                 old: total.old,
                 new,
-                replayed: total.replayed,
+                merged: total.merged,
+                conflicts: total.conflicts,
+                pins: total.pins,
+                failing: total.failing,
                 pushed,
                 attempts,
                 kept: total.kept,
@@ -216,30 +229,6 @@ impl Repository {
         }
     }
 
-    /// The local step of a sync, under the board lock: replays the commits
-    /// only this clone has onto `fetched`, then moves HEAD, the index and
-    /// the working tree to the result. The lock is not held across any
-    /// network call.
-    fn integrate(&self, fetched: ObjectId, deadline: Deadline) -> Result<Integrated, SyncError> {
-        let lock = self
-            .lock(deadline.left().min(LOCK_WAIT))
-            .map_err(SyncError::from)?;
-        let old = self.head()?;
-        let (new, replayed) = self.replay(old, fetched)?;
-        let kept = if old == Some(new) {
-            Vec::new()
-        } else {
-            let changes = self.changes(&self.files_of(old)?, &self.files_of(Some(new))?)?;
-            self.check_out(&lock, old, new, changes)?
-        };
-        Ok(Integrated {
-            old,
-            new,
-            replayed,
-            kept,
-        })
-    }
-
     /// The commit `upstream`'s tracking ref names after a fetch.
     fn tracking(&self, upstream: &Upstream) -> Result<ObjectId, SyncError> {
         let mut found = self
@@ -250,116 +239,6 @@ impl Repository {
             .peel_to_id()
             .map_err(|source| self.unreadable(source))?;
         Ok(model_id(&id))
-    }
-
-    /// The commits reachable from `old` but not from `tip`, replayed onto
-    /// `tip` one by one as commits of the same author and message, with the
-    /// committer git is configured with. Returns the resulting commit.
-    /// `tip` itself when nothing is to replay, and `old` when `tip` is
-    /// already behind it.
-    fn replay(
-        &self,
-        old: Option<ObjectId>,
-        tip: ObjectId,
-    ) -> Result<(ObjectId, Vec<Replayed>), SyncError> {
-        let Some(head) = old else {
-            return Ok((tip, Vec::new()));
-        };
-        let git = self.git();
-        let tip_id = self.gix_id(tip)?;
-        let walk = git
-            .rev_walk([self.gix_id(head)?])
-            .with_hidden([tip_id])
-            .all()
-            .map_err(|source| self.unreadable(source))?;
-        let mut local: Vec<_> = walk
-            .map(|info| info.map_err(|source| self.unreadable(source)))
-            .collect::<Result<_, _>>()?;
-        local.reverse();
-        let Some(oldest) = local.first() else {
-            return Ok((tip, Vec::new()));
-        };
-        if oldest.parent_ids.contains(&tip_id) {
-            return Ok((head, Vec::new()));
-        }
-        let committer = git
-            .committer()
-            .ok_or(WriteError::NoIdentity)?
-            .map_err(|source| self.unreadable(source))?
-            .to_owned()
-            .map_err(|source| self.unreadable(source))?;
-        let mut base = tip_id;
-        let mut base_files = self.files(self.tree_of(tip_id)?)?;
-        let mut replayed = Vec::new();
-        for info in &local {
-            let commit = git
-                .find_commit(info.id)
-                .map_err(|source| self.unreadable(source))?;
-            let parent = info.parent_ids.first().copied();
-            let before = self.files_of(parent.map(|id| model_id(&id)))?;
-            let after = self.files(self.tree_of(info.id)?)?;
-            let mut editor = git
-                .edit_tree(self.tree_of(base)?)
-                .map_err(|source| self.unreadable(source))?;
-            let mut changed = false;
-            for path in before.keys().chain(after.keys()) {
-                let (was, now) = (before.get(path), after.get(path));
-                if was == now || base_files.get(path) == now {
-                    continue;
-                }
-                if base_files.get(path) != was {
-                    return Err(SyncError::Conflict {
-                        path: path.to_string(),
-                    });
-                }
-                match now {
-                    Some((id, kind)) => editor.upsert(path.as_bstr(), *kind, *id),
-                    None => editor.remove(path.as_bstr()),
-                }
-                .map_err(|source| self.unreadable(source))?;
-                match now {
-                    Some(entry) => base_files.insert(path.clone(), *entry),
-                    None => base_files.remove(path),
-                };
-                changed = true;
-            }
-            let from = model_id(&info.id);
-            if !changed {
-                replayed.push(Replayed { from, to: None });
-                continue;
-            }
-            let tree = editor
-                .write()
-                .map_err(|source| self.unreadable(source))?
-                .detach();
-            let author = commit
-                .author()
-                .map_err(|source| self.unreadable(source))?
-                .to_owned()
-                .map_err(|source| self.unreadable(source))?;
-            let message = commit
-                .message_raw()
-                .map_err(|source| self.unreadable(source))?
-                .to_owned();
-            let new = git
-                .write_object(gix::objs::Commit {
-                    tree,
-                    parents: [base].into(),
-                    author,
-                    committer: committer.clone(),
-                    encoding: None,
-                    message,
-                    extra_headers: Vec::new(),
-                })
-                .map_err(|source| self.unreadable(source))?
-                .detach();
-            replayed.push(Replayed {
-                from,
-                to: Some(model_id(&new)),
-            });
-            base = new;
-        }
-        Ok((model_id(&base), replayed))
     }
 
     /// The files of `commit`'s tree, or none for `None`.
@@ -551,8 +430,6 @@ pub enum SyncError {
         left: Duration,
         deadline: Duration,
     },
-    #[error("{path} changed on the remote and in a commit here that is not pushed")]
-    Conflict { path: String },
     #[error("{path} is edited here and changed on the remote")]
     Edited { path: String },
     #[error("{path} cannot be written: {symlink} is a symlink")]
@@ -572,7 +449,6 @@ impl SyncError {
         match self {
             Self::NoRemote { .. } => Code::SyncNoRemote,
             Self::NotStarted { .. } | Self::Failed { .. } => Code::SyncFailed,
-            Self::Conflict { .. } => Code::SyncConflict,
             Self::Edited { .. } => Code::SyncEdited,
             Self::Symlink { .. } => Code::PutSymlink,
             Self::Busy { .. } => Code::SyncBusy,
@@ -586,9 +462,7 @@ impl SyncError {
     /// The logical path of the file at fault, when it has one.
     pub fn fields(&self) -> Fields {
         match self {
-            Self::Conflict { path } | Self::Edited { path } | Self::Symlink { path, .. } => {
-                fields_at(path)
-            }
+            Self::Edited { path } | Self::Symlink { path, .. } => fields_at(path),
             Self::Write(error) => error.fields(),
             _ => Fields::default(),
         }

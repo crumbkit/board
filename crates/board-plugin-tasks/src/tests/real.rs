@@ -253,6 +253,12 @@ impl Clones for Pinning<'_> {
             .map(|report| report.new.to_string())
             .map_err(|error| Box::new(error.refusal()))
     }
+
+    fn conflicts(&self) -> Vec<board_ops::Conflicted> {
+        Vec::new()
+    }
+
+    fn forget_conflicts(&self) {}
 }
 
 /// The host a call gets for the notes clone: it only syncs, as `board -C

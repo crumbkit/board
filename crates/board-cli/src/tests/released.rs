@@ -897,8 +897,8 @@ const OPEN_DATA: &[&str] = &["board/query-report/v2", "board/call-report/v2"];
 /// Every report once, from a board holding a record, a mount one commit
 /// behind its library, and the tasks plugin shipping a schema that
 /// differs from the board's copy. The put lands a degraded record, so the
-/// check and the refs report a code. A second clone's sync replays a
-/// commit, so its report holds `replayed`. `serve`, `ui open` and `answer`
+/// check and the refs report a code. A second clone's sync merges a
+/// commit, so its report holds `merged`. `serve`, `ui open` and `answer`
 /// need a server, a browser and the owner's signer, so their reports come
 /// from the functions that render them.
 fn samples() -> Vec<(String, Value)> {

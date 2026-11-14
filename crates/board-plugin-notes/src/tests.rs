@@ -105,7 +105,15 @@ fn every_output_property_is_required_so_a_null_is_never_left_out() {
         |index: usize| manifest["capabilities"][index]["outputSchema"]["required"].clone();
     assert_eq!(
         required(0),
-        json!(["repo", "path", "commit", "candidates", "parked", "unpushed"])
+        json!([
+            "repo",
+            "path",
+            "commit",
+            "candidates",
+            "parked",
+            "unpushed",
+            "conflicts"
+        ])
     );
     assert_eq!(
         required(1),

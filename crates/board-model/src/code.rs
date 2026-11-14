@@ -93,7 +93,6 @@ codes! {
     RmDirectory => "board::rm::directory",
     SyncNoRemote => "board::sync::no_remote",
     SyncFailed => "board::sync::failed",
-    SyncConflict => "board::sync::conflict",
     SyncEdited => "board::sync::edited",
     SyncKept => "board::sync::kept",
     SyncBusy => "board::sync::busy",

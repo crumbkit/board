@@ -33,6 +33,7 @@ fn a_note_lands_in_todays_daily_note_under_a_time_heading_and_reaches_the_remote
             "candidates": null,
             "parked": null,
             "unpushed": null,
+            "conflicts": [],
         })
     );
     assert!(section(&notes.read(&path), "Call the bank.\n"));
@@ -238,32 +239,97 @@ fn a_desktop_commit_beside_a_phone_push_to_another_note_syncs_and_is_not_parked(
 }
 
 #[test]
-fn a_notes_repo_that_cannot_sync_parks_the_note_and_leaves_no_merge_or_rebase_behind() {
+fn a_desktop_commit_and_a_phone_push_that_both_append_to_one_note_both_survive_without_a_conflict()
+{
     let notes = Notes::new();
     let path = Notes::note(&notes.call("add", &["--text", "First."]).unwrap());
     notes
         .clone
         .write(&path, Item::Appended("\nFrom the desktop.\n"));
-    let desktop = notes.read(&path);
     commit(notes.clone.workdir());
     notes.phone_appends(&path, "\nFrom the phone.\n");
     let output = notes.call("add", &["--text", "From the agent."]).unwrap();
-    assert_eq!(output["parked"], "board::sync::conflict");
-    assert_eq!(output["unpushed"], "board::sync::conflict");
-    assert_eq!(
-        output["path"],
-        format!("/repos/notes-personal/{}", sibling(&path))
-    );
+    assert_eq!(output["parked"], Value::Null);
+    assert_eq!(output["unpushed"], Value::Null);
+    assert_eq!(output["conflicts"], json!([]));
+    assert_eq!(output["path"], format!("/repos/notes-personal/{path}"));
     assert_eq!(output["commit"], json!(notes.head()));
     assert_eq!(notes.pin(), notes.head());
-    assert_eq!(notes.read(&path), desktop);
+    let kept = notes.read(&path);
+    let at = |text: &str| kept.find(text).unwrap_or_else(|| panic!("{text}: {kept}"));
+    assert!(at("From the phone.") < at("From the desktop."), "{kept}");
+    assert!(at("From the desktop.") < at("From the agent."), "{kept}");
     assert_eq!(git(notes.clone.workdir(), &["status", "--porcelain"]), "");
+    assert!(
+        !notes
+            .clone
+            .head()
+            .unwrap()
+            .files
+            .keys()
+            .any(|path| path.starts_with("conflicts/")),
+        "no record is written"
+    );
     let branch = git(notes.clone.workdir(), &["symbolic-ref", "--short", "HEAD"]);
     assert_eq!(branch, "main");
     let gitdir = notes.clone.workdir().join(".git");
     for name in ["MERGE_HEAD", "REBASE_HEAD", "rebase-merge", "rebase-apply"] {
         assert!(!gitdir.join(name).exists(), "{name}");
     }
+}
+
+#[test]
+fn a_conflict_the_sync_before_the_append_recorded_is_not_reported_because_the_text_landed_after_it()
+{
+    let notes = Notes::new();
+    let path = Notes::note(&notes.call("add", &["--text", "First."]).unwrap());
+    let before = notes.read(&path);
+    notes.clone.write(
+        &path,
+        Item::File(&before.replace("First.", "First, desktop.")),
+    );
+    commit(notes.clone.workdir());
+    let phone = notes.phone.workdir();
+    git(phone, &["pull", "-q"]);
+    notes.phone.write(
+        &path,
+        Item::File(&before.replace("First.", "First, phone.")),
+    );
+    commit(phone);
+    git(phone, &["push", "-q"]);
+    let output = notes.call("add", &["--text", "From the agent."]).unwrap();
+    assert_eq!(output["parked"], Value::Null);
+    assert_eq!(output["conflicts"], json!([]));
+    let records = notes.clone.head().unwrap().files;
+    assert!(
+        records.keys().any(|path| path.starts_with("conflicts/")),
+        "the sync before the append recorded the conflict"
+    );
+    let kept = notes.read(&path);
+    assert!(kept.contains("First, phone."), "{kept}");
+    assert!(!kept.contains("First, desktop."), "{kept}");
+    assert!(kept.contains("From the agent."), "{kept}");
+}
+
+#[test]
+fn a_desktop_commit_and_a_phone_push_to_different_parts_of_one_note_both_survive() {
+    let notes = Notes::new();
+    let path = Notes::note(&notes.call("add", &["--text", "First."]).unwrap());
+    notes.call("add", &["--text", "Second."]).unwrap();
+    let kept = notes.read(&path);
+    notes
+        .clone
+        .write(&path, Item::File(&format!("From the desktop.\n{kept}")));
+    commit(notes.clone.workdir());
+    notes.phone_appends(&path, "\nFrom the phone.\n");
+    let output = notes.call("add", &["--text", "From the agent."]).unwrap();
+    assert_eq!(output["parked"], Value::Null);
+    assert_eq!(output["unpushed"], Value::Null);
+    let merged = notes.read(&path);
+    for text in ["From the desktop.", "From the phone.", "From the agent."] {
+        assert!(merged.contains(text), "{text}: {merged}");
+    }
+    assert_eq!(git(notes.clone.workdir(), &["status", "--porcelain"]), "");
 }
 
 #[test]

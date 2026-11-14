@@ -92,7 +92,7 @@ clap = { version = "4.6.7", default-features = false, features = ["derive", "err
 constant_time_eq = "0.6.1"
 # board serve's per-launch token. gix already brings this version in.
 getrandom = "0.3.4"
-gix = { version = "0.88.0", default-features = false, features = ["excludes", "parallel", "sha1"] }
+gix = { version = "0.88.0", default-features = false, features = ["excludes", "merge", "parallel", "revision", "sha1"] }
 # The UTC time a pending effect records as `asked`. clap already brings this
 # crate in.
 humantime = "2.4.0"

@@ -60,7 +60,7 @@ pub use crate::put::{
 pub use crate::query::{DEFAULT_LIMIT, MAX_LIMIT, QueryError, QueryReport};
 pub use crate::read::{GetReport, Listed, LsReport, ReadError};
 pub use crate::refs::{Absent, Fielded, Incoming, Missing, Outgoing, RefsError, RefsReport};
-pub use crate::sync::{SyncError, Synced};
+pub use crate::sync::{Conflicted, SyncError, Synced};
 pub use crate::trace::{Phase, Trace};
 pub use crate::types::TypeError;
 pub use crate::ui::{BindingError, Drawn, Failed, Page, PageError};

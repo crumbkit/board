@@ -154,7 +154,7 @@ instance pointer in sorted order.
 
 Board's own documents (`board/*`) refuse unknown fields. User records follow
 their schema. Board knows `board/config/v1`, `board/mount/v1`, `board/repo/v1`,
-`board/plugin-manifest/v1`, `board/attachment/v1`, and the effects types
+`board/plugin-manifest/v1`, `board/attachment/v1`, `board/conflict/v1`, and the effects types
 `board/effect/v1` and `board/seen/v1` wherever they are stored. A manifest is checked by its content alone; a
 broken one is `plugin::bad_manifest`. Any other `board/*` type is
 `record::unknown_type`.
@@ -322,7 +322,7 @@ rules.
 [architecture/writes.md](architecture/writes.md) says how a put of one record
 or a batch writes through a mount and moves the pin, how `board mount update`
 moves a pin to the commit its `follow` ref names, and how `board sync`
-replays this clone's commits onto the branch it follows.
+merges this clone's commits with the branch it follows.
 
 ## Commands
 

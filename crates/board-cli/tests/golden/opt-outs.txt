@@ -187,7 +187,7 @@ document-name: board rm
   Declares: The command prints board/put-report/v2, where its path gives the name rm.
 
 document-name: board sync
-  Declares: The command prints board/sync-report/v2, where its path gives the name sync.
+  Declares: The command prints board/sync-report/v3, where its path gives the name sync.
 
 document-name: board mount update
   Declares: The command prints board/mount-update-report/v2, where its path gives the name mount-update.

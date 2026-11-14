@@ -10,6 +10,7 @@ rust-version.workspace = true
 [dependencies]
 board-model.workspace = true
 board-plugin.workspace = true
+board-validate.workspace = true
 crumbkit-process.workspace = true
 gix.workspace = true
 thiserror.workspace = true
@@ -18,6 +19,7 @@ thiserror.workspace = true
 board-scenario.workspace = true
 proptest.workspace = true
 rustix.workspace = true
+serde_json.workspace = true
 tempfile.workspace = true
 
 [lints]

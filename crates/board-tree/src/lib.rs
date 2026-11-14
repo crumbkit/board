@@ -37,5 +37,5 @@ pub use crate::worktree::{
     repository_root, uncommitted,
 };
 pub use crate::write::outside::write_outside;
-pub use crate::write::sync::{ATTEMPTS, Replayed, SyncError, Synced};
+pub use crate::write::sync::{ATTEMPTS, Conflicted, PinBasis, PinResolution, SyncError, Synced};
 pub use crate::write::{LOCK_WAIT, Lock, Removes, Staged, Target, WriteError};

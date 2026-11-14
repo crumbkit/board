@@ -870,10 +870,6 @@ board sync
   hint
 
 board sync
-  fails with board::sync::conflict
-  hint
-
-board sync
   fails with board::sync::edited
   hint
 
