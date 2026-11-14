@@ -874,6 +874,19 @@ board sync
   hint
 
 board sync
+  fails with board::sync::shallow
+  hint
+
+board sync
+  fails with board::sync::merging
+  hint
+
+board sync
+  fails with board::sync::rewound
+  run board sync --accept-rewrite
+    exits 0
+
+board sync
   fails with board::sync::gave_up
   run board sync --no-push
     exits 0

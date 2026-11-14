@@ -410,3 +410,19 @@ fn a_landed_write_lists_only_the_conflicts_of_the_syncs_after_the_write() {
         ["/repos/work/conflicts/after.json"]
     );
 }
+
+/// A rewritten remote, a shallow clone and a git merge in progress leave the
+/// clone as it was and wait for a person, so a write goes on beside them and
+/// is not refused.
+#[test]
+fn a_sync_refused_for_a_rewound_remote_a_shallow_clone_or_a_merge_lets_the_write_park() {
+    for code in [Code::SyncRewound, Code::SyncShallow, Code::SyncMerging] {
+        let clones = Recorded::default();
+        clones.syncs.borrow_mut().extend([refusal(code)]);
+        let host = local(&[]);
+        assert_eq!(
+            mounted().sync(writer(&host, &clones), false).unwrap(),
+            Some(code)
+        );
+    }
+}
