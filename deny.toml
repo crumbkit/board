@@ -58,6 +58,10 @@ deny = [
 # The workspace is proprietary and unpublished; only dependencies are checked.
 private = { ignore = true }
 allow = ["Apache-2.0", "MIT", "MIT-0", "Unicode-3.0", "Zlib"]
+# encoding_rs (through gix-filter) is "(Apache-2.0 OR MIT) AND BSD-3-Clause".
+exceptions = [
+    { crate = "encoding_rs", allow = ["BSD-3-Clause"] },
+]
 confidence-threshold = 0.9
 
 [sources]

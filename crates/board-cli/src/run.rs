@@ -32,13 +32,12 @@ use clap::{CommandFactory, Parser, Subcommand};
 use crumbkit::{Sink, Unparsed};
 
 use crate::config::Context;
-use crate::effects;
-use crate::graft;
 use crate::render::{self, Printer};
 use crate::report::Output;
 use crate::stdin::{Input, Stdin, TypeCommand, call, put};
 use crate::timing::Ran;
 use crate::values::{duration, expect, pointer, var};
+use crate::{effects, graft};
 
 const ROOT_EXAMPLES: &str = "\
 Start here:
@@ -261,12 +260,13 @@ Examples:
     Rm(remove::Removal),
     /// Fetch the remote branch, merge it into this board, and push.
     #[command(after_help = "\
-Board fetches the remote branch HEAD's branch follows, merges it into HEAD
-with a merge commit, pushes the result, and moves HEAD, git's index and the
-working tree to it. A file both sides changed takes the remote's content, and
-a board/conflict/v1 record names both versions. A file edited during the sync
-keeps its edit and is listed as kept. A fetch runs the `git` executable, so
-git's remotes, credentials and SSH settings apply.
+Board fetches the remote branch HEAD's branch follows, merges it into HEAD,
+pushes the result, and moves git's index and the working tree to it. A file
+both sides changed is merged line by line where it is text. Where the two
+changes cannot both stand, the remote's content is kept and a
+board/conflict/v1 record under /conflicts/ names both versions. A file edited
+during the sync keeps its edit and is listed as kept. A fetch runs the `git`
+executable, so git's remotes, credentials and SSH settings apply.
 
 Examples:
   board sync
