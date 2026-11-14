@@ -156,3 +156,71 @@ fn sync_leaves_a_file_edited_during_the_push_as_an_ordinary_edit_and_exits_0() {
         assert_eq!(edited, "edited\n");
     }
 }
+
+/// A sync that a git merge in progress stops, with the code and the hint
+/// that names the way out, before anything changes.
+#[test]
+fn sync_stops_during_a_git_merge_and_goes_on_once_it_is_aborted() {
+    let (remote, a, _) = clones();
+    let dir = a.workdir();
+    a.write(".git/MERGE_HEAD", Item::File("x\n"));
+    let before = a.head().unwrap().id;
+    remote.commit(&[
+        (".board/board.json", CONFIG),
+        (
+            ".board/types/lr/project/v1.schema.json",
+            r#"{"type": "object"}"#,
+        ),
+        ("projects/p.json", PROJECT),
+        ("projects/r.json", PROJECT),
+    ]);
+    for flags in [&["sync"][..], &["sync", "--accept-rewrite"][..]] {
+        let output = board_in(dir, flags);
+        assert_eq!(output.code, 1);
+        let stderr = text(&output.stderr);
+        assert!(stderr.contains("code:  board::sync::merging"), "{stderr}");
+        assert!(stderr.contains("git merge --abort"), "{stderr}");
+        assert_eq!(a.head().unwrap().id, before);
+    }
+    a.write(".git/MERGE_HEAD", Item::Deleted);
+    assert_eq!(board_in(dir, &["sync", "--no-push"]).code, 0);
+}
+
+/// A rewritten remote stops the sync with its code every time until a
+/// person accepts the rewrite, and a shallow clone is not helped by that.
+#[test]
+fn sync_stops_for_a_rewritten_remote_until_accepted_and_for_a_shallow_clone_always() {
+    let (remote, a, _) = clones();
+    let before = a.head().unwrap().id;
+    remote.write(".git/refs/heads/main", Item::Deleted);
+    let rewritten = remote.commit(&[
+        (".board/board.json", CONFIG),
+        (
+            ".board/types/lr/project/v1.schema.json",
+            r#"{"type": "object"}"#,
+        ),
+        ("projects/p.json", r#"{"$type": "lr/project/v1", "x": 2}"#),
+    ]);
+    for _ in 0..2 {
+        let output = board_in(a.workdir(), &["sync", "--json"]);
+        assert_eq!(output.code, 1);
+        assert_eq!(json(&output)["code"], "board::sync::rewound");
+        assert!(
+            json(&output)["recovery"]["text"]
+                .as_str()
+                .unwrap()
+                .contains("--accept-rewrite")
+        );
+        assert_eq!(a.head().unwrap().id, before);
+    }
+    a.write(".git/shallow", Item::File(&format!("{before}\n")));
+    let output = board_in(a.workdir(), &["sync", "--accept-rewrite", "--json"]);
+    assert_eq!(json(&output)["code"], "board::sync::shallow");
+    a.write(".git/shallow", Item::Deleted);
+    let output = board_in(
+        a.workdir(),
+        &["sync", "--accept-rewrite", "--no-push", "--json"],
+    );
+    assert_eq!(output.code, 0, "{}", text(&output.stderr));
+    assert_eq!(json(&output)["data"]["fetched"], rewritten.to_string());
+}

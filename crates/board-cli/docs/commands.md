@@ -188,6 +188,7 @@ Fetch the remote branch, merge it into this board, and push
 ### Arguments
 
 - `--no-push`: Fetch and merge, and leave the push for later
+- `--accept-rewrite`: Merge a remote branch that was rewritten since the last fetch, which otherwise stops the sync
 
 Effects: additive, not idempotent, open-world.
 
