@@ -1,5 +1,5 @@
 //! Sets `BOARD_BUILD_DATE`, the commit date of the source in seconds (empty
-//! when neither `SOURCE_DATE_EPOCH` nor git gives one), and `BOARD_BUILD`, the suffix the timing log adds to Board's version:
+//! when neither git nor `SOURCE_DATE_EPOCH` gives one, git's commit date first), and `BOARD_BUILD`, the suffix the timing log adds to Board's version:
 //! `+<commit>`, with `.dirty.<hash>` when the source differs from it.
 //! `BOARD_BUILD_COMMIT` names the commit in place of git's, and asserts that
 //! the source is that commit: a copy whose own repository committed the

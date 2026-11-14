@@ -13,6 +13,19 @@ pub(crate) struct Output {
     pub(crate) error: Option<String>,
 }
 
+impl Output {
+    /// This output, with a warning on stderr when the run wrote a board whose
+    /// `min_board` names a build date that this build, having none, could
+    /// not check.
+    pub(crate) fn warned_by(mut self, board: &board_ops::Board) -> Self {
+        if let Some(note) = board.undated_gate_passed() {
+            self.stderr
+                .extend(format!("warning: {note}\n").into_bytes());
+        }
+        self
+    }
+}
+
 #[expect(
     clippy::disallowed_methods,
     reason = "this module is the binary's one owner of stdout and stderr"

@@ -44,6 +44,7 @@ codes! {
     ConfigInvalid => "board::config::invalid",
     ConfigAmbiguous => "board::config::ambiguous",
     ConfigBoardTooOld => "board::config::board_too_old",
+    ConfigMinBoardUnreadable => "board::config::min_board_unreadable",
     SchemaInvalid => "board::schema::invalid",
     SchemaDiffers => "board::schema::differs",
     RefMalformed => "board::ref::malformed",

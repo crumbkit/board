@@ -340,9 +340,21 @@ fn find(
     let shown = shown(file);
     let (mut seen, mut skipped, mut matches) = (HashSet::new(), vec![], vec![]);
     for root in listed.iter().map(|root| against(file, root)) {
-        let opened = Board::open(&root, home.map(Path::to_path_buf));
-        let found = opened.map(|board| (board.places(start, cache), board));
-        let Ok((Ok(places), board)) = found else {
+        let board = match Board::open(&root, home.map(Path::to_path_buf)) {
+            Ok(board) => board,
+            // A listed directory that is no board any more is passed over.
+            Err(OpenError::NotFound { .. } | OpenError::NoRepository { .. }) => {
+                skipped.push(root.display().to_string());
+                continue;
+            }
+            // One that is a board this Board cannot open must not read as a
+            // repository with no board, and so no controls: say why.
+            Err(error) => {
+                let refusal = Refusal::new(error.code(), &error, &Fields::default());
+                return Err(Box::new(refusal));
+            }
+        };
+        let Ok(places) = board.places(start, cache) else {
             skipped.push(root.display().to_string());
             continue;
         };

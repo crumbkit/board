@@ -3,7 +3,7 @@
 
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
@@ -34,9 +34,34 @@ pub struct Repositories {
     /// The moved prefixes a resolution that names nothing tries: see
     /// [`Repositories::moving`].
     pub(crate) moved: Vec<Moved>,
-    /// The `min_board` and the running version, when this Board is older
-    /// than the board allows: see [`Repositories::refuse_writes`].
-    too_old: Option<(String, String)>,
+    /// What the board's `min_board` makes of writes: see
+    /// [`Repositories::gate_writes`].
+    gate: Option<WriteGate>,
+    /// Whether a write was admitted past a [`WriteGate::Unchecked`] gate.
+    passed_unchecked: AtomicBool,
+}
+
+/// What a board's `min_board` makes of this Board's writes, when it makes
+/// anything (docs/architecture/writes/minimum.md).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum WriteGate {
+    /// This Board is older than `min_board` allows: every write and sync is
+    /// refused with `board::config::board_too_old`. `install` says what to
+    /// install to satisfy it.
+    TooOld {
+        min_board: String,
+        running: String,
+        install: String,
+    },
+    /// `min_board` is a value this Board cannot read, so it cannot tell
+    /// whether it is old enough: every write and sync is refused with
+    /// `board::config::min_board_unreadable`.
+    Unreadable { detail: String },
+    /// `min_board` names a build date and this build has none, so the date
+    /// cannot be checked: writes are admitted, and
+    /// [`Repositories::passed_unchecked`] says so. Holds the text of the
+    /// note to show.
+    Unchecked { note: String },
 }
 
 /// A mount pointer in the working tree that one run reads at a checkout's
@@ -101,7 +126,8 @@ impl Repositories {
             opened: AtomicUsize::new(0),
             checkout: None,
             moved: Vec::new(),
-            too_old: None,
+            gate: None,
+            passed_unchecked: AtomicBool::new(false),
         })
     }
 
@@ -142,21 +168,50 @@ impl Repositories {
         self.root.lock(wait)
     }
 
-    /// Makes every write and sync refuse with `board::config::board_too_old`
-    /// when `too_old` names the board's `min_board` and the running
-    /// version, and lifts that when it is `None`.
-    pub fn refuse_writes(&mut self, too_old: Option<(String, String)>) {
-        self.too_old = too_old;
+    /// Sets what the board's `min_board` makes of writes and syncs, and
+    /// lifts the earlier setting when `gate` is `None`.
+    pub fn gate_writes(&mut self, gate: Option<WriteGate>) {
+        self.gate = gate;
+        self.passed_unchecked.store(false, Ordering::Relaxed);
+    }
+
+    /// The note for a write admitted without checking `min_board`'s build
+    /// date, because this build has none, when one was admitted.
+    pub fn passed_unchecked(&self) -> Option<&str> {
+        match &self.gate {
+            Some(WriteGate::Unchecked { note })
+                if self.passed_unchecked.load(Ordering::Relaxed) =>
+            {
+                Some(note)
+            }
+            _ => None,
+        }
     }
 
     /// Whether this run may write: it may not while a mount is read at a
-    /// checkout, or when this Board is older than the board's `min_board`.
+    /// checkout, or when `min_board` refuses this Board.
     pub fn writable(&self) -> Result<(), WriteError> {
-        if let Some((min_board, running)) = &self.too_old {
-            return Err(WriteError::BoardTooOld {
-                min_board: min_board.clone(),
-                running: running.clone(),
-            });
+        match &self.gate {
+            Some(WriteGate::TooOld {
+                min_board,
+                running,
+                install,
+            }) => {
+                return Err(WriteError::BoardTooOld {
+                    min_board: min_board.clone(),
+                    running: running.clone(),
+                    install: install.clone(),
+                });
+            }
+            Some(WriteGate::Unreadable { detail }) => {
+                return Err(WriteError::MinBoardUnreadable {
+                    detail: detail.clone(),
+                });
+            }
+            Some(WriteGate::Unchecked { .. }) => {
+                self.passed_unchecked.store(true, Ordering::Relaxed);
+            }
+            None => {}
         }
         match &self.checkout {
             Some(checkout) => Err(WriteError::AtCheckout {

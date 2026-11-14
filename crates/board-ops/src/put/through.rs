@@ -53,16 +53,13 @@ impl Board {
         if inside.repository == self.repository().path() {
             return Err(refused(&first.path, mount, Through::Own));
         }
-        let home = self.repositories().home().map(Into::into);
-        let mut mounted = match Board::open(&inside.repository, home) {
+        let mut mounted = match self.open_beside(&inside.repository) {
             Ok(mounted) if mounted.repository().path() == inside.repository => mounted,
             _ => return Err(refused(&first.path, mount, Through::NotABoard)),
         };
         // The mounted board checks the put against its own settings, at the
         // path the put lands in there.
         mounted.ask_as(self.asker.clone());
-        // ...and refuses it when its own `min_board` is newer than this run.
-        mounted.running_as(self.running);
         mounted.bulk.clone_from(&self.bulk);
         // Refuses a `follow` that names nothing, as `mount update` does.
         let pin = self.repositories().pin(mount)?;

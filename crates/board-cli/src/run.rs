@@ -425,6 +425,9 @@ pub(crate) fn run(
     stdin: &mut dyn Stdin,
     ran: &mut Ran,
 ) -> Output {
+    // The one place the binary names its build: every board opened after
+    // this, by whatever code, gates its writes as it.
+    board_ops::declare_build(crate::timing::BUILD, crate::timing::built());
     let mut arguments: Vec<OsString> = arguments.into_iter().collect();
     if let Some(completed) = crate::complete::complete(&arguments, context) {
         return completed;
@@ -522,7 +525,7 @@ pub(crate) fn run(
         },
     };
     ran.trace.extend(board.take_trace());
-    output
+    output.warned_by(&board)
 }
 
 /// Runs completion and skills, which need no board.

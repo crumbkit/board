@@ -2,7 +2,6 @@
 
 use std::cell::RefCell;
 use std::path::{Path, PathBuf};
-use std::str::FromStr;
 
 use board_model::{
     CONFIG_TYPE, Classified, Code, Content, Fields, LogicalPath, Object, ObjectId, PluginName,
@@ -16,7 +15,7 @@ use serde_json::Value;
 use crate::effects::Asker;
 use crate::host::BuiltIn;
 use crate::trace::Trace;
-use crate::version::{Built, MinBoard, Running, Version};
+use crate::version::{MinBoard, Running};
 
 /// `.board/board.json`, a `board/config/v1` record.
 #[derive(Debug, Deserialize)]
@@ -32,7 +31,7 @@ pub struct Config {
     #[serde(default)]
     pub store: Option<Store>,
     /// The oldest Board that may write this board, which every older Board
-    /// refuses to write or sync (docs/architecture/writes.md).
+    /// refuses to write or sync (docs/architecture/writes/minimum.md).
     #[serde(default)]
     pub min_board: Option<MinBoard>,
 }
@@ -169,10 +168,7 @@ impl Board {
             asker: Asker::default(),
             built_in: BuiltIn::default(),
             build: "",
-            running: Running {
-                version: Version::from_str(env!("CARGO_PKG_VERSION")).unwrap_or_default(),
-                built: None,
-            },
+            running: crate::version::declared(),
             started: None,
             bulk: None,
             between: Between::default(),
@@ -188,12 +184,19 @@ impl Board {
     /// write and sync from now on. Text that is no version leaves the
     /// running version as it was.
     pub fn running(&mut self, version: &str, built: Option<i64>) {
-        if let Ok(version) = version.parse() {
-            self.running_as(Running {
-                version,
-                built: built.map(Built::from_seconds),
-            });
+        if let Ok(running) = Running::parse(version, built) {
+            self.running_as(running);
         }
+    }
+
+    /// Opens the board at `start` as the Board this one is running as, so
+    /// that a board reached from this one, such as a mounted one or the
+    /// personal board, gates its writes the same way.
+    pub(crate) fn open_beside(&self, start: &Path) -> Result<Self, OpenError> {
+        let home = self.repositories().home().map(Into::into);
+        let mut board = Self::open(start, home)?;
+        board.running_as(self.running.clone());
+        Ok(board)
     }
 
     /// [`Board::running`] for a Board already parsed.
@@ -205,12 +208,15 @@ impl Board {
     /// Refuses writes in the repositories when `min_board` is newer than
     /// the running version, and lifts the refusal when it is not.
     fn gate_writes(&mut self) {
-        let refusal = self
-            .config
-            .min_board
-            .filter(|minimum| minimum.refuses(&self.running))
-            .map(|minimum| (minimum.to_string(), self.running.to_string()));
-        self.repositories.refuse_writes(refusal);
+        let gate = (self.config.min_board.as_ref()).and_then(|minimum| minimum.gate(&self.running));
+        self.repositories.gate_writes(gate);
+    }
+
+    /// The note for a write this run made without checking the build date
+    /// that `min_board` names, because this build has none, when it made
+    /// one.
+    pub fn undated_gate_passed(&self) -> Option<String> {
+        self.repositories.passed_unchecked().map(str::to_owned)
     }
 
     /// Marks every commit this board makes from now on as a bulk one,

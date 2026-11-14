@@ -4,31 +4,20 @@
 
 use std::ffi::OsStr;
 
-/// The seconds since the Unix epoch at which the source was committed:
-/// `epoch`, the value of `SOURCE_DATE_EPOCH`, when it is set and not empty,
-/// and otherwise what `log` returns, which is the committer date as
-/// `git log -1 --format=%ct` prints it, for `commit` (the value of
-/// `BOARD_BUILD_COMMIT`) when that is set and not empty, and for git's HEAD
-/// when it is not. `None` when neither is available, including when `log`
-/// cannot read `commit`. A `SOURCE_DATE_EPOCH` that is not whole seconds is the message
-/// the build fails with.
+/// The seconds since the Unix epoch at which the source was committed: what
+/// `log` returns, which is the committer date as `git log -1 --format=%ct`
+/// prints it, for `commit` (the value of `BOARD_BUILD_COMMIT`) when that is
+/// set and not empty, and for git's HEAD when it is not. Only when git gives
+/// no date, `epoch`, the value of `SOURCE_DATE_EPOCH`, when it is set and not
+/// empty: packagers set it to dates that are not the source's, such as Nix's
+/// 1980. `None` when neither is available, including when `log` cannot read
+/// `commit`. A `SOURCE_DATE_EPOCH` that is not whole seconds, and is needed,
+/// is the message the build fails with.
 pub(crate) fn seconds(
     epoch: Option<&OsStr>,
     commit: Option<&OsStr>,
     log: impl FnOnce(Option<&str>) -> Option<String>,
 ) -> Result<Option<i64>, String> {
-    if let Some(epoch) = epoch.filter(|epoch| !epoch.is_empty()) {
-        return epoch
-            .to_str()
-            .and_then(|text| text.parse().ok())
-            .map(Some)
-            .ok_or_else(|| {
-                format!(
-                    "SOURCE_DATE_EPOCH is \"{}\", which is not whole seconds since the Unix epoch; set it to digits or unset it",
-                    epoch.to_string_lossy().escape_debug()
-                )
-            });
-    }
     let commit = commit.filter(|commit| !commit.is_empty());
     // A commit name that is not text cannot name a commit.
     let text = match commit.map(OsStr::to_str) {
@@ -36,5 +25,20 @@ pub(crate) fn seconds(
         Some(Some(name)) => log(Some(name)),
         None => log(None),
     };
-    Ok(text.and_then(|text| text.trim().parse().ok()))
+    if let Some(seconds) = text.and_then(|text| text.trim().parse().ok()) {
+        return Ok(Some(seconds));
+    }
+    let Some(epoch) = epoch.filter(|epoch| !epoch.is_empty()) else {
+        return Ok(None);
+    };
+    epoch
+        .to_str()
+        .and_then(|text| text.parse().ok())
+        .map(Some)
+        .ok_or_else(|| {
+            format!(
+                "SOURCE_DATE_EPOCH is \"{}\", which is not whole seconds since the Unix epoch; set it to digits or unset it",
+                epoch.to_string_lossy().escape_debug()
+            )
+        })
 }

@@ -73,8 +73,7 @@ impl Board {
                 if inside.repository == self.repository().path() {
                     return Ok(());
                 }
-                let home = self.repositories().home().map(Into::into);
-                let Ok(mut mounted) = Board::open(&inside.repository, home) else {
+                let Ok(mut mounted) = self.open_beside(&inside.repository) else {
                     return Ok(());
                 };
                 mounted.ask_as(self.asker.clone());

@@ -1,5 +1,5 @@
-//! `BOARD_BUILD_DATE`, the commit date a build embeds, comes from
-//! `SOURCE_DATE_EPOCH` when it is set, and otherwise from git's HEAD; with
+//! `BOARD_BUILD_DATE`, the commit date a build embeds, comes from git's
+//! commit date, and from `SOURCE_DATE_EPOCH` only when git gives none; with
 //! neither, a build has no date (docs/architecture/writes/minimum.md).
 
 #[path = "../build/built.rs"]
@@ -23,9 +23,18 @@ fn no_git(_: Option<&str>) -> Option<String> {
 }
 
 #[test]
-fn source_date_epoch_wins_over_git() {
+fn the_commit_date_wins_over_source_date_epoch() {
+    // Nix exports 1980 for every build, and a packager sets its own date.
     assert_eq!(
-        seconds(Some(os("1794528000")), None, git("5")),
+        seconds(Some(os("315532800")), None, git("1794528000")),
+        Ok(Some(1_794_528_000))
+    );
+}
+
+#[test]
+fn source_date_epoch_dates_a_build_whose_commit_git_cannot_read() {
+    assert_eq!(
+        seconds(Some(os("1794528000")), None, no_git),
         Ok(Some(1_794_528_000))
     );
 }
@@ -49,8 +58,13 @@ fn a_build_with_neither_has_no_date() {
 }
 
 #[test]
-fn a_source_date_epoch_that_is_not_whole_seconds_fails_the_build() {
-    let message = seconds(Some(os("yesterday")), None, git("5")).unwrap_err();
+fn a_source_date_epoch_that_is_not_whole_seconds_fails_the_build_when_git_gives_no_date() {
+    assert_eq!(
+        seconds(Some(os("yesterday")), None, git("5")),
+        Ok(Some(5)),
+        "git's date is used, so the epoch is never read"
+    );
+    let message = seconds(Some(os("yesterday")), None, no_git).unwrap_err();
     assert!(
         message.contains("SOURCE_DATE_EPOCH is \"yesterday\""),
         "{message}"
@@ -80,7 +94,14 @@ fn a_build_commit_git_cannot_read_leaves_the_build_without_a_date() {
 }
 
 #[test]
-fn an_empty_build_commit_is_unset_and_source_date_epoch_still_wins() {
+fn an_empty_build_commit_is_unset_and_a_commit_git_cannot_read_falls_back_to_source_date_epoch() {
     assert_eq!(seconds(None, Some(os("")), log), Ok(Some(100)));
-    assert_eq!(seconds(Some(os("7")), Some(os("abc123")), log), Ok(Some(7)));
+    assert_eq!(
+        seconds(Some(os("7")), Some(os("abc123")), log),
+        Ok(Some(1_794_528_000))
+    );
+    assert_eq!(
+        seconds(Some(os("7")), Some(os("feedface")), log),
+        Ok(Some(7))
+    );
 }
