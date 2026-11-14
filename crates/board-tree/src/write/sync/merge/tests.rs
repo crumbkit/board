@@ -614,3 +614,127 @@ fn a_pointer_at_a_path_that_cannot_hold_one_is_an_ordinary_conflict() {
     assert_eq!(merged.pins, Vec::new());
     assert_eq!(merged.conflicts.len(), 1);
 }
+
+#[test]
+fn two_appends_at_the_end_of_a_text_file_keep_both_remote_first_without_a_conflict() {
+    let fixture = Fixture::new();
+    let (merged, files) = fixture.merge(
+        &[("daily.md", "a\nb\n")],
+        &[("daily.md", "a\nb\nagent\n")],
+        &[("daily.md", "a\nb\nphone\n")],
+    );
+    assert_eq!(files, [file("daily.md", "a\nb\nphone\nagent\n")]);
+    assert_eq!(merged.conflicts, Vec::new());
+}
+
+#[test]
+fn two_insertions_at_one_point_inside_a_text_file_keep_both_remote_first() {
+    let fixture = Fixture::new();
+    let (merged, files) = fixture.merge(
+        &[("n.md", "a\nb\nc\n")],
+        &[("n.md", "a\nagent\nb\nc\nlocal tail\n")],
+        &[("n.md", "a\nphone 1\nphone 2\nb\nc\n")],
+    );
+    assert_eq!(
+        files,
+        [file(
+            "n.md",
+            "a\nphone 1\nphone 2\nagent\nb\nc\nlocal tail\n"
+        )]
+    );
+    assert_eq!(merged.conflicts, Vec::new());
+}
+
+#[test]
+fn two_appends_to_a_file_both_added_keep_both_remote_first() {
+    let fixture = Fixture::new();
+    let (merged, files) = fixture.merge(&[], &[("n.md", "agent\n")], &[("n.md", "phone\n")]);
+    assert_eq!(files, [file("n.md", "phone\nagent\n")]);
+    assert_eq!(merged.conflicts, Vec::new());
+}
+
+#[test]
+fn an_insertion_beside_a_deletion_of_the_neighbouring_lines_takes_the_remote_and_records_it() {
+    let fixture = Fixture::new();
+    let (merged, files) = fixture.merge(
+        &[("n.md", "a\nb\nc\n")],
+        &[("n.md", "a\nb\nlocal\nc\n")],
+        &[("n.md", "a\nc\n")],
+    );
+    assert_eq!(files, [file("n.md", "a\nc\n")]);
+    assert_eq!(merged.conflicts.len(), 1);
+}
+
+#[test]
+fn an_insertion_at_the_point_where_the_other_side_replaced_a_line_is_a_conflict() {
+    let fixture = Fixture::new();
+    let (merged, files) = fixture.merge(
+        &[("n.md", "a\nb\nc\n")],
+        &[("n.md", "a\nb\nlocal\nc\n")],
+        &[("n.md", "a\nb\nremote\n")],
+    );
+    assert_eq!(files, [file("n.md", "a\nb\nremote\n")]);
+    assert_eq!(merged.conflicts.len(), 1);
+}
+
+#[test]
+fn an_insertion_together_with_an_overlapping_edit_elsewhere_is_still_a_conflict() {
+    let fixture = Fixture::new();
+    let (merged, files) = fixture.merge(
+        &[("n.md", "a\nb\nc\nd\ne\nf\ng\n")],
+        &[("n.md", "a\nB local\nc\nd\ne\nf\ng\nagent\n")],
+        &[("n.md", "a\nB remote\nc\nd\ne\nf\ng\nphone\n")],
+    );
+    assert_eq!(files, [file("n.md", "a\nB remote\nc\nd\ne\nf\ng\nphone\n")]);
+    assert_eq!(merged.conflicts.len(), 1);
+}
+
+#[test]
+fn a_gitattributes_file_both_sides_appended_to_takes_the_remote_and_records_it() {
+    let fixture = Fixture::new();
+    let (merged, files) = fixture.merge(
+        &[(".gitattributes", "a\n")],
+        &[(".gitattributes", "a\nlocal\n")],
+        &[(".gitattributes", "a\nremote\n")],
+    );
+    assert_eq!(files, [file(".gitattributes", "a\nremote\n")]);
+    assert_eq!(merged.conflicts.len(), 1);
+}
+
+#[test]
+fn two_conflict_records_at_one_path_take_the_remote_one_without_a_new_record() {
+    let fixture = Fixture::new();
+    let (merged, files) = fixture.merge(
+        &[],
+        &[("conflicts/abc.json", "local record")],
+        &[("conflicts/abc.json", "remote record")],
+    );
+    assert_eq!(files, [file("conflicts/abc.json", "remote record")]);
+    assert_eq!(merged.conflicts, Vec::new());
+}
+
+#[test]
+fn a_conflict_record_one_side_changed_and_the_other_deleted_is_kept_without_a_new_record() {
+    let fixture = Fixture::new();
+    let base = [("conflicts/abc.json", "old"), ("a.json", "1")];
+    let (merged, files) = fixture.merge(
+        &base,
+        &[("conflicts/abc.json", "new"), ("a.json", "1")],
+        &[("a.json", "1")],
+    );
+    assert_eq!(
+        files,
+        [file("a.json", "1"), file("conflicts/abc.json", "new")]
+    );
+    assert_eq!(merged.conflicts, Vec::new());
+    let (merged, files) = fixture.merge(
+        &base,
+        &[("a.json", "1")],
+        &[("conflicts/abc.json", "new"), ("a.json", "1")],
+    );
+    assert_eq!(
+        files,
+        [file("a.json", "1"), file("conflicts/abc.json", "new")]
+    );
+    assert_eq!(merged.conflicts, Vec::new());
+}

@@ -6,8 +6,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use board_model::{
-    Mount, ObjectId, Pointer, Side, TYPES_DIRECTORY, can_hold_pointer, is_json_file, pointer,
-    repinned,
+    CONFLICTS_DIRECTORY, Mount, ObjectId, Pointer, Side, TYPES_DIRECTORY, can_hold_pointer,
+    is_json_file, pointer, repinned,
 };
 use gix::bstr::BString;
 use gix::objs::tree::{Entry, EntryKind, EntryMode};
@@ -229,6 +229,11 @@ impl Merge<'_> {
                 mode: EntryKind::Tree.into(),
             }));
         }
+        if path.starts_with(CONFLICTS_DIRECTORY) {
+            // A conflict record is never the subject of another: the
+            // remote's stands, and so does the only one there is.
+            return Ok(remote.or(local));
+        }
         let (kept, kind) = match (local, remote) {
             (Some(file), Some(remote)) if remote.is_tree() => (
                 Some(remote),
@@ -286,8 +291,10 @@ impl Merge<'_> {
     }
 
     /// The text file both sides changed, merged line by line from `base`,
-    /// when no hunk of one side overlaps a hunk of the other. A JSON file,
-    /// a file that is not text and a merge with overlapping hunks give
+    /// when no hunk of one side overlaps a hunk of the other, or when the
+    /// only hunks that meet are insertions at one point, which both stay
+    /// in ([`insertions_together`]). A file [`merges_by_line`] excludes, a
+    /// file that is not text and a merge with other overlapping hunks give
     /// `None`.
     fn text(
         &self,
@@ -296,7 +303,7 @@ impl Merge<'_> {
         local: Slot,
         remote: Slot,
     ) -> Result<Option<Slot>, GitError> {
-        if is_json_file(path)
+        if !merges_by_line(path)
             || local.mode != remote.mode
             || !local.mode.is_blob()
             || base.is_some_and(|base| !base.mode.is_blob())
@@ -328,7 +335,10 @@ impl Merge<'_> {
             gix::merge::blob::builtin_driver::text::Options::default(),
         );
         if outcome != gix::merge::blob::Resolution::Complete {
-            return Ok(None);
+            let Some(together) = insertions_together(&ancestor, &ours, &theirs) else {
+                return Ok(None);
+            };
+            merged = together;
         }
         let id = self
             .repository
@@ -448,6 +458,111 @@ impl Merge<'_> {
             source: source.into(),
         }
     }
+}
+
+/// Whether the file at `path` may be merged line by line. A JSON record
+/// (which includes every mount pointer, since only a plain `.json` file
+/// can hold one) and a `.gitattributes` file take one side whole, because
+/// a union of their lines can be invalid.
+fn merges_by_line(path: &str) -> bool {
+    let name = path.rsplit('/').next().unwrap_or(path);
+    !is_json_file(path) && name != ".gitattributes"
+}
+
+/// One change to a file's lines: the lines `before` in the ancestor became
+/// the lines `after` in a side.
+struct Hunk {
+    before: std::ops::Range<u32>,
+    after: std::ops::Range<u32>,
+}
+
+/// The line changes from `ancestor` to `side`, in order.
+fn hunks(ancestor: &[u8], side: &[u8]) -> Vec<Hunk> {
+    let input = gix::diff::blob::InternedInput::new(ancestor, side);
+    let mut diff = gix::diff::blob::Diff::compute(gix::diff::blob::Algorithm::Myers, &input);
+    diff.postprocess_lines(&input);
+    diff.hunks()
+        .map(|hunk| Hunk {
+            before: hunk.before,
+            after: hunk.after,
+        })
+        .collect()
+}
+
+/// Whether two hunks overlap or are adjacent in the ancestor.
+fn touches(a: &Hunk, b: &Hunk) -> bool {
+    a.before.start <= b.before.end && b.before.start <= a.before.end
+}
+
+/// The merge of `ours` and `theirs` from `ancestor` that keeps the
+/// insertions both made at one point, `theirs` first and then `ours`.
+/// Every other change must stand clear of the other side's: a change that
+/// overlaps or is adjacent to one of the other side, other than two pure
+/// insertions at the same line, gives `None`, and so does a merge with no
+/// such pair of insertions, which `gix`'s merge settles. A line is kept with
+/// its newline, and the remote's insertion must end in one, or the two
+/// insertions would join into one line.
+fn insertions_together(ancestor: &[u8], ours: &[u8], theirs: &[u8]) -> Option<Vec<u8>> {
+    fn lines(bytes: &[u8]) -> Vec<&[u8]> {
+        bytes.split_inclusive(|b| *b == b'\n').collect()
+    }
+    let (base, ours_lines, theirs_lines) = (lines(ancestor), lines(ours), lines(theirs));
+    let (ours_hunks, theirs_hunks) = (hunks(ancestor, ours), hunks(ancestor, theirs));
+    let copy = |lines: &[&[u8]], range: &std::ops::Range<u32>, out: &mut Vec<u8>| {
+        for line in &lines[range.start as usize..range.end as usize] {
+            out.extend_from_slice(line);
+        }
+    };
+    let mut merged = Vec::new();
+    let mut at = 0;
+    let (mut o, mut t) = (0, 0);
+    let mut inserted = false;
+    while o < ours_hunks.len() || t < theirs_hunks.len() {
+        let (mine, other) = (ours_hunks.get(o), theirs_hunks.get(t));
+        if let (Some(mine), Some(other)) = (mine, other)
+            && touches(mine, other)
+        {
+            let same_point = mine.before.is_empty()
+                && other.before.is_empty()
+                && mine.before.start == other.before.start;
+            let chained = ours_hunks
+                .get(o + 1)
+                .is_some_and(|next| touches(next, other))
+                || theirs_hunks
+                    .get(t + 1)
+                    .is_some_and(|next| touches(next, mine));
+            let open_ended = theirs_lines[other.after.start as usize..other.after.end as usize]
+                .last()
+                .is_some_and(|line| !line.ends_with(b"\n"));
+            if !same_point || chained || open_ended {
+                return None;
+            }
+            copy(&base, &(at..mine.before.start), &mut merged);
+            copy(&theirs_lines, &other.after, &mut merged);
+            copy(&ours_lines, &mine.after, &mut merged);
+            at = mine.before.start;
+            inserted = true;
+            o += 1;
+            t += 1;
+            continue;
+        }
+        let from_ours = match (mine, other) {
+            (Some(mine), Some(other)) => mine.before.start <= other.before.start,
+            (mine, _) => mine.is_some(),
+        };
+        let (hunk, lines) = if from_ours {
+            o += 1;
+            (mine?, &ours_lines)
+        } else {
+            t += 1;
+            (other?, &theirs_lines)
+        };
+        copy(&base, &(at..hunk.before.start), &mut merged);
+        copy(lines, &hunk.after, &mut merged);
+        at = hunk.before.end;
+    }
+    copy(&base, &(at..u32::try_from(base.len()).ok()?), &mut merged);
+    inserted.then_some(merged)
 }
 
 #[cfg(test)]

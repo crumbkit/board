@@ -110,15 +110,19 @@ impl Repository {
                 .map_err(|source| self.unreadable(source))?;
             for found in &merged.conflicts {
                 let record = self.conflict_record(found, local, remote, base)?;
-                let path = format!("{CONFLICTS_DIRECTORY}{}.json", self.name_of(&found.path));
-                let bytes = canonical_json(&record.to_value()).into_bytes();
-                let blob = git
-                    .write_blob(&bytes)
-                    .map_err(|source| self.unreadable(source))?
-                    .detach();
-                editor
-                    .upsert(path.as_str(), EntryKind::Blob, blob)
-                    .map_err(|source| self.unreadable(source))?;
+                let path = format!("{CONFLICTS_DIRECTORY}{}.json", self.name_of(&record));
+                // A record that is already there is about this same
+                // conflict, and is not replaced, so it keeps its commits.
+                if self.entry_in(tree, &path)?.is_none() {
+                    let bytes = canonical_json(&record.to_value()).into_bytes();
+                    let blob = git
+                        .write_blob(&bytes)
+                        .map_err(|source| self.unreadable(source))?
+                        .detach();
+                    editor
+                        .upsert(path.as_str(), EntryKind::Blob, blob)
+                        .map_err(|source| self.unreadable(source))?;
+                }
                 outcome.conflicts.push(Conflicted {
                     path: found.path.clone(),
                     kind: record.kind,
@@ -160,11 +164,21 @@ impl Repository {
         common_ancestor(self.git(), local, remote).map_err(|source| self.unreadable(source))
     }
 
-    /// A name for the record of the conflict at `path`: the first twelve
-    /// hex digits of the path's hash, so the same path always has the same
-    /// record.
-    fn name_of(&self, path: &str) -> String {
-        self.blob_id(path.as_bytes()).to_string()[..12].to_owned()
+    /// A name for the record of a conflict: the hash of its path and the
+    /// three blobs in dispute (the ancestor's and each side's, or `-` for
+    /// none). The same conflict always has the same name, and a later
+    /// conflict at the same path, over other content, has another.
+    fn name_of(&self, record: &Conflict) -> String {
+        let blob =
+            |blob: Option<ObjectId>| blob.map_or_else(|| "-".to_owned(), |id| id.to_string());
+        let key = format!(
+            "{}\n{}\n{}\n{}",
+            record.path,
+            blob(record.base),
+            blob(record.local.blob),
+            blob(record.remote.blob)
+        );
+        self.blob_id(key.as_bytes()).to_string()
     }
 
     /// The record of `found`, a conflict between `local` and `remote`
@@ -264,7 +278,15 @@ impl Repository {
         commit: gix::ObjectId,
         path: &str,
     ) -> Result<Option<gix::ObjectId>, SyncError> {
-        let mut tree = self.tree_of(commit)?;
+        self.entry_in(self.tree_of(commit)?, path)
+    }
+
+    /// The object the tree `tree` holds at `path`.
+    fn entry_in(
+        &self,
+        mut tree: gix::ObjectId,
+        path: &str,
+    ) -> Result<Option<gix::ObjectId>, SyncError> {
         let mut parts = path.split('/').peekable();
         while let Some(part) = parts.next() {
             let found = self

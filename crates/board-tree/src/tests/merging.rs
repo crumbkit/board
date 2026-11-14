@@ -295,3 +295,101 @@ fn a_text_file_both_sides_changed_on_one_line_takes_the_remote_and_records_it() 
     assert_eq!(text(&two, "daily.md"), "a\nphone\nc\n");
     assert_eq!(records(&two).len(), 1);
 }
+
+fn record_files(clone: &Scenario) -> std::collections::BTreeMap<String, String> {
+    (clone.head().unwrap().files.into_iter())
+        .filter(|(path, _)| path.starts_with("conflicts/"))
+        .map(|(path, bytes)| (path, String::from_utf8(bytes).unwrap()))
+        .collect()
+}
+
+#[test]
+fn a_later_conflict_at_an_already_conflicted_path_keeps_the_earlier_record() {
+    let (_remote, one, two) = pair(&[("a.json", "0")]);
+    commit_here(&one, &[("a.json", "1")]);
+    sync(&one, true);
+    commit_here(&two, &[("a.json", "2")]);
+    sync(&two, true);
+    let earlier = record_files(&two);
+    assert_eq!(earlier.len(), 1);
+    sync(&one, false);
+    let (name, record) = earlier.iter().next().unwrap();
+    commit_here(&one, &[("a.json", "3"), (name, record)]);
+    sync(&one, true);
+    commit_here(&two, &[("a.json", "4"), (name, record)]);
+    let synced = sync(&two, false);
+    assert_eq!(synced.conflicts.len(), 1);
+    let found = record_files(&two);
+    assert_eq!(found.len(), 2, "{:?}", found.keys());
+    for (path, bytes) in &earlier {
+        assert_eq!(&found[path], bytes);
+    }
+    assert!(found.contains_key(synced.conflicts[0].record.as_str()));
+}
+
+#[test]
+fn two_clones_that_make_the_same_conflict_record_never_conflict_about_it() {
+    let remote = Scenario::new();
+    remote.identified().accepting_pushes();
+    remote.commit(&[("a.json", "0")]);
+    let [one, two, three] = [(); 3].map(|()| Scenario::clone_of(&remote));
+    for clone in [&one, &two, &three] {
+        clone.identified();
+    }
+    commit_here(&one, &[("a.json", "1")]);
+    sync(&one, true);
+    commit_here(&two, &[("a.json", "2")]);
+    // Another parent gives `three`'s commit another id, with the same file.
+    commit_here(&three, &[("a.json", "0"), ("b.json", "1")]);
+    commit_here(&three, &[("a.json", "2"), ("b.json", "1")]);
+    sync(&two, true);
+    let held = record_files(&two);
+    assert_eq!(held.len(), 1);
+    let synced = sync(&three, true);
+    // The clone makes the record the other already pushed: that one stands.
+    assert_eq!(record_files(&three), held);
+    assert_eq!(synced.conflicts.len(), 1);
+    assert!(held.contains_key(synced.conflicts[0].record.as_str()));
+    // A fourth merge of the two clones' records finds no conflict in them.
+    let again = sync(&two, true);
+    assert_eq!(again.conflicts, Vec::new());
+    assert_eq!(record_files(&two), held);
+}
+
+#[test]
+fn merging_the_same_commits_twice_gives_the_same_conflict_record_bytes_and_name() {
+    let remote = Scenario::new();
+    remote.identified().accepting_pushes();
+    remote.commit(&[("a.json", "0")]);
+    let [one, two, three] = [(); 3].map(|()| Scenario::clone_of(&remote));
+    for clone in [&one, &two, &three] {
+        clone.identified();
+    }
+    commit_here(&one, &[("a.json", "1")]);
+    sync(&one, true);
+    // `two` and `three` commit the same tree on the same parent, so the
+    // commit has one id.
+    let ours = commit_here(&two, &[("a.json", "2")]);
+    assert_eq!(commit_here(&three, &[("a.json", "2")]), ours);
+    sync(&two, false);
+    sync(&three, false);
+    assert_eq!(record_files(&two), record_files(&three));
+    assert_eq!(record_files(&two).len(), 1);
+}
+
+#[test]
+fn two_appends_at_the_end_of_a_text_file_both_stay_remote_first_and_record_nothing() {
+    let (_remote, one, two) = pair(&[("daily.md", "a\nb\n")]);
+    commit_here(&one, &[("daily.md", "a\nb\nphone\n")]);
+    sync(&one, true);
+    commit_here(&two, &[("daily.md", "a\nb\nagent\n")]);
+    let synced = sync(&two, true);
+    assert!(synced.merged && synced.pushed);
+    assert_eq!(synced.conflicts, Vec::new());
+    assert_eq!(records(&two).len(), 0);
+    assert_eq!(text(&two, "daily.md"), "a\nb\nphone\nagent\n");
+    assert_eq!(
+        std::fs::read_to_string(two.workdir().join("daily.md")).unwrap(),
+        "a\nb\nphone\nagent\n"
+    );
+}
