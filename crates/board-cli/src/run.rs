@@ -14,6 +14,7 @@ use board_plugin::{Limits, Target};
 mod checkout;
 mod lookup;
 mod remove;
+mod syncing;
 mod uri;
 
 /// What a plugin run gets from this command line's context.
@@ -271,11 +272,7 @@ executable, so git's remotes, credentials and SSH settings apply.
 Examples:
   board sync
   board sync --no-push")]
-    Sync {
-        /// Fetch and merge, and leave the push for later.
-        #[arg(long)]
-        no_push: bool,
-    },
+    Sync(syncing::Syncing),
     /// Work with mounts.
     #[command(
         subcommand,
@@ -684,10 +681,7 @@ fn command(
         }
         Command::Put(putting) => put(board, printer, prefix, putting, stdin),
         Command::Rm(asked) => remove::remove(board, printer, prefix, asked),
-        Command::Sync { no_push } => match board.sync(!no_push, board_tree::GIT_DEADLINE) {
-            Ok(report) => render::sync(printer, &report),
-            Err(error) => render::refused(printer, error.refusal()),
-        },
+        Command::Sync(asked) => syncing::run(board, printer, &asked),
         Command::Mount(MountCommand::Update { path }) => {
             match board.mount_update(&path, board_tree::LOCK_WAIT) {
                 Ok(report) => render::mount_update(printer, &report),

@@ -18,6 +18,7 @@ use crate::transport::{self, Deadline, Pushed, Upstream};
 
 mod integrate;
 mod merge;
+mod refuse;
 
 pub use merge::{PinBasis, PinResolution};
 
@@ -139,15 +140,35 @@ impl Repository {
         deadline: Deadline,
         wait: Duration,
     ) -> Result<Synced, SyncError> {
+        self.sync_accepting(push, false, deadline, wait)
+    }
+
+    /// As [`Self::sync`], and with `accept_rewrite` the sync merges a remote
+    /// branch that no longer contains the commit the last fetch left, which
+    /// it refuses as [`SyncError::Rewound`] otherwise. A merge or rebase in
+    /// progress and a shallow or partial clone are refused either way,
+    /// before the board lock is taken.
+    pub fn sync_accepting(
+        &self,
+        push: bool,
+        accept_rewrite: bool,
+        deadline: Deadline,
+        wait: Duration,
+    ) -> Result<Synced, SyncError> {
         let upstream = self.upstream()?;
         let _only = self.sync_lock(wait.min(deadline.left()))?;
         let ssh = self.ssh();
         let mut summary: Option<Integrated> = None;
         let mut reason = String::new();
         for attempts in 1..=ATTEMPTS {
+            let previous = self.tracking(&upstream).ok();
             transport::fetch(self.path(), &upstream, &ssh, deadline)?;
             let fetched = self.tracking(&upstream)?;
-            let round = match self.integrate(&upstream, fetched, deadline) {
+            let before = refuse::Before {
+                previous: previous.filter(|_| !accept_rewrite),
+                restore: previous,
+            };
+            let round = match self.integrate(&upstream, fetched, before, deadline) {
                 Ok(round) => round,
                 Err(SyncError::Write(WriteError::HeadMoved)) if attempts < ATTEMPTS => continue,
                 // A board lock still held when the deadline is spent is the
@@ -436,6 +457,19 @@ pub enum SyncError {
     Symlink { path: String, symlink: String },
     #[error("another sync of this clone is running; {} is held", lock.display())]
     Busy { lock: std::path::PathBuf },
+    #[error("a git {operation} is in progress in this clone")]
+    Merging { operation: &'static str },
+    #[error("this clone is {kind}, so the history a merge needs may be missing")]
+    Shallow { kind: &'static str },
+    #[error(
+        "{remote}/{branch} is at {fetched}, which does not contain {previous}, the commit this clone fetched last time"
+    )]
+    Rewound {
+        remote: String,
+        branch: String,
+        previous: ObjectId,
+        fetched: ObjectId,
+    },
     #[error("the remote refused the push {attempts} times, the last time with {reason}")]
     GaveUp { attempts: u32, reason: String },
     #[error(transparent)]
@@ -453,6 +487,9 @@ impl SyncError {
             Self::Symlink { .. } => Code::PutSymlink,
             Self::Busy { .. } => Code::SyncBusy,
             Self::GaveUp { .. } => Code::SyncGaveUp,
+            Self::Merging { .. } => Code::SyncMerging,
+            Self::Shallow { .. } => Code::SyncShallow,
+            Self::Rewound { .. } => Code::SyncRewound,
             Self::TimedOut { .. } => Code::SyncTimeout,
             Self::Write(error) => error.code(),
             Self::Git(error) => error.code(),

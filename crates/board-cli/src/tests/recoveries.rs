@@ -807,7 +807,7 @@ fn through_mounts(starts: &mut Starts) {
 /// Clones of one remote that `sync` refuses: one following no remote
 /// branch, one whose remote git cannot reach, one that committed a record
 /// the remote also changed, one holding an edit of a file the remote
-/// changed, and one whose remote refuses every push. `-C` names the clone,
+/// changed, and one whose remote was rewritten since its last fetch, one that is shallow, one in the middle of a git merge, and one whose remote refuses every push. `-C` names the clone,
 /// which is the reason; the pushed clone's twin leaves the push for later.
 fn syncing(starts: &mut Starts) {
     let files = [
@@ -848,16 +848,35 @@ fn syncing(starts: &mut Starts) {
     assert_eq!(put(&refused, "/projects/r").code, 0);
     let line = |dir: &Path| format!("-C {} sync", dir.display());
     let admitted = line(good.workdir());
-    let clones: [(Code, &Scenario); 3] = [
+    let shallow = clone();
+    shallow.write(
+        ".git/shallow",
+        Item::File(&format!("{}\n", shallow.head().unwrap().id)),
+    );
+    let merging = clone();
+    merging.write(".git/MERGE_HEAD", Item::File("x\n"));
+    let clones: [(Code, &Scenario); 5] = [
         (Code::SyncNoRemote, &no_remote),
         (Code::SyncFailed, &unreachable),
         (Code::SyncEdited, &edited),
+        (Code::SyncShallow, &shallow),
+        (Code::SyncMerging, &merging),
     ];
     for (code, clone) in clones {
         let place = RuntimeFailing::at(clone.workdir());
         starts.add(&place, code, "sync");
         starts.pair(&place, code, &line(clone.workdir()), &admitted);
     }
+    let rewritten = Scenario::new();
+    rewritten.commit(&files);
+    rewritten.accepting_pushes();
+    let rewound = Scenario::clone_of(&rewritten);
+    identified(&rewound);
+    rewritten.write(".git/refs/heads/main", Item::Deleted);
+    rewritten.commit(&[files[0], files[1], ("projects/r.json", changed)]);
+    let place = RuntimeFailing::at(rewound.workdir());
+    starts.add(&place, Code::SyncRewound, "sync");
+    starts.pair(&place, Code::SyncRewound, "sync", "sync --accept-rewrite");
     let place = RuntimeFailing::at(refused.workdir());
     starts.add(&place, Code::SyncGaveUp, "sync");
     starts.pair(&place, Code::SyncGaveUp, "sync", "sync --no-push");
@@ -868,6 +887,10 @@ fn syncing(starts: &mut Starts) {
         no_remote,
         unreachable,
         edited,
+        shallow,
+        merging,
+        rewritten,
+        rewound,
         refusing,
         refused,
     ];

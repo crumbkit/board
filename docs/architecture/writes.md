@@ -70,7 +70,8 @@ admits one sync per clone: a second exits at once with `board::sync::busy`.
 1. Fetch the branch into its remote-tracking ref by running the `git`
    executable, so git's remotes, credentials and SSH settings apply, with
    `fetch.fsckObjects` on.
-2. Integrate, under the board lock. Merge the fetched commit into HEAD
+2. Integrate ([refusals](writes/sync/refusals.md)), under the board lock.
+   Merge the fetched commit into HEAD
    from their common ancestor, as [merging.md](writes/merging.md) says: a
    merge commit has HEAD as its first parent and the fetched commit as its
    second, so every commit made here keeps its id, and each conflict is

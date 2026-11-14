@@ -39,8 +39,10 @@ impl Repository {
         &self,
         upstream: &Upstream,
         fetched: ObjectId,
+        before: super::refuse::Before,
         deadline: Deadline,
     ) -> Result<Integrated, SyncError> {
+        self.refuse_unsafe(upstream, fetched, before)?;
         let lock = self
             .lock(deadline.left().min(LOCK_WAIT))
             .map_err(SyncError::from)?;
@@ -410,7 +412,7 @@ impl Repository {
 /// The best common ancestor of two commits, `None` when their histories
 /// share no commit. gix reports both that case and a damaged history as an
 /// error, so an error is settled by walking both histories.
-fn common_ancestor(
+pub(super) fn common_ancestor(
     git: &gix::Repository,
     one: gix::ObjectId,
     two: gix::ObjectId,

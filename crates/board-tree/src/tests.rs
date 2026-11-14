@@ -12,6 +12,7 @@ mod moved;
 mod places;
 mod planned;
 mod reading;
+mod refusing;
 mod removing;
 #[expect(
     clippy::duplicate_mod,

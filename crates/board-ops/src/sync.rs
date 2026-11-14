@@ -21,6 +21,25 @@ impl Board {
         self.sync_waiting(push, deadline, Duration::ZERO)
     }
 
+    /// As [`Self::sync`], and with `accept_rewrite` a remote branch that no
+    /// longer contains the commit the last fetch left is merged instead of
+    /// refused as `board::sync::rewound`. Only a person asks for this: the
+    /// plugin host's sync never does.
+    pub fn sync_accepting_rewrite(
+        &self,
+        push: bool,
+        accept_rewrite: bool,
+        deadline: Duration,
+    ) -> Result<Synced, SyncError> {
+        let deadline = Deadline::after(deadline);
+        (self.repositories())
+            .writable()
+            .map_err(board_tree::SyncError::from)?;
+        Ok(self
+            .repository()
+            .sync_accepting(push, accept_rewrite, deadline, Duration::ZERO)?)
+    }
+
     /// As [`Self::sync`], but a sync already running is waited for up to
     /// `wait`, within `deadline`, before this one is refused as busy.
     pub fn sync_waiting(
