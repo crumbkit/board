@@ -145,3 +145,32 @@ fn a_batch_refusal_prints_every_refused_line_in_order_as_text_and_as_json() {
         ]})
     );
 }
+
+#[test]
+fn an_undated_build_that_wrote_a_date_gated_board_warns_once_and_leaves_no_stale_note() {
+    use board_scenario::{Item, Scenario};
+
+    let scenario = Scenario::new();
+    scenario.write(
+        ".board/board.json",
+        Item::File(
+            r#"{"$type": "board/config/v1", "min_board": {"built": "2026-11-13T00:00:00Z"}}"#,
+        ),
+    );
+    scenario.identified();
+    let mut board = board_ops::Board::open(scenario.workdir(), None).unwrap();
+    board.running("0.0.0+abc", None);
+    board
+        .put_file(
+            &"/notes/a.md".parse().unwrap(),
+            board_ops::Expect::Any,
+            b"hi\n",
+        )
+        .unwrap();
+    let warned = crate::report::Output::default().warned();
+    let stderr = text(&warned.stderr);
+    assert_eq!(stderr.matches("warning: ").count(), 1, "{stderr}");
+    assert!(stderr.contains("no build date"), "{stderr}");
+    let next = crate::report::Output::default().warned();
+    assert_eq!(next.stderr, b"");
+}

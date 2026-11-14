@@ -67,16 +67,15 @@ impl Board {
         match self.prepare(&lock, &mut view, schemas, path, Expect::Any, record) {
             Err(PutError::Write(WriteError::ThroughMount {
                 inside: Some(inside),
+                path: through,
+                mount,
                 ..
             })) => {
                 drop(lock);
                 if inside.repository == self.repository().path() {
                     return Ok(());
                 }
-                let home = self.repositories().home().map(Into::into);
-                let Ok(mut mounted) = Board::open(&inside.repository, home) else {
-                    return Ok(());
-                };
+                let mut mounted = self.open_mounted(&inside.repository, &through, &mount)?;
                 mounted.ask_as(self.asker.clone());
                 mounted.check_attachment(&inside.path, record, wait)
             }

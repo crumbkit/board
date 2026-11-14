@@ -139,7 +139,7 @@ impl Context {
 
     /// The board holding `start`, or else the one known board with a mount
     /// whose repository holds `start`, and `start`'s logical path in that
-    /// board, opened as this build, reading that mount `at` its pin or its
+    /// board, opened as the build `run` declares, reading that mount `at` its pin or its
     /// checkout (`board --checkout`).
     pub(crate) fn open(
         &self,
@@ -149,7 +149,6 @@ impl Context {
         let (home, cache) = (self.home.as_deref(), self.cache.as_deref());
         let (mut board, prefix) = board_ops::open_at(start, home, cache, || self.known(), at)?;
         board.built_by(crate::timing::DECIDER);
-        board.running(crate::timing::BUILD, crate::timing::built());
         Ok((board, prefix))
     }
 }
