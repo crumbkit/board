@@ -29,7 +29,8 @@ build is refused when it is older than the version named, or when its date is
 before the timestamp named. A build with no date is judged by the version
 alone, and writes a board with a date gate anyway. It prints a warning on
 stderr when it does, whichever board it wrote: the root, one through a mount,
-the personal board or one a plugin opened. The warning says that it could not
+the personal board that `board answer` writes, or one that a built-in
+plugin's request opens in the same process. The warning says that it could not
 check the date.
 
 Source builds are numbered `0.0.0`, so a `min_board` version above `0.0.0`
@@ -49,11 +50,11 @@ named commit is an ancestor of its HEAD; no build does yet.
 
 ## The refusal's install step
 
-The message ends with what to do, chosen from the build and the gate:
-
 A published release is numbered above `0.0.0` and also prints
 `+<commit>`; a build numbered `0.0.0`, with or without a commit, is a source
 build.
+
+The message ends with what to do, chosen from the build and the gate:
 
 - a release build older than a version: install a release of that version or
   newer (README.md, "Installing a release");

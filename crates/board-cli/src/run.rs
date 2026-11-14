@@ -416,10 +416,20 @@ impl Command {
     }
 }
 
-/// `none`, or a blob id in hex.
 /// Runs one command line against the board found from `context`, reading a
 /// record from `stdin` when the command takes one, and traces it in `ran`.
 pub(crate) fn run(
+    arguments: impl IntoIterator<Item = OsString>,
+    context: &Context,
+    stdin: &mut dyn Stdin,
+    ran: &mut Ran,
+) -> Output {
+    // Every exit prints the warnings for the undated writes it made.
+    board_ops::take_undated_gate_notes();
+    run_command(arguments, context, stdin, ran).warned()
+}
+
+fn run_command(
     arguments: impl IntoIterator<Item = OsString>,
     context: &Context,
     stdin: &mut dyn Stdin,
@@ -525,7 +535,7 @@ pub(crate) fn run(
         },
     };
     ran.trace.extend(board.take_trace());
-    output.warned()
+    output
 }
 
 /// Runs completion and skills, which need no board.

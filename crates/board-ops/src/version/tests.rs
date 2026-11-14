@@ -32,6 +32,8 @@ fn gated(min_board: Option<&str>) -> Scenario {
 }
 
 fn running(scenario: &Scenario, version: &str, built: Option<i64>) -> crate::Board {
+    // Each helper call starts from no notes of undated writes.
+    crate::take_undated_gate_notes();
     let mut board = open(scenario);
     board.running(version, built);
     board
@@ -406,7 +408,6 @@ fn a_date_gate_met_by_a_build_with_no_date_is_admitted_and_noted() {
 #[test]
 fn a_date_gate_met_without_a_build_date_in_a_mounted_board_is_noted() {
     let (root, _library) = nested(r#"{"built": "2026-11-13T00:00:00Z"}"#);
-    assert_eq!(crate::take_undated_gate_notes(), Vec::<String>::new());
     put_through(&root, "0.0.0+abc", None).unwrap();
     let notes = crate::take_undated_gate_notes();
     assert_eq!(notes.len(), 1, "{notes:?}");
