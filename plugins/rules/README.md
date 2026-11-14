@@ -428,20 +428,26 @@ become the new ones. crumbkit/board's own `controls/rules/<name>` becomes
 again at the hash of its new JSON and the old version is kept, so a change
 in a mounted board that still names it keeps reading. Every record in this
 board that named the old version names the new one, so each change is pinned
-to it.
+to it. Every other flow that is not stored at the hash of its JSON, such as one a change holds at `/changes/<name>/flow` or a copy in a handoff, is rewritten where it is, since nothing pins it by a hash; one under `/controls/` moves to `/rules/` as any file there does.
 
 Attention orders, effects and each order's context are never rewritten,
 since they carry a signature; the records they name are rewritten as any
 other. The orders and effects that hold an old name are listed under
 `signed`. Each of these is listed under `kept`, with why, and left for a
-person to change: a mount pointer under `/controls/`; a board config that
-names `controls`, since a plugin may not write the config; a file under
+person to change: a mount pointer under `/controls/`; a file under
 `/controls/` that is not UTF-8 text, or whose JSON does not parse as a
-record; a flow that would change but is not stored at the hash of its JSON;
+record; a flow under `/flows/` that would change but is not stored at the hash of its JSON;
 and the records under `/changes/control-becomes-rule/` and
 `/changes/rule-rename-rest/`, which describe the rename in the old names. Two flow versions that rename to the same JSON are
 stored once, and both are re-pointed to it. A reference into a mounted board
 that has not migrated yet resolves through the moved prefix until it does.
+
+The rename, dry run and apply alike, refuses with
+`rules::migrate::config_first` and writes nothing while `.board/board.json`
+does not name `rules` in `plugins` or still names `controls`, since a plugin
+may not write the config.
+Edit the config to name `rules` in place of `controls`, commit it, and run the
+rename again.
 
 The dry run lists each write under `writes`, with `to` for a move, and gives
 a `digest`. `--apply true --digest <digest>` writes them in one commit whose

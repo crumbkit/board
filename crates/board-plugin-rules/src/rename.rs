@@ -28,10 +28,10 @@ use crate::records::{CONTROL_TYPE, RENAMED};
 /// The reason the commit gives in its `Board-Bulk:` trailer.
 const BULK: &str = "rename controls to rules";
 const STALE: &str = "rules::migrate::stale";
+const CONFIG_FIRST: &str = "rules::migrate::config_first";
 const FLOW_TYPE: &str = "changes/flow/v1";
-/// Why a config that names `controls` is kept.
-const CONFIG: &str = "the board's config names controls; only the owner may write it, so name \
-                      rules in its place in .board/board.json";
+/// The board's config, which the rename never writes.
+const CONFIG_PATH: &str = "/.board/board";
 /// Each old field name in a record and the name it takes.
 type Renames = &'static [(&'static str, &'static str)];
 /// The records of the changes that rename controls to rules, which describe
@@ -119,6 +119,18 @@ pub(crate) fn rename(
     output: &mut Output,
 ) -> Result<(), PluginError> {
     let entries = entries(host)?;
+    // Only the owner writes the config, so it names `rules` and no longer
+    // `controls` before the rename. A binary that predates the rename then
+    // refuses `controls.*` from the first commit after the apply, and a
+    // config that names both would leave it reading an emptied `/controls/`.
+    let config = (entries.iter()).find(|entry| entry.logical == CONFIG_PATH);
+    if !config.is_some_and(|entry| names(entry, "rules") && !names(entry, "controls")) {
+        return Err(refusal(
+            CONFIG_FIRST,
+            "the board's config does not name rules, or still names controls, in its plugins",
+            "name rules in place of controls in .board/board.json, then run the rename again",
+        ));
+    }
     let mut held: BTreeSet<String> = (entries.iter())
         .map(|entry| entry.logical.clone())
         .collect();
@@ -134,7 +146,10 @@ pub(crate) fn rename(
             continue;
         }
         let flow = flows.get(&entry.logical);
-        let to = (flow.map(|(new, _)| new.clone())).or_else(|| moved(&entry.logical));
+        // A flow rewritten in place has no new path.
+        let to = (flow.map(|(new, _)| new.clone()))
+            .filter(|new| *new != entry.logical)
+            .or_else(|| moved(&entry.logical));
         let mut keep = |why| {
             kept.push(Kept {
                 path: entry.logical.clone(),
@@ -161,7 +176,7 @@ pub(crate) fn rename(
             // stored already; it is stored once, and a version with no
             // line to write is not listed. Records naming the old version
             // are re-pinned either way.
-            Some(to) if flow.is_some() => {
+            Some(to) if flow.is_some() && entry.logical.starts_with("/flows/") => {
                 if !held.insert(to.clone()) {
                     continue;
                 }
@@ -176,7 +191,7 @@ pub(crate) fn rename(
         }
         // An old flow version stays: a change in a mounted board that this
         // migration cannot re-pin still names it.
-        if to.is_some() && flow.is_none() {
+        if to.is_some() && (flow.is_none() || !entry.logical.starts_with("/flows/")) {
             lines.push(json!({"path": entry.logical, "expect": entry.blob, "remove": true}));
         }
         writes.push(Write {
@@ -187,6 +202,10 @@ pub(crate) fn rename(
     let current = digest_of(&lines);
     if apply {
         write(host, &lines, digest == Some(current.as_str()))?;
+    } else {
+        // The refusal the apply would give, so a dry run that lists writes
+        // is one whose apply the schemas admit.
+        (host.check(&lines)).map_err(|error| refused_put(&error.refusal()))?;
     }
     output.total = writes.len();
     output.truncated = output.total > LISTED;
@@ -215,13 +234,9 @@ fn content(
         return kept(
             "a mount pointer; move it to /rules/ with board put once its target board has migrated",
         );
-    } else if record_type == Some(CONFIG_TYPE) {
-        let config = parse_json(entry.text.as_deref().unwrap_or_default().as_bytes());
-        let plugins = config.unwrap_or_default()["plugins"].clone();
-        let names =
-            (plugins.as_array()).is_some_and(|each| each.iter().any(|one| one == "controls"));
-        return if names { Err(CONFIG) } else { Ok(None) };
-    } else if record_type == Some(FLOW_TYPE) {
+    } else if matches!(record_type, Some(CONFIG_TYPE | FLOW_TYPE)) {
+        // The config is the owner's to write; a flow is in `flows` or needs
+        // no change.
         return Ok(None);
     } else if let Some(text) = &entry.text {
         if entry.role.as_deref() == Some("json") {
@@ -255,6 +270,13 @@ fn content(
     Ok(Some(content))
 }
 
+/// Whether the config `entry` holds enables the plugin `plugin`.
+fn names(entry: &Entry, plugin: &str) -> bool {
+    let config = parse_json(entry.text.as_deref().unwrap_or_default().as_bytes());
+    let plugins = config.unwrap_or_default()["plugins"].clone();
+    (plugins.as_array()).is_some_and(|each| each.iter().any(|one| one == plugin))
+}
+
 /// Writes `lines` in one bulk commit, or refuses with
 /// [`STALE`] when the digest given is not theirs.
 fn write(host: &dyn Host, lines: &[Value], current: bool) -> Result<(), PluginError> {
@@ -266,13 +288,15 @@ fn write(host: &dyn Host, lines: &[Value], current: bool) -> Result<(), PluginEr
         ));
     }
     if !lines.is_empty() {
-        let refused = |refusal: &board_model::Refusal| {
-            PluginError::board_refused("rules", "put --batch --bulk", refusal)
-        };
-        let bulk = Bulk::new(BULK).map_err(|error| refused(&error.refusal()))?;
-        (host.put_bulk(lines, &bulk)).map_err(|error| refused(&error.refusal()))?;
+        let bulk = Bulk::new(BULK).map_err(|error| refused_put(&error.refusal()))?;
+        (host.put_bulk(lines, &bulk)).map_err(|error| refused_put(&error.refusal()))?;
     }
     Ok(())
+}
+
+/// Board's `refusal` of the batch the rename writes.
+fn refused_put(refusal: &board_model::Refusal) -> PluginError {
+    PluginError::board_refused("rules", "put --batch --bulk", refusal)
 }
 
 /// The rename's refusal `code`, saying that nothing was written.
@@ -379,12 +403,22 @@ fn flows(entries: &[Entry], kept: &mut Vec<Kept>) -> Flows {
         let (stored, at_hash) = (flow_version(name, &record), flow_version(name, &value));
         if at_hash == entry.logical && stored != entry.logical {
             flows.insert(entry.logical.clone(), (stored, record));
-        } else if at_hash != entry.logical && record != value {
-            kept.push(Kept {
-                path: entry.logical.clone(),
-                why: "a flow not stored at the hash of its JSON; store its new version with the \
-                      changes plugin and re-pin its changes by hand",
-            });
+        } else if at_hash != entry.logical && (record != value || moved(&entry.logical).is_some()) {
+            // A flow outside /flows/, such as one a change holds, is pinned
+            // by its path, not its hash, so every such flow off its hash is
+            // rewritten in place, or moved with the other files under
+            // /controls/. One under /flows/ off its hash is a version a
+            // change may pin by a hash that is not its own.
+            if entry.logical.starts_with("/flows/") {
+                kept.push(Kept {
+                    path: entry.logical.clone(),
+                    why: "a flow not stored at the hash of its JSON; store its new version with \
+                          the changes plugin and re-pin its changes by hand",
+                });
+            } else {
+                let new = moved(&entry.logical).unwrap_or_else(|| entry.logical.clone());
+                flows.insert(entry.logical.clone(), (new, record));
+            }
         }
     }
     flows

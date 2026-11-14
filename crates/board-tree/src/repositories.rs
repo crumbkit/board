@@ -34,6 +34,9 @@ pub struct Repositories {
     /// The moved prefixes a resolution that names nothing tries: see
     /// [`Repositories::moving`].
     pub(crate) moved: Vec<Moved>,
+    /// The `min_board` and the running version, when this Board is older
+    /// than the board allows: see [`Repositories::refuse_writes`].
+    too_old: Option<(String, String)>,
 }
 
 /// A mount pointer in the working tree that one run reads at a checkout's
@@ -98,6 +101,7 @@ impl Repositories {
             opened: AtomicUsize::new(0),
             checkout: None,
             moved: Vec::new(),
+            too_old: None,
         })
     }
 
@@ -138,9 +142,22 @@ impl Repositories {
         self.root.lock(wait)
     }
 
+    /// Makes every write and sync refuse with `board::config::board_too_old`
+    /// when `too_old` names the board's `min_board` and the running
+    /// version, and lifts that when it is `None`.
+    pub fn refuse_writes(&mut self, too_old: Option<(String, String)>) {
+        self.too_old = too_old;
+    }
+
     /// Whether this run may write: it may not while a mount is read at a
-    /// checkout.
+    /// checkout, or when this Board is older than the board's `min_board`.
     pub fn writable(&self) -> Result<(), WriteError> {
+        if let Some((min_board, running)) = &self.too_old {
+            return Err(WriteError::BoardTooOld {
+                min_board: min_board.clone(),
+                running: running.clone(),
+            });
+        }
         match &self.checkout {
             Some(checkout) => Err(WriteError::AtCheckout {
                 pointer: checkout.pointer.clone(),

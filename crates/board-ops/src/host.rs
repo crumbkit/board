@@ -87,6 +87,13 @@ pub trait Host {
         let _ = bulk;
         self.put(lines)
     }
+    /// Checks `lines` as [`Host::put`] would, against the schema of each
+    /// record's type and the rest of its checks, and writes nothing. A host
+    /// with no schemas, as a test's, finds nothing wrong.
+    fn check(&self, lines: &[Value]) -> Result<(), PutError> {
+        let _ = lines;
+        Ok(())
+    }
     /// Runs `target` with `input` as the plugin's own `board call` does:
     /// one call deeper, under the `BOARD_PLUGIN` it would set, with only
     /// the capability's declared `env` among the variables. Board's
@@ -475,6 +482,7 @@ impl Hosted<'_> {
         let mut board = Board::open(self.board.repository().path(), home)?;
         board.build_in(self.board.built_in.0);
         board.built_by(self.board.build);
+        board.running_as(self.board.running);
         if let Some(checkout) = self.board.repositories().checkout() {
             board.read_checkout(checkout.clone());
         }
@@ -489,6 +497,16 @@ impl Hosted<'_> {
         lines: &[Value],
         bulk: Option<&crate::Bulk>,
     ) -> Result<PutReport, PutError> {
+        let (board, text) = self.batch_of(lines, bulk)?;
+        board.put_batch(&mut text.as_bytes())
+    }
+
+    /// The board opened as the plugin, and `lines` as the text of a batch.
+    fn batch_of(
+        &self,
+        lines: &[Value],
+        bulk: Option<&crate::Bulk>,
+    ) -> Result<(Board, String), PutError> {
         let plugin = self.plugin()?;
         let mut board = self
             .again()
@@ -505,7 +523,7 @@ impl Hosted<'_> {
             .map(Value::to_string)
             .collect::<Vec<_>>()
             .join("\n");
-        board.put_batch(&mut text.as_bytes())
+        Ok((board, text))
     }
 
     fn plugin(&self) -> Result<PluginName, PutError> {
@@ -570,6 +588,11 @@ impl Host for Hosted<'_> {
         self.put_marked(lines, Some(bulk))
     }
 
+    fn check(&self, lines: &[Value]) -> Result<(), PutError> {
+        let (board, text) = self.batch_of(lines, None)?;
+        board.check_batch(&mut text.as_bytes())
+    }
+
     fn call(&self, target: &Target, input: &Value) -> Result<CallReport, Box<Refusal>> {
         let board = self.again().map_err(|error| Box::new(opened(&error)))?;
         // As bytes, so the input passes the size limit and parse a process
@@ -607,6 +630,7 @@ impl Host for Hosted<'_> {
         let (mut board, _) = known::open(&start, home, self.plugins.cache, || Ok(known))?;
         board.build_in(self.board.built_in.0);
         board.built_by(self.board.build);
+        board.running_as(self.board.running);
         Ok(Box::new(Hosted {
             board: HostBoard::Opened(Box::new(board)),
             settings: self.settings.clone(),

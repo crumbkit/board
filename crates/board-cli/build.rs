@@ -1,4 +1,5 @@
-//! Sets `BOARD_BUILD`, the suffix the timing log adds to Board's version:
+//! Sets `BOARD_BUILD_DATE`, the commit date of the source in seconds (empty
+//! when neither `SOURCE_DATE_EPOCH` nor git gives one), and `BOARD_BUILD`, the suffix the timing log adds to Board's version:
 //! `+<commit>`, with `.dirty.<hash>` when the source differs from it.
 //! `BOARD_BUILD_COMMIT` names the commit in place of git's, and asserts that
 //! the source is that commit: a copy whose own repository committed the
@@ -20,6 +21,8 @@ use std::hash::{DefaultHasher, Hasher};
 use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 
+#[path = "build/built.rs"]
+mod built;
 #[path = "build/commit.rs"]
 mod commit;
 
@@ -86,6 +89,27 @@ fn main() {
         Err(message) => fail(&message),
     }
     println!("cargo::rerun-if-env-changed=BOARD_BUILD_COMMIT");
+    let epoch = std::env::var_os("SOURCE_DATE_EPOCH");
+    let log = |commit: Option<&str>| {
+        let mut arguments = vec!["log", "-1", "--format=%ct"];
+        arguments.extend(commit);
+        arguments.push("--");
+        text(&arguments)
+    };
+    match built::seconds(epoch.as_deref(), given.as_deref(), log) {
+        Ok(date) => {
+            println!(
+                "cargo::rustc-env=BOARD_BUILD_DATE={}",
+                date.map_or_else(String::new, |date| date.to_string())
+            );
+            println!(
+                "cargo::rustc-env=BOARD_BUILD_SHOWN={}",
+                date.map_or_else(String::new, |date| format!(" (built {})", utc(date)))
+            );
+        }
+        Err(message) => fail(&message),
+    }
+    println!("cargo::rerun-if-env-changed=SOURCE_DATE_EPOCH");
     // A commit appends to HEAD's reflog, or moves HEAD where git keeps no
     // reflog; an edit changes the source.
     let path = |name| text(&["rev-parse", "--path-format=absolute", "--git-path", name]);
@@ -199,4 +223,10 @@ fn skills() {
 /// Fails the build with `message`, which cargo prints as an error.
 fn fail(message: &str) {
     println!("cargo::error={message}");
+}
+
+/// `seconds` since the Unix epoch as a UTC timestamp, such as
+/// `2026-11-13T10:00:00Z`.
+fn utc(seconds: i64) -> String {
+    jiff::Timestamp::from_second(seconds).map_or_else(|_| seconds.to_string(), |at| at.to_string())
 }

@@ -149,6 +149,7 @@ impl Context {
         let (home, cache) = (self.home.as_deref(), self.cache.as_deref());
         let (mut board, prefix) = board_ops::open_at(start, home, cache, || self.known(), at)?;
         board.built_by(crate::timing::DECIDER);
+        board.running(crate::timing::BUILD, crate::timing::built());
         Ok((board, prefix))
     }
 }

@@ -56,5 +56,8 @@ crumbkit-test.workspace = true
 proptest.workspace = true
 tempfile.workspace = true
 
+[build-dependencies]
+jiff.workspace = true
+
 [lints]
 workspace = true

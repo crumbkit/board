@@ -35,6 +35,7 @@ const NOTE: &str = "# A note\n\nRun `board call controls.check`, then read /cont
 /// the crossing.
 fn old_board() -> Fixture {
     let board = Fixture::enabling(&["controls", "boundary", "attention"]);
+    config_naming(&board, &["rules", "boundary", "attention"]);
     let rule = json!({
         "$type": "controls/control/v1",
         "requirement": "Name no one; see /controls/sources/s.",
@@ -117,7 +118,7 @@ fn renaming_moves_rules_renames_fields_rewrites_mentions_and_leaves_signed_recor
         ]
     );
     assert_eq!(listed["signed"], json!(["/effects/pending/e", "/orders/o"]));
-    assert_eq!(listed["kept"][0]["path"], "/.board/board");
+    assert_eq!(listed["kept"], json!([]));
     let ran = applied(&board, listed["digest"].as_str().unwrap());
     assert_eq!(ran.code, 0, "{}", text(&ran.stdout));
 
@@ -199,7 +200,7 @@ fn a_mount_pointer_under_controls_is_kept_and_a_reference_renamed_through_it_sti
     let kept: Vec<&str> = (listed["kept"].as_array().unwrap().iter())
         .filter_map(|each| each["path"].as_str())
         .collect();
-    assert_eq!(kept, ["/.board/board", "/controls/auth"], "{listed}");
+    assert_eq!(kept, ["/controls/auth"], "{listed}");
     let ran = applied(&board, listed["digest"].as_str().unwrap());
     assert_eq!(ran.code, 0, "{}", text(&ran.stdout));
     let renamed: Value = serde_json::from_str(&board.read("boundaries/auth.json")).unwrap();
@@ -236,7 +237,6 @@ fn a_file_that_cannot_move_as_text_and_the_renaming_change_are_kept_as_they_are(
     assert_eq!(
         kept,
         [
-            "/.board/board",
             "/changes/control-becomes-rule/details.md",
             "/controls/x/broken",
             "/controls/x/img.png"
@@ -308,4 +308,125 @@ fn applying_after_a_record_changed_since_the_dry_run_refuses_and_writes_nothing(
             .contains("controls/control/v1")
     );
     assert!(board.read("notes/n.md").contains("/controls/x/a"));
+}
+
+#[test]
+fn the_dry_run_refuses_a_record_whose_type_has_no_schema_as_the_apply_would() {
+    let board = old_board();
+    let page = json!({"$type": "sites/page/v1", "title": "See /controls/x/a."}).to_string();
+    board.write("sites/p.json", &page);
+    let dry = rename(&board, &[]);
+    assert_ne!(dry.code, 0, "{}", text(&dry.stdout));
+    let shown = text(&dry.stdout);
+    assert!(
+        shown.contains("/sites/p") && shown.contains("sites/page/v1"),
+        "{shown}"
+    );
+    assert_eq!(json(&dry)["code"], "rules::board::refused", "{shown}");
+    assert_eq!(
+        json(&dry)["fields"]["code"],
+        "board::put::invalid",
+        "{shown}"
+    );
+    assert!(
+        board
+            .read("controls/x/a.json")
+            .contains("controls/control/v1")
+    );
+    assert_eq!(board.read("sites/p.json"), page);
+}
+
+/// A source that mentions an old path, so the rename rewrites it, with
+/// `extra` fields.
+fn source_with(extra: &Value) -> String {
+    let mut source = json!({
+        "$type": "controls/source/v1", "url": "https://example.com/t", "title": "T",
+        "read_on": "2026-11-01", "why": "See /controls/x/a.",
+    });
+    source
+        .as_object_mut()
+        .unwrap()
+        .extend(extra.as_object().unwrap().clone());
+    source.to_string()
+}
+
+#[test]
+fn the_dry_run_refuses_a_rewritten_record_its_schema_does_not_admit_and_passes_one_it_does() {
+    let board = old_board();
+    board.write(
+        "controls/sources/bad.json",
+        &source_with(&json!({"extra": 1})),
+    );
+    let dry = rename(&board, &[]);
+    assert_ne!(dry.code, 0, "{}", text(&dry.stdout));
+    assert!(
+        text(&dry.stdout).contains("/rules/sources/bad"),
+        "{}",
+        text(&dry.stdout)
+    );
+    board.write("controls/sources/bad.json", &source_with(&json!({})));
+    let listed = dry_run(&board);
+    let ran = applied(&board, listed["digest"].as_str().unwrap());
+    assert_eq!(ran.code, 0, "{}", text(&ran.stdout));
+}
+
+#[test]
+fn the_dry_run_refuses_a_move_whose_target_file_is_taken_as_the_apply_would() {
+    let board = old_board();
+    board.write("controls/x/notes.txt", "see /controls/x/a\n");
+    board.write("rules/x/notes.txt", "already here\n");
+    let dry = rename(&board, &[]);
+    assert_ne!(dry.code, 0, "{}", text(&dry.stdout));
+    assert!(
+        text(&dry.stdout).contains("/rules/x/notes.txt"),
+        "{}",
+        text(&dry.stdout)
+    );
+    // The line the apply would name: the file's move is the sixth line of
+    // the batch, after two moves of two lines each and the boundary.
+    assert_eq!(json(&dry)["fields"]["refusals"][0]["line"], 6);
+}
+
+/// The config of `board`, naming `plugins`.
+fn config_naming(board: &Fixture, plugins: &[&str]) {
+    let mut config: Value = serde_json::from_str(&board.read(".board/board.json")).unwrap();
+    config["plugins"] = json!(plugins);
+    board.write(".board/board.json", &config.to_string());
+}
+
+#[test]
+fn the_rename_is_refused_until_the_config_names_rules_and_then_applies() {
+    let board = old_board();
+    config_naming(&board, &["controls", "boundary", "attention"]);
+    let before = board.read("controls/x/a.json");
+    for flags in [
+        &[][..],
+        &["--apply", "true", "--digest", &"0".repeat(64)][..],
+    ] {
+        let ran = rename(&board, flags);
+        assert_ne!(ran.code, 0, "{}", text(&ran.stdout));
+        assert_eq!(json(&ran)["code"], "rules::migrate::config_first");
+    }
+    assert_eq!(board.read("controls/x/a.json"), before);
+    config_naming(&board, &["rules", "boundary", "attention"]);
+    let listed = dry_run(&board);
+    let ran = applied(&board, listed["digest"].as_str().unwrap());
+    assert_eq!(ran.code, 0, "{}", text(&ran.stdout));
+    assert!(board.read("rules/x/a.json").contains("rules/rule/v1"));
+}
+
+#[test]
+fn the_rename_is_refused_while_the_config_names_both_rules_and_controls() {
+    let board = old_board();
+    config_naming(&board, &["rules", "controls", "boundary", "attention"]);
+    let before = board.read("controls/x/a.json");
+    for flags in [
+        &[][..],
+        &["--apply", "true", "--digest", &"0".repeat(64)][..],
+    ] {
+        let ran = rename(&board, flags);
+        assert_ne!(ran.code, 0, "{}", text(&ran.stdout));
+        assert_eq!(json(&ran)["code"], "rules::migrate::config_first");
+    }
+    assert_eq!(board.read("controls/x/a.json"), before);
 }

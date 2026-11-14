@@ -22,7 +22,7 @@ pub struct Exhibit {
 /// Codes the CLI's recovery and twin checks cannot provoke through the
 /// `board` command line, why, and where each is tested instead. The checks
 /// provoke every other code, from the seed board or another small fixture.
-pub const NOT_REPRODUCED: [(Code, &str); 21] = [
+pub const NOT_REPRODUCED: [(Code, &str); 22] = [
     (
         Code::AttachmentMissing,
         "the store must lose an object between the put and the fetch; \
@@ -42,6 +42,11 @@ pub const NOT_REPRODUCED: [(Code, &str); 21] = [
         Code::PutNoIdentity,
         "whether git has an identity depends on the machine's configuration; \
          board-cli/tests/identity.rs runs board in a child process with an empty HOME",
+    ),
+    (
+        Code::ConfigBoardTooOld,
+        "the running Board must be older than the board's min_board, by version or by build date, which is \
+         a build from source's only gate; board-ops/src/version/tests.rs names an older version and date",
     ),
     (
         Code::PutHeadMoved,
@@ -117,7 +122,7 @@ const OPEN: &str = "ui open or the server gives it; check opens and serves nothi
 
 /// Codes `check` never gives an entry, and why. The seed board has an
 /// exhibit for every other code, so a new code needs one or a line here.
-pub const NOT_CHECKED: [(Code, &str); 79] = [
+pub const NOT_CHECKED: [(Code, &str); 80] = [
     (
         Code::AttachmentMissing,
         "only get --fetch gives it; check reads the attachment record and never the store",
@@ -145,6 +150,10 @@ pub const NOT_CHECKED: [(Code, &str); 79] = [
     (
         Code::ConfigAmbiguous,
         "a board that cannot be chosen does not open, so it has no entries",
+    ),
+    (
+        Code::ConfigBoardTooOld,
+        "a write and a sync give it; a check reads the board and writes nothing",
     ),
     (
         Code::PathNotFound,
