@@ -69,3 +69,22 @@ fn a_ref_that_no_longer_matches_the_fetched_commit_is_left_and_reported() {
         "{error}"
     );
 }
+
+#[test]
+fn an_unreadable_tracking_ref_is_an_error_and_a_missing_one_is_a_first_sync() {
+    let remote = Scenario::new();
+    remote.commit(&[("a.json", "{}")]);
+    let clone = Scenario::clone_of(&remote);
+    let repository = Repository::open(clone.workdir()).unwrap();
+    let upstream = repository.upstream().unwrap();
+    clone.write(
+        ".git/refs/remotes/origin/main",
+        board_scenario::Item::File("not a commit id\n"),
+    );
+    assert!(repository.tracking_before(&upstream).is_err());
+    clone.write(
+        ".git/refs/remotes/origin/main",
+        board_scenario::Item::Deleted,
+    );
+    assert_eq!(repository.tracking_before(&upstream).unwrap(), None);
+}

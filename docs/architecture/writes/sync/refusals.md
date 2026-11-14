@@ -3,7 +3,7 @@
 Integrate checks these three things, in this order, after the fetch and
 before it takes the board lock or writes any file, object, index entry or
 HEAD. Each refusal leaves the working tree, index and HEAD as they were and
-puts the remote-tracking ref back to the commit it held before the fetch.
+puts the remote-tracking ref back to the commit it held before the fetch, when it held one.
 
 | Code | When | Way out |
 | --- | --- | --- |
