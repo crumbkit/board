@@ -160,7 +160,8 @@ fn default(each: &flow::Check) -> String {
         }
         Kind::Understood if each.rechecks.is_some() => format!(
             "{ask}ask the owner again, worded differently, the predict or edge questions of each \
-             understanding check the detail names, and add them to its rechecks."
+             understanding check the detail names, and add them to its rechecks. Give each \
+             recheck a `point`; a recheck that asks a missed point again takes the same `point`."
         ),
         Kind::Understood => format!(
             "{ask}run the understanding-check skill with the owner, {ATTACH}, and ask the owner to \

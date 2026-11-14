@@ -53,9 +53,17 @@ knows what the plan does, and records what he showed.
    plan can be short-term recall. Before the change moves to `review`, ask
    two of the predict or edge questions again, worded differently, and add
    them to `rechecks`, each with its question, his answer, the design's
-   answer, its `kind` and whether it `matches`. The build gate refuses with `changes::gate::unmet` until the
-   record holds two rechecks and every one matched. A wrong answer reopens
-   the check for that part.
+   answer, its `kind`, whether it `matches`, and its `point`: a short
+   lowercase name for the part of the design it checks, such as
+   `flow-version`. When an answer misses, keep that recheck in the record,
+   settle the mismatch in the plan or in his expectation, then ask the same
+   point again, worded differently, and add the new recheck with the same
+   `point`. When the plan changed so that the point no longer exists, ask
+   about the new design under the same `point`. Never remove a missed
+   recheck or change its question, answers or `matches`; correcting a
+   `point`'s spelling is allowed. The build gate refuses with
+   `changes::gate::unmet` until the record holds rechecks of two points and
+   the latest recheck of every point matched.
 
 The owner can take the check live in chat or as a written questionnaire:
 the most important questions first, one idea per question, room for an

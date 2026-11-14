@@ -58,6 +58,9 @@ struct Given {
     /// Whether the change follows the stored version of the development
     /// flow whose checks read the plan's prose.
     prose: bool,
+    /// The number of points the flow's `rechecks` check wants, when it is
+    /// not the shipped flow's.
+    rechecks: Option<u32>,
 }
 
 /// The version of the development flow shipped before plans gave typed
@@ -83,6 +86,7 @@ fn given(phase: &'static str) -> Given {
         controlled: Vec::new(),
         answers: json!({"ux": "none", "data": "none", "lifecycle": "none"}),
         prose: false,
+        rechecks: None,
     }
 }
 
@@ -103,6 +107,12 @@ impl Given {
     fn prose(mut self) -> Self {
         self.prose = true;
         self.answers(json!({}))
+    }
+
+    /// The flow's `rechecks` check wants `wanted` points.
+    fn rechecks(mut self, wanted: u32) -> Self {
+        self.rechecks = Some(wanted);
+        self
     }
 
     fn plan(mut self, plan: Option<&str>) -> Self {
@@ -153,6 +163,13 @@ impl Given {
         } else {
             development()
         });
+        if let (Some(wanted), Some(flow)) = (self.rechecks, observed.flow.as_mut()) {
+            for check in (flow.phases.iter_mut()).flat_map(|phase| phase.checks.iter_mut()) {
+                if check.rechecks.is_some() {
+                    check.rechecks = Some(wanted);
+                }
+            }
+        }
         observed.answers = serde_json::from_value(self.answers.clone()).unwrap();
         observed.plan.clone_from(&self.plan);
         observed.plan_file = self
@@ -801,12 +818,16 @@ fn a_data_decision_a_hook_wrote_signs_nothing_and_one_the_owner_signed_does() {
     assert_eq!(plan_checks(&plan, owned)["data-signed"], "pass");
 }
 
-/// Rechecks, one per entry, each matching the plan or not.
+/// Rechecks, one per entry, each matching the plan or not, each of its own
+/// point.
 fn rechecked(matches: &[bool]) -> Value {
-    (matches.iter())
-        .map(
-            |matched| json!({"kind": "edge", "question": "Q?", "answer": "A.", "design": "A.", "matches": matched}),
-        )
+    (matches.iter().enumerate())
+        .map(|(at, matched)| {
+            json!({
+                "kind": "edge", "question": "Q?", "answer": "A.", "design": "A.",
+                "matches": matched, "point": format!("point-{at}"),
+            })
+        })
         .collect()
 }
 
@@ -831,9 +852,9 @@ fn the_build_gate_needs_two_matching_rechecks_on_each_attached_understanding_che
     }
     assert_eq!(
         built(understanding(&json!({}))).check("rechecks").1,
-        "the understanding check at /changes/t/understanding/data holds fewer than two rechecks \
-         that match the plan; before review, ask two of its predict or edge questions again, \
-         worded differently, and add them to its rechecks"
+        "the understanding check at /changes/t/understanding/data holds rechecks of fewer than two \
+         points; before review, ask two of its predict or edge questions again, worded \
+         differently, and add each to its rechecks with its own point"
     );
     let passed = built(understanding(
         &json!({"rechecks": rechecked(&[true, true])}),
@@ -1239,3 +1260,4 @@ fn a_records_check_reads_an_attempt_whichever_type_it_has_and_not_a_record_of_an
 }
 
 mod answers;
+mod rechecks;

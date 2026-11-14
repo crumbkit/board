@@ -8,6 +8,10 @@ use board_plugin::shape::{
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+mod understanding;
+
+pub(crate) use understanding::{Subject, UnderstandingRecord};
+
 /// The record types a change's `tickets` may reference; the jira and github
 /// plugins own them.
 pub(crate) const TICKET_TYPES: [&str; 2] = ["jira/issue/v1", "github/issue/v1"];
@@ -562,79 +566,6 @@ fn owed_or_former(schema: &mut schemars::Schema) {
 
 impl Record for PlanRecord {
     const TYPE: &'static str = "changes/plan/v1";
-}
-
-/// `changes/understanding/v1`: the owner's answers to a check that he
-/// understands a change's data or UX.
-///
-/// It lives at `/changes/<name>/understanding/<subject>`. The owner's
-/// sign-off decision references it in its `refs`.
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-#[schemars(extend("x-board-folder" = "/changes/{change}/understanding/"))]
-pub(crate) struct UnderstandingRecord {
-    /// The record's type.
-    #[serde(rename = "$type")]
-    tag: Tag<Self>,
-    /// The change whose design was checked.
-    #[schemars(with = "Ref<AnyChange>")]
-    change: String,
-    /// What was checked: the design's data or its UX.
-    subject: Subject,
-    /// Each question asked, in order.
-    #[schemars(length(min = 1))]
-    questions: Vec<Asked>,
-    /// Predict or edge questions asked again, worded differently, before
-    /// review; the build gate wants two that match.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    rechecks: Option<Vec<Asked>>,
-}
-
-impl Record for UnderstandingRecord {
-    const TYPE: &'static str = "changes/understanding/v1";
-}
-
-/// What an understanding check covers.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "lowercase")]
-#[schemars(inline)]
-pub(crate) enum Subject {
-    Data,
-    Ux,
-}
-
-/// One question of an understanding check, the owner's answer and the
-/// design's.
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-#[schemars(title = "Asked")]
-struct Asked {
-    /// The question, as asked.
-    #[schemars(with = "Prose", extend("minLength" = 1))]
-    question: String,
-    /// The owner's answer, in his own words.
-    #[schemars(with = "Prose", extend("minLength" = 1))]
-    answer: String,
-    /// What the design says the answer is.
-    #[schemars(with = "Prose", extend("minLength" = 1))]
-    design: String,
-    /// The kind of question.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    kind: Option<Question>,
-    /// Whether the owner's answer matches the design.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    matches: Option<bool>,
-}
-
-/// The kinds of question an understanding check asks.
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "lowercase")]
-#[schemars(inline)]
-enum Question {
-    Predict,
-    Choose,
-    Explain,
-    Edge,
 }
 
 /// A question for the owner, which the plans plugin owns.
