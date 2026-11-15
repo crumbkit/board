@@ -444,7 +444,7 @@ fn generic(code: Code) -> &'static str {
             "a repository has one repo record: remove all but one of the records the message names, or fix the `remote` of the one that names another repository"
         }
         Code::CommitNotFound => {
-            "--at takes HEAD or a full commit id of this board's repository; `board log` lists the board's commits"
+            "--at takes HEAD or a full commit id of this board's repository, and `board log` of a path in the board lists ids it takes; a log of a path through a mount lists the mounted repository's commits, which `get --at` on this board cannot read, and board log of the directory that holds the mount record lists the board commits that moved its pin, which --at takes"
         }
         Code::SymlinkOutside => {
             "make the symlink a relative path to a file inside the repository, or replace it with the file; Board reads only the repository's tree"

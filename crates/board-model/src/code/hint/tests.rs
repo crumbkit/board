@@ -45,6 +45,24 @@ fn the_merging_hint_gives_the_code_a_note_write_and_a_task_write_fails_with() {
 }
 
 #[test]
+fn the_commit_hint_says_a_log_through_a_mount_lists_commits_get_at_on_the_board_cannot_read() {
+    let text = hint(Code::CommitNotFound);
+    assert!(
+        text.contains("through a mount lists the mounted repository's commits"),
+        "{text}"
+    );
+    assert!(
+        text.contains("`get --at` on this board cannot read"),
+        "{text}"
+    );
+    assert!(
+        text.contains("board log of the directory that holds the mount record lists the board commits that moved its pin, which --at takes"),
+        "{text}"
+    );
+    assert!(!text.contains("lists the board's commits"), "{text}");
+}
+
+#[test]
 fn the_locked_hint_says_board_clears_a_lock_a_killed_board_left_and_a_person_clears_the_rest() {
     let text = hint(Code::PutLocked);
     assert!(text.contains("a killed Board"), "{text}");

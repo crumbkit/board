@@ -453,6 +453,14 @@ pub enum ReadError {
         source: ResolveError,
         stem: LogicalPath,
     },
+    /// `log` finds nothing at a path whose deepest ancestor that resolves
+    /// is beneath a mount; `holder` is the board directory that holds the
+    /// outermost mount record.
+    #[error("{source}")]
+    BeneathMount {
+        source: ResolveError,
+        holder: LogicalPath,
+    },
     #[error("{path} is not a record")]
     NotARecord { path: LogicalPath },
     #[error("{path} cannot be read: {code}")]
@@ -471,7 +479,9 @@ pub enum ReadError {
 impl ReadError {
     pub fn code(&self) -> Code {
         match self {
-            Self::Resolve { source } | Self::ByFile { source, .. } => source.code(),
+            Self::Resolve { source }
+            | Self::ByFile { source, .. }
+            | Self::BeneathMount { source, .. } => source.code(),
             Self::NoHead => Code::CommitNotFound,
             Self::NoHistory { .. } => Code::PathNotFound,
             Self::NotARecord { .. } => Code::RecordNotARecord,
@@ -488,7 +498,9 @@ impl ReadError {
     /// to start the walk where it existed.
     pub fn refusal(&self, command: &'static str) -> Refusal {
         let fields = match self {
-            Self::Resolve { source } | Self::ByFile { source, .. } => source.fields(),
+            Self::Resolve { source }
+            | Self::ByFile { source, .. }
+            | Self::BeneathMount { source, .. } => source.fields(),
             Self::NotARecord { path }
             | Self::Unread { path, .. }
             | Self::Fetch { path, .. }
@@ -504,7 +516,10 @@ impl ReadError {
             Self::Resolve {
                 source: ResolveError::NotFound { ancestor, .. },
             } if command == "log" => refusal.with_hint(format!(
-                "`{BINARY_NAME} log {ancestor}` lists the commits that changed {ancestor}; if the path was removed, run log again with --at set to a commit from before the removal"
+                "`{BINARY_NAME} log {ancestor}` lists the commits that changed {ancestor}; if the path was removed, the commit that removed the path is among them, and log again with --at set to a commit listed after it, which is from before the removal, lists the path's history"
+            )),
+            Self::BeneathMount { holder, .. } => refusal.with_hint(format!(
+                "the path is beneath a mount, whose log lists the mounted repository's commits, which --at refuses; `{BINARY_NAME} log {holder}` lists the board commits that moved its pin, and log or get again with --at set to one that pinned a commit from before the removal reads the path"
             )),
             Self::NoHead | Self::NoHistory { .. } => refusal.with_hint(
                 "make the board's first commit, with board put or git commit, then run the command again",

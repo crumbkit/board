@@ -2,7 +2,7 @@
 //! commits that changed a path (docs/architecture/records/history.md).
 
 use board_model::{Location, LogicalPath, ObjectId, Source};
-use board_tree::{GitError, History, MAX_WALKED, Walk};
+use board_tree::{GitError, History, MAX_WALKED, ResolveError, Walk};
 
 use crate::board::Board;
 use crate::read::{GetReport, ReadError, display, read_at};
@@ -67,7 +67,19 @@ impl Board {
             .ok_or_else(|| ReadError::NoHistory { path: path.clone() })?;
         let repositories = self.repositories();
         let mut view = (repositories.in_commit(repositories.root(), start)).map_err(git)?;
-        let location = Self::located(path, |path| view.resolve(path))?;
+        let location = match Self::located(path, |path| view.resolve(path)) {
+            Err(ReadError::Resolve {
+                source: ResolveError::NotFound { path, ancestor },
+            }) => {
+                let holder = (view.resolve(&ancestor).ok()).and_then(|at| mount_holder(&at));
+                let source = ResolveError::NotFound { path, ancestor };
+                return Err(match holder {
+                    Some(holder) => ReadError::BeneathMount { source, holder },
+                    None => ReadError::Resolve { source },
+                });
+            }
+            located => located?,
+        };
         let Source::Commit(from) = location.board.source else {
             unreachable!("a resolution in a commit reads each mount at a commit")
         };
@@ -95,4 +107,19 @@ impl Board {
         }
         .map_err(|source| ReadError::Git { source })
     }
+}
+
+/// The board directory that holds the outermost mount record `location`
+/// was reached through, or `None` when no mount was followed. A pointer is
+/// a mount exactly when the step after it is in another board, and the
+/// outermost one sits in the root board's tree, whose physical paths are
+/// logical ones.
+fn mount_holder(location: &Location) -> Option<LogicalPath> {
+    let next = (location.pointers.iter().skip(1))
+        .chain(std::iter::once(location))
+        .map(|step| &step.board);
+    let (mount, _) =
+        (location.pointers.iter().zip(next)).find(|(pointer, next)| pointer.board != **next)?;
+    let record: LogicalPath = format!("/{}", mount.path).parse().ok()?;
+    Some(record.parent())
 }
