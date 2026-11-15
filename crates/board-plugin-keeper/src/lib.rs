@@ -2,6 +2,8 @@
 
 mod gather;
 mod host;
+mod map;
+mod placement;
 pub mod records;
 mod render;
 mod stale;
@@ -61,11 +63,12 @@ impl Plugin for Keeper {
     ) -> Result<Value, PluginError> {
         match capability.as_str() {
             "gather" => gather::gather(host, &input),
+            "map" => map::map(host, &input),
             "render" => render::render(host, &input),
             other => Err(PluginError {
                 code: "keeper::call::unknown_capability".to_owned(),
                 message: format!(
-                    "keeper offers no capability {other}; it offers gather and render"
+                    "keeper offers no capability {other}; it offers gather, map and render"
                 ),
                 fields: Map::new(),
                 hint: None,
@@ -97,6 +100,18 @@ fn manifest() -> Value {
             "inputSchema": schema_of::<gather::Input>(SchemaSettings::draft2020_12()),
             "outputSchema": {"type": "object"},
             "annotations": read_only(),
+            "_meta": {},
+        }, {
+            "name": "map",
+            "description": "Checks a pass's project tree and writes it as a keeper map.",
+            "inputSchema": schema_of::<map::Input>(SchemaSettings::draft2020_12()),
+            "outputSchema": {"type": "object"},
+            "annotations": {
+                "readOnlyHint": false,
+                "destructiveHint": false,
+                "idempotentHint": false,
+                "openWorldHint": false,
+            },
             "_meta": {},
         }, {
             "name": "render",

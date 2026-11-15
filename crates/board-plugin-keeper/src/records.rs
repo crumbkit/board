@@ -52,7 +52,7 @@ impl Record for KeeperMap {
 }
 
 /// A group of projects.
-#[derive(Debug, JsonSchema)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Realm {
     /// The realm's id, a short word such as `board`.
@@ -76,7 +76,7 @@ pub enum State {
 }
 
 /// A project: a goal with the changes and tasks that serve it.
-#[derive(Debug, JsonSchema)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Project {
     /// The project's id, a slug.
@@ -90,6 +90,7 @@ pub struct Project {
     pub state: State,
     /// Where the work stands and what comes next.
     #[schemars(with = "Option<Prose>")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub summary: Option<String>,
     /// The task that tracks the project, by path, or null when none does.
     /// The field is always present, so that null can say there is none.
@@ -98,12 +99,15 @@ pub struct Project {
     /// The open changes of the project, by path.
     pub changes: Vec<String>,
     /// The open tasks of the project that no change of it does, by path.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub tasks: Option<Vec<String>>,
     /// Pairs of changes of this project, the first landing before the
     /// second.
     #[schemars(with = "Option<Vec<[String; 2]>>")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub order: Option<Vec<(String, String)>>,
     /// The open questions of the project, by path.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub questions: Option<Vec<String>>,
 }
 
@@ -125,7 +129,7 @@ pub enum Kind {
 
 /// A problem the pass found, with the capability that fixes it and the
 /// question filed for the owner.
-#[derive(Debug, JsonSchema)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Finding {
     /// What kind of problem it is.
@@ -139,6 +143,7 @@ pub struct Finding {
     #[schemars(with = "Prose")]
     pub fix: String,
     /// The question filed for the owner, by path.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub question: Option<String>,
     /// Stable id: the kind, a dash and the first 8 hex digits of the sha256
     /// of the paths joined by newlines.
@@ -146,8 +151,27 @@ pub struct Finding {
     pub id: String,
 }
 
+/// A finding as the agent proposes it, before `keeper.map` computes its id.
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct NewFinding {
+    /// What kind of problem it is.
+    pub kind: Kind,
+    /// The changes, tasks or records the finding concerns, by path.
+    pub paths: Vec<String>,
+    /// What shows the problem.
+    #[schemars(with = "Prose")]
+    pub evidence: String,
+    /// The capability that fixes it, and how.
+    #[schemars(with = "Prose")]
+    pub fix: String,
+    /// The question filed for the owner, by path.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub question: Option<String>,
+}
+
 /// A change that must land before another.
-#[derive(Debug, JsonSchema)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Link {
     /// The change that lands first, by path.
@@ -169,7 +193,7 @@ pub enum LinkKind {
 }
 
 /// A repository or service, as the agent surveyed it.
-#[derive(Debug, JsonSchema)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct System {
     /// The system's id. A repository's id is its mount's name.
@@ -180,20 +204,26 @@ pub struct System {
     #[schemars(with = "Prose")]
     pub title: String,
     /// The language it is written in.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub language: Option<String>,
     /// Whether the system is outside the repositories, such as a cloud
     /// service that only links reach.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub external: Option<bool>,
     /// The mount whose Cargo workspace `keeper.render` reads for crates.
-    pub crates_from: Option<Ref>,
+    #[schemars(with = "Option<Ref>")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub crates_from: Option<String>,
     /// The parts of the system that the survey found.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub modules: Option<Vec<Module>>,
     /// The links that start at this system.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub links: Option<Vec<SystemLink>>,
 }
 
 /// A part of a system.
-#[derive(Debug, JsonSchema)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Module {
     /// The module's id, such as `server`.
@@ -215,7 +245,7 @@ pub enum End {
 }
 
 /// A gate or a limit on a link.
-#[derive(Debug, JsonSchema)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Control {
     /// The control's name.
@@ -230,7 +260,7 @@ pub struct Control {
 
 /// A link from a system, or one of its modules, to another system or
 /// module.
-#[derive(Debug, JsonSchema)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SystemLink {
     /// The link's id.
@@ -239,6 +269,7 @@ pub struct SystemLink {
     #[schemars(with = "Prose")]
     pub name: String,
     /// The module of this system where the link starts.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub module: Option<String>,
     /// The other end: a system id, or `<system>.<module>`.
     pub to: String,
@@ -246,15 +277,18 @@ pub struct SystemLink {
     pub kind: LinkKind,
     /// How busy the link is, from 1 to 10.
     #[schemars(range(min = 1, max = 10))]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub traffic: Option<u8>,
     /// Whether the link runs in production.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub production: Option<bool>,
     /// Gates and limits on the link.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub controls: Option<Vec<Control>>,
 }
 
 /// A rule that ties a question to a project by a task path.
-#[derive(Debug, JsonSchema)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct TaskRule {
     /// Text that a question's `blocked_work` contains.
@@ -266,7 +300,7 @@ pub struct TaskRule {
 /// How an open question is placed on a project, and which realm counts a
 /// question that no rule places. The first rule that matches wins: a change
 /// the question names, then a task, then the project name in its path.
-#[derive(Debug, JsonSchema)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct QuestionRules {
     /// The realm id of each mounted board's questions, by mount name.

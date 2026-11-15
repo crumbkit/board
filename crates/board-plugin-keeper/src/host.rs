@@ -2,7 +2,7 @@
 //! `keeper::board::refused`.
 
 use board_model::{LogicalPath, Object, Refusal};
-use board_ops::{Host, Limit, PluginError};
+use board_ops::{Host, Limit, PluginError, literal};
 use board_plugin::Target;
 use serde_json::Value;
 
@@ -79,4 +79,15 @@ pub(crate) fn put(host: &dyn Host, lines: &[Value]) -> Result<(), PluginError> {
     (host.put(lines))
         .map(|_| ())
         .map_err(|error| refused("put --batch", &error.refusal()))
+}
+
+/// The blob of the file at the logical `path`, or `none` when nothing is
+/// there, as a `put` line expects it.
+pub(crate) fn blob_at(host: &dyn Host, path: &str) -> Result<String, PluginError> {
+    let sql = format!("SELECT blob FROM entries WHERE logical = {}", literal(path));
+    Ok(rows(host, &sql)?
+        .first()
+        .and_then(|row| text(row.first()))
+        .unwrap_or("none")
+        .to_owned())
 }

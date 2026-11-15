@@ -45,6 +45,7 @@ github.pre-push disabled Run by the pre-push hook: check the refs git pushes as 
 github.covers disabled Name the boundaries that cover a git push or gh write from the checkout, and where it goes, checking nothing and writing nothing.
 jira.ref disabled Write the issue at /jira/<site>/<key> with its title, read once through acli, unless a record is already there.
 keeper.gather disabled The live facts a consolidation pass needs.
+keeper.map disabled Checks a pass's project tree and writes it as a keeper map.
 keeper.render disabled Writes the status board page.
 notes.add disabled Sync the notes repo, append text under a `## HH:MM` heading to today's daily note or a topic's note, commit it and push it.
 notes.daily disabled Sync the notes repo and print a day's daily note, unless the note is private.

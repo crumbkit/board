@@ -225,3 +225,118 @@ fn gather_refuses_when_a_plugin_it_reads_is_not_enabled_and_names_the_capability
     let enabled = Fixture::enabling(&["keeper", "changes", "plans", "tasks"]);
     enabled.call("keeper.gather", &[]);
 }
+
+/// The input of `keeper.map` for the open changes `a` and `b`, with `fields`
+/// replacing its own.
+fn map_input(fields: &Value) -> String {
+    record(
+        json!({
+            "source": "/curation.md",
+            "realms": [{"id": "alpha", "title": "Alpha"}, {"id": "beta", "title": "Beta"}],
+            "projects": [
+                {"id": "speed", "realm": "alpha", "title": "Speed", "state": "active",
+                 "task": null, "changes": ["/changes/a", "/changes/b"]},
+                {"id": "docs", "realm": "beta", "title": "Docs", "state": "queued",
+                 "task": null, "changes": []},
+            ],
+            "findings": [{"kind": "stale", "paths": ["/changes/a"], "evidence": "No commit.",
+                          "fix": "changes.pause"}],
+        }),
+        fields,
+    )
+}
+
+/// A board with changes `a` and `b` and a curation record.
+fn mapped() -> Fixture {
+    let board = board();
+    board
+        .write("curation.md", "# Pass\n")
+        .write("changes/a.json", &change("Add a timeout", "build", 0))
+        .write("changes/b.json", &change("Cache results", "build", 0));
+    board
+}
+
+/// The record at the logical `path`, or none.
+fn stored(board: &Fixture, path: &str) -> Option<Value> {
+    let file = board
+        .board
+        .workdir()
+        .join(format!("{}.json", path.trim_start_matches('/')));
+    Some(serde_json::from_str(&std::fs::read_to_string(file).ok()?).unwrap())
+}
+
+fn run_map(board: &Fixture, input: &str) -> Output {
+    board.run_with(&["--json", "call", "keeper.map"], input)
+}
+
+#[test]
+fn map_writes_a_timestamped_record_and_latest_in_one_commit_with_computed_fields() {
+    let board = mapped();
+    board.write(
+        "projects/p/questions/q.json",
+        &open_question("Should cache wait?"),
+    );
+    let input = map_input(&json!({"question_rules": {
+        "mount_realms": {}, "localRealm": {}, "localDefault": "beta",
+        "tasks": [], "names": {"p": "speed"},
+    }}));
+    let output = run_map(&board, &input);
+    assert_eq!(output.code, 0, "{}", text(&output.stderr));
+    let said = json(&output)["data"]["output"].clone();
+    let path = said["path"].as_str().unwrap();
+    assert!(path.starts_with("/projects/keeper/map/2"), "{said}");
+    assert_eq!(said["latest"], "/projects/keeper/map/latest");
+    let held = stored(&board, path).expect("the timestamped record is written");
+    let latest = stored(&board, "/projects/keeper/map/latest").expect("latest is written");
+    assert_eq!(held, latest);
+    assert_eq!(held["$type"], "keeper/map/v1");
+    assert_eq!(held["date"], days_ago(0));
+    let id = held["findings"][0]["id"].as_str().unwrap();
+    assert!(id.starts_with("stale-") && id.len() == 14, "{id}");
+    assert_eq!(held["questions_waiting"], json!({"alpha": 1, "beta": 0}));
+    assert!(held.get("dedupe").is_none(), "{held}");
+    let checked = board.checked("/projects/keeper/map/");
+    assert!(checked.values().all(Option::is_none), "{checked:?}");
+}
+
+#[test]
+fn a_second_map_replaces_latest_and_leaves_the_first_where_it_was() {
+    let board = mapped();
+    let first = run_map(&board, &map_input(&json!({})));
+    assert_eq!(first.code, 0, "{}", text(&first.stderr));
+    // The record's path has the second in it.
+    std::thread::sleep(std::time::Duration::from_millis(1100));
+    let second = run_map(
+        &board,
+        &map_input(&json!({"projects": [
+            {"id": "speed", "realm": "alpha", "title": "Speed 2", "state": "active",
+             "task": null, "changes": ["/changes/a", "/changes/b"]},
+        ]})),
+    );
+    assert_eq!(second.code, 0, "{}", text(&second.stderr));
+    let (first, second) = (
+        json(&first)["data"]["output"].clone(),
+        json(&second)["data"]["output"].clone(),
+    );
+    assert_ne!(first["path"], second["path"]);
+    let title = |path: &str| stored(&board, path).unwrap()["projects"][0]["title"].clone();
+    assert_eq!(title(first["path"].as_str().unwrap()), "Speed");
+    assert_eq!(title(second["path"].as_str().unwrap()), "Speed 2");
+    assert_eq!(title("/projects/keeper/map/latest"), "Speed 2");
+}
+
+#[test]
+fn map_refuses_an_unplaced_open_change_and_writes_nothing() {
+    let board = mapped();
+    let input = map_input(&json!({"projects": [
+        {"id": "speed", "realm": "alpha", "title": "Speed", "state": "active",
+         "task": null, "changes": ["/changes/a"]},
+    ]}));
+    let output = run_map(&board, &input);
+    assert_ne!(output.code, 0);
+    let failed = json(&output);
+    assert_eq!(failed["code"], "keeper::map::unplaced", "{failed}");
+    assert!(stored(&board, "/projects/keeper/map/latest").is_none());
+    let placed = run_map(&board, &map_input(&json!({})));
+    assert_eq!(placed.code, 0, "{}", text(&placed.stderr));
+}
