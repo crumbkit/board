@@ -27,7 +27,10 @@ mod removal;
 pub use removal::Removes;
 mod locks;
 mod retry;
+pub(crate) mod stop;
 pub(crate) mod sync;
+
+use stop::Stop;
 
 /// How long a put waits for another put's lock.
 pub const LOCK_WAIT: Duration = Duration::from_secs(5);
@@ -50,6 +53,10 @@ pub struct Target {
 #[derive(Debug)]
 pub struct Lock {
     _held: gix::lock::Marker,
+    /// The lock owner record's entry for `board.lock`, removed after it.
+    _owner: locks::Owned,
+    /// The kernel lock that shows a live Board process holds `board.lock`.
+    _flock: fs::File,
     /// When this put stops waiting: the one wait covers `board.lock` and
     /// every wait for git's `index.lock`.
     deadline: Instant,
@@ -353,6 +360,8 @@ pub struct Staged {
     parent: Option<ObjectId>,
     index: gix::index::File,
     index_lock: gix::lock::File,
+    /// Declared after `index_lock` so the owner record outlives the file.
+    owner: locks::Owned,
 }
 
 /// The id git gives a blob holding `bytes` under the object hash `kind`.
@@ -415,12 +424,13 @@ impl Repository {
         if let Some(operation) = self.operation_in_progress() {
             return Err(WriteError::InProgress { operation });
         }
-        let (index_lock, index) = self.lock_index(lock.deadline)?;
+        let (index_lock, index, owner) = self.lock_index(lock)?;
         let mut staged = Staged {
             commit: ObjectId::Sha1([0; 20]),
             parent: self.head()?,
             index,
             index_lock,
+            owner,
         };
         let failed =
             |source: Box<dyn std::error::Error + Send + Sync>| WriteError::Commit { source };
@@ -479,39 +489,7 @@ impl Repository {
     /// Finishes `staged` as [`Self::finish_commit`] does, writing `log` to
     /// the reflog.
     fn finish(&self, lock: &Lock, mut staged: Staged, log: &str) -> Result<ObjectId, WriteError> {
-        use gix::refs::Target as RefTarget;
-        use gix::refs::transaction::{Change, LogChange, PreviousValue, RefEdit, RefLog};
-        let commit = gix::ObjectId::try_from(staged.commit.as_bytes()).map_err(|error| {
-            WriteError::Commit {
-                source: error.into(),
-            }
-        })?;
-        let expected = match staged.parent {
-            Some(parent) => PreviousValue::MustExistAndMatch(RefTarget::Object(
-                gix::ObjectId::try_from(parent.as_bytes()).map_err(|error| WriteError::Commit {
-                    source: error.into(),
-                })?,
-            )),
-            None => PreviousValue::MustNotExist,
-        };
-        let edit =
-            RefEdit {
-                change: Change::Update {
-                    log: LogChange {
-                        mode: RefLog::AndReference,
-                        force_create_reflog: false,
-                        message: log.into(),
-                    },
-                    expected,
-                    new: RefTarget::Object(commit),
-                },
-                name: "HEAD".try_into().map_err(
-                    |error: gix::validate::reference::name::Error| WriteError::Commit {
-                        source: error.into(),
-                    },
-                )?,
-                deref: true,
-            };
+        let edit = Self::head_edit(&staged, log)?;
         // As git does, the reflog names a fallback identity when none is
         // configured: a put has refused by then, and a sync that only
         // fast-forwards commits nothing.
@@ -527,7 +505,9 @@ impl Repository {
         // plain `git commit` still reads the index before it takes
         // `index.lock` and HEAD after, so one that straddles a put can
         // commit a tree without the put's files.
-        let prepared = Self::lock_branch(&git, &edit, lock.deadline)?;
+        stop::at(Stop::IndexLock);
+        let (mut owner, prepared) = self.claim_branch(lock, &git, &edit)?;
+        stop::at(Stop::BranchLock);
         let committer = git
             .committer()
             .transpose()
@@ -543,11 +523,15 @@ impl Repository {
             })
             .and_then(|()| staged.index_lock.commit().map_err(|error| error.error))
             .map_err(|source| WriteError::IndexNotWritten { source })?;
+        staged.owner.release();
+        stop::at(Stop::IndexRenamed);
         prepared
             .commit(committer)
             .map_err(|error| WriteError::Uncommitted {
                 source: error.into(),
             })?;
+        owner.release();
+        stop::at(Stop::BranchMoved);
         Ok(staged.commit)
     }
 }

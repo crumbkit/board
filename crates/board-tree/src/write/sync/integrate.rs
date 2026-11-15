@@ -47,15 +47,20 @@ impl Repository {
             .lock(deadline.left().min(LOCK_WAIT))
             .map_err(SyncError::from)?;
         let old = self.head()?;
+        let recorded = self.recorded_checkouts(&lock, old)?;
         let (new, merged, outcome) = match old {
             None => (fetched, false, Outcome::default()),
             Some(head) => self.merge_into(upstream, head, fetched)?,
         };
-        let kept = if old == Some(new) {
+        let kept = if old == Some(new) && recorded.is_empty() {
             Vec::new()
         } else {
-            let changes = self.changes(&self.files_of(old)?, &self.files_of(Some(new))?)?;
-            self.check_out(&lock, old, new, changes)?
+            let written = (recorded.iter())
+                .map(|commit| self.files_of(Some(*commit)))
+                .collect::<Result<Vec<_>, _>>()?;
+            let changes =
+                self.changes(&self.files_of(old)?, &self.files_of(Some(new))?, &written)?;
+            self.check_out(&lock, old, new, changes, recorded)?
         };
         Ok(Integrated {
             old,

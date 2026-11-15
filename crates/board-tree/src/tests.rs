@@ -5,6 +5,7 @@ mod address;
 mod commits;
 mod history;
 mod kept;
+mod killing;
 mod links;
 mod merging;
 mod mounts;
