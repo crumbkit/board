@@ -51,9 +51,10 @@ band draws nothing. While a survey holds the band, no mod draws in it.
   Board refuses the call with `board::plugin::no_capability`, and the button
   counts the open questions instead, as `Questions <n>`. The mod then stops
   asking for `waiting` until it loads again. The button opens the open
-  questions pane. When a read of either count fails, the button turns red and
-  reads `<count>: the last read failed`, or `Questions could not be read`
-  when none has worked; the pane says why.
+  questions pane. When the read of the count the button draws fails, the
+  button turns red and reads `<count>: the last read failed`, or `Questions
+  could not be read` when none has worked. The pane says why only for a
+  failed `plans.open`; a failed `plans.waiting` is in the debug log.
 - **Effects button**, from `board-effects`: `Effects <n>`, with `+` when
   Board listed only the first. It opens the pending effects pane. A failed
   read shows it in red, as `Effects could not be read`, or `Effects <n>: the

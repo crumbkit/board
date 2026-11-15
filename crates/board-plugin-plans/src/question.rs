@@ -30,11 +30,13 @@ pub(crate) const NAMES: &str = concat!(
 );
 
 /// True when an answer in `named` (a source and the question it names, read
-/// once from each answer) names the question `q`. The two ways an answer
-/// names a question, as `NAMES` says, are separate lookups, so each is one equality on
-/// `target` that `SQLite` answers from an index of `named`.
+/// once from each answer) names the question `q`: `NAMES`, with each way an
+/// answer names a question as its own lookup. Each lookup is equalities on
+/// both columns of `named`, so `SQLite` answers it from an index of `named`
+/// and never scans it for a question.
 pub(crate) const NAMED: &str = concat!(
-    "(EXISTS (SELECT 1 FROM named n WHERE n.target = q.logical AND (n.source = 'worktree' OR n.source = q.source)) \
+    "(EXISTS (SELECT 1 FROM named n WHERE n.source = 'worktree' AND n.target = q.logical) \
+     OR EXISTS (SELECT 1 FROM named n WHERE n.source = q.source AND n.target = q.logical) \
      OR EXISTS (SELECT 1 FROM named n WHERE n.source = q.source AND n.target = ",
     own_path!(),
     "))"

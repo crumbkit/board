@@ -280,6 +280,41 @@ test('the count button names a stale or missing count, and a zero count with no 
   expect(countBadge(null, { questions: [], total: 0 }, none)).toBeNull()
 })
 
+test('the failure marked on the count button is the failure of the read whose count is drawn', () => {
+  const none = { open: null, waiting: null }
+  const waits = { total: 14, blocking: 0 }
+  const open = { questions: [], total: 3 }
+  // plans.waiting works and plans.open fails: the drawn count is fresh.
+  expect(countBadge(waits, open, { ...none, open: 'board::query::timeout the query ran longer than 1s' })).toEqual({ label: 'Waiting 14', problem: false })
+  // plans.waiting fails and plans.open works: the drawn count is the stale one.
+  expect(countBadge(waits, open, { ...none, waiting: 'board::query::timeout the query ran longer than 1s' })).toEqual({ label: 'Waiting 14: the last read failed', problem: true })
+  // plans.waiting has only ever failed quietly, so the open count is drawn and its real failure shows.
+  const quiet = 'board::plugin::not_installed plugin plans is not installed'
+  const real = 'board::query::timeout the query ran longer than 1s'
+  expect(countBadge(null, open, { open: real, waiting: quiet })).toEqual({ label: 'Questions 3: the last read failed', problem: true })
+  expect(countBadge(null, null, { open: real, waiting: quiet })).toEqual({ label: 'Questions could not be read', problem: true })
+  // The twin: the same quiet failure beside a quiet one draws no mark.
+  expect(countBadge(null, open, { open: quiet, waiting: quiet })).toEqual({ label: 'Questions 3', problem: false })
+})
+
+test('a plans.waiting that comes back absent clears the failure that an earlier read left', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const timeout = { exitCode: 1, stdout: JSON.stringify({ schema: 'board/failure/v1', code: 'board::query::timeout', message: 'the query ran longer than 1s' }) }
+  let answer = { exitCode: 0, stdout: waitingReport(14, 11) }
+  engine(on, { waiting: () => answer })
+  await start($)
+  await (await $.ui.mount({ ...BAND, surface: 'terminal' })).unmount()
+  answer = timeout
+  await clock.advance(60_000)
+  const failing = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect((await failing.find({ key: 'waiting' }))?.text).toBe('Waiting 14 · 11 blocking: the last read failed')
+  await failing.unmount()
+  answer = { exitCode: 1, stdout: ABSENT }
+  await clock.advance(60_000)
+  const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect((await band.find({ key: 'waiting' }))?.text).toBe('Waiting 14 · 11 blocking')
+})
+
 test('the pane lists each question with its options, and an option answers it in one batch sent to the asking session', async ($, on) => {
   mock.clock(on, { now: NOW })
   const { ran, stdins, sent, toasts } = engine(on)

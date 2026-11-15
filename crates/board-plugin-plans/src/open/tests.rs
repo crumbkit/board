@@ -597,22 +597,203 @@ fn busy_board() -> (Scenario, Board) {
     plans_board(&files)
 }
 
-/// The question list of a board the size of the personal board comes back
-/// well inside the 1 second a query may run. The query once compared every
-/// question with every answer, parsing each answer's body again each time,
-/// and ran past the limit on the real personal board.
-#[test]
-fn plans_open_on_a_board_with_hundreds_of_questions_and_answers_stays_well_inside_the_query_limit()
-{
-    let (_scenario, board) = busy_board();
-    let started = std::time::Instant::now();
+/// The answer record that names `question`.
+fn answer_naming(question: &str) -> Value {
+    Value::String(
+        json!({
+            "$type": "plans/answer/v1",
+            "question": question,
+            "words": "Done.",
+            "answered": "2026-10-30T09:00:00Z",
+        })
+        .to_string(),
+    )
+}
+
+/// A plans board holding `root`, and a board mounted at `/vendor` that
+/// enables plans and holds `mounted`. The paths of `mounted` are its own, so
+/// `projects/a/questions/q` there is `/vendor/projects/a/questions/q` here.
+fn mounting_board(
+    root: &[(&str, Value)],
+    mounted: &[(&str, Value)],
+) -> (Scenario, Scenario, Board) {
+    let (scenario, _) = plans_board(&[]);
+    let schemas = scenario.workdir().join(".board/types/plans");
+    let library = Scenario::new();
+    let files: Vec<(String, String)> = (mounted.iter())
+        .map(|(path, body)| (format!("{path}.json"), body.as_str().unwrap().to_owned()))
+        .collect();
+    let mut files: Vec<(&str, &str)> = (files.iter())
+        .map(|(path, text)| (path.as_str(), text.as_str()))
+        .collect();
+    let config = r#"{"$type": "board/config/v1", "plugins": ["plans"]}"#;
+    files.push((".board/board.json", config));
+    let schema_files: Vec<(String, String)> = ["answer", "question", "withdraw"]
+        .iter()
+        .filter_map(|name| {
+            let path = format!(".board/types/plans/{name}/v1.schema.json");
+            let text = std::fs::read_to_string(schemas.join(format!("{name}/v1.schema.json")));
+            text.ok().map(|text| (path, text))
+        })
+        .collect();
+    files.extend(schema_files.iter().map(|(p, t)| (p.as_str(), t.as_str())));
+    let pinned = library.commit(&files);
+    let mount = json!({"$type": "board/mount/v1", "repo": library.path(), "follow": "main", "commit": pinned.to_string()});
+    scenario.write("vendor.json", Item::File(&mount.to_string()));
+    for (path, body) in root {
+        scenario.write(&format!("{path}.json"), Item::File(body.as_str().unwrap()));
+    }
+    let mut board = Board::open(scenario.workdir(), None).unwrap();
+    board.build_in(&[&Plans]);
+    (scenario, library, board)
+}
+
+fn open_paths(board: &Board) -> Vec<String> {
     let report = board.query(&questions(), usize::MAX, None, None).unwrap();
-    let took = started.elapsed();
-    assert_eq!(report.rows.len(), 120);
-    assert!(
-        took < std::time::Duration::from_millis(600),
-        "the question query took {took:?}, the budget is 600 ms of the 1s limit"
+    let mut paths: Vec<String> = (report.rows.iter())
+        .map(|row| row[0].as_str().unwrap().to_owned())
+        .collect();
+    paths.sort();
+    paths
+}
+
+const MOUNTED_QUESTION: &str = "projects/a/questions/q";
+
+/// An answer in a mounted board names a question there by its path in that
+/// board, which a reference in a mounted board is read from. The twin is the
+/// same answer in the root board, which is another source: it names the
+/// question only by its logical path, which the mount puts under `/vendor`.
+#[test]
+fn an_answer_in_a_mounted_board_names_its_question_by_its_own_path_and_one_from_another_source_does_not()
+ {
+    let asked = body("2026-10-01T09:00:00Z", &json!({}));
+    let own = answer_naming("/projects/a/questions/q");
+    let (_s, _l, board) = mounting_board(&[], &[(MOUNTED_QUESTION, asked.clone())]);
+    assert_eq!(open_paths(&board), ["/vendor/projects/a/questions/q"]);
+    let (_s, _l, board) = mounting_board(
+        &[],
+        &[
+            (MOUNTED_QUESTION, asked.clone()),
+            ("projects/a/answers/q", own.clone()),
+        ],
     );
+    assert_eq!(open_paths(&board), Vec::<String>::new());
+    let (_s, _l, board) = mounting_board(
+        &[("projects/a/answers/q", own)],
+        &[(MOUNTED_QUESTION, asked.clone())],
+    );
+    assert_eq!(open_paths(&board), ["/vendor/projects/a/questions/q"]);
+    let (_s, _l, board) = mounting_board(
+        &[(
+            "projects/a/answers/q",
+            answer_naming("/vendor/projects/a/questions/q"),
+        )],
+        &[(MOUNTED_QUESTION, asked)],
+    );
+    assert_eq!(open_paths(&board), Vec::<String>::new());
+}
+
+/// `NAMED` and `NAMES` are two spellings of one fact. Over answers in the
+/// root board and in a mounted board, naming each question by its logical or
+/// its own path, the questions each leaves unnamed are the same.
+#[test]
+fn the_open_query_leaves_out_the_questions_that_the_names_predicate_says_an_answer_names() {
+    let asked = body("2026-10-01T09:00:00Z", &json!({}));
+    let paths = [
+        "/projects/a/questions/q",
+        "/vendor/projects/a/questions/q",
+        "/projects/a/questions/none",
+    ];
+    let mut checked = 0;
+    for (in_root, in_mount) in [
+        (None, None),
+        (Some(0), None),
+        (Some(1), None),
+        (None, Some(0)),
+        (None, Some(1)),
+        (Some(0), Some(1)),
+        (Some(1), Some(0)),
+    ] {
+        let root: Vec<(&str, Value)> = [("projects/a/questions/q", asked.clone())]
+            .into_iter()
+            .chain(in_root.map(|n| ("projects/a/answers/q", answer_naming(paths[n]))))
+            .collect();
+        let mounted: Vec<(&str, Value)> = [(MOUNTED_QUESTION, asked.clone())]
+            .into_iter()
+            .chain(in_mount.map(|n| ("projects/a/answers/q", answer_naming(paths[n]))))
+            .collect();
+        let (_s, _l, board) = mounting_board(&root, &mounted);
+        let unnamed = format!(
+            "SELECT q.logical FROM records q WHERE q.type = 'plans/question/v1' \
+             AND NOT EXISTS (SELECT 1 FROM records a WHERE a.type = 'plans/answer/v1' AND {})",
+            crate::question::NAMES
+        );
+        let report = board.query(&unnamed, usize::MAX, None, None).unwrap();
+        let mut by_names: Vec<String> = (report.rows.iter())
+            .map(|row| row[0].as_str().unwrap().to_owned())
+            .collect();
+        by_names.sort();
+        assert_eq!(open_paths(&board), by_names, "{in_root:?} {in_mount:?}");
+        checked += by_names.len();
+    }
+    assert!(checked > 0);
+}
+
+/// What each step of the query's plan does, as SQLite reports it.
+fn plan(board: &Board) -> Vec<String> {
+    let sql = format!("EXPLAIN QUERY PLAN {}", questions());
+    let report = board.query(&sql, usize::MAX, None, None).unwrap();
+    let column = report.columns.iter().position(|c| c == "detail").unwrap();
+    (report.rows.iter())
+        .map(|row| row[column].as_str().unwrap().to_owned())
+        .collect()
+}
+
+/// Each question is looked up in `named` by key. A step that scans `named`
+/// for every question compares every question with every answer, which ran
+/// past the one second a query may take on a board of 9,000 questions and
+/// 4,500 answers. Counting the plan's steps does not depend on the machine.
+/// The twin shows that `plan` reports the scans of a query that has them.
+#[test]
+fn plans_open_looks_up_each_named_question_by_key_and_never_scans_the_answers_per_question() {
+    let (_scenario, board) = busy_board();
+    let scans = |steps: &[String]| {
+        (steps.iter())
+            .filter(|step| step.starts_with("SCAN n"))
+            .count()
+    };
+    let steps = plan(&board);
+    assert_eq!(scans(&steps), 0, "{steps:#?}");
+    let searches: Vec<&String> = (steps.iter())
+        .filter(|step| step.starts_with("SEARCH n"))
+        .collect();
+    // The two sources and the own path make three lookups, each by `target`.
+    assert_eq!(searches.len(), 3, "{steps:#?}");
+    for search in searches {
+        assert!(search.contains("target=?"), "{steps:#?}");
+    }
+    let unkeyed = "EXPLAIN QUERY PLAN WITH named AS MATERIALIZED (SELECT a.source AS source, \
+         json_extract(a.body, '$.question') AS target FROM records a \
+         WHERE a.type = 'plans/answer/v1') SELECT q.logical FROM records q \
+         WHERE q.type = 'plans/question/v1' \
+         AND NOT EXISTS (SELECT 1 FROM named n WHERE n.target || '' = q.logical)";
+    let report = board.query(unkeyed, usize::MAX, None, None).unwrap();
+    let column = report.columns.iter().position(|c| c == "detail").unwrap();
+    let steps: Vec<String> = (report.rows.iter())
+        .map(|row| row[column].as_str().unwrap().to_owned())
+        .collect();
+    assert_eq!(scans(&steps), 1, "{steps:#?}");
+}
+
+/// The question list of a board the size of the personal board lists the
+/// questions no answer names. The query once compared every question with
+/// every answer, parsing each answer's body again each time, and ran past the
+/// one second a query may take on the real personal board.
+#[test]
+fn plans_open_on_a_board_with_hundreds_of_questions_and_answers_lists_the_unanswered() {
+    let (_scenario, board) = busy_board();
+    let report = board.query(&questions(), usize::MAX, None, None).unwrap();
+    assert_eq!(report.rows.len(), 120);
     let target: Target = "plans.open".parse().unwrap();
     let report = board
         .call(&target, br#"{"limit": 100}"#, &Plugins::default())

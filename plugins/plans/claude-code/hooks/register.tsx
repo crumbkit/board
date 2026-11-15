@@ -54,7 +54,7 @@ async function refreshWaiting($: EngineInterface, options: PluginOptions, local:
     if (read.kind === 'absent') local.absent = true
     if (read.kind === 'failed') $.ui.log(`board: plans.waiting failed: ${read.why}`, { to: 'debug' })
     if (read.kind === 'read') await update($, waiting, () => read.waiting)
-    if (read.kind !== 'absent') await update($, failed, last => ({ ...last, waiting: read.kind === 'failed' ? read.why : null }))
+    await update($, failed, last => ({ ...last, waiting: read.kind === 'failed' ? read.why : null }))
   } catch (error) {
     $.ui.log(`board: plans.waiting did not run: ${String(error)}`, { to: 'debug' })
     await update($, failed, last => ({ ...last, waiting: `plans.waiting did not run: ${String(error)}` }))

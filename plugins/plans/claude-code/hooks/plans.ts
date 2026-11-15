@@ -166,8 +166,11 @@ const QUIET = ['board::config::not_found', 'board::plugin::not_installed']
  */
 export function countBadge(waiting: Waiting | null, open: Open | null, failed: Unread): { label: string; problem: boolean } | null {
   const label = waiting !== null ? waitingLabel(waiting) : open === null ? null : questionsLabel(open.total)
-  const why = failed.waiting ?? failed.open
-  if (why === null || QUIET.some(code => why.startsWith(code))) return label === null ? null : { label, problem: false }
+  // The failure that matters is that of the read whose count is drawn. With no
+  // count drawn, any failure that is not quiet says the questions could not be read.
+  const loud = (why: string | null) => (why === null || QUIET.some(code => why.startsWith(code)) ? null : why)
+  const why = waiting !== null ? loud(failed.waiting) : open !== null ? loud(failed.open) : (loud(failed.open) ?? loud(failed.waiting))
+  if (why === null) return label === null ? null : { label, problem: false }
   if (waiting === null && open === null) return { label: 'Questions could not be read', problem: true }
   return { label: `${label ?? (waiting !== null ? 'Waiting 0' : 'Questions 0')}: the last read failed`, problem: true }
 }
