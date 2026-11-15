@@ -2,13 +2,17 @@
 //! boundary pass, and the change then moves to done once GitHub says the
 //! pull request merged.
 
-use super::desk::Desk;
+use super::desk::{Desk, record_in};
 use super::*;
 
 const PULL_URL: &str = "https://github.com/octo/widgets/pull/12";
 const HEAD: &str = "0123456789abcdef0123456789abcdef01234567";
 const CHANGE: &str = "/changes/lever";
 const TESTED: &str = "# Lever\n\n## What the tests prove\n\nIt lands.\n\n## What the tests do not prove\n\nRetries.\n";
+/// A plan that also has the section the team board's flow asks for.
+const TEAM_TESTED: &str = "# Lever\n\n## What the tests prove\n\nIt lands.\n\n## What the tests do not prove\n\nRetries.\n\n## Team tests\n\nThe team ran it.\n";
+/// The version of the development flow that only the team board holds.
+const TEAM_FLOW: &str = "/flows/development/7ea3000000000000";
 
 /// Enables the changes plugin and writes a change in `phase` at `head`,
 /// with a plan record whose text holds `plan` and pull request 12. An
@@ -20,23 +24,6 @@ fn change(desk: &Desk, phase: &str, head: &str, plan: &str) {
         &[],
     );
     assert_eq!(enabled.code, 0, "{}", text(&enabled.stderr));
-    desk.write("changes/lever/plan.md", plan);
-    let planned = json!({
-        "$type": "changes/plan/v1",
-        "text": "/changes/lever/plan.md",
-        "uses": [],
-        "records": [],
-        "answers": {"ux": "none", "data": "none", "lifecycle": "none"},
-    });
-    desk.write("changes/lever/plans/1.json", &planned.to_string());
-    let pull = json!({
-        "$type": "github/pull/v1",
-        "owner": "octo",
-        "repo": "widgets",
-        "number": 12,
-        "url": PULL_URL,
-    });
-    desk.write("gh/octo/widgets/pulls/12.json", &pull.to_string());
     let mut record = json!({
         "$type": "changes/change/v1",
         "title": "Add a lever",
@@ -50,7 +37,65 @@ fn change(desk: &Desk, phase: &str, head: &str, plan: &str) {
     if head.is_empty() {
         record.as_object_mut().unwrap().remove("head");
     }
-    desk.write("changes/lever.json", &record.to_string());
+    lever(&desk.personal, &record, plan);
+}
+
+/// Writes `record` at /changes/lever in `board`, with a plan record whose
+/// text holds `plan` and pull request 12.
+fn lever(board: &Scenario, record: &Value, plan: &str) {
+    let write = |path: &str, text: &str| {
+        board.write(path, Item::File(text));
+    };
+    write("changes/lever/plan.md", plan);
+    let planned = json!({
+        "$type": "changes/plan/v1",
+        "text": "/changes/lever/plan.md",
+        "uses": [],
+        "records": [],
+        "answers": {"ux": "none", "data": "none", "lifecycle": "none"},
+    });
+    write("changes/lever/plans/1.json", &planned.to_string());
+    let pull = json!({
+        "$type": "github/pull/v1",
+        "owner": "octo",
+        "repo": "widgets",
+        "number": 12,
+        "url": PULL_URL,
+    });
+    write("gh/octo/widgets/pulls/12.json", &pull.to_string());
+    write("changes/lever.json", &record.to_string());
+}
+
+/// Writes, in the team board, a `changes/change/v2` at /changes/lever in
+/// land at [`HEAD`] whose plan's text holds `plan`, and the [`TEAM_FLOW`]
+/// version it follows: the development flow whose land phase also asks for
+/// a Team tests section under the check `team-tests`, which no shipped
+/// flow has. Then commits the team board and moves the pin.
+fn team_change(desk: &Desk, team: &Scenario, plan: &str) {
+    let mut flow: Value = serde_json::from_str(include_str!(
+        "../../../../../board-plugin-changes/flows/development.json"
+    ))
+    .unwrap();
+    let phases = flow["phases"].as_array_mut().unwrap();
+    let land = phases.iter_mut().find(|phase| phase["name"] == "land");
+    land.unwrap()["checks"].as_array_mut().unwrap().push(json!({
+        "id": "team-tests", "kind": "sections", "sections": ["Team tests"],
+    }));
+    let version = format!("{}.json", TEAM_FLOW.trim_start_matches('/'));
+    team.write(&version, Item::File(&flow.to_string()));
+    let record = json!({
+        "$type": "changes/change/v2",
+        "title": "Add a lever",
+        "mount": "/repos/widgets",
+        "phase": "land",
+        "touched": "2026-11-10",
+        "head": HEAD,
+        "flow": TEAM_FLOW,
+        "plan": "/changes/lever/plans/1",
+        "pulls": ["/gh/octo/widgets/pulls/12"],
+    });
+    lever(team, &record, plan);
+    desk.pin(team);
 }
 
 /// Makes the stub gh answer `gh api` with a pull request whose `merged` is
@@ -283,4 +328,173 @@ fn a_failed_gh_merge_leaves_the_change_in_land_and_a_retry_merges_it() {
     assert_eq!(desk.record(CHANGE).unwrap()["phase"], "land");
     desk.gh_answers(&json!(""), 0, "");
     assert_eq!(desk.output("merge", &flags)["phase"], "done");
+}
+
+#[test]
+fn a_merge_run_with_checkout_moves_its_change_to_done_as_one_run_without_it_does() {
+    let desk = Desk::new();
+    change(&desk, "land", HEAD, TESTED);
+    pulls(&desk, true);
+    desk.gh_answers(&json!(""), 0, "");
+    let flags = merging("Add a lever", "Levers lift.", &["--change", CHANGE]);
+    let (ran, document) = desk.call_in(&["--checkout"], "merge", &flags);
+    assert_eq!(ran.code, 0, "{document}");
+    assert_eq!(document["data"]["output"]["phase"], "done");
+    assert_eq!(merges(&desk), 1);
+    assert_eq!(desk.record(CHANGE).unwrap()["phase"], "done");
+}
+
+#[test]
+fn a_change_the_personal_board_does_not_hold_is_refused_there_with_a_hint_that_does_not_name_personal()
+ {
+    let desk = Desk::new();
+    change(&desk, "land", HEAD, TESTED);
+    let typo = ["--change", "/changes/levr"];
+    let flags = merging("Add a lever", "Levers lift.", &typo);
+    let (ran, document) = desk.call_in(&["--personal"], "merge", &flags);
+    assert_eq!(ran.code, 1, "{document}");
+    assert_eq!(document["fields"]["code"], "changes::change::not_found");
+    let hint = document["recovery"]["text"].as_str().unwrap_or_default();
+    assert!(!hint.contains("--personal"), "{document}");
+    assert!(hint.contains("board changes open"), "{document}");
+    assert_eq!(desk.gh_calls(), 0);
+}
+
+#[test]
+fn merge_run_in_a_board_the_personal_board_mounts_lands_that_boards_change() {
+    let desk = Desk::new();
+    let team = desk.team();
+    team_change(&desk, &team, TEAM_TESTED);
+    pulls(&desk, true);
+    desk.gh_answers(&json!(""), 0, "");
+    let at = team.path();
+    let (ran, document) = desk.call_in(
+        &["-C", &at],
+        "merge",
+        &merging("Add a lever", "Levers lift.", &["--change", CHANGE]),
+    );
+    assert_eq!(ran.code, 0, "{document}");
+    let result = &document["data"]["output"];
+    assert_eq!(result["phase"], "done");
+    assert_eq!(merges(&desk), 1);
+    let argv = desk.gh_file("gh-merge-argv.txt");
+    assert!(argv.lines().any(|line| line == HEAD), "{argv}");
+    assert_eq!(record_in(&team, CHANGE).unwrap()["phase"], "done");
+    let crossing = desk.record(result["crossing"].as_str().unwrap()).unwrap();
+    assert_eq!(
+        (&crossing["action"], &crossing["result"]),
+        (&json!("github.merge"), &json!(PULL_URL))
+    );
+}
+
+#[test]
+fn merge_in_a_mounted_board_refuses_exactly_what_changes_next_there_misses_and_merges_once_it_passes()
+ {
+    let desk = Desk::new();
+    let team = desk.team();
+    team_change(&desk, &team, "# Lever\n");
+    pulls(&desk, true);
+    let at = team.path();
+    let missing = || -> Vec<Value> {
+        let next = ["-C", &at, "--json", "call", "changes.next"];
+        let arguments: Vec<&str> = next.into_iter().chain(["--path", CHANGE]).collect();
+        let ran = desk.run_in(&desk.checkout(), &arguments, &[]);
+        let document = json(&ran);
+        assert_eq!(ran.code, 0, "{document}");
+        let gate = document["data"]["output"]["gate"].as_array().unwrap();
+        (gate.iter())
+            .filter(|check| check["status"] == "missing" && check["blocks"] == true)
+            .map(|check| check["check"].clone())
+            .collect()
+    };
+    let flags = merging("Add a lever", "Levers lift.", &["--change", CHANGE]);
+    let (ran, document) = desk.call_in(&["-C", &at], "merge", &flags);
+    assert_eq!(ran.code, 1, "{document}");
+    assert_eq!(document["code"], "github::merge::gate");
+    assert_eq!(document["fields"]["missing"], json!(missing()));
+    assert_eq!(missing(), [json!("test-sections"), json!("team-tests")]);
+    assert_eq!(desk.gh_calls(), 0);
+    team.write("changes/lever/plan.md", Item::File(TEAM_TESTED));
+    desk.pin(&team);
+    assert_eq!(missing(), Vec::<Value>::new());
+    desk.gh_answers(&json!(""), 0, "");
+    let (ran, document) = desk.call_in(&["-C", &at], "merge", &flags);
+    assert_eq!(ran.code, 0, "{document}");
+    assert_eq!(merges(&desk), 1);
+}
+
+#[test]
+fn merge_naming_a_change_under_a_mount_is_refused_and_the_same_change_named_in_its_own_board_merges()
+ {
+    let desk = Desk::new();
+    let team = desk.team();
+    team_change(&desk, &team, TEAM_TESTED);
+    pulls(&desk, true);
+    let mounted = "/repos/team/changes/lever";
+    let (ran, document) = desk.call_in(
+        &["--personal"],
+        "merge",
+        &merging("Add a lever", "Levers lift.", &["--change", mounted]),
+    );
+    assert_eq!(ran.code, 1, "{document}");
+    assert_eq!(document["code"], "github::merge::change", "{document}");
+    assert_eq!(desk.gh_calls(), 0);
+    desk.gh_answers(&json!(""), 0, "");
+    let at = team.path();
+    let (ran, document) = desk.call_in(
+        &["-C", &at],
+        "merge",
+        &merging("Add a lever", "Levers lift.", &["--change", CHANGE]),
+    );
+    assert_eq!(ran.code, 0, "{document}");
+    assert_eq!(merges(&desk), 1);
+}
+
+#[test]
+fn a_change_in_the_personal_board_still_merges_beside_a_mounted_board_that_holds_one_of_the_same_name()
+ {
+    let desk = Desk::new();
+    let team = desk.team();
+    team_change(&desk, &team, TEAM_TESTED);
+    change(&desk, "land", HEAD, TESTED);
+    pulls(&desk, true);
+    desk.gh_answers(&json!(""), 0, "");
+    let (ran, document) = desk.call_in(
+        &["--personal"],
+        "merge",
+        &merging("Add a lever", "Levers lift.", &["--change", CHANGE]),
+    );
+    assert_eq!(ran.code, 0, "{document}");
+    assert_eq!(desk.record(CHANGE).unwrap()["phase"], "done");
+    assert_eq!(record_in(&team, CHANGE).unwrap()["phase"], "land");
+}
+
+#[test]
+fn a_change_the_commands_board_does_not_hold_is_refused_with_both_forms_and_merges_with_personal() {
+    let desk = Desk::new();
+    let team = desk.team();
+    change(&desk, "land", HEAD, TESTED);
+    pulls(&desk, true);
+    let flags = merging("Add a lever", "Levers lift.", &["--change", CHANGE]);
+    let at = team.path();
+    let (ran, document) = desk.call_in(&["-C", &at], "merge", &flags);
+    assert_eq!(ran.code, 1, "{document}");
+    assert_eq!(
+        (&document["code"], &document["fields"]["code"]),
+        (
+            &json!("github::board::refused"),
+            &json!("changes::change::not_found")
+        ),
+        "{document}"
+    );
+    let hint = document["recovery"]["text"].as_str().unwrap_or_default();
+    assert!(
+        hint.contains("--personal") && hint.contains("-C"),
+        "{document}"
+    );
+    assert_eq!(desk.gh_calls(), 0);
+    desk.gh_answers(&json!(""), 0, "");
+    let (ran, document) = desk.call_in(&["--personal"], "merge", &flags);
+    assert_eq!(ran.code, 0, "{document}");
+    assert_eq!(desk.record(CHANGE).unwrap()["phase"], "done");
 }
