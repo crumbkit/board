@@ -24,7 +24,7 @@ use crate::add::append;
 
 /// What the other writer does just before the first put of the plugin.
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum Race {
+pub(super) enum Race {
     /// It writes nothing.
     Alone,
     /// It puts its text at the path; the plugin's put then goes to Board.
@@ -38,9 +38,9 @@ enum Race {
 
 /// A board mounting a notes clone at `/repos/notes`, whose puts, reads and
 /// pins are Board's.
-struct Mounted {
+pub(super) struct Mounted {
     _remote: Scenario,
-    clone: Scenario,
+    pub(super) clone: Scenario,
     board: Scenario,
     settings: Settings,
     race: Race,
@@ -50,7 +50,7 @@ struct Mounted {
 }
 
 impl Mounted {
-    fn new(race: Race, other: &str) -> Self {
+    pub(super) fn new(race: Race, other: &str) -> Self {
         let remote = Scenario::new();
         let started = remote.commit(&[
             (".board/board.json", r#"{"$type": "board/config/v1"}"#),
@@ -144,7 +144,7 @@ impl Host for Mounted {
         panic!("notes calls no plugin")
     }
     fn board(&self, _: &Elsewhere) -> Result<Box<dyn Host + '_>, Box<Refusal>> {
-        panic!("a write syncs nothing")
+        Ok(Box::new(Cloned(self)))
     }
     fn decide(
         &self,
@@ -166,6 +166,67 @@ impl Host for Mounted {
     }
     fn settings(&self) -> &Settings {
         &self.settings
+    }
+}
+
+/// The host a call gets for the notes clone: it only syncs, as `board -C
+/// <clone> sync` does.
+struct Cloned<'a>(&'a Mounted);
+
+impl Host for Cloned<'_> {
+    fn query(&self, _: &str, _: Limit) -> Result<QueryReport, QueryError> {
+        panic!("only a sync is asked of the clone")
+    }
+    fn refs(
+        &self,
+        _: &[LogicalPath],
+        _: Absent,
+        _: &[String],
+    ) -> Result<Vec<Result<RefsReport, RefsError>>, RefsError> {
+        panic!("only a sync is asked of the clone")
+    }
+    fn get_each(&self, _: &[LogicalPath]) -> Result<Vec<Result<GetReport, ReadError>>, ReadError> {
+        panic!("only a sync is asked of the clone")
+    }
+    fn put(&self, _: &[Value]) -> Result<PutReport, PutError> {
+        panic!("only a sync is asked of the clone")
+    }
+    fn call(
+        &self,
+        _: &board_plugin::Target,
+        _: &Value,
+    ) -> Result<board_plugin::CallReport, Box<Refusal>> {
+        panic!("only a sync is asked of the clone")
+    }
+    fn board(&self, _: &Elsewhere) -> Result<Box<dyn Host + '_>, Box<Refusal>> {
+        panic!("only a sync is asked of the clone")
+    }
+    fn decide(
+        &self,
+        _: &str,
+        _: &LogicalPath,
+        _: Option<&Shown>,
+    ) -> Result<DecideReport, Box<Refusal>> {
+        panic!("only a sync is asked of the clone")
+    }
+    fn sync(&self, push: bool, deadline: Duration) -> Result<Synced, SyncError> {
+        self.sync_waiting(push, deadline, Duration::ZERO)
+    }
+    fn sync_waiting(
+        &self,
+        push: bool,
+        deadline: Duration,
+        wait: Duration,
+    ) -> Result<Synced, SyncError> {
+        let mut board = Board::open(self.0.clone.workdir(), None).unwrap();
+        board.built_by("test");
+        board.sync_waiting(push, deadline, wait)
+    }
+    fn mount_update(&self, _: &LogicalPath, _: Duration) -> Result<MountUpdateReport, MountError> {
+        panic!("only a sync is asked of the clone")
+    }
+    fn settings(&self) -> &Settings {
+        &self.0.settings
     }
 }
 

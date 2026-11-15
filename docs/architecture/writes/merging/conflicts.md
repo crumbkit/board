@@ -43,7 +43,9 @@ conflict, then merge each other's work, therefore stay at one record.
 | merging a text file | both sides added the path with different content, and neither starts with frontmatter | both texts, remote first | sync |
 | merge tree built | a conflict record's path holds one side's blob | the record's `kept` names that side | sync |
 | checking | git state reports a merge, rebase, cherry-pick or revert | refused (`board::sync::merging`) | a person finishes or aborts it |
-| note or task write | sync refused `merging` | write fails with `<plugin>::board::refused` (`code` field `board::sync::merging`) | a person finishes or aborts the operation, then writes again |
+| note write | sync refused `merging` | write fails with `notes::board::refused` (`code` field `board::sync::merging`) | a person finishes or aborts the operation, then writes again |
+| task write | sync refused `merging` | the put refuses, and the write fails with `tasks::board::refused` (`code` field `board::put::locked`) | a person finishes or aborts the operation, then writes again |
+| `notes.daily` | sync refused `merging` | the note is returned as the clone holds it, with `unsynced` set to `board::sync::merging` | a person finishes or aborts the operation |
 
 Every decision above is made while the merge tree is built in memory, before
 integrate writes a file, so the clone is left as [merging.md](../merging.md) describes it after a kill.

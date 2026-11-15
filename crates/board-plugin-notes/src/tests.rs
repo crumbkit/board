@@ -13,9 +13,10 @@ use board_ops::Elsewhere;
 use serde_json::json;
 
 use super::*;
+use crate::daily::private;
 use add::{clock, inbox};
-use daily::private;
 
+mod daily;
 mod mount;
 
 /// The committed schema file holds, byte for byte, the canonical JSON of

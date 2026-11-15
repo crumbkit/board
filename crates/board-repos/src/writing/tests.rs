@@ -242,13 +242,13 @@ fn a_sync_refused_with_head_left_in_place_gives_its_code_and_any_other_refusal_i
     let host = local(&[]);
     let writer = writer(&host, &clones);
     assert_eq!(
-        mounted().sync(writer, false).unwrap(),
+        mounted().sync(writer, false, Access::Write).unwrap(),
         Some(Code::SyncEdited)
     );
-    let refused = mounted().sync(writer, false).unwrap_err();
+    let refused = mounted().sync(writer, false, Access::Write).unwrap_err();
     assert_eq!(refused.code, "tasks::board::refused");
     assert_eq!(refused.fields["code"], json!("board::sync::failed"));
-    assert_eq!(mounted().sync(writer, false).unwrap(), None);
+    assert_eq!(mounted().sync(writer, false, Access::Write).unwrap(), None);
 }
 
 #[test]
@@ -445,7 +445,9 @@ fn a_sync_refused_for_a_rewound_remote_or_a_shallow_clone_lets_the_write_park() 
         clones.syncs.borrow_mut().extend([refusal(code)]);
         let host = local(&[]);
         assert_eq!(
-            mounted().sync(writer(&host, &clones), false).unwrap(),
+            mounted()
+                .sync(writer(&host, &clones), false, Access::Write)
+                .unwrap(),
             Some(code)
         );
     }
@@ -491,7 +493,33 @@ fn a_sync_refused_for_a_merge_in_progress_in_a_real_clone_fails_the_write() {
         plugin: "notes",
         deadline: Duration::from_secs(10),
     };
-    let error = repo.sync(writer, false).unwrap_err();
+    let error = repo.sync(writer, false, Access::Write).unwrap_err();
     assert_eq!(error.fields["code"], "board::sync::merging", "{error:?}");
     assert!(host.puts.borrow().is_empty());
+}
+
+/// A read of the clone is not refused by a git operation in progress: it
+/// gets the sync's code and reads the clone as it is.
+#[test]
+fn a_sync_for_a_read_of_a_clone_in_a_merge_gives_the_syncs_code() {
+    let remote = board_scenario::Scenario::new();
+    remote.commit(&[(".board/board.json", r#"{"$type": "board/config/v1"}"#)]);
+    let clone = board_scenario::Scenario::clone_of(&remote);
+    clone.identified();
+    clone.write(".git/MERGE_HEAD", board_scenario::Item::File("x\n"));
+    let host = local(&[]);
+    let repo = Repo {
+        root: "/repos/work".to_owned(),
+        clone: Some(clone.path().clone()),
+    };
+    let writer = Writer {
+        host: &host,
+        clones: &Real,
+        plugin: "notes",
+        deadline: Duration::from_secs(10),
+    };
+    assert_eq!(
+        repo.sync(writer, false, Access::Read).unwrap(),
+        Some(Code::SyncMerging)
+    );
 }

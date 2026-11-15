@@ -28,11 +28,21 @@ compares with the commit the earlier round fetched.
 `--accept-rewrite` merges the rewritten branch with this clone's history,
 so the clone's commits, including any the rewrite removed, are pushed again.
 A rewrite made on purpose, such as removing a leaked secret, needs a fresh
-clone instead, and `--accept-rewrite` must not be used on the old one.
+clone instead, and `--accept-rewrite` must not be used on the old one. Keep
+the old clone, and before fetching in it run `git log <remote>/<branch>..HEAD`
+there to check that it shows no commit you still need, since the fresh clone
+does not hold its unpushed commits. After a fetch the same command also lists
+the commits the rewrite dropped.
 
 A writer such as `notes.add` or a tasks writer treats `rewound` and `shallow`
 as a sync it can write beside, like `board::sync::edited`: it writes the note or
 task in the clone and leaves the sync for a person. It does not do so for
-`merging`: a put refuses during a git operation too, so the write fails with
-`<plugin>::board::refused`, whose `code` field is `board::sync::merging`, and nothing is written. Finish or abort the operation,
-then write again.
+`merging`, because a put refuses during a git operation too, and nothing is
+written. A note write fails with `notes::board::refused`, whose `code` field is
+`board::sync::merging`. A task write goes on to the put, which refuses, so it
+fails with `tasks::board::refused`, whose `code` field is `board::put::locked`.
+Finish or abort the operation, then write again.
+
+A call that only reads, such as `notes.daily`, goes on after `merging` as it
+does after the other three: it returns the note as the clone holds it, with
+`unsynced` set to `board::sync::merging`.

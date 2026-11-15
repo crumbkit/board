@@ -22,8 +22,8 @@ pub use listing::{
 pub use repo::{File, Repo};
 pub use slug::slug;
 pub use writing::{
-    ATTEMPTS, Clones, EDITED, MOVED, Through, Writer, create, landed, landed_with, push, refused,
-    synced,
+    ATTEMPTS, Access, Clones, EDITED, MOVED, Through, Writer, create, landed, landed_with, push,
+    refused, synced,
 };
 
 /// Text without trailing whitespace, as Python's `str.rstrip` drops it,
