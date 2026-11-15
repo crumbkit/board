@@ -88,6 +88,19 @@ fn isolated(scenario: &Scenario) -> gix::Repository {
 }
 
 #[test]
+fn a_commit_at_records_the_scenario_signature_in_the_reflog_whatever_the_machines_identity() {
+    let scenario = Scenario::new();
+    let id = scenario.commit_at(&[("a.txt", "a")], &[], 7, "first");
+    let log = std::fs::read_to_string(scenario.workdir().join(".git/logs/HEAD")).unwrap();
+    let line = log.lines().last().unwrap();
+    assert!(line.contains(&id.to_string()), "{line}");
+    assert!(
+        line.contains("scenario <scenario@example.com> 7 +0000"),
+        "{line}"
+    );
+}
+
+#[test]
 fn an_identified_repository_commits_as_board_test_and_its_twin_has_nobody_to_commit_as() {
     let scenario = Scenario::new();
     assert!(isolated(&scenario).committer().is_none());
