@@ -12,7 +12,7 @@ pub(crate) struct Syncing {
     /// Fetch and merge, and leave the push for later.
     #[arg(long)]
     no_push: bool,
-    /// Merge a remote branch that was rewritten since the last fetch, which otherwise stops the sync.
+    /// Merge a remote branch that was rewritten since the last fetch, which otherwise stops the sync. The clone's commits, including any the rewrite removed, are pushed again, so a deliberate rewrite such as removing a secret needs a fresh clone instead.
     #[arg(long)]
     accept_rewrite: bool,
 }

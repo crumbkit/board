@@ -224,3 +224,48 @@ fn sync_stops_for_a_rewritten_remote_until_accepted_and_for_a_shallow_clone_alwa
     assert_eq!(output.code, 0, "{}", text(&output.stderr));
     assert_eq!(json(&output)["data"]["fetched"], rewritten.to_string());
 }
+
+/// The flag's help says what accepting a rewrite does to the commits the
+/// rewrite removed.
+#[test]
+fn the_accept_rewrite_help_says_removed_commits_are_pushed_again_and_a_deliberate_rewrite_needs_a_fresh_clone()
+ {
+    let (_remote, a, _) = clones();
+    let output = board_in(a.workdir(), &["sync", "--help"]);
+    let help = text(&output.stdout).replace('\n', " ");
+    let help: String = help.split_whitespace().collect::<Vec<_>>().join(" ");
+    assert!(help.contains("pushed again"), "{help}");
+    assert!(help.contains("fresh clone"), "{help}");
+}
+
+/// When this clone edited a file and the remote deleted it, the merge keeps
+/// the local edit, and the report says so in both forms.
+#[test]
+fn sync_reports_the_local_version_kept_when_the_remote_deleted_a_file_this_clone_edited() {
+    for json_output in [true, false] {
+        let (remote, a, _) = clones();
+        board_with(
+            a.workdir(),
+            None,
+            &["put", "/projects/p"],
+            br#"{"$type": "lr/project/v1", "x": 1}"#,
+        );
+        remote.commit(&[
+            (".board/board.json", CONFIG),
+            (
+                ".board/types/lr/project/v1.schema.json",
+                r#"{"type": "object"}"#,
+            ),
+        ]);
+        if json_output {
+            let output = board_in(a.workdir(), &["sync", "--no-push", "--json"]);
+            let conflicts = &json(&output)["data"]["conflicts"];
+            assert_eq!(conflicts[0]["kind"], "edit_delete", "{conflicts}");
+            assert_eq!(conflicts[0]["kept"], "local", "{conflicts}");
+        } else {
+            let report = text(&board_in(a.workdir(), &["sync", "--no-push"]).stdout);
+            assert!(report.contains("the local version is kept"), "{report}");
+            assert!(!report.contains("the remote's version is kept"), "{report}");
+        }
+    }
+}

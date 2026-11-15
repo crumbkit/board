@@ -352,6 +352,7 @@ fn the_conflict_records_that_name_a_written_file_are_listed_once_with_their_logi
     let conflicted = |path: &str, record: &str| board_ops::Conflicted {
         path: path.to_owned(),
         kind: board_model::ConflictKind::BothChanged,
+        kept: board_model::Side::Remote,
         record: record.to_owned(),
     };
     clones.found.borrow_mut().extend([
@@ -374,6 +375,29 @@ fn the_conflict_records_that_name_a_written_file_are_listed_once_with_their_logi
     );
 }
 
+/// A file and a directory that met at a path conflict there, and a write
+/// below that path is named by the record, but one beside it is not.
+#[test]
+fn a_conflict_on_a_parent_directory_of_a_written_file_names_it() {
+    let host = local(&[]);
+    let clones = Recorded::default();
+    clones.found.borrow_mut().push(board_ops::Conflicted {
+        path: "daily".to_owned(),
+        kind: board_model::ConflictKind::FileDirectory,
+        kept: board_model::Side::Remote,
+        record: "conflicts/dir.json".to_owned(),
+    });
+    let writer = writer(&host, &clones);
+    assert_eq!(
+        writer.conflicts_at(&mounted(), &["daily/2026/d.md"]),
+        ["/repos/work/conflicts/dir.json"]
+    );
+    assert_eq!(
+        writer.conflicts_at(&mounted(), &["daily.md", "dailyx/d.md"]),
+        Vec::<String>::new()
+    );
+}
+
 #[test]
 fn a_landed_write_lists_only_the_conflicts_of_the_syncs_after_the_write() {
     let host = local(&[]);
@@ -381,6 +405,7 @@ fn a_landed_write_lists_only_the_conflicts_of_the_syncs_after_the_write() {
     let conflicted = |record: &str| board_ops::Conflicted {
         path: "daily/d.md".to_owned(),
         kind: board_model::ConflictKind::BothChanged,
+        kept: board_model::Side::Remote,
         record: record.to_owned(),
     };
     // The sync before the write found one conflict at the note.
@@ -411,12 +436,11 @@ fn a_landed_write_lists_only_the_conflicts_of_the_syncs_after_the_write() {
     );
 }
 
-/// A rewritten remote, a shallow clone and a git merge in progress leave the
-/// clone as it was and wait for a person, so a write goes on beside them and
-/// is not refused.
+/// A rewritten remote and a shallow clone leave the clone as it was and wait
+/// for a person, so a write goes on beside them and is not refused.
 #[test]
-fn a_sync_refused_for_a_rewound_remote_a_shallow_clone_or_a_merge_lets_the_write_park() {
-    for code in [Code::SyncRewound, Code::SyncShallow, Code::SyncMerging] {
+fn a_sync_refused_for_a_rewound_remote_or_a_shallow_clone_lets_the_write_park() {
+    for code in [Code::SyncRewound, Code::SyncShallow] {
         let clones = Recorded::default();
         clones.syncs.borrow_mut().extend([refusal(code)]);
         let host = local(&[]);
@@ -425,4 +449,49 @@ fn a_sync_refused_for_a_rewound_remote_a_shallow_clone_or_a_merge_lets_the_write
             Some(code)
         );
     }
+}
+
+/// Clones that sync as `board -C <clone> sync` does.
+struct Real;
+
+impl Clones for Real {
+    fn sync(&self, clone: &Path, push: bool, deadline: Duration) -> Result<(), Box<Refusal>> {
+        let board = board_ops::Board::open(clone, None).unwrap();
+        (board.sync_waiting(push, deadline, Duration::ZERO))
+            .map(drop)
+            .map_err(|error| Box::new(error.refusal()))
+    }
+    fn mount_update(&self, _: &LogicalPath, _: Duration) -> Result<String, Box<Refusal>> {
+        unreachable!("a refused sync pins nothing")
+    }
+    fn conflicts(&self) -> Vec<board_ops::Conflicted> {
+        Vec::new()
+    }
+    fn forget_conflicts(&self) {}
+}
+
+/// A merge in progress in a real clone waits for a person, and a write is
+/// refused with the sync's code rather than parked, because a put refuses
+/// during a merge too.
+#[test]
+fn a_sync_refused_for_a_merge_in_progress_in_a_real_clone_fails_the_write() {
+    let remote = board_scenario::Scenario::new();
+    remote.commit(&[(".board/board.json", r#"{"$type": "board/config/v1"}"#)]);
+    let clone = board_scenario::Scenario::clone_of(&remote);
+    clone.identified();
+    clone.write(".git/MERGE_HEAD", board_scenario::Item::File("x\n"));
+    let host = local(&[]);
+    let repo = Repo {
+        root: "/repos/work".to_owned(),
+        clone: Some(clone.path().clone()),
+    };
+    let writer = Writer {
+        host: &host,
+        clones: &Real,
+        plugin: "notes",
+        deadline: Duration::from_secs(10),
+    };
+    let error = repo.sync(writer, false).unwrap_err();
+    assert_eq!(error.fields["code"], "board::sync::merging", "{error:?}");
+    assert!(host.puts.borrow().is_empty());
 }

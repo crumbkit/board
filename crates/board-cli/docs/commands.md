@@ -188,7 +188,7 @@ Fetch the remote branch, merge it into this board, and push
 ### Arguments
 
 - `--no-push`: Fetch and merge, and leave the push for later
-- `--accept-rewrite`: Merge a remote branch that was rewritten since the last fetch, which otherwise stops the sync
+- `--accept-rewrite`: Merge a remote branch that was rewritten since the last fetch, which otherwise stops the sync. The clone's commits, including any the rewrite removed, are pushed again, so a deliberate rewrite such as removing a secret needs a fresh clone instead
 
 Effects: additive, not idempotent, open-world.
 

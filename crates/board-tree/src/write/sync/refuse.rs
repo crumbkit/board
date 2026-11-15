@@ -1,7 +1,7 @@
-//! The refusals of a sync that come before it writes anything: a git merge
-//! or rebase in progress, a shallow or partial clone, and a remote branch
-//! that no longer contains the commit the clone fetched last time
-//! (docs/architecture/writes.md, Sync).
+//! The refusals of a sync that come before it changes the working tree, index or HEAD: a git
+//! operation in progress (the put's list of them), a shallow or partial
+//! clone, and a remote branch that no longer contains the commit the clone
+//! fetched last time (docs/architecture/writes.md, Sync).
 
 use board_model::ObjectId;
 
@@ -21,16 +21,8 @@ pub(super) struct Before {
     pub restore: Option<ObjectId>,
 }
 
-/// The files git keeps in its directory while an operation is in progress,
-/// and its name.
-const OPERATIONS: [(&str, &str); 3] = [
-    ("MERGE_HEAD", "merge"),
-    ("rebase-merge", "rebase"),
-    ("rebase-apply", "rebase"),
-];
-
 impl Repository {
-    /// Refuses before the board lock is taken and before any file, object,
+    /// Refuses before the board lock is taken and before any working-tree file,
     /// index entry or HEAD is written. Every refusal puts the
     /// remote-tracking ref back where it was before the fetch, so the next
     /// run compares the remote with the same commit. A ref that cannot be put
@@ -55,13 +47,11 @@ impl Repository {
         fetched: ObjectId,
         previous: Option<ObjectId>,
     ) -> Option<SyncError> {
-        for (file, operation) in OPERATIONS {
-            if self.git_dir().join(file).exists() {
-                return Some(SyncError::Merging {
-                    operation,
-                    unrestored: false,
-                });
-            }
+        if let Some(operation) = self.operation_in_progress() {
+            return Some(SyncError::Merging {
+                operation,
+                unrestored: false,
+            });
         }
         if let Some(kind) = self.incomplete(&upstream.remote) {
             return Some(SyncError::Shallow {

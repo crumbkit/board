@@ -223,7 +223,7 @@ fn two_moved_pins_take_the_one_that_descends_from_the_other_without_a_record() {
 }
 
 #[test]
-fn two_moved_pins_where_a_commit_is_missing_keep_the_local_pin() {
+fn two_moved_pins_where_a_commit_is_missing_take_the_remote_pin_and_record_a_conflict() {
     let mounted = Mounted::new();
     let [old, middle, _] = mounted.commits;
     let missing = ObjectId::from_hex(&"ab".repeat(20)).unwrap();
@@ -232,9 +232,36 @@ fn two_moved_pins_where_a_commit_is_missing_keep_the_local_pin() {
         &mounted.pin(middle),
         &mounted.pin(missing),
     );
-    assert_eq!(pin, mounted.pin(middle));
+    assert_eq!(pin, mounted.pin(missing));
     assert_eq!(synced.pins[0].basis, PinBasis::Unknown);
-    assert_eq!(synced.conflicts, Vec::new());
+    assert_eq!(synced.conflicts.len(), 1);
+    assert_eq!(synced.conflicts[0].path, "mount.json");
+}
+
+#[test]
+fn a_pin_merged_without_its_commits_never_moves_back_on_the_clone_that_pushed_it() {
+    let mounted = Mounted::new();
+    let [old, middle, _] = mounted.commits;
+    let missing = ObjectId::from_hex(&"ab".repeat(20)).unwrap();
+    let (_remote, one, two) = pair(&[("mount.json", &mounted.pin(old))]);
+    commit_here(&one, &[("mount.json", &mounted.pin(missing))]);
+    sync(&one, true);
+    commit_here(&two, &[("mount.json", &mounted.pin(middle))]);
+    assert!(sync(&two, true).pushed);
+    sync(&one, true);
+    assert_eq!(text(&one, "mount.json"), mounted.pin(missing));
+}
+
+#[test]
+fn two_clones_creating_one_task_file_end_with_one_frontmatter_block_and_a_record() {
+    let (_remote, one, two) = pair(&[("a.json", "0")]);
+    let file = |title: &str| format!("---\n$type: tasks/task/v2\ntitle: {title}\n---\n");
+    commit_here(&one, &[("a.json", "0"), ("t.md", &file("one"))]);
+    commit_here(&two, &[("a.json", "0"), ("t.md", &file("two"))]);
+    sync(&one, true);
+    let synced = sync(&two, false);
+    assert_eq!(synced.conflicts.len(), 1);
+    assert_eq!(text(&two, "t.md"), file("one"));
 }
 
 #[test]
