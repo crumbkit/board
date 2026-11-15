@@ -410,13 +410,25 @@ impl Scenario {
             .iter()
             .map(|(path, text)| (path.as_bytes(), Item::File(text)))
             .collect();
+        self.commit_items_at(&items, parents, time, message)
+    }
+
+    /// [`Scenario::commit_at`] of a tree holding each item at its path, such
+    /// as a symlink.
+    pub fn commit_items_at(
+        &self,
+        items: &[(&[u8], Item<'_>)],
+        parents: &[ObjectId],
+        time: i64,
+        message: &str,
+    ) -> ObjectId {
         let signature = gix::actor::Signature {
             name: "scenario".into(),
             email: "scenario@example.com".into(),
             time: gix::date::Time::new(time, 0),
         };
         let commit = gix::objs::Commit {
-            tree: self.tree_of(&items),
+            tree: self.tree_of(items),
             parents: parents
                 .iter()
                 .map(|parent| gix::ObjectId::try_from(parent.as_bytes()).unwrap())

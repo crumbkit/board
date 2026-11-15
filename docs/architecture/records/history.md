@@ -15,7 +15,9 @@ Paths resolve as they do beneath a mount: links are followed, and a mount is
 read at the commit its pointer pins in that tree. An uncommitted edit is not
 seen. A path that ends at a mount that cannot be read returns the mount's own
 record, as `get` does in the working tree, and a path beneath it gets the
-mount's code.
+mount's code. As in the working tree, a path under a renamed plugin's new
+prefix that names nothing is read again under the prefix it moved from, so
+an old commit answers with the record it held under the old prefix.
 
 The report is `board/get-report/v2`, with each file's `location.source` the
 commit's id. The limits are `get`'s. A path that names nothing in that commit
@@ -51,17 +53,24 @@ with the newest committer time, with ties taken by the smaller id, and queues
 the parents it follows. A commit is listed after the child that queued it,
 even when clocks are skewed.
 
-`log` follows the physical path resolved at the start commit. A link
+`log` follows the physical path resolved at the start commit. A symlink at
+the path that leads to a file stands for that file, as it does for `get`, so
+the walk follows the file's path and a row's `blob` is the blob `get`
+reports. A link
 retargeted since then can make `get --at <commit>` resolve to another file,
 so a row's `blob` is the value to compare. Renames are not followed. A path
 through a mount lists the mounted repository's commits from the commit the
 mount pins, and `summary.location.repository` names that repository;
-`get --at` does not take those ids.
+`get --at` does not take those ids. Where the mount's pinned commit cannot be
+read, `log` of the mount's path or a path beneath it is refused with the
+mount's code; it does not list the history of the pointer file.
 
 `--limit` is 1 to 10,000 and defaults to 100; `--all` lifts it. The walk stops
 as soon as it holds `limit` rows, so `--limit 1` on a file changed at the
 start commit reads one commit. It reads at most 100,000 commits. It reads the
 repository's shallow commits once and walks each as a commit with no parent.
+So the oldest row at a shallow commit may not be a change: that commit is
+listed whenever it holds the path, and `summary.complete` is false.
 A missing or corrupt commit or tree is `board::repo::unreadable`.
 
 Each row has `commit`, the full id; `time`, the committer time in UTC as RFC

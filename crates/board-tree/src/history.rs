@@ -7,7 +7,8 @@ use std::collections::{BinaryHeap, HashMap, HashSet};
 use board_model::ObjectId;
 use gix::object::tree::EntryKind;
 
-use crate::git::{GitError, Repository, model_id};
+use crate::git::{GitError, Repository, Sizes, model_id};
+use crate::symlink::{self, Chains};
 
 /// The most commits one walk reads, which bounds a walk for a path last
 /// changed far back.
@@ -132,14 +133,17 @@ impl Repository {
     /// the newest committer time from a queue that starts with `start`,
     /// with ties taken by the smaller id, and queues the parents that
     /// git's rule for a path follows. A shallow commit is walked as a root.
+    /// A symlink at `path` that leads to a file in `start` stands for that
+    /// file, as a read through it does, so the walk follows the file's path.
     pub fn history(&self, start: ObjectId, path: &str, walk: Walk) -> Result<History, GitError> {
         let shallow: HashSet<gix::ObjectId> = (self.git().shallow_commits())
             .map_err(|error| self.missing(start, error))?
             .map(|commits| commits.iter().copied().collect())
             .unwrap_or_default();
+        let followed = self.followed(start, path)?;
         let mut walker = Walker {
             repository: self,
-            path,
+            path: &followed,
             entries: HashMap::new(),
         };
         let start = self.gix_id(start)?;
@@ -197,6 +201,24 @@ impl Repository {
             changes,
             walked: read,
             end,
+        })
+    }
+}
+
+impl Repository {
+    /// The physical path of the file a symlink at `path` leads to in
+    /// commit `start`, or `path` itself when no symlink there leads to a
+    /// file.
+    fn followed(&self, start: ObjectId, path: &str) -> Result<String, GitError> {
+        let mut tree = self.commit_tree(start)?.sizing(Sizes::Symlinks);
+        let mut chains = Chains::default();
+        let link = chains.find(&mut tree, path.as_bytes())?;
+        Ok(match chains.follow(&mut tree, link)? {
+            Some((symlink::End::File { at, .. }, _)) => (chains.names(at).iter())
+                .map(|name| String::from_utf8_lossy(name))
+                .collect::<Vec<_>>()
+                .join("/"),
+            _ => path.to_owned(),
         })
     }
 }

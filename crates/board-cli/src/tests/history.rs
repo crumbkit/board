@@ -397,6 +397,60 @@ fn log_limit_one_gives_the_newest_change_truncated_and_all_gives_every_change_co
 }
 
 #[test]
+fn log_at_a_shallow_boundary_is_truncated_and_not_complete_and_its_text_notes_why() {
+    let (scenario, commits) = history();
+    scenario.write(".git/shallow", Item::File(&format!("{}\n", commits[2])));
+    let report = json(&run_in(&scenario, &["log", "/tasks/a", "--json"]));
+    let summary = &report["summary"];
+    assert_eq!(
+        (
+            report["truncated"].clone(),
+            summary["complete"].clone(),
+            summary["walked"].clone()
+        ),
+        (json!(true), json!(false), json!(3))
+    );
+    let listed = run_in(&scenario, &["log", "/tasks/a"]);
+    let stderr = text(&listed.stderr);
+    assert!(
+        stderr.contains("note: the walk stopped after 3 commits"),
+        "{stderr}"
+    );
+}
+
+#[test]
+fn log_of_a_symlinked_record_lists_each_edit_of_its_target_with_the_blob_get_reports() {
+    let scenario = Scenario::board();
+    let target = |n: &'static str| (b"tasks/a.json".as_slice(), Item::File(n));
+    let config = (CONFIG.0.as_bytes(), Item::File(CONFIG.1));
+    let link = (b"tasks/c.json".as_slice(), Item::Symlink("a.json"));
+    let first = scenario.commit_items_at(&[config, target(r#"{"n": 1}"#)], &[], T, "put a");
+    let linked = scenario.commit_items_at(
+        &[config, target(r#"{"n": 1}"#), link],
+        &[first],
+        T + 60,
+        "link c",
+    );
+    let edited = scenario.commit_items_at(
+        &[config, target(r#"{"n": 2}"#), link],
+        &[linked],
+        T + 120,
+        "edit a",
+    );
+    let log = json(&run_in(&scenario, &["log", "/tasks/c", "--json"]));
+    let listed: Vec<Value> = (log["data"].as_array().unwrap().iter())
+        .map(|row| row["commit"].clone())
+        .collect();
+    let expected = [edited, first].map(|commit| json!(commit.to_string()));
+    let got = run_in(&scenario, &["get", "--at", "HEAD", "/tasks/c", "--json"]);
+    assert_eq!(
+        (listed, log["data"][0]["blob"].clone()),
+        (expected.to_vec(), answers(&got)[0]["blob"].clone()),
+        "the target's edits and get's blob, not the link's"
+    );
+}
+
+#[test]
 fn log_of_a_path_absent_at_head_is_not_found_naming_at_and_at_the_commit_before_the_removal_lists_it()
  {
     let (scenario, commits) = history();

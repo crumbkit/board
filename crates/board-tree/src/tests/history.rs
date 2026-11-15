@@ -259,19 +259,15 @@ proptest! {
         parents in proptest::collection::vec(proptest::option::of(0u8..3), 0..4),
     ) {
         let Decision { listed, follow } = decide(entry.as_ref(), &parents);
-        let equal = parents.iter().position(|parent| *parent == entry);
-        match equal {
-            Some(first) => {
-                prop_assert!(!listed);
-                prop_assert_eq!(follow, Follow::One(first));
-            }
-            None if parents.is_empty() => {
-                prop_assert_eq!(listed, entry.is_some());
-                prop_assert_eq!(follow, Follow::All);
-            }
-            None => {
-                prop_assert!(listed);
-                prop_assert_eq!(follow, Follow::All);
+        let differs = |at: usize| parents[at] != entry;
+        let every_differs = (0..parents.len()).all(differs);
+        let expected_listed = if parents.is_empty() { entry.is_some() } else { every_differs };
+        prop_assert_eq!(listed, expected_listed);
+        match follow {
+            Follow::All => prop_assert!(every_differs),
+            Follow::One(at) => {
+                prop_assert!(at < parents.len() && !differs(at));
+                prop_assert!((0..at).all(differs), "an earlier parent is equal");
             }
         }
     }

@@ -504,7 +504,7 @@ impl ReadError {
             Self::Resolve {
                 source: ResolveError::NotFound { ancestor, .. },
             } if command == "log" => refusal.with_hint(format!(
-                "`{BINARY_NAME} log {ancestor}` lists the commits that changed {ancestor}; run log again with --at set to a commit from before the path was removed"
+                "`{BINARY_NAME} log {ancestor}` lists the commits that changed {ancestor}; if the path was removed, run log again with --at set to a commit from before the removal"
             )),
             Self::NoHead | Self::NoHistory { .. } => refusal.with_hint(
                 "make the board's first commit, with board put or git commit, then run the command again",
