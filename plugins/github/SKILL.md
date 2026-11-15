@@ -36,9 +36,14 @@ add `--personal` after `board`.
 - Squash-merge the pull request of a change in its land phase:
   `board github merge --number <n> --subject <subject> --body <body>
   --change /changes/<name>`. It merges the change's head and moves the
-  change to its next phase. Without a change, pass `--head <sha>`, the full
-  40-hex commit. When `queued` is true, a merge queue holds the pull
-  request: run `board changes advance --path <change>` after it merges.
+  change to its next phase. It reads the change in the board the command
+  runs in: for a change in another board, add `-C <that board's directory>`
+  and name it as `/changes/<name>`, never through a mount. From the
+  checkout of a repository that another board mounts, a change in the
+  personal board needs `--personal`. Without a change, pass `--head <sha>`,
+  the full 40-hex commit. When `queued` is true, a merge queue holds the
+  pull request: run `board changes advance --path <change>` in the same
+  board after it merges.
 
 On `github::boundary::refused`, nothing was sent. Read `fields.failures`, the
 message, and the hint after it, which is the boundary's `Next:` step. Change
@@ -78,12 +83,15 @@ its message, change what it names, and push again.
 - `github::gh::failed`: gh is missing, signed out or failed. Run
   `gh auth status`. After a check passed, look on GitHub before you run the
   action again, since the content may have been sent.
+- `github::merge::change`: the `--change` path is not under `/changes/`.
+  Run the merge in the board that holds the change, with `-C`.
 - `github::merge::gate`: the change is not in its land phase, or its land
   gate misses the checks in `fields.missing`. Run `board changes next`.
 - `github::merge::head`: no head to merge, or `--head` differs from the
   change's head. Attach the head to the change or pass the right one.
 - `github::merge::advance`: the pull request merged but the change did not
-  move. Do not merge again; run `board changes advance --path <change>`.
+  move. Do not merge again; run `board changes advance --path <change>` in
+  the board the merge ran in.
 - `github::hook::exists`: the checkout already has a different `pre-push`
   hook. Ask the owner before you move it aside.
 - `github::record::degraded`: the record already there fails its schema.

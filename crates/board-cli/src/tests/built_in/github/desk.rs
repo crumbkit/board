@@ -91,6 +91,46 @@ impl Desk {
         desk
     }
 
+    /// A second board, the team board, with changes and github enabled,
+    /// that mounts the checkout at /repos/widgets as the personal board
+    /// does. The personal board, with changes enabled too, mounts it at
+    /// /repos/team pinned to its first commit, and the known boards file
+    /// names both.
+    pub(super) fn team(&self) -> Scenario {
+        let team = Scenario::new();
+        let config = r#"{"$type": "board/config/v1", "commit_on_put": false}"#;
+        team.write(".board/board.json", Item::File(config));
+        let mount = std::fs::read_to_string(self.personal.workdir().join("repos/widgets.json"));
+        team.write("repos/widgets.json", Item::File(&mount.unwrap()));
+        let personal = self.personal.path();
+        self.known(&json!({"boards": [personal, team.path()], "personal": personal}));
+        for (board, plugin) in [
+            (&self.personal, "changes"),
+            (&team, "changes"),
+            (&team, "github"),
+        ] {
+            let enabled = self.run_in(board.workdir(), &["plugin", "enable", plugin], &[]);
+            assert_eq!(enabled.code, 0, "{}", text(&enabled.stderr));
+        }
+        self.pin(&team);
+        team
+    }
+
+    /// Commits the team board's working tree and pins the personal board's
+    /// /repos/team mount at that commit.
+    pub(super) fn pin(&self, team: &Scenario) {
+        let at = team.workdir();
+        self.git(at, &["add", "-A"]);
+        self.git(at, &["commit", "-q", "--allow-empty", "-m", "Team"]);
+        let mount = json!({
+            "$type": "board/mount/v1",
+            "repo": team.path(),
+            "follow": "HEAD",
+            "commit": self.git(at, &["rev-parse", "HEAD"]),
+        });
+        self.write("repos/team.json", &mount.to_string());
+    }
+
     pub(super) fn home(&self) -> PathBuf {
         self.root.path().join("home")
     }
@@ -288,14 +328,38 @@ impl Desk {
         flags: &[&str],
         extra: &[(&str, &str)],
     ) -> (Output, Value) {
-        let target = format!("github.{capability}");
         let front: &[&str] = if personal { &["--personal"] } else { &[] };
+        let checkout = self.checkout();
+        let directory = directory.unwrap_or(&checkout);
+        self.call_from(directory, front, capability, flags, extra)
+    }
+
+    /// `board <front> --json call github.<capability> <flags>` in the
+    /// checkout, where `front` names the board, such as `-C <board>`: its
+    /// run and its one document.
+    pub(super) fn call_in(
+        &self,
+        front: &[&str],
+        capability: &str,
+        flags: &[&str],
+    ) -> (Output, Value) {
+        self.call_from(&self.checkout(), front, capability, flags, &[])
+    }
+
+    fn call_from(
+        &self,
+        directory: &Path,
+        front: &[&str],
+        capability: &str,
+        flags: &[&str],
+        extra: &[(&str, &str)],
+    ) -> (Output, Value) {
+        let target = format!("github.{capability}");
         let arguments: Vec<&str> = (front.iter().copied())
             .chain(["--json", "call", &target])
             .chain(flags.iter().copied())
             .collect();
-        let checkout = self.checkout();
-        let ran = self.run_in(directory.unwrap_or(&checkout), &arguments, extra);
+        let ran = self.run_in(directory, &arguments, extra);
         let document = json(&ran);
         (ran, document)
     }
@@ -320,9 +384,7 @@ impl Desk {
 
     /// The record at the logical `path` in the personal board, or `None`.
     pub(super) fn record(&self, path: &str) -> Option<Value> {
-        let file = (self.personal.workdir()).join(format!("{}.json", path.trim_start_matches('/')));
-        let text = std::fs::read_to_string(file).ok()?;
-        Some(serde_json::from_str(&text).unwrap())
+        record_in(&self.personal, path)
     }
 
     /// A control that refuses [`PRIVATE`], and a boundary on octo's
@@ -420,6 +482,13 @@ impl Desk {
 pub(super) fn digest(action: &str, parts: &Value) -> String {
     let content = json!({"action": action, "parts": parts, "to": TO});
     board_model::Digest::of(content.to_string().as_bytes()).to_string()
+}
+
+/// The record at the logical `path` in `board`'s working tree, or `None`.
+pub(super) fn record_in(board: &Scenario, path: &str) -> Option<Value> {
+    let file = (board.workdir()).join(format!("{}.json", path.trim_start_matches('/')));
+    let text = std::fs::read_to_string(file).ok()?;
+    Some(serde_json::from_str(&text).unwrap())
 }
 
 /// Writes `text` to the file at `path`, anywhere at the desk.

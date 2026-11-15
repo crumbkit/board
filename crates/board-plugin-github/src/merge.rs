@@ -16,6 +16,10 @@ use crate::send::{Delivered, after_sent, origin, output};
 
 /// The phase a change must be in before its pull request merges.
 const LAND: &str = "land";
+/// The folder a board's own changes sit in.
+const CHANGES: &str = "/changes/";
+/// What to run again after a merge, so it opens the board the merge ran in.
+const SAME_BOARD: &str = "in the board this merge ran in, with the same `-C` or `--personal`";
 
 /// Squash-merge a pull request in the checkout's repository, once the
 /// change it lands passes its land gate and the boundary passes the
@@ -32,9 +36,9 @@ pub(crate) struct MergeInput {
     subject: String,
     /// The squash commit's body.
     body: String,
-    /// The change in the personal board that the pull request lands, such
-    /// as /changes/lever. Its land gate must pass, its head is the commit
-    /// merged, and it moves to its next phase after the merge.
+    /// The change in the board this command runs in that the pull request
+    /// lands, such as /changes/lever. Its land gate must pass, its head is
+    /// the commit merged, and it moves to its next phase after the merge.
     #[schemars(regex(pattern = "^/"))]
     change: Option<String>,
     /// The full 40-hex commit the pull request's head must be at. With
@@ -89,11 +93,16 @@ pub(crate) fn merge(host: &dyn Host, input: &Value) -> Result<Value, PluginError
         change,
         head,
     } = PluginError::read_input("github", "merge", input)?;
+    if let Some(change) = change.as_deref()
+        && !change.starts_with(CHANGES)
+    {
+        return Err(not_a_change(change));
+    }
     let place = origin(host)?;
     let head = match change.as_deref() {
         Some(change) => {
-            gate(&*place.personal, change)?;
-            let recorded = recorded_head(&*place.personal, change)?;
+            gate(host, change)?;
+            let recorded = recorded_head(host, change)?;
             match (recorded, head) {
                 (None, _) => {
                     return Err(head_refused(format!(
@@ -158,7 +167,7 @@ pub(crate) fn merge(host: &dyn Host, input: &Value) -> Result<Value, PluginError
     } = place.sent(passed, url)?;
     let queued = !merged(host, &repository, number, &sent)?;
     let phase = match change {
-        Some(change) if !queued => Some(advance(&*place.personal, &change, &sent)?),
+        Some(change) if !queued => Some(advance(host, &change, &sent)?),
         _ => None,
     };
     Ok(output(&MergeOutput {
@@ -186,7 +195,7 @@ fn is_full_commit(commit: &str) -> bool {
 fn merged(host: &dyn Host, repository: &str, number: u64, url: &str) -> Result<bool, PluginError> {
     let lead = format!(
         "the merge of pull request {url} was already sent, so do not merge it again; look on \
-         GitHub whether it merged, then run `board changes advance` for its change"
+         GitHub whether it merged, then run `board changes advance` for its change {SAME_BOARD}"
     );
     let endpoint = format!("repos/{repository}/pulls/{number}");
     let answer = gh::api(host, &endpoint).map_err(|error| after_sent(&lead, url, error))?;
@@ -201,23 +210,32 @@ fn merged(host: &dyn Host, repository: &str, number: u64, url: &str) -> Result<b
     Ok(pull.get("merged").and_then(Value::as_bool) == Some(true))
 }
 
-/// Runs `changes.<capability>` in the personal board with `path`.
+/// Runs `changes.<capability>` in `host`'s board with `path`.
 fn changes(
-    personal: &dyn Host,
+    host: &dyn Host,
     capability: &str,
     path: &str,
 ) -> Result<Value, Box<board_model::Refusal>> {
     let target: Target = format!("changes.{capability}")
         .parse()
         .expect("changes.<capability> is <plugin>.<capability>");
-    (personal.call(&target, &json!({"path": path}))).map(|report| report.output)
+    (host.call(&target, &json!({"path": path}))).map(|report| report.output)
 }
 
 /// Refuses with `github::merge::gate` unless the change at `path` is in
 /// its land phase and no blocking check of its gate is missing.
-fn gate(personal: &dyn Host, path: &str) -> Result<(), PluginError> {
-    let output = changes(personal, "next", path)
-        .map_err(|refusal| PluginError::board_refused("github", "--personal call", &refusal))?;
+fn gate(host: &dyn Host, path: &str) -> Result<(), PluginError> {
+    let output = changes(host, "next", path).map_err(|refusal| {
+        let mut error = PluginError::board_refused("github", "call", &refusal);
+        if refusal.code.as_str() == "changes::change::not_found" {
+            error.hint = Some(
+                "merge reads the change in the board the command runs in; add `--personal` for \
+                 a change in the personal board, or `-C <board>` for a change in another board"
+                    .to_owned(),
+            );
+        }
+        error
+    })?;
     let next = Next::deserialize(&output).map_err(|error| PluginError {
         code: "github::merge::unreadable".to_owned(),
         message: format!("changes.next gave output this plugin cannot read: {error}"),
@@ -257,16 +275,15 @@ fn gate(personal: &dyn Host, path: &str) -> Result<(), PluginError> {
 }
 
 /// The head commit the change at `path` records, if any.
-fn recorded_head(personal: &dyn Host, path: &str) -> Result<Option<String>, PluginError> {
-    let refused = |refusal: &board_model::Refusal| {
-        PluginError::board_refused("github", "--personal get", refusal)
-    };
+fn recorded_head(host: &dyn Host, path: &str) -> Result<Option<String>, PluginError> {
+    let refused =
+        |refusal: &board_model::Refusal| PluginError::board_refused("github", "get", refusal);
     let logical: LogicalPath = path.parse().map_err(|_| {
         head_refused(format!(
             "{path} is not a logical path; name the change as /changes/<name>"
         ))
     })?;
-    let mut answers = (personal.get_each(&[logical]))
+    let mut answers = (host.get_each(&[logical]))
         .map_err(|error| refused(&error.refusal("get")))?
         .into_iter();
     let report = answers
@@ -282,19 +299,38 @@ fn recorded_head(personal: &dyn Host, path: &str) -> Result<Option<String>, Plug
 
 /// Moves the change at `path` to its next phase after its pull request at
 /// `url` merged, and returns that phase.
-fn advance(personal: &dyn Host, path: &str, url: &str) -> Result<String, PluginError> {
+fn advance(host: &dyn Host, path: &str, url: &str) -> Result<String, PluginError> {
     let lead = format!(
         "pull request {url} was already merged, so do not merge it again; run `board changes \
-         advance --path {path}`"
+         advance --path {path}` {SAME_BOARD}"
     );
-    let moved = changes(personal, "advance", path).map_err(|refusal| {
-        let mut error = PluginError::board_refused("github", "--personal call", &refusal);
+    let moved = changes(host, "advance", path).map_err(|refusal| {
+        let mut error = PluginError::board_refused("github", "call", &refusal);
         "github::merge::advance".clone_into(&mut error.code);
         after_sent(&lead, url, error)
     })?;
     Ok((moved.get("to").and_then(Value::as_str))
         .unwrap_or_default()
         .to_owned())
+}
+
+/// `github::merge::change`: `path` is not under /changes/, so it names no
+/// change of the board the command runs in.
+fn not_a_change(path: &str) -> PluginError {
+    let mut fields = Map::new();
+    fields.insert("path".to_owned(), json!(path));
+    PluginError {
+        code: "github::merge::change".to_owned(),
+        message: format!(
+            "{path} is not a change of this board; a board's own changes are at \
+             /changes/<name>, and a change is merged in the board that holds it"
+        ),
+        fields,
+        hint: Some(
+            "run `board -C <that board's directory> github merge ... --change /changes/<name>`"
+                .to_owned(),
+        ),
+    }
 }
 
 /// `github::merge::head`, saying `message`.

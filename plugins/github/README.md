@@ -78,16 +78,24 @@ result it recorded.
   squash-merges a pull request with `gh pr merge --squash
   --match-head-commit <sha>`, so GitHub refuses it when the pull request's
   head has moved. With `--change`, it first runs `changes.next` in the
-  personal board and refuses unless the change is in its land phase with no
-  blocking check missing, and while a run of the change has a stop set. The
+  board the command runs in, which `-C <board>` or `--personal` names, and
+  refuses unless the change is in its land phase with no blocking check
+  missing, and while a run of the change has a stop set. The gate, the
+  change's head and `changes.advance` all come from that board; the boundary
+  check and the crossing stay in the personal board. A board's own changes
+  are at `/changes/<name>`, so a change in another board is merged with
+  `-C <that board's directory>`, and a `--change` path under a mount, such
+  as `/repos/team/changes/<name>`, is refused. From the checkout of a
+  repository that another board mounts, Board runs in that board, so a
+  change in the personal board then needs `--personal`. The
   head is the change's head, which must be a full 40-hex commit; a
   `--head` that differs is refused. Without `--change`, `--head` is
   required. After gh exits 0, it records the pull request's URL on the
   crossing and asks `gh api repos/<owner>/<repo>/pulls/<n>` whether it
   merged. When it did, it runs `changes.advance` and returns the new phase
   as `phase`. When a merge queue only queued it, it returns `queued: true`
-  and no `phase`; run `board changes advance --path <change>` once the
-  queue merges it. It returns the merged commit as `head`; `sent` is the
+  and no `phase`; run `board changes advance --path <change>` in the same
+  board once the queue merges it. It returns the merged commit as `head`; `sent` is the
   pull request's URL.
 
 The destination is `github:<owner>/<repo>` in lower case, from the URL
@@ -152,7 +160,10 @@ Refusals:
   boundary's refusal carried, such as `rules::rule::not_found` inside
   `boundary::board::refused`, is in `cause`. Nothing is sent.
 - Any other refusal of the check, such as boundary not being enabled in the
-  personal board, is `github::board::refused` with Board's code.
+  personal board, is `github::board::refused` with Board's code. When
+  `merge` finds no change at the path in the board the command runs in,
+  `fields.code` is `changes::change::not_found` and the hint names
+  `--personal` and `-C <board>`.
 - `github::checkout::not_found`: Board was not started in a git checkout.
 - `github::remote::not_github`: origin is not a GitHub URL.
 - `github::remote::split`: origin pushes to a URL other than the one it
@@ -164,6 +175,9 @@ Refusals:
   paths.
 - `github::push::failed`: git refused the push, such as a branch that is
   behind. The crossing passed and keeps no result.
+- `github::merge::change`: `merge` named a `--change` path that is not
+  under `/changes/`, such as a change under a mount. The hint names the
+  `-C <that board's directory>` form. gh does not run.
 - `github::merge::gate`: `merge` named a change that is not in its land
   phase, whose land gate misses a blocking check, or whose run has a stop
   set. `fields.phase` names its phase, `fields.missing` the checks and
@@ -174,7 +188,8 @@ Refusals:
   head. gh does not run.
 - `github::merge::advance`: the pull request merged, but `changes.advance`
   refused. The message says not to merge again and names the command to
-  move the change; `fields.sent` is the pull request's URL.
+  move the change, to run in the board the merge ran in; `fields.sent` is
+  the pull request's URL.
 - `github::merge::unreadable`: `changes.next` answered in a shape this
   plugin does not read.
 - `github::boundary::unreadable`: the boundary answered in a shape this
