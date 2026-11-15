@@ -27,72 +27,18 @@ fn reversed(value: &Value, in_list: bool) -> Value {
 }
 
 fn pass() -> Value {
-    json!({
-        "date": "2026-02-03",
-        "realms": [{"id": "alpha", "title": "Alpha"}, {"id": "beta", "title": "Beta"}],
-        "projects": [
-            {"id": "speed", "realm": "alpha", "title": "Speed", "state": "active", "task": null,
-             "changes": ["/changes/cache", "/changes/bench", "/changes/gone"],
-             "order": [["/changes/cache", "/changes/bench"]]},
-            {"id": "docs", "realm": "beta", "title": "Docs", "state": "queued", "task": null,
-             "changes": ["/changes/guide"]},
-        ],
-        "findings": [
-            {"kind": "stale-plan", "paths": ["/changes/cache"], "evidence": "Old.", "fix": "x",
-             "id": "stale-plan-00000001"},
-            {"kind": "merge", "paths": ["/changes/cache", "/changes/bench"], "evidence": "Same.",
-             "fix": "x", "id": "merge-00000002"},
-            {"kind": "stale", "paths": ["/changes/guide"], "evidence": "Idle.", "fix": "x",
-             "id": "stale-00000003"},
-        ],
-        "links": [{"before": "/changes/bench", "after": "/changes/guide", "project": "speed"}],
-        "systems": [
-            {"id": "api", "realm": "alpha", "title": "API", "language": "Rust",
-             "modules": [{"id": "server", "lines": 900, "purpose": "Serves."},
-                         {"id": "cli", "lines": 100, "purpose": "Commands."}],
-             "links": [{"id": "calls", "name": "Calls", "module": "server", "to": "cloud",
-                        "kind": "api-call", "traffic": 4, "production": true,
-                        "controls": [{"caption": "Gate", "detail": "Token.", "at": "to"}]}]},
-            {"id": "cloud", "realm": "alpha", "title": "Cloud", "external": true},
-        ],
-        "question_rules": {
-            "mount_realms": {"team": "beta"}, "localRealm": {"notes": "alpha"},
-            "localDefault": "beta",
-            "tasks": [{"contains": "profile-task", "to": "speed"}],
-            "names": {"guide": "docs"},
-        },
-    })
+    serde_json::from_str(include_str!("../../page/fixture/pass.json")).unwrap()
 }
 
 fn facts() -> Value {
-    json!({
-        "changes": [
-            {"path": "/changes/cache", "title": "Cache results", "phase": "build",
-             "mount": "/repos/api", "touched": "2026-02-01", "task": "/tasks/cache.md",
-             "plan": "Edits server and the crate api-core, not api-cored."},
-            {"path": "/changes/bench", "title": "Benchmark", "phase": "plan",
-             "mount": "/repos/api", "touched": "2026-02-02", "task": null, "plan": null},
-            {"path": "/changes/guide", "title": "Write the guide", "phase": "review",
-             "mount": null, "touched": null, "task": null, "plan": null},
-            {"path": "/changes/extra", "title": "Not in the map", "phase": "plan",
-             "mount": null, "touched": "2026-02-04", "task": null, "plan": null},
-        ],
-        "questions": [
-            {"path": "/projects/p/questions/one", "asked": "2026-02-02",
-             "text": "Should cache wait for bench?", "blocked_work": ""},
-            {"path": "/projects/guide/questions/two", "asked": "2026-02-01",
-             "text": "Which style?", "blocked_work": ""},
-            {"path": "/projects/notes/questions/three", "asked": "2026-02-03",
-             "text": "Anything?", "blocked_work": ""},
-            {"path": "/repos/team/projects/misc/questions/four", "asked": "2026-02-03",
-             "text": "Other?", "blocked_work": "profile-task"},
-        ],
-        "workspaces": [{"system": "api", "crates": [
-            {"id": "api-core", "lines": 700, "deps": ["api-util", "api-base"],
-             "modules": [{"id": "z", "lines": 1}, {"id": "a", "lines": 2}]},
-            {"id": "api-util", "lines": 300, "deps": [], "modules": []},
-        ]}],
-    })
+    serde_json::from_str(include_str!("../../page/fixture/facts.json")).unwrap()
+}
+
+/// The project of `page` with `id`.
+fn project<'a>(page: &'a Page, id: &str) -> &'a Value {
+    (page.data["projects"].as_array().unwrap().iter())
+        .find(|project| project["id"] == id)
+        .unwrap()
 }
 
 fn page(pass: &Value, facts: &Value) -> Result<Page, PluginError> {
@@ -116,26 +62,35 @@ fn the_blocks_are_the_same_whatever_order_every_input_list_and_key_arrives_in() 
 #[test]
 fn a_change_has_its_kinds_of_finding_its_repo_its_crates_and_no_more() {
     let page = page(&pass(), &facts()).unwrap();
-    let speed = &page.data["projects"][1];
-    assert_eq!(speed["id"], "speed");
-    let cache = &speed["changes"][1];
-    assert_eq!(cache["id"], "cache");
+    let speed = project(&page, "speed");
+    let (bench, cache) = (&speed["changes"][0], &speed["changes"][1]);
+    assert_eq!(
+        (bench["id"].clone(), cache["id"].clone()),
+        (json!("bench"), json!("cache"))
+    );
     assert_eq!(cache["findings"], json!(["merge", "stale-plan"]));
-    assert_eq!(cache["repo"], "api");
+    assert_eq!(cache["repo"], "core");
     assert_eq!(
         cache["crates"],
-        json!(["api-core"]),
-        "api-cored is no crate"
+        json!(["demo-core"]),
+        "demo-cored is no crate"
     );
+    assert_eq!(bench["crates"], json!(["demo-base"]));
     assert_eq!(cache["tasks"], json!(["cache.md"]));
     assert_eq!(cache["date"], "2026-02-01");
-    let guide = &page.data["projects"][0]["changes"][0];
+    let guide = &project(&page, "docs")["changes"][0];
     assert_eq!(
         (guide["repo"].clone(), guide["date"].clone()),
-        (Value::Null, Value::Null)
+        (json!("api"), Value::Null)
+    );
+    assert_eq!(guide["crates"], json!([]), "api has no workspace");
+    let release = &project(&page, "shipped")["changes"][0];
+    assert_eq!(
+        (release["repo"].clone(), release["findings"].clone()),
+        (Value::Null, json!(["landed"]))
     );
     assert_eq!(
-        page.data["projects"][1]["order"],
+        speed["order"],
         json!([["/changes/cache", "/changes/bench"]])
     );
 }
@@ -143,7 +98,7 @@ fn a_change_has_its_kinds_of_finding_its_repo_its_crates_and_no_more() {
 #[test]
 fn a_change_the_map_names_that_is_not_open_is_left_out_and_an_open_one_it_lacks_is_counted() {
     let page = page(&pass(), &facts()).unwrap();
-    let ids: Vec<&str> = (page.data["projects"][1]["changes"]
+    let ids: Vec<&str> = (project(&page, "speed")["changes"]
         .as_array()
         .unwrap()
         .iter())
@@ -156,7 +111,7 @@ fn a_change_the_map_names_that_is_not_open_is_left_out_and_an_open_one_it_lacks_
     );
     assert_eq!(
         (page.data["open"].clone(), page.data["missing"].clone()),
-        (json!(4), json!(1))
+        (json!(5), json!(1))
     );
 }
 
@@ -194,7 +149,7 @@ fn the_page_is_as_of_the_newest_day_on_any_input() {
     let page = page(&pass(), &facts()).unwrap();
     assert_eq!(page.questions["asOf"], "2026-02-04");
     let mut older = facts();
-    older["changes"][3]["touched"] = json!("2026-01-01");
+    older["changes"][4]["touched"] = json!("2026-01-01");
     let (pass, older) = (
         serde_json::from_value(pass()).unwrap(),
         serde_json::from_value(older).unwrap(),
@@ -203,7 +158,7 @@ fn the_page_is_as_of_the_newest_day_on_any_input() {
 }
 
 #[test]
-fn systems_become_cities_links_and_external_names_sorted_by_id() {
+fn systems_become_cities_links_and_external_names_and_workspaces_hold_their_crates_sorted() {
     let page = page(&pass(), &facts()).unwrap();
     let systems = &page.systems;
     assert_eq!(systems["cities"][0]["id"], "api");
@@ -215,18 +170,23 @@ fn systems_become_cities_links_and_external_names_sorted_by_id() {
         systems["external"],
         json!([{"id": "cloud", "title": "Cloud"}])
     );
-    let link = &systems["links"][0];
+    let (calls, events) = (&systems["links"][0], &systems["links"][1]);
     assert_eq!(
-        (link["from"].clone(), link["kind"].clone()),
+        (calls["from"].clone(), calls["kind"].clone()),
         (json!("api.server"), json!("road"))
     );
-    assert_eq!(link["symbols"][0]["at"], "to");
+    assert_eq!(calls["symbols"][0]["at"], "to");
+    assert_eq!(
+        (events["from"].clone(), events["kind"].clone()),
+        (json!("api"), json!("rail"))
+    );
     let workspace = &page.data["workspaces"][0];
     assert_eq!(
         (workspace["id"].clone(), workspace["lang"].clone()),
-        (json!("api"), json!("Rust"))
+        (json!("core"), json!("Rust"))
     );
     let crates = &workspace["crates"];
-    assert_eq!(crates[0]["deps"], json!(["api-base", "api-util"]));
-    assert_eq!(crates[0]["modules"][0]["id"], "a");
+    assert_eq!(crates[1]["id"], "demo-core");
+    assert_eq!(crates[1]["deps"], json!(["demo-base", "demo-util"]));
+    assert_eq!(crates[1]["modules"][0]["id"], "lib");
 }

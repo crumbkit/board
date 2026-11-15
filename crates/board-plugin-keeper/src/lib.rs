@@ -4,6 +4,7 @@ mod gather;
 mod host;
 mod map;
 mod model;
+mod page;
 mod placement;
 pub mod records;
 mod render;

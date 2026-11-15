@@ -1,0 +1,42 @@
+{
+  "$type": "keeper/map/v1",
+  "date": "2026-02-03",
+  "source": "/curation.md",
+  "realms": [{"id": "alpha", "title": "Alpha"}, {"id": "beta", "title": "Beta"}],
+  "projects": [
+    {"id": "speed", "realm": "alpha", "title": "Make the parser fast", "state": "active",
+     "summary": "The cache lands next; the benchmark follows.", "task": null,
+     "changes": ["/changes/cache", "/changes/bench", "/changes/gone"],
+     "order": [["/changes/cache", "/changes/bench"]]},
+    {"id": "docs", "realm": "beta", "title": "Write the guide", "state": "waiting-on-owner",
+     "summary": "The draft waits for a style decision.", "task": null,
+     "changes": ["/changes/guide"]},
+    {"id": "shipped", "realm": "alpha", "title": "Ship the release", "state": "held", "task": null,
+     "changes": ["/changes/release"]},
+    {"id": "idle", "realm": "beta", "title": "Name the plugin", "state": "queued", "task": null,
+     "changes": []}
+  ],
+  "findings": [
+    {"kind": "stale-plan", "paths": ["/changes/cache"], "evidence": "Old.", "fix": "x", "id": "stale-plan-00000001"},
+    {"kind": "merge", "paths": ["/changes/cache", "/changes/bench"], "evidence": "Same.", "fix": "x", "id": "merge-00000002"},
+    {"kind": "stale", "paths": ["/changes/guide"], "evidence": "Idle.", "fix": "x", "id": "stale-00000003"},
+    {"kind": "landed", "paths": ["/changes/release"], "evidence": "Merged.", "fix": "x", "id": "landed-00000004"}
+  ],
+  "links": [{"before": "/changes/bench", "after": "/changes/guide", "project": "speed"}],
+  "systems": [
+    {"id": "core", "realm": "alpha", "title": "Core", "language": "Rust", "crates_from": "/repos/core"},
+    {"id": "api", "realm": "alpha", "title": "API", "language": "Python",
+     "modules": [{"id": "server", "lines": 900, "purpose": "Serves requests."},
+                 {"id": "cli", "lines": 100, "purpose": "Runs commands."}],
+     "links": [{"id": "calls", "name": "Calls the cloud", "module": "server", "to": "cloud",
+                "kind": "api-call", "traffic": 4, "production": true,
+                "controls": [{"caption": "Token gate", "detail": "The cloud wants a token.", "at": "to"}]},
+               {"id": "events", "name": "Core events", "to": "core.demo-base", "kind": "event-stream"}]},
+    {"id": "cloud", "realm": "alpha", "title": "Cloud", "external": true}
+  ],
+  "question_rules": {
+    "mount_realms": {"team": "beta"}, "localRealm": {"notes": "alpha"}, "localDefault": "beta",
+    "tasks": [{"contains": "profile-task", "to": "speed"}],
+    "names": {"guide": "docs"}
+  }
+}

@@ -409,7 +409,7 @@ fn render_reads_the_crates_of_a_mounted_cargo_workspace_and_says_so_when_there_a
     assert_eq!(crates[0]["loc"], 3);
     assert_eq!(
         crates[0]["modules"],
-        json!([{"id": "lib", "loc": 2}, {"id": "run", "loc": 1}])
+        json!([{"id": "lib", "loc": 2, "items": []}, {"id": "run", "loc": 1, "items": []}])
     );
     let (plain, commit) = repository(&[], &[("README.md", "# Plain\n".to_owned())]);
     let other = mapped();

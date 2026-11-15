@@ -140,28 +140,16 @@ fn facts(host: &dyn Host, pass: &Pass) -> Result<(Facts, Vec<Value>), PluginErro
     ))
 }
 
-/// A block as the text of a script element: JSON with `</` escaped.
-fn block(id: &str, value: &Value) -> String {
-    let json = serde_json::to_string(value).expect("a value serialises");
-    format!(
-        "<script type=\"application/json\" id=\"{id}\">{}</script>\n",
-        json.replace("</", "<\\/")
-    )
-}
-
 pub(crate) fn render(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
     let Input { path } = PluginError::read_input(PLUGIN, "render", input)?;
     let path = path.unwrap_or_else(|| DEFAULT_PATH.to_owned());
     let pass = latest(host)?;
     let (facts, surveys) = facts(host, &pass)?;
     let page = model::build(&pass, &facts)?;
-    let html = format!(
-        "<!doctype html>\n{}{}{}",
-        block("data", &page.data),
-        block("systems", &page.systems),
-        block("questions", &page.questions),
-    );
-    put(host, &[json!({"path": path, "text": html})])?;
+    put(
+        host,
+        &[json!({"path": path, "text": crate::page::html(&page)})],
+    )?;
     Ok(
         json!({"path": path, "missing": page.data["missing"], "open": page.data["open"], "surveys": surveys}),
     )

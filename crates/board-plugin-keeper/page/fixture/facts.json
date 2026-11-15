@@ -1,0 +1,31 @@
+{
+  "changes": [
+    {"path": "/changes/cache", "title": "Cache results", "phase": "build", "mount": "/repos/core",
+     "touched": "2026-02-01", "task": "/tasks/cache.md",
+     "plan": "Edits server and the crate demo-core, not demo-cored."},
+    {"path": "/changes/bench", "title": "Benchmark the parser", "phase": "plan", "mount": "/repos/core",
+     "touched": "2026-02-02", "task": null, "plan": "Reads demo-base."},
+    {"path": "/changes/guide", "title": "Write the guide", "phase": "review", "mount": "/repos/api",
+     "touched": null, "task": null, "plan": null},
+    {"path": "/changes/release", "title": "Cut the release", "phase": "review", "mount": null,
+     "touched": "2026-01-30", "task": null, "plan": null},
+    {"path": "/changes/extra", "title": "Not in the map", "phase": "plan", "mount": null,
+     "touched": "2026-02-04", "task": null, "plan": null}
+  ],
+  "questions": [
+    {"path": "/projects/p/questions/one", "asked": "2026-02-02",
+     "text": "Should cache wait for bench?", "blocked_work": ""},
+    {"path": "/projects/guide/questions/two", "asked": "2026-02-01",
+     "text": "Which style?", "blocked_work": ""},
+    {"path": "/projects/notes/questions/three", "asked": "2026-02-03",
+     "text": "Anything else?", "blocked_work": ""},
+    {"path": "/repos/team/projects/misc/questions/four", "asked": "2026-02-03",
+     "text": "Is the profile ready?", "blocked_work": "see profile-task"}
+  ],
+  "workspaces": [{"system": "core", "crates": [
+    {"id": "demo-core", "lines": 700, "deps": ["demo-base", "demo-util"],
+     "modules": [{"id": "run", "lines": 500, "items": ["run_all", "Plan"]}, {"id": "lib", "lines": 100}]},
+    {"id": "demo-base", "lines": 300, "deps": [], "modules": [{"id": "lib", "lines": 300}]},
+    {"id": "demo-util", "lines": 80, "deps": ["demo-base"], "modules": []}
+  ]}]
+}

@@ -57,6 +57,9 @@ pub(crate) struct CrateFact {
 pub(crate) struct ModuleFact {
     pub(crate) id: String,
     pub(crate) lines: u64,
+    /// The names of its public functions, structs, enums and traits.
+    #[serde(default)]
+    pub(crate) items: Vec<String>,
 }
 
 /// The crates of one system's Cargo workspace.
@@ -214,7 +217,11 @@ fn crate_block(each: &CrateFact) -> Value {
     let mut deps = each.deps.clone();
     deps.sort();
     let mut modules: Vec<Value> = (each.modules.iter())
-        .map(|module| json!({"id": module.id, "loc": module.lines}))
+        .map(|module| {
+            let mut items = module.items.clone();
+            items.sort();
+            json!({"id": module.id, "loc": module.lines, "items": items})
+        })
         .collect();
     modules.sort_by_key(|module| module["id"].as_str().unwrap_or_default().to_owned());
     json!({"id": each.id, "loc": each.lines, "deps": deps, "modules": modules})

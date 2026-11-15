@@ -13,7 +13,7 @@ fn files(extra: &[(&str, &str)]) -> BTreeMap<String, String> {
             "crates/core/Cargo.toml",
             "[package]\nname = \"demo-core\"\n[dependencies]\nserde = \"1\"\nbase = { package = \"demo-base\", path = \"../base\" }\n",
         ),
-        ("crates/core/src/lib.rs", "a\nb\n"),
+        ("crates/core/src/lib.rs", "pub fn run_all() {}\npub(crate) struct Plan;\n"),
         ("crates/core/src/run.rs", "one\ntwo\nthree"),
         ("crates/core/src/run/part.rs", "x\n"),
         ("crates/core/tests/it.rs", "t\n"),
@@ -121,4 +121,12 @@ fn a_glob_segment_matches_a_run_and_only_within_its_segment() {
     assert!(!wild("demo-*", "other-core"));
     assert!(listed(&["crates/*".to_owned()], "crates/core"));
     assert!(!listed(&["crates/*".to_owned()], "crates/core/deep"));
+}
+
+#[test]
+fn items_are_the_public_functions_structs_enums_and_traits_that_start_a_line() {
+    let text = "pub fn one() {}\npub(crate) async fn two() {}\npub struct Three;\n\
+                pub enum Four {}\npub trait Five {}\nfn private() {}\n    pub fn nested() {}\n\
+                pub const SIX: u8 = 6;\npub(super) fn seven() {}\n";
+    assert_eq!(items(text), ["one", "two", "Three", "Four", "Five"]);
 }

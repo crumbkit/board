@@ -51,6 +51,28 @@ fn lines(text: &str) -> u64 {
     u64::try_from(newlines).expect("a count of lines fits in u64") + last
 }
 
+/// The names of the public functions, structs, enums and traits that start
+/// a line of `text`, as `pub fn name`, `pub(crate) struct name` or
+/// `pub async fn name` do.
+fn items(text: &str) -> Vec<String> {
+    text.lines()
+        .filter_map(|line| {
+            let rest = line.strip_prefix("pub")?;
+            let rest = rest
+                .strip_prefix("(crate)")
+                .unwrap_or(rest)
+                .strip_prefix(' ')?;
+            let rest = rest.strip_prefix("async ").unwrap_or(rest);
+            let (kind, name) = rest.split_once(' ')?;
+            let name: String = name
+                .chars()
+                .take_while(|c| c.is_alphanumeric() || *c == '_')
+                .collect();
+            (["fn", "struct", "enum", "trait"].contains(&kind) && !name.is_empty()).then_some(name)
+        })
+        .collect()
+}
+
 /// A list of strings at `key` of `table`.
 fn strings(table: &toml::Table, key: &[&str]) -> Vec<String> {
     let mut at = Some(table);
@@ -88,6 +110,14 @@ fn dependencies(manifest: &toml::Table) -> BTreeSet<String> {
             })
         })
         .collect()
+}
+
+/// The twelve longest names, longest first.
+fn top_items(names: BTreeSet<String>) -> Vec<String> {
+    let mut names: Vec<String> = names.into_iter().collect();
+    names.sort_by(|a, b| b.len().cmp(&a.len()).then_with(|| a.cmp(b)));
+    names.truncate(12);
+    names
 }
 
 /// The crates of the workspace whose files are `files`, by path from the
@@ -151,7 +181,7 @@ pub(crate) fn crates(files: &BTreeMap<String, String>) -> Result<Vec<CrateFact>,
     let mut found = Vec::new();
     for (dir, name, deps) in &manifests {
         let mut total = 0;
-        let mut modules: BTreeMap<String, u64> = BTreeMap::new();
+        let mut modules: BTreeMap<String, (u64, BTreeSet<String>)> = BTreeMap::new();
         for (path, text) in files.iter().filter(|(path, _)| {
             std::path::Path::new(path)
                 .extension()
@@ -171,7 +201,9 @@ pub(crate) fn crates(files: &BTreeMap<String, String>) -> Result<Vec<CrateFact>,
                 let module = under
                     .split_once('/')
                     .map_or_else(|| under.trim_end_matches(".rs"), |(head, _)| head);
-                *modules.entry(module.to_owned()).or_default() += count;
+                let (lines, names) = modules.entry(module.to_owned()).or_default();
+                *lines += count;
+                names.extend(items(text));
             }
         }
         found.push(CrateFact {
@@ -182,7 +214,11 @@ pub(crate) fn crates(files: &BTreeMap<String, String>) -> Result<Vec<CrateFact>,
                 .cloned()
                 .collect(),
             modules: (modules.into_iter())
-                .map(|(id, lines)| ModuleFact { id, lines })
+                .map(|(id, (lines, names))| ModuleFact {
+                    id,
+                    lines,
+                    items: top_items(names),
+                })
                 .collect(),
         });
     }

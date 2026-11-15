@@ -1,0 +1,731 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>Work</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+/* Tokens. One neutral ramp, one accent for selection and links, amber for what waits on the owner, green for merged. Spacing is a 4px grid. */
+:root {
+  --bg: #ffffff; --bg-2: #f7f7f8; --bg-3: #efeff1; --line: #e6e6e9; --line-2: #d0d0d6;
+  --ink: #17171a; --ink-2: #4b4b55; --ink-3: #6f6f7a; --ink-4: #a9a9b3;
+  --accent: #4353d8; --accent-bg: #eef0fd;
+  --attn: #a8530a; --attn-bg: #fdf1dc; --attn-dot: #d9822b;
+  --ok: #17803d;
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, Roboto, "Helvetica Neue", Arial, sans-serif;
+  --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+  --pad: 32px; --top: 48px; --panel: 400px; --rowh: 36px;
+  color-scheme: light;
+}
+:root[data-theme="dark"] {
+  --bg: #0f0f11; --bg-2: #17171a; --bg-3: #202024; --line: #25252a; --line-2: #3a3a42;
+  --ink: #ececef; --ink-2: #b4b4bd; --ink-3: #8a8a95; --ink-4: #5b5b65;
+  --accent: #8e9bff; --accent-bg: #1c2040;
+  --attn: #f0a84a; --attn-bg: #33240f; --attn-dot: #e6952e;
+  --ok: #4ac777;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 13px/20px var(--sans); -webkit-font-smoothing: antialiased; font-feature-settings: "tnum" 1; }
+a { color: inherit; text-decoration: none; }
+h1, h2, h3, p, dl, dd, ul { margin: 0; padding: 0; }
+ul { list-style: none; }
+i { font-style: normal; }
+.mono { font-family: var(--mono); font-size: 12px; letter-spacing: -0.01em; }
+.dim { color: var(--ink-3); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; border-radius: 4px; }
+.sprite { position: absolute; width: 0; height: 0; }
+
+/* Top bar */
+.top { position: fixed; inset: 0 0 auto 0; height: var(--top); z-index: 20; display: flex; align-items: center; gap: 16px; padding: 0 var(--pad); background: var(--bg); border-bottom: 1px solid var(--line); }
+#crumbs { display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1; color: var(--ink-3); white-space: nowrap; }
+#crumbs > :first-child { color: var(--ink); font-weight: 600; }
+#crumbs > :last-child { color: var(--ink); overflow: hidden; text-overflow: ellipsis; }
+#crumbs a:hover { color: var(--ink); }
+#crumbs i { color: var(--ink-4); }
+#theme { font: inherit; font-size: 12px; color: var(--ink-2); background: none; border: 1px solid var(--line-2); border-radius: 6px; height: 28px; padding: 0 10px; cursor: pointer; white-space: nowrap; }
+#theme:hover { background: var(--bg-2); color: var(--ink); }
+
+/* Page frame */
+#main { padding: var(--top) 0 64px; transition: margin-right 160ms ease; container-type: inline-size; }
+body.has-panel #main { margin-right: var(--panel); }
+.ph { padding: 28px var(--pad) 16px; }
+.ph-top, .sec-top { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+h1 { font-size: 22px; line-height: 28px; font-weight: 600; letter-spacing: -0.015em; }
+h2 { font-size: 15px; line-height: 24px; font-weight: 600; letter-spacing: -0.005em; }
+h3 { font-size: 12px; line-height: 20px; font-weight: 600; color: var(--ink-2); display: flex; align-items: center; gap: 8px; }
+h2 .n, h3 .n { margin-left: 8px; font: 400 12px/20px var(--mono); color: var(--ink-3); }
+h3 .n { margin-left: 0; }
+.eyebrow { font-size: 12px; line-height: 16px; color: var(--ink-3); margin-bottom: 4px; }
+.lead { margin-top: 8px; max-width: 72ch; color: var(--ink-2); font-size: 14px; line-height: 22px; }
+.meta { margin-top: 6px; display: flex; flex-wrap: wrap; gap: 0 8px; color: var(--ink-3); font-size: 12px; line-height: 20px; }
+.meta span:not(:last-child)::after { content: "·"; margin-left: 8px; color: var(--ink-4); }
+.attn { color: var(--attn); font-weight: 500; }
+.empty { padding: 12px var(--pad); color: var(--ink-3); }
+.sec { margin-top: 28px; }
+.sec > h2, .sec-top { padding: 0 var(--pad); margin-bottom: 8px; }
+.sec .dist { padding: 0 var(--pad); margin: 12px 0 16px; }
+
+/* Segmented control */
+.seg { display: inline-flex; padding: 2px; background: var(--bg-3); border-radius: 7px; flex: none; }
+.seg a { padding: 2px 12px; border-radius: 5px; font-size: 12px; line-height: 20px; color: var(--ink-3); }
+.seg a.on { background: var(--bg); color: var(--ink); font-weight: 500; box-shadow: 0 0 0 1px var(--line), 0 1px 1px rgba(0, 0, 0, .04); }
+.seg a:not(.on):hover { color: var(--ink); }
+
+/* Marks: one glyph per phase. Outline means planned, a fuller disc means further along, a tick means merged. Muted means stale or paused. */
+.m { width: 14px; height: 14px; flex: none; color: var(--ink); display: block; }
+.m-plan { color: var(--ink-3); }
+.m-merged { color: var(--ok); }
+.m.muted { color: var(--ink-4); }
+.m-plan.muted { stroke-dasharray: 2.2 1.9; }
+.mk { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 20px; border-radius: 4px; position: relative; z-index: 1; }
+.mk:hover { background: var(--bg-3); }
+.mk.on { background: var(--accent-bg); box-shadow: 0 0 0 1.5px var(--accent); }
+
+/* Distribution bar and key */
+.dist { margin-top: 20px; }
+.bar { display: flex; gap: 2px; height: 6px; }
+.bar i { min-width: 3px; border-radius: 1.5px; background: var(--ink); }
+.bar .b-plan { background: none; box-shadow: inset 0 0 0 1px var(--ink-3); }
+.bar .b-build { background: var(--ink-4); }
+.bar .b-review { background: var(--ink-3); }
+.bar .b-merged { background: var(--ok); }
+.key { display: flex; flex-wrap: wrap; gap: 4px 20px; margin-top: 10px; font-size: 12px; line-height: 20px; color: var(--ink-2); }
+.key li { display: flex; align-items: center; gap: 6px; }
+.key li b { font: 500 12px/20px var(--mono); color: var(--ink); }
+.key li.zero { color: var(--ink-4); }
+.key li.zero b, .key li.zero .m { color: var(--ink-4); }
+.key li.sep { margin-left: auto; }
+.key.solo { margin-top: 16px; }
+.key.solo li.sep { margin-left: 0; }
+
+/* Tags name systems. Filled means its modules are known. Outline means named only. Dashed means outside the repositories. */
+.tag { display: inline-flex; align-items: center; height: 20px; padding: 0 6px; border-radius: 4px; border: 1px solid var(--line-2); font-size: 12px; line-height: 18px; color: var(--ink-2); white-space: nowrap; position: relative; z-index: 1; }
+.tag.t-surveyed { background: var(--bg-3); border-color: var(--bg-3); color: var(--ink); font-weight: 500; }
+.tag.t-external { border-style: dashed; }
+a.tag:hover { border-color: var(--accent); color: var(--accent); }
+.tags, .c-sys { display: flex; gap: 4px; align-items: center; min-width: 0; }
+.row .c-sys { overflow: hidden; }
+.tags { flex-wrap: wrap; }
+.more { font-size: 12px; color: var(--ink-3); padding-left: 2px; }
+.wait { display: inline-flex; align-items: center; justify-content: center; min-width: 22px; height: 20px; padding: 0 7px; border-radius: 10px; background: var(--attn-bg); color: var(--attn); font: 600 12px/20px var(--mono); white-space: nowrap; }
+.wait.dot { min-width: 0; width: 8px; height: 8px; padding: 0; background: var(--attn-dot); }
+.ph .wait, .facts .wait { margin-right: 4px; }
+
+/* Filter bar: one segmented control over the table, with the number of projects each filter keeps. */
+.fbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 0 var(--pad) 12px; }
+.filters a { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.filters b { font: 400 11px/20px var(--mono); color: var(--ink-3); }
+.fold { font-size: 12px; line-height: 20px; color: var(--ink-3); white-space: nowrap; }
+.fold:hover { color: var(--ink); }
+
+/* Carets fold a realm and the line of quiet projects. */
+.caret { display: inline-block; width: 6px; height: 6px; border-right: 1.5px solid var(--ink-3); border-bottom: 1.5px solid var(--ink-3); transform: rotate(-45deg); flex: none; }
+.caret.dn { transform: translateY(-2px) rotate(45deg); }
+.rh .c-title { display: flex; align-items: baseline; }
+.tw { display: inline-flex; align-items: center; justify-content: center; align-self: center; flex: none; width: 20px; height: 20px; margin: 0 4px 0 -6px; border-radius: 4px; }
+.tw:hover { background: var(--bg-3); }
+.tw:hover .caret { border-color: var(--ink); }
+
+/* Plan health: a corner dot on the mark of a change whose plan needs tidying. A mark the filter does not pick is faint. */
+.mk.tidy::after { content: ""; position: absolute; top: 1px; right: 0; width: 4px; height: 4px; border-radius: 50%; background: var(--ink-2); box-shadow: 0 0 0 1.5px var(--bg); }
+.row:hover .mk.tidy::after { box-shadow: 0 0 0 1.5px var(--bg-2); }
+span.mk { width: 14px; }
+span.mk:hover { background: none; }
+span.mk.tidy::after { right: -3px; }
+.mk.off { opacity: .22; }
+.mk.off:hover, .mk.off.on { opacity: 1; }
+.tag.t-crate { background: var(--bg-2); border-color: var(--line); color: var(--ink-2); }
+
+/* Tables. Every table is a grid of hairline rows that share one set of columns. */
+.tbl { border-top: 1px solid var(--line); }
+.thead, .rh, .row { display: grid; align-items: center; column-gap: 16px; padding: 0 var(--pad); min-height: var(--rowh); border-bottom: 1px solid var(--line); position: relative; }
+.thead { min-height: 32px; font-size: 11px; font-weight: 500; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-3); background: var(--bg); }
+.tbl > .thead { position: sticky; top: var(--top); z-index: 5; }
+.row:hover { background: var(--bg-2); }
+.row.on, .rh.on { background: var(--accent-bg); }
+.rh { min-height: 44px; background: var(--bg-2); }
+.rh .t { font-size: 14px; font-weight: 600; }
+.rh .sub { margin-left: 12px; font-size: 12px; color: var(--ink-3); }
+.grp > h3 { padding: 0 var(--pad); min-height: 36px; background: var(--bg-2); border-bottom: 1px solid var(--line); }
+.c-title { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.row .c-title .t::after { content: ""; position: absolute; inset: 0; }
+.row .c-title .t:hover, a.row:hover .c-title { color: var(--accent); }
+.c-n, .c-wait, .c-date { text-align: right; justify-self: end; }
+.row .c-n { font: 12px/20px var(--mono); color: var(--ink-2); }
+.c-date { color: var(--ink-3); }
+
+/* Projects and systems: title, facts, then one column per phase */
+.t-projects .thead, .t-projects .rh, .t-projects .row { grid-template-columns: minmax(200px, 1fr) 116px 296px auto 44px; }
+.t-projects.no-sys .thead, .t-projects.no-sys .row { grid-template-columns: minmax(200px, 1fr) 116px auto 44px; }
+.t-projects.no-sys .c-sys { display: none; }
+.t-systems .thead, .t-systems .row { grid-template-columns: minmax(160px, 1fr) 120px 64px 72px 64px auto 44px; }
+.c-ph { display: flex; gap: 12px; align-items: center; width: calc((var(--w-plan) + var(--w-build) + var(--w-review) + var(--w-land) + var(--w-merged)) * 18px + 48px); }
+.pc { display: flex; flex-wrap: wrap; width: calc(var(--w) * 18px); }
+.pc-plan { --w: var(--w-plan); } .pc-build { --w: var(--w-build); } .pc-review { --w: var(--w-review); } .pc-land { --w: var(--w-land); } .pc-merged { --w: var(--w-merged); }
+.pc.tot { font: 12px/20px var(--mono); color: var(--ink-3); padding-left: 5px; }
+.thead .pc { padding-left: 2px; }
+.none { color: var(--ink-4); font-size: 12px; padding-left: 2px; }
+.row.k-built .t { font-weight: 500; }
+.row.k-named .t { color: var(--ink-3); }
+.row .c-state { font-size: 12px; color: var(--ink-2); white-space: nowrap; }
+.row .s-waiting-on-owner, .strip .s-waiting-on-owner { color: var(--attn); font-weight: 500; }
+.row .s-held { color: var(--ink); font-weight: 500; }
+.row .s-queued, .row .s-stale, .row .s-done { color: var(--ink-3); }
+.c-kind { font-size: 12px; color: var(--ink-3); }
+.t-systems .row.k-surveyed .t { font-weight: 500; }
+
+/* Lines inside a realm that are not projects: questions tied to no project, and the fold of quiet projects. */
+.t-projects .row.line .c-title { grid-column: 1 / -3; }
+.t-projects .row.line .c-ph { grid-column: -3 / -2; }
+.t-projects .row.line .c-wait { grid-column: -2 / -1; }
+.row.line .t { color: var(--ink-2); }
+.row.line .t .caret { margin: 0 11px 1px 1px; }
+.row.line .sub { margin-left: 12px; font-size: 12px; color: var(--ink-3); }
+
+/* Open questions, on a project's page and in a realm's panel */
+.qs { margin: 0 var(--pad); max-width: 880px; border-top: 1px solid var(--line); }
+.part.q .mono { color: var(--ink-3); }
+.part.q p { margin-top: 2px; font-size: 13px; line-height: 20px; color: var(--ink-2); }
+
+/* Header strip of facts */
+.strip { display: flex; flex-wrap: wrap; gap: 12px 40px; margin-top: 20px; }
+.strip dt { font-size: 11px; line-height: 16px; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 2px; }
+.strip dd { display: flex; align-items: center; min-height: 20px; }
+
+/* A project's changes as a list */
+.crow { grid-template-columns: 14px minmax(160px, 1fr) auto 132px 72px 48px; }
+.c-flags, .c-ord { font-size: 12px; color: var(--ink-3); white-space: nowrap; }
+.row.muted .c-title { color: var(--ink-3); }
+
+/* A project's changes as a phase timeline: one track per change, filled as far as the change has come */
+.t-time .thead, .trow { grid-template-columns: minmax(180px, 1fr) minmax(280px, 520px) 72px 48px; }
+.track { position: relative; height: 20px; display: block; }
+.thead .track span { position: absolute; left: calc((var(--j) + .5) * 20%); transform: translateX(-50%); line-height: 20px; }
+.track .rail, .track .done { position: absolute; top: 50%; left: 10%; height: 1px; margin-top: -.5px; background: var(--line-2); width: 80%; }
+.track .done { height: 2px; margin-top: -1px; background: var(--ink); width: calc(var(--i) * 20%); }
+.track .st { position: absolute; top: 50%; left: calc((var(--j) + .5) * 20%); width: 5px; height: 5px; margin: -2.5px 0 0 -2.5px; border-radius: 50%; background: var(--bg); box-shadow: inset 0 0 0 1px var(--line-2); }
+.track .st.past { background: var(--ink); box-shadow: none; }
+.track .at { position: absolute; top: 50%; left: calc((var(--i) + .5) * 20%); margin: -9px 0 0 -9px; padding: 2px; border-radius: 50%; background: var(--bg); }
+.row:hover .track .at, .row:hover .track .st:not(.past) { background: var(--bg-2); }
+.row.on .track .at, .row.on .track .st:not(.past) { background: var(--accent-bg); }
+.trow.muted .done, .trow.muted .st.past { background: var(--ink-4); }
+
+/* Modules and links */
+.mrow, .t-modules .thead { grid-template-columns: 208px minmax(120px, 1fr) 168px calc(var(--w-ch) * 18px); }
+.c-name { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 500; }
+.c-name.mono { font-weight: 400; color: var(--ink); }
+.c-purpose, .c-ctl { min-width: 0; color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.c-loc { display: grid; grid-template-columns: 56px 1fr; gap: 12px; align-items: center; }
+.row .c-loc .mono { text-align: right; color: var(--ink-2); }
+.lb { display: block; height: 4px; border-radius: 2px; background: var(--bg-3); }
+.lb i { display: block; height: 4px; border-radius: 2px; background: var(--ink-3); }
+.c-ch { display: flex; gap: 4px; align-items: center; }
+.lrow, .t-links .thead { grid-template-columns: 184px minmax(200px, 1.4fr) 124px minmax(80px, 1fr); }
+.c-ends { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--ink-2); }
+.c-ends b, .facts b { font-weight: 500; color: var(--ink); }
+.facts a b { color: inherit; }
+.t-modules.no-ch .c-ch { display: none; }
+.t-modules.no-ch .mrow, .t-modules.no-ch .thead { grid-template-columns: 208px minmax(120px, 1fr) 168px; }
+.arr { margin: 0 8px; color: var(--ink-3); }
+.c-prod { font-size: 12px; color: var(--ink-2); white-space: nowrap; }
+.c-prod.not { color: var(--ink-3); }
+.c-prod::before { content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 7px; background: var(--ink-2); }
+.c-prod.not::before { background: none; box-shadow: inset 0 0 0 1.25px var(--ink-3); }
+.thead .c-prod::before { display: none; }
+.lk { display: inline-block; width: 16px; height: 6px; flex: none; color: var(--ink-2); }
+.lk-road { background: linear-gradient(currentColor, currentColor) center / 100% 2px no-repeat; }
+.lk-rail { background: repeating-linear-gradient(90deg, currentColor 0 4px, transparent 4px 6px) center / 100% 2px no-repeat; }
+.lk-river { border-top: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; }
+
+/* Detail panel */
+#panel { position: fixed; top: var(--top); right: 0; bottom: 0; width: var(--panel); z-index: 15; background: var(--bg); border-left: 1px solid var(--line); padding: 20px 24px 40px; overflow-y: auto; transform: translateX(100%); visibility: hidden; transition: transform 160ms ease, visibility 0s 160ms; }
+body.has-panel #panel { transform: none; visibility: visible; transition: transform 160ms ease; }
+.p-head { display: flex; justify-content: space-between; align-items: center; }
+.p-head .eyebrow { margin: 0; }
+.x { font-size: 12px; color: var(--ink-3); border: 1px solid var(--line-2); border-radius: 6px; padding: 1px 8px; }
+.x:hover { color: var(--ink); background: var(--bg-2); }
+#panel h2 { margin-top: 8px; font-size: 16px; line-height: 24px; overflow-wrap: anywhere; }
+#panel h2 .mono { font-size: 15px; }
+#panel h3 { margin-top: 24px; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
+.facts { margin-top: 16px; border-top: 1px solid var(--line); }
+.facts .f { display: grid; grid-template-columns: 104px minmax(0, 1fr); gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.facts dt { font-size: 12px; color: var(--ink-3); }
+.facts dd { overflow-wrap: anywhere; }
+.facts a:not(.tag):not(.cl), .parts a { color: var(--accent); }
+.facts a:not(.tag):hover { text-decoration: underline; }
+.pl { display: inline-flex; align-items: center; gap: 6px; }
+.pls { display: grid; gap: 2px; }
+.cls { display: grid; gap: 6px; }
+.cl { display: grid; grid-template-columns: 14px 1fr; gap: 8px; align-items: start; }
+.cl .m { margin-top: 3px; }
+.cl:hover span { color: var(--accent); }
+.part { display: grid; grid-template-columns: 1fr auto; gap: 0 12px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.part .r { color: var(--ink-2); }
+.part p { grid-column: 1 / -1; font-size: 12px; line-height: 18px; color: var(--ink-3); overflow-wrap: anywhere; }
+.part > span:first-child:not(.mono) { font-weight: 500; }
+.meter { display: inline-flex; gap: 2px; align-items: center; height: 20px; }
+.meter i { width: 6px; height: 10px; border-radius: 1px; background: var(--bg-3); }
+.meter i.on { background: var(--ink-3); }
+.open { display: inline-flex; align-items: center; margin-top: 20px; height: 32px; padding: 0 12px; border-radius: 6px; border: 1px solid var(--line-2); font-weight: 500; }
+.open:hover { border-color: var(--accent); color: var(--accent); }
+.open .arr { margin: 0 0 0 8px; color: inherit; }
+
+/* Narrow frames: the panel takes room from the table, so the least needed columns go first. */
+@container (max-width: 1180px) {
+  .t-projects .thead, .t-projects .rh, .t-projects .row { grid-template-columns: minmax(180px, 1fr) 116px auto 44px; }
+  .t-projects .c-sys { display: none; }
+  .t-systems .thead, .t-systems .row { grid-template-columns: minmax(150px, 1fr) 112px 64px auto 44px; }
+  .t-systems .row > .c-n:nth-child(4), .t-systems .row > .c-n:nth-child(5), .t-systems .thead > .c-n:nth-child(4), .t-systems .thead > .c-n:nth-child(5) { display: none; }
+  .crow { grid-template-columns: 14px minmax(160px, 1fr) auto 72px 48px; }
+  .crow .c-sys { display: none; }
+  .lrow, .t-links .thead { grid-template-columns: 168px minmax(200px, 1fr) 124px; }
+  .t-links .c-ctl { display: none; }
+}
+
+/* Phone: each row stacks. The phase columns become one strip of marks, read by the shape of each mark. */
+@media (max-width: 720px) {
+  :root { --pad: 16px; --rowh: 44px; }
+  #main { margin-right: 0 !important; }
+  #panel { width: 100%; border-left: 0; padding: 16px 16px 40px; transform: translateY(24px); opacity: 0; transition: transform 160ms ease, opacity 160ms ease, visibility 0s 160ms; }
+  body.has-panel #panel { opacity: 1; transition: transform 160ms ease, opacity 160ms ease; }
+  body.has-panel { overflow: hidden; }
+  .ph { padding: 20px var(--pad) 16px; }
+  h1 { font-size: 20px; line-height: 26px; }
+  .key { gap: 2px 14px; }
+  .key li.sep { margin-left: 0; }
+  .strip { gap: 12px 28px; }
+  .tbl > .thead { display: none; }
+  .row, .rh { padding-top: 10px; padding-bottom: 10px; row-gap: 4px; column-gap: 12px; }
+  .t-projects .rh, .t-projects .row, .t-projects.no-sys .row { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "title wait" "ph state" "sys sys"; }
+  .t-projects .c-title { grid-area: title; white-space: normal; }
+  .t-projects .c-wait { grid-area: wait; }
+  .t-projects .c-ph { grid-area: ph; }
+  .t-projects .c-state { grid-area: state; justify-self: end; }
+  .t-projects .c-sys { grid-area: sys; display: flex; }
+  .t-projects .c-sys:empty, .rh .c-ph, .rh .c-state, .rh .c-sys { display: none; }
+  .t-projects .rh { grid-template-areas: "title wait"; }
+  .t-projects .row.line { grid-template-areas: "title wait"; }
+  .t-projects .row.line .c-title { grid-column: auto; grid-area: title; }
+  .t-projects .row.line .c-wait { grid-column: auto; grid-area: wait; }
+  .t-projects .row.line .c-ph { display: none; }
+  .row.line .sub { display: block; margin-left: 0; }
+  .fbar { display: block; padding-bottom: 8px; }
+  .filters { display: flex; flex-wrap: wrap; }
+  .fold { display: inline-block; margin-top: 8px; }
+  .qs { margin: 0 var(--pad); }
+  .rh .c-title { display: flex; align-items: baseline; }
+  .c-ph { gap: 8px; flex-wrap: wrap; width: auto; }
+  .pc { width: auto; flex-wrap: nowrap; }
+  .pc:empty { display: none; }
+  .t-systems .row { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "title kind" "ph ph"; }
+  .t-systems .row .c-title { grid-area: title; } .t-systems .row .c-kind { grid-area: kind; } .t-systems .row .c-ph { grid-area: ph; }
+  .t-systems .row .c-n { display: none; }
+  .t-systems .row .c-ph:not(:has(.mk)) { display: none; }
+  .crow { grid-template-columns: 14px minmax(0, 1fr) auto; grid-template-areas: "m title title" ". flags date"; align-items: start; }
+  .crow .m { grid-area: m; margin-top: 3px; } .crow .c-title { grid-area: title; white-space: normal; } .crow .c-flags { grid-area: flags; white-space: normal; } .crow .c-date { grid-area: date; }
+  .crow .c-sys, .crow .c-ord { display: none; }
+  .t-time .thead { display: none; }
+  .trow { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "title date" "track track"; }
+  .trow .c-title { grid-area: title; } .trow .track { grid-area: track; margin: 2px -10% 0; } .trow .c-date { grid-area: date; } .trow .c-ord { display: none; }
+  .mrow { grid-template-columns: minmax(0, 1fr) 150px; grid-template-areas: "name loc" "purpose purpose"; }
+  .mrow .c-name { grid-area: name; } .mrow .c-loc { grid-area: loc; } .mrow .c-purpose { grid-area: purpose; white-space: normal; font-size: 12px; line-height: 18px; }
+  .mrow .c-n, .mrow .c-ch { display: none; }
+  .lrow { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "name prod" "ends ends" "ctl ctl"; }
+  .lrow .c-name { grid-area: name; } .lrow .c-prod { grid-area: prod; } .lrow .c-ends { grid-area: ends; white-space: normal; } .lrow .c-ctl { grid-area: ctl; display: block; white-space: normal; font-size: 12px; color: var(--ink-3); }
+  .lrow .c-ctl:empty { display: none; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+<svg class="sprite" aria-hidden="true"><defs>
+<symbol id="m-plan" viewBox="0 0 14 14"><circle cx="7" cy="7" r="5.25" fill="none" stroke="currentColor" stroke-width="1.5"/></symbol>
+<symbol id="m-build" viewBox="0 0 14 14"><circle cx="7" cy="7" r="5.25" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M7 3.7a3.3 3.3 0 0 1 0 6.6z" fill="currentColor"/></symbol>
+<symbol id="m-review" viewBox="0 0 14 14"><circle cx="7" cy="7" r="5.25" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M7 7V3.7A3.3 3.3 0 1 1 3.7 7z" fill="currentColor"/></symbol>
+<symbol id="m-land" viewBox="0 0 14 14"><circle cx="7" cy="7" r="6" fill="currentColor"/></symbol>
+<symbol id="m-merged" viewBox="0 0 14 14"><circle cx="7" cy="7" r="6" fill="currentColor"/><path d="M4.1 7.2l2 2 3.8-4.1" fill="none" stroke="var(--bg)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="none"/></symbol>
+<symbol id="m-paused" viewBox="0 0 14 14"><circle cx="7" cy="7" r="5.25" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M5.6 4.9v4.2M8.4 4.9v4.2" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="none"/></symbol>
+</defs></svg>
+<header class="top"><nav id="crumbs" aria-label="Breadcrumb"></nav><button id="theme" type="button" title="Switch between the system theme, light and dark"></button></header>
+<main id="main"></main>
+<aside id="panel" aria-label="Details"></aside>
+<script type="application/json" id="data">
+{"date":"2026-02-03","links":[{"after":"/changes/guide","before":"/changes/bench","project":"speed"}],"missing":1,"open":5,"projects":[{"changes":[{"crates":[],"date":null,"findings":["stale"],"id":"guide","repo":"api","state":"review","tasks":[],"title":"Write the guide"}],"id":"docs","order":[],"realm":"beta","state":"waiting-on-owner","summary":"The draft waits for a style decision.","title":"Write the guide"},{"changes":[],"id":"idle","order":[],"realm":"beta","state":"queued","summary":null,"title":"Name the plugin"},{"changes":[{"crates":[],"date":"2026-01-30","findings":["landed"],"id":"release","repo":null,"state":"review","tasks":[],"title":"Cut the release"}],"id":"shipped","order":[],"realm":"alpha","state":"held","summary":null,"title":"Ship the release"},{"changes":[{"crates":["demo-base"],"date":"2026-02-02","findings":["merge"],"id":"bench","repo":"core","state":"plan","tasks":[],"title":"Benchmark the parser"},{"crates":["demo-core"],"date":"2026-02-01","findings":["merge","stale-plan"],"id":"cache","repo":"core","state":"build","tasks":["cache.md"],"title":"Cache results"}],"id":"speed","order":[["/changes/cache","/changes/bench"]],"realm":"alpha","state":"active","summary":"The cache lands next; the benchmark follows.","title":"Make the parser fast"}],"realms":[{"id":"alpha","title":"Alpha"},{"id":"beta","title":"Beta"}],"workspaces":[{"crates":[{"deps":[],"id":"demo-base","loc":300,"modules":[{"id":"lib","items":[],"loc":300}]},{"deps":["demo-base","demo-util"],"id":"demo-core","loc":700,"modules":[{"id":"lib","items":[],"loc":100},{"id":"run","items":["Plan","run_all"],"loc":500}]},{"deps":["demo-base"],"id":"demo-util","loc":80,"modules":[]}],"id":"core","lang":"Rust","realm":"alpha","title":"Core"}]}
+</script>
+<script type="application/json" id="systems">
+{"cities":[{"districts":[{"id":"api.cli","loc":100,"purpose":"Runs commands.","title":"cli"},{"id":"api.server","loc":900,"purpose":"Serves requests.","title":"server"}],"id":"api","lang":"Python","realm":"alpha","title":"API"}],"external":[{"id":"cloud","title":"Cloud"}],"links":[{"from":"api.server","id":"calls","kind":"road","name":"Calls the cloud","prod":true,"symbols":[{"at":"to","caption":"Token gate","detail":"The cloud wants a token."}],"to":"cloud","traffic":4},{"from":"api","id":"events","kind":"rail","name":"Core events","prod":false,"symbols":[],"to":"core.demo-base","traffic":1}]}
+</script>
+<script type="application/json" id="questions">
+{"asOf":"2026-02-04","projects":{"docs":[{"asked":"2026-02-01","by":"name","id":"/projects/guide/questions/two","text":"Which style?"}],"speed":[{"asked":"2026-02-02","by":"change","id":"/projects/p/questions/one","text":"Should cache wait for bench?"},{"asked":"2026-02-03","by":"task","id":"/repos/team/projects/misc/questions/four","text":"Is the profile ready?"}]},"unassigned":{"alpha":[{"asked":"2026-02-03","from":"notes","id":"/projects/notes/questions/three","text":"Anything else?"}]}}
+</script>
+<script>
+'use strict';
+// ---- model: buildModel(data, systems, questions) -> realms, projects, changes, systems, links.
+// The model holds what exists and how it is related. Every list is sorted by a stated rule, so input order never matters.
+const cmp = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
+const by = (...keys) => (a, b) => { for (const k of keys) { const d = cmp(k(a), k(b)); if (d) return d; } return 0; };
+const uniq = xs => Array.from(new Set(xs)).sort(cmp);
+
+const PHASES = ['plan', 'build', 'review', 'land', 'merged'];
+const PHASE_WORD = { plan: 'Planned', build: 'Building', review: 'Review', land: 'Landing', merged: 'Merged' };
+const PHASE_LONG = { plan: 'Planned', build: 'Being built', review: 'In review', land: 'Landing', merged: 'Merged, still open' };
+const STATUS_WORD = { live: 'In play', paused: 'Paused', stale: 'Stale' };
+const STATE_RANK = { 'waiting-on-owner': 0, held: 1, active: 2, queued: 3, stale: 4, done: 5 };
+const STATE_WORD = { 'waiting-on-owner': 'Waiting on the owner', held: 'Held', active: 'Active', queued: 'Queued', stale: 'Stale', done: 'Done, still open' };
+const KNOW_WORD = { named: 'Named only', planned: 'Planned', built: 'Built' };
+const FLAG_WORD = { stale: 'No recent work', superseded: 'Superseded by other work', 'stale-plan': 'Plan is out of date', 'empty-plan': 'Plan is empty', merge: 'Overlaps another change', landed: 'Pull request merged, change not closed' };
+const KIND_WORD = { road: 'API calls', rail: 'Event streams', river: 'Logs and records' };
+const KIND_ONE = { road: 'API call', rail: 'Event stream', river: 'Logs and records' };
+const KIND_ORDER = ['road', 'rail', 'river'];
+const SYS_KIND_WORD = { surveyed: 'Modules known', named: 'Named only', external: 'External' };
+// The three findings that say a change's plan needs tidying. They get one quiet mark on the overview.
+const TIDY = ['stale-plan', 'empty-plan', 'merge'];
+const TIDY_WORD = { 'stale-plan': 'plan is out of date', 'empty-plan': 'plan is empty', merge: 'overlaps another change' };
+
+// The overview's filters. A filter keeps a project when `project` says so, or when one of its changes passes `change`.
+const FILTERS = [
+  { id: 'all', word: 'All', about: 'Every project. Quiet projects fold into one line per realm.' },
+  { id: 'owner', word: 'Waiting on the owner', about: 'Projects with an open question for the owner, and projects whose state is waiting on the owner.', project: p => p.needsOwner },
+  { id: 'flight', word: 'In flight', about: 'Projects with a change that is being built, in review or landing, and is neither stale nor paused.', change: c => c.status === 'live' && (c.col === 'build' || c.col === 'review' || c.col === 'land') },
+  { id: 'merged', word: 'Merged but open', about: 'Projects with a change whose pull request merged while the change stayed open.', change: c => c.col === 'merged' },
+  { id: 'stale', word: 'Stale', about: 'Projects whose state is stale, and projects with a stale or superseded change.', project: p => p.state === 'stale', change: c => c.status === 'stale' },
+  { id: 'tidy', word: 'Needs tidying', about: 'Projects with a change whose plan is out of date or empty, or that overlaps another change.', change: c => c.tidy.length > 0 },
+];
+const FILTER = Object.fromEntries(FILTERS.map(f => [f.id, f]));
+const keeps = (f, p) => !!((f.project && f.project(p)) || (f.change && p.changes.some(f.change)));
+
+// questions is the extract that extract-questions.js writes: the open questions with no answer, per project and per realm.
+function buildModel(data, sys, questions) {
+  const Q = questions || { asOf: null, projects: {}, unassigned: {} };
+  const qsort = xs => (xs || []).map(q => ({ id: q.id, asked: q.asked, text: q.text, from: q.from || null })).sort(by(q => q.asked, q => q.id));
+  const base = s => s.split('/').pop();
+  const C = {}, P = {}, S = {};
+
+  // Systems that have surveyed modules: a Cargo workspace from its crates, the others from the survey.
+  const addSystem = (id, o) => (S[id] = Object.assign({ id, title: id, realm: null, kind: 'named', lang: null, loc: null, modules: [], M: {}, projects: [], changes: [], links: [] }, o));
+  for (const w of data.workspaces) {
+    const s = addSystem(w.id, { title: w.title, realm: w.realm, kind: 'surveyed', lang: w.lang });
+    for (const c of w.crates) {
+      s.modules.push({ id: c.id, sys: w.id, title: c.id, loc: c.loc, crate: true, purpose: null, deps: c.deps.slice().sort(cmp), changes: [],
+        parts: c.modules.map(m => ({ id: m.id, loc: m.loc, items: m.items.slice().sort(cmp) })).sort(by(m => -m.loc, m => m.id)) });
+    }
+  }
+  for (const c of sys.cities) {
+    const s = addSystem(c.id, { title: c.title, realm: c.realm, kind: 'surveyed', lang: c.lang });
+    for (const d of c.districts) s.modules.push({ id: d.id.slice(c.id.length + 1), sys: c.id, title: d.title, loc: d.loc, crate: false, purpose: d.purpose, deps: [], changes: [], parts: [] });
+  }
+  for (const s of Object.values(S)) { s.modules.sort(by(m => -m.loc, m => m.id)); s.loc = s.modules.reduce((t, m) => t + m.loc, 0); for (const m of s.modules) s.M[m.id] = m; }
+
+  // Projects and their changes.
+  const projects = data.projects.map(p => {
+    const ids = p.changes.map(c => c.id).sort(cmp);
+    const find = path => { const b = base(path); return ids.find(i => i === b) || ids.find(i => i.startsWith(b) || b.startsWith(i)); };
+    const pairs = p.order.map(([a, b]) => [find(a), find(b)]).filter(([a, b]) => a && b).sort(by(x => x[0], x => x[1]));
+    const rank = {}; // landing order: 1 + the longest chain of changes that must land first
+    for (let pass = 0; pass <= pairs.length; pass++) for (const [a, b] of pairs) { rank[a] = rank[a] || 1; rank[b] = Math.max(rank[b] || 1, rank[a] + 1); }
+    const changes = p.changes.map(c => {
+      const f = c.findings.slice().sort(cmp), merged = f.includes('landed');
+      const repo = c.repo && c.repo[0] !== '/' ? c.repo : null;
+      const ch = { id: c.id, title: c.title, project: p.id, realm: p.realm, sys: repo, source: c.repo, date: /^\d{4}-/.test(c.date) ? c.date : null,
+        col: merged ? 'merged' : c.state === 'paused' ? 'build' : c.state, phase: c.state,
+        status: c.state === 'paused' ? 'paused' : f.includes('stale') || f.includes('superseded') ? 'stale' : 'live',
+        flags: f, tidy: TIDY.filter(t => f.includes(t)), modules: c.crates.slice().sort(cmp), tasks: c.tasks.slice().sort(cmp), rank: rank[c.id] || 0,
+        after: pairs.filter(x => x[1] === c.id).map(x => x[0]), before: pairs.filter(x => x[0] === c.id).map(x => x[1]) };
+      C[c.id] = ch; return ch;
+    }).sort(by(c => PHASES.indexOf(c.col), c => (c.status === 'live' ? 0 : 1), c => c.rank || 99, c => c.id));
+    const know = !changes.length ? 'named' : changes.every(c => c.col === 'plan') ? 'planned' : 'built';
+    const count = {}; for (const c of changes) if (c.sys) count[c.sys] = (count[c.sys] || 0) + 1;
+    const systems = Object.keys(count).sort(by(s => -count[s], s => s));
+    // Tags. A system whose changes name its modules (Board's crates) is shown as those modules, most changes first, then by name.
+    const tags = systems.flatMap(s => {
+      const n = {}; for (const c of changes) if (c.sys === s) for (const x of c.modules) if (S[s] && S[s].M[x]) n[x] = (n[x] || 0) + 1;
+      const mods = Object.keys(n).sort(by(x => -n[x], x => x));
+      return mods.length ? mods.map(x => ({ sys: s, mod: x, n: n[x] })) : [{ sys: s, mod: null, n: count[s] }];
+    });
+    const qs = qsort(Q.projects[p.id]), needsOwner = qs.length > 0 || p.state === 'waiting-on-owner';
+    const pr = { id: p.id, title: p.title, realm: p.realm, state: p.state, summary: p.summary, know, changes, systems, tags, questions: qs, waiting: qs.length, needsOwner,
+      quiet: !needsOwner && changes.every(c => c.status === 'stale') }; // quiet: no changes, or only stale ones, and nothing for the owner
+    P[p.id] = pr; return pr;
+  }).sort(by(p => (p.needsOwner ? 0 : 1), p => STATE_RANK[p.state], p => -p.changes.length, p => p.id));
+  for (const l of data.links || []) { const a = C[base(l.before)], b = C[base(l.after)]; if (a && b) { a.before = uniq(a.before.concat(b.id)); b.after = uniq(b.after.concat(a.id)); } }
+
+  // Every repository a change names is a system. Its realm is the realm of most of the projects that change it.
+  for (const p of projects) for (const s of p.systems) if (!S[s]) addSystem(s, {});
+  for (const p of projects) for (const s of p.systems) S[s].projects.push(p.id);
+  for (const c of Object.values(C)) if (c.sys) { S[c.sys].changes.push(c.id); for (const m of c.modules) if (S[c.sys].M[m]) S[c.sys].M[m].changes.push(c.id); }
+  for (const s of Object.values(S)) {
+    s.changes.sort(cmp); for (const m of s.modules) m.changes.sort(cmp);
+    if (!s.realm && s.projects.length) { const v = {}; for (const p of s.projects) v[P[p].realm] = (v[P[p].realm] || 0) + 1; s.realm = Object.keys(v).sort(by(r => -v[r], r => r))[0]; }
+  }
+
+  // Links. An end is a module of a system, a system, or a project. An end that is none of these is a system outside the repositories.
+  const names = Object.fromEntries((sys.external || []).map(e => [e.id, e.title]));
+  const end = ref => {
+    const dot = ref.indexOf('.');
+    if (dot > 0 && S[ref.slice(0, dot)] && S[ref.slice(0, dot)].M[ref.slice(dot + 1)]) return { sys: ref.slice(0, dot), mod: ref.slice(dot + 1) };
+    if (S[ref]) return { sys: ref };
+    if (P[ref]) return { project: ref };
+    addSystem(ref, { title: names[ref] || ref, kind: 'external' }); return { sys: ref };
+  };
+  const links = sys.links.map(l => ({ id: l.id, name: l.name, kind: l.kind, prod: !!l.prod, traffic: l.traffic, note: l.buslane || null, a: end(l.from), b: end(l.to),
+    controls: (l.symbols || []).map(s => ({ caption: s.caption, detail: s.detail, at: s.at })).sort(by(s => s.caption)) })).sort(by(l => KIND_ORDER.indexOf(l.kind), l => l.id));
+  const L = {}; for (const l of links) { L[l.id] = l; for (const e of [l.a, l.b]) if (e.sys && !S[e.sys].links.includes(l.id)) S[e.sys].links.push(l.id); }
+
+  const realms = data.realms.map(r => {
+    const ps = projects.filter(p => p.realm === r.id);
+    const unassigned = qsort(Q.unassigned[r.id]); // a realm's total is the sum of its rows and its unassigned questions
+    return { id: r.id, title: r.title, unassigned, waiting: ps.reduce((t, p) => t + p.waiting, 0) + unassigned.length, projects: ps.map(p => p.id) };
+  }).sort(by(r => -r.waiting, r => r.id));
+  const systems = Object.values(S).sort(by(s => ({ surveyed: 0, named: 1, external: 2 })[s.kind], s => -s.changes.length, s => s.id));
+  for (const s of systems) s.projects.sort(by(p => projects.indexOf(P[p])));
+  const R = Object.fromEntries(realms.map(r => [r.id, r]));
+  const allChanges = Object.values(C);
+  const cols = Object.fromEntries(PHASES.map(k => [k, Math.max(0, ...projects.map(p => p.changes.filter(c => c.col === k).length))])); // widest cell per phase column
+  const sysCols = Object.fromEntries(PHASES.map(k => [k, Math.max(0, ...systems.map(s => s.changes.filter(c => C[c].col === k).length))]));
+  return { date: data.date, asOf: Q.asOf, missing: data.missing, realms, R, projects, P, C, systems, S, links, L, cols, sysCols, changes: allChanges.sort(by(c => c.id)), waiting: realms.reduce((t, r) => t + r.waiting, 0) };
+}
+
+// Reverses every list and every object's key order, for the determinism check. A pair inside a list is a tuple and keeps its order.
+function reverseDeep(x, inList) {
+  if (Array.isArray(x)) { const y = x.map(v => reverseDeep(v, true)); return inList ? y : y.reverse(); }
+  if (x && typeof x === 'object') return Object.fromEntries(Object.keys(x).reverse().map(k => [k, reverseDeep(x[k], false)]));
+  return x;
+}
+
+// ---- view: render(model, route) -> { title, crumbs, main, panel }. Pure functions from the model to HTML text. No DOM, no measuring.
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+const num = n => String(n).replace(/\B(?=(\d{3})+$)/g, ',');
+const plural = (n, w, ws) => num(n) + ' ' + (n === 1 ? w : ws || w + 's');
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const day = (d, year) => (d ? Number(d.slice(8, 10)) + ' ' + MONTHS[Number(d.slice(5, 7)) - 1] + (year ? ' ' + d.slice(0, 4) : '') : '');
+
+function parseRoute(hash) {
+  const [path, query] = String(hash || '').replace(/^#\/?/, '').split('?');
+  const seg = path.split('/').filter(Boolean).map(decodeURIComponent);
+  const sel = /(?:^|&)sel=([^&]*)/.exec(query || '');
+  // The overview's filter and its collapsed realms live in the address, in a fixed order, so one address always gives one page.
+  const one = k => { const x = new RegExp('(?:^|&)' + k + '=([^&]*)').exec(query || ''); return x ? decodeURIComponent(x[1]) : ''; };
+  const r = { page: 'overview', id: null, view: 'list', f: FILTER[one('f')] ? one('f') : 'all', shut: uniq(one('shut').split(',').filter(Boolean)), quiet: uniq(one('quiet').split(',').filter(Boolean)), sel: sel ? decodeURIComponent(sel[1]) : null };
+  if (seg[0] === 'systems') r.page = 'systems';
+  else if ((seg[0] === 'project' || seg[0] === 'system') && seg[1]) { r.page = seg[0]; r.id = seg[1]; if (seg[2] === 'timeline') r.view = 'timeline'; }
+  return r;
+}
+const href = r => {
+  const q = [];
+  if (r.page === 'overview') { if (r.f && r.f !== 'all') q.push('f=' + r.f); if (r.shut && r.shut.length) q.push('shut=' + uniq(r.shut).map(encodeURIComponent).join(',')); if (r.quiet && r.quiet.length) q.push('quiet=' + uniq(r.quiet).map(encodeURIComponent).join(',')); }
+  if (r.sel) q.push('sel=' + encodeURIComponent(r.sel).replace(/%3A/g, ':').replace(/%2F/g, '/'));
+  return '#/' + (r.page === 'overview' ? '' : r.page === 'systems' ? 'systems' : r.page + '/' + encodeURIComponent(r.id) + (r.view === 'timeline' ? '/timeline' : '')) + (q.length ? '?' + q.join('&') : '');
+};
+const toProject = id => href({ page: 'project', id });
+const toSystem = id => href({ page: 'system', id });
+
+function render(m, route) {
+  route = Object.assign({}, route, { f: FILTER[route.f] ? route.f : 'all', shut: (route.shut || []).filter(id => m.R[id]), quiet: (route.quiet || []).filter(id => m.R[id]) });
+  const flip = (key, id) => href(Object.assign({}, route, { [key]: route[key].includes(id) ? route[key].filter(x => x !== id) : route[key].concat(id) }));
+  const pick = sel => href(Object.assign({}, route, { sel }));
+  const isSel = sel => route.sel === sel;
+
+  // ---- marks and small parts
+  const glyph = c => (c.status === 'paused' ? 'paused' : c.col);
+  const svg = (g, cls) => `<svg class="m m-${g}${cls ? ' ' + cls : ''}" viewBox="0 0 14 14" aria-hidden="true"><use href="#m-${g}"/></svg>`;
+  const markSvg = c => svg(glyph(c), c.status === 'live' ? '' : 'muted');
+  const about = c => PHASE_LONG[c.col] + (c.status === 'live' ? '' : ', ' + STATUS_WORD[c.status].toLowerCase());
+  const tidyText = c => c.tidy.map(t => TIDY_WORD[t]).join(', ');
+  // A change whose plan needs tidying carries a corner dot. A change the filter does not pick is drawn faint.
+  const mark = (c, off) => `<a class="mk${c.tidy.length ? ' tidy' : ''}${off ? ' off' : ''}${isSel('change:' + c.id) ? ' on' : ''}" href="${pick('change:' + c.id)}" title="${esc(c.title)} (${esc(about(c))})${c.tidy.length ? esc('. Needs tidying: ' + tidyText(c) + '.') : ''}" data-k="c:${esc(c.id)}">${markSvg(c)}</a>`;
+  const short = t => (t.mod.startsWith(t.sys + '-') ? t.mod.slice(t.sys.length + 1) : t.mod);
+  const ptag = t => (t.mod ? `<a class="tag t-crate" href="${href({ page: 'system', id: t.sys, sel: 'module:' + t.sys + '/' + t.mod })}" title="${esc(m.S[t.sys].title)} crate ${esc(t.mod)}, touched by ${plural(t.n, 'change')} of this project">${esc(short(t))}</a>` : tag(t.sys));
+  const ptags = (ts, max) => ts.slice(0, max).map(ptag).join('') + (ts.length > max ? `<span class="more" title="${esc(ts.slice(max).map(t => t.mod || t.sys).join(', '))}">+${ts.length - max}</span>` : '');
+  const tag = (id, link) => { const s = m.S[id]; return link === false ? `<span class="tag t-${s.kind}">${esc(s.title)}</span>` : `<a class="tag t-${s.kind}" href="${toSystem(id)}" title="${esc(SYS_KIND_WORD[s.kind])} system">${esc(s.title)}</a>`; };
+  const wait = (n, long) => `<span class="wait" title="${plural(n, 'open question')} waiting on the owner">${num(n)}${long ? ' waiting on the owner' : ''}</span>`;
+  const NO_Q = 'Waiting on the owner for a review, a merge or a decision. The board holds no open question for this project.';
+  const waitCell = p => (p.waiting ? wait(p.waiting) : p.state === 'waiting-on-owner' ? `<span class="wait dot" title="${NO_Q}"></span>` : '');
+  const phaseCells = (changes, empty, off) => '<div class="c-ph">' + (changes.length || !empty ? PHASES.map(k => `<div class="pc pc-${k}">${changes.filter(c => c.col === k).map(c => mark(c, off && off(c))).join('')}</div>`).join('') : `<span class="none">${empty}</span>`) + '</div>';
+  const qItem = q => `<div class="part q"><span class="mono">${day(q.asked)}</span><span class="mono r">${esc(q.from ? q.from : q.id.split('/').pop())}</span><p>${esc(q.text)}</p></div>`;
+  const phaseTotals = changes => '<div class="c-ph">' + PHASES.map(k => { const n = changes.filter(c => c.col === k).length; return `<div class="pc pc-${k} tot">${n || ''}</div>`; }).join('') + '</div>';
+  const phaseHead = '<div class="c-ph">' + PHASES.map(k => `<div class="pc pc-${k}">${PHASE_WORD[k]}</div>`).join('') + '</div>';
+  const widths = (cols, cap) => 'style="' + PHASES.map(k => `--w-${k}:${Math.max(4, Math.min(cap, cols[k]))}`).join(';') + '"'; // a phase column is as wide as its fullest cell, up to a cap
+  const colVars = widths(m.cols, 8), sysVars = widths(m.sysCols, 10);
+  const seg = items => '<nav class="seg">' + items.map(([label, h, on]) => `<a href="${h}"${on ? ' class="on" aria-current="page"' : ''}>${label}</a>`).join('') + '</nav>';
+  const fact = (k, v) => (v === '' || v == null ? '' : `<div class="f"><dt>${k}</dt><dd>${v}</dd></div>`);
+  const mono = s => `<span class="mono">${esc(s)}</span>`;
+  const changeLink = id => { const c = m.C[id]; return `<a class="cl" href="${href({ page: 'project', id: c.project, sel: 'change:' + c.id })}">${markSvg(c)}<span>${esc(c.title)}</span></a>`; };
+  const changeList = ids => (ids.length ? '<div class="cls">' + ids.map(changeLink).join('') + '</div>' : '');
+
+  // The distribution of changes over the phases, as one stacked bar with its counts. It doubles as the key to the marks.
+  const dist = changes => {
+    const n = k => changes.filter(c => c.col === k).length, stale = changes.filter(c => c.status === 'stale').length, paused = changes.filter(c => c.status === 'paused').length, tidy = changes.filter(c => c.tidy.length).length;
+    return '<div class="dist"><div class="bar" role="img" aria-label="Changes by phase">' + PHASES.filter(n).map(k => `<i class="b-${k}" style="flex-grow:${n(k)}"></i>`).join('') + '</div><ul class="key">'
+      + PHASES.map(k => `<li${n(k) ? '' : ' class="zero"'}>${svg(k)}<span>${PHASE_LONG[k]}</span><b>${n(k)}</b></li>`).join('')
+      + `<li class="sep${tidy ? '' : ' zero'}" title="The plan is out of date, the plan is empty, or the change overlaps another change."><span class="mk tidy">${svg('plan')}</span><span>Plan needs tidying</span><b>${tidy}</b></li>`
+      + `<li${stale ? '' : ' class="zero"'}>${svg('plan', 'muted')}<span>Stale, drawn muted</span><b>${stale}</b></li><li${paused ? '' : ' class="zero"'}>${svg('paused', 'muted')}<span>Paused</span><b>${paused}</b></li></ul></div>`;
+  };
+
+  // ---- project rows, shared by the overview and a system's page
+  const projectRow = (p, only, off) => {
+    const cs = only ? p.changes.filter(c => c.sys === only) : p.changes;
+    return `<div class="row k-${p.know}${isSel('project:' + p.id) ? ' on' : ''}" data-k="p:${esc(p.id)}">`
+      + `<div class="c-title"><a class="t" href="${toProject(p.id)}" title="${esc(p.title)}">${esc(p.title)}</a></div>`
+      + `<div class="c-state s-${p.state}">${STATE_WORD[p.state]}</div>`
+      + `<div class="c-sys">${ptags(p.tags, 3)}</div>` + phaseCells(cs, 'Named only. No changes yet.', off) + `<div class="c-wait">${waitCell(p)}</div></div>`;
+  };
+  const projectHead = `<div class="thead"><div class="c-title">Project</div><div class="c-state">State</div><div class="c-sys">Systems</div>${phaseHead}<div class="c-wait">Waiting</div></div>`;
+
+  // ---- overview: one section per realm
+  const overview = () => {
+    const F = FILTER[route.f], all = route.f === 'all';
+    const head = `<header class="ph"><div class="ph-top"><h1>Work in play</h1>${seg([['Projects', href({ page: 'overview' }), true], ['Systems', href({ page: 'systems' }), false]])}</div>`
+      + `<p class="meta"><span>${day(m.date, true)}</span><span>${plural(m.realms.length, 'realm')}</span><span>${plural(m.projects.length, 'project')}</span><span>${plural(m.changes.length, 'open change')}</span><span>${plural(m.systems.length, 'system')}</span>${m.missing ? `<span>${m.missing === 1 ? '1 open change is' : m.missing + ' open changes are'} not in the map of ${day(m.date)}</span>` : ''}<span class="attn">${plural(m.waiting, 'question')} waiting on the owner${m.asOf && m.asOf !== m.date ? ', counted ' + day(m.asOf) : ''}</span></p>${dist(m.changes)}</header>`;
+    // The filter bar. Each filter states how many projects it keeps. The link at its right folds or unfolds every realm.
+    const allShut = m.realms.every(r => route.shut.includes(r.id));
+    const bar = '<div class="fbar"><nav class="seg filters" aria-label="Filter projects">' + FILTERS.map(f => `<a href="${href(Object.assign({}, route, { f: f.id }))}"${f.id === route.f ? ' class="on" aria-current="true"' : ''} title="${esc(f.about)}">${f.word}<b>${f.id === 'all' ? m.projects.length : m.projects.filter(p => keeps(f, p)).length}</b></a>`).join('') + '</nav>'
+      + `<a class="fold" href="${href(Object.assign({}, route, { shut: allShut ? [] : m.realms.map(r => r.id) }))}">${allShut ? 'Expand all realms' : 'Collapse all realms'}</a></div>`;
+    const caret = open => `<i class="caret${open ? ' dn' : ''}"></i>`;
+    const sections = m.realms.map(r => {
+      const ps = r.projects.map(id => m.P[id]), cs = ps.flatMap(p => p.changes), shut = route.shut.includes(r.id), openQuiet = route.quiet.includes(r.id);
+      const kept = all ? ps : ps.filter(p => keeps(F, p)), quiet = all ? kept.filter(p => p.quiet) : [], shown = all ? kept.filter(p => !p.quiet) : kept;
+      // A project the filter keeps for its own sake shows every mark. Otherwise the marks the filter does not pick are drawn faint.
+      const row = p => projectRow(p, null, F.change && !(F.project && F.project(p)) ? c => !F.change(c) : null);
+      const from = {}; for (const q of r.unassigned) from[q.from] = (from[q.from] || 0) + 1;
+      const un = (all || route.f === 'owner') && r.unassigned.length ? `<div class="row line" data-k="u:${r.id}"><div class="c-title"><a class="t" href="${pick('realm:' + r.id)}" title="Open questions that no rule ties to a project of this realm">Not tied to a project</a><span class="sub">${esc(Object.keys(from).sort(by(k => -from[k], k => k)).map(k => k + ' ' + from[k]).join(', '))}</span></div><div class="c-wait">${wait(r.unassigned.length)}</div></div>` : '';
+      const qline = quiet.length ? `<div class="row line" data-k="q:${r.id}"><div class="c-title"><a class="t" href="${flip('quiet', r.id)}" aria-expanded="${openQuiet}" title="Projects with no changes or only stale ones, and nothing waiting on the owner">${caret(openQuiet)}${plural(quiet.length, 'quiet project')}</a><span class="sub">${esc(quiet.map(p => p.title).join(', '))}</span></div>${phaseTotals(quiet.flatMap(p => p.changes))}<div class="c-wait"></div></div>` : '';
+      const sub = all ? `${plural(ps.length, 'project')}, ${plural(cs.length, 'change')}` : `${kept.length ? kept.length : 'None'} of ${plural(ps.length, 'project')}`;
+      const body = shut ? '' : shown.filter(p => p.needsOwner).map(row).join('') + un + shown.filter(p => !p.needsOwner).map(row).join('') + qline + (openQuiet ? quiet.map(row).join('') : '');
+      return `<section class="realm" data-k="r:${r.id}"><div class="rh${isSel('realm:' + r.id) ? ' on' : ''}"><div class="c-title"><a class="tw" href="${flip('shut', r.id)}" aria-expanded="${!shut}" aria-label="${shut ? 'Expand' : 'Collapse'} ${esc(r.title)}" title="${shut ? 'Expand' : 'Collapse'} ${esc(r.title)}">${caret(!shut)}</a><a class="t" href="${pick('realm:' + r.id)}">${esc(r.title)}</a><span class="sub">${sub}</span></div><div class="c-state"></div><div class="c-sys"></div>${phaseTotals(cs)}<div class="c-wait">${r.waiting ? wait(r.waiting) : ''}</div></div>${body}</section>`;
+    }).join('');
+    return head + bar + `<div class="tbl t-projects" ${colVars}>${projectHead}${sections}</div>`;
+  };
+
+  // ---- systems: every system, grouped by realm, then every link by kind
+  const endText = (e, plain) => (e.project ? (plain ? esc(m.P[e.project].title) : `<a href="${toProject(e.project)}">${esc(m.P[e.project].title)}</a>`) + ' <span class="dim">project</span>'
+    : (plain ? `<b>${esc(m.S[e.sys].title)}</b>` : `<a href="${toSystem(e.sys)}"><b>${esc(m.S[e.sys].title)}</b></a>`) + (e.mod ? ` <span class="dim">${esc(m.S[e.sys].M[e.mod].title)}</span>` : ''));
+  const linkRow = l => `<a class="row lrow${isSel('link:' + l.id) ? ' on' : ''}" href="${pick('link:' + l.id)}" data-k="l:${l.id}"><span class="c-name">${esc(l.name)}</span><span class="c-ends">${endText(l.a, true)}<i class="arr">→</i>${endText(l.b, true)}</span>`
+    + `<span class="c-prod${l.prod ? '' : ' not'}">${l.prod ? 'In production' : 'Not in production'}</span><span class="c-ctl">${l.controls.map(c => esc(c.caption)).join(', ')}</span></a>`;
+  const linkGroups = ls => KIND_ORDER.filter(k => ls.some(l => l.kind === k)).map(k => `<div class="grp"><h3><i class="lk lk-${k}"></i>${KIND_WORD[k]}<span class="n">${ls.filter(l => l.kind === k).length}</span></h3>${ls.filter(l => l.kind === k).map(linkRow).join('')}</div>`).join('');
+  const linkHead = '<div class="thead"><div class="c-name">Link</div><div class="c-ends">From and to</div><div class="c-prod">Status</div><div class="c-ctl">Controls</div></div>';
+  const systemRow = s => `<div class="row k-${s.kind}${isSel('system:' + s.id) ? ' on' : ''}" data-k="s:${esc(s.id)}"><div class="c-title"><a class="t" href="${toSystem(s.id)}">${esc(s.title)}</a></div><div class="c-kind">${SYS_KIND_WORD[s.kind]}</div>`
+    + `<div class="c-n">${s.modules.length ? s.modules.length : ''}</div><div class="c-n">${s.loc ? num(s.loc) : ''}</div><div class="c-n">${s.projects.length || ''}</div>${phaseCells(s.changes.map(i => m.C[i]).sort(by(c => PHASES.indexOf(c.col), c => (c.status === 'live' ? 0 : 1), c => c.id)))}<div class="c-n">${s.links.length || ''}</div></div>`;
+  const systemsPage = () => {
+    const head = `<header class="ph"><div class="ph-top"><h1>Systems</h1>${seg([['Projects', href({ page: 'overview' }), false], ['Systems', href({ page: 'systems' }), true]])}</div>`
+      + `<p class="meta"><span>${day(m.date, true)}</span><span>${plural(m.systems.length, 'system')}</span><span>${m.systems.filter(s => s.kind === 'surveyed').length} with known modules</span><span>${plural(m.links.length, 'link')} between systems</span></p>`
+      + `<ul class="key solo"><li><span class="tag t-surveyed">name</span><span>Modules known</span></li><li><span class="tag t-named">name</span><span>Named only, by the changes that touch it</span></li><li><span class="tag t-external">name</span><span>Outside the repositories</span></li></ul></header>`;
+    const groups = m.realms.map(r => [r.title, m.systems.filter(s => s.realm === r.id)]).concat([['Outside the repositories', m.systems.filter(s => !s.realm)]]).filter(g => g[1].length);
+    const thead = `<div class="thead"><div class="c-title">System</div><div class="c-kind">Known as</div><div class="c-n">Modules</div><div class="c-n">Lines</div><div class="c-n">Projects</div>${phaseHead}<div class="c-n">Links</div></div>`;
+    return head + `<div class="tbl t-systems" ${sysVars}>${thead}` + groups.map(([title, ss]) => `<section class="realm"><div class="rh"><div class="c-title"><span class="t">${esc(title)}</span><span class="sub">${plural(ss.length, 'system')}</span></div></div>${ss.map(systemRow).join('')}</section>`).join('') + '</div>'
+      + `<section class="sec"><h2>Links between systems<span class="n">${m.links.length}</span></h2><div class="tbl t-links">${linkHead}${linkGroups(m.links)}</div></section>`;
+  };
+
+  // ---- a project: its changes as a list or as a phase timeline
+  const flagText = c => c.flags.filter(f => f !== 'landed').map(f => FLAG_WORD[f]).concat(c.status === 'paused' ? ['Paused'] : []);
+  const rowMark = c => (c.tidy.length ? `<span class="mk tidy" title="Needs tidying: ${esc(tidyText(c))}.">${markSvg(c)}</span>` : markSvg(c));
+  const changeRow = c => `<a class="row crow${isSel('change:' + c.id) ? ' on' : ''}${c.status === 'live' ? '' : ' muted'}" href="${pick('change:' + c.id)}" data-k="c:${esc(c.id)}">${rowMark(c)}<span class="c-title">${esc(c.title)}</span>`
+    + `<span class="c-flags">${flagText(c).map(esc).join(' · ')}</span><span class="c-sys">${c.sys ? tag(c.sys, false) : ''}</span><span class="c-ord">${c.rank ? 'Step ' + c.rank : ''}</span><span class="c-date mono">${day(c.date)}</span></a>`;
+  const listView = p => PHASES.filter(k => p.changes.some(c => c.col === k)).map(k => { const cs = p.changes.filter(c => c.col === k); return `<div class="grp"><h3>${svg(k)}${PHASE_LONG[k]}<span class="n">${cs.length}</span></h3>${cs.map(changeRow).join('')}</div>`; }).join('');
+  const timeline = p => {
+    const cs = p.changes.slice().sort(by(c => -PHASES.indexOf(c.col), c => c.rank || 99, c => c.id));
+    const row = c => { const i = PHASES.indexOf(c.col);
+      return `<a class="row trow${isSel('change:' + c.id) ? ' on' : ''}${c.status === 'live' ? '' : ' muted'}" href="${pick('change:' + c.id)}" data-k="c:${esc(c.id)}"><span class="c-title">${esc(c.title)}</span>`
+        + `<span class="track" style="--i:${i}"><i class="rail"></i><i class="done"></i>${PHASES.map((k, j) => `<i class="st${j < i ? ' past' : ''}" style="--j:${j}"></i>`).join('')}<span class="at">${markSvg(c)}</span></span>`
+        + `<span class="c-ord">${c.rank ? 'Step ' + c.rank : ''}</span><span class="c-date mono">${day(c.date)}</span></a>`; };
+    return `<div class="tbl t-time"><div class="thead"><div class="c-title">Change</div><div class="track">${PHASES.map((k, j) => `<span style="--j:${j}">${PHASE_WORD[k]}</span>`).join('')}</div><div class="c-ord">Order</div><div class="c-date">Updated</div></div>${cs.map(row).join('')}</div>`;
+  };
+  const crumb = (...xs) => xs.map(([t, h]) => (h ? `<a href="${h}">${esc(t)}</a>` : `<span>${esc(t)}</span>`)).join('<i>/</i>');
+  const projectPage = p => {
+    const r = m.R[p.realm];
+    const head = `<header class="ph"><p class="eyebrow">Project in ${esc(r.title)}</p><h1>${esc(p.title)}</h1>${p.summary ? `<p class="lead">${esc(p.summary)}</p>` : ''}`
+      + `<dl class="strip">${fact('State', `<span class="s-${p.state}">${STATE_WORD[p.state]}</span>`)}${fact('Known as', KNOW_WORD[p.know])}${fact('Open changes', p.changes.length)}${fact('Waiting on the owner', p.waiting ? wait(p.waiting) + (p.waiting === 1 ? ' question' : ' questions') : p.state === 'waiting-on-owner' ? `<span class="wait dot" title="${NO_Q}"></span> A review, a merge or a decision` : 'Nothing')}${fact('Systems', p.systems.length ? `<span class="tags">${p.systems.map(i => tag(i)).join('')}</span>` : 'None named')}${fact('Crates', p.tags.some(t => t.mod) ? `<span class="tags">${p.tags.filter(t => t.mod).map(ptag).join('')}</span>` : '')}</dl></header>`;
+    const qs = p.questions.length ? `<section class="sec"><h2>Questions waiting on the owner<span class="n">${p.questions.length}</span></h2><div class="parts qs">${p.questions.map(qItem).join('')}</div></section>` : '';
+    if (!p.changes.length) return head + qs + '<p class="empty">This project is named only. It has no changes yet.</p>';
+    return head + qs + `<section class="sec"><div class="sec-top"><h2>Changes<span class="n">${p.changes.length}</span></h2>${seg([['List', href({ page: 'project', id: p.id }), route.view === 'list'], ['Timeline', href({ page: 'project', id: p.id, view: 'timeline' }), route.view === 'timeline']])}</div>${dist(p.changes)}`
+      + (route.view === 'timeline' ? timeline(p) : `<div class="tbl t-changes">${listView(p)}</div>`) + '</section>';
+  };
+
+  // ---- a system: the projects that change it, its modules, and its links by kind
+  const systemPage = s => {
+    const max = Math.max(1, ...s.modules.map(x => x.loc)), isCrate = s.modules.some(x => x.crate);
+    const head = `<header class="ph"><p class="eyebrow">System${s.realm ? ' in ' + esc(m.R[s.realm].title) : ' outside the repositories'}</p><h1>${esc(s.title)}</h1>`
+      + `<dl class="strip">${fact('Known as', `<span class="tag t-${s.kind}">${SYS_KIND_WORD[s.kind]}</span>`)}${fact('Language', s.lang)}${fact('Lines', s.loc ? num(s.loc) : '')}${fact('Modules', s.modules.length || '')}${fact('Projects', s.projects.length)}${fact('Open changes', s.changes.length)}${fact('Links', s.links.length)}</dl></header>`;
+    const ps = s.projects.map(id => m.P[id]);
+    const projects = `<section class="sec"><h2>Projects that change it<span class="n">${ps.length}</span></h2>` + (ps.length ? `${dist(s.changes.map(i => m.C[i]))}<div class="tbl t-projects no-sys" ${colVars}>${projectHead}${ps.map(p => projectRow(p, s.id)).join('')}</div>` : '<p class="empty">No project in play changes this system.</p>') + '</section>';
+    const modRow = x => `<a class="row mrow${isSel('module:' + s.id + '/' + x.id) ? ' on' : ''}" href="${pick('module:' + s.id + '/' + x.id)}" data-k="m:${esc(s.id + '/' + x.id)}"><span class="c-name mono">${esc(x.title)}</span>`
+      + `<span class="c-purpose">${x.purpose ? esc(x.purpose) : `${plural(x.parts.length, 'module')}, depends on ${plural(x.deps.length, 'crate')}`}</span><span class="c-loc"><span class="mono">${num(x.loc)}</span><i class="lb"><i style="width:${Math.max(1, Math.round(100 * x.loc / max))}%"></i></i></span>`
+      + `<span class="c-ch">${x.changes.slice(0, 9).map(i => markSvg(m.C[i])).join('')}${x.changes.length > 9 ? `<span class="more">+${x.changes.length - 9}</span>` : ''}</span></a>`;
+    const modules = `<section class="sec"><h2>Modules<span class="n">${s.modules.length}</span></h2>` + (s.modules.length ? `<div class="tbl t-modules${s.modules.some(x => x.changes.length) ? '' : ' no-ch'}" style="--w-ch:${Math.max(5, Math.min(11, ...[Math.max(...s.modules.map(x => x.changes.length))]))}"><div class="thead"><div class="c-name">${isCrate ? 'Crate' : 'Module'}</div><div class="c-purpose">${isCrate ? 'Contents' : 'Purpose'}</div><div class="c-loc">Lines</div><div class="c-ch">Changes</div></div>${s.modules.map(modRow).join('')}</div>`
+      : `<p class="empty">${s.kind === 'external' ? 'This system is outside the repositories. Its modules are not known.' : 'This system is named by the changes that touch it. Its modules have not been surveyed.'}</p>`) + '</section>';
+    const ls = s.links.map(i => m.L[i]);
+    const links = `<section class="sec"><h2>Links to other systems<span class="n">${ls.length}</span></h2>` + (ls.length ? `<div class="tbl t-links">${linkHead}${linkGroups(ls)}</div>` : '<p class="empty">No link to another system is recorded.</p>') + '</section>';
+    return head + projects + modules + links;
+  };
+
+  // ---- the detail panel: the facts of the selected item
+  const panel = () => {
+    if (!route.sel) return '';
+    const i = route.sel.indexOf(':'), kind = route.sel.slice(0, i), id = route.sel.slice(i + 1);
+    const wrap = (eyebrow, title, body, open) => `<div class="p-head"><p class="eyebrow">${eyebrow}</p><a class="x" href="${pick(null)}" aria-label="Close panel" title="Close (Esc)">Close</a></div><h2>${title}</h2>${body}${open ? `<a class="open" href="${open[1]}">${open[0]}<i class="arr">→</i></a>` : ''}`;
+    const phaseList = cs => PHASES.filter(k => cs.some(c => c.col === k)).map(k => `<span class="pl">${svg(k)}${cs.filter(c => c.col === k).length} ${PHASE_LONG[k].toLowerCase()}</span>`).join('') || 'None';
+    if (kind === 'change' && m.C[id]) { const c = m.C[id], p = m.P[c.project];
+      return wrap('Change', esc(c.title), `<dl class="facts">${fact('Phase', `<span class="pl">${markSvg(c)}${PHASE_LONG[c.col]}</span>`)}${fact('Status', STATUS_WORD[c.status])}${fact('Notes', flagText(c).concat(c.flags.includes('landed') ? [FLAG_WORD.landed] : []).map(esc).join('<br>'))}`
+        + `${fact('Project', `<a href="${toProject(p.id)}">${esc(p.title)}</a>`)}${fact('Realm', esc(m.R[c.realm].title))}${fact('System', c.sys ? tag(c.sys) : `<span class="dim">No mounted repository</span>`)}${fact('Modules', c.modules.map(x => `<a class="mono" href="${href({ page: 'system', id: c.sys, sel: 'module:' + c.sys + '/' + x })}">${esc(x)}</a>`).join('<br>'))}`
+        + `${fact('Updated', c.date ? day(c.date, true) : '<span class="dim">No date recorded</span>')}${fact('Landing order', c.rank ? 'Step ' + c.rank + ' of ' + Math.max(...p.changes.map(x => x.rank)) + ' in its project' : '')}${fact('Lands after', changeList(c.after))}${fact('Lands before', changeList(c.before))}${fact('Open tasks', c.tasks.map(esc).join('<br>'))}${fact('Id', mono(c.id))}</dl>`,
+        route.page === 'project' && route.id === p.id ? null : ['Open project', href({ page: 'project', id: p.id, sel: 'change:' + c.id })]); }
+    if (kind === 'realm' && m.R[id]) { const r = m.R[id], ps = r.projects.map(x => m.P[x]), cs = ps.flatMap(p => p.changes);
+      return wrap('Realm', esc(r.title), `<dl class="facts">${fact('Waiting on the owner', r.waiting ? wait(r.waiting) + (r.waiting === 1 ? ' question' : ' questions') : 'Nothing')}${fact('Projects', ps.length)}${fact('By state', Object.keys(STATE_RANK).filter(k => ps.some(p => p.state === k)).map(k => `${ps.filter(p => p.state === k).length} ${STATE_WORD[k].toLowerCase()}`).join('<br>'))}${fact('Open changes', `<span class="pls">${phaseList(cs)}</span>`)}`
+        + `${fact('Systems', `<span class="tags">${m.systems.filter(s => s.realm === r.id).map(s => tag(s.id)).join('')}</span>`)}</dl>`
+        + (r.waiting ? `<h3>Questions by project<span class="n">${r.waiting}</span></h3><div class="parts">${ps.filter(p => p.waiting).map(p => `<div class="part"><a href="${toProject(p.id)}">${esc(p.title)}</a><span class="mono r">${p.waiting}</span></div>`).join('')}${r.unassigned.length ? `<div class="part"><span class="dim">Not tied to a project</span><span class="mono r">${r.unassigned.length}</span></div>` : ''}</div>` : '')
+        + (r.unassigned.length ? `<h3>Not tied to a project<span class="n">${r.unassigned.length}</span></h3><div class="parts">${r.unassigned.map(qItem).join('')}</div>` : '')); }
+    if (kind === 'module') { const [sid, mid] = id.split('/'), s = m.S[sid], x = s && s.M[mid]; if (!x) return '';
+      return wrap(x.crate ? 'Crate' : 'Module', `<span class="mono">${esc(x.title)}</span>`, `<dl class="facts">${fact('System', tag(s.id))}${fact('Purpose', x.purpose ? esc(x.purpose) : '')}${fact('Lines', num(x.loc))}`
+        + `${fact('Open changes', changeList(x.changes))}${fact('Depends on', x.deps.map(d => `<a class="mono" href="${pick('module:' + s.id + '/' + d)}">${esc(d)}</a>`).join('<br>'))}`
+        + `${fact('Links', s.links.map(l => m.L[l]).filter(l => [l.a, l.b].some(e => e.sys === s.id && e.mod === x.id)).map(l => `<a href="${pick('link:' + l.id)}">${esc(l.name)}</a>`).join('<br>'))}</dl>`
+        + (x.parts.length ? `<h3>Modules<span class="n">${x.parts.length}</span></h3><div class="parts">${x.parts.map(q => `<div class="part"><span class="mono">${esc(q.id)}</span><span class="mono r">${num(q.loc)}</span>${q.items.length ? `<p>${q.items.map(esc).join(', ')}</p>` : ''}</div>`).join('')}</div>` : '')); }
+    if (kind === 'link' && m.L[id]) { const l = m.L[id];
+      return wrap(KIND_ONE[l.kind], esc(l.name), `<dl class="facts">${fact('From', endText(l.a))}${fact('To', endText(l.b))}${fact('Kind', `<span class="pl"><i class="lk lk-${l.kind}"></i>${KIND_ONE[l.kind]}</span>`)}${fact('Status', l.prod ? 'In production' : 'Not in production')}${fact('Carries', l.note ? esc(l.note[0].toUpperCase() + l.note.slice(1)) : '')}${fact('Traffic', `<span class="meter" title="Relative traffic, ${l.traffic} of 9">${Array.from({ length: 9 }, (_, j) => `<i${j < l.traffic ? ' class="on"' : ''}></i>`).join('')}</span>`)}</dl>`
+        + (l.controls.length ? `<h3>Controls<span class="n">${l.controls.length}</span></h3><div class="parts">${l.controls.map(c => `<div class="part"><span>${esc(c.caption)}</span><p>${esc(c.detail)}</p></div>`).join('')}</div>` : '')); }
+    return '';
+  };
+
+  const p = route.page === 'project' ? m.P[route.id] : null, s = route.page === 'system' ? m.S[route.id] : null;
+  const home = ['Work', href({ page: 'overview' })];
+  if (p) return { title: p.title, crumbs: crumb(home, [m.R[p.realm].title, href({ page: 'overview', sel: 'realm:' + p.realm })], [p.title]), main: projectPage(p), panel: panel() };
+  if (s) return { title: s.title, crumbs: crumb(home, ['Systems', href({ page: 'systems' })], [s.title]), main: systemPage(s), panel: panel() };
+  if (route.page === 'systems') return { title: 'Systems', crumbs: crumb(home, ['Systems']), main: systemsPage(), panel: panel() };
+  return { title: 'Work in play', crumbs: crumb(['Work']), main: overview(), panel: panel() };
+}
+
+// Every route the page can show, used by the determinism check and the screenshots.
+function allRoutes(m) {
+  const ids = m.realms.map(r => r.id).sort(cmp), fs = FILTERS.filter(f => f.id !== 'all').map(f => f.id);
+  const views = fs.map(f => '#/?f=' + f).concat(ids.map(r => '#/?shut=' + r), ids.map(r => '#/?quiet=' + r), ['#/?shut=' + ids.join(','), '#/?quiet=' + ids.join(',')],
+    fs.map(f => '#/?f=' + f + '&shut=' + ids[0]), ['#/?f=owner&shut=' + ids.join(','), '#/?shut=' + ids[0] + '&quiet=' + ids.join(','), '#/?f=tidy&sel=realm:' + ids[0]]);
+  return ['#/', '#/systems'].concat(views, m.realms.map(r => '#/?sel=realm:' + r.id), m.projects.flatMap(p => ['#/project/' + p.id, '#/project/' + p.id + '/timeline']), m.changes.map(c => '#/project/' + c.project + '?sel=change:' + c.id),
+    m.systems.map(s => '#/system/' + s.id), m.systems.flatMap(s => s.modules.map(x => '#/system/' + s.id + '?sel=module:' + s.id + '/' + x.id)), m.links.map(l => '#/systems?sel=link:' + l.id));
+}
+
+// ---- page: reads the embedded data, renders the route in the address, and re-renders when the route changes.
+if (typeof document !== 'undefined') (function () {
+  const read = id => JSON.parse(document.getElementById(id).textContent);
+  const reversed = /[?&]order=reversed/.test(location.search);
+  const data = reversed ? reverseDeep(read('data')) : read('data'), systems = reversed ? reverseDeep(read('systems')) : read('systems'), questions = reversed ? reverseDeep(read('questions')) : read('questions');
+  const model = buildModel(data, systems, questions);
+  const $ = id => document.getElementById(id), root = document.documentElement, dark = matchMedia('(prefers-color-scheme: dark)');
+  let theme = 'auto', path = null;
+  const paint = () => { root.dataset.theme = theme === 'auto' ? (dark.matches ? 'dark' : 'light') : theme; $('theme').textContent = 'Theme: ' + theme[0].toUpperCase() + theme.slice(1); };
+  $('theme').addEventListener('click', () => { theme = { auto: 'light', light: 'dark', dark: 'auto' }[theme]; paint(); });
+  dark.addEventListener('change', paint);
+  const show = () => {
+    const route = parseRoute(location.hash), out = render(model, route), here = route.page + '/' + route.id + '/' + route.view + '/' + route.f, y = window.scrollY;
+    $('crumbs').innerHTML = out.crumbs; $('main').innerHTML = out.main; $('panel').innerHTML = out.panel;
+    document.body.classList.toggle('has-panel', !!out.panel); document.title = out.title + ' · Work';
+    if (here !== path) { window.scrollTo(0, 0); path = here; } else window.scrollTo(0, y);
+    if (out.panel) $('panel').scrollTop = 0;
+  };
+  addEventListener('hashchange', show);
+  addEventListener('keydown', e => { if (e.key === 'Escape') { const x = document.querySelector('#panel .x'); if (x) location.hash = x.getAttribute('href'); } });
+  paint(); show();
+  // For the checks: the routes, and the position of every keyed element on the page.
+  window.workboard = { routes: () => allRoutes(model), html: () => $('crumbs').innerHTML + $('main').innerHTML + $('panel').innerHTML,
+    boxes: () => JSON.stringify(Array.from(document.querySelectorAll('[data-k], h1, h2, h3, .thead > *, .f, .tag, .wait')).map(e => { const b = e.getBoundingClientRect(); return [e.dataset.k || e.tagName, b.x, b.y, b.width, b.height]; })) };
+})();
+if (typeof module !== 'undefined') module.exports = { buildModel, reverseDeep, render, parseRoute, allRoutes };
+
+</script>
+</html>
