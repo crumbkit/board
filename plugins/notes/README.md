@@ -135,7 +135,7 @@ note. It may hide a note Reflect shows, and never shows one Reflect hides.
 
 ## Sync, pins and conflicts
 
-Board itself never merges contents. Every call to a mounted repo runs,
+Board merges the contents of text files line by line when a sync finds both sides changed one. Every call to a mounted repo runs,
 through Board:
 
 1. `board -C <clone> sync` (with `--no-push` for `daily`), which fetches the

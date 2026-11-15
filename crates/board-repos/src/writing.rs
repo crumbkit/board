@@ -136,11 +136,18 @@ impl Writer<'_> {
     /// The paths, logical in `repo`, of the conflict records that name a
     /// file of `wrote` (paths in the clone), once each, in path order, from
     /// every sync made through this writer's clones. Such a record says a
-    /// merge kept one side's content of a file the call wrote, which may
-    /// not be the call's.
+    /// merge kept one side's content of a file the call wrote, or of a
+    /// directory above it, which may not be the call's.
     pub fn conflicts_at(&self, repo: &Repo, wrote: &[&str]) -> Vec<String> {
         let mut found: Vec<String> = (self.clones.conflicts().iter())
-            .filter(|conflict| wrote.contains(&conflict.path.as_str()))
+            .filter(|conflict| {
+                wrote.iter().any(|file| {
+                    // A conflict on a parent directory of the file also
+                    // names it: a file and a directory met at that path.
+                    let under = file.strip_prefix(conflict.path.as_str());
+                    under.is_some_and(|rest| rest.is_empty() || rest.starts_with('/'))
+                })
+            })
             .map(|conflict| repo.logical(&conflict.record))
             .collect();
         found.sort();
@@ -270,9 +277,9 @@ pub fn landed(
 /// Pushes a write when `push`, then moves the mount's pin to the clone's
 /// HEAD: the commit holding the write, and [`synced`]'s code, or
 /// `<plugin>::repo::not_pushed` for a clone left unpushed. A put through a
-/// mount pins the commit it made, and the push may rebase that commit onto
-/// the remote's, so the pin moves after the push and the commit returned
-/// is the clone's HEAD. `commit` is none when the put left the write
+/// mount pins the commit it made, and the sync before the push may merge the
+/// remote's commits into a merge commit, so the pin moves after the push
+/// and the commit returned is the clone's HEAD, the merge commit then. `commit` is none when the put left the write
 /// uncommitted.
 pub fn landed_with(
     writer: Writer<'_>,

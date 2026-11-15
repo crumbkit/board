@@ -1,9 +1,12 @@
-# Refusals before a sync writes
+# Refusals before a sync changes the working tree
 
 Integrate checks these three things, in this order, after the fetch and
-before it takes the board lock or writes any file, object, index entry or
-HEAD. Each refusal leaves the working tree, index and HEAD as they were and
-puts the remote-tracking ref back to the commit it held before the fetch, when it held one.
+before it takes the board lock or writes any working-tree file, index entry
+or HEAD. The fetch has already written objects and `FETCH_HEAD` and moved
+the remote-tracking ref. Each refusal leaves the working tree, index and
+HEAD as they were and puts the remote-tracking ref back to the commit it
+held before the fetch, when it held one. The fetched objects stay in the
+object store.
 
 | Code | When | Way out |
 | --- | --- | --- |

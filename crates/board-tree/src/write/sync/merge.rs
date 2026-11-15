@@ -353,9 +353,9 @@ impl Merge<'_> {
         ) {
             (None, None, None) => (merge_lines(&ancestor, &ours, &theirs), false),
             (Some(base), Some(ours), Some(theirs)) => {
-                let (head, clash) = if ours.0 == theirs.0 || base.0 == theirs.0 {
+                let (head, clash) = if same_head(ours.0, theirs.0) || same_head(base.0, theirs.0) {
                     (ours.0, false)
-                } else if base.0 == ours.0 {
+                } else if same_head(base.0, ours.0) {
                     (theirs.0, false)
                 } else {
                     (theirs.0, true)
@@ -364,7 +364,16 @@ impl Merge<'_> {
                 // A closing fence with no newline ends a file with no body,
                 // and a body that follows it needs a line of its own.
                 let join: &[u8] = match &body {
-                    Some(body) if !body.is_empty() && !head.ends_with(b"\n") => b"\n",
+                    Some(body) if !body.is_empty() && !head.ends_with(b"\n") => {
+                        let opening = head
+                            .strip_prefix(b"\xEF\xBB\xBF".as_slice())
+                            .unwrap_or(head);
+                        if opening.starts_with(b"---\r\n") {
+                            b"\r\n"
+                        } else {
+                            b"\n"
+                        }
+                    }
                     _ => b"",
                 };
                 (body.map(|body| [head, join, &body].concat()), clash)
@@ -626,6 +635,16 @@ fn frontmatter(bytes: &[u8]) -> Option<(&[u8], &[u8])> {
         }
     }
     None
+}
+
+/// Whether two frontmatters are the same but for the newline after the
+/// closing fence, which a file with no body may lack.
+fn same_head(one: &[u8], other: &[u8]) -> bool {
+    let bare = |head: &[u8]| {
+        let head = head.strip_suffix(b"\n").unwrap_or(head);
+        head.strip_suffix(b"\r").unwrap_or(head).to_vec()
+    };
+    bare(one) == bare(other)
 }
 
 /// The line-level three-way merge of `ours` and `theirs` from `ancestor`,

@@ -128,6 +128,7 @@ impl Repository {
                 outcome.conflicts.push(Conflicted {
                     path: found.path.clone(),
                     kind: record.kind,
+                    kept: record.kept,
                     record: path,
                 });
             }

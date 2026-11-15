@@ -912,7 +912,9 @@ fn a_closing_fence_with_no_newline_keeps_a_newline_before_the_merged_body() {
         &[("t.md", "---\na: 2\n---")],
     );
     assert_eq!(files, [file("t.md", "---\na: 2\n---\nBody\n")]);
-    assert_eq!(merged.conflicts.len(), 1);
+    // The local frontmatter differs from the base only by the newline after
+    // its closing fence, so only the remote changed it.
+    assert_eq!(merged.conflicts.len(), 0);
 }
 
 #[test]
@@ -938,4 +940,28 @@ fn a_frontmatter_closed_by_three_dots_is_split_from_its_body() {
         [file("t.md", "---\n$type: x\nparent: b\n...\nBody\nMore\n")]
     );
     assert_eq!(merged.conflicts.len(), 1);
+}
+
+#[test]
+fn a_frontmatter_differing_only_by_the_newline_after_its_closing_fence_counts_as_unchanged() {
+    let fixture = Fixture::new();
+    let (merged, files) = fixture.merge(
+        &[("t.md", "---\na: 1\n---")],
+        &[("t.md", "---\na: 1\n---\nBody\n")],
+        &[("t.md", "---\na: 2\n---")],
+    );
+    assert_eq!(files, [file("t.md", "---\na: 2\n---\nBody\n")]);
+    assert_eq!(merged.conflicts, Vec::new());
+}
+
+#[test]
+fn the_newline_added_before_a_body_follows_the_line_ending_of_the_opening_fence() {
+    let fixture = Fixture::new();
+    let (merged, files) = fixture.merge(
+        &[("t.md", "---\r\na: 1\r\n---")],
+        &[("t.md", "---\r\na: 1\r\n---\r\nBody\r\n")],
+        &[("t.md", "---\r\na: 2\r\n---")],
+    );
+    assert_eq!(files, [file("t.md", "---\r\na: 2\r\n---\r\nBody\r\n")]);
+    assert_eq!(merged.conflicts, Vec::new());
 }

@@ -565,9 +565,10 @@ pub(crate) fn sync(printer: Printer, report: &Synced) -> Output {
     for conflict in &report.conflicts {
         let _ = writeln!(
             text,
-            "conflict in {} ({}): the remote's version is kept, both are in history, see {}",
+            "conflict in {} ({}): the {} version is kept, both are in history, see {}",
             conflict.path,
             conflict.kind.as_str(),
+            conflict.kept.as_str(),
             conflict.record
         );
     }
@@ -612,6 +613,7 @@ pub(crate) fn sync(printer: Printer, report: &Synced) -> Output {
             json!({
                 "path": conflict.path,
                 "kind": conflict.kind.as_str(),
+                "kept": conflict.kept.as_str(),
                 "record": conflict.record,
             })
         })

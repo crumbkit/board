@@ -352,6 +352,7 @@ fn the_conflict_records_that_name_a_written_file_are_listed_once_with_their_logi
     let conflicted = |path: &str, record: &str| board_ops::Conflicted {
         path: path.to_owned(),
         kind: board_model::ConflictKind::BothChanged,
+        kept: board_model::Side::Remote,
         record: record.to_owned(),
     };
     clones.found.borrow_mut().extend([
@@ -374,6 +375,29 @@ fn the_conflict_records_that_name_a_written_file_are_listed_once_with_their_logi
     );
 }
 
+/// A file and a directory that met at a path conflict there, and a write
+/// below that path is named by the record, but one beside it is not.
+#[test]
+fn a_conflict_on_a_parent_directory_of_a_written_file_names_it() {
+    let host = local(&[]);
+    let clones = Recorded::default();
+    clones.found.borrow_mut().push(board_ops::Conflicted {
+        path: "daily".to_owned(),
+        kind: board_model::ConflictKind::FileDirectory,
+        kept: board_model::Side::Remote,
+        record: "conflicts/dir.json".to_owned(),
+    });
+    let writer = writer(&host, &clones);
+    assert_eq!(
+        writer.conflicts_at(&mounted(), &["daily/2026/d.md"]),
+        ["/repos/work/conflicts/dir.json"]
+    );
+    assert_eq!(
+        writer.conflicts_at(&mounted(), &["daily.md", "dailyx/d.md"]),
+        Vec::<String>::new()
+    );
+}
+
 #[test]
 fn a_landed_write_lists_only_the_conflicts_of_the_syncs_after_the_write() {
     let host = local(&[]);
@@ -381,6 +405,7 @@ fn a_landed_write_lists_only_the_conflicts_of_the_syncs_after_the_write() {
     let conflicted = |record: &str| board_ops::Conflicted {
         path: "daily/d.md".to_owned(),
         kind: board_model::ConflictKind::BothChanged,
+        kept: board_model::Side::Remote,
         record: record.to_owned(),
     };
     // The sync before the write found one conflict at the note.

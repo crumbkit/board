@@ -1,4 +1,4 @@
-//! The refusals of a sync that come before it writes anything: a git
+//! The refusals of a sync that come before it changes the working tree, index or HEAD: a git
 //! operation in progress (the put's list of them), a shallow or partial
 //! clone, and a remote branch that no longer contains the commit the clone
 //! fetched last time (docs/architecture/writes.md, Sync).
@@ -22,7 +22,7 @@ pub(super) struct Before {
 }
 
 impl Repository {
-    /// Refuses before the board lock is taken and before any file, object,
+    /// Refuses before the board lock is taken and before any working-tree file,
     /// index entry or HEAD is written. Every refusal puts the
     /// remote-tracking ref back where it was before the fetch, so the next
     /// run compares the remote with the same commit. A ref that cannot be put
