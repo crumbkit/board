@@ -1,9 +1,9 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, PluginOptions, Register, RenderElement } from 'claude-code'
 
-import type { Open, Question, Waiting } from '../types'
+import type { Open, Question, Unread, Waiting } from '../types'
 import { SLOT, joinBand } from './band'
-import { answerBatch, answerText, blocking, failure, parseOpen, parseRows, parseWaiting, project, questionSql, questionsLabel, refusal, report, REPORT_LIMIT, REPORT_SQL, waitingLabel } from './plans'
+import { answerBatch, answerText, blocking, countBadge, failure, parseOpen, parseRows, parseWaiting, plain, project, questionSql, refusal, report, REPORT_LIMIT, REPORT_SQL } from './plans'
 
 // The mod reads the owner's open questions from Board, draws their count in
 // the band above the prompt and lists them in a pane, where the owner answers
@@ -14,6 +14,9 @@ import { answerBatch, answerText, blocking, failure, parseOpen, parseRows, parse
 const open = atom({ plugin: 'board-plans', key: 'open' } as const, null as Open | null)
 const morning = atom({ plugin: 'board-plans', key: 'report' } as const, null as string | null)
 const waiting = atom({ plugin: 'board-plans', key: 'waiting' } as const, null as Waiting | null)
+
+// Why the last read of each count failed, so a failure shows in the band.
+const failed = atom({ plugin: 'board-plans', key: 'failed' } as const, { open: null, waiting: null } as Unread)
 
 const QUESTIONS = 'questions'
 // Board lives in ~/.local/bin, which a session's PATH may lack.
@@ -51,22 +54,27 @@ async function refreshWaiting($: EngineInterface, options: PluginOptions, local:
     if (read.kind === 'absent') local.absent = true
     if (read.kind === 'failed') $.ui.log(`board: plans.waiting failed: ${read.why}`, { to: 'debug' })
     if (read.kind === 'read') await update($, waiting, () => read.waiting)
+    if (read.kind !== 'absent') await update($, failed, last => ({ ...last, waiting: read.kind === 'failed' ? read.why : null }))
   } catch (error) {
     $.ui.log(`board: plans.waiting did not run: ${String(error)}`, { to: 'debug' })
+    await update($, failed, last => ({ ...last, waiting: `plans.waiting did not run: ${String(error)}` }))
   }
 }
 
-/** Reads the open questions again. A failure is logged and keeps the last count read. */
+/** Reads the open questions again. A failure is logged, kept for the band and keeps the last count read. */
 async function refreshOpen($: EngineInterface, options: PluginOptions) {
   let found: Open | null = null
+  let why: string | null = null
   try {
     const ran = await board($, options, ['call', 'plans.open', '--limit', String(LISTED)])
     found = ran.exitCode === 0 ? parseOpen(ran.stdout) : null
-    if (found === null) $.ui.log(`board: plans.open failed: ${failure(ran.exitCode, ran.stdout, ran.stderr)}`, { to: 'debug' })
+    if (found === null) why = failure(ran.exitCode, ran.stdout, ran.stderr)
   } catch (error) {
-    $.ui.log(`board: plans.open did not run: ${String(error)}`, { to: 'debug' })
+    why = `plans.open did not run: ${String(error)}`
   }
+  if (why !== null) $.ui.log(`board: plans.open failed: ${why}`, { to: 'debug' })
   if (found !== null) await update($, open, () => found)
+  await update($, failed, last => ({ ...last, open: why }))
 }
 
 /** Reads the open questions and what waits on the owner, side by side. */
@@ -148,15 +156,13 @@ export const register: Register = (on, options) => {
     }
     if (e.props.hasSurvey) return below
     // plans.waiting counts questions, gates and effects; until it exists the button counts open questions.
-    const counted = await read($, waiting)
-    const found = await read($, open)
-    const label = counted !== null ? waitingLabel(counted) : found === null ? null : questionsLabel(found.total)
-    if (label === null) return below
+    const badge = countBadge(await read($, waiting), await read($, open), await read($, failed))
+    if (badge === null) return below
     const { Box, Button, Text } = $.ui.resolve(e)
     const part = (
       <Box key={SLOT.waiting}>
-        <Button key="waiting" label={label} onPress={() => void $.ui.open({ id: QUESTIONS, title: 'Open questions' })}>
-          <Text color="warning">{label}</Text>
+        <Button key="waiting" label={badge.label} onPress={() => void $.ui.open({ id: QUESTIONS, title: 'Open questions' })}>
+          <Text color={badge.problem ? 'red' : 'warning'}>{badge.label}</Text>
         </Button>
       </Box>
     )
@@ -165,15 +171,21 @@ export const register: Register = (on, options) => {
 
   on('ui.render', { component: 'Pane', requestId: QUESTIONS }, async ($, e) => {
     const found = await read($, open)
+    const unread = (await read($, failed)).open
     const now = await $.clock.now()
     const ui = $.ui.resolve(e)
     const { Box, Button, Text } = ui
     // Mobile draws no Input, so a question there is answered by its options alone.
     const Input = 'Input' in ui ? ui.Input : undefined
-    if (found === null || found.questions.length === 0) return <Text dimColor>No open questions.</Text>
+    const problem =
+      unread === null ? null : (
+        <Text color="red">{plain(`The open questions could not be read: ${unread}.${found === null ? '' : ' This list is from the last read that worked.'}`)}</Text>
+      )
+    if (found === null || found.questions.length === 0) return problem ?? <Text dimColor>No open questions.</Text>
     const more = found.total - found.questions.length
     return (
       <Box flexDirection="column">
+        {problem}
         {found.questions.map(q => (
           <Box key={q.path} flexDirection="column" marginBottom={1}>
             <Text dimColor>

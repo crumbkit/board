@@ -23,8 +23,8 @@ prompt is described in [claude-code/band.md](claude-code/band.md). From the
 first time the band is drawn, the mod runs the call again
 every minute, so a `-p` run, which draws no band, reads Board once. The
 refresh does not depend on `isInteractive`, because desktop sessions run
-through the Agent SDK and report it as false. A failed refresh is logged and
-keeps the last count read. The band is drawn on the terminal and the desktop app only.
+through the Agent SDK and report it as false. A failed refresh is logged, keeps
+the last count read and marks the band's button; the pane says why. The band is drawn on the terminal and the desktop app only.
 
 The button opens the `questions` pane. It lists each question with its project, its
 age and what it blocks, shown as the last path segment of `blocks` or as

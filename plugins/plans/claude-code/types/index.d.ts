@@ -18,6 +18,9 @@ export type Question = {
 /** What `plans.open` answered: the questions it listed and how many are open in all. */
 export type Open = { questions: Question[]; total: number }
 
+/** Why the last read of each count failed, as Board's code and message; null when it worked or has not run. */
+export type Unread = { open: string | null; waiting: string | null }
+
 /** What `plans.waiting` counts: everything that waits on the owner, and how much of it blocks work. */
 export type Waiting = { total: number; blocking: number }
 
@@ -28,6 +31,8 @@ declare module 'claude-code' {
       open: Open | null
       /** What waits on the owner; null until plans.waiting answers, and while it does not exist. */
       waiting: Waiting | null
+      /** Why the last read of the counts failed, so the band can say the count is stale or missing. */
+      failed: Unread
       /** The last morning report, as Markdown; null before /yesterday ran. */
       report: string | null
     }

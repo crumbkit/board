@@ -560,3 +560,62 @@ fn board_calls_plans_open_in_its_own_process_and_leaves_out_answered_and_withdra
     assert!(!phases.contains(&"plugin.reply"), "{phases:?}");
     assert_eq!(Plans.schemas().len(), 3);
 }
+
+/// A board about the size of the owner's personal board: 900 questions in
+/// 20 projects, 780 of them answered, so that 120 stay open. Half of the
+/// answers sit beside their question and half in another project.
+fn busy_board() -> (Scenario, Board) {
+    let mut files = Vec::new();
+    for number in 0..900 {
+        let project = number % 20;
+        let asked = format!("2026-10-{:02}T09:00:00Z", 1 + number % 28);
+        files.push((
+            format!("projects/p{project}/questions/q{number}"),
+            body(&asked, &json!({})),
+        ));
+        if number < 780 {
+            let home = if number % 2 == 0 {
+                project
+            } else {
+                (project + 1) % 20
+            };
+            files.push((
+                format!("projects/p{home}/answers/q{number}"),
+                Value::String(
+                    json!({
+                        "$type": "plans/answer/v1",
+                        "question": format!("/projects/p{project}/questions/q{number}"),
+                        "words": "Done.",
+                        "answered": "2026-10-30T09:00:00Z",
+                    })
+                    .to_string(),
+                ),
+            ));
+        }
+    }
+    let files: Vec<(&str, Value)> = files.iter().map(|(p, b)| (p.as_str(), b.clone())).collect();
+    plans_board(&files)
+}
+
+/// The question list of a board the size of the personal board comes back
+/// well inside the 1 second a query may run. The query once compared every
+/// question with every answer, parsing each answer's body again each time,
+/// and ran past the limit on the real personal board.
+#[test]
+fn plans_open_on_a_board_with_hundreds_of_questions_and_answers_stays_well_inside_the_query_limit()
+{
+    let (_scenario, board) = busy_board();
+    let started = std::time::Instant::now();
+    let report = board.query(&questions(), usize::MAX, None, None).unwrap();
+    let took = started.elapsed();
+    assert_eq!(report.rows.len(), 120);
+    assert!(
+        took < std::time::Duration::from_millis(250),
+        "the question query took {took:?}, a quarter of the 1s limit is the budget"
+    );
+    let target: Target = "plans.open".parse().unwrap();
+    let report = board
+        .call(&target, br#"{"limit": 100}"#, &Plugins::default())
+        .unwrap();
+    assert_eq!(report.output["total"], json!(120));
+}
