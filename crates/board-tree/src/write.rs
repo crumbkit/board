@@ -651,7 +651,9 @@ pub enum WriteError {
     Beneath { path: LogicalPath, beneath: Beneath },
     #[error("{path} cannot be written: {symlink} is a symlink")]
     Symlink { path: LogicalPath, symlink: String },
-    #[error("{lock:?} is held; if no board process is running, remove it")]
+    #[error(
+        "{lock:?} is held; the next put or sync removes a lock a killed Board process left; for any other lock file, check that no git or Board process runs, then remove it"
+    )]
     Locked { lock: PathBuf },
     /// A write in a run that reads the mount at `pointer` at its checkout's
     /// HEAD.

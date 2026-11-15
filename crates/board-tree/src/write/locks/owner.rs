@@ -9,13 +9,49 @@ use std::fs;
 use std::io;
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
+use std::time::UNIX_EPOCH;
 
-/// One line of the record: the device and inode of the lock file at `path`
-/// when Board took it.
-#[derive(Debug, PartialEq, Eq)]
-struct Entry {
+/// A file's birth time, seconds and nanoseconds since the epoch.
+type Birth = (u64, u32);
+
+/// What tells one lock file from another that was created at its path
+/// later: the device and inode, and the birth time, which a file system
+/// that reuses an inode number gives the new file anew. `birth` is `None`
+/// where the platform or file system gives none, and a file with no birth
+/// time is never taken for the one an entry names.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Identity {
     device: u64,
     inode: u64,
+    birth: Option<Birth>,
+}
+
+impl Identity {
+    fn of(metadata: &fs::Metadata) -> Self {
+        let birth = metadata
+            .created()
+            .ok()
+            .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
+            .map(|since| (since.as_secs(), since.subsec_nanos()));
+        Self {
+            device: metadata.dev(),
+            inode: metadata.ino(),
+            birth,
+        }
+    }
+
+    /// Whether the file with identity `found` is the file this identity
+    /// was taken from.
+    fn names(&self, found: &Self) -> bool {
+        self.birth.is_some() && self == found
+    }
+}
+
+/// One line of the record: the identity of the lock file at `path` when
+/// Board took it.
+#[derive(Debug, PartialEq, Eq)]
+struct Entry {
+    identity: Identity,
     path: PathBuf,
 }
 
@@ -52,8 +88,7 @@ impl Owned {
             }
             entries.retain(|entry| entry.path != *lock);
             entries.push(Entry {
-                device: metadata.dev(),
-                inode: metadata.ino(),
+                identity: Identity::of(&metadata),
                 path: lock.to_path_buf(),
             });
             held.push(lock.to_path_buf());
@@ -88,29 +123,39 @@ impl Drop for Owned {
     }
 }
 
-/// Removes each lock file `record` names whose device and inode are the ones
-/// its entry holds, which only a killed Board process leaves, and then the
-/// record. A file with the entry's path and another inode, or no file, was
-/// not left by a killed process, so it stays. The caller must hold
-/// `board.flock`, so no other Board process changes the record or holds a
-/// lock meanwhile.
-pub(in crate::write) fn clear(record: &Path) -> io::Result<()> {
+/// Removes each lock file `record` names whose device, inode and birth time
+/// are the ones its entry holds, which only a killed Board process leaves,
+/// and then the record. A file with the entry's path and another identity,
+/// or no birth time, or no file, was not left by a killed process, so it
+/// stays. The caller must hold `board.flock`, so no other Board process
+/// changes the record or holds a lock meanwhile. A lock file that cannot be
+/// removed is returned with the error.
+pub(in crate::write) fn clear(record: &Path) -> Result<(), (PathBuf, io::Error)> {
+    clear_with(record, Identity::of)
+}
+
+/// [`clear`], with `identify` giving the identity of each file found.
+fn clear_with(
+    record: &Path,
+    identify: impl Fn(&fs::Metadata) -> Identity,
+) -> Result<(), (PathBuf, io::Error)> {
     for entry in read(record) {
         if let Ok(metadata) = fs::symlink_metadata(&entry.path)
-            && (metadata.dev(), metadata.ino()) == (entry.device, entry.inode)
+            && entry.identity.names(&identify(&metadata))
         {
             match fs::remove_file(&entry.path) {
                 Ok(()) => {}
                 Err(error) if error.kind() == io::ErrorKind::NotFound => {}
-                Err(error) => return Err(error),
+                Err(error) => return Err((entry.path, error)),
             }
         }
     }
-    write(record, &[])
+    write(record, &[]).map_err(|error| (record.to_path_buf(), error))
 }
 
 /// The entries of `record`; none when it is missing or unreadable, and a
-/// line that does not parse is left out.
+/// line that does not parse is left out. A line of the earlier format,
+/// which holds no birth time, reads with none.
 fn read(record: &Path) -> Vec<Entry> {
     let Ok(text) = fs::read_to_string(record) else {
         return Vec::new();
@@ -118,14 +163,29 @@ fn read(record: &Path) -> Vec<Entry> {
     text.lines()
         .filter_map(|line| {
             let (device, rest) = line.split_once(' ')?;
-            let (inode, path) = rest.split_once(' ')?;
+            let (inode, rest) = rest.split_once(' ')?;
+            let (birth, path) = if rest.starts_with('/') {
+                (None, rest)
+            } else {
+                let (birth, path) = rest.split_once(' ')?;
+                (parse_birth(birth), path)
+            };
             Some(Entry {
-                device: device.parse().ok()?,
-                inode: inode.parse().ok()?,
+                identity: Identity {
+                    device: device.parse().ok()?,
+                    inode: inode.parse().ok()?,
+                    birth,
+                },
                 path: PathBuf::from(path),
             })
         })
         .collect()
+}
+
+/// `seconds.nanoseconds`, or none for `-` and for text that is not one.
+fn parse_birth(text: &str) -> Option<Birth> {
+    let (seconds, nanoseconds) = text.split_once('.')?;
+    Some((seconds.parse().ok()?, nanoseconds.parse().ok()?))
 }
 
 /// Replaces `record` with `entries` by temporary file and rename, or
@@ -143,7 +203,13 @@ fn write(record: &Path, entries: &[Entry]) -> io::Result<()> {
         .iter()
         .filter_map(|entry| {
             let path = entry.path.to_str()?;
-            Some(format!("{} {} {path}\n", entry.device, entry.inode))
+            let Identity {
+                device,
+                inode,
+                birth,
+            } = entry.identity;
+            let birth = birth.map_or_else(|| "-".to_owned(), |(s, n)| format!("{s}.{n:09}"));
+            Some(format!("{device} {inode} {birth} {path}\n"))
         })
         .collect();
     let temporary = record.with_extension("tmp");

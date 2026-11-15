@@ -18,6 +18,7 @@ use crate::git::{GitError, Repository, model_id};
 use crate::transport::{self, Deadline, Pushed, Upstream};
 
 mod checkout;
+use checkout::{Recorded, Started};
 mod integrate;
 mod merge;
 mod refuse;
@@ -328,10 +329,10 @@ impl Repository {
 
     /// The paths to write between `old` and `new`, each with the blob to
     /// write there, or `None` to remove the file. A path is listed when
-    /// `old` and `new` differ there, and also when a commit in `recorded`,
-    /// which an earlier checkout wrote files from, differs from both there.
-    /// A file whose working-tree bytes are none of its old blob, its new
-    /// one or the blob of a recorded commit is edited, and stops
+    /// `old` and `new` differ there, and also when the target of a checkout
+    /// in `recorded` differs from both at a path that checkout wrote. A file
+    /// whose working-tree bytes are none of its old blob, its new one or the
+    /// blob a recorded checkout wrote there is edited, and stops
     /// the sync, as does a file that is, or lies beneath a directory that
     /// is, a symlink on disk, which a write would follow; a path that is not
     /// a plain file in `new` is removed.
@@ -339,17 +340,21 @@ impl Repository {
         &self,
         old: &Files,
         new: &Files,
-        recorded: &[Files],
+        recorded: &[Written],
     ) -> Result<Vec<Change>, SyncError> {
         let mut changes = Vec::new();
         let paths: std::collections::BTreeSet<_> = old
             .keys()
             .chain(new.keys())
-            .chain(recorded.iter().flat_map(Files::keys))
+            .chain(recorded.iter().flat_map(Written::paths))
             .collect();
         for path in paths {
             let (was, now) = (old.get(path), new.get(path));
-            let written: Vec<_> = recorded.iter().map(|files| files.get(path)).collect();
+            let written: Vec<_> = recorded
+                .iter()
+                .filter(|checkout| checkout.wrote(path))
+                .map(|checkout| checkout.target.get(path))
+                .collect();
             if was == now && written.iter().all(|entry| *entry == was) {
                 continue;
             }
@@ -397,7 +402,7 @@ impl Repository {
         old: Option<ObjectId>,
         new: ObjectId,
         changes: Vec<Change>,
-        mut recorded: Vec<ObjectId>,
+        mut recorded: Vec<Recorded>,
     ) -> Result<Vec<Fields>, SyncError> {
         let (index_lock, index, owner) = self.lock_index(lock)?;
         let mut staged = Staged {
@@ -408,8 +413,11 @@ impl Repository {
             owner,
         };
         let mut kept = Vec::new();
-        recorded.retain(|commit| *commit != new);
-        recorded.push(new);
+        recorded.retain(|checkout| checkout.target != new);
+        recorded.push(Recorded {
+            started: old.map_or(Started::Unborn, Started::At),
+            target: new,
+        });
         self.record_checkout(lock, &recorded)?;
         stop::at(Stop::Record);
         for (position, change) in changes.into_iter().enumerate() {
@@ -444,6 +452,32 @@ impl Repository {
             source: source.into(),
         }
         .into()
+    }
+}
+
+/// The files of a recorded checkout: those of the commit it was moving to,
+/// and those of the commit it started from when the record holds it.
+struct Written {
+    start: Option<Files>,
+    target: Files,
+}
+
+impl Written {
+    /// Every path of either commit.
+    fn paths(&self) -> impl Iterator<Item = &BString> {
+        self.start
+            .iter()
+            .flat_map(Files::keys)
+            .chain(self.target.keys())
+    }
+
+    /// Whether the checkout wrote `path`, which is where its start and
+    /// target commits differ. A start the record does not hold means no
+    /// path was written.
+    fn wrote(&self, path: &BString) -> bool {
+        self.start
+            .as_ref()
+            .is_some_and(|start| start.get(path) != self.target.get(path))
     }
 }
 

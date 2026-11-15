@@ -79,9 +79,8 @@ them as canonical bytes, and a write through a mount admits a path whose
 working file equals the blob it writes, so running the share again finishes
 it too. If a shared file was changed in between, Board refuses with
 `board::mount::stale` naming it. A SIGKILL can leave `board.lock` and git's
-`index.lock` in the git directories of both repositories;
-`board::put::locked` names a `board.lock` and says to remove it when no put
-runs, and git names an `index.lock`. A kill after Board rewrote the pin and before it committed the mount
+`index.lock` in the git directories of both repositories; the next put or sync
+in each clears the lock files Board left, so run the call again. A kill after Board rewrote the pin and before it committed the mount
 record leaves the record modified, and a second share finds nothing to copy.
 The plugin cannot finish that case: it reads git state only through Board,
 which does not report an uncommitted pin, and `board mount update` writes
