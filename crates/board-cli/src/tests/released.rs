@@ -640,6 +640,17 @@ const DYNAMIC: &[(&str, &[&str])] = &[
         ],
     ),
     (
+        "keeper::map::{what}",
+        &[
+            "keeper::map::duplicate",
+            "keeper::map::duplicate_id",
+            "keeper::map::unknown_path",
+            "keeper::map::unknown_project",
+            "keeper::map::unknown_realm",
+            "keeper::map::unplaced",
+        ],
+    ),
+    (
         "plans::{call}::{reason}",
         &[
             "plans::answer::already_answered",
