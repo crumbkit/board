@@ -8,7 +8,8 @@ use serde_json::{Value, json};
 
 use crate::gather::open_changes;
 use crate::host::{get_text, put, rows, text};
-use crate::model::{self, ChangeFact, Facts, Pass};
+use crate::model::{self, ChangeFact, Facts, Pass, Workspace};
+use crate::survey::survey;
 use crate::{LATEST, PLUGIN, refusal};
 use board_ops::literal;
 
@@ -77,12 +78,41 @@ fn plans(
     Ok(texts)
 }
 
-/// What the board holds now.
-fn facts(host: &dyn Host) -> Result<Facts, PluginError> {
+/// The crates of each system the map marks, and for each system that has
+/// none, why.
+fn workspaces(host: &dyn Host, pass: &Pass) -> Result<(Vec<Workspace>, Vec<Value>), PluginError> {
+    let mut found = Vec::new();
+    let mut surveys = Vec::new();
+    for system in pass.systems.iter().flatten() {
+        let Some(mount) = &system.crates_from else {
+            continue;
+        };
+        match survey(host, mount)? {
+            Ok(crates) => {
+                surveys.push(json!({"system": system.id, "crates": crates.len()}));
+                found.push(Workspace {
+                    system: system.id.clone(),
+                    crates,
+                });
+            }
+            Err(problem) => {
+                surveys.push(json!({"system": system.id, "crates": 0, "problem": problem}));
+            }
+        }
+    }
+    Ok((found, surveys))
+}
+
+/// What the board holds now, and what each survey found.
+fn facts(host: &dyn Host, pass: &Pass) -> Result<(Facts, Vec<Value>), PluginError> {
     let open = open_changes(host)?;
-    let crates = Vec::new();
+    let (workspaces, surveys) = workspaces(host, pass)?;
     let wanted: Vec<(&str, &str)> = (open.iter())
-        .filter(|_| !crates.is_empty())
+        .filter(|_| {
+            workspaces
+                .iter()
+                .any(|workspace| !workspace.crates.is_empty())
+        })
         .filter_map(|change| Some((change.path.as_str(), change.plan.as_deref()?)))
         .collect();
     let plans = plans(host, &wanted)?;
@@ -99,11 +129,15 @@ fn facts(host: &dyn Host) -> Result<Facts, PluginError> {
                 .map(|(_, words)| words.clone()),
         })
         .collect();
-    Ok(Facts {
-        changes,
-        questions: crate::map::waiting(host)?,
-        crates,
-    })
+    let questions = crate::map::waiting(host)?;
+    Ok((
+        Facts {
+            changes,
+            questions,
+            workspaces,
+        },
+        surveys,
+    ))
 }
 
 /// A block as the text of a script element: JSON with `</` escaped.
@@ -119,7 +153,8 @@ pub(crate) fn render(host: &dyn Host, input: &Value) -> Result<Value, PluginErro
     let Input { path } = PluginError::read_input(PLUGIN, "render", input)?;
     let path = path.unwrap_or_else(|| DEFAULT_PATH.to_owned());
     let pass = latest(host)?;
-    let page = model::build(&pass, &facts(host)?)?;
+    let (facts, surveys) = facts(host, &pass)?;
+    let page = model::build(&pass, &facts)?;
     let html = format!(
         "<!doctype html>\n{}{}{}",
         block("data", &page.data),
@@ -127,5 +162,7 @@ pub(crate) fn render(host: &dyn Host, input: &Value) -> Result<Value, PluginErro
         block("questions", &page.questions),
     );
     put(host, &[json!({"path": path, "text": html})])?;
-    Ok(json!({"path": path, "missing": page.data["missing"], "open": page.data["open"]}))
+    Ok(
+        json!({"path": path, "missing": page.data["missing"], "open": page.data["open"], "surveys": surveys}),
+    )
 }

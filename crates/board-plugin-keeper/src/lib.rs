@@ -8,6 +8,7 @@ mod placement;
 pub mod records;
 mod render;
 mod stale;
+mod survey;
 
 use board_model::{CapabilityName, RecordType};
 use board_ops::{Host, Plugin, PluginError};

@@ -87,11 +87,11 @@ fn facts() -> Value {
             {"path": "/repos/team/projects/misc/questions/four", "asked": "2026-02-03",
              "text": "Other?", "blocked_work": "profile-task"},
         ],
-        "crates": [
+        "workspaces": [{"system": "api", "crates": [
             {"id": "api-core", "lines": 700, "deps": ["api-util", "api-base"],
              "modules": [{"id": "z", "lines": 1}, {"id": "a", "lines": 2}]},
             {"id": "api-util", "lines": 300, "deps": [], "modules": []},
-        ],
+        ]}],
     })
 }
 
@@ -221,7 +221,12 @@ fn systems_become_cities_links_and_external_names_sorted_by_id() {
         (json!("api.server"), json!("road"))
     );
     assert_eq!(link["symbols"][0]["at"], "to");
-    let crates = &page.data["crates"];
+    let workspace = &page.data["workspaces"][0];
+    assert_eq!(
+        (workspace["id"].clone(), workspace["lang"].clone()),
+        (json!("api"), json!("Rust"))
+    );
+    let crates = &workspace["crates"];
     assert_eq!(crates[0]["deps"], json!(["api-base", "api-util"]));
     assert_eq!(crates[0]["modules"][0]["id"], "a");
 }

@@ -91,3 +91,29 @@ pub(crate) fn blob_at(host: &dyn Host, path: &str) -> Result<String, PluginError
         .unwrap_or("none")
         .to_owned())
 }
+
+/// The stored text of each file of `paths` that Board reads, as the path
+/// and its text; a path that reads nothing is left out. One snapshot reads
+/// them all.
+pub(crate) fn get_texts(
+    host: &dyn Host,
+    paths: &[String],
+) -> Result<Vec<(String, String)>, PluginError> {
+    let asked: Vec<(&String, LogicalPath)> = (paths.iter())
+        .filter_map(|path| Some((path, path.parse::<LogicalPath>().ok()?)))
+        .collect();
+    let logical: Vec<LogicalPath> = asked.iter().map(|(_, path)| path.clone()).collect();
+    let answers =
+        (host.get_each(&logical)).map_err(|error| refused("get", &error.refusal("get")))?;
+    Ok(asked
+        .into_iter()
+        .zip(answers)
+        .filter_map(|((path, _), answer)| match answer {
+            Ok(report) if matches!(report.location.object, Object::Blob(_)) => Some((
+                path.clone(),
+                String::from_utf8_lossy(&report.bytes).into_owned(),
+            )),
+            _ => None,
+        })
+        .collect())
+}

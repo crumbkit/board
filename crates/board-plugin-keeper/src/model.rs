@@ -59,12 +59,20 @@ pub(crate) struct ModuleFact {
     pub(crate) lines: u64,
 }
 
+/// The crates of one system's Cargo workspace.
+#[derive(Debug, Deserialize)]
+pub(crate) struct Workspace {
+    /// The system's id, which is its mount's name.
+    pub(crate) system: String,
+    pub(crate) crates: Vec<CrateFact>,
+}
+
 /// What the board holds now.
 #[derive(Debug, Deserialize)]
 pub(crate) struct Facts {
     pub(crate) changes: Vec<ChangeFact>,
     pub(crate) questions: Vec<Waiting>,
-    pub(crate) crates: Vec<CrateFact>,
+    pub(crate) workspaces: Vec<Workspace>,
 }
 
 /// The three blocks the page reads, and what the header says about the map.
@@ -200,6 +208,18 @@ fn kind_word(kind: LinkKind) -> &'static str {
     }
 }
 
+/// One crate as the page reads it: its lines, the workspace crates it
+/// depends on and its top-level modules, all sorted.
+fn crate_block(each: &CrateFact) -> Value {
+    let mut deps = each.deps.clone();
+    deps.sort();
+    let mut modules: Vec<Value> = (each.modules.iter())
+        .map(|module| json!({"id": module.id, "loc": module.lines}))
+        .collect();
+    modules.sort_by_key(|module| module["id"].as_str().unwrap_or_default().to_owned());
+    json!({"id": each.id, "loc": each.lines, "deps": deps, "modules": modules})
+}
+
 /// The `systems` block: surveyed systems with modules as cities, systems
 /// outside the repositories, and every link, sorted by id.
 fn systems_block(systems: &[System]) -> Value {
@@ -288,7 +308,6 @@ pub(crate) fn build(pass: &Pass, facts: &Facts) -> Result<Page, PluginError> {
         .iter()
         .map(|change| (change.path.as_str(), change))
         .collect();
-    let crate_ids: Vec<&str> = facts.crates.iter().map(|each| each.id.as_str()).collect();
     let mut placed = BTreeSet::new();
     let mut projects: Vec<Value> = Vec::new();
     for project in &pass.projects {
@@ -302,8 +321,13 @@ pub(crate) fn build(pass: &Pass, facts: &Facts) -> Result<Page, PluginError> {
             placed.insert(path);
             let mut tasks: Vec<&str> = change.task.iter().map(|task| change_id(task)).collect();
             tasks.sort_unstable();
+            let repo = repo(change.mount.as_ref());
+            let crate_ids: Vec<&str> = (facts.workspaces.iter())
+                .filter(|workspace| repo.as_str() == Some(workspace.system.as_str()))
+                .flat_map(|workspace| workspace.crates.iter().map(|each| each.id.as_str()))
+                .collect();
             changes.push(json!({
-                "id": change_id(path), "title": change.title, "repo": repo(change.mount.as_ref()),
+                "id": change_id(path), "title": change.title, "repo": repo,
                 "state": change.phase, "date": day(change.touched.as_ref()),
                 "findings": finding_kinds(&pass.findings, path),
                 "crates": crates_named(change.plan.as_deref().unwrap_or_default(), &crate_ids),
@@ -335,20 +359,21 @@ pub(crate) fn build(pass: &Pass, facts: &Facts) -> Result<Page, PluginError> {
             link["after"].as_str().unwrap_or_default().to_owned(),
         )
     });
-    let mut crates: Vec<Value> = facts
-        .crates
-        .iter()
-        .map(|each| {
-            let mut deps = each.deps.clone();
-            deps.sort();
-            let mut modules: Vec<Value> = (each.modules.iter())
-                .map(|module| json!({"id": module.id, "loc": module.lines, "items": []}))
-                .collect();
-            modules.sort_by_key(|module| module["id"].as_str().unwrap_or_default().to_owned());
-            json!({"id": each.id, "loc": each.lines, "deps": deps, "modules": modules})
+    let mut workspaces: Vec<Value> = (facts.workspaces.iter())
+        .map(|workspace| {
+            let system =
+                (pass.systems.iter().flatten()).find(|system| system.id == workspace.system);
+            let mut crates: Vec<Value> = (workspace.crates.iter()).map(crate_block).collect();
+            crates.sort_by_key(|each| each["id"].as_str().unwrap_or_default().to_owned());
+            json!({
+                "id": workspace.system, "crates": crates,
+                "title": system.map_or(workspace.system.as_str(), |system| system.title.as_str()),
+                "realm": system.map(|system| system.realm.as_str()),
+                "lang": system.and_then(|system| system.language.as_deref()),
+            })
         })
         .collect();
-    crates.sort_by_key(|each| each["id"].as_str().unwrap_or_default().to_owned());
+    workspaces.sort_by_key(|each| each["id"].as_str().unwrap_or_default().to_owned());
     let missing = live.keys().filter(|path| !placed.contains(**path)).count();
     let as_of = page_as_of(pass, facts);
     let mut questions = questions_block(pass, &live, &facts.questions)?;
@@ -356,7 +381,7 @@ pub(crate) fn build(pass: &Pass, facts: &Facts) -> Result<Page, PluginError> {
     Ok(Page {
         data: json!({
             "date": pass.date, "realms": realms, "projects": projects, "links": links,
-            "crates": crates, "open": live.len(), "missing": missing,
+            "workspaces": workspaces, "open": live.len(), "missing": missing,
         }),
         systems: systems_block(pass.systems.as_deref().unwrap_or_default()),
         questions,

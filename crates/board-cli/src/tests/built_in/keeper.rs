@@ -356,3 +356,72 @@ fn render_refuses_without_a_map_and_with_one_that_does_not_read_and_writes_a_pag
     assert_eq!(elsewhere["path"], "/projects/keeper/other.html");
     assert_eq!(board.read("projects/keeper/other.html"), page);
 }
+
+/// A map whose one system reads the Cargo workspace mounted at `/repos/lib`.
+fn surveyed_map() -> String {
+    map(&json!({"systems": [{
+        "id": "lib", "realm": "alpha", "title": "Lib", "language": "Rust",
+        "crates_from": "/repos/lib",
+    }]}))
+}
+
+#[test]
+fn render_reads_the_crates_of_a_mounted_cargo_workspace_and_says_so_when_there_are_none() {
+    let board = mapped();
+    board.write("projects/keeper/map/latest.json", &surveyed_map());
+    let (library, commit) = repository(
+        &[],
+        &[
+            (
+                "Cargo.toml",
+                "[workspace]\nmembers = [\"crates/*\"]\n".to_owned(),
+            ),
+            (
+                "crates/one/Cargo.toml",
+                "[package]\nname = \"lib-one\"\n[dependencies]\nlib-two = \"*\"\n".to_owned(),
+            ),
+            ("crates/one/src/lib.rs", "a\nb\n".to_owned()),
+            ("crates/one/src/run/mod.rs", "c\n".to_owned()),
+            (
+                "crates/two/Cargo.toml",
+                "[package]\nname = \"lib-two\"\n".to_owned(),
+            ),
+            ("crates/two/src/lib.rs", "d\n".to_owned()),
+        ],
+    );
+    mount(&board, "repos/lib.json", &library, commit);
+    let said = board.call("keeper.render", &[]);
+    assert_eq!(
+        said["surveys"],
+        json!([{"system": "lib", "crates": 2}]),
+        "{said}"
+    );
+    let page = board.read("projects/keeper/work-view/index.html");
+    let data = page
+        .split("id=\"data\">")
+        .nth(1)
+        .and_then(|rest| rest.split("</script>").next())
+        .unwrap();
+    let data: Value = serde_json::from_str(data).unwrap();
+    let crates = &data["workspaces"][0]["crates"];
+    assert_eq!(crates[0]["id"], "lib-one", "{data}");
+    assert_eq!(crates[0]["deps"], json!(["lib-two"]));
+    assert_eq!(crates[0]["loc"], 3);
+    assert_eq!(
+        crates[0]["modules"],
+        json!([{"id": "lib", "loc": 2}, {"id": "run", "loc": 1}])
+    );
+    let (plain, commit) = repository(&[], &[("README.md", "# Plain\n".to_owned())]);
+    let other = mapped();
+    other.write("projects/keeper/map/latest.json", &surveyed_map());
+    mount(&other, "repos/lib.json", &plain, commit);
+    let said = other.call("keeper.render", &[]);
+    assert_eq!(said["surveys"][0]["crates"], 0, "{said}");
+    assert!(
+        said["surveys"][0]["problem"]
+            .as_str()
+            .unwrap()
+            .contains("no Cargo.toml"),
+        "{said}"
+    );
+}
