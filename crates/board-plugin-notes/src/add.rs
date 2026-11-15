@@ -6,8 +6,8 @@ use std::time::{Duration, SystemTime};
 use board_model::{Code, shown_remote};
 use board_ops::{Host, PluginError};
 use board_repos::{
-    ATTEMPTS, Date, EDITED, MOVED, Repo, Through, Writer, create, day_start, landed, refused, slug,
-    today, trimmed,
+    ATTEMPTS, Access, Date, EDITED, MOVED, Repo, Through, Writer, create, day_start, landed,
+    refused, slug, today, trimmed,
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -101,7 +101,7 @@ pub(crate) fn add(host: &dyn Host, input: &Value) -> Result<Value, PluginError> 
     let section = format!("## {hours:02}:{minutes:02}\n\n{}\n", trimmed(&given.text));
     let clones = Through::new(host);
     let writer = writer(host, &clones);
-    let synced = repo.sync(writer, true)?;
+    let synced = repo.sync(writer, true, Access::Write)?;
     let mut parked = None;
     let (path, commit) = if let Some(candidates) = &choice.candidates {
         // An inbox note is a new file, which nothing else writes, so it is

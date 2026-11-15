@@ -2,7 +2,7 @@
 //! to, unless it is private. A read creates no note.
 
 use board_ops::{Host, PluginError};
-use board_repos::{Through, day_start, python_space, today};
+use board_repos::{Access, Through, day_start, python_space, today};
 use schemars::{JsonSchema, Schema, SchemaGenerator, json_schema};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -83,7 +83,7 @@ pub(crate) fn daily(host: &dyn Host, input: &Value) -> Result<Value, PluginError
     let writer = writer(host, &clones);
     let unsynced = match &repo.clone {
         None => Some(format!("{PLUGIN}::repo::not_synced")),
-        Some(_) => (repo.sync(writer, false)?).map(|code| code.as_str().to_owned()),
+        Some(_) => (repo.sync(writer, false, Access::Read)?).map(|code| code.as_str().to_owned()),
     };
     let commit = repo.pin(writer)?;
     let note = read(host, &repo, &path)?;

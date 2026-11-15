@@ -27,13 +27,43 @@ pub const ATTEMPTS: usize = 3;
 /// way the write parks beside it. A rewound remote and a shallow clone wait
 /// for a person, and the note or task they hold should not wait with them.
 /// A git operation in progress is not here: the put refuses during it too,
-/// so the write fails with the sync's code.
+/// so a write fails with the sync's code. A read has [`READ_UNSYNCED`].
 const UNSYNCED: [Code; 4] = [
     Code::SyncEdited,
     Code::SyncBusy,
     Code::SyncRewound,
     Code::SyncShallow,
 ];
+
+/// The sync refusals after which a read can still be made: those of
+/// [`UNSYNCED`] and a git operation in progress, since a read of the clone
+/// as it is does not move HEAD or the index.
+const READ_UNSYNCED: [Code; 5] = [
+    Code::SyncEdited,
+    Code::SyncBusy,
+    Code::SyncRewound,
+    Code::SyncShallow,
+    Code::SyncMerging,
+];
+
+/// What a caller does with the clone after its sync.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Access {
+    /// The caller only reads the clone.
+    Read,
+    /// The caller writes to the clone.
+    Write,
+}
+
+impl Access {
+    /// The sync refusals after which this access goes on.
+    fn goes_on_after(self) -> &'static [Code] {
+        match self {
+            Self::Read => &READ_UNSYNCED,
+            Self::Write => &UNSYNCED,
+        }
+    }
+}
 
 /// What landing a write needs of Board beyond what [`Host`] has on main:
 /// `board -C <clone> sync` and `board mount update`, each within a
@@ -158,16 +188,22 @@ impl Writer<'_> {
 
 impl Repo {
     /// Syncs the clone with its remote: none, or the code of a refusal
-    /// that left HEAD where it was. Any other refusal is
-    /// `<plugin>::board::refused`. The board's own tree is never synced,
-    /// so a caller does not sync it.
-    pub fn sync(&self, writer: Writer<'_>, push: bool) -> Result<Option<Code>, PluginError> {
+    /// that left HEAD where it was and that `access` goes on after. Any
+    /// other refusal is `<plugin>::board::refused`. The board's own tree is
+    /// never synced, so a caller does not sync it.
+    pub fn sync(
+        &self,
+        writer: Writer<'_>,
+        push: bool,
+        access: Access,
+    ) -> Result<Option<Code>, PluginError> {
         let Some(clone) = &self.clone else {
             return Ok(None);
         };
         match (writer.clones).sync(Path::new(clone), push, writer.deadline) {
             Ok(()) => Ok(None),
-            Err(refused) => match UNSYNCED
+            Err(refused) => match access
+                .goes_on_after()
                 .iter()
                 .find(|code| code.as_str() == refused.code.as_str())
             {
@@ -255,7 +291,7 @@ pub fn synced(writer: Writer<'_>, repo: &Repo, push: bool) -> Option<String> {
     if repo.clone.is_none() {
         return Some(format!("{}::repo::not_synced", writer.plugin));
     }
-    match repo.sync(writer, push) {
+    match repo.sync(writer, push, Access::Write) {
         Ok(code) => code.map(|code| code.as_str().to_owned()),
         Err(error) => Some(
             (error.fields.get("code").and_then(|code| code.as_str()))
