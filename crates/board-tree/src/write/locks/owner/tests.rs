@@ -1,3 +1,4 @@
+use std::os::unix::fs::MetadataExt;
 use std::time::Duration;
 
 use board_scenario::{Item, Scenario};
@@ -62,4 +63,70 @@ fn an_index_lock_with_another_inode_than_the_record_names_is_refused_and_kept() 
     let error = staging(&repository).unwrap_err();
     assert!(matches!(error, WriteError::Locked { .. }), "{error:?}");
     assert!(scenario.workdir().join(".git/index.lock").exists());
+}
+
+#[test]
+fn an_index_lock_with_the_recorded_inode_and_another_birth_time_is_refused_and_kept() {
+    let (scenario, repository) = leftover(true);
+    let record = repository.git_dir().join("board-locks");
+    // A file system that reuses inode numbers gives the file a person
+    // recreated the recorded device and inode, and a birth time of its own.
+    let reborn = |metadata: &std::fs::Metadata| {
+        let found = super::Identity::of(metadata);
+        super::Identity {
+            birth: found.birth.map(|(seconds, nanos)| (seconds, nanos ^ 1)),
+            ..found
+        }
+    };
+    super::clear_with(&record, reborn).unwrap();
+    assert!(scenario.workdir().join(".git/index.lock").exists());
+    let error = staging(&repository).unwrap_err();
+    let held = repository.git_dir().join("index.lock");
+    assert!(
+        matches!(&error, WriteError::Locked { lock } if *lock == held),
+        "{error:?}"
+    );
+}
+
+#[test]
+fn an_entry_with_no_birth_time_keeps_its_lock_file_and_is_removed() {
+    for text in [
+        // The earlier format, with no birth time.
+        "{device} {inode} {path}\n",
+        // The current format where the file system gave none.
+        "{device} {inode} - {path}\n",
+    ] {
+        let (scenario, repository) = leftover(false);
+        let path = repository.git_dir().join("index.lock");
+        let metadata = std::fs::symlink_metadata(&path).unwrap();
+        let record = repository.git_dir().join("board-locks");
+        let text = text
+            .replace("{device}", &metadata.dev().to_string())
+            .replace("{inode}", &metadata.ino().to_string())
+            .replace("{path}", path.to_str().unwrap());
+        std::fs::write(&record, text).unwrap();
+        let error = staging(&repository).unwrap_err();
+        assert!(matches!(error, WriteError::Locked { .. }), "{error:?}");
+        assert!(scenario.workdir().join(".git/index.lock").exists());
+        assert!(!record.exists());
+    }
+}
+
+#[test]
+fn a_recorded_lock_file_that_cannot_be_removed_is_named_in_the_refusal() {
+    let scenario = Scenario::new();
+    scenario.identified().commit(&[("a.json", "{}")]);
+    // A directory cannot be removed as a file.
+    std::fs::create_dir(scenario.workdir().join(".git/index.lock")).unwrap();
+    let repository = Repository::open(scenario.workdir()).unwrap();
+    let held = repository.git_dir().join("index.lock");
+    std::mem::forget(super::Owned::claim(
+        &repository.git_dir().join("board-locks"),
+        &[&held],
+    ));
+    let error = staging(&repository).unwrap_err();
+    assert!(
+        matches!(&error, WriteError::Io { path, .. } if *path == held),
+        "{error:?}"
+    );
 }

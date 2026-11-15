@@ -271,7 +271,9 @@ fn a_held_index_lock_refuses_a_commit_before_the_index_is_read_and_a_free_one_is
     let held = repository.git_dir().join("index.lock");
     assert_eq!(
         error.to_string(),
-        format!("{held:?} is held; if no board process is running, remove it")
+        format!(
+            "{held:?} is held; the next put or sync removes a lock a killed Board process left; for any other lock file, check that no git or Board process runs, then remove it"
+        )
     );
     scenario
         .write(".git/index", Item::Deleted)

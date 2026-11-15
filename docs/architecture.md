@@ -243,10 +243,9 @@ tables and views, how a refresh decides what to redo, and `board query` and
 `board put <path>` reads one JSON record from stdin, then:
 
 1. takes `board.lock` in the worktree's git directory, trying every 20
-   milliseconds for 5 seconds, or for as long as `--wait` says (`500ms`,
-   `30s`, `2m`, `1h`), and then refusing with `board::put::locked`. Concurrent puts each land in their own commit. The steps below
+   milliseconds for 5 seconds, or for as long as `--wait` says, and then refusing with `board::put::locked`. It first takes `board.flock` and clears the lock files `board-locks` names. Concurrent puts each land in their own commit. The steps below
    run under the lock, so a record is checked against the board it is written
-   to, and other writers wait while it is checked;
+   to;
 2. checks it with the codes `check` uses: size and strict parse, `$type`,
    schema, validity, and that references parse. A reference need not resolve.
    Input that is not one JSON object with a `$type` is `board::put::invalid`.

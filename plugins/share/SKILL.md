@@ -70,9 +70,8 @@ the pin moved. If someone changed a shared file in the mounted checkout in
 between, Board refuses with `board::mount::stale` naming it; remove or
 restore that file and run the call again. A kill can leave a `board.lock`
 and git's `index.lock` in the git directories of both repositories, this
-board's and the mounted one. `board::put::locked` names a `board.lock`, and
-git names an `index.lock`; remove each when no put or git command is
-running. A kill after the pin was written and before this
+board's and the mounted one. The next put or sync in each clears the lock
+files Board left, so run the call again. A kill after the pin was written and before this
 board committed it leaves the mount's record, such as `team.json`, modified,
 and a second call writes nothing. Commit it with `git -C <board> commit -m
 "Move the pin" -- team.json`.

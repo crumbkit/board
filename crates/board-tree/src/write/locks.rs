@@ -42,10 +42,7 @@ impl Repository {
         let started = Instant::now();
         let deadline = started + wait;
         let flock = Self::flock(&resource.with_extension("flock"), &marker, wait)?;
-        clear(&self.owners()).map_err(|source| WriteError::Io {
-            path: self.owners(),
-            source,
-        })?;
+        clear(&self.owners()).map_err(|(path, source)| WriteError::Io { path, source })?;
         loop {
             match gix::lock::Marker::acquire_to_hold_resource(&resource, Fail::Immediately, None) {
                 Ok(held) => {

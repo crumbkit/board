@@ -254,3 +254,36 @@ fn a_lock_file_renamed_away_has_no_owner_entry_when_the_process_is_killed_after_
     );
     assert!(record.contains("board.lock"), "{record}");
 }
+
+#[test]
+fn an_edit_that_restores_a_file_a_killed_sync_never_wrote_still_refuses_the_next_sync() {
+    let (remote, killed, _twin) = setup();
+    // The killed sync moves a.json only, so b.json holds the same blob at the
+    // commit it started from and the one it was moving to.
+    remote.commit(&[("a.json", "1"), ("b.json", "0"), ("c.json", "0")]);
+    kill(&killed, Stop::LastFile, "sync");
+    // Another program then moves HEAD to a commit that changes b.json, as a
+    // `git commit` or a put does.
+    remote.commit(&[("a.json", "1"), ("b.json", "5"), ("c.json", "0")]);
+    for args in [
+        ["fetch", "origin"].as_slice(),
+        &["update-ref", "refs/heads/main", "refs/remotes/origin/main"],
+    ] {
+        let status = Command::new("git")
+            .args(args)
+            .current_dir(killed.workdir())
+            .status()
+            .unwrap();
+        assert!(status.success(), "{args:?}");
+    }
+    // The person leaves b.json holding the blob the old commits hold, and
+    // the remote changes it again.
+    remote.commit(&[("a.json", "1"), ("b.json", "6"), ("c.json", "0")]);
+    let error = sync(&killed).unwrap_err();
+    assert_eq!(error.code(), Code::SyncEdited, "{error}");
+    assert_eq!(
+        error.to_string(),
+        "b.json is edited here and changed on the remote"
+    );
+    assert_eq!(working_tree(&killed)["b.json"], b"0");
+}

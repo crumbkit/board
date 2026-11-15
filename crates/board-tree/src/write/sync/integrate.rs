@@ -14,7 +14,7 @@ use board_validate::Schema;
 use gix::object::tree::EntryKind;
 
 use super::merge::{self, Ancestry};
-use super::{Conflicted, Integrated, SyncError};
+use super::{Conflicted, Files, Integrated, Started, SyncError, Written};
 use crate::git::{Repository, model_id};
 use crate::transport::{Deadline, Upstream};
 use crate::{LOCK_WAIT, WriteError};
@@ -56,8 +56,17 @@ impl Repository {
             Vec::new()
         } else {
             let written = (recorded.iter())
-                .map(|commit| self.files_of(Some(*commit)))
-                .collect::<Result<Vec<_>, _>>()?;
+                .map(|checkout| {
+                    Ok(Written {
+                        start: match checkout.started {
+                            Started::Unknown => None,
+                            Started::Unborn => Some(Files::new()),
+                            Started::At(start) => Some(self.files_of(Some(start))?),
+                        },
+                        target: self.files_of(Some(checkout.target))?,
+                    })
+                })
+                .collect::<Result<Vec<_>, SyncError>>()?;
             let changes =
                 self.changes(&self.files_of(old)?, &self.files_of(Some(new))?, &written)?;
             self.check_out(&lock, old, new, changes, recorded)?
