@@ -70,7 +70,7 @@ impl fmt::Display for Refused {
 
 impl std::error::Error for Refused {}
 
-/// The code of a refusal whose code crumbkit cannot hold.
+/// The code of a refusal whose code is not three valid segments.
 const UNHELD: Code<'static> = Code::new("board", "output", "unheld");
 
 impl Failure for Refused {

@@ -117,7 +117,7 @@ fn completion_install_with_board_complete_set_writes_the_board_variable() {
     assert_eq!(output.status.code(), Some(0), "{output:?}");
     let file = home.path().join("config/fish/completions/board.fish");
     let script = fs::read_to_string(file).unwrap();
-    assert!(script.contains("BOARD_COMPLETE"), "{script}");
+    assert!(script.contains("BOARD_COMPLETE=fish"), "{script}");
 }
 
 #[test]
