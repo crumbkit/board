@@ -476,6 +476,25 @@ fn log_of_a_path_absent_at_head_is_not_found_naming_at_and_at_the_commit_before_
 }
 
 #[test]
+fn the_hint_for_a_removed_path_says_log_of_its_ancestor_lists_the_commit_that_removed_it() {
+    let (scenario, commits) = history();
+    let removal = scenario.commit_at(
+        &[CONFIG, ("tasks/b.json", "{}")],
+        &[commits[4]],
+        T + 600,
+        "board rm /tasks/a",
+    );
+    let stderr = text(&run_in(&scenario, &["log", "/tasks/a"]).stderr);
+    assert!(
+        stderr.contains("`board log /tasks` lists the commits that changed /tasks")
+            && stderr.contains("the commit that removed the path"),
+        "{stderr}"
+    );
+    let ancestor = json(&run_in(&scenario, &["log", "/tasks", "--json"]));
+    assert_eq!(ancestor["data"][0]["commit"], json!(removal.to_string()));
+}
+
+#[test]
 fn in_a_board_with_no_commit_log_is_not_found_and_get_at_head_names_no_commit_until_the_first() {
     let scenario = Scenario::board();
     scenario.write("tasks/a.json", Item::File("{}"));
@@ -520,6 +539,23 @@ fn log_through_a_mount_lists_the_mounted_repositorys_commits_and_names_that_repo
         json!(repository.display().to_string())
     );
     assert_eq!(report["summary"]["at"], json!(at));
+}
+
+#[test]
+fn get_at_a_row_id_from_a_log_through_a_mount_is_not_found_and_the_hint_says_why_log_gave_it() {
+    let (board, _library, _commits, pins) = moving_pin();
+    let refused = run_in(
+        &board,
+        &["get", "--at", &pins[1].to_string(), "/repos/lib/docs/a.md"],
+    );
+    assert_eq!(ended(&refused), (1, Some("board::commit::not_found")));
+    let stderr = text(&refused.stderr);
+    assert!(
+        stderr.contains("through a mount lists the mounted repository's commits")
+            && stderr.contains("`get --at` on this board cannot read"),
+        "{stderr}"
+    );
+    assert!(!stderr.contains("lists the board's commits"), "{stderr}");
 }
 
 #[test]

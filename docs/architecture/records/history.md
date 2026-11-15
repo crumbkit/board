@@ -61,7 +61,9 @@ retargeted since then can make `get --at <commit>` resolve to another file,
 so a row's `blob` is the value to compare. Renames are not followed. A path
 through a mount lists the mounted repository's commits from the commit the
 mount pins, and `summary.location.repository` names that repository;
-`get --at` does not take those ids. Where the mount's pinned commit cannot be
+`get --at` does not take those ids. Such a log does not list the board
+commits that moved the pin, even where a move changed what `get` returns for
+the path. Where the mount's pinned commit cannot be
 read, `log` of the mount's path or a path beneath it is refused with the
 mount's code; it does not list the history of the pointer file.
 
