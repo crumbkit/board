@@ -311,12 +311,14 @@ impl Merge<'_> {
     /// The text file both sides changed, merged line by line from `base`,
     /// when no hunk of one side overlaps a hunk of the other, or when the
     /// only hunks that meet are insertions at one point, which both stay
-    /// in ([`insertions_together`]). A file that starts with a `---` line
-    /// keeps one side's frontmatter whole and merges only the body by
-    /// line: the side that changed the frontmatter, or the remote's with
-    /// `clash` set when both did, differently. A file [`merges_by_line`]
-    /// excludes, a file that is not text, a path both sides added and a
-    /// merge with other overlapping hunks give `None`.
+    /// in ([`insertions_together`]). A file that starts with frontmatter
+    /// ([`frontmatter`]) keeps one side's frontmatter whole and merges only
+    /// the body by line: the side that changed the frontmatter, or the
+    /// remote's with `clash` set when both did, differently. A path both
+    /// sides added is merged from an empty ancestor, so both texts stay,
+    /// unless either starts with frontmatter. A file [`merges_by_line`]
+    /// excludes, a file that is not text and a merge with other
+    /// overlapping hunks give `None`.
     fn text(
         &self,
         path: &str,
@@ -324,20 +326,18 @@ impl Merge<'_> {
         local: Slot,
         remote: Slot,
     ) -> Result<Option<Text>, GitError> {
-        let Some(base) = base else {
-            return Ok(None);
-        };
         if !merges_by_line(path)
             || local.mode != remote.mode
             || !local.mode.is_blob()
-            || !base.mode.is_blob()
+            || base.is_some_and(|base| !base.mode.is_blob())
         {
             return Ok(None);
         }
         let read = |id: gix::ObjectId| self.repository.read_blob(model_id(&id));
-        let (Some(ours), Some(theirs), Some(ancestor)) =
-            (read(local.id)?, read(remote.id)?, read(base.id)?)
-        else {
+        let (Some(ours), Some(theirs)) = (read(local.id)?, read(remote.id)?) else {
+            return Ok(None);
+        };
+        let Some(ancestor) = base.map_or(Ok(Some(Vec::new())), |base| read(base.id))? else {
             return Ok(None);
         };
         if [&ours, &theirs, &ancestor]
@@ -361,7 +361,13 @@ impl Merge<'_> {
                     (theirs.0, true)
                 };
                 let body = merge_lines(base.1, ours.1, theirs.1);
-                (body.map(|body| [head, &body].concat()), clash)
+                // A closing fence with no newline ends a file with no body,
+                // and a body that follows it needs a line of its own.
+                let join: &[u8] = match &body {
+                    Some(body) if !body.is_empty() && !head.ends_with(b"\n") => b"\n",
+                    _ => b"",
+                };
+                (body.map(|body| [head, join, &body].concat()), clash)
             }
             _ => (None, false),
         };
@@ -594,29 +600,32 @@ fn merges_by_line(path: &str) -> bool {
     !is_json_file(path) && name != ".gitattributes"
 }
 
-/// Whether `line` is a frontmatter fence: `---` and nothing else.
-fn is_fence(line: &[u8]) -> bool {
-    let line = line.strip_suffix(b"\n").unwrap_or(line);
-    line.strip_suffix(b"\r").unwrap_or(line) == b"---"
-}
-
-/// A file that starts with a `---` line split into its frontmatter, which
-/// ends with the next `---` line (or is the whole file when there is none),
-/// and the body after it. `None` for any other file.
+/// A file that opens with frontmatter split into the frontmatter, from an
+/// optional byte order mark through its closing line, and the body after
+/// it. The block is a first line `---` and the next line `---` or `...`,
+/// as `board_model`'s frontmatter reading takes it. `None` for any other
+/// file, including one whose block is never closed.
 fn frontmatter(bytes: &[u8]) -> Option<(&[u8], &[u8])> {
-    let mut lines = bytes.split_inclusive(|b| *b == b'\n');
-    let first = lines.next()?;
-    if !is_fence(first) {
-        return None;
-    }
-    let mut end = first.len();
-    for line in lines {
+    let mark = if bytes.starts_with(b"\xEF\xBB\xBF") {
+        3
+    } else {
+        0
+    };
+    let rest = &bytes[mark..];
+    let open = rest
+        .strip_prefix(b"---\n".as_slice())
+        .map(|_| 4)
+        .or_else(|| rest.strip_prefix(b"---\r\n".as_slice()).map(|_| 5))?;
+    let mut end = mark + open;
+    for line in bytes[end..].split_inclusive(|b| *b == b'\n') {
         end += line.len();
-        if is_fence(line) {
+        let bare = line.strip_suffix(b"\n").unwrap_or(line);
+        let bare = bare.strip_suffix(b"\r").unwrap_or(bare);
+        if bare == b"---" || bare == b"..." {
             return Some(bytes.split_at(end));
         }
     }
-    Some((bytes, &[]))
+    None
 }
 
 /// The line-level three-way merge of `ours` and `theirs` from `ancestor`,

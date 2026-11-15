@@ -1,6 +1,6 @@
 # Conflict records and the merge lifecycle
 
-For each such path the merge commit also holds a `board/conflict/v1` record at
+For each path where the merge could not keep both sides, the merge commit also holds a `board/conflict/v1` record at
 `conflicts/<name>.json`, where `<name>` is the hash of the path and of the
 three blobs in dispute (the ancestor's and each side's, or `-` for none),
 with the two sides' ids in sorted order, so two clones that merge the same
@@ -37,12 +37,13 @@ conflict, then merge each other's work, therefore stay at one record.
 | merging a pin | local pin descends from remote | local pin taken | sync |
 | merging a pin | neither descends | remote pin taken | sync |
 | merging a pin | either commit missing from the child | remote pin taken, conflict record | sync |
-| merging a Markdown record | only one side changed the frontmatter | that side's frontmatter, body line-merged | sync |
-| merging a Markdown record | both sides changed the frontmatter differently | remote frontmatter, body line-merged, conflict record | sync |
-| merging any file | both sides added the path with different content | remote file, conflict record | sync |
+| merging a text file with frontmatter | only one side changed the frontmatter | that side's frontmatter, body line-merged | sync |
+| merging a text file with frontmatter | both sides changed the frontmatter differently | remote frontmatter, body line-merged, conflict record | sync |
+| merging any file | both sides added the path with different content, and either starts with frontmatter | remote file, conflict record | sync |
+| merging a text file | both sides added the path with different content, and neither starts with frontmatter | both texts, remote first | sync |
 | merge tree built | a conflict record's path holds one side's blob | the record's `kept` names that side | sync |
 | checking | git state reports a merge, rebase, cherry-pick or revert | refused (`board::sync::merging`) | a person finishes or aborts it |
-| note or task write | sync refused `merging` | write fails with `board::sync::merging` | a person finishes or aborts the operation, then writes again |
+| note or task write | sync refused `merging` | write fails with `<plugin>::board::refused` (`code` field `board::sync::merging`) | a person finishes or aborts the operation, then writes again |
 
 Every decision above is made while the merge tree is built in memory, before
 integrate writes a file, so the clone is left as [merging.md](../merging.md) describes it after a kill.

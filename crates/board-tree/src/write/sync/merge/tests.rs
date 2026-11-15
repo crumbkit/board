@@ -655,10 +655,19 @@ fn two_insertions_at_one_point_inside_a_text_file_keep_both_remote_first() {
 }
 
 #[test]
-fn a_path_both_sides_added_with_different_text_takes_the_remote_and_records_a_conflict() {
+fn two_sides_creating_one_note_without_frontmatter_keep_both_texts_remote_first() {
     let fixture = Fixture::new();
     let (merged, files) = fixture.merge(&[], &[("n.md", "agent\n")], &[("n.md", "phone\n")]);
-    assert_eq!(files, [file("n.md", "phone\n")]);
+    assert_eq!(files, [file("n.md", "phone\nagent\n")]);
+    assert_eq!(merged.conflicts, Vec::new());
+}
+
+#[test]
+fn a_path_one_side_added_with_frontmatter_and_the_other_without_takes_the_remote_and_records_it() {
+    let fixture = Fixture::new();
+    let with = "---\ntitle: A\n---\nOne.\n";
+    let (merged, files) = fixture.merge(&[], &[("n.md", "plain\n")], &[("n.md", with)]);
+    assert_eq!(files, [file("n.md", with)]);
     assert_eq!(merged.conflicts.len(), 1);
 }
 
@@ -892,4 +901,41 @@ fn a_conflict_record_that_names_the_side_the_merged_file_holds_is_left_alone() {
         &[("a.json", "b"), ("conflicts/x.json", &right)],
     );
     assert_eq!(files[1], file("conflicts/x.json", &right));
+}
+
+#[test]
+fn a_closing_fence_with_no_newline_keeps_a_newline_before_the_merged_body() {
+    let fixture = Fixture::new();
+    let (merged, files) = fixture.merge(
+        &[("t.md", "---\na: 1\n---")],
+        &[("t.md", "---\na: 1\n---\nBody\n")],
+        &[("t.md", "---\na: 2\n---")],
+    );
+    assert_eq!(files, [file("t.md", "---\na: 2\n---\nBody\n")]);
+    assert_eq!(merged.conflicts.len(), 1);
+}
+
+#[test]
+fn a_frontmatter_after_a_byte_order_mark_is_merged_whole() {
+    let fixture = Fixture::new();
+    let base = "\u{feff}---\n$type: x\ntitle: A\n---\nBody\n";
+    let local = "\u{feff}---\n$type: x\ntitle: A\nparent: a\n---\nBody\n";
+    let remote = "\u{feff}---\n$type: x\ntitle: A\nparent: b\n---\nBody\n";
+    let (merged, files) = fixture.merge(&[("t.md", base)], &[("t.md", local)], &[("t.md", remote)]);
+    assert_eq!(files, [file("t.md", remote)]);
+    assert_eq!(merged.conflicts.len(), 1);
+}
+
+#[test]
+fn a_frontmatter_closed_by_three_dots_is_split_from_its_body() {
+    let fixture = Fixture::new();
+    let base = "---\n$type: x\n...\nBody\n";
+    let local = "---\n$type: x\nparent: a\n...\nBody\nMore\n";
+    let remote = "---\n$type: x\nparent: b\n...\nBody\n";
+    let (merged, files) = fixture.merge(&[("t.md", base)], &[("t.md", local)], &[("t.md", remote)]);
+    assert_eq!(
+        files,
+        [file("t.md", "---\n$type: x\nparent: b\n...\nBody\nMore\n")]
+    );
+    assert_eq!(merged.conflicts.len(), 1);
 }

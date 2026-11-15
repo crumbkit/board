@@ -1,7 +1,7 @@
-//! The refusals of a sync that come before it writes anything: a git operation
-//! in progress (the put's list of them), a shallow or partial clone, and a remote branch
-//! that no longer contains the commit the clone fetched last time
-//! (docs/architecture/writes.md, Sync).
+//! The refusals of a sync that come before it writes anything: a git
+//! operation in progress (the put's list of them), a shallow or partial
+//! clone, and a remote branch that no longer contains the commit the clone
+//! fetched last time (docs/architecture/writes.md, Sync).
 
 use board_model::ObjectId;
 

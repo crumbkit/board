@@ -377,6 +377,12 @@ impl Repository {
     /// paths, or a sync that moves HEAD, must not run under, as `git commit
     /// <paths>` refuses while an operation that would give the commit more
     /// parents is under way. A put and a sync both read it here.
+    ///
+    /// It is as complete as `gix`'s `state()`, which reads `MERGE_HEAD`,
+    /// `CHERRY_PICK_HEAD`, `REVERT_HEAD` and the rebase directories. It
+    /// misses a `sequencer/` directory left with none of those files, and
+    /// it reports a bisect ahead of a revert, so a revert stopped during a
+    /// bisect is not seen.
     pub(crate) fn operation_in_progress(&self) -> Option<&'static str> {
         use gix::state::InProgress as Op;
         match self.git().state() {
