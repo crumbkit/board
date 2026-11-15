@@ -837,6 +837,7 @@ mod changes;
 mod evals;
 mod github;
 mod jira;
+mod keeper;
 mod notes;
 mod params;
 mod plans;

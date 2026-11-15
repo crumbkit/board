@@ -7,6 +7,7 @@ missing  evals                skills/evals
 missing  flow                 skills/flow
 missing  github               skills/github
 missing  jira                 skills/jira
+missing  keeper               skills/keeper
 missing  notes                skills/notes
 missing  params               skills/params
 missing  plans                skills/plans

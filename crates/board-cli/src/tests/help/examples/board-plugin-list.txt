@@ -5,6 +5,7 @@ ok changes 0.1.0 disabled offers start, next, attach, advance, open, pr, plan, l
 ok evals 0.1.0 disabled offers about, open, migrate
 ok github 0.1.0 disabled offers ref, push, pr-create, pr-edit, comment, issue-create, merge, install-hook, pre-push, covers
 ok jira 0.1.0 disabled offers ref
+ok keeper 0.1.0 disabled offers gather, render
 ok notes 0.1.0 disabled offers add, daily
 ok params 0.1.0 disabled offers get, due
 ok plans 0.1.0 disabled offers open, answer, withdraw, migrate

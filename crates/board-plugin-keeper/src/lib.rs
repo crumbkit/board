@@ -1,0 +1,102 @@
+//! The keeper plugin built into Board (plugins/keeper/README.md).
+
+mod gather;
+mod host;
+mod render;
+
+use board_model::{CapabilityName, RecordType};
+use board_ops::{Host, Plugin, PluginError};
+use board_plugin::Manifest;
+use serde_json::{Map, Value, json};
+
+/// The plugin's name, which prefixes its error codes.
+pub(crate) const PLUGIN: &str = "keeper";
+
+#[derive(Clone, Copy, Debug)]
+pub struct Keeper;
+
+impl Plugin for Keeper {
+    fn manifest(&self) -> Manifest {
+        Manifest::built_in(manifest()).expect(
+            "the manifest is built from constants and its inputs' schemas; a test parses it",
+        )
+    }
+
+    fn schemas(&self) -> Vec<(RecordType, Value)> {
+        Vec::new()
+    }
+
+    fn call(
+        &self,
+        host: &dyn Host,
+        capability: &CapabilityName,
+        input: Value,
+    ) -> Result<Value, PluginError> {
+        match capability.as_str() {
+            "gather" => gather::gather(host, &input),
+            "render" => render::render(host, &input),
+            other => Err(PluginError {
+                code: "keeper::call::unknown_capability".to_owned(),
+                message: format!(
+                    "keeper offers no capability {other}; it offers gather and render"
+                ),
+                fields: Map::new(),
+                hint: None,
+            }),
+        }
+    }
+}
+
+fn read_only() -> Value {
+    json!({
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+    })
+}
+
+fn manifest() -> Value {
+    json!({
+        "$type": "board/plugin-manifest/v1",
+        "name": "keeper",
+        "version": "0.1.0",
+        "description": skill_description(),
+        "metadata": {"area": "work"},
+        "types": [],
+        "capabilities": [{
+            "name": "gather",
+            "description": "The live facts a consolidation pass needs.",
+            "inputSchema": {"type": "object", "properties": {}, "additionalProperties": false},
+            "outputSchema": {"type": "object"},
+            "annotations": read_only(),
+            "_meta": {},
+        }, {
+            "name": "render",
+            "description": "Writes the status board page.",
+            "inputSchema": {"type": "object", "properties": {}, "additionalProperties": false},
+            "outputSchema": {"type": "object"},
+            "annotations": {
+                "readOnlyHint": false,
+                "destructiveHint": false,
+                "idempotentHint": true,
+                "openWorldHint": false,
+            },
+            "_meta": {},
+        }],
+    })
+}
+
+/// The `description` of SKILL.md's frontmatter, a single-quoted YAML scalar
+/// on one line.
+fn skill_description() -> String {
+    let skill = include_str!("../../../plugins/keeper/SKILL.md");
+    let line = (skill.lines())
+        .find_map(|line| line.strip_prefix("description: "))
+        .expect("SKILL.md's frontmatter has a description");
+    let quoted = (line
+        .strip_prefix('\'')
+        .and_then(|rest| rest.strip_suffix('\'')))
+    .expect("the description is a single-quoted scalar");
+    quoted.replace("''", "'")
+}
