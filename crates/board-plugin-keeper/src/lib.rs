@@ -3,6 +3,7 @@
 mod gather;
 mod host;
 mod map;
+mod model;
 mod placement;
 pub mod records;
 mod render;
@@ -116,7 +117,7 @@ fn manifest() -> Value {
         }, {
             "name": "render",
             "description": "Writes the status board page.",
-            "inputSchema": {"type": "object", "properties": {}, "additionalProperties": false},
+            "inputSchema": schema_of::<render::Input>(SchemaSettings::draft2020_12()),
             "outputSchema": {"type": "object"},
             "annotations": {
                 "readOnlyHint": false,

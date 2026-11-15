@@ -14,14 +14,14 @@
 use std::collections::BTreeMap;
 
 use board_ops::PluginError;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use crate::records::QuestionRules;
 use crate::refusal;
 
 /// An open question that no answer names, as `plans.open` lists it.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Deserialize)]
 pub(crate) struct Waiting {
     pub(crate) path: String,
     /// The day it was asked, `YYYY-MM-DD`.
@@ -74,7 +74,7 @@ pub(crate) fn change_id(path: &str) -> &str {
 }
 
 /// Whether `text` holds `id` with no letter, digit or hyphen on either side.
-fn names(text: &str, id: &str) -> bool {
+pub(crate) fn names(text: &str, id: &str) -> bool {
     let word = |c: char| c.is_ascii_alphanumeric() || c == '-';
     text.match_indices(id).any(|(at, _)| {
         let before = text[..at].chars().next_back();

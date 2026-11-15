@@ -302,7 +302,7 @@ fn all_changes(host: &dyn Host) -> Result<BTreeSet<String>, PluginError> {
 }
 
 /// The waiting questions of `plans.open` in the shape placement reads.
-fn waiting(host: &dyn Host) -> Result<Vec<Waiting>, PluginError> {
+pub(crate) fn waiting(host: &dyn Host) -> Result<Vec<Waiting>, PluginError> {
     let listed = call(host, "plans.open", &json!({"limit": 10_000}))?;
     let field =
         |question: &Value, name: &str| question[name].as_str().unwrap_or_default().to_owned();

@@ -23,6 +23,10 @@ pub(crate) struct ChangeFacts {
     pub(crate) touched: Option<String>,
     /// The task the change does.
     pub(crate) task: Option<String>,
+    /// The mount the change is for.
+    pub(crate) mount: Option<String>,
+    /// The change's plan record, by path.
+    pub(crate) plan: Option<String>,
 }
 
 /// An open task, as the stale rules read it.

@@ -16,6 +16,8 @@ fn change(path: &str, phase: &str, touched: Option<&str>) -> ChangeFacts {
         verdict: None,
         touched: touched.map(str::to_owned),
         task: None,
+        mount: None,
+        plan: None,
     }
 }
 

@@ -1,12 +1,131 @@
-//! `render`: the status board page.
+//! `render`: reads the latest map and the live records, builds the page's
+//! three data blocks and writes the page.
 
 use board_ops::{Host, PluginError};
+use schemars::JsonSchema;
+use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::host::put;
+use crate::gather::open_changes;
+use crate::host::{get_text, put, rows, text};
+use crate::model::{self, ChangeFact, Facts, Pass};
+use crate::{LATEST, PLUGIN, refusal};
+use board_ops::literal;
 
-pub(crate) fn render(host: &dyn Host, _input: &Value) -> Result<Value, PluginError> {
-    let path = "/projects/keeper/work-view/index.html";
-    put(host, &[json!({"path": path, "text": "<!doctype html>\n"})])?;
-    Ok(json!({"path": path}))
+/// Where the page goes when the caller names no path.
+pub(crate) const DEFAULT_PATH: &str = "/projects/keeper/work-view/index.html";
+
+/// Where to write the page.
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+#[schemars(rename = "RenderInput")]
+pub(crate) struct Input {
+    /// The file to write, by logical path; `/projects/keeper/work-view/index.html`
+    /// when left out.
+    #[schemars(regex(pattern = r"^/"))]
+    path: Option<String>,
+}
+
+/// The latest map as the page reads it.
+fn latest(host: &dyn Host) -> Result<Pass, PluginError> {
+    let Some(stored) = get_text(host, LATEST)? else {
+        return Err(refusal(
+            "keeper::render::no_map",
+            format!(
+                "the board holds no map at {LATEST}; run the keeper skill's consolidation pass"
+            ),
+            [("path", json!(LATEST))],
+        ));
+    };
+    serde_json::from_str(&stored).map_err(|error| {
+        refusal(
+            "keeper::render::bad_map",
+            format!(
+                "the map at {LATEST} does not read: {error}; run the keeper skill's consolidation \
+                 pass to write a new one"
+            ),
+            [("path", json!(LATEST))],
+        )
+    })
+}
+
+/// The text of each change's plan, by the change's path. The page matches
+/// them against the crates' names, so none is read when there are no crates.
+fn plans(
+    host: &dyn Host,
+    plan_paths: &[(&str, &str)],
+) -> Result<Vec<(String, String)>, PluginError> {
+    if plan_paths.is_empty() {
+        return Ok(Vec::new());
+    }
+    let list: Vec<String> = plan_paths.iter().map(|(_, plan)| literal(plan)).collect();
+    let sql = format!(
+        "SELECT logical, json_extract(body, '$.text') FROM records WHERE logical IN ({})",
+        list.join(", ")
+    );
+    let mut texts = Vec::new();
+    for row in rows(host, &sql)? {
+        let (Some(plan), Some(file)) = (text(row.first()), text(row.get(1))) else {
+            continue;
+        };
+        if let Some(words) = get_text(host, file)?
+            && let Some((change, _)) = plan_paths.iter().find(|(_, each)| *each == plan)
+        {
+            texts.push(((*change).to_owned(), words));
+        }
+    }
+    Ok(texts)
+}
+
+/// What the board holds now.
+fn facts(host: &dyn Host) -> Result<Facts, PluginError> {
+    let open = open_changes(host)?;
+    let crates = Vec::new();
+    let wanted: Vec<(&str, &str)> = (open.iter())
+        .filter(|_| !crates.is_empty())
+        .filter_map(|change| Some((change.path.as_str(), change.plan.as_deref()?)))
+        .collect();
+    let plans = plans(host, &wanted)?;
+    let changes = (open.iter())
+        .map(|change| ChangeFact {
+            path: change.path.clone(),
+            title: change.title.clone(),
+            phase: change.phase.clone(),
+            mount: change.mount.clone(),
+            touched: change.touched.clone(),
+            task: change.task.clone(),
+            plan: (plans.iter())
+                .find(|(path, _)| *path == change.path)
+                .map(|(_, words)| words.clone()),
+        })
+        .collect();
+    Ok(Facts {
+        changes,
+        questions: crate::map::waiting(host)?,
+        crates,
+    })
+}
+
+/// A block as the text of a script element: JSON with `</` escaped.
+fn block(id: &str, value: &Value) -> String {
+    let json = serde_json::to_string(value).expect("a value serialises");
+    format!(
+        "<script type=\"application/json\" id=\"{id}\">{}</script>\n",
+        json.replace("</", "<\\/")
+    )
+}
+
+pub(crate) fn render(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
+    let Input { path } = PluginError::read_input(PLUGIN, "render", input)?;
+    let path = path.unwrap_or_else(|| DEFAULT_PATH.to_owned());
+    let pass = latest(host)?;
+    let page = model::build(&pass, &facts(host)?)?;
+    let html = format!(
+        "<!doctype html>\n{}{}{}",
+        block("data", &page.data),
+        block("systems", &page.systems),
+        block("questions", &page.questions),
+    );
+    put(host, &[json!({"path": path, "text": html})])?;
+    Ok(json!({"path": path, "missing": page.data["missing"], "open": page.data["open"]}))
 }

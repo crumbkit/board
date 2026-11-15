@@ -36,11 +36,18 @@ pub(crate) fn today(host: &dyn Host) -> Date {
 pub(crate) fn open_changes(host: &dyn Host) -> Result<Vec<ChangeFacts>, PluginError> {
     let listed = call(host, "changes.open", &json!({"limit": 10_000}))?;
     let mut touched = std::collections::BTreeMap::new();
-    let sql = "SELECT logical, json_extract(body, '$.touched') FROM records \
-               WHERE type IN ('changes/change/v1', 'changes/change/v2')";
+    let mut plans = std::collections::BTreeMap::new();
+    let sql = "SELECT logical, json_extract(body, '$.touched'), json_extract(body, '$.plan') \
+               FROM records WHERE type IN ('changes/change/v1', 'changes/change/v2')";
     for row in rows(host, sql)? {
-        if let (Some(path), Some(day)) = (text(row.first()), text(row.get(1))) {
+        let Some(path) = text(row.first()) else {
+            continue;
+        };
+        if let Some(day) = text(row.get(1)) {
             touched.insert(path.to_owned(), day.to_owned());
+        }
+        if let Some(plan) = text(row.get(2)) {
+            plans.insert(path.to_owned(), plan.to_owned());
         }
     }
     let field = |change: &Value, name: &str| change[name].as_str().map(str::to_owned);
@@ -53,6 +60,8 @@ pub(crate) fn open_changes(host: &dyn Host) -> Result<Vec<ChangeFacts>, PluginEr
                 prototype: change["kind"] == "prototype",
                 verdict: field(&change["prototype"], "verdict"),
                 task: field(change, "task"),
+                mount: field(change, "mount"),
+                plan: plans.get(&path).cloned(),
                 touched: touched.get(&path).cloned(),
                 path,
             }

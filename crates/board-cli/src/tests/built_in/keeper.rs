@@ -153,16 +153,6 @@ fn gather_counts_a_question_answered_under_a_mounted_boards_shorter_path_as_answ
     );
 }
 
-#[test]
-fn render_writes_a_file_at_a_path_in_the_board() {
-    let board = board();
-    board.call("keeper.render", &[]);
-    assert_eq!(
-        board.read("projects/keeper/work-view/index.html"),
-        "<!doctype html>\n"
-    );
-}
-
 /// A map of one realm, one project and one finding, with `fields` replacing
 /// its own.
 fn map(fields: &Value) -> String {
@@ -339,4 +329,30 @@ fn map_refuses_an_unplaced_open_change_and_writes_nothing() {
     assert!(stored(&board, "/projects/keeper/map/latest").is_none());
     let placed = run_map(&board, &map_input(&json!({})));
     assert_eq!(placed.code, 0, "{}", text(&placed.stderr));
+}
+
+#[test]
+fn render_refuses_without_a_map_and_with_one_that_does_not_read_and_writes_a_page_with_one() {
+    let board = mapped();
+    let none = board.refusal("keeper.render", &[]);
+    assert_eq!(none["code"], "keeper::render::no_map", "{none}");
+    board.write("projects/keeper/map/latest.json", "{\"date\": 3}");
+    let bad = board.refusal("keeper.render", &[]);
+    assert_eq!(bad["code"], "keeper::render::bad_map", "{bad}");
+    board.write("projects/keeper/map/latest.json", &map(&json!({})));
+    let said = board.call("keeper.render", &[]);
+    assert_eq!(said["path"], "/projects/keeper/work-view/index.html");
+    assert_eq!(
+        (said["open"].clone(), said["missing"].clone()),
+        (json!(2), json!(1)),
+        "{said}"
+    );
+    let page = board.read("projects/keeper/work-view/index.html");
+    for id in ["data", "systems", "questions"] {
+        assert!(page.contains(&format!("id=\"{id}\"")), "{page}");
+    }
+    assert!(page.contains("Add a timeout"));
+    let elsewhere = board.call("keeper.render", &["--path", "/projects/keeper/other.html"]);
+    assert_eq!(elsewhere["path"], "/projects/keeper/other.html");
+    assert_eq!(board.read("projects/keeper/other.html"), page);
 }
