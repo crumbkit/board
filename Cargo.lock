@@ -320,6 +320,7 @@ dependencies = [
  "board-plugin",
  "board-scenario",
  "board-validate",
+ "jiff",
  "schemars",
  "serde",
  "serde_json",

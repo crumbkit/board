@@ -3,10 +3,10 @@
 use board_ops::{Host, PluginError};
 use serde_json::{Value, json};
 
+use crate::host::put;
+
 pub(crate) fn render(host: &dyn Host, _input: &Value) -> Result<Value, PluginError> {
-    let line =
-        json!({"path": "/projects/keeper/work-view/index.html", "text": "<!doctype html>\n"});
-    host.put(&[line])
-        .map_err(|error| PluginError::board_refused(crate::PLUGIN, "put", &error.refusal()))?;
-    Ok(json!({"path": "/projects/keeper/work-view/index.html"}))
+    let path = "/projects/keeper/work-view/index.html";
+    put(host, &[json!({"path": path, "text": "<!doctype html>\n"})])?;
+    Ok(json!({"path": path}))
 }

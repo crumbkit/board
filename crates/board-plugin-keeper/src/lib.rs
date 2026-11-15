@@ -4,6 +4,7 @@ mod gather;
 mod host;
 pub mod records;
 mod render;
+mod stale;
 
 use board_model::{CapabilityName, RecordType};
 use board_ops::{Host, Plugin, PluginError};
@@ -15,6 +16,26 @@ use serde_json::{Map, Value, json};
 
 /// The plugin's name, which prefixes its error codes.
 pub(crate) const PLUGIN: &str = "keeper";
+
+/// The latest map, which `map` writes beside its timestamped record.
+pub(crate) const LATEST: &str = "/projects/keeper/map/latest";
+
+/// A refusal with `code`, `message` and the named `fields`.
+pub(crate) fn refusal<const N: usize>(
+    code: &str,
+    message: String,
+    fields: [(&str, Value); N],
+) -> PluginError {
+    PluginError {
+        code: code.to_owned(),
+        message,
+        fields: fields
+            .into_iter()
+            .map(|(name, value)| (name.to_owned(), value))
+            .collect(),
+        hint: None,
+    }
+}
 
 #[derive(Clone, Copy, Debug)]
 pub struct Keeper;
@@ -73,7 +94,7 @@ fn manifest() -> Value {
         "capabilities": [{
             "name": "gather",
             "description": "The live facts a consolidation pass needs.",
-            "inputSchema": {"type": "object", "properties": {}, "additionalProperties": false},
+            "inputSchema": schema_of::<gather::Input>(SchemaSettings::draft2020_12()),
             "outputSchema": {"type": "object"},
             "annotations": read_only(),
             "_meta": {},
