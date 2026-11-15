@@ -18,6 +18,11 @@ fn the_rewound_hint_keeps_the_old_clone_until_its_unpushed_commits_are_checked()
     let text = hint(Code::SyncRewound);
     assert!(text.contains("keep the old clone"), "{text}");
     assert!(text.contains("git log <remote>/<branch>..HEAD"), "{text}");
+    assert!(text.contains("Before fetching in it"), "{text}");
+    assert!(
+        text.contains("after a fetch the same command also lists the commits the rewrite dropped"),
+        "{text}"
+    );
 }
 
 #[test]

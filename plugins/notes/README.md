@@ -134,7 +134,8 @@ and fails closed: a quoted key, a YAML tag or a repeated key hides the
 note. It may hide a note Reflect shows, and never shows one Reflect hides.
 While the clone is in the middle of a git merge, rebase, cherry-pick or
 revert, `daily` still returns the note as the clone holds it, with `unsynced`
-set to `board::sync::merging`; `add` refuses with that code instead.
+set to `board::sync::merging`; `add` fails with `notes::board::refused`, whose
+`code` field is `board::sync::merging`.
 
 ## Sync, pins and conflicts
 

@@ -29,8 +29,10 @@ compares with the commit the earlier round fetched.
 so the clone's commits, including any the rewrite removed, are pushed again.
 A rewrite made on purpose, such as removing a leaked secret, needs a fresh
 clone instead, and `--accept-rewrite` must not be used on the old one. Keep
-the old clone until `git log <remote>/<branch>..HEAD` in it shows no commit
-you still need, since the fresh clone does not hold its unpushed commits.
+the old clone, and before fetching in it run `git log <remote>/<branch>..HEAD`
+there to check that it shows no commit you still need, since the fresh clone
+does not hold its unpushed commits. After a fetch the same command also lists
+the commits the rewrite dropped.
 
 A writer such as `notes.add` or a tasks writer treats `rewound` and `shallow`
 as a sync it can write beside, like `board::sync::edited`: it writes the note or

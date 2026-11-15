@@ -66,4 +66,7 @@ their daily note back.
      written. Tell the person.
    - `notes::board::refused` carrying a `board::sync::` code, such as
      `board::sync::failed`: the first sync could not reach the remote, so
-     nothing was written. Tell the person.
+     nothing was written. Tell the person. With `board::sync::merging`, a git
+     merge, rebase, cherry-pick or revert is in progress in the notes clone;
+     the person finishes or aborts it, and then you call again. `daily` does
+     not fail then: it returns the note with `unsynced` set to that code.
