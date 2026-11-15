@@ -46,3 +46,7 @@ Finish or abort the operation, then write again.
 A call that only reads, such as `notes.daily`, goes on after `merging` as it
 does after the other three: it returns the note as the clone holds it, with
 `unsynced` set to `board::sync::merging`.
+
+`board::sync::edited` does not fire for a file that a killed sync wrote: the
+checkout record lets the next sync tell it from a person's edit
+([checkout.md](checkout.md)).

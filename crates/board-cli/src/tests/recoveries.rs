@@ -203,7 +203,9 @@ impl Starts {
     }
 }
 
-/// Every file and symlink below each shared board, with its bytes or target.
+/// Every file and symlink below each shared board, with its bytes or target,
+/// except `board.flock`, the empty file that the first put or sync of a clone
+/// leaves in its git directory and that holds no state.
 fn snapshot(boards: &[PathBuf]) -> BTreeMap<PathBuf, Vec<u8>> {
     let mut files = BTreeMap::new();
     let mut pending = boards.to_vec();
@@ -211,6 +213,9 @@ fn snapshot(boards: &[PathBuf]) -> BTreeMap<PathBuf, Vec<u8>> {
         for entry in std::fs::read_dir(directory).unwrap() {
             let path = entry.unwrap().path();
             let kind = std::fs::symlink_metadata(&path).unwrap().file_type();
+            if path.file_name().is_some_and(|name| name == "board.flock") {
+                continue;
+            }
             if kind.is_dir() {
                 pending.push(path);
             } else if kind.is_symlink() {

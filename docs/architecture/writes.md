@@ -86,8 +86,8 @@ admits one sync per clone: a second exits at once with `board::sync::busy`.
    `board::sync::kept`. The index takes the new blob; a file the remote
    removed is left untracked. Committing the edit undoes the remote's
    change. An edit after the second compare is overwritten. If another
-   program moves HEAD, the next round fetches again. A sync killed
-   before HEAD moves is repaired by the next one ([merging.md](writes/merging.md)).
+   program moves HEAD, the next round fetches again. The next sync repairs a
+   killed one and its lock files ([checkout.md](writes/sync/checkout.md)).
 3. Push, unless `--no-push`, with `git push --atomic`, never forced. When
    the remote moved meanwhile, the push is rejected and the next round
    starts from the fetch. After three rounds the sync stops

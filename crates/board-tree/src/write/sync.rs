@@ -12,10 +12,12 @@ use gix::bstr::BString;
 use gix::object::tree::EntryKind;
 
 use super::entries::{stage_entry, unstage_entry};
+use super::stop::{self, Stop};
 use super::{Lock, Staged, WriteError};
 use crate::git::{GitError, Repository, model_id};
 use crate::transport::{self, Deadline, Pushed, Upstream};
 
+mod checkout;
 mod integrate;
 mod merge;
 mod refuse;
@@ -324,18 +326,31 @@ impl Repository {
         Ok(files)
     }
 
-    /// The paths that differ between `old` and `new`, each with the blob to
-    /// write there, or `None` to remove the file. A file whose working-tree
-    /// bytes are neither its old blob nor its new one is edited, and stops
+    /// The paths to write between `old` and `new`, each with the blob to
+    /// write there, or `None` to remove the file. A path is listed when
+    /// `old` and `new` differ there, and also when a commit in `recorded`,
+    /// which an earlier checkout wrote files from, differs from both there.
+    /// A file whose working-tree bytes are none of its old blob, its new
+    /// one or the blob of a recorded commit is edited, and stops
     /// the sync, as does a file that is, or lies beneath a directory that
     /// is, a symlink on disk, which a write would follow; a path that is not
     /// a plain file in `new` is removed.
-    fn changes(&self, old: &Files, new: &Files) -> Result<Vec<Change>, SyncError> {
+    fn changes(
+        &self,
+        old: &Files,
+        new: &Files,
+        recorded: &[Files],
+    ) -> Result<Vec<Change>, SyncError> {
         let mut changes = Vec::new();
-        let paths: std::collections::BTreeSet<_> = old.keys().chain(new.keys()).collect();
+        let paths: std::collections::BTreeSet<_> = old
+            .keys()
+            .chain(new.keys())
+            .chain(recorded.iter().flat_map(Files::keys))
+            .collect();
         for path in paths {
             let (was, now) = (old.get(path), new.get(path));
-            if was == now {
+            let written: Vec<_> = recorded.iter().map(|files| files.get(path)).collect();
+            if was == now && written.iter().all(|entry| *entry == was) {
                 continue;
             }
             let blob = |entry: Option<&(gix::ObjectId, EntryKind)>| match entry {
@@ -343,6 +358,7 @@ impl Repository {
                 _ => None,
             };
             let (was, now) = (blob(was), blob(now));
+            let written: Vec<_> = written.into_iter().map(blob).collect();
             let path = path.to_string();
             // A prefix that is still a file here, which the remote turned
             // into a directory, holds no symlink; check_out removes it first.
@@ -357,11 +373,16 @@ impl Repository {
             if let Some(symlink) = symlink {
                 return Err(SyncError::Symlink { path, symlink });
             }
-            let held = self.working_held(&path)?;
-            if held != was && held != now {
-                return Err(SyncError::Edited { path });
+            let change = Change {
+                path,
+                was,
+                now,
+                written,
+            };
+            if change.is_edited(self.working_held(&change.path)?) {
+                return Err(SyncError::Edited { path: change.path });
             }
-            changes.push(Change { path, was, now });
+            changes.push(change);
         }
         Ok(changes)
     }
@@ -376,18 +397,24 @@ impl Repository {
         old: Option<ObjectId>,
         new: ObjectId,
         changes: Vec<Change>,
+        mut recorded: Vec<ObjectId>,
     ) -> Result<Vec<Fields>, SyncError> {
-        let (index_lock, index) = self.lock_index(lock.deadline)?;
+        let (index_lock, index, owner) = self.lock_index(lock)?;
         let mut staged = Staged {
             commit: new,
             parent: old,
             index,
             index_lock,
+            owner,
         };
         let mut kept = Vec::new();
-        for change in changes {
+        recorded.retain(|commit| *commit != new);
+        recorded.push(new);
+        self.record_checkout(lock, &recorded)?;
+        stop::at(Stop::Record);
+        for (position, change) in changes.into_iter().enumerate() {
             let held = self.working_held(&change.path)?;
-            if held != change.was && held != change.now {
+            if change.is_edited(held) {
                 kept.push(fields_at(&change.path));
             } else if let Some(blob) = change.now {
                 let bytes = self
@@ -401,8 +428,13 @@ impl Repository {
                 Some(blob) => stage_entry(&mut staged.index, &change.path, self.gix_id(blob)?),
                 None => unstage_entry(&mut staged.index, &change.path),
             }
+            if position == 0 {
+                stop::at(Stop::FirstFile);
+            }
         }
+        stop::at(Stop::LastFile);
         self.finish(lock, staged, "board sync")?;
+        self.clear_checkout(lock)?;
         Ok(kept)
     }
 
@@ -421,6 +453,17 @@ struct Change {
     path: String,
     was: Option<ObjectId>,
     now: Option<ObjectId>,
+    /// Its blob in each commit an earlier checkout was moving to.
+    written: Vec<Option<ObjectId>>,
+}
+
+impl Change {
+    /// Whether a file holding `held` was edited by a person: its bytes are
+    /// neither of the blobs in the two commits nor one an earlier checkout
+    /// wrote.
+    fn is_edited(&self, held: Option<ObjectId>) -> bool {
+        held != self.was && held != self.now && !self.written.contains(&held)
+    }
 }
 
 /// Fields naming the logical path of the file at `path`.

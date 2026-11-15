@@ -43,3 +43,11 @@ fn the_merging_hint_gives_the_code_a_note_write_and_a_task_write_fails_with() {
     assert!(text.contains("`tasks::board::refused`"), "{text}");
     assert!(text.contains("`board::put::locked`"), "{text}");
 }
+
+#[test]
+fn the_locked_hint_says_board_clears_a_lock_a_killed_board_left_and_a_person_clears_the_rest() {
+    let text = hint(Code::PutLocked);
+    assert!(text.contains("a killed Board"), "{text}");
+    assert!(text.contains("the next put or sync removes"), "{text}");
+    assert!(text.contains("any other lock file"), "{text}");
+}

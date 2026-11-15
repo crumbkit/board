@@ -470,7 +470,7 @@ fn generic(code: Code) -> &'static str {
             "after `plugin enable`, run it again; after a put, read the record again with `board get <path>`, reapply your change, and put it with `--expect` set to the blob this error names"
         }
         Code::PutLocked => {
-            "wait for the other write to finish, or give `put --wait` longer than 5s; if no board process is running, remove the lock file the message names; or finish the merge, rebase, revert or cherry-pick in progress, then try again"
+            "wait for the other write to finish, or give `put --wait` longer than 5s; a lock file that a killed Board process left is one the next put or sync removes, so run it again; for any other lock file, such as one a `git commit` holds, check that no process runs and then remove the file the message names; or finish the merge, rebase, revert or cherry-pick in progress, then try again"
         }
         Code::PutThroughMount => {
             "write in the mounted repository and run `board mount update <path>`; a put writes through one mount whose board commits its puts and whose HEAD is on the branch the mount follows"
