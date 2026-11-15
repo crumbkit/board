@@ -361,7 +361,7 @@ pub struct Staged {
     index: gix::index::File,
     index_lock: gix::lock::File,
     /// Declared after `index_lock` so the owner record outlives the file.
-    _owner: locks::Owned,
+    owner: locks::Owned,
 }
 
 /// The id git gives a blob holding `bytes` under the object hash `kind`.
@@ -430,7 +430,7 @@ impl Repository {
             parent: self.head()?,
             index,
             index_lock,
-            _owner: owner,
+            owner,
         };
         let failed =
             |source: Box<dyn std::error::Error + Send + Sync>| WriteError::Commit { source };
@@ -506,7 +506,7 @@ impl Repository {
         // `index.lock` and HEAD after, so one that straddles a put can
         // commit a tree without the put's files.
         stop::at(Stop::IndexLock);
-        let (_owner, prepared) = self.claim_branch(lock, &git, &edit)?;
+        let (mut owner, prepared) = self.claim_branch(lock, &git, &edit)?;
         stop::at(Stop::BranchLock);
         let committer = git
             .committer()
@@ -523,12 +523,14 @@ impl Repository {
             })
             .and_then(|()| staged.index_lock.commit().map_err(|error| error.error))
             .map_err(|source| WriteError::IndexNotWritten { source })?;
+        staged.owner.release();
         stop::at(Stop::IndexRenamed);
         prepared
             .commit(committer)
             .map_err(|error| WriteError::Uncommitted {
                 source: error.into(),
             })?;
+        owner.release();
         stop::at(Stop::BranchMoved);
         Ok(staged.commit)
     }

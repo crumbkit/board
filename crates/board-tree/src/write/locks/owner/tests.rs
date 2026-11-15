@@ -51,10 +51,14 @@ fn an_index_lock_with_no_record_is_refused_naming_the_file() {
 #[test]
 fn an_index_lock_with_another_inode_than_the_record_names_is_refused_and_kept() {
     let (scenario, repository) = leftover(true);
-    // Another process takes its own lock file in place of the recorded one.
-    scenario
-        .write(".git/index.lock", Item::Deleted)
-        .write(".git/index.lock", Item::File(""));
+    // Another process makes its own lock file while the recorded one still
+    // exists, so the two inodes differ, and renames it into place.
+    scenario.write(".git/other.lock", Item::File(""));
+    std::fs::rename(
+        scenario.workdir().join(".git/other.lock"),
+        scenario.workdir().join(".git/index.lock"),
+    )
+    .unwrap();
     let error = staging(&repository).unwrap_err();
     assert!(matches!(error, WriteError::Locked { .. }), "{error:?}");
     assert!(scenario.workdir().join(".git/index.lock").exists());

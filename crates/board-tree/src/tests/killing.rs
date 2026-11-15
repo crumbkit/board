@@ -226,3 +226,31 @@ fn two_syncs_killed_one_after_the_other_and_a_third_match_one_that_was_never_kil
     sync(&twin).unwrap();
     assert_same(&killed, &twin, "two kills");
 }
+
+/// The lock owner record, as the killed process left it.
+fn owners(clone: &Scenario) -> String {
+    std::fs::read_to_string(clone.workdir().join(".git/board-locks")).unwrap_or_default()
+}
+
+#[test]
+fn a_lock_file_renamed_away_has_no_owner_entry_when_the_process_is_killed_after_it() {
+    let (remote, killed, _twin) = setup();
+    remote.commit(&FIRST);
+    kill(&killed, Stop::IndexRenamed, "sync");
+    let record = owners(&killed);
+    assert!(!record.contains("index.lock"), "{record}");
+    assert!(
+        record.contains("main.lock"),
+        "the branch lock is still held: {record}"
+    );
+    let (remote, killed, _twin) = setup();
+    remote.commit(&FIRST);
+    kill(&killed, Stop::BranchMoved, "sync");
+    let record = owners(&killed);
+    assert_eq!(
+        record.lines().count(),
+        1,
+        "only board.lock is held: {record}"
+    );
+    assert!(record.contains("board.lock"), "{record}");
+}

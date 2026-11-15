@@ -405,7 +405,7 @@ impl Repository {
             parent: old,
             index,
             index_lock,
-            _owner: owner,
+            owner,
         };
         let mut kept = Vec::new();
         recorded.retain(|commit| *commit != new);

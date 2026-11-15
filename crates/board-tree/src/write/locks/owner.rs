@@ -10,8 +10,6 @@ use std::io;
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 
-use super::super::write_temporary;
-
 /// One line of the record: the device and inode of the lock file at `path`
 /// when Board took it.
 #[derive(Debug, PartialEq, Eq)]
@@ -70,15 +68,23 @@ impl Owned {
     }
 }
 
-impl Drop for Owned {
-    fn drop(&mut self) {
+impl Owned {
+    /// Removes the entries now, for lock files that were committed or
+    /// renamed away. The record that cannot be rewritten stays, naming
+    /// files that the next run finds gone or finds with another inode.
+    pub(in crate::write) fn release(&mut self) {
         if !self.held.is_empty() {
             let mut entries = read(&self.record);
             entries.retain(|entry| !self.held.contains(&entry.path));
-            // A record that cannot be rewritten stays, naming files that
-            // the next run finds gone or finds with another inode.
             let _ = write(&self.record, &entries);
+            self.held.clear();
         }
+    }
+}
+
+impl Drop for Owned {
+    fn drop(&mut self) {
+        self.release();
     }
 }
 
@@ -123,7 +129,9 @@ fn read(record: &Path) -> Vec<Entry> {
 }
 
 /// Replaces `record` with `entries` by temporary file and rename, or
-/// removes it when there are none.
+/// removes it when there are none. The record is not fsynced: a killed
+/// process leaves the page cache, which the next run reads, and the fsync
+/// would lengthen the window between taking a lock and recording it.
 fn write(record: &Path, entries: &[Entry]) -> io::Result<()> {
     if entries.is_empty() {
         return match fs::remove_file(record) {
@@ -139,8 +147,7 @@ fn write(record: &Path, entries: &[Entry]) -> io::Result<()> {
         })
         .collect();
     let temporary = record.with_extension("tmp");
-    write_temporary(&temporary, record, text.as_bytes())
-        .and_then(|()| fs::rename(&temporary, record))
+    fs::write(&temporary, text).and_then(|()| fs::rename(&temporary, record))
 }
 
 #[cfg(test)]

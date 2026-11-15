@@ -48,7 +48,14 @@ the record. Board never removes a lock file the record does not name, or names
 with another inode, such as the `index.lock` of a running `git commit`.
 
 A process killed between taking a lock and writing its entry leaves a lock
-with no entry, which still refuses with `board::put::locked`. The window is a
-few system calls long. A lock file of git's that is replaced by another file
-with the recorded inode, after a kill, would be removed too, which needs the
-inode number to be reused before the next Board run.
+with no entry, which still refuses with `board::put::locked`. The window is one
+read of the record, and the create, write and rename of its temporary file,
+with no fsync, since a killed process leaves the page cache. The window for
+`board.lock` blocks every put and sync until a person removes the file.
+
+Board removes an entry as soon as its lock file is renamed into place or
+committed, before the next write point, so a kill after the index rename or
+the branch move leaves no entry naming a live file. Between the rename and the
+removal, a few system calls, a kill still leaves one. A lock file of git's that
+takes the recorded inode number before the next Board run would be removed
+too, which needs the inode number to be reused in that time.
