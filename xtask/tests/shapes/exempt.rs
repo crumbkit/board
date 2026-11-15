@@ -16,7 +16,7 @@ pub(super) enum Kind {
 use Kind::{Local, UntilAdopted};
 
 #[rustfmt::skip]
-pub(super) const UNSHARED: [(&str, &str, Kind, &str); 91] = [
+pub(super) const UNSHARED: [(&str, &str, Kind, &str); 119] = [
     // This repository's board's copies of the rules plugin's schemas.
     (".board/controls/control/v1", "/rule/at_least", Local, "a version floor of dotted numbers, which only a version rule compares"),
     (".board/controls/control/v1", "/rule/capture", Local, "a regular expression in the syntax of Rust's regex crate, which only a version rule compiles"),
@@ -51,6 +51,34 @@ pub(super) const UNSHARED: [(&str, &str, Kind, &str); 91] = [
     ("jira/issue/v1", "/key", Local, "a Jira issue key is the jira plugin's own identifier"),
     ("jira/issue/v1", "/site", Local, "a Jira site name is the jira plugin's own identifier"),
     ("jira/issue/v1", "/url", UntilAdopted, "Url, when that shape lands"),
+    ("keeper/map/v1", "/dedupe/{key}", Local, "a path as it was on the day of the pass, which may be gone later, so Board resolves none of them"),
+    ("keeper/map/v1", "/findings/-/id", Local, "a stable id, the kind and a hash of the paths, which only this record's findings use"),
+    ("keeper/map/v1", "/findings/-/paths/-", Local, "a path as it was on the day of the pass, which may be gone later, so Board resolves none of them"),
+    ("keeper/map/v1", "/findings/-/question", Local, "a path as it was on the day of the pass, which may be gone later, so Board resolves none of them"),
+    ("keeper/map/v1", "/links/-/after", Local, "a path as it was on the day of the pass, which may be gone later, so Board resolves none of them"),
+    ("keeper/map/v1", "/links/-/before", Local, "a path as it was on the day of the pass, which may be gone later, so Board resolves none of them"),
+    ("keeper/map/v1", "/links/-/project", Local, "the id of a realm or project of this record, which only its lists match"),
+    ("keeper/map/v1", "/projects/-/changes/-", Local, "a path as it was on the day of the pass, which may be gone later, so Board resolves none of them"),
+    ("keeper/map/v1", "/projects/-/id", Local, "an id that the pass chooses, which only this record's lists match"),
+    ("keeper/map/v1", "/projects/-/order/-/-", Local, "a path as it was on the day of the pass, which may be gone later, so Board resolves none of them"),
+    ("keeper/map/v1", "/projects/-/questions/-", Local, "a path as it was on the day of the pass, which may be gone later, so Board resolves none of them"),
+    ("keeper/map/v1", "/projects/-/realm", Local, "the id of a realm or project of this record, which only its lists match"),
+    ("keeper/map/v1", "/projects/-/task", Local, "a path as it was on the day of the pass, which may be gone later, so Board resolves none of them"),
+    ("keeper/map/v1", "/projects/-/tasks/-", Local, "a path as it was on the day of the pass, which may be gone later, so Board resolves none of them"),
+    ("keeper/map/v1", "/question_rules/localDefault", Local, "the id of a realm or project of this record, which only its lists match"),
+    ("keeper/map/v1", "/question_rules/localRealm/{key}", Local, "the id of a realm or project of this record, which only its lists match"),
+    ("keeper/map/v1", "/question_rules/mount_realms/{key}", Local, "the id of a realm or project of this record, which only its lists match"),
+    ("keeper/map/v1", "/question_rules/names/{key}", Local, "the id of a realm or project of this record, which only its lists match"),
+    ("keeper/map/v1", "/question_rules/tasks/-/contains", Local, "text of a question's blocked work, which only the status board matches"),
+    ("keeper/map/v1", "/question_rules/tasks/-/to", Local, "the id of a realm or project of this record, which only its lists match"),
+    ("keeper/map/v1", "/realms/-/id", Local, "an id that the pass chooses, which only this record's lists match"),
+    ("keeper/map/v1", "/systems/-/id", Local, "an id that the pass chooses, which only this record's lists match"),
+    ("keeper/map/v1", "/systems/-/language", Local, "a language name as the survey wrote it, which only the status board shows"),
+    ("keeper/map/v1", "/systems/-/links/-/id", Local, "an id that the pass chooses, which only this record's lists match"),
+    ("keeper/map/v1", "/systems/-/links/-/module", Local, "the id of a module of the system, which only this record's lists match"),
+    ("keeper/map/v1", "/systems/-/links/-/to", Local, "the id of a system or of `<system>.<module>`, which only this record's lists match"),
+    ("keeper/map/v1", "/systems/-/modules/-/id", Local, "an id that the pass chooses, which only this record's lists match"),
+    ("keeper/map/v1", "/systems/-/realm", Local, "the id of a realm or project of this record, which only its lists match"),
     ("notes/repo/v1", "/covers/-", UntilAdopted, "RemotePattern (audit row 43)"),
     ("plans/answer/v1", "/answered", UntilAdopted, "Timestamp (audit row 38)"),
     ("plans/answer/v1", "/choice", UntilAdopted, "Slug, when option ids are (audit row 34)"),

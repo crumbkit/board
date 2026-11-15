@@ -49,3 +49,53 @@ fn render_writes_a_file_at_a_path_in_the_board() {
         "<!doctype html>\n"
     );
 }
+
+/// A map of one realm, one project and one finding, with `fields` replacing
+/// its own.
+fn map(fields: &Value) -> String {
+    record(
+        json!({
+            "$type": "keeper/map/v1",
+            "date": "2026-02-03",
+            "source": "/curation.md",
+            "realms": [{"id": "alpha", "title": "Alpha"}],
+            "projects": [{
+                "id": "speed", "realm": "alpha", "title": "Speed", "state": "active",
+                "task": null, "changes": ["/changes/a"],
+            }],
+            "findings": [{
+                "kind": "stale", "paths": ["/changes/a"], "evidence": "No commit.",
+                "fix": "changes.pause", "id": "stale-0a1b2c3d",
+            }],
+        }),
+        fields,
+    )
+}
+
+#[test]
+fn a_map_is_admitted_by_board_and_one_with_a_bad_finding_id_is_refused_with_its_code() {
+    let board = board();
+    board.write("curation.md", "# Pass\n");
+    board.write("projects/keeper/map/ok.json", &map(&json!({})));
+    let admitted = board.json(&["check", "--healthy", "--all"]);
+    assert!(
+        !admitted["data"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|entry| entry["logical"] == "/projects/keeper/map/ok" && !entry["code"].is_null()),
+        "{admitted}"
+    );
+    let bad = map(&json!({"findings": [{
+        "kind": "stale", "paths": [], "evidence": "x", "fix": "y", "id": "stale-xyz",
+    }]}));
+    let put = board.run_with(&["put", "/projects/keeper/map/bad"], &bad);
+    assert_ne!(put.code, 0);
+    assert!(
+        text(&put.stderr).contains("board::record::invalid"),
+        "{}",
+        text(&put.stderr)
+    );
+    let good = board.run_with(&["put", "/projects/keeper/map/good"], &map(&json!({})));
+    assert_eq!(good.code, 0, "{}", text(&good.stderr));
+}

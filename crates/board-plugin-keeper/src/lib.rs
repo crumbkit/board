@@ -2,11 +2,15 @@
 
 mod gather;
 mod host;
+pub mod records;
 mod render;
 
 use board_model::{CapabilityName, RecordType};
 use board_ops::{Host, Plugin, PluginError};
 use board_plugin::Manifest;
+use board_plugin::shape::{Record, schema_of};
+use records::KeeperMap;
+use schemars::generate::SchemaSettings;
 use serde_json::{Map, Value, json};
 
 /// The plugin's name, which prefixes its error codes.
@@ -23,7 +27,9 @@ impl Plugin for Keeper {
     }
 
     fn schemas(&self) -> Vec<(RecordType, Value)> {
-        Vec::new()
+        let name =
+            (KeeperMap::TYPE.parse()).expect("KeeperMap's TYPE is a record type; a test parses it");
+        vec![(name, schema_of::<KeeperMap>(SchemaSettings::draft2020_12()))]
     }
 
     fn call(
@@ -63,7 +69,7 @@ fn manifest() -> Value {
         "version": "0.1.0",
         "description": skill_description(),
         "metadata": {"area": "work"},
-        "types": [],
+        "types": [KeeperMap::TYPE],
         "capabilities": [{
             "name": "gather",
             "description": "The live facts a consolidation pass needs.",
@@ -100,3 +106,6 @@ fn skill_description() -> String {
     .expect("the description is a single-quoted scalar");
     quoted.replace("''", "'")
 }
+
+#[cfg(test)]
+mod tests;

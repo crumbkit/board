@@ -1,0 +1,500 @@
+{
+  "$defs": {
+    "Control": {
+      "additionalProperties": false,
+      "description": "A gate or a limit on a link.",
+      "properties": {
+        "at": {
+          "description": "The end of the link where it sits.",
+          "enum": [
+            "from",
+            "to"
+          ],
+          "type": "string"
+        },
+        "caption": {
+          "description": "The control's name.",
+          "type": "string",
+          "x-board-prose": true
+        },
+        "detail": {
+          "description": "What it does.",
+          "type": "string",
+          "x-board-prose": true
+        }
+      },
+      "required": [
+        "caption",
+        "detail",
+        "at"
+      ],
+      "type": "object"
+    },
+    "Finding": {
+      "additionalProperties": false,
+      "description": "A problem the pass found, with the capability that fixes it and the\nquestion filed for the owner.",
+      "properties": {
+        "evidence": {
+          "description": "What shows the problem.",
+          "type": "string",
+          "x-board-prose": true
+        },
+        "fix": {
+          "description": "The capability that fixes it, and how.",
+          "type": "string",
+          "x-board-prose": true
+        },
+        "id": {
+          "description": "Stable id: the kind, a dash and the first 8 hex digits of the sha256\nof the paths joined by newlines.",
+          "pattern": "^[a-z]+(-[a-z]+)*-[0-9a-f]{8}$",
+          "type": "string"
+        },
+        "kind": {
+          "description": "What kind of problem it is.",
+          "enum": [
+            "landed",
+            "superseded",
+            "merge",
+            "stale-plan",
+            "empty-plan",
+            "stale",
+            "loose-link",
+            "duplicate-mount",
+            "answered-open"
+          ],
+          "type": "string"
+        },
+        "paths": {
+          "description": "The changes, tasks or records the finding concerns, by path.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "question": {
+          "description": "The question filed for the owner, by path.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "paths",
+        "evidence",
+        "fix",
+        "id"
+      ],
+      "type": "object"
+    },
+    "Link": {
+      "additionalProperties": false,
+      "description": "A change that must land before another.",
+      "properties": {
+        "after": {
+          "description": "The change that lands after it, by path.",
+          "type": "string"
+        },
+        "before": {
+          "description": "The change that lands first, by path.",
+          "type": "string"
+        },
+        "project": {
+          "description": "The id of the project that holds both.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "before",
+        "after",
+        "project"
+      ],
+      "type": "object"
+    },
+    "Module": {
+      "additionalProperties": false,
+      "description": "A part of a system.",
+      "properties": {
+        "id": {
+          "description": "The module's id, such as `server`.",
+          "type": "string"
+        },
+        "lines": {
+          "description": "How many lines of code it holds.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "purpose": {
+          "description": "What the module does.",
+          "type": "string",
+          "x-board-prose": true
+        }
+      },
+      "required": [
+        "id",
+        "lines",
+        "purpose"
+      ],
+      "type": "object"
+    },
+    "Project": {
+      "additionalProperties": false,
+      "description": "A project: a goal with the changes and tasks that serve it.",
+      "properties": {
+        "changes": {
+          "description": "The open changes of the project, by path.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "id": {
+          "description": "The project's id, a slug.",
+          "type": "string"
+        },
+        "order": {
+          "description": "Pairs of changes of this project, the first landing before the\nsecond.",
+          "items": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 2,
+            "minItems": 2,
+            "type": "array"
+          },
+          "type": "array"
+        },
+        "questions": {
+          "description": "The open questions of the project, by path.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "realm": {
+          "description": "The id of the realm the project belongs to.",
+          "type": "string"
+        },
+        "state": {
+          "description": "Where the project stands.",
+          "enum": [
+            "active",
+            "queued",
+            "held",
+            "waiting-on-owner",
+            "stale",
+            "done"
+          ],
+          "type": "string"
+        },
+        "summary": {
+          "description": "Where the work stands and what comes next.",
+          "type": "string",
+          "x-board-prose": true
+        },
+        "task": {
+          "description": "The task that tracks the project, by path, or null when none does.\nThe field is always present, so that null can say there is none.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "tasks": {
+          "description": "The open tasks of the project that no change of it does, by path.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "title": {
+          "description": "What the project is for, in a few words.",
+          "type": "string",
+          "x-board-prose": true
+        }
+      },
+      "required": [
+        "id",
+        "realm",
+        "title",
+        "state",
+        "task",
+        "changes"
+      ],
+      "type": "object"
+    },
+    "QuestionRules": {
+      "additionalProperties": false,
+      "description": "How an open question is placed on a project, and which realm counts a\nquestion that no rule places. The first rule that matches wins: a change\nthe question names, then a task, then the project name in its path.",
+      "properties": {
+        "localDefault": {
+          "description": "The realm id of every other question of the board itself.",
+          "type": "string"
+        },
+        "localRealm": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "The realm id of the questions of each project folder of the board\nitself, by folder name.",
+          "type": "object"
+        },
+        "mount_realms": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "The realm id of each mounted board's questions, by mount name.",
+          "type": "object"
+        },
+        "names": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "The project id for each project folder, as `<folder>` or\n`<mount>/<folder>`.",
+          "type": "object"
+        },
+        "tasks": {
+          "description": "Rules by task.",
+          "items": {
+            "$ref": "#/$defs/TaskRule"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "mount_realms",
+        "localRealm",
+        "localDefault",
+        "tasks",
+        "names"
+      ],
+      "type": "object"
+    },
+    "Realm": {
+      "additionalProperties": false,
+      "description": "A group of projects.",
+      "properties": {
+        "id": {
+          "description": "The realm's id, a short word such as `board`.",
+          "type": "string"
+        },
+        "title": {
+          "description": "The realm's name as a page shows it.",
+          "type": "string",
+          "x-board-prose": true
+        }
+      },
+      "required": [
+        "id",
+        "title"
+      ],
+      "type": "object"
+    },
+    "System": {
+      "additionalProperties": false,
+      "description": "A repository or service, as the agent surveyed it.",
+      "properties": {
+        "crates_from": {
+          "description": "The mount whose Cargo workspace `keeper.render` reads for crates.",
+          "format": "board-ref",
+          "type": "string"
+        },
+        "external": {
+          "description": "Whether the system is outside the repositories, such as a cloud\nservice that only links reach.",
+          "type": "boolean"
+        },
+        "id": {
+          "description": "The system's id. A repository's id is its mount's name.",
+          "type": "string"
+        },
+        "language": {
+          "description": "The language it is written in.",
+          "type": "string"
+        },
+        "links": {
+          "description": "The links that start at this system.",
+          "items": {
+            "$ref": "#/$defs/SystemLink"
+          },
+          "type": "array"
+        },
+        "modules": {
+          "description": "The parts of the system that the survey found.",
+          "items": {
+            "$ref": "#/$defs/Module"
+          },
+          "type": "array"
+        },
+        "realm": {
+          "description": "The id of the realm it belongs to.",
+          "type": "string"
+        },
+        "title": {
+          "description": "The system's name as a page shows it.",
+          "type": "string",
+          "x-board-prose": true
+        }
+      },
+      "required": [
+        "id",
+        "realm",
+        "title"
+      ],
+      "type": "object"
+    },
+    "SystemLink": {
+      "additionalProperties": false,
+      "description": "A link from a system, or one of its modules, to another system or\nmodule.",
+      "properties": {
+        "controls": {
+          "description": "Gates and limits on the link.",
+          "items": {
+            "$ref": "#/$defs/Control"
+          },
+          "type": "array"
+        },
+        "id": {
+          "description": "The link's id.",
+          "type": "string"
+        },
+        "kind": {
+          "description": "What the link carries.",
+          "enum": [
+            "api-call",
+            "event-stream",
+            "logs-and-records"
+          ],
+          "type": "string"
+        },
+        "module": {
+          "description": "The module of this system where the link starts.",
+          "type": "string"
+        },
+        "name": {
+          "description": "What the link carries, in a few words.",
+          "type": "string",
+          "x-board-prose": true
+        },
+        "production": {
+          "description": "Whether the link runs in production.",
+          "type": "boolean"
+        },
+        "to": {
+          "description": "The other end: a system id, or `<system>.<module>`.",
+          "type": "string"
+        },
+        "traffic": {
+          "description": "How busy the link is, from 1 to 10.",
+          "maximum": 10,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "to",
+        "kind"
+      ],
+      "type": "object"
+    },
+    "TaskRule": {
+      "additionalProperties": false,
+      "description": "A rule that ties a question to a project by a task path.",
+      "properties": {
+        "contains": {
+          "description": "Text that a question's `blocked_work` contains.",
+          "type": "string"
+        },
+        "to": {
+          "description": "The id of the project the question belongs to.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "contains",
+        "to"
+      ],
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "`keeper/map/v1`: a consolidation pass's project tree, its findings and,\nwhen the pass surveyed them, the systems the work touches. Phase, touched\ndate and pull request come from `changes.open` and the change records,\nnot from this record.",
+  "properties": {
+    "$type": {
+      "const": "keeper/map/v1",
+      "description": "The record's type.",
+      "type": "string"
+    },
+    "date": {
+      "description": "The UTC day of the pass.",
+      "format": "date",
+      "type": "string"
+    },
+    "dedupe": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "description": "Each path through a doubly mounted repository, with the path it\nduplicates.",
+      "type": "object"
+    },
+    "findings": {
+      "description": "What the pass found that needs the owner or an agent to act.",
+      "items": {
+        "$ref": "#/$defs/Finding"
+      },
+      "type": "array"
+    },
+    "links": {
+      "description": "Orderings between changes of different projects.",
+      "items": {
+        "$ref": "#/$defs/Link"
+      },
+      "type": "array"
+    },
+    "projects": {
+      "description": "The project tree: every open change is in exactly one project.",
+      "items": {
+        "$ref": "#/$defs/Project"
+      },
+      "type": "array"
+    },
+    "question_rules": {
+      "$ref": "#/$defs/QuestionRules",
+      "description": "How the status board places an open question on a project."
+    },
+    "questions_waiting": {
+      "additionalProperties": {
+        "minimum": 0,
+        "type": "integer"
+      },
+      "description": "How many questions wait on the owner, by realm id.",
+      "type": "object"
+    },
+    "realms": {
+      "description": "The groups that projects belong to, such as one per board or team.",
+      "items": {
+        "$ref": "#/$defs/Realm"
+      },
+      "type": "array"
+    },
+    "source": {
+      "description": "The curation record this map was built from.",
+      "format": "board-ref",
+      "type": "string"
+    },
+    "systems": {
+      "description": "The repositories and services the work touches, from the agent's\nsurvey of each.",
+      "items": {
+        "$ref": "#/$defs/System"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "$type",
+    "date",
+    "source",
+    "realms",
+    "projects",
+    "findings"
+  ],
+  "title": "KeeperMap",
+  "type": "object"
+}
