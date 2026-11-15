@@ -27,9 +27,9 @@ use std::process::ExitCode;
 use std::time::Instant;
 
 fn main() -> ExitCode {
+    complete::declare();
     let started = Instant::now();
     let context = config::Context::read();
-    complete::declare(&context);
     let mut ran = timing::Ran::default();
     let output = run::run(
         std::env::args_os(),

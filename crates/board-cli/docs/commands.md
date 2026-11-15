@@ -501,7 +501,7 @@ board completion install --shell zsh --force
 - `state`: What install did: failed, skipped, written or unchanged.
 - `shell`: The shell: bash, elvish, fish, powershell or zsh.
 - `path`: The completion file that install wrote or left. When the file is a link to a file that install wrote, the path of that file.
-- `reason`: Why install skipped or failed, or what it replaced under --force, such as `linked to /src/shelf/shelf.fish`, or null.
+- `reason`: Why install skipped or failed, or what it replaced under --force, such as `linked to /path/to/target.fish`, or null.
 
 Effects: additive, idempotent, closed-world.
 
@@ -526,7 +526,7 @@ board completion check --shell zsh
 - `state`: Whether the file holds the script that install writes: missing, differs, unreadable, linked or current.
 - `shell`: The shell: bash, elvish, fish, powershell or zsh.
 - `path`: The completion file that was checked. When the file is a link to a file that install wrote, the path of that file.
-- `reason`: Why the file differs, cannot be read or is linked, such as `linked to /src/shelf/shelf.fish`, or null.
+- `reason`: Why the file differs, cannot be read or is linked, such as `linked to /path/to/target.fish`, or null.
 
 Effects: read-only, closed-world.
 

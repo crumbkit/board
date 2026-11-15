@@ -9,8 +9,8 @@ use std::process::Command;
 use std::time::{Duration, Instant};
 
 use crumbkit_process::{
-    Capture, Escalation, Input, Outcome, OverLimit, RunError, RunOptions, Signal, Status,
-    StopReason, Zeroizing,
+    Capture, Escalation, Input, Outcome, RunError, RunOptions, Signal, Status, StopReason,
+    Zeroizing,
 };
 
 /// How long a child has to exit after SIGTERM before Board kills it.
@@ -152,13 +152,8 @@ pub(crate) fn run(
     let at = Instant::now();
     let settings = RunOptions::new()
         .stdin(Input::Bytes(Zeroizing::new(input)))
-        .stdout(Capture::Whole {
-            limit: limits.stdout,
-            over: OverLimit::Stop,
-        })
-        .stderr(Capture::Tail {
-            limit: limits.stderr,
-        })
+        .stdout(Capture::whole(limits.stdout))
+        .stderr(Capture::tail(limits.stderr))
         .deadline(at + limits.time)
         .escalation(Escalation::default().step(Signal::Terminate, GRACE))
         .scope(match scope {

@@ -99,7 +99,7 @@ fn steps(hint: Option<&str>) -> Vec<RecoveryStep> {
 }
 
 /// Board's `code` as crumbkit's.
-fn crumbkit_code(code: Code) -> crumbkit::Code {
+fn crumbkit_code(code: Code) -> crumbkit::Code<'static> {
     let mut parts = code.as_str().split("::");
     let mut next = || parts.next().unwrap();
     crumbkit::Code::new(next(), next(), next())
@@ -1168,10 +1168,9 @@ const SCHEMA_MISSING: &str = "the board lacks an enabled plugin's schema, and no
 
 /// Board's codes, as crumbkit's, and why each one that no command line in
 /// a test provokes is not provoked.
-fn declared() -> (Vec<crumbkit::Code>, Vec<Unprovoked<'static>>) {
+fn declared() -> (Vec<crumbkit::Code<'static>>, Vec<Unprovoked<'static>>) {
     let unprovoked = NOT_REPRODUCED.iter();
-    let unprovoked =
-        unprovoked.map(|(code, reason)| Unprovoked::from_code(crumbkit_code(*code), reason));
+    let unprovoked = unprovoked.map(|(code, reason)| Unprovoked::new(crumbkit_code(*code), reason));
     let codes = Code::ALL.into_iter().map(crumbkit_code).collect();
     (codes, unprovoked.collect())
 }
@@ -1191,10 +1190,11 @@ fn recover(starts: &[Failing<'_>]) -> BTreeSet<String> {
         .failure_reader(&reader);
     let (codes, mut unprovoked) = declared();
     for code in [Code::SettingsAsked, Code::SettingsRefused] {
-        unprovoked.push(Unprovoked::from_code(crumbkit_code(code), NAMES_AN_ID));
+        unprovoked.push(Unprovoked::new(crumbkit_code(code), NAMES_AN_ID));
     }
 
-    let recoveries = Recoveries::from_codes(examples, &codes)
+    let lists = [codes.as_slice()];
+    let recoveries = Recoveries::new(examples, &lists)
         .starts(starts)
         .unprovoked(&unprovoked);
     Suite::new(build)
@@ -1262,7 +1262,8 @@ fn every_refusal_has_a_twin_one_word_apart_that_succeeds() {
         .allow(&starts.untwinned)
         .failure_reader(&reader);
     let (codes, unprovoked) = declared();
-    let twins = Twins::from_codes(examples, &codes)
+    let lists = [codes.as_slice()];
+    let twins = Twins::new(examples, &lists)
         .pairs(&starts.pairs)
         .unprovoked(&unprovoked);
     Suite::new(build).twins(twins).run(Check::Twins);

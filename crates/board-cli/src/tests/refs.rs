@@ -115,6 +115,40 @@ fn a_field_that_is_not_a_json_pointer_refuses_the_run_and_its_twin_that_is_one_i
     assert!(text(&ran.stdout).contains(r#" target=- ""={"$type":"lr/project/v1""#));
 }
 
+#[test]
+fn refs_refuses_the_view_flag_fields_and_its_twin_field_is_read_as_a_pointer() {
+    let scenario = hub();
+    let refused = board_in(
+        scenario.workdir(),
+        &["refs", "/hub", "--json", "--fields", "text"],
+    );
+    assert_eq!(
+        (refused.code, refused.error.as_deref()),
+        (2, Some("board::cli::usage")),
+        "{}",
+        text(&refused.stderr)
+    );
+    assert!(
+        text(&refused.stdout).contains("--fields names an unknown field 'text'"),
+        "{}",
+        text(&refused.stdout)
+    );
+
+    let admitted = board_in(
+        scenario.workdir(),
+        &["refs", "/hub", "--json", "--field", "/status"],
+    );
+    assert_eq!((admitted.code, admitted.error), (0, None));
+    let root = std::fs::canonicalize(scenario.workdir()).unwrap();
+    let printed = text(&admitted.stdout).replace(&root.display().to_string(), "<root>");
+    assert_eq!(printed, GOLDEN_STATUS);
+}
+
+/// `board refs /hub --json --field /status`, with the board's root as
+/// `<root>`, as Board printed it on crumbkit 0.3.1.
+const GOLDEN_STATUS: &str = r#"{"schema":"board/refs-report/v2","data":[{"from":[{"link":false,"location":{"display":"/projects/p","path":"projects/p.json","pointers":[{"path":"links/l.json","repository":"<root>","source":"worktree"}],"repository":"<root>","source":"worktree"},"pointer":"/see/0","status":"ok","target":"/links/l","values":[{"absent":true,"pointer":"/status"}]},{"link":false,"location":{"display":"/notes.md","path":"notes.md","pointers":[],"repository":"<root>","source":"worktree"},"pointer":"/see/1","status":"ok","target":"/notes.md","target_code":"board::record::not_a_record"},{"code":"board::ref::dangling","link":false,"location":null,"pointer":"/see/2","status":"degraded","target":"/zz"},{"link":false,"location":{"display":"/tasks/bad","path":"tasks/bad.json","pointers":[],"repository":"<root>","source":"worktree"},"pointer":"/see/3","status":"ok","target":"/tasks/bad","target_code":"board::record::invalid","values":[{"pointer":"/status","value":"done"}]}],"location":{"display":"/hub","path":"hub.json","pointers":[],"repository":"<root>","source":"worktree"},"missing":null,"to":[],"total":4,"truncated":false}],"failures":[]}
+"#;
+
 /// A `from` line's fields read back: its target's code, then each pointer
 /// with its value, or `None` where it is absent.
 fn read_fields(line: &str) -> (String, Vec<(String, Option<serde_json::Value>)>) {

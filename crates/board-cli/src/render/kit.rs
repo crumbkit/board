@@ -7,8 +7,8 @@ use board_model::{Refusal, RefusalCode};
 use crumbkit::help::Help;
 use crumbkit::tool::{Failures, Output as Printing, RefusalContext};
 use crumbkit::{
-    Batch, Call, Code, Document, Failure, Field, FieldValue, Listing, Prose, Recovery, Row, Rows,
-    Sink, Spelling, Tool, codes,
+    Batch, Call, Code, Document, Failure, Field, FieldValue, Line, Listing, Problem, Prose,
+    Recovery, Row, Rows, Sink, Spelling, Tool, codes,
 };
 use schemars::JsonSchema;
 use serde::Serialize;
@@ -71,19 +71,19 @@ impl fmt::Display for Refused {
 impl std::error::Error for Refused {}
 
 /// The code of a refusal whose code crumbkit cannot hold.
-const UNHELD: Code = Code::new("board", "output", "unheld");
+const UNHELD: Code<'static> = Code::new("board", "output", "unheld");
 
 impl Failure for Refused {
-    fn code(&self) -> &'static Code {
+    fn code(&self) -> Code<'_> {
         let code = self.0.code.as_str();
         // crumbkit exits 2 only for its own usage code.
         if code == board_model::Code::CliUsage.as_str() {
-            return &codes::CLI_USAGE;
+            return codes::CLI_USAGE;
         }
         Spelling::COLONS
             .split(code)
             .and_then(|(component, area, reason)| Code::runtime(component, area, reason).ok())
-            .unwrap_or(&UNHELD)
+            .unwrap_or(UNHELD)
     }
 
     /// A refusal keeps its hint as text.
@@ -151,11 +151,7 @@ impl Whole {
 impl Row for Whole {
     const COLUMNS: &'static [&'static str] = &[];
     const WHOLE: bool = true;
-    const LINE: Option<&'static str> = Some("<ENTRY>");
-
-    fn text_line(&self) -> Option<String> {
-        self.line.clone()
-    }
+    const LINE: Option<Line<Self>> = Some(Line::new("<ENTRY>", |row: &Self| row.line.clone()));
 }
 
 /// A [`Whole`] row whose `code`, when it has one, reports a problem, so a
@@ -168,21 +164,8 @@ pub(crate) struct Flagged(pub(crate) Whole);
 impl Row for Flagged {
     const COLUMNS: &'static [&'static str] = &["logical", "kind", "code", "hint"];
     const WHOLE: bool = true;
-    const LINE: Option<&'static str> = Some("<ENTRY>");
-    const PROBLEM: Option<&'static str> = Some("code");
-
-    fn text_line(&self) -> Option<String> {
-        self.0.text_line()
-    }
-
-    /// As crumbkit's default reads `code`, without serializing the row.
-    fn is_problem(&self) -> bool {
-        match self.0.value.get("code") {
-            None | Some(Value::Null | Value::Bool(false)) => false,
-            Some(Value::String(text)) => !text.is_empty(),
-            Some(_) => true,
-        }
-    }
+    const LINE: Option<Line<Self>> = Some(Line::new("<ENTRY>", |row: &Self| row.0.line.clone()));
+    const PROBLEM: Option<Problem<Self>> = Some(Problem::field("code"));
 }
 
 /// One line of a note on stderr beside a result.

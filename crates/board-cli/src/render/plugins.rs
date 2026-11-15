@@ -5,7 +5,7 @@ use board_ops::{PluginEntry, PluginFindReport, PluginListReport, PluginState};
 use board_plugin::{CallReport, Capability};
 use board_tree::Status;
 use crumbkit::help::Leaf;
-use crumbkit::{Document, Listing, Prose, Row};
+use crumbkit::{Document, Line, Listing, Problem, Prose, Row};
 use schemars::JsonSchema;
 use serde::Serialize;
 use serde_json::{Map, Value, json};
@@ -144,18 +144,14 @@ impl Row for Listed {
     const COLUMNS: &'static [&'static str] = &["status", "name", "version", "enabled", "offers"];
     const LONG_COLUMNS: &'static [&'static str] = &["description", "message", "schemas"];
     const WHOLE: bool = true;
-    const LINE: Option<&'static str> =
-        Some("<STATUS> <NAME> [<VERSION>] <ENABLED>[: <PROBLEMS>][ offers <OFFERS>]");
-
+    const LINE: Option<Line<Self>> = Some(Line::new(
+        "<STATUS> <NAME> [<VERSION>] <ENABLED>[: <PROBLEMS>][ offers <OFFERS>]",
+        |row: &Self| Some(row.line.clone()),
+    ));
     /// A row with a `code` reports a problem. `code` is not a column, because
     /// the text of `status` holds it, so the row says so itself (ADR-0096).
-    fn is_problem(&self) -> bool {
-        self.code.is_some()
-    }
-
-    fn text_line(&self) -> Option<String> {
-        Some(self.line.clone())
-    }
+    const PROBLEM: Option<Problem<Self>> =
+        Some(Problem::by("status", |row: &Self| row.code.is_some()));
 }
 
 const LIST_REPORT: Document<Listing<Listed>> = Document::new(
@@ -257,17 +253,18 @@ impl Row for Found {
     const LONG_COLUMNS: &'static [&'static str] =
         &["title", "version", "annotations", "timeout", "env"];
     const WHOLE: bool = true;
-    const LINE: Option<&'static str> = Some("<PLUGIN>.<CAPABILITY> <ENABLED> <DESCRIPTION>");
-
-    fn text_line(&self) -> Option<String> {
-        Some(format!(
-            "{}.{} {} {}",
-            self.plugin,
-            self.capability,
-            enabled(self.enabled),
-            self.description
-        ))
-    }
+    const LINE: Option<Line<Self>> = Some(Line::new(
+        "<PLUGIN>.<CAPABILITY> <ENABLED> <DESCRIPTION>",
+        |row: &Self| {
+            Some(format!(
+                "{}.{} {} {}",
+                row.plugin,
+                row.capability,
+                enabled(row.enabled),
+                row.description
+            ))
+        },
+    ));
 }
 
 const FIND_REPORT: Document<Listing<Found>> = Document::new(
