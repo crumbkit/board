@@ -158,7 +158,11 @@ fn a_remote_rewritten_during_a_merge_or_shallow_refusal_still_refuses_as_rewound
 
 #[test]
 fn a_merge_or_rebase_in_progress_refuses_even_when_a_rewrite_is_accepted_and_the_twin_syncs() {
-    for marker in [".git/MERGE_HEAD", ".git/rebase-merge", ".git/rebase-apply"] {
+    for (marker, top) in [
+        (".git/MERGE_HEAD", ".git/MERGE_HEAD"),
+        (".git/rebase-merge/done", ".git/rebase-merge"),
+        (".git/rebase-apply/next", ".git/rebase-apply"),
+    ] {
         let (remote, clone) = pair();
         let tip = remote.commit(&[("a.json", "{}"), ("b.json", "[]")]);
         let before = state(&clone);
@@ -168,7 +172,34 @@ fn a_merge_or_rebase_in_progress_refuses_even_when_a_rewrite_is_accepted_and_the
             assert_eq!(error.code(), Code::SyncMerging, "{marker}: {error}");
             assert_eq!(state(&clone), before);
         }
-        clone.write(marker, Item::Deleted);
+        clone.write(top, Item::Deleted);
+        assert_eq!(sync(&clone, false, false).unwrap().new, tip, "{marker}");
+    }
+}
+
+#[test]
+fn a_stopped_cherry_pick_revert_or_sequencer_refuses_like_a_merge_and_the_twin_syncs() {
+    for markers in [
+        &[".git/CHERRY_PICK_HEAD"][..],
+        &[".git/REVERT_HEAD"][..],
+        &[".git/CHERRY_PICK_HEAD", ".git/sequencer/todo"][..],
+        &[".git/REVERT_HEAD", ".git/sequencer/todo"][..],
+    ] {
+        let marker = markers.join(" + ");
+        let (remote, clone) = pair();
+        let tip = remote.commit(&[("a.json", "{}"), ("b.json", "[]")]);
+        let before = state(&clone);
+        for marker in markers {
+            clone.write(marker, Item::File("pick 0000000 x\n"));
+        }
+        let error = sync(&clone, false, false).unwrap_err();
+        assert_eq!(error.code(), Code::SyncMerging, "{marker}: {error}");
+        assert_eq!(state(&clone), before, "{marker}");
+        for marker in markers {
+            if clone.workdir().join(marker).exists() {
+                clone.write(marker, Item::Deleted);
+            }
+        }
         assert_eq!(sync(&clone, false, false).unwrap().new, tip, "{marker}");
     }
 }

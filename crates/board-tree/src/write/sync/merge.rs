@@ -7,7 +7,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use board_model::{
     CONFLICTS_DIRECTORY, Mount, ObjectId, Pointer, Side, TYPES_DIRECTORY, can_hold_pointer,
-    is_json_file, pointer, repinned,
+    canonical_json, is_json_file, parse_json, pointer, repinned,
 };
 use gix::bstr::BString;
 use gix::objs::tree::{Entry, EntryKind, EntryMode};
@@ -83,7 +83,8 @@ pub enum PinBasis {
     Descendant,
     /// Neither descends from the other, so the remote was taken.
     Unrelated,
-    /// Ancestry could not be read, so the local pin stayed.
+    /// Ancestry could not be read, so the remote pin was taken and a
+    /// conflict recorded.
     Unknown,
 }
 
@@ -92,6 +93,13 @@ pub(crate) struct SchemaClash {
     pub(crate) path: String,
     pub(crate) local: ObjectId,
     pub(crate) remote: ObjectId,
+}
+
+/// A file merged as text: what it holds, and whether its frontmatter was
+/// changed differently on both sides, so the remote's stands.
+struct Text {
+    slot: Slot,
+    clash: bool,
 }
 
 /// One tree entry: what a name holds in a directory.
@@ -139,7 +147,7 @@ pub(crate) fn merge_trees(
         Some(tree) => tree,
         None => merge.write(Vec::new())?,
     };
-    let tree = model_id(&tree);
+    let tree = model_id(&merge.settle_kept(tree)?);
     Ok(Merged {
         tree,
         conflicts: merge.conflicts,
@@ -253,11 +261,21 @@ impl Merge<'_> {
                 return Ok(Some(remote));
             }
             (Some(local), Some(remote)) => {
-                if let Some(taken) = self.pin(path, local, remote)? {
+                if let Some(taken) = self.pin(path, base, local, remote)? {
                     return Ok(Some(taken));
                 }
                 if let Some(merged) = self.text(path, base, local, remote)? {
-                    return Ok(Some(merged));
+                    if merged.clash {
+                        self.conflicts.push(Conflict {
+                            path: path.to_owned(),
+                            base: base.and_then(Slot::blob),
+                            kind: ConflictKind::BothChanged {
+                                local: local.object(),
+                                remote: remote.object(),
+                            },
+                        });
+                    }
+                    return Ok(Some(merged.slot));
                 }
                 self.flag_schema(path, local, remote);
                 let kind = ConflictKind::BothChanged {
@@ -293,28 +311,33 @@ impl Merge<'_> {
     /// The text file both sides changed, merged line by line from `base`,
     /// when no hunk of one side overlaps a hunk of the other, or when the
     /// only hunks that meet are insertions at one point, which both stay
-    /// in ([`insertions_together`]). A file [`merges_by_line`] excludes, a
-    /// file that is not text and a merge with other overlapping hunks give
-    /// `None`.
+    /// in ([`insertions_together`]). A file that starts with a `---` line
+    /// keeps one side's frontmatter whole and merges only the body by
+    /// line: the side that changed the frontmatter, or the remote's with
+    /// `clash` set when both did, differently. A file [`merges_by_line`]
+    /// excludes, a file that is not text, a path both sides added and a
+    /// merge with other overlapping hunks give `None`.
     fn text(
         &self,
         path: &str,
         base: Option<Slot>,
         local: Slot,
         remote: Slot,
-    ) -> Result<Option<Slot>, GitError> {
+    ) -> Result<Option<Text>, GitError> {
+        let Some(base) = base else {
+            return Ok(None);
+        };
         if !merges_by_line(path)
             || local.mode != remote.mode
             || !local.mode.is_blob()
-            || base.is_some_and(|base| !base.mode.is_blob())
+            || !base.mode.is_blob()
         {
             return Ok(None);
         }
         let read = |id: gix::ObjectId| self.repository.read_blob(model_id(&id));
-        let (Some(ours), Some(theirs)) = (read(local.id)?, read(remote.id)?) else {
-            return Ok(None);
-        };
-        let Some(ancestor) = base.map_or(Ok(Some(Vec::new())), |base| read(base.id))? else {
+        let (Some(ours), Some(theirs), Some(ancestor)) =
+            (read(local.id)?, read(remote.id)?, read(base.id)?)
+        else {
             return Ok(None);
         };
         if [&ours, &theirs, &ancestor]
@@ -323,37 +346,51 @@ impl Merge<'_> {
         {
             return Ok(None);
         }
-        let mut merged = Vec::new();
-        let mut input = gix::diff::blob::InternedInput::new(&[][..], &[]);
-        let outcome = gix::merge::blob::builtin_driver::text(
-            &mut merged,
-            &mut input,
-            gix::merge::blob::builtin_driver::text::Labels::default(),
-            &ours,
-            &ancestor,
-            &theirs,
-            gix::merge::blob::builtin_driver::text::Options::default(),
-        );
-        if outcome != gix::merge::blob::Resolution::Complete {
-            let Some(together) = insertions_together(&ancestor, &ours, &theirs) else {
-                return Ok(None);
-            };
-            merged = together;
-        }
+        let (merged, clash) = match (
+            frontmatter(&ancestor),
+            frontmatter(&ours),
+            frontmatter(&theirs),
+        ) {
+            (None, None, None) => (merge_lines(&ancestor, &ours, &theirs), false),
+            (Some(base), Some(ours), Some(theirs)) => {
+                let (head, clash) = if ours.0 == theirs.0 || base.0 == theirs.0 {
+                    (ours.0, false)
+                } else if base.0 == ours.0 {
+                    (theirs.0, false)
+                } else {
+                    (theirs.0, true)
+                };
+                let body = merge_lines(base.1, ours.1, theirs.1);
+                (body.map(|body| [head, &body].concat()), clash)
+            }
+            _ => (None, false),
+        };
+        let Some(merged) = merged else {
+            return Ok(None);
+        };
         let id = self
             .repository
             .git()
             .write_blob(&merged)
             .map_err(|e| self.unreadable(e))?;
-        Ok(Some(Slot {
-            id: id.detach(),
-            mode: local.mode,
+        Ok(Some(Text {
+            slot: Slot {
+                id: id.detach(),
+                mode: local.mode,
+            },
+            clash,
         }))
     }
 
     /// The pin to keep when `local` and `remote` are mount pointers that
     /// differ only in their commit.
-    fn pin(&mut self, path: &str, local: Slot, remote: Slot) -> Result<Option<Slot>, GitError> {
+    fn pin(
+        &mut self,
+        path: &str,
+        base: Option<Slot>,
+        local: Slot,
+        remote: Slot,
+    ) -> Result<Option<Slot>, GitError> {
         if !can_hold_pointer(path) {
             return Ok(None);
         }
@@ -372,11 +409,11 @@ impl Merge<'_> {
         }
         let (taken, basis) = match (self.descends)(&remote_mount, remote_commit, local_commit) {
             Ancestry::Descends => (Side::Remote, PinBasis::Descendant),
-            Ancestry::Unknown => (Side::Local, PinBasis::Unknown),
+            Ancestry::Unknown => (Side::Remote, PinBasis::Unknown),
             Ancestry::DoesNot => match (self.descends)(&local_mount, local_commit, remote_commit) {
                 Ancestry::Descends => (Side::Local, PinBasis::Descendant),
                 Ancestry::DoesNot => (Side::Remote, PinBasis::Unrelated),
-                Ancestry::Unknown => (Side::Local, PinBasis::Unknown),
+                Ancestry::Unknown => (Side::Remote, PinBasis::Unknown),
             },
         };
         self.pins.push(PinResolution {
@@ -386,6 +423,19 @@ impl Merge<'_> {
             taken,
             basis,
         });
+        if basis == PinBasis::Unknown {
+            // The machine that pushed the remote pin had its commit, and
+            // the local pin may be an ancestor of it, so the remote pin
+            // stands and the choice is left on record.
+            self.conflicts.push(Conflict {
+                path: path.to_owned(),
+                base: base.and_then(Slot::blob),
+                kind: ConflictKind::BothChanged {
+                    local: local.object(),
+                    remote: remote.object(),
+                },
+            });
+        }
         Ok(Some(match taken {
             Side::Local => local,
             Side::Remote => remote,
@@ -417,6 +467,81 @@ impl Merge<'_> {
                 remote,
             });
         }
+    }
+
+    /// `root` with the `kept` of each conflict record under `conflicts/`
+    /// set to the side whose blob `root` holds at the record's path. A
+    /// record whose path holds neither side's blob is left as it is.
+    fn settle_kept(&self, root: gix::ObjectId) -> Result<gix::ObjectId, GitError> {
+        let top = self.entries(Some(root))?;
+        let name = CONFLICTS_DIRECTORY.trim_end_matches('/');
+        let Some(directory) = top.get(&BString::from(name)).filter(|slot| slot.is_tree()) else {
+            return Ok(root);
+        };
+        let mut fixed = Vec::new();
+        for (file, slot) in self.entries(Some(directory.id))? {
+            let Some(blob) = slot.blob() else {
+                continue;
+            };
+            let Some(bytes) = self.repository.read_blob(blob)? else {
+                continue;
+            };
+            let Ok(value) = parse_json(&bytes) else {
+                continue;
+            };
+            let Ok(mut record) = board_model::Conflict::from_value(&value) else {
+                continue;
+            };
+            let held = self.blob_at(root, &record.path)?;
+            let kept = match held {
+                Some(held) if Some(held) == record.local.blob => Side::Local,
+                Some(held) if Some(held) == record.remote.blob => Side::Remote,
+                _ => continue,
+            };
+            if kept == record.kept {
+                continue;
+            }
+            record.kept = kept;
+            let written = self
+                .repository
+                .git()
+                .write_blob(canonical_json(&record.to_value()).into_bytes())
+                .map_err(|e| self.unreadable(e))?;
+            fixed.push((format!("{CONFLICTS_DIRECTORY}{file}"), written.detach()));
+        }
+        if fixed.is_empty() {
+            return Ok(root);
+        }
+        let mut editor = self
+            .repository
+            .git()
+            .edit_tree(root)
+            .map_err(|e| self.unreadable(e))?;
+        for (path, blob) in fixed {
+            editor
+                .upsert(path.as_str(), EntryKind::Blob, blob)
+                .map_err(|e| self.unreadable(e))?;
+        }
+        Ok(editor.write().map_err(|e| self.unreadable(e))?.detach())
+    }
+
+    /// The blob the tree `root` holds at `path`, if it holds a file there.
+    fn blob_at(&self, root: gix::ObjectId, path: &str) -> Result<Option<ObjectId>, GitError> {
+        let mut tree = root;
+        let mut parts = path.split('/').peekable();
+        while let Some(part) = parts.next() {
+            let Some(slot) = self.entries(Some(tree))?.get(&BString::from(part)).copied() else {
+                return Ok(None);
+            };
+            if parts.peek().is_none() {
+                return Ok(slot.blob());
+            }
+            if !slot.is_tree() {
+                return Ok(None);
+            }
+            tree = slot.id;
+        }
+        Ok(None)
     }
 
     fn entries(&self, tree: Option<gix::ObjectId>) -> Result<BTreeMap<BString, Slot>, GitError> {
@@ -467,6 +592,53 @@ impl Merge<'_> {
 fn merges_by_line(path: &str) -> bool {
     let name = path.rsplit('/').next().unwrap_or(path);
     !is_json_file(path) && name != ".gitattributes"
+}
+
+/// Whether `line` is a frontmatter fence: `---` and nothing else.
+fn is_fence(line: &[u8]) -> bool {
+    let line = line.strip_suffix(b"\n").unwrap_or(line);
+    line.strip_suffix(b"\r").unwrap_or(line) == b"---"
+}
+
+/// A file that starts with a `---` line split into its frontmatter, which
+/// ends with the next `---` line (or is the whole file when there is none),
+/// and the body after it. `None` for any other file.
+fn frontmatter(bytes: &[u8]) -> Option<(&[u8], &[u8])> {
+    let mut lines = bytes.split_inclusive(|b| *b == b'\n');
+    let first = lines.next()?;
+    if !is_fence(first) {
+        return None;
+    }
+    let mut end = first.len();
+    for line in lines {
+        end += line.len();
+        if is_fence(line) {
+            return Some(bytes.split_at(end));
+        }
+    }
+    Some((bytes, &[]))
+}
+
+/// The line-level three-way merge of `ours` and `theirs` from `ancestor`,
+/// `None` when it is a conflict: `gix`'s merge when no hunks overlap, else
+/// [`insertions_together`].
+fn merge_lines(ancestor: &[u8], ours: &[u8], theirs: &[u8]) -> Option<Vec<u8>> {
+    let mut merged = Vec::new();
+    let mut input = gix::diff::blob::InternedInput::new(&[][..], &[]);
+    let outcome = gix::merge::blob::builtin_driver::text(
+        &mut merged,
+        &mut input,
+        gix::merge::blob::builtin_driver::text::Labels::default(),
+        ours,
+        ancestor,
+        theirs,
+        gix::merge::blob::builtin_driver::text::Options::default(),
+    );
+    if outcome == gix::merge::blob::Resolution::Complete {
+        Some(merged)
+    } else {
+        insertions_together(ancestor, ours, theirs)
+    }
 }
 
 /// One change to a file's lines: the lines `before` in the ancestor became

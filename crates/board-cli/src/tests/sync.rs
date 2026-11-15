@@ -224,3 +224,16 @@ fn sync_stops_for_a_rewritten_remote_until_accepted_and_for_a_shallow_clone_alwa
     assert_eq!(output.code, 0, "{}", text(&output.stderr));
     assert_eq!(json(&output)["data"]["fetched"], rewritten.to_string());
 }
+
+/// The flag's help says what accepting a rewrite does to the commits the
+/// rewrite removed.
+#[test]
+fn the_accept_rewrite_help_says_removed_commits_are_pushed_again_and_a_deliberate_rewrite_needs_a_fresh_clone()
+ {
+    let (_remote, a, _) = clones();
+    let output = board_in(a.workdir(), &["sync", "--help"]);
+    let help = text(&output.stdout).replace('\n', " ");
+    let help: String = help.split_whitespace().collect::<Vec<_>>().join(" ");
+    assert!(help.contains("pushed again"), "{help}");
+    assert!(help.contains("fresh clone"), "{help}");
+}

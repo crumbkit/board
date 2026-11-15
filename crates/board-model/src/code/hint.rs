@@ -531,13 +531,13 @@ fn generic(code: Code) -> &'static str {
             "git did not finish within its deadline, 60 seconds for `board sync`, for example because the remote hangs, so Board stopped it; the commits here stay for the next sync. `git fetch` run by hand shows where the remote stalls"
         }
         Code::SyncRewound => {
-            "the remote branch no longer contains the commit this clone fetched last time, so someone rewrote it (a force push, or a branch reset) and merging it could bring back commits the remote dropped. The working tree, index and HEAD are unchanged. Check the remote branch named in the message with `git log <remote>/<branch>`; when the rewrite is expected, run `board sync --accept-rewrite` once to merge it"
+            "the remote branch no longer contains the commit this clone fetched last time, so someone rewrote it (a force push, or a branch reset) and merging it could bring back commits the remote dropped. The working tree, index and HEAD are unchanged. Check the remote branch named in the message with `git log <remote>/<branch>`; accepting the rewrite merges the rewritten branch with this clone's history and pushes this clone's commits again, including any the rewrite removed, so a rewrite made on purpose, such as removing a secret, needs a fresh clone instead: clone the board again. When the rewrite is expected and this clone's commits should be pushed again, run `board sync --accept-rewrite` once"
         }
         Code::SyncShallow => {
             "this clone is shallow or partial, so Board cannot find the common history a merge needs. The working tree, index and HEAD are unchanged. Run `git fetch --unshallow` (for a partial clone, after `git fetch` has fetched everything, also run `git config --unset remote.<name>.promisor` and `git config --unset extensions.partialclone`), or clone the board again in full; `--accept-rewrite` does not clear this"
         }
         Code::SyncMerging => {
-            "a git merge or rebase is in progress in this clone, so a sync would move HEAD and the index under it. The working tree, index and HEAD are unchanged. Finish it with `git merge --continue` or `git rebase --continue`, or stop it with `git merge --abort` or `git rebase --abort`, then sync again; `--accept-rewrite` does not clear this"
+            "a git merge, rebase, cherry-pick or revert is in progress in this clone, so a sync would move HEAD and the index under it, and a note or task write fails with this code for the same reason. The working tree, index and HEAD are unchanged. Finish the operation with `git merge --continue`, `git rebase --continue`, `git cherry-pick --continue` or `git revert --continue`, or stop it with `git merge --abort`, `git rebase --abort`, `git cherry-pick --abort` or `git revert --abort`, then sync or write again; `--accept-rewrite` does not clear this"
         }
         Code::RefsTargetChanged => {
             "the target's file changed during this run, so its values were not read; run the same board refs again. If every run refuses it, delete the board's directory under `$XDG_CACHE_HOME/board/` or `~/.cache/board/` so the index is rebuilt from the tree, and if it persists, report it"
@@ -678,3 +678,6 @@ fn generic(code: Code) -> &'static str {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

@@ -1,5 +1,5 @@
-//! The refusals of a sync that come before it writes anything: a git merge
-//! or rebase in progress, a shallow or partial clone, and a remote branch
+//! The refusals of a sync that come before it writes anything: a git operation
+//! in progress (the put's list of them), a shallow or partial clone, and a remote branch
 //! that no longer contains the commit the clone fetched last time
 //! (docs/architecture/writes.md, Sync).
 
@@ -20,14 +20,6 @@ pub(super) struct Before {
     /// refused as rewound, so a later run is refused too.
     pub restore: Option<ObjectId>,
 }
-
-/// The files git keeps in its directory while an operation is in progress,
-/// and its name.
-const OPERATIONS: [(&str, &str); 3] = [
-    ("MERGE_HEAD", "merge"),
-    ("rebase-merge", "rebase"),
-    ("rebase-apply", "rebase"),
-];
 
 impl Repository {
     /// Refuses before the board lock is taken and before any file, object,
@@ -55,13 +47,11 @@ impl Repository {
         fetched: ObjectId,
         previous: Option<ObjectId>,
     ) -> Option<SyncError> {
-        for (file, operation) in OPERATIONS {
-            if self.git_dir().join(file).exists() {
-                return Some(SyncError::Merging {
-                    operation,
-                    unrestored: false,
-                });
-            }
+        if let Some(operation) = self.operation_in_progress() {
+            return Some(SyncError::Merging {
+                operation,
+                unrestored: false,
+            });
         }
         if let Some(kind) = self.incomplete(&upstream.remote) {
             return Some(SyncError::Shallow {

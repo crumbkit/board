@@ -373,6 +373,22 @@ impl Staged {
 }
 
 impl Repository {
+    /// The git operation under way in this clone that a commit of some
+    /// paths, or a sync that moves HEAD, must not run under, as `git commit
+    /// <paths>` refuses while an operation that would give the commit more
+    /// parents is under way. A put and a sync both read it here.
+    pub(crate) fn operation_in_progress(&self) -> Option<&'static str> {
+        use gix::state::InProgress as Op;
+        match self.git().state() {
+            None | Some(Op::Bisect) => None,
+            Some(Op::Merge) => Some("merge"),
+            Some(Op::CherryPick | Op::CherryPickSequence) => Some("cherry-pick"),
+            Some(Op::Revert | Op::RevertSequence) => Some("revert"),
+            Some(Op::Rebase | Op::RebaseInteractive) => Some("rebase"),
+            Some(Op::ApplyMailbox | Op::ApplyMailboxRebase) => Some("rebase or am"),
+        }
+    }
+
     /// Makes a commit of `writes`, each a `/`-separated path and the bytes it
     /// will hold, or `None` when it is removed, onto HEAD as `git commit
     /// <paths>` would, without moving
@@ -386,22 +402,11 @@ impl Repository {
         writes: &[(&str, Option<&[u8]>)],
         message: &str,
     ) -> Result<Option<Staged>, WriteError> {
-        use gix::state::InProgress as Op;
         let git = self.git();
         if !matches!(git.committer(), Some(Ok(_))) || !matches!(git.author(), Some(Ok(_))) {
             return Err(WriteError::NoIdentity);
         }
-        // As `git commit <paths>`, which refuses a partial commit while an
-        // operation that would give the commit more parents is under way.
-        let operation = match git.state() {
-            None | Some(Op::Bisect) => None,
-            Some(Op::Merge) => Some("merge"),
-            Some(Op::CherryPick | Op::CherryPickSequence) => Some("cherry-pick"),
-            Some(Op::Revert | Op::RevertSequence) => Some("revert"),
-            Some(Op::Rebase | Op::RebaseInteractive) => Some("rebase"),
-            Some(Op::ApplyMailbox | Op::ApplyMailboxRebase) => Some("rebase or am"),
-        };
-        if let Some(operation) = operation {
+        if let Some(operation) = self.operation_in_progress() {
             return Err(WriteError::InProgress { operation });
         }
         let (index_lock, index) = self.lock_index(lock.deadline)?;

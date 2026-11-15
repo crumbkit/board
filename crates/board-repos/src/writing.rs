@@ -24,15 +24,15 @@ pub const EDITED: Code = Code::MountStale;
 pub const ATTEMPTS: usize = 3;
 /// The sync refusals after which a write can still be made: the clone is
 /// left as it was or as an earlier round of the sync made it, and either
-/// way the write parks beside it. A rewound remote, a shallow clone and a
-/// merge in progress wait for a person, and the note or task they hold
-/// should not wait with them.
-const UNSYNCED: [Code; 5] = [
+/// way the write parks beside it. A rewound remote and a shallow clone wait
+/// for a person, and the note or task they hold should not wait with them.
+/// A git operation in progress is not here: the put refuses during it too,
+/// so the write fails with the sync's code.
+const UNSYNCED: [Code; 4] = [
     Code::SyncEdited,
     Code::SyncBusy,
     Code::SyncRewound,
     Code::SyncShallow,
-    Code::SyncMerging,
 ];
 
 /// What landing a write needs of Board beyond what [`Host`] has on main:
