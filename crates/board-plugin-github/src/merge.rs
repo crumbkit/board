@@ -3,8 +3,10 @@
 //! boundary passes the commit's subject and body. The change then moves to
 //! its next phase.
 
+use std::path::PathBuf;
+
 use board_model::LogicalPath;
-use board_ops::{Host, PluginError};
+use board_ops::{Elsewhere, Host, PluginError};
 use board_plugin::Target;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -99,10 +101,14 @@ pub(crate) fn merge(host: &dyn Host, input: &Value) -> Result<Value, PluginError
         return Err(not_a_change(change));
     }
     let place = origin(host)?;
-    let head = match change.as_deref() {
-        Some(change) => {
-            gate(host, change)?;
-            let recorded = recorded_head(host, change)?;
+    let changed = match change.as_deref() {
+        Some(path) => Some((path, own(host)?)),
+        None => None,
+    };
+    let head = match &changed {
+        Some((change, board)) => {
+            gate(&**board, &*place.personal, change)?;
+            let recorded = recorded_head(&**board, change)?;
             match (recorded, head) {
                 (None, _) => {
                     return Err(head_refused(format!(
@@ -166,8 +172,8 @@ pub(crate) fn merge(host: &dyn Host, input: &Value) -> Result<Value, PluginError
         sent,
     } = place.sent(passed, url)?;
     let queued = !merged(host, &repository, number, &sent)?;
-    let phase = match change {
-        Some(change) if !queued => Some(advance(host, &change, &sent)?),
+    let phase = match &changed {
+        Some((change, board)) if !queued => Some(advance(&**board, change, &sent)?),
         _ => None,
     };
     Ok(output(&MergeOutput {
@@ -210,6 +216,27 @@ fn merged(host: &dyn Host, repository: &str, number: u64, url: &str) -> Result<b
     Ok(pull.get("merged").and_then(Value::as_bool) == Some(true))
 }
 
+/// The board the command runs in, opened again as `board changes next`
+/// and `board changes advance` there open it: it reads each mount at its
+/// pin and may write, even when the command reads a mount at a checkout.
+fn own(host: &dyn Host) -> Result<Box<dyn Host + '_>, PluginError> {
+    (host.board(&Elsewhere::Directory(PathBuf::from("."))))
+        .map_err(|refusal| PluginError::board_refused("github", "-C .", &refusal))
+}
+
+/// Whether `personal` holds a change at `path`.
+fn holds_change(personal: &dyn Host, path: &str) -> bool {
+    let Ok(logical) = path.parse::<LogicalPath>() else {
+        return false;
+    };
+    let record = (personal.get_each(&[logical]).ok())
+        .and_then(|answers| answers.into_iter().next()?.ok())
+        .and_then(|report| report.record.ok());
+    (record.as_ref())
+        .and_then(|record| record.get("$type")?.as_str())
+        .is_some_and(|kind| kind.starts_with("changes/change/"))
+}
+
 /// Runs `changes.<capability>` in `host`'s board with `path`.
 fn changes(
     host: &dyn Host,
@@ -223,16 +250,23 @@ fn changes(
 }
 
 /// Refuses with `github::merge::gate` unless the change at `path` is in
-/// its land phase and no blocking check of its gate is missing.
-fn gate(host: &dyn Host, path: &str) -> Result<(), PluginError> {
+/// its land phase and no blocking check of its gate is missing. When
+/// `host` holds no change there, the hint names `--personal` only when
+/// `personal` holds one.
+fn gate(host: &dyn Host, personal: &dyn Host, path: &str) -> Result<(), PluginError> {
     let output = changes(host, "next", path).map_err(|refusal| {
         let mut error = PluginError::board_refused("github", "call", &refusal);
         if refusal.code.as_str() == "changes::change::not_found" {
-            error.hint = Some(
-                "merge reads the change in the board the command runs in; add `--personal` for \
-                 a change in the personal board, or `-C <board>` for a change in another board"
-                    .to_owned(),
-            );
+            let personal = if holds_change(personal, path) {
+                "the personal board holds this change, so add `--personal`; otherwise, "
+            } else {
+                ""
+            };
+            error.hint = Some(format!(
+                "merge reads the change in the board the command runs in; {personal}check the \
+                 path with `board changes open`, or run in the board that holds the change with \
+                 `-C <board>`"
+            ));
         }
         error
     })?;

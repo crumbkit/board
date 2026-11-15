@@ -331,6 +331,36 @@ fn a_failed_gh_merge_leaves_the_change_in_land_and_a_retry_merges_it() {
 }
 
 #[test]
+fn a_merge_run_with_checkout_moves_its_change_to_done_as_one_run_without_it_does() {
+    let desk = Desk::new();
+    change(&desk, "land", HEAD, TESTED);
+    pulls(&desk, true);
+    desk.gh_answers(&json!(""), 0, "");
+    let flags = merging("Add a lever", "Levers lift.", &["--change", CHANGE]);
+    let (ran, document) = desk.call_in(&["--checkout"], "merge", &flags);
+    assert_eq!(ran.code, 0, "{document}");
+    assert_eq!(document["data"]["output"]["phase"], "done");
+    assert_eq!(merges(&desk), 1);
+    assert_eq!(desk.record(CHANGE).unwrap()["phase"], "done");
+}
+
+#[test]
+fn a_change_the_personal_board_does_not_hold_is_refused_there_with_a_hint_that_does_not_name_personal()
+ {
+    let desk = Desk::new();
+    change(&desk, "land", HEAD, TESTED);
+    let typo = ["--change", "/changes/levr"];
+    let flags = merging("Add a lever", "Levers lift.", &typo);
+    let (ran, document) = desk.call_in(&["--personal"], "merge", &flags);
+    assert_eq!(ran.code, 1, "{document}");
+    assert_eq!(document["fields"]["code"], "changes::change::not_found");
+    let hint = document["recovery"]["text"].as_str().unwrap_or_default();
+    assert!(!hint.contains("--personal"), "{document}");
+    assert!(hint.contains("board changes open"), "{document}");
+    assert_eq!(desk.gh_calls(), 0);
+}
+
+#[test]
 fn merge_run_in_a_board_the_personal_board_mounts_lands_that_boards_change() {
     let desk = Desk::new();
     let team = desk.team();

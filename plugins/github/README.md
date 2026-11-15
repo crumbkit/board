@@ -81,8 +81,10 @@ result it recorded.
   board the command runs in, which `-C <board>` or `--personal` names, and
   refuses unless the change is in its land phase with no blocking check
   missing, and while a run of the change has a stop set. The gate, the
-  change's head and `changes.advance` all come from that board; the boundary
-  check and the crossing stay in the personal board. A board's own changes
+  change's head and `changes.advance` all come from that board, opened
+  again so it reads each mount at its pin and may write, even under
+  `--checkout`; the boundary check and the crossing stay in the personal
+  board. A board's own changes
   are at `/changes/<name>`, so a change in another board is merged with
   `-C <that board's directory>`, and a `--change` path under a mount, such
   as `/repos/team/changes/<name>`, is refused. From the checkout of a
@@ -162,8 +164,9 @@ Refusals:
 - Any other refusal of the check, such as boundary not being enabled in the
   personal board, is `github::board::refused` with Board's code. When
   `merge` finds no change at the path in the board the command runs in,
-  `fields.code` is `changes::change::not_found` and the hint names
-  `--personal` and `-C <board>`.
+  `fields.code` is `changes::change::not_found`. The hint names
+  `board changes open` and `-C <board>`, and names `--personal` when the
+  personal board holds a change at that path.
 - `github::checkout::not_found`: Board was not started in a git checkout.
 - `github::remote::not_github`: origin is not a GitHub URL.
 - `github::remote::split`: origin pushes to a URL other than the one it
