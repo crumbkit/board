@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 # Runs board-ui's story tests, which compare each story with its golden
-# screenshot in both themes, in the pinned Playwright image (bin/ui-container).
-# Arguments go to vitest: `bin/ui-goldens --update` rewrites the goldens.
+# screenshot in both themes, in the pinned Playwright image (bin/ui-container),
+# then the keeper page's route check, which needs only Node and runs in the
+# same image. Arguments go to vitest: `bin/ui-goldens --update` rewrites the
+# goldens.
 set -euo pipefail
-exec "$(dirname "$0")/ui-container" exec vitest run "$@"
+here="$(dirname "$0")"
+"$here/ui-container" exec vitest run "$@"
+"$here/ui-container" exec node /keeper-page/check.mjs

@@ -13,6 +13,7 @@ pnpm="npx --yes pnpm@12.15.0"
 docker run --rm --platform linux/arm64 --ipc=host \
   --volume "$PWD:/ui" \
   --volume board-ui-node-modules-arm64:/ui/node_modules \
+  --volume "$PWD/../crates/board-plugin-keeper/page:/keeper-page:ro" \
   --volume board-ui-pnpm-store:/root/.local/share/pnpm/store \
   --workdir /ui --env CI \
   "$image" \
