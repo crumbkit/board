@@ -84,6 +84,75 @@ fn completion_check_exits_with_1_for_a_missing_file_and_0_after_install() {
     assert_eq!(current.status.code(), Some(0), "{current:?}");
 }
 
+/// The variable a run that asks for completion sets.
+const ASKING: [(&str, &str); 1] = [("BOARD_COMPLETE", "fish")];
+
+#[test]
+fn completion_print_with_board_complete_set_prints_the_board_variable() {
+    let home = TempDir::new().unwrap();
+
+    let output = board(
+        home.path(),
+        &["completion", "print", "--shell", "fish"],
+        &ASKING,
+    );
+
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+    assert!(
+        stdout(&output).contains("BOARD_COMPLETE=fish"),
+        "{output:?}"
+    );
+}
+
+#[test]
+fn completion_install_with_board_complete_set_writes_the_board_variable() {
+    let home = TempDir::new().unwrap();
+
+    let output = board(
+        home.path(),
+        &["completion", "install", "--shell", "fish"],
+        &ASKING,
+    );
+
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+    let file = home.path().join("config/fish/completions/board.fish");
+    let script = fs::read_to_string(file).unwrap();
+    assert!(script.contains("BOARD_COMPLETE=fish"), "{script}");
+}
+
+#[test]
+fn completion_check_with_board_complete_set_finds_an_old_registration_differs() {
+    let home = TempDir::new().unwrap();
+    let check = ["completion", "check", "--shell", "fish"];
+    // The registration an install with the variable set wrote before:
+    // the same file, setting `COMPLETE` where it sets `BOARD_COMPLETE`.
+    board(
+        home.path(),
+        &["completion", "install", "--shell", "fish"],
+        &[],
+    );
+    let file = home.path().join("config/fish/completions/board.fish");
+    let script = fs::read_to_string(&file).unwrap();
+    assert!(script.contains("BOARD_COMPLETE=fish"), "{script}");
+    fs::write(
+        &file,
+        script.replace("BOARD_COMPLETE=fish", "COMPLETE=fish"),
+    )
+    .unwrap();
+
+    let differs = board(home.path(), &check, &ASKING);
+    board(
+        home.path(),
+        &["completion", "install", "--shell", "fish"],
+        &ASKING,
+    );
+    let current = board(home.path(), &check, &ASKING);
+
+    assert_eq!(differs.status.code(), Some(1), "{differs:?}");
+    assert!(stdout(&differs).contains("differs"), "{differs:?}");
+    assert_eq!(current.status.code(), Some(0), "{current:?}");
+}
+
 #[test]
 fn completion_install_reads_the_shell_from_the_shell_variable() {
     let home = TempDir::new().unwrap();

@@ -7,9 +7,7 @@ use std::path::Path;
 use std::process::{Command, ExitStatus, Output};
 use std::time::{Duration, Instant};
 
-use crumbkit_process::{
-    Capture, Escalation, Outcome, OverLimit, RunError, RunOptions, Signal, Status,
-};
+use crumbkit_process::{Capture, Escalation, Outcome, RunError, RunOptions, Signal, Status};
 
 use crate::git::Repository;
 use crate::write::sync::SyncError;
@@ -210,11 +208,8 @@ fn run(
         .map_err(|source| SyncError::NotStarted { source })?;
     let left = deadline.left();
     let settings = RunOptions::new()
-        .stdout(Capture::Whole {
-            limit: STDOUT,
-            over: OverLimit::Stop,
-        })
-        .stderr(Capture::Tail { limit: STDERR })
+        .stdout(Capture::whole(STDOUT))
+        .stderr(Capture::tail(STDERR))
         .deadline(Instant::now() + left)
         .escalation(Escalation::default().step(Signal::Terminate, GRACE));
     let failure = |status: String, stderr: Vec<u8>| SyncError::Failed {

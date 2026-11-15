@@ -32,17 +32,9 @@ fn requested(context: &Context) -> Option<&OsStr> {
 
 /// Declares `BOARD_COMPLETE` to crumbkit as Board's completion variable, so
 /// that the registration `board completion install`, `check` and `print`
-/// write sets it. crumbkit records the name when it first looks for a
-/// request, and answers one only when the variable asks for completion, so
-/// this runs only when it does not: `complete` answers those requests,
-/// because it completes paths from the board, which crumbkit's own answer
-/// cannot. A run that asks for completion and also names a command, such as
-/// `BOARD_COMPLETE=fish board completion install`, declares nothing and
-/// registers `COMPLETE`.
-pub(crate) fn declare(context: &Context) {
-    if requested(context).is_none() {
-        let _ = crumbkit::complete_with_words(VARIABLE, |_| Cli::command());
-    }
+/// write sets it, whether or not the run asks for completion.
+pub(crate) fn declare() {
+    crumbkit::declare_completion_variable(VARIABLE);
 }
 
 /// What `BOARD_COMPLETE` asks of `arguments`: the registration script when
@@ -73,7 +65,7 @@ pub(crate) fn complete(arguments: &[OsString], context: &Context) -> Option<Outp
     let sink = &mut Sink::new(&mut stdout, std::io::sink());
     // A line crumbkit cannot complete prints nothing, which is all the
     // shell needs; its exit code goes unread.
-    let _ = crumbkit::complete_to(sink, command, VARIABLE, shell, arguments, None);
+    let _ = crumbkit::complete_to(sink, VARIABLE, command, shell, arguments, None);
     Some(Output {
         stdout,
         ..Output::default()

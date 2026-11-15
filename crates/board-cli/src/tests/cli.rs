@@ -339,6 +339,21 @@ fn a_group_without_its_command_prints_its_help_page_and_with_one_runs() {
 }
 
 #[test]
+fn check_help_says_a_value_in_the_code_column_marks_a_problem() {
+    let scenario = board();
+    let help = board_in(scenario.workdir(), &["check", "-h"]);
+    assert_eq!(help.code, 0);
+    assert!(
+        text(&help.stdout).contains(
+            "Problems: a value in the code column marks a row with a problem, \
+             and the command then exits with 1."
+        ),
+        "{}",
+        text(&help.stdout)
+    );
+}
+
+#[test]
 fn board_help_prints_the_root_help_as_dash_dash_help_does() {
     let scenario = board();
     let helped = board_in(scenario.workdir(), &["--help"]);
