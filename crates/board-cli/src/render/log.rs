@@ -16,12 +16,12 @@ use crate::report::Output;
 
 /// `board log --help` after its options.
 pub(crate) const LOG_HELP: &str = "\
-The walk follows merges as `git log -- <path>` does, and no rename. Through a
-mount it lists the mounted repository's commits.
+The walk follows merges as `git log -- <path>` does, not renames. Through a
+mount it lists the mounted repository's commits, which get --at refuses,
+not pin moves; log the mount record's directory for those.
 
---json prints board/log-report/v2. `truncated` is true when older changes may
-exist. `summary` holds the start commit `at`, the commits `walked`, and
-`complete`, false past 100000 commits or at a shallow commit.
+--json prints board/log-report/v2. `truncated` means older rows may exist.
+`summary.complete` is false past 100000 commits or at a shallow one.
 
 Examples:
   board log /tasks/a

@@ -492,6 +492,10 @@ fn the_hint_for_a_removed_path_says_log_of_its_ancestor_lists_the_commit_that_re
     );
     let ancestor = json(&run_in(&scenario, &["log", "/tasks", "--json"]));
     assert_eq!(ancestor["data"][0]["commit"], json!(removal.to_string()));
+    let before = ancestor["data"][1]["commit"].as_str().unwrap();
+    let history = run_in(&scenario, &["log", "/tasks/a", "--at", before, "--json"]);
+    assert_eq!(ended(&history), (0, None));
+    assert_eq!(json(&history)["data"].as_array().unwrap().len(), 4);
 }
 
 #[test]
@@ -555,7 +559,82 @@ fn get_at_a_row_id_from_a_log_through_a_mount_is_not_found_and_the_hint_says_why
             && stderr.contains("`get --at` on this board cannot read"),
         "{stderr}"
     );
+    assert!(
+        stderr.contains("board log of the directory that holds the mount record lists the board commits that moved its pin"),
+        "{stderr}"
+    );
     assert!(!stderr.contains("lists the board's commits"), "{stderr}");
+}
+
+#[test]
+fn log_help_says_a_log_through_a_mount_gives_ids_get_at_refuses_and_where_the_pin_moves_are() {
+    let (scenario, _commits) = history();
+    let help = text(&run_in(&scenario, &["log", "--help"]).stdout).replace('\n', " ");
+    for said in [
+        "Through a mount it lists the mounted repository's commits, which get --at refuses",
+        "not pin moves; log the mount record's directory for those",
+    ] {
+        assert!(help.contains(said), "{said}: {help}");
+    }
+}
+
+/// A board whose library mount at `/repos/lib` pins a library commit
+/// holding `docs/gone.md`, then the library commit that removed it, with
+/// the board's two commits in order.
+fn removed_beneath_a_mount() -> (Scenario, Scenario, [ObjectId; 2]) {
+    let library = Scenario::new();
+    let held = library.commit_at(
+        &[("docs/gone.md", "gone"), ("docs/kept.md", "kept")],
+        &[],
+        T,
+        "add",
+    );
+    let removed = library.commit_at(&[("docs/kept.md", "kept")], &[held], T + 1, "remove");
+    let board = Scenario::board();
+    let pin = |commit| mount_of(&library.path(), commit);
+    let (first, second) = (pin(held), pin(removed));
+    let c0 = board.commit_at(&[CONFIG, ("repos/lib.json", &first)], &[], T, "pin held");
+    let c1 = board.commit_at(
+        &[CONFIG, ("repos/lib.json", &second)],
+        &[c0],
+        T + 60,
+        "pin removed",
+    );
+    (board, library, [c0, c1])
+}
+
+#[test]
+fn a_path_removed_beneath_a_mount_is_hinted_to_the_board_log_of_the_mounts_directory_which_leads_to_it()
+ {
+    let (board, _library, commits) = removed_beneath_a_mount();
+    let path = "/repos/lib/docs/gone.md";
+    let refused = run_in(&board, &["log", path]);
+    assert_eq!(ended(&refused), (1, Some("board::path::not_found")));
+    let stderr = text(&refused.stderr);
+    assert!(
+        stderr.contains("`board log /repos` lists the board commits that moved its pin"),
+        "{stderr}"
+    );
+    let moves = json(&run_in(&board, &["log", "/repos", "--json"]));
+    let listed: Vec<Value> = moves["data"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|row| row["commit"].clone())
+        .collect();
+    assert_eq!(
+        listed,
+        [json!(commits[1].to_string()), json!(commits[0].to_string())]
+    );
+    let before = commits[0].to_string();
+    let history = run_in(&board, &["log", path, "--at", &before, "--json"]);
+    assert_eq!(ended(&history), (0, None));
+    assert_eq!(json(&history)["data"].as_array().unwrap().len(), 1);
+    let read = run_in(&board, &["get", "--at", &before, path]);
+    assert_eq!(
+        (ended(&read), text(&read.stdout)),
+        ((0, None), "gone".to_owned())
+    );
 }
 
 #[test]

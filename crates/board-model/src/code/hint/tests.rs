@@ -55,6 +55,10 @@ fn the_commit_hint_says_a_log_through_a_mount_lists_commits_get_at_on_the_board_
         text.contains("`get --at` on this board cannot read"),
         "{text}"
     );
+    assert!(
+        text.contains("board log of the directory that holds the mount record lists the board commits that moved its pin, which --at takes"),
+        "{text}"
+    );
     assert!(!text.contains("lists the board's commits"), "{text}");
 }
 
