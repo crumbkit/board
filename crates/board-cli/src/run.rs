@@ -262,12 +262,12 @@ Examples:
     /// Fetch the remote branch, merge it into this board, and push.
     #[command(after_help = "\
 Board fetches the remote branch HEAD's branch follows, merges it into HEAD,
-pushes the result, and moves git's index and the working tree to it. A file
+pushes the result, and moves git's index and working tree to it. A file
 both sides changed is merged line by line where it is text. Where the two
-changes cannot both stand, the remote's content is kept and a
-board/conflict/v1 record under /conflicts/ names both versions. A file edited
-during the sync keeps its edit and is listed as kept. A fetch runs the `git`
-executable, so git's remotes, credentials and SSH settings apply.
+changes cannot both stand, the remote's content is kept (a local edit of a
+deleted file wins) and a board/conflict/v1 record under /conflicts/ names
+both. A file edited during the sync keeps its edit and is listed as kept. A fetch runs the `git`
+executable, so git's remotes, credentials and SSH config apply.
 
 Examples:
   board sync

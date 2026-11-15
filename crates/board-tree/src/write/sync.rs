@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 use std::io;
 use std::time::Duration;
 
-use board_model::{Code, ConflictKind, Fields, LogicalPath, ObjectId};
+use board_model::{Code, ConflictKind, Fields, LogicalPath, ObjectId, Side};
 use gix::bstr::BString;
 use gix::object::tree::EntryKind;
 
@@ -57,6 +57,8 @@ pub struct Synced {
 pub struct Conflicted {
     pub path: String,
     pub kind: ConflictKind,
+    /// The side whose content the merged tree holds at `path`.
+    pub kept: Side,
     /// The record's path in the repository.
     pub record: String,
 }
