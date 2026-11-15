@@ -443,6 +443,9 @@ fn generic(code: Code) -> &'static str {
         Code::RepoDuplicateRemote => {
             "a repository has one repo record: remove all but one of the records the message names, or fix the `remote` of the one that names another repository"
         }
+        Code::CommitNotFound => {
+            "--at takes HEAD or a full commit id of this board's repository; `board log` lists the board's commits"
+        }
         Code::SymlinkOutside => {
             "make the symlink a relative path to a file inside the repository, or replace it with the file; Board reads only the repository's tree"
         }

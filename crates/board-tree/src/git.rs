@@ -549,6 +549,8 @@ pub enum GitError {
         #[source]
         source: Box<dyn Error + Send + Sync>,
     },
+    #[error("{id} names no commit in {repository:?}")]
+    NoCommit { repository: PathBuf, id: ObjectId },
 }
 
 impl GitError {
@@ -559,6 +561,7 @@ impl GitError {
             | Self::File { .. }
             | Self::Changed { .. }
             | Self::Object { .. } => Code::RepoUnreadable,
+            Self::NoCommit { .. } => Code::CommitNotFound,
             Self::Symlink { refused, .. } => refused.code,
         }
     }

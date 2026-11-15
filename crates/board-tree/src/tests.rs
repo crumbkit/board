@@ -3,6 +3,7 @@
 
 mod address;
 mod commits;
+mod history;
 mod kept;
 mod links;
 mod merging;

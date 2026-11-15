@@ -4,6 +4,7 @@
 
 mod address;
 mod git;
+mod history;
 mod mounts;
 mod moved;
 mod repositories;
@@ -21,6 +22,7 @@ mod write;
 mod tests;
 
 pub use crate::git::{Contents, GitError, Repository, latest};
+pub use crate::history::{Change, End, History, MAX_WALKED, Walk};
 pub use crate::mounts::{
     Cache, Choice, Crossing, Held, Matched, MountPoint, Mounted, Origin, Pin, PinError, Place,
     Reached, Scopes, head_of, in_scope, origin, own_origin, within,
