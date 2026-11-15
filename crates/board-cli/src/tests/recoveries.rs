@@ -809,6 +809,35 @@ fn through_mounts(starts: &mut Starts) {
     }
 }
 
+/// Reads at a commit of a board with one commit: a commit id the board's
+/// repository does not hold, and a path no commit changed. Following
+/// their hints runs `log`, which reads the board unchanged.
+fn at_commits(starts: &mut Starts) {
+    let files = [
+        (".board/board.json", CONFIG),
+        (
+            ".board/types/lr/project/v1.schema.json",
+            r#"{"type": "object"}"#,
+        ),
+        ("projects/p.json", r#"{"$type": "lr/project/v1"}"#),
+    ];
+    let board = Scenario::new();
+    board.commit(&files);
+    for (at, text) in files {
+        board.write(at, Item::File(text));
+    }
+    let place = starts.share(board);
+    let absent = format!("get --at {} /projects/p", "1".repeat(40));
+    starts.add(&place, Code::CommitNotFound, &absent);
+    starts.add(&place, Code::PathNotFound, "log /projects/nowhere");
+    starts.pair(
+        &place,
+        Code::CommitNotFound,
+        &absent,
+        "get --at HEAD /projects/p",
+    );
+}
+
 /// Clones of one remote that `sync` refuses: one following no remote
 /// branch, one whose remote git cannot reach, one that committed a record
 /// the remote also changed, one holding an edit of a file the remote
@@ -1072,6 +1101,7 @@ fn starts(twins: bool) -> Starts {
     enabling_plugins(&mut starts);
     apart(&mut starts);
     through_mounts(&mut starts);
+    at_commits(&mut starts);
     known_boards(&mut starts);
     uris(&mut starts);
     effects(&mut starts);

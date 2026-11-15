@@ -26,6 +26,7 @@ pub(crate) use kit::{Printer, TOOL};
 mod effects;
 mod get;
 mod kit;
+mod log;
 mod page;
 mod plugins;
 mod refs;
@@ -33,6 +34,7 @@ mod ui;
 
 pub(crate) use effects::{answer, decide};
 pub(crate) use get::{GET_HELP, get};
+pub(crate) use log::{LOG_HELP, log};
 use page::Shown;
 pub(crate) use plugins::{CALL_REPORT, call, plugin_find, plugin_list};
 pub(crate) use refs::{REFS_HELP, refs};
@@ -48,6 +50,7 @@ pub(crate) const LEAVES: &[Leaf] = &[
     Leaf::new(&["check"]).document(CHECK).effects(READS),
     get::LEAF.effects(READS.open_world()),
     Leaf::new(&["ls"]).document(LS).effects(READS),
+    log::LEAF.effects(READS),
     refs::LEAF.effects(READS),
     Leaf::new(&["uri"]).document(URI).effects(READS),
     Leaf::new(&["put"])
@@ -123,7 +126,7 @@ pub(crate) const GOALS: Group = Group::new(
         Goal::new("These commands make and check a board", &["init", "check"]),
         Goal::new(
             "These commands read files and records",
-            &["get", "ls", "refs", "query", "uri"],
+            &["get", "ls", "log", "refs", "query", "uri"],
         ),
         Goal::new(
             "These commands write files, records and types",

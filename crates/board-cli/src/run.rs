@@ -12,6 +12,7 @@ use board_ops::{Board, Bulk, DEFAULT_LIMIT, Expect, MAX_LIMIT, Plugins, PutError
 use board_plugin::{Limits, Target};
 
 mod checkout;
+mod history;
 mod lookup;
 mod remove;
 mod syncing;
@@ -37,7 +38,7 @@ use crate::render::{self, Printer};
 use crate::report::Output;
 use crate::stdin::{Input, Stdin, TypeCommand, call, put};
 use crate::timing::Ran;
-use crate::values::{duration, expect, pointer, var};
+use crate::values::{duration, expect, var};
 use crate::{effects, graft};
 
 const ROOT_EXAMPLES: &str = "\
@@ -154,22 +155,6 @@ pub(crate) struct Putting {
     pub(crate) wait: Duration,
 }
 
-/// `refs`'s arguments.
-#[derive(Debug, clap::Args)]
-struct Refs {
-    /// Each entry's logical path, such as /projects/p, or p from /projects; several share one check of the board.
-    #[arg(required = true, value_name = "PATH", num_args = 1..=MAX_LIMIT)]
-    paths: Vec<Given>,
-    /// When nothing is at a path yet, report where a file there would be instead of refusing.
-    #[arg(long)]
-    missing: bool,
-    /// A JSON pointer, such as /status, whose value in each reference's target to show; can be repeated.
-    #[arg(long = "field", value_name = "POINTER", value_parser = pointer)]
-    fields: Vec<String>,
-    #[command(flatten)]
-    page: Page,
-}
-
 #[derive(Debug, Subcommand)]
 enum Command {
     /// Make this git repository a board.
@@ -209,6 +194,9 @@ Examples:
         /// Fetch an attachment's bytes from the store and print them if their digest matches.
         #[arg(long)]
         fetch: bool,
+        /// Read each path in this commit (HEAD or a full id), each mount at its pin
+        #[arg(long, value_name = "COMMIT", value_parser = crate::values::commit)]
+        at: Option<board_ops::At>,
     },
     /// List the directory at a path, without following pointers inside it.
     #[command(after_help = "\
@@ -221,9 +209,12 @@ Examples:
         #[command(flatten)]
         page: Page,
     },
+    /// List the commits that changed what a path names, newest first.
+    #[command(after_help = render::LOG_HELP)]
+    Log(history::Logging),
     /// List the references each entry makes and the entries that reach it.
     #[command(after_help = render::REFS_HELP)]
-    Refs(Refs),
+    Refs(lookup::Refs),
     /// Print the board:// URI that names a record from any known board's clone.
     #[command(after_help = render::URI_HELP)]
     Uri {
@@ -675,10 +666,15 @@ fn command(
                 Err(error) => render::refused(printer, behind(error.refusal())),
             }
         }
-        Command::Get { paths, fetch } => {
+        Command::Get {
+            paths,
+            fetch,
+            at: commit,
+        } => {
             let paths = or_refuse!(at(&paths, "get"));
-            lookup::get(board, printer, &paths, fetch, &behind)
+            lookup::get(board, printer, (&paths, commit), fetch, &behind)
         }
+        Command::Log(asked) => history::log(board, printer, prefix, &asked, &behind),
         Command::Put(putting) => put(board, printer, prefix, putting, stdin),
         Command::Rm(asked) => remove::remove(board, printer, prefix, asked),
         Command::Sync(asked) => syncing::run(board, printer, &asked),

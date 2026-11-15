@@ -1,29 +1,54 @@
 //! `board get` and `board refs`: the reads that answer each path they are given.
 
 use board_model::{LogicalPath, Refusal};
-use board_ops::{Absent, Board};
+use board_ops::{Absent, At, Board, MAX_LIMIT};
 
-use super::Refs;
+use super::{Given, Page};
 use crate::config::Context;
 use crate::render::{self, Printer};
 use crate::report::Output;
+use crate::values::pointer;
 
-/// `get` of `paths`, with each attachment's bytes when `fetch` is set,
-/// passing each refusal through `behind`.
+/// `refs`'s arguments.
+#[derive(Debug, clap::Args)]
+pub(super) struct Refs {
+    /// Each entry's logical path, such as /projects/p, or p from /projects; several share one check of the board.
+    #[arg(required = true, value_name = "PATH", num_args = 1..=MAX_LIMIT)]
+    pub(super) paths: Vec<Given>,
+    /// When nothing is at a path yet, report where a file there would be instead of refusing.
+    #[arg(long)]
+    missing: bool,
+    /// A JSON pointer, such as /status, whose value in each reference's target to show; can be repeated.
+    #[arg(long = "field", value_name = "POINTER", value_parser = pointer)]
+    fields: Vec<String>,
+    #[command(flatten)]
+    page: Page,
+}
+
+/// `get` of `paths`, in the working tree or in the commit `at` names, with
+/// each attachment's bytes when `fetch` is set, passing each refusal
+/// through `behind`.
 pub(super) fn get(
     board: &Board,
     printer: Printer,
-    paths: &[LogicalPath],
+    (paths, at): (&[LogicalPath], Option<At>),
     fetch: bool,
     behind: &dyn Fn(Refusal) -> Refusal,
 ) -> Output {
-    let answers = board.get_each(paths).map(|each| {
-        each.map(move |answer| match answer {
-            Ok(report) if fetch => board.fetched(report),
-            answer => answer,
-        })
-    });
-    render::get(printer, paths, answers, behind)
+    let fetched = move |answer| match answer {
+        Ok(report) if fetch => board.fetched(report),
+        answer => answer,
+    };
+    match at {
+        None => {
+            let answers = board.get_each(paths).map(|each| each.map(fetched));
+            render::get(printer, paths, answers, behind)
+        }
+        Some(at) => {
+            let answers = board.get_each_at(at, paths).map(|each| each.map(fetched));
+            render::get(printer, paths, answers, behind)
+        }
+    }
 }
 
 /// `refs` of `paths`, read from the paths asked, with `--missing` or without.

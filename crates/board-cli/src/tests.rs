@@ -2018,6 +2018,7 @@ mod flags;
 mod get;
 mod help;
 mod hints;
+mod history;
 mod known;
 mod plugins;
 mod query;

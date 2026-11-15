@@ -375,6 +375,86 @@ impl Scenario {
 
     /// Commits a tree holding each item at its path, which may be any bytes.
     pub fn commit_items(&self, items: &[(&[u8], Item<'_>)]) -> ObjectId {
+        let tree = self.tree_of(items);
+        let signature = gix::actor::SignatureRef {
+            name: "scenario".into(),
+            email: "scenario@example.com".into(),
+            time: "0 +0000",
+        };
+        let parents: Vec<gix::ObjectId> = self
+            .git
+            .head_id()
+            .ok()
+            .map(gix::Id::detach)
+            .into_iter()
+            .collect();
+        let commit = self
+            .git
+            .commit_as(signature, signature, "HEAD", "scenario", tree, parents)
+            .unwrap();
+        model(commit.detach())
+    }
+
+    /// Commits a tree of text files at `/`-separated paths with `parents`,
+    /// the committer time `time` in seconds since the epoch and `message`,
+    /// and moves HEAD's branch to it, whatever it held before. A history
+    /// test gives each commit its own time, so the order of a walk is fixed.
+    pub fn commit_at(
+        &self,
+        files: &[(&str, &str)],
+        parents: &[ObjectId],
+        time: i64,
+        message: &str,
+    ) -> ObjectId {
+        let items: Vec<(&[u8], Item<'_>)> = files
+            .iter()
+            .map(|(path, text)| (path.as_bytes(), Item::File(text)))
+            .collect();
+        self.commit_items_at(&items, parents, time, message)
+    }
+
+    /// [`Scenario::commit_at`] of a tree holding each item at its path, such
+    /// as a symlink.
+    pub fn commit_items_at(
+        &self,
+        items: &[(&[u8], Item<'_>)],
+        parents: &[ObjectId],
+        time: i64,
+        message: &str,
+    ) -> ObjectId {
+        let signature = gix::actor::Signature {
+            name: "scenario".into(),
+            email: "scenario@example.com".into(),
+            time: gix::date::Time::new(time, 0),
+        };
+        let commit = gix::objs::Commit {
+            tree: self.tree_of(items),
+            parents: parents
+                .iter()
+                .map(|parent| gix::ObjectId::try_from(parent.as_bytes()).unwrap())
+                .collect(),
+            author: signature.clone(),
+            committer: signature,
+            encoding: None,
+            message: message.into(),
+            extra_headers: Vec::new(),
+        };
+        let id = self.git.write_object(&commit).unwrap().detach();
+        let edit = gix::refs::transaction::RefEdit {
+            change: gix::refs::transaction::Change::Update {
+                log: gix::refs::transaction::LogChange::default(),
+                expected: gix::refs::transaction::PreviousValue::Any,
+                new: gix::refs::Target::Object(id),
+            },
+            name: "HEAD".try_into().unwrap(),
+            deref: true,
+        };
+        self.git.edit_reference(edit).unwrap();
+        model(id)
+    }
+
+    /// The tree holding each item at its path, written to the object store.
+    fn tree_of(&self, items: &[(&[u8], Item<'_>)]) -> gix::ObjectId {
         let empty = gix::ObjectId::empty_tree(self.git.object_hash());
         let mut editor = self.git.edit_tree(empty).unwrap();
         for (path, item) in items {
@@ -436,23 +516,7 @@ impl Scenario {
             root.entries.sort();
             tree = self.git.write_object(&root).unwrap().detach();
         }
-        let signature = gix::actor::SignatureRef {
-            name: "scenario".into(),
-            email: "scenario@example.com".into(),
-            time: "0 +0000",
-        };
-        let parents: Vec<gix::ObjectId> = self
-            .git
-            .head_id()
-            .ok()
-            .map(gix::Id::detach)
-            .into_iter()
-            .collect();
-        let commit = self
-            .git
-            .commit_as(signature, signature, "HEAD", "scenario", tree, parents)
-            .unwrap();
-        model(commit.detach())
+        tree
     }
 }
 

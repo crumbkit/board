@@ -5,7 +5,9 @@ use std::path::{Path, PathBuf};
 
 use board_model::{Code, Refusal, URI_SCHEME};
 
-use super::{Cli, Command, Given, Refs, plain};
+use super::history::Logging;
+use super::lookup::Refs;
+use super::{Cli, Command, Given, plain};
 use crate::config::Context;
 
 /// The root of the known board the URIs among the paths `cli`'s command
@@ -68,7 +70,9 @@ pub(super) fn chosen(cli: &mut Cli, context: &Context) -> Result<Option<PathBuf>
 /// The paths `command` reads, each of which may be a `board://` URI.
 fn read_paths(command: &mut Command) -> Vec<&mut Given> {
     match command {
-        Command::Check { path, .. } | Command::Ls { path, .. } => path.iter_mut().collect(),
+        Command::Check { path, .. }
+        | Command::Ls { path, .. }
+        | Command::Log(Logging { path, .. }) => path.iter_mut().collect(),
         Command::Get { paths, .. } | Command::Refs(Refs { paths, .. }) => {
             paths.iter_mut().collect()
         }

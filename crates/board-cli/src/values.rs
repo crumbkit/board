@@ -3,7 +3,7 @@
 use std::time::Duration;
 
 use board_model::ObjectId;
-use board_ops::{Expect, Removing, Unmatched};
+use board_ops::{At, Expect, Removing, Unmatched};
 use board_plugin::Target;
 
 /// What `board rm`'s `-r`, `--expect` and `--ignore-unmatch` ask it to do.
@@ -32,6 +32,18 @@ pub(crate) fn expect(text: &str) -> Result<Expect, String> {
     ObjectId::from_hex(text)
         .map(Expect::Blob)
         .ok_or_else(|| "must be `none` or a blob id in lowercase hex".to_owned())
+}
+
+/// The commit `--at` names: `HEAD`, or a full id, read as `--expect` reads a
+/// blob's, so no value is ambiguous.
+pub(crate) fn commit(text: &str) -> Result<At, String> {
+    if text == "HEAD" {
+        return Ok(At::Head);
+    }
+    ObjectId::from_hex(text).map(At::Commit).ok_or_else(|| {
+        "must be HEAD or a full commit id: 40 or 64 digits of lowercase hex, as board log prints"
+            .to_owned()
+    })
 }
 
 /// A `--var <name>=<value>`, whose value fills one segment of a folder.

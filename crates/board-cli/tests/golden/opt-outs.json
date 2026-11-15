@@ -254,15 +254,15 @@
     {
       "rule": "help-budget/command",
       "applies_to": "board get",
-      "reason": "get has two output formats and --fetch, and a reader needs to know on one page that without --fetch get prints an attachment record and never reaches the store.",
+      "reason": "get has two output formats, --fetch and --at, and a reader needs to know on one page that without --fetch get prints an attachment record and never reaches the store, and that --at reads every path in one commit.",
       "costs": [
-        "Each read of the page can cost 200 bytes more than the default, about 50 tokens."
+        "Each read of the page can cost 300 bytes more than the default, about 75 tokens."
       ],
       "budget": {
-        "bytes": 1400,
+        "bytes": 1500,
         "default": 1200,
-        "extra_bytes": 200,
-        "extra_tokens": 50
+        "extra_bytes": 300,
+        "extra_tokens": 75
       }
     },
     {
@@ -355,7 +355,7 @@
     },
     {
       "declaration": "root-verbs",
-      "applies_to": "board init, board check, board get, board ls, board refs, board uri, board put, board rm, board sync, board call, board decide, board answer, board query, board serve",
+      "applies_to": "board init, board check, board get, board ls, board log, board refs, board uri, board put, board rm, board sync, board call, board decide, board answer, board query, board serve",
       "declares": "Each command sits directly under the root as a verb.",
       "reason": "board's root commands are the verbs an agent types most, each acting on the board or a record, and a resource word before them would lengthen every call"
     },
@@ -388,6 +388,16 @@
       "declaration": "text-line",
       "applies_to": "board ls",
       "declares": "The text prints each row as the line <ENTRY> in place of a table row."
+    },
+    {
+      "declaration": "document-name",
+      "applies_to": "board log",
+      "declares": "The command prints board/log-report/v2, where its path gives the name log."
+    },
+    {
+      "declaration": "text-line",
+      "applies_to": "board log",
+      "declares": "The text prints each row as the line <COMMIT> <TIME> <SUBJECT> in place of a table row."
     },
     {
       "declaration": "document-name",

@@ -25,3 +25,6 @@ paths in `left_out`, to ask for in another run. So a run holds at most
 64 MiB, one more answer, and the short errors of the paths it left. The plugin
 library's `Board.get` does that. `rules.check` reads every
 file its measured rules reach this way.
+
+[history.md](history.md) says how `get --at` reads every path at one commit,
+and how `board log` lists the commits that changed a path.
