@@ -434,7 +434,7 @@ impl Scenario {
                 .map(|parent| gix::ObjectId::try_from(parent.as_bytes()).unwrap())
                 .collect(),
             author: signature.clone(),
-            committer: signature,
+            committer: signature.clone(),
             encoding: None,
             message: message.into(),
             extra_headers: Vec::new(),
@@ -449,7 +449,12 @@ impl Scenario {
             name: "HEAD".try_into().unwrap(),
             deref: true,
         };
-        self.git.edit_reference(edit).unwrap();
+        // The reflog entry names the scenario's signature, as the commit does,
+        // so moving HEAD needs no git identity on the machine.
+        let mut time = gix::date::parse::TimeBuf::default();
+        self.git
+            .edit_references_as([edit], Some(signature.to_ref(&mut time)))
+            .unwrap();
         model(id)
     }
 
