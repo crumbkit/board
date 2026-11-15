@@ -53,7 +53,7 @@ gix gives one merge base for two commits. When the histories hold more than one
 best common ancestor (a criss-cross), the merge uses that one, and a change in
 another base may be taken as new.
 
-A sync killed after some files were written leaves HEAD where it was. While
-the remote branch has not moved, the next sync computes the same merge and
-accepts the files already at their new content. When the remote branch has
-moved, the merge differs, and step S5 covers that case.
+A sync killed after some files were written leaves HEAD where it was, and a
+checkout record naming the commit it was moving to. The next sync accepts the
+files that hold that commit's blobs, whether or not the remote branch has
+moved since, as [checkout.md](sync/checkout.md) says.
