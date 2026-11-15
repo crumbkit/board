@@ -11,6 +11,7 @@ mod check;
 mod checkout;
 mod effects;
 mod enable;
+mod history;
 mod host;
 mod index;
 mod init;
@@ -40,6 +41,7 @@ pub use crate::effects::{
     VerifyOrderError, answer,
 };
 pub use crate::enable::{EnableError, EnableReport, Kept};
+pub use crate::history::{At, LogReport};
 pub use crate::host::{
     BuiltIn, Elsewhere, Host, Limit, Origin, Plugin, PluginError, Run, Settings, Variables, literal,
 };

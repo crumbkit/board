@@ -12,6 +12,7 @@ Board: a fast, validated view of a git tree.
 - [`board check`](#board-check): Check every entry, or those at or beneath a path; list and fail on the degraded ones
 - [`board get`](#board-get): Print the file at each path, following pointers
 - [`board ls`](#board-ls): List the directory at a path, without following pointers inside it
+- [`board log`](#board-log): List the commits that changed what a path names, newest first
 - [`board refs`](#board-refs): List the references each entry makes and the entries that reach it
 - [`board uri`](#board-uri): Print the board:// URI that names a record from any known board's clone
 - [`board put`](#board-put): Write the record on stdin at a path or --new name, or a file with --file
@@ -82,6 +83,7 @@ Print the file at each path, following pointers
 
 - `<PATH>`: Each file's logical path, such as /projects/p, or p from /projects; a JSON file's leaves out .json. Required. Takes more than one value.
 - `--fetch`: Fetch an attachment's bytes from the store and print them if their digest matches
+- `--at <COMMIT>`: Read each path in this commit (HEAD or a full id), each mount at its pin
 
 ### JSON fields that `--fields` selects
 
@@ -105,6 +107,28 @@ List the directory at a path, without following pointers inside it
 Effects: read-only, closed-world.
 
 Text: one line per row, `<ENTRY>`.
+
+## `board log`
+
+List the commits that changed what a path names, newest first
+
+### Arguments
+
+- `<PATH>`: The logical path, such as /tasks/a, or a from /tasks, whose file or directory's history to list; the board's root when left out
+- `--at <COMMIT>`: The commit to start the walk at: HEAD, the default, or a full commit id
+- `--limit <N>`: Print at most this many rows, up to 10000. Default: `100`.
+- `--all`: Print every row
+
+### Columns
+
+- `commit`: The commit's full id.
+- `time`: The committer time in UTC, as RFC 3339 with seconds.
+- `subject`: The first line of the commit's message, at most 256 bytes; empty for an empty message.
+- `blob`: The file at the path in that commit, or null when the commit removed it or the path is a directory there.
+
+Effects: read-only, closed-world.
+
+Text: one line per row, `<COMMIT> <TIME> <SUBJECT>`; --fields prints a table.
 
 ## `board refs`
 

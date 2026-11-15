@@ -266,6 +266,7 @@ fn every_listing_command_takes_limit_and_all() {
     let listing = [
         "check",
         "ls",
+        "log",
         "refs",
         "plugin list",
         "plugin find",

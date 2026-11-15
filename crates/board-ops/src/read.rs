@@ -6,10 +6,10 @@ use std::path::Path;
 
 use board_index::Fallback;
 use board_model::{
-    BINARY_NAME, Classified, Code, Content, Fields, Kind, Location, LogicalPath, Object, Refusal,
-    Role, Source, classify,
+    BINARY_NAME, Classified, Code, Content, Fields, Kind, Location, LogicalPath, Object, ObjectId,
+    Refusal, Role, Source, classify,
 };
-use board_tree::{Contents, GitError, Reader, ResolveError, Resolver, Status};
+use board_tree::{Contents, GitError, InCommit, Reader, ResolveError, Resolver, Status};
 use serde_json::Value;
 
 use crate::attachment::FetchError;
@@ -280,7 +280,7 @@ impl Board {
     }
 
     /// Where `path` leads by `resolve`, as [`Board::locate`] says.
-    fn located(
+    pub(crate) fn located(
         path: &LogicalPath,
         mut resolve: impl FnMut(&LogicalPath) -> Result<Location, ResolveError>,
     ) -> Result<Location, ReadError> {
@@ -299,11 +299,44 @@ impl Board {
     }
 }
 
+/// A snapshot that reads the file a resolution in it found: of the working
+/// tree, or of one commit.
+pub(crate) trait Reads {
+    fn read(
+        &mut self,
+        board: &board_model::Board,
+        path: &str,
+        blob: ObjectId,
+    ) -> Result<Option<Contents>, GitError>;
+}
+
+impl Reads for Resolver<'_, '_> {
+    fn read(
+        &mut self,
+        board: &board_model::Board,
+        path: &str,
+        blob: ObjectId,
+    ) -> Result<Option<Contents>, GitError> {
+        Resolver::read(self, board, path, blob)
+    }
+}
+
+impl Reads for InCommit<'_> {
+    fn read(
+        &mut self,
+        board: &board_model::Board,
+        path: &str,
+        blob: ObjectId,
+    ) -> Result<Option<Contents>, GitError> {
+        InCommit::read(self, board, path, blob)
+    }
+}
+
 /// The file at `location`, which `path` resolved to, with the blob of the
 /// bytes read. With `latest`, a file that changed since it was resolved is
 /// read as it is now; without, it is [`GitError::Changed`].
 pub(crate) fn read_at(
-    view: &mut Resolver,
+    view: &mut impl Reads,
     mut location: Location,
     path: &LogicalPath,
     latest: bool,
@@ -402,11 +435,17 @@ pub(crate) fn join(parent: &LogicalPath, segment: &str) -> Option<LogicalPath> {
     .ok()
 }
 
-/// A path `get` or `ls` cannot read.
+/// A path `get`, `ls` or `log` cannot read.
 #[derive(Debug, thiserror::Error)]
 pub enum ReadError {
     #[error(transparent)]
     Resolve { source: ResolveError },
+    /// `get --at HEAD` before the board's first commit.
+    #[error("HEAD names no commit, because the board has none yet")]
+    NoHead,
+    /// `log` before the board's first commit.
+    #[error("{path} has no history, because the board has no commit yet")]
+    NoHistory { path: LogicalPath },
     /// Nothing is at the path, which ends `.json`, but `stem`, the path
     /// without it, resolves.
     #[error("{source}")]
@@ -433,6 +472,8 @@ impl ReadError {
     pub fn code(&self) -> Code {
         match self {
             Self::Resolve { source } | Self::ByFile { source, .. } => source.code(),
+            Self::NoHead => Code::CommitNotFound,
+            Self::NoHistory { .. } => Code::PathNotFound,
             Self::NotARecord { .. } => Code::RecordNotARecord,
             Self::Unread { code, .. } => *code,
             Self::Git { source } => source.code(),
@@ -443,14 +484,16 @@ impl ReadError {
 
     /// This error as `board <command>` reports it. A path that names an
     /// entry by its file is hinted without `.json`, since a logical path
-    /// leaves the extension out.
+    /// leaves the extension out. A path `log` finds nothing at is hinted
+    /// to start the walk where it existed.
     pub fn refusal(&self, command: &'static str) -> Refusal {
         let fields = match self {
             Self::Resolve { source } | Self::ByFile { source, .. } => source.fields(),
-            Self::NotARecord { path } | Self::Unread { path, .. } | Self::Fetch { path, .. } => {
-                Fields::at(path)
-            }
-            Self::Git { .. } => Fields::default(),
+            Self::NotARecord { path }
+            | Self::Unread { path, .. }
+            | Self::Fetch { path, .. }
+            | Self::NoHistory { path } => Fields::at(path),
+            Self::Git { .. } | Self::NoHead => Fields::default(),
             Self::Check { source } => return source.refusal(),
         };
         let refusal = Refusal::new(self.code(), self, &fields);
@@ -458,6 +501,14 @@ impl ReadError {
             Self::ByFile { stem, .. } => refusal.with_hint(format!(
                 "a logical path leaves out .json: try `{BINARY_NAME} {command} {stem}`"
             )),
+            Self::Resolve {
+                source: ResolveError::NotFound { ancestor, .. },
+            } if command == "log" => refusal.with_hint(format!(
+                "`{BINARY_NAME} log {ancestor}` lists the commits that changed {ancestor}; run log again with --at set to a commit from before the path was removed"
+            )),
+            Self::NoHead | Self::NoHistory { .. } => refusal.with_hint(
+                "make the board's first commit, with board put or git commit, then run the command again",
+            ),
             _ => refusal,
         }
     }

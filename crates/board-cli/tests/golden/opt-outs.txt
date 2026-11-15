@@ -112,9 +112,9 @@ help-budget/root: board
   Cost: Each read of the page can cost 1550 bytes more than the default, about 388 tokens.
 
 help-budget/command: board get
-  Budget: 1400 bytes, where the default is 1200 bytes.
-  Reason: get has two output formats and --fetch, and a reader needs to know on one page that without --fetch get prints an attachment record and never reaches the store.
-  Cost: Each read of the page can cost 200 bytes more than the default, about 50 tokens.
+  Budget: 1500 bytes, where the default is 1200 bytes.
+  Reason: get has two output formats, --fetch and --at, and a reader needs to know on one page that without --fetch get prints an attachment record and never reaches the store, and that --at reads every path in one commit.
+  Cost: Each read of the page can cost 300 bytes more than the default, about 75 tokens.
 
 help-budget/command: board put
   Budget: 1620 bytes, where the default is 1200 bytes.
@@ -147,12 +147,12 @@ terminal-detection/off: every run of board
   Cost: Progress never prints, help prints without clap's colours at a terminal, and a table's cells print without their styles.
   Cost: A text table never fits the terminal's width, so the terminal wraps each line of a table that is wider than the terminal.
 
-board has 31 declarations.
+board has 33 declarations.
 
 refusal-alternatives: every run of board
   Declares: A refused command line for a command without its own function also offers the tool's own alternatives.
 
-root-verbs: board init, board check, board get, board ls, board refs, board uri, board put, board rm, board sync, board call, board decide, board answer, board query, board serve
+root-verbs: board init, board check, board get, board ls, board log, board refs, board uri, board put, board rm, board sync, board call, board decide, board answer, board query, board serve
   Declares: Each command sits directly under the root as a verb.
   Reason: board's root commands are the verbs an agent types most, each acting on the board or a record, and a resource word before them would lengthen every call
 
@@ -173,6 +173,12 @@ document-name: board ls
 
 text-line: board ls
   Declares: The text prints each row as the line <ENTRY> in place of a table row.
+
+document-name: board log
+  Declares: The command prints board/log-report/v2, where its path gives the name log.
+
+text-line: board log
+  Declares: The text prints each row as the line <COMMIT> <TIME> <SUBJECT> in place of a table row.
 
 document-name: board refs
   Declares: The command prints board/refs-report/v2, where its path gives the name refs.

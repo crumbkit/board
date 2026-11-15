@@ -20,6 +20,9 @@ pub enum Refused<'a> {
     /// A command that opens no board, such as `init` and `answer`, or one
     /// that serves the board past this run, such as `serve` and `ui`.
     Command(&'static str),
+    /// A read at a commit, such as `get --at` and `log`, which reads each
+    /// mount at the commit its pointer pins in that commit.
+    AtCommit(&'static str),
     /// A process plugin, whose own `board` runs read each mount at its pin.
     ProcessPlugin(&'a PluginName),
 }
@@ -56,6 +59,13 @@ impl Refused<'_> {
                      `board {command}` opens no board or serves one past this run"
                 ),
                 format!("run `board {command}` without --checkout"),
+            ),
+            Self::AtCommit(command) => (
+                format!(
+                    "--checkout reads a mount at its checkout's HEAD, and `board {command}` \
+                     reads each mount at the commit its pointer pins in the commit read"
+                ),
+                format!("run board {command} without --checkout"),
             ),
             Self::ProcessPlugin(plugin) => (
                 format!(

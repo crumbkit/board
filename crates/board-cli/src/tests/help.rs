@@ -63,7 +63,12 @@ const NO_ANSWER: &str = "a pending effect's id hashes the asking board's directo
 /// `serve` runs until it is idle, and `ui open` starts a server and a
 /// browser; board-serve/src/tests.rs and the ui tests here run both.
 const SERVES: &str = "the command starts a server that outlives the example's time limit";
+/// The fixture board has no commit of its own, so that `sync` has a commit
+/// to check out and each `put` makes the first.
+const NO_COMMIT: &str = "the fixture board has no commit of its own, so its sync example checks one out; history.rs in these tests pins log's output on a board with history";
 const ALLOW: &[Allow] = &[
+    Allow::example("log", &["/tasks/a"], NO_COMMIT),
+    Allow::example("log", &["/tasks/a", "--limit", "1", "--json"], NO_COMMIT),
     Allow::example(
         "answer",
         &[
@@ -217,8 +222,8 @@ pub(super) const BUDGETS: Budgets = Budgets::new()
     .nodes(&[
         Budget::new(
             "get",
-            1_400,
-            "get has two output formats and --fetch, and a reader needs to know on one page that without --fetch get prints an attachment record and never reaches the store.",
+            1_500,
+            "get has two output formats, --fetch and --at, and a reader needs to know on one page that without --fetch get prints an attachment record and never reaches the store, and that --at reads every path in one commit.",
         ),
         Budget::new(
             "put",

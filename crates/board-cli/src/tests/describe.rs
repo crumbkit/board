@@ -18,6 +18,7 @@ const LINES: &[(&str, &[&str], &[&str])] = &[
     ("check", &[], &[]),
     ("get", &[], &["/projects/p"]),
     ("ls", &[], &[]),
+    ("log", &[], &[]),
     ("refs", &[], &["/projects/p"]),
     ("uri", &[], &["/projects/p"]),
     ("put", &[], &["/tasks/a"]),
