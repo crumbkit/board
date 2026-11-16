@@ -105,9 +105,9 @@ pub(crate) fn of(each: &flow::Check, values: &Values) -> String {
     let mut said = fill(&text, values);
     if each.waivable == Some(true) {
         let waiver = format!(
-            " The owner may waive this check with a plans/decision/v1 he signs whose refs name \
-             {{change}}#{}, attached with `board changes attach --path {{change}} --ref \
-             <decision>`.",
+            " The owner may waive this check with a plans/decision/v1 he signs with by.person \
+             whose refs name {{change}}#{}, attached with `board changes attach --path \
+             {{change}} --ref <decision>`.",
             each.id
         );
         said.push_str(&fill(&waiver, values));
@@ -169,8 +169,8 @@ fn default(each: &flow::Check) -> String {
         ),
         Kind::Mockups => format!(
             "{ask}list each mockup by URL or board path under ### Mockups in UX, with a ### \
-             Neighbours list, and attach the owner's plans/decision/v1 that names each in its \
-             urls or refs; or start UX with No UI change and a reason."
+             Neighbours list, and attach the owner's plans/decision/v1 with by.person that names \
+             each in its urls or refs; or start UX with No UI change and a reason."
         ),
         Kind::Considered => {
             "Cite each surfaced record you build on in the plan's uses, list the rest in its \

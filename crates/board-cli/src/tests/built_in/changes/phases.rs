@@ -141,6 +141,47 @@ fn advance_refuses_an_unmet_gate_naming_what_is_missing_and_moves_on_once_it_is_
 }
 
 #[test]
+fn advance_refuses_a_plan_only_an_agent_approved_and_moves_on_once_a_decision_names_a_person() {
+    let board = Changes::new();
+    let agent = json!({"refs": [CHANGE], "by": {"program": "claude-code", "session": "s"}});
+    board.write("decisions/agent.json", &decision(&agent));
+    board.change_at(
+        "changes/t.json",
+        "plan",
+        &json!({"plan": "/changes/t/plan.md", "route": "owner", "records": ["/decisions/agent"]}),
+    );
+    board.write("changes/t/plan.md", PLAN);
+    let refused = board.refusal("advance", &path());
+    assert_eq!(
+        (&refused["code"], &refused["fields"]["missing"]),
+        (&json!("changes::gate::unmet"), &json!(["owner-approval"]))
+    );
+    board.call("attach", &at(&json!({"ref": board.approved()})));
+    assert_eq!(advanced(&board), "build");
+}
+
+#[test]
+fn a_decision_the_plan_only_uses_approves_nothing_and_attaching_it_does() {
+    let board = Changes::new();
+    board.write(
+        "decisions/owner.json",
+        &decision(&json!({"refs": [CHANGE]})),
+    );
+    board.change_at(
+        "changes/t.json",
+        "plan",
+        &json!({"plan": "/changes/t/plan.md", "route": "owner"}),
+    );
+    board.write("changes/t/plan.md", PLAN);
+    let mut plan = board.read("changes/t/plans/1.json");
+    plan["uses"] = json!(["/decisions/owner"]);
+    board.write("changes/t/plans/1.json", &plan.to_string());
+    assert_eq!(missing(&board), json!(["owner-approval"]));
+    board.call("attach", &at(&json!({"ref": "/decisions/owner"})));
+    assert_eq!(advanced(&board), "build");
+}
+
+#[test]
 fn a_plan_with_no_route_blocks_the_plan_gate_and_setting_one_clears_it() {
     let board = Changes::new();
     board.change_at(
@@ -666,7 +707,8 @@ fn planned_change(board: &Changes, plan: &str, ux: &str, data: &str) {
     board.write("changes/t/plans/1.json", &record.to_string());
 }
 
-/// A decision with these refs or urls.
+/// A decision of the owner's, whose `by` names a person, with these refs,
+/// urls or other fields.
 fn decision(fields: &Value) -> String {
     let body = json!({
         "$type": "plans/decision/v1",
@@ -674,6 +716,7 @@ fn decision(fields: &Value) -> String {
         "why": "Seen.",
         "session": "s",
         "decided": "2026-11-01T10:00:00Z",
+        "by": {"person": PERSON},
     });
     record(body, fields)
 }

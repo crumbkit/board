@@ -15,7 +15,7 @@ fn built(points: &[Option<&str>]) -> Changes {
         "decisions/data.json",
         &typed(
             "plans/decision/v1",
-            &json!({"decision": "Agreed.", "refs": [RECORD]}),
+            &json!({"decision": "Agreed.", "refs": [RECORD], "by": {"person": PERSON}}),
         ),
     );
     board.change_at(

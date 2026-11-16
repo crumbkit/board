@@ -67,6 +67,12 @@ blocks is missing.
    GitHub issue or pull request with
    `board -C <board> github ref --ref <owner>/<repo>#<number>`, then
    attach the path it returns with `--ticket <path>` or `--pull <path>`.
+   An owner check (`owner-approval`, `data-signed`, `rechecks`, `mockups`
+   and a waiver) counts an attached `plans/decision/v1` only when its
+   `by.person` names a person and its `written_by` is empty. A decision the
+   plan lists only in `uses` passes no check. When you record the owner's
+   approval from chat, write the decision as the plans skill says, with
+   `by.person` and the owner's words in `why`.
 4. Run `board -C <board> changes advance --path /changes/<name>`
    when every check passes. To send a change back to build for a fix
    round, such as after a review asks for fixes, run

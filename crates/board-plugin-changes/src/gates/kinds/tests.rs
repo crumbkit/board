@@ -8,6 +8,7 @@ use serde_json::{Value, json};
 
 use crate::change::Referenced;
 use crate::flow;
+use crate::gates::tests::{PERSON, by, judged};
 use crate::gates::{Observed, Status, interpret};
 use crate::records::Kind;
 
@@ -158,21 +159,24 @@ fn records_whose_refs_must_name_an_attached_type_and_be_owner_signed() {
         "where": {"owner_signed": true, "refs": ["evals/eval/v1"]}
     }]);
     let eval = ("/evals/e", "evals/eval/v1", json!({}));
-    let stub = (
-        "/d",
-        "plans/decision/v1",
-        json!({"refs": ["/evals/e"], "written_by": "hook"}),
-    );
-    let found = run(&observed(&json!({}), &[eval.clone(), stub]), list.clone());
+    let found = |fields: &Value| {
+        let decided = (
+            "/d",
+            "plans/decision/v1",
+            by(json!({"refs": ["/evals/e"]}), fields),
+        );
+        run(
+            &observed(&json!({}), &[eval.clone(), decided]),
+            list.clone(),
+        )
+        .remove(0)
+    };
+    let [got, wanted] = judged(|fields| found(fields).1 == Status::Pass);
+    assert_eq!(got, wanted);
     assert_eq!(
-        found[0].2,
-        "no plans/decision/v1 that the owner signed whose refs name an attached evals/eval/v1 is \
-         attached"
-    );
-    let signed = ("/d", "plans/decision/v1", json!({"refs": ["/evals/e"]}));
-    assert_eq!(
-        run(&observed(&json!({}), &[eval, signed]), list)[0].1,
-        Status::Pass
+        found(&json!({"by": {"program": "claude-code"}})).2,
+        "no plans/decision/v1 that the owner signed with by.person whose refs name an attached \
+         evals/eval/v1 is attached"
     );
 }
 
@@ -380,28 +384,27 @@ fn a_tickets_check_with_types_needs_a_ticket_of_one_of_them() {
 }
 
 #[test]
-fn a_waivable_check_passes_on_a_decision_the_owner_signed_naming_it_and_not_on_a_hooks_stub() {
+fn a_waivable_check_passes_only_on_a_decision_naming_it_that_names_a_person_and_no_hook_wrote() {
     let list = json!([{"id": "suite-run", "kind": "run", "scope": "full", "waivable": true}]);
-    let stub = (
-        "/d/w",
-        "plans/decision/v1",
-        json!({"refs": ["/changes/t#suite-run"], "written_by": "hook"}),
-    );
-    let missing = first(&observed(&json!({"head": HEAD}), &[stub]), list.clone());
-    assert_eq!(missing.status, Status::Missing);
+    let found = |fields: &Value| {
+        let decided = (
+            "/d/w",
+            "plans/decision/v1",
+            by(json!({"refs": ["/changes/t#suite-run"]}), fields),
+        );
+        first(&observed(&json!({"head": HEAD}), &[decided]), list.clone())
+    };
+    let [got, wanted] = judged(|fields| found(fields).status == Status::Pass);
+    assert_eq!(got, wanted);
+    let missing = found(&json!({"by": {"program": "claude-code"}}));
     assert!(
         missing
             .remedy
             .unwrap()
-            .contains("whose refs name /changes/t#suite-run"),
+            .contains("he signs with by.person whose refs name /changes/t#suite-run"),
         "the remedy says how to waive the check"
     );
-    let signed = (
-        "/d/w",
-        "plans/decision/v1",
-        json!({"refs": ["/changes/t#suite-run"]}),
-    );
-    let waived = first(&observed(&json!({"head": HEAD}), &[signed]), list);
+    let waived = found(&json!({"by": {"person": PERSON}}));
     assert_eq!(
         (waived.status, waived.detail),
         (Status::Pass, "the owner waived it in /d/w".to_owned())
@@ -414,7 +417,7 @@ fn a_check_that_is_not_waivable_ignores_a_decision_naming_it() {
     let signed = (
         "/d/w",
         "plans/decision/v1",
-        json!({"refs": ["/changes/t#suite-run"]}),
+        json!({"refs": ["/changes/t#suite-run"], "by": {"person": PERSON}}),
     );
     let found = first(&observed(&json!({"head": HEAD}), &[signed]), list);
     assert_eq!(found.status, Status::Missing);

@@ -229,7 +229,7 @@ fn the_adopt_check_needs_one_owner_decision_whose_refs_name_both_the_draft_and_t
         "changes/author/adopted.json",
         &typed(
             "plans/decision/v1",
-            &json!({"refs": ["/changes/author/draft"]}),
+            &json!({"refs": ["/changes/author/draft"], "by": {"person": PERSON}}),
         ),
     );
     board.call(
@@ -241,7 +241,7 @@ fn the_adopt_check_needs_one_owner_decision_whose_refs_name_both_the_draft_and_t
         "changes/author/adopted.json",
         &typed(
             "plans/decision/v1",
-            &json!({"refs": ["/changes/author/draft", "/evals/trial"]}),
+            &json!({"refs": ["/changes/author/draft", "/evals/trial"], "by": {"person": PERSON}}),
         ),
     );
     let gate = gate_of(&board, AUTHOR);
