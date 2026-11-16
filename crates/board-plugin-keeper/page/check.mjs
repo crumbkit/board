@@ -39,7 +39,6 @@ const given = pages(data, systems, questions);
 check(given === pages(clone(data), clone(systems), clone(questions)), 'a second render of the same data differs');
 check(given === pages(reverseDeep(data), reverseDeep(systems), reverseDeep(questions)), 'reversed input renders different HTML');
 
-if (process.env.DBG) { const a = given.split('\n'), b = pages(reverseDeep(data), reverseDeep(systems), reverseDeep(questions)).split('\n'); const i = a.findIndex((x, k) => x !== b[k]); let j = 0; while (a[i][j] === b[i][j]) j++; console.error(a[i].slice(j - 150, j + 250), '\n---\n', b[i].slice(j - 150, j + 250)); const n = given.indexOf('null</'); console.error(given.slice(n - 200, n + 20)); }
 const model = buildModel(data, systems, questions);
 const routes = allRoutes(model);
 check(routes.length === new Set(routes).size, 'a route is listed twice');
