@@ -252,11 +252,58 @@ fn statuses(pairs: &[(&str, &'static str)]) -> BTreeMap<String, &'static str> {
         .collect()
 }
 
+/// The person a fixture decision of the owner's names in `by`.
+pub(crate) const PERSON: &str = "pat";
+
+/// The four ways a decision says who wrote it, each with whether an owner
+/// check counts it: a `by` of a program and session only, an empty
+/// person, a hook's stub that names a person, and the owner's.
+fn signers() -> [(&'static str, Value, bool); 4] {
+    [
+        (
+            "no person",
+            json!({"by": {"program": "claude-code", "session": "s"}}),
+            false,
+        ),
+        (
+            "empty person",
+            json!({"by": {"person": "", "program": "claude-code"}}),
+            false,
+        ),
+        (
+            "hook stub",
+            json!({"by": {"person": PERSON}, "written_by": "hook"}),
+            false,
+        ),
+        ("the owner's", json!({"by": {"person": PERSON}}), true),
+    ]
+}
+
+/// Whether `counts` passes each of [`signers`], by name, beside whether
+/// it should, so one assertion shows every case that differs.
+pub(crate) fn judged(counts: impl Fn(&Value) -> bool) -> [Vec<(&'static str, bool)>; 2] {
+    let (got, wanted) = (signers().into_iter())
+        .map(|(signer, fields, counted)| ((signer, counts(&fields)), (signer, counted)))
+        .unzip();
+    [got, wanted]
+}
+
+/// `body` with each of `fields` over it.
+pub(crate) fn by(mut body: Value, fields: &Value) -> Value {
+    for (key, value) in fields.as_object().unwrap() {
+        body[key] = value.clone();
+    }
+    body
+}
+
 /// A decision the owner signed whose refs name the change's plan.
 fn approval() -> (&'static str, (&'static str, Value)) {
     (
         "/d/plan",
-        ("plans/decision/v1", json!({"refs": ["/changes/t/plans/1"]})),
+        (
+            "plans/decision/v1",
+            json!({"refs": ["/changes/t/plans/1"], "by": {"person": PERSON}}),
+        ),
     )
 }
 
@@ -331,35 +378,27 @@ fn the_plan_gate_misses_a_change_with_no_route_and_passes_each_route() {
 }
 
 #[test]
-fn on_every_route_the_plan_gate_needs_a_signed_decision_whose_refs_name_the_plan_or_the_change() {
+fn on_every_route_the_plan_gate_needs_a_persons_decision_whose_refs_name_the_plan_or_the_change() {
     for route in ["owner", "ask-first", "unowned"] {
         let asking = || given("plan").with(json!({"route": route}));
         let unrelated = vec![(
             "/d",
-            ("plans/decision/v1", json!({"refs": ["/changes/other"]})),
+            (
+                "plans/decision/v1",
+                json!({"refs": ["/changes/other"], "by": {"person": PERSON}}),
+            ),
         )];
         assert_eq!(
             asking().records(unrelated).statuses()["owner-approval"],
             "missing"
         );
-        let stub = vec![(
-            "/d",
-            (
-                "plans/decision/v1",
-                json!({"refs": [PATH], "written_by": "hook"}),
-            ),
-        )];
-        assert_eq!(
-            asking().records(stub).statuses()["owner-approval"],
-            "missing"
-        );
         for named in ["/changes/t/plans/1", "/changes/t/plans/1.md", PATH] {
-            let approved = vec![("/d", ("plans/decision/v1", json!({"refs": [named]})))];
-            assert_eq!(
-                asking().records(approved).statuses()["owner-approval"],
-                "pass",
-                "{route} {named}"
-            );
+            let [got, wanted] = judged(|fields| {
+                let body = by(json!({"refs": [named]}), fields);
+                let decided = vec![("/d", ("plans/decision/v1", body))];
+                asking().records(decided).statuses()["owner-approval"] == "pass"
+            });
+            assert_eq!(got, wanted, "{route} {named}");
         }
     }
 }
@@ -606,7 +645,7 @@ fn agreed(named: &[&str]) -> Records {
         "/d/ux",
         (
             "plans/decision/v1",
-            json!({"decision": "Agreed.", "urls": urls, "refs": refs}),
+            json!({"decision": "Agreed.", "urls": urls, "refs": refs, "by": {"person": PERSON}}),
         ),
     )]
 }
@@ -700,12 +739,14 @@ fn a_mockup_with_no_decision_naming_it_is_not_agreed_and_one_named_in_urls_or_re
 }
 
 #[test]
-fn a_decision_a_hook_wrote_agrees_nothing_and_one_an_agent_wrote_does() {
+fn a_mockup_decision_agrees_only_when_it_names_a_person_and_no_hook_wrote_it() {
     let plan = planned_ux(&format!("{}\n{NEIGHBOURS}", mockups_list()));
-    let mut stub = both();
-    stub[0].1.1["written_by"] = json!("runs/pr-create");
-    assert_eq!(plan_checks(&plan, stub)["mockups"], "missing");
-    assert_eq!(plan_checks(&plan, both())["mockups"], "pass");
+    let [got, wanted] = judged(|fields| {
+        let mut decided = both();
+        decided[0].1.1 = by(decided[0].1.1.clone(), fields);
+        plan_checks(&plan, decided)["mockups"] == "pass"
+    });
+    assert_eq!(got, wanted);
 }
 
 #[test]
@@ -758,7 +799,7 @@ fn understanding(fields: &Value) -> (&'static str, Value) {
 fn signed(refs: &[&str]) -> (&'static str, Value) {
     (
         "plans/decision/v1",
-        json!({"decision": "Signed off.", "refs": refs}),
+        json!({"decision": "Signed off.", "refs": refs, "by": {"person": PERSON}}),
     )
 }
 
@@ -770,9 +811,9 @@ fn data_that_is_not_none_needs_a_decision_referencing_this_changes_understanding
     );
     assert_eq!(
         detail(&plan, "data-signed", Vec::new()),
-        "no attached plans/decision/v1 the owner signed references an attached \
+        "no attached plans/decision/v1 the owner signed with by.person references an attached \
          changes/understanding/v1 of this change's data; run the understanding-check skill, then \
-         have the owner sign a decision whose refs name its record"
+         have the owner sign a decision with by.person whose refs name its record"
     );
     let routed = (given("plan").prose().plan(Some(&plan))).with(json!({"route": "owner"}));
     assert_eq!(routed.code("data-signed"), "changes::data::not_signed");
@@ -799,23 +840,39 @@ fn data_that_is_not_none_needs_a_decision_referencing_this_changes_understanding
 }
 
 #[test]
-fn a_data_decision_a_hook_wrote_signs_nothing_and_one_the_owner_signed_does() {
+fn a_data_decision_signs_off_only_when_it_names_a_person_and_no_hook_wrote_it() {
     let plan = planned(
         "No UI change: it is headless.",
         "One record per call, in the calls table.",
     );
-    let (kind, mut body) = signed(&[UNDERSTOOD]);
-    body["written_by"] = json!("runs/pr-create");
-    let stub = vec![
-        (UNDERSTOOD, understanding(&json!({}))),
-        ("/d/s", (kind, body)),
-    ];
-    assert_eq!(plan_checks(&plan, stub)["data-signed"], "missing");
-    let owned = vec![
-        (UNDERSTOOD, understanding(&json!({}))),
-        ("/d/s", signed(&[UNDERSTOOD])),
-    ];
-    assert_eq!(plan_checks(&plan, owned)["data-signed"], "pass");
+    let [got, wanted] = judged(|fields| {
+        let (kind, body) = signed(&[UNDERSTOOD]);
+        let decided = vec![
+            (UNDERSTOOD, understanding(&json!({}))),
+            ("/d/s", (kind, by(body, fields))),
+        ];
+        plan_checks(&plan, decided)["data-signed"] == "pass"
+    });
+    assert_eq!(got, wanted);
+}
+
+#[test]
+fn the_build_gate_reads_rechecks_only_under_a_sign_off_that_names_a_person() {
+    let stored = planned("No UI change: it is headless.", "One record per call.");
+    let [got, wanted] = judged(|fields| {
+        let (kind, body) = signed(&[UNDERSTOOD]);
+        let built = (given("build").prose().plan(Some(&stored)).records(vec![
+            (RUN, run(&json!({}))),
+            (
+                UNDERSTOOD,
+                understanding(&json!({"rechecks": rechecked(&[true, true])})),
+            ),
+            ("/d/s", (kind, by(body, fields))),
+        ]))
+        .with(json!({"head": HEAD}));
+        built.statuses()["rechecks"] == "pass"
+    });
+    assert_eq!(got, wanted);
 }
 
 /// Rechecks, one per entry, each matching the plan or not, each of its own

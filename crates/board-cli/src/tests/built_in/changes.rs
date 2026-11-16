@@ -66,6 +66,8 @@ const PLAN: &str = "# Timeout\n\n## Problem\n\nSuites hang.\n\n## Outcome\n\nA s
 /// The paths a fixture plan declares: everything under the fixture
 /// change's mount.
 const PATHS: [&str; 1] = ["/repos/x/**"];
+/// The person a fixture decision of the owner's names in `by`.
+const PERSON: &str = "pat";
 /// The owner's decision approving /changes/t's plan, which [`Changes::approved`]
 /// writes.
 const APPROVED: &str = "/changes/t/approved";
@@ -416,13 +418,16 @@ impl Changes {
         self.write(file, &change(phase, &Value::Object(kept)));
     }
 
-    /// Writes the owner's decision whose refs name /changes/t, which the
-    /// plan gate's owner-approval check needs, and returns its path for a
-    /// plan record to attach.
+    /// Writes the owner's decision whose refs name /changes/t and whose
+    /// `by` names a person, which the plan gate's owner-approval check
+    /// needs, and returns its path for a plan record to attach.
     fn approved(&self) -> &'static str {
         self.write(
             "changes/t/approved.json",
-            &typed("plans/decision/v1", &json!({"refs": ["/changes/t"]})),
+            &typed(
+                "plans/decision/v1",
+                &json!({"refs": ["/changes/t"], "by": {"person": PERSON}}),
+            ),
         );
         APPROVED
     }

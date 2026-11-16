@@ -7,8 +7,8 @@ use std::collections::BTreeSet;
 
 use super::remedy::{Values, fill, unfilled};
 use super::{
-    NO_HEAD, Observed, UNDERSTANDING_TYPE, objects, reviewed_head, route_missing, same_commit,
-    signed_decisions, strings, task_missing, truthy, unset,
+    NO_HEAD, Observed, UNDERSTANDING_TYPE, objects, owner_signed, reviewed_head, route_missing,
+    same_commit, signed_decisions, strings, task_missing, unset,
 };
 use board_plugin::shape::Record;
 
@@ -268,7 +268,7 @@ fn meets(
         (finding.get("severity").and_then(Value::as_str))
             .is_some_and(|severity| severities.iter().any(|each| each.as_str() == severity))
     });
-    let signed = rules.owner_signed != Some(true) || !truthy(body.get("written_by"));
+    let signed = rules.owner_signed != Some(true) || owner_signed(body);
     let refs = (rules.refs.iter().flatten())
         .all(|target| strings(body, "refs").any(|each| names(observed, target, each)));
     values && clean && signed && refs
@@ -358,7 +358,7 @@ fn records_detail(
         format!(" whose refs name {}", targets.join(" and "))
     };
     let signed = if rules.owner_signed == Some(true) {
-        " that the owner signed"
+        " that the owner signed with by.person"
     } else {
         ""
     };
@@ -430,14 +430,14 @@ pub(super) fn understood_missing(observed: &Observed, each: &flow::Check) -> Opt
         (observed.records.of_type(UNDERSTANDING_TYPE))
             .filter(|(_, body)| understands(observed, body, subject))
             .collect();
-    let signed = (signed_decisions(observed)).any(|body| {
+    let signed = (signed_decisions(observed)).any(|(_, body)| {
         strings(body, "refs").any(|named| understood.iter().any(|(path, _)| *path == named))
     });
     if !signed {
         return Some(format!(
-            "no attached plans/decision/v1 the owner signed references an attached \
-             {UNDERSTANDING_TYPE} of this change's {}; run the understanding-check skill, then \
-             have the owner sign a decision whose refs name its record",
+            "no attached plans/decision/v1 the owner signed with by.person references an \
+             attached {UNDERSTANDING_TYPE} of this change's {}; run the understanding-check \
+             skill, then have the owner sign a decision with by.person whose refs name its record",
             subject_word(subject)
         ));
     }
