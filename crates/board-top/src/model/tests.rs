@@ -636,7 +636,11 @@ fn a_bottom_pin_keeps_the_realm_heading_above_the_selected_row() {
     for capacity in 2..body.len() {
         let window = view.window(capacity);
         assert!(
-            window.start != at || !matches!(body[at - 1], BodyLine::Realm(_)),
+            window.start <= at && at < window.end,
+            "selected row not drawn at capacity {capacity}: {window:?}"
+        );
+        assert!(
+            capacity < 3 || window.start != at || !matches!(body[at - 1], BodyLine::Realm(_)),
             "capacity {capacity}: {window:?} body {body:?}"
         );
     }

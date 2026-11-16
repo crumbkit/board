@@ -101,7 +101,10 @@ impl View {
         if let Some(at) = selected {
             if at <= start {
                 start = at;
-                while start > 0 && matches!(body[start - 1], BodyLine::Realm(_)) {
+                while start > 0
+                    && matches!(body[start - 1], BodyLine::Realm(_))
+                    && at + 1 - start < room
+                {
                     start -= 1;
                 }
             } else if !at_bottom && at >= start + room {
