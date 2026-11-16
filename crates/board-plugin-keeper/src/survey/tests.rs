@@ -1,6 +1,8 @@
 //! A synthetic workspace: members by glob, an excluded directory, a renamed
 //! dependency and a dependency that is not a member.
 
+use serde_json::Value;
+
 use super::*;
 
 fn files(extra: &[(&str, &str)]) -> BTreeMap<String, String> {
@@ -129,4 +131,103 @@ fn items_are_the_public_functions_structs_enums_and_traits_that_start_a_line() {
                 pub enum Four {}\npub trait Five {}\nfn private() {}\n    pub fn nested() {}\n\
                 pub const SIX: u8 = 6;\npub(super) fn seven() {}\n";
     assert_eq!(items(text), ["one", "two", "Three", "Four", "Five"]);
+}
+
+/// A host whose every query passes the output budget.
+struct OverBudget(board_ops::Settings);
+
+impl Host for OverBudget {
+    fn query(
+        &self,
+        _sql: &str,
+        _limit: board_ops::Limit,
+    ) -> Result<board_ops::QueryReport, board_ops::QueryError> {
+        Ok(board_ops::QueryReport {
+            columns: vec!["logical".into()],
+            rows: Vec::new(),
+            truncated: true,
+            over_budget: true,
+            memory: None,
+        })
+    }
+
+    fn refs(
+        &self,
+        _: &[board_model::LogicalPath],
+        _: board_ops::Absent,
+        _: &[String],
+    ) -> Result<Vec<Result<board_ops::RefsReport, board_ops::RefsError>>, board_ops::RefsError>
+    {
+        unreachable!("the survey resolves no paths")
+    }
+
+    fn get_each(
+        &self,
+        _: &[board_model::LogicalPath],
+    ) -> Result<Vec<Result<board_ops::GetReport, board_ops::ReadError>>, board_ops::ReadError> {
+        unreachable!("the survey reads no files after its listing fails")
+    }
+
+    fn put(&self, _: &[Value]) -> Result<board_ops::PutReport, board_ops::PutError> {
+        unreachable!("the survey writes nothing")
+    }
+
+    fn call(
+        &self,
+        _: &board_plugin::Target,
+        _: &Value,
+    ) -> Result<board_plugin::CallReport, Box<board_model::Refusal>> {
+        unreachable!("the survey calls no plugin")
+    }
+
+    fn board(
+        &self,
+        _: &board_ops::Elsewhere,
+    ) -> Result<Box<dyn Host + '_>, Box<board_model::Refusal>> {
+        unreachable!("the survey opens no other board")
+    }
+
+    fn decide(
+        &self,
+        _: &str,
+        _: &board_model::LogicalPath,
+        _: Option<&board_ops::Shown>,
+    ) -> Result<board_ops::DecideReport, Box<board_model::Refusal>> {
+        unreachable!("the survey asks the owner nothing")
+    }
+
+    fn sync(
+        &self,
+        _: bool,
+        _: std::time::Duration,
+    ) -> Result<board_ops::Synced, board_ops::SyncError> {
+        unreachable!("the survey syncs nothing")
+    }
+
+    fn mount_update(
+        &self,
+        _: &board_model::LogicalPath,
+        _: std::time::Duration,
+    ) -> Result<board_ops::MountUpdateReport, board_ops::MountError> {
+        unreachable!("the survey updates no mount")
+    }
+
+    fn settings(&self) -> &board_ops::Settings {
+        &self.0
+    }
+}
+
+#[test]
+fn a_mount_with_more_files_than_the_budget_allows_is_left_without_crates_and_says_why() {
+    let host = OverBudget(board_ops::Settings {
+        now: std::time::SystemTime::UNIX_EPOCH,
+        day_start: None,
+        utc_offset: 0,
+        caller: None,
+        environment: board_ops::Variables::default(),
+        cache_home: None,
+    });
+    let surveyed = survey(&host, "/repos/big").expect("a large mount is no refusal");
+    let problem = surveyed.expect_err("a large mount has no crates");
+    assert!(problem.contains("too many files"), "{problem}");
 }

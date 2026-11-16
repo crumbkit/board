@@ -239,7 +239,17 @@ pub(crate) fn survey(
         prefix.chars().count(),
         literal(&prefix)
     );
-    let paths: Vec<String> = rows(host, &sql)?
+    let listed = match rows(host, &sql) {
+        Ok(listed) => listed,
+        Err(refused) if refused.code == "keeper::board::over_budget" => {
+            return Ok(Err(format!(
+                "{} holds too many files to list in one board run; survey it by hand",
+                prefix.trim_end_matches('/')
+            )));
+        }
+        Err(other) => return Err(other),
+    };
+    let paths: Vec<String> = listed
         .iter()
         .filter_map(|row| text(row.first()).map(str::to_owned))
         .collect();
