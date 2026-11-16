@@ -169,27 +169,35 @@ fn a_question_no_rule_places_counts_on_its_realms_line_with_where_it_came_from()
 }
 
 #[test]
-fn a_mount_without_a_realm_is_refused_and_a_mount_with_one_is_admitted() {
+fn a_mount_without_a_realm_lands_on_the_default_realms_line_and_sums_still_hold() {
     let rules = rules();
-    let refused = place(
+    let strays = [
+        question("/repos/stray/projects/misc/questions/q", "Which?", ""),
+        question("/repos/team/projects/misc/questions/q", "Which?", ""),
+    ];
+    let placed = place(&tree(&rules), &strays).unwrap();
+    let by_path = |path: &str| placed.iter().find(|each| each.id == path).unwrap();
+    let stray = by_path("/repos/stray/projects/misc/questions/q");
+    assert_eq!(
+        (
+            stray.realm.as_str(),
+            stray.project.as_deref(),
+            stray.from.as_deref()
+        ),
+        ("beta", None, Some("stray/misc"))
+    );
+    let listed = by_path("/repos/team/projects/misc/questions/q");
+    assert_eq!(listed.realm, "beta");
+    let other = place(
         &tree(&rules),
         &[question(
-            "/repos/stray/projects/misc/questions/q",
-            "Which?",
-            "",
-        )],
-    )
-    .unwrap_err();
-    assert_eq!(refused.code, "keeper::map::unknown_realm");
-    place(
-        &tree(&rules),
-        &[question(
-            "/repos/team/projects/misc/questions/q",
+            "/repos/other/projects/misc/questions/q",
             "Which?",
             "",
         )],
     )
     .unwrap();
+    assert_eq!(other[0].realm, "alpha");
 }
 
 #[test]

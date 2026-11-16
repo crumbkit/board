@@ -8,8 +8,8 @@
 //!    its path is tied to a project by `names`.
 //!
 //! A question no rule places is counted on its realm's line "Not tied to a
-//! project". The realm comes from `mount_realms` for a mounted board, else
-//! from `localRealm`, else `localDefault`.
+//! project". The realm comes from `mount_realms` for a mounted board that it
+//! lists, else from `localRealm`, else `localDefault`.
 
 use std::collections::BTreeMap;
 
@@ -144,8 +144,9 @@ pub(crate) fn place(tree: &Tree<'_>, waiting: &[Waiting]) -> Result<Vec<Placed>,
                 .ok_or_else(|| unknown("project", project, &question.path))?
                 .clone()
         } else if let Some(mount) = mount {
+            // A mount the rules do not list goes to the default realm.
             (rules.mount_realms.get(mount))
-                .ok_or_else(|| unknown("realm", mount, &question.path))?
+                .unwrap_or(&rules.local_default)
                 .clone()
         } else {
             (name.and_then(|name| rules.local_realm.get(name)))
