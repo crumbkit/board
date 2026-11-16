@@ -216,6 +216,19 @@ fn gather_refuses_when_a_plugin_it_reads_is_not_enabled_and_names_the_capability
     enabled.call("keeper.gather", &[]);
 }
 
+#[test]
+fn map_and_render_name_their_own_capability_when_a_source_refuses() {
+    let board = Fixture::enabling(&["keeper", "plans"]);
+    board
+        .write("curation.md", "# Pass\n")
+        .write("projects/keeper/map/latest.json", &map(&json!({})));
+    let render = board.refusal("keeper.render", &[]);
+    assert_eq!(render["code"], "keeper::render::source_failed", "{render}");
+    assert_eq!(render["fields"]["capability"], "changes.open", "{render}");
+    let refused = json(&run_map(&board, &map_input(&json!({}))));
+    assert_eq!(refused["code"], "keeper::map::source_failed", "{refused}");
+}
+
 /// The input of `keeper.map` for the open changes `a` and `b`, with `fields`
 /// replacing its own.
 fn map_input(fields: &Value) -> String {

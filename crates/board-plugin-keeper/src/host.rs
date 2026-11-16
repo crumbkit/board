@@ -13,10 +13,45 @@ pub(crate) fn refused(command: &str, refusal: &Refusal) -> PluginError {
     PluginError::board_refused(PLUGIN, command, refusal)
 }
 
+/// The keeper capability on whose behalf the host is called, which names the
+/// codes of the refusals it raises.
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum Caller {
+    Gather,
+    Map,
+    Render,
+}
+
+impl Caller {
+    /// The code of a refusal by another plugin's capability.
+    pub(crate) fn source_failed(self) -> &'static str {
+        match self {
+            Self::Gather => "keeper::gather::source_failed",
+            Self::Map => "keeper::map::source_failed",
+            Self::Render => "keeper::render::source_failed",
+        }
+    }
+
+    /// The code of a refusal for a question list that `plans.open` cut off.
+    /// `gather` reports a cut list in its output and never refuses.
+    pub(crate) fn questions_truncated(self) -> Option<&'static str> {
+        match self {
+            Self::Gather => None,
+            Self::Map => Some("keeper::map::questions_truncated"),
+            Self::Render => Some("keeper::render::questions_truncated"),
+        }
+    }
+}
+
 /// What `<capability>` of another plugin outputs for `input`, or the
-/// refusal as `keeper::gather::source_failed` naming the capability and its
+/// refusal as the caller's `source_failed` naming the capability and its
 /// code.
-pub(crate) fn call(host: &dyn Host, capability: &str, input: &Value) -> Result<Value, PluginError> {
+pub(crate) fn call(
+    host: &dyn Host,
+    caller: Caller,
+    capability: &str,
+    input: &Value,
+) -> Result<Value, PluginError> {
     let target: Target = capability
         .parse()
         .expect("each capability called is <plugin>.<capability>");
@@ -24,7 +59,7 @@ pub(crate) fn call(host: &dyn Host, capability: &str, input: &Value) -> Result<V
         .map(|report| report.output)
         .map_err(|failed| {
             refusal(
-                "keeper::gather::source_failed",
+                caller.source_failed(),
                 format!(
                     "{capability} refused with {}: {}; fix that capability's input or the board it \
                      reads, then run again",

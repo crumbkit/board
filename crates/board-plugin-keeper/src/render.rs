@@ -7,7 +7,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::gather::open_changes;
-use crate::host::{get_text, put, rows, text};
+use crate::host::{Caller, get_text, put, rows, text};
 use crate::model::{self, ChangeFact, Facts, Pass, Workspace};
 use crate::survey::survey;
 use crate::{LATEST, PLUGIN, refusal};
@@ -103,9 +103,10 @@ fn workspaces(host: &dyn Host, pass: &Pass) -> Result<(Vec<Workspace>, Vec<Value
     Ok((found, surveys))
 }
 
-/// What the board holds now, and what each survey found.
-fn facts(host: &dyn Host, pass: &Pass) -> Result<(Facts, Vec<Value>), PluginError> {
-    let open = open_changes(host)?;
+/// What the board holds now, what each survey found, and how many open
+/// questions `plans.open` could not read.
+fn facts(host: &dyn Host, pass: &Pass) -> Result<(Facts, Vec<Value>, u64), PluginError> {
+    let open = open_changes(host, Caller::Render)?;
     let (workspaces, surveys) = workspaces(host, pass)?;
     let wanted: Vec<(&str, &str)> = (open.iter())
         .filter(|_| {
@@ -129,7 +130,7 @@ fn facts(host: &dyn Host, pass: &Pass) -> Result<(Facts, Vec<Value>), PluginErro
                 .map(|(_, words)| words.clone()),
         })
         .collect();
-    let questions = crate::map::waiting(host)?;
+    let (questions, unreadable) = crate::map::waiting(host, Caller::Render)?;
     Ok((
         Facts {
             changes,
@@ -137,6 +138,7 @@ fn facts(host: &dyn Host, pass: &Pass) -> Result<(Facts, Vec<Value>), PluginErro
             workspaces,
         },
         surveys,
+        unreadable,
     ))
 }
 
@@ -144,13 +146,13 @@ pub(crate) fn render(host: &dyn Host, input: &Value) -> Result<Value, PluginErro
     let Input { path } = PluginError::read_input(PLUGIN, "render", input)?;
     let path = path.unwrap_or_else(|| DEFAULT_PATH.to_owned());
     let pass = latest(host)?;
-    let (facts, surveys) = facts(host, &pass)?;
+    let (facts, surveys, unreadable) = facts(host, &pass)?;
     let page = model::build(&pass, &facts)?;
     put(
         host,
         &[json!({"path": path, "text": crate::page::html(&page)})],
     )?;
     Ok(
-        json!({"path": path, "missing": page.data["missing"], "open": page.data["open"], "surveys": surveys}),
+        json!({"path": path, "missing": page.data["missing"], "open": page.data["open"], "surveys": surveys, "questions_unreadable": unreadable}),
     )
 }

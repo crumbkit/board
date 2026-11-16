@@ -193,3 +193,27 @@ fn a_commit_mounted_twice_is_deduped_to_its_shortest_path_and_one_mounted_once_i
     );
     assert!(dedupe(&mounts[2..3]).is_empty());
 }
+
+fn listed(truncated: bool, unreadable: u64) -> Value {
+    json!({
+        "questions": [{"path": "/questions/q", "asked": "2026-02-01T09:00:00Z",
+                       "question": "Which?", "blocked_work": ""}],
+        "total": 1, "truncated": truncated, "unreadable": unreadable,
+    })
+}
+
+#[test]
+fn a_cut_question_list_is_refused_by_map_and_render_and_a_whole_one_is_read() {
+    let map = read_waiting(&listed(true, 0), Caller::Map).unwrap_err();
+    assert_eq!(map.code, "keeper::map::questions_truncated");
+    let render = read_waiting(&listed(true, 0), Caller::Render).unwrap_err();
+    assert_eq!(render.code, "keeper::render::questions_truncated");
+    let (questions, unreadable) = read_waiting(&listed(false, 0), Caller::Map).unwrap();
+    assert_eq!((questions.len(), unreadable), (1, 0));
+}
+
+#[test]
+fn unreadable_questions_are_counted_and_not_dropped_silently() {
+    let (questions, unreadable) = read_waiting(&listed(false, 3), Caller::Render).unwrap();
+    assert_eq!((questions.len(), unreadable), (1, 3));
+}

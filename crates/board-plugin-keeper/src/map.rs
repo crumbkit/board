@@ -14,7 +14,7 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
 use crate::gather::{open_changes, today};
-use crate::host::{blob_at, call, put, rows, text};
+use crate::host::{Caller, blob_at, call, put, rows, text};
 use crate::placement::{self, Tree, Waiting};
 use crate::records::{
     Finding, KeeperMap, Kind, Link, NewFinding, Project, QuestionRules, Realm, System,
@@ -301,19 +301,42 @@ fn all_changes(host: &dyn Host) -> Result<BTreeSet<String>, PluginError> {
         .collect())
 }
 
-/// The waiting questions of `plans.open` in the shape placement reads.
-pub(crate) fn waiting(host: &dyn Host) -> Result<Vec<Waiting>, PluginError> {
-    let listed = call(host, "plans.open", &json!({"limit": 10_000}))?;
+/// The waiting questions of `plans.open` in the shape placement reads, and
+/// how many open questions it could not read. A list the limit cut short is
+/// refused, because every count and row built from it would be low.
+pub(crate) fn waiting(host: &dyn Host, caller: Caller) -> Result<(Vec<Waiting>, u64), PluginError> {
+    let listed = call(host, caller, "plans.open", &json!({"limit": 10_000}))?;
+    read_waiting(&listed, caller)
+}
+
+/// The questions in `listed`, the output of `plans.open`, and its count of
+/// unreadable questions.
+fn read_waiting(listed: &Value, caller: Caller) -> Result<(Vec<Waiting>, u64), PluginError> {
+    if let (true, Some(code)) = (
+        listed["truncated"].as_bool().unwrap_or(false),
+        caller.questions_truncated(),
+    ) {
+        return Err(refusal(
+            code,
+            format!(
+                "plans.open listed {} of {} waiting questions, so counts and rows built from them                  would be low; answer or withdraw some questions, or raise the limit of the call",
+                listed["questions"].as_array().map_or(0, Vec::len),
+                listed["total"]
+            ),
+            [("total", listed["total"].clone())],
+        ));
+    }
     let field =
         |question: &Value, name: &str| question[name].as_str().unwrap_or_default().to_owned();
-    Ok((listed["questions"].as_array().into_iter().flatten())
+    let questions = (listed["questions"].as_array().into_iter().flatten())
         .map(|question| Waiting {
             path: field(question, "path"),
             asked: field(question, "asked").chars().take(10).collect(),
             text: field(question, "question"),
             blocked_work: field(question, "blocked_work"),
         })
-        .collect())
+        .collect();
+    Ok((questions, listed["unreadable"].as_u64().unwrap_or(0)))
 }
 
 /// How many questions each realm has waiting, with every realm listed.
@@ -354,7 +377,7 @@ fn stamp(host: &dyn Host) -> String {
 
 pub(crate) fn map(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
     let input: Input = PluginError::read_input(PLUGIN, "map", input)?;
-    let open = open_changes(host)?;
+    let open = open_changes(host, Caller::Map)?;
     let known = Known {
         open: open.into_iter().map(|change| change.path).collect(),
         changes: all_changes(host)?,
@@ -392,9 +415,12 @@ pub(crate) fn map(host: &dyn Host, input: &Value) -> Result<Value, PluginError> 
     );
     let dedupe = dedupe(&mounts(host)?);
     optional("dedupe", (!dedupe.is_empty()).then(|| json!(dedupe)));
-    let waiting_counts = match &input.question_rules {
-        Some(rules) => Some(counts(&input, rules, &waiting(host)?)?),
-        None => None,
+    let (waiting_counts, unreadable) = match &input.question_rules {
+        Some(rules) => {
+            let (questions, unreadable) = waiting(host, Caller::Map)?;
+            (Some(counts(&input, rules, &questions)?), unreadable)
+        }
+        None => (None, 0),
     };
     optional(
         "questions_waiting",
@@ -415,6 +441,7 @@ pub(crate) fn map(host: &dyn Host, input: &Value) -> Result<Value, PluginError> 
         "projects": input.projects.len(),
         "findings": findings.iter().map(|finding| &finding.id).collect::<Vec<_>>(),
         "questions_waiting": waiting_counts,
+        "questions_unreadable": unreadable,
     }))
 }
 

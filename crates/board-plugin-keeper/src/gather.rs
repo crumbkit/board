@@ -8,7 +8,7 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 
-use crate::host::{call, get_text, rows, text};
+use crate::host::{Caller, call, get_text, rows, text};
 use crate::stale::{ChangeFacts, TaskFacts, stale};
 use crate::{LATEST, PLUGIN};
 
@@ -31,8 +31,11 @@ pub(crate) fn today(host: &dyn Host) -> Date {
 
 /// The open changes of `changes.open`, as the stale rules and the map check
 /// read them, with the day each was touched.
-pub(crate) fn open_changes(host: &dyn Host) -> Result<Vec<ChangeFacts>, PluginError> {
-    let listed = call(host, "changes.open", &json!({"limit": 10_000}))?;
+pub(crate) fn open_changes(
+    host: &dyn Host,
+    caller: Caller,
+) -> Result<Vec<ChangeFacts>, PluginError> {
+    let listed = call(host, caller, "changes.open", &json!({"limit": 10_000}))?;
     let mut touched = std::collections::BTreeMap::new();
     let mut plans = std::collections::BTreeMap::new();
     let sql = "SELECT logical, json_extract(body, '$.touched'), json_extract(body, '$.plan') \
@@ -89,7 +92,7 @@ pub(crate) fn tasks(
     if let Some(repo) = repo {
         input.insert("repo".to_owned(), json!(repo));
     }
-    let tree = call(host, "tasks.tree", &Value::Object(input))?;
+    let tree = call(host, Caller::Gather, "tasks.tree", &Value::Object(input))?;
     let mut open = Vec::new();
     open_tasks(&tree["roots"], &mut open);
     let mut reviewed = std::collections::BTreeMap::new();
@@ -140,9 +143,14 @@ fn latest_map(host: &dyn Host) -> Result<Option<(String, Vec<String>)>, PluginEr
 pub(crate) fn gather(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
     let Input { repo } = PluginError::read_input(PLUGIN, "gather", input)?;
     let today = today(host);
-    let changes = open_changes(host)?;
+    let changes = open_changes(host, Caller::Gather)?;
     let (tasks, trees_left_out) = tasks(host, repo.as_deref())?;
-    let questions = call(host, "plans.open", &json!({"limit": 10_000}))?;
+    let questions = call(
+        host,
+        Caller::Gather,
+        "plans.open",
+        &json!({"limit": 10_000}),
+    )?;
     let map = latest_map(host)?;
     let unplaced: Vec<&str> = map.as_ref().map_or(Vec::new(), |(_, placed)| {
         (changes.iter())
@@ -171,6 +179,7 @@ pub(crate) fn gather(host: &dyn Host, input: &Value) -> Result<Value, PluginErro
             "waiting": questions["questions"],
             "total": questions["total"],
             "truncated": questions["truncated"],
+            "unreadable": questions["unreadable"],
         },
         "map": map.map(|(date, placed)| json!({"path": LATEST, "date": date, "changes_placed": placed.len()})),
         "unplaced": unplaced,
