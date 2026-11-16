@@ -846,12 +846,12 @@ evaluated by kind:
 | --- | --- |
 | `sections` | the plan has text under each heading in `sections` |
 | `field` | the change sets `field` (`task`, `route`, `head`, `plan`, `tickets` or `pulls`), with at least `min` references; for `tickets` with `types`, at least `min` tickets Board reads as one of them; for `pulls` with `types`, the newest reads as a `github/pull/v1` |
-| `records` | at least `min` attached records of `type` meet `where` (`at_head`, `values`, `no_findings`, `owner_signed`, and `refs`, each of which a record's refs must name: `plan` is the plan, its text or the change), from different actors when `distinct` names a part of `by` |
+| `records` | at least `min` attached records of `type` meet `where` (`at_head`, `values`, `no_findings`, `owner_signed`, which counts only a decision the owner signed, and `refs`, each of which a record's refs must name: `plan` is the plan, its text or the change), from different actors when `distinct` names a part of `by` |
 | `run` | an attached run of the change's suite with `scope` is clean, passing and on `head` |
 | `paths` | the diff edits only the plan's paths |
 | `tasks` | every attached task but the change's own is done or dropped |
 | `understood` | a decision the owner signed references an attached understanding check of this change's `subject`; with `rechecks`, each such check also holds rechecks of that many points, and the latest recheck of every point matches |
-| `mockups` | the `agreed` part: each mockup under UX is named by a signed decision; the `neighbours` part: UX lists its neighbours; both when `part` is left out |
+| `mockups` | the `agreed` part: each mockup under UX is named by a decision the owner signed; the `neighbours` part: UX lists its neighbours; both when `part` is left out |
 | `considered` | each path in the change's `surfaced` that still reaches something is in the plan's `uses` or its `considered` field |
 | `obligations` | no obligation rule applies to the plan's paths, except those in the plan's `owed` field; a board without the rules plugin enabled has none |
 | `rule-paths` | the diff edits no file that the rules in `rules` list in their `paths` or `applies_to`; the detail names at most ten such files and counts the rest |
@@ -875,9 +875,30 @@ can make it pass. A check with `blocks: false` is reported but never
 refuses `advance`. A missing check carries a `remedy`: the flow's, or else
 its kind's own. A `waivable` check passes when an attached
 `plans/decision/v1` that the owner signed names `<change>#<id>` in its
-`refs`, and its detail names the decision; its remedy says so. A decision
-with `written_by` set is an agent's stub and signs nothing, here and in
-every check.
+`refs`, and its detail names the decision; its remedy says so.
+
+Every owner check (`owner_signed`, `understood`, `mockups` and a waiver)
+reads one rule. A decision counts as the owner's signature only when its
+`written_by` is empty and its `by.person` is a string that is not empty. A
+decision with `written_by` set is a hook's stub. A decision whose `by` names
+only a program, a session or an agent is an agent's, and it signs nothing.
+Board holds no name for the owner, so it compares `by.person` with nothing.
+A check reads only attached records, the paths in the `records` field of the
+change's plans; a decision the plan lists only in `uses` signs nothing.
+
+These routes still pass a gate without the owner:
+
+1. A false `by.person`. Any writer can set the field, to any name. A
+   session that relays the owner's approval sets it and quotes the owner's
+   words in `why`, and the gate cannot tell a faithful relay from an
+   invented one.
+2. A flow without `owner-approval`. An agent can write such a flow under
+   `/flows/` and move the change onto it with `changes reflow`.
+3. A direct phase edit. An agent can write the change record with a later
+   phase. `github.merge` reads only the land gate, which has no owner check.
+4. An approval that names the change. A decision whose `refs` name the
+   change, in place of a plan record, keeps counting after the plan is
+   written again.
 
 Instructions, remedies and the rules of a `rule-paths` or
 `planned-rule-paths` check may name
@@ -898,7 +919,7 @@ The development flow's gates:
 
 | Leaving | Checks |
 | --- | --- |
-| plan | `plan-sections`, the eight sections; `considered`; `task`; `route`; `owner-approval`, a `plans/decision/v1` the owner signed whose `refs` name the plan or the change, on every route; `mockups`, when the plan answers `ux` mockups; `data-signed`, an `understood` check of the data, when it answers `data` stored; `lifecycle-declared`, a `planned-rule-paths` check of `/rules/{repo}/lifecycle-paths`, when it answers `lifecycle` none; `lifecycle-record`, an `exists` check of `/changes/{name}/lifecycle`, when it answers `lifecycle` record; `obligations`, which does not block |
+| plan | `plan-sections`, the eight sections; `considered`; `task`; `route`; `owner-approval`, a `plans/decision/v1` the owner signed, with `by.person`, whose `refs` name the plan or the change, on every route; `mockups`, when the plan answers `ux` mockups; `data-signed`, an `understood` check of the data, when it answers `data` stored; `lifecycle-declared`, a `planned-rule-paths` check of `/rules/{repo}/lifecycle-paths`, when it answers `lifecycle` none; `lifecycle-record`, an `exists` check of `/changes/{name}/lifecycle`, when it answers `lifecycle` record; `obligations`, which does not block |
 | build | `head`; `suite-run`, waivable; `tasks`; `rechecks`, rechecks of two points, the latest recheck of each matching, when the plan answers `data` stored |
 | review | `review`, a report on `head` with no critical or high finding; `paths`; `ui-paths` and `data-paths`, `rule-paths` checks of `/rules/{repo}/ui-paths` when the plan answers `ux` none and `/rules/{repo}/data-paths` when it answers `data` none; `lifecycle-paths`, the same check of `/rules/{repo}/lifecycle-paths` unless Board reads a `changes/lifecycle/v1` at `/changes/{name}/lifecycle`; `lifecycle-none-paths`, the same check when the plan answers `lifecycle` none, whether or not a record exists; `obligations-settled`, with the escape heading `Obligations left owed` |
 | land | `test-sections`, What the tests prove and What the tests do not prove; `pull-request`; `lifecycle-paths-at-land` and `lifecycle-none-paths-at-land`, the two review checks of `/rules/{repo}/lifecycle-paths` again, so each re-reads the diff at the recorded head and a record removed after review is gated |

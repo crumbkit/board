@@ -36,6 +36,16 @@ in. `<project>` names what the record concerns, such as the repository
    decision concerns, such as a plan or an answer, `urls` for web pages such
    as a pull request, and `"review": "wanted"` when the owner should look
    at it.
+
+   A change's owner checks count a decision only when its `by.person` is
+   set and its `written_by` is empty. When the owner approves in chat,
+   record his approval with his name as `person` and his words, quoted, in
+   `why`:
+
+       echo '{"$type": "plans/decision/v1", "decision": "<the owner> approves the plan <plan record>.", "why": "Asked whether he approves the plan, <the owner> answered \"<his words>\".", "refs": ["<plan record>"], "by": {"person": "<the owner>", "session": "<your local_ id>"}, "decided": "<now>"}' | board -C <board> put --new --var project=<project>
+
+   Set `person` only for a decision the owner made. A decision you make
+   yourself names your `session` or `program`.
 3. When the decision belongs to a change, attach it:
 
        board -C <board> changes attach --path /changes/<name> --ref /projects/<project>/decisions/<id>

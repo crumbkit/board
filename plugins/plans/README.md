@@ -51,6 +51,23 @@ so it is written at its path. Its schema declares its folder too, so
 Such a stub names its plugin and hook in `written_by`, such as
 `runs/pr-create`, and the agent fills in `why` on its next turn.
 
+The changes plugin's owner checks count a decision as the owner's only when
+its `written_by` is empty and its `by.person` is a string that is not empty.
+They compare the person with no name, so any writer can set it. An agent that
+records an approval the owner gave in chat names the owner as `person` and
+quotes the owner's words in `why`:
+
+```json
+{
+  "$type": "plans/decision/v1",
+  "decision": "The owner approves the plan /changes/timeout/plans/1.",
+  "why": "Asked whether he approves the plan, the owner answered \"Approve\".",
+  "refs": ["/changes/timeout/plans/1"],
+  "by": {"person": "pat", "session": "local_335a90f9-0c1d-4e2f-8a9b-7c6d5e4f3a2b"},
+  "decided": "2026-11-15T22:30:00Z"
+}
+```
+
 ## Capabilities
 
 `board plans open [--path /projects/<project>] [--limit <n>]` lists the
