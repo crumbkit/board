@@ -1,7 +1,7 @@
 //! The stale lists of the consolidation prompt's step 5. Each is a pure
 //! function of the live facts and today's day.
 
-use jiff::civil::Date;
+use crate::clock::Date;
 use serde::Serialize;
 
 /// Tasks open this many days with no change are stale.
@@ -64,7 +64,7 @@ pub(crate) struct Stale {
 /// day.
 fn age(today: Date, since: Option<&str>) -> Option<i32> {
     let then: Date = since?.parse().ok()?;
-    then.until(today).ok().map(|span| span.get_days())
+    Some(today.days_since(then))
 }
 
 fn item(path: &str, title: &str, since: Option<&str>, days: Option<i32>) -> Item {

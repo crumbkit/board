@@ -2,8 +2,8 @@
 //! tasks and plans plugins, the change and task records and the latest map.
 //! It writes nothing.
 
+use crate::clock::{self, Date};
 use board_ops::{Host, PluginError};
-use jiff::civil::Date;
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
@@ -26,9 +26,7 @@ pub(crate) struct Input {
 
 /// The UTC day of the host's clock.
 pub(crate) fn today(host: &dyn Host) -> Date {
-    let now = jiff::Timestamp::try_from(host.settings().now)
-        .expect("the host's clock is a time that a timestamp holds");
-    now.to_zoned(jiff::tz::TimeZone::UTC).date()
+    clock::utc(host.settings().now).0
 }
 
 /// The open changes of `changes.open`, as the stale rules and the map check

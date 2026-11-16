@@ -1,5 +1,6 @@
 //! The keeper plugin built into Board (plugins/keeper/README.md).
 
+mod clock;
 mod gather;
 mod host;
 mod map;

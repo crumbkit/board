@@ -349,9 +349,7 @@ fn counts(
 
 /// The UTC time as `YYYYMMDDTHHMMSSZ`.
 fn stamp(host: &dyn Host) -> String {
-    let now = jiff::Timestamp::try_from(host.settings().now)
-        .expect("the host's clock is a time that a timestamp holds");
-    now.strftime("%Y%m%dT%H%M%SZ").to_string()
+    crate::clock::stamp(host.settings().now)
 }
 
 pub(crate) fn map(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
