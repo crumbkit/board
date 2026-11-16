@@ -29,6 +29,19 @@ pub(crate) const NAMES: &str = concat!(
     "))"
 );
 
+/// True when an answer in `named` (a source and the question it names, read
+/// once from each answer) names the question `q`: `NAMES`, with each way an
+/// answer names a question as its own lookup. Each lookup is equalities on
+/// both columns of `named`, so `SQLite` answers it from an index of `named`
+/// and never scans it for a question.
+pub(crate) const NAMED: &str = concat!(
+    "(EXISTS (SELECT 1 FROM named n WHERE n.source = 'worktree' AND n.target = q.logical) \
+     OR EXISTS (SELECT 1 FROM named n WHERE n.source = q.source AND n.target = q.logical) \
+     OR EXISTS (SELECT 1 FROM named n WHERE n.source = q.source AND n.target = ",
+    own_path!(),
+    "))"
+);
+
 /// The question at `path`, with its path in its own board, and every answer
 /// that names it, at any id.
 pub(crate) fn question_sql(path: &str) -> String {

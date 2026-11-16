@@ -11,17 +11,28 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
 use self::asked::{Instant, instant};
-use crate::question::NAMES;
+use crate::question::NAMED;
 use crate::records::Choice;
 
 /// Every question whose status is open and that no answer names. The path's
 /// prefix is matched in Rust: `starts_with` compares as `substr` and `length`
 /// would in `SQLite`.
+///
+/// Each answer's `question` is read once into `named`, which `SQLite` keeps
+/// and indexes by that value, so each question is looked up by key. Matching
+/// every question against every answer's body would parse each body again
+/// for each question and run past the one second a query may take.
+///
+/// The cast gives `target` the text affinity of `logical`. Without it,
+/// `SQLite` applies that affinity to `target` when it compares the two, cannot
+/// use an index of `target`, and scans `named` for every question.
 pub(crate) fn questions() -> String {
     format!(
-        "SELECT q.logical, q.code, q.body FROM records q \
+        "WITH named AS MATERIALIZED (SELECT a.source AS source, CAST(json_extract(a.body, '$.question') AS TEXT) AS target \
+         FROM records a WHERE a.type = 'plans/answer/v1') \
+         SELECT q.logical, q.code, q.body FROM records q \
          WHERE q.type = 'plans/question/v1' AND json_extract(q.body, '$.status') = 'open' \
-         AND NOT EXISTS (SELECT 1 FROM records a WHERE a.type = 'plans/answer/v1' AND {NAMES})"
+         AND NOT {NAMED}"
     )
 }
 

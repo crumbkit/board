@@ -1,7 +1,7 @@
 // What board answered, and the records and words the mod makes from it. Pure
 // functions, so the tests can pin every word.
 
-import type { Open, Question, Waiting } from '../types'
+import type { Open, Question, Unread, Waiting } from '../types'
 
 /** The `written_by` of an answer the owner gave in the pane. */
 export const WRITTEN_BY = 'plans/pane-answer'
@@ -153,6 +153,31 @@ export function waitingLabel(w: Waiting): string | null {
 
 /** The button's label while plans.waiting does not exist: the open questions; null when none are open. */
 export const questionsLabel = (total: number) => (total === 0 ? null : `Questions ${total}`)
+
+/** Failure codes the band does not report: no personal board, and no plans plugin in it. */
+const QUIET = ['board::config::not_found', 'board::plugin::not_installed']
+
+/**
+ * The band's count button. A count that is read draws as before. A failed
+ * read of either count draws in the warning colour: `Questions 4: the last
+ * read failed` beside the last count read, or `Questions could not be read`
+ * when none ever was. Nothing is drawn for a failure that only says there is
+ * no personal board or no plans plugin, and nothing when the count is zero.
+ */
+export function countBadge(waiting: Waiting | null, open: Open | null, failed: Unread): { label: string; problem: boolean } | null {
+  const label = waiting !== null ? waitingLabel(waiting) : open === null ? null : questionsLabel(open.total)
+  // The failure that matters is that of the read whose count is drawn. With no
+  // count drawn, any failure that is not quiet says the questions could not be read.
+  const loud = (why: string | null) => (why === null || QUIET.some(code => why.startsWith(code)) ? null : why)
+  const why = waiting !== null ? loud(failed.waiting) : open !== null ? loud(failed.open) : (loud(failed.open) ?? loud(failed.waiting))
+  if (why === null) return label === null ? null : { label, problem: false }
+  if (waiting === null && open === null) return { label: 'Questions could not be read', problem: true }
+  return { label: `${label ?? (waiting !== null ? 'Waiting 0' : 'Questions 0')}: the last read failed`, problem: true }
+}
+
+/** `text` with each control character as a space, so a message from Board draws on one line. */
+// eslint-disable-next-line no-control-regex
+export const plain = (text: string) => text.replace(/[\u0000-\u001f\u007f-\u009f]/g, ' ')
 
 // The report covers the day before the current one, from 07:00 local time
 // to 07:00 today. The 07:00 day start is fixed here; no config changes it. SQLite
