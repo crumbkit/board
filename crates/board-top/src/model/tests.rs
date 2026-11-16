@@ -531,10 +531,23 @@ fn typing_narrows_rows_by_project_title_or_path_ignoring_case() {
     let all = view.rows().count();
     type_text(&mut view, "DASH");
     assert!(view.rows().count() < all);
-    assert!(
-        view.rows()
-            .all(|row| row.path.contains('b') || view.groups.iter().any(|g| g.project == "dash"))
-    );
+    let kept = view.rows().count();
+    assert!(kept > 0);
+    let matching: usize = view
+        .groups
+        .iter()
+        .map(|g| {
+            g.rows
+                .iter()
+                .filter(|row| {
+                    g.project.to_lowercase().contains("dash")
+                        || row.title.to_lowercase().contains("dash")
+                        || row.path.to_lowercase().contains("dash")
+                })
+                .count()
+        })
+        .sum();
+    assert_eq!(kept, matching);
     view.clear_search();
     type_text(&mut view, "/CHANGES/A");
     assert_eq!(view.rows().count(), 1);
@@ -609,4 +622,31 @@ fn the_query_survives_a_refresh() {
     fresh.keep_selection(&old);
     assert_eq!(fresh.filter, "/changes/a");
     assert_eq!(fresh.rows().count(), 1);
+}
+
+#[test]
+fn a_bottom_pin_keeps_the_realm_heading_above_the_selected_row() {
+    let mut view = view_with_trailing_ended_lines();
+    let body = view.body();
+    view.end();
+    let at = body
+        .iter()
+        .position(|line| matches!(line, BodyLine::Row { index, .. } if *index == view.selected))
+        .unwrap();
+    for capacity in 2..body.len() {
+        let window = view.window(capacity);
+        assert!(
+            window.start != at || !matches!(body[at - 1], BodyLine::Realm(_)),
+            "capacity {capacity}: {window:?} body {body:?}"
+        );
+    }
+}
+
+#[test]
+fn escape_with_no_filter_keeps_the_bottom_pin() {
+    let mut view = long_view(40);
+    view.end();
+    view.clear_search();
+    assert_eq!(view.scroll, usize::MAX);
+    assert_eq!(view.selected, view.rows().count() - 1);
 }

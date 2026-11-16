@@ -68,7 +68,11 @@ impl View {
     /// record still passes, otherwise on the first row.
     fn edit(&mut self, change: impl FnOnce(&mut Self)) {
         let path = self.selected_path().map(str::to_owned);
+        let before = self.filter.clone();
         change(self);
+        if self.filter == before {
+            return;
+        }
         self.selected = path
             .and_then(|path| self.rows().position(|row| row.path == path))
             .unwrap_or(0);
