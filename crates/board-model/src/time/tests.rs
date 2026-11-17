@@ -31,7 +31,7 @@ fn a_time_before_1970_or_after_the_last_timestamp_is_clamped() {
     let before = UNIX_EPOCH - Duration::from_secs(1);
     assert_eq!(utc(before), "1970-01-01T00:00:00.000000Z");
     assert_eq!(utc_seconds(before), "1970-01-01T00:00:00Z");
-    let after = UNIX_EPOCH + Duration::from_secs(300_000_000_000);
+    let after = UNIX_EPOCH + Duration::from_mins(5_000_000_000);
     assert_eq!(utc(after), "9999-12-30T22:00:00.999999Z");
     assert_eq!(utc_seconds(after), "9999-12-30T22:00:00Z");
 }
