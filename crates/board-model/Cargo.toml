@@ -8,7 +8,7 @@ repository.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-humantime.workspace = true
+jiff.workspace = true
 percent-encoding.workspace = true
 pulldown-cmark.workspace = true
 saphyr-parser.workspace = true

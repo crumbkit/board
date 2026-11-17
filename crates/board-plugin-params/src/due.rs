@@ -2,13 +2,14 @@
 
 use std::time::{Duration, SystemTime};
 
+use board_model::moment;
 use board_ops::{Host, PluginError};
 use board_plugin::shape::Slug;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::stored::{CheckRun, Fallback, check_runs, moment, params, usable};
+use crate::stored::{CheckRun, Fallback, check_runs, params, usable};
 
 /// `due` takes no input.
 #[derive(Deserialize, JsonSchema)]

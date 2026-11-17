@@ -2,9 +2,9 @@
 //! query each, and the one test of whether a reader may use a value.
 
 use std::collections::BTreeMap;
-use std::time::{Duration, SystemTime};
+use std::time::SystemTime;
 
-use board_model::parse_json;
+use board_model::{moment, parse_json};
 use board_ops::{Host, Limit, PluginError};
 use board_plugin::shape::TREE_CODES;
 use serde::Deserialize;
@@ -125,33 +125,6 @@ pub(crate) fn params(host: &dyn Host) -> Result<Params, PluginError> {
         }
     }
     Ok(params)
-}
-
-/// The moment an RFC 3339 `text` names. humantime reads only `Z`, and a run's
-/// `started` may hold any offset, so this removes an offset of the form
-/// `+HH:MM` first and applies it. It reads nothing else a `date-time` allows
-/// that humantime refuses, such as a lowercase `z`.
-pub(crate) fn moment(text: &str) -> Option<SystemTime> {
-    let cut = text.len().checked_sub(6)?;
-    let [
-        sign @ (b'+' | b'-'),
-        hours @ ..,
-        b':',
-        minute_tens,
-        minute_ones,
-    ] = text.get(cut..).map_or(&[][..], str::as_bytes)
-    else {
-        return humantime::parse_rfc3339(text).ok();
-    };
-    let number = |digits: &[u8]| std::str::from_utf8(digits).ok()?.parse::<u64>().ok();
-    let seconds = number(hours)? * 3_600 + number(&[*minute_tens, *minute_ones])? * 60;
-    let utc = humantime::parse_rfc3339(&format!("{}Z", &text[..cut])).ok()?;
-    let offset = Duration::from_secs(seconds);
-    if *sign == b'+' {
-        utc.checked_sub(offset)
-    } else {
-        utc.checked_add(offset)
-    }
 }
 
 /// A check run: its suite, when it started, and the `check` it measured.

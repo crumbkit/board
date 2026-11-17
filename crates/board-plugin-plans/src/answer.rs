@@ -108,7 +108,7 @@ pub(crate) fn answer(host: &dyn Host, input: &Value) -> Result<Value, PluginErro
     let words = words
         .or_else(|| chosen.map(|(_, text)| (*text).to_owned()))
         .unwrap_or_default();
-    let answered = humantime::format_rfc3339_seconds(host.settings().now).to_string();
+    let answered = board_model::utc_seconds(host.settings().now);
     let mut record = Map::new();
     record.insert("$type".to_owned(), json!(AnswerRecord::TYPE));
     // A reference is read from the root of the board it is in, and the

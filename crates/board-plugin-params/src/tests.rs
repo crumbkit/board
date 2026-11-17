@@ -7,14 +7,14 @@
 use std::path::Path;
 use std::time::Duration;
 
-use board_model::{Code, LogicalPath, Refusal, canonical_json};
+use board_model::{Code, LogicalPath, Refusal, canonical_json, moment};
 use board_ops::Elsewhere;
 use serde::Deserialize;
 
 use super::*;
 use crate::due::stale;
 use crate::records::Bounds;
-use crate::stored::{Check, Fallback, Heuristic, Stored, is_name, moment, shipped, usable};
+use crate::stored::{Check, Fallback, Heuristic, Stored, is_name, shipped, usable};
 
 /// The `description` of SKILL.md's frontmatter, a single-quoted YAML
 /// scalar on one line.

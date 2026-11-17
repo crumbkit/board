@@ -7,6 +7,7 @@ use std::time::{Duration, UNIX_EPOCH};
 use serde_json::json;
 
 use super::*;
+use crate::utc;
 
 #[test]
 fn an_effect_id_is_the_same_for_the_same_request_and_differs_for_another_body_path_or_prior_blob() {
@@ -279,16 +280,4 @@ fn an_effect_asked_at_another_time_keeps_its_id_and_approval_and_reads_back_with
             .get("asked")
             .is_none()
     );
-}
-
-#[test]
-fn a_utc_time_is_rfc_3339_to_the_microsecond_with_a_fixed_width_of_27() {
-    let at = |micros| utc(UNIX_EPOCH + Duration::from_micros(micros));
-    assert_eq!(at(0), "1970-01-01T00:00:00.000000Z");
-    let leap = at(1_709_251_199_000_000);
-    assert_eq!(leap, "2024-02-29T23:59:59.000000Z");
-    let now = at(1_793_400_294_102_864);
-    assert_eq!(now, "2026-10-30T22:44:54.102864Z");
-    assert_eq!((leap.len(), now.len()), (27, 27));
-    assert!(leap < now);
 }
