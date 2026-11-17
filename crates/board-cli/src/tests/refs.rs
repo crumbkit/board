@@ -129,7 +129,10 @@ fn refs_refuses_the_view_flag_fields_and_its_twin_field_is_read_as_a_pointer() {
         text(&refused.stderr)
     );
     assert!(
-        text(&refused.stdout).contains("--fields names an unknown field 'text'"),
+        text(&refused.stdout).contains(
+            "--fields names the field 'text', and this command takes no --fields, \
+             because its rows have no named fields"
+        ),
         "{}",
         text(&refused.stdout)
     );

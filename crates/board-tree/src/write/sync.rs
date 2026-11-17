@@ -228,31 +228,13 @@ impl Repository {
     /// refuses with [`SyncError::Busy`]. The kernel drops the lock when the
     /// process ends, however it ends, so a file left behind by a killed sync
     /// does not hold anything.
-    fn sync_lock(&self, wait: Duration) -> Result<std::fs::File, SyncError> {
+    fn sync_lock(&self, wait: Duration) -> Result<crumbkit_durable::PathLock, SyncError> {
+        use crumbkit_durable::{LockError, PathLock};
         let lock = self.git_dir().join("sync.lock");
-        let failed = |source| {
-            SyncError::Write(WriteError::Io {
-                path: lock.clone(),
-                source,
-            })
-        };
-        let file = std::fs::OpenOptions::new()
-            .create(true)
-            .truncate(false)
-            .write(true)
-            .open(&lock)
-            .map_err(failed)?;
-        let started = std::time::Instant::now();
-        loop {
-            match file.try_lock() {
-                Ok(()) => return Ok(file),
-                Err(std::fs::TryLockError::WouldBlock) if started.elapsed() < wait => {
-                    std::thread::sleep(Duration::from_millis(20));
-                }
-                Err(std::fs::TryLockError::WouldBlock) => return Err(SyncError::Busy { lock }),
-                Err(std::fs::TryLockError::Error(source)) => return Err(failed(source)),
-            }
-        }
+        PathLock::acquire(&lock, std::time::Instant::now() + wait).map_err(|error| match error {
+            LockError::Io { path, source, .. } => SyncError::Write(WriteError::Io { path, source }),
+            _ => SyncError::Busy { lock },
+        })
     }
 
     /// The commit `upstream`'s tracking ref names before a fetch, or `None`

@@ -163,12 +163,12 @@ fn a_directory_after_the_command_is_refused_and_before_it_is_admitted() {
 #[test]
 fn a_group_without_its_command_after_a_directory_prints_the_groups_help() {
     let scenario = board();
-    let refused = board_in(scenario.workdir(), &["-C", "projects", "plugin"]);
-    assert_eq!(refused.code, 2);
+    let bare = board_in(scenario.workdir(), &["-C", "projects", "plugin"]);
+    assert_eq!(bare.code, 0);
     assert!(
-        text(&refused.stderr).contains("\nNext: board plugin <COMMAND> -h\n"),
+        text(&bare.stdout).contains("\nNext: board plugin <COMMAND> -h\n"),
         "{}",
-        text(&refused.stderr)
+        text(&bare.stdout)
     );
     let admitted = board_in(scenario.workdir(), &["-C", "projects", "plugin", "list"]);
     assert_eq!(admitted.code, 0);
@@ -232,15 +232,15 @@ fn a_directory_that_is_not_utf8_still_prints_a_groups_help() {
         OsString::from_vec(vec![0xff]),
         OsString::from("plugin"),
     ];
-    let refused = run(arguments, &context, &mut &b""[..], &mut Ran::default());
-    assert_eq!(refused.code, 2);
+    let bare = run(arguments, &context, &mut &b""[..], &mut Ran::default());
+    assert_eq!(bare.code, 0);
     assert!(
-        text(&refused.stderr).contains("\nNext: board plugin <COMMAND> -h\n"),
+        text(&bare.stdout).contains("\nNext: board plugin <COMMAND> -h\n"),
         "{}",
-        text(&refused.stderr)
+        text(&bare.stdout)
     );
     let utf8 = board_in(scenario.workdir(), &["-C", "projects", "plugin"]);
-    assert!(text(&utf8.stderr).contains("\nNext: board plugin <COMMAND> -h\n"));
+    assert!(text(&utf8.stdout).contains("\nNext: board plugin <COMMAND> -h\n"));
 }
 
 #[test]

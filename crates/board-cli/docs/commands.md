@@ -142,11 +142,6 @@ List the references each entry makes and the entries that reach it
 - `--limit <N>`: Print at most this many rows, up to 10000. Default: `100`.
 - `--all`: Print every row
 
-### JSON fields that `--fields` selects
-
-- `text`
-- `base64`
-
 Effects: read-only, closed-world.
 
 Output: each answer's bytes unchanged, under a ==> KEY <== header when there are several keys, and --json prints the bytes as text or base64.

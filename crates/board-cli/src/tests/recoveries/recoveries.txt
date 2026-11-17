@@ -529,11 +529,6 @@ board ls --limit 0
   run board ls -h
     exits 0
 
-board plugin
-  fails with board::cli::usage
-  run board plugin -h
-    exits 0
-
 board mount update /mount/unfollowed
   fails with board::mount::follow_missing
   hint

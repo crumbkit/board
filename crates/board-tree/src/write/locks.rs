@@ -1,11 +1,11 @@
 //! The locks a put holds: `board.lock` and git's `index.lock`
 //! (docs/architecture.md, Writes).
 
-use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
+use crumbkit_durable::{LockError, PathLock};
 use gix::lock::acquire::Fail;
 
 use board_model::ObjectId;
@@ -61,35 +61,16 @@ impl Repository {
         }
     }
 
-    /// Takes an exclusive kernel lock on the file `flock`, trying again every
-    /// `LOCK_POLL` until `wait` has passed, then refuses with
-    /// [`WriteError::Locked`] naming `marker`, the board lock it stands for.
-    fn flock(flock: &Path, marker: &Path, wait: Duration) -> Result<fs::File, WriteError> {
-        let failed = |source| WriteError::Io {
-            path: flock.to_path_buf(),
-            source,
-        };
-        let file = fs::OpenOptions::new()
-            .create(true)
-            .truncate(false)
-            .write(true)
-            .open(flock)
-            .map_err(failed)?;
-        let started = Instant::now();
-        loop {
-            match file.try_lock() {
-                Ok(()) => return Ok(file),
-                Err(fs::TryLockError::WouldBlock) if started.elapsed() < wait => {
-                    std::thread::sleep(LOCK_POLL);
-                }
-                Err(fs::TryLockError::WouldBlock) => {
-                    return Err(WriteError::Locked {
-                        lock: marker.to_path_buf(),
-                    });
-                }
-                Err(fs::TryLockError::Error(source)) => return Err(failed(source)),
-            }
-        }
+    /// Takes an exclusive kernel lock on the file `flock`, trying again until
+    /// `wait` has passed, then refuses with [`WriteError::Locked`] naming
+    /// `marker`, the board lock it stands for.
+    fn flock(flock: &Path, marker: &Path, wait: Duration) -> Result<PathLock, WriteError> {
+        PathLock::acquire(flock, Instant::now() + wait).map_err(|error| match error {
+            LockError::Io { path, source, .. } => WriteError::Io { path, source },
+            _ => WriteError::Locked {
+                lock: marker.to_path_buf(),
+            },
+        })
     }
 
     /// Takes git's `index.lock`, trying again every `LOCK_POLL` until
