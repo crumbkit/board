@@ -23,7 +23,7 @@ deny = [
     # board-plugin's sign module checks who owns the allowed signers file.
     # crumbkit-process starts, signals and reaps every child Board runs.
     # crossterm, under board-top's ratatui, puts the terminal in raw mode.
-    { crate = "rustix", wrappers = ["board-plugin", "board-tree", "crossterm", "crumbkit", "crumbkit-process", "gix-index", "tempfile"] },
+    { crate = "rustix", wrappers = ["board-plugin", "board-tree", "crossterm", "crumbkit", "crumbkit-durable", "crumbkit-process", "gix-index", "tempfile"] },
     # board-plugin's process module sets the flag `board ui` stops on, and
     # crumbkit-process's forward feature forwards stop signals to every
     # child group Board runs.
@@ -37,7 +37,7 @@ deny = [
     # board-cli's config module reads the local time zone, and gix dates
     # commits; a plugin gets the UTC offset in Settings. board-ops parses and
     # prints the build timestamps of a board's min_board.
-    { crate = "jiff", wrappers = ["board-cli", "board-ops", "gix-date"] },
+    { crate = "jiff", wrappers = ["board-cli", "board-ops", "crumbkit", "gix-date"] },
     { crate = "tiny_http", wrappers = ["board-serve"] },
     # board-plugin's process module runs plugin, signer and built-in children
     # and forwards signals through crumbkit-process; board-tree's transport
