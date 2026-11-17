@@ -111,9 +111,9 @@ make it concrete. Rule 17 already fixes the report, the exit codes and `--json`.
     when `--json` is on the command line. clap suggests the nearest command or
     flag for a misspelling. Text errors are `error: <message>`, then clap's
     `usage:` line when clap prints one, then `help:` and `code:` lines. One
-    exception: in text, a command group run without a subcommand prints the
-    group's help page on stderr and exits 2, because exit 2 already means
-    `board::cli::usage`; with `--json` it prints the failure document. JSON errors carry `recovery` beside `code` and
+    exception: a command group run without a subcommand prints the group's
+    help page on stdout and exits 0, as a help run does, with or without
+    `--json`. JSON errors carry `recovery` beside `code` and
     `message`. A record
     refused by its schema names the JSON pointer that failed and why. Gate: the
     hint for each code is chosen by an exhaustive `match` on `Code`, so a new
