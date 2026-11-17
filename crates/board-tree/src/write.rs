@@ -56,7 +56,7 @@ pub struct Lock {
     /// The lock owner record's entry for `board.lock`, removed after it.
     _owner: locks::Owned,
     /// The kernel lock that shows a live Board process holds `board.lock`.
-    _flock: fs::File,
+    _flock: crumbkit_durable::PathLock,
     /// When this put stops waiting: the one wait covers `board.lock` and
     /// every wait for git's `index.lock`.
     deadline: Instant,

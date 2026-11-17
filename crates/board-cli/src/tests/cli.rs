@@ -331,11 +331,11 @@ fn a_misspelt_command_is_a_coded_error_with_a_suggestion_and_the_right_one_runs(
 #[test]
 fn a_group_without_its_command_prints_its_help_page_and_with_one_runs() {
     let scenario = board();
-    let refused = board_in(scenario.workdir(), &["plugin"]);
-    assert_eq!(refused.code, 2);
-    assert_eq!(refused.stdout, b"");
+    let bare = board_in(scenario.workdir(), &["plugin"]);
+    assert_eq!(bare.code, 0);
+    assert_eq!(bare.stderr, b"");
     let page = board_in(scenario.workdir(), &["plugin", "-h"]);
-    assert_eq!(text(&refused.stderr), text(&page.stdout));
+    assert_eq!(text(&bare.stdout), text(&page.stdout));
     assert_eq!(board_in(scenario.workdir(), &["plugin", "list"]).code, 0);
 }
 
@@ -367,16 +367,12 @@ fn board_help_prints_the_root_help_as_dash_dash_help_does() {
 }
 
 #[test]
-fn a_bare_group_in_json_names_its_subcommands_and_with_one_runs() {
+fn a_bare_group_in_json_prints_its_help_page_and_with_one_runs() {
     let scenario = board();
-    let refused = board_in(scenario.workdir(), &["plugin", "--json"]);
-    assert_eq!(refused.code, 2);
-    let document = json(&refused);
-    assert_eq!(document["code"], "board::cli::usage");
-    assert_eq!(
-        document["message"],
-        "the command `board plugin` needs a subcommand: list, find, enable"
-    );
+    let bare = board_in(scenario.workdir(), &["plugin", "--json"]);
+    assert_eq!(bare.code, 0);
+    let page = board_in(scenario.workdir(), &["plugin", "-h"]);
+    assert_eq!(text(&bare.stdout), text(&page.stdout));
     let admitted = board_in(scenario.workdir(), &["plugin", "list", "--json"]);
     assert_eq!(admitted.code, 0, "{}", text(&admitted.stderr));
 }

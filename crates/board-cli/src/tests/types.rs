@@ -57,6 +57,8 @@ fn every_failure() -> Failure {
         code: "board::path::not_found".to_owned(),
         message: "nothing is at /zz".to_owned(),
         cause: Some("a: b".to_owned()),
+        causes: vec!["first".to_owned(), "second".to_owned()],
+        sentence: Some("Nothing is at that path.".to_owned()),
         fields,
         labels: vec![label.clone()],
         related: vec![Related {
@@ -86,7 +88,29 @@ fn every_failure() -> Failure {
             Recovery::Terminal {
                 call: "board login".to_owned(),
             },
+            Recovery::Program {
+                program: "git".to_owned(),
+                args: vec!["status".to_owned()],
+                run: "git status".to_owned(),
+            },
             Recovery::Retry,
+            Recovery::After {
+                repair: "run git status".to_owned(),
+                then: Box::new(Recovery::Run {
+                    call: "board ls <PATH>...".to_owned(),
+                    all: Some("path".to_owned()),
+                }),
+            },
+            Recovery::After {
+                repair: "run git status".to_owned(),
+                then: Box::new(Recovery::Terminal {
+                    call: "board login".to_owned(),
+                }),
+            },
+            Recovery::After {
+                repair: "run git status".to_owned(),
+                then: Box::new(Recovery::Retry),
+            },
             Recovery::Hint {
                 text: "look".to_owned(),
             },

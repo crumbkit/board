@@ -52,6 +52,12 @@ pub struct Failure {
     pub message: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cause: Option<String>,
+    /// The reasons the failure lists side by side, in order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub causes: Vec<String>,
+    /// A fixed sentence that a person reviewed, safe to show to anyone.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sentence: Option<String>,
     /// The values at fault, by name. crumbkit prints them in the order the
     /// failure gives them; this map orders them by name.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
@@ -86,8 +92,17 @@ pub enum Recovery {
     /// A person must run `call` in a terminal, so a program hands the step
     /// to a person.
     Terminal { call: String },
+    /// Run this command of another program: `run` is the quoted command line
+    /// that the text output prints.
+    Program {
+        program: String,
+        args: Vec<String>,
+        run: String,
+    },
     /// Run the same command again later.
     Retry,
+    /// Make the repair `repair`, then take the step `then`.
+    After { repair: String, then: Box<Self> },
     /// Follow this advice.
     Hint { text: String },
     /// There is no next step, for this reason.

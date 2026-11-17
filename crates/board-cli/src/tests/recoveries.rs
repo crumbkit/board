@@ -100,9 +100,7 @@ fn steps(hint: Option<&str>) -> Vec<RecoveryStep> {
 
 /// Board's `code` as crumbkit's.
 fn crumbkit_code(code: Code) -> crumbkit::Code<'static> {
-    let mut parts = code.as_str().split("::");
-    let mut next = || parts.next().unwrap();
-    crumbkit::Code::new(next(), next(), next())
+    crumbkit::Code::runtime(code.as_str()).unwrap()
 }
 
 /// `scenario`, given an identity to commit as in its own git config, so
@@ -298,7 +296,7 @@ fn refusals(starts: &mut Starts, fixture: &RuntimePlace) {
     let unbounded = "query 'WITH RECURSIVE c(n) AS (SELECT 1 UNION ALL SELECT n+1 FROM c) \
                      SELECT count(*) FROM c'";
     let zeroes = "query 'SELECT zeroblob(100000000)'";
-    let lines: [(Code, &str); 24] = [
+    let lines: [(Code, &str); 23] = [
         (Code::PathNotFound, "get /nowhere"),
         (Code::PathNotFound, "get /nowhere.json"),
         (Code::PathNotFound, "get /taks/t1"),
@@ -320,7 +318,6 @@ fn refusals(starts: &mut Starts, fixture: &RuntimePlace) {
         (Code::CliUsage, "cat /projects/p"),
         (Code::CliUsage, "get projects//p"),
         (Code::CliUsage, "ls --limit 0"),
-        (Code::CliUsage, "plugin"),
         (Code::MountFollowMissing, "mount update /mount/unfollowed"),
         (Code::PathNotFound, "mount update /projects/zz"),
     ];
@@ -1228,8 +1225,7 @@ fn recover(starts: &[Failing<'_>]) -> BTreeSet<String> {
         unprovoked.push(Unprovoked::new(crumbkit_code(code), NAMES_AN_ID));
     }
 
-    let lists = [codes.as_slice()];
-    let recoveries = Recoveries::new(examples, &lists)
+    let recoveries = Recoveries::new(examples, &codes)
         .starts(starts)
         .unprovoked(&unprovoked);
     Suite::new(build)
@@ -1297,8 +1293,7 @@ fn every_refusal_has_a_twin_one_word_apart_that_succeeds() {
         .allow(&starts.untwinned)
         .failure_reader(&reader);
     let (codes, unprovoked) = declared();
-    let lists = [codes.as_slice()];
-    let twins = Twins::new(examples, &lists)
+    let twins = Twins::new(examples, &codes)
         .pairs(&starts.pairs)
         .unprovoked(&unprovoked);
     Suite::new(build).twins(twins).run(Check::Twins);

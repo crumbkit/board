@@ -11,6 +11,7 @@ rust-version.workspace = true
 board-model.workspace = true
 board-plugin.workspace = true
 board-validate.workspace = true
+crumbkit-durable.workspace = true
 crumbkit-process.workspace = true
 gix.workspace = true
 thiserror.workspace = true

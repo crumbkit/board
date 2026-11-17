@@ -71,7 +71,7 @@ impl fmt::Display for Refused {
 impl std::error::Error for Refused {}
 
 /// The code of a refusal whose code is not three valid segments.
-const UNHELD: Code<'static> = Code::new("board", "output", "unheld");
+const UNHELD: Code<'static> = Code::from_spelling("board::output::unheld");
 
 impl Failure for Refused {
     fn code(&self) -> Code<'_> {
@@ -80,10 +80,7 @@ impl Failure for Refused {
         if code == board_model::Code::CliUsage.as_str() {
             return codes::CLI_USAGE;
         }
-        Spelling::COLONS
-            .split(code)
-            .and_then(|(component, area, reason)| Code::runtime(component, area, reason).ok())
-            .unwrap_or(UNHELD)
+        Code::runtime(code).unwrap_or(UNHELD)
     }
 
     /// A refusal keeps its hint as text.

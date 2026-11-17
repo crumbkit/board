@@ -132,7 +132,7 @@ dependencies = [
  "clap_complete",
  "crumbkit",
  "crumbkit-test",
- "jiff",
+ "jiff 0.2.37",
  "nix",
  "proptest",
  "schemars",
@@ -183,7 +183,7 @@ dependencies = [
  "board-tree",
  "board-types",
  "board-validate",
- "jiff",
+ "jiff 0.2.37",
  "proptest",
  "serde",
  "serde_json",
@@ -560,6 +560,7 @@ dependencies = [
  "board-plugin",
  "board-scenario",
  "board-validate",
+ "crumbkit-durable",
  "crumbkit-process",
  "gix",
  "proptest",
@@ -952,14 +953,15 @@ dependencies = [
 
 [[package]]
 name = "crumbkit"
-version = "0.5.0"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6947c2b73fe52c95c21aa67ab38f641c8fb8e5c49765f7829b8690bf9da9ed18"
+checksum = "b71ce9d40bdf7fe4e04521e05c33642b61fd967ef4cfc1ff115d1eed2b7e5313"
 dependencies = [
  "clap",
  "clap_complete",
- "humantime",
+ "crumbkit-durable",
  "is-ai-agent",
+ "jiff 1.0.0",
  "rustix",
  "schemars",
  "serde",
@@ -967,10 +969,19 @@ dependencies = [
 ]
 
 [[package]]
-name = "crumbkit-markdown"
-version = "0.5.0"
+name = "crumbkit-durable"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6783b904e7f7ae69e8933247a6ce3ef507de764e707660f9ed4b2f7d113588ec"
+checksum = "2d80551b03aac1261b394355c02cded2bdb2ccc51ff338a735b74c67c74c8bdc"
+dependencies = [
+ "rustix",
+]
+
+[[package]]
+name = "crumbkit-markdown"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "155895de507fc0780b81b58074330ed8ddf2e251ab5c6c09fe36196aff123b81"
 dependencies = [
  "crumbkit",
  "serde",
@@ -979,9 +990,9 @@ dependencies = [
 
 [[package]]
 name = "crumbkit-process"
-version = "0.5.0"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "62d63f3e0b61771aeb0cd74c82ba5ef4e05bf73a7de9ed065966932f84f4dcd7"
+checksum = "265b38b587325da2bc31f4cece3866eb26933306e218035c8617459a16a2d88b"
 dependencies = [
  "process-wrap",
  "rustix",
@@ -991,12 +1002,13 @@ dependencies = [
 
 [[package]]
 name = "crumbkit-test"
-version = "0.5.0"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5dc1794eaf90f76d7825eb5527170e8115e6033e5561c444315f064a099f4c76"
+checksum = "f5abeb4104155100f352cd0610bc3779d3b2cfea67d2054c72b9e6c66136ffa8"
 dependencies = [
  "clap",
  "crumbkit",
+ "crumbkit-durable",
  "crumbkit-markdown",
  "serde",
  "serde_json",
@@ -1493,7 +1505,7 @@ dependencies = [
  "bstr",
  "gix-error",
  "itoa",
- "jiff",
+ "jiff 0.2.37",
 ]
 
 [[package]]
@@ -1650,7 +1662,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7518b930f6aeb75e871d32ce873c2ae46e35cef19b5a0b039d4337f651d897cd"
 dependencies = [
  "bstr",
- "hashbrown 0.16.1",
+ "hashbrown 0.17.1",
 ]
 
 [[package]]
@@ -2275,14 +2287,28 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0ab1baf72f08796de0260609515130699b890ac25f30e610ad894bc5856cafdb"
 dependencies = [
  "defmt 1.1.1",
- "jiff-core",
- "jiff-static",
+ "jiff-core 0.1.1",
+ "jiff-static 0.2.37",
  "jiff-tzdb-platform",
  "log",
  "portable-atomic",
  "portable-atomic-util",
  "serde_core",
  "windows-link",
+]
+
+[[package]]
+name = "jiff"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9cc767b5763de45e810109520123bb2829a653f3a7ed9be40b2bc4f81158f595"
+dependencies = [
+ "jiff-core 1.0.0",
+ "jiff-static 1.0.0",
+ "log",
+ "portable-atomic",
+ "portable-atomic-util",
+ "serde_core",
 ]
 
 [[package]]
@@ -2296,15 +2322,36 @@ dependencies = [
 ]
 
 [[package]]
+name = "jiff-core"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "894f7ac42105f584100691b3bf6e6b92dd12fcfa225f6c397f95c8a94b47b68f"
+dependencies = [
+ "log",
+]
+
+[[package]]
 name = "jiff-static"
 version = "0.2.37"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "378268a1116ad67ae6228701118ac9f491d78fda38a40a1f1a9e1348de6f7212"
 dependencies = [
- "jiff-core",
+ "jiff-core 0.1.1",
  "proc-macro2",
  "quote",
  "syn 2.0.119",
+]
+
+[[package]]
+name = "jiff-static"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "955491488dc99b572ea6d67b172dcd98787d00744b1fb44a5689b4e6413695a6"
+dependencies = [
+ "jiff-core 1.0.0",
+ "proc-macro2",
+ "quote",
+ "syn 3.0.6",
 ]
 
 [[package]]
