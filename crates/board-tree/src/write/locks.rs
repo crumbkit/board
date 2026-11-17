@@ -41,7 +41,7 @@ impl Repository {
         let marker = resource.with_extension("lock");
         let started = Instant::now();
         let deadline = started + wait;
-        let flock = Self::flock(&resource.with_extension("flock"), &marker, wait)?;
+        let flock = Self::flock(&resource.with_extension("flock"), &marker, deadline)?;
         clear(&self.owners()).map_err(|(path, source)| WriteError::Io { path, source })?;
         loop {
             match gix::lock::Marker::acquire_to_hold_resource(&resource, Fail::Immediately, None) {
@@ -62,10 +62,10 @@ impl Repository {
     }
 
     /// Takes an exclusive kernel lock on the file `flock`, trying again until
-    /// `wait` has passed, then refuses with [`WriteError::Locked`] naming
+    /// `deadline` has passed, then refuses with [`WriteError::Locked`] naming
     /// `marker`, the board lock it stands for.
-    fn flock(flock: &Path, marker: &Path, wait: Duration) -> Result<PathLock, WriteError> {
-        PathLock::acquire(flock, Instant::now() + wait).map_err(|error| match error {
+    fn flock(flock: &Path, marker: &Path, deadline: Instant) -> Result<PathLock, WriteError> {
+        PathLock::acquire(flock, deadline).map_err(|error| match error {
             LockError::Io { path, source, .. } => WriteError::Io { path, source },
             _ => WriteError::Locked {
                 lock: marker.to_path_buf(),
