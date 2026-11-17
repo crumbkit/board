@@ -1,19 +1,16 @@
 //! The times Board writes and reads: RFC 3339 text and the instants it names.
 
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use jiff::Timestamp;
 
 /// `time` as a jiff timestamp. A time before 1970 is the epoch and a time
 /// after jiff's last timestamp is that timestamp.
 fn clamped(time: SystemTime) -> Timestamp {
-    match time.duration_since(UNIX_EPOCH) {
-        Err(_) => Timestamp::UNIX_EPOCH,
-        Ok(since) => Timestamp::new(
-            i64::try_from(since.as_secs()).unwrap_or(i64::MAX),
-            i32::try_from(since.subsec_nanos()).unwrap_or(0),
-        )
-        .unwrap_or(Timestamp::MAX),
+    match Timestamp::try_from(time) {
+        Ok(at) => at.max(Timestamp::UNIX_EPOCH),
+        Err(_) if time < UNIX_EPOCH => Timestamp::UNIX_EPOCH,
+        Err(_) => Timestamp::MAX,
     }
 }
 
@@ -32,19 +29,7 @@ pub fn utc_seconds(time: SystemTime) -> String {
 /// The moment an RFC 3339 `text` names, at any offset, or none when `text` is
 /// no time.
 pub fn moment(text: &str) -> Option<SystemTime> {
-    let at: Timestamp = text.parse().ok()?;
-    let seconds = u64::try_from(at.as_second()).ok();
-    let nanos = u32::try_from(at.subsec_nanosecond()).ok()?;
-    match seconds {
-        Some(seconds) => UNIX_EPOCH.checked_add(Duration::new(seconds, nanos)),
-        None => {
-            // Before 1970: whole seconds back, then the fraction forward.
-            let back = Duration::from_secs(at.as_second().unsigned_abs());
-            UNIX_EPOCH
-                .checked_sub(back)?
-                .checked_add(Duration::from_nanos(nanos.into()))
-        }
-    }
+    text.parse::<Timestamp>().ok().map(SystemTime::from)
 }
 
 #[cfg(test)]

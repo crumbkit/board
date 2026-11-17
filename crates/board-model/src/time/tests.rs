@@ -50,6 +50,14 @@ fn a_moment_reads_z_and_any_offset_as_the_same_instant() {
 }
 
 #[test]
+fn a_moment_reads_a_time_before_1970() {
+    assert_eq!(
+        moment("1969-12-31T23:59:59Z"),
+        Some(UNIX_EPOCH - Duration::from_secs(1))
+    );
+}
+
+#[test]
 fn a_moment_refuses_what_is_no_time_and_a_fraction_of_ten_digits() {
     assert_eq!(moment("not a time"), None);
     assert_eq!(moment("2026-11-08T09:00:00+xx:00"), None);
