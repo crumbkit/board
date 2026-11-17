@@ -110,7 +110,7 @@ pub(crate) fn put(host: &dyn Host, lines: &[Value]) -> Result<(), PluginError> {
 
 /// The time `now` names, in UTC to the second, such as 2026-11-01T09:00:00Z.
 pub(crate) fn timestamp(now: SystemTime) -> String {
-    humantime::format_rfc3339_seconds(now).to_string()
+    board_model::utc_seconds(now)
 }
 
 /// One artifact record, by its path.

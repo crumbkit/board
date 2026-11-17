@@ -12,7 +12,6 @@ board-model.workspace = true
 board-ops.workspace = true
 board-plugin.workspace = true
 board-validate.workspace = true
-humantime.workspace = true
 schemars.workspace = true
 serde.workspace = true
 serde_json.workspace = true

@@ -19,6 +19,7 @@ mod record;
 mod refusal;
 mod repo;
 mod stat;
+mod time;
 mod ui;
 
 pub use crate::app::{BINARY_NAME, DISPLAY_NAME};
@@ -30,7 +31,7 @@ pub use crate::conflict::{
 pub use crate::effect::{
     APPROVAL_HEADER, Answer, EFFECT_TYPE, EFFECT_TYPES, Effect, Expiry, MAX_DECIDE_BYTES,
     ORDER_TYPE, Order, PUT_OP, Pinned, RM_OP, SEEN_TYPE, Seen, WRITE_HEADER, effect_record,
-    is_effect_id, shown_digest, signature_namespace, utc,
+    is_effect_id, shown_digest, signature_namespace,
 };
 pub use crate::fields::{Fields, Found, Known, Lined};
 pub use crate::flow::flow_version;
@@ -55,6 +56,7 @@ pub use crate::record::{
 pub use crate::refusal::{Refusal, RefusalCode};
 pub use crate::repo::{REPO_TYPE, Repo, URI_SCHEME, github_remote, record_uri, shown_remote};
 pub use crate::stat::{Change, Stat};
+pub use crate::time::{moment, utc, utc_seconds};
 pub use crate::ui::{
     BINDING_TYPE, Binding, ComponentKind, DERIVED_TYPE, Fill, PatchError, Slot, UiError, VIEW_TYPE,
     View, check as check_ui,
