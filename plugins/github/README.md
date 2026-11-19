@@ -187,10 +187,12 @@ Refusals:
 - `github::merge::gate`: `merge` named a change that is not in its land
   phase, whose land gate misses a blocking check, or whose run has a stop
   set. `fields.phase` names its phase, `fields.missing` the checks and
-  `fields.stop` the stop; the hint gives each missing check's remedy. gh does not run.
-- `github::merge::number`: `merge` got no `--number` and `--change` records
-  no single pull request of the repository, or no `--change` was given.
-  gh does not run.
+  `fields.stop` the stop; the hint gives
+  each missing check's remedy. gh does not run.
+- `github::merge::number`: `merge` got no `--number` and either no
+  `--change`, or a change that records no pull request of the repository or
+  several, whose numbers the message lists in `fields.pulls`. Owner and
+  repository match without regard to case. gh does not run.
 - `github::merge::head`: `merge` has no head to match, because the change
   records none or one that is not a full 40-hex commit, or neither
   `--change` nor `--head` was given, or `--head` differs from the change's
@@ -205,7 +207,9 @@ Refusals:
   plugin does not read, which happens only when the two come from
   different Board builds.
 - `github::gh::failed`: gh failed after the check passed. The message says
-  the content may have been sent.
+  the content may have been sent. `merge` also gives it when its `gh api`
+  read of the pull request, for a left-out subject or body, fails or finds
+  no pull request; gh has sent nothing then.
 - A refusal after GitHub took the content, such as a record that cannot be
   written or a crossing that cannot take its result, keeps its own code but
   starts its message by saying the content was already sent and must not be

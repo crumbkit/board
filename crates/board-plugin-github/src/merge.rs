@@ -113,7 +113,7 @@ pub(crate) fn merge(host: &dyn Host, input: &Value) -> Result<Value, PluginError
     let head = match &changed {
         Some((change, board)) => {
             gate(&**board, &*place.personal, change)?;
-            let (recorded, found) = recorded(&**board, change)?;
+            let (recorded, found) = recorded_change(&**board, change)?;
             pulls = found;
             change_head(change, recorded, head)?
         }
@@ -127,7 +127,7 @@ pub(crate) fn merge(host: &dyn Host, input: &Value) -> Result<Value, PluginError
     let repository = format!("{}/{}", place.owner, place.repo);
     let number = match number {
         Some(number) => number,
-        None => only_pull(&pulls, &repository)?,
+        None => only_pull(&pulls, &repository, changed.is_some())?,
     };
     let (subject, body) = commit_text(host, &repository, number, subject, body)?;
     let parts = Parts::from([
@@ -354,29 +354,37 @@ fn gate(host: &dyn Host, personal: &dyn Host, path: &str) -> Result<(), PluginEr
 }
 
 /// The pull request number the change records for `repository`, or
-/// `github::merge::number` when it records none or several, or no change
-/// was named.
-fn only_pull(pulls: &[String], repository: &str) -> Result<u64, PluginError> {
-    let prefix = format!("/gh/{repository}/pulls/");
-    let numbers: Vec<u64> = (pulls.iter())
-        .filter_map(|pull| pull.strip_prefix(&prefix)?.parse().ok())
+/// `github::merge::number` saying why there is none: no change was named
+/// (`named` false), it records no pull request of `repository`, or several.
+/// Owner and repository match without regard to case, as GitHub names them.
+fn only_pull(pulls: &[String], repository: &str, named: bool) -> Result<u64, PluginError> {
+    let prefix = format!("/gh/{}/pulls/", repository.to_lowercase());
+    let mut numbers: Vec<u64> = (pulls.iter())
+        .filter_map(|pull| pull.to_lowercase().strip_prefix(&prefix)?.parse().ok())
         .collect();
+    numbers.sort_unstable();
+    numbers.dedup();
     if let [number] = numbers[..] {
         return Ok(number);
     }
-    let found = if numbers.is_empty() {
-        format!("records no pull request of {repository}")
+    let message = if !named {
+        "merge needs the pull request to merge; pass --change /changes/<name> or --number <n>"
+            .to_owned()
+    } else if numbers.is_empty() {
+        format!("the change records no pull request of {repository}; pass --number <n>")
     } else {
-        format!("records the pull requests {}", pulls.join(", "))
+        let list: Vec<String> = numbers.iter().map(|number| format!("#{number}")).collect();
+        format!(
+            "the change records several pull requests of {repository}, {}; pass --number <n> \
+             for the one to merge",
+            list.join(", ")
+        )
     };
     let mut fields = Map::new();
     fields.insert("pulls".to_owned(), json!(numbers));
     Err(PluginError {
         code: "github::merge::number".to_owned(),
-        message: format!(
-            "merge cannot tell which pull request to merge: the change {found}, or no --change \
-             was given"
-        ),
+        message,
         fields,
         hint: Some("pass --number <n>, the pull request's number".to_owned()),
     })
@@ -384,7 +392,10 @@ fn only_pull(pulls: &[String], repository: &str) -> Result<u64, PluginError> {
 
 /// The head commit the change at `path` records, if any, and the pull
 /// requests it records.
-fn recorded(host: &dyn Host, path: &str) -> Result<(Option<String>, Vec<String>), PluginError> {
+fn recorded_change(
+    host: &dyn Host,
+    path: &str,
+) -> Result<(Option<String>, Vec<String>), PluginError> {
     let refused =
         |refusal: &board_model::Refusal| PluginError::board_refused("github", "get", refusal);
     let logical: LogicalPath = path.parse().map_err(|_| {

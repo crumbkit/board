@@ -37,8 +37,8 @@ add `--personal` after `board`.
   `board github merge --change /changes/<name>`. It merges the change's
   head and moves the change to its next phase. The pull request is the
   change's only one in this repository, and the commit takes the pull
-  request's title and body; `--number`, `--subject` and `--body` override. It reads the change in the board the command
-  runs in: for a change in another board, add `-C <that board's directory>`
+  request's title and body; `--number`, `--subject` and `--body` override. It
+  reads the change in the board the command runs in: for a change in another board, add `-C <that board's directory>`
   and name it as `/changes/<name>`, never through a mount. From the
   checkout of a repository that another board mounts, a change in the
   personal board needs `--personal`. Without a change, pass `--head <sha>`,
@@ -81,15 +81,17 @@ its message, change what it names, and push again.
   whose origin is GitHub.
 - `github::push::failed`: git refused the push. Pull or rebase, then run it
   again.
-- `github::gh::failed`: gh is missing, signed out or failed. Run
+- `github::gh::failed`: gh is missing, signed out or failed, including the
+  `gh api` read of a pull request that `merge` makes for a left-out subject
+  or body. Run
   `gh auth status`. After a check passed, look on GitHub before you run the
   action again, since the content may have been sent.
 - `github::merge::change`: the `--change` path is not under `/changes/`.
   Run the merge in the board that holds the change, with `-C`.
 - `github::merge::gate`: the change is not in its land phase, or its land
   gate misses the checks in `fields.missing`. Run `board changes next`.
-- `github::merge::number`: no `--number`, and the change records no single
-  pull request of this repository. Pass `--number <n>`.
+- `github::merge::number`: no `--number`, and no change that records exactly
+  one pull request of this repository. Pass `--number <n>`.
 - `github::merge::head`: no head to merge, or `--head` differs from the
   change's head. Attach the head to the change or pass the right one.
 - `github::merge::advance`: the pull request merged but the change did not

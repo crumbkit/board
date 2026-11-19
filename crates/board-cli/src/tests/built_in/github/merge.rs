@@ -572,7 +572,8 @@ fn a_change_with_no_pull_or_two_pulls_in_the_repository_needs_number_and_with_it
             "{recorded:?}"
         );
         assert_eq!(desk.gh_calls(), 0);
-        let result = desk.output("merge", &["--change", CHANGE, "--number", "12"]);
+        let number = if recorded.len() == 2 { "13" } else { "12" };
+        let result = desk.output("merge", &["--change", CHANGE, "--number", number]);
         assert_eq!(result["phase"], "done");
     }
     // A pull of another repository does not count, and one of this does.
@@ -599,4 +600,46 @@ fn a_gate_refusal_hint_names_each_missing_checks_remedy() {
     assert_eq!(document["code"], "github::merge::gate");
     let hint = document["recovery"]["text"].as_str().unwrap_or_default();
     assert!(hint.contains("test-sections: "), "{document}");
+}
+
+#[test]
+fn a_defaulted_subject_or_body_that_fails_the_boundary_is_refused_and_a_clean_one_merges() {
+    let desk = Desk::new();
+    change(&desk, "land", HEAD, TESTED);
+    desk.refuse(&["pr.*"], "github.*");
+    for (title, body, part) in [
+        ("Fix acme-123", "Levers lift.", "pr.merge.subject"),
+        ("Add a lever", "For acme-123.", "pr.merge.body"),
+    ] {
+        desk.gh_also(&format!(
+            "if [ \"$1\" = api ]; then printf '%s' '{{\"merged\":true,\"title\":\"{title}\",\"body\":\"{body}\"}}'; exit 0; fi\n\
+             echo merge >> \"$here/gh-merges.txt\""
+        ));
+        let (ran, document) = desk.call("merge", &["--change", CHANGE]);
+        assert_eq!(ran.code, 1, "{document}");
+        assert_eq!(document["code"], "github::boundary::refused");
+        let parts: Vec<&Value> = (document["fields"]["failures"].as_array().unwrap().iter())
+            .map(|failure| &failure["part"])
+            .collect();
+        assert_eq!(parts, [&json!(part)]);
+    }
+    assert!(!desk.gh_file("gh-merges.txt").contains("merge"));
+    pulls(&desk, true);
+    desk.gh_answers(&json!(""), 0, "");
+    assert_eq!(desk.output("merge", &["--change", CHANGE])["phase"], "done");
+}
+
+#[test]
+fn a_pull_request_with_a_null_body_merges_with_an_empty_body() {
+    let desk = Desk::new();
+    change(&desk, "land", HEAD, TESTED);
+    desk.gh_also(
+        "if [ \"$1\" = api ]; then printf '%s' '{\"merged\":true,\"title\":\"Add a lever\",\"body\":null}'; exit 0; fi\n\
+         cp \"$here/gh-argv.txt\" \"$here/gh-merge-argv.txt\"\n\
+         cp \"$here/gh-stdin.txt\" \"$here/gh-merge-stdin.txt\"\n\
+         echo merge >> \"$here/gh-merges.txt\"",
+    );
+    desk.gh_answers(&json!(""), 0, "");
+    desk.output("merge", &["--change", CHANGE]);
+    assert_eq!(desk.gh_file("gh-merge-stdin.txt"), "");
 }
