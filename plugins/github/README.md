@@ -102,7 +102,20 @@ result it recorded.
   as `phase`. When a merge queue only queued it, it returns `queued: true`
   and no `phase`; run `board changes advance --path <change>` in the same
   board once the queue merges it. It returns the merged commit as `head`; `sent` is the
-  pull request's URL.
+  pull request's URL. Then it moves the mount of the merged repository: the
+  change's `mount` in the change's board, or without `--change` the
+  checkout's mount in the personal board. It resolves the mount with
+  `refs`, splits the ref it follows into a remote of the mounted clone and
+  a branch, runs `git fetch <remote> <branch>` there, and moves the pin as
+  `board mount update` does. It returns `mount` with `path`, `old`, `new`
+  and `wrote`. When it leaves the mount at its pin, because the merge was
+  queued, the mount is missing, it follows a local branch, or the fetch or
+  the update failed, it returns `mount_warning` and also prints it. The
+  merge still succeeds. The warning's `code` is `github::merge::mount`,
+  `cause` is the code of the step that failed, and `command` is
+  `git -C <clone> fetch <remote> <branch> && board mount update <path>`,
+  or only the `board mount update` part when the remote is unknown, with
+  `--personal` when the mount is in the personal board.
 
 The destination is `github:<owner>/<repo>` in lower case, from the URL
 configured for the checkout's `origin`. It is read before any `insteadOf`
@@ -212,6 +225,10 @@ Refusals:
   the pull request's URL.
 - `github::merge::unreadable`: `changes.next` answered in a shape this
   plugin does not read.
+- `github::merge::mount`: a warning, never a refusal. The pull request
+  merged, and the mount was left at its pin. `cause` names the code of the
+  step that failed, such as `github::git::failed` or
+  `board::path::not_found`, and `command` moves the mount by hand.
 - `github::boundary::unreadable`: the boundary answered in a shape this
   plugin does not read, which happens only when the two come from
   different Board builds.

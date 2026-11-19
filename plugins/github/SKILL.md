@@ -35,7 +35,11 @@ add `--personal` after `board`.
 - Open an issue: `board github issue-create --title <title> --body <body>`.
 - Squash-merge the pull request of a change in its land phase:
   `board github merge --change /changes/<name>`. It merges the change's
-  head and moves the change to its next phase. The pull request is the
+  head and moves the change to its next phase. It also fetches the branch
+  the change's mount follows and moves the mount to the merged commit, so
+  do not run `board mount update` after it. When the output has
+  `mount_warning`, the pull request merged but the mount was left at its
+  pin; run the warning's `command`. The pull request is the
   change's only one in this repository, and the commit takes the pull
   request's title and body; `--number`, `--subject` and `--body` override.
   It reads the change in the board the command runs in: for a change in
@@ -44,7 +48,8 @@ add `--personal` after `board`.
   checkout of a repository that another board mounts, a change in the
   personal board needs `--personal`. Without a change, pass `--head <sha>`,
   the full 40-hex commit. When `queued` is true, a merge queue holds the
-  pull request: run `board changes advance --path <change>` in the same
+  pull request: run `board changes advance --path <change>` and the
+  `mount_warning` command in the same
   board after it merges.
 
 On `github::boundary::refused`, nothing was sent. Read `fields.failures`, the
