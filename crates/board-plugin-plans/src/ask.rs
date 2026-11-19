@@ -113,13 +113,13 @@ fn merge(
         same.session == session || same.also_asked.iter().any(|other| other == session)
     });
     if !known {
-        let mut asked = question::read(host, "ask", &same.path)?;
-        asked.still_open("ask", &same.path)?;
-        let also = asked.fields.entry("also_by").or_insert_with(|| json!([]));
+        let mut stored = question::read(host, "ask", &same.path)?;
+        stored.still_open("ask", &same.path)?;
+        let also = stored.fields.entry("also_by").or_insert_with(|| json!([]));
         if let Value::Array(also) = also {
             also.push(asker.clone());
         }
-        let line = json!({"path": same.path, "expect": asked.blob, "record": asked.fields});
+        let line = json!({"path": same.path, "expect": stored.blob, "record": stored.fields});
         (host.put(&[line])).map_err(|error| {
             PluginError::board_refused("plans", "put --batch", &error.refusal())
         })?;

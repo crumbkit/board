@@ -1,6 +1,9 @@
 //! `ask` files a question only when no open question in its project asks
 //! the same words and no answered one does.
 
+use std::time::SystemTime;
+
+use board_model::utc_seconds;
 use board_ops::{Board, Plugins};
 use board_plugin::Target;
 use serde_json::{Value, json};
@@ -39,26 +42,27 @@ fn asking(words: &str, session: &str) -> Value {
     })
 }
 
+/// A question nobody asked yet is filed open, asked at the time the call
+/// ran, which `Board::call` gives the host as its settings' `now`.
 #[test]
 fn a_new_question_is_filed_open_in_its_project() {
     let (_scenario, board) = plans_board(&[]);
+    let before = utc_seconds(SystemTime::now());
     let output = ask(&board, &asking("Ship it?", "local_aa"));
+    let after = utc_seconds(SystemTime::now());
     assert_eq!(output["outcome"], json!("filed"));
     let path = output["path"].as_str().unwrap();
     assert!(path.starts_with("/projects/a/questions/"), "{path}");
     let listed = open(&board);
     assert_eq!(listed.len(), 1);
     assert_eq!(
-        (
-            &listed[0]["path"],
-            &listed[0]["question"],
-            &listed[0]["asked"]
-        ),
-        (
-            &json!(path),
-            &json!("Ship it?"),
-            &json!("1970-01-01T00:00:00Z")
-        )
+        (&listed[0]["path"], &listed[0]["question"]),
+        (&json!(path), &json!("Ship it?"))
+    );
+    let asked = listed[0]["asked"].as_str().unwrap();
+    assert!(
+        before.as_str() <= asked && asked <= after.as_str(),
+        "{before} <= {asked} <= {after}"
     );
 }
 
