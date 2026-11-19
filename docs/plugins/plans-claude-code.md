@@ -35,40 +35,32 @@ does not, the owner may answer in words instead. Pressing an option records
 that option's `id` as `choice` and its text as `words`. Words typed in the
 field record the words verbatim and no `choice`.
 
-Before it writes, the mod reads the question and every `plans/answer/v1`
-whose `question` names it, at any id. If an answer exists, the mod writes
-nothing and the toast names that answer's path. If the question's `status` is
-no longer `open`, for example because it was withdrawn, the mod writes
-nothing and the toast says the status.
+The mod records the answer with `board --json call plans.answer`, passing
+`--path`, `--option`, `--words` and `--written_by` as `--name=value` flags, so
+words that start with `-` stay the value. `option` is `none` when the owner
+typed words. `plans.answer` refuses a question that already has an answer at
+any id or is no longer `open`, and then writes nothing; the toast gives its
+code and message. When the question blocks a change, `plans.answer` attaches
+the answer to that change's plan.
 
-An answer to an open question is one `board put --batch --wait 2s` of two
-lines: a new `plans/answer/v1` at the question's id under `answers/`, which
-must not exist yet, and the question unchanged, which must still hold the
-blob the mod read. The answer is what marks the question answered; its
-status stays `open`. Board writes both or neither, so a question
-that changed after the read is refused whole. The mod then reads the question
-again, and the toast names an answer written meanwhile, or else gives Board's
-refusal. The put waits at most 2 seconds for board's lock, so a held lock is
-refused as a Board failure before the mod's 5-second process timeout.
-`board call plans.answer` makes the same checks and the same put in Board's
-own process, for clients without the mod.
-
-The answer carries `written_by: "plans/pane-answer"`. In the desktop app it
-also carries `by`, the actor `{"session": <local_ id>}` with this session's
-id from `CLAUDE_CODE_HOST_SESSION_ID`, the same form questions use. Elsewhere no
+The answer carries `written_by: "plans/pane-answer"`. In the desktop app the
+mod also passes `--session` with this session's id from
+`CLAUDE_CODE_HOST_SESSION_ID`, so the answer's `by` is
+`{"session": <local_ id>}`, the same form questions use. Elsewhere no
 `local_` id names the session, so `by` is left out. Answering needs no Touch
 ID, because the press is the owner's own.
 
 The answer is recorded in Board whether or not the asking session hears of
-it. After the write, the mod tries to send the asking session a message
-naming the question, the choice, the words and the answer's path, with
-`$.session.send({ to: session })`, the question's `local_` id as a string.
+it. After the write, the mod tries to send the asking session, and each
+session in the question's `also_asked`, a message naming the question, the
+choice, the words and the answer's path, with `$.session.send({ to })`, each
+`local_` id as a string.
 The send is best effort. `{ sessionId }` is not used, because a headless probe
 on 2.1.308 showed it refuses a live session's `local_` id. The string is the
 SendMessage tool's spelling of a recipient; it was refused in the same
 headless probe, and its delivery in the desktop app has not been tested. When
-the send is refused, the toast says the answer is recorded in Board and the
-message was not delivered.
+the send to the asking session is refused, the toast says the answer is
+recorded in Board and the message was not delivered.
 
 ## The morning report
 

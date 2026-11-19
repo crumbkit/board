@@ -41,18 +41,6 @@ export function parseRows(stdout: string): { rows: Record<string, unknown>[]; tr
   return { rows, truncated: report.truncated === true }
 }
 
-const quoted = (text: string) => `'${text.replaceAll("'", "''")}'`
-
-/**
- * The query for the question's blob and body, which the answer's batch puts
- * back unchanged, and for every answer already naming the question, at its
- * own id or another.
- */
-export const questionSql = (path: string) =>
-  `SELECT 'question' AS kind, logical AS path, blob, body, ${OWN} AS own FROM records q WHERE logical = ${quoted(path)} ` +
-  `UNION ALL SELECT 'answer', a.logical, a.blob, NULL, NULL FROM records a, records q ` +
-  `WHERE q.logical = ${quoted(path)} AND a.type = 'plans/answer/v1' AND ${NAMES}`
-
 /** The question `q`'s path in its own board, which a reference from that board names it by. */
 const OWN = "'/' || CASE WHEN q.path LIKE '%.json' THEN substr(q.path, 1, length(q.path) - 5) ELSE q.path END"
 
@@ -67,19 +55,6 @@ export const NAMES =
   "(((a.source = 'worktree' OR a.source = q.source) AND json_extract(a.body, '$.question') = q.logical) " +
   `OR (a.source = q.source AND json_extract(a.body, '$.question') = ${OWN}))`
 
-/**
- * Why the owner's answer to `path` must not be recorded, or null when it may:
- * the question could not be read, already has an answer, or is no longer open.
- */
-export function refusal(path: string, rows: readonly Record<string, unknown>[] | undefined): string | null {
-  const question = rows?.find(r => r.kind === 'question')
-  if (question === undefined) return `${path} could not be read, so nothing was recorded`
-  const answers = (rows ?? []).filter(r => r.kind === 'answer').map(r => String(r.path))
-  if (answers.length > 0) return `${path} already has an answer at ${answers.join(', ')}, so nothing was recorded`
-  const status = (JSON.parse(String(question.body)) as { status?: unknown }).status
-  return status === 'open' ? null : `${path} is ${String(status)} now, so nothing was recorded`
-}
-
 /** The project a question's path names, `/projects/<project>/questions/<id>`. */
 export const project = (path: string) => path.split('/')[2] ?? path
 
@@ -91,35 +66,6 @@ export const blocking = (q: { blocks: string | null; blocked_work: string | null
 
 /** Where a question's answer lives: the same id under `answers/`. */
 export const answerPath = (path: string) => path.replace(/\/questions\/([^/]+)$/, '/answers/$1')
-
-export const iso = (ms: number) => new Date(ms).toISOString().replace(/\.\d{3}Z$/, 'Z')
-
-/**
- * The `board put --batch` lines that record an answer: the answer, which must
- * be new, and the question unchanged, which must still hold `blob`, so a
- * question withdrawn or edited since the read refuses the batch. The answer
- * is what marks the question answered; its status stays open. `by` names the
- * pane's own session by its `local_` id, and is left out when the pane
- * cannot name it. `own` is the question's path in its own board, which the
- * answer names it by. `choice` is undefined when the owner's words choose no
- * option, and the answer then leaves it out.
- */
-export function answerBatch(question: string, own: string, blob: string, body: string, choice: string | undefined, words: string, by: string | undefined, now: number): string {
-  // The answer lands in the question's board, where a reference is read from that board's root.
-  const answer = {
-    $type: 'plans/answer/v1',
-    question: own,
-    ...(choice === undefined ? {} : { choice }),
-    words,
-    answered: iso(now),
-    ...(by === undefined ? {} : { by: { session: by } }),
-    written_by: WRITTEN_BY,
-  }
-  return [
-    JSON.stringify({ path: answerPath(question), expect: 'none', record: answer }),
-    JSON.stringify({ path: question, expect: blob, record: JSON.parse(body) as object }),
-  ].join('\n')
-}
 
 /** What the asking session is sent. */
 export const answerText = (question: string, choice: string | undefined, words: string) =>

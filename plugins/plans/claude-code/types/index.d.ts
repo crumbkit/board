@@ -7,6 +7,8 @@ export type Question = {
   question: string
   asked: string
   session: string
+  /** The other sessions that asked the same question, each of which waits for its answer too. */
+  also_asked: string[]
   options: Option[]
   recommendation: string | null
   /** The change the question holds up, by its path. */
