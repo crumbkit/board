@@ -441,26 +441,69 @@ fn pr_create_attaches_the_pull_request_to_the_change_named_and_without_one_attac
     let note = result["change_note"].as_str().unwrap();
     assert!(note.contains("no change is at /changes/feature"), "{note}");
     assert!(
-        note.contains(&attaching(&desk, "/changes/<name>")),
+        note.contains(&attaching(&desk, "/changes/CHANGE")),
+        "{note}"
+    );
+    assert!(
+        note.contains("replace CHANGE with the change's name"),
         "{note}"
     );
     assert_eq!(desk.record(CHANGE).unwrap(), before);
 }
 
-/// The attach command a note gives for the change `to`, which is quoted
-/// unless it is the `/changes/<name>` placeholder: it names the personal
-/// board and quotes each value.
+/// The attach command a note gives for the change `to`: it names the
+/// personal board and quotes each value.
 fn attaching(desk: &Desk, to: &str) -> String {
     let board = desk.personal.workdir().canonicalize().unwrap();
-    let to = if to.contains('<') {
-        to.to_owned()
-    } else {
-        format!("'{to}'")
-    };
     format!(
-        "`board -C '{}' changes attach --path {to} --pull '{PULL}'`",
+        "`board -C '{}' changes attach --path '{to}' --pull '{PULL}'`",
         board.display()
     )
+}
+
+/// [`lever_change`] in `phase`, then moved onto the mount `mount`.
+fn lever_on(desk: &Desk, phase: &str, mount: &str) -> Value {
+    let mut record = lever_change(desk, phase, false);
+    record["mount"] = json!(mount);
+    desk.write(&format!("{CHANGE}.json"), &record.to_string());
+    record
+}
+
+#[test]
+fn pr_create_with_change_attaches_to_a_done_change_or_one_on_another_mount_which_the_branch_does_not_find()
+ {
+    // The branch lookup refuses a done change in the test above.
+    let desk = Desk::new();
+    lever_on(&desk, "done", "/repos/widgets");
+    let result = opened(&desk, "lever", &["--change", CHANGE]);
+    assert_eq!(
+        (&result["change"], result.get("change_note")),
+        (&json!(CHANGE), None)
+    );
+    assert_eq!(desk.record(CHANGE).unwrap()["pulls"], json!([PULL]));
+
+    let desk = Desk::new();
+    lever_on(&desk, "build", "/repos/other");
+    let result = opened(&desk, "lever", &["--change", CHANGE]);
+    assert_eq!(
+        (&result["change"], result.get("change_note")),
+        (&json!(CHANGE), None)
+    );
+    assert_eq!(desk.record(CHANGE).unwrap()["pulls"], json!([PULL]));
+
+    let desk = Desk::new();
+    let before = lever_on(&desk, "build", "/repos/other");
+    let result = opened(&desk, "lever", &[]);
+    assert_eq!(result.get("change"), None);
+    let note = result["change_note"].as_str().unwrap();
+    assert!(
+        note.contains(
+            "the change at /changes/lever is on /repos/other, not on this checkout's mount \
+             /repos/widgets"
+        ),
+        "{note}"
+    );
+    assert_eq!(desk.record(CHANGE).unwrap(), before);
 }
 
 #[test]

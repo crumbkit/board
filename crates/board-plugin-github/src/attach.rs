@@ -54,10 +54,17 @@ pub(crate) fn attach(
 
 /// The note for the pull request at `pull` attached to no change because
 /// of `why`, with the attach command for `change`, or for a change to
-/// choose when none. `front` names the board the command runs in; without
-/// one, the note says to run it in the board pr-create ran in.
+/// choose when none, which the placeholder CHANGE stands for. `front` names
+/// the board the command runs in; without one, the note says to run it in
+/// the board pr-create ran in.
 fn note(front: Option<&str>, why: &str, change: Option<&str>, pull: &str) -> String {
-    let to = change.map_or_else(|| "/changes/<name>".to_owned(), |change| quoted(&change));
+    let (to, replace) = change.map_or(
+        (
+            "/changes/CHANGE",
+            ", after you replace CHANGE with the change's name",
+        ),
+        |change| (change, ""),
+    );
     let (front, there) = front.map_or(
         (
             "board",
@@ -67,7 +74,8 @@ fn note(front: Option<&str>, why: &str, change: Option<&str>, pull: &str) -> Str
     );
     format!(
         "pr-create attached the pull request to no change: {why}; attach it with `{front} \
-         changes attach --path {to} --pull {}`{there}",
+         changes attach --path {} --pull {}`{there}{replace}",
+        quoted(&to),
         quoted(&pull)
     )
 }
