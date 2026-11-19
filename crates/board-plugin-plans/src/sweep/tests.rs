@@ -8,6 +8,7 @@ use board_plugin::Target;
 use board_scenario::Item;
 use serde_json::{Value, json};
 
+use crate::Plans;
 use crate::open::tests::{
     MOUNTED_QUESTION, answer_naming, body, change, host, mounting_board, plans_board,
 };
@@ -122,8 +123,7 @@ fn a_question_from_an_archived_session_is_withdrawn_and_its_twin_from_a_live_one
     assert_eq!(open(&board), ["/projects/a/questions/live"]);
 }
 
-/// Two open questions in one project with the same words both stay, because
-/// `plans.ask` merges repeats when they are filed and the sweep leaves them.
+/// Two open questions in one project with the same words both stay open.
 #[test]
 fn two_open_questions_with_the_same_words_both_stay() {
     let (_scenario, board) = plans_board(&[
@@ -309,8 +309,9 @@ fn questions_in_the_root_and_a_mounted_board_are_both_withdrawn() {
 
 /// A question answered or withdrawn after the sweep found it, and before it
 /// read the question again to write, is refused with the sweep's own code and
-/// a hint to sweep again, and no question is withdrawn. The twin, unchanged,
-/// withdraws both questions.
+/// a hint to sweep again, and no question is withdrawn. The changed question,
+/// `b`, sorts last, so `a` staying open shows every question is checked
+/// before any is written. The twin, unchanged, withdraws both questions.
 #[test]
 fn a_question_answered_or_withdrawn_before_the_write_is_refused_and_nothing_is_written() {
     let withdrawn_since = asked_by(
@@ -321,13 +322,13 @@ fn a_question_answered_or_withdrawn_before_the_write_is_refused_and_nothing_is_w
     let changes = [
         (
             Some((
-                "projects/a/answers/a",
-                answer_naming("/projects/a/questions/a"),
+                "projects/a/answers/b",
+                answer_naming("/projects/a/questions/b"),
             )),
             Some("plans::sweep::already_answered"),
         ),
         (
-            Some(("projects/a/questions/a", withdrawn_since)),
+            Some(("projects/a/questions/b", withdrawn_since)),
             Some("plans::sweep::not_open"),
         ),
         (None, None),
@@ -364,8 +365,75 @@ fn a_question_answered_or_withdrawn_before_the_write_is_refused_and_nothing_is_w
             Some("run `board plans sweep` again; it reads each question afresh")
         );
         assert!(host.puts.borrow().is_empty(), "{code} puts nothing");
-        let b = std::fs::read_to_string(scenario.workdir().join("projects/a/questions/b.json"));
-        let b: Value = serde_json::from_str(&b.unwrap()).unwrap();
-        assert_eq!(b["status"], json!("open"), "{code} leaves b open");
+        let a = std::fs::read_to_string(scenario.workdir().join("projects/a/questions/a.json"));
+        let a: Value = serde_json::from_str(&a.unwrap()).unwrap();
+        assert_eq!(a["status"], json!("open"), "{code} leaves a open");
     }
+}
+
+/// When a later board's batch is refused, the boards written before it keep
+/// their commit, and the refusal lists them in `written` and says to sweep
+/// again. Here the library's HEAD leaves `main` after the sweep read the
+/// questions, so Board refuses the write through the mount. The twin is
+/// `questions_in_the_root_and_a_mounted_board_are_both_withdrawn`.
+#[test]
+fn a_mounted_board_refused_after_the_root_was_written_lists_the_root_as_written() {
+    let dead = asked_by("local_dead0", 1, &json!({}));
+    let (root, library, board) = mounting_board(
+        &[("projects/a/questions/root", dead.clone())],
+        &[(MOUNTED_QUESTION, dead)],
+    );
+    let mut host = host(Vec::new());
+    host.board = Some(board);
+    let library = Rc::new(library);
+    let there = Rc::clone(&library);
+    *host.between.borrow_mut() = Some(Box::new(move || {
+        let detached = format!("{}\n", there.head().unwrap().id);
+        there.write(".git/HEAD", Item::File(&detached));
+    }));
+    let refused = crate::sweep::sweep(&host, &json!({"apply": true, "archived": ["local_dead0"]}))
+        .unwrap_err();
+    assert_eq!(refused.code, "plans::board::refused");
+    assert_eq!(refused.fields["code"], json!("board::put::through_mount"));
+    assert_eq!(refused.fields["written"], json!(["/"]));
+    assert!(
+        (refused.hint.as_deref().unwrap())
+            .ends_with(", then run `board plans sweep` again to withdraw the questions left"),
+        "{:?}",
+        refused.hint
+    );
+    assert_eq!(
+        open(host.board.as_ref().unwrap()),
+        ["/vendor/projects/a/questions/q"]
+    );
+    assert_eq!(root.history().len(), 1, "the root's own batch is committed");
+}
+
+/// Rule 1 for a task: a question blocking a `tasks/task/v2` whose status is
+/// done is withdrawn, and its twin blocking an open task stays open.
+#[test]
+fn a_question_blocking_a_done_task_is_withdrawn_and_its_twin_blocking_an_open_task_stays() {
+    let (scenario, _) = plans_board(&[]);
+    for status in ["done", "open"] {
+        let task =
+            format!("---\n$type: tasks/task/v2\ntitle: Work\nstatus: {status}\n---\nBody.\n");
+        scenario.write(&format!("tasks/{status}.md"), Item::File(&task));
+        let question = body(ASKED, &json!({"blocks": format!("/tasks/{status}.md")}));
+        scenario.write(
+            &format!("projects/a/questions/{status}.json"),
+            Item::File(question.as_str().unwrap()),
+        );
+    }
+    let mut board = Board::open(scenario.workdir(), None).unwrap();
+    board.build_in(&[&Plans]);
+    let output = sweep(&board, &json!({"apply": true}));
+    assert_eq!(
+        withdrawn(&output),
+        [("/projects/a/questions/done".to_owned(), "done".to_owned())]
+    );
+    assert_eq!(
+        output["withdrawn"][0]["reason"],
+        json!("plans.sweep: the work it blocks, /tasks/done.md, is done.")
+    );
+    assert_eq!(open(&board), ["/projects/a/questions/open"]);
 }

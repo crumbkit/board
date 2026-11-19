@@ -8,8 +8,7 @@
 //! question is answered when a question in its project that an answer names
 //! asks the same words. Words match after lower-casing and keeping only
 //! letters and digits (decision /projects/board/decisions/20261119T0039Z-a1de).
-//! The sweep leaves a question that repeats another open one, because
-//! `plans.ask` merges repeats when they are filed
+//! The sweep leaves open a question that repeats another open question
 //! (decision /projects/board/decisions/20261119T1000Z-c4d9).
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -118,8 +117,8 @@ pub(crate) fn sweep(host: &dyn Host, input: &Value) -> Result<Value, PluginError
 /// open. A put batch may not cross a mount, so the questions of each board,
 /// named by the mount prefix of their paths, go in a batch of their own. A
 /// board's batch is one commit or none; when a later board's batch is
-/// refused, the boards before it keep their withdrawals, and the refusal
-/// lists them in `written`.
+/// refused, the boards before it keep their withdrawals, the refusal lists
+/// them in `written`, and its hint says to sweep again.
 fn write(host: &dyn Host, found: &[Withdrawn]) -> Result<(), PluginError> {
     let mut boards: BTreeMap<String, Vec<Value>> = BTreeMap::new();
     for each in found {
@@ -139,6 +138,9 @@ fn write(host: &dyn Host, found: &[Withdrawn]) -> Result<(), PluginError> {
     let refused = |refusal: &board_model::Refusal, written: &[String]| {
         let mut error = PluginError::board_refused("plans", "put --batch --bulk", refusal);
         (error.fields).insert("written".to_owned(), json!(written));
+        error.hint = (error.hint).map(|hint| {
+            format!("{hint}, then run `board plans sweep` again to withdraw the questions left")
+        });
         error
     };
     let bulk = Bulk::new(BULK).map_err(|error| refused(&error.refusal(), &written))?;
