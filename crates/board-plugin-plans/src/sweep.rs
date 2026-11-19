@@ -233,7 +233,9 @@ pub(crate) fn words(text: &str) -> String {
 /// Each question an answer names, by its project and words, with the
 /// question's path and the answer's. The oldest question of a project's
 /// words is kept.
-pub(crate) fn answered(host: &dyn Host) -> Result<BTreeMap<(String, String), (String, String)>, PluginError> {
+pub(crate) fn answered(
+    host: &dyn Host,
+) -> Result<BTreeMap<(String, String), (String, String)>, PluginError> {
     let report = (host.query(&answered_sql(), Limit::ALL))
         .map_err(|error| PluginError::board_refused("plans", "query", &error.refusal()))?;
     let mut found = BTreeMap::new();

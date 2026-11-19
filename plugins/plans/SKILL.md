@@ -53,12 +53,14 @@ in. `<project>` names what the record concerns, such as the repository
 ## Questions and answers
 
 1. When only the owner can answer and the work cannot go on without the
-   answer, write a `plans/question/v1` with the options the owner may
-   choose:
+   answer, ask it with `plans.ask` and the options the owner may choose:
 
-       echo '{"$type": "plans/question/v1", "question": "<what the owner is asked>", "options": [{"id": "a", "text": "<option a>"}, {"id": "b", "text": "<option b>"}], "recommendation": "a", "why": "<why you recommend it>", "blocked_work": "<what waits on it, in words>", "by": {"session": "<your local_ id>"}, "asked": "<now>", "status": "open"}' | board -C <board> put --new --var project=<project>
+       echo '{"project": "<project>", "question": {"question": "<what the owner is asked>", "options": [{"id": "a", "text": "<option a>"}, {"id": "b", "text": "<option b>"}], "recommendation": "a", "why": "<why you recommend it>", "blocked_work": "<what waits on it, in words>", "by": {"session": "<your local_ id>"}}}' | board -C <board> call plans.ask
 
-   It writes `/projects/<project>/questions/<id>`. `asked` is the UTC time.
+   When `outcome` is `filed`, it wrote `/projects/<project>/questions/<id>`.
+   When it is `merged`, an open question already asks the same words and
+   you now wait on that one. When it is `answered`, the owner already
+   answered: act on the `answer` it returns and ask nothing.
    `by` must name your session's `local_` id, so the answer can be sent
    back to it. Never put a secret in a question. When a change or task
    waits on the answer, add `"blocks": "/changes/<name>"` or the task's
