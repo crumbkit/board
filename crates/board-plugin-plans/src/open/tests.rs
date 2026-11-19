@@ -1044,3 +1044,42 @@ fn a_mounted_questions_blocks_is_read_from_its_own_boards_root() {
         ]
     );
 }
+
+/// A blocked change with no phase, which Board marks degraded but still
+/// indexes with its type, gives the question null work: neither critical
+/// nor ended. Its twin blocks a change with a phase, which is active.
+#[test]
+fn a_question_blocking_a_change_with_no_phase_has_no_work_and_its_twin_with_a_phase_is_active() {
+    let blocking = |change: &str| {
+        body(
+            "2026-10-01T09:00:00Z",
+            &json!({"blocks": format!("/changes/{change}")}),
+        )
+    };
+    let broken = Value::String(json!({"$type": "changes/change/v2", "title": "Work"}).to_string());
+    let (_scenario, board) = plans_board(&[
+        ("changes/broken", broken),
+        ("changes/whole", change("build")),
+        ("projects/a/questions/broken", blocking("broken")),
+        ("projects/a/questions/whole", blocking("whole")),
+    ]);
+    assert_eq!(
+        work_of(&board),
+        [
+            ("/projects/a/questions/broken".to_owned(), Value::Null),
+            ("/projects/a/questions/whole".to_owned(), json!("active")),
+        ]
+    );
+    let target: Target = "plans.open".parse().unwrap();
+    let report = board.call(&target, b"{}", &Plugins::default()).unwrap();
+    let critical: Vec<(&Value, &Value)> = (report.output["questions"].as_array().unwrap().iter())
+        .map(|question| (&question["path"], &question["critical"]))
+        .collect();
+    assert_eq!(
+        critical,
+        [
+            (&json!("/projects/a/questions/whole"), &json!(true)),
+            (&json!("/projects/a/questions/broken"), &json!(false)),
+        ]
+    );
+}
