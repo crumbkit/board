@@ -65,7 +65,10 @@ so ask before you change one. A refusal files no request for the owner; pass
 Do not send to GitHub with `git push` or `gh` directly. In Claude Code, the
 `board-github` mod refuses them when a boundary covers the repository, and
 its message ends with a `Next:` step naming the `board call github.<action>`
-that sends the same content. Run that command.
+that sends the same content. Run that command. When you start a subagent
+whose prompt holds such a command in code, the mod adds
+`github::brief::covered` advice to the subagent's prompt and to your
+result; name the `board call github.<action>` in the next prompt instead.
 
 To check pushes made outside Board too, such as from a terminal, run
 `board github install-hook` in the checkout once. It writes nothing: it

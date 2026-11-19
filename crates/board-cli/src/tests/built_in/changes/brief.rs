@@ -31,6 +31,14 @@ fn spent(brief: &Value) -> usize {
     if let Some(lifecycle) = brief.get("lifecycle") {
         counted.push(shown(lifecycle));
     }
+    for mockup in brief
+        .get("mockups")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+    {
+        counted.push(shown(mockup));
+    }
     for warning in brief
         .get("warnings")
         .and_then(Value::as_array)
@@ -857,6 +865,44 @@ fn a_use_too_long_to_fit_leaves_room_for_the_shorter_uses_after_it() {
     assert_eq!(refs, ["/standards/a.md", "/standards/b.md"]);
     assert_eq!(brief["left_out"], 1);
     assert!(spent(&brief) <= BRIEF_WORDS, "{}", spent(&brief));
+}
+
+#[test]
+fn a_ui_brief_lists_its_mockups_and_warns_until_a_decision_names_each_one() {
+    use super::phases::{MOCKUP, decision, planned_change, ux_plan};
+    let not_agreed = |brief: &Value| {
+        let warnings = brief.get("warnings").and_then(Value::as_array);
+        (warnings.into_iter().flatten())
+            .find(|warning| warning["code"] == "changes::ux::not_agreed")
+            .map(|warning| warning["detail"].clone())
+    };
+    let board = Changes::new();
+    let mockups = format!("### Mockups\n\n- {MOCKUP}\n\n### Neighbours\n\n- /changes/other\n");
+    planned_change(&board, &ux_plan(&mockups, "None."), "mockups", "none");
+    let unagreed = brief(&board);
+    assert_eq!(unagreed["mockups"], json!([MOCKUP]), "{unagreed}");
+    let detail = format!(
+        "these mockups have no attached plans/decision/v1 that names them in its urls or refs: \
+         {MOCKUP}"
+    );
+    assert_eq!(not_agreed(&unagreed), Some(json!(detail)));
+    assert!(spent(&unagreed) <= BRIEF_WORDS, "{unagreed}");
+    board.write("decisions/ux.json", &decision(&json!({"urls": [MOCKUP]})));
+    board.call("attach", &json!({"path": CHANGE, "ref": "/decisions/ux"}));
+    let agreed = brief(&board);
+    assert_eq!(agreed["mockups"], json!([MOCKUP]), "{agreed}");
+    assert_eq!(not_agreed(&agreed), None, "{agreed}");
+}
+
+#[test]
+fn a_brief_whose_plan_answers_ux_none_lists_no_mockups_and_one_that_answers_mockups_does() {
+    use super::phases::{MOCKUP, planned_change, ux_plan};
+    let board = Changes::new();
+    let mockups = format!("### Mockups\n\n- {MOCKUP}\n\n### Neighbours\n\n- /changes/other\n");
+    planned_change(&board, &ux_plan(&mockups, "None."), "none", "none");
+    assert_eq!(brief(&board).get("mockups"), None);
+    planned_change(&board, &ux_plan(&mockups, "None."), "mockups", "none");
+    assert_eq!(brief(&board)["mockups"], json!([MOCKUP]));
 }
 
 #[test]

@@ -562,6 +562,11 @@ of `changes` still fails `review`.
   `warnings`, left out when empty, whose `changes::brief::no_rule` entry
   says a rule a `planned-rule-paths` check of the change's flow names does
   not exist, so only the plan's typed answers guard what it would list,
+  and whose `changes::ux::not_agreed` entry, for a plan that answers `ux`
+  mockups, says what the plan gate's mockups check would say, such as a
+  mockup no attached owner's decision names,
+  `mockups`, the artifacts such a plan's Mockups list names, left out when
+  it names none,
   `answers`, the plan's typed answers, left out when it gives none,
   `rules`, each rule that applies to the plan's `paths`, once, from
   `rules.for-paths`: its `rule`, its `summary` and at most three of
@@ -1157,6 +1162,40 @@ line. It cannot see:
 The guard advises on an edit of every mounted repository that is not itself a
 known board, including the notes repositories a personal board mounts, such
 as `/repos/notes`.
+
+### The brief check
+
+The same mod checks each Agent call whose prompt names a change. It takes
+the change in a `board-brief:` line first, then each `/changes/<name>` at the
+start of the prompt or after whitespace, a backtick, a quote or `(`, so a
+path such as `plugins/changes/x` names none. For each of the first three in
+turn it reads the change from each known board with `board get`, and acts on
+the first board that holds one in `build`. Each `get` may take up to 5
+seconds, so a change named fourth or later is not read. A change whose `get`
+fails is skipped. It reads the change's plan record the same way, and runs
+two checks:
+
+- `changes::brief::no_line`: the prompt's first non-empty line is not
+  `board-brief: /changes/<name>`. The advice names that first line. The
+  edit guard reads the builder's first line, and Claude Code may put the
+  session's context before the rest of the prompt.
+- `changes::brief::not_rendered`: no JSON object in the prompt that holds
+  `brief_line` has the change's brief line, path, phase and plan text. An
+  object starts at a line that is `{` and ends at the next line that is
+  `}`. The advice names the first field that differs, or says the prompt
+  holds no brief, and names the command that renders the brief.
+
+`not_rendered` compares only those four fields, so it misses a brief
+rendered in the same plan and phase whose other fields have changed since,
+such as its rules, uses or warnings.
+
+A failed check never blocks the call. The mod appends the advice to the
+builder's prompt and adds it to the lead's tool result. Each piece of advice
+starts "if this agent builds /changes/<name>", because a reviewer or an
+explorer whose prompt names the change gets it too. A prompt that names no
+change, a change no known board holds in `build`, and a plan record that
+cannot be read leave the call untouched. The check does not read the subagent type or the
+tools the agent has.
 
 `claude plugin test plugins/changes/claude-code` runs the mod's tests.
 

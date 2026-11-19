@@ -8,13 +8,14 @@ use serde::Serialize;
 use serde_json::{Map, Value, json};
 
 use crate::board::{call_or_refusal, refused};
-use crate::change::{current, plan_at, read, referenced};
+use crate::change::{attached, current, plan_at, read, referenced};
 use crate::flow::Kind;
 use crate::gates::kinds::named_rules;
 use crate::gates::remedy::values;
-use crate::gates::{HEADING, Observed};
+use crate::gates::{HEADING, Observed, mockups, sections, ux_missing};
 use crate::lifecycle::{LifecycleRecord, says_none};
 use crate::phases::{PathInput, plan_text, step_of};
+use crate::plan::answers::Ux;
 use crate::plan::{Answers, documents, words};
 use crate::rules::{RULE_TYPES, RULES_UNAVAILABLE, listed, listed_by};
 use crate::{PLUGIN, Warning, refusal, to_value};
@@ -105,8 +106,11 @@ pub(crate) struct RulesCommand {
 /// when it gives none. `lifecycle` is the path of the text of its lifecycle
 /// record, left out when it has none; the text counts outside the limit, as
 /// the plan's does. `warnings` says when a rule a `planned-rule-paths`
-/// check of the change's flow names does not exist, left out when none is
-/// missing. `rules` lists each rule on the plan's paths once,
+/// check of the change's flow names does not exist, and carries
+/// `changes::ux::not_agreed` when a plan that answers `ux` mockups lists a
+/// mockup the owner has not agreed; it is left out when it says nothing.
+/// `mockups` lists the artifacts such a plan's Mockups list names, left out
+/// when it names none. `rules` lists each rule on the plan's paths once,
 /// as `rules.for-paths` finds them: those that matched only some planned
 /// paths first, then the others, each group by rule path. Each rule's
 /// path and summary are fitted first, skipping any that do not fit, and its
@@ -135,6 +139,8 @@ pub(crate) struct Output {
     pub(crate) answers: Option<Answers>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) lifecycle: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub(crate) mockups: Vec<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub(crate) warnings: Vec<Warning>,
     pub(crate) rules: Vec<RuleLine>,
@@ -412,6 +418,31 @@ fn missing_rules(host: &dyn Host, observed: &Observed) -> Result<Vec<Warning>, P
     Ok(said)
 }
 
+/// The mockups a plan that answers `ux` mockups lists, and the
+/// `changes::ux::not_agreed` warning the plan gate would give for them;
+/// nothing for any other plan. `observed` is what the change's gate read; the
+/// attached records are read here only when it read none.
+fn mockups_of(
+    host: &dyn Host,
+    observed: &mut Observed,
+    plan: Option<&str>,
+    answers: Option<Answers>,
+) -> Result<(Vec<String>, Option<Warning>), PluginError> {
+    let Some(answers) = answers.filter(|answers| answers.ux == Some(Ux::Mockups)) else {
+        return Ok((Vec::new(), None));
+    };
+    let found = sections(plan.unwrap_or_default());
+    if observed.cited.is_empty() {
+        observed.records = referenced(host, &attached(host, &observed.path)?)?;
+    }
+    observed.answers = answers;
+    let warning = ux_missing(observed, &found).map(|detail| Warning {
+        code: "changes::ux::not_agreed",
+        detail,
+    });
+    Ok((mockups(&found), warning))
+}
+
 pub(crate) fn brief(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
     let PathInput { path } = PluginError::read_input(PLUGIN, "brief", input)?;
     Ok(to_value(brief_of(host, &path)?))
@@ -423,19 +454,21 @@ pub(crate) fn brief_of(host: &dyn Host, path: &str) -> Result<Output, PluginErro
     let (text, uses, paths) = current(host, &change)?;
     let records = referenced(host, &uses)?;
     let texts = documents(host, &uses, &records)?;
-    let (step, observed) = step_of(host, path)?;
+    let (step, mut observed) = step_of(host, path)?;
     let answers = match &change.plan {
         Some(plan) => plan_at(host, plan)?.and_then(|(record, _)| record.answers),
         None => None,
     };
     let said = answers.and_then(|answers| answers.lifecycle);
-    let lifecycle =
-        if (plan_text(host, &change)?.as_deref()).is_some_and(|text| says_none(said, text)) {
-            None
-        } else {
-            lifecycle_text(host, change.plan.as_deref())?
-        };
-    let warnings = missing_rules(host, &observed)?;
+    let plan = plan_text(host, &change)?;
+    let lifecycle = if (plan.as_deref()).is_some_and(|text| says_none(said, text)) {
+        None
+    } else {
+        lifecycle_text(host, change.plan.as_deref())?
+    };
+    let mut warnings = missing_rules(host, &observed)?;
+    let (mockups, unagreed) = mockups_of(host, &mut observed, plan.as_deref(), answers)?;
+    warnings.extend(unagreed);
     let rules_check = format!("board rules check --path {}", change.mount);
     let brief_line = format!("board-brief: {path}");
     let mut spent = words(
@@ -447,6 +480,7 @@ pub(crate) fn brief_of(host: &dyn Host, path: &str) -> Result<Output, PluginErro
             &step.instruction,
             &rules_check,
             lifecycle.as_deref().unwrap_or_default(),
+            &mockups.join(" "),
         ]
         .join(" "),
     );
@@ -504,6 +538,7 @@ pub(crate) fn brief_of(host: &dyn Host, path: &str) -> Result<Output, PluginErro
         plan: text,
         answers,
         lifecycle,
+        mockups,
         warnings,
         rules,
         rules_left_out: named,
