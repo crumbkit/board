@@ -20,6 +20,7 @@ import {
   repositoryOf,
   sameDirectory,
   unknown,
+  unknownRecord,
 } from './guard'
 import type { Mount } from './guard'
 
@@ -39,12 +40,14 @@ import type { Mount } from './guard'
 // config. It does not test for a board root marker, because a code repository
 // can commit a board of its own: Board's own source holds `.board/board.json`.
 // A lookup that fails admits the edit with a `changes::guard::unknown` line that
-// names what failed. The config check needs no lookup, so it runs first.
+// names what failed. The exception is a file in a known board's checkout: the
+// guard decides the board config and the change records from the config and the
+// path alone, and when a later lookup fails for a file in such a checkout, which
+// may hide a mount record, it refuses with `changes::guard::unknown`.
 //
 // The guard sees only these three tools. A file written through Bash (`sed -i`,
 // a heredoc, a script) passes it, and the guard checks the brief line, not that
-// `changes.brief` produced it. The review gate checks that every commit of a
-// change came from the change's builder sessions.
+// `changes.brief` produced it.
 
 const PATH = '"$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"'
 // Run in a directory, it prints the repository's common directory, the
@@ -208,29 +211,40 @@ type Held = { boards: string[]; worktree: Mount[]; byOrigin: () => Promise<Mount
  * So a separate clone is guarded too. A repository with no origin that is no
  * worktree of a mount stays outside the guard.
  */
-async function held($: EngineInterface, file: string): Promise<Held | string | null> {
+async function held($: EngineInterface, file: string, state: { inBoard: boolean }): Promise<Held | string | null> {
   const placed = await place($, file)
   if (placed.real === (await realOf($, await configPath($)))) return configRecord(file)
+  // The change records need only the config and the path, so they are decided before any lookup that can fail.
+  const listed: { board: string; real: string; under: boolean }[] = []
+  for (const board of await knownBoards($)) {
+    const real = await realOf($, board)
+    const root = `${real.replace(/\/$/, '')}/`
+    const under = placed.real.startsWith(root)
+    if (under) {
+      state.inBoard = true
+      if (isChangeRecord(placed.real.slice(root.length))) return changeRecord(file, board)
+    }
+    listed.push({ board, real, under })
+  }
   // Every board is a git repository, so a file outside one is no board record either.
   const found = await locate($, placed.dir)
   if (found === null) return null
+  // A known board's repository holds records, which a failed lookup from here on may hide.
+  const repoReal = await realOf($, found.repo)
+  if (listed.some(b => sameDirectory(repoReal, b.real))) state.inBoard = true
   const all: Mount[] = []
   const boards: { board: string; real: string; mounts: Mount[] }[] = []
-  for (const board of await knownBoards($)) {
+  for (const { board, real, under } of listed) {
     const mounts = await mountsIn($, board)
-    const real = await realOf($, board)
     boards.push({ board, real, mounts })
-    const root = `${real.replace(/\/$/, '')}/`
-    if (placed.real.startsWith(root)) {
-      const relative = placed.real.slice(root.length)
-      if (isChangeRecord(relative)) return changeRecord(file, board)
+    if (under) {
+      const relative = placed.real.slice(`${real.replace(/\/$/, '')}/`.length)
       const record = mounts.find(m => m.record === relative)
       if (record !== undefined) return mountRecord(file, record)
     }
     all.push(...mounts)
   }
   // A known board's repository holds records, which ownRecord guards, and no code.
-  const repoReal = await realOf($, found.repo)
   const own = boards.find(b => sameDirectory(repoReal, b.real))
   if (own !== undefined) return ownRecord($, file, placed.real, found, own)
   const worktreeOf = (repo: string) => all.filter(m => m.repo === repo)
@@ -288,8 +302,10 @@ type Verdict = { deny: string } | { advise: string } | null
  * only when its worktree mounts do not settle that.
  */
 async function verdict($: EngineInterface, file: string, agentId: string | undefined): Promise<Verdict> {
+  // Set once the file lies in a known board's checkout, where a failed lookup may hide a record.
+  const state = { inBoard: false }
   try {
-    const found = await held($, file)
+    const found = await held($, file, state)
     if (found === null) return null
     if (typeof found === 'string') return { deny: found }
     let mounts = found.worktree
@@ -357,7 +373,8 @@ async function verdict($: EngineInterface, file: string, agentId: string | undef
     }
     return { advise: noBrief(file, mounts[0]!, named) }
   } catch (error) {
-    return { advise: unknown(file, error instanceof Unknown ? error.message : `the lookup threw ${String(error)}`) }
+    const why = error instanceof Unknown ? error.message : `the lookup threw ${String(error)}`
+    return state.inBoard ? { deny: unknownRecord(file, why) } : { advise: unknown(file, why) }
   }
 }
 
@@ -368,19 +385,15 @@ async function guarded<R extends { deny?: string; context?: string[] }>(v: Verdi
   return v === null || ran.deny !== undefined ? ran : { ...ran, context: [...(ran.context ?? []), v.advise] }
 }
 
-// A hook that throws is skipped and the call runs, so each `.catch` admits the
-// edit with a line that says the guard failed.
+// verdict never throws, and it never calls next, so next runs once, outside it.
+// A hook that throws is skipped and the call runs, so the registrations have
+// no `.catch`: it would run next a second time when next itself threw.
 // The engine requires `on('<event>', hook)` spelled at each call, so the three
 // registrations cannot share one helper.
 export const register: Register = on => {
-  const failed = (file: string): Verdict => ({ advise: unknown(file, 'the guard failed') })
-  on('tool.call', { tool: 'Edit' }, async ($, e, next) => guarded(await verdict($, e.file_path, e.agentId), () => next(e))).catch(
-    async (_, e, next) => guarded(failed(e.file_path), () => next(e)),
-  )
-  on('tool.call', { tool: 'Write' }, async ($, e, next) => guarded(await verdict($, e.file_path, e.agentId), () => next(e))).catch(
-    async (_, e, next) => guarded(failed(e.file_path), () => next(e)),
-  )
+  on('tool.call', { tool: 'Edit' }, async ($, e, next) => guarded(await verdict($, e.file_path, e.agentId), () => next(e)))
+  on('tool.call', { tool: 'Write' }, async ($, e, next) => guarded(await verdict($, e.file_path, e.agentId), () => next(e)))
   on('tool.call', { tool: 'NotebookEdit' }, async ($, e, next) =>
     guarded(await verdict($, e.notebook_path, e.agentId), () => next(e)),
-  ).catch(async (_, e, next) => guarded(failed(e.notebook_path), () => next(e)))
+  )
 }

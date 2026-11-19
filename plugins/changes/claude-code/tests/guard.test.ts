@@ -323,8 +323,8 @@ test('a subagent started from the brief of a change in build edits its repositor
   expect(done.deny).toBeUndefined()
   expect(edits).toEqual(['Edit'])
   expect(ran).toEqual([
-    'git',
     'config',
+    'git',
     `query ${BOARD}`,
     `get ${BOARD} /changes/fix-it`,
     `get ${BOARD} /changes/fix-it/prototype`,
@@ -382,7 +382,8 @@ test('a brief for a change to another repository is advised, and one for this re
   expect(advised.deny).toBeUndefined()
   expect(advised.context).toEqual([
     `changes::guard::wrong_mount: this edit of ${FILE} ran. /changes/fix-it is a change to /repos/gadgets, and ${FILE} ` +
-      'is in /repos/widgets. Work on /repos/widgets lands through a change to /repos/widgets.',
+      `is in /repos/widgets. Work on /repos/widgets lands through a change to it: ` +
+      `\`board -C ${BOARD} changes start --mount /repos/widgets --title '<title>'\`.`,
   ])
   answers.change = change({ mount: '/repos/widgets', phase: 'build' })
   expect((await edit($, FILE, 'a1')).context).toBeUndefined()
@@ -459,7 +460,7 @@ test('a path outside every mounted repository is admitted without reading the co
     expect(done.deny).toBeUndefined()
   }
   expect(edits).toEqual(['Write', 'Write', 'Write'])
-  expect(ran).toEqual(['git', 'config', `query ${BOARD}`, 'git', 'config', `query ${BOARD}`, 'git'])
+  expect(ran).toEqual(['config', 'git', `query ${BOARD}`, 'config', 'git', `query ${BOARD}`, 'config', 'git'])
 })
 
 test('with no board config no repository is mounted, and the edit runs', async ($, on) => {
@@ -523,7 +524,7 @@ test('a clone whose ssh origin names the mounted repository is guarded like a wo
   expect((await edit($, file)).context?.[0]).toMatch(/^changes::guard::no_brief: this edit of .* ran\. \/work\/clone-ssh\/src\/lib.rs is in \/repos\/widgets, /)
   expect((await edit($, file, 'a1')).deny).toBeUndefined()
   expect(edits).toEqual(['Edit', 'Edit'])
-  expect(ran.slice(0, 4)).toEqual(['git', 'config', `query ${BOARD}`, `origins ${REPO} /work/gadgets`])
+  expect(ran.slice(0, 4)).toEqual(['config', 'git', `query ${BOARD}`, `origins ${REPO} /work/gadgets`])
 })
 
 test('a clone whose https origin names the mounted repository is guarded like a worktree of it', async ($, on) => {
@@ -538,7 +539,7 @@ test('a repository whose origin names no mounted repository is admitted without 
   const { ran, edits } = engine(on, {})
   expect((await edit($, '/work/other/src/lib.rs')).deny).toBeUndefined()
   expect(edits).toEqual(['Edit'])
-  expect(ran).toEqual(['git', 'config', `query ${BOARD}`, `origins ${REPO} /work/gadgets`])
+  expect(ran).toEqual(['config', 'git', `query ${BOARD}`, `origins ${REPO} /work/gadgets`])
 })
 
 test('origins match across ssh and https forms, case and a trailing .git', () => {
@@ -555,7 +556,7 @@ test('a clone whose origin is a local path or a file URL of the mounted reposito
     expect((await edit($, file, 'a1')).deny).toBeUndefined()
   }
   expect(edits).toEqual(['Edit', 'Edit', 'Edit', 'Edit'])
-  expect(ran.slice(0, 4)).toEqual(['git', 'config', `query ${BOARD}`, 'git'])
+  expect(ran.slice(0, 4)).toEqual(['config', 'git', `query ${BOARD}`, 'git'])
 })
 
 test('a local origin is a path or a file URL, and an absolute path is kept as it is', () => {
@@ -573,7 +574,7 @@ test('a worktree in another directory is guarded as its repository', async ($, o
   expect((await edit($, file)).context?.[0]).toMatch(/^changes::guard::no_brief: this edit of .* ran\. .* is in \/repos\/widgets, /)
   expect((await edit($, file, 'a1')).deny).toBeUndefined()
   expect(edits).toEqual(['Edit', 'Edit'])
-  expect(ran.slice(0, 3)).toEqual(['git', 'config', `query ${BOARD}`])
+  expect(ran.slice(0, 3)).toEqual(['config', 'git', `query ${BOARD}`])
 })
 
 test('a ~ path to a mounted repository is guarded, and one outside it is admitted', async ($, on) => {
@@ -663,7 +664,8 @@ test('a builder edits a clone that a second board mounts beneath a change, and a
   answers.changes = { [BOARD2]: MISSING, [BOARD]: change({ mount: '/repos/gadgets', phase: 'build' }) }
   expect((await edit($, file, 'a1')).context).toEqual([
     `changes::guard::wrong_mount: this edit of ${file} ran. /changes/fix-it is a change to /repos/gadgets, and ${file} ` +
-      'is in /repos/widgets. Work on /repos/widgets lands through a change to /repos/widgets.',
+      `is in /repos/widgets. Work on /repos/widgets lands through a change to it: ` +
+      `\`board -C ${BOARD} changes start --mount /repos/widgets --title '<title>'\`.`,
   ])
   expect(edits).toEqual(['Edit', 'Edit', 'Edit'])
 })
@@ -773,7 +775,7 @@ test('a known board that another known board mounts is admitted without a brief,
   }
   const { ran, edits } = engine(on, answers)
   expect((await edit($, HANDOFF)).deny).toBeUndefined()
-  expect(ran).toEqual(['git', 'config', `query ${BOARD}`, `query ${SECOND}`])
+  expect(ran).toEqual(['config', 'git', `query ${BOARD}`, `query ${SECOND}`])
   answers.config = JSON.stringify({ boards: [SECOND] })
   expect((await edit($, HANDOFF)).context).toEqual([noBriefLine(HANDOFF, SECOND, '/personal')])
   expect(edits).toEqual(['Edit', 'Edit'])
@@ -907,29 +909,60 @@ test("a mount record only a linked worktree's branch holds is refused there, and
   expect(edits).toEqual(['Edit'])
 })
 
-test("a linked worktree's mount query that fails is advised as unknown and the edit runs", async ($, on) => {
+test("a linked worktree's mount query that fails refuses with unknown, and with the query working the file is admitted", async ($, on) => {
   const answers: Answers = { first: { '': 'Coordinate the work.' }, config: JSON.stringify({ boards: [BOARD] }) }
   engine(on, answers)
   answers.queryFailsIn = BOARD_WORKTREE
-  expect((await edit($, `${BOARD_WORKTREE}/projects/handoff.md`)).context?.[0]).toMatch(
-    /^changes::guard::unknown: .*`board -C \/home\/me\/board.worktrees\/x query` did not list its mounts/,
+  const done = await edit($, `${BOARD_WORKTREE}/projects/handoff.md`)
+  expect(done.context).toBeUndefined()
+  expect(done.deny).toMatch(
+    /^changes::guard::unknown: the guard could not tell whether .* is a record of a board: .*`board -C \/home\/me\/board.worktrees\/x query` did not list its mounts/,
   )
   delete answers.queryFailsIn
   expect((await edit($, `${BOARD_WORKTREE}/projects/handoff.md`)).deny).toBeUndefined()
 })
 
-test("a file in a known board's git directory is advised as unknown, and a file in its checkout is admitted", async ($, on) => {
+test('a board query that fails refuses a mount record with unknown, and admits the same failure on a mounted repository file', async ($, on) => {
+  const answers: Answers = { first: { '': 'Coordinate the work.' }, queryFails: true }
+  const { edits } = engine(on, answers)
+  const record = await edit($, `${BOARD}/repos/widgets.json`)
+  expect(record.deny).toMatch(/^changes::guard::unknown: the guard could not tell whether .*repos\/widgets.json is a record of a board: .*did not list its mounts/)
+  expect(edits).toEqual([])
+  const plain = await edit($, FILE)
+  expect(plain.deny).toBeUndefined()
+  expect(plain.context?.[0]).toMatch(/^changes::guard::unknown: this edit of .* ran\. /)
+  expect(edits).toEqual(['Edit'])
+  answers.queryFails = false
+  expect((await edit($, `${BOARD}/repos/widgets.json`)).deny).toMatch(/^changes::guard::board_record: /)
+})
+
+test('a change record is refused with its own code when the board query fails, and the same failure admits a mounted repository file', async ($, on) => {
+  const answers: Answers = { first: { '': 'Coordinate the work.' }, queryFails: true }
+  const { ran, edits } = engine(on, answers)
+  expect((await edit($, `${BOARD}/changes/fix-it.json`)).deny).toMatch(/^changes::guard::board_record: .* is a change record of the board at /)
+  expect(ran.some(r => r.startsWith('query'))).toBe(false)
+  expect((await edit($, FILE)).deny).toBeUndefined()
+  expect(edits).toEqual(['Edit'])
+})
+
+test('a change record is refused when git fails, and the same git failure admits a file outside a board', async ($, on) => {
+  const { edits } = engine(on, {})
+  expect((await edit($, `${BOARD}/changes/fix-it.json`)).deny).toMatch(/^changes::guard::board_record: /)
+  expect((await edit($, '/work/throws/a.rs')).deny).toBeUndefined()
+  expect(edits).toEqual(['Edit'])
+})
+
+test("a file in a known board's git directory is refused as unknown, and a file in its checkout is admitted", async ($, on) => {
   const { edits } = engine(on, { first: { '': 'Coordinate the work.' }, config: JSON.stringify({ boards: [BOARD] }) })
   const inside = await edit($, `${BOARD}/.git/description`)
-  expect(inside.deny).toBeUndefined()
-  expect(inside.context).toEqual([
-    unknownLine(
-      `${BOARD}/.git/description`,
-      `${BOARD}/.git/description is inside the git directory of the board at ${BOARD}, which agents do not edit`,
-    ),
-  ])
+  expect(inside.context).toBeUndefined()
+  expect(inside.deny).toBe(
+    `changes::guard::unknown: the guard could not tell whether ${BOARD}/.git/description is a record of a board: ` +
+      `${BOARD}/.git/description is inside the git directory of the board at ${BOARD}, which agents do not edit. ` +
+      'This edit was refused, since a board record changes only through board commands; fix what failed and try again.',
+  )
   expect((await edit($, HANDOFF)).deny).toBeUndefined()
-  expect(edits).toEqual(['Edit', 'Edit'])
+  expect(edits).toEqual(['Edit'])
 })
 
 test('records in a known board are matched without regard to letter case', async ($, on) => {

@@ -218,6 +218,11 @@ export const unknown = (file: string, why: string) =>
   `changes::guard::unknown: this edit of ${file} ran. The guard could not tell whether it belongs to a change: ` +
   `${why}. Fix what failed and the guard advises on the next edit.`
 
+/** The refusal of an edit of a file in a known board's checkout that the guard cannot check. */
+export const unknownRecord = (file: string, why: string) =>
+  `changes::guard::unknown: the guard could not tell whether ${file} is a record of a board: ${why}. This edit ` +
+  'was refused, since a board record changes only through board commands; fix what failed and try again.'
+
 /** The advice for an agent with no brief, or whose brief names a change no board that mounts the file holds. */
 export function noBrief(file: string, at: Mount, named: string | null): string {
   const said =
@@ -262,7 +267,8 @@ export function judge(
   if (change.mount !== at.mount) {
     return (
       `changes::guard::wrong_mount: this edit of ${file} ran. ${name} is a change to ${change.mount}, and ${file} ` +
-      `is in ${at.mount}. Work on ${at.mount} lands through a change to ${at.mount}.`
+      `is in ${at.mount}. Work on ${at.mount} lands through a change to it: ` +
+      `\`board -C ${at.board} changes start --mount ${at.mount} --title '<title>'\`.`
     )
   }
   const only = prototypeBranch(name)

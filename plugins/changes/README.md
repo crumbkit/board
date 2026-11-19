@@ -1107,7 +1107,8 @@ config, each known board's change records (`changes/<name>.json`, its
 `prototype.json` and its `plans/<stamp>.json`) and its mount records. A
 plan's text, `changes/<name>/plans/<stamp>.md`, stays writable.
 
-Only `board_record` refuses. Every other code is advice: the edit runs and
+Only `board_record` refuses, and `unknown` in a board's checkout. Every other
+code is advice: the edit runs and
 the guard adds one line to the tool result that starts with the code, says
 the edit ran, and names what to do:
 
@@ -1127,19 +1128,20 @@ the edit ran, and names what to do:
   or `board` failed, or the conversation could not be read. The line says
   what failed, and the edit runs.
 
-The guard advises agents that follow the process. It needs no bypass, since
-it refuses only Board's own records. It cannot see:
+The guard sees only Edit, Write and NotebookEdit. It advises agents that
+follow the process and refuses only Board's own records. When a lookup
+fails for a file in a known board's checkout, it refuses with
+`changes::guard::unknown`; for any other file it admits the edit with that
+line. It cannot see:
 
-- files written through Bash, such as `sed -i` or a heredoc. The review gate
-  checks that a change's commits came from its builder sessions;
+- files written through Bash, such as `sed -i` or a heredoc;
 - a prototype's builder that switches its checkout to `proto/<name>` for
   the edit and back before it commits. The guard reads the branch at the
   moment of the edit;
 - a clone of a mounted repository with no `origin` remote, or one whose
   `origin` points somewhere else, such as a fork or an ssh host alias like
   `git@github-work:owner/name.git`;
-- a brief line that a parent agent wrote by hand. The review gate checks
-  that a change's commits came from its builder sessions;
+- a brief line that a parent agent wrote by hand;
 - a first message that has left the newest 4,096 entries of a conversation,
   or that a compaction replaced, before the agent's first guarded edit. The
   guard keeps a brief it has found for each session and agent until the mod
