@@ -558,13 +558,7 @@ fn opened(error: &OpenError) -> Refusal {
 impl Hosted<'_> {
     /// Opens the board again asking as the plugin, with the personal
     /// board and signing `board decide` reads.
-    fn answer(
-        &self,
-        capability: &str,
-        path: &LogicalPath,
-        shown: Option<&Shown>,
-        hold: bool,
-    ) -> Result<Option<DecideReport>, Box<Refusal>> {
+    fn asking(&self, capability: &str) -> Result<Board, Box<Refusal>> {
         if !matches!(capability.parse(), Ok(Target::Named { .. })) {
             let message = format!(
                 "the capability {capability:?} to decide must be `<plugin>.<capability>`, such as review.comment"
@@ -586,12 +580,7 @@ impl Hosted<'_> {
         )?;
         let mut board = self.again().map_err(|error| Box::new(opened(&error)))?;
         board.ask_as(asker);
-        if hold {
-            (board.decide_capability(capability, path, shown)).map(Some)
-        } else {
-            board.decided_capability(capability, path, shown)
-        }
-        .map_err(|error| Box::new(error.refusal()))
+        Ok(board)
     }
 }
 
@@ -695,8 +684,10 @@ impl Host for Hosted<'_> {
         path: &LogicalPath,
         shown: Option<&Shown>,
     ) -> Result<DecideReport, Box<Refusal>> {
-        let report = self.answer(capability, path, shown, true)?;
-        Ok(report.expect("a decide that holds returns the owner's answer or an error"))
+        (self
+            .asking(capability)?
+            .decide_capability(capability, path, shown))
+        .map_err(|error| Box::new(error.refusal()))
     }
 
     fn decided(
@@ -705,7 +696,10 @@ impl Host for Hosted<'_> {
         path: &LogicalPath,
         shown: Option<&Shown>,
     ) -> Result<Option<DecideReport>, Box<Refusal>> {
-        self.answer(capability, path, shown, false)
+        (self
+            .asking(capability)?
+            .decided_capability(capability, path, shown))
+        .map_err(|error| Box::new(error.refusal()))
     }
 
     fn sync(&self, push: bool, deadline: Duration) -> Result<Synced, SyncError> {

@@ -62,7 +62,21 @@ pub(crate) fn check(
     if let Some(ask_owner) = ask_owner {
         input["ask_owner"] = json!(ask_owner);
     }
-    let output = call(personal, "check", &input).map_err(|refusal| passed_on(&refusal))?;
+    let output = call(personal, "check", &input).map_err(|refusal| {
+        let mut refused = passed_on(&refusal);
+        if ask_owner.is_none() {
+            // The call has no `--ask_owner`, so the offer to use it is dropped.
+            for text in [Some(&mut refused.message), refused.hint.as_mut()]
+                .into_iter()
+                .flatten()
+            {
+                if let Some(at) = text.find(" No request went to the owner.") {
+                    text.truncate(at);
+                }
+            }
+        }
+        refused
+    })?;
     Passed::deserialize(&output).map_err(|error| unreadable("check", &error))
 }
 

@@ -34,27 +34,33 @@ impl Origin<'_> {
         format!("github:{}/{}", self.owner, self.repo)
     }
 
-    /// The boundary's check of the parts of `github.<action>`.
+    /// The boundary's check of the parts of `github.<action>`, which never
+    /// asks the owner.
     pub(crate) fn check(&self, action: &str, parts: &Parts) -> Result<Passed, PluginError> {
-        self.check_asking(action, parts, None)
+        self.crossed(action, parts, None)
     }
 
-    /// [`Origin::check`], asking the owner on a failure when `ask_owner`.
+    /// [`Origin::check`] for a call that offers `--ask_owner`, which asks the
+    /// owner on a failure when `ask_owner`.
     fn check_asking(
+        &self,
+        action: &str,
+        parts: &Parts,
+        ask_owner: bool,
+    ) -> Result<Passed, PluginError> {
+        self.crossed(action, parts, Some(ask_owner))
+    }
+
+    fn crossed(
         &self,
         action: &str,
         parts: &Parts,
         ask_owner: Option<bool>,
     ) -> Result<Passed, PluginError> {
         let action = format!("github.{action}");
-        crossing::check(
-            &*self.personal,
-            &action,
-            &self.to(),
-            self.mount.as_deref(),
-            parts,
-            ask_owner,
-        )
+        let to = self.to();
+        let from = self.mount.as_deref();
+        crossing::check(&*self.personal, &action, &to, from, parts, ask_owner)
     }
 
     /// Records `result` on the crossing, and returns the output every action
@@ -192,7 +198,7 @@ fn pushed(
     head: &str,
     action: Pushing,
     extra: Parts,
-    ask_owner: Option<bool>,
+    ask_owner: bool,
 ) -> Result<Push, PluginError> {
     let (host, top) = (place.host, &place.top);
     let have = git::advertised(host, top, "origin")?;
@@ -255,7 +261,7 @@ pub(crate) fn push(host: &dyn Host, input: &Value) -> Result<Value, PluginError>
         &head,
         Pushing::Push,
         Parts::new(),
-        ask_owner,
+        ask_owner == Some(true),
     )?;
     Ok(output(&Pushed {
         digest: passed.digest,
@@ -309,7 +315,14 @@ pub(crate) fn pr_create(host: &dyn Host, input: &Value) -> Result<Value, PluginE
         branch,
         commits,
         ..
-    } = pushed(&place, branch, &head, Pushing::PrCreate, extra, ask_owner)?;
+    } = pushed(
+        &place,
+        branch,
+        &head,
+        Pushing::PrCreate,
+        extra,
+        ask_owner == Some(true),
+    )?;
     let repository = format!("{}/{}", place.owner, place.repo);
     let mut arguments: Vec<String> = ["pr", "create", "--repo", &repository, "--head", &branch]
         .into_iter()
@@ -397,7 +410,7 @@ pub(crate) fn pr_edit(host: &dyn Host, input: &Value) -> Result<Value, PluginErr
             fields.insert(name.to_owned(), Value::from(text));
         }
     }
-    let passed = place.check_asking("pr-edit", &parts, ask_owner)?;
+    let passed = place.check_asking("pr-edit", &parts, ask_owner == Some(true))?;
     let endpoint = format!("repos/{}/{}/pulls/{number}", place.owner, place.repo);
     let (_, url) = gh::send_json(host, "PATCH", &endpoint, &Value::Object(fields))?;
     Ok(output(&place.sent(passed, url)?))
@@ -431,7 +444,7 @@ pub(crate) fn comment(host: &dyn Host, input: &Value) -> Result<Value, PluginErr
     } = PluginError::read_input("github", "comment", input)?;
     let place = origin(host)?;
     let parts = Parts::from([("comment.body".to_owned(), body.clone())]);
-    let passed = place.check_asking("comment", &parts, ask_owner)?;
+    let passed = place.check_asking("comment", &parts, ask_owner == Some(true))?;
     let endpoint = format!(
         "repos/{}/{}/issues/{number}/comments",
         place.owner, place.repo
@@ -469,7 +482,7 @@ pub(crate) fn issue_create(host: &dyn Host, input: &Value) -> Result<Value, Plug
         ("issue.title".to_owned(), title.clone()),
         ("issue.body".to_owned(), body.clone()),
     ]);
-    let passed = place.check_asking("issue-create", &parts, ask_owner)?;
+    let passed = place.check_asking("issue-create", &parts, ask_owner == Some(true))?;
     let endpoint = format!("repos/{}/{}/issues", place.owner, place.repo);
     let body = json!({"title": title, "body": body});
     let (answer, url) = gh::send_json(host, "POST", &endpoint, &body)?;

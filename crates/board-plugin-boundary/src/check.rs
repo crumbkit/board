@@ -270,22 +270,19 @@ fn ask(
         .parse()
         .expect("/crossings/<hex digest> is a logical path");
     let shown = Shown::Text(content.shown().into_bytes());
-    let approved = |report: board_ops::DecideReport| {
-        let effect =
-            (report.effect).expect("Host asks as the plugin, so Board names the effect it admits");
-        Ok(Answer::Approved(effect))
-    };
-    let refusal = if file {
-        match host.decide(OVERRIDE, &path, Some(&shown)) {
-            Ok(report) => return approved(report),
-            Err(refusal) => refusal,
-        }
+    let decided = if file {
+        host.decide(OVERRIDE, &path, Some(&shown)).map(Some)
     } else {
-        match host.decided(OVERRIDE, &path, Some(&shown)) {
-            Ok(Some(report)) => return approved(report),
-            Ok(None) => return Ok(Answer::NotAsked),
-            Err(refusal) => refusal,
+        host.decided(OVERRIDE, &path, Some(&shown))
+    };
+    let refusal = match decided {
+        Ok(Some(report)) => {
+            let effect = (report.effect)
+                .expect("Host asks as the plugin, so Board names the effect it admits");
+            return Ok(Answer::Approved(effect));
         }
+        Ok(None) => return Ok(Answer::NotAsked),
+        Err(refusal) => refusal,
     };
     let effect = (refusal.fields.get("effect").and_then(Value::as_str)).map(str::to_owned);
     match (refusal.code.as_str(), effect) {
