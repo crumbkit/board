@@ -150,11 +150,7 @@ fn write(host: &dyn Host, found: &[Withdrawn]) -> Result<(), PluginError> {
 /// The questions to withdraw among `open`, which comes in digest order, so
 /// that within a project the older of two repeats comes first unless the
 /// later one is critical.
-fn find(
-    open: &[Waiting],
-    archived: &BTreeSet<String>,
-    answered: &BTreeMap<(String, String), (String, String)>,
-) -> Vec<Withdrawn> {
+fn find(open: &[Waiting], archived: &BTreeSet<String>, answered: &Answered) -> Vec<Withdrawn> {
     let mut found = Vec::new();
     let mut standing: BTreeMap<(String, String), &str> = BTreeMap::new();
     let mut live = Vec::new();
@@ -214,10 +210,14 @@ pub(crate) fn words(text: &str) -> String {
         .join(" ")
 }
 
+/// Answered questions keyed by their project and words, each with the
+/// question's path and the answer's.
+type Answered = BTreeMap<(String, String), (String, String)>;
+
 /// Each question an answer names, by its project and words, with the
 /// question's path and the answer's. The oldest question of a project's
 /// words is kept.
-fn answered(host: &dyn Host) -> Result<BTreeMap<(String, String), (String, String)>, PluginError> {
+fn answered(host: &dyn Host) -> Result<Answered, PluginError> {
     let report = (host.query(&answered_sql(), Limit::ALL))
         .map_err(|error| PluginError::board_refused("plans", "query", &error.refusal()))?;
     let mut found = BTreeMap::new();
