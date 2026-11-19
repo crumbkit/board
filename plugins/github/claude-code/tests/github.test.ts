@@ -27,11 +27,52 @@ function engine(on: On, answer: { covers: Covers }) {
     return { value: { exitCode: to === 'fails' ? 1 : 0, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
   })
   on('tool.call', (_, e) => {
-    ran.push(e.tool === 'Bash' ? e.command : e.tool)
+    ran.push(e.tool === 'Bash' ? e.command : e.tool === 'Agent' ? e.prompt : e.tool)
     return { result: { stdout: '', stderr: '', interrupted: false } } as never
   })
   return { asked, ran }
 }
+
+/** The context an Agent call's result carries for the lead. */
+const agent = async ($: Engine, prompt: string) => (await $.tool.call({ tool: 'Agent', description: 'Build it', prompt })).context
+
+const PUSH_ADVICE =
+  'github::brief::covered: This git push sends commits to github:octo/widgets, which a boundary in the personal ' +
+  'board covers. Content for it goes through Board, which has the boundary check it first. Next: run `cd ../widgets && ' +
+  'board call github.push`. It pushes the branch checked out to origin.'
+
+test('a builder prompt whose code span pushes to a covered repository is advised, and one to another repository is not', async ($, on) => {
+  const { asked, ran } = engine(on, { covers: ({ dir }) => (dir === '../widgets' ? TO : null) })
+  const covered = 'board-brief: /changes/t\n\nWhen it is done, run `cd ../widgets && git push`.'
+  expect(await agent($, covered)).toEqual([PUSH_ADVICE])
+  expect(ran).toEqual([`${covered}\n\n${PUSH_ADVICE}`])
+  const uncovered = 'board-brief: /changes/t\n\nWhen it is done, run `cd ../gadgets && git push`.'
+  expect(await agent($, uncovered)).toBeUndefined()
+  expect(ran[1]).toBe(uncovered)
+  expect(asked).toEqual(["covers in '../widgets' --action push", "covers in '../gadgets' --action push"])
+})
+
+test('a fenced block in a builder prompt is read like a span, and prose outside code is not', async ($, on) => {
+  const { asked, ran } = engine(on, { covers: always })
+  const fenced = 'Then:\n\n```sh\ngh pr create --title T --body B\n```\n'
+  expect((await agent($, fenced))?.[0]).toMatch(
+    /^github::brief::covered: This gh command sends content that github\.pr-create sends to github:octo\/widgets/,
+  )
+  const prose = 'Then git push and gh pr create --title T --body B.'
+  expect(await agent($, prose)).toBeUndefined()
+  expect(ran[1]).toBe(prose)
+  expect(asked).toEqual(["covers in '' --action pr-create"])
+})
+
+test('a github.covers that fails leaves the builder prompt untouched, and one that answers advises it', async ($, on) => {
+  const answer: { covers: Covers } = { covers: () => 'fails' }
+  const { ran } = engine(on, answer)
+  const prompt = 'Run `git push` when done.'
+  expect(await agent($, prompt)).toBeUndefined()
+  expect(ran).toEqual([prompt])
+  answer.covers = always
+  expect(await agent($, prompt)).toHaveLength(1)
+})
 
 const always: Covers = () => TO
 

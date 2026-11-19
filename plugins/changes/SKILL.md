@@ -30,10 +30,14 @@ blocks is missing.
    `stop` with `reached` true, `advance` refuses. With the `board-changes`
    mod installed, an Edit, Write or NotebookEdit of the repository by an
    agent not started from `changes.brief` runs with a line of advice; it
-   cannot see writes made through Bash. The builder's first message is
-   the brief as `changes.brief` prints it, or starts with its
-   `brief_line`. Put the brief in as plain text, not inside a code fence,
-   which the guard does not read. The brief's `rules_left_out` gives each rule it left out a
+   cannot see writes made through Bash. Start a builder with a prompt
+   whose first line is the brief's `brief_line`, followed by the whole
+   brief as `changes.brief` prints it now, as plain text, not inside a code
+   fence. The mod advises an Agent call that breaks either rule with
+   `changes::brief::no_line` or `changes::brief::not_rendered`, in the
+   builder's prompt and in your result; fix the prompt for the next
+   builder. A UI change's brief lists its `mockups`, and warns
+   `changes::ux::not_agreed` while one lacks the owner's decision. The brief's `rules_left_out` gives each rule it left out a
    `reason`: the rule had no room, or it is a version rule whose capture
    finds no version in the planned files. A missing or unreadable planned
    file keeps a version rule. A rule with no room still applies, so read

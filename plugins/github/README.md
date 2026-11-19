@@ -427,6 +427,15 @@ How it reads a command:
   command names before the person approves the command. No git hook runs.
 - The run stops after 5 seconds, and the call then runs.
 
+The mod also reads each Agent call's prompt, so a lead learns before a
+builder starts that a command in its brief would be refused. It reads each
+fenced block and inline code span of the prompt as a command, by the rules
+above, and asks `covers` about each write. Prose outside code is not read.
+For each covered write it adds `github::brief::covered:` and the refusal
+the Bash hook would give. It never refuses the Agent call: it appends the
+advice to the builder's prompt and adds it to the lead's tool result. When
+`covers` fails, the call runs untouched.
+
 `covers --action <action> [--remote <remote>] [--repo <owner>/<repo>]`
 returns `covered`, each destination a boundary covers, with `to` and
 `boundaries`. The action is `push`, `pr-create`, `pr-edit`, `comment`,
