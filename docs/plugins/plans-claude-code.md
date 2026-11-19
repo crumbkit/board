@@ -37,20 +37,16 @@ field record the words verbatim and no `choice`, unless the question has an
 option whose id is `none`; then they record `choice` `none`.
 
 The mod records the answer with `board --json call plans.answer`, passing
-`--path`, `--option`, `--words` and `--written_by` as `--name=value` flags, so
-words that start with `-` stay the value. `option` is `none` when the owner
-typed words. `plans.answer` refuses a question that already has an answer at
-any id or is no longer `open`, and then writes nothing; the toast gives its
-code and message. When the question blocks a change, `plans.answer` attaches
-the answer to that change's plan. When that attach is refused, the toast says
-the answer is recorded but not attached, and names the change and the code.
+each input as a `--name=value` flag, so words that start with `-` stay the
+value. When `plans.answer` refuses, it writes nothing and the toast gives its
+code. When it attaches the answer to the change the question blocks and that
+attach is refused, the toast names the change and the code.
 
-The call may run for 15 seconds, because `plans.answer` takes board's lock
-twice, once for the answer and once for the attach, and each take waits up to
-5 seconds. Every other `board` run the mod makes is stopped after 5 seconds.
-When the call times out, or ends without Board's failure report, the answer
+The call may run for 15 seconds, since `plans.answer` takes board's lock
+twice and each take waits up to 5 seconds; other `board` runs stop after 5.
+When the call times out or ends without Board's failure report, the answer
 may have been written. The toast says so, nothing is sent, and the question
-stays in the list until `plans.open` stops listing it.
+stays listed until `plans.open` stops listing it.
 
 The answer carries `written_by: "plans/pane-answer"`. In the desktop app the
 mod also passes `--session` with this session's id from
@@ -60,11 +56,9 @@ mod also passes `--session` with this session's id from
 ID, because the press is the owner's own.
 
 The answer is recorded in Board whether or not the asking session hears of
-it. After the write, the mod tries to send the asking session, and each
-session in the question's `also_asked`, a message naming the question, the
-choice, the words and the answer's path that `plans.answer` returned, with
-`$.session.send({ to })`, each
-`local_` id as a string.
+it. After the write, the mod sends the asking session, and each session in
+`also_asked`, the question, the choice, the words and the answer's path, with
+`$.session.send({ to })`, each `local_` id as a string.
 The send is best effort. `{ sessionId }` is not used, because a headless probe
 on 2.1.308 showed it refuses a live session's `local_` id. The string is the
 SendMessage tool's spelling of a recipient; it was refused in the same

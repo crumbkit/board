@@ -443,6 +443,19 @@ test('an answer whose attach was refused says it is recorded but not attached, a
   }
 })
 
+test('an answer whose attach was refused and whose message was not delivered says once that it is recorded', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  const attached = { change: '/changes/fix-the-sync', refused: 'changes::attach::no_plan' }
+  const { toasts } = engine(on, { delivered: false, answer: () => ({ exitCode: 0, stdout: answered(ANSWER, attached) }) })
+  await start($)
+  const ui = await $.ui.mount({ ...pane('questions'), surface: 'terminal' })
+  await ui.press({ key: `${MERGE.path}#a` })
+  expect(toasts).toEqual([
+    'Answered and recorded in Board, but not attached to /changes/fix-the-sync: changes::attach::no_plan. The message to local_ab12 was not delivered',
+  ])
+  expect(toasts[0]?.match(/recorded/g)).toHaveLength(1)
+})
+
 test('/yesterday reads the day from 07:00 in one query, opens the report pane and prints its totals', async ($, on) => {
   mock.clock(on, { now: NOW })
   const day = rows(

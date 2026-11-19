@@ -123,8 +123,13 @@ async function answer($: EngineInterface, options: PluginOptions, q: Question, c
     // A board from before plans.ask merged questions lists no `also_asked`.
     const others = (q.also_asked ?? []).filter(to => to !== q.session)
     const [sent] = await Promise.all([send(q.session), ...others.map(send)])
-    const unattached = answered.attached?.refused === undefined ? '' : `. The answer is recorded but was not attached to ${answered.attached.change}: ${answered.attached.refused}`
-    $.ui.toast(`${sent ? `Answered, and sent to ${q.session}` : `Answered and recorded in Board. The message to ${q.session} was not delivered`}${unattached}`)
+    const { attached } = answered
+    const unattached = attached?.refused === undefined ? null : `not attached to ${attached.change}: ${attached.refused}`
+    $.ui.toast(
+      sent
+        ? `Answered, and sent to ${q.session}${unattached === null ? '' : `. The answer is recorded but was ${unattached}`}`
+        : `Answered and recorded in Board${unattached === null ? '' : `, but ${unattached}`}. The message to ${q.session} was not delivered`,
+    )
   } catch (error) {
     $.ui.toast(`No answer was recorded: ${String(error)}`)
   }
