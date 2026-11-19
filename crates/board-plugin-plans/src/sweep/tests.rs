@@ -1,12 +1,15 @@
 //! `sweep` withdraws each open question that no longer needs the owner, with
 //! a reason, and keeps its twin that still does.
 
+use std::rc::Rc;
+
 use board_ops::{Board, Plugins};
 use board_plugin::Target;
+use board_scenario::Item;
 use serde_json::{Value, json};
 
 use crate::open::tests::{
-    MOUNTED_QUESTION, answer_naming, body, change, mounting_board, plans_board,
+    MOUNTED_QUESTION, answer_naming, body, change, host, mounting_board, plans_board,
 };
 
 const ASKED: &str = "2026-10-01T09:00:00Z";
@@ -119,12 +122,10 @@ fn a_question_from_an_archived_session_is_withdrawn_and_its_twin_from_a_live_one
     assert_eq!(open(&board), ["/projects/a/questions/live"]);
 }
 
-/// The later of two open questions in one project whose words match, case
-/// and punctuation aside, is withdrawn and names the one that stays. The
-/// same words in another project, and other words in the same project,
-/// stay.
+/// Two open questions in one project with the same words both stay, because
+/// `plans.ask` merges repeats when they are filed and the sweep leaves them.
 #[test]
-fn a_later_repeat_in_the_same_project_is_withdrawn_and_other_projects_and_words_stay() {
+fn two_open_questions_with_the_same_words_both_stay() {
     let (_scenario, board) = plans_board(&[
         (
             "projects/a/questions/first",
@@ -134,34 +135,12 @@ fn a_later_repeat_in_the_same_project_is_withdrawn_and_other_projects_and_words_
             "projects/a/questions/again",
             asked_by("local_bb", 2, &json!({"question": "which way  north"})),
         ),
-        (
-            "projects/a/questions/other",
-            asked_by("local_bb", 3, &json!({"question": "Which way, south?"})),
-        ),
-        (
-            "projects/b/questions/same",
-            asked_by("local_bb", 4, &json!({"question": "Which way, north?"})),
-        ),
     ]);
     let output = sweep(&board, &json!({"apply": true}));
-    assert_eq!(
-        withdrawn(&output),
-        [(
-            "/projects/a/questions/again".to_owned(),
-            "repeat".to_owned()
-        )]
-    );
-    assert_eq!(
-        output["withdrawn"][0]["reason"],
-        json!("plans.sweep: it repeats /projects/a/questions/first, which stays open.")
-    );
+    assert_eq!(output["total"], json!(0));
     assert_eq!(
         open(&board),
-        [
-            "/projects/a/questions/first",
-            "/projects/a/questions/other",
-            "/projects/b/questions/same"
-        ]
+        ["/projects/a/questions/again", "/projects/a/questions/first"]
     );
 }
 
@@ -202,47 +181,11 @@ fn a_question_already_answered_in_its_project_is_withdrawn_and_its_twin_elsewher
             "plans.sweep: /projects/a/questions/before asked the same and was answered at /projects/a/answers/before."
         )
     );
-    assert_eq!(open(&board), ["/projects/b/questions/again"]);
-}
-
-/// A repeat of a question the sweep withdraws as dead stays open, since the
-/// question it repeats no longer stands. A dead question that is also a
-/// repeat is counted once, by why it is dead.
-#[test]
-fn a_repeat_of_a_dead_question_stays_and_each_question_is_counted_once() {
-    let (_scenario, board) = plans_board(&[
-        (
-            "projects/a/questions/first",
-            asked_by("local_dead0", 1, &json!({"question": "Go?"})),
-        ),
-        (
-            "projects/a/questions/second",
-            asked_by("local_a11e", 2, &json!({"question": "Go?"})),
-        ),
-        (
-            "projects/a/questions/third",
-            asked_by("local_dead0", 3, &json!({"question": "Go?"})),
-        ),
-    ]);
-    let output = sweep(&board, &json!({"apply": true, "archived": ["local_dead0"]}));
-    assert_eq!(
-        withdrawn(&output),
-        [
-            (
-                "/projects/a/questions/first".to_owned(),
-                "archived".to_owned()
-            ),
-            (
-                "/projects/a/questions/third".to_owned(),
-                "archived".to_owned()
-            ),
-        ]
-    );
     assert_eq!(
         output["counts"],
-        json!({"done": 0, "dropped": 0, "archived": 2, "repeat": 0, "answered": 0})
+        json!({"done": 0, "dropped": 0, "archived": 0, "answered": 1})
     );
-    assert_eq!(open(&board), ["/projects/a/questions/second"]);
+    assert_eq!(open(&board), ["/projects/b/questions/again"]);
 }
 
 /// Without `apply` the sweep lists what it would withdraw and writes
@@ -323,15 +266,106 @@ fn board_refuses_an_archived_session_that_is_no_local_id_and_admits_its_twin() {
 
 /// A put batch may not cross a mount, so the sweep writes the questions of
 /// each board in their own batch. A dead question in the root board and one
-/// in a mounted board are both withdrawn.
+/// in a mounted board are both withdrawn. The library gets one commit. The
+/// root gets two: its own batch, then the move of the mount's pin to the
+/// library's new commit, which Board makes after every write through a
+/// mount (docs/architecture/writes.md). Each carries the sweep's trailer.
 #[test]
 fn questions_in_the_root_and_a_mounted_board_are_both_withdrawn() {
     let dead = asked_by("local_dead0", 1, &json!({}));
-    let (_s, _l, board) = mounting_board(
+    let (root, library, board) = mounting_board(
         &[("projects/a/questions/root", dead.clone())],
         &[(MOUNTED_QUESTION, dead)],
     );
+    assert!(
+        root.head().is_none(),
+        "the root has no commit before the sweep"
+    );
+    let pinned = library.head().unwrap().id;
     let output = sweep(&board, &json!({"apply": true, "archived": ["local_dead0"]}));
     assert_eq!(output["total"], json!(2));
     assert_eq!(open(&board), Vec::<String>::new());
+    let library_head = library.head().unwrap();
+    assert_eq!(library_head.parents, [pinned]);
+    let mounted: Value =
+        serde_json::from_slice(&library_head.files[&format!("{MOUNTED_QUESTION}.json")]).unwrap();
+    assert_eq!(mounted["status"], json!("withdrawn"));
+    let subjects: Vec<String> = root
+        .history()
+        .into_iter()
+        .map(|(_, subject)| subject)
+        .collect();
+    assert_eq!(subjects, ["board put --batch (1 records)"; 2]);
+    let root_head = root.head().unwrap();
+    let mount: Value = serde_json::from_slice(&root_head.files["vendor.json"]).unwrap();
+    assert_eq!(mount["commit"], json!(library_head.id.to_string()));
+    for head in [root_head, library_head] {
+        assert_eq!(
+            head.message,
+            "board put --batch (1 records)\n\nBoard-Bulk: sweep questions"
+        );
+    }
+}
+
+/// A question answered or withdrawn after the sweep found it, and before it
+/// read the question again to write, is refused with the sweep's own code and
+/// a hint to sweep again, and no question is withdrawn. The twin, unchanged,
+/// withdraws both questions.
+#[test]
+fn a_question_answered_or_withdrawn_before_the_write_is_refused_and_nothing_is_written() {
+    let withdrawn_since = asked_by(
+        "local_dead0",
+        1,
+        &json!({"status": "withdrawn", "withdrawn_reason": "Someone withdrew it."}),
+    );
+    let changes = [
+        (
+            Some((
+                "projects/a/answers/a",
+                answer_naming("/projects/a/questions/a"),
+            )),
+            Some("plans::sweep::already_answered"),
+        ),
+        (
+            Some(("projects/a/questions/a", withdrawn_since)),
+            Some("plans::sweep::not_open"),
+        ),
+        (None, None),
+    ];
+    for (change, code) in changes {
+        let dead = asked_by("local_dead0", 1, &json!({}));
+        let (scenario, board) = plans_board(&[
+            ("projects/a/questions/a", dead.clone()),
+            ("projects/a/questions/b", dead),
+        ]);
+        let mut host = host(Vec::new());
+        host.board = Some(board);
+        let scenario = Rc::new(scenario);
+        if let Some((path, record)) = change {
+            let there = Rc::clone(&scenario);
+            *host.before_read.borrow_mut() = Some(Box::new(move || {
+                there.write(
+                    &format!("{path}.json"),
+                    Item::File(record.as_str().unwrap()),
+                );
+            }));
+        }
+        let result =
+            crate::sweep::sweep(&host, &json!({"apply": true, "archived": ["local_dead0"]}));
+        let Some(code) = code else {
+            assert_eq!(result.unwrap()["total"], json!(2));
+            assert_eq!(open(host.board.as_ref().unwrap()), Vec::<String>::new());
+            continue;
+        };
+        let refused = result.unwrap_err();
+        assert_eq!(refused.code, code);
+        assert_eq!(
+            refused.hint.as_deref(),
+            Some("run `board plans sweep` again; it reads each question afresh")
+        );
+        assert!(host.puts.borrow().is_empty(), "{code} puts nothing");
+        let b = std::fs::read_to_string(scenario.workdir().join("projects/a/questions/b.json"));
+        let b: Value = serde_json::from_str(&b.unwrap()).unwrap();
+        assert_eq!(b["status"], json!("open"), "{code} leaves b open");
+    }
 }

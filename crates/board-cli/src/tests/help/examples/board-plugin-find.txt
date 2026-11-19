@@ -53,7 +53,7 @@ plans.answer disabled Record the owner's answer to an open question. The answer 
 plans.withdraw disabled Withdraw an open question that no answer names, with the reason, so that plans.open stops listing it.
 plans.migrate disabled Rewrite each question whose blocks holds words: a value that names one change becomes that change's path and its words move to blocked_work, and any other value moves to blocked_work. apply writes every line in one commit with a Board-Bulk trailer; without it nothing is written.
 plans.waiting disabled How many questions under a path wait for the owner, and one line that says so, which an agent can end its reply with.
-plans.sweep disabled Withdraw, with a reason, each open question whose blocked change or task is done or dropped, whose asking session is archived, that repeats an older open question in its project, or whose words a question answered in its project already asked. apply writes each board's withdrawals in one commit with a Board-Bulk trailer; without it nothing is written.
+plans.sweep disabled Withdraw, with a reason, each open question whose blocked change or task is done or dropped, whose asking session is archived, or whose words a question answered in its project already asked. apply writes each board's withdrawals in one commit with a Board-Bulk trailer; without it nothing is written.
 prompts.get disabled Read one prompt at its pin and render its body and runs_in with the input values given on stdin.
 prompts.list disabled List the prompts in the board's own tree and the marked repos the caller's remote chooses, at their pins, by repo then title.
 requests.thread disabled Every version of the effect's request, oldest first, with its answer, and the owner's replies to them, oldest first.

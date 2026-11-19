@@ -125,9 +125,6 @@ pub(crate) struct Waiting {
     /// `done` or `dropped` when the work `blocks` names has ended.
     #[serde(skip)]
     pub(crate) ended: Option<String>,
-    /// When it was asked, as an instant.
-    #[serde(skip)]
-    pub(crate) asked_at: Instant,
 }
 
 /// Options are read as objects because serde reads a struct from a list too.
@@ -249,7 +246,6 @@ fn readable(path: &str, body: &Value, work: Option<&str>) -> Option<(Instant, Wa
         ended: work
             .filter(|work| ["done", "dropped"].contains(work))
             .map(str::to_owned),
-        asked_at: when,
     };
     Some((when, question))
 }

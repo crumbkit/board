@@ -104,12 +104,14 @@ withdrawn for the first of these that applies:
 - `answered`: a question that an answer names, in the same project, asks
   the same words. Words match after lower-casing and keeping only letters
   and digits.
-- `repeat`: an older open question in the same project asks the same words
-  and stays open.
+
+The sweep leaves a question that repeats another open one, because
+`plans.ask` merges repeats when they are filed.
 
 Without `apply` it writes nothing. With it, each question is read again and
-refused with `plans::sweep::<reason>` for the reasons `plans.withdraw` gives
-if it changed, then every question of one board is withdrawn in one commit with
+refused, with nothing written, if it changed since the sweep read it: with
+`plans::sweep::already_answered` if it was answered and
+`plans::sweep::not_open` if it was withdrawn. Otherwise every question of one board is withdrawn in one commit with
 a `Board-Bulk: sweep questions` trailer. A batch may not cross a mount, so
 each mounted board gets its own commit; when one is refused, the refusal
 lists the boards already written in `written`. It returns `withdrawn` (at

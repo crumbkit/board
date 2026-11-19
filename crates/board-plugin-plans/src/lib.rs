@@ -149,10 +149,9 @@ fn manifest() -> Value {
         }, {
             "name": "sweep",
             "description": "Withdraw, with a reason, each open question whose blocked change or task \
-                is done or dropped, whose asking session is archived, that repeats an older open \
-                question in its project, or whose words a question answered in its project already \
-                asked. apply writes each board's withdrawals in one commit with a Board-Bulk \
-                trailer; without it nothing is written.",
+                is done or dropped, whose asking session is archived, or whose words a question \
+                answered in its project already asked. apply writes each board's withdrawals in one \
+                commit with a Board-Bulk trailer; without it nothing is written.",
             "inputSchema": schema_of::<sweep::Input>(SchemaSettings::draft2020_12()),
             "outputSchema": schema_of::<sweep::Output>(SchemaSettings::draft2020_12().for_serialize()),
             "annotations": {

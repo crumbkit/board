@@ -14,13 +14,16 @@ use crate::Plans;
 /// A host that answers every query with `rows` and records what it was
 /// asked, or answers with `failing`'s refusal of a query that names no
 /// table. With `board`, it queries that board and puts there instead, after
-/// running `between`. It records each put's lines either way.
+/// running `between`, and runs `before_read` before the first query that
+/// reads one question by `question::question_sql`. It records each put's
+/// lines either way.
 pub(crate) struct Answering {
     rows: Vec<Vec<Value>>,
     pub(crate) asked: RefCell<Vec<(String, Limit)>>,
     failing: Option<Board>,
     pub(crate) board: Option<Board>,
     pub(crate) between: RefCell<Option<Box<dyn FnOnce()>>>,
+    pub(crate) before_read: RefCell<Option<Box<dyn FnOnce()>>>,
     pub(crate) puts: RefCell<Vec<Vec<Value>>>,
     pub(crate) settings: Settings,
 }
@@ -32,6 +35,11 @@ impl Host for Answering {
             board.query("SELECT logical FROM nowhere", 1, None, None)?;
         }
         if let Some(board) = &self.board {
+            if sql.starts_with("SELECT 'question' AS kind")
+                && let Some(before_read) = self.before_read.take()
+            {
+                before_read();
+            }
             return board.query(sql, usize::MAX, None, None);
         }
         Ok(QueryReport {
@@ -132,6 +140,7 @@ pub(crate) fn host(rows: Vec<Vec<Value>>) -> Answering {
         failing: None,
         board: None,
         between: RefCell::default(),
+        before_read: RefCell::default(),
         puts: RefCell::default(),
         settings: Settings {
             now: std::time::SystemTime::UNIX_EPOCH,
@@ -633,6 +642,12 @@ pub(crate) fn mounting_board(
     mounted: &[(&str, Value)],
 ) -> (Scenario, Scenario, Board) {
     let (scenario, _) = plans_board(&[]);
+    // The root board commits each put too, so a test can count its commits.
+    let config = scenario.workdir().join(".board/board.json");
+    let mut root_config: Value =
+        serde_json::from_str(&std::fs::read_to_string(&config).unwrap()).unwrap();
+    root_config.as_object_mut().unwrap().remove("commit_on_put");
+    (scenario.write(".board/board.json", Item::File(&root_config.to_string()))).identified();
     let schemas = scenario.workdir().join(".board/types/plans");
     let library = Scenario::new();
     let files: Vec<(String, String)> = (mounted.iter())
