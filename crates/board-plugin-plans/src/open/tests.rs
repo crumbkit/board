@@ -613,7 +613,7 @@ fn busy_board() -> (Scenario, Board) {
 }
 
 /// The answer record that names `question`.
-fn answer_naming(question: &str) -> Value {
+pub(crate) fn answer_naming(question: &str) -> Value {
     Value::String(
         json!({
             "$type": "plans/answer/v1",
@@ -628,7 +628,7 @@ fn answer_naming(question: &str) -> Value {
 /// A plans board holding `root`, and a board mounted at `/vendor` that
 /// enables plans and holds `mounted`. The paths of `mounted` are its own, so
 /// `projects/a/questions/q` there is `/vendor/projects/a/questions/q` here.
-fn mounting_board(
+pub(crate) fn mounting_board(
     root: &[(&str, Value)],
     mounted: &[(&str, Value)],
 ) -> (Scenario, Scenario, Board) {
@@ -672,7 +672,7 @@ fn open_paths(board: &Board) -> Vec<String> {
     paths
 }
 
-const MOUNTED_QUESTION: &str = "projects/a/questions/q";
+pub(crate) const MOUNTED_QUESTION: &str = "projects/a/questions/q";
 
 /// An answer in a mounted board names a question there by its path in that
 /// board, which a reference in a mounted board is read from. The twin is the
@@ -929,7 +929,7 @@ fn a_questions_project_is_the_folder_above_its_questions_folder() {
 }
 
 /// A change record in `phase`, as the changes plugin writes one.
-fn change(phase: &str) -> Value {
+pub(crate) fn change(phase: &str) -> Value {
     Value::String(
         json!({"$type": "changes/change/v2", "title": "Work", "phase": phase}).to_string(),
     )

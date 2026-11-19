@@ -130,7 +130,10 @@ fn the_manifest_parses_as_a_built_in_one_and_describes_the_plugin_with_the_skill
     let names: Vec<&str> = (manifest.capabilities.iter())
         .map(|capability| capability.name.as_str())
         .collect();
-    assert_eq!(names, ["open", "answer", "withdraw", "migrate", "waiting"]);
+    assert_eq!(
+        names,
+        ["open", "answer", "withdraw", "migrate", "waiting", "sweep"]
+    );
     assert_eq!(manifest.description, skill_description());
 }
 
@@ -579,7 +582,7 @@ fn a_capability_the_plugin_does_not_offer_is_refused_and_open_is_answered() {
     assert_eq!(refused.code, "plans::call::unknown_capability");
     assert_eq!(
         refused.message,
-        "plans offers no capability closed; it offers open, answer, withdraw, migrate and waiting"
+        "plans offers no capability closed; it offers open, answer, withdraw, migrate, waiting and sweep"
     );
     let answered = call("open").unwrap();
     assert_eq!(answered["total"], 0);

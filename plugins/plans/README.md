@@ -93,6 +93,29 @@ with, such as "3 questions are waiting for you, 2 of them blocking work. Run
 /ask to answer them." The board-plans mod's Waiting button draws `total` and
 `blocking`.
 
+`board plans sweep [--path /projects/<project>] [--archived <local_ id>]...
+[--apply true]` withdraws each open question below the path that no longer
+needs the owner, with a reason that starts `plans.sweep:`. Each question is
+withdrawn for the first of these that applies:
+
+- `done` or `dropped`: the change or task `blocks` names is done or dropped.
+- `archived`: the session that asked is one of `archived`. Board knows
+  nothing of sessions, so the caller names the archived ones.
+- `answered`: a question that an answer names, in the same project, asks
+  the same words. Words match after lower-casing and keeping only letters
+  and digits.
+- `repeat`: an older open question in the same project asks the same words
+  and stays open.
+
+Without `apply` it writes nothing. With it, each question is read again and
+refused with `plans::sweep::already_answered` or `plans::sweep::not_open` if
+it changed, then every question of one board is withdrawn in one commit with
+a `Board-Bulk: sweep questions` trailer. A batch may not cross a mount, so
+each mounted board gets its own commit; when one is refused, the refusal
+lists the boards already written in `written`. It returns `withdrawn` (at
+most 100, each with `path`, `kind` and `reason`), `total`, `truncated`,
+`counts` by kind and `remaining`, the open questions left.
+
 `board plans answer --path <question> --option <id> [--words <text>]
 [--session <local_ id>] [--program <slug>] [--person <slug>] [--agent <name>]
 [--written_by <plugin>/<client>]` records the owner's answer
