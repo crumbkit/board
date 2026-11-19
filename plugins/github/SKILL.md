@@ -28,35 +28,52 @@ add `--personal` after `board`.
 - Push the branch checked out: `board github push`.
 - Push and open a pull request:
   `board github pr-create --title <title> --body <body>`, with
-  `--base <branch>` or `--draft true` when needed.
+  `--base <branch>` or `--draft true` when needed. It attaches the pull
+  request to the open change on this checkout's mount that is named after
+  the branch, so you do not run `board changes attach --pull`.
+  `--change /changes/<name>` attaches it to that change instead, without
+  checking the change's phase or mount. When the output has `change_note`, it attached none; run
+  the command the note gives.
 - Change a pull request: `board github pr-edit --number <n> --title <title>`,
   or `--body <body>`.
 - Comment: `board github comment --number <n> --body <body>`.
 - Open an issue: `board github issue-create --title <title> --body <body>`.
 - Squash-merge the pull request of a change in its land phase:
-  `board github merge --number <n> --subject <subject> --body <body>
-  --change /changes/<name>`. It merges the change's head and moves the
-  change to its next phase. It reads the change in the board the command
-  runs in: for a change in another board, add `-C <that board's directory>`
-  and name it as `/changes/<name>`, never through a mount. From the
+  `board github merge --change /changes/<name>`. It merges the change's
+  head and moves the change to its next phase. It also fetches the branch
+  the change's mount follows and moves the mount to the merged commit, so
+  do not run `board mount update` after it. When the output has
+  `mount_warning`, the pull request merged but the mount was left at its
+  pin. Run the warning's `command` as it is; it is there only when it can
+  run unchanged. Without one, follow the message. The pull request is the
+  change's only one in this repository, and the commit takes the pull
+  request's title and body; `--number`, `--subject` and `--body` override.
+  It reads the change in the board the command runs in: for a change in
+  another board, add `-C <that board's directory>` and name it as
+  `/changes/<name>`, never through a mount. From the
   checkout of a repository that another board mounts, a change in the
   personal board needs `--personal`. Without a change, pass `--head <sha>`,
   the full 40-hex commit. When `queued` is true, a merge queue holds the
-  pull request: run `board changes advance --path <change>` in the same
-  board after it merges.
+  pull request: after it merges, run `board changes advance --path
+  <change>` in the same board, then the `mount_warning` command, if any.
 
 On `github::boundary::refused`, nothing was sent. Read `fields.failures`, the
 message, and the hint after it, which is the boundary's `Next:` step. Change
 what it names, such as a commit message with `git commit --amend` or the body
 you pass, and run the action again. A boundary is a record the owner keeps,
-so ask before you change one.
+so ask before you change one. A refusal files no request for the owner; pass
+`--ask_owner true` on `push`, `pr-create`, `pr-edit`, `comment` or
+`issue-create` only when the exact content must go as it is.
 
 ## Raw git push and gh
 
 Do not send to GitHub with `git push` or `gh` directly. In Claude Code, the
 `board-github` mod refuses them when a boundary covers the repository, and
 its message ends with a `Next:` step naming the `board call github.<action>`
-that sends the same content. Run that command.
+that sends the same content. Run that command. When you start a subagent
+whose prompt holds such a command in code, the mod adds
+`github::brief::covered` advice to the subagent's prompt and to your
+result; name the `board call github.<action>` in the next prompt instead.
 
 To check pushes made outside Board too, such as from a terminal, run
 `board github install-hook` in the checkout once. It writes nothing: it
@@ -80,13 +97,20 @@ its message, change what it names, and push again.
   whose origin is GitHub.
 - `github::push::failed`: git refused the push. Pull or rebase, then run it
   again.
-- `github::gh::failed`: gh is missing, signed out or failed. Run
+- `github::gh::failed`: gh is missing, signed out or failed, including the
+  `gh api` read of a pull request that `merge` makes for a left-out subject
+  or body. Run
   `gh auth status`. After a check passed, look on GitHub before you run the
   action again, since the content may have been sent.
 - `github::merge::change`: the `--change` path is not under `/changes/`.
   Run the merge in the board that holds the change, with `-C`.
 - `github::merge::gate`: the change is not in its land phase, or its land
   gate misses the checks in `fields.missing`. Run `board changes next`.
+- `github::merge::number`: no `--number`, and no change that records exactly
+  one pull request of this repository. Pass `--number <n>`.
+- `github::merge::pull`: GitHub has no pull request `--number`, or it has
+  no title, so there is no subject or body to default to. Check
+  `--number`, or pass `--subject` and `--body`.
 - `github::merge::head`: no head to merge, or `--head` differs from the
   change's head. Attach the head to the change or pass the right one.
 - `github::merge::advance`: the pull request merged but the change did not

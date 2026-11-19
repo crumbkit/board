@@ -82,8 +82,9 @@ a task whose status is `open`. A mounted question's `blocks` is read from its
 own board's root. The questions come grouped by project. Within a project
 the critical ones come first, then the rest, each oldest first. Projects
 come in the order of their first question, so a project holding a critical
-question comes before one that holds none. The limit keeps the first ones. It returns at most 100 by default, with
-`total`, which counts the readable ones, and `truncated`. `unreadable` counts
+question comes before one that holds none. The limit keeps the first
+ones. It returns at most 100 by default, with `total`, which counts the
+readable ones, and `truncated`. `unreadable` counts
 open questions Board marks degraded or this plugin cannot read. Each question
 also carries `why`, `note`, `mount` and `context_path`, null when the record
 leaves them out.
@@ -111,8 +112,7 @@ as `plans.sweep` matches them:
 Each output carries `line`, one sentence that says what happened. A
 question its schema refuses is refused with `plans::board::refused`,
 carrying Board's code, and nothing is written. `plans.open` lists each
-question's merged sessions in `also_asked`, and `plans.sweep` withdraws a
-question for archived askers only when every one of them is archived.
+question's merged sessions in `also_asked`.
 
 `board plans sweep [--path /projects/<project>] [--archived <local_ id>]...
 [--apply true]` withdraws each open question below the path that no longer
@@ -120,17 +120,20 @@ needs the owner, with a reason that starts `plans.sweep:`. Each question is
 withdrawn for the first of these that applies:
 
 - `done` or `dropped`: the change or task `blocks` names is done or dropped.
-- `archived`: the session that asked is one of `archived`. Board knows
-  nothing of sessions, so the caller names the archived ones.
+- `archived`: the session that asked and every session in `also_by` are
+  among `archived`. Board knows nothing of sessions, so the caller names
+  the archived ones.
 - `answered`: a question that an answer names, in the same project, asks
   the same words. Words match after lower-casing and keeping only letters
   and digits.
-- `repeat`: an older open question in the same project asks the same words
-  and stays open.
+
+The sweep leaves open a question that repeats another open question,
+because `plans.ask` merges repeats when they are filed.
 
 Without `apply` it writes nothing. With it, each question is read again and
-refused with `plans::sweep::<reason>` for the reasons `plans.withdraw` gives
-if it changed, then every question of one board is withdrawn in one commit with
+refused with `plans::sweep::<reason>`, for the reasons `plans.withdraw`
+gives, if it was answered or withdrawn since the sweep read it, and nothing
+is written. Otherwise every question of one board is withdrawn in one commit with
 a `Board-Bulk: sweep questions` trailer. A batch may not cross a mount, so
 each mounted board gets its own commit; when one is refused, the refusal
 lists the boards already written in `written`. It returns `withdrawn` (at

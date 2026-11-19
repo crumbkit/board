@@ -10,7 +10,7 @@ export type Mount = { board: string; mount: string; repo: string | null; record:
 
 /** What `board get` answered for the change a brief names. */
 export type Change =
-  | { kind: 'found'; mount: string; phase: string }
+  | { kind: 'found'; mount: string; phase: string; plan: string | null }
   | { kind: 'missing' }
   | { kind: 'failed'; why: string }
 
@@ -136,13 +136,14 @@ export function parseMounts(board: string, stdout: string): Mount[] | null {
 export function parseChange(stdout: string): Change {
   const report = parseJson(stdout) as
     | {
-        data?: { record?: { mount?: unknown; phase?: unknown } }[]
+        data?: { record?: { mount?: unknown; phase?: unknown; plan?: unknown } }[]
         failures?: { code?: unknown; message?: unknown }[]
       }
     | undefined
   const record = report?.data?.[0]?.record
   if (typeof record?.mount === 'string' && typeof record.phase === 'string') {
-    return { kind: 'found', mount: record.mount, phase: record.phase }
+    const plan = typeof record.plan === 'string' ? record.plan : null
+    return { kind: 'found', mount: record.mount, phase: record.phase, plan }
   }
   const failure = report?.failures?.[0]
   if (failure?.code === 'board::path::not_found') return { kind: 'missing' }
@@ -213,22 +214,31 @@ export const mountRecord = (file: string, at: Mount) =>
 export const isChangeRecord = (relative: string) =>
   /^changes\/[^/]+(\/prototype|\/plans\/[^/]+)?\.json$/.test(relative)
 
-/** The refusal of an edit the guard cannot check. */
+/** The advice for an edit the guard cannot check; the edit runs. */
 export const unknown = (file: string, why: string) =>
-  `changes::guard::unknown: the guard could not tell whether this agent may edit ${file}: ${why}. The guard ` +
-  'refuses every edit of a mounted repository it cannot check; fix what failed and try again.'
+  `changes::guard::unknown: this edit of ${file} ran. The guard could not tell whether it belongs to a change: ` +
+  `${why}. Run the command that failed to see why; the next edit is checked again.`
 
-/** The refusal of an agent with no brief, or whose brief names a change no board that mounts the file holds. */
+/** Whether `path` ends like a change record or a mount record, for when the config that names the boards is unreadable. */
+export const looksLikeRecord = (path: string) =>
+  /(^|\/)(changes\/[^/]+(\/prototype|\/plans\/[^/]+)?|repos\/.+)\.json$/i.test(path)
+
+/** The refusal of an edit of a file in a known board's checkout that the guard cannot check. */
+export const unknownRecord = (file: string, why: string) =>
+  `changes::guard::unknown: the guard could not tell whether ${file} is a record of a board: ${why}. This edit ` +
+  'was refused, since a board record changes only through board commands; fix what failed and try again.'
+
+/** The advice for an agent with no brief, or whose brief names a change no board that mounts the file holds. */
 export function noBrief(file: string, at: Mount, named: string | null): string {
   const said =
     named === null
-      ? "this agent's first message does not"
-      : `this agent's first message names ${named}, which the board at ${at.board} does not hold`
+      ? 'this agent did not start from the brief of a change'
+      : `this agent's brief names ${named}, which the board at ${at.board} does not hold`
   return (
-    `changes::guard::no_brief: ${file} is in ${at.mount}, which the board at ${at.board} mounts. Only an agent ` +
-    'whose first message is the brief `changes.brief` prints, or starts with `board-brief: /changes/<name>`, may ' +
-    `edit it, and ${said}. Start a builder ` +
-    `whose first message is the output of \`board -C ${at.board} call changes.brief --path /changes/<name>\`.`
+    `changes::guard::no_brief: this edit of ${file} ran. ${file} is in ${at.mount}, which the board at ${at.board} ` +
+    `mounts, and ${said}. Work on a mounted repository lands through a change: ` +
+    `\`board -C ${at.board} changes start --mount ${at.mount} --title '<title>'\`, then build from ` +
+    `\`board -C ${at.board} call changes.brief --path /changes/<name>\`.`
   )
 }
 
@@ -236,9 +246,8 @@ export function noBrief(file: string, at: Mount, named: string | null): string {
 export const prototypeBranch = (name: string) => `proto/${name.replace(/\/+$/, '').split('/').pop()}`
 
 /**
- * The refusal for a change, or null when its builder may edit `file`, which
- * is checked out on `branch` ('' when detached). `prototype` says whether a
- * prototype record sits at `<name>/prototype`.
+ * The advice for a change, or null when its builder edits `file` as the change expects. `file` is checked out on
+ * `branch` ('' when detached). `prototype` says whether a prototype record sits at `<name>/prototype`.
  */
 export function judge(
   file: string,
@@ -250,29 +259,30 @@ export function judge(
 ): string | null {
   if (change.phase === 'paused') {
     return (
-      `changes::guard::not_building: ${name} is paused, and its builder may edit ${file} only in build. ` +
-      `Run \`board -C ${at.board} call changes.resume --path ${name}\` when the cap allows.`
+      `changes::guard::not_building: this edit of ${file} ran. ${name} is paused, and a change takes edits in ` +
+      `build. Run \`board -C ${at.board} call changes.resume --path ${name}\` when the cap allows.`
     )
   }
   if (change.phase !== 'build') {
     return (
-      `changes::guard::not_building: ${name} is in phase ${change.phase}, and its builder may edit ${file} only ` +
-      `in build. Run \`board -C ${at.board} call changes.advance --path ${name}\` once its plan gate passes.`
+      `changes::guard::not_building: this edit of ${file} ran. ${name} is in phase ${change.phase}, and a change ` +
+      `takes edits in build. Run \`board -C ${at.board} call changes.advance --path ${name}\` once its plan gate passes.`
     )
   }
   if (change.mount !== at.mount) {
     return (
-      `changes::guard::wrong_mount: ${name} is a change to ${change.mount}, and ${file} is in ${at.mount}. ` +
-      `Start a builder from the brief of a change to ${at.mount}.`
+      `changes::guard::wrong_mount: this edit of ${file} ran. ${name} is a change to ${change.mount}, and ${file} ` +
+      `is in ${at.mount}. Work on ${at.mount} lands through a change to it: ` +
+      `\`board -C ${at.board} changes start --mount ${at.mount} --title '<title>'\`.`
     )
   }
   const only = prototypeBranch(name)
   if (prototype && branch !== only) {
     const on = branch === '' ? 'a detached HEAD' : `branch ${branch}`
     return (
-      `changes::guard::wrong_branch: ${name} is a prototype, and its builder may edit ${file} only on branch ` +
-      `${only}, but the file's checkout is on ${on}. Run \`git switch -c ${only}\` there, or \`git switch ${only}\` ` +
-      'once it exists.'
+      `changes::guard::wrong_branch: this edit of ${file} ran. ${name} is a prototype, which edits ${file} on ` +
+      `branch ${only}, and the file's checkout is on ${on}. Run \`git switch -c ${only}\` there, or ` +
+      `\`git switch ${only}\` once it exists.`
     )
   }
   return null

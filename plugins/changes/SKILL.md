@@ -27,12 +27,17 @@ blocks is missing.
    When `ask` is set, only the owner or a reviewer can pass the checks
    left: put `ask` to them. Stop where the change's `stop` says, or the
    flow's when it has none, unless told otherwise; once `next` returns
-   `stop` with `reached` true, `advance` refuses. With the `board-changes` mod installed, only a builder started
-   from `changes.brief` can Edit, Write or NotebookEdit the repository; it
-   cannot see writes made through Bash. The builder's first message is the
-   brief as `changes.brief` prints it, or starts with its `brief_line`. Put
-   the brief in as plain text, not inside a code fence, which the guard does
-   not read. The brief's `rules_left_out` gives each rule it left out a
+   `stop` with `reached` true, `advance` refuses. With the `board-changes`
+   mod installed, an Edit, Write or NotebookEdit of the repository by an
+   agent not started from `changes.brief` runs with a line of advice; it
+   cannot see writes made through Bash. Start a builder with a prompt
+   whose first line is the brief's `brief_line`, followed by the whole
+   brief as `changes.brief` prints it now, as plain text, not inside a code
+   fence. The mod advises an Agent call that breaks either rule with
+   `changes::brief::no_line` or `changes::brief::not_rendered`, in the
+   builder's prompt and in your result; fix the prompt for the next
+   builder. A UI change's brief lists its `mockups`, and warns
+   `changes::ux::not_agreed` while one lacks the owner's decision. The brief's `rules_left_out` gives each rule it left out a
    `reason`: the rule had no room, or it is a version rule whose capture
    finds no version in the planned files. A missing or unreadable planned
    file keeps a version rule. A rule with no room still applies, so read
@@ -63,16 +68,28 @@ blocks is missing.
    repository file where the table lands) and `external` to
    `board -C <board> changes lifecycle`. The builder's brief names its text.
    Set the commit under test with `--head <sha>` after each push, and the
-   check suite with `--suite <path>` when the change names none. Record a
-   GitHub issue or pull request with
+   check suite with `--suite <path>` when the change names none.
+   `board github pr-create --change /changes/<name>`, run from the checkout
+   as the github skill says, opens the pull request and attaches it. When
+   its output has `change_note`, run the command the note gives. Record
+   any other GitHub issue or pull request with
    `board -C <board> github ref --ref <owner>/<repo>#<number>`, then
    attach the path it returns with `--ticket <path>` or `--pull <path>`.
    An owner check (`owner-approval`, `data-signed`, `rechecks`, `mockups`
    and a waiver) counts an attached `plans/decision/v1` only when its
    `by.person` names a person and its `written_by` is empty. A decision the
-   plan lists only in `uses` passes no check. When you record the owner's
-   approval from chat, write the decision as the plans skill says, with
-   `by.person` and the owner's words in `why`.
+   plan lists only in `uses` passes no check. An owner check that counts
+   such decisions with refs naming the plan or the change, such as
+   `owner-approval` or `owner-confirms`, also counts the owner's
+   `plans/answer/v1` from /ask, with the same `by.person` and `written_by`
+   rule, when the option the owner chose names the change's path, such as
+   `/changes/<name>`, in its text. When you ask for approval with /ask, put
+   the change's path in the text of the option that approves it and in no
+   other option, because any chosen option that names the path counts.
+   Attach the question and the answer, each with
+   `board changes attach --path /changes/<name> --ref <path>`. When you
+   record the owner's approval from chat, write the decision as the plans
+   skill says, with `by.person` and the owner's words in `why`.
 4. Run `board -C <board> changes advance --path /changes/<name>`
    when every check passes. To send a change back to build for a fix
    round, such as after a review asks for fixes, run
@@ -241,13 +258,14 @@ to replace the flow copies changes kept before versions.
 - `changes::change::exists`: pass another `--name`, or resume the
   change with `next`.
 - `changes::mount::not_found`: run `board ls /repos` to find the mount.
-- `changes::guard::no_brief`: this agent did not start from a brief. Hand
-  the edit to a builder started from `changes.brief`.
-- `changes::guard::not_building`: `advance` the change to `build`.
+- `changes::guard::no_brief`: advice, the edit ran. Start a change and
+  build from `changes.brief`.
+- `changes::guard::not_building`: advice; `advance` the change to `build`.
 - `changes::guard::wrong_mount`: the brief's change is for another
   repository.
 - `changes::guard::wrong_branch`: a prototype's builder edits only on
   `proto/<name>`; switch to it.
-- `changes::guard::unknown`: the guard could not check; fix what it names.
+- `changes::guard::unknown`: the guard could not check. It refuses in a known
+  board's checkout and advises elsewhere. Fix what it names.
 - `changes::phase::final`: the change is done or dropped. Run `open`, or
   `start` a new change.

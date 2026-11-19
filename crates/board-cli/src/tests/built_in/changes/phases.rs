@@ -4,7 +4,7 @@
 use super::*;
 
 const CHANGE: &str = "/changes/t";
-const MOCKUP: &str = "https://claude.ai/artifact/m1";
+pub(super) const MOCKUP: &str = "https://claude.ai/artifact/m1";
 
 /// `{"path": CHANGE}` with `fields`.
 fn at(fields: &Value) -> Value {
@@ -123,7 +123,7 @@ fn advance_refuses_an_unmet_gate_naming_what_is_missing_and_moves_on_once_it_is_
         remedies[1]
             .as_str()
             .unwrap()
-            .starts_with("Only the owner can provide this"),
+            .starts_with("Ask the owner with /ask, with /changes/t in the text"),
         "{remedies:?}"
     );
     board.change_at(
@@ -687,7 +687,7 @@ fn a_change_with_no_task_blocks_the_plan_gate_and_attaching_one_clears_it() {
 }
 
 /// The fixture plan with these UX and Data sections.
-fn ux_plan(ux: &str, data: &str) -> String {
+pub(super) fn ux_plan(ux: &str, data: &str) -> String {
     let before = PLAN.split("## UX").next().unwrap();
     let (_, after) = PLAN.split_once("## Failure paths").unwrap();
     format!("{before}## UX\n\n{ux}\n\n## Data\n\n{data}\n\n## Failure paths{after}")
@@ -695,7 +695,7 @@ fn ux_plan(ux: &str, data: &str) -> String {
 
 /// An owner-routed change in plan whose plan file holds `plan` and whose
 /// plan answers `ux` and `data` with these words.
-fn planned_change(board: &Changes, plan: &str, ux: &str, data: &str) {
+pub(super) fn planned_change(board: &Changes, plan: &str, ux: &str, data: &str) {
     board.change_at(
         "changes/t.json",
         "plan",
@@ -709,7 +709,7 @@ fn planned_change(board: &Changes, plan: &str, ux: &str, data: &str) {
 
 /// A decision of the owner's, whose `by` names a person, with these refs,
 /// urls or other fields.
-fn decision(fields: &Value) -> String {
+pub(super) fn decision(fields: &Value) -> String {
     let body = json!({
         "$type": "plans/decision/v1",
         "decision": "Agreed.",

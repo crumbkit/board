@@ -26,7 +26,7 @@ use crate::sweep::{answered, words};
 #[schemars(rename = "AskInput")]
 pub(crate) struct Input {
     /// The project the question concerns, such as `board`; the question is
-    /// filed under /projects/<project>/questions/.
+    /// filed under `/projects/<project>/questions/`.
     #[schemars(regex(pattern = r"^[a-z0-9][a-z0-9._-]*$"))]
     project: String,
     /// The question as a `plans/question/v1` holds it, with `question` and
@@ -73,9 +73,9 @@ pub(crate) fn ask(host: &dyn Host, input: &Value) -> Result<Value, PluginError> 
     let key = (folder.clone(), words(text));
     let asker = question.get("by").cloned().unwrap_or(Value::Null);
     let (open, _) = waiting(host, &folder)?;
-    let same = (open.iter())
-        .filter(|each| each.project == folder && words(&each.question) == key.1)
-        .min_by(|a, b| (&a.asked_at, &a.path).cmp(&(&b.asked_at, &b.path)));
+    // `waiting` lists a project's questions critical first, then oldest
+    // first, so the first match is the one the owner reads first.
+    let same = (open.iter()).find(|each| each.project == folder && words(&each.question) == key.1);
     let output = if let Some(same) = same {
         merge(host, same, &asker)?
     } else if let Some((earlier, answer)) = answered(host)?.remove(&key) {
@@ -113,13 +113,13 @@ fn merge(
         same.session == session || same.also_asked.iter().any(|other| other == session)
     });
     if !known {
-        let mut asked = question::read(host, "ask", &same.path)?;
-        asked.still_open("ask", &same.path)?;
-        let also = asked.fields.entry("also_by").or_insert_with(|| json!([]));
+        let mut stored = question::read(host, "ask", &same.path)?;
+        stored.still_open("ask", &same.path)?;
+        let also = stored.fields.entry("also_by").or_insert_with(|| json!([]));
         if let Value::Array(also) = also {
             also.push(asker.clone());
         }
-        let line = json!({"path": same.path, "expect": asked.blob, "record": asked.fields});
+        let line = json!({"path": same.path, "expect": stored.blob, "record": stored.fields});
         (host.put(&[line])).map_err(|error| {
             PluginError::board_refused("plans", "put --batch", &error.refusal())
         })?;

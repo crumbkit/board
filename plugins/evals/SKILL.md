@@ -58,7 +58,9 @@ of the repository you are in before you test.
    board. It reads that board through the mount at the mount's `commit`, so
    it misses evals the repository added after that commit. To see them, run
    `git -C <path> fetch`, then `board mount update /repos/<name>`, which
-   moves `commit` to the fetched `origin/main`. Evals not yet on
+   moves `commit` to the fetched `origin/main`. After `board github merge`
+   of the repository's pull request, the mount is already at the merged
+   commit, so skip both. Evals not yet on
    `origin/main`, such as ones on your branch, are not seen this way.
 
    Ask the personal board and any board the owner named for sharing.

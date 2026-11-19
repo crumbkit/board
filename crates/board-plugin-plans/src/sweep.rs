@@ -3,12 +3,15 @@
 //! stays, withdrawn.
 //!
 //! A question is dead when the change or task it blocks is done or dropped,
-//! or when the session that asked it is archived. Board knows nothing of
+//! or when the session that asked it and every session in its `also_by` are
+//! archived. Board knows nothing of
 //! sessions, so the caller names the archived ones. Of the questions left, a
-//! question is a repeat when an older open question in its project asks the
-//! same words, and answered when a question in its project that an answer
-//! names asks the same words. Words match after lower-casing and keeping
-//! only letters and digits (decision /projects/board/decisions/20261119T0039Z-a1de).
+//! question is answered when a question in its project that an answer names
+//! asks the same words. Words match after lower-casing and keeping only
+//! letters and digits (decision /projects/board/decisions/20261119T0039Z-a1de).
+//! The sweep leaves open a question that repeats another open question,
+//! because `plans.ask` merges repeats when they are filed
+//! (decision /projects/board/decisions/20261119T1000Z-c4d9).
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -75,13 +78,13 @@ pub(crate) struct Output {
 #[serde(deny_unknown_fields)]
 struct Withdrawn {
     path: String,
-    /// `done`, `dropped`, `archived`, `repeat` or `answered`.
+    /// `done`, `dropped`, `archived` or `answered`.
     kind: &'static str,
     reason: String,
 }
 
-/// Each kind of withdrawal, in the order the output counts them.
-const KINDS: [&str; 5] = ["done", "dropped", "archived", "repeat", "answered"];
+/// Each kind of withdrawal, so that `counts` names every kind, even at 0.
+const KINDS: [&str; 4] = ["done", "dropped", "archived", "answered"];
 
 pub(crate) fn sweep(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
     let Input {
@@ -116,13 +119,17 @@ pub(crate) fn sweep(host: &dyn Host, input: &Value) -> Result<Value, PluginError
 /// open. A put batch may not cross a mount, so the questions of each board,
 /// named by the mount prefix of their paths, go in a batch of their own. A
 /// board's batch is one commit or none; when a later board's batch is
-/// refused, the boards before it keep their withdrawals, and the refusal
-/// lists them in `written`.
+/// refused, the boards before it keep their withdrawals, the refusal lists
+/// them in `written`, and its hint says to sweep again.
 fn write(host: &dyn Host, found: &[Withdrawn]) -> Result<(), PluginError> {
     let mut boards: BTreeMap<String, Vec<Value>> = BTreeMap::new();
     for each in found {
         let mut asked = question::read(host, "sweep", &each.path)?;
-        asked.still_open("sweep", &each.path)?;
+        (asked.still_open("sweep", &each.path)).map_err(|mut error| {
+            error.hint =
+                Some("run `board plans sweep` again; it reads each question afresh".to_owned());
+            error
+        })?;
         let prefix = (each.path.strip_suffix(asked.own.as_str())).unwrap_or_default();
         asked.fields.insert("status".to_owned(), json!("withdrawn"));
         (asked.fields).insert("withdrawn_reason".to_owned(), json!(each.reason));
@@ -130,14 +137,17 @@ fn write(host: &dyn Host, found: &[Withdrawn]) -> Result<(), PluginError> {
         boards.entry(prefix.to_owned()).or_default().push(line);
     }
     let mut written: Vec<String> = Vec::new();
+    let refused = |refusal: &board_model::Refusal, written: &[String]| {
+        let mut error = PluginError::board_refused("plans", "put --batch --bulk", refusal);
+        (error.fields).insert("written".to_owned(), json!(written));
+        error.hint = (error.hint).map(|hint| {
+            format!("{hint}, then run `board plans sweep` again to withdraw the questions left")
+        });
+        error
+    };
+    let bulk = Bulk::new(BULK).map_err(|error| refused(&error.refusal(), &written))?;
     for (board, lines) in boards {
-        let refused = |refusal: &board_model::Refusal| {
-            let mut error = PluginError::board_refused("plans", "put --batch --bulk", refusal);
-            (error.fields).insert("written".to_owned(), json!(written));
-            error
-        };
-        let bulk = Bulk::new(BULK).map_err(|error| refused(&error.refusal()))?;
-        (host.put_bulk(&lines, &bulk)).map_err(|error| refused(&error.refusal()))?;
+        (host.put_bulk(&lines, &bulk)).map_err(|error| refused(&error.refusal(), &written))?;
         written.push(if board.is_empty() {
             "/".to_owned()
         } else {
@@ -147,15 +157,11 @@ fn write(host: &dyn Host, found: &[Withdrawn]) -> Result<(), PluginError> {
     Ok(())
 }
 
-/// The questions to withdraw among `open`, which comes in digest order, so
-/// that within a project the older of two repeats comes first unless the
-/// later one is critical.
+/// The questions to withdraw among `open`, sorted by path.
 fn find(open: &[Waiting], archived: &BTreeSet<String>, answered: &Answered) -> Vec<Withdrawn> {
     let mut found = Vec::new();
-    let mut standing: BTreeMap<(String, String), &str> = BTreeMap::new();
-    let mut live = Vec::new();
     for question in open {
-        let dead = match (&question.ended, &question.blocks) {
+        let reason = match (&question.ended, &question.blocks) {
             (Some(ended), Some(blocks)) => Some((
                 if ended == "done" { "done" } else { "dropped" },
                 format!("the work it blocks, {blocks}, is {ended}."),
@@ -168,25 +174,16 @@ fn find(open: &[Waiting], archived: &BTreeSet<String>, answered: &Answered) -> V
             {
                 Some(("archived", askers_archived(question)))
             }
-            _ => None,
+            _ => {
+                let key = (question.project.clone(), words(&question.question));
+                answered.get(&key).map(|(earlier, answer)| {
+                    let why = format!("{earlier} asked the same and was answered at {answer}.");
+                    ("answered", why)
+                })
+            }
         };
-        match dead {
-            Some((kind, why)) => found.push(withdrawn(question, kind, &why)),
-            None => live.push(question),
-        }
-    }
-    let mut oldest_first = live;
-    oldest_first.sort_by(|a, b| (&a.asked_at, &a.path).cmp(&(&b.asked_at, &b.path)));
-    for question in oldest_first {
-        let key = (question.project.clone(), words(&question.question));
-        if let Some((earlier, answer)) = answered.get(&key) {
-            let why = format!("{earlier} asked the same and was answered at {answer}.");
-            found.push(withdrawn(question, "answered", &why));
-        } else if let Some(first) = standing.get(&key) {
-            let why = format!("it repeats {first}, which stays open.");
-            found.push(withdrawn(question, "repeat", &why));
-        } else {
-            standing.insert(key, &question.path);
+        if let Some((kind, why)) = reason {
+            found.push(withdrawn(question, kind, &why));
         }
     }
     found.sort_by(|a, b| a.path.cmp(&b.path));
@@ -231,8 +228,8 @@ pub(crate) fn words(text: &str) -> String {
 pub(crate) type Answered = BTreeMap<(String, String), (String, String)>;
 
 /// Each question an answer names, by its project and words, with the
-/// question's path and the answer's. The oldest question of a project's
-/// words is kept.
+/// question's path and the answer's. Of the questions a project asks with
+/// the same words, the one first by logical path is kept.
 pub(crate) fn answered(host: &dyn Host) -> Result<Answered, PluginError> {
     let report = (host.query(&answered_sql(), Limit::ALL))
         .map_err(|error| PluginError::board_refused("plans", "query", &error.refusal()))?;

@@ -9,7 +9,7 @@ ported in #48 with its output, messages and codes unchanged then.
 
 A built-in plugin reads and writes the board through `Host` and nothing
 else: `query`, `refs`, `get_each`, `put`, `call`, `board`, `decide`,
-`settings`, `caller_remote` and `run` (docs/plugins/built-in.md). It
+`decided` (reads the owner's signed answer and files nothing), `settings`, `caller_remote` and `run` (docs/plugins/built-in.md). It
 writes records only with `put`, which takes the lines that
 `board put --batch` reads, and maps its error with
 `PluginError::board_refused(<name>, "put --batch", &error.refusal())`; a
