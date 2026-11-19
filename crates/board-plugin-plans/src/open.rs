@@ -106,25 +106,28 @@ pub(crate) struct Output {
 #[serde(deny_unknown_fields)]
 #[schemars(rename = "OpenQuestion")]
 pub(crate) struct Waiting {
-    path: String,
-    question: String,
+    pub(crate) path: String,
+    pub(crate) question: String,
     #[schemars(extend("format" = "date-time"))]
     asked: String,
-    session: String,
+    pub(crate) session: String,
     options: Vec<Choice>,
     recommendation: Option<String>,
     why: Option<String>,
-    blocks: Option<String>,
+    pub(crate) blocks: Option<String>,
     blocked_work: Option<String>,
     note: Option<String>,
     mount: Option<String>,
     context_path: Option<String>,
     /// The folder that holds the question's `questions/` folder, such as
     /// `/projects/board`; the question's own folder when it is not in one.
-    project: String,
+    pub(crate) project: String,
     /// True when `blocks` names a change that is not done or dropped, or a
     /// task that is open.
     pub(crate) critical: bool,
+    /// `done` or `dropped` when the work `blocks` names has ended.
+    #[serde(skip)]
+    pub(crate) ended: Option<String>,
 }
 
 /// Options are read as objects because serde reads a struct from a list too.
@@ -175,7 +178,7 @@ pub(crate) fn waiting(host: &dyn Host, path: &str) -> Result<(Vec<Waiting>, usiz
         }
         let tree = code.is_null() || TREE_CODES.iter().any(|tree| code == *tree);
         match tree
-            .then(|| readable(logical, body, work == "active"))
+            .then(|| readable(logical, body, work.as_str()))
             .flatten()
         {
             Some(read) => found.push(read),
@@ -212,7 +215,7 @@ fn digest(mut found: Vec<(Instant, Waiting)>) -> Vec<Waiting> {
 /// The folder above the `questions/` folder that holds `path`, or the
 /// question's own folder when no `questions/` folder holds it. The root is
 /// `/`.
-fn project_of(path: &str) -> String {
+pub(crate) fn project_of(path: &str) -> String {
     let folder = match path.rsplit_once("/questions/") {
         Some((project, id)) if !id.contains('/') => project,
         _ => path.rsplit_once('/').map_or("", |(folder, _)| folder),
@@ -221,7 +224,7 @@ fn project_of(path: &str) -> String {
 }
 
 /// `None` when `body` lacks the shape `open` returns, as a mounted board's may.
-fn readable(path: &str, body: &Value, critical: bool) -> Option<(Instant, Waiting)> {
+fn readable(path: &str, body: &Value, work: Option<&str>) -> Option<(Instant, Waiting)> {
     let record = parse_json(body.as_str()?.as_bytes())
         .ok()
         .filter(Value::is_object)?;
@@ -242,7 +245,10 @@ fn readable(path: &str, body: &Value, critical: bool) -> Option<(Instant, Waitin
         mount: asked.mount,
         context_path: asked.context_path,
         project: project_of(path),
-        critical,
+        critical: work == Some("active"),
+        ended: work
+            .filter(|work| ["done", "dropped"].contains(work))
+            .map(str::to_owned),
     };
     Some((when, question))
 }

@@ -78,7 +78,10 @@ in. `<project>` names what the record concerns, such as the repository
    It writes the `plans/answer/v1` at `/projects/<project>/answers/<id>`,
    with the question's id. `--option none` with `--words` records an answer
    that chooses no option.
-4. Withdraw a question that no longer matters:
+4. Withdraw the questions whose work ended, whose session is archived, or
+   whose words a question answered in the same project already asked, with `board -C <board> plans sweep --archived <local_ id>
+   --apply true`; leave out `--apply` to see the list first.
+5. Withdraw a question that no longer matters:
 
        board -C <board> plans withdraw --path /projects/<project>/questions/<id> --reason '<why>'
 

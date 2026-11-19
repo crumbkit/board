@@ -15,13 +15,16 @@ use crate::Plans;
 /// A host that answers every query with `rows` and records what it was
 /// asked, or answers with `failing`'s refusal of a query that names no
 /// table. With `board`, it queries that board and puts there instead, after
-/// running `between`. It records each put's lines either way.
+/// running `between`, and runs `before_read` before the first query that
+/// reads one question by `question::question_sql`. It records each put's
+/// lines either way.
 pub(crate) struct Answering {
     rows: Vec<Vec<Value>>,
     pub(crate) asked: RefCell<Vec<(String, Limit)>>,
     failing: Option<Board>,
     pub(crate) board: Option<Board>,
     pub(crate) between: RefCell<Option<Box<dyn FnOnce()>>>,
+    pub(crate) before_read: RefCell<Option<Box<dyn FnOnce()>>>,
     pub(crate) puts: RefCell<Vec<Vec<Value>>>,
     pub(crate) settings: Settings,
 }
@@ -33,6 +36,11 @@ impl Host for Answering {
             board.query("SELECT logical FROM nowhere", 1, None, None)?;
         }
         if let Some(board) = &self.board {
+            if sql.starts_with("SELECT 'question' AS kind")
+                && let Some(before_read) = self.before_read.take()
+            {
+                before_read();
+            }
             return board.query(sql, usize::MAX, None, None);
         }
         Ok(QueryReport {
@@ -133,6 +141,7 @@ pub(crate) fn host(rows: Vec<Vec<Value>>) -> Answering {
         failing: None,
         board: None,
         between: RefCell::default(),
+        before_read: RefCell::default(),
         puts: RefCell::default(),
         settings: Settings {
             now: std::time::SystemTime::UNIX_EPOCH,
@@ -614,7 +623,7 @@ fn busy_board() -> (Scenario, Board) {
 }
 
 /// The answer record that names `question`.
-fn answer_naming(question: &str) -> Value {
+pub(crate) fn answer_naming(question: &str) -> Value {
     Value::String(
         json!({
             "$type": "plans/answer/v1",
@@ -629,11 +638,17 @@ fn answer_naming(question: &str) -> Value {
 /// A plans board holding `root`, and a board mounted at `/vendor` that
 /// enables plans and holds `mounted`. The paths of `mounted` are its own, so
 /// `projects/a/questions/q` there is `/vendor/projects/a/questions/q` here.
-fn mounting_board(
+pub(crate) fn mounting_board(
     root: &[(&str, Value)],
     mounted: &[(&str, Value)],
 ) -> (Scenario, Scenario, Board) {
     let (scenario, _) = plans_board(&[]);
+    // The root board commits each put too, so a test can count its commits.
+    let config = scenario.workdir().join(".board/board.json");
+    let mut root_config: Value =
+        serde_json::from_str(&std::fs::read_to_string(&config).unwrap()).unwrap();
+    root_config.as_object_mut().unwrap().remove("commit_on_put");
+    (scenario.write(".board/board.json", Item::File(&root_config.to_string()))).identified();
     let schemas = scenario.workdir().join(".board/types/plans");
     let library = Scenario::new();
     let files: Vec<(String, String)> = (mounted.iter())
@@ -654,6 +669,14 @@ fn mounting_board(
         .collect();
     files.extend(schema_files.iter().map(|(p, t)| (p.as_str(), t.as_str())));
     let pinned = library.commit(&files);
+    // A write through the mount needs the library's working tree to hold
+    // what it commits (docs/architecture/writes.md). It also needs a git
+    // identity to commit as, because Board refuses a mounted board that sets
+    // `commit_on_put` to false, and CI has no global identity to fall back on.
+    for (path, text) in &files {
+        library.write(path, Item::File(text));
+    }
+    library.identified();
     let mount = json!({"$type": "board/mount/v1", "repo": library.path(), "follow": "main", "commit": pinned.to_string()});
     scenario.write("vendor.json", Item::File(&mount.to_string()));
     for (path, body) in root {
@@ -673,7 +696,7 @@ fn open_paths(board: &Board) -> Vec<String> {
     paths
 }
 
-const MOUNTED_QUESTION: &str = "projects/a/questions/q";
+pub(crate) const MOUNTED_QUESTION: &str = "projects/a/questions/q";
 
 /// An answer in a mounted board names a question there by its path in that
 /// board, which a reference in a mounted board is read from. The twin is the
@@ -930,7 +953,7 @@ fn a_questions_project_is_the_folder_above_its_questions_folder() {
 }
 
 /// A change record in `phase`, as the changes plugin writes one.
-fn change(phase: &str) -> Value {
+pub(crate) fn change(phase: &str) -> Value {
     Value::String(
         json!({"$type": "changes/change/v2", "title": "Work", "phase": phase}).to_string(),
     )

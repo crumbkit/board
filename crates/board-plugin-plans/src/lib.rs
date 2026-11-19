@@ -5,6 +5,7 @@ mod migrate;
 mod open;
 mod question;
 pub mod records;
+mod sweep;
 mod waiting;
 mod withdraw;
 
@@ -50,10 +51,11 @@ impl Plugin for Plans {
             "withdraw" => withdraw::withdraw(host, &input),
             "migrate" => migrate::migrate(host, &input),
             "waiting" => waiting::waiting(host, &input),
+            "sweep" => sweep::sweep(host, &input),
             other => Err(PluginError {
                 code: "plans::call::unknown_capability".to_owned(),
                 message: format!(
-                    "plans offers no capability {other}; it offers open, answer, withdraw, migrate and waiting"
+                    "plans offers no capability {other}; it offers open, answer, withdraw, migrate, waiting and sweep"
                 ),
                 fields: Map::new(),
                 hint: None,
@@ -140,6 +142,21 @@ fn manifest() -> Value {
             "annotations": {
                 "readOnlyHint": true,
                 "destructiveHint": false,
+                "idempotentHint": true,
+                "openWorldHint": false,
+            },
+            "_meta": {},
+        }, {
+            "name": "sweep",
+            "description": "Withdraw, with a reason, each open question whose blocked change or task \
+                is done or dropped, whose asking session is archived, or whose words a question \
+                answered in its project already asked. apply writes each board's withdrawals in one \
+                commit with a Board-Bulk trailer; without it nothing is written.",
+            "inputSchema": schema_of::<sweep::Input>(SchemaSettings::draft2020_12()),
+            "outputSchema": schema_of::<sweep::Output>(SchemaSettings::draft2020_12().for_serialize()),
+            "annotations": {
+                "readOnlyHint": false,
+                "destructiveHint": true,
                 "idempotentHint": true,
                 "openWorldHint": false,
             },
