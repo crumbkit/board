@@ -157,7 +157,12 @@ fn a_difference_fails_the_review_and_the_detail_lists_each_element() {
 fn a_match_that_lists_a_difference_does_not_pass() {
     let listed = json!([{"element": "title", "kind": "missing", "expected": "Flows"}]);
     let found = at_review(vec![("/c/1", conformance(&json!({"differences": listed})))]);
-    assert_eq!(found.statuses()["design-conformance"], "missing");
+    assert_eq!(
+        found.code("design-conformance"),
+        "changes::ux::not_conformed"
+    );
+    let clean = at_review(vec![("/c/1", conformance(&json!({"differences": []})))]);
+    assert_eq!(clean.statuses()["design-conformance"], "pass");
 }
 
 #[test]
@@ -168,8 +173,36 @@ fn a_record_of_another_version_or_another_head_does_not_count() {
         json!({"head": "b".repeat(40)}),
     ] {
         let found = at_review(vec![("/c/1", conformance(&other))]);
-        assert_eq!(found.statuses()["design-conformance"], "missing", "{other}");
+        assert_eq!(
+            found.code("design-conformance"),
+            "changes::ux::not_conformed",
+            "{other}"
+        );
     }
+    let same = at_review(vec![("/c/1", conformance(&json!({})))]);
+    assert_eq!(same.statuses()["design-conformance"], "pass");
+}
+
+#[test]
+fn timestamps_with_a_fraction_order_by_their_instant() {
+    let listed = json!([{"element": "title", "kind": "missing", "expected": "Flows"}]);
+    let differs =
+        json!({"verdict": "differs", "differences": listed, "at": "2026-11-19T10:00:00Z"});
+    let later = json!({"at": "2026-11-19T10:00:00.5Z"});
+    let found = at_review(vec![
+        ("/c/1", conformance(&differs)),
+        ("/c/2", conformance(&later)),
+    ]);
+    assert_eq!(found.statuses()["design-conformance"], "pass");
+    let earlier = json!({"at": "2026-11-19T09:59:59.9Z"});
+    let found = at_review(vec![
+        ("/c/1", conformance(&differs)),
+        ("/c/2", conformance(&earlier)),
+    ]);
+    assert_eq!(
+        found.code("design-conformance"),
+        "changes::ux::not_conformed"
+    );
 }
 
 #[test]
@@ -284,6 +317,15 @@ fn an_answer_to_another_question_clears_nothing() {
         found.code("design-conformance"),
         "changes::ux::not_conformed"
     );
+    let own = (
+        "/q/1/answer",
+        (
+            "plans/answer/v1",
+            json!({"question": "/q/1", "words": "Fine.", "by": {"person": PERSON}}),
+        ),
+    );
+    let cleared = at_review(vec![("/c/1", conformance(&unbuilt())), own]);
+    assert_eq!(cleared.statuses()["design-conformance"], "pass");
 }
 
 #[test]

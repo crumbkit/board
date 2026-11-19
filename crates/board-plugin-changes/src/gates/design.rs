@@ -190,6 +190,15 @@ fn cleared(observed: &Observed, each: &Map<String, Value>) -> bool {
     })
 }
 
+/// A sortable form of a UTC timestamp ending in `Z`: the whole seconds, then
+/// the fraction with its trailing zeros dropped, so `10:00:00.5Z` sorts after
+/// `10:00:00Z`. A record with no timestamp sorts first.
+fn instant(at: Option<&str>) -> (String, String) {
+    let at = at.unwrap_or_default().trim_end_matches('Z');
+    let (whole, fraction) = at.split_once('.').unwrap_or((at, ""));
+    (whole.to_owned(), fraction.trim_end_matches('0').to_owned())
+}
+
 /// The record that decides a mockup version: the newest at the head, by
 /// its `at`, and by its path when two share one.
 fn latest<'a>(
@@ -207,7 +216,7 @@ fn latest<'a>(
                 && text(body, "mockup").as_deref() == Some(mockup)
                 && text(body, "version").as_deref() == Some(version)
         })
-        .max_by_key(|(path, body)| (text(body, "at"), *path))
+        .max_by_key(|(path, body)| (instant(text(body, "at").as_deref()), *path))
         .map(|(_, body)| body)
 }
 
