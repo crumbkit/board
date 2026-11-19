@@ -654,10 +654,13 @@ pub(crate) fn mounting_board(
     files.extend(schema_files.iter().map(|(p, t)| (p.as_str(), t.as_str())));
     let pinned = library.commit(&files);
     // A write through the mount needs the library's working tree to hold
-    // what it commits (docs/architecture/writes.md).
+    // what it commits (docs/architecture/writes.md). It also needs a git
+    // identity to commit as, because Board refuses a mounted board that sets
+    // `commit_on_put` to false, and CI has no global identity to fall back on.
     for (path, text) in &files {
         library.write(path, Item::File(text));
     }
+    library.identified();
     let mount = json!({"$type": "board/mount/v1", "repo": library.path(), "follow": "main", "commit": pinned.to_string()});
     scenario.write("vendor.json", Item::File(&mount.to_string()));
     for (path, body) in root {
