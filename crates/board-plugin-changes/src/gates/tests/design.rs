@@ -290,13 +290,13 @@ fn an_answer_to_another_question_clears_nothing() {
 fn a_waiver_the_owner_signed_passes_the_conformance_check() {
     let unwaived = at_review(vec![("/c/1", conformance(&unbuilt()))]);
     assert_eq!(unwaived.statuses()["design-conformance"], "missing");
-    let waiver = (
+    let decision = (
         "/d/waive",
         (
             "plans/decision/v1",
             json!({"decision": "Waived.", "refs": ["/changes/t#design-conformance"], "by": {"person": PERSON}}),
         ),
     );
-    let waived = at_review(vec![("/c/1", conformance(&unbuilt())), waiver]);
+    let waived = at_review(vec![("/c/1", conformance(&unbuilt())), decision]);
     assert_eq!(waived.statuses()["design-conformance"], "pass");
 }
