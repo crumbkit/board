@@ -727,7 +727,9 @@ fn advance_refuses_a_mockup_the_owner_has_not_agreed_and_moves_on_once_a_decisio
     planned_change(
         &board,
         &ux_plan(
-            &format!("### Mockups\n\n- {MOCKUP}\n\n### Neighbours\n\n- /changes/other\n"),
+            &format!(
+                "### Mockups\n\n- {MOCKUP}, version v1\n\n### Neighbours\n\n- /changes/other\n"
+            ),
             "None.",
         ),
         "mockups",
@@ -748,7 +750,7 @@ fn advance_refuses_mockups_with_no_neighbours_list_and_moves_on_once_one_is_writ
     board.write("decisions/ux.json", &decision(&json!({"urls": [MOCKUP]})));
     planned_change(
         &board,
-        &ux_plan(&format!("### Mockups\n\n- {MOCKUP}"), "None."),
+        &ux_plan(&format!("### Mockups\n\n- {MOCKUP}, version v1"), "None."),
         "mockups",
         "none",
     );
@@ -760,11 +762,74 @@ fn advance_refuses_mockups_with_no_neighbours_list_and_moves_on_once_one_is_writ
     board.write(
         "changes/t/plan.md",
         &ux_plan(
-            &format!("### Mockups\n\n- {MOCKUP}\n\n### Neighbours\n\n- /changes/other\n"),
+            &format!(
+                "### Mockups\n\n- {MOCKUP}, version v1\n\n### Neighbours\n\n- /changes/other\n"
+            ),
             "None.",
         ),
     );
     assert_eq!(advanced(&board), "build");
+}
+
+#[test]
+fn advance_refuses_a_mockup_with_no_version_and_moves_on_once_the_plan_names_one() {
+    let board = Changes::new();
+    board.write("decisions/ux.json", &decision(&json!({"urls": [MOCKUP]})));
+    let listed = |item: &str| {
+        ux_plan(
+            &format!("### Mockups\n\n- {item}\n\n### Neighbours\n\n- /changes/other\n"),
+            "None.",
+        )
+    };
+    planned_change(&board, &listed(MOCKUP), "mockups", "none");
+    board.call("attach", &at(&json!({"ref": "/decisions/ux"})));
+    assert_eq!(
+        board.refusal("advance", &path())["code"],
+        "changes::ux::no_version"
+    );
+    board.write(
+        "changes/t/plan.md",
+        &listed(&format!("{MOCKUP}, version v1")),
+    );
+    assert_eq!(advanced(&board), "build");
+}
+
+#[test]
+fn advance_refuses_a_review_with_no_conformance_record_and_moves_on_once_one_matches() {
+    let board = Changes::new();
+    let (base, head) = reviewing(&board, &[]);
+    let plan = ux_plan(
+        &format!("### Mockups\n\n- {MOCKUP}, version v1\n\n### Neighbours\n\n- /changes/other\n"),
+        "None.",
+    );
+    let stored = board.read("changes/t.json")["plan"]
+        .as_str()
+        .unwrap()
+        .trim_start_matches('/')
+        .to_owned();
+    let mut record = board.read(&format!("{stored}.json"));
+    board.write(
+        record["text"].as_str().unwrap().trim_start_matches('/'),
+        &plan,
+    );
+    record["answers"] = json!({"ux": "mockups", "data": "none", "lifecycle": "none"});
+    board.write(&format!("{stored}.json"), &record.to_string());
+    board.write("decisions/ux.json", &decision(&json!({"urls": [MOCKUP]})));
+    board.write("r/1.json", &approving(&head, &base));
+    board.call("attach", &at(&json!({"ref": "/decisions/ux"})));
+    board.call("attach", &at(&json!({"ref": "/r/1"})));
+    assert_eq!(
+        board.refusal("advance", &path())["code"],
+        "changes::ux::not_conformed"
+    );
+    let conformance = json!({
+        "$type": "changes/conformance/v1", "change": CHANGE, "mockup": MOCKUP,
+        "version": "v1", "head": board.read("changes/t.json")["head"], "page": "http://localhost:3000/",
+        "at": "2026-11-19T10:00:00Z", "verdict": "match", "differences": [],
+    });
+    board.write("changes/t/conformance/1.json", &conformance.to_string());
+    board.call("attach", &at(&json!({"ref": "/changes/t/conformance/1"})));
+    assert_eq!(advanced(&board), "land");
 }
 
 /// An understanding check of /changes/t's data, every question answered

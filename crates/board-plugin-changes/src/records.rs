@@ -8,8 +8,10 @@ use board_plugin::shape::{
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+mod conformance;
 mod understanding;
 
+pub(crate) use conformance::ConformanceRecord;
 pub(crate) use understanding::{Subject, UnderstandingRecord};
 
 /// The record types a change's `tickets` may reference; the jira and github

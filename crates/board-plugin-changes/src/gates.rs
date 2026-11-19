@@ -13,7 +13,7 @@ use serde_json::{Map, Value};
 
 use crate::change::Referenced;
 use crate::flow::{self, Actor, Field, Kind as CheckKind, Part, Scope};
-use crate::plan::answers::{Answers, Ux};
+use crate::plan::answers::Answers;
 use crate::records::{BUILD, ChangeRecord, Kind, Subject, TASK_TYPE};
 
 pub(crate) const RUN_TYPE: &str = "runs/run/v1";
@@ -31,14 +31,6 @@ fn pattern(text: &str) -> Regex {
     Regex::new(text).expect("each pattern is a constant; the gate tests compile it")
 }
 
-/// How a UX section says it lists no mockups, at its start, without case.
-static NO_UI: LazyLock<Regex> = LazyLock::new(|| pattern(r"(?i)^no ui change\b[\s.:,;-]*\w"));
-/// A mockup an item of the UX section's Mockups list names: its first URL,
-/// or else its first board path in inline code.
-static MOCKUP_URL: LazyLock<Regex> = LazyLock::new(|| pattern(r"https?://[^\s)>\]]+"));
-static MOCKUP_PATH: LazyLock<Regex> = LazyLock::new(|| pattern(r"`(/[^`\s]+)`"));
-static LIST_ITEM: LazyLock<Regex> =
-    LazyLock::new(|| pattern(r"(?m)^\s*(?:[-*+]|\d+[.)])\s+(\S.*)$"));
 pub(crate) static HEADING: LazyLock<Regex> = LazyLock::new(|| pattern(r"^#{1,6}\s+(.*?)\s*#*\s*$"));
 
 /// One check of a gate: `pass`, or `missing` with what is missing, who can
@@ -196,7 +188,9 @@ fn code_of(
     match each.kind.known() {
         Some(CheckKind::Mockups) => match each.part {
             Some(Part::Agreed) => "changes::ux::not_agreed",
-            None if ux_missing(observed, plan).is_some() => "changes::ux::not_agreed",
+            Some(Part::Versioned) => "changes::ux::no_version",
+            Some(Part::Built) => "changes::ux::not_conformed",
+            None if design::ux_missing(observed, plan).is_some() => "changes::ux::not_agreed",
             Some(Part::Neighbours) | None => "changes::ux::no_neighbours",
         },
         Some(CheckKind::Understood)
@@ -481,9 +475,11 @@ fn evaluate(
         CheckKind::Tasks => tasks_missing(observed),
         CheckKind::Understood => kinds::understood_missing(observed, each),
         CheckKind::Mockups => match each.part {
-            Some(Part::Agreed) => ux_missing(observed, plan),
-            Some(Part::Neighbours) => neighbours_missing(plan),
-            None => ux_missing(observed, plan).or_else(|| neighbours_missing(plan)),
+            Some(Part::Agreed) => design::ux_missing(observed, plan),
+            Some(Part::Neighbours) => design::neighbours_missing(plan),
+            Some(Part::Versioned) => design::versions_missing(plan),
+            Some(Part::Built) => design::built_missing(observed, plan),
+            None => design::ux_missing(observed, plan).or_else(|| design::neighbours_missing(plan)),
         },
         CheckKind::Considered => kinds::considered_missing(observed),
         CheckKind::Obligations => kinds::obligations_missing(observed),
@@ -548,45 +544,6 @@ fn verdict_missing(observed: &Observed) -> String {
     )
 }
 
-/// The list items under the `heading` subsection of the UX section, or
-/// none when UX holds no such heading.
-fn under_ux(found: &BTreeMap<String, String>, heading: &str) -> Vec<String> {
-    let named = pattern(&format!(r"(?im)^#{{1,6}}\s+{heading}\s*$"));
-    if !named.is_match(found.get("ux").map_or("", String::as_str)) {
-        return Vec::new();
-    }
-    let text = found.get(heading).map_or("", String::as_str);
-    (LIST_ITEM.captures_iter(text))
-        .filter_map(|captures| Some(captures.get(1)?.as_str().trim().to_owned()))
-        .collect()
-}
-
-/// The artifact a Mockups item names: its first URL, or else its first
-/// board path in inline code.
-fn named_in(item: &str) -> Option<String> {
-    if let Some(url) = MOCKUP_URL.find(item) {
-        return Some(
-            url.as_str()
-                .trim_end_matches(['.', ',', ';', ':'])
-                .to_owned(),
-        );
-    }
-    let path = MOCKUP_PATH.captures(item)?.get(1)?;
-    Some(path.as_str().to_owned())
-}
-
-pub(crate) fn mockups(found: &BTreeMap<String, String>) -> Vec<String> {
-    let mut named = Vec::new();
-    for item in under_ux(found, "mockups") {
-        if let Some(name) = named_in(&item)
-            && !named.contains(&name)
-        {
-            named.push(name);
-        }
-    }
-    named
-}
-
 /// The attached decisions the owner signed, by path.
 fn signed_decisions(observed: &Observed) -> impl Iterator<Item = (&str, &Map<String, Value>)> {
     (observed.records.of_type(DECISION_TYPE)).filter(|(_, body)| owner_signed(body))
@@ -618,60 +575,6 @@ fn strings<'a>(body: &'a Map<String, Value>, key: &str) -> impl Iterator<Item = 
         .into_iter()
         .flatten())
     .filter_map(Value::as_str)
-}
-
-fn named_by_decisions(observed: &Observed) -> BTreeSet<&str> {
-    (signed_decisions(observed))
-        .flat_map(|(_, body)| strings(body, "urls").chain(strings(body, "refs")))
-        .collect()
-}
-
-pub(crate) fn ux_missing(observed: &Observed, found: &BTreeMap<String, String>) -> Option<String> {
-    // A plan whose typed answer is mockups lists them, whatever its text says.
-    if observed.answers.ux != Some(Ux::Mockups)
-        && NO_UI.is_match(found.get("ux").map_or("", String::as_str))
-    {
-        return None;
-    }
-    let items = under_ux(found, "mockups");
-    if items.is_empty() {
-        return Some(if observed.answers.ux == Some(Ux::Mockups) {
-            "the plan answers `ux` mockups and its UX section lists none under a ### Mockups \
-             heading"
-        } else {
-            "the UX section neither starts with No UI change and a reason nor lists mockups under \
-             a ### Mockups heading"
-        }
-        .to_owned());
-    }
-    if let Some(unnamed) = items.iter().find(|item| named_in(item).is_none()) {
-        return Some(format!(
-            "this item of the Mockups list names no artifact by URL or board path: {unnamed}"
-        ));
-    }
-    let agreed = named_by_decisions(observed);
-    let unagreed: Vec<String> = (mockups(found).into_iter())
-        .filter(|mockup| !agreed.contains(mockup.as_str()))
-        .collect();
-    (!unagreed.is_empty()).then(|| {
-        format!(
-            "these mockups have no attached plans/decision/v1 that names them in its urls or \
-             refs: {}",
-            unagreed.join(", ")
-        )
-    })
-}
-
-fn neighbours_missing(found: &BTreeMap<String, String>) -> Option<String> {
-    if under_ux(found, "mockups").is_empty() || !under_ux(found, "neighbours").is_empty() {
-        return None;
-    }
-    Some(
-        "the UX section lists mockups but has no ### Neighbours heading under it with a list: \
-         name the open changes and artifacts in the same area, and the components and flows the \
-         design reuses"
-            .to_owned(),
-    )
 }
 
 fn route_missing(observed: &Observed) -> Option<String> {
@@ -793,6 +696,8 @@ fn reviewed_head(report: &Map<String, Value>) -> Option<Value> {
     Some(Value::from(head.trim_start_matches('.')))
 }
 
+pub(crate) mod design;
+pub(crate) use design::{mockups, ux_missing};
 pub(crate) mod kinds;
 pub(crate) mod remedy;
 

@@ -1,0 +1,127 @@
+{
+  "$defs": {
+    "Difference": {
+      "additionalProperties": false,
+      "description": "One element the built page lacks or shows differently from the design.",
+      "properties": {
+        "built": {
+          "description": "What the build shows, when it shows the element.",
+          "type": "string",
+          "x-board-prose": true
+        },
+        "element": {
+          "description": "The element, such as `flow graph` or `status badge`.",
+          "minLength": 1,
+          "type": "string",
+          "x-board-prose": true
+        },
+        "expected": {
+          "description": "What the version shows.",
+          "minLength": 1,
+          "type": "string",
+          "x-board-prose": true
+        },
+        "kind": {
+          "description": "Whether the build lacks the element or shows it differently.",
+          "enum": [
+            "missing",
+            "different"
+          ],
+          "type": "string"
+        },
+        "question": {
+          "description": "The `plans/question/v1` a builder filed because it could not build\nthe element. The difference stops blocking once the owner's\n`plans/answer/v1` to it is attached.",
+          "format": "board-ref",
+          "type": "string"
+        }
+      },
+      "required": [
+        "element",
+        "kind",
+        "expected"
+      ],
+      "title": "Difference",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "`changes/conformance/v1`: what a critic with a clean context found when\nit screenshotted the built page and compared it with one version of the\nartifact the owner agreed.\n\nIt lives at `/changes/<name>/conformance/<n>`. The review gate reads the\nnewest record at the change's head for each mockup version: it passes\nwhen the record says `match` and every difference it lists has an owner\nanswer, and otherwise shows each difference left.",
+  "properties": {
+    "$type": {
+      "const": "changes/conformance/v1",
+      "description": "The record's type.",
+      "type": "string"
+    },
+    "at": {
+      "description": "When the comparison was made, in UTC. The newest record at the head\ndecides the gate.",
+      "format": "date-time",
+      "pattern": "Z$",
+      "type": "string"
+    },
+    "change": {
+      "description": "The change whose build was compared.",
+      "format": "board-ref",
+      "type": "string",
+      "x-board-type": [
+        "changes/change/v1",
+        "changes/change/v2"
+      ]
+    },
+    "differences": {
+      "description": "Each element of the version the build lacks or shows differently.",
+      "items": {
+        "$ref": "#/$defs/Difference"
+      },
+      "type": "array"
+    },
+    "head": {
+      "description": "The commit the screenshot was taken at.",
+      "pattern": "^[0-9a-f]{7,40}$",
+      "type": "string"
+    },
+    "mockup": {
+      "description": "The mockup, as the plan's Mockups list names it: a URL or a board\npath.",
+      "minLength": 1,
+      "type": "string",
+      "x-board-prose": true
+    },
+    "page": {
+      "description": "What was screenshotted: the URL or file of the built page.",
+      "minLength": 1,
+      "type": "string",
+      "x-board-prose": true
+    },
+    "screenshot": {
+      "description": "Where the screenshot is saved, when it is kept.",
+      "type": "string",
+      "x-board-prose": true
+    },
+    "verdict": {
+      "description": "Whether the build matches the version: `match` only when\n`differences` is empty.",
+      "enum": [
+        "match",
+        "differs"
+      ],
+      "type": "string"
+    },
+    "version": {
+      "description": "The version of the mockup the build was compared with.",
+      "pattern": "^\\S+( \\S+){0,24}$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "$type",
+    "change",
+    "mockup",
+    "version",
+    "head",
+    "at",
+    "page",
+    "verdict",
+    "differences"
+  ],
+  "title": "ConformanceRecord",
+  "type": "object",
+  "x-board-folder": "/changes/{change}/conformance/"
+}
