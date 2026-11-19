@@ -57,14 +57,10 @@ pub(crate) fn waiting(host: &dyn Host, input: &Value) -> Result<Value, PluginErr
 }
 
 fn line(count: usize, blocking: usize, unreadable: usize) -> String {
-    let (noun, verb, pronoun) = if count == 1 {
-        ("question", "is", "it")
-    } else {
-        ("questions", "are", "them")
-    };
+    let (noun, verb, pronoun) = words(count);
     let blocks = match blocking {
         0 => String::new(),
-        _ if count == 1 => ", and it blocks work".to_owned(),
+        _ if count == 1 => " and blocks work".to_owned(),
         some => format!(", {some} of them blocking work"),
     };
     let apart = match unreadable {
@@ -74,11 +70,23 @@ fn line(count: usize, blocking: usize, unreadable: usize) -> String {
     match count {
         0 if unreadable == 0 => "No questions are waiting for you.".to_owned(),
         0 => {
-            format!("No readable questions are waiting for you{apart}. Run `board check` on them.")
+            let (noun, verb, pronoun) = words(unreadable);
+            format!(
+                "{unreadable} {noun} {verb} waiting for you but cannot be read. Run `board check` on {pronoun}."
+            )
         }
         _ => format!(
             "{count} {noun} {verb} waiting for you{blocks}{apart}. Run /ask to answer {pronoun}."
         ),
+    }
+}
+
+/// The noun, verb and pronoun for `count` questions.
+fn words(count: usize) -> (&'static str, &'static str, &'static str) {
+    if count == 1 {
+        ("question", "is", "it")
+    } else {
+        ("questions", "are", "them")
     }
 }
 

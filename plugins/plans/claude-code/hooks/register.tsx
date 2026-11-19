@@ -155,7 +155,7 @@ export const register: Register = (on, options) => {
       $.clock.every(REFRESH_MS, () => void refresh($, options, local))
     }
     if (e.props.hasSurvey) return below
-    // plans.waiting counts questions, gates and effects; until it exists the button counts open questions.
+    // plans.waiting counts the open questions; when it has not answered, the button counts plans.open's.
     const badge = countBadge(await read($, waiting), await read($, open), await read($, failed))
     if (badge === null) return below
     const { Box, Button, Text } = $.ui.resolve(e)

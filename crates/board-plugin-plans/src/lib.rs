@@ -167,10 +167,10 @@ fn manifest() -> Value {
             capability::<sweep::Input, sweep::Output>(
                 "sweep",
                 "Withdraw, with a reason, each open question whose blocked change or task is done \
-                 or dropped, whose asking session is archived, that repeats an older open \
-                 question in its project, or whose words a question answered in its project \
-                 already asked. apply writes each board's withdrawals in one commit with a \
-                 Board-Bulk trailer; without it nothing is written.",
+                 or dropped, whose asking session and every also_by session are archived, or \
+                 whose words a question answered in its project already asked. apply writes each \
+                 board's withdrawals in one commit with a Board-Bulk trailer; without it nothing \
+                 is written.",
                 Effect::OverwritesOnce,
             ),
             capability::<ask::Input, ask::Output>(

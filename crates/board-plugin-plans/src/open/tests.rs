@@ -3,7 +3,8 @@
 
 use std::cell::RefCell;
 
-use board_ops::{Board, Plugin, Plugins, QueryReport, Settings};
+use board_model::LogicalPath;
+use board_ops::{Board, Expect, Plugin, Plugins, QueryReport, Settings};
 use board_plugin::Target;
 use board_scenario::{Item, Scenario};
 use serde_json::json;
@@ -14,13 +15,16 @@ use crate::Plans;
 /// A host that answers every query with `rows` and records what it was
 /// asked, or answers with `failing`'s refusal of a query that names no
 /// table. With `board`, it queries that board and puts there instead, after
-/// running `between`. It records each put's lines either way.
+/// running `between`, and runs `before_read` before the first query that
+/// reads one question by `question::question_sql`. It records each put's
+/// lines either way.
 pub(crate) struct Answering {
     rows: Vec<Vec<Value>>,
     pub(crate) asked: RefCell<Vec<(String, Limit)>>,
     failing: Option<Board>,
     pub(crate) board: Option<Board>,
     pub(crate) between: RefCell<Option<Box<dyn FnOnce()>>>,
+    pub(crate) before_read: RefCell<Option<Box<dyn FnOnce()>>>,
     pub(crate) puts: RefCell<Vec<Vec<Value>>>,
     pub(crate) settings: Settings,
 }
@@ -32,6 +36,11 @@ impl Host for Answering {
             board.query("SELECT logical FROM nowhere", 1, None, None)?;
         }
         if let Some(board) = &self.board {
+            if sql.starts_with("SELECT 'question' AS kind")
+                && let Some(before_read) = self.before_read.take()
+            {
+                before_read();
+            }
             return board.query(sql, usize::MAX, None, None);
         }
         Ok(QueryReport {
@@ -132,6 +141,7 @@ pub(crate) fn host(rows: Vec<Vec<Value>>) -> Answering {
         failing: None,
         board: None,
         between: RefCell::default(),
+        before_read: RefCell::default(),
         puts: RefCell::default(),
         settings: Settings {
             now: std::time::SystemTime::UNIX_EPOCH,
@@ -634,6 +644,12 @@ pub(crate) fn mounting_board(
     mounted: &[(&str, Value)],
 ) -> (Scenario, Scenario, Board) {
     let (scenario, _) = plans_board(&[]);
+    // The root board commits each put too, so a test can count its commits.
+    let config = scenario.workdir().join(".board/board.json");
+    let mut root_config: Value =
+        serde_json::from_str(&std::fs::read_to_string(&config).unwrap()).unwrap();
+    root_config.as_object_mut().unwrap().remove("commit_on_put");
+    (scenario.write(".board/board.json", Item::File(&root_config.to_string()))).identified();
     let schemas = scenario.workdir().join(".board/types/plans");
     let library = Scenario::new();
     let files: Vec<(String, String)> = (mounted.iter())
@@ -655,10 +671,13 @@ pub(crate) fn mounting_board(
     files.extend(schema_files.iter().map(|(p, t)| (p.as_str(), t.as_str())));
     let pinned = library.commit(&files);
     // A write through the mount needs the library's working tree to hold
-    // what it commits (docs/architecture/writes.md).
+    // what it commits (docs/architecture/writes.md). It also needs a git
+    // identity to commit as, because Board refuses a mounted board that sets
+    // `commit_on_put` to false, and CI has no global identity to fall back on.
     for (path, text) in &files {
         library.write(path, Item::File(text));
     }
+    library.identified();
     let mount = json!({"$type": "board/mount/v1", "repo": library.path(), "follow": "main", "commit": pinned.to_string()});
     scenario.write("vendor.json", Item::File(&mount.to_string()));
     for (path, body) in root {
@@ -1049,4 +1068,74 @@ fn a_mounted_questions_blocks_is_read_from_its_own_boards_root() {
             ("/vendor/projects/a/questions/q".to_owned(), json!("active")),
         ]
     );
+}
+
+/// A blocked change with no phase, which Board marks degraded but still
+/// indexes with its type, gives the question null work: neither critical
+/// nor ended. Its twin blocks a change with a phase, which is active.
+#[test]
+fn a_question_blocking_a_change_with_no_phase_has_no_work_and_its_twin_with_a_phase_is_active() {
+    let blocking = |change: &str| {
+        body(
+            "2026-10-01T09:00:00Z",
+            &json!({"blocks": format!("/changes/{change}")}),
+        )
+    };
+    let broken = Value::String(json!({"$type": "changes/change/v2", "title": "Work"}).to_string());
+    let (_scenario, board) = plans_board(&[
+        ("changes/broken", broken),
+        ("changes/whole", change("build")),
+        ("projects/a/questions/broken", blocking("broken")),
+        ("projects/a/questions/whole", blocking("whole")),
+    ]);
+    assert_eq!(
+        work_of(&board),
+        [
+            ("/projects/a/questions/broken".to_owned(), Value::Null),
+            ("/projects/a/questions/whole".to_owned(), json!("active")),
+        ]
+    );
+    let target: Target = "plans.open".parse().unwrap();
+    let report = board.call(&target, b"{}", &Plugins::default()).unwrap();
+    let critical: Vec<(&Value, &Value)> = (report.output["questions"].as_array().unwrap().iter())
+        .map(|question| (&question["path"], &question["critical"]))
+        .collect();
+    assert_eq!(
+        critical,
+        [
+            (&json!("/projects/a/questions/whole"), &json!(true)),
+            (&json!("/projects/a/questions/broken"), &json!(false)),
+        ]
+    );
+}
+
+/// `put` writes a question whose `blocks` names a task whole. Its twin,
+/// whose `blocks` names a record that is neither a change nor a task, is
+/// written too, as Board writes every broken reference, but marked degraded
+/// with `board::ref::wrong_type` at `/blocks`.
+#[test]
+fn put_writes_a_question_blocking_a_task_whole_and_marks_its_twin_blocking_another_type() {
+    let (scenario, _) = plans_board(&[(
+        "projects/a/questions/other",
+        body("2026-10-01T09:00:00Z", &json!({})),
+    )]);
+    scenario.write(
+        "tasks/w.md",
+        Item::File("---\n$type: tasks/task/v2\ntitle: Work\nstatus: open\n---\nBody.\n"),
+    );
+    let mut board = Board::open(scenario.workdir(), None).unwrap();
+    board.build_in(&[&Plans]);
+    let degraded = |blocks: &str| {
+        let path: LogicalPath = "/projects/a/questions/q".parse().unwrap();
+        let question = body("2026-10-01T09:00:00Z", &json!({"blocks": blocks}));
+        let report =
+            (board.put(&path, Expect::Any, question.as_str().unwrap().as_bytes())).unwrap();
+        (report.writes[0].degraded.as_ref())
+            .map(|(code, detail)| (code.as_str(), detail.pointer.clone()))
+    };
+    assert_eq!(
+        degraded("/projects/a/questions/other"),
+        Some(("board::ref::wrong_type", Some("/blocks".to_owned())))
+    );
+    assert_eq!(degraded("/tasks/w.md"), None);
 }
