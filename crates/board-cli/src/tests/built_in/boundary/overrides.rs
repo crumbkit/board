@@ -213,6 +213,11 @@ fn a_failed_check_without_ask_owner_files_no_request_and_the_same_check_asking_f
     assert_eq!(personal.pending(), Vec::<String>::new());
     let hint = document["recovery"]["text"].as_str().unwrap();
     assert!(hint.starts_with("Next: change pr.body:"), "{hint}");
+    assert!(hint.ends_with("No request went to the owner."), "{hint}");
+    let mut offering = quiet(&failing());
+    offering["ask_owner"] = json!(false);
+    let (_, offered) = personal.call("check", &offering);
+    let hint = offered["recovery"]["text"].as_str().unwrap();
     assert!(hint.contains("No request went to the owner."), "{hint}");
     assert!(
         hint.ends_with("with `--ask_owner true`, which asks the owner once."),
@@ -236,7 +241,7 @@ fn an_approval_lets_the_exact_content_through_without_ask_owner_and_one_characte
     let (ran, document) = personal.call("check", &quiet(&failing()));
     assert_eq!(ran.code, 0, "{}", printed(&ran));
     assert_ne!(output(&document)["override"], Value::Null);
-    let changed = record(failing(), &json!({"pr.title": "Fine."}));
+    let changed = record(failing(), &json!({"pr.body": "See acme-123 here.x"}));
     let changed: Value = serde_json::from_str(&changed).unwrap();
     let (ran, document) = personal.call("check", &quiet(&changed));
     assert_eq!(ran.code, 1);
@@ -257,18 +262,4 @@ fn a_refused_override_still_refuses_without_ask_owner_and_names_its_effect() {
     assert_eq!(document["fields"]["effect"], effect);
     let hint = document["recovery"]["text"].as_str().unwrap();
     assert!(hint.contains("The owner refused"), "{hint}");
-}
-
-#[test]
-fn a_failure_in_a_commit_part_adds_the_squash_step_and_one_in_another_part_does_not() {
-    let personal = Personal::new();
-    covered(&personal);
-    let squash = "squash the branch into one commit";
-    let (_, document) = personal.call("check", &quiet(&failing()));
-    let hint = document["recovery"]["text"].as_str().unwrap();
-    assert!(!hint.contains(squash), "{hint}");
-    let parts = json!({"commit.abcdef123456.diff": "+see acme-123"});
-    let (_, document) = personal.call("check", &quiet(&parts));
-    let hint = document["recovery"]["text"].as_str().unwrap();
-    assert!(hint.contains(squash), "{hint}");
 }

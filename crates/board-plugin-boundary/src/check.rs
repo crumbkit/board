@@ -26,10 +26,6 @@ const NO_CHECKER: &str = "this rule has no checker, so it cannot check content; 
                           checker, or remove it from the boundary";
 const GIVE_CHECKER: &str =
     "give each rule without a checker a checker, or remove it from the boundary";
-/// The step that fixes a match in a commit's diff.
-const SQUASH: &str = "squash the branch into one commit whose diff no longer holds the match, \
-                      such as with `git reset --soft origin/main && git commit`, and push again, \
-                      under a new branch name if the old one was already pushed";
 /// The capability the owner approves to let one failed crossing through, and how
 /// Board refuses a decide it has not admitted.
 const OVERRIDE: &str = "boundary.override";
@@ -56,7 +52,8 @@ pub(crate) struct Input {
     parts: BTreeMap<String, String>,
     /// Ask the owner to let this exact content through when a check fails,
     /// which files one request the owner answers; left out, an earlier answer
-    /// still applies but no request is filed.
+    /// still applies but no request is filed. Pass false to have a refusal
+    /// name this flag as the way to ask.
     ask_owner: Option<bool>,
 }
 
@@ -167,7 +164,12 @@ pub(crate) fn check(host: &dyn Host, input: &Value) -> Result<Value, PluginError
         prior.as_ref().map(|(_, blob)| blob.as_str()),
     )?;
     if let Some(answer) = answer.filter(|_| !passed) {
-        return Err(refusal(&action, &digest, &failed, &answer));
+        return Err(refusal(
+            &action,
+            &digest,
+            &failed,
+            (&answer, ask_owner == Some(false)),
+        ));
     }
     let note = if matched.is_empty() {
         let from = from.map_or_else(String::new, |from| format!(" from {from}"));
@@ -295,7 +297,14 @@ fn ask(
 
 /// `boundary::check::failed`, naming each failing rule, part and line,
 /// with the next step and what the owner may do about it.
-fn refusal(action: &str, digest: &str, failed: &[&Verdict], answer: &Answer) -> PluginError {
+/// `offer` is whether the caller can pass `ask_owner`, which it says by passing it
+/// false, so the hint names the flag only where it can be used.
+fn refusal(
+    action: &str,
+    digest: &str,
+    failed: &[&Verdict],
+    (answer, offer): (&Answer, bool),
+) -> PluginError {
     let mut failures = Vec::new();
     let mut named = Vec::new();
     let no_checker = [Finding {
@@ -355,10 +364,7 @@ fn refusal(action: &str, digest: &str, failed: &[&Verdict], answer: &Answer) -> 
             parts.into_iter().collect::<Vec<_>>().join(", ")
         ));
     }
-    if (failed.iter()).any(|verdict| verdict.part.starts_with("commit.")) {
-        steps.push(SQUASH.to_owned());
-    }
-    let (owner, effect) = owner(answer);
+    let (owner, effect) = owner(answer, offer);
     let mut fields = Map::from_iter([
         ("digest".to_owned(), json!(digest)),
         ("crossing".to_owned(), json!(crossing::path(digest))),
@@ -386,7 +392,7 @@ fn refusal(action: &str, digest: &str, failed: &[&Verdict], answer: &Answer) -> 
 
 /// What the owner may do about the failed content, given how they answered,
 /// and the effect that asks or refused.
-fn owner(answer: &Answer) -> (String, Option<&String>) {
+fn owner(answer: &Answer, offer: bool) -> (String, Option<&String>) {
     match answer {
         Answer::TooLarge => (
             "This content is over 1 MiB as the owner would see it, so the owner cannot approve \
@@ -394,12 +400,13 @@ fn owner(answer: &Answer) -> (String, Option<&String>) {
                 .to_owned(),
             None,
         ),
-        Answer::NotAsked => (
+        Answer::NotAsked if offer => (
             "No request went to the owner. If this exact content must go as it is, run the same \
              command again with `--ask_owner true`, which asks the owner once."
                 .to_owned(),
             None,
         ),
+        Answer::NotAsked => ("No request went to the owner.".to_owned(), None),
         Answer::Refused(effect) => (
             format!(
                 "The owner refused to let this exact content through ({effect}); the owner can \

@@ -67,8 +67,8 @@ impl Board {
         }
     }
 
-    /// The decide, which writes the pending effect of an unanswered one only
-    /// when `hold`, and is refused as asked either way.
+    /// The decide. An unanswered one is refused as `Asked` whether or not it
+    /// wrote its pending effect; it writes the effect only when `hold`.
     fn answer_capability(
         &self,
         capability: &str,

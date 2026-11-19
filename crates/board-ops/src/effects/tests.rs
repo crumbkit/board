@@ -1325,19 +1325,23 @@ fn a_lookup_refuses_an_unsigned_approval_as_a_decide_does_and_admits_the_owners_
     let board = opened(&scenario, Some("review"), Some(&mine));
     let id = asked(decide(&board, "/pulls/7"));
     let approval = pending_effect(&mine, &id).approval();
-    approve_by_hand(&mine, &id, None);
-    assert_eq!(
-        named(decided(&board, "/pulls/7")),
-        (Code::SettingsUnsigned, Some(id.clone()))
-    );
-    approve_by_hand(&mine, &id, Some(Signer::new().sign(&approval)));
-    assert_eq!(
-        named(decided(&board, "/pulls/7")),
-        (Code::SettingsUnsigned, Some(id.clone()))
-    );
+    let unsigned = (Code::SettingsUnsigned, Some(id.clone()));
+    let before = std::fs::read_dir(mine.workdir().join("effects/pending"))
+        .unwrap()
+        .count();
+    for signature in [None, Some(Signer::new().sign(&approval))] {
+        approve_by_hand(&mine, &id, signature);
+        assert_eq!(named(decided(&board, "/pulls/7")), unsigned);
+        assert_eq!(named(decide(&board, "/pulls/7")), unsigned);
+    }
     approve_by_hand(&mine, &id, Some(signer().sign(&approval)));
     let report = decided(&board, "/pulls/7").unwrap().unwrap();
-    assert_eq!(report.effect, Some(id));
+    assert_eq!(report.effect, Some(id.clone()));
+    assert_eq!(decide(&board, "/pulls/7").unwrap().effect, Some(id));
+    let after = std::fs::read_dir(mine.workdir().join("effects/pending"))
+        .unwrap()
+        .count();
+    assert_eq!(before, after);
 }
 
 #[test]

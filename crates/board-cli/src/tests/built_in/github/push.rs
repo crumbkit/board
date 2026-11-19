@@ -745,3 +745,44 @@ fn a_refused_push_files_no_request_without_ask_owner_and_one_with_it() {
     assert_eq!(failure["fields"]["code"], "boundary::check::failed");
     assert_eq!(filed(), 1);
 }
+
+#[test]
+fn a_push_goes_without_ask_owner_once_the_owner_approved_an_earlier_request_for_it() {
+    let desk = Desk::new();
+    desk.refuse(&["commit.*.message"], "github.*");
+    let before = desk.remote_head("main");
+    desk.commit("Fix acme-123");
+    let (_, failure) = desk.call("push", &["--ask_owner", "true"]);
+    assert_eq!(failure["fields"]["code"], "boundary::check::failed");
+    let effect = failure["fields"]["effect"].as_str().unwrap();
+    assert_eq!(desk.remote_head("main"), before);
+    let answered = desk.run_in(desk.personal.workdir(), &["answer", effect, "approve"], &[]);
+    assert_eq!(answered.code, 0, "{}", text(&answered.stderr));
+    let sent = desk.output("push", &[]);
+    assert_eq!(sent["commits"], json!([desk.head()]));
+    assert_eq!(desk.remote_head("main"), Some(desk.head()));
+}
+
+#[test]
+fn only_the_calls_that_take_ask_owner_name_it_in_a_refusal_so_merge_does_not_and_push_does() {
+    let desk = Desk::new();
+    desk.refuse(&["commit.*.message", "pr.*"], "github.*");
+    let merge = [
+        "--number",
+        "12",
+        "--subject",
+        "Fix acme-123",
+        "--body",
+        "Levers lift.",
+        "--head",
+        "0123456789abcdef0123456789abcdef01234567",
+    ];
+    let (ran, merged) = desk.call("merge", &merge);
+    assert_eq!(ran.code, 1, "{merged}");
+    assert_eq!(merged["code"], "github::boundary::refused");
+    assert!(!merged.to_string().contains("ask_owner"), "{merged}");
+    desk.commit("Fix acme-123");
+    let (_, pushed) = desk.call("push", &[]);
+    assert_eq!(pushed["code"], "github::boundary::refused");
+    assert!(pushed.to_string().contains("--ask_owner true"), "{pushed}");
+}
