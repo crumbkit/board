@@ -442,6 +442,7 @@ fn a_question_is_returned_with_its_original_time_and_null_for_what_it_leaves_out
             "question": "Which way?",
             "asked": "2026-10-01t09:00:00.5+01:00",
             "session": "local_0a1b",
+            "also_asked": [],
             "options": [{"id": "a", "text": "A"}],
             "recommendation": "a",
             "why": null,

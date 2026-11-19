@@ -164,13 +164,14 @@ fn find(
                 if ended == "done" { "done" } else { "dropped" },
                 format!("the work it blocks, {blocks}, is {ended}."),
             )),
-            _ if archived.contains(&question.session) => Some((
-                "archived",
-                format!(
-                    "the session that asked it, {}, is archived.",
-                    question.session
-                ),
-            )),
+            _ if archived.contains(&question.session)
+                && question
+                    .also_asked
+                    .iter()
+                    .all(|other| archived.contains(other)) =>
+            {
+                Some(("archived", askers_archived(question)))
+            }
             _ => None,
         };
         match dead {
@@ -196,6 +197,21 @@ fn find(
     found
 }
 
+/// Why a question every asker of which is archived is withdrawn.
+fn askers_archived(question: &Waiting) -> String {
+    if question.also_asked.is_empty() {
+        return format!(
+            "the session that asked it, {}, is archived.",
+            question.session
+        );
+    }
+    let others = question.also_asked.join(", ");
+    format!(
+        "the sessions that asked it, {} and {others}, are archived.",
+        question.session
+    )
+}
+
 fn withdrawn(question: &Waiting, kind: &'static str, why: &str) -> Withdrawn {
     Withdrawn {
         path: question.path.clone(),
@@ -217,7 +233,7 @@ pub(crate) fn words(text: &str) -> String {
 /// Each question an answer names, by its project and words, with the
 /// question's path and the answer's. The oldest question of a project's
 /// words is kept.
-fn answered(host: &dyn Host) -> Result<BTreeMap<(String, String), (String, String)>, PluginError> {
+pub(crate) fn answered(host: &dyn Host) -> Result<BTreeMap<(String, String), (String, String)>, PluginError> {
     let report = (host.query(&answered_sql(), Limit::ALL))
         .map_err(|error| PluginError::board_refused("plans", "query", &error.refusal()))?;
     let mut found = BTreeMap::new();

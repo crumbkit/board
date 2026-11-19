@@ -132,7 +132,9 @@ fn the_manifest_parses_as_a_built_in_one_and_describes_the_plugin_with_the_skill
         .collect();
     assert_eq!(
         names,
-        ["open", "answer", "withdraw", "migrate", "waiting", "sweep"]
+        [
+            "open", "answer", "withdraw", "migrate", "waiting", "sweep", "ask"
+        ]
     );
     assert_eq!(manifest.description, skill_description());
 }
@@ -181,6 +183,7 @@ fn the_output_schema_admits_an_answer_and_refuses_one_without_its_total() {
             "question": "Which way?",
             "asked": "2026-10-01T09:00:00Z",
             "session": "local_0a1b",
+            "also_asked": [],
             "options": [{"id": "a", "text": "A"}],
             "recommendation": null,
             "why": null,
@@ -582,7 +585,7 @@ fn a_capability_the_plugin_does_not_offer_is_refused_and_open_is_answered() {
     assert_eq!(refused.code, "plans::call::unknown_capability");
     assert_eq!(
         refused.message,
-        "plans offers no capability closed; it offers open, answer, withdraw, migrate, waiting and sweep"
+        "plans offers no capability closed; it offers open, answer, withdraw, migrate, waiting, sweep and ask"
     );
     let answered = call("open").unwrap();
     assert_eq!(answered["total"], 0);

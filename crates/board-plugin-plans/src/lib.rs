@@ -1,6 +1,7 @@
 //! The plans plugin built into Board (plugins/plans/README.md).
 
 mod answer;
+mod ask;
 mod migrate;
 mod open;
 mod question;
@@ -52,10 +53,11 @@ impl Plugin for Plans {
             "migrate" => migrate::migrate(host, &input),
             "waiting" => waiting::waiting(host, &input),
             "sweep" => sweep::sweep(host, &input),
+            "ask" => ask::ask(host, &input),
             other => Err(PluginError {
                 code: "plans::call::unknown_capability".to_owned(),
                 message: format!(
-                    "plans offers no capability {other}; it offers open, answer, withdraw, migrate, waiting and sweep"
+                    "plans offers no capability {other}; it offers open, answer, withdraw, migrate, waiting, sweep and ask"
                 ),
                 fields: Map::new(),
                 hint: None,
@@ -159,6 +161,21 @@ fn manifest() -> Value {
                 "readOnlyHint": false,
                 "destructiveHint": true,
                 "idempotentHint": true,
+                "openWorldHint": false,
+            },
+            "_meta": {},
+        }, {
+            "name": "ask",
+            "description": "File a question for the owner under /projects/<project>/questions/, \
+                unless an open question in the project asks the same words, which then takes the \
+                asker into its also_by, or a question answered in the project asked them, whose \
+                answer and decisions are returned instead.",
+            "inputSchema": schema_of::<ask::Input>(SchemaSettings::draft2020_12()),
+            "outputSchema": schema_of::<ask::Output>(SchemaSettings::draft2020_12().for_serialize()),
+            "annotations": {
+                "readOnlyHint": false,
+                "destructiveHint": false,
+                "idempotentHint": false,
                 "openWorldHint": false,
             },
             "_meta": {},
