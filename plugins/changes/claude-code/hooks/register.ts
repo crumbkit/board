@@ -70,6 +70,8 @@ const CHECK = `PATH=${PATH} exec board -C "$1" --json check --healthy "$2"`
 
 // A slow or hung git or board holds the edit no longer than this, then admits it with advice.
 const TIMEOUT_MS = 5000
+// The most changes named in an Agent call's prompt that the brief check reads, brief lines first.
+const CANDIDATES = 3
 // `$.session.messages` returns at most this many entries, the newest.
 const WINDOW = 4096
 
@@ -401,17 +403,19 @@ async function guarded<R extends { deny?: string; context?: string[] }>(v: Verdi
 /**
  * The advice on a builder's prompt that names a change a known board holds in
  * build: `changes::brief::no_line` and `not_rendered`, or null when both pass,
- * when the prompt names no such change, or when a lookup fails. Never throws.
+ * when the prompt names no such change, or when the plan record cannot be read.
+ * A change whose lookup fails is skipped. Never throws.
  */
 async function briefAdvice($: EngineInterface, prompt: string): Promise<string | null> {
   const paths = changesIn(prompt)
   if (paths.length === 0) return null
   try {
     const boards = await knownBoards($)
-    for (const path of paths) {
+    // Each lookup may take up to TIMEOUT_MS, so only the first CANDIDATES changes the prompt names are read.
+    candidates: for (const path of paths.slice(0, CANDIDATES)) {
       for (const board of boards) {
         const change = parseChange((await sh($, GET, [board, path])).stdout)
-        if (change.kind === 'failed') return null
+        if (change.kind === 'failed') continue candidates
         if (change.kind === 'missing' || change.phase !== 'build') continue
         // The brief's `plan` is the text path its plan record names.
         const plan = change.plan === null ? null : planText((await sh($, GET, [board, change.plan])).stdout)

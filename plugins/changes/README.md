@@ -1168,10 +1168,12 @@ as `/repos/notes`.
 The same mod checks each Agent call whose prompt names a change. It takes
 the change in a `board-brief:` line first, then each `/changes/<name>` at the
 start of the prompt or after whitespace, a backtick, a quote or `(`, so a
-path such as `plugins/changes/x` names none. For each in turn it reads the
-change from each known board with `board get`, and acts on the first board
-that holds one in `build`. It reads the change's plan record the same way,
-and runs two checks:
+path such as `plugins/changes/x` names none. For each of the first three in
+turn it reads the change from each known board with `board get`, and acts on
+the first board that holds one in `build`. Each `get` may take up to 5
+seconds, so a change named fourth or later is not read. A change whose `get`
+fails is skipped. It reads the change's plan record the same way, and runs
+two checks:
 
 - `changes::brief::no_line`: the prompt's first non-empty line is not
   `board-brief: /changes/<name>`. The advice names that first line. The
@@ -1191,8 +1193,8 @@ A failed check never blocks the call. The mod appends the advice to the
 builder's prompt and adds it to the lead's tool result. Each piece of advice
 starts "if this agent builds /changes/<name>", because a reviewer or an
 explorer whose prompt names the change gets it too. A prompt that names no
-change, a change no known board holds in `build`, and a lookup that fails
-leave the call untouched. The check does not read the subagent type or the
+change, a change no known board holds in `build`, and a plan record that
+cannot be read leave the call untouched. The check does not read the subagent type or the
 tools the agent has.
 
 `claude plugin test plugins/changes/claude-code` runs the mod's tests.

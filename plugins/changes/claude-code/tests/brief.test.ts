@@ -178,6 +178,25 @@ test('a later candidate in build is checked when an earlier one is not a change'
   expect(ran).toEqual([`get ${BOARD} /changes/missing`, `get ${BOARD} ${PATH}`, `get ${BOARD} ${PLAN}`])
 })
 
+test('a change named fourth is not read, and the same change named third is checked', async ($, on) => {
+  const { ran } = engine(on, {})
+  const fourth = 'See /changes/a, /changes/b and /changes/c, then build /changes/t.'
+  expect((await agent($, fourth)).context).toBeUndefined()
+  expect(ran).toEqual(['/changes/a', '/changes/b', '/changes/c'].map(path => `get ${BOARD} ${path}`))
+  expect((await agent($, 'See /changes/a and /changes/b, then build /changes/t.')).context).toHaveLength(1)
+})
+
+test('a change whose lookup fails is skipped for the next one named, and alone it leaves the call untouched', async ($, on) => {
+  const failed = JSON.stringify({
+    schema: 'board/get-report/v2',
+    data: [],
+    failures: [{ key: '/changes/bad', code: 'board::record::invalid', message: '/changes/bad fails its schema' }],
+  })
+  engine(on, { changes: { '/changes/bad': failed, [PATH]: change('build') } })
+  expect((await agent($, 'See /changes/bad, then build /changes/t.')).context).toHaveLength(1)
+  expect((await agent($, 'See /changes/bad.')).context).toBeUndefined()
+})
+
 test('a plan record that cannot be read leaves the call untouched, and one that reads advises', async ($, on) => {
   const answers: Answers = { plan: 'fails' }
   const { prompts } = engine(on, answers)
