@@ -585,7 +585,7 @@ fn a_capability_the_plugin_does_not_offer_is_refused_and_open_is_answered() {
     assert_eq!(refused.code, "plans::call::unknown_capability");
     assert_eq!(
         refused.message,
-        "plans offers no capability closed; it offers open, answer, withdraw, migrate, waiting, sweep and ask"
+        "plans offers no capability closed; it offers open, answer, withdraw, migrate, waiting, sweep, ask and stale"
     );
     let answered = call("open").unwrap();
     assert_eq!(answered["total"], 0);

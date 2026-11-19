@@ -83,7 +83,13 @@ in. `<project>` names what the record concerns, such as the repository
 4. Withdraw the questions whose work ended, whose asking sessions are all archived, or
    whose words a question answered in the same project already asked, with `board -C <board> plans sweep --archived <local_ id>
    --apply true`; leave out `--apply` to see the list first.
-5. Withdraw a question that no longer matters:
+5. Find work nobody tends and ask the owner about all of it at once with
+   `board -C <board> plans stale --session <local_ id> --apply true`; leave
+   out `--apply` to see the list first. It covers changes in plan with no
+   owner and evals with no verdict (over 7 days without activity), and
+   open tasks with no owner (over 30 days). Each item becomes one
+   drop-or-keep question; nothing is dropped until the owner answers.
+6. Withdraw a question that no longer matters:
 
        board -C <board> plans withdraw --path /projects/<project>/questions/<id> --reason '<why>'
 

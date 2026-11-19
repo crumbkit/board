@@ -6,6 +6,7 @@ mod migrate;
 mod open;
 mod question;
 pub mod records;
+mod stale;
 mod sweep;
 mod waiting;
 mod withdraw;
@@ -54,11 +55,12 @@ impl Plugin for Plans {
             "migrate" => migrate::migrate(host, &input),
             "waiting" => waiting::waiting(host, &input),
             "sweep" => sweep::sweep(host, &input),
+            "stale" => stale::stale(host, &input),
             "ask" => ask::ask(host, &input),
             other => Err(PluginError {
                 code: "plans::call::unknown_capability".to_owned(),
                 message: format!(
-                    "plans offers no capability {other}; it offers open, answer, withdraw, migrate, waiting, sweep and ask"
+                    "plans offers no capability {other}; it offers open, answer, withdraw, migrate, waiting, sweep, ask and stale"
                 ),
                 fields: Map::new(),
                 hint: None,
@@ -176,6 +178,15 @@ fn manifest() -> Value {
                  open question in the project asks the same words, which then takes the asker \
                  into its also_by, or a question answered in the project asked them, whose \
                  answer and decisions are returned instead.",
+                Effect::AddsOnce,
+            ),
+            capability::<stale::Input, stale::Output>(
+                "stale",
+                "List the changes in plan with no owner, the evals planned or running with no \
+                 verdict, and the open tasks with no owner that show no activity for more than \
+                 days (7), or task_days (30) for a task. apply asks the owner about each with a \
+                 drop-or-keep question through plans.ask, as session; without it nothing is \
+                 written.",
                 Effect::AddsOnce,
             ),
         ],
