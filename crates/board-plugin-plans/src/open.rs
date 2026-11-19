@@ -32,9 +32,10 @@ use crate::records::{CHANGE_TYPES, Choice, TASK_TYPE};
 /// `blocks` is still going: `done` or `dropped` once a change's phase or a
 /// task's status is one of those, `active` before, and null when `blocks`
 /// is absent, names no change or task, or names one whose phase or status
-/// is null, as it is in a degraded record that leaves the field out. A question's `blocks` is read from the root of
-/// its own board, so the work's logical path is the question's mount prefix
-/// followed by `blocks`; the lookup is one equality on `logical`.
+/// is null, as it is in a degraded record that leaves the field out. A
+/// question's `blocks` is read from the root of its own board, so the
+/// work's logical path is the question's mount prefix followed by
+/// `blocks`; the lookup is one equality on `logical`.
 pub(crate) fn questions() -> String {
     let changes = CHANGE_TYPES.map(|each| format!("'{each}'")).join(", ");
     format!(

@@ -80,8 +80,9 @@ a task whose status is `open`. A mounted question's `blocks` is read from its
 own board's root. The questions come grouped by project. Within a project
 the critical ones come first, then the rest, each oldest first. Projects
 come in the order of their first question, so a project holding a critical
-question comes before one that holds none. The limit keeps the first ones. It returns at most 100 by default, with
-`total`, which counts the readable ones, and `truncated`. `unreadable` counts
+question comes before one that holds none. The limit keeps the first
+ones. It returns at most 100 by default, with `total`, which counts the
+readable ones, and `truncated`. `unreadable` counts
 open questions Board marks degraded or this plugin cannot read. Each question
 also carries `why`, `note`, `mount` and `context_path`, null when the record
 leaves them out.

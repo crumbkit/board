@@ -152,7 +152,8 @@ fn waiting_with_only_unreadable_questions_says_they_cannot_be_read() {
 }
 
 /// One question that blocks work beside one that cannot be read gives a
-/// line with a single "and" before the unreadable count.
+/// line whose "blocks work" needs no comma and whose unreadable count
+/// follows ", and".
 #[test]
 fn one_blocking_question_and_one_unreadable_question_share_one_line() {
     let rows = vec![

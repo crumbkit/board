@@ -3,7 +3,8 @@
 
 use std::cell::RefCell;
 
-use board_ops::{Board, Plugin, Plugins, QueryReport, Settings};
+use board_model::LogicalPath;
+use board_ops::{Board, Expect, Plugin, Plugins, QueryReport, Settings};
 use board_plugin::Target;
 use board_scenario::{Item, Scenario};
 use serde_json::json;
@@ -1082,4 +1083,35 @@ fn a_question_blocking_a_change_with_no_phase_has_no_work_and_its_twin_with_a_ph
             (&json!("/projects/a/questions/broken"), &json!(false)),
         ]
     );
+}
+
+/// `put` writes a question whose `blocks` names a task whole. Its twin,
+/// whose `blocks` names a record that is neither a change nor a task, is
+/// written too, as Board writes every broken reference, but marked degraded
+/// with `board::ref::wrong_type` at `/blocks`.
+#[test]
+fn put_writes_a_question_blocking_a_task_whole_and_marks_its_twin_blocking_another_type() {
+    let (scenario, _) = plans_board(&[(
+        "projects/a/questions/other",
+        body("2026-10-01T09:00:00Z", &json!({})),
+    )]);
+    scenario.write(
+        "tasks/w.md",
+        Item::File("---\n$type: tasks/task/v2\ntitle: Work\nstatus: open\n---\nBody.\n"),
+    );
+    let mut board = Board::open(scenario.workdir(), None).unwrap();
+    board.build_in(&[&Plans]);
+    let degraded = |blocks: &str| {
+        let path: LogicalPath = "/projects/a/questions/q".parse().unwrap();
+        let question = body("2026-10-01T09:00:00Z", &json!({"blocks": blocks}));
+        let report =
+            (board.put(&path, Expect::Any, question.as_str().unwrap().as_bytes())).unwrap();
+        (report.writes[0].degraded.as_ref())
+            .map(|(code, detail)| (code.as_str(), detail.pointer.clone()))
+    };
+    assert_eq!(
+        degraded("/projects/a/questions/other"),
+        Some(("board::ref::wrong_type", Some("/blocks".to_owned())))
+    );
+    assert_eq!(degraded("/tasks/w.md"), None);
 }
