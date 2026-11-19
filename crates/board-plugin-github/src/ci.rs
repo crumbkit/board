@@ -1,7 +1,7 @@
 //! `ci`: reads what GitHub reports for a change's head, its check runs,
-//! check suites and commit statuses, and once every one has passed writes
-//! the check runs as a run of the change's suite and attaches the run and
-//! the head to the change.
+//! check suites and commit statuses. Once each of them has passed, it
+//! writes the check runs as a run of the change's suite and attaches the
+//! run to the change.
 
 use board_ops::{Host, PluginError};
 use board_plugin::Target;
@@ -62,12 +62,14 @@ struct CheckRun {
 /// before its jobs that wait on others have check runs.
 #[derive(Deserialize)]
 struct Suites {
+    total_count: usize,
     check_suites: Vec<CheckSuite>,
 }
 
 #[derive(Deserialize)]
 struct CheckSuite {
     status: String,
+    conclusion: Option<String>,
     app: Option<App>,
 }
 
@@ -80,6 +82,7 @@ struct App {
 /// outside GitHub's checks reports.
 #[derive(Deserialize)]
 struct Combined {
+    total_count: usize,
     statuses: Vec<Status>,
 }
 
@@ -121,16 +124,22 @@ pub(crate) fn ci(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
     let commit = format!("repos/{owner}/{repo}/commits/{head}");
     let runs: Runs = read(host, &format!("{commit}/check-runs?per_page=100"))?;
     let suites: Suites = read(host, &format!("{commit}/check-suites?per_page=100"))?;
-    let combined: Combined = read(host, &format!("{commit}/status"))?;
-    let unusable = |why: &str| {
-        gh::failed(
-            &format!("{commit}/check-runs"),
-            why,
-            "record the run by hand",
-        )
+    let combined: Combined = read(host, &format!("{commit}/status?per_page=100"))?;
+    let unusable = |what: &str, why: &str| {
+        gh::failed(&format!("{commit}/{what}"), why, "record the run by hand")
     };
-    if runs.total_count > runs.check_runs.len() {
-        return Err(unusable("reported more than 100 check runs"));
+    for (what, total, got) in [
+        ("check-runs", runs.total_count, runs.check_runs.len()),
+        (
+            "check-suites",
+            suites.total_count,
+            suites.check_suites.len(),
+        ),
+        ("status", combined.total_count, combined.statuses.len()),
+    ] {
+        if total > got {
+            return Err(unusable(what, "reported more than one page of 100"));
+        }
     }
     let runs = runs.check_runs;
     judge(&change, &head, &runs, &suites, &combined)?;
@@ -143,7 +152,7 @@ pub(crate) fn ci(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
         .take(12)
         .collect();
     if stamp.len() < 12 {
-        return Err(unusable("gave no completed_at timestamp"));
+        return Err(unusable("check-runs", "gave no completed_at timestamp"));
     }
     let name = change.rsplit('/').next().unwrap_or_default();
     let path = format!(
@@ -180,7 +189,8 @@ pub(crate) fn ci(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
     let target: Target = "changes.attach"
         .parse()
         .expect("changes.attach is <plugin>.<capability>");
-    let attach = json!({"path": change, "ref": path, "head": head});
+    // Only the run, so a newer head attached meanwhile stays.
+    let attach = json!({"path": change, "ref": path});
     board.call(&target, &attach).map_err(|refusal| {
         let mut error = PluginError::board_refused("github", "call", &refusal);
         error.message = format!(
@@ -208,6 +218,20 @@ fn read<T: DeserializeOwned>(host: &dyn Host, endpoint: &str) -> Result<T, Plugi
     })
 }
 
+/// The check run or check suite `name` with `status` and `conclusion`: it
+/// passed once completed with one of [`PASSED`].
+fn checked(name: &str, status: &str, conclusion: Option<&str>) -> Check {
+    let done = status == "completed";
+    let state = conclusion.filter(|_| done).unwrap_or(status);
+    let passed = done && PASSED.contains(&state);
+    Check {
+        name: name.to_owned(),
+        state: state.to_owned(),
+        done,
+        passed,
+    }
+}
+
 /// Refuses with `github::ci::failed` naming each check that finished
 /// without passing, else `github::ci::pending` naming each not finished,
 /// else `github::ci::none` when no check run concluded success.
@@ -218,26 +242,14 @@ fn judge(
     suites: &Suites,
     combined: &Combined,
 ) -> Result<(), PluginError> {
-    let ran = (runs.iter()).map(|each| {
-        let done = each.status == "completed";
-        let state =
-            (each.conclusion.clone().filter(|_| done)).unwrap_or_else(|| each.status.clone());
-        let passed = done && PASSED.contains(&state.as_str());
-        Check {
-            name: each.name.clone(),
-            state,
-            done,
-            passed,
-        }
-    });
-    let suites = (suites.check_suites.iter()).map(|each| Check {
-        name: (each.app.as_ref()).map_or_else(
+    let ran =
+        (runs.iter()).map(|each| checked(&each.name, &each.status, each.conclusion.as_deref()));
+    let suites = (suites.check_suites.iter()).map(|each| {
+        let name = (each.app.as_ref()).map_or_else(
             || "a check suite".to_owned(),
             |app| format!("the check suite of {}", app.name),
-        ),
-        state: each.status.clone(),
-        done: each.status == "completed",
-        passed: true,
+        );
+        checked(&name, &each.status, each.conclusion.as_deref())
     });
     let statuses = (combined.statuses.iter()).map(|each| Check {
         name: each.context.clone(),

@@ -79,7 +79,7 @@ fn answers(desk: &Desk, runs: &[Value], suites: &[Value], statuses: &[Value]) {
         "echo \"$2\" >> \"$here/gh-endpoints.txt\"\n\
          case \"$2\" in\n\
          *check-suites*) cat \"$here/suites.json\"; exit 0;;\n\
-         */status) cat \"$here/status.json\"; exit 0;;\n\
+         */status*) cat \"$here/status.json\"; exit 0;;\n\
          esac",
     );
     let answer = json!({"total_count": runs.len(), "check_runs": runs});
@@ -87,7 +87,7 @@ fn answers(desk: &Desk, runs: &[Value], suites: &[Value], statuses: &[Value]) {
     let suites = json!({"total_count": suites.len(), "check_suites": suites});
     put_file(&desk.bin().join("suites.json"), &suites.to_string());
     // GitHub's combined state is pending when there are no statuses.
-    let combined = json!({"state": "pending", "statuses": statuses});
+    let combined = json!({"state": "pending", "total_count": statuses.len(), "statuses": statuses});
     put_file(&desk.bin().join("status.json"), &combined.to_string());
 }
 
@@ -100,9 +100,16 @@ fn passing() -> Vec<Value> {
     ]
 }
 
-/// One check suite of GitHub Actions in `status`.
+/// One check suite of GitHub Actions in `status`, concluded success once
+/// completed.
 fn suite(status: &str) -> Vec<Value> {
-    vec![json!({"status": status, "app": {"name": "GitHub Actions"}})]
+    let conclusion = (status == "completed").then_some("success");
+    concluded(status, conclusion)
+}
+
+/// One check suite of GitHub Actions in `status` with `conclusion`.
+fn concluded(status: &str, conclusion: Option<&str>) -> Vec<Value> {
+    vec![json!({"status": status, "conclusion": conclusion, "app": {"name": "GitHub Actions"}})]
 }
 
 /// Whether any run of the suite was written.
@@ -140,7 +147,7 @@ fn ci_writes_a_passing_run_of_the_changes_suite_from_its_check_runs_and_attaches
     assert_eq!(
         desk.gh_file("gh-endpoints.txt"),
         format!(
-            "{commit}/check-runs?per_page=100\n{commit}/check-suites?per_page=100\n{commit}/status\n"
+            "{commit}/check-runs?per_page=100\n{commit}/check-suites?per_page=100\n{commit}/status?per_page=100\n"
         )
     );
     assert_eq!(
@@ -237,6 +244,22 @@ fn ci_while_a_check_suite_is_queued_is_refused_as_pending_though_every_check_run
     let message = refused["message"].as_str().unwrap();
     assert!(
         message.contains("the check suite of GitHub Actions (queued) has not finished"),
+        "{message}"
+    );
+}
+
+#[test]
+fn ci_with_a_check_suite_that_concluded_failure_and_no_check_runs_is_refused_and_its_twin_is_admitted()
+ {
+    let refused = refused_then_admitted(&[], &concluded("completed", Some("failure")), &[]);
+    assert_eq!(refused["code"], "github::ci::failed");
+    assert_eq!(
+        refused["fields"]["checks"],
+        json!(["the check suite of GitHub Actions"])
+    );
+    let message = refused["message"].as_str().unwrap();
+    assert!(
+        message.contains("the check suite of GitHub Actions (failure) did not pass"),
         "{message}"
     );
 }
