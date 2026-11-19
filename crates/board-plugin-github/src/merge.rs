@@ -16,7 +16,7 @@ use serde_json::{Map, Value, json};
 use crate::gh;
 use crate::parts::Parts;
 use crate::records::PullRecord;
-use crate::repin::{Moved, Warning, repin};
+use crate::repin::{Mount, Moved, Warning, repin};
 use crate::send::{Delivered, after_sent, origin, output};
 
 /// The phase a change must be in before its pull request merges.
@@ -24,8 +24,7 @@ const LAND: &str = "land";
 /// The folder a board's own changes sit in.
 const CHANGES: &str = "/changes/";
 /// What to run again after a merge, so it opens the board the merge ran in.
-pub(crate) const SAME_BOARD: &str =
-    "in the board this merge ran in, with the same `-C` or `--personal`";
+const SAME_BOARD: &str = "in the board this merge ran in, with the same `-C` or `--personal`";
 
 /// Squash-merge a pull request in the checkout's repository, once the
 /// change it lands passes its land gate and the boundary passes the
@@ -133,7 +132,7 @@ pub(crate) fn merge(host: &dyn Host, input: &Value) -> Result<Value, PluginError
                 )
             })?,
             None,
-            None,
+            Mount::personal(place.mount.clone()),
         ),
     };
     let repository = format!("{}/{}", place.owner, place.repo);
@@ -180,10 +179,11 @@ pub(crate) fn merge(host: &dyn Host, input: &Value) -> Result<Value, PluginError
         Some((change, board)) if !queued => Some(advance(&**board, change, &sent)?),
         _ => None,
     };
-    let (mount, mount_warning) = match &changed {
-        Some((_, board)) => repin(host, &**board, mounted.as_deref(), false, queued),
-        None => repin(host, &*place.personal, place.mount.as_deref(), true, queued),
+    let board: &dyn Host = match &changed {
+        Some((_, board)) => &**board,
+        None => &*place.personal,
     };
+    let (mount, mount_warning) = repin(host, board, &mounted, queued);
     Ok(output(&MergeOutput {
         digest,
         crossing,
@@ -477,8 +477,8 @@ fn only_pull(
 }
 
 /// What a change records that merge reads: its head commit, if any, its
-/// pull requests, and its mount, if any.
-type Recorded = (Option<String>, Vec<String>, Option<String>);
+/// pull requests, and its mount in the board that holds it.
+type Recorded = (Option<String>, Vec<String>, Mount);
 
 /// What the change at `path` records.
 fn recorded_change(host: &dyn Host, path: &str) -> Result<Recorded, PluginError> {
@@ -501,7 +501,8 @@ fn recorded_change(host: &dyn Host, path: &str) -> Result<Recorded, PluginError>
     let pulls = (record.get("pulls").and_then(Value::as_array).into_iter())
         .flatten()
         .filter_map(|pull| pull.as_str().map(str::to_owned));
-    Ok((text("head"), pulls.collect(), text("mount")))
+    let mount = Mount::of_change(text("mount"), &report.location.board.repository);
+    Ok((text("head"), pulls.collect(), mount))
 }
 
 /// Moves the change at `path` to its next phase after its pull request at

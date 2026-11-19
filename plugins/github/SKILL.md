@@ -48,9 +48,8 @@ add `--personal` after `board`.
   checkout of a repository that another board mounts, a change in the
   personal board needs `--personal`. Without a change, pass `--head <sha>`,
   the full 40-hex commit. When `queued` is true, a merge queue holds the
-  pull request: run `board changes advance --path <change>` and the
-  `mount_warning` command in the same
-  board after it merges.
+  pull request: after it merges, run `board changes advance --path
+  <change>` in the same board, then the `mount_warning` command as it is.
 
 On `github::boundary::refused`, nothing was sent. Read `fields.failures`, the
 message, and the hint after it, which is the boundary's `Next:` step. Change

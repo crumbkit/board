@@ -3,7 +3,7 @@
 //! command to run by hand.
 
 use super::desk::Desk;
-use super::merge::{CHANGE, HEAD, TESTED, change, merging, pulls};
+use super::merge::{CHANGE, HEAD, TEAM_TESTED, TESTED, change, merging, pulls, team_change};
 use super::*;
 
 const MOUNT: &str = "/repos/widgets";
@@ -41,10 +41,22 @@ fn ready(merged: bool) -> (Desk, String) {
     (desk, commit)
 }
 
-/// What `fetch` and `mount update` the warning tells the agent to run.
-fn by_hand(desk: &Desk, personal: &str) -> String {
+/// `-C <directory>`, which reaches the board at `directory` from anywhere.
+fn at(directory: &Path) -> String {
+    format!("-C {}", directory.canonicalize().unwrap().display())
+}
+
+/// `-C` naming the personal board, which holds the desk's change.
+fn personal(desk: &Desk) -> String {
+    at(desk.personal.workdir())
+}
+
+/// The `fetch` and `mount update` the warning tells the agent to run, with
+/// `board` reaching the board that holds the mount.
+fn by_hand(desk: &Desk, board: &str) -> String {
     format!(
-        "git -C {} fetch origin main && board {personal}mount update {MOUNT}",
+        "git -C {} fetch origin +refs/heads/main:refs/remotes/origin/main && board {board} mount \
+         update {MOUNT}",
         desk.checkout().display()
     )
 }
@@ -54,6 +66,13 @@ fn merged(desk: &Desk) -> (Value, String) {
     let (ran, document) = desk.call("merge", &["--change", CHANGE]);
     assert_eq!(ran.code, 0, "{document}");
     (document["data"]["output"].clone(), text(&ran.stderr))
+}
+
+/// Points the change at the mount `mount`.
+fn mounting(desk: &Desk, mount: &str) {
+    let mut record = desk.record(CHANGE).unwrap();
+    record["mount"] = json!(mount);
+    desk.write("changes/lever.json", &record.to_string());
 }
 
 #[test]
@@ -88,7 +107,11 @@ fn a_queued_merge_leaves_the_pin_and_warns_and_once_merged_moves_it() {
     let warning = &result["mount_warning"];
     assert_eq!(
         (&warning["code"], warning.get("cause"), &warning["command"]),
-        (&json!(WARNING), None, &json!(by_hand(&desk, "")))
+        (
+            &json!(WARNING),
+            None,
+            &json!(by_hand(&desk, &personal(&desk)))
+        )
     );
     assert!(stderr.contains(WARNING), "{stderr}");
     assert_eq!(pin(&desk), before);
@@ -96,6 +119,56 @@ fn a_queued_merge_leaves_the_pin_and_warns_and_once_merged_moves_it() {
     let (result, _) = merged(&desk);
     assert_eq!(result["mount"]["new"], json!(commit), "{result}");
     assert_eq!(pin(&desk), commit);
+}
+
+#[test]
+fn a_queued_merge_says_it_was_queued_even_when_the_mount_is_missing() {
+    let (desk, _) = ready(false);
+    mounting(&desk, "/repos/gone");
+    let (result, _) = merged(&desk);
+    let warning = &result["mount_warning"];
+    assert_eq!(warning.get("cause"), None, "{warning}");
+    let message = warning["message"].as_str().unwrap();
+    assert!(
+        message.starts_with("GitHub only queued the merge"),
+        "{message}"
+    );
+    let command = format!("board {} mount update /repos/gone", personal(&desk));
+    assert_eq!(warning["command"], json!(command));
+}
+
+#[test]
+fn the_command_names_the_board_that_holds_the_change_however_the_merge_reached_it() {
+    for front in [&[][..], &["--personal"][..]] {
+        let (desk, _) = ready(false);
+        let (ran, document) = desk.call_in(front, "merge", &["--change", CHANGE]);
+        assert_eq!(ran.code, 0, "{document}");
+        assert_eq!(
+            document["data"]["output"]["mount_warning"]["command"],
+            json!(by_hand(&desk, &personal(&desk))),
+            "{front:?}"
+        );
+    }
+    let desk = Desk::new();
+    let team = desk.team();
+    team_change(&desk, &team, TEAM_TESTED);
+    pulls(&desk, false);
+    desk.gh_answers(&json!(""), 0, "");
+    let (ran, document) = desk.call_in(&["-C", &team.path()], "merge", &["--change", CHANGE]);
+    assert_eq!(ran.code, 0, "{document}");
+    assert_eq!(
+        document["data"]["output"]["mount_warning"]["command"],
+        json!(by_hand(&desk, &at(team.workdir())))
+    );
+    let (desk, _) = ready(false);
+    let result = desk.output(
+        "merge",
+        &merging("Add a lever", "Levers lift.", &["--head", HEAD]),
+    );
+    assert_eq!(
+        result["mount_warning"]["command"],
+        json!(by_hand(&desk, "--personal"))
+    );
 }
 
 #[test]
@@ -126,7 +199,7 @@ fn an_unreachable_remote_still_merges_and_warns_and_a_reachable_one_moves_the_pi
                 (
                     &json!(WARNING),
                     &json!("github::git::failed"),
-                    &json!(by_hand(&desk, ""))
+                    &json!(by_hand(&desk, &personal(&desk)))
                 ),
             );
             assert_eq!(result.get("mount"), None);
@@ -136,13 +209,25 @@ fn an_unreachable_remote_still_merges_and_warns_and_a_reachable_one_moves_the_pi
 }
 
 #[test]
+fn a_clone_whose_fetch_refspec_leaves_out_the_branch_still_moves_the_pin_as_one_that_has_it_does() {
+    for refspec in ["+refs/heads/other:refs/remotes/origin/other", ""] {
+        let (desk, commit) = ready(true);
+        if !refspec.is_empty() {
+            let checkout = desk.checkout();
+            desk.git(&checkout, &["config", "remote.origin.fetch", refspec]);
+        }
+        let (result, _) = merged(&desk);
+        assert_eq!(result["mount"]["new"], json!(commit), "{refspec}: {result}");
+        assert_eq!(pin(&desk), commit);
+    }
+}
+
+#[test]
 fn a_change_naming_a_missing_mount_still_reaches_done_and_warns_and_its_twin_moves_the_mount() {
     for mount in ["/repos/gone", MOUNT] {
         let (desk, commit) = ready(true);
         let before = pin(&desk);
-        let mut record = desk.record(CHANGE).unwrap();
-        record["mount"] = json!(mount);
-        desk.write("changes/lever.json", &record.to_string());
+        mounting(&desk, mount);
         let (result, _) = merged(&desk);
         assert_eq!(result["phase"], "done", "{mount}");
         if mount == MOUNT {
@@ -150,12 +235,13 @@ fn a_change_naming_a_missing_mount_still_reaches_done_and_warns_and_its_twin_mov
             assert_eq!(pin(&desk), commit);
         } else {
             let warning = &result["mount_warning"];
+            let command = format!("board {} mount update /repos/gone", personal(&desk));
             assert_eq!(
                 (&warning["code"], &warning["cause"], &warning["command"]),
                 (
                     &json!(WARNING),
                     &json!("board::path::not_found"),
-                    &json!("board mount update /repos/gone")
+                    &json!(command)
                 ),
             );
             assert_eq!(pin(&desk), before);
@@ -174,13 +260,10 @@ fn a_mount_following_a_local_branch_is_left_and_warned_of_and_one_following_orig
         let (result, _) = merged(&desk);
         if follow == "main" {
             let warning = &result["mount_warning"];
+            let command = format!("board {} mount update {MOUNT}", personal(&desk));
             assert_eq!(
                 (&warning["code"], warning.get("cause"), &warning["command"]),
-                (
-                    &json!(WARNING),
-                    None,
-                    &json!(format!("board mount update {MOUNT}"))
-                ),
+                (&json!(WARNING), None, &json!(command)),
             );
             assert_eq!(result.get("mount"), None);
             assert_eq!(pin(&desk), before);

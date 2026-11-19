@@ -106,16 +106,20 @@ result it recorded.
   change's `mount` in the change's board, or without `--change` the
   checkout's mount in the personal board. It resolves the mount with
   `refs`, splits the ref it follows into a remote of the mounted clone and
-  a branch, runs `git fetch <remote> <branch>` there, and moves the pin as
-  `board mount update` does. It returns `mount` with `path`, `old`, `new`
-  and `wrote`. When it leaves the mount at its pin, because the merge was
-  queued, the mount is missing, it follows a local branch, or the fetch or
-  the update failed, it returns `mount_warning` and also prints it. The
-  merge still succeeds. The warning's `code` is `github::merge::mount`,
-  `cause` is the code of the step that failed, and `command` is
-  `git -C <clone> fetch <remote> <branch> && board mount update <path>`,
-  or only the `board mount update` part when the remote is unknown, with
-  `--personal` when the mount is in the personal board.
+  a branch, fetches `+refs/heads/<branch>:refs/remotes/<remote>/<branch>`
+  there, so the ref moves even when the clone's own refspec leaves the
+  branch out, and moves the pin as `board mount update` does. It returns
+  `mount` with `path`, `old`, `new` and `wrote`. When it leaves the mount
+  at its pin, because the merge was queued, the mount is missing, it
+  follows a local branch, or the fetch or the update failed, it returns
+  `mount_warning` and also prints it. The merge still succeeds. The
+  warning's `code` is `github::merge::mount`. `cause` is the code of the
+  step that failed, and is absent for a queued merge, whose message always
+  says it was queued. `command` is `git -C <clone> fetch <remote> <refspec>
+  && <board> mount update <path>`, or only the `mount update` part when
+  the remote is unknown. `<board>` reaches the board that holds the mount
+  from any directory: `board -C <that board's directory>` with `--change`,
+  and `board --personal` without it.
 
 The destination is `github:<owner>/<repo>` in lower case, from the URL
 configured for the checkout's `origin`. It is read before any `insteadOf`

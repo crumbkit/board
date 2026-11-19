@@ -10,7 +10,7 @@ pub(super) const HEAD: &str = "0123456789abcdef0123456789abcdef01234567";
 pub(super) const CHANGE: &str = "/changes/lever";
 pub(super) const TESTED: &str = "# Lever\n\n## What the tests prove\n\nIt lands.\n\n## What the tests do not prove\n\nRetries.\n";
 /// A plan that also has the section the team board's flow asks for.
-const TEAM_TESTED: &str = "# Lever\n\n## What the tests prove\n\nIt lands.\n\n## What the tests do not prove\n\nRetries.\n\n## Team tests\n\nThe team ran it.\n";
+pub(super) const TEAM_TESTED: &str = "# Lever\n\n## What the tests prove\n\nIt lands.\n\n## What the tests do not prove\n\nRetries.\n\n## Team tests\n\nThe team ran it.\n";
 /// The version of the development flow that only the team board holds.
 const TEAM_FLOW: &str = "/flows/development/7ea3000000000000";
 
@@ -71,7 +71,7 @@ fn lever(board: &Scenario, record: &Value, plan: &str) {
 /// version it follows: the development flow whose land phase also asks for
 /// a Team tests section under the check `team-tests`, which no shipped
 /// flow has. Then commits the team board and moves the pin.
-fn team_change(desk: &Desk, team: &Scenario, plan: &str) {
+pub(super) fn team_change(desk: &Desk, team: &Scenario, plan: &str) {
     let mut flow: Value = serde_json::from_str(include_str!(
         "../../../../../board-plugin-changes/flows/development.json"
     ))

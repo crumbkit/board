@@ -13,10 +13,11 @@ use serde::Serialize;
 use serde_json::{Map, json};
 
 use crate::git;
-use crate::merge::SAME_BOARD;
 
 /// The code of every warning this module gives.
 const CODE: &str = "github::merge::mount";
+/// Why a queued merge leaves the mount, whatever else would stop it.
+const QUEUED: &str = "GitHub only queued the merge, which has not landed yet";
 
 /// The mount a merge moved, and the commits it was and is pinned at.
 /// `wrote` is false when the mount was already at the new commit.
@@ -43,52 +44,69 @@ pub(crate) struct Warning {
     command: String,
 }
 
-/// After a merge, moves the mount at `path` in `board`, the personal board
-/// when `personal`. A merge GitHub only `queued` leaves it. A mount left at
-/// its pin is warned of through `host`.
+/// The mount a merge moves: its path, or why none is known, and the front
+/// of a `board` command that reaches the board holding it from anywhere.
+pub(crate) struct Mount {
+    path: Result<String, &'static str>,
+    board: String,
+}
+
+impl Mount {
+    /// The mount the change in the board at `directory` records, if any.
+    pub(crate) fn of_change(path: Option<String>, directory: &Path) -> Self {
+        Self {
+            path: path.ok_or("the change records no mount"),
+            board: format!("board -C {}", directory.display()),
+        }
+    }
+
+    /// The checkout's mount in the personal board, if it has one place.
+    pub(crate) fn personal(path: Option<String>) -> Self {
+        Self {
+            path: path.ok_or("the personal board mounts this checkout at no one path"),
+            board: "board --personal".to_owned(),
+        }
+    }
+}
+
+/// After a merge, moves `mount`, held in `board`. A merge GitHub only
+/// `queued` leaves it. A mount left at its pin is warned of through `host`.
 pub(crate) fn repin(
     host: &dyn Host,
     board: &dyn Host,
-    path: Option<&str>,
-    personal: bool,
+    mount: &Mount,
     queued: bool,
 ) -> (Option<Moved>, Option<Warning>) {
-    match moved(host, board, path, personal, queued) {
+    match moved(host, board, mount, queued) {
         Ok(moved) => (Some(moved), None),
         Err(warning) => {
-            host.warn(&warning.refusal(personal));
+            host.warn(&warning.refusal());
             (None, Some(warning))
         }
     }
 }
 
 /// [`repin`]'s steps: resolve the mount, find the remote branch it
-/// follows, fetch it, and update the mount.
-fn moved(
-    host: &dyn Host,
-    board: &dyn Host,
-    path: Option<&str>,
-    personal: bool,
-    queued: bool,
-) -> Result<Moved, Warning> {
-    let personal = if personal { "--personal " } else { "" };
-    let Some(path) = path else {
-        return Err(Warning::new(
-            None,
-            "no mount is known for this merge: the change records none, or the personal board \
-             mounts this checkout at no one path, so no mount was moved"
-                .to_owned(),
-            format!("board {personal}mount update /repos/<name>"),
-        ));
-    };
-    let update = format!("board {personal}mount update {path}");
+/// follows, fetch it, and update the mount. When `queued`, every warning
+/// says so, whatever step stopped first.
+fn moved(host: &dyn Host, board: &dyn Host, mount: &Mount, queued: bool) -> Result<Moved, Warning> {
     let left = |cause: Option<String>, why: String, command: &str| {
+        let (cause, why) = if queued {
+            (None, QUEUED.to_owned())
+        } else {
+            (cause, why)
+        };
         Warning::new(
             cause,
-            format!("{why}, so {path} was left at its pin"),
+            format!("{why}, so the mount was left at its pin"),
             command.to_owned(),
         )
     };
+    let path = (mount.path.as_deref()).map_err(|why| {
+        let command = format!("{} mount update /repos/<name>", mount.board);
+        left(None, (*why).to_owned(), &command)
+    })?;
+    let update = format!("{} mount update {path}", mount.board);
     let logical: LogicalPath =
         (path.parse()).map_err(|_| left(None, format!("{path} is not a logical path"), &update))?;
     let report = (board.refs(std::slice::from_ref(&logical), Absent::Refuse, &[]))
@@ -115,12 +133,17 @@ fn moved(
         );
         return Err(left(None, why, &update));
     };
-    let command = fetch(repository, remote, branch, &update);
+    // An explicit refspec moves the remote-tracking ref the mount follows
+    // even when the clone's own fetch refspec leaves the branch out.
+    let refspec = format!("+refs/heads/{branch}:refs/remotes/{remote}/{branch}");
+    let command = format!(
+        "git -C {} fetch {remote} {refspec} && {update}",
+        repository.display()
+    );
     if queued {
-        let why = "GitHub only queued the merge, which has not landed yet".to_owned();
-        return Err(left(None, why, &command));
+        return Err(left(None, String::new(), &command));
     }
-    git::git(host, repository, &["fetch", remote, branch], "")
+    git::git(host, repository, &["fetch", remote, &refspec], "")
         .map_err(|error| failed(error, &command))?;
     let report = (board.mount_update(&logical, LOCK_WAIT)).map_err(|error| {
         let why = format!("`board mount update` refused: {error}");
@@ -147,12 +170,6 @@ fn upstream<'a>(remotes: &'a str, follow: &'a str) -> Option<(&'a str, &'a str)>
         .max_by_key(|(remote, _)| remote.len())
 }
 
-/// `git -C <repository> fetch <remote> <branch> && <update>`.
-fn fetch(repository: &Path, remote: &str, branch: &str, update: &str) -> String {
-    let at = repository.display();
-    format!("git -C {at} fetch {remote} {branch} && {update}")
-}
-
 impl Warning {
     fn new(cause: Option<String>, message: String, command: String) -> Self {
         Self {
@@ -163,9 +180,8 @@ impl Warning {
         }
     }
 
-    /// The warning as Board prints it, naming the board to run the
-    /// command in unless that is the personal board.
-    fn refusal(&self, personal: bool) -> Refusal {
+    /// The warning as Board prints it.
+    fn refusal(&self) -> Refusal {
         let plugin: PluginName = "github".parse().expect("github is a plugin name");
         let code = PluginCode::parse(&plugin, CODE.to_owned()).expect("CODE is github's");
         let mut fields = Map::new();
@@ -174,12 +190,7 @@ impl Warning {
             fields.insert("cause".to_owned(), json!(cause));
         }
         let mut refusal = Refusal::plugin(code, self.message.clone(), fields);
-        let board = if personal {
-            String::new()
-        } else {
-            format!(" {SAME_BOARD}")
-        };
-        refusal.hint = Some(format!("run `{}`{board}", self.command));
+        refusal.hint = Some(format!("run `{}`", self.command));
         refusal
     }
 }
