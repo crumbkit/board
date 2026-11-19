@@ -573,8 +573,8 @@ fn a_change_with_no_pull_or_two_pulls_in_the_repository_needs_number_and_with_it
         ),
         (
             vec![other],
-            "the change records no readable github/pull/v1 record of octo/widgets, and \
-             fields.skipped lists the paths it could not read; pass --number <n>",
+            "the change records no readable github/pull/v1 record of octo/widgets; pass \
+             --number <n>",
             json!([]),
         ),
     ] {
@@ -639,20 +639,12 @@ fn a_pull_the_change_records_through_a_mount_gives_the_number_and_one_of_another
     desk.pin(&team);
     pulls(&desk, true);
     desk.gh_answers(&json!(""), 0, "");
-    // A path the team board does not hold is skipped and named, and a
-    // pull of another repository is read but does not count.
-    let missing = "/repos/team/gh/octo/widgets/pulls/99";
-    pulling(&desk, &["/repos/team/gh/octo/other/pulls/3", missing]);
+    pulling(&desk, &["/repos/team/gh/octo/other/pulls/3"]);
     let (ran, document) = desk.call_in(&["--personal"], "merge", &["--change", CHANGE]);
     assert_eq!(ran.code, 1, "{document}");
-    let fields = &document["fields"];
     assert_eq!(
-        (&document["code"], &fields["pulls"], &fields["skipped"]),
-        (
-            &json!("github::merge::number"),
-            &json!([]),
-            &json!([missing])
-        )
+        (&document["code"], &document["fields"]["pulls"]),
+        (&json!("github::merge::number"), &json!([]))
     );
     assert_eq!(desk.gh_calls(), 0);
     pulling(&desk, &["/repos/team/gh/octo/widgets/pulls/12"]);

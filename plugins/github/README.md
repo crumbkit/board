@@ -193,10 +193,8 @@ Refusals:
 - `github::merge::number`: `merge` got no `--number`, and either no
   `--change`, or a change that records no readable pull request of the
   repository, or several. `fields.pulls` lists the numbers of this
-  repository's pull requests the change records, and `fields.skipped` the
-  paths it names that are no readable `github/pull/v1` record, such as
-  one in an unfetched mount. Owner and repository match without regard to
-  case. gh does not run.
+  repository's pull requests the change records. Owner and repository
+  match without regard to case. gh does not run.
 - `github::merge::pull`: `merge` left out `--subject` or `--body`, and
   GitHub has no pull request `--number` in the repository, or that pull
   request has no title for a left-out subject. `fields.number` names it.

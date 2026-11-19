@@ -406,37 +406,30 @@ fn gate(host: &dyn Host, personal: &dyn Host, path: &str) -> Result<(), PluginEr
 /// `github/pull/v1` records `pulls` names in `host`, or
 /// `github::merge::number` saying why there is none: no change was named
 /// (`pulls` is `None`), the change records no readable one of this
-/// repository, or several. `fields.skipped` lists each path it names that
-/// is no readable `github/pull/v1` record, such as one in an unfetched
-/// mount. The land gate already refuses a change with no pull request. A
-/// record keeps owner and repository in lower case, and GitHub matches
-/// them without case, so they compare so here.
+/// repository, or several. The land gate already refuses a change with no
+/// pull request, or one whose recorded pull request is missing. A record
+/// keeps owner and repository in lower case, and GitHub matches them
+/// without case, so they compare so here.
 fn only_pull(
     host: &dyn Host,
     pulls: Option<&[String]>,
     owner: &str,
     repo: &str,
 ) -> Result<u64, PluginError> {
-    let (named, mut skipped): (Vec<&String>, Vec<&String>) =
-        (pulls.unwrap_or_default().iter()).partition(|pull| pull.parse::<LogicalPath>().is_ok());
-    let paths: Vec<LogicalPath> = named.iter().filter_map(|pull| pull.parse().ok()).collect();
-    let answers = (host.get_each(&paths))
-        .map_err(|error| PluginError::board_refused("github", "get", &error.refusal("get")))?;
+    let paths: Vec<LogicalPath> = (pulls.unwrap_or_default().iter())
+        .filter_map(|pull| pull.parse().ok())
+        .collect();
+    let records = (host.get_each(&paths))
+        .map_err(|error| PluginError::board_refused("github", "get", &error.refusal("get")))?
+        .into_iter();
     let ours = |record: &Value, key: &str, name: &str| {
         (record.get(key).and_then(Value::as_str)).is_some_and(|its| its.eq_ignore_ascii_case(name))
     };
-    let mut numbers: Vec<u64> = Vec::new();
-    for (pull, answer) in named.into_iter().zip(answers) {
-        let record = (answer.ok().and_then(|report| report.record.ok()))
-            .filter(|record| record.get("$type").and_then(Value::as_str) == Some(PullRecord::TYPE));
-        match record {
-            None => skipped.push(pull),
-            Some(record) if ours(&record, "owner", owner) && ours(&record, "repo", repo) => {
-                numbers.extend(record.get("number").and_then(Value::as_u64));
-            }
-            Some(_) => {}
-        }
-    }
+    let mut numbers: Vec<u64> = (records.filter_map(|answer| answer.ok()?.record.ok()))
+        .filter(|record| record.get("$type").and_then(Value::as_str) == Some(PullRecord::TYPE))
+        .filter(|record| ours(record, "owner", owner) && ours(record, "repo", repo))
+        .filter_map(|record| record.get("number")?.as_u64())
+        .collect();
     numbers.sort_unstable();
     numbers.dedup();
     if let [number] = numbers[..] {
@@ -447,8 +440,8 @@ fn only_pull(
                  --number <n>"
             .to_owned(),
         Some(_) if numbers.is_empty() => format!(
-            "the change records no readable github/pull/v1 record of {owner}/{repo}, and \
-             fields.skipped lists the paths it could not read; pass --number <n>"
+            "the change records no readable github/pull/v1 record of {owner}/{repo}; pass \
+             --number <n>"
         ),
         Some(_) => {
             let list: Vec<String> = numbers.iter().map(|number| format!("#{number}")).collect();
@@ -461,7 +454,6 @@ fn only_pull(
     };
     let mut fields = Map::new();
     fields.insert("pulls".to_owned(), json!(numbers));
-    fields.insert("skipped".to_owned(), json!(skipped));
     Err(PluginError {
         code: "github::merge::number".to_owned(),
         message,
