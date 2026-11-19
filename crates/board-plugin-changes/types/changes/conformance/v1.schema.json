@@ -95,7 +95,7 @@
     },
     "version": {
       "description": "The version of the mockup the build was compared with.",
-      "minLength": 1,
+      "pattern": "^\\S+( \\S+){0,24}$",
       "type": "string"
     }
   },

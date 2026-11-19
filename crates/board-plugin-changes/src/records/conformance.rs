@@ -1,7 +1,7 @@
 //! `changes/conformance/v1`, a critic's comparison of a built page with an
 //! agreed design.
 
-use board_plugin::shape::{CommitName, Prose, Record, Ref, Tag};
+use board_plugin::shape::{CommitName, Prose, Record, Ref, Summary, Tag};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -29,7 +29,7 @@ pub(crate) struct ConformanceRecord {
     #[schemars(with = "Prose", extend("minLength" = 1))]
     mockup: String,
     /// The version of the mockup the build was compared with.
-    #[schemars(length(min = 1))]
+    #[schemars(with = "Summary")]
     version: String,
     /// The commit the screenshot was taken at.
     #[schemars(with = "CommitName")]
