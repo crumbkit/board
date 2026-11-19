@@ -258,6 +258,15 @@ function engine(on: On, answers: Answers) {
 const edit = ($: Engine, file = FILE, agentId?: string) =>
   $.tool.call({ tool: 'Edit', file_path: file, old_string: 'a', new_string: 'b', replace_all: false, ...(agentId ? { agentId } : {}) })
 
+// The advice the guard adds to an edit that ran.
+const noBriefLine = (file: string, board = BOARD, mount = '/repos/widgets', said = 'this agent did not start from the brief of a change') =>
+  `changes::guard::no_brief: this edit of ${file} ran. ${file} is in ${mount}, which the board at ${board} mounts, and ${said}. ` +
+  `Work on a mounted repository lands through a change: \`board -C ${board} changes start --mount ${mount} --title '<title>'\`, ` +
+  `then build from \`board -C ${board} call changes.brief --path /changes/<name>\`.`
+const unknownLine = (file: string, why: string) =>
+  `changes::guard::unknown: this edit of ${file} ran. The guard could not tell whether it belongs to a change: ${why}. ` +
+  'Fix what failed and the guard advises on the next edit.'
+
 test('a brief line is the first line of the first message, naming one change', () => {
   expect(briefOf(BRIEF)).toBe('/changes/fix-it')
   expect(briefOf('\n  board-brief: /changes/fix-it  \nmore')).toBe('/changes/fix-it')
@@ -322,17 +331,12 @@ test('a subagent started from the brief of a change in build edits its repositor
   ])
 })
 
-test('a main session without a brief is refused an edit of a mounted repository', async ($, on) => {
+test('a main session without a brief edits a mounted repository and is advised', async ($, on) => {
   const { edits } = engine(on, { first: { '': 'Coordinate the work.', a1: BRIEF } })
   const done = await edit($)
-  expect(done.deny).toBe(
-    `changes::guard::no_brief: ${FILE} is in /repos/widgets, which the board at ${BOARD} mounts. Only an agent ` +
-      'whose first message is the brief `changes.brief` prints, or starts with `board-brief: /changes/<name>`, may ' +
-      'edit it, and this agent\'s first message ' +
-      `does not. Start a builder whose first message is the output of \`board -C ${BOARD} call changes.brief --path ` +
-      '/changes/<name>`.',
-  )
-  expect(edits).toEqual([])
+  expect(done.deny).toBeUndefined()
+  expect(done.context).toEqual([noBriefLine(FILE)])
+  expect(edits).toEqual(['Edit'])
 })
 
 test('a main session that started from a brief edits a mounted repository', async ($, on) => {
@@ -342,60 +346,68 @@ test('a main session that started from a brief edits a mounted repository', asyn
   expect(edits).toEqual(['Edit'])
 })
 
-test('a brief that names a change in plan is refused, and the same brief in build is admitted', async ($, on) => {
+test('a brief that names a change in plan is advised, and the same brief in build is not', async ($, on) => {
   const answers: Answers = { first: { a1: BRIEF }, change: change({ mount: '/repos/widgets', phase: 'plan' }) }
   const { edits } = engine(on, answers)
-  const refused = await edit($, FILE, 'a1')
-  expect(refused.deny).toBe(
-    `changes::guard::not_building: /changes/fix-it is in phase plan, and its builder may edit ${FILE} only in ` +
-      `build. Run \`board -C ${BOARD} call changes.advance --path /changes/fix-it\` once its plan gate passes.`,
-  )
+  const advised = await edit($, FILE, 'a1')
+  expect(advised.deny).toBeUndefined()
+  expect(advised.context).toEqual([
+    `changes::guard::not_building: this edit of ${FILE} ran. /changes/fix-it is in phase plan, and a change takes ` +
+      `edits in build. Run \`board -C ${BOARD} call changes.advance --path /changes/fix-it\` once its plan gate passes.`,
+  ])
   answers.change = change({ mount: '/repos/widgets', phase: 'build' })
-  expect((await edit($, FILE, 'a1')).deny).toBeUndefined()
-  expect(edits).toEqual(['Edit'])
+  const plain = await edit($, FILE, 'a1')
+  expect(plain.deny).toBeUndefined()
+  expect(plain.context).toBeUndefined()
+  expect(edits).toEqual(['Edit', 'Edit'])
 })
 
-test('a paused change is refused and says to resume it, and the same change in build is admitted', async ($, on) => {
+test('a paused change is advised to resume, and the same change in build is not', async ($, on) => {
   const answers: Answers = { first: { a1: BRIEF }, change: change({ mount: '/repos/widgets', phase: 'paused' }) }
   engine(on, answers)
-  expect((await edit($, FILE, 'a1')).deny).toBe(
-    `changes::guard::not_building: /changes/fix-it is paused, and its builder may edit ${FILE} only in build. ` +
-      `Run \`board -C ${BOARD} call changes.resume --path /changes/fix-it\` when the cap allows.`,
-  )
+  const advised = await edit($, FILE, 'a1')
+  expect(advised.deny).toBeUndefined()
+  expect(advised.context).toEqual([
+    `changes::guard::not_building: this edit of ${FILE} ran. /changes/fix-it is paused, and a change takes edits in ` +
+      `build. Run \`board -C ${BOARD} call changes.resume --path /changes/fix-it\` when the cap allows.`,
+  ])
   answers.change = change({ mount: '/repos/widgets', phase: 'build' })
-  expect((await edit($, FILE, 'a1')).deny).toBeUndefined()
+  expect((await edit($, FILE, 'a1')).context).toBeUndefined()
 })
 
-test('a brief for a change to another repository is refused, and one for this repository is admitted', async ($, on) => {
+test('a brief for a change to another repository is advised, and one for this repository is not', async ($, on) => {
   const answers: Answers = { first: { a1: BRIEF }, change: change({ mount: '/repos/gadgets', phase: 'build' }) }
   const { edits } = engine(on, answers)
-  const done = await edit($, FILE, 'a1')
-  expect(done.deny).toBe(
-    `changes::guard::wrong_mount: /changes/fix-it is a change to /repos/gadgets, and ${FILE} is in ` +
-      '/repos/widgets. Start a builder from the brief of a change to /repos/widgets.',
-  )
+  const advised = await edit($, FILE, 'a1')
+  expect(advised.deny).toBeUndefined()
+  expect(advised.context).toEqual([
+    `changes::guard::wrong_mount: this edit of ${FILE} ran. /changes/fix-it is a change to /repos/gadgets, and ${FILE} ` +
+      'is in /repos/widgets. Work on /repos/widgets lands through a change to /repos/widgets.',
+  ])
   answers.change = change({ mount: '/repos/widgets', phase: 'build' })
-  expect((await edit($, FILE, 'a1')).deny).toBeUndefined()
-  expect(edits).toEqual(['Edit'])
+  expect((await edit($, FILE, 'a1')).context).toBeUndefined()
+  expect(edits).toEqual(['Edit', 'Edit'])
 })
 
-test('a prototype builder is refused off its proto branch and admitted on it', async ($, on) => {
+test('a prototype builder is advised off its proto branch and not advised on it', async ($, on) => {
   // A change is a prototype when a prototype record sits at <change>/prototype.
   const answers: Answers = { first: { a1: BRIEF }, prototype: PROTOTYPE, branch: 'main' }
   const { edits } = engine(on, answers)
-  expect((await edit($, FILE, 'a1')).deny).toBe(
-    `changes::guard::wrong_branch: /changes/fix-it is a prototype, and its builder may edit ${FILE} only on ` +
-      "branch proto/fix-it, but the file's checkout is on branch main. Run `git switch -c proto/fix-it` there, or " +
+  const off = await edit($, FILE, 'a1')
+  expect(off.deny).toBeUndefined()
+  expect(off.context).toEqual([
+    `changes::guard::wrong_branch: this edit of ${FILE} ran. /changes/fix-it is a prototype, which edits ${FILE} on ` +
+      "branch proto/fix-it, and the file's checkout is on branch main. Run `git switch -c proto/fix-it` there, or " +
       '`git switch proto/fix-it` once it exists.',
-  )
+  ])
   answers.branch = ''
-  expect((await edit($, FILE, 'a1')).deny).toMatch(/checkout is on a detached HEAD\./)
+  expect((await edit($, FILE, 'a1')).context?.[0]).toMatch(/checkout is on a detached HEAD\./)
   answers.branch = 'proto/fix-it'
-  expect((await edit($, FILE, 'a1')).deny).toBeUndefined()
-  expect(edits).toEqual(['Edit'])
+  expect((await edit($, FILE, 'a1')).context).toBeUndefined()
+  expect(edits).toEqual(['Edit', 'Edit', 'Edit'])
 })
 
-test('a prototype record Board does not read refuses the edit, and with none there the change builds', async ($, on) => {
+test('a prototype record Board does not read is advised as unknown, and with a healthy one there the builder is not', async ($, on) => {
   const answers: Answers = {
     first: { a1: BRIEF },
     prototype: DEGRADED_PROTOTYPE,
@@ -403,36 +415,41 @@ test('a prototype record Board does not read refuses the edit, and with none the
     branch: 'proto/fix-it',
   }
   const { ran, edits } = engine(on, answers)
-  expect((await edit($, FILE, 'a1')).deny).toMatch(
-    /`board -C \/home\/me\/board check --healthy \/changes\/fix-it\/prototype` failed with board::record::invalid: fails its schema/,
+  const bad = await edit($, FILE, 'a1')
+  expect(bad.deny).toBeUndefined()
+  expect(bad.context?.[0]).toMatch(
+    /^changes::guard::unknown: this edit of .* ran\. .*`board -C \/home\/me\/board check --healthy \/changes\/fix-it\/prototype` failed with board::record::invalid: fails its schema/,
   )
   expect(ran).toContain(`check ${BOARD} /changes/fix-it/prototype`)
-  // The same record when Board reads it admits the builder on its branch.
+  // The same record when Board reads it leaves the builder on its branch unadvised.
   delete answers.checked
   answers.prototype = PROTOTYPE
-  expect((await edit($, FILE, 'a1')).deny).toBeUndefined()
-  // A record of another type there is refused too.
+  expect((await edit($, FILE, 'a1')).context).toBeUndefined()
+  // A record of another type there is advised too.
   answers.prototype = OTHER_TYPE
-  expect((await edit($, FILE, 'a1')).deny).toMatch(/failed with it holds a tasks\/task\/v2, not a changes\/prototype\/v1/)
+  expect((await edit($, FILE, 'a1')).context?.[0]).toMatch(/failed with it holds a tasks\/task\/v2, not a changes\/prototype\/v1/)
   answers.branch = 'proto/other'
   delete answers.prototype
-  expect((await edit($, FILE, 'a1')).deny).toBeUndefined()
-  expect(edits).toEqual(['Edit', 'Edit'])
+  expect((await edit($, FILE, 'a1')).context).toBeUndefined()
+  expect(edits).toEqual(['Edit', 'Edit', 'Edit', 'Edit'])
 })
 
 test('a build change is admitted on any branch', async ($, on) => {
   const { edits } = engine(on, { first: { a1: BRIEF }, branch: 'proto/other' })
-  expect((await edit($, FILE, 'a1')).deny).toBeUndefined()
+  expect((await edit($, FILE, 'a1')).context).toBeUndefined()
   expect(edits).toEqual(['Edit'])
 })
 
-test('a brief naming a change no board holds is refused as no brief', async ($, on) => {
+test('a brief naming a change no board holds is advised as no brief, and the change in build is not', async ($, on) => {
   const answers: Answers = { first: { a1: BRIEF }, change: MISSING }
   engine(on, answers)
   const done = await edit($, FILE, 'a1')
-  expect(done.deny).toMatch(/^changes::guard::no_brief: .*first message names \/changes\/fix-it, which the board at /)
+  expect(done.deny).toBeUndefined()
+  expect(done.context).toEqual([
+    noBriefLine(FILE, BOARD, '/repos/widgets', `this agent's brief names /changes/fix-it, which the board at ${BOARD} does not hold`),
+  ])
   answers.change = change({ mount: '/repos/widgets', phase: 'build' })
-  expect((await edit($, FILE, 'a1')).deny).toBeUndefined()
+  expect((await edit($, FILE, 'a1')).context).toBeUndefined()
 })
 
 test('a path outside every mounted repository is admitted without reading the conversation', async ($, on) => {
@@ -456,38 +473,37 @@ test('a NotebookEdit is guarded like an Edit', async ($, on) => {
   const call = (agentId?: string) =>
     $.tool.call({ tool: 'NotebookEdit', notebook_path: notebook, new_source: 'x', ...(agentId ? { agentId } : {}) })
   const { edits } = engine(on, { first: { '': 'Coordinate the work.', a1: BRIEF } })
-  expect((await call()).deny).toMatch(/^changes::guard::no_brief: /)
+  expect((await call()).context?.[0]).toMatch(/^changes::guard::no_brief: this edit of .* ran\. /)
   expect((await call('a1')).deny).toBeUndefined()
-  expect(edits).toEqual(['NotebookEdit'])
+  expect(edits).toEqual(['NotebookEdit', 'NotebookEdit'])
 })
 
-test('an unreadable change refuses with unknown and says what failed', async ($, on) => {
+test('an unreadable change is advised as unknown and the edit runs', async ($, on) => {
   const answers: Answers = { first: { a1: BRIEF }, change: DEGRADED }
   const { edits } = engine(on, answers)
   const done = await edit($, FILE, 'a1')
-  expect(done.deny).toBe(
-    `changes::guard::unknown: the guard could not tell whether this agent may edit ${FILE}: \`board -C ${BOARD} ` +
-      'get /changes/fix-it` failed with board::record::invalid: /changes/fix-it fails its schema. The guard refuses ' +
-      'every edit of a mounted repository it cannot check; fix what failed and try again.',
-  )
+  expect(done.deny).toBeUndefined()
+  expect(done.context).toEqual([
+    unknownLine(FILE, `\`board -C ${BOARD} get /changes/fix-it\` failed with board::record::invalid: /changes/fix-it fails its schema`),
+  ])
   answers.change = change({ mount: '/repos/widgets', phase: 'build' })
   expect((await edit($, FILE, 'a1')).deny).toBeUndefined()
-  expect(edits).toEqual(['Edit'])
+  expect(edits).toEqual(['Edit', 'Edit'])
 })
 
-test('a conversation the session cannot read refuses with unknown, and one it can read is admitted', async ($, on) => {
+test('a conversation the session cannot read is advised as unknown and the edit runs, and one it can read is admitted', async ($, on) => {
   const answers: Answers = { first: {} }
   engine(on, answers)
   const done = await edit($, FILE, 'gone')
-  expect(done.deny).toMatch(/^changes::guard::unknown: .*no conversation gone/)
+  expect(done.context?.[0]).toMatch(/^changes::guard::unknown: .*no conversation gone/)
   answers.first = { gone: BRIEF }
   expect((await edit($, FILE, 'gone')).deny).toBeUndefined()
 })
 
-test('a board config that is not JSON refuses with unknown, and one that is admits the builder', async ($, on) => {
+test('a board config that is not JSON is advised as unknown and the edit runs, and one that is admits the builder', async ($, on) => {
   const answers: Answers = { first: { a1: BRIEF }, config: 'boards = [' }
   engine(on, answers)
-  expect((await edit($, FILE, 'a1')).deny).toMatch(/^changes::guard::unknown: .*board config/)
+  expect((await edit($, FILE, 'a1')).context?.[0]).toMatch(/^changes::guard::unknown: .*board config/)
   answers.config = JSON.stringify({ boards: [BOARD] })
   expect((await edit($, FILE, 'a1')).deny).toBeUndefined()
 })
@@ -504,18 +520,18 @@ test('a brief found once is kept for the agent, so a long conversation keeps its
 test('a clone whose ssh origin names the mounted repository is guarded like a worktree of it', async ($, on) => {
   const file = '/work/clone-ssh/src/lib.rs'
   const { ran, edits } = engine(on, { first: { '': 'Coordinate the work.', a1: BRIEF } })
-  expect((await edit($, file)).deny).toMatch(/^changes::guard::no_brief: \/work\/clone-ssh\/src\/lib.rs is in \/repos\/widgets, /)
+  expect((await edit($, file)).context?.[0]).toMatch(/^changes::guard::no_brief: this edit of .* ran\. \/work\/clone-ssh\/src\/lib.rs is in \/repos\/widgets, /)
   expect((await edit($, file, 'a1')).deny).toBeUndefined()
-  expect(edits).toEqual(['Edit'])
+  expect(edits).toEqual(['Edit', 'Edit'])
   expect(ran.slice(0, 4)).toEqual(['git', 'config', `query ${BOARD}`, `origins ${REPO} /work/gadgets`])
 })
 
 test('a clone whose https origin names the mounted repository is guarded like a worktree of it', async ($, on) => {
   const file = '/work/clone-https/src/lib.rs'
   const { edits } = engine(on, { first: { '': 'Coordinate the work.', a1: BRIEF } })
-  expect((await edit($, file)).deny).toMatch(/^changes::guard::no_brief: .* is in \/repos\/widgets, /)
+  expect((await edit($, file)).context?.[0]).toMatch(/^changes::guard::no_brief: this edit of .* ran\. .* is in \/repos\/widgets, /)
   expect((await edit($, file, 'a1')).deny).toBeUndefined()
-  expect(edits).toEqual(['Edit'])
+  expect(edits).toEqual(['Edit', 'Edit'])
 })
 
 test('a repository whose origin names no mounted repository is admitted without reading the conversation', async ($, on) => {
@@ -535,10 +551,10 @@ test('origins match across ssh and https forms, case and a trailing .git', () =>
 test('a clone whose origin is a local path or a file URL of the mounted repository is guarded like a worktree', async ($, on) => {
   const { ran, edits } = engine(on, { first: { '': 'Coordinate the work.', a1: BRIEF } })
   for (const file of ['/work/clone-local/src/lib.rs', '/work/clone-file/src/lib.rs']) {
-    expect((await edit($, file)).deny).toMatch(/^changes::guard::no_brief: .* is in \/repos\/widgets, /)
+    expect((await edit($, file)).context?.[0]).toMatch(/^changes::guard::no_brief: this edit of .* ran\. .* is in \/repos\/widgets, /)
     expect((await edit($, file, 'a1')).deny).toBeUndefined()
   }
-  expect(edits).toEqual(['Edit', 'Edit'])
+  expect(edits).toEqual(['Edit', 'Edit', 'Edit', 'Edit'])
   expect(ran.slice(0, 4)).toEqual(['git', 'config', `query ${BOARD}`, 'git'])
 })
 
@@ -554,46 +570,46 @@ test('a local origin is a path or a file URL, and an absolute path is kept as it
 test('a worktree in another directory is guarded as its repository', async ($, on) => {
   const file = '/work/widgets.worktrees/x/src/lib.rs'
   const { ran, edits } = engine(on, { first: { '': 'Coordinate the work.', a1: BRIEF } })
-  expect((await edit($, file)).deny).toMatch(/^changes::guard::no_brief: .* is in \/repos\/widgets, /)
+  expect((await edit($, file)).context?.[0]).toMatch(/^changes::guard::no_brief: this edit of .* ran\. .* is in \/repos\/widgets, /)
   expect((await edit($, file, 'a1')).deny).toBeUndefined()
-  expect(edits).toEqual(['Edit'])
+  expect(edits).toEqual(['Edit', 'Edit'])
   expect(ran.slice(0, 3)).toEqual(['git', 'config', `query ${BOARD}`])
 })
 
 test('a ~ path to a mounted repository is guarded, and one outside it is admitted', async ($, on) => {
   const { edits } = engine(on, { first: { '': 'Coordinate the work.' } })
-  expect((await edit($, '~/widgets/src/lib.rs')).deny).toMatch(
-    /^changes::guard::no_brief: ~\/widgets\/src\/lib.rs is in \/repos\/widgets, /,
+  expect((await edit($, '~/widgets/src/lib.rs')).context?.[0]).toMatch(
+    /^changes::guard::no_brief: this edit of .* ran\. ~\/widgets\/src\/lib.rs is in \/repos\/widgets, /,
   )
   expect((await edit($, '~/board/tasks/a.md')).deny).toBeUndefined()
-  expect(edits).toEqual(['Edit'])
+  expect(edits).toEqual(['Edit', 'Edit'])
 })
 
-test('a symbolic link into a mounted repository is guarded, and one that leads nowhere refuses with unknown', async ($, on) => {
+test('a symbolic link into a mounted repository is advised, and one that leads nowhere is advised as unknown and the edit runs', async ($, on) => {
   const { edits } = engine(on, { first: { '': 'Coordinate the work.' } })
-  expect((await edit($, '/tmp/x/link.md')).deny).toMatch(/^changes::guard::no_brief: \/tmp\/x\/link.md is in \/repos\/widgets, /)
-  expect((await edit($, '/tmp/x/dangling.md')).deny).toMatch(/^changes::guard::unknown: .*cannot place/)
+  expect((await edit($, '/tmp/x/link.md')).context?.[0]).toMatch(/^changes::guard::no_brief: this edit of .* ran\. \/tmp\/x\/link.md is in \/repos\/widgets, /)
+  expect((await edit($, '/tmp/x/dangling.md')).context?.[0]).toMatch(/^changes::guard::unknown: .*cannot place/)
   expect((await edit($, '/tmp/x/new.md')).deny).toBeUndefined()
-  expect(edits).toEqual(['Edit'])
+  expect(edits).toEqual(['Edit', 'Edit', 'Edit'])
 })
 
-test('a ~user path cannot be placed and refuses with unknown', async ($, on) => {
+test('a ~user path cannot be placed and is advised as unknown and the edit runs', async ($, on) => {
   engine(on, {})
-  expect((await edit($, '~other/widgets/src/lib.rs')).deny).toMatch(/^changes::guard::unknown: .*cannot place/)
+  expect((await edit($, '~other/widgets/src/lib.rs')).context?.[0]).toMatch(/^changes::guard::unknown: .*cannot place/)
 })
 
-test('a git failure other than no repository refuses with unknown, and git that throws does too', async ($, on) => {
+test('a git failure other than no repository is advised as unknown and the edit runs, and git that throws does too', async ($, on) => {
   const { edits } = engine(on, {})
-  expect((await edit($, '/work/dubious/a.rs')).deny).toMatch(/^changes::guard::unknown: .*dubious ownership/)
-  expect((await edit($, '/work/throws/a.rs')).deny).toMatch(/^changes::guard::unknown: .*the lookup threw /)
+  expect((await edit($, '/work/dubious/a.rs')).context?.[0]).toMatch(/^changes::guard::unknown: .*dubious ownership/)
+  expect((await edit($, '/work/throws/a.rs')).context?.[0]).toMatch(/^changes::guard::unknown: .*the lookup threw /)
   expect((await edit($, '/work/loose/notes.md')).deny).toBeUndefined()
-  expect(edits).toEqual(['Edit'])
+  expect(edits).toEqual(['Edit', 'Edit', 'Edit'])
 })
 
-test('a board query that fails refuses with unknown, and one that lists mounts admits the builder', async ($, on) => {
+test('a board query that fails is advised as unknown and the edit runs, and one that lists mounts admits the builder', async ($, on) => {
   const answers: Answers = { first: { a1: BRIEF }, queryFails: true }
   engine(on, answers)
-  expect((await edit($, FILE, 'a1')).deny).toMatch(/^changes::guard::unknown: .*did not list its mounts: board: the index/)
+  expect((await edit($, FILE, 'a1')).context?.[0]).toMatch(/^changes::guard::unknown: .*did not list its mounts: board: the index/)
   answers.queryFails = false
   expect((await edit($, FILE, 'a1')).deny).toBeUndefined()
 })
@@ -610,7 +626,7 @@ test('with two boards the change is read from the one that holds it', async ($, 
   ])
 })
 
-test("a builder edits a worktree that another change's own mount also holds, and a brief for another repository is refused", async ($, on) => {
+test("a builder edits a worktree that another change's own mount also holds, and a brief for another repository is advised", async ($, on) => {
   // The board mounts the repository twice: beneath another change, listed first, and at /repos/widgets.
   const mounts = report('board/query-report/v2', [
     ['/changes/other/source', REPO, 'changes/other/source.json'],
@@ -622,13 +638,13 @@ test("a builder edits a worktree that another change's own mount also holds, and
   expect((await edit($, FILE, 'a1')).deny).toBeUndefined()
   expect(edits).toEqual(['Edit'])
   answers.change = change({ mount: '/repos/gadgets', phase: 'build' })
-  expect((await edit($, FILE, 'a1')).deny).toMatch(
-    /^changes::guard::wrong_mount: \/changes\/fix-it is a change to \/repos\/gadgets, and /,
+  expect((await edit($, FILE, 'a1')).context?.[0]).toMatch(
+    /^changes::guard::wrong_mount: this edit of .* ran\. \/changes\/fix-it is a change to \/repos\/gadgets, and /,
   )
-  expect(edits).toEqual(['Edit'])
+  expect(edits).toEqual(['Edit', 'Edit'])
 })
 
-test('a builder edits a clone that a second board mounts beneath a change, and a brief for another repository is refused', async ($, on) => {
+test('a builder edits a clone that a second board mounts beneath a change, and a brief for another repository is advised', async ($, on) => {
   const file = '/work/clone-ssh/src/lib.rs'
   // The team board holds only a change's own mount of the clone. The personal
   // board, which holds the brief's change, mounts the clone's origin.
@@ -643,16 +659,16 @@ test('a builder edits a clone that a second board mounts beneath a change, and a
   const { edits } = engine(on, answers)
   expect((await edit($, file, 'a1')).deny).toBeUndefined()
   expect(edits).toEqual(['Edit'])
-  expect((await edit($, file)).deny).toMatch(/^changes::guard::no_brief: .* is in \/changes\/old\/source, /)
+  expect((await edit($, file)).context?.[0]).toMatch(/^changes::guard::no_brief: this edit of .* ran\. .* is in \/changes\/old\/source, /)
   answers.changes = { [BOARD2]: MISSING, [BOARD]: change({ mount: '/repos/gadgets', phase: 'build' }) }
-  expect((await edit($, file, 'a1')).deny).toBe(
-    `changes::guard::wrong_mount: /changes/fix-it is a change to /repos/gadgets, and ${file} is in ` +
-      '/repos/widgets. Start a builder from the brief of a change to /repos/widgets.',
-  )
-  expect(edits).toEqual(['Edit'])
+  expect((await edit($, file, 'a1')).context).toEqual([
+    `changes::guard::wrong_mount: this edit of ${file} ran. /changes/fix-it is a change to /repos/gadgets, and ${file} ` +
+      'is in /repos/widgets. Work on /repos/widgets lands through a change to /repos/widgets.',
+  ])
+  expect(edits).toEqual(['Edit', 'Edit', 'Edit'])
 })
 
-test('a change of the same name in a board listed first does not refuse the builder of the change that names the mount', async ($, on) => {
+test('a change of the same name in a board listed first does not advise the builder of the change that names the mount', async ($, on) => {
   const file = '/work/clone-ssh/src/lib.rs'
   // The team board, listed first, mounts the clone's origin and holds a done change of the same name.
   // The personal board mounts the clone itself and holds the change in build.
@@ -672,8 +688,8 @@ test('a change of the same name in a board listed first does not refuse the buil
   ])
   // With the change in no other board, the done one refuses.
   answers.changes = { [BOARD2]: done, [BOARD]: MISSING }
-  expect((await edit($, file, 'a1')).deny).toMatch(/^changes::guard::not_building: \/changes\/fix-it is in phase done, /)
-  expect(edits).toEqual(['Edit'])
+  expect((await edit($, file, 'a1')).context?.[0]).toMatch(/^changes::guard::not_building: this edit of .* ran\. \/changes\/fix-it is in phase done, /)
+  expect(edits).toEqual(['Edit', 'Edit'])
 })
 
 test('a brief kept for the main conversation does not outlive /clear or /resume', async ($, on) => {
@@ -682,13 +698,13 @@ test('a brief kept for the main conversation does not outlive /clear or /resume'
   expect((await edit($)).deny).toBeUndefined()
   answers.session = 'after-clear'
   answers.first = { '': 'A new conversation.' }
-  expect((await edit($)).deny).toMatch(/^changes::guard::no_brief: /)
+  expect((await edit($)).context?.[0]).toMatch(/^changes::guard::no_brief: this edit of .* ran\. /)
 })
 
-test('a full window with no kept brief refuses with unknown, and a window that holds the first message admits', async ($, on) => {
+test('a full window with no kept brief is advised as unknown and the edit runs, and a window that holds the first message admits', async ($, on) => {
   const answers: Answers = { first: { w1: BRIEF }, entries: 4096 }
   engine(on, answers)
-  expect((await edit($, FILE, 'w1')).deny).toMatch(/^changes::guard::unknown: .*4,096/)
+  expect((await edit($, FILE, 'w1')).context?.[0]).toMatch(/^changes::guard::unknown: .*4,096/)
   answers.entries = 4095
   expect((await edit($, FILE, 'w1')).deny).toBeUndefined()
 })
@@ -759,14 +775,8 @@ test('a known board that another known board mounts is admitted without a brief,
   expect((await edit($, HANDOFF)).deny).toBeUndefined()
   expect(ran).toEqual(['git', 'config', `query ${BOARD}`, `query ${SECOND}`])
   answers.config = JSON.stringify({ boards: [SECOND] })
-  expect((await edit($, HANDOFF)).deny).toBe(
-    `changes::guard::no_brief: ${HANDOFF} is in /personal, which the board at ${SECOND} mounts. Only an agent ` +
-      'whose first message is the brief `changes.brief` prints, or starts with `board-brief: /changes/<name>`, may ' +
-      'edit it, and this agent\'s first message ' +
-      `does not. Start a builder whose first message is the output of \`board -C ${SECOND} call changes.brief ` +
-      '--path /changes/<name>`.',
-  )
-  expect(edits).toEqual(['Edit'])
+  expect((await edit($, HANDOFF)).context).toEqual([noBriefLine(HANDOFF, SECOND, '/personal')])
+  expect(edits).toEqual(['Edit', 'Edit'])
 })
 
 test('a mounted known board still refuses its change, plan and mount records', async ($, on) => {
@@ -800,8 +810,8 @@ test('a nested known board is its own repository, admitted when listed and guard
   const { edits } = engine(on, answers)
   expect((await edit($, file)).deny).toBeUndefined()
   answers.config = JSON.stringify({ boards: [BOARD] })
-  expect((await edit($, file)).deny).toMatch(/^changes::guard::no_brief: \/home\/me\/board\/second\/notes.md is in \/repos\/second, /)
-  expect(edits).toEqual(['Edit'])
+  expect((await edit($, file)).context?.[0]).toMatch(/^changes::guard::no_brief: this edit of .* ran\. \/home\/me\/board\/second\/notes.md is in \/repos\/second, /)
+  expect(edits).toEqual(['Edit', 'Edit'])
 })
 
 test('a code repository a board mounts stays guarded when a known board is mounted too', async ($, on) => {
@@ -811,9 +821,9 @@ test('a code repository a board mounts stays guarded when a known board is mount
     mounts: { [SECOND]: SECOND_MOUNTS },
   }
   const { edits } = engine(on, answers)
-  expect((await edit($)).deny).toMatch(/^changes::guard::no_brief: \/work\/widgets\/src\/lib.rs is in \/repos\/widgets, /)
+  expect((await edit($)).context?.[0]).toMatch(/^changes::guard::no_brief: this edit of .* ran\. \/work\/widgets\/src\/lib.rs is in \/repos\/widgets, /)
   expect((await edit($, FILE, 'a1')).deny).toBeUndefined()
-  expect(edits).toEqual(['Edit'])
+  expect(edits).toEqual(['Edit', 'Edit'])
 })
 
 test('a worktree of a known board is admitted like the board, and guarded when the board is not listed', async ($, on) => {
@@ -826,8 +836,8 @@ test('a worktree of a known board is admitted like the board, and guarded when t
   const { edits } = engine(on, answers)
   expect((await edit($, file)).deny).toBeUndefined()
   answers.config = JSON.stringify({ boards: [SECOND] })
-  expect((await edit($, file)).deny).toMatch(/^changes::guard::no_brief: .* is in \/personal, which the board at \/home\/me\/board\/second mounts\./)
-  expect(edits).toEqual(['Edit'])
+  expect((await edit($, file)).context?.[0]).toMatch(/^changes::guard::no_brief: this edit of .* ran\. .* is in \/personal, which the board at \/home\/me\/board\/second mounts, /)
+  expect(edits).toEqual(['Edit', 'Edit'])
 })
 
 test("a linked worktree of a known board still refuses its change and mount records, and admits its other files", async ($, on) => {
@@ -871,8 +881,8 @@ test('a known board listed through a symbolic link is exempt, and its records ar
       'or `changes.advance`, or `board put` to drop a change.',
   )
   answers.config = JSON.stringify({ boards: [SECOND] })
-  expect((await edit($, `${link}/projects/handoff.md`)).deny).toMatch(/^changes::guard::no_brief: .* is in \/personal, /)
-  expect(edits).toEqual(['Edit', 'Edit'])
+  expect((await edit($, `${link}/projects/handoff.md`)).context?.[0]).toMatch(/^changes::guard::no_brief: this edit of .* ran\. .* is in \/personal, /)
+  expect(edits).toEqual(['Edit', 'Edit', 'Edit'])
 })
 
 // The worktree's branch holds a mount record the main checkout does not.
@@ -897,26 +907,29 @@ test("a mount record only a linked worktree's branch holds is refused there, and
   expect(edits).toEqual(['Edit'])
 })
 
-test("a linked worktree's mount query that fails refuses with unknown", async ($, on) => {
+test("a linked worktree's mount query that fails is advised as unknown and the edit runs", async ($, on) => {
   const answers: Answers = { first: { '': 'Coordinate the work.' }, config: JSON.stringify({ boards: [BOARD] }) }
   engine(on, answers)
   answers.queryFailsIn = BOARD_WORKTREE
-  expect((await edit($, `${BOARD_WORKTREE}/projects/handoff.md`)).deny).toMatch(
+  expect((await edit($, `${BOARD_WORKTREE}/projects/handoff.md`)).context?.[0]).toMatch(
     /^changes::guard::unknown: .*`board -C \/home\/me\/board.worktrees\/x query` did not list its mounts/,
   )
   delete answers.queryFailsIn
   expect((await edit($, `${BOARD_WORKTREE}/projects/handoff.md`)).deny).toBeUndefined()
 })
 
-test("a file in a known board's git directory is refused and says so, and a file in its checkout is admitted", async ($, on) => {
+test("a file in a known board's git directory is advised as unknown, and a file in its checkout is admitted", async ($, on) => {
   const { edits } = engine(on, { first: { '': 'Coordinate the work.' }, config: JSON.stringify({ boards: [BOARD] }) })
-  expect((await edit($, `${BOARD}/.git/description`)).deny).toBe(
-    `changes::guard::unknown: the guard could not tell whether this agent may edit ${BOARD}/.git/description: ` +
-      `${BOARD}/.git/description is inside the git directory of the board at ${BOARD}, which agents do not edit. ` +
-      'The guard refuses every edit of a mounted repository it cannot check; fix what failed and try again.',
-  )
+  const inside = await edit($, `${BOARD}/.git/description`)
+  expect(inside.deny).toBeUndefined()
+  expect(inside.context).toEqual([
+    unknownLine(
+      `${BOARD}/.git/description`,
+      `${BOARD}/.git/description is inside the git directory of the board at ${BOARD}, which agents do not edit`,
+    ),
+  ])
   expect((await edit($, HANDOFF)).deny).toBeUndefined()
-  expect(edits).toEqual(['Edit'])
+  expect(edits).toEqual(['Edit', 'Edit'])
 })
 
 test('records in a known board are matched without regard to letter case', async ($, on) => {
@@ -939,8 +952,8 @@ test('a listed directory that is a linked worktree exempts nothing, and listing 
     mounts: { [SECOND]: SECOND_MOUNTS },
   }
   const { edits } = engine(on, answers)
-  expect((await edit($, file)).deny).toMatch(/^changes::guard::no_brief: .* is in \/personal, which the board at \/home\/me\/board\/second mounts\./)
+  expect((await edit($, file)).context?.[0]).toMatch(/^changes::guard::no_brief: this edit of .* ran\. .* is in \/personal, which the board at \/home\/me\/board\/second mounts, /)
   answers.config = JSON.stringify({ boards: [BOARD, SECOND] })
   expect((await edit($, file)).deny).toBeUndefined()
-  expect(edits).toEqual(['Edit'])
+  expect(edits).toEqual(['Edit', 'Edit'])
 })

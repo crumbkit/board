@@ -23,30 +23,28 @@ import {
 } from './guard'
 import type { Mount } from './guard'
 
-// The write guard. Before an Edit, Write or NotebookEdit of a file in a
-// repository that a known board mounts, it reads the acting agent's first
-// message and admits the call only when that message starts with
-// `board-brief: /changes/<name>` for a change in build to that repository,
-// and, for a prototype, only on its branch `proto/<name>`.
-// Every other file is admitted untouched, except the board config and each
-// known board's change and mount records, which change only through board
-// commands and are refused to every agent. A repository whose directory is
-// listed in `boards` of the board config is not guarded as a mounted
-// repository, even when another known board mounts it, since a board holds
-// records and no code. The guard learns this from the config. It does not
-// test for a board root marker, because a code repository can commit a board
-// of its own: Board's own source holds `.board/board.json`. A lookup that
-// fails refuses: a guard that admits what it cannot check would be optional.
-// There is no bypass.
+// The write guard. Before an Edit, Write or NotebookEdit, it refuses only a
+// record that Board's own commands write: the board config and each known
+// board's change and mount records. Every other edit runs.
+// For a file in a repository that a known board mounts, the guard then reads
+// the acting agent's first message and adds one line of advice to the tool
+// result unless that message starts with `board-brief: /changes/<name>` for a
+// change in build to that repository, and, for a prototype, the file's
+// checkout is on branch `proto/<name>`. The line starts with its code
+// (`changes::guard::no_brief`, `not_building`, `wrong_mount` or `wrong_branch`)
+// and names the command that starts a change.
+// A repository whose directory is listed in `boards` of the board config is
+// not guarded as a mounted repository, even when another known board mounts it,
+// since a board holds records and no code. The guard learns this from the
+// config. It does not test for a board root marker, because a code repository
+// can commit a board of its own: Board's own source holds `.board/board.json`.
+// A lookup that fails admits the edit with a `changes::guard::unknown` line that
+// names what failed. The config check needs no lookup, so it runs first.
 //
-// Soft limit: the guard sees only these three tools. A file written through
-// Bash (`sed -i`, a heredoc, a script) passes it. The review gate covers that
-// gap: the reviewer checks that every commit of a change came from the
-// change's builder sessions. A Bash guard would need a command parser.
-//
-// Soft limit: the guard checks the brief line, not that `changes.brief`
-// produced it, so a parent agent can type the line itself. The review gate
-// covers that gap too.
+// The guard sees only these three tools. A file written through Bash (`sed -i`,
+// a heredoc, a script) passes it, and the guard checks the brief line, not that
+// `changes.brief` produced it. The review gate checks that every commit of a
+// change came from the change's builder sessions.
 
 const PATH = '"$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"'
 // Run in a directory, it prints the repository's common directory, the
@@ -63,7 +61,7 @@ const MOUNTS = `PATH=${PATH} exec board -C "$1" --json query --all "$2"`
 const GET = `PATH=${PATH} exec board -C "$1" --json get "$2"`
 const CHECK = `PATH=${PATH} exec board -C "$1" --json check --healthy "$2"`
 
-// A slow or hung git or board holds the edit no longer than this, then refuses it.
+// A slow or hung git or board holds the edit no longer than this, then admits it with advice.
 const TIMEOUT_MS = 5000
 // `$.session.messages` returns at most this many entries, the newest.
 const WINDOW = 4096
@@ -71,9 +69,9 @@ const WINDOW = 4096
 // The change each agent's brief named, by session id and agent id ('' for the
 // main conversation), so `/clear` and `/resume` start over. The message window
 // holds the newest 4096 entries, and a compaction replaces the first message,
-// so a brief found once is kept. Soft limit: an agent whose first guarded edit
-// comes after its first message left that window is refused; the cache starts
-// over when the module reloads. Reading the transcript file would replace it.
+// so a brief found once is kept. An agent whose first guarded edit comes after
+// its first message left that window gets the unknown advice; the cache starts
+// over when the module reloads.
 const briefs = new Map<string, string>()
 
 type Ran = { exitCode: number; stdout: string; stderr: string }
@@ -279,17 +277,21 @@ async function briefNamed($: EngineInterface, agentId: string | undefined): Prom
   return named
 }
 
+/** What the guard does with an edit: refuses a board record, or admits it with a line of advice, or null to admit it untouched. */
+type Verdict = { deny: string } | { advise: string } | null
+
 /**
- * The refusal of an edit of `file` by `agentId`, or null to admit it. The
- * guard chooses no mount: the brief's change names one, in the board that
- * holds the change, and the edit is admitted when that mount's repository is
- * the file's, whichever known board is listed first. The mounts the file's
- * origin names are read only when its worktree mounts do not settle that.
+ * The verdict on an edit of `file` by `agentId`. The guard chooses no mount:
+ * the brief's change names one, in the board that holds the change, and the
+ * edit needs no advice when that mount's repository is the file's, whichever
+ * known board is listed first. The mounts the file's origin names are read
+ * only when its worktree mounts do not settle that.
  */
-async function refusal($: EngineInterface, file: string, agentId: string | undefined): Promise<string | null> {
+async function verdict($: EngineInterface, file: string, agentId: string | undefined): Promise<Verdict> {
   try {
     const found = await held($, file)
-    if (found === null || typeof found === 'string') return found
+    if (found === null) return null
+    if (typeof found === 'string') return { deny: found }
     let mounts = found.worktree
     let widened = false
     const widen = async () => {
@@ -299,7 +301,7 @@ async function refusal($: EngineInterface, file: string, agentId: string | undef
     if (mounts.length === 0) await widen()
     if (mounts.length === 0) return null
     const named = await briefNamed($, agentId)
-    if (named === null) return noBrief(file, mounts[0]!, null)
+    if (named === null) return { advise: noBrief(file, mounts[0]!, null) }
     // The change as each board that mounts the file's repository holds it; null where it holds none.
     const changes = new Map<string, { mount: string; phase: string } | null>()
     const mountNamed = (board: string) => {
@@ -308,7 +310,7 @@ async function refusal($: EngineInterface, file: string, agentId: string | undef
     }
     // Reads the change from each such board not read yet, up to the first whose change names a mount of the file's
     // repository. A change of the same name in a board that mounts the repository nowhere is never read.
-    const read = async (): Promise<{ deny: string } | { board: string | undefined }> => {
+    const read = async (): Promise<{ advise: string } | { board: string | undefined }> => {
       for (const board of found.boards) {
         if (!mounts.some(m => m.board === board)) continue
         if (!changes.has(board)) {
@@ -316,7 +318,7 @@ async function refusal($: EngineInterface, file: string, agentId: string | undef
           const change = parseChange(ran.stdout)
           if (change.kind === 'failed') {
             const why = ran.exitCode !== 0 && ran.stdout.trim() === '' ? said(ran) : change.why
-            return { deny: unknown(file, `\`board -C ${board} get ${named}\` failed with ${why}`) }
+            return { advise: unknown(file, `\`board -C ${board} get ${named}\` failed with ${why}`) }
           }
           changes.set(board, change.kind === 'found' ? change : null)
         }
@@ -325,12 +327,12 @@ async function refusal($: EngineInterface, file: string, agentId: string | undef
       return { board: undefined }
     }
     let picked = await read()
-    if (!('deny' in picked) && picked.board === undefined && !widened) {
+    if (!('advise' in picked) && picked.board === undefined && !widened) {
       await widen()
       picked = await read()
     }
-    if ('deny' in picked) return picked.deny
-    // With no change that names a mount of the file's repository, the first board that holds the change refuses.
+    if ('advise' in picked) return picked
+    // With no change that names a mount of the file's repository, the first board that holds the change advises.
     const board = picked.board ?? found.boards.find(b => changes.get(b) != null)
     const change = board === undefined ? undefined : changes.get(board)
     if (board !== undefined && change != null) {
@@ -339,40 +341,46 @@ async function refusal($: EngineInterface, file: string, agentId: string | undef
       const kind = parseKind(got.stdout)
       if (kind.kind === 'failed') {
         const why = got.exitCode !== 0 && got.stdout.trim() === '' ? said(got) : kind.why
-        return unknown(file, `\`board -C ${board} get ${named}/prototype\` failed with ${why}`)
+        return { advise: unknown(file, `\`board -C ${board} get ${named}/prototype\` failed with ${why}`) }
       }
       if (kind.kind === 'prototype') {
         const checked = await sh($, CHECK, [board, `${named}/prototype`])
         const health = parseHealth(checked.stdout)
         if (health.kind === 'failed') {
           const why = checked.stdout.trim() === '' ? said(checked) : health.why
-          return unknown(file, `\`board -C ${board} check --healthy ${named}/prototype\` failed with ${why}`)
+          return { advise: unknown(file, `\`board -C ${board} check --healthy ${named}/prototype\` failed with ${why}`) }
         }
       }
       const prototype = kind.kind === 'prototype'
-      return judge(file, at, named, change, prototype, prototype ? await branchOf($, file) : '')
+      const advice = judge(file, at, named, change, prototype, prototype ? await branchOf($, file) : '')
+      return advice === null ? null : { advise: advice }
     }
-    return noBrief(file, mounts[0]!, named)
+    return { advise: noBrief(file, mounts[0]!, named) }
   } catch (error) {
-    return unknown(file, error instanceof Unknown ? error.message : `the lookup threw ${String(error)}`)
+    return { advise: unknown(file, error instanceof Unknown ? error.message : `the lookup threw ${String(error)}`) }
   }
 }
 
-// A hook that throws is skipped and the call runs, so each `.catch` refuses.
+/** Runs the edit unless `v` refuses it; adds the advice of `v` to the result of an edit that ran. */
+async function guarded<R extends { deny?: string; context?: string[] }>(v: Verdict, next: () => Promise<R>) {
+  if (v !== null && 'deny' in v) return { deny: v.deny }
+  const ran = await next()
+  return v === null || ran.deny !== undefined ? ran : { ...ran, context: [...(ran.context ?? []), v.advise] }
+}
+
+// A hook that throws is skipped and the call runs, so each `.catch` admits the
+// edit with a line that says the guard failed.
 // The engine requires `on('<event>', hook)` spelled at each call, so the three
 // registrations cannot share one helper.
 export const register: Register = on => {
-  const failed = (file: string) => ({ deny: unknown(file, 'the guard failed') })
-  on('tool.call', { tool: 'Edit' }, async ($, e, next) => {
-    const deny = await refusal($, e.file_path, e.agentId)
-    return deny === null ? next(e) : { deny }
-  }).catch(($, e) => failed(e.file_path))
-  on('tool.call', { tool: 'Write' }, async ($, e, next) => {
-    const deny = await refusal($, e.file_path, e.agentId)
-    return deny === null ? next(e) : { deny }
-  }).catch(($, e) => failed(e.file_path))
-  on('tool.call', { tool: 'NotebookEdit' }, async ($, e, next) => {
-    const deny = await refusal($, e.notebook_path, e.agentId)
-    return deny === null ? next(e) : { deny }
-  }).catch(($, e) => failed(e.notebook_path))
+  const failed = (file: string): Verdict => ({ advise: unknown(file, 'the guard failed') })
+  on('tool.call', { tool: 'Edit' }, async ($, e, next) => guarded(await verdict($, e.file_path, e.agentId), () => next(e))).catch(
+    async (_, e, next) => guarded(failed(e.file_path), () => next(e)),
+  )
+  on('tool.call', { tool: 'Write' }, async ($, e, next) => guarded(await verdict($, e.file_path, e.agentId), () => next(e))).catch(
+    async (_, e, next) => guarded(failed(e.file_path), () => next(e)),
+  )
+  on('tool.call', { tool: 'NotebookEdit' }, async ($, e, next) =>
+    guarded(await verdict($, e.notebook_path, e.agentId), () => next(e)),
+  ).catch(async (_, e, next) => guarded(failed(e.notebook_path), () => next(e)))
 }

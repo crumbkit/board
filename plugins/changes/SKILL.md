@@ -27,9 +27,9 @@ blocks is missing.
    When `ask` is set, only the owner or a reviewer can pass the checks
    left: put `ask` to them. Stop where the change's `stop` says, or the
    flow's when it has none, unless told otherwise; once `next` returns
-   `stop` with `reached` true, `advance` refuses. With the `board-changes` mod installed, only a builder started
-   from `changes.brief` can Edit, Write or NotebookEdit the repository; it
-   cannot see writes made through Bash. The builder's first message is the
+   `stop` with `reached` true, `advance` refuses. With the `board-changes` mod installed, an Edit, Write or NotebookEdit of
+   the repository by an agent not started from `changes.brief` runs with a
+   line of advice; it cannot see writes made through Bash. The builder's first message is the
    brief as `changes.brief` prints it, or starts with its `brief_line`. Put
    the brief in as plain text, not inside a code fence, which the guard does
    not read. The brief's `rules_left_out` gives each rule it left out a
@@ -241,13 +241,13 @@ to replace the flow copies changes kept before versions.
 - `changes::change::exists`: pass another `--name`, or resume the
   change with `next`.
 - `changes::mount::not_found`: run `board ls /repos` to find the mount.
-- `changes::guard::no_brief`: this agent did not start from a brief. Hand
-  the edit to a builder started from `changes.brief`.
-- `changes::guard::not_building`: `advance` the change to `build`.
+- `changes::guard::no_brief`: advice, the edit ran. Start a change and
+  build from `changes.brief`.
+- `changes::guard::not_building`: advice; `advance` the change to `build`.
 - `changes::guard::wrong_mount`: the brief's change is for another
   repository.
 - `changes::guard::wrong_branch`: a prototype's builder edits only on
   `proto/<name>`; switch to it.
-- `changes::guard::unknown`: the guard could not check; fix what it names.
+- `changes::guard::unknown`: advice; the guard could not check. Fix what it names.
 - `changes::phase::final`: the change is done or dropped. Run `open`, or
   `start` a new change.
