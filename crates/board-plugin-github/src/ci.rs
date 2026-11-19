@@ -24,8 +24,8 @@ const PASSED: [&str; 3] = ["success", "skipped", "neutral"];
 #[schemars(rename = "CiInput")]
 pub(crate) struct CiInput {
     /// The change in the board this command runs in, such as
-    /// /changes/lever. Its head is the commit whose checks are read, and
-    /// the run is written under its suite.
+    /// /changes/lever. Its head is the commit whose check runs are read,
+    /// and the run is written under its suite.
     #[schemars(regex(pattern = "^/changes/"))]
     change: String,
 }
