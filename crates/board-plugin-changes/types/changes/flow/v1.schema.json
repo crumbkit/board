@@ -309,7 +309,9 @@
           "description": "`mockups`: the part of the UX section the check reads; both when\nleft out.",
           "enum": [
             "agreed",
-            "neighbours"
+            "neighbours",
+            "versioned",
+            "built"
           ],
           "type": "string"
         }

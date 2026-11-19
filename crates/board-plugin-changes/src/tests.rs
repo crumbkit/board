@@ -37,6 +37,7 @@ fn the_manifest_parses_as_a_built_in_one_with_each_capabilitys_variables_and_tim
             "changes/attempt/v1",
             "changes/change/v1",
             "changes/change/v2",
+            "changes/conformance/v1",
             "changes/flow/v1",
             "changes/lifecycle/v1",
             "changes/plan/v1",

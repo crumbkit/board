@@ -555,3 +555,24 @@ fn a_flow_named_repos_is_refused_and_one_named_repo_is_admitted() {
 }
 
 mod version;
+
+/// The stored version an open change follows, from before the flow checked
+/// a build against its mockups. The shipped flow has a new version.
+#[test]
+fn the_stored_flow_without_design_checks_keeps_its_version_path_and_the_shipped_flow_has_them() {
+    let text = include_str!("flows-md/development-da44e719e601120e.json");
+    let value: serde_json::Value = serde_json::from_str(text).unwrap();
+    schema().validate(&value).unwrap();
+    let flow: Flow = serde_json::from_str(text).unwrap();
+    assert_eq!(problems(&flow, false), []);
+    let stored = board_model::flow_version("development", &value);
+    assert_eq!(stored, "/flows/development/da44e719e601120e");
+    assert_ne!(version_path(&development()), stored);
+    let has = |flow: &Flow, id: &str| {
+        (flow.phases.iter().flat_map(|phase| &phase.checks)).any(|each| each.id == id)
+    };
+    assert!(!has(&flow, "design-conformance") && !has(&flow, "mockup-versions"));
+    let shipped = development();
+    assert!(has(&shipped, "design-conformance") && has(&shipped, "mockup-versions"));
+    assert_eq!(problems(&shipped, false), []);
+}

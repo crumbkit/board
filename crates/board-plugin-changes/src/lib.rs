@@ -41,8 +41,8 @@ use serde_json::{Map, Value, json};
 
 use lifecycle::LifecycleRecord;
 use records::{
-    AttemptRecord, ChangeRecord, ChangeV1, PlanRecord, PrototypeRecord, ReopenRecord, StopRecord,
-    UnderstandingRecord,
+    AttemptRecord, ChangeRecord, ChangeV1, ConformanceRecord, PlanRecord, PrototypeRecord,
+    ReopenRecord, StopRecord, UnderstandingRecord,
 };
 
 /// The plugin's name, which its codes start with.
@@ -401,6 +401,10 @@ impl Plugin for Changes {
                 schema_of::<LifecycleRecord>(settings()),
             ),
             typed(
+                ConformanceRecord::TYPE,
+                schema_of::<ConformanceRecord>(settings()),
+            ),
+            typed(
                 UnderstandingRecord::TYPE,
                 schema_of::<UnderstandingRecord>(settings()),
             ),
@@ -480,6 +484,7 @@ fn manifest() -> Value {
             AttemptRecord::TYPE,
             ChangeV1::TYPE,
             ChangeRecord::TYPE,
+            ConformanceRecord::TYPE,
             flow::Flow::TYPE,
             LifecycleRecord::TYPE,
             PlanRecord::TYPE,

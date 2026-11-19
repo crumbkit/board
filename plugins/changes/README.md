@@ -407,8 +407,9 @@ of `changes` still fails `review`.
   flow, and from its last phase to `done`, when every check that blocks
   passes. Otherwise it refuses, `missing` lists the failed checks that
   block and `remedies` what to do for each, in order. The code is that of
-  the first: `changes::ux::not_agreed` or `changes::ux::no_neighbours` for
-  a `mockups` check, `changes::data::not_signed` for an `understood` check
+  the first: `changes::ux::not_agreed`, `changes::ux::no_neighbours`,
+  `changes::ux::no_version` or `changes::ux::not_conformed` for a `mockups`
+  check, `changes::data::not_signed` for an `understood` check
   of the data without rechecks, `changes::paths::outside_plan` for a
   `paths` check, `changes::prototype::never_lands` for a prototype's
   `verdict` check, else `changes::gate::unmet`. Moving into `build` is also subject to the WIP
@@ -856,7 +857,7 @@ evaluated by kind:
 | `paths` | the diff edits only the plan's paths |
 | `tasks` | every attached task but the change's own is done or dropped |
 | `understood` | a decision the owner signed references an attached understanding check of this change's `subject`; with `rechecks`, each such check also holds rechecks of that many points, and the latest recheck of every point matches |
-| `mockups` | the `agreed` part: each mockup under UX is named by a decision the owner signed; the `neighbours` part: UX lists its neighbours; both when `part` is left out |
+| `mockups` | the `agreed` part: each mockup under UX is named by a decision the owner signed; the `neighbours` part: UX lists its neighbours; the `versioned` part: each mockup item names a version, as `version <id>` or a `/artifacts/<id>/versions/<id>` path; the `built` part: for each mockup version the plan names, a `changes/conformance/v1` at `head` says `match` with no difference listed, and the detail lists each element that is missing or different; both `agreed` and `neighbours` when `part` is left out |
 | `considered` | each path in the change's `surfaced` that still reaches something is in the plan's `uses` or its `considered` field |
 | `obligations` | no obligation rule applies to the plan's paths, except those in the plan's `owed` field; a board without the rules plugin enabled has none |
 | `rule-paths` | the diff edits no file that the rules in `rules` list in their `paths` or `applies_to`; the detail names at most ten such files and counts the rest |
@@ -944,9 +945,9 @@ The development flow's gates:
 
 | Leaving | Checks |
 | --- | --- |
-| plan | `plan-sections`, the eight sections; `considered`; `task`; `route`; `owner-approval`, a `plans/decision/v1` the owner signed, with `by.person`, whose `refs` name the plan or the change, or the owner's attached `plans/answer/v1` whose chosen option, in its attached question, names the change, on every route; `mockups`, when the plan answers `ux` mockups; `data-signed`, an `understood` check of the data, when it answers `data` stored; `lifecycle-declared`, a `planned-rule-paths` check of `/rules/{repo}/lifecycle-paths`, when it answers `lifecycle` none; `lifecycle-record`, an `exists` check of `/changes/{name}/lifecycle`, when it answers `lifecycle` record; `obligations`, which does not block |
+| plan | `plan-sections`, the eight sections; `considered`; `task`; `route`; `owner-approval`, a `plans/decision/v1` the owner signed, with `by.person`, whose `refs` name the plan or the change, or the owner's attached `plans/answer/v1` whose chosen option, in its attached question, names the change, on every route; `mockups` and `mockup-versions`, when the plan answers `ux` mockups; `data-signed`, an `understood` check of the data, when it answers `data` stored; `lifecycle-declared`, a `planned-rule-paths` check of `/rules/{repo}/lifecycle-paths`, when it answers `lifecycle` none; `lifecycle-record`, an `exists` check of `/changes/{name}/lifecycle`, when it answers `lifecycle` record; `obligations`, which does not block |
 | build | `head`; `suite-run`, waivable; `tasks`; `rechecks`, rechecks of two points, the latest recheck of each matching, when the plan answers `data` stored |
-| review | `review`, a report on `head` with no critical or high finding; `paths`; `ui-paths` and `data-paths`, `rule-paths` checks of `/rules/{repo}/ui-paths` when the plan answers `ux` none and `/rules/{repo}/data-paths` when it answers `data` none; `lifecycle-paths`, the same check of `/rules/{repo}/lifecycle-paths` unless Board reads a `changes/lifecycle/v1` at `/changes/{name}/lifecycle`; `lifecycle-none-paths`, the same check when the plan answers `lifecycle` none, whether or not a record exists; `obligations-settled`, with the escape heading `Obligations left owed` |
+| review | `review`, a report on `head` with no critical or high finding; `design-conformance`, the `built` part of `mockups`, when the plan answers `ux` mockups; `paths`; `ui-paths` and `data-paths`, `rule-paths` checks of `/rules/{repo}/ui-paths` when the plan answers `ux` none and `/rules/{repo}/data-paths` when it answers `data` none; `lifecycle-paths`, the same check of `/rules/{repo}/lifecycle-paths` unless Board reads a `changes/lifecycle/v1` at `/changes/{name}/lifecycle`; `lifecycle-none-paths`, the same check when the plan answers `lifecycle` none, whether or not a record exists; `obligations-settled`, with the escape heading `Obligations left owed` |
 | land | `test-sections`, What the tests prove and What the tests do not prove; `pull-request`; `lifecycle-paths-at-land` and `lifecycle-none-paths-at-land`, the two review checks of `/rules/{repo}/lifecycle-paths` again, so each re-reads the diff at the recorded head and a record removed after review is gated |
 | build, for a prototype | Never passes: `verdict` ends a prototype instead. |
 
@@ -978,7 +979,17 @@ the `### Mockups` list names one mockup, by its first URL or, without one,
 by its first board path in inline code; other links are not mockups. The
 `### Neighbours` list names the open changes and artifacts in the same
 area and the components the design reuses; the gate checks that it
-exists, and the reviewer judges what it says. An attached understanding
+exists, and the reviewer judges what it says. A critic with a clean context writes the
+`changes/conformance/v1` at `/changes/<name>/conformance/<n>`: it screenshots
+the built page with Playwright, compares it with the named version of the
+mockup, and lists each missing or different element, with `verdict` `match`
+only when none is. A builder that cannot build an element stops and files a
+`plans/question/v1` in place of a substitute and names it in the
+difference's `question`; the owner's `plans/answer/v1` to it clears that
+difference. The newest record at the head, by its `at`, decides each
+mockup version. `design-conformance` is waivable, so an owner's decision
+naming `<change>#design-conformance` passes a partial build or a page
+Playwright cannot screenshot, such as an iOS or terminal screen. An attached understanding
 check Board does not read fails an `understood` check. A repeating task
 never reaches `done`, so drop it to release the `tasks` check. A run counts
 toward `run` when it sits under `<suite>/runs/`, has no `fail` or `error`,

@@ -203,6 +203,16 @@ to replace the flow copies changes kept before versions.
 - `changes::change::not_migrated`: run `changes.migrate --apply true`.
 - `changes::ux::not_agreed`: a mockup has no owner decision naming it, or
   the plan answers `ux` mockups and UX lists none.
+- `changes::ux::no_version`: name the agreed version of each mockup in its
+  item, such as `version <id>`.
+- `changes::ux::not_conformed`: the built page differs from a mockup version,
+  or no critic compared it. Fix each listed element, or file a
+  `plans/question/v1` for one that cannot be built, then have a clean-context
+  critic write a `changes/conformance/v1` for the new head. The newest
+  record at the head decides. An owner's answer to the question a difference
+  names clears it, and the owner's waiver decision naming
+  `<change>#design-conformance` passes a partial build or a page
+  Playwright cannot screenshot.
 - `changes::plan::no_answers`: send the plan again with the `answers` the
   message names, such as `{"ux": "none", "data": "none", "lifecycle": "none"}`.
 - A check whose detail says the plan gives no typed answer: the plan was
