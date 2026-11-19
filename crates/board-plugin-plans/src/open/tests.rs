@@ -26,6 +26,10 @@ pub(crate) struct Answering {
     pub(crate) between: RefCell<Option<Box<dyn FnOnce()>>>,
     pub(crate) before_read: RefCell<Option<Box<dyn FnOnce()>>>,
     pub(crate) puts: RefCell<Vec<Vec<Value>>>,
+    /// Each call's target and input; a call answers with `call_refusal`
+    /// when it is set and with `{}` when not.
+    pub(crate) calls: RefCell<Vec<(String, Value)>>,
+    pub(crate) call_refusal: Option<board_model::Refusal>,
     pub(crate) settings: Settings,
 }
 
@@ -93,10 +97,25 @@ impl Host for Answering {
 
     fn call(
         &self,
-        _target: &board_plugin::Target,
-        _input: &serde_json::Value,
+        target: &board_plugin::Target,
+        input: &serde_json::Value,
     ) -> Result<board_plugin::CallReport, Box<board_model::Refusal>> {
-        panic!("this plugin calls no plugin")
+        let Target::Named { plugin, capability } = target else {
+            panic!("this plugin names the plugin it calls")
+        };
+        (self.calls.borrow_mut()).push((
+            format!("{}.{}", plugin.as_str(), capability.as_str()),
+            input.clone(),
+        ));
+        if let Some(refusal) = &self.call_refusal {
+            return Err(Box::new(refusal.clone()));
+        }
+        Ok(board_plugin::CallReport {
+            plugin: plugin.clone(),
+            capability: capability.clone(),
+            output: json!({}),
+            warnings: Vec::new(),
+        })
     }
 
     fn board(
@@ -143,6 +162,8 @@ pub(crate) fn host(rows: Vec<Vec<Value>>) -> Answering {
         between: RefCell::default(),
         before_read: RefCell::default(),
         puts: RefCell::default(),
+        calls: RefCell::default(),
+        call_refusal: None,
         settings: Settings {
             now: std::time::SystemTime::UNIX_EPOCH,
             day_start: None,

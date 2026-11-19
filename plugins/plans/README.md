@@ -150,10 +150,9 @@ most 100, each with `path`, `kind` and `reason`), `total`, `truncated`,
 
 `board plans answer --path <question> --option <id> [--words <text>]
 [--session <local_ id>] [--program <slug>] [--person <slug>] [--agent <name>]
-[--written_by <plugin>/<client>]` records the owner's answer
-as the Claude Code mod's pane does, so a client without the mod, such as
-Board.app, can answer. `--option` is one of the question's option ids, or
-`none` with `--words`; a question with an option whose id is `none` takes
+[--written_by <plugin>/<client>]` records the owner's answer. The Claude
+Code mod's pane, Board.app and the ask skill all answer through it.
+`--option` is one of the question's option ids, or `none` with `--words`; a question with an option whose id is `none` takes
 `--option none` as that option. `--words` defaults to the chosen option's
 text. It writes one commit of two lines: a new `plans/answer/v1` at the
 question's id under `answers/`, answered now, with no `choice` when `none`
@@ -162,6 +161,16 @@ question by its path in the board the answer lands in, and the question with its
 which must still hold the blob the call read. It returns the answer's path,
 the question's path, `choice` (`none` when no option was chosen), `words`
 and `answered`.
+
+When the question's `blocks` names a change, read from the root of the
+question's own board, the answer then calls `changes.attach --ref <answer>`
+on that change, so the change's plan keeps the answer. The output's
+`attached` names the change, and `attached.refused` gives the code when
+`changes.attach` refused; the answer stays recorded either way. A question
+that blocks a task or nothing gets no `attached`, since a task's Markdown
+record has no list of references. A question in a mounted board gets no
+`attached` either: `changes.attach` reads a change's plan from the root
+board, so it cannot attach to a change in a mounted board.
 
 It writes nothing, and fails with its own code, when the path is not
 `.../questions/<id>` (`plans::answer::not_a_question_path`), nothing there is
