@@ -108,8 +108,8 @@ withdrawn for the first of these that applies:
   and stays open.
 
 Without `apply` it writes nothing. With it, each question is read again and
-refused with `plans::sweep::already_answered` or `plans::sweep::not_open` if
-it changed, then every question of one board is withdrawn in one commit with
+refused with `plans::sweep::<reason>` for the reasons `plans.withdraw` gives
+if it changed, then every question of one board is withdrawn in one commit with
 a `Board-Bulk: sweep questions` trailer. A batch may not cross a mount, so
 each mounted board gets its own commit; when one is refused, the refusal
 lists the boards already written in `written`. It returns `withdrawn` (at
