@@ -178,6 +178,7 @@ fn the_manifest_parses_as_a_built_in_one_and_describes_the_plugin_with_the_skill
             "comment",
             "issue-create",
             "merge",
+            "ci",
             "install-hook",
             "pre-push",
             "covers"
@@ -210,13 +211,14 @@ fn the_manifest_parses_as_a_built_in_one_and_describes_the_plugin_with_the_skill
         "GIT_SSH"
     ]);
     let expected = [
-        ("ref", gh),
+        ("ref", gh.clone()),
         ("push", send.clone()),
         ("pr-create", send.clone()),
         ("pr-edit", send.clone()),
         ("comment", send.clone()),
         ("issue-create", send.clone()),
         ("merge", send),
+        ("ci", gh),
         ("install-hook", Value::Null),
         ("pre-push", pre_push),
         ("covers", json!(["GIT_SSH_COMMAND", "GIT_SSH"])),
@@ -343,7 +345,7 @@ fn a_capability_the_plugin_does_not_offer_is_refused_and_ref_is_admitted() {
     assert_eq!(
         refused.message,
         "github offers no capability fetch; it offers ref, push, pr-create, pr-edit, comment, \
-         issue-create, merge, install-hook, pre-push, covers"
+         issue-create, merge, ci, install-hook, pre-push, covers"
     );
     let held =
         json!({"$type": "github/issue/v1", "url": "https://github.com/octo/widgets/issues/7"});

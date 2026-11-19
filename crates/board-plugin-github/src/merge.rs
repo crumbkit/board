@@ -120,7 +120,7 @@ pub(crate) fn merge(host: &dyn Host, input: &Value) -> Result<Value, PluginError
     let (head, pulls, mounted) = match &changed {
         Some((change, board)) => {
             gate(&**board, &*place.personal, change)?;
-            let (recorded, pulls, mounted) = recorded_change(&**board, change)?;
+            let (recorded, pulls, mounted, _) = recorded_change(&**board, change)?;
             (change_head(change, recorded, head)?, Some(pulls), mounted)
         }
         None => (
@@ -293,7 +293,7 @@ fn pull_refused(number: u64, message: String, hint: &str) -> PluginError {
 }
 
 /// Whether `commit` is a full 40-hex commit name.
-fn is_full_commit(commit: &str) -> bool {
+pub(crate) fn is_full_commit(commit: &str) -> bool {
     commit.len() == 40
         && commit
             .bytes()
@@ -476,12 +476,13 @@ fn only_pull(
     })
 }
 
-/// What a change records that merge reads: its head commit, if any, its
-/// pull requests, and its mount in the board that holds it.
-type Recorded = (Option<String>, Vec<String>, Mount);
+/// What a change records that merge and ci read: its head commit, if any,
+/// its pull requests, its mount in the board that holds it, and its suite,
+/// if any.
+type Recorded = (Option<String>, Vec<String>, Mount, Option<String>);
 
 /// What the change at `path` records.
-fn recorded_change(host: &dyn Host, path: &str) -> Result<Recorded, PluginError> {
+pub(crate) fn recorded_change(host: &dyn Host, path: &str) -> Result<Recorded, PluginError> {
     let refused =
         |refusal: &board_model::Refusal| PluginError::board_refused("github", "get", refusal);
     let logical: LogicalPath = path.parse().map_err(|_| {
@@ -502,7 +503,7 @@ fn recorded_change(host: &dyn Host, path: &str) -> Result<Recorded, PluginError>
         .flatten()
         .filter_map(|pull| pull.as_str().map(str::to_owned));
     let mount = Mount::of_change(text("mount"), &report.location.board.repository);
-    Ok((text("head"), pulls.collect(), mount))
+    Ok((text("head"), pulls.collect(), mount, text("suite")))
 }
 
 /// Moves the change at `path` to its next phase after its pull request at

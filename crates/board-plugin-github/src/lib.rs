@@ -4,6 +4,7 @@
 //! boundary through `crossing`.
 
 mod attach;
+mod ci;
 mod crossing;
 mod gh;
 mod git;
@@ -167,7 +168,7 @@ fn output<T: JsonSchema>() -> Value {
 }
 
 /// Every capability, in the order the manifest lists them.
-const CAPABILITIES: [Capability; 10] = [
+const CAPABILITIES: [Capability; 11] = [
     Capability {
         name: "ref",
         description: "Write the record of a pull request or issue, asking gh which it is and its \
@@ -251,6 +252,19 @@ const CAPABILITIES: [Capability; 10] = [
         open_world: true,
         env: &SEND_ENV,
         timeout: Some(SEND_TIMEOUT),
+    },
+    Capability {
+        name: "ci",
+        description: "Read the check runs GitHub reports for a change's head and, when every one \
+            passed, write them as a run of the change's suite and attach the run and the head to \
+            the change; refuse and write nothing while one is pending or after one failed.",
+        run: ci::ci,
+        input: input::<ci::CiInput>,
+        output: output::<ci::CiOutput>,
+        effect: Effect::AddsOnce,
+        open_world: true,
+        env: &gh::ENV,
+        timeout: None,
     },
     Capability {
         name: "install-hook",

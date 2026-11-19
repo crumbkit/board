@@ -66,6 +66,19 @@ fn the_mockups_remedy_asks_for_the_owners_decision_with_by_person() {
 }
 
 #[test]
+fn the_suite_run_remedy_names_board_github_ci_and_a_local_run() {
+    let run = check(serde_json::json!({"id": "suite-run", "kind": "run"}));
+    assert_eq!(
+        of(&run, &values(Some("abc"))),
+        "Once CI has passed on abc, record its check runs as a run of /suites/checks with \
+         `board github ci --change /changes/t`, which also attaches the run. Or run \
+         /suites/checks on abc yourself, write the run with `board put`, and attach it with \
+         `board changes attach --path /changes/t --ref <run>`. When the change names no suite, \
+         name one with `board changes attach --path /changes/t --suite /suites/<name>`."
+    );
+}
+
+#[test]
 fn an_owner_check_says_only_the_owner_can_provide_it_and_an_agent_check_does_not() {
     let owner = check(
         serde_json::json!({"id": "a", "kind": "records", "type": "plans/decision/v1", "actor": "owner"}),
