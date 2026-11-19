@@ -575,7 +575,6 @@ fn named_in(item: &str) -> Option<String> {
     Some(path.as_str().to_owned())
 }
 
-/// The artifacts the Mockups list of a plan's sections names, once each, in order.
 pub(crate) fn mockups(found: &BTreeMap<String, String>) -> Vec<String> {
     let mut named = Vec::new();
     for item in under_ux(found, "mockups") {
@@ -627,8 +626,6 @@ fn named_by_decisions(observed: &Observed) -> BTreeSet<&str> {
         .collect()
 }
 
-/// What the plan's UX section lacks for the owner's agreement, or none when
-/// it says No UI change or every mockup it lists has a signed decision.
 pub(crate) fn ux_missing(observed: &Observed, found: &BTreeMap<String, String>) -> Option<String> {
     // A plan whose typed answer is mockups lists them, whatever its text says.
     if observed.answers.ux != Some(Ux::Mockups)
