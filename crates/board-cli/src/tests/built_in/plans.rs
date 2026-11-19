@@ -112,6 +112,8 @@ fn open_shows_what_the_owner_needs_to_answer() {
             "note": null,
             "mount": null,
             "context_path": null,
+            "project": "/projects/a",
+            "critical": false,
         }])
     );
 }

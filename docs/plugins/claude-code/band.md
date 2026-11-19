@@ -47,9 +47,9 @@ band draws nothing. While a survey holds the band, no mod draws in it.
   rules::rule::degraded`.
 - **Waiting button**, from `board-plans`: `Waiting <total> · <blocking>
   blocking` from `board --json call plans.waiting`, or `Waiting <total>`
-  when nothing blocks. While the plans plugin has no `waiting` capability,
-  Board refuses the call with `board::plugin::no_capability`, and the button
-  counts the open questions instead, as `Questions <n>`. The mod then stops
+  when nothing blocks. On a Board whose plans plugin has no `waiting`
+  capability, Board refuses the call with `board::plugin::no_capability`,
+  and the button counts the open questions instead, as `Questions <n>`. The mod then stops
   asking for `waiting` until it loads again. The button opens the open
   questions pane. When the read of the count the button draws fails, the
   button turns red and reads `<count>: the last read failed`, or `Questions
@@ -58,8 +58,8 @@ band draws nothing. While a survey holds the band, no mod draws in it.
 - **Effects button**, from `board-effects`: `Effects <n>`, with `+` when
   Board listed only the first. It opens the pending effects pane. A failed
   read shows it in red, as `Effects could not be read`, or `Effects <n>: the
-  last read failed` once a read has worked. The button stays after
-  `plans.waiting` lands, and its effects are then also counted in Waiting.
+  last read failed` once a read has worked. Waiting counts only open
+  questions, so effects are counted only here.
 
 ## How the mods share the row
 

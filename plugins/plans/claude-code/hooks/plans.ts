@@ -128,7 +128,7 @@ export const answerText = (question: string, choice: string | undefined, words: 
 
 /**
  * Reads `board --json call plans.waiting`, whose output is
- * `{total, blocking, line, questions, gates, effects, truncated, unreadable}`.
+ * `{total, blocking, line, unreadable}`.
  * `absent` when the plans plugin has no `waiting` capability yet, so the
  * band counts open questions instead; `failed` with Board's words otherwise.
  */

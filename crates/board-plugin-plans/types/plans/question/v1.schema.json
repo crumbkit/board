@@ -80,12 +80,13 @@
       "x-board-prose": true
     },
     "blocks": {
-      "description": "The change that cannot proceed until the question is answered.",
+      "description": "The change or task that cannot proceed until the question is\nanswered. `plans.open` puts a question first while this work is\nstill going.",
       "format": "board-ref",
       "type": "string",
       "x-board-type": [
         "changes/change/v1",
-        "changes/change/v2"
+        "changes/change/v2",
+        "tasks/task/v2"
       ]
     },
     "by": {

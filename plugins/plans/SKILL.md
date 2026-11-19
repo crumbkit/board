@@ -60,12 +60,15 @@ in. `<project>` names what the record concerns, such as the repository
 
    It writes `/projects/<project>/questions/<id>`. `asked` is the UTC time.
    `by` must name your session's `local_` id, so the answer can be sent
-   back to it. Never put a secret in a question. When a change waits on the
-   answer, add `"blocks": "/changes/<name>"`; `blocks` takes a change's path
-   and no words.
-2. List the questions still waiting for an answer:
+   back to it. Never put a secret in a question. When a change or task
+   waits on the answer, add `"blocks": "/changes/<name>"` or the task's
+   path; `blocks` takes a path and no words.
+2. List the questions still waiting for an answer, the most urgent first:
 
        board -C <board> plans open --path /projects/<project>
+
+   `board -C <board> plans waiting` gives their count and one line to end a
+   reply with.
 
 3. When the owner answers in chat, record the answer with the option they
    chose and their words verbatim:

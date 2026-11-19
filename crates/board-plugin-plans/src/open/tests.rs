@@ -3,7 +3,8 @@
 
 use std::cell::RefCell;
 
-use board_ops::{Board, Plugin, Plugins, QueryReport, Settings};
+use board_model::LogicalPath;
+use board_ops::{Board, Expect, Plugin, Plugins, QueryReport, Settings};
 use board_plugin::Target;
 use board_scenario::{Item, Scenario};
 use serde_json::json;
@@ -160,9 +161,22 @@ pub(crate) fn body(asked: &str, fields: &Value) -> Value {
     Value::String(record.to_string())
 }
 
-/// A row of the question at `path` with `code` and `body`.
+/// A row of the question at `path` with `code` and `body`, whose `blocks`
+/// names no work the query found.
 fn row(path: &str, code: Option<&str>, body: Value) -> Vec<Value> {
-    vec![json!(path), json!(code), body]
+    vec![json!(path), json!(code), body, Value::Null]
+}
+
+/// A row of the open question at `path`, asked on day `day` of October, whose
+/// `blocks` names work in `work`: `active`, `done`, `dropped` or null.
+fn worked(path: &str, day: u8, work: Option<&str>) -> Vec<Value> {
+    let asked = format!("2026-10-{day:02}T09:00:00Z");
+    vec![
+        json!(path),
+        Value::Null,
+        body(&asked, &json!({})),
+        json!(work),
+    ]
 }
 
 /// The paths `open` returns from `rows` for `input`, and its output.
@@ -437,6 +451,8 @@ fn a_question_is_returned_with_its_original_time_and_null_for_what_it_leaves_out
             "note": null,
             "mount": "/repos/r",
             "context_path": null,
+            "project": "/q",
+            "critical": false,
         })
     );
 }
@@ -764,6 +780,12 @@ fn plans_open_looks_up_each_named_question_by_key_and_never_scans_the_answers_pe
     };
     let steps = plan(&board);
     assert_eq!(scans(&steps), 0, "{steps:#?}");
+    // The work a question blocks is looked up by its logical path, never by
+    // scanning every record for each question.
+    assert!(
+        !steps.iter().any(|step| step.starts_with("SCAN w")),
+        "{steps:#?}"
+    );
     let searches: Vec<&String> = (steps.iter())
         .filter(|step| step.starts_with("SEARCH n"))
         .collect();
@@ -799,4 +821,297 @@ fn plans_open_on_a_board_with_hundreds_of_questions_and_answers_lists_the_unansw
         .call(&target, br#"{"limit": 100}"#, &Plugins::default())
         .unwrap();
     assert_eq!(report.output["total"], json!(120));
+}
+
+/// Within a project, a question that holds up active work comes first and
+/// the rest follow oldest first. A question whose work ended, or whose
+/// `blocks` names nothing the query found, is not critical.
+#[test]
+fn within_a_project_questions_blocking_active_work_come_first_then_the_rest_oldest_first() {
+    let rows = vec![
+        worked("/projects/a/questions/old", 1, None),
+        worked("/projects/a/questions/ended", 2, Some("done")),
+        worked("/projects/a/questions/late-critical", 4, Some("active")),
+        worked("/projects/a/questions/early-critical", 3, Some("active")),
+    ];
+    let (paths, output) = opened(rows, &json!({}));
+    assert_eq!(
+        paths,
+        [
+            "/projects/a/questions/early-critical",
+            "/projects/a/questions/late-critical",
+            "/projects/a/questions/old",
+            "/projects/a/questions/ended",
+        ]
+    );
+    let critical: Vec<&Value> = (output["questions"].as_array().unwrap().iter())
+        .map(|question| &question["critical"])
+        .collect();
+    assert_eq!(
+        critical,
+        [&json!(true), &json!(true), &json!(false), &json!(false)]
+    );
+}
+
+/// Questions stay together by project. A project holding a critical
+/// question comes before one holding none, however old that one's
+/// questions are, and projects of the same kind come oldest first.
+#[test]
+fn projects_with_critical_questions_come_first_and_each_projects_questions_stay_together() {
+    let rows = vec![
+        worked("/projects/calm/questions/oldest", 1, None),
+        worked("/projects/late/questions/blocking", 9, Some("active")),
+        worked("/projects/early/questions/later", 8, None),
+        worked("/projects/early/questions/blocking", 5, Some("active")),
+        worked("/projects/late/questions/other", 2, None),
+        worked("/projects/calm/questions/newer", 3, None),
+        worked("/projects/quiet/questions/only", 2, None),
+    ];
+    let (paths, output) = opened(rows, &json!({}));
+    assert_eq!(
+        paths,
+        [
+            "/projects/early/questions/blocking",
+            "/projects/early/questions/later",
+            "/projects/late/questions/blocking",
+            "/projects/late/questions/other",
+            "/projects/calm/questions/oldest",
+            "/projects/calm/questions/newer",
+            "/projects/quiet/questions/only",
+        ]
+    );
+    let projects: Vec<&str> = (output["questions"].as_array().unwrap().iter())
+        .map(|question| question["project"].as_str().unwrap())
+        .collect();
+    assert_eq!(projects[0], "/projects/early");
+}
+
+/// The limit keeps the first questions of the digest order, so a critical
+/// question asked last is still returned when the limit is one.
+#[test]
+fn the_limit_keeps_the_most_urgent_questions_of_the_digest_order() {
+    let rows = vec![
+        worked("/projects/a/questions/old", 1, None),
+        worked("/projects/b/questions/new", 9, Some("active")),
+    ];
+    let (paths, output) = opened(rows, &json!({"limit": 1}));
+    assert_eq!(paths, ["/projects/b/questions/new"]);
+    assert_eq!(
+        (&output["total"], &output["truncated"]),
+        (&json!(2), &json!(true))
+    );
+}
+
+/// A question's project is the folder that holds its `questions/` folder,
+/// so a mounted board's project keeps the mount's prefix.
+#[test]
+fn a_questions_project_is_the_folder_above_its_questions_folder() {
+    let rows = vec![
+        worked("/repos/lib/projects/demos/questions/q", 1, None),
+        worked("/elsewhere/q", 2, None),
+        worked("/questions/q", 3, None),
+        worked("/q", 4, None),
+        worked("/projects/a/questions/sub/q", 5, None),
+    ];
+    let (_, output) = opened(rows, &json!({}));
+    let projects: Vec<&Value> = (output["questions"].as_array().unwrap().iter())
+        .map(|question| &question["project"])
+        .collect();
+    assert_eq!(
+        projects,
+        [
+            &json!("/repos/lib/projects/demos"),
+            &json!("/elsewhere"),
+            &json!("/"),
+            &json!("/"),
+            &json!("/projects/a/questions/sub"),
+        ]
+    );
+}
+
+/// A change record in `phase`, as the changes plugin writes one.
+fn change(phase: &str) -> Value {
+    Value::String(
+        json!({"$type": "changes/change/v2", "title": "Work", "phase": phase}).to_string(),
+    )
+}
+
+/// The work column the query reads for each open question, by path.
+fn work_of(board: &Board) -> Vec<(String, Value)> {
+    let report = board.query(&questions(), usize::MAX, None, None).unwrap();
+    let mut work: Vec<(String, Value)> = (report.rows.iter())
+        .map(|row| (row[0].as_str().unwrap().to_owned(), row[3].clone()))
+        .collect();
+    work.sort_by(|a, b| a.0.cmp(&b.0));
+    work
+}
+
+/// The query reads the phase of the change a question blocks: `done` and
+/// `dropped` are given as they are and every other phase is active. A `blocks` that
+/// names nothing gives null.
+#[test]
+fn the_query_reads_a_blocked_change_as_active_until_it_is_done_or_dropped() {
+    let mut files = vec![];
+    for phase in [
+        "plan", "build", "review", "land", "paused", "done", "dropped",
+    ] {
+        files.push((format!("changes/{phase}"), change(phase)));
+        files.push((
+            format!("projects/a/questions/{phase}"),
+            body(
+                "2026-10-01T09:00:00Z",
+                &json!({"blocks": format!("/changes/{phase}")}),
+            ),
+        ));
+    }
+    files.push((
+        "projects/a/questions/nothing".to_owned(),
+        body(
+            "2026-10-01T09:00:00Z",
+            &json!({"blocks": "/changes/missing"}),
+        ),
+    ));
+    files.push((
+        "projects/a/questions/unblocking".to_owned(),
+        body("2026-10-01T09:00:00Z", &json!({})),
+    ));
+    let files: Vec<(&str, Value)> = files.iter().map(|(p, b)| (p.as_str(), b.clone())).collect();
+    let (_scenario, board) = plans_board(&files);
+    let work = work_of(&board);
+    let expected = [
+        ("build", json!("active")),
+        ("done", json!("done")),
+        ("dropped", json!("dropped")),
+        ("land", json!("active")),
+        ("nothing", Value::Null),
+        ("paused", json!("active")),
+        ("plan", json!("active")),
+        ("review", json!("active")),
+        ("unblocking", Value::Null),
+    ];
+    let expected: Vec<(String, Value)> = (expected.into_iter())
+        .map(|(name, work)| (format!("/projects/a/questions/{name}"), work))
+        .collect();
+    assert_eq!(work, expected);
+}
+
+/// A task is a Markdown file whose frontmatter is the record. An open task
+/// is active, and a done or dropped one is given as it is.
+#[test]
+fn the_query_reads_a_blocked_task_as_active_while_it_is_open() {
+    let (scenario, _) = plans_board(&[]);
+    for status in ["open", "done", "dropped"] {
+        let task =
+            format!("---\n$type: tasks/task/v2\ntitle: Work\nstatus: {status}\n---\nBody.\n");
+        scenario.write(&format!("tasks/{status}.md"), Item::File(&task));
+        let question = body(
+            "2026-10-01T09:00:00Z",
+            &json!({"blocks": format!("/tasks/{status}.md")}),
+        );
+        scenario.write(
+            &format!("projects/a/questions/{status}.json"),
+            Item::File(question.as_str().unwrap()),
+        );
+    }
+    let mut board = Board::open(scenario.workdir(), None).unwrap();
+    board.build_in(&[&Plans]);
+    let work = work_of(&board);
+    assert_eq!(
+        work,
+        [
+            ("/projects/a/questions/done".to_owned(), json!("done")),
+            ("/projects/a/questions/dropped".to_owned(), json!("dropped")),
+            ("/projects/a/questions/open".to_owned(), json!("active")),
+        ]
+    );
+}
+
+/// A question in a mounted board names the change it blocks by its path in
+/// that board, so the query finds the change under the mount. The twin is
+/// the same `blocks` on a question in the root board, which finds no
+/// change there.
+#[test]
+fn a_mounted_questions_blocks_is_read_from_its_own_boards_root() {
+    let question = body("2026-10-01T09:00:00Z", &json!({"blocks": "/changes/w"}));
+    let (_s, _l, board) = mounting_board(
+        &[("projects/a/questions/root", question.clone())],
+        &[(MOUNTED_QUESTION, question), ("changes/w", change("build"))],
+    );
+    assert_eq!(
+        work_of(&board),
+        [
+            ("/projects/a/questions/root".to_owned(), Value::Null),
+            ("/vendor/projects/a/questions/q".to_owned(), json!("active")),
+        ]
+    );
+}
+
+/// A blocked change with no phase, which Board marks degraded but still
+/// indexes with its type, gives the question null work: neither critical
+/// nor ended. Its twin blocks a change with a phase, which is active.
+#[test]
+fn a_question_blocking_a_change_with_no_phase_has_no_work_and_its_twin_with_a_phase_is_active() {
+    let blocking = |change: &str| {
+        body(
+            "2026-10-01T09:00:00Z",
+            &json!({"blocks": format!("/changes/{change}")}),
+        )
+    };
+    let broken = Value::String(json!({"$type": "changes/change/v2", "title": "Work"}).to_string());
+    let (_scenario, board) = plans_board(&[
+        ("changes/broken", broken),
+        ("changes/whole", change("build")),
+        ("projects/a/questions/broken", blocking("broken")),
+        ("projects/a/questions/whole", blocking("whole")),
+    ]);
+    assert_eq!(
+        work_of(&board),
+        [
+            ("/projects/a/questions/broken".to_owned(), Value::Null),
+            ("/projects/a/questions/whole".to_owned(), json!("active")),
+        ]
+    );
+    let target: Target = "plans.open".parse().unwrap();
+    let report = board.call(&target, b"{}", &Plugins::default()).unwrap();
+    let critical: Vec<(&Value, &Value)> = (report.output["questions"].as_array().unwrap().iter())
+        .map(|question| (&question["path"], &question["critical"]))
+        .collect();
+    assert_eq!(
+        critical,
+        [
+            (&json!("/projects/a/questions/whole"), &json!(true)),
+            (&json!("/projects/a/questions/broken"), &json!(false)),
+        ]
+    );
+}
+
+/// `put` writes a question whose `blocks` names a task whole. Its twin,
+/// whose `blocks` names a record that is neither a change nor a task, is
+/// written too, as Board writes every broken reference, but marked degraded
+/// with `board::ref::wrong_type` at `/blocks`.
+#[test]
+fn put_writes_a_question_blocking_a_task_whole_and_marks_its_twin_blocking_another_type() {
+    let (scenario, _) = plans_board(&[(
+        "projects/a/questions/other",
+        body("2026-10-01T09:00:00Z", &json!({})),
+    )]);
+    scenario.write(
+        "tasks/w.md",
+        Item::File("---\n$type: tasks/task/v2\ntitle: Work\nstatus: open\n---\nBody.\n"),
+    );
+    let mut board = Board::open(scenario.workdir(), None).unwrap();
+    board.build_in(&[&Plans]);
+    let degraded = |blocks: &str| {
+        let path: LogicalPath = "/projects/a/questions/q".parse().unwrap();
+        let question = body("2026-10-01T09:00:00Z", &json!({"blocks": blocks}));
+        let report =
+            (board.put(&path, Expect::Any, question.as_str().unwrap().as_bytes())).unwrap();
+        (report.writes[0].degraded.as_ref())
+            .map(|(code, detail)| (code.as_str(), detail.pointer.clone()))
+    };
+    assert_eq!(
+        degraded("/projects/a/questions/other"),
+        Some(("board::ref::wrong_type", Some("/blocks".to_owned())))
+    );
+    assert_eq!(degraded("/tasks/w.md"), None);
 }

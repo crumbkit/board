@@ -17,7 +17,8 @@ so it is written at its path. Its schema declares its folder too, so
   `local_` id), `asked` and `status` (`open` or `withdrawn`) are required.
   `options`, `recommendation`, `why`, `blocks`, `blocked_work`, `mount`,
   `context_path`, `note` and `withdrawn_reason` are optional. `blocks` is the
-  path of the change that cannot proceed until the question is answered.
+  path of the change or task that cannot proceed until the question is
+  answered.
   `blocked_work` says what cannot proceed in words, when no change names it
   or the change needs more detail. A question is answered when a
   `plans/answer/v1` names it in `question`; answering leaves its status
@@ -71,12 +72,27 @@ quotes the owner's words in `why`:
 ## Capabilities
 
 `board plans open [--path /projects/<project>] [--limit <n>]` lists the
-questions below the path whose `status` is `open` and that no answer names, oldest first, with their options,
-recommendation and what each blocks. It returns at most 100 by default, with
-`total`, which counts the readable ones, and `truncated`. `unreadable` counts
+questions below the path whose `status` is `open` and that no answer names,
+with their options, recommendation and what each blocks. Each question
+carries `project`, the folder above its `questions/` folder, and `critical`,
+true when `blocks` names a change whose phase is not `done` or `dropped`, or
+a task whose status is `open`. A mounted question's `blocks` is read from its
+own board's root. The questions come grouped by project. Within a project
+the critical ones come first, then the rest, each oldest first. Projects
+come in the order of their first question, so a project holding a critical
+question comes before one that holds none. The limit keeps the first
+ones. It returns at most 100 by default, with `total`, which counts the
+readable ones, and `truncated`. `unreadable` counts
 open questions Board marks degraded or this plugin cannot read. Each question
 also carries `why`, `note`, `mount` and `context_path`, null when the record
 leaves them out.
+
+`board plans waiting [--path /projects/<project>]` counts the questions
+`plans open` lists and returns `total`, `blocking` (how many of them are
+critical), `unreadable` and `line`, one sentence an agent can end its reply
+with, such as "3 questions are waiting for you, 2 of them blocking work. Run
+/ask to answer them." The board-plans mod's Waiting button draws `total` and
+`blocking`.
 
 `board plans answer --path <question> --option <id> [--words <text>]
 [--session <local_ id>] [--program <slug>] [--person <slug>] [--agent <name>]

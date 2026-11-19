@@ -16,7 +16,7 @@ macro_rules! own_path {
     };
 }
 
-const OWN_PATH: &str = own_path!();
+pub(crate) const OWN_PATH: &str = own_path!();
 
 /// SQL that is true when the answer `a` names the question `q`. A reference
 /// in a mounted board is read from that board's root, so an answer names a

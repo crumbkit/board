@@ -5,6 +5,7 @@ mod migrate;
 mod open;
 mod question;
 pub mod records;
+mod waiting;
 mod withdraw;
 
 use board_model::{CapabilityName, RecordType};
@@ -48,10 +49,11 @@ impl Plugin for Plans {
             "answer" => answer::answer(host, &input),
             "withdraw" => withdraw::withdraw(host, &input),
             "migrate" => migrate::migrate(host, &input),
+            "waiting" => waiting::waiting(host, &input),
             other => Err(PluginError {
                 code: "plans::call::unknown_capability".to_owned(),
                 message: format!(
-                    "plans offers no capability {other}; it offers open, answer, withdraw and migrate"
+                    "plans offers no capability {other}; it offers open, answer, withdraw, migrate and waiting"
                 ),
                 fields: Map::new(),
                 hint: None,
@@ -77,7 +79,8 @@ fn manifest() -> Value {
         "capabilities": [{
             "name": "open",
             "description": "The questions under a path whose status is open and that no answer names, \
-                oldest first.",
+                grouped by project: a project holding a question that blocks active work comes \
+                first, and within a project those questions come first, each oldest first.",
             "inputSchema": schema_of::<open::Input>(SchemaSettings::draft2020_12()),
             "outputSchema": schema_of::<open::Output>(SchemaSettings::draft2020_12().for_serialize()),
             "annotations": {
@@ -124,6 +127,19 @@ fn manifest() -> Value {
             "annotations": {
                 "readOnlyHint": false,
                 "destructiveHint": true,
+                "idempotentHint": true,
+                "openWorldHint": false,
+            },
+            "_meta": {},
+        }, {
+            "name": "waiting",
+            "description": "How many questions under a path wait for the owner, and one line that \
+                says so, which an agent can end its reply with.",
+            "inputSchema": schema_of::<waiting::Input>(SchemaSettings::draft2020_12()),
+            "outputSchema": schema_of::<waiting::Output>(SchemaSettings::draft2020_12().for_serialize()),
+            "annotations": {
+                "readOnlyHint": true,
+                "destructiveHint": false,
                 "idempotentHint": true,
                 "openWorldHint": false,
             },
