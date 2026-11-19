@@ -162,7 +162,9 @@ Refusals:
   boundary's code, such as `boundary::check::failed`. The message is the
   boundary's, followed by its `Next:` step, which is also the hint. The
   other fields are the boundary's own, unchanged: `failures`, `digest`,
-  `crossing` and `effect`. A code the
+  `crossing` and, when the call passed `--ask_owner true`, `effect`; without
+  it no request is filed. `push`, `pr-create`, `pr-edit`, `comment` and
+  `issue-create` take `ask_owner`; `merge` and the hook never ask. A code the
   boundary's refusal carried, such as `rules::rule::not_found` inside
   `boundary::board::refused`, is in `cause`. Nothing is sent.
 - Any other refusal of the check, such as boundary not being enabled in the

@@ -372,3 +372,20 @@ fn pr_create_failing_after_the_push_says_the_pull_request_was_not_opened_and_run
     remove(&hook);
     assert_eq!(desk.output("pr-create", &flags)["sent"], PULL_URL);
 }
+
+#[test]
+fn pr_create_files_no_request_without_ask_owner_and_one_with_it() {
+    let desk = Desk::new();
+    desk.refuse(&["pr.body"], "github.*");
+    desk.git(&desk.checkout(), &["switch", "-q", "-c", "feature"]);
+    desk.commit("Add a lever");
+    let pending = desk.personal.workdir().join("effects/pending");
+    let filed = || std::fs::read_dir(&pending).map_or(0, Iterator::count);
+    let flags = ["--title", "Add a lever", "--body", "For acme-123."];
+    refused(desk.call("pr-create", &flags));
+    assert_eq!(filed(), 0);
+    let asking = [&flags[..], &["--ask_owner", "true"]].concat();
+    refused(desk.call("pr-create", &asking));
+    assert_eq!(filed(), 1);
+    assert_eq!(desk.gh_calls(), 0);
+}

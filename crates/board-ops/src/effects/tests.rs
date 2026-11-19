@@ -1297,3 +1297,55 @@ fn deciding_through_a_link_on_a_file_that_is_not_a_record_names_the_file_and_its
         assert_eq!(pending_effect(&mine, &id).path, "/pulls/a.md", "{at}");
     }
 }
+
+/// `board decide` that only reads the owner's answer.
+fn decided(board: &Board, at: &str) -> Result<Option<DecideReport>, EffectError> {
+    board.decided_capability(CAPABILITY, &path(at), None)
+}
+
+#[test]
+fn an_unanswered_lookup_returns_no_answer_and_writes_nothing_and_a_decide_writes_the_pending_effect()
+ {
+    let (scenario, mine) = (board(), personal());
+    let board = opened(&scenario, Some("review"), Some(&mine));
+    assert!(decided(&board, "/pulls/7").unwrap().is_none());
+    assert!(!exists(&mine, "effects/pending"));
+    assert!(!exists(&mine, "effects/seen"));
+    let id = asked(decide(&board, "/pulls/7"));
+    assert!(exists(&mine, &format!("effects/pending/{id}.json")));
+}
+
+#[test]
+#[expect(
+    clippy::disallowed_methods,
+    reason = "it signs the approval with the test key, as the signer would"
+)]
+fn a_lookup_refuses_an_unsigned_approval_as_a_decide_does_and_admits_the_owners_signed_one() {
+    let (scenario, mine) = (board(), personal());
+    let board = opened(&scenario, Some("review"), Some(&mine));
+    let id = asked(decide(&board, "/pulls/7"));
+    let approval = pending_effect(&mine, &id).approval();
+    let unsigned = (Code::SettingsUnsigned, Some(id.clone()));
+    for signature in [None, Some(Signer::new().sign(&approval))] {
+        approve_by_hand(&mine, &id, signature);
+        assert_eq!(named(decided(&board, "/pulls/7")), unsigned);
+        assert_eq!(named(decide(&board, "/pulls/7")), unsigned);
+    }
+    approve_by_hand(&mine, &id, Some(signer().sign(&approval)));
+    let report = decided(&board, "/pulls/7").unwrap().unwrap();
+    assert_eq!(report.effect, Some(id.clone()));
+    assert_eq!(decide(&board, "/pulls/7").unwrap().effect, Some(id));
+}
+
+#[test]
+fn a_lookup_through_a_mount_writes_nothing_in_either_board_and_a_decide_through_it_does() {
+    let ((scenario, library), mine) = (mounted(), personal());
+    let plugin = opened(&scenario, Some("review"), Some(&mine));
+    let report = decided(&plugin, "/m/notes/y").unwrap();
+    assert!(report.is_none());
+    for board in [&scenario, &library, &mine] {
+        assert!(!exists(board, "effects"));
+    }
+    let id = asked(decide(&plugin, "/m/notes/y"));
+    assert!(exists(&mine, &format!("effects/pending/{id}.json")));
+}

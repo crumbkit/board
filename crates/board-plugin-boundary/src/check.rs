@@ -50,6 +50,20 @@ pub(crate) struct Input {
     /// Each part of the content, by its name, such as pr.body.
     #[schemars(extend("minProperties" = 1))]
     parts: BTreeMap<String, String>,
+    /// Ask the owner to let this exact content through when a check fails,
+    /// which files one request the owner answers; left out, an earlier answer
+    /// still applies but no request is filed.
+    #[serde(default)]
+    ask_owner: bool,
+    /// Whether a refusal that filed no request names `ask_owner` as the way to
+    /// ask; false for a caller that cannot pass it.
+    #[serde(default = "offered")]
+    offer_ask_owner: bool,
+}
+
+/// `offer_ask_owner` when the caller leaves it out.
+fn offered() -> bool {
+    true
 }
 
 /// The crossing written, the boundaries that matched, and every verdict;
@@ -87,6 +101,8 @@ enum Answer {
     Asked(String),
     /// Refused, by the answer to this effect.
     Refused(String),
+    /// Not answered, and the caller did not ask the owner.
+    NotAsked,
     /// Too large to show, so it cannot be asked.
     TooLarge,
 }
@@ -99,6 +115,8 @@ pub(crate) fn check(host: &dyn Host, input: &Value) -> Result<Value, PluginError
         to,
         from,
         parts,
+        ask_owner,
+        offer_ask_owner,
     } = PluginError::read_input("boundary", "check", input)?;
     let personal = personal(host)?;
     let personal = &*personal;
@@ -117,11 +135,13 @@ pub(crate) fn check(host: &dyn Host, input: &Value) -> Result<Value, PluginError
         parts: &parts,
     };
     let digest = content.digest();
-    // Only a failure asks the owner, so a passing crossing writes no effect.
+    // Only a failure asks the owner, and only when the caller says so, so a
+    // passing crossing writes no effect.
     let answer = if failed.is_empty() {
         None
     } else {
-        Some(ask(personal, &crossing::path(&digest), &content)?)
+        let path = crossing::path(&digest);
+        Some(ask(personal, &path, &content, ask_owner)?)
     };
     let overridden = match &answer {
         Some(Answer::Approved(effect)) => Some(format!("sha256:{effect}")),
@@ -154,7 +174,12 @@ pub(crate) fn check(host: &dyn Host, input: &Value) -> Result<Value, PluginError
         prior.as_ref().map(|(_, blob)| blob.as_str()),
     )?;
     if let Some(answer) = answer.filter(|_| !passed) {
-        return Err(refusal(&action, &digest, &failed, &answer));
+        return Err(refusal(
+            &action,
+            &digest,
+            &failed,
+            (&answer, offer_ask_owner),
+        ));
     }
     let note = if matched.is_empty() {
         let from = from.map_or_else(String::new, |from| format!(" from {from}"));
@@ -247,17 +272,28 @@ fn evaluate(
 /// Board refuses to show more than 1 MiB, so such content cannot be
 /// overridden (a soft limit; showing only the parts the checks failed on
 /// would raise it).
-fn ask(host: &dyn Host, path: &str, content: &Content<'_>) -> Result<Answer, PluginError> {
+fn ask(
+    host: &dyn Host,
+    path: &str,
+    content: &Content<'_>,
+    file: bool,
+) -> Result<Answer, PluginError> {
     let path: LogicalPath = path
         .parse()
         .expect("/crossings/<hex digest> is a logical path");
     let shown = Shown::Text(content.shown().into_bytes());
-    let refusal = match host.decide(OVERRIDE, &path, Some(&shown)) {
-        Ok(report) => {
+    let decided = if file {
+        host.decide(OVERRIDE, &path, Some(&shown)).map(Some)
+    } else {
+        host.decided(OVERRIDE, &path, Some(&shown))
+    };
+    let refusal = match decided {
+        Ok(Some(report)) => {
             let effect = (report.effect)
-                .expect("Host::decide asks as the plugin, so Board names the effect it admits");
+                .expect("Host asks as the plugin, so Board names the effect it admits");
             return Ok(Answer::Approved(effect));
         }
+        Ok(None) => return Ok(Answer::NotAsked),
         Err(refusal) => refusal,
     };
     let effect = (refusal.fields.get("effect").and_then(Value::as_str)).map(str::to_owned);
@@ -271,7 +307,14 @@ fn ask(host: &dyn Host, path: &str, content: &Content<'_>) -> Result<Answer, Plu
 
 /// `boundary::check::failed`, naming each failing rule, part and line,
 /// with the next step and what the owner may do about it.
-fn refusal(action: &str, digest: &str, failed: &[&Verdict], answer: &Answer) -> PluginError {
+/// `offer` is whether the hint names `--ask_owner`, which only a caller that can
+/// pass it wants.
+fn refusal(
+    action: &str,
+    digest: &str,
+    failed: &[&Verdict],
+    (answer, offer): (&Answer, bool),
+) -> PluginError {
     let mut failures = Vec::new();
     let mut named = Vec::new();
     let no_checker = [Finding {
@@ -331,7 +374,7 @@ fn refusal(action: &str, digest: &str, failed: &[&Verdict], answer: &Answer) -> 
             parts.into_iter().collect::<Vec<_>>().join(", ")
         ));
     }
-    let (owner, effect) = owner(answer);
+    let (owner, effect) = owner(answer, offer);
     let mut fields = Map::from_iter([
         ("digest".to_owned(), json!(digest)),
         ("crossing".to_owned(), json!(crossing::path(digest))),
@@ -359,7 +402,7 @@ fn refusal(action: &str, digest: &str, failed: &[&Verdict], answer: &Answer) -> 
 
 /// What the owner may do about the failed content, given how they answered,
 /// and the effect that asks or refused.
-fn owner(answer: &Answer) -> (String, Option<&String>) {
+fn owner(answer: &Answer, offer: bool) -> (String, Option<&String>) {
     match answer {
         Answer::TooLarge => (
             "This content is over 1 MiB as the owner would see it, so the owner cannot approve \
@@ -367,6 +410,13 @@ fn owner(answer: &Answer) -> (String, Option<&String>) {
                 .to_owned(),
             None,
         ),
+        Answer::NotAsked if offer => (
+            "No request went to the owner. If this exact content must go as it is, run the same \
+             command again with `--ask_owner true`, which asks the owner once."
+                .to_owned(),
+            None,
+        ),
+        Answer::NotAsked => ("No request went to the owner.".to_owned(), None),
         Answer::Refused(effect) => (
             format!(
                 "The owner refused to let this exact content through ({effect}); the owner can \
