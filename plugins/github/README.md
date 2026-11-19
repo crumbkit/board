@@ -62,30 +62,44 @@ result it recorded.
   `git push -u` does, which works in a single-branch clone too. It returns `branch`, `commits`, the commits sent, oldest
   first, and `sent`, git's line for the branch, such as
   `<sha>:refs/heads/x [new branch]`.
-- `pr-create --title <t> --body <b> [--base <branch>] [--draft true]` pushes
-  as `push` does, then runs `gh pr create`. One check covers the commits,
-  title and body. It records git's line on the crossing as soon as the push
-  lands, so a gh failure after it still leaves the push recorded. It writes
-  the `github/pull/v1` record and returns `number` and `path`; `sent` is the
-  pull request's URL, which replaces git's line on the crossing.
+- `pr-create --title <t> --body <b> [--base <branch>] [--draft true] [--change <path>]`
+  pushes as `push` does, then runs `gh pr create`. One check covers the
+  commits, title and body. It records git's line on the crossing as soon as
+  the push lands, so a gh failure after it still leaves the push recorded.
+  It writes the `github/pull/v1` record and returns `number` and `path`;
+  `sent` is the pull request's URL, which replaces git's line on the
+  crossing. It then attaches the record to a change in the board the command
+  runs in, as `board changes attach --pull` does. With `--change`, it
+  attaches to that change whatever its phase or mount. Without it, it
+  attaches to the change at `/changes/<branch>` only when that change is on
+  the checkout's mount and not done or dropped. A change that already lists
+  the pull request is not written. `change` names the change it attached
+  to; otherwise `change_note` says why it attached none and gives the
+  attach command, which names the board with `-C` and quotes each value.
+  The attach step never fails the call, since the pull request is already
+  open.
 - `pr-edit --number <n> [--title <t>] [--body <b>]` changes the title, the
   body or both through `gh api`. Board refuses a call with neither as
   `board::plugin::bad_input`.
 - `comment --number <n> --body <b>` comments on a pull request or issue.
 - `issue-create --title <t> --body <b>` opens an issue, writes its
   `github/issue/v1` record and returns `number` and `path`.
-- `merge --number <n> --subject <s> --body <b> [--change <path>] [--head <sha>]`
+- `merge [--change <path>] [--number <n>] [--subject <s>] [--body <b>] [--head <sha>]`
   squash-merges a pull request with `gh pr merge --squash
   --match-head-commit <sha>`, so GitHub refuses it when the pull request's
-  head has moved. With `--change`, it first runs `changes.next` in the
-  board the command runs in, which `-C <board>` or `--personal` names, and
-  refuses unless the change is in its land phase with no blocking check
-  missing, and while a run of the change has a stop set. The gate, the
-  change's head and `changes.advance` all come from that board, opened
-  again so it reads each mount at its pin and may write, even under
-  `--checkout`; the boundary check and the crossing stay in the personal
-  board. A board's own changes
-  are at `/changes/<name>`, so a change in another board is merged with
+  head has moved. A left-out `--subject` is the pull request's title and
+  ` (#<n>)`, a left-out `--body` its body, read with `gh api`. A left-out
+  `--number` is the one pull request of the checkout's repository among
+  the `github/pull/v1` records that `--change` names, read from the
+  change's board, through a mount too. With `--change`, it first runs
+  `changes.next` in the board the command runs in, which `-C <board>` or
+  `--personal` names, and refuses unless the change is in its land phase
+  with no blocking check missing, and while a run of the change has a
+  stop set. The gate, the change's head and `changes.advance` all come
+  from that board, opened again so it reads each mount at its pin and may
+  write, even under `--checkout`; the boundary check and the crossing
+  stay in the personal board. A board's own changes are at
+  `/changes/<name>`, so a change in another board is merged with
   `-C <that board's directory>`, and a `--change` path under a mount, such
   as `/repos/team/changes/<name>`, is refused. From the checkout of a
   repository that another board mounts, Board runs in that board, so a
@@ -98,7 +112,30 @@ result it recorded.
   as `phase`. When a merge queue only queued it, it returns `queued: true`
   and no `phase`; run `board changes advance --path <change>` in the same
   board once the queue merges it. It returns the merged commit as `head`; `sent` is the
-  pull request's URL.
+  pull request's URL. Then it moves the mount of the merged repository: the
+  change's `mount` in the change's board, or without `--change` the
+  checkout's mount in the personal board. It resolves the mount with
+  `refs`, splits the ref it follows into a remote of the mounted clone and
+  a branch, fetches `+refs/heads/<branch>:refs/remotes/<remote>/<branch>`
+  there, so the ref moves even when the clone's own refspec leaves the
+  branch out, and moves the pin as `board mount update` does. It returns
+  `mount` with `path`, `old`, `new` and `wrote`. When it leaves the mount
+  at its pin, because the merge was queued, the mount is missing, it
+  follows a local branch, or the fetch or the update failed, it returns
+  `mount_warning` and also prints it. The merge still succeeds. The
+  warning's `code` is `github::merge::mount`. `cause` is the code of the
+  step that failed, and is absent when the only reason is a queued merge.
+  A queued merge's message always says it was queued, beside any other
+  reason. `command` is present only when it can run in a POSIX shell as
+  it is, and every value in it that comes from a record or from git is
+  single-quoted. It is `git -C <clone> fetch <remote> <refspec>
+  && <board> mount update <path>`, or only the `mount update` part when
+  the remote is unknown. `<board>` reaches the board that holds the mount
+  from any directory: `board -C <that board's directory>` with `--change`,
+  and `board --personal` without it. When no mount is known, because the
+  change records none or the personal board mounts the checkout at no one
+  path, there is no `command`, and the message says to run `mount update`
+  with the mount's path.
 
 The destination is `github:<owner>/<repo>` in lower case, from the URL
 configured for the checkout's `origin`. It is read before any `insteadOf`
@@ -158,7 +195,9 @@ Refusals:
   boundary's code, such as `boundary::check::failed`. The message is the
   boundary's, followed by its `Next:` step, which is also the hint. The
   other fields are the boundary's own, unchanged: `failures`, `digest`,
-  `crossing` and `effect`. A code the
+  `crossing` and, when the call passed `--ask_owner true`, `effect`; without
+  it no request is filed. `push`, `pr-create`, `pr-edit`, `comment` and
+  `issue-create` take `ask_owner`; `merge` and the hook never ask. A code the
   boundary's refusal carried, such as `rules::rule::not_found` inside
   `boundary::board::refused`, is in `cause`. Nothing is sent.
 - Any other refusal of the check, such as boundary not being enabled in the
@@ -184,7 +223,18 @@ Refusals:
 - `github::merge::gate`: `merge` named a change that is not in its land
   phase, whose land gate misses a blocking check, or whose run has a stop
   set. `fields.phase` names its phase, `fields.missing` the checks and
-  `fields.stop` the stop. gh does not run.
+  `fields.stop` the stop; the hint gives
+  each missing check's remedy. gh does not run.
+- `github::merge::number`: `merge` got no `--number`, and either no
+  `--change`, or a change that records no readable pull request of the
+  repository, or several. `fields.pulls` lists the numbers of this
+  repository's pull requests the change records. Owner and repository
+  match without regard to case. gh does not run.
+- `github::merge::pull`: `merge` left out `--subject` or `--body`, and
+  GitHub has no pull request `--number` in the repository, or that pull
+  request has no title for a left-out subject. `fields.number` names it.
+  The hint says to check `--number` or to pass the text. gh does not run
+  the merge.
 - `github::merge::head`: `merge` has no head to match, because the change
   records none or one that is not a full 40-hex commit, or neither
   `--change` nor `--head` was given, or `--head` differs from the change's
@@ -195,11 +245,19 @@ Refusals:
   the pull request's URL.
 - `github::merge::unreadable`: `changes.next` answered in a shape this
   plugin does not read.
+- `github::merge::mount`: a warning, never a refusal. The pull request
+  merged, and the mount was left at its pin. `cause` names the code of the
+  step that failed, such as `github::git::failed` or
+  `board::path::not_found`, and `command`, when present, moves the mount
+  by hand.
 - `github::boundary::unreadable`: the boundary answered in a shape this
   plugin does not read, which happens only when the two come from
   different Board builds.
 - `github::gh::failed`: gh failed after the check passed. The message says
-  the content may have been sent.
+  the content may have been sent. `merge` also gives it when its `gh api`
+  read of the pull request, for a left-out subject or body, fails; gh has
+  sent nothing then, and the hint says to check `--number` or to pass the
+  text.
 - A refusal after GitHub took the content, such as a record that cannot be
   written or a crossing that cannot take its result, keeps its own code but
   starts its message by saying the content was already sent and must not be
@@ -406,6 +464,15 @@ How it reads a command:
 - `covers` reads the git config and board mount of the directory the
   command names before the person approves the command. No git hook runs.
 - The run stops after 5 seconds, and the call then runs.
+
+The mod also reads each Agent call's prompt, so a lead learns before a
+builder starts that a command in its brief would be refused. It reads each
+fenced block and inline code span of the prompt as a command, by the rules
+above, and asks `covers` about each write. Prose outside code is not read.
+For each covered write it adds `github::brief::covered:` and the refusal
+the Bash hook would give. It never refuses the Agent call: it appends the
+advice to the builder's prompt and adds it to the lead's tool result. When
+`covers` fails, the call runs untouched.
 
 `covers --action <action> [--remote <remote>] [--repo <owner>/<repo>]`
 returns `covered`, each destination a boundary covers, with `to` and

@@ -49,6 +49,33 @@ impl Board {
         path: &LogicalPath,
         shown: Option<&Shown>,
     ) -> Result<DecideReport, EffectError> {
+        self.answer_capability(capability, path, shown, true)
+    }
+
+    /// As [`Board::decide_capability`], but with no answer it writes no
+    /// pending effect and returns `None`.
+    pub fn decided_capability(
+        &self,
+        capability: &str,
+        path: &LogicalPath,
+        shown: Option<&Shown>,
+    ) -> Result<Option<DecideReport>, EffectError> {
+        match self.answer_capability(capability, path, shown, false) {
+            Ok(report) => Ok(Some(report)),
+            Err(EffectError::Asked { .. }) => Ok(None),
+            Err(error) => Err(error),
+        }
+    }
+
+    /// The decide. An unanswered one is refused as `Asked` whether or not it
+    /// wrote its pending effect; it writes the effect only when `hold`.
+    fn answer_capability(
+        &self,
+        capability: &str,
+        path: &LogicalPath,
+        shown: Option<&Shown>,
+        hold: bool,
+    ) -> Result<DecideReport, EffectError> {
         let (record, text) = shows(shown, MAX_DECIDE_BYTES)?;
         let mut view = (self.repositories().snapshot()).map_err(|source| EffectError::Read {
             directory: path.to_string(),
@@ -67,7 +94,8 @@ impl Board {
                     .open_beside(&inside.repository)
                     .map_err(|source| EffectError::Open { source })?;
                 mounted.ask_as(self.asker.clone());
-                let mut report = mounted.decide_capability(capability, &inside.path, shown)?;
+                let mut report =
+                    mounted.answer_capability(capability, &inside.path, shown, hold)?;
                 report.path = path.clone();
                 return Ok(report);
             }
@@ -85,7 +113,7 @@ impl Board {
                 .transpose()?,
         };
         let landed = landed.unwrap_or_else(|| path.clone());
-        self.decide_at(capability, path, landed, (record, text))
+        self.decide_at(capability, path, landed, (record, text), hold)
     }
 
     /// [`Board::decide_capability`] for `capability` at `landed`, the path in this board
@@ -96,6 +124,7 @@ impl Board {
         path: &LogicalPath,
         landed: LogicalPath,
         (record, text): (Option<Value>, Option<String>),
+        hold_unanswered: bool,
     ) -> Result<DecideReport, EffectError> {
         let mut report = DecideReport {
             capability: capability.to_owned(),
@@ -130,7 +159,9 @@ impl Board {
                 id,
             }),
             None => {
-                hold(&personal, &effect)?;
+                if hold_unanswered {
+                    hold(&personal, &effect)?;
+                }
                 Err(EffectError::Asked {
                     plugin,
                     op,

@@ -53,11 +53,15 @@ pub(crate) fn check(
     to: &str,
     from: Option<&str>,
     parts: &Parts,
+    ask_owner: Option<bool>,
 ) -> Result<Passed, PluginError> {
     let mut input = json!({"action": action, "to": to, "parts": parts});
     if let Some(from) = from {
         input["from"] = json!(from);
     }
+    // `None` is a call with no `--ask_owner`, so its refusal must not offer it.
+    input["ask_owner"] = json!(ask_owner == Some(true));
+    input["offer_ask_owner"] = json!(ask_owner.is_some());
     let output = call(personal, "check", &input).map_err(|refusal| passed_on(&refusal))?;
     Passed::deserialize(&output).map_err(|error| unreadable("check", &error))
 }
