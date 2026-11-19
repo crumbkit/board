@@ -1,5 +1,6 @@
-//! `plans.open`: the questions still waiting for the owner, oldest first. A
-//! question waits while its status is open and no answer names it.
+//! `plans.open`: the questions still waiting for the owner, grouped by
+//! project with the questions that block active work first. A question
+//! waits while its status is open and no answer names it.
 
 mod asked;
 
@@ -30,9 +31,11 @@ use crate::records::{CHANGE_TYPES, Choice, TASK_TYPE};
 /// The fourth column, `work`, says whether the change or task the question
 /// `blocks` is still going: `done` or `dropped` once a change's phase or a
 /// task's status is one of those, `active` before, and null when `blocks`
-/// is absent or names no change or task. A question's `blocks` is read from the root of
-/// its own board, so the work's logical path is the question's mount prefix
-/// followed by `blocks`; the lookup is one equality on `logical`.
+/// is absent, names no change or task, or names one whose phase or status
+/// is null, as it is in a degraded record that leaves the field out. A
+/// question's `blocks` is read from the root of its own board, so the
+/// work's logical path is the question's mount prefix followed by
+/// `blocks`; the lookup is one equality on `logical`.
 pub(crate) fn questions() -> String {
     let changes = CHANGE_TYPES.map(|each| format!("'{each}'")).join(", ");
     format!(
@@ -40,10 +43,10 @@ pub(crate) fn questions() -> String {
          FROM records a WHERE a.type = 'plans/answer/v1') \
          SELECT q.logical, q.code, q.body, \
          (SELECT CASE \
-           WHEN w.type IN ({changes}) THEN \
+           WHEN w.type IN ({changes}) AND json_extract(w.body, '$.phase') IS NOT NULL THEN \
              CASE json_extract(w.body, '$.phase') WHEN 'done' THEN 'done' WHEN 'dropped' THEN 'dropped' \
              ELSE 'active' END \
-           WHEN w.type = '{TASK_TYPE}' THEN \
+           WHEN w.type = '{TASK_TYPE}' AND json_extract(w.body, '$.status') IS NOT NULL THEN \
              CASE json_extract(w.body, '$.status') WHEN 'done' THEN 'done' WHEN 'dropped' THEN 'dropped' \
              ELSE 'active' END \
            END \
@@ -190,9 +193,9 @@ pub(crate) fn waiting(host: &dyn Host, path: &str) -> Result<(Vec<Waiting>, usiz
 /// order of their first question by the same key, so a project holding a
 /// critical question comes before one holding none.
 fn digest(mut found: Vec<(Instant, Waiting)>) -> Vec<Waiting> {
-    let key =
-        |(when, question): &(Instant, Waiting)| (!question.critical, *when, question.path.clone());
-    found.sort_by_key(key);
+    found.sort_by(|(a_when, a), (b_when, b)| {
+        (!a.critical, a_when, &a.path).cmp(&(!b.critical, b_when, &b.path))
+    });
     let mut projects: Vec<(String, Vec<(Instant, Waiting)>)> = Vec::new();
     for each in found {
         match projects

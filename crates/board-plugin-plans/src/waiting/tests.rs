@@ -119,6 +119,57 @@ fn waiting_counts_the_questions_that_block_active_work() {
     let output = waiting(&host(rows), &json!({})).unwrap();
     assert_eq!(
         output["line"],
-        json!("1 question is waiting for you, and it blocks work. Run /ask to answer it.")
+        json!("1 question is waiting for you and blocks work. Run /ask to answer it.")
+    );
+}
+
+/// A row of an open question at `path` that this plugin cannot read.
+fn unreadable_row(path: &str) -> Vec<Value> {
+    vec![json!(path), Value::Null, Value::Null, Value::Null]
+}
+
+/// With no readable question, the line says how many unreadable ones wait
+/// and to check them, in the singular for one and the plural for two.
+#[test]
+fn waiting_with_only_unreadable_questions_says_they_cannot_be_read() {
+    for (rows, line) in [
+        (
+            vec![unreadable_row("/projects/a/questions/bad")],
+            "1 question is waiting for you but cannot be read. Run `board check` on it.",
+        ),
+        (
+            vec![
+                unreadable_row("/projects/a/questions/bad"),
+                unreadable_row("/projects/a/questions/worse"),
+            ],
+            "2 questions are waiting for you but cannot be read. Run `board check` on them.",
+        ),
+    ] {
+        let output = waiting(&host(rows), &json!({})).unwrap();
+        assert_eq!(output["total"], json!(0));
+        assert_eq!(output["line"], json!(line));
+    }
+}
+
+/// One question that blocks work beside one that cannot be read gives a
+/// line whose "blocks work" needs no comma and whose unreadable count
+/// follows ", and".
+#[test]
+fn one_blocking_question_and_one_unreadable_question_share_one_line() {
+    let rows = vec![
+        vec![
+            json!("/projects/a/questions/q"),
+            Value::Null,
+            body("2026-10-01T09:00:00Z", &json!({})),
+            json!("active"),
+        ],
+        unreadable_row("/projects/a/questions/bad"),
+    ];
+    let output = waiting(&host(rows), &json!({})).unwrap();
+    assert_eq!(
+        output["line"],
+        json!(
+            "1 question is waiting for you and blocks work, and 1 more cannot be read. Run /ask to answer it."
+        )
     );
 }

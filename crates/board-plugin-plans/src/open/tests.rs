@@ -3,7 +3,8 @@
 
 use std::cell::RefCell;
 
-use board_ops::{Board, Plugin, Plugins, QueryReport, Settings};
+use board_model::LogicalPath;
+use board_ops::{Board, Expect, Plugin, Plugins, QueryReport, Settings};
 use board_plugin::Target;
 use board_scenario::{Item, Scenario};
 use serde_json::json;
@@ -1066,4 +1067,74 @@ fn a_mounted_questions_blocks_is_read_from_its_own_boards_root() {
             ("/vendor/projects/a/questions/q".to_owned(), json!("active")),
         ]
     );
+}
+
+/// A blocked change with no phase, which Board marks degraded but still
+/// indexes with its type, gives the question null work: neither critical
+/// nor ended. Its twin blocks a change with a phase, which is active.
+#[test]
+fn a_question_blocking_a_change_with_no_phase_has_no_work_and_its_twin_with_a_phase_is_active() {
+    let blocking = |change: &str| {
+        body(
+            "2026-10-01T09:00:00Z",
+            &json!({"blocks": format!("/changes/{change}")}),
+        )
+    };
+    let broken = Value::String(json!({"$type": "changes/change/v2", "title": "Work"}).to_string());
+    let (_scenario, board) = plans_board(&[
+        ("changes/broken", broken),
+        ("changes/whole", change("build")),
+        ("projects/a/questions/broken", blocking("broken")),
+        ("projects/a/questions/whole", blocking("whole")),
+    ]);
+    assert_eq!(
+        work_of(&board),
+        [
+            ("/projects/a/questions/broken".to_owned(), Value::Null),
+            ("/projects/a/questions/whole".to_owned(), json!("active")),
+        ]
+    );
+    let target: Target = "plans.open".parse().unwrap();
+    let report = board.call(&target, b"{}", &Plugins::default()).unwrap();
+    let critical: Vec<(&Value, &Value)> = (report.output["questions"].as_array().unwrap().iter())
+        .map(|question| (&question["path"], &question["critical"]))
+        .collect();
+    assert_eq!(
+        critical,
+        [
+            (&json!("/projects/a/questions/whole"), &json!(true)),
+            (&json!("/projects/a/questions/broken"), &json!(false)),
+        ]
+    );
+}
+
+/// `put` writes a question whose `blocks` names a task whole. Its twin,
+/// whose `blocks` names a record that is neither a change nor a task, is
+/// written too, as Board writes every broken reference, but marked degraded
+/// with `board::ref::wrong_type` at `/blocks`.
+#[test]
+fn put_writes_a_question_blocking_a_task_whole_and_marks_its_twin_blocking_another_type() {
+    let (scenario, _) = plans_board(&[(
+        "projects/a/questions/other",
+        body("2026-10-01T09:00:00Z", &json!({})),
+    )]);
+    scenario.write(
+        "tasks/w.md",
+        Item::File("---\n$type: tasks/task/v2\ntitle: Work\nstatus: open\n---\nBody.\n"),
+    );
+    let mut board = Board::open(scenario.workdir(), None).unwrap();
+    board.build_in(&[&Plans]);
+    let degraded = |blocks: &str| {
+        let path: LogicalPath = "/projects/a/questions/q".parse().unwrap();
+        let question = body("2026-10-01T09:00:00Z", &json!({"blocks": blocks}));
+        let report =
+            (board.put(&path, Expect::Any, question.as_str().unwrap().as_bytes())).unwrap();
+        (report.writes[0].degraded.as_ref())
+            .map(|(code, detail)| (code.as_str(), detail.pointer.clone()))
+    };
+    assert_eq!(
+        degraded("/projects/a/questions/other"),
+        Some(("board::ref::wrong_type", Some("/blocks".to_owned())))
+    );
+    assert_eq!(degraded("/tasks/w.md"), None);
 }
