@@ -8,12 +8,14 @@ use std::path::PathBuf;
 use board_model::LogicalPath;
 use board_ops::{Elsewhere, Host, PluginError};
 use board_plugin::Target;
+use board_plugin::shape::Record;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 
 use crate::gh;
 use crate::parts::Parts;
+use crate::records::PullRecord;
 use crate::send::{Delivered, after_sent, origin, output};
 
 /// The phase a change must be in before its pull request merges.
@@ -109,25 +111,30 @@ pub(crate) fn merge(host: &dyn Host, input: &Value) -> Result<Value, PluginError
         Some(path) => Some((path, own(host)?)),
         None => None,
     };
-    let mut pulls = Vec::new();
-    let head = match &changed {
+    let (head, pulls) = match &changed {
         Some((change, board)) => {
             gate(&**board, &*place.personal, change)?;
-            let (recorded, found) = recorded_change(&**board, change)?;
-            pulls = found;
-            change_head(change, recorded, head)?
+            let (recorded, pulls) = recorded_change(&**board, change)?;
+            (change_head(change, recorded, head)?, Some(pulls))
         }
-        None => head.ok_or_else(|| {
-            head_refused(
-                "merge needs the commit to merge; pass --head <sha> or --change /changes/<name>"
-                    .to_owned(),
-            )
-        })?,
+        None => (
+            head.ok_or_else(|| {
+                head_refused(
+                    "merge needs the commit to merge; pass --head <sha> or --change \
+                     /changes/<name>"
+                        .to_owned(),
+                )
+            })?,
+            None,
+        ),
     };
     let repository = format!("{}/{}", place.owner, place.repo);
     let number = match number {
         Some(number) => number,
-        None => only_pull(&pulls, &repository, changed.is_some())?,
+        None => {
+            let board = changed.as_ref().map_or(host, |(_, board)| &**board);
+            only_pull(board, pulls.as_deref(), &place.owner, &place.repo)?
+        }
     };
     let (subject, body) = commit_text(host, &repository, number, subject, body)?;
     let parts = Parts::from([
@@ -215,18 +222,61 @@ fn commit_text(
         return Ok((subject.clone(), body.clone()));
     }
     let endpoint = format!("repos/{repository}/pulls/{number}");
-    let pull = gh::api(host, &endpoint)?.ok_or_else(|| {
-        gh::failed(
-            &endpoint,
-            "answered 404",
-            "check the pull request on GitHub",
-        )
-    })?;
-    let text = |key| pull.get(key).and_then(Value::as_str).unwrap_or_default();
+    let pull = gh::api(host, &endpoint)
+        .map_err(|mut error| {
+            error.message = format!(
+                "merge read pull request --number {number} for the commit's subject and body: {}",
+                error.message
+            );
+            error.hint = Some(FROM_PULL.to_owned());
+            error
+        })?
+        .ok_or_else(|| {
+            pull_refused(
+                number,
+                format!(
+                    "GitHub has no pull request --number {number} in {repository} to take the \
+                     commit's subject and body from"
+                ),
+                FROM_PULL,
+            )
+        })?;
+    let text = |key| pull.get(key).and_then(Value::as_str);
+    let subject = match (subject, text("title")) {
+        (Some(subject), _) => subject,
+        (None, Some(title)) if !title.is_empty() => format!("{title} (#{number})"),
+        (None, _) => {
+            return Err(pull_refused(
+                number,
+                format!(
+                    "GitHub gave pull request --number {number} in {repository} no title to \
+                     take the commit's subject from"
+                ),
+                "pass --subject",
+            ));
+        }
+    };
     Ok((
-        subject.unwrap_or_else(|| format!("{} (#{number})", text("title"))),
-        body.unwrap_or_else(|| text("body").to_owned()),
+        subject,
+        body.unwrap_or_else(|| text("body").unwrap_or_default().to_owned()),
     ))
+}
+
+/// What to do when merge cannot read the pull request it would take the
+/// commit's subject and body from.
+const FROM_PULL: &str = "check --number, or pass --subject and --body";
+
+/// `github::merge::pull`: the pull request `number` gave no subject or
+/// body to default to, saying `message`, with `hint`.
+fn pull_refused(number: u64, message: String, hint: &str) -> PluginError {
+    let mut fields = Map::new();
+    fields.insert("number".to_owned(), json!(number));
+    PluginError {
+        code: "github::merge::pull".to_owned(),
+        message,
+        fields,
+        hint: Some(hint.to_owned()),
+    }
 }
 
 /// Whether `commit` is a full 40-hex commit name.
@@ -353,32 +403,54 @@ fn gate(host: &dyn Host, personal: &dyn Host, path: &str) -> Result<(), PluginEr
     })
 }
 
-/// The pull request number the change records for `repository`, or
+/// The number of the one pull request of `owner`/`repo` among the
+/// `github/pull/v1` records `pulls` names in `host`, or
 /// `github::merge::number` saying why there is none: no change was named
-/// (`named` false), it records no pull request of `repository`, or several.
-/// Owner and repository match without regard to case, as GitHub names them.
-fn only_pull(pulls: &[String], repository: &str, named: bool) -> Result<u64, PluginError> {
-    let prefix = format!("/gh/{}/pulls/", repository.to_lowercase());
-    let mut numbers: Vec<u64> = (pulls.iter())
-        .filter_map(|pull| pull.to_lowercase().strip_prefix(&prefix)?.parse().ok())
+/// (`pulls` is `None`), the change records no pull request, none of this
+/// repository, or several. A record keeps owner and repository in lower
+/// case, and GitHub matches them without case, so they compare so here.
+fn only_pull(
+    host: &dyn Host,
+    pulls: Option<&[String]>,
+    owner: &str,
+    repo: &str,
+) -> Result<u64, PluginError> {
+    let paths: Vec<LogicalPath> = (pulls.unwrap_or_default().iter())
+        .filter_map(|pull| pull.parse().ok())
+        .collect();
+    let records = (host.get_each(&paths))
+        .map_err(|error| PluginError::board_refused("github", "get", &error.refusal("get")))?
+        .into_iter();
+    let ours = |record: &Value, key: &str, name: &str| {
+        (record.get(key).and_then(Value::as_str)).is_some_and(|its| its.eq_ignore_ascii_case(name))
+    };
+    let mut numbers: Vec<u64> = (records.filter_map(|answer| answer.ok()?.record.ok()))
+        .filter(|record| record.get("$type").and_then(Value::as_str) == Some(PullRecord::TYPE))
+        .filter(|record| ours(record, "owner", owner) && ours(record, "repo", repo))
+        .filter_map(|record| record.get("number")?.as_u64())
         .collect();
     numbers.sort_unstable();
     numbers.dedup();
     if let [number] = numbers[..] {
         return Ok(number);
     }
-    let message = if !named {
-        "merge needs the pull request to merge; pass --change /changes/<name> or --number <n>"
-            .to_owned()
-    } else if numbers.is_empty() {
-        format!("the change records no pull request of {repository}; pass --number <n>")
-    } else {
-        let list: Vec<String> = numbers.iter().map(|number| format!("#{number}")).collect();
-        format!(
-            "the change records several pull requests of {repository}, {}; pass --number <n> \
-             for the one to merge",
-            list.join(", ")
-        )
+    let message = match pulls {
+        None => "merge needs the pull request to merge; pass --change /changes/<name> or \
+                 --number <n>"
+            .to_owned(),
+        Some([]) => "the change records no pull request; pass --number <n>".to_owned(),
+        Some(_) if numbers.is_empty() => format!(
+            "the change records no pull request of {owner}/{repo}, only of other repositories; \
+             pass --number <n>"
+        ),
+        Some(_) => {
+            let list: Vec<String> = numbers.iter().map(|number| format!("#{number}")).collect();
+            format!(
+                "the change records several pull requests of {owner}/{repo}, {}; pass --number \
+                 <n> for the one to merge",
+                list.join(", ")
+            )
+        }
     };
     let mut fields = Map::new();
     fields.insert("pulls".to_owned(), json!(numbers));

@@ -547,11 +547,42 @@ fn a_given_subject_and_body_win_over_the_pull_request() {
     assert_eq!(desk.gh_file("gh-merge-stdin.txt"), "Own words.");
 }
 
+/// The code, message and `fields.pulls` of a refused merge.
+fn refusal(desk: &Desk, flags: &[&str]) -> (Value, String, Value) {
+    let (ran, document) = desk.call("merge", flags);
+    assert_eq!(ran.code, 1, "{document}");
+    let message = document["message"].as_str().unwrap_or_default().to_owned();
+    (
+        document["code"].clone(),
+        message,
+        document["fields"]["pulls"].clone(),
+    )
+}
+
 #[test]
 fn a_change_with_no_pull_or_two_pulls_in_the_repository_needs_number_and_with_it_merges() {
     let other = "/gh/octo/other/pulls/3";
     let two = ["/gh/octo/widgets/pulls/12", "/gh/octo/widgets/pulls/13"];
-    for recorded in [two.to_vec(), vec![other]] {
+    let number = || json!("github::merge::number");
+    for (recorded, message, numbers) in [
+        (
+            two.to_vec(),
+            "the change records several pull requests of octo/widgets, #12, #13; pass --number \
+             <n> for the one to merge",
+            json!([12, 13]),
+        ),
+        (
+            vec![other],
+            "the change records no pull request of octo/widgets, only of other repositories; \
+             pass --number <n>",
+            json!([]),
+        ),
+        (
+            vec![],
+            "the change records no pull request; pass --number <n>",
+            json!([]),
+        ),
+    ] {
         let desk = Desk::new();
         change(&desk, "land", HEAD, TESTED);
         let pull = json!({
@@ -568,8 +599,8 @@ fn a_change_with_no_pull_or_two_pulls_in_the_repository_needs_number_and_with_it
         pulls(&desk, true);
         desk.gh_answers(&json!(""), 0, "");
         assert_eq!(
-            failed(desk.call("merge", &["--change", CHANGE])),
-            (1, json!("github::merge::number")),
+            refusal(&desk, &["--change", CHANGE]),
+            (number(), message.to_owned(), numbers),
             "{recorded:?}"
         );
         assert_eq!(desk.gh_calls(), 0);
@@ -586,21 +617,76 @@ fn a_change_with_no_pull_or_two_pulls_in_the_repository_needs_number_and_with_it
     assert_eq!(desk.output("merge", &["--change", CHANGE])["phase"], "done");
     // Without a change, the number is required too.
     assert_eq!(
-        failed(desk.call("merge", &["--head", HEAD])),
-        (1, json!("github::merge::number"))
+        refusal(&desk, &["--head", HEAD]),
+        (
+            number(),
+            "merge needs the pull request to merge; pass --change /changes/<name> or --number <n>"
+                .to_owned(),
+            json!([])
+        )
     );
+}
+
+#[test]
+fn a_pull_the_change_records_through_a_mount_gives_the_number_and_one_of_another_repository_does_not()
+ {
+    let desk = Desk::new();
+    let team = desk.team();
+    change(&desk, "land", HEAD, TESTED);
+    for (repo, number) in [("widgets", 12), ("other", 3)] {
+        let pull = json!({
+            "$type": "github/pull/v1", "owner": "octo", "repo": repo, "number": number,
+            "url": format!("https://github.com/octo/{repo}/pull/{number}"),
+        });
+        let path = format!("gh/octo/{repo}/pulls/{number}.json");
+        team.write(&path, Item::File(&pull.to_string()));
+    }
+    desk.pin(&team);
+    pulls(&desk, true);
+    desk.gh_answers(&json!(""), 0, "");
+    pulling(&desk, &["/repos/team/gh/octo/other/pulls/3"]);
+    let (code, _, numbers) = refusal(&desk, &["--change", CHANGE]);
+    assert_eq!((code, numbers), (json!("github::merge::number"), json!([])));
+    assert_eq!(desk.gh_calls(), 0);
+    pulling(&desk, &["/repos/team/gh/octo/widgets/pulls/12"]);
+    assert_eq!(desk.output("merge", &["--change", CHANGE])["phase"], "done");
+    let argv = desk.gh_file("gh-merge-argv.txt");
+    assert_eq!(argv.lines().nth(2), Some("12"), "{argv}");
 }
 
 #[test]
 fn a_gate_refusal_hint_names_each_missing_checks_remedy() {
     let desk = Desk::new();
-    change(&desk, "land", HEAD, "# Lever\n");
+    let team = desk.team();
+    team_change(&desk, &team, "# Lever\n");
     pulls(&desk, true);
-    let (ran, document) = desk.call("merge", &["--change", CHANGE]);
+    let at = team.path();
+    let next = [
+        "-C",
+        &at,
+        "--json",
+        "call",
+        "changes.next",
+        "--path",
+        CHANGE,
+    ];
+    let ran = desk.run_in(&desk.checkout(), &next, &[]);
+    let gate = json(&ran)["data"]["output"]["gate"].clone();
+    let remedies: Vec<String> = (gate.as_array().unwrap().iter())
+        .filter(|check| check["status"] == "missing" && check["blocks"] == true)
+        .map(|check| {
+            format!(
+                "{}: {}",
+                check["check"].as_str().unwrap(),
+                check["remedy"].as_str().unwrap()
+            )
+        })
+        .collect();
+    assert_eq!(remedies.len(), 2, "{gate}");
+    let (ran, document) = desk.call_in(&["-C", &at], "merge", &["--change", CHANGE]);
     assert_eq!(ran.code, 1, "{document}");
     assert_eq!(document["code"], "github::merge::gate");
-    let hint = document["recovery"]["text"].as_str().unwrap_or_default();
-    assert!(hint.contains("test-sections: "), "{document}");
+    assert_eq!(document["recovery"]["text"], json!(remedies.join("; ")));
 }
 
 #[test]
@@ -643,4 +729,56 @@ fn a_pull_request_with_a_null_body_merges_with_an_empty_body() {
     desk.gh_answers(&json!(""), 0, "");
     desk.output("merge", &["--change", CHANGE]);
     assert_eq!(desk.gh_file("gh-merge-stdin.txt"), "");
+}
+
+#[test]
+fn a_number_github_does_not_know_is_refused_naming_it_and_a_known_one_merges() {
+    let desk = Desk::new();
+    change(&desk, "land", HEAD, TESTED);
+    desk.gh_also(
+        "if [ \"$1\" = api ]; then echo 'gh: Not Found (HTTP 404)' >&2; exit 1; fi\n\
+         echo merge >> \"$here/gh-merges.txt\"",
+    );
+    let (ran, document) = desk.call("merge", &["--change", CHANGE, "--number", "99"]);
+    assert_eq!(ran.code, 1, "{document}");
+    assert_eq!(document["code"], "github::merge::pull");
+    assert_eq!(
+        document["message"],
+        "GitHub has no pull request --number 99 in octo/widgets to take the commit's subject \
+         and body from"
+    );
+    assert_eq!(document["fields"]["number"], 99);
+    assert_eq!(
+        document["recovery"]["text"],
+        "check --number, or pass --subject and --body"
+    );
+    assert_eq!(merges(&desk), 0);
+    pulls(&desk, true);
+    desk.gh_answers(&json!(""), 0, "");
+    let merged = desk.output("merge", &["--change", CHANGE, "--number", "12"]);
+    assert_eq!(merged["phase"], "done");
+}
+
+#[test]
+fn a_pull_request_without_a_title_is_refused_when_the_subject_is_left_out_and_merges_with_one() {
+    let desk = Desk::new();
+    change(&desk, "land", HEAD, TESTED);
+    desk.gh_also(
+        "if [ \"$1\" = api ]; then printf '%s' '{\"merged\":true,\"body\":\"Levers lift.\"}'; exit 0; fi\n\
+         echo merge >> \"$here/gh-merges.txt\"",
+    );
+    let (ran, document) = desk.call("merge", &["--change", CHANGE]);
+    assert_eq!(ran.code, 1, "{document}");
+    assert_eq!(document["code"], "github::merge::pull");
+    assert_eq!(
+        document["message"],
+        "GitHub gave pull request --number 12 in octo/widgets no title to take the commit's \
+         subject from"
+    );
+    assert_eq!(document["recovery"]["text"], "pass --subject");
+    assert_eq!(merges(&desk), 0);
+    desk.gh_answers(&json!(""), 0, "");
+    let merged = desk.output("merge", &["--change", CHANGE, "--subject", "Add a lever"]);
+    assert_eq!(merged["phase"], "done");
+    assert_eq!(merges(&desk), 1);
 }

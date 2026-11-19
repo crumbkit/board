@@ -79,8 +79,9 @@ result it recorded.
   --match-head-commit <sha>`, so GitHub refuses it when the pull request's
   head has moved. A left-out `--subject` is the pull request's title and
   ` (#<n>)`, a left-out `--body` its body, read with `gh api`. A left-out
-  `--number` is the one pull request of the checkout's repository that
-  `--change` records. With `--change`, it first runs `changes.next` in the
+  `--number` is the one pull request of the checkout's repository among
+  the `github/pull/v1` records that `--change` names, read from the
+  change's board, through a mount too. With `--change`, it first runs `changes.next` in the
   board the command runs in, which `-C <board>` or `--personal` names, and
   refuses unless the change is in its land phase with no blocking check
   missing, and while a run of the change has a stop set. The gate, the
@@ -189,10 +190,16 @@ Refusals:
   set. `fields.phase` names its phase, `fields.missing` the checks and
   `fields.stop` the stop; the hint gives
   each missing check's remedy. gh does not run.
-- `github::merge::number`: `merge` got no `--number` and either no
-  `--change`, or a change that records no pull request of the repository or
-  several, whose numbers the message lists in `fields.pulls`. Owner and
-  repository match without regard to case. gh does not run.
+- `github::merge::number`: `merge` got no `--number`, and either no
+  `--change`, or a change that records no pull request of the repository,
+  or several. `fields.pulls` lists the numbers of this repository's pull
+  requests the change records. Owner and repository match without regard
+  to case. gh does not run.
+- `github::merge::pull`: `merge` left out `--subject` or `--body`, and
+  GitHub has no pull request `--number` in the repository, or that pull
+  request has no title for a left-out subject. `fields.number` names it.
+  The hint says to check `--number` or to pass the text. gh does not run
+  the merge.
 - `github::merge::head`: `merge` has no head to match, because the change
   records none or one that is not a full 40-hex commit, or neither
   `--change` nor `--head` was given, or `--head` differs from the change's
@@ -208,8 +215,9 @@ Refusals:
   different Board builds.
 - `github::gh::failed`: gh failed after the check passed. The message says
   the content may have been sent. `merge` also gives it when its `gh api`
-  read of the pull request, for a left-out subject or body, fails or finds
-  no pull request; gh has sent nothing then.
+  read of the pull request, for a left-out subject or body, fails; gh has
+  sent nothing then, and the hint says to check `--number` or to pass the
+  text.
 - A refusal after GitHub took the content, such as a record that cannot be
   written or a crossing that cannot take its result, keeps its own code but
   starts its message by saying the content was already sent and must not be
