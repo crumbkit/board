@@ -727,7 +727,9 @@ fn advance_refuses_a_mockup_the_owner_has_not_agreed_and_moves_on_once_a_decisio
     planned_change(
         &board,
         &ux_plan(
-            &format!("### Mockups\n\n- {MOCKUP}\n\n### Neighbours\n\n- /changes/other\n"),
+            &format!(
+                "### Mockups\n\n- {MOCKUP}, version v1\n\n### Neighbours\n\n- /changes/other\n"
+            ),
             "None.",
         ),
         "mockups",
@@ -748,7 +750,7 @@ fn advance_refuses_mockups_with_no_neighbours_list_and_moves_on_once_one_is_writ
     board.write("decisions/ux.json", &decision(&json!({"urls": [MOCKUP]})));
     planned_change(
         &board,
-        &ux_plan(&format!("### Mockups\n\n- {MOCKUP}"), "None."),
+        &ux_plan(&format!("### Mockups\n\n- {MOCKUP}, version v1"), "None."),
         "mockups",
         "none",
     );
@@ -760,9 +762,34 @@ fn advance_refuses_mockups_with_no_neighbours_list_and_moves_on_once_one_is_writ
     board.write(
         "changes/t/plan.md",
         &ux_plan(
-            &format!("### Mockups\n\n- {MOCKUP}\n\n### Neighbours\n\n- /changes/other\n"),
+            &format!(
+                "### Mockups\n\n- {MOCKUP}, version v1\n\n### Neighbours\n\n- /changes/other\n"
+            ),
             "None.",
         ),
+    );
+    assert_eq!(advanced(&board), "build");
+}
+
+#[test]
+fn advance_refuses_a_mockup_with_no_version_and_moves_on_once_the_plan_names_one() {
+    let board = Changes::new();
+    board.write("decisions/ux.json", &decision(&json!({"urls": [MOCKUP]})));
+    let listed = |item: &str| {
+        ux_plan(
+            &format!("### Mockups\n\n- {item}\n\n### Neighbours\n\n- /changes/other\n"),
+            "None.",
+        )
+    };
+    planned_change(&board, &listed(MOCKUP), "mockups", "none");
+    board.call("attach", &at(&json!({"ref": "/decisions/ux"})));
+    assert_eq!(
+        board.refusal("advance", &path())["code"],
+        "changes::ux::no_version"
+    );
+    board.write(
+        "changes/t/plan.md",
+        &listed(&format!("{MOCKUP}, version v1")),
     );
     assert_eq!(advanced(&board), "build");
 }

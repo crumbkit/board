@@ -487,14 +487,18 @@ impl Scope {
 }
 
 /// The part of the UX section a `mockups` check reads: `agreed`, that an
-/// owner decision names each mockup, or `neighbours`, that UX lists its
-/// neighbours under the mockups.
+/// owner decision names each mockup, `neighbours`, that UX lists its
+/// neighbours under the mockups, `versioned`, that each mockup names its
+/// version, or `built`, that a `changes/conformance/v1` record at the head
+/// says the build matches each named version.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 #[schemars(inline)]
 pub(crate) enum Part {
     Agreed,
     Neighbours,
+    Versioned,
+    Built,
 }
 
 mod read;
