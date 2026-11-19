@@ -48,8 +48,9 @@ fails when a mod has no entry in the marketplace.
 ## board-changes
 
 `board-changes`, in `plugins/changes/claude-code/`, is the write guard: it
-refuses an Edit, Write or NotebookEdit of a mounted repository unless the
-acting agent started from a change's brief. The changes plugin's README,
+refuses an Edit, Write or NotebookEdit of Board's own records and advises
+on one of a mounted repository when the acting agent did not start from a
+change's brief. The changes plugin's README,
 section "The write guard", says what it checks and what it cannot see.
 
 ## written_by
