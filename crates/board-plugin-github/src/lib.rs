@@ -255,9 +255,10 @@ const CAPABILITIES: [Capability; 11] = [
     },
     Capability {
         name: "ci",
-        description: "Read the check runs GitHub reports for a change's head and, when every one \
-            passed, write them as a run of the change's suite and attach the run and the head to \
-            the change; refuse and write nothing while one is pending or after one failed.",
+        description: "Read the check runs, check suites and commit statuses GitHub reports for a \
+            change's head and, when every one passed, write a run of the change's suite and \
+            attach the run to the change; refuse and write nothing while one is pending, after \
+            one failed, or when no check run succeeded.",
         run: ci::ci,
         input: input::<ci::CiInput>,
         output: output::<ci::CiOutput>,
