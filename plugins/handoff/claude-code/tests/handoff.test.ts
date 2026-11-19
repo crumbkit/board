@@ -318,3 +318,15 @@ test('the context share can be crossed and asked about again after the session f
   await $.session.measure(usage(80))
   expect(submitted).toHaveLength(2)
 })
+
+test('a measurement without a context percent does not re-arm the context crossing', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  const { submitted } = host(on, 's1')
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('session.measure', (_, e) => ({ changed: e.changed }))
+  await start($)
+  await $.session.measure(usage(80))
+  await $.session.measure({ ...usage(80), context: { window: 200_000 }, changed: ['rateLimits' as never] })
+  await $.session.measure(usage(80))
+  expect(submitted).toHaveLength(1)
+})

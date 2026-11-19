@@ -48,7 +48,7 @@ const message = (why: string) =>
   'Commit and push every branch in each checkout you used, record state in the board, and end your reply with the one-line handoff ' +
   '(`handoff: <board path> — resume: <command>`) and then READY TO ARCHIVE.'
 
-type Mem = { id: string | undefined; polling: boolean; shares: Promise<Shares> | undefined; cwd: string; asked: Set<string>; status: Session['status']; line: string | undefined }
+type Mem = { id: string | undefined; loading: Promise<void> | undefined; polling: boolean; shares: Promise<Shares> | undefined; cwd: string; asked: Set<string>; status: Session['status']; line: string | undefined }
 
 async function dir($: EngineInterface) {
   const config = (await $.env.get('CLAUDE_CONFIG_DIR')) ?? `${(await $.env.get('HOME')) ?? ''}/.claude`
@@ -99,18 +99,21 @@ async function save($: EngineInterface, mem: Mem) {
 }
 
 /** Loads what the session's own file holds. /clear and /resume change the id without a session.start, so every hook calls this first. */
+async function load($: EngineInterface, mem: Mem, id: string) {
+  const earlier = SESSION_ID.test(id) ? await readJson<Session>($, `${await dir($)}/sessions/${id}.json`) : undefined
+  mem.asked = new Set(earlier?.asked ?? [])
+  mem.status = earlier?.status ?? 'asked'
+  mem.line = earlier?.line
+}
+
+/** Loads what the session's own file holds. /clear and /resume change the id without a session.start, so every hook calls this first and waits for the load. */
 async function sync($: EngineInterface, mem: Mem) {
   const id = await $.session.id()
-  if (id === mem.id) return
-  mem.id = id
-  mem.asked = new Set()
-  mem.status = 'asked'
-  mem.line = undefined
-  const earlier = SESSION_ID.test(id) ? await readJson<Session>($, `${await dir($)}/sessions/${id}.json`) : undefined
-  if (earlier === undefined) return
-  for (const key of earlier.asked) mem.asked.add(key)
-  mem.status = earlier.status
-  mem.line = earlier.line
+  if (mem.loading === undefined || mem.id !== id) {
+    mem.id = id
+    mem.loading = load($, mem, id)
+  }
+  await mem.loading
 }
 
 /** Records each new crossing; tells the session to hand off when it has not been told yet or its last handoff is done. */
@@ -125,7 +128,7 @@ async function ask($: EngineInterface, mem: Mem, found: readonly Crossing[]) {
 }
 
 export const register: Register = (on) => {
-  const mem: Mem = { id: undefined, polling: false, shares: undefined, cwd: '', asked: new Set(), status: 'asked', line: undefined }
+  const mem: Mem = { id: undefined, loading: undefined, polling: false, shares: undefined, cwd: '', asked: new Set(), status: 'asked', line: undefined }
   on('session.start', async ($, e, next) => {
     mem.cwd = e.cwd
     await sync($, mem)
@@ -148,7 +151,7 @@ export const register: Register = (on) => {
     await sync($, mem)
     const shares = await loadShares($, mem)
     // A context share the session fell back under (after /compact) can be crossed and asked about again.
-    if (mem.asked.has('context') && (e.context.percent ?? 0) < shares.context) mem.asked.delete('context')
+    if (mem.asked.has('context') && e.context.percent !== undefined && e.context.percent < shares.context) mem.asked.delete('context')
     const fresh = crossings(e, shares).filter(c => !mem.asked.has(c.key))
     for (const c of fresh) {
       if (c.window === undefined) continue
