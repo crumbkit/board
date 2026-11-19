@@ -133,7 +133,7 @@ fn the_manifest_parses_as_a_built_in_one_and_describes_the_plugin_with_the_skill
     assert_eq!(
         names,
         [
-            "open", "answer", "withdraw", "migrate", "waiting", "sweep", "ask"
+            "open", "answer", "withdraw", "migrate", "waiting", "sweep", "ask", "stale"
         ]
     );
     assert_eq!(manifest.description, skill_description());

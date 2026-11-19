@@ -472,7 +472,7 @@ fn log(host: &dyn Host, repository: &Path, since: &str) -> Option<BTreeMap<Strin
             continue;
         }
         if day_of(&Value::String(line.to_owned())).is_some() && line.len() == 10 {
-            day = line.to_owned();
+            line.clone_into(&mut day);
         } else {
             // Newest first, so the first day a file shows is its newest.
             files.entry(line.to_owned()).or_insert_with(|| day.clone());
