@@ -1194,8 +1194,8 @@ builder's prompt and adds it to the lead's tool result. Each piece of advice
 starts "if this agent builds /changes/<name>", because a reviewer or an
 explorer whose prompt names the change gets it too. A prompt that names no
 change, a change no known board holds in `build`, and a plan record that
-cannot be read leave the call untouched. The check does not read the subagent type or the
-tools the agent has.
+cannot be read leave the call untouched. The check does not read the
+subagent type or the tools the agent has.
 
 `claude plugin test plugins/changes/claude-code` runs the mod's tests.
 
