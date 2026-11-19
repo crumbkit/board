@@ -110,16 +110,24 @@ as `plans.sweep` matches them:
 - Otherwise the question is filed: `outcome` is `filed` and `path` is new.
 
 Each output carries `line`, one sentence that says what happened. A
-question its schema refuses is refused with `plans::board::refused`,
-carrying Board's code, and nothing is written. `plans.open` lists each
-question's merged sessions in `also_asked`.
+question its schema refuses, such as one whose `by` names no session, is
+refused with `plans::board::refused`, carrying Board's code, before any
+question is read, and nothing is written. When the open question is
+answered or withdrawn before the merge writes, the call is refused with
+`plans::ask::<reason>`, for the reasons `plans.withdraw` gives, and a hint
+to ask again. `plans.open` lists each question's merged sessions in
+`also_asked`.
 
 `board plans sweep [--path /projects/<project>] [--archived <local_ id>]...
 [--apply true]` withdraws each open question below the path that no longer
 needs the owner, with a reason that starts `plans.sweep:`. Each question is
 withdrawn for the first of these that applies:
 
-- `done` or `dropped`: the change or task `blocks` names is done or dropped.
+- `done` or `dropped`: the change or task `blocks` names is done or
+  dropped, and no session is in `also_by`. A merged question waits on its
+  later askers' work too, which `blocks` does not name, so it is withdrawn
+  only when it is answered, when every asker is archived, or when a person
+  withdraws it.
 - `archived`: the session that asked and every session in `also_by` are
   among `archived`. Board knows nothing of sessions, so the caller names
   the archived ones.
@@ -143,8 +151,8 @@ most 100, each with `path`, `kind` and `reason`), `total`, `truncated`,
 `board plans answer --path <question> --option <id> [--words <text>]
 [--session <local_ id>] [--program <slug>] [--person <slug>] [--agent <name>]
 [--written_by <plugin>/<client>]` records the owner's answer. The Claude
-Code mod's pane, Board.app and the ask skill all answer through it. `--option` is one of the question's option ids, or
-`none` with `--words`; a question with an option whose id is `none` takes
+Code mod's pane, Board.app and the ask skill all answer through it.
+`--option` is one of the question's option ids, or `none` with `--words`; a question with an option whose id is `none` takes
 `--option none` as that option. `--words` defaults to the chosen option's
 text. It writes one commit of two lines: a new `plans/answer/v1` at the
 question's id under `answers/`, answered now, with no `choice` when `none`

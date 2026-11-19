@@ -456,3 +456,33 @@ fn a_question_blocking_a_done_task_is_withdrawn_and_its_twin_blocking_an_open_ta
     );
     assert_eq!(open(&board), ["/projects/a/questions/open"]);
 }
+
+/// A merged question whose first asker's work is done stays open, because
+/// a session in its `also_by` may still wait on work `blocks` does not
+/// name. The twin, with no `also_by`, is withdrawn as done.
+#[test]
+fn a_merged_question_whose_first_askers_work_is_done_stays_and_its_unmerged_twin_is_withdrawn() {
+    let (_scenario, board) = plans_board(&[
+        ("changes/done", change("done")),
+        (
+            "projects/a/questions/merged",
+            body(
+                ASKED,
+                &json!({"blocks": "/changes/done", "also_by": [{"session": "local_a11e"}]}),
+            ),
+        ),
+        (
+            "projects/a/questions/alone",
+            body(
+                ASKED,
+                &json!({"question": "Other?", "blocks": "/changes/done"}),
+            ),
+        ),
+    ]);
+    let output = sweep(&board, &json!({"apply": true}));
+    assert_eq!(
+        withdrawn(&output),
+        [("/projects/a/questions/alone".to_owned(), "done".to_owned())]
+    );
+    assert_eq!(open(&board), ["/projects/a/questions/merged"]);
+}
