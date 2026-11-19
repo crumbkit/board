@@ -41,9 +41,14 @@ fn ready(merged: bool) -> (Desk, String) {
     (desk, commit)
 }
 
+/// `directory`, canonical, as one shell word in single quotes.
+fn word(directory: &Path) -> String {
+    format!("'{}'", directory.canonicalize().unwrap().display())
+}
+
 /// `-C <directory>`, which reaches the board at `directory` from anywhere.
 fn at(directory: &Path) -> String {
-    format!("-C {}", directory.canonicalize().unwrap().display())
+    format!("-C {}", word(directory))
 }
 
 /// `-C` naming the personal board, which holds the desk's change.
@@ -57,7 +62,7 @@ fn by_hand(desk: &Desk, board: &str) -> String {
     format!(
         "git -C {} fetch origin +refs/heads/main:refs/remotes/origin/main && board {board} mount \
          update {MOUNT}",
-        desk.checkout().display()
+        word(&desk.checkout())
     )
 }
 
@@ -122,19 +127,45 @@ fn a_queued_merge_leaves_the_pin_and_warns_and_once_merged_moves_it() {
 }
 
 #[test]
-fn a_queued_merge_says_it_was_queued_even_when_the_mount_is_missing() {
-    let (desk, _) = ready(false);
-    mounting(&desk, "/repos/gone");
-    let (result, _) = merged(&desk);
-    let warning = &result["mount_warning"];
-    assert_eq!(warning.get("cause"), None, "{warning}");
-    let message = warning["message"].as_str().unwrap();
-    assert!(
-        message.starts_with("GitHub only queued the merge"),
-        "{message}"
-    );
-    let command = format!("board {} mount update /repos/gone", personal(&desk));
-    assert_eq!(warning["command"], json!(command));
+fn a_queued_merge_of_a_missing_mount_gives_both_causes_and_one_with_its_mount_only_the_queue() {
+    for mount in ["/repos/gone", MOUNT] {
+        let (desk, _) = ready(false);
+        mounting(&desk, mount);
+        let (result, _) = merged(&desk);
+        let warning = &result["mount_warning"];
+        let message = warning["message"].as_str().unwrap();
+        assert!(
+            message.contains("GitHub only queued the merge"),
+            "{message}"
+        );
+        if mount == MOUNT {
+            assert_eq!(warning.get("cause"), None, "{warning}");
+            assert!(message.starts_with("GitHub only queued"), "{message}");
+        } else {
+            assert_eq!(warning["cause"], "board::path::not_found", "{warning}");
+            let command = format!("board {} mount update /repos/gone", personal(&desk));
+            assert_eq!(warning["command"], json!(command));
+        }
+    }
+}
+
+#[test]
+fn the_command_runs_in_a_shell_for_a_clone_whose_directory_has_a_space_as_for_one_without() {
+    for name in ["widgets clone", "widgets-clone"] {
+        let (desk, commit) = ready(false);
+        let root = desk.checkout().parent().unwrap().to_path_buf();
+        let remote = desk.remote().display().to_string();
+        desk.git(&root, &["clone", "-q", &remote, name]);
+        let mut mount = desk.record(MOUNT).unwrap();
+        mount["repo"] = json!(root.join(name));
+        desk.write("repos/widgets.json", &mount.to_string());
+        let (result, _) = merged(&desk);
+        let command = result["mount_warning"]["command"].as_str().unwrap();
+        assert!(command.contains(&word(&root.join(name))), "{command}");
+        let (code, _, stderr) = desk.process("sh", &root, &["-c", command], &[]);
+        assert_eq!(code, 0, "{name}: {command}: {stderr}");
+        assert_eq!(pin(&desk), commit, "{name}");
+    }
 }
 
 #[test]

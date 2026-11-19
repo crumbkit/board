@@ -13,6 +13,7 @@ use serde::Serialize;
 use serde_json::{Map, json};
 
 use crate::git;
+use crate::hook::quoted;
 
 /// The code of every warning this module gives.
 const CODE: &str = "github::merge::mount";
@@ -56,7 +57,7 @@ impl Mount {
     pub(crate) fn of_change(path: Option<String>, directory: &Path) -> Self {
         Self {
             path: path.ok_or("the change records no mount"),
-            board: format!("board -C {}", directory.display()),
+            board: format!("board -C {}", quoted(directory)),
         }
     }
 
@@ -87,18 +88,15 @@ pub(crate) fn repin(
 }
 
 /// [`repin`]'s steps: resolve the mount, find the remote branch it
-/// follows, fetch it, and update the mount. When `queued`, every warning
-/// says so, whatever step stopped first.
+/// follows, fetch it, and update the mount. When `queued`, a warning from
+/// an earlier step also says the merge was queued.
 fn moved(host: &dyn Host, board: &dyn Host, mount: &Mount, queued: bool) -> Result<Moved, Warning> {
+    let also = if queued { "; also, " } else { "" };
+    let queue = if queued { QUEUED } else { "" };
     let left = |cause: Option<String>, why: String, command: &str| {
-        let (cause, why) = if queued {
-            (None, QUEUED.to_owned())
-        } else {
-            (cause, why)
-        };
         Warning::new(
             cause,
-            format!("{why}, so the mount was left at its pin"),
+            format!("{why}, so the mount was left at its pin{also}{queue}"),
             command.to_owned(),
         )
     };
@@ -136,12 +134,11 @@ fn moved(host: &dyn Host, board: &dyn Host, mount: &Mount, queued: bool) -> Resu
     // An explicit refspec moves the remote-tracking ref the mount follows
     // even when the clone's own fetch refspec leaves the branch out.
     let refspec = format!("+refs/heads/{branch}:refs/remotes/{remote}/{branch}");
-    let command = format!(
-        "git -C {} fetch {remote} {refspec} && {update}",
-        repository.display()
-    );
+    let at = quoted(repository);
+    let command = format!("git -C {at} fetch {remote} {refspec} && {update}");
     if queued {
-        return Err(left(None, String::new(), &command));
+        let why = format!("{QUEUED}, so the mount was left at its pin");
+        return Err(Warning::new(None, why, command));
     }
     git::git(host, repository, &["fetch", remote, &refspec], "")
         .map_err(|error| failed(error, &command))?;

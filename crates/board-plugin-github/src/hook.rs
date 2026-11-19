@@ -143,7 +143,7 @@ fn held(path: &Path) -> Result<bool, PluginError> {
 }
 
 /// `path` as one shell word, in single quotes.
-fn quoted(path: &Path) -> String {
+pub(crate) fn quoted(path: &Path) -> String {
     format!("'{}'", path.display().to_string().replace('\'', r"'\''"))
 }
 

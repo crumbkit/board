@@ -114,8 +114,10 @@ result it recorded.
   follows a local branch, or the fetch or the update failed, it returns
   `mount_warning` and also prints it. The merge still succeeds. The
   warning's `code` is `github::merge::mount`. `cause` is the code of the
-  step that failed, and is absent for a queued merge, whose message always
-  says it was queued. `command` is `git -C <clone> fetch <remote> <refspec>
+  step that failed, and is absent when the only reason is a queued merge.
+  A queued merge's message always says it was queued, beside any other
+  reason. Each directory in `command` is single-quoted for a POSIX shell.
+  `command` is `git -C <clone> fetch <remote> <refspec>
   && <board> mount update <path>`, or only the `mount update` part when
   the remote is unknown. `<board>` reaches the board that holds the mount
   from any directory: `board -C <that board's directory>` with `--change`,
