@@ -146,7 +146,10 @@ export const register: Register = (on) => {
 
   on('session.measure', async ($, e, next) => {
     await sync($, mem)
-    const fresh = crossings(e, await loadShares($, mem)).filter(c => !mem.asked.has(c.key))
+    const shares = await loadShares($, mem)
+    // A context share the session fell back under (after /compact) can be crossed and asked about again.
+    if (mem.asked.has('context') && (e.context.percent ?? 0) < shares.context) mem.asked.delete('context')
+    const fresh = crossings(e, shares).filter(c => !mem.asked.has(c.key))
     for (const c of fresh) {
       if (c.window === undefined) continue
       const trigger: Trigger = { key: c.key, why: c.why, at: iso(await $.clock.now()), ...(c.window.resetsAt === undefined ? {} : { resetsAt: c.window.resetsAt }) }
@@ -160,8 +163,7 @@ export const register: Register = (on) => {
     return next(e)
   })
 
-  // The told session's turn that ends with a handoff line is its handoff; a turn that was
-  // already running when it was told, or was aborted, is not.
+  // The first turn of a told session that ends with a handoff line is its handoff; an aborted turn is not.
   on('turn.complete', async ($, e, next) => {
     const result = await next(e)
     await sync($, mem)
@@ -178,7 +180,7 @@ export const register: Register = (on) => {
     const folder = `${await dir($)}/sessions`
     let names: string[] = []
     try {
-      names = (await $.fs.list(folder)).map(entry => entry.name).filter(n => n.endsWith('.json') && SESSION_ID.test(n.slice(0, -5))).sort()
+      names = (await $.fs.list(folder)).filter(entry => entry.name.endsWith('.json') && SESSION_ID.test(entry.name.slice(0, -5))).sort((a, b) => a.mtimeMs - b.mtimeMs).map(entry => entry.name)
     } catch {
       // no session was told yet
     }

@@ -303,3 +303,18 @@ test('a session id that is not a plain name is never written as a file', async (
   await $.session.measure(usage(80))
   expect([...disk.keys()].filter(k => k.includes('sessions'))).toEqual([])
 })
+
+test('the context share can be crossed and asked about again after the session falls back under it', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  const { submitted } = host(on, 's1')
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('session.measure', (_, e) => ({ changed: e.changed }))
+  on('turn.complete', (_, e) => ({ text: e.answer }))
+  await start($)
+  await $.session.measure(usage(80))
+  await $.session.measure(usage(85))
+  expect(submitted).toHaveLength(1)
+  await $.session.measure(usage(20))
+  await $.session.measure(usage(80))
+  expect(submitted).toHaveLength(2)
+})
