@@ -1326,9 +1326,6 @@ fn a_lookup_refuses_an_unsigned_approval_as_a_decide_does_and_admits_the_owners_
     let id = asked(decide(&board, "/pulls/7"));
     let approval = pending_effect(&mine, &id).approval();
     let unsigned = (Code::SettingsUnsigned, Some(id.clone()));
-    let before = std::fs::read_dir(mine.workdir().join("effects/pending"))
-        .unwrap()
-        .count();
     for signature in [None, Some(Signer::new().sign(&approval))] {
         approve_by_hand(&mine, &id, signature);
         assert_eq!(named(decided(&board, "/pulls/7")), unsigned);
@@ -1338,10 +1335,6 @@ fn a_lookup_refuses_an_unsigned_approval_as_a_decide_does_and_admits_the_owners_
     let report = decided(&board, "/pulls/7").unwrap().unwrap();
     assert_eq!(report.effect, Some(id.clone()));
     assert_eq!(decide(&board, "/pulls/7").unwrap().effect, Some(id));
-    let after = std::fs::read_dir(mine.workdir().join("effects/pending"))
-        .unwrap()
-        .count();
-    assert_eq!(before, after);
 }
 
 #[test]

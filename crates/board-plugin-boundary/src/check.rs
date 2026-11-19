@@ -52,9 +52,18 @@ pub(crate) struct Input {
     parts: BTreeMap<String, String>,
     /// Ask the owner to let this exact content through when a check fails,
     /// which files one request the owner answers; left out, an earlier answer
-    /// still applies but no request is filed. Pass false to have a refusal
-    /// name this flag as the way to ask.
-    ask_owner: Option<bool>,
+    /// still applies but no request is filed.
+    #[serde(default)]
+    ask_owner: bool,
+    /// Whether a refusal that filed no request names `ask_owner` as the way to
+    /// ask; false for a caller that cannot pass it.
+    #[serde(default = "offered")]
+    offer_ask_owner: bool,
+}
+
+/// `offer_ask_owner` when the caller leaves it out.
+fn offered() -> bool {
+    true
 }
 
 /// The crossing written, the boundaries that matched, and every verdict;
@@ -107,6 +116,7 @@ pub(crate) fn check(host: &dyn Host, input: &Value) -> Result<Value, PluginError
         from,
         parts,
         ask_owner,
+        offer_ask_owner,
     } = PluginError::read_input("boundary", "check", input)?;
     let personal = personal(host)?;
     let personal = &*personal;
@@ -131,7 +141,7 @@ pub(crate) fn check(host: &dyn Host, input: &Value) -> Result<Value, PluginError
         None
     } else {
         let path = crossing::path(&digest);
-        Some(ask(personal, &path, &content, ask_owner == Some(true))?)
+        Some(ask(personal, &path, &content, ask_owner)?)
     };
     let overridden = match &answer {
         Some(Answer::Approved(effect)) => Some(format!("sha256:{effect}")),
@@ -168,7 +178,7 @@ pub(crate) fn check(host: &dyn Host, input: &Value) -> Result<Value, PluginError
             &action,
             &digest,
             &failed,
-            (&answer, ask_owner == Some(false)),
+            (&answer, offer_ask_owner),
         ));
     }
     let note = if matched.is_empty() {
@@ -297,8 +307,8 @@ fn ask(
 
 /// `boundary::check::failed`, naming each failing rule, part and line,
 /// with the next step and what the owner may do about it.
-/// `offer` is whether the caller can pass `ask_owner`, which it says by passing it
-/// false, so the hint names the flag only where it can be used.
+/// `offer` is whether the hint names `--ask_owner`, which only a caller that can
+/// pass it wants.
 fn refusal(
     action: &str,
     digest: &str,

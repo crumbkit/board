@@ -101,9 +101,10 @@ before a raw `git push` or `gh` write.
 
 The owner can let one exact content through a failed check without
 changing a rule. Only a failed check with `ask_owner` true asks; a passing check writes no
-effect, and a failed check without `ask_owner` files no request but still
-honours an earlier approval or refusal of the same content. Its hint says no
-request went to the owner and names `--ask_owner true`.
+effect. A failed check without it files no request but still honours an
+earlier approval or refusal of the same content. Its hint says no request went
+to the owner and, unless `offer_ask_owner` is false, names `--ask_owner true`.
+`github merge` and the pre-push hook pass `offer_ask_owner` false.
 
 - A failed check with `ask_owner` true asks Board to decide the capability `boundary.override` at
   `/crossings/<hex>` in the personal board, as plugin `boundary`, showing

@@ -59,9 +59,9 @@ pub(crate) fn check(
     if let Some(from) = from {
         input["from"] = json!(from);
     }
-    if let Some(ask_owner) = ask_owner {
-        input["ask_owner"] = json!(ask_owner);
-    }
+    // `None` is a call with no `--ask_owner`, so its refusal must not offer it.
+    input["ask_owner"] = json!(ask_owner == Some(true));
+    input["offer_ask_owner"] = json!(ask_owner.is_some());
     let output = call(personal, "check", &input).map_err(|refusal| passed_on(&refusal))?;
     Passed::deserialize(&output).map_err(|error| unreadable("check", &error))
 }

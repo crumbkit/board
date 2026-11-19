@@ -213,11 +213,6 @@ fn a_failed_check_without_ask_owner_files_no_request_and_the_same_check_asking_f
     assert_eq!(personal.pending(), Vec::<String>::new());
     let hint = document["recovery"]["text"].as_str().unwrap();
     assert!(hint.starts_with("Next: change pr.body:"), "{hint}");
-    assert!(hint.ends_with("No request went to the owner."), "{hint}");
-    let mut offering = quiet(&failing());
-    offering["ask_owner"] = json!(false);
-    let (_, offered) = personal.call("check", &offering);
-    let hint = offered["recovery"]["text"].as_str().unwrap();
     assert!(hint.contains("No request went to the owner."), "{hint}");
     assert!(
         hint.ends_with("with `--ask_owner true`, which asks the owner once."),
@@ -262,4 +257,20 @@ fn a_refused_override_still_refuses_without_ask_owner_and_names_its_effect() {
     assert_eq!(document["fields"]["effect"], effect);
     let hint = document["recovery"]["text"].as_str().unwrap();
     assert!(hint.contains("The owner refused"), "{hint}");
+}
+
+#[test]
+fn a_direct_check_refusal_offers_ask_owner_and_one_from_a_caller_that_cannot_pass_it_does_not() {
+    let personal = Personal::new();
+    covered(&personal);
+    let (_, offered) = personal.call("check", &quiet(&failing()));
+    let hint = offered["recovery"]["text"].as_str().unwrap();
+    assert!(hint.contains("--ask_owner true"), "{hint}");
+    let mut silent = quiet(&failing());
+    silent["offer_ask_owner"] = json!(false);
+    let (_, plain) = personal.call("check", &silent);
+    assert_eq!(plain["code"], "boundary::check::failed");
+    let hint = plain["recovery"]["text"].as_str().unwrap();
+    assert!(!hint.contains("ask_owner"), "{hint}");
+    assert_eq!(personal.pending(), Vec::<String>::new());
 }
