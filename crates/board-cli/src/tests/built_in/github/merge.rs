@@ -573,8 +573,8 @@ fn a_change_with_no_pull_or_two_pulls_in_the_repository_needs_number_and_with_it
         ),
         (
             vec![other],
-            "the change records no pull request of octo/widgets, only of other repositories; \
-             pass --number <n>",
+            "the change records no readable github/pull/v1 record of octo/widgets, and \
+             fields.skipped lists the paths it could not read; pass --number <n>",
             json!([]),
         ),
     ] {
@@ -639,12 +639,20 @@ fn a_pull_the_change_records_through_a_mount_gives_the_number_and_one_of_another
     desk.pin(&team);
     pulls(&desk, true);
     desk.gh_answers(&json!(""), 0, "");
-    pulling(&desk, &["/repos/team/gh/octo/other/pulls/3"]);
+    // A path the team board does not hold is skipped and named, and a
+    // pull of another repository is read but does not count.
+    let missing = "/repos/team/gh/octo/widgets/pulls/99";
+    pulling(&desk, &["/repos/team/gh/octo/other/pulls/3", missing]);
     let (ran, document) = desk.call_in(&["--personal"], "merge", &["--change", CHANGE]);
     assert_eq!(ran.code, 1, "{document}");
+    let fields = &document["fields"];
     assert_eq!(
-        (&document["code"], &document["fields"]["pulls"]),
-        (&json!("github::merge::number"), &json!([]))
+        (&document["code"], &fields["pulls"], &fields["skipped"]),
+        (
+            &json!("github::merge::number"),
+            &json!([]),
+            &json!([missing])
+        )
     );
     assert_eq!(desk.gh_calls(), 0);
     pulling(&desk, &["/repos/team/gh/octo/widgets/pulls/12"]);
@@ -745,8 +753,8 @@ fn a_number_github_does_not_know_is_refused_naming_it_and_a_known_one_merges() {
     assert_eq!(document["code"], "github::merge::pull");
     assert_eq!(
         document["message"],
-        "GitHub has no pull request --number 99 in octo/widgets to take the commit's subject \
-         and body from"
+        "GitHub has no pull request #99 in octo/widgets to take the commit's subject and body \
+         from"
     );
     assert_eq!(document["fields"]["number"], 99);
     assert_eq!(
@@ -773,8 +781,8 @@ fn a_pull_request_without_a_title_is_refused_when_the_subject_is_left_out_and_me
     assert_eq!(document["code"], "github::merge::pull");
     assert_eq!(
         document["message"],
-        "GitHub gave pull request --number 12 in octo/widgets no title to take the commit's \
-         subject from"
+        "GitHub gave pull request #12 in octo/widgets no title to take the commit's subject \
+         from"
     );
     assert_eq!(document["recovery"]["text"], "pass --subject");
     assert_eq!(merges(&desk), 0);

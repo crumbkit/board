@@ -81,15 +81,15 @@ result it recorded.
   ` (#<n>)`, a left-out `--body` its body, read with `gh api`. A left-out
   `--number` is the one pull request of the checkout's repository among
   the `github/pull/v1` records that `--change` names, read from the
-  change's board, through a mount too. With `--change`, it first runs `changes.next` in the
-  board the command runs in, which `-C <board>` or `--personal` names, and
-  refuses unless the change is in its land phase with no blocking check
-  missing, and while a run of the change has a stop set. The gate, the
-  change's head and `changes.advance` all come from that board, opened
-  again so it reads each mount at its pin and may write, even under
-  `--checkout`; the boundary check and the crossing stay in the personal
-  board. A board's own changes
-  are at `/changes/<name>`, so a change in another board is merged with
+  change's board, through a mount too. With `--change`, it first runs
+  `changes.next` in the board the command runs in, which `-C <board>` or
+  `--personal` names, and refuses unless the change is in its land phase
+  with no blocking check missing, and while a run of the change has a
+  stop set. The gate, the change's head and `changes.advance` all come
+  from that board, opened again so it reads each mount at its pin and may
+  write, even under `--checkout`; the boundary check and the crossing
+  stay in the personal board. A board's own changes are at
+  `/changes/<name>`, so a change in another board is merged with
   `-C <that board's directory>`, and a `--change` path under a mount, such
   as `/repos/team/changes/<name>`, is refused. From the checkout of a
   repository that another board mounts, Board runs in that board, so a
@@ -191,10 +191,12 @@ Refusals:
   `fields.stop` the stop; the hint gives
   each missing check's remedy. gh does not run.
 - `github::merge::number`: `merge` got no `--number`, and either no
-  `--change`, or a change that records no pull request of the repository,
-  or several. `fields.pulls` lists the numbers of this repository's pull
-  requests the change records. Owner and repository match without regard
-  to case. gh does not run.
+  `--change`, or a change that records no readable pull request of the
+  repository, or several. `fields.pulls` lists the numbers of this
+  repository's pull requests the change records, and `fields.skipped` the
+  paths it names that are no readable `github/pull/v1` record, such as
+  one in an unfetched mount. Owner and repository match without regard to
+  case. gh does not run.
 - `github::merge::pull`: `merge` left out `--subject` or `--body`, and
   GitHub has no pull request `--number` in the repository, or that pull
   request has no title for a left-out subject. `fields.number` names it.
