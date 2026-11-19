@@ -20,6 +20,7 @@ import {
   repositoryOf,
   sameDirectory,
   unknown,
+  looksLikeRecord,
   unknownRecord,
 } from './guard'
 import type { Mount } from './guard'
@@ -42,8 +43,10 @@ import type { Mount } from './guard'
 // A lookup that fails admits the edit with a `changes::guard::unknown` line that
 // names what failed. The exception is a file in a known board's checkout: the
 // guard decides the board config and the change records from the config and the
-// path alone, and when a later lookup fails for a file in such a checkout, which
-// may hide a mount record, it refuses with `changes::guard::unknown`.
+// real paths, with no git or `board` call. When a later lookup fails for a file in
+// such a checkout, which may hide a mount record, it refuses with
+// `changes::guard::unknown`. When the config cannot be read, it refuses a path
+// that ends like a change or mount record and admits the rest with advice.
 //
 // The guard sees only these three tools. A file written through Bash (`sed -i`,
 // a heredoc, a script) passes it, and the guard checks the brief line, not that
@@ -214,15 +217,21 @@ type Held = { boards: string[]; worktree: Mount[]; byOrigin: () => Promise<Mount
 async function held($: EngineInterface, file: string, state: { inBoard: boolean }): Promise<Held | string | null> {
   const placed = await place($, file)
   if (placed.real === (await realOf($, await configPath($)))) return configRecord(file)
-  // The change records need only the config and the path, so they are decided before any lookup that can fail.
+  // The change records need the config, the real paths and no git or `board`, so they are decided before any
+  // lookup that can fail. Without the config the guard cannot name a board, so a path shaped like a record is refused.
+  const names = await knownBoards($).catch(error => {
+    if (looksLikeRecord(placed.real)) state.inBoard = true
+    throw error
+  })
+  const lowered = placed.real.toLowerCase()
   const listed: { board: string; real: string; under: boolean }[] = []
-  for (const board of await knownBoards($)) {
+  for (const board of names) {
     const real = await realOf($, board)
     const root = `${real.replace(/\/$/, '')}/`
-    const under = placed.real.startsWith(root)
+    const under = lowered.startsWith(root.toLowerCase())
     if (under) {
       state.inBoard = true
-      if (isChangeRecord(placed.real.slice(root.length))) return changeRecord(file, board)
+      if (isChangeRecord(lowered.slice(root.length))) return changeRecord(file, board)
     }
     listed.push({ board, real, under })
   }
@@ -238,8 +247,8 @@ async function held($: EngineInterface, file: string, state: { inBoard: boolean 
     const mounts = await mountsIn($, board)
     boards.push({ board, real, mounts })
     if (under) {
-      const relative = placed.real.slice(`${real.replace(/\/$/, '')}/`.length)
-      const record = mounts.find(m => m.record === relative)
+      const relative = lowered.slice(`${real.replace(/\/$/, '')}/`.length)
+      const record = mounts.find(m => m.record.toLowerCase() === relative)
       if (record !== undefined) return mountRecord(file, record)
     }
     all.push(...mounts)

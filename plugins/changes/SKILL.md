@@ -248,6 +248,7 @@ to replace the flow copies changes kept before versions.
   repository.
 - `changes::guard::wrong_branch`: a prototype's builder edits only on
   `proto/<name>`; switch to it.
-- `changes::guard::unknown`: advice; the guard could not check. Fix what it names.
+- `changes::guard::unknown`: the guard could not check. It refuses in a known
+  board's checkout and advises elsewhere. Fix what it names.
 - `changes::phase::final`: the change is done or dropped. Run `open`, or
   `start` a new change.

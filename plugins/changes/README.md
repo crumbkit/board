@@ -1067,7 +1067,8 @@ every Edit, Write and NotebookEdit. Install it with
    `changes::guard::board_record`. In a linked worktree the guard reads
    the mount records from the worktree's own branch, and the refusal names
    the worktree. A file inside the board repository's git directory is
-   admitted with a `changes::guard::unknown` line that says so. The guard compares the repository's directory
+   refused with `changes::guard::unknown`, which says so. When the config cannot be read, a path
+   that ends like a change or mount record is refused the same way. The guard compares the repository's directory
    with each listed directory, with symbolic links followed, and they must
    be equal: a board inside a larger repository does not exempt that
    repository. The listed directory
@@ -1126,7 +1127,8 @@ the edit ran, and names what to do:
   the file's checkout is not on `proto/<name>`.
 - `changes::guard::unknown`: the path could not be placed, git, the config
   or `board` failed, or the conversation could not be read. The line says
-  what failed, and the edit runs.
+  what failed. In a known board's checkout, or for a record-shaped path when
+  the config is unreadable, the edit is refused; elsewhere it runs.
 
 The guard sees only Edit, Write and NotebookEdit. It advises agents that
 follow the process and refuses only Board's own records. When a lookup

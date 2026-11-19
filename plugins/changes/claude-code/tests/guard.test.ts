@@ -990,3 +990,27 @@ test('a listed directory that is a linked worktree exempts nothing, and listing 
   expect((await edit($, file)).deny).toBeUndefined()
   expect(edits).toEqual(['Edit', 'Edit'])
 })
+
+test('with an unreadable board config a record-shaped path is refused with unknown, and another file is admitted with advice', async ($, on) => {
+  const answers: Answers = { first: { a1: BRIEF }, config: 'boards = [' }
+  const { edits } = engine(on, answers)
+  for (const record of [`${BOARD}/changes/fix-it.json`, `${BOARD}/changes/fix-it/plans/20261105T120000Z.json`, `${BOARD}/repos/widgets.json`]) {
+    const done = await edit($, record, 'a1')
+    expect(done.context).toBeUndefined()
+    expect(done.deny).toMatch(/^changes::guard::unknown: the guard could not tell whether .* is a record of a board: .*board config/)
+  }
+  expect(edits).toEqual([])
+  const plain = await edit($, FILE, 'a1')
+  expect(plain.deny).toBeUndefined()
+  expect(plain.context?.[0]).toMatch(/^changes::guard::unknown: this edit of .* ran\. .*board config/)
+  answers.config = JSON.stringify({ boards: [BOARD] })
+  expect((await edit($, `${BOARD}/changes/fix-it.json`, 'a1')).deny).toMatch(/^changes::guard::board_record: /)
+})
+
+test('a change record is matched without regard to letter case before any lookup, and a file beside it is admitted', async ($, on) => {
+  const { ran, edits } = engine(on, { first: { '': 'Coordinate the work.' }, queryFails: true })
+  expect((await edit($, `${BOARD}/Changes/Fix-It.json`)).deny).toMatch(/^changes::guard::board_record: .* is a change record of the board at /)
+  expect(ran.some(r => r.startsWith('query'))).toBe(false)
+  expect((await edit($, FILE)).deny).toBeUndefined()
+  expect(edits).toEqual(['Edit'])
+})

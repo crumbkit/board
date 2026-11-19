@@ -218,6 +218,10 @@ export const unknown = (file: string, why: string) =>
   `changes::guard::unknown: this edit of ${file} ran. The guard could not tell whether it belongs to a change: ` +
   `${why}. Fix what failed and the guard advises on the next edit.`
 
+/** Whether `path` ends like a change record or a mount record, for when the config that names the boards is unreadable. */
+export const looksLikeRecord = (path: string) =>
+  /(^|\/)(changes\/[^/]+(\/prototype|\/plans\/[^/]+)?|repos\/[^/]+)\.json$/i.test(path)
+
 /** The refusal of an edit of a file in a known board's checkout that the guard cannot check. */
 export const unknownRecord = (file: string, why: string) =>
   `changes::guard::unknown: the guard could not tell whether ${file} is a record of a board: ${why}. This edit ` +
