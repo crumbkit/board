@@ -34,11 +34,13 @@ add `--personal` after `board`.
 - Comment: `board github comment --number <n> --body <body>`.
 - Open an issue: `board github issue-create --title <title> --body <body>`.
 - Squash-merge the pull request of a change in its land phase:
-  `board github merge --number <n> --subject <subject> --body <body>
-  --change /changes/<name>`. It merges the change's head and moves the
-  change to its next phase. It reads the change in the board the command
-  runs in: for a change in another board, add `-C <that board's directory>`
-  and name it as `/changes/<name>`, never through a mount. From the
+  `board github merge --change /changes/<name>`. It merges the change's
+  head and moves the change to its next phase. The pull request is the
+  change's only one in this repository, and the commit takes the pull
+  request's title and body; `--number`, `--subject` and `--body` override.
+  It reads the change in the board the command runs in: for a change in
+  another board, add `-C <that board's directory>` and name it as
+  `/changes/<name>`, never through a mount. From the
   checkout of a repository that another board mounts, a change in the
   personal board needs `--personal`. Without a change, pass `--head <sha>`,
   the full 40-hex commit. When `queued` is true, a merge queue holds the
@@ -82,13 +84,20 @@ its message, change what it names, and push again.
   whose origin is GitHub.
 - `github::push::failed`: git refused the push. Pull or rebase, then run it
   again.
-- `github::gh::failed`: gh is missing, signed out or failed. Run
+- `github::gh::failed`: gh is missing, signed out or failed, including the
+  `gh api` read of a pull request that `merge` makes for a left-out subject
+  or body. Run
   `gh auth status`. After a check passed, look on GitHub before you run the
   action again, since the content may have been sent.
 - `github::merge::change`: the `--change` path is not under `/changes/`.
   Run the merge in the board that holds the change, with `-C`.
 - `github::merge::gate`: the change is not in its land phase, or its land
   gate misses the checks in `fields.missing`. Run `board changes next`.
+- `github::merge::number`: no `--number`, and no change that records exactly
+  one pull request of this repository. Pass `--number <n>`.
+- `github::merge::pull`: GitHub has no pull request `--number`, or it has
+  no title, so there is no subject or body to default to. Check
+  `--number`, or pass `--subject` and `--body`.
 - `github::merge::head`: no head to merge, or `--head` differs from the
   change's head. Attach the head to the change or pass the right one.
 - `github::merge::advance`: the pull request merged but the change did not
