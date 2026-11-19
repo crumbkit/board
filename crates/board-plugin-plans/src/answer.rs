@@ -1,6 +1,7 @@
-//! `plans.answer`: records the owner's answer to an open question, as the
-//! Claude Code mod's pane does, in Board's own process. The answer is what
-//! makes the question answered; the question's status stays `open`.
+//! `plans.answer`: records the owner's answer to an open question, in Board's
+//! own process. Every client answers through it, the Claude Code mod's pane
+//! included. The answer is what makes the question answered; the question's
+//! status stays `open`.
 
 use board_ops::{Host, PluginError};
 use board_plugin::Target;
@@ -152,7 +153,10 @@ pub(crate) fn answer(host: &dyn Host, input: &Value) -> Result<Value, PluginErro
     ];
     (host.put(&lines))
         .map_err(|error| PluginError::board_refused("plans", "put --batch", &error.refusal()))?;
-    let attached = attach(host, asked.work, &answer_path);
+    // `changes.attach` reads a change's plan from the root board, so only a
+    // question in the root board, whose own path is its logical one, attaches.
+    let work = asked.work.filter(|_| asked.own == path);
+    let attached = attach(host, work, &answer_path);
     let output = Output {
         answer: answer_path,
         question: path,

@@ -17,11 +17,23 @@ function parseJson(text: string): Report | null {
   }
 }
 
-/** Board's failure code and message in `stdout`, or the exit status and stderr when it printed none. */
-export function failure(exitCode: number, stdout: string, stderr: string): string {
+/** Board's failure code and message in `stdout`; null when it printed no failure report. */
+export function refused(stdout: string): string | null {
   const report = parseJson(stdout)
-  if (typeof report?.code === 'string') return `${report.code} ${String(report.message ?? '')}`.trim()
-  return `exit ${exitCode} ${stderr.trim().slice(0, 500)}`.trim()
+  return typeof report?.code === 'string' ? `${report.code} ${String(report.message ?? '')}`.trim() : null
+}
+
+/** Board's failure code and message in `stdout`, or the exit status and stderr when it printed none. */
+export const failure = (exitCode: number, stdout: string, stderr: string): string =>
+  refused(stdout) ?? `exit ${exitCode} ${stderr.trim().slice(0, 500)}`.trim()
+
+/** What `board --json call plans.answer` returned: the answer's path, and the change it attached the answer to. */
+export type Answered = { answer?: string; attached?: { change: string; refused?: string } }
+
+/** Reads `board --json call plans.answer`'s output; empty when it printed no call report. */
+export function parseAnswered(stdout: string): Answered {
+  const output = (parseJson(stdout)?.data as { output?: Answered } | undefined)?.output
+  return typeof output === 'object' && output !== null ? output : {}
 }
 
 /** Reads `board --json call plans.open`; null when it printed no call report. */
@@ -64,13 +76,10 @@ export const blocking = (q: { blocks: string | null; blocked_work: string | null
   return what === null ? '' : ` · blocks ${what}`
 }
 
-/** Where a question's answer lives: the same id under `answers/`. */
-export const answerPath = (path: string) => path.replace(/\/questions\/([^/]+)$/, '/answers/$1')
-
-/** What the asking session is sent. */
-export const answerText = (question: string, choice: string | undefined, words: string) =>
-  `The owner answered ${question}: choice ${choice ?? 'none'}, in these words: ${words}\n` +
-  `The answer is recorded at ${answerPath(question)}.`
+/** What the asking session is sent; `answer` is the answer's path as plans.answer returned it. */
+export const answerText = (question: string, answer: string | undefined, choice: string | undefined, words: string) =>
+  `The owner answered ${question}: choice ${choice ?? 'none'}, in these words: ${words}` +
+  (answer === undefined ? '' : `\nThe answer is recorded at ${answer}.`)
 
 /**
  * Reads `board --json call plans.waiting`, whose output is

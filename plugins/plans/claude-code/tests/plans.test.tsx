@@ -26,6 +26,10 @@ const MERGE = {
 }
 const COUNT = { ...MERGE, path: '/projects/core/questions/20261025T0800Z-x1', asked: '2026-10-25T08:00:00Z', question: 'How many users have a blank email?', options: [], recommendation: null, blocks: null, blocked_work: null }
 
+const ANSWER = '/projects/home/answers/20261024T1830Z-k3'
+/** What plans.answer prints when it records the answer at `answer`, with `attached` when it names one. */
+const answered = (answer = ANSWER, attached?: object) =>
+  JSON.stringify({ schema: 'board/call-report/v2', data: { plugin: 'plans', capability: 'answer', output: { answer, question: MERGE.path, ...(attached === undefined ? {} : { attached }) } } })
 const opened = (questions: object[]) =>
   JSON.stringify({ schema: 'board/call-report/v2', data: { plugin: 'plans', capability: 'open', output: { questions, total: questions.length, truncated: false, unreadable: 0 } } })
 const rows = (columns: string[], data: unknown[][]) => JSON.stringify({ schema: 'board/query-report/v2', data, truncated: false, summary: { columns, plugins: [] } })
@@ -54,8 +58,8 @@ type Answers = {
   open?: () => { exitCode: number; stdout: string }
   /** What plans.waiting answers; by default the plans plugin has no such capability. */
   waiting?: () => { exitCode: number; stdout: string }
-  /** What plans.answer answers; by default it records the answer. */
-  answer?: { exitCode: number; stdout: string }
+  /** What plans.answer answers, or `timeout` when its run rejects; by default it records the answer. */
+  answer?: () => { exitCode: number; stdout: string } | 'timeout'
   delivered?: boolean
   report?: string
   host?: string | null
@@ -71,6 +75,7 @@ function engine(on: On, answers: Answers = {}) {
   const whole = { stderr: '', isStdoutTruncated: false, isStderrTruncated: false }
   mock.env(on, answers.host === null ? {} : { CLAUDE_CODE_HOST_SESSION_ID: answers.host ?? 'local_cd34' })
   const waited: string[][] = []
+  const limits: (number | undefined)[] = []
   on('process.run', (_, e) => {
     const args = e.argv.slice(e.argv.indexOf('--json') + 1)
     if (args[1] === 'plans.waiting') {
@@ -79,7 +84,9 @@ function engine(on: On, answers: Answers = {}) {
     }
     ran.push([...e.argv.slice(4, e.argv.indexOf('--json')), ...args])
     if (args[1] === 'plans.answer') {
-      const result = answers.answer ?? { exitCode: 0, stdout: '{}' }
+      limits.push(e.init?.timeoutMs)
+      const result = answers.answer?.() ?? { exitCode: 0, stdout: answered() }
+      if (result === 'timeout') throw new Error('timed out after 15000 ms')
       if (result.exitCode === 0) questions = questions.filter(q => q.path !== MERGE.path)
       return { value: { ...result, ...whole } }
     }
@@ -102,7 +109,7 @@ function engine(on: On, answers: Answers = {}) {
   on('command.register', (_, e) => ({ value: { command: e.name } }))
   on('ui.render', ($, e) => $.ui.resolve(e).Box({}))
   on('session.start', (_, e) => ({ cwd: e.cwd }))
-  return { ran, waited, panes, sent, toasts }
+  return { ran, waited, limits, panes, sent, toasts }
 }
 
 const start = ($: Engine) => $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
@@ -317,7 +324,7 @@ const answerCall = (path: string, option: string, words: string, session?: strin
 
 test('the pane lists each question with its options, and an option answers it through plans.answer and is sent to the asking session', async ($, on) => {
   mock.clock(on, { now: NOW })
-  const { ran, sent, toasts } = engine(on)
+  const { ran, limits, sent, toasts } = engine(on)
   await start($)
   const ui = await $.ui.mount({ ...pane('questions'), surface: 'desktop' })
   expect((await ui.findAll({ type: 'Text' })).map(t => t.text)).toEqual([
@@ -331,10 +338,12 @@ test('the pane lists each question with its options, and an option answers it th
   await ui.press({ key: `${MERGE.path}#a` })
 
   expect(ran.slice(1)).toEqual([['--personal', ...answerCall(MERGE.path, 'a', 'Merge', 'local_cd34')]])
+  // plans.answer may wait for board's lock twice, so it gets longer than a read's 5 seconds.
+  expect(limits).toEqual([15_000])
   expect(sent).toEqual([
     {
       to: 'local_ab12',
-      text: `The owner answered ${MERGE.path}: choice a, in these words: Merge\nThe answer is recorded at /projects/home/answers/20261024T1830Z-k3.`,
+      text: `The owner answered ${MERGE.path}: choice a, in these words: Merge\nThe answer is recorded at ${ANSWER}.`,
     },
   ])
   expect(toasts).toEqual(['Answered, and sent to local_ab12'])
@@ -387,13 +396,51 @@ test('an answer plans.answer refuses sends nothing, keeps the question listed, a
     code: 'plans::answer::already_answered',
     message: `${MERGE.path} already has an answer at /projects/home/answers/20261024T1900Z-k3b`,
   })
-  const { sent, toasts } = engine(on, { answer: { exitCode: 1, stdout: refused } })
+  const { sent, toasts } = engine(on, { answer: () => ({ exitCode: 1, stdout: refused }) })
   await start($)
   const ui = await $.ui.mount({ ...pane('questions'), surface: 'terminal' })
   await ui.press({ key: `${MERGE.path}#a` })
   expect(sent).toEqual([])
   expect(toasts).toEqual([`No answer was recorded: plans::answer::already_answered ${MERGE.path} already has an answer at /projects/home/answers/20261024T1900Z-k3b`])
   expect(await ui.find({ type: 'Text', text: 'Merge home#201?' })).toBeDefined()
+})
+
+test('a plans.answer that times out or ends without a failure report may have recorded the answer, so nothing is sent', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  const maybe = 'The answer may have been recorded, because board did not finish. The question stays in the list until plans.open stops listing it.'
+  let outcome: { exitCode: number; stdout: string } | 'timeout' = 'timeout'
+  const { sent, toasts } = engine(on, { answer: () => outcome })
+  await start($)
+  const ui = await $.ui.mount({ ...pane('questions'), surface: 'terminal' })
+  await ui.press({ key: `${MERGE.path}#a` })
+  outcome = { exitCode: 137, stdout: '' }
+  await ui.press({ key: `${MERGE.path}#a` })
+  expect(sent).toEqual([])
+  expect(toasts).toEqual([maybe, maybe])
+  expect(await ui.find({ type: 'Text', text: 'Merge home#201?' })).toBeDefined()
+})
+
+test('an answer whose attach was refused says it is recorded but not attached, and names the change and the code; an attached one says nothing of it', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  const elsewhere = '/vendor/projects/home/answers/20261024T1830Z-k3'
+  const cases = [
+    { attached: { change: '/changes/fix-the-sync', refused: 'changes::attach::no_plan' }, toast: 'Answered, and sent to local_ab12. The answer is recorded but was not attached to /changes/fix-the-sync: changes::attach::no_plan' },
+    { attached: { change: '/changes/fix-the-sync' }, toast: 'Answered, and sent to local_ab12' },
+  ]
+  let attached: object = cases[0]?.attached ?? {}
+  const { sent, toasts } = engine(on, { answer: () => ({ exitCode: 0, stdout: answered(elsewhere, attached) }) })
+  await start($)
+  for (const [i, each] of cases.entries()) {
+    attached = each.attached
+    const ui = await $.ui.mount({ ...pane('questions'), surface: 'terminal' })
+    // The first answer takes MERGE off the list, so the twin answers COUNT in words.
+    if (i === 0) await ui.press({ key: `${MERGE.path}#a` })
+    else await ui.input({ key: `${COUNT.path}#words`, text: 'About 40.' })
+    expect(toasts.pop()).toBe(each.toast)
+    // The message names the answer's path as plans.answer returned it.
+    expect(sent.pop()?.text).toContain(`The answer is recorded at ${elsewhere}.`)
+    await ui.unmount()
+  }
 })
 
 test('/yesterday reads the day from 07:00 in one query, opens the report pane and prints its totals', async ($, on) => {

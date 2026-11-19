@@ -3,7 +3,7 @@ import type { EngineInterface, PluginOptions, Register, RenderElement } from 'cl
 
 import type { Open, Question, Unread, Waiting } from '../types'
 import { SLOT, joinBand } from './band'
-import { answerText, blocking, countBadge, failure, parseOpen, parseRows, parseWaiting, plain, project, report, REPORT_LIMIT, REPORT_SQL, WRITTEN_BY } from './plans'
+import { answerText, blocking, countBadge, failure, parseAnswered, parseOpen, parseRows, parseWaiting, plain, project, refused, report, REPORT_LIMIT, REPORT_SQL, WRITTEN_BY } from './plans'
 
 // The mod reads the owner's open questions from Board, draws their count in
 // the band above the prompt and lists them in a pane, where the owner answers
@@ -23,6 +23,9 @@ const QUESTIONS = 'questions'
 const RUN = 'PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH" exec board "$@"'
 // A slow or hung board holds a refresh or an answer no longer than this.
 const TIMEOUT_MS = 5000
+// plans.answer takes board's lock twice, for the answer and for the attach,
+// and each take may wait up to 5 seconds.
+const ANSWER_MS = 15_000
 const REFRESH_MS = 60_000
 // The pane lists this many questions; the band counts them all.
 const LISTED = 100
@@ -30,10 +33,10 @@ const LISTED = 100
 type Ran = { exitCode: number; stdout: string; stderr: string }
 
 /** Runs `board` with `args` in the configured board, the personal board when none is set. */
-function board($: EngineInterface, options: PluginOptions, args: string[]): Promise<Ran> {
+function board($: EngineInterface, options: PluginOptions, args: string[], timeoutMs = TIMEOUT_MS): Promise<Ran> {
   const dir = String(options.board ?? '')
   const where = dir === '' ? ['--personal'] : ['-C', dir]
-  return $.process.run(['/bin/sh', '-c', RUN, 'board', ...where, '--json', ...args], { timeoutMs: TIMEOUT_MS })
+  return $.process.run(['/bin/sh', '-c', RUN, 'board', ...where, '--json', ...args], { timeoutMs })
 }
 
 /**
@@ -82,7 +85,10 @@ async function refresh($: EngineInterface, options: PluginOptions, local: { abse
  * answer to the change the question blocks. Then it tries to send the answer
  * to the session that asked and to each session that asked the same question.
  *
- * The answer is recorded in Board either way; the send is best effort. It
+ * Only Board's own failure report says nothing was written; a run that timed
+ * out or was killed may have recorded the answer, so nothing is sent then.
+ *
+ * Once the answer is recorded, the send is best effort. It
  * names each asking session's `local_` id as a string, the SendMessage tool's
  * spelling of a recipient, because `{ sessionId }` refuses a `local_` id.
  */
@@ -94,10 +100,18 @@ async function answer($: EngineInterface, options: PluginOptions, q: Question, c
     const args = ['call', 'plans.answer', `--path=${q.path}`, `--option=${choice ?? 'none'}`, `--words=${words}`]
     if (host?.startsWith('local_')) args.push(`--session=${host}`)
     args.push(`--written_by=${WRITTEN_BY}`)
-    const ran = await board($, options, args)
-    if (ran.exitCode !== 0) return $.ui.toast(`No answer was recorded: ${failure(ran.exitCode, ran.stdout, ran.stderr)}`)
+    const ran = await board($, options, args, ANSWER_MS).catch(() => null)
+    if (ran?.exitCode !== 0) {
+      const why = ran === null ? null : refused(ran.stdout)
+      return $.ui.toast(
+        why === null
+          ? 'The answer may have been recorded, because board did not finish. The question stays in the list until plans.open stops listing it.'
+          : `No answer was recorded: ${why}`,
+      )
+    }
     await update($, open, found => found && { questions: found.questions.filter(o => o.path !== q.path), total: found.total - 1 })
-    const text = answerText(q.path, choice, words)
+    const answered = parseAnswered(ran.stdout)
+    const text = answerText(q.path, answered.answer, choice, words)
     const send = async (to: string) => {
       try {
         return (await $.session.send({ to, text })).isDelivered
@@ -109,7 +123,8 @@ async function answer($: EngineInterface, options: PluginOptions, q: Question, c
     // A board from before plans.ask merged questions lists no `also_asked`.
     const others = (q.also_asked ?? []).filter(to => to !== q.session)
     const [sent] = await Promise.all([send(q.session), ...others.map(send)])
-    $.ui.toast(sent ? `Answered, and sent to ${q.session}` : `Answered and recorded in Board. The message to ${q.session} was not delivered`)
+    const unattached = answered.attached?.refused === undefined ? '' : `. The answer is recorded but was not attached to ${answered.attached.change}: ${answered.attached.refused}`
+    $.ui.toast(`${sent ? `Answered, and sent to ${q.session}` : `Answered and recorded in Board. The message to ${q.session} was not delivered`}${unattached}`)
   } catch (error) {
     $.ui.toast(`No answer was recorded: ${String(error)}`)
   }

@@ -570,3 +570,23 @@ fn a_question_read_finds_the_change_it_blocks_from_its_own_boards_root() {
         assert_eq!(asked.work, found.then_some(work));
     }
 }
+
+/// A question in a mounted board that blocks a change in its own board makes
+/// no attach call and gets no `attached`, because `changes.attach` reads a
+/// change's plan from the root board. Its twin is the same question in the
+/// root board, which attaches.
+#[test]
+fn a_mounted_question_blocking_a_change_is_not_attached_and_its_root_twin_is() {
+    for (path, work, attached) in [
+        (QUESTION, "/changes/x", true),
+        ("/vendor/projects/a/questions/q", "/vendor/changes/x", false),
+    ] {
+        let mut rows = rows("plans/question/v1", &json!({"blocks": "/changes/x"}), &[]);
+        rows[0].extend([json!(QUESTION), json!(work), json!("changes/change/v2")]);
+        let host = at_now(rows);
+        let output = answer(&host, &json!({"path": path, "option": "a"})).unwrap();
+        assert_eq!(output.get("attached").is_some(), attached, "{path}");
+        assert_eq!(host.calls.borrow().len(), usize::from(attached), "{path}");
+        assert_eq!(host.puts.borrow().len(), 1, "{path}");
+    }
+}
