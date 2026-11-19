@@ -87,8 +87,8 @@ fn an_owner_approval_check_says_to_attach_the_owners_answer_and_one_with_type_re
     let said = of(&approval(serde_json::json!(["plan"])), &values(None));
     assert_eq!(
         said,
-        "Ask the owner with /ask, with /changes/t in the text of the option that approves it. \
-         Then attach the question and the owner's answer, each with `board changes attach \
+        "Ask the owner with /ask, with /changes/t in the text of the option that approves it \
+         and in no other option, because any chosen option that names it counts. Then attach the question and the owner's answer, each with `board changes attach \
          --path /changes/t --ref <path>`. A plans/decision/v1 the owner signs with by.person \
          whose refs name /changes/t also counts."
     );

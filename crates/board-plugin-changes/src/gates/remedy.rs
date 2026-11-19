@@ -145,7 +145,8 @@ fn default(each: &flow::Check) -> String {
         }
         Kind::Field => field(each.field),
         Kind::Records if answers_count(each) => "Ask the owner with /ask, with {change} in the \
-             text of the option that approves it. Then attach the question and the owner's \
+             text of the option that approves it and in no other option, because any chosen \
+             option that names it counts. Then attach the question and the owner's \
              answer, each with `board changes attach --path {change} --ref <path>`. A \
              plans/decision/v1 the owner signs with by.person whose refs name {change} also \
              counts."

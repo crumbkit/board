@@ -918,6 +918,12 @@ These routes still pass a gate without the owner:
 4. An approval that names the change. A decision whose `refs` name the
    change, in place of a plan record, keeps counting after the plan is
    written again.
+5. An option that names the change but does not approve it. The gate
+   counts any chosen option whose text names the change's path, so an
+   answer that chose "Reject /changes/<name>" counts as approval.
+6. An edited question. The gate reads the question's options as they are
+   now, so editing an option's text after the owner answered changes what
+   the answer counts for.
 
 Instructions, remedies and the rules of a `rule-paths` or
 `planned-rule-paths` check may name

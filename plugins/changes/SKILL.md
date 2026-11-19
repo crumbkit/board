@@ -78,12 +78,15 @@ blocks is missing.
    An owner check (`owner-approval`, `data-signed`, `rechecks`, `mockups`
    and a waiver) counts an attached `plans/decision/v1` only when its
    `by.person` names a person and its `written_by` is empty. A decision the
-   plan lists only in `uses` passes no check. `owner-approval` also counts
-   the owner's `plans/answer/v1` from /ask, with the same `by.person` and
-   `written_by` rule, when the option the owner chose names the change's
-   path, such as `/changes/<name>`, in its text. When you ask for approval
-   with /ask, put the change's path in the text of the option that
-   approves it. Attach the question and the answer, each with
+   plan lists only in `uses` passes no check. An owner check that counts
+   such decisions with refs naming the plan or the change, such as
+   `owner-approval` or `owner-confirms`, also counts the owner's
+   `plans/answer/v1` from /ask, with the same `by.person` and `written_by`
+   rule, when the option the owner chose names the change's path, such as
+   `/changes/<name>`, in its text. When you ask for approval with /ask, put
+   the change's path in the text of the option that approves it and in no
+   other option, because any chosen option that names the path counts.
+   Attach the question and the answer, each with
    `board changes attach --path /changes/<name> --ref <path>`. When you
    record the owner's approval from chat, write the decision as the plans
    skill says, with `by.person` and the owner's words in `why`.
