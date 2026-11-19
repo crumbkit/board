@@ -110,9 +110,10 @@ fn pulls(desk: &Desk, merged: bool) {
     ));
 }
 
-/// How many times the stub gh ran other than for `gh api`, once it has.
+/// How many times the stub gh ran other than for `gh api`.
 fn merges(desk: &Desk) -> usize {
-    desk.gh_file("gh-merges.txt").lines().count()
+    std::fs::read_to_string(desk.bin().join("gh-merges.txt"))
+        .map_or(0, |merges| merges.lines().count())
 }
 
 /// The flags of a merge of pull request 12 with `subject` and `body`, and
@@ -623,7 +624,7 @@ fn a_defaulted_subject_or_body_that_fails_the_boundary_is_refused_and_a_clean_on
             .collect();
         assert_eq!(parts, [&json!(part)]);
     }
-    assert!(!desk.gh_file("gh-merges.txt").contains("merge"));
+    assert_eq!(merges(&desk), 0);
     pulls(&desk, true);
     desk.gh_answers(&json!(""), 0, "");
     assert_eq!(desk.output("merge", &["--change", CHANGE])["phase"], "done");
