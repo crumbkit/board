@@ -71,7 +71,8 @@ blocks is missing.
    check suite with `--suite <path>` when the change names none.
    `board github pr-create --change /changes/<name>`, run from the checkout
    as the github skill says, opens the pull request and attaches it. When
-   its output has `change_note`, run the command the note gives. Record any other GitHub issue or pull request with
+   its output has `change_note`, run the command the note gives. Record
+   any other GitHub issue or pull request with
    `board -C <board> github ref --ref <owner>/<repo>#<number>`, then
    attach the path it returns with `--ticket <path>` or `--pull <path>`.
    An owner check (`owner-approval`, `data-signed`, `rechecks`, `mockups`
