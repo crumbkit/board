@@ -653,6 +653,11 @@ pub(crate) fn mounting_board(
         .collect();
     files.extend(schema_files.iter().map(|(p, t)| (p.as_str(), t.as_str())));
     let pinned = library.commit(&files);
+    // A write through the mount needs the library's working tree to hold
+    // what it commits (docs/architecture/writes.md).
+    for (path, text) in &files {
+        library.write(path, Item::File(text));
+    }
     let mount = json!({"$type": "board/mount/v1", "repo": library.path(), "follow": "main", "commit": pinned.to_string()});
     scenario.write("vendor.json", Item::File(&mount.to_string()));
     for (path, body) in root {
