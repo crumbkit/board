@@ -27,12 +27,13 @@ blocks is missing.
    When `ask` is set, only the owner or a reviewer can pass the checks
    left: put `ask` to them. Stop where the change's `stop` says, or the
    flow's when it has none, unless told otherwise; once `next` returns
-   `stop` with `reached` true, `advance` refuses. With the `board-changes` mod installed, an Edit, Write or NotebookEdit of
-   the repository by an agent not started from `changes.brief` runs with a
-   line of advice; it cannot see writes made through Bash. The builder's first message is the
-   brief as `changes.brief` prints it, or starts with its `brief_line`. Put
-   the brief in as plain text, not inside a code fence, which the guard does
-   not read. The brief's `rules_left_out` gives each rule it left out a
+   `stop` with `reached` true, `advance` refuses. With the `board-changes`
+   mod installed, an Edit, Write or NotebookEdit of the repository by an
+   agent not started from `changes.brief` runs with a line of advice; it
+   cannot see writes made through Bash. The builder's first message is
+   the brief as `changes.brief` prints it, or starts with its
+   `brief_line`. Put the brief in as plain text, not inside a code fence,
+   which the guard does not read. The brief's `rules_left_out` gives each rule it left out a
    `reason`: the rule had no room, or it is a version rule whose capture
    finds no version in the planned files. A missing or unreadable planned
    file keeps a version rule. A rule with no room still applies, so read

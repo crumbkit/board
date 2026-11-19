@@ -1066,9 +1066,11 @@ every Edit, Write and NotebookEdit. Install it with
    directory and in each linked worktree, are still refused with
    `changes::guard::board_record`. In a linked worktree the guard reads
    the mount records from the worktree's own branch, and the refusal names
-   the worktree. A file inside the board repository's git directory is
-   refused with `changes::guard::unknown`, which says so. When the config cannot be read, a path
-   that ends like a change or mount record is refused the same way. The guard compares the repository's directory
+   the worktree. A file inside a known board repository's git directory
+   is refused with `changes::guard::unknown`, since the guard cannot tell
+   a board record from other git data there. When the config cannot be
+   read, a path that ends like a change or mount record is refused the
+   same way. The guard compares the repository's directory
    with each listed directory, with symbolic links followed, and they must
    be equal: a board inside a larger repository does not exempt that
    repository. The listed directory

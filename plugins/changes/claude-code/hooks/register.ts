@@ -150,7 +150,10 @@ const configPath = async ($: EngineInterface) =>
 async function knownBoards($: EngineInterface): Promise<string[]> {
   const path = await configPath($)
   if (!(await $.fs.exists(path))) return []
-  const boards = parseBoards(await $.fs.read(path))
+  const text = await $.fs.read(path).catch((error: unknown) => {
+    throw new Unknown(`the board config at ${path} could not be read: ${String(error)}`)
+  })
+  const boards = parseBoards(text)
   if (!Array.isArray(boards)) throw new Unknown(boards.why)
   return boards
 }

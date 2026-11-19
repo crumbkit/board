@@ -265,7 +265,7 @@ const noBriefLine = (file: string, board = BOARD, mount = '/repos/widgets', said
   `then build from \`board -C ${board} call changes.brief --path /changes/<name>\`.`
 const unknownLine = (file: string, why: string) =>
   `changes::guard::unknown: this edit of ${file} ran. The guard could not tell whether it belongs to a change: ${why}. ` +
-  'Fix what failed and the guard advises on the next edit.'
+  'Run the command that failed to see why; the next edit is checked again.'
 
 test('a brief line is the first line of the first message, naming one change', () => {
   expect(briefOf(BRIEF)).toBe('/changes/fix-it')
@@ -994,7 +994,7 @@ test('a listed directory that is a linked worktree exempts nothing, and listing 
 test('with an unreadable board config a record-shaped path is refused with unknown, and another file is admitted with advice', async ($, on) => {
   const answers: Answers = { first: { a1: BRIEF }, config: 'boards = [' }
   const { edits } = engine(on, answers)
-  for (const record of [`${BOARD}/changes/fix-it.json`, `${BOARD}/changes/fix-it/plans/20261105T120000Z.json`, `${BOARD}/repos/widgets.json`]) {
+  for (const record of [`${BOARD}/changes/fix-it.json`, `${BOARD}/changes/fix-it/plans/20261105T120000Z.json`, `${BOARD}/repos/widgets.json`, `${BOARD}/repos/crumbkit/docs.json`]) {
     const done = await edit($, record, 'a1')
     expect(done.context).toBeUndefined()
     expect(done.deny).toMatch(/^changes::guard::unknown: the guard could not tell whether .* is a record of a board: .*board config/)
@@ -1013,4 +1013,28 @@ test('a change record is matched without regard to letter case before any lookup
   expect(ran.some(r => r.startsWith('query'))).toBe(false)
   expect((await edit($, FILE)).deny).toBeUndefined()
   expect(edits).toEqual(['Edit'])
+})
+
+test('the no_brief and unknown advice read exactly, and next runs once for an advised edit and never for a refused one', async ($, on) => {
+  const answers: Answers = { first: { '': 'Coordinate the work.' } }
+  const { edits } = engine(on, answers)
+  const advised = await edit($)
+  expect(advised.context).toEqual([
+    `changes::guard::no_brief: this edit of /work/widgets/src/lib.rs ran. /work/widgets/src/lib.rs is in /repos/widgets, which the board at /home/me/board mounts, and this agent did not start from the brief of a change. Work on a mounted repository lands through a change: \`board -C /home/me/board changes start --mount /repos/widgets --title '<title>'\`, then build from \`board -C /home/me/board call changes.brief --path /changes/<name>\`.`,
+  ])
+  expect(edits).toEqual(['Edit'])
+  const refused = await edit($, CONFIG)
+  expect(refused.deny).toMatch(/^changes::guard::board_record: /)
+  expect(edits).toEqual(['Edit'])
+  answers.queryFails = true
+  expect((await edit($)).context).toEqual([
+    "changes::guard::unknown: this edit of /work/widgets/src/lib.rs ran. The guard could not tell whether it belongs to a change: `board -C /home/me/board query` did not list its mounts: board: the index could not be built. Run the command that failed to see why; the next edit is checked again.",
+  ])
+  expect(edits).toEqual(['Edit', 'Edit'])
+})
+
+test('a board config that does not parse is reported as the board config in the refusal', async ($, on) => {
+  const answers: Answers = { config: 'boards = [' }
+  engine(on, answers)
+  expect((await edit($, `${BOARD}/repos/widgets.json`)).deny).toMatch(/: the board config is not JSON with a `boards` list of directories\. /)
 })
