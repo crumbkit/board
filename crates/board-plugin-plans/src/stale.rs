@@ -15,7 +15,7 @@
 //! repository that holds it. A project task and a deferred task are left out,
 //! because their owner chose not to work on them now.
 //!
-//! Each item gets the question "Drop <kind> <path>?" with the options `drop`
+//! Each item gets the question `Drop KIND PATH?` with the options `drop`
 //! and `keep`, recommending `drop`. `plans.ask` files it, merges it into an
 //! open question that asks the same words, or finds it answered; an item
 //! whose question was answered is left out of the list and counted.
