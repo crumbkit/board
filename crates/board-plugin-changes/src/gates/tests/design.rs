@@ -156,3 +156,37 @@ fn a_later_matching_record_passes_where_an_earlier_one_differed() {
     ]);
     assert_eq!(found.statuses()["design-conformance"], "pass");
 }
+
+/// A staging flow page from November: the plan of the change that restored
+/// it records what the page showed against the approved
+/// interface, which had the stored flow graph and no Hints card. Each
+/// difference below is one that plan states.
+#[test]
+fn the_staging_flow_page_that_showed_no_graph_and_a_hints_card_would_have_failed_the_review() {
+    let seen = json!([
+        {"element": "flow graph", "kind": "missing",
+         "expected": "the stored flow graph, drawn when no test service is configured",
+         "built": null},
+        {"element": "Hints card", "kind": "different",
+         "expected": "no standalone Hints card", "built": "a Hints card renders"},
+    ]);
+    let seen: Vec<Value> = (seen.as_array().unwrap().iter())
+        .map(|each| {
+            let mut each = each.clone();
+            if each["built"].is_null() {
+                each.as_object_mut().unwrap().remove("built");
+            }
+            each
+        })
+        .collect();
+    let drifted = at_review(vec![(
+        "/c/1",
+        conformance(&json!({"verdict": "differs", "differences": seen})),
+    )]);
+    assert_eq!(drifted.statuses()["design-conformance"], "missing");
+    let detail = drifted.check("design-conformance").1;
+    assert!(detail.contains("flow graph is missing"), "{detail}");
+    assert!(detail.contains("Hints card is different"), "{detail}");
+    let fixed = at_review(vec![("/c/2", conformance(&json!({})))]);
+    assert_eq!(fixed.statuses()["design-conformance"], "pass");
+}

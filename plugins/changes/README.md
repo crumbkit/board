@@ -132,7 +132,7 @@ something is there that Board does not read as a prototype record,
 whether the change is a prototype is not known: `next`, `advance`, `plan`
 and `pr` refuse with `changes::change::degraded`, `open` counts the
 change as unreadable, the WIP limit counts it with the prototypes, and
-the write guard refuses the builder's edits.
+the write guard advises on the builder's edits.
 
 ```json
 {
@@ -1052,7 +1052,7 @@ every Edit, Write and NotebookEdit. Install it with
 1. It places the file: it expands a leading `~/` from `HOME`, follows every
    symbolic link, and takes a file that does not exist yet from its nearest
    directory that does. A path it cannot place, such as `~user/x` or a link
-   that leads nowhere, is refused with `changes::guard::unknown`.
+   that leads nowhere, is admitted with a `changes::guard::unknown` line.
 2. It finds the git repository that holds that directory, through its
    common directory, so a worktree counts as its repository. It lists the
    mounts of each board in `boards` of `$XDG_CONFIG_HOME/board/config.json`
@@ -1072,9 +1072,11 @@ every Edit, Write and NotebookEdit. Install it with
    directory and in each linked worktree, are still refused with
    `changes::guard::board_record`. In a linked worktree the guard reads
    the mount records from the worktree's own branch, and the refusal names
-   the worktree. A file inside the board repository's git directory is
-   refused with `changes::guard::unknown`, and the refusal says the file is
-   in the git directory. The guard compares the repository's directory
+   the worktree. A file inside a known board repository's git directory
+   is refused with `changes::guard::unknown`, since the guard cannot tell
+   a board record from other git data there. When the config cannot be
+   read, a path that ends like a change or mount record is refused the
+   same way. The guard compares the repository's directory
    with each listed directory, with symbolic links followed, and they must
    be equal: a board inside a larger repository does not exempt that
    repository. The listed directory
@@ -1095,9 +1097,9 @@ every Edit, Write and NotebookEdit. Install it with
 4. It reads that change from each known board that mounts the file's
    repository, and takes the board whose change names, as its `mount`, a
    mount that holds the file. It admits the call when that change's
-   `phase` is `build`; a paused change is refused and told to resume. When
+   `phase` is `build`; a paused change is advised to resume. When
    no board's change names such a mount, the first listed board that holds
-   the change refuses the edit. The guard chooses no mount itself, so a
+   the change advises on the edit. The guard chooses no mount itself, so a
    repository mounted several times, such as at `/repos/<name>` and
    beneath another change, admits the builder of a change to any of those
    mounts. It then reads `<change>/prototype` with `board get`, and when a
@@ -1105,8 +1107,8 @@ every Edit, Write and NotebookEdit. Install it with
    reads it, because `board get` prints a degraded record as it prints a
    valid one. When a readable prototype record is there, the file's
    checkout must also be on branch `proto/<name>`. When the record there is
-   degraded or of another type, the edit is refused with
-   `changes::guard::unknown`.
+   degraded or of another type, the edit is admitted with a
+   `changes::guard::unknown` line.
 
 Before any of that, the guard refuses three kinds of file to every agent,
 brief or not, because they change only through board commands: the board
@@ -1114,53 +1116,53 @@ config, each known board's change records (`changes/<name>.json`, its
 `prototype.json` and its `plans/<stamp>.json`) and its mount records. A
 plan's text, `changes/<name>/plans/<stamp>.md`, stays writable.
 
-Each refusal names one code and what fixes it:
+Only `board_record` refuses, and `unknown` in a board's checkout. Every other
+code is advice: the edit runs and
+the guard adds one line to the tool result that starts with the code, says
+the edit ran, and names what to do:
 
 - `changes::guard::board_record`: the file is the board config, a change
   record or a mount record. The refusal names the board command to use.
 
 - `changes::guard::no_brief`: the first message starts with neither the
   brief line nor the brief as `changes.brief` prints it, or names a change
-  no such board holds. Start a builder whose first message is the
-  output of `changes.brief`.
+  no such board holds. Start a change and build from `changes.brief`.
 - `changes::guard::not_building`: run `changes.advance` until the change is
   in `build`.
 - `changes::guard::wrong_mount`: the brief's change is for another
   repository.
 - `changes::guard::wrong_branch`: the brief's change is a prototype, and
-  the file's checkout is not on `proto/<name>`. Switch to that branch.
+  the file's checkout is not on `proto/<name>`.
 - `changes::guard::unknown`: the path could not be placed, git, the config
-  or `board` failed, or the conversation could not be read. The refusal says
-  what failed.
+  or `board` failed, or the conversation could not be read. The line says
+  what failed. In a known board's checkout, or for a record-shaped path when
+  the config is unreadable, the edit is refused; elsewhere it runs.
 
-The guard is a guardrail for agents that follow the process, not a defence
-against an agent set on getting round it. The known routes round it are
-Bash writes, a hand-typed brief line and a clone of a local clone.
+The guard sees only Edit, Write and NotebookEdit. It advises agents that
+follow the process and refuses only Board's own records. When a lookup
+fails for a file in a known board's checkout, it refuses with
+`changes::guard::unknown`; for any other file it admits the edit with that
+line. It cannot see:
 
-There is no bypass flag. The guard cannot see:
-
-- files written through Bash, such as `sed -i` or a heredoc. The review gate
-  checks that a change's commits came from its builder sessions;
+- files written through Bash, such as `sed -i` or a heredoc;
 - a prototype's builder that switches its checkout to `proto/<name>` for
   the edit and back before it commits. The guard reads the branch at the
   moment of the edit;
 - a clone of a mounted repository with no `origin` remote, or one whose
   `origin` points somewhere else, such as a fork or an ssh host alias like
   `git@github-work:owner/name.git`;
-- a brief line that a parent agent wrote by hand. The review gate checks
-  that a change's commits came from its builder sessions;
+- a brief line that a parent agent wrote by hand;
 - a first message that has left the newest 4,096 entries of a conversation,
   or that a compaction replaced, before the agent's first guarded edit. The
   guard keeps a brief it has found for each session and agent until the mod
   reloads, and `/clear` or `/resume` starts over. With no brief kept and a
-  full window of 4,096 entries, the guard refuses with
+  full window of 4,096 entries, the guard advises with
   `changes::guard::unknown`, since the oldest row left may be one another
   agent wrote.
 
-The guard refuses an edit of every mounted repository that is not itself a
+The guard advises on an edit of every mounted repository that is not itself a
 known board, including the notes repositories a personal board mounts, such
-as `/repos/notes`. An agent without a brief writes notes and tasks
-through the `tasks` and `notes` capabilities instead.
+as `/repos/notes`.
 
 `claude plugin test plugins/changes/claude-code` runs the mod's tests.
 
