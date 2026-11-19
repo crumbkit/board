@@ -53,18 +53,26 @@ async function decide($: EngineInterface, command: string): Promise<string | nul
 
 /** The advice on each covered write a code span or fenced block of `prompt` makes, or null for none. Never throws. */
 async function briefAdvice($: EngineInterface, prompt: string): Promise<string | null> {
-  const advice = new Set<string>()
+  // Each write once, by what github.covers is asked: its directory, action, repository and remote.
+  const unique = new Map<string, [Write, string]>()
   try {
     for (const code of codeIn(prompt)) {
       for (const write of writes(code) ?? []) {
-        const to = write.dir === null ? null : await covered($, write, write.dir)
-        if (to !== null) advice.add(`github::brief::covered: ${refusal(write, to)}`)
+        const key = [write.dir, write.action, write.repo ?? '', write.remote ?? ''].join('\0')
+        if (write.dir !== null && !unique.has(key)) unique.set(key, [write, write.dir])
       }
     }
+    const found = await Promise.all(
+      [...unique.values()].map(async ([write, dir]) => {
+        const to = await covered($, write, dir)
+        return to === null ? null : `github::brief::covered: ${refusal(write, to)}`
+      }),
+    )
+    const advice = [...new Set(found.filter(line => line !== null))]
+    return advice.length === 0 ? null : advice.join('\n')
   } catch {
     return null
   }
-  return advice.size === 0 ? null : [...advice].join('\n')
 }
 
 export const register: Register = on => {

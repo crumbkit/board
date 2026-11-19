@@ -24,7 +24,7 @@ import {
   unknownRecord,
 } from './guard'
 import type { Mount } from './guard'
-import { changeIn, noLine, notRendered, parseRendered } from './brief'
+import { changesIn, noLine, notRendered, planText } from './brief'
 
 // The write guard. Before an Edit, Write or NotebookEdit, it refuses only a
 // record that Board's own commands write: the board config and each known
@@ -67,12 +67,9 @@ const ORIGINS = 'for r; do printf \'%s\\t%s\\n\' "$r" "$(git -C "$r" config --ge
 const MOUNTS = `PATH=${PATH} exec board -C "$1" --json query --all "$2"`
 const GET = `PATH=${PATH} exec board -C "$1" --json get "$2"`
 const CHECK = `PATH=${PATH} exec board -C "$1" --json check --healthy "$2"`
-const RENDER = `PATH=${PATH} exec board -C "$1" --json call changes.brief --path "$2"`
 
 // A slow or hung git or board holds the edit no longer than this, then admits it with advice.
 const TIMEOUT_MS = 5000
-// changes.brief lists the rules on the planned paths, which takes about half a minute on a large board.
-const RENDER_MS = 60000
 // `$.session.messages` returns at most this many entries, the newest.
 const WINDOW = 4096
 
@@ -85,8 +82,8 @@ const WINDOW = 4096
 const briefs = new Map<string, string>()
 
 type Ran = { exitCode: number; stdout: string; stderr: string }
-const sh = ($: EngineInterface, script: string, args: string[], timeoutMs = TIMEOUT_MS): Promise<Ran> =>
-  $.process.run(['/bin/sh', '-c', script, 'guard', ...args], { timeoutMs })
+const sh = ($: EngineInterface, script: string, args: string[]): Promise<Ran> =>
+  $.process.run(['/bin/sh', '-c', script, 'guard', ...args], { timeoutMs: TIMEOUT_MS })
 
 const said = (ran: Ran) => (ran.stderr.trim() || ran.stdout.trim()).slice(0, 500) || `exit ${ran.exitCode}`
 
@@ -407,18 +404,22 @@ async function guarded<R extends { deny?: string; context?: string[] }>(v: Verdi
  * when the prompt names no such change, or when a lookup fails. Never throws.
  */
 async function briefAdvice($: EngineInterface, prompt: string): Promise<string | null> {
-  const path = changeIn(prompt)
-  if (path === null) return null
+  const paths = changesIn(prompt)
+  if (paths.length === 0) return null
   try {
-    for (const board of await knownBoards($)) {
-      const change = parseChange((await sh($, GET, [board, path])).stdout)
-      if (change.kind === 'failed') return null
-      if (change.kind === 'missing' || change.phase !== 'build') continue
-      const ran = await sh($, RENDER, [board, path], RENDER_MS)
-      const rendered = ran.exitCode === 0 ? parseRendered(ran.stdout) : null
-      if (rendered === null) return null
-      const advice = [noLine(prompt, path), notRendered(prompt, rendered, path, board)].filter(a => a !== null)
-      return advice.length === 0 ? null : advice.join('\n')
+    const boards = await knownBoards($)
+    for (const path of paths) {
+      for (const board of boards) {
+        const change = parseChange((await sh($, GET, [board, path])).stdout)
+        if (change.kind === 'failed') return null
+        if (change.kind === 'missing' || change.phase !== 'build') continue
+        // The brief's `plan` is the text path its plan record names.
+        const plan = change.plan === null ? null : planText((await sh($, GET, [board, change.plan])).stdout)
+        if (change.plan !== null && plan === null) return null
+        const expected = { brief_line: `board-brief: ${path}`, path, phase: change.phase, plan }
+        const advice = [noLine(prompt, path), notRendered(prompt, expected, board)].filter(a => a !== null)
+        return advice.length === 0 ? null : advice.join('\n')
+      }
     }
   } catch {
     // A lookup that fails leaves the call untouched.

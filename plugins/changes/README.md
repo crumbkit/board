@@ -1165,27 +1165,35 @@ as `/repos/notes`.
 
 ### The brief check
 
-The same mod checks each Agent call whose prompt names `/changes/<name>`. It
-reads that change from each known board with `board get`, and acts on the
-first board that holds it in `build`. It then renders the brief with
-`board -C <board> --json call changes.brief --path /changes/<name>`, which
-can take half a minute on a large board, and runs two checks:
+The same mod checks each Agent call whose prompt names a change. It takes
+the change in a `board-brief:` line first, then each `/changes/<name>` at the
+start of the prompt or after whitespace, a backtick, a quote or `(`, so a
+path such as `plugins/changes/x` names none. For each in turn it reads the
+change from each known board with `board get`, and acts on the first board
+that holds one in `build`. It reads the change's plan record the same way,
+and runs two checks:
 
 - `changes::brief::no_line`: the prompt's first non-empty line is not
   `board-brief: /changes/<name>`. The advice names that first line. The
   edit guard reads the builder's first line, and Claude Code may put the
   session's context before the rest of the prompt.
-- `changes::brief::not_rendered`: no JSON object in the prompt equals the
-  brief `changes.brief` renders now, in any key order. An object starts at
-  a line that is `{` and ends at the next line that is `}`. The advice
-  names the first differing key, in sorted order, of the object that holds
-  `brief_line`, and the command that renders the brief.
+- `changes::brief::not_rendered`: no JSON object in the prompt that holds
+  `brief_line` has the change's brief line, path, phase and plan text. An
+  object starts at a line that is `{` and ends at the next line that is
+  `}`. The advice names the first field that differs, or says the prompt
+  holds no brief, and names the command that renders the brief.
+
+`not_rendered` compares only those four fields, so it misses a brief
+rendered in the same plan and phase whose other fields have changed since,
+such as its rules, uses or warnings.
 
 A failed check never blocks the call. The mod appends the advice to the
-builder's prompt and adds it to the lead's tool result. A prompt that names
-no change, a change no known board holds in `build`, and a lookup or render
-that fails or runs past 60 seconds leave the call untouched. The check does
-not read the subagent type or the tools the builder has.
+builder's prompt and adds it to the lead's tool result. Each piece of advice
+starts "if this agent builds /changes/<name>", because a reviewer or an
+explorer whose prompt names the change gets it too. A prompt that names no
+change, a change no known board holds in `build`, and a lookup that fails
+leave the call untouched. The check does not read the subagent type or the
+tools the agent has.
 
 `claude plugin test plugins/changes/claude-code` runs the mod's tests.
 

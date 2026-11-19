@@ -64,6 +64,13 @@ test('a fenced block in a builder prompt is read like a span, and prose outside 
   expect(asked).toEqual(["covers in '' --action pr-create"])
 })
 
+test('a write a builder prompt repeats is asked about once, and a push to another remote is asked about too', async ($, on) => {
+  const { asked } = engine(on, { covers: always })
+  const advice = await agent($, 'Run `git push`, then:\n\n```\ngit push\n```\n\nand later `git push upstream`.')
+  expect(asked).toEqual(["covers in '' --action push", "covers in '' --action push --remote upstream"])
+  expect(advice?.[0]?.split('\n')).toHaveLength(1)
+})
+
 test('a github.covers that fails leaves the builder prompt untouched, and one that answers advises it', async ($, on) => {
   const answer: { covers: Covers } = { covers: () => 'fails' }
   const { ran } = engine(on, answer)

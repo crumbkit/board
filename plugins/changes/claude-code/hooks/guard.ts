@@ -10,7 +10,7 @@ export type Mount = { board: string; mount: string; repo: string | null; record:
 
 /** What `board get` answered for the change a brief names. */
 export type Change =
-  | { kind: 'found'; mount: string; phase: string }
+  | { kind: 'found'; mount: string; phase: string; plan: string | null }
   | { kind: 'missing' }
   | { kind: 'failed'; why: string }
 
@@ -136,13 +136,14 @@ export function parseMounts(board: string, stdout: string): Mount[] | null {
 export function parseChange(stdout: string): Change {
   const report = parseJson(stdout) as
     | {
-        data?: { record?: { mount?: unknown; phase?: unknown } }[]
+        data?: { record?: { mount?: unknown; phase?: unknown; plan?: unknown } }[]
         failures?: { code?: unknown; message?: unknown }[]
       }
     | undefined
   const record = report?.data?.[0]?.record
   if (typeof record?.mount === 'string' && typeof record.phase === 'string') {
-    return { kind: 'found', mount: record.mount, phase: record.phase }
+    const plan = typeof record.plan === 'string' ? record.plan : null
+    return { kind: 'found', mount: record.mount, phase: record.phase, plan }
   }
   const failure = report?.failures?.[0]
   if (failure?.code === 'board::path::not_found') return { kind: 'missing' }
