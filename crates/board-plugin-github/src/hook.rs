@@ -262,7 +262,8 @@ fn check_pushed(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
             {
                 (handed.to_owned(), Some(REUSED.to_owned()))
             } else {
-                let passed = crossing::check(personal, "github.push", to, from.as_deref(), &parts)?;
+                let passed =
+                    crossing::check(personal, "github.push", to, from.as_deref(), &parts, None)?;
                 (passed.digest, passed.note)
             };
             checked.push(Checked {

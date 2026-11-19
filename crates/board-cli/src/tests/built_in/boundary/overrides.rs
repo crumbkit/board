@@ -11,8 +11,16 @@ fn covered(personal: &Personal) {
     personal.write("boundaries/octo.json", &boundary(&fields));
 }
 
-/// A pull request to octo/board from no checkout, with `parts`.
+/// A pull request to octo/board from no checkout, with `parts`, which asks
+/// the owner when a check fails.
 fn request(parts: &Value) -> Value {
+    let mut request = quiet(parts);
+    request["ask_owner"] = json!(true);
+    request
+}
+
+/// [`request`] without `ask_owner`.
+fn quiet(parts: &Value) -> Value {
     json!({"action": "github.pr-create", "to": "github:octo/board", "parts": parts})
 }
 
@@ -192,4 +200,75 @@ fn failing_content_too_large_to_show_the_owner_still_fails_with_its_findings_and
     assert_eq!(personal.pending(), Vec::<String>::new());
     let (_, passed) = crossing(&personal, fields["crossing"].as_str().unwrap());
     assert_eq!(passed, false);
+}
+
+#[test]
+fn a_failed_check_without_ask_owner_files_no_request_and_the_same_check_asking_files_one() {
+    let personal = Personal::new();
+    covered(&personal);
+    let (ran, document) = personal.call("check", &quiet(&failing()));
+    assert_eq!(ran.code, 1);
+    assert_eq!(document["code"], "boundary::check::failed");
+    assert_eq!(document["fields"].get("effect"), None);
+    assert_eq!(personal.pending(), Vec::<String>::new());
+    let hint = document["recovery"]["text"].as_str().unwrap();
+    assert!(hint.starts_with("Next: change pr.body:"), "{hint}");
+    assert!(hint.contains("No request went to the owner."), "{hint}");
+    assert!(
+        hint.ends_with("with `--ask_owner true`, which asks the owner once."),
+        "{hint}"
+    );
+    let (ran, asked) = personal.call("check", &request(&failing()));
+    assert_eq!(ran.code, 1);
+    assert_eq!(asked["code"], "boundary::check::failed");
+    assert_eq!(personal.pending().len(), 1);
+    let hint = asked["recovery"]["text"].as_str().unwrap();
+    assert!(!hint.contains("No request went to the owner."), "{hint}");
+}
+
+#[test]
+fn an_approval_lets_the_exact_content_through_without_ask_owner_and_one_character_more_is_refused()
+{
+    let personal = Personal::new();
+    covered(&personal);
+    let (_, asked) = personal.call("check", &request(&failing()));
+    personal.answer(asked["fields"]["effect"].as_str().unwrap(), "approve");
+    let (ran, document) = personal.call("check", &quiet(&failing()));
+    assert_eq!(ran.code, 0, "{}", printed(&ran));
+    assert_ne!(output(&document)["override"], Value::Null);
+    let changed = record(failing(), &json!({"pr.title": "Fine."}));
+    let changed: Value = serde_json::from_str(&changed).unwrap();
+    let (ran, document) = personal.call("check", &quiet(&changed));
+    assert_eq!(ran.code, 1);
+    assert_eq!(document["code"], "boundary::check::failed");
+    assert_eq!(personal.pending(), Vec::<String>::new());
+}
+
+#[test]
+fn a_refused_override_still_refuses_without_ask_owner_and_names_its_effect() {
+    let personal = Personal::new();
+    covered(&personal);
+    let (_, asked) = personal.call("check", &request(&failing()));
+    let effect = asked["fields"]["effect"].as_str().unwrap();
+    personal.answer(effect, "refuse");
+    let (ran, document) = personal.call("check", &quiet(&failing()));
+    assert_eq!(ran.code, 1);
+    assert_eq!(document["code"], "boundary::check::failed");
+    assert_eq!(document["fields"]["effect"], effect);
+    let hint = document["recovery"]["text"].as_str().unwrap();
+    assert!(hint.contains("The owner refused"), "{hint}");
+}
+
+#[test]
+fn a_failure_in_a_commit_part_adds_the_squash_step_and_one_in_another_part_does_not() {
+    let personal = Personal::new();
+    covered(&personal);
+    let squash = "squash the branch into one commit";
+    let (_, document) = personal.call("check", &quiet(&failing()));
+    let hint = document["recovery"]["text"].as_str().unwrap();
+    assert!(!hint.contains(squash), "{hint}");
+    let parts = json!({"commit.abcdef123456.diff": "+see acme-123"});
+    let (_, document) = personal.call("check", &quiet(&parts));
+    let hint = document["recovery"]["text"].as_str().unwrap();
+    assert!(hint.contains(squash), "{hint}");
 }

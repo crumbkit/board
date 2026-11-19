@@ -36,6 +36,16 @@ impl Origin<'_> {
 
     /// The boundary's check of the parts of `github.<action>`.
     pub(crate) fn check(&self, action: &str, parts: &Parts) -> Result<Passed, PluginError> {
+        self.check_asking(action, parts, None)
+    }
+
+    /// [`Origin::check`], asking the owner on a failure when `ask_owner`.
+    fn check_asking(
+        &self,
+        action: &str,
+        parts: &Parts,
+        ask_owner: Option<bool>,
+    ) -> Result<Passed, PluginError> {
         let action = format!("github.{action}");
         crossing::check(
             &*self.personal,
@@ -43,6 +53,7 @@ impl Origin<'_> {
             &self.to(),
             self.mount.as_deref(),
             parts,
+            ask_owner,
         )
     }
 
@@ -181,12 +192,13 @@ fn pushed(
     head: &str,
     action: Pushing,
     extra: Parts,
+    ask_owner: Option<bool>,
 ) -> Result<Push, PluginError> {
     let (host, top) = (place.host, &place.top);
     let have = git::advertised(host, top, "origin")?;
     let (commits, mut parts) = push_parts(host, top, &branch, head, &have)?;
     parts.extend(extra.clone());
-    let passed = place.check(action.capability(), &parts)?;
+    let passed = place.check_asking(action.capability(), &parts, ask_owner)?;
     let handed = Handed {
         digest: passed.digest.clone(),
         action,
@@ -220,19 +232,31 @@ fn pushed(
 #[derive(Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 #[schemars(rename = "PushInput")]
-pub(crate) struct PushInput {}
+pub(crate) struct PushInput {
+    /// Ask the owner to let this exact content through when a check fails,
+    /// which files one request the owner answers; left out, an earlier answer
+    /// still applies but no request is filed.
+    ask_owner: Option<bool>,
+}
 
 /// Pushes the branch checked out, once the boundary passes its name and
 /// each commit it would send.
 pub(crate) fn push(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
-    let PushInput {} = PluginError::read_input("github", "push", input)?;
+    let PushInput { ask_owner } = PluginError::read_input("github", "push", input)?;
     let (place, branch, head) = branched(host)?;
     let Push {
         passed,
         branch,
         commits,
         line,
-    } = pushed(&place, branch, &head, Pushing::Push, Parts::new())?;
+    } = pushed(
+        &place,
+        branch,
+        &head,
+        Pushing::Push,
+        Parts::new(),
+        ask_owner,
+    )?;
     Ok(output(&Pushed {
         digest: passed.digest,
         crossing: passed.crossing,
@@ -259,6 +283,10 @@ pub(crate) struct PrCreateInput {
     base: Option<String>,
     /// Whether to open it as a draft.
     draft: Option<bool>,
+    /// Ask the owner to let this exact content through when a check fails,
+    /// which files one request the owner answers; left out, an earlier answer
+    /// still applies but no request is filed.
+    ask_owner: Option<bool>,
 }
 
 /// Pushes the branch and opens a pull request from it, once the boundary
@@ -269,6 +297,7 @@ pub(crate) fn pr_create(host: &dyn Host, input: &Value) -> Result<Value, PluginE
         body,
         base,
         draft,
+        ask_owner,
     } = PluginError::read_input("github", "pr-create", input)?;
     let (place, branch, head) = branched(host)?;
     let extra = Parts::from([
@@ -280,7 +309,7 @@ pub(crate) fn pr_create(host: &dyn Host, input: &Value) -> Result<Value, PluginE
         branch,
         commits,
         ..
-    } = pushed(&place, branch, &head, Pushing::PrCreate, extra)?;
+    } = pushed(&place, branch, &head, Pushing::PrCreate, extra, ask_owner)?;
     let repository = format!("{}/{}", place.owner, place.repo);
     let mut arguments: Vec<String> = ["pr", "create", "--repo", &repository, "--head", &branch]
         .into_iter()
@@ -344,6 +373,10 @@ pub(crate) struct PrEditInput {
     title: Option<String>,
     /// The new body, in Markdown.
     body: Option<String>,
+    /// Ask the owner to let this exact content through when a check fails,
+    /// which files one request the owner answers; left out, an earlier answer
+    /// still applies but no request is filed.
+    ask_owner: Option<bool>,
 }
 
 /// Changes a pull request's title or body, once the boundary passes the new
@@ -353,6 +386,7 @@ pub(crate) fn pr_edit(host: &dyn Host, input: &Value) -> Result<Value, PluginErr
         number,
         title,
         body,
+        ask_owner,
     } = PluginError::read_input("github", "pr-edit", input)?;
     let place = origin(host)?;
     let mut fields = serde_json::Map::new();
@@ -363,7 +397,7 @@ pub(crate) fn pr_edit(host: &dyn Host, input: &Value) -> Result<Value, PluginErr
             fields.insert(name.to_owned(), Value::from(text));
         }
     }
-    let passed = place.check("pr-edit", &parts)?;
+    let passed = place.check_asking("pr-edit", &parts, ask_owner)?;
     let endpoint = format!("repos/{}/{}/pulls/{number}", place.owner, place.repo);
     let (_, url) = gh::send_json(host, "PATCH", &endpoint, &Value::Object(fields))?;
     Ok(output(&place.sent(passed, url)?))
@@ -381,15 +415,23 @@ pub(crate) struct CommentInput {
     /// The comment, in Markdown.
     #[schemars(length(min = 1))]
     body: String,
+    /// Ask the owner to let this exact content through when a check fails,
+    /// which files one request the owner answers; left out, an earlier answer
+    /// still applies but no request is filed.
+    ask_owner: Option<bool>,
 }
 
 /// Comments on a pull request or issue, once the boundary passes the
 /// comment.
 pub(crate) fn comment(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
-    let CommentInput { number, body } = PluginError::read_input("github", "comment", input)?;
+    let CommentInput {
+        number,
+        body,
+        ask_owner,
+    } = PluginError::read_input("github", "comment", input)?;
     let place = origin(host)?;
     let parts = Parts::from([("comment.body".to_owned(), body.clone())]);
-    let passed = place.check("comment", &parts)?;
+    let passed = place.check_asking("comment", &parts, ask_owner)?;
     let endpoint = format!(
         "repos/{}/{}/issues/{number}/comments",
         place.owner, place.repo
@@ -408,19 +450,26 @@ pub(crate) struct IssueCreateInput {
     title: String,
     /// The issue's body, in Markdown.
     body: String,
+    /// Ask the owner to let this exact content through when a check fails,
+    /// which files one request the owner answers; left out, an earlier answer
+    /// still applies but no request is filed.
+    ask_owner: Option<bool>,
 }
 
 /// Opens an issue, once the boundary passes its title and body, and writes
 /// its record.
 pub(crate) fn issue_create(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
-    let IssueCreateInput { title, body } =
-        PluginError::read_input("github", "issue-create", input)?;
+    let IssueCreateInput {
+        title,
+        body,
+        ask_owner,
+    } = PluginError::read_input("github", "issue-create", input)?;
     let place = origin(host)?;
     let parts = Parts::from([
         ("issue.title".to_owned(), title.clone()),
         ("issue.body".to_owned(), body.clone()),
     ]);
-    let passed = place.check("issue-create", &parts)?;
+    let passed = place.check_asking("issue-create", &parts, ask_owner)?;
     let endpoint = format!("repos/{}/{}/issues", place.owner, place.repo);
     let body = json!({"title": title, "body": body});
     let (answer, url) = gh::send_json(host, "POST", &endpoint, &body)?;

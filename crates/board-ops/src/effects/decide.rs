@@ -43,12 +43,38 @@ impl Board {
     /// and it is refused as asked. The owner's own capability is admitted. With
     /// `shown`, the effect shows that content and its id covers its digest,
     /// so an approval admits only the same content.
+    ///
+    /// # Panics
+    ///
+    /// Never in practice: a decide that holds returns an answer or an error.
     pub fn decide_capability(
         &self,
         capability: &str,
         path: &LogicalPath,
         shown: Option<&Shown>,
     ) -> Result<DecideReport, EffectError> {
+        let report = self.answer_capability(capability, path, shown, true)?;
+        Ok(report.expect("a decide that holds returns the owner's answer or an error"))
+    }
+
+    /// As [`Board::decide_capability`], but with no answer it writes nothing
+    /// and returns `None`, so it asks the owner nothing.
+    pub fn decided_capability(
+        &self,
+        capability: &str,
+        path: &LogicalPath,
+        shown: Option<&Shown>,
+    ) -> Result<Option<DecideReport>, EffectError> {
+        self.answer_capability(capability, path, shown, false)
+    }
+
+    fn answer_capability(
+        &self,
+        capability: &str,
+        path: &LogicalPath,
+        shown: Option<&Shown>,
+        hold_unanswered: bool,
+    ) -> Result<Option<DecideReport>, EffectError> {
         let (record, text) = shows(shown, MAX_DECIDE_BYTES)?;
         let mut view = (self.repositories().snapshot()).map_err(|source| EffectError::Read {
             directory: path.to_string(),
@@ -67,8 +93,11 @@ impl Board {
                     .open_beside(&inside.repository)
                     .map_err(|source| EffectError::Open { source })?;
                 mounted.ask_as(self.asker.clone());
-                let mut report = mounted.decide_capability(capability, &inside.path, shown)?;
-                report.path = path.clone();
+                let mut report =
+                    mounted.answer_capability(capability, &inside.path, shown, hold_unanswered)?;
+                if let Some(report) = &mut report {
+                    report.path = path.clone();
+                }
                 return Ok(report);
             }
             Err(error @ WriteError::ThroughMount { .. }) => {
@@ -85,7 +114,7 @@ impl Board {
                 .transpose()?,
         };
         let landed = landed.unwrap_or_else(|| path.clone());
-        self.decide_at(capability, path, landed, (record, text))
+        self.decide_at(capability, path, landed, (record, text), hold_unanswered)
     }
 
     /// [`Board::decide_capability`] for `capability` at `landed`, the path in this board
@@ -96,14 +125,15 @@ impl Board {
         path: &LogicalPath,
         landed: LogicalPath,
         (record, text): (Option<Value>, Option<String>),
-    ) -> Result<DecideReport, EffectError> {
+        hold_unanswered: bool,
+    ) -> Result<Option<DecideReport>, EffectError> {
         let mut report = DecideReport {
             capability: capability.to_owned(),
             path: path.clone(),
             effect: None,
         };
         let Some(plugin) = &self.asker.plugin else {
-            return Ok(report);
+            return Ok(Some(report));
         };
         let personal = self.asker.personal(|| {
             format!("{capability} {path} needs a pending effect in the personal board")
@@ -121,7 +151,7 @@ impl Board {
         match seen(&personal, &effect, self.asker.signing.allowed.as_deref())? {
             Some(Answer::Approve) => {
                 report.effect = Some(id);
-                Ok(report)
+                Ok(Some(report))
             }
             Some(Answer::Refuse) => Err(EffectError::Refused {
                 plugin,
@@ -129,6 +159,7 @@ impl Board {
                 path,
                 id,
             }),
+            None if !hold_unanswered => Ok(None),
             None => {
                 hold(&personal, &effect)?;
                 Err(EffectError::Asked {

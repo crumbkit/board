@@ -722,3 +722,24 @@ fn a_remote_listing_that_fails_to_sign_in_while_a_gh_token_is_set_carries_the_si
     let pushed = desk.call_at(None, false, "push", &[], &[("GH_TOKEN", "gh-token-1")]);
     assert_eq!(pushed.0.code, 0, "{}", pushed.1);
 }
+
+#[test]
+fn a_refused_push_files_no_request_without_ask_owner_and_one_with_it() {
+    let desk = Desk::new();
+    desk.refuse(&["commit.*.message"], "github.*");
+    desk.commit("Fix acme-123");
+    let pending = desk.personal.workdir().join("effects/pending");
+    let filed = || std::fs::read_dir(&pending).map_or(0, Iterator::count);
+    assert_eq!(
+        code(&desk, &[]),
+        (1, "github::boundary::refused".to_owned())
+    );
+    assert_eq!(filed(), 0);
+    let (ran, failure) = desk.call("push", &["--ask_owner", "true"]);
+    assert_eq!(
+        refused(&ran, &failure),
+        (1, "github::boundary::refused".to_owned())
+    );
+    assert_eq!(failure["fields"]["code"], "boundary::check::failed");
+    assert_eq!(filed(), 1);
+}

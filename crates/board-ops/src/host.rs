@@ -117,6 +117,16 @@ pub trait Host {
         path: &LogicalPath,
         shown: Option<&Shown>,
     ) -> Result<DecideReport, Box<Refusal>>;
+    /// As [`Host::decide`], but with no answer it writes no pending effect and
+    /// returns `None`. The default says no answer, for a host with no owner.
+    fn decided(
+        &self,
+        _capability: &str,
+        _path: &LogicalPath,
+        _shown: Option<&Shown>,
+    ) -> Result<Option<DecideReport>, Box<Refusal>> {
+        Ok(None)
+    }
     /// Syncs this host's board as `board sync` does, or as `board sync
     /// --no-push` without `push`, within `deadline`: it waits for the board
     /// lock no longer than `board sync` does, and git still fetching or
@@ -545,6 +555,46 @@ fn opened(error: &OpenError) -> Refusal {
     Refusal::new(error.code(), error, &error.fields())
 }
 
+impl Hosted<'_> {
+    /// Opens the board again asking as the plugin, with the personal
+    /// board and signing `board decide` reads.
+    fn answer(
+        &self,
+        capability: &str,
+        path: &LogicalPath,
+        shown: Option<&Shown>,
+        hold: bool,
+    ) -> Result<Option<DecideReport>, Box<Refusal>> {
+        if !matches!(capability.parse(), Ok(Target::Named { .. })) {
+            let message = format!(
+                "the capability {capability:?} to decide must be `<plugin>.<capability>`, such as review.comment"
+            );
+            let refusal = Refusal::new(Code::CliUsage, message, &Fields::default());
+            return Err(Box::new(refusal.with_hint(
+                "name the capability as the plugin's name, a dot and the capability, as `board decide --capability` takes it",
+            )));
+        }
+        let plugin = self.plugin().map_err(|error| Box::new(error.refusal()))?;
+        let default = KnownBoards::default();
+        let known = self.plugins.known.unwrap_or(&default);
+        let home = self.board.repositories().home().map(Path::to_path_buf);
+        let asker = known::asker(
+            Some(plugin),
+            Some(known),
+            home,
+            self.plugins.signing.clone(),
+        )?;
+        let mut board = self.again().map_err(|error| Box::new(opened(&error)))?;
+        board.ask_as(asker);
+        if hold {
+            (board.decide_capability(capability, path, shown)).map(Some)
+        } else {
+            board.decided_capability(capability, path, shown)
+        }
+        .map_err(|error| Box::new(error.refusal()))
+    }
+}
+
 impl Host for Hosted<'_> {
     fn query(&self, sql: &str, limit: Limit) -> Result<QueryReport, QueryError> {
         self.board.query(sql, limit.0, None, self.plugins.cache)
@@ -639,37 +689,23 @@ impl Host for Hosted<'_> {
         }))
     }
 
-    /// Opens the board again asking as the plugin, with the personal
-    /// board and signing `board decide` reads.
     fn decide(
         &self,
         capability: &str,
         path: &LogicalPath,
         shown: Option<&Shown>,
     ) -> Result<DecideReport, Box<Refusal>> {
-        if !matches!(capability.parse(), Ok(Target::Named { .. })) {
-            let message = format!(
-                "the capability {capability:?} to decide must be `<plugin>.<capability>`, such as review.comment"
-            );
-            let refusal = Refusal::new(Code::CliUsage, message, &Fields::default());
-            return Err(Box::new(refusal.with_hint(
-                "name the capability as the plugin's name, a dot and the capability, as `board decide --capability` takes it",
-            )));
-        }
-        let plugin = self.plugin().map_err(|error| Box::new(error.refusal()))?;
-        let default = KnownBoards::default();
-        let known = self.plugins.known.unwrap_or(&default);
-        let home = self.board.repositories().home().map(Path::to_path_buf);
-        let asker = known::asker(
-            Some(plugin),
-            Some(known),
-            home,
-            self.plugins.signing.clone(),
-        )?;
-        let mut board = self.again().map_err(|error| Box::new(opened(&error)))?;
-        board.ask_as(asker);
-        (board.decide_capability(capability, path, shown))
-            .map_err(|error| Box::new(error.refusal()))
+        let report = self.answer(capability, path, shown, true)?;
+        Ok(report.expect("a decide that holds returns the owner's answer or an error"))
+    }
+
+    fn decided(
+        &self,
+        capability: &str,
+        path: &LogicalPath,
+        shown: Option<&Shown>,
+    ) -> Result<Option<DecideReport>, Box<Refusal>> {
+        self.answer(capability, path, shown, false)
     }
 
     fn sync(&self, push: bool, deadline: Duration) -> Result<Synced, SyncError> {

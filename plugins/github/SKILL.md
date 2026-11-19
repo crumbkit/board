@@ -49,7 +49,9 @@ On `github::boundary::refused`, nothing was sent. Read `fields.failures`, the
 message, and the hint after it, which is the boundary's `Next:` step. Change
 what it names, such as a commit message with `git commit --amend` or the body
 you pass, and run the action again. A boundary is a record the owner keeps,
-so ask before you change one.
+so ask before you change one. A refusal files no request for the owner; pass
+`--ask_owner true` on `push`, `pr-create`, `pr-edit`, `comment` or
+`issue-create` only when the exact content must go as it is.
 
 ## Raw git push and gh
 
