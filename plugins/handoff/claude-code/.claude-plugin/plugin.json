@@ -1,0 +1,5 @@
+{
+  "name": "board-handoff",
+  "version": "0.1.0",
+  "description": "Tells each Claude Code session on an account to push its branches and write its handoff record when its context window or the account's usage reaches a calibrated share, then shows one resume line per session."
+}
