@@ -148,6 +148,29 @@ lists the boards already written in `written`. It returns `withdrawn` (at
 most 100, each with `path`, `kind` and `reason`), `total`, `truncated`,
 `counts` by kind and `remaining`, the open questions left.
 
+`board plans stale [--days 7] [--task_days 30] [--project board] [--session <local_ id>]
+[--apply true]` lists the work nobody tends and, with `--apply`, asks the owner
+about each item. It lists a change in the plan phase whose route is
+`unowned` (its repository names no code owner, which is how Board records
+a change with no owner), an eval that is planned or running with no verdict, and an open
+task with no `owner`, no `defer` and a kind other than `project`. A change
+or eval is stale after `days` days without activity, a task after
+`task_days`. Activity is the newest of the record's own day (a change's
+`touched` and plan id, the start or finish of an eval's runs, a task's
+`reviewed`) and the newest commit that touched the record's file, or for a
+change any file in its folder, in the repository that holds it. A repository
+git cannot read gives no commit activity. With `--apply`, each item becomes
+the question `Drop <change|eval|task> <path>?` with the options `drop` and
+`keep`, recommending `drop`, filed through `plans.ask`, so an open question
+with the same words takes the session into its `also_by`. An item whose
+question the owner answered is left out and counted in `already_answered`, so
+an answer of `keep` is not asked again. `--apply` needs `--session`, or
+refuses with `plans::stale::no_session`. It never drops anything; the
+owner's answers are acted on afterwards. It returns `items` (at most 100,
+each with `path`, `kind`, `last_activity`, `reason`, `recommendation` and the
+`question` filed), `total`, `truncated`, `counts` by kind, `already_answered`
+and `outcomes`. It reads changes of `changes/change/v2` only.
+
 `board plans answer --path <question> --option <id> [--words <text>]
 [--session <local_ id>] [--program <slug>] [--person <slug>] [--agent <name>]
 [--written_by <plugin>/<client>]` records the owner's answer. The Claude
