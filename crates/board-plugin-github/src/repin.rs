@@ -33,7 +33,8 @@ pub(crate) struct Moved {
 }
 
 /// Why a merge left the mount at its pin. `cause` is the code of the step
-/// that failed, when one did, and `command` moves the mount by hand.
+/// that failed, when one did. `command` moves the mount by hand and runs in
+/// a POSIX shell as it is; it is left out when no mount is known.
 #[derive(Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 #[schemars(rename = "MergeMountWarning")]
@@ -42,7 +43,8 @@ pub(crate) struct Warning {
     #[serde(skip_serializing_if = "Option::is_none")]
     cause: Option<String>,
     message: String,
-    command: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    command: Option<String>,
 }
 
 /// The mount a merge moves: its path, or why none is known, and the front
@@ -57,7 +59,7 @@ impl Mount {
     pub(crate) fn of_change(path: Option<String>, directory: &Path) -> Self {
         Self {
             path: path.ok_or("the change records no mount"),
-            board: format!("board -C {}", quoted(directory)),
+            board: format!("board -C {}", quoted(&directory.display())),
         }
     }
 
@@ -97,14 +99,18 @@ fn moved(host: &dyn Host, board: &dyn Host, mount: &Mount, queued: bool) -> Resu
         Warning::new(
             cause,
             format!("{why}, so the mount was left at its pin{also}{queue}"),
-            command.to_owned(),
+            Some(command.to_owned()),
         )
     };
     let path = (mount.path.as_deref()).map_err(|why| {
-        let command = format!("{} mount update /repos/<name>", mount.board);
-        left(None, (*why).to_owned(), &command)
+        let why = format!(
+            "{why}, so no mount was moved; run `{} mount update` with the path of the \
+             repository's mount{also}{queue}",
+            mount.board
+        );
+        Warning::new(None, why, None)
     })?;
-    let update = format!("{} mount update {path}", mount.board);
+    let update = format!("{} mount update {}", mount.board, quoted(&path));
     let logical: LogicalPath =
         (path.parse()).map_err(|_| left(None, format!("{path} is not a logical path"), &update))?;
     let report = (board.refs(std::slice::from_ref(&logical), Absent::Refuse, &[]))
@@ -134,11 +140,15 @@ fn moved(host: &dyn Host, board: &dyn Host, mount: &Mount, queued: bool) -> Resu
     // An explicit refspec moves the remote-tracking ref the mount follows
     // even when the clone's own fetch refspec leaves the branch out.
     let refspec = format!("+refs/heads/{branch}:refs/remotes/{remote}/{branch}");
-    let at = quoted(repository);
-    let command = format!("git -C {at} fetch {remote} {refspec} && {update}");
+    let at = quoted(&repository.display());
+    let command = format!(
+        "git -C {at} fetch {} {} && {update}",
+        quoted(&remote),
+        quoted(&refspec)
+    );
     if queued {
         let why = format!("{QUEUED}, so the mount was left at its pin");
-        return Err(Warning::new(None, why, command));
+        return Err(Warning::new(None, why, Some(command)));
     }
     git::git(host, repository, &["fetch", remote, &refspec], "")
         .map_err(|error| failed(error, &command))?;
@@ -168,7 +178,7 @@ fn upstream<'a>(remotes: &'a str, follow: &'a str) -> Option<(&'a str, &'a str)>
 }
 
 impl Warning {
-    fn new(cause: Option<String>, message: String, command: String) -> Self {
+    fn new(cause: Option<String>, message: String, command: Option<String>) -> Self {
         Self {
             code: CODE.to_owned(),
             cause,
@@ -182,12 +192,13 @@ impl Warning {
         let plugin: PluginName = "github".parse().expect("github is a plugin name");
         let code = PluginCode::parse(&plugin, CODE.to_owned()).expect("CODE is github's");
         let mut fields = Map::new();
-        fields.insert("command".to_owned(), json!(self.command));
-        if let Some(cause) = &self.cause {
-            fields.insert("cause".to_owned(), json!(cause));
+        for (name, value) in [("command", &self.command), ("cause", &self.cause)] {
+            if let Some(value) = value {
+                fields.insert(name.to_owned(), json!(value));
+            }
         }
         let mut refusal = Refusal::plugin(code, self.message.clone(), fields);
-        refusal.hint = Some(format!("run `{}`", self.command));
+        refusal.hint = (self.command.as_ref()).map(|command| format!("run `{command}`"));
         refusal
     }
 }

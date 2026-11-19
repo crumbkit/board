@@ -103,7 +103,7 @@ pub(crate) fn install_hook(host: &dyn Host, input: &Value) -> Result<Value, Plug
     }
     let path = hooks.join("pre-push");
     let current = held(&path)?;
-    let (hooks, shown) = (quoted(&hooks), quoted(&path));
+    let (hooks, shown) = (quoted(&hooks.display()), quoted(&path.display()));
     let command =
         format!("mkdir -p {hooks} && cat > {shown} <<'{END}' && chmod 755 {shown}\n{HOOK}{END}\n");
     Ok(output(&InstallHookOutput {
@@ -142,9 +142,9 @@ fn held(path: &Path) -> Result<bool, PluginError> {
     ))
 }
 
-/// `path` as one shell word, in single quotes.
-pub(crate) fn quoted(path: &Path) -> String {
-    format!("'{}'", path.display().to_string().replace('\'', r"'\''"))
+/// `text` as one shell word, in single quotes.
+pub(crate) fn quoted(text: &impl std::fmt::Display) -> String {
+    format!("'{}'", text.to_string().replace('\'', r"'\''"))
 }
 
 /// What git gives its pre-push hook: the remote and the refs it pushes. The

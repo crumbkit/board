@@ -116,12 +116,16 @@ result it recorded.
   warning's `code` is `github::merge::mount`. `cause` is the code of the
   step that failed, and is absent when the only reason is a queued merge.
   A queued merge's message always says it was queued, beside any other
-  reason. Each directory in `command` is single-quoted for a POSIX shell.
-  `command` is `git -C <clone> fetch <remote> <refspec>
+  reason. `command` is present only when it can run in a POSIX shell as
+  it is, and every value in it that comes from a record or from git is
+  single-quoted. It is `git -C <clone> fetch <remote> <refspec>
   && <board> mount update <path>`, or only the `mount update` part when
   the remote is unknown. `<board>` reaches the board that holds the mount
   from any directory: `board -C <that board's directory>` with `--change`,
-  and `board --personal` without it.
+  and `board --personal` without it. When no mount is known, because the
+  change records none or the personal board mounts the checkout at no one
+  path, there is no `command`, and the message says to run `mount update`
+  with the mount's path.
 
 The destination is `github:<owner>/<repo>` in lower case, from the URL
 configured for the checkout's `origin`. It is read before any `insteadOf`
@@ -234,7 +238,8 @@ Refusals:
 - `github::merge::mount`: a warning, never a refusal. The pull request
   merged, and the mount was left at its pin. `cause` names the code of the
   step that failed, such as `github::git::failed` or
-  `board::path::not_found`, and `command` moves the mount by hand.
+  `board::path::not_found`, and `command`, when present, moves the mount
+  by hand.
 - `github::boundary::unreadable`: the boundary answered in a shape this
   plugin does not read, which happens only when the two come from
   different Board builds.

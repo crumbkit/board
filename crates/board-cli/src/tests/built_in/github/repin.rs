@@ -41,9 +41,14 @@ fn ready(merged: bool) -> (Desk, String) {
     (desk, commit)
 }
 
-/// `directory`, canonical, as one shell word in single quotes.
+/// `text` as one shell word in single quotes.
+fn quote(text: &str) -> String {
+    format!("'{}'", text.replace('\'', r"'\''"))
+}
+
+/// `directory`, canonical, as one shell word.
 fn word(directory: &Path) -> String {
-    format!("'{}'", directory.canonicalize().unwrap().display())
+    quote(&directory.canonicalize().unwrap().display().to_string())
 }
 
 /// `-C <directory>`, which reaches the board at `directory` from anywhere.
@@ -60,8 +65,8 @@ fn personal(desk: &Desk) -> String {
 /// `board` reaching the board that holds the mount.
 fn by_hand(desk: &Desk, board: &str) -> String {
     format!(
-        "git -C {} fetch origin +refs/heads/main:refs/remotes/origin/main && board {board} mount \
-         update {MOUNT}",
+        "git -C {} fetch 'origin' '+refs/heads/main:refs/remotes/origin/main' && board {board} \
+         mount update '{MOUNT}'",
         word(&desk.checkout())
     )
 }
@@ -143,8 +148,57 @@ fn a_queued_merge_of_a_missing_mount_gives_both_causes_and_one_with_its_mount_on
             assert!(message.starts_with("GitHub only queued"), "{message}");
         } else {
             assert_eq!(warning["cause"], "board::path::not_found", "{warning}");
-            let command = format!("board {} mount update /repos/gone", personal(&desk));
+            let command = format!("board {} mount update '/repos/gone'", personal(&desk));
             assert_eq!(warning["command"], json!(command));
+        }
+    }
+}
+
+#[test]
+fn a_mount_path_holding_shell_code_is_one_quoted_word_that_runs_nothing_and_a_plain_one_moves() {
+    for injected in [true, false] {
+        let (desk, commit) = ready(false);
+        let root = desk.checkout().parent().unwrap().to_path_buf();
+        let marker = root.join("marker");
+        let mount = if injected {
+            let marker = marker.display();
+            format!("/repos/gone;touch {marker}$(touch {marker})")
+        } else {
+            MOUNT.to_owned()
+        };
+        mounting(&desk, &mount);
+        let (result, _) = merged(&desk);
+        let command = result["mount_warning"]["command"].as_str().unwrap();
+        assert!(command.contains(&quote(&mount)), "{command}");
+        let (code, _, stderr) = desk.process("sh", &root, &["-c", command], &[]);
+        assert!(!marker.exists(), "{command} ran the injected part");
+        if injected {
+            assert_ne!(code, 0, "{command}");
+        } else {
+            assert_eq!(code, 0, "{command}: {stderr}");
+            assert_eq!(pin(&desk), commit);
+        }
+    }
+}
+
+#[test]
+fn a_merge_with_no_known_mount_gives_no_command_and_one_with_a_mount_does() {
+    for known in [false, true] {
+        let (desk, _) = ready(false);
+        if !known {
+            super::desk::remove(&desk.personal.workdir().join("repos/widgets.json"));
+        }
+        let result = desk.output(
+            "merge",
+            &merging("Add a lever", "Levers lift.", &["--head", HEAD]),
+        );
+        let warning = &result["mount_warning"];
+        if known {
+            assert_eq!(warning["command"], json!(by_hand(&desk, "--personal")));
+        } else {
+            assert_eq!(warning.get("command"), None, "{warning}");
+            let message = warning["message"].as_str().unwrap();
+            assert!(message.contains("mount update"), "{message}");
         }
     }
 }
@@ -266,7 +320,7 @@ fn a_change_naming_a_missing_mount_still_reaches_done_and_warns_and_its_twin_mov
             assert_eq!(pin(&desk), commit);
         } else {
             let warning = &result["mount_warning"];
-            let command = format!("board {} mount update /repos/gone", personal(&desk));
+            let command = format!("board {} mount update '/repos/gone'", personal(&desk));
             assert_eq!(
                 (&warning["code"], &warning["cause"], &warning["command"]),
                 (
@@ -291,7 +345,7 @@ fn a_mount_following_a_local_branch_is_left_and_warned_of_and_one_following_orig
         let (result, _) = merged(&desk);
         if follow == "main" {
             let warning = &result["mount_warning"];
-            let command = format!("board {} mount update {MOUNT}", personal(&desk));
+            let command = format!("board {} mount update '{MOUNT}'", personal(&desk));
             assert_eq!(
                 (&warning["code"], warning.get("cause"), &warning["command"]),
                 (&json!(WARNING), None, &json!(command)),

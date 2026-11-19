@@ -39,7 +39,8 @@ add `--personal` after `board`.
   the change's mount follows and moves the mount to the merged commit, so
   do not run `board mount update` after it. When the output has
   `mount_warning`, the pull request merged but the mount was left at its
-  pin; run the warning's `command`. The pull request is the
+  pin. Run the warning's `command` as it is; it is there only when it can
+  run unchanged. Without one, follow the message. The pull request is the
   change's only one in this repository, and the commit takes the pull
   request's title and body; `--number`, `--subject` and `--body` override.
   It reads the change in the board the command runs in: for a change in
@@ -49,7 +50,7 @@ add `--personal` after `board`.
   personal board needs `--personal`. Without a change, pass `--head <sha>`,
   the full 40-hex commit. When `queued` is true, a merge queue holds the
   pull request: after it merges, run `board changes advance --path
-  <change>` in the same board, then the `mount_warning` command as it is.
+  <change>` in the same board, then the `mount_warning` command, if any.
 
 On `github::boundary::refused`, nothing was sent. Read `fields.failures`, the
 message, and the hint after it, which is the boundary's `Next:` step. Change
