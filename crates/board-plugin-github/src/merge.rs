@@ -476,12 +476,12 @@ fn only_pull(
     })
 }
 
-/// The head commit the change at `path` records, if any, the pull requests
-/// it records, and its mount, if any.
-fn recorded_change(
-    host: &dyn Host,
-    path: &str,
-) -> Result<(Option<String>, Vec<String>, Option<String>), PluginError> {
+/// What a change records that merge reads: its head commit, if any, its
+/// pull requests, and its mount, if any.
+type Recorded = (Option<String>, Vec<String>, Option<String>);
+
+/// What the change at `path` records.
+fn recorded_change(host: &dyn Host, path: &str) -> Result<Recorded, PluginError> {
     let refused =
         |refusal: &board_model::Refusal| PluginError::board_refused("github", "get", refusal);
     let logical: LogicalPath = path.parse().map_err(|_| {

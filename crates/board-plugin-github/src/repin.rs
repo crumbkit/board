@@ -91,7 +91,7 @@ fn moved(
     };
     let logical: LogicalPath =
         (path.parse()).map_err(|_| left(None, format!("{path} is not a logical path"), &update))?;
-    let report = (board.refs(&[logical.clone()], Absent::Refuse, &[]))
+    let report = (board.refs(std::slice::from_ref(&logical), Absent::Refuse, &[]))
         .and_then(|answers| (answers.into_iter().next()).expect("refs answers each path asked"))
         .map_err(|error| {
             let refusal = error.refusal();
