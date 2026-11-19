@@ -75,8 +75,6 @@ enum Effect {
     Reads,
     /// It only adds records or fields, and a repeat adds nothing more.
     AddsOnce,
-    /// It adds records or fields, and a repeat may add more.
-    Adds,
     /// It changes fields of existing records, and a repeat changes nothing
     /// more.
     OverwritesOnce,
@@ -88,7 +86,6 @@ impl Effect {
         match self {
             Self::Reads => [true, false, true],
             Self::AddsOnce => [false, false, true],
-            Self::Adds => [false, false, false],
             Self::OverwritesOnce => [false, true, true],
         }
     }
@@ -179,7 +176,7 @@ fn manifest() -> Value {
                  open question in the project asks the same words, which then takes the asker \
                  into its also_by, or a question answered in the project asked them, whose \
                  answer and decisions are returned instead.",
-                Effect::Adds,
+                Effect::AddsOnce,
             ),
         ],
     })

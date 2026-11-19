@@ -2,10 +2,12 @@
 //! owner, with the reason, so that `plans.open` stops listing it. The record
 //! stays, withdrawn.
 //!
-//! A question is dead when the change or task it blocks is done or dropped,
-//! or when the session that asked it and every session in its `also_by` are
-//! archived. Board knows nothing of
-//! sessions, so the caller names the archived ones. Of the questions left, a
+//! A question is dead when the change or task it blocks is done or dropped
+//! and its `also_by` is empty, or when the session that asked it and every
+//! session in its `also_by` are archived. A merged question waits on its
+//! later askers' work too, which `blocks` does not name, so the sweep
+//! withdraws it only for archived askers or an answer. Board knows nothing
+//! of sessions, so the caller names the archived ones. Of the questions left, a
 //! question is answered when a question in its project that an answer names
 //! asks the same words. Words match after lower-casing and keeping only
 //! letters and digits (decision /projects/board/decisions/20261119T0039Z-a1de).
@@ -37,8 +39,9 @@ pub(crate) struct Input {
     /// every question when left out.
     #[schemars(pattern("^/"), extend("format" = "board-path"))]
     path: String,
-    /// The `local_` ids of the sessions that are archived. A question one of
-    /// them asked is withdrawn.
+    /// The `local_` ids of the sessions that are archived. A question is
+    /// withdrawn when the session that asked it and every session in its
+    /// `also_by` are among them.
     #[schemars(inner(pattern("^local_[0-9a-f-]+$")))]
     archived: Vec<String>,
     /// Withdraw the questions found, in one commit; without it nothing is
@@ -162,7 +165,7 @@ fn find(open: &[Waiting], archived: &BTreeSet<String>, answered: &Answered) -> V
     let mut found = Vec::new();
     for question in open {
         let reason = match (&question.ended, &question.blocks) {
-            (Some(ended), Some(blocks)) => Some((
+            (Some(ended), Some(blocks)) if question.also_asked.is_empty() => Some((
                 if ended == "done" { "done" } else { "dropped" },
                 format!("the work it blocks, {blocks}, is {ended}."),
             )),

@@ -15,7 +15,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 
-use crate::open::waiting;
+use crate::open::{Waiting, waiting};
 use crate::question;
 use crate::records::QuestionRecord;
 use crate::sweep::{answered, words};
@@ -69,26 +69,43 @@ pub(crate) fn ask(host: &dyn Host, input: &Value) -> Result<Value, PluginError> 
         mut question,
     } = PluginError::read_input("plans", "ask", input)?;
     let folder = format!("/projects/{project}");
+    question.insert("$type".to_owned(), json!(QuestionRecord::TYPE));
+    question.insert("status".to_owned(), json!("open"));
+    let now = utc_seconds(host.settings().now);
+    question.entry("asked").or_insert_with(|| json!(now));
+    let line = json!({"new": format!("{folder}/questions/"), "record": question.clone()});
+    // Filing and merging admit the same questions: one its schema admits,
+    // whose `by` therefore names a session.
+    let put_refused = |error: board_ops::PutError| {
+        PluginError::board_refused("plans", "put --batch", &error.refusal())
+    };
+    host.check(std::slice::from_ref(&line))
+        .map_err(put_refused)?;
     let text = (question.get("question").and_then(Value::as_str)).unwrap_or_default();
     let key = (folder.clone(), words(text));
     let asker = question.get("by").cloned().unwrap_or(Value::Null);
+    let session = asker
+        .get("session")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
     let (open, _) = waiting(host, &folder)?;
-    // `waiting` lists a project's questions critical first, then oldest
-    // first, so the first match is the one the owner reads first.
-    let same = (open.iter()).find(|each| each.project == folder && words(&each.question) == key.1);
-    let output = if let Some(same) = same {
-        merge(host, same, &asker)?
+    let same: Vec<&Waiting> = (open.iter())
+        .filter(|each| each.project == folder && words(&each.question) == key.1)
+        .collect();
+    // A match the session already asked is the one it waits on. Otherwise
+    // the first match is the one the owner reads first, because `waiting`
+    // lists a project's questions critical first, then oldest first.
+    let known = (same.iter()).find(|each| {
+        each.session == session || each.also_asked.iter().any(|other| other == session)
+    });
+    let output = if let Some(known) = known {
+        merged(&known.path)
+    } else if let Some(first) = same.first() {
+        merge(host, &first.path, &asker)?
     } else if let Some((earlier, answer)) = answered(host)?.remove(&key) {
         recall(host, earlier, answer)?
     } else {
-        question.insert("$type".to_owned(), json!(QuestionRecord::TYPE));
-        question.insert("status".to_owned(), json!("open"));
-        let now = utc_seconds(host.settings().now);
-        question.entry("asked").or_insert_with(|| json!(now));
-        let line = json!({"new": format!("{folder}/questions/"), "record": question});
-        let report = (host.put(&[line])).map_err(|error| {
-            PluginError::board_refused("plans", "put --batch", &error.refusal())
-        })?;
+        let report = host.put(&[line]).map_err(put_refused)?;
         let path =
             (report.writes.first()).map_or_else(String::new, |write| write.display.to_string());
         Output {
@@ -102,38 +119,35 @@ pub(crate) fn ask(host: &dyn Host, input: &Value) -> Result<Value, PluginError> 
     Ok(serde_json::to_value(output).expect("Output holds only strings and lists"))
 }
 
-/// Adds `asker` to `same`'s `also_by`, unless it already asked.
-fn merge(
-    host: &dyn Host,
-    same: &crate::open::Waiting,
-    asker: &Value,
-) -> Result<Output, PluginError> {
-    let session = asker.get("session").and_then(Value::as_str);
-    let known = session.is_some_and(|session| {
-        same.session == session || same.also_asked.iter().any(|other| other == session)
-    });
-    if !known {
-        let mut stored = question::read(host, "ask", &same.path)?;
-        stored.still_open("ask", &same.path)?;
-        let also = stored.fields.entry("also_by").or_insert_with(|| json!([]));
-        if let Value::Array(also) = also {
-            also.push(asker.clone());
-        }
-        let line = json!({"path": same.path, "expect": stored.blob, "record": stored.fields});
-        (host.put(&[line])).map_err(|error| {
-            PluginError::board_refused("plans", "put --batch", &error.refusal())
-        })?;
+/// Adds `asker` to the `also_by` of the open question at `path`. A question
+/// answered or withdrawn since `waiting` read it is refused with
+/// `plans::ask::already_answered` or `plans::ask::not_open`, and nothing is
+/// written.
+fn merge(host: &dyn Host, path: &str, asker: &Value) -> Result<Output, PluginError> {
+    let mut stored = question::read(host, "ask", path)?;
+    stored.still_open("ask", path).map_err(|mut error| {
+        error.hint = Some("run `board plans ask` again; it reads each question afresh".to_owned());
+        error
+    })?;
+    let also = stored.fields.entry("also_by").or_insert_with(|| json!([]));
+    if let Value::Array(also) = also {
+        also.push(asker.clone());
     }
-    Ok(Output {
+    let line = json!({"path": path, "expect": stored.blob, "record": stored.fields});
+    (host.put(&[line]))
+        .map_err(|error| PluginError::board_refused("plans", "put --batch", &error.refusal()))?;
+    Ok(merged(path))
+}
+
+/// The output for an asker who now waits on the open question at `path`.
+fn merged(path: &str) -> Output {
+    Output {
         outcome: "merged",
-        path: same.path.clone(),
+        path: path.to_owned(),
         answer: None,
         decisions: None,
-        line: format!(
-            "{} already asks this, and its answer reaches you too.",
-            same.path
-        ),
-    })
+        line: format!("{path} already asks this, and its answer reaches you too."),
+    }
 }
 
 /// The answer at `answer` to `earlier`, and the decisions that name either.
