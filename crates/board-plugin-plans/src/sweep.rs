@@ -2,13 +2,17 @@
 //! owner, with the reason, so that `plans.open` stops listing it. The record
 //! stays, withdrawn.
 //!
-//! A question is dead when the change or task it blocks is done or dropped,
-//! or when the session that asked it is archived. Board knows nothing of
-//! sessions, so the caller names the archived ones. Of the questions left, a
+//! A question is dead when the change or task it blocks is done or dropped
+//! and its `also_by` is empty, or when the session that asked it and every
+//! session in its `also_by` are archived. A merged question waits on its
+//! later askers' work too, which `blocks` does not name, so the sweep
+//! withdraws it only for archived askers or an answer. Board knows nothing
+//! of sessions, so the caller names the archived ones. Of the questions left, a
 //! question is answered when a question in its project that an answer names
 //! asks the same words. Words match after lower-casing and keeping only
 //! letters and digits (decision /projects/board/decisions/20261119T0039Z-a1de).
-//! The sweep leaves open a question that repeats another open question
+//! The sweep leaves open a question that repeats another open question,
+//! because `plans.ask` merges repeats when they are filed
 //! (decision /projects/board/decisions/20261119T1000Z-c4d9).
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -35,8 +39,9 @@ pub(crate) struct Input {
     /// every question when left out.
     #[schemars(pattern("^/"), extend("format" = "board-path"))]
     path: String,
-    /// The `local_` ids of the sessions that are archived. A question one of
-    /// them asked is withdrawn.
+    /// The `local_` ids of the sessions that are archived. A question is
+    /// withdrawn when the session that asked it and every session in its
+    /// `also_by` are among them.
     #[schemars(inner(pattern("^local_[0-9a-f-]+$")))]
     archived: Vec<String>,
     /// Withdraw the questions found, in one commit; without it nothing is
@@ -160,17 +165,18 @@ fn find(open: &[Waiting], archived: &BTreeSet<String>, answered: &Answered) -> V
     let mut found = Vec::new();
     for question in open {
         let reason = match (&question.ended, &question.blocks) {
-            (Some(ended), Some(blocks)) => Some((
+            (Some(ended), Some(blocks)) if question.also_asked.is_empty() => Some((
                 if ended == "done" { "done" } else { "dropped" },
                 format!("the work it blocks, {blocks}, is {ended}."),
             )),
-            _ if archived.contains(&question.session) => Some((
-                "archived",
-                format!(
-                    "the session that asked it, {}, is archived.",
-                    question.session
-                ),
-            )),
+            _ if archived.contains(&question.session)
+                && question
+                    .also_asked
+                    .iter()
+                    .all(|other| archived.contains(other)) =>
+            {
+                Some(("archived", askers_archived(question)))
+            }
             _ => {
                 let key = (question.project.clone(), words(&question.question));
                 answered.get(&key).map(|(earlier, answer)| {
@@ -185,6 +191,21 @@ fn find(open: &[Waiting], archived: &BTreeSet<String>, answered: &Answered) -> V
     }
     found.sort_by(|a, b| a.path.cmp(&b.path));
     found
+}
+
+/// Why a question every asker of which is archived is withdrawn.
+fn askers_archived(question: &Waiting) -> String {
+    if question.also_asked.is_empty() {
+        return format!(
+            "the session that asked it, {}, is archived.",
+            question.session
+        );
+    }
+    let others = question.also_asked.join(", ");
+    format!(
+        "the sessions that asked it, {} and {others}, are archived.",
+        question.session
+    )
 }
 
 fn withdrawn(question: &Waiting, kind: &'static str, why: &str) -> Withdrawn {
@@ -207,12 +228,12 @@ pub(crate) fn words(text: &str) -> String {
 
 /// Answered questions keyed by their project and words, each with the
 /// question's path and the answer's.
-type Answered = BTreeMap<(String, String), (String, String)>;
+pub(crate) type Answered = BTreeMap<(String, String), (String, String)>;
 
 /// Each question an answer names, by its project and words, with the
 /// question's path and the answer's. Of the questions a project asks with
 /// the same words, the one first by logical path is kept.
-fn answered(host: &dyn Host) -> Result<Answered, PluginError> {
+pub(crate) fn answered(host: &dyn Host) -> Result<Answered, PluginError> {
     let report = (host.query(&answered_sql(), Limit::ALL))
         .map_err(|error| PluginError::board_refused("plans", "query", &error.refusal()))?;
     let mut found = BTreeMap::new();

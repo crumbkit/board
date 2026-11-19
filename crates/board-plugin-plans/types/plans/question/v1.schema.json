@@ -69,6 +69,14 @@
       "description": "The record's type.",
       "type": "string"
     },
+    "also_by": {
+      "default": [],
+      "description": "The other sessions that asked the same question, which `plans.ask`\nmerged into it, so the answer can be sent to each of them too.",
+      "items": {
+        "$ref": "#/$defs/Actor"
+      },
+      "type": "array"
+    },
     "asked": {
       "description": "When the question was asked.",
       "format": "date-time",

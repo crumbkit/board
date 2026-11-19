@@ -29,6 +29,10 @@ pub struct QuestionRecord {
     /// Who asked. It names the asking session, so the answer can be sent
     /// back to it.
     pub by: Actor,
+    /// The other sessions that asked the same question, which `plans.ask`
+    /// merged into it, so the answer can be sent to each of them too.
+    #[serde(default)]
+    pub also_by: Vec<Actor>,
     /// When the question was asked.
     #[schemars(extend("format" = "date-time"))]
     pub asked: String,

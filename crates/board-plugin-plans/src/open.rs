@@ -111,6 +111,9 @@ pub(crate) struct Waiting {
     #[schemars(extend("format" = "date-time"))]
     asked: String,
     pub(crate) session: String,
+    /// The sessions `plans.ask` merged into the question, each of which
+    /// waits for its answer too.
+    pub(crate) also_asked: Vec<String>,
     options: Vec<Choice>,
     recommendation: Option<String>,
     why: Option<String>,
@@ -135,6 +138,8 @@ pub(crate) struct Waiting {
 struct Stored {
     question: String,
     by: Actor,
+    #[serde(default)]
+    also_by: Vec<Actor>,
     asked: String,
     #[serde(default)]
     options: Vec<Map<String, Value>>,
@@ -236,6 +241,9 @@ fn readable(path: &str, body: &Value, work: Option<&str>) -> Option<(Instant, Wa
         question: asked.question,
         asked: asked.asked,
         session: asked.by.session?,
+        also_asked: (asked.also_by.into_iter())
+            .filter_map(|actor| actor.session)
+            .collect(),
         options,
         recommendation: asked.recommendation,
         why: asked.why,

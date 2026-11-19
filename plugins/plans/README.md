@@ -16,7 +16,9 @@ so it is written at its path. Its schema declares its folder too, so
   `question`, `by` (an `Actor` whose `session` is the asking session's
   `local_` id), `asked` and `status` (`open` or `withdrawn`) are required.
   `options`, `recommendation`, `why`, `blocks`, `blocked_work`, `mount`,
-  `context_path`, `note` and `withdrawn_reason` are optional. `blocks` is the
+  `context_path`, `note`, `also_by` and `withdrawn_reason` are optional.
+  `also_by` lists the other sessions, as `Actor`s, that `plans.ask` merged
+  into the question. `blocks` is the
   path of the change or task that cannot proceed until the question is
   answered.
   `blocked_work` says what cannot proceed in words, when no change names it
@@ -94,19 +96,47 @@ with, such as "3 questions are waiting for you, 2 of them blocking work. Run
 /ask to answer them." The board-plans mod's Waiting button draws `total` and
 `blocking`.
 
+`board call plans.ask` with `{"project": "<project>", "question": {...}}` on
+stdin files a question, the record as a `plans/question/v1` holds it, under
+`/projects/<project>/questions/`, open and asked now unless it says when. It
+first looks in the project for a question that asks the same words, matched
+as `plans.sweep` matches them:
+
+- An open one takes the asker into its `also_by` unless that session already
+  asked it, and nothing is filed. `outcome` is `merged` and `path` names it.
+- Otherwise, one that an answer names gives `outcome` `answered`, its `path`,
+  the `answer` (`path`, `choice`, `words`) and `decisions`, the decisions
+  whose `refs` name the question or the answer. Nothing is filed.
+- Otherwise the question is filed: `outcome` is `filed` and `path` is new.
+
+Each output carries `line`, one sentence that says what happened. A
+question its schema refuses, such as one whose `by` names no session, is
+refused with `plans::board::refused`, carrying Board's code, before any
+question is read, and nothing is written. When the open question is
+answered or withdrawn before the merge writes, the call is refused with
+`plans::ask::<reason>`, for the reasons `plans.withdraw` gives, and a hint
+to ask again. `plans.open` lists each question's merged sessions in
+`also_asked`.
+
 `board plans sweep [--path /projects/<project>] [--archived <local_ id>]...
 [--apply true]` withdraws each open question below the path that no longer
 needs the owner, with a reason that starts `plans.sweep:`. Each question is
 withdrawn for the first of these that applies:
 
-- `done` or `dropped`: the change or task `blocks` names is done or dropped.
-- `archived`: the session that asked is one of `archived`. Board knows
-  nothing of sessions, so the caller names the archived ones.
+- `done` or `dropped`: the change or task `blocks` names is done or
+  dropped, and no session is in `also_by`. A merged question waits on its
+  later askers' work too, which `blocks` does not name, so it is withdrawn
+  only when it is answered, when every asker is archived, or when a person
+  withdraws it.
+- `archived`: the session that asked and every session in `also_by` are
+  among `archived`. Board knows nothing of sessions, so the caller names
+  the archived ones.
 - `answered`: a question that an answer names, in the same project, asks
   the same words. Words match after lower-casing and keeping only letters
   and digits.
 
-The sweep leaves open a question that repeats another open question.
+The sweep leaves open a question that repeats another open question,
+because `plans.ask` merges repeats when they are filed.
 
 Without `apply` it writes nothing. With it, each question is read again and
 refused with `plans::sweep::<reason>`, for the reasons `plans.withdraw`

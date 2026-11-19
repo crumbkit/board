@@ -371,6 +371,25 @@ fn a_question_answered_or_withdrawn_before_the_write_is_refused_and_nothing_is_w
     }
 }
 
+/// A question is dead for an archived asker only when every session that
+/// asked it, the first and each merged into it, is archived.
+#[test]
+fn a_merged_question_stays_while_any_asker_is_live_and_is_withdrawn_once_all_are_archived() {
+    let asked = || {
+        let mut fields = json!({"also_by": [{"session": "local_a11e"}]});
+        fields["by"] = json!({"session": "local_dead0"});
+        body(ASKED, &fields)
+    };
+    let (_scenario, board) = plans_board(&[("projects/a/questions/q", asked())]);
+    let output = sweep(&board, &json!({"archived": ["local_dead0"]}));
+    assert_eq!(output["total"], json!(0));
+    let output = sweep(&board, &json!({"archived": ["local_dead0", "local_a11e"]}));
+    assert_eq!(
+        withdrawn(&output),
+        [("/projects/a/questions/q".to_owned(), "archived".to_owned())]
+    );
+}
+
 /// When a later board's batch is refused, the boards written before it keep
 /// their commit, and the refusal lists them in `written` and says to sweep
 /// again. Here the library's HEAD leaves `main` after the sweep read the
@@ -436,4 +455,34 @@ fn a_question_blocking_a_done_task_is_withdrawn_and_its_twin_blocking_an_open_ta
         json!("plans.sweep: the work it blocks, /tasks/done.md, is done.")
     );
     assert_eq!(open(&board), ["/projects/a/questions/open"]);
+}
+
+/// A merged question whose first asker's work is done stays open, because
+/// a session in its `also_by` may still wait on work `blocks` does not
+/// name. The twin, with no `also_by`, is withdrawn as done.
+#[test]
+fn a_merged_question_whose_first_askers_work_is_done_stays_and_its_unmerged_twin_is_withdrawn() {
+    let (_scenario, board) = plans_board(&[
+        ("changes/done", change("done")),
+        (
+            "projects/a/questions/merged",
+            body(
+                ASKED,
+                &json!({"blocks": "/changes/done", "also_by": [{"session": "local_a11e"}]}),
+            ),
+        ),
+        (
+            "projects/a/questions/alone",
+            body(
+                ASKED,
+                &json!({"question": "Other?", "blocks": "/changes/done"}),
+            ),
+        ),
+    ]);
+    let output = sweep(&board, &json!({"apply": true}));
+    assert_eq!(
+        withdrawn(&output),
+        [("/projects/a/questions/alone".to_owned(), "done".to_owned())]
+    );
+    assert_eq!(open(&board), ["/projects/a/questions/merged"]);
 }
