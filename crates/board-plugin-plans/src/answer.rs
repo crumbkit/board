@@ -3,6 +3,7 @@
 //! makes the question answered; the question's status stays `open`.
 
 use board_ops::{Host, PluginError};
+use board_plugin::Target;
 use board_plugin::shape::{Actor, Person, Prose, Record, SessionId, Slug};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -11,7 +12,7 @@ use serde_json::{Map, Value, json};
 #[cfg(test)]
 pub(crate) use crate::question::question_sql;
 use crate::question::{self, answer_path_of, refused};
-use crate::records::AnswerRecord;
+use crate::records::{AnswerRecord, CHANGE_TYPES};
 
 /// The owner's answer to the question at `path`.
 #[derive(Deserialize, JsonSchema)]
@@ -60,6 +61,21 @@ pub(crate) struct Output {
     /// When the answer was recorded, in UTC to the second.
     #[schemars(extend("format" = "date-time"))]
     answered: String,
+    /// The change the question blocks, which `changes.attach` was asked to
+    /// keep the answer; left out when the question blocks no change.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    attached: Option<Attached>,
+}
+
+/// The change the answer was attached to, and the code `changes.attach`
+/// refused with when it refused. A refused attach leaves the answer
+/// recorded.
+#[derive(Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct Attached {
+    change: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    refused: Option<String>,
 }
 
 pub(crate) fn answer(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
@@ -134,14 +150,35 @@ pub(crate) fn answer(host: &dyn Host, input: &Value) -> Result<Value, PluginErro
     ];
     (host.put(&lines))
         .map_err(|error| PluginError::board_refused("plans", "put --batch", &error.refusal()))?;
+    let attached = attach(host, asked.work, &answer_path);
     let output = Output {
         answer: answer_path,
         question: path,
         choice: option,
         words,
         answered,
+        attached,
     };
     Ok(serde_json::to_value(output).expect("Output holds only strings"))
+}
+
+/// Asks `changes.attach` to keep `answer` on the plan of the change the
+/// question blocks, so that the change's record holds the owner's answer.
+/// `None` when `work` is no change. A task's record is Markdown in a notes
+/// repository, which has no list of references to add the answer to.
+fn attach(host: &dyn Host, work: Option<(String, String)>, answer: &str) -> Option<Attached> {
+    let (change, kind) = work?;
+    if !CHANGE_TYPES.contains(&kind.as_str()) {
+        return None;
+    }
+    let target: Target = "changes.attach"
+        .parse()
+        .expect("changes.attach is <plugin>.<capability>");
+    let refused = (host
+        .call(&target, &json!({"path": change, "ref": answer}))
+        .err())
+    .map(|refusal| refusal.code.as_str().to_owned());
+    Some(Attached { change, refused })
 }
 
 /// The id and text of each of the question's options that has both.

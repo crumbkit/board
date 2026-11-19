@@ -152,6 +152,14 @@ which must still hold the blob the call read. It returns the answer's path,
 the question's path, `choice` (`none` when no option was chosen), `words`
 and `answered`.
 
+When the question's `blocks` names a change, read from the root of the
+question's own board, the answer then calls `changes.attach --ref <answer>`
+on that change, so the change's plan keeps the answer. The output's
+`attached` names the change, and `attached.refused` gives the code when
+`changes.attach` refused; the answer stays recorded either way. A question
+that blocks a task or nothing gets no `attached`, since a task's Markdown
+record has no list of references.
+
 It writes nothing, and fails with its own code, when the path is not
 `.../questions/<id>` (`plans::answer::not_a_question_path`), nothing there is
 a question (`plans::answer::no_question`), an answer already names the
