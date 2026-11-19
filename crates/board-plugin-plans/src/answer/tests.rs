@@ -126,13 +126,17 @@ fn a_question_quoted_in_sql_is_read_by_its_own_path() {
     assert_eq!(
         question_sql(path),
         format!(
-            "SELECT 'question' AS kind, logical, type, blob, body, '/' || CASE WHEN q.path LIKE \
-             '%.json' THEN substr(q.path, 1, length(q.path) - 5) ELSE q.path END FROM records q \
-             WHERE logical = '/projects/o''brien/questions/q' \
-             UNION ALL SELECT 'answer', a.logical, a.type, a.blob, NULL, NULL FROM records a, records q \
+            "SELECT 'question' AS kind, q.logical, q.type, q.blob, q.body, {own}, w.logical, w.type \
+             FROM records q LEFT JOIN records w \
+             ON w.logical = substr(q.logical, 1, length(q.logical) - length({own})) \
+             || json_extract(q.body, '$.blocks') \
+             WHERE q.logical = '/projects/o''brien/questions/q' \
+             UNION ALL SELECT 'answer', a.logical, a.type, a.blob, NULL, NULL, NULL, NULL \
+             FROM records a, records q \
              WHERE q.logical = '/projects/o''brien/questions/q' AND a.type = 'plans/answer/v1' \
              AND {}",
-            crate::question::NAMES
+            crate::question::NAMES,
+            own = "'/' || CASE WHEN q.path LIKE '%.json' THEN substr(q.path, 1, length(q.path) - 5) ELSE q.path END",
         )
     );
 }
@@ -474,5 +478,115 @@ fn every_actor_input_reaches_the_answers_by_and_a_blank_agent_is_left_out() {
         answer(&host, &input).unwrap();
         let puts = host.puts.take();
         assert_eq!(puts[0][0]["record"]["by"], expected, "{given}");
+    }
+}
+
+/// The rows `question_sql` returns for a question at `QUESTION` whose
+/// `blocks` names a record of `kind` at `work`.
+fn blocking(work: &str, kind: &str) -> Vec<Vec<Value>> {
+    let mut rows = rows("plans/question/v1", &json!({"blocks": work}), &[]);
+    rows[0].extend([json!(QUESTION), json!(work), json!(kind)]);
+    rows
+}
+
+/// An answer to a question that blocks a change asks `changes.attach` to
+/// keep the answer on that change. The twins block a task, which has no
+/// list of references, and nothing, and neither calls any plugin.
+#[test]
+fn an_answer_to_a_question_blocking_a_change_is_attached_to_it_and_one_blocking_a_task_is_not() {
+    let input = json!({"path": QUESTION, "option": "a"});
+    let host = at_now(blocking("/changes/x", "changes/change/v2"));
+    let output = answer(&host, &input).unwrap();
+    assert_eq!(output["attached"], json!({"change": "/changes/x"}));
+    assert_eq!(
+        *host.calls.borrow(),
+        [(
+            "changes.attach".to_owned(),
+            json!({"path": "/changes/x", "ref": "/projects/a/answers/q"})
+        )]
+    );
+    for host in [
+        at_now(blocking("/repos/notes/tasks/x.md", "tasks/task/v2")),
+        at_now(rows("plans/question/v1", &json!({}), &[])),
+    ] {
+        let output = answer(&host, &input).unwrap();
+        assert_eq!(output.get("attached"), None);
+        assert!(host.calls.borrow().is_empty());
+        assert_eq!(host.puts.borrow().len(), 1);
+    }
+}
+
+/// A refused attach still records the answer, and names the code it was
+/// refused with. Its twin is the admitted attach above.
+#[test]
+fn a_refused_attach_leaves_the_answer_recorded_and_names_the_code() {
+    let mut host = at_now(blocking("/changes/x", "changes/change/v2"));
+    let fields = board_model::Fields::default();
+    host.call_refusal = Some(board_model::Refusal::new(
+        board_model::Code::PluginNoCapability,
+        "no changes plugin",
+        &fields,
+    ));
+    let output = answer(&host, &json!({"path": QUESTION, "option": "a"})).unwrap();
+    assert_eq!(
+        output["attached"],
+        json!({"change": "/changes/x", "refused": "board::plugin::no_capability"})
+    );
+    assert_eq!(output["answer"], "/projects/a/answers/q");
+    assert_eq!(host.puts.borrow().len(), 1);
+}
+
+/// On a real board the question's read finds the change its `blocks`
+/// names. A mounted question's `blocks` is read from its own board's root,
+/// so the same change in the root board is not its work.
+#[test]
+fn a_question_read_finds_the_change_it_blocks_from_its_own_boards_root() {
+    use crate::open::tests::{MOUNTED_QUESTION, change, mounting_board};
+    let blocks = question(&json!({"blocks": "/changes/x"}));
+    let (_s, board) = plans_board(&[
+        ("projects/a/questions/q", blocks.clone()),
+        ("changes/x", change("build")),
+    ]);
+    let mut host = at_now(Vec::new());
+    host.board = Some(board);
+    let asked = crate::question::read(&host, "answer", QUESTION).unwrap();
+    let work = ("/changes/x".to_owned(), "changes/change/v2".to_owned());
+    assert_eq!(asked.work, Some(work));
+    let mounted = "/vendor/projects/a/questions/q";
+    for (root, library, found) in [
+        (vec![], vec![("changes/x", change("build"))], true),
+        (vec![("changes/x", change("build"))], vec![], false),
+    ] {
+        let mut library = library;
+        library.push((MOUNTED_QUESTION, blocks.clone()));
+        let (_s, _l, board) = mounting_board(&root, &library);
+        let mut host = at_now(Vec::new());
+        host.board = Some(board);
+        let asked = crate::question::read(&host, "answer", mounted).unwrap();
+        let work = (
+            "/vendor/changes/x".to_owned(),
+            "changes/change/v2".to_owned(),
+        );
+        assert_eq!(asked.work, found.then_some(work));
+    }
+}
+
+/// A question in a mounted board that blocks a change in its own board makes
+/// no attach call and gets no `attached`, because `changes.attach` reads a
+/// change's plan from the root board. Its twin is the same question in the
+/// root board, which attaches.
+#[test]
+fn a_mounted_question_blocking_a_change_is_not_attached_and_its_root_twin_is() {
+    for (path, work, attached) in [
+        (QUESTION, "/changes/x", true),
+        ("/vendor/projects/a/questions/q", "/vendor/changes/x", false),
+    ] {
+        let mut rows = rows("plans/question/v1", &json!({"blocks": "/changes/x"}), &[]);
+        rows[0].extend([json!(QUESTION), json!(work), json!("changes/change/v2")]);
+        let host = at_now(rows);
+        let output = answer(&host, &json!({"path": path, "option": "a"})).unwrap();
+        assert_eq!(output.get("attached").is_some(), attached, "{path}");
+        assert_eq!(host.calls.borrow().len(), usize::from(attached), "{path}");
+        assert_eq!(host.puts.borrow().len(), 1, "{path}");
     }
 }

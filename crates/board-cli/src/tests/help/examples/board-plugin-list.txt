@@ -7,7 +7,7 @@ ok github 0.1.0 disabled offers ref, push, pr-create, pr-edit, comment, issue-cr
 ok jira 0.1.0 disabled offers ref
 ok notes 0.1.0 disabled offers add, daily
 ok params 0.1.0 disabled offers get, due
-ok plans 0.1.0 disabled offers open, answer, withdraw, migrate
+ok plans 0.1.0 disabled offers open, answer, withdraw, migrate, waiting, sweep, ask
 ok prompts 0.1.0 disabled offers get, list
 ok requests 0.1.0 disabled offers thread
 ok review 0.2.0 disabled offers run, post, covered

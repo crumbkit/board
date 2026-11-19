@@ -53,19 +53,24 @@ in. `<project>` names what the record concerns, such as the repository
 ## Questions and answers
 
 1. When only the owner can answer and the work cannot go on without the
-   answer, write a `plans/question/v1` with the options the owner may
-   choose:
+   answer, ask it with `plans.ask` and the options the owner may choose:
 
-       echo '{"$type": "plans/question/v1", "question": "<what the owner is asked>", "options": [{"id": "a", "text": "<option a>"}, {"id": "b", "text": "<option b>"}], "recommendation": "a", "why": "<why you recommend it>", "blocked_work": "<what waits on it, in words>", "by": {"session": "<your local_ id>"}, "asked": "<now>", "status": "open"}' | board -C <board> put --new --var project=<project>
+       echo '{"project": "<project>", "question": {"question": "<what the owner is asked>", "options": [{"id": "a", "text": "<option a>"}, {"id": "b", "text": "<option b>"}], "recommendation": "a", "why": "<why you recommend it>", "blocked_work": "<what waits on it, in words>", "by": {"session": "<your local_ id>"}}}' | board -C <board> call plans.ask
 
-   It writes `/projects/<project>/questions/<id>`. `asked` is the UTC time.
+   When `outcome` is `filed`, it wrote `/projects/<project>/questions/<id>`.
+   When it is `merged`, an open question already asks the same words and
+   you now wait on that one. When it is `answered`, the owner already
+   answered: act on the `answer` it returns and ask nothing.
    `by` must name your session's `local_` id, so the answer can be sent
-   back to it. Never put a secret in a question. When a change waits on the
-   answer, add `"blocks": "/changes/<name>"`; `blocks` takes a change's path
-   and no words.
-2. List the questions still waiting for an answer:
+   back to it. Never put a secret in a question. When a change or task
+   waits on the answer, add `"blocks": "/changes/<name>"` or the task's
+   path; `blocks` takes a path and no words.
+2. List the questions still waiting for an answer, the most urgent first:
 
        board -C <board> plans open --path /projects/<project>
+
+   `board -C <board> plans waiting` gives their count and one line to end a
+   reply with.
 
 3. When the owner answers in chat, record the answer with the option they
    chose and their words verbatim:
@@ -75,7 +80,10 @@ in. `<project>` names what the record concerns, such as the repository
    It writes the `plans/answer/v1` at `/projects/<project>/answers/<id>`,
    with the question's id. `--option none` with `--words` records an answer
    that chooses no option.
-4. Withdraw a question that no longer matters:
+4. Withdraw the questions whose work ended, whose asking sessions are all archived, or
+   whose words a question answered in the same project already asked, with `board -C <board> plans sweep --archived <local_ id>
+   --apply true`; leave out `--apply` to see the list first.
+5. Withdraw a question that no longer matters:
 
        board -C <board> plans withdraw --path /projects/<project>/questions/<id> --reason '<why>'
 

@@ -16,7 +16,7 @@ macro_rules! own_path {
     };
 }
 
-const OWN_PATH: &str = own_path!();
+pub(crate) const OWN_PATH: &str = own_path!();
 
 /// SQL that is true when the answer `a` names the question `q`. A reference
 /// in a mounted board is read from that board's root, so an answer names a
@@ -42,14 +42,20 @@ pub(crate) const NAMED: &str = concat!(
     "))"
 );
 
-/// The question at `path`, with its path in its own board, and every answer
-/// that names it, at any id.
+/// The question at `path`, with its path in its own board and the logical
+/// path and type of the record its `blocks` names, and every answer that
+/// names it, at any id. `blocks` is read from the root of the question's own
+/// board, as `plans.open` reads it.
 pub(crate) fn question_sql(path: &str) -> String {
     let path = literal(path);
     format!(
-        "SELECT 'question' AS kind, logical, type, blob, body, {OWN_PATH} FROM records q \
-         WHERE logical = {path} \
-         UNION ALL SELECT 'answer', a.logical, a.type, a.blob, NULL, NULL FROM records a, records q \
+        "SELECT 'question' AS kind, q.logical, q.type, q.blob, q.body, {OWN_PATH}, w.logical, w.type \
+         FROM records q LEFT JOIN records w \
+         ON w.logical = substr(q.logical, 1, length(q.logical) - length({OWN_PATH})) \
+         || json_extract(q.body, '$.blocks') \
+         WHERE q.logical = {path} \
+         UNION ALL SELECT 'answer', a.logical, a.type, a.blob, NULL, NULL, NULL, NULL \
+         FROM records a, records q \
          WHERE q.logical = {path} AND a.type = '{}' AND {NAMES}",
         AnswerRecord::TYPE
     )
@@ -64,6 +70,9 @@ pub(crate) struct Asked {
     pub(crate) own: String,
     pub(crate) fields: Map<String, Value>,
     pub(crate) answers: Vec<String>,
+    /// The logical path and type of the record the question's `blocks`
+    /// names, when the board holds one there.
+    pub(crate) work: Option<(String, String)>,
 }
 
 /// `/…/questions/<id>` with `answers` in place of `questions`; `None` when
@@ -118,12 +127,14 @@ pub(crate) fn read(host: &dyn Host, call: &str, path: &str) -> Result<Asked, Plu
         .filter_map(|row| row.get(1).and_then(Value::as_str))
         .map(str::to_owned)
         .collect();
-    let own = (own.first().and_then(Value::as_str)).unwrap_or(path);
+    let text = |at: usize| own.get(at).and_then(Value::as_str);
+    let work = text(1).zip(text(2));
     Ok(Asked {
         blob: blob.clone(),
-        own: own.to_owned(),
+        own: text(0).unwrap_or(path).to_owned(),
         fields,
         answers,
+        work: work.map(|(path, kind)| (path.to_owned(), kind.to_owned())),
     })
 }
 

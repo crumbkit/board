@@ -3,13 +3,13 @@ import type { EngineInterface, PluginOptions, Register, RenderElement } from 'cl
 
 import type { Open, Question, Unread, Waiting } from '../types'
 import { SLOT, joinBand } from './band'
-import { answerBatch, answerText, blocking, countBadge, failure, parseOpen, parseRows, parseWaiting, plain, project, questionSql, refusal, report, REPORT_LIMIT, REPORT_SQL } from './plans'
+import { answerText, blocking, countBadge, failure, parseAnswered, parseOpen, parseRows, parseWaiting, plain, project, refused, report, REPORT_LIMIT, REPORT_SQL, WRITTEN_BY } from './plans'
 
 // The mod reads the owner's open questions from Board, draws their count in
 // the band above the prompt and lists them in a pane, where the owner answers
 // one with a press or in words. /yesterday shows the morning report in a
-// second pane. Every write goes through `board put`; an answer is the owner's
-// own press, so nothing gates it.
+// second pane. An answer goes through `board call plans.answer`; it is the
+// owner's own press, so nothing gates it.
 
 const open = atom({ plugin: 'board-plans', key: 'open' } as const, null as Open | null)
 const morning = atom({ plugin: 'board-plans', key: 'report' } as const, null as string | null)
@@ -23,9 +23,9 @@ const QUESTIONS = 'questions'
 const RUN = 'PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH" exec board "$@"'
 // A slow or hung board holds a refresh or an answer no longer than this.
 const TIMEOUT_MS = 5000
-// The put waits this long for board's lock, well inside TIMEOUT_MS, so a
-// held lock fails as `board::lock` rather than as a killed process.
-const LOCK_WAIT = '2s'
+// plans.answer takes board's lock twice, for the answer and for the attach,
+// and each take may wait up to 5 seconds.
+const ANSWER_MS = 15_000
 const REFRESH_MS = 60_000
 // The pane lists this many questions; the band counts them all.
 const LISTED = 100
@@ -33,13 +33,10 @@ const LISTED = 100
 type Ran = { exitCode: number; stdout: string; stderr: string }
 
 /** Runs `board` with `args` in the configured board, the personal board when none is set. */
-function board($: EngineInterface, options: PluginOptions, args: string[], stdin?: string): Promise<Ran> {
+function board($: EngineInterface, options: PluginOptions, args: string[], timeoutMs = TIMEOUT_MS): Promise<Ran> {
   const dir = String(options.board ?? '')
   const where = dir === '' ? ['--personal'] : ['-C', dir]
-  return $.process.run(['/bin/sh', '-c', RUN, 'board', ...where, '--json', ...args], {
-    timeoutMs: TIMEOUT_MS,
-    ...(stdin === undefined ? {} : { stdin }),
-  })
+  return $.process.run(['/bin/sh', '-c', RUN, 'board', ...where, '--json', ...args], { timeoutMs })
 }
 
 /**
@@ -82,47 +79,57 @@ async function refresh($: EngineInterface, options: PluginOptions, local: { abse
   await Promise.all([refreshOpen($, options), refreshWaiting($, options, local)])
 }
 
-/** Reads the question and its answers; undefined when board fails. */
-async function held($: EngineInterface, options: PluginOptions, path: string) {
-  const ran = await board($, options, ['query', questionSql(path)])
-  return ran.exitCode === 0 ? parseRows(ran.stdout)?.rows : undefined
-}
-
 /**
- * Records the owner's answer, with the question put back unchanged, in one batch, then
- * tries to send the answer to the session that asked. A question that is no
- * longer open, or that already has an answer at any id, is refused before the
- * put; one that changes between the read and the put is refused by the put's
- * `expect`, and is read again to say why.
+ * Records the owner's answer through `plans.answer`, which refuses a question
+ * that is no longer open or already has an answer at any id, and attaches the
+ * answer to the change the question blocks. Then it tries to send the answer
+ * to the session that asked and to each session that asked the same question.
  *
- * The answer is recorded in Board either way; the send is best effort. It
- * names the asking session's `local_` id as a string, the SendMessage tool's
+ * Only Board's own failure report says nothing was written; a run that timed
+ * out or was killed may have recorded the answer, so nothing is sent then.
+ *
+ * Once the answer is recorded, the send is best effort. It
+ * names each asking session's `local_` id as a string, the SendMessage tool's
  * spelling of a recipient, because `{ sessionId }` refuses a `local_` id.
  */
 async function answer($: EngineInterface, options: PluginOptions, q: Question, choice: string | undefined, words: string) {
   try {
-    const rows = await held($, options, q.path)
-    const refused = refusal(q.path, rows)
-    const row = rows?.find(r => r.kind === 'question')
-    if (refused !== null || row === undefined) return $.ui.toast(refused ?? `${q.path} could not be read, so nothing was recorded`)
     // The desktop app names this session's `local_` id, the form questions use.
     const host = await $.env.get('CLAUDE_CODE_HOST_SESSION_ID')
-    const by = host?.startsWith('local_') ? host : undefined
-    const batch = answerBatch(q.path, String(row.own ?? q.path), String(row.blob), String(row.body), choice, words, by, await $.clock.now())
-    const put = await board($, options, ['put', '--batch', '--wait', LOCK_WAIT], batch)
-    if (put.exitCode !== 0) {
-      const why = failure(put.exitCode, put.stdout, put.stderr)
-      const since = why.startsWith('board::put::stale') ? refusal(q.path, await held($, options, q.path)) : null
-      return $.ui.toast(since ?? `No answer was recorded: ${why}`)
+    // Each input is a flag; the `=` form keeps words that start with `-` as the value.
+    const args = ['call', 'plans.answer', `--path=${q.path}`, `--option=${choice ?? 'none'}`, `--words=${words}`]
+    if (host?.startsWith('local_')) args.push(`--session=${host}`)
+    args.push(`--written_by=${WRITTEN_BY}`)
+    const ran = await board($, options, args, ANSWER_MS).catch(() => null)
+    if (ran?.exitCode !== 0) {
+      const why = ran === null ? null : refused(ran.stdout)
+      return $.ui.toast(
+        why === null
+          ? 'The answer may have been recorded, because board did not finish. The question stays in the list until plans.open stops listing it.'
+          : `No answer was recorded: ${why}`,
+      )
     }
     await update($, open, found => found && { questions: found.questions.filter(o => o.path !== q.path), total: found.total - 1 })
-    let sent = false
-    try {
-      sent = (await $.session.send({ to: q.session, text: answerText(q.path, choice, words) })).isDelivered
-    } catch {
-      // A send that rejects is a send refused; the answer is in Board all the same.
+    const answered = parseAnswered(ran.stdout)
+    const text = answerText(q.path, answered.answer, choice, words)
+    const send = async (to: string) => {
+      try {
+        return (await $.session.send({ to, text })).isDelivered
+      } catch {
+        // A send that rejects is a send refused; the answer is in Board all the same.
+        return false
+      }
     }
-    $.ui.toast(sent ? `Answered, and sent to ${q.session}` : `Answered and recorded in Board. The message to ${q.session} was not delivered`)
+    // A board from before plans.ask merged questions lists no `also_asked`.
+    const others = (q.also_asked ?? []).filter(to => to !== q.session)
+    const [sent] = await Promise.all([send(q.session), ...others.map(send)])
+    const { attached } = answered
+    const unattached = attached?.refused === undefined ? null : `not attached to ${attached.change}: ${attached.refused}`
+    $.ui.toast(
+      sent
+        ? `Answered, and sent to ${q.session}${unattached === null ? '' : `. The answer is recorded but was ${unattached}`}`
+        : `Answered and recorded in Board${unattached === null ? '' : `, but ${unattached}`}. The message to ${q.session} was not delivered`,
+    )
   } catch (error) {
     $.ui.toast(`No answer was recorded: ${String(error)}`)
   }
@@ -155,7 +162,7 @@ export const register: Register = (on, options) => {
       $.clock.every(REFRESH_MS, () => void refresh($, options, local))
     }
     if (e.props.hasSurvey) return below
-    // plans.waiting counts questions, gates and effects; until it exists the button counts open questions.
+    // plans.waiting counts the open questions; when it has not answered, the button counts plans.open's.
     const badge = countBadge(await read($, waiting), await read($, open), await read($, failed))
     if (badge === null) return below
     const { Box, Button, Text } = $.ui.resolve(e)

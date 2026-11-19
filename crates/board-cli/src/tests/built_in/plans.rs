@@ -104,6 +104,7 @@ fn open_shows_what_the_owner_needs_to_answer() {
             "question": "Which way?",
             "asked": "2026-10-01T09:00:00Z",
             "session": "local_0a1b",
+            "also_asked": [],
             "options": options,
             "recommendation": "a",
             "why": "It ships.",
@@ -112,6 +113,8 @@ fn open_shows_what_the_owner_needs_to_answer() {
             "note": null,
             "mount": null,
             "context_path": null,
+            "project": "/projects/a",
+            "critical": false,
         }])
     );
 }

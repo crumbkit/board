@@ -29,6 +29,10 @@ pub struct QuestionRecord {
     /// Who asked. It names the asking session, so the answer can be sent
     /// back to it.
     pub by: Actor,
+    /// The other sessions that asked the same question, which `plans.ask`
+    /// merged into it, so the answer can be sent to each of them too.
+    #[serde(default)]
+    pub also_by: Vec<Actor>,
     /// When the question was asked.
     #[schemars(extend("format" = "date-time"))]
     pub asked: String,
@@ -49,8 +53,10 @@ pub struct QuestionRecord {
     pub recommendation: Option<String>,
     /// Why the asker recommends it.
     pub why: Option<String>,
-    /// The change that cannot proceed until the question is answered.
-    pub blocks: Option<Ref<AnyChange>>,
+    /// The change or task that cannot proceed until the question is
+    /// answered. `plans.open` puts a question first while this work is
+    /// still going.
+    pub blocks: Option<Ref<AnyWork>>,
     /// What cannot proceed, in words, when no change names it or the change
     /// needs more detail.
     #[schemars(with = "Option<Prose>")]
@@ -66,16 +72,20 @@ impl Record for QuestionRecord {
     const TYPE: &'static str = "plans/question/v1";
 }
 
-/// A change of the changes plugin, of either version.
+/// A change of the changes plugin, of either version, or a task of the
+/// tasks plugin.
 #[derive(Debug)]
-pub enum AnyChange {}
+pub enum AnyWork {}
 
-impl Accepts for AnyChange {
-    const TYPES: &'static [&'static str] = &CHANGE_TYPES;
+impl Accepts for AnyWork {
+    const TYPES: &'static [&'static str] = &[CHANGE_TYPES[0], CHANGE_TYPES[1], TASK_TYPE];
 }
 
 /// The record types of a change, which the changes plugin ships.
 pub(crate) const CHANGE_TYPES: [&str; 2] = ["changes/change/v1", "changes/change/v2"];
+
+/// The record type of a task, which the tasks plugin ships.
+pub(crate) const TASK_TYPE: &str = "tasks/task/v2";
 
 /// Where a question stands.
 #[derive(Debug, JsonSchema)]

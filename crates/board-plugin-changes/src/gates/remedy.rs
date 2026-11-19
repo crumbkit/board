@@ -13,6 +13,7 @@ use std::sync::LazyLock;
 use board_plugin::shape::Record;
 use regex::Regex;
 
+use super::kinds::answers_count;
 use super::{Observed, pattern};
 use crate::change::name_in;
 use crate::flow::{self, Actor, Field, Kind};
@@ -130,7 +131,7 @@ fn default(each: &flow::Check) -> String {
             .to_owned();
     };
     let ask = match each.actor {
-        Some(Actor::Owner) => "Only the owner can provide this: ask him, then ",
+        Some(Actor::Owner) => "Only the owner can provide this: ask the owner, then ",
         Some(Actor::Reviewer) => {
             "Only a reviewer can provide this: start one with `board review run`, then "
         }
@@ -143,6 +144,13 @@ fn default(each: &flow::Check) -> String {
                 .to_owned()
         }
         Kind::Field => field(each.field),
+        Kind::Records if answers_count(each) => "Ask the owner with /ask, with {change} in the \
+             text of the option that approves it and in no other option, because any chosen \
+             option that names it counts. Then attach the question and the owner's \
+             answer, each with `board changes attach --path {change} --ref <path>`. A \
+             plans/decision/v1 the owner signs with by.person whose refs name {change} also \
+             counts."
+            .to_owned(),
         Kind::Records => format!("{ask}write the record the detail describes and {ATTACH}."),
         Kind::Run => "Run {suite} on {head} with `board runs run` and attach the run with `board \
              changes attach --path {change} --ref <run>`. When the change names no suite, name \

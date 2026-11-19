@@ -7,6 +7,8 @@ export type Question = {
   question: string
   asked: string
   session: string
+  /** The other sessions that asked the same question, each of which waits for its answer too. */
+  also_asked?: string[]
   options: Option[]
   recommendation: string | null
   /** The change the question holds up, by its path. */
@@ -21,7 +23,7 @@ export type Open = { questions: Question[]; total: number }
 /** Why the last read of each count failed, as Board's code and message; null when it worked or has not run. */
 export type Unread = { open: string | null; waiting: string | null }
 
-/** What `plans.waiting` counts: everything that waits on the owner, and how much of it blocks work. */
+/** What `plans.waiting` counts: the open questions, and how many of them block work. */
 export type Waiting = { total: number; blocking: number }
 
 declare module 'claude-code' {
@@ -29,7 +31,7 @@ declare module 'claude-code' {
     'board-plans': {
       /** The open questions; null until the first read, or when it failed. */
       open: Open | null
-      /** What waits on the owner; null until plans.waiting answers, and while it does not exist. */
+      /** The open questions plans.waiting counts; null until it answers, or when it failed. */
       waiting: Waiting | null
       /** Why the last read of the counts failed, so the band can say the count is stale or missing. */
       failed: Unread

@@ -69,6 +69,14 @@
       "description": "The record's type.",
       "type": "string"
     },
+    "also_by": {
+      "default": [],
+      "description": "The other sessions that asked the same question, which `plans.ask`\nmerged into it, so the answer can be sent to each of them too.",
+      "items": {
+        "$ref": "#/$defs/Actor"
+      },
+      "type": "array"
+    },
     "asked": {
       "description": "When the question was asked.",
       "format": "date-time",
@@ -80,12 +88,13 @@
       "x-board-prose": true
     },
     "blocks": {
-      "description": "The change that cannot proceed until the question is answered.",
+      "description": "The change or task that cannot proceed until the question is\nanswered. `plans.open` puts a question first while this work is\nstill going.",
       "format": "board-ref",
       "type": "string",
       "x-board-type": [
         "changes/change/v1",
-        "changes/change/v2"
+        "changes/change/v2",
+        "tasks/task/v2"
       ]
     },
     "by": {

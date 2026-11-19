@@ -1,16 +1,20 @@
 //! The plans plugin built into Board (plugins/plans/README.md).
 
 mod answer;
+mod ask;
 mod migrate;
 mod open;
 mod question;
 pub mod records;
+mod sweep;
+mod waiting;
 mod withdraw;
 
 use board_model::{CapabilityName, RecordType};
 use board_ops::{Host, Plugin, PluginError};
 use board_plugin::Manifest;
 use board_plugin::shape::{Record, schema_of};
+use schemars::JsonSchema;
 use schemars::generate::SchemaSettings;
 use serde_json::{Map, Value, json};
 
@@ -48,16 +52,65 @@ impl Plugin for Plans {
             "answer" => answer::answer(host, &input),
             "withdraw" => withdraw::withdraw(host, &input),
             "migrate" => migrate::migrate(host, &input),
+            "waiting" => waiting::waiting(host, &input),
+            "sweep" => sweep::sweep(host, &input),
+            "ask" => ask::ask(host, &input),
             other => Err(PluginError {
                 code: "plans::call::unknown_capability".to_owned(),
                 message: format!(
-                    "plans offers no capability {other}; it offers open, answer, withdraw and migrate"
+                    "plans offers no capability {other}; it offers open, answer, withdraw, migrate, waiting, sweep and ask"
                 ),
                 fields: Map::new(),
                 hint: None,
             }),
         }
     }
+}
+
+/// What a capability does to the board. Every capability reads and writes
+/// only the board, so each is closed-world.
+#[derive(Clone, Copy)]
+enum Effect {
+    /// It writes nothing.
+    Reads,
+    /// It only adds records or fields, and a repeat adds nothing more.
+    AddsOnce,
+    /// It changes fields of existing records, and a repeat changes nothing
+    /// more.
+    OverwritesOnce,
+}
+
+impl Effect {
+    /// MCP's read-only, destructive and idempotent hints for it.
+    fn hints(self) -> [bool; 3] {
+        match self {
+            Self::Reads => [true, false, true],
+            Self::AddsOnce => [false, false, true],
+            Self::OverwritesOnce => [false, true, true],
+        }
+    }
+}
+
+/// One capability's manifest entry.
+fn capability<I: JsonSchema, O: JsonSchema>(
+    name: &str,
+    description: &str,
+    effect: Effect,
+) -> Value {
+    let [read_only, destructive, idempotent] = effect.hints();
+    json!({
+        "name": name,
+        "description": description,
+        "inputSchema": schema_of::<I>(SchemaSettings::draft2020_12()),
+        "outputSchema": schema_of::<O>(SchemaSettings::draft2020_12().for_serialize()),
+        "annotations": {
+            "readOnlyHint": read_only,
+            "destructiveHint": destructive,
+            "idempotentHint": idempotent,
+            "openWorldHint": false,
+        },
+        "_meta": {},
+    })
 }
 
 fn manifest() -> Value {
@@ -74,61 +127,58 @@ fn manifest() -> Value {
             answer. SKILL.md and README.md in the plugin's directory say more.",
         "metadata": {"area": "planning"},
         "types": record_schemas().map(|(name, _)| name),
-        "capabilities": [{
-            "name": "open",
-            "description": "The questions under a path whose status is open and that no answer names, \
-                oldest first.",
-            "inputSchema": schema_of::<open::Input>(SchemaSettings::draft2020_12()),
-            "outputSchema": schema_of::<open::Output>(SchemaSettings::draft2020_12().for_serialize()),
-            "annotations": {
-                "readOnlyHint": true,
-                "destructiveHint": false,
-                "idempotentHint": true,
-                "openWorldHint": false,
-            },
-            "_meta": {},
-        }, {
-            "name": "answer",
-            "description": "Record the owner's answer to an open question. The answer is what \
-                marks the question answered; the question's content is left unchanged.",
-            "inputSchema": schema_of::<answer::Input>(SchemaSettings::draft2020_12()),
-            "outputSchema": schema_of::<answer::Output>(SchemaSettings::draft2020_12().for_serialize()),
-            "annotations": {
-                "readOnlyHint": false,
-                "destructiveHint": false,
-                "idempotentHint": true,
-                "openWorldHint": false,
-            },
-            "_meta": {},
-        }, {
-            "name": "withdraw",
-            "description": "Withdraw an open question that no answer names, with the reason, so \
-                that plans.open stops listing it.",
-            "inputSchema": schema_of::<withdraw::Input>(SchemaSettings::draft2020_12()),
-            "outputSchema": schema_of::<withdraw::Output>(SchemaSettings::draft2020_12().for_serialize()),
-            "annotations": {
-                "readOnlyHint": false,
-                "destructiveHint": true,
-                "idempotentHint": true,
-                "openWorldHint": false,
-            },
-            "_meta": {},
-        }, {
-            "name": "migrate",
-            "description": "Rewrite each question whose blocks holds words: a value that names one \
-                change becomes that change's path and its words move to blocked_work, and any \
-                other value moves to blocked_work. apply writes every line in one commit with a \
-                Board-Bulk trailer; without it nothing is written.",
-            "inputSchema": schema_of::<migrate::Input>(SchemaSettings::draft2020_12()),
-            "outputSchema": schema_of::<migrate::Output>(SchemaSettings::draft2020_12().for_serialize()),
-            "annotations": {
-                "readOnlyHint": false,
-                "destructiveHint": true,
-                "idempotentHint": true,
-                "openWorldHint": false,
-            },
-            "_meta": {},
-        }],
+        "capabilities": [
+            capability::<open::Input, open::Output>(
+                "open",
+                "The questions under a path whose status is open and that no answer names, \
+                 grouped by project: a project holding a question that blocks active work comes \
+                 first, and within a project those questions come first, each oldest first.",
+                Effect::Reads,
+            ),
+            capability::<answer::Input, answer::Output>(
+                "answer",
+                "Record the owner's answer to an open question. The answer is what marks the \
+                 question answered; the question's content is left unchanged.",
+                Effect::AddsOnce,
+            ),
+            capability::<withdraw::Input, withdraw::Output>(
+                "withdraw",
+                "Withdraw an open question that no answer names, with the reason, so that \
+                 plans.open stops listing it.",
+                Effect::OverwritesOnce,
+            ),
+            capability::<migrate::Input, migrate::Output>(
+                "migrate",
+                "Rewrite each question whose blocks holds words: a value that names one change \
+                 becomes that change's path and its words move to blocked_work, and any other \
+                 value moves to blocked_work. apply writes every line in one commit with a \
+                 Board-Bulk trailer; without it nothing is written.",
+                Effect::OverwritesOnce,
+            ),
+            capability::<waiting::Input, waiting::Output>(
+                "waiting",
+                "How many questions under a path wait for the owner, and one line that says so, \
+                 which an agent can end its reply with.",
+                Effect::Reads,
+            ),
+            capability::<sweep::Input, sweep::Output>(
+                "sweep",
+                "Withdraw, with a reason, each open question whose blocked change or task is done \
+                 or dropped, whose asking session and every also_by session are archived, or \
+                 whose words a question answered in its project already asked. apply writes each \
+                 board's withdrawals in one commit with a Board-Bulk trailer; without it nothing \
+                 is written.",
+                Effect::OverwritesOnce,
+            ),
+            capability::<ask::Input, ask::Output>(
+                "ask",
+                "File a question for the owner under /projects/<project>/questions/, unless an \
+                 open question in the project asks the same words, which then takes the asker \
+                 into its also_by, or a question answered in the project asked them, whose \
+                 answer and decisions are returned instead.",
+                Effect::AddsOnce,
+            ),
+        ],
     })
 }
 
