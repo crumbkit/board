@@ -112,7 +112,7 @@ fn an_installed_copy_of_a_built_in_plugin_is_listed_with_its_directory_and_one_u
             assert_eq!(row["code"], "board::plugin::duplicate");
             assert_eq!(row["shadows"], json!(directory.display().to_string()));
             let expected = format!(
-                "degraded board::plugin::duplicate plans 0.1.0 disabled: installed again at {} offers open, answer, withdraw, migrate",
+                "degraded board::plugin::duplicate plans 0.1.0 disabled: installed again at {} offers open, answer, withdraw, migrate, waiting",
                 directory.display()
             );
             assert_eq!(line, expected);
@@ -120,7 +120,7 @@ fn an_installed_copy_of_a_built_in_plugin_is_listed_with_its_directory_and_one_u
             assert_eq!((row.get("code"), row.get("shadows")), (None, None));
             assert_eq!(
                 line,
-                "ok plans 0.1.0 disabled offers open, answer, withdraw, migrate"
+                "ok plans 0.1.0 disabled offers open, answer, withdraw, migrate, waiting"
             );
         }
     }

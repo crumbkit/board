@@ -48,10 +48,11 @@ notes.add disabled Sync the notes repo, append text under a `## HH:MM` heading t
 notes.daily disabled Sync the notes repo and print a day's daily note, unless the note is private.
 params.get disabled A calibrated value for a scope, or its heuristic's default and why the default applies.
 params.due disabled The values an agent should derive again, oldest first: those on the default, those readers cannot use, those whose latest check failed, and those older than their recheck_after in calendar days.
-plans.open disabled The questions under a path whose status is open and that no answer names, oldest first.
+plans.open disabled The questions under a path whose status is open and that no answer names, grouped by project: a project holding a question that blocks active work comes first, and within a project those questions come first, each oldest first.
 plans.answer disabled Record the owner's answer to an open question. The answer is what marks the question answered; the question's content is left unchanged.
 plans.withdraw disabled Withdraw an open question that no answer names, with the reason, so that plans.open stops listing it.
 plans.migrate disabled Rewrite each question whose blocks holds words: a value that names one change becomes that change's path and its words move to blocked_work, and any other value moves to blocked_work. apply writes every line in one commit with a Board-Bulk trailer; without it nothing is written.
+plans.waiting disabled How many questions under a path wait for the owner, and one line that says so, which an agent can end its reply with.
 prompts.get disabled Read one prompt at its pin and render its body and runs_in with the input values given on stdin.
 prompts.list disabled List the prompts in the board's own tree and the marked repos the caller's remote chooses, at their pins, by repo then title.
 requests.thread disabled Every version of the effect's request, oldest first, with its answer, and the owner's replies to them, oldest first.
