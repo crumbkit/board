@@ -1,9 +1,10 @@
 //! `ci`: the check runs GitHub reports for a change's head become a run of
-//! the change's suite only when every one passed, and the run and head are
+//! the change's suite only when every check run, check suite and commit
+//! status passed and one check run succeeded, and the run and head are
 //! attached to the change. Each refusal writes nothing and has a passing
 //! twin that is admitted.
 
-use super::desk::Desk;
+use super::desk::{Desk, put_file};
 use super::merge::{CHANGE, HEAD};
 use super::*;
 
@@ -65,10 +66,29 @@ fn check(name: &str, status: &str, conclusion: Option<&str>, minute: u8) -> Valu
     })
 }
 
-/// What `gh api .../check-runs` prints for `runs`.
-fn answers(desk: &Desk, runs: &[Value]) {
+/// One commit status as GitHub reports it.
+fn status(context: &str, state: &str) -> Value {
+    json!({"context": context, "state": state})
+}
+
+/// Makes the stub gh answer `.../check-runs` with `runs`,
+/// `.../check-suites` with `suites` and `.../status` with `statuses`, and
+/// keep each endpoint it is asked in `gh-endpoints.txt`.
+fn answers(desk: &Desk, runs: &[Value], suites: &[Value], statuses: &[Value]) {
+    desk.gh_also(
+        "echo \"$2\" >> \"$here/gh-endpoints.txt\"\n\
+         case \"$2\" in\n\
+         *check-suites*) cat \"$here/suites.json\"; exit 0;;\n\
+         */status) cat \"$here/status.json\"; exit 0;;\n\
+         esac",
+    );
     let answer = json!({"total_count": runs.len(), "check_runs": runs});
     desk.gh_answers(&answer, 0, "");
+    let suites = json!({"total_count": suites.len(), "check_suites": suites});
+    put_file(&desk.bin().join("suites.json"), &suites.to_string());
+    // GitHub's combined state is pending when there are no statuses.
+    let combined = json!({"state": "pending", "statuses": statuses});
+    put_file(&desk.bin().join("status.json"), &combined.to_string());
 }
 
 /// Three check runs that passed, the last one skipped.
@@ -80,22 +100,28 @@ fn passing() -> Vec<Value> {
     ]
 }
 
+/// One check suite of GitHub Actions in `status`.
+fn suite(status: &str) -> Vec<Value> {
+    vec![json!({"status": status, "app": {"name": "GitHub Actions"}})]
+}
+
 /// Whether any run of the suite was written.
 fn wrote_a_run(desk: &Desk) -> bool {
     desk.personal.workdir().join("suites/checks/runs").exists()
 }
 
-/// The refusal `ci` gives for `runs`, after which nothing is written; then
-/// the passing twin is admitted.
-fn refused_then_admitted(runs: &[Value]) -> Value {
+/// The refusal `ci` gives for `runs`, `suites` and `statuses`, after which
+/// nothing is written; then the passing twin, with a completed suite and
+/// no statuses, is admitted.
+fn refused_then_admitted(runs: &[Value], suites: &[Value], statuses: &[Value]) -> Value {
     let desk = desk();
     lever(&desk, &json!({}));
-    answers(&desk, runs);
+    answers(&desk, runs, suites, statuses);
     let (ran, document) = desk.call("ci", &["--change", CHANGE]);
     assert_eq!(ran.code, 1, "{document}");
     assert!(!wrote_a_run(&desk));
     assert_eq!(desk.record(CHANGE).unwrap().get("head"), Some(&json!(HEAD)));
-    answers(&desk, &passing());
+    answers(&desk, &passing(), &suite("completed"), &[]);
     assert_eq!(desk.output("ci", &["--change", CHANGE])["run"], RUN);
     document
 }
@@ -104,14 +130,19 @@ fn refused_then_admitted(runs: &[Value]) -> Value {
 fn ci_writes_a_passing_run_of_the_changes_suite_from_its_check_runs_and_attaches_it() {
     let desk = desk();
     lever(&desk, &json!({}));
-    answers(&desk, &passing());
+    answers(&desk, &passing(), &suite("completed"), &[]);
     let output = desk.output("ci", &["--change", CHANGE]);
     assert_eq!(
         output,
         json!({"run": RUN, "head": HEAD, "change": CHANGE, "checks": 3})
     );
-    let endpoint = format!("repos/octo/widgets/commits/{HEAD}/check-runs?per_page=100");
-    assert_eq!(desk.gh_argv(), ["api", &endpoint]);
+    let commit = format!("repos/octo/widgets/commits/{HEAD}");
+    assert_eq!(
+        desk.gh_file("gh-endpoints.txt"),
+        format!(
+            "{commit}/check-runs?per_page=100\n{commit}/check-suites?per_page=100\n{commit}/status\n"
+        )
+    );
     assert_eq!(
         desk.record(RUN).unwrap(),
         json!({
@@ -129,12 +160,7 @@ fn ci_writes_a_passing_run_of_the_changes_suite_from_its_check_runs_and_attaches
                 {"case": "docs", "outcome": "skipped", "note": "GitHub concluded skipped."},
             ],
             "versions": {"widgets": HEAD},
-            "measures": {"checks": 3, "skipped": 1},
-            "setup": format!(
-                "Read by board github ci from the check runs GitHub reports for octo/widgets at \
-                 {HEAD}. Each result is one check run, named as GitHub names it."
-            ),
-            "summary": "All 3 check runs completed with success, skipped or neutral.",
+            "summary": "Read by board github ci from the check runs GitHub reports.",
         })
     );
     let plan = desk.record("/changes/lever/plans/1").unwrap();
@@ -147,12 +173,12 @@ fn ci_with_a_check_still_running_is_refused_as_pending_and_its_finished_twin_is_
     let mut runs = passing();
     runs[1] = check("test", "in_progress", None, 51);
     runs.push(check("deny", "queued", None, 53));
-    let refused = refused_then_admitted(&runs);
+    let refused = refused_then_admitted(&runs, &suite("completed"), &[]);
     assert_eq!(refused["code"], "github::ci::pending");
     assert_eq!(refused["fields"]["checks"], json!(["test", "deny"]));
     let message = refused["message"].as_str().unwrap();
     assert!(
-        message.contains("test (in_progress), deny (queued)"),
+        message.contains("test (in_progress), deny (queued) have not finished"),
         "{message}"
     );
     let hint = refused["recovery"]["text"].as_str().unwrap();
@@ -168,7 +194,7 @@ fn ci_with_a_failed_check_is_refused_as_failed_and_its_passing_twin_is_admitted(
     runs[0] = check("lint", "completed", Some("failure"), 52);
     runs[1] = check("test", "completed", Some("timed_out"), 51);
     runs.push(check("deny", "queued", None, 53));
-    let refused = refused_then_admitted(&runs);
+    let refused = refused_then_admitted(&runs, &suite("in_progress"), &[]);
     assert_eq!(refused["code"], "github::ci::failed");
     assert_eq!(refused["fields"]["checks"], json!(["lint", "test"]));
     let message = refused["message"].as_str().unwrap();
@@ -182,7 +208,7 @@ fn ci_with_a_failed_check_is_refused_as_failed_and_its_passing_twin_is_admitted(
 
 #[test]
 fn ci_on_a_head_with_no_check_runs_is_refused_and_its_twin_with_runs_is_admitted() {
-    let refused = refused_then_admitted(&[]);
+    let refused = refused_then_admitted(&[], &[], &[]);
     assert_eq!(refused["code"], "github::ci::none");
     assert_eq!(refused["fields"]["checks"], json!([]));
     let message = refused["message"].as_str().unwrap();
@@ -190,10 +216,52 @@ fn ci_on_a_head_with_no_check_runs_is_refused_and_its_twin_with_runs_is_admitted
 }
 
 #[test]
+fn ci_on_a_head_whose_check_runs_were_all_skipped_is_refused_as_none_and_its_twin_is_admitted() {
+    let runs = [
+        check("lint", "completed", Some("skipped"), 52),
+        check("docs", "completed", Some("neutral"), 50),
+    ];
+    let refused = refused_then_admitted(&runs, &suite("completed"), &[]);
+    assert_eq!(refused["code"], "github::ci::none");
+    assert_eq!(refused["fields"]["checks"], json!(["lint", "docs"]));
+}
+
+#[test]
+fn ci_while_a_check_suite_is_queued_is_refused_as_pending_though_every_check_run_passed() {
+    let refused = refused_then_admitted(&passing(), &suite("queued"), &[]);
+    assert_eq!(refused["code"], "github::ci::pending");
+    assert_eq!(
+        refused["fields"]["checks"],
+        json!(["the check suite of GitHub Actions"])
+    );
+    let message = refused["message"].as_str().unwrap();
+    assert!(
+        message.contains("the check suite of GitHub Actions (queued) has not finished"),
+        "{message}"
+    );
+}
+
+#[test]
+fn ci_with_a_failed_commit_status_is_refused_as_failed_and_its_twin_is_admitted() {
+    let statuses = [status("ci/old", "success"), status("ci/extra", "error")];
+    let refused = refused_then_admitted(&passing(), &suite("completed"), &statuses);
+    assert_eq!(refused["code"], "github::ci::failed");
+    assert_eq!(refused["fields"]["checks"], json!(["ci/extra"]));
+}
+
+#[test]
+fn ci_with_a_pending_commit_status_is_refused_as_pending_and_its_twin_is_admitted() {
+    let statuses = [status("ci/extra", "pending")];
+    let refused = refused_then_admitted(&passing(), &suite("completed"), &statuses);
+    assert_eq!(refused["code"], "github::ci::pending");
+    assert_eq!(refused["fields"]["checks"], json!(["ci/extra"]));
+}
+
+#[test]
 fn ci_of_a_change_with_no_suite_is_refused_without_gh_and_one_with_a_suite_is_admitted() {
     let desk = desk();
     lever(&desk, &json!({"suite": null}));
-    answers(&desk, &passing());
+    answers(&desk, &passing(), &suite("completed"), &[]);
     let (ran, document) = desk.call("ci", &["--change", CHANGE]);
     assert_eq!(
         (ran.code, &document["code"]),

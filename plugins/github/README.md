@@ -46,27 +46,35 @@ the boundary plugin passes it. SKILL.md holds the procedure.
 - `ci --change <path>` records CI on a change's head as a run of the
   change's suite. It reads the change's `head`, a full 40-hex commit, and
   `suite` in the board the command runs in, and the repository from the
-  checkout's origin. It runs `gh api
-  repos/<owner>/<repo>/commits/<head>/check-runs?per_page=100` once. GitHub
-  answers with the latest check run of each name. When every one completed
-  with success, skipped or neutral, it writes a `runs/run/v1` at
-  `<suite>/runs/<stamp>-<name>-<head7>`. `<stamp>` is the last completion
-  time, written `YYYYMMDDTHHMMZ`, so the same check runs give the same path.
-  The run has one result per check run: `case` is the check's name and
-  `outcome` is `pass` for success and `skipped`, with a note, for the rest.
-  It is `full` and not `dirty`. `versions` maps the repository's name to
-  the head, and `started` and `finished` come from the check runs.
-  `measures` holds `checks` and `skipped`. `by` is the program `board` and
+  checkout's origin. It runs `gh api` once each on the head's
+  `check-runs?per_page=100`, `check-suites?per_page=100` and `status`, under
+  `repos/<owner>/<repo>/commits/<head>/`. GitHub answers with the latest
+  check run of each name. A job that waits on another has no check run
+  until it is queued, but its check suite is already there, so a suite that
+  has not completed keeps the run from passing. When every check run
+  completed with success, skipped or neutral, at least one with success,
+  every check suite completed and no commit status is pending, failure or
+  error, it writes a `runs/run/v1` at `<suite>/runs/<stamp>-<name>-<head7>`.
+  `<stamp>` is the last completion time, written `YYYYMMDDTHHMMZ`, so the
+  same check runs give the same path. The run has one result per check
+  run: `case` is the check's name and `outcome` is `pass` for success and
+  `skipped`, with a note, for the rest. It is `full` and not `dirty`.
+  `versions` maps the repository's name to the head, and `started` and
+  `finished` come from the check runs. `by` is the program `board` and
   `written_by` is `github/ci`. Then it calls `changes.attach` with the run
   and the head. It returns `run`, `head`, `change` and `checks`. It sends
   nothing to GitHub, and on a refusal it writes nothing.
   - `github::ci::change`: the change records no full head or no suite.
     gh does not run.
   - `github::ci::failed`: a check run completed with another conclusion,
-    such as failure, cancelled or timed_out. It wins over pending.
-  - `github::ci::pending`: a check run is queued or in progress.
-  - `github::ci::none`: GitHub reports no check runs for the head.
-  - Each of the last three names the check runs in the message and in
+    such as failure, cancelled or timed_out, or a commit status is failure
+    or error. It wins over pending.
+  - `github::ci::pending`: a check run or check suite is queued or in
+    progress, or a commit status is pending. A check suite of an app that
+    never creates check runs can stay queued; record the run by hand then.
+  - `github::ci::none`: no check run concluded success, such as when there
+    are none or all were skipped.
+  - Each of the last three names the checks in the message and in
     `fields.checks`, and the hint says what to do next.
   - `github::gh::failed`: gh failed, GitHub answered 404, the answer cannot
     be read, or it holds more than 100 check runs.

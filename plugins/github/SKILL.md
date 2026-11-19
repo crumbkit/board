@@ -69,13 +69,14 @@ so ask before you change one. A refusal files no request for the owner; pass
 
 Once CI has passed on a change's head, run
 `board github ci --change /changes/<name>` from the checkout. It reads the
-check runs GitHub reports for the head. When every one completed with
-success, skipped or neutral, it writes a `runs/run/v1` under the change's
-suite and attaches the run and the head to the change, so the suite-run
-check passes. It sends nothing to GitHub. On `github::ci::pending`, wait for
-the checks it names and run it again. On `github::ci::failed`, fix the
-failures, push, attach the new head, and run it again once CI passes. On
-`github::ci::none`, push the head and wait for CI to start.
+check runs, check suites and commit statuses GitHub reports for the head.
+When every one has passed and at least one check run succeeded, it writes a
+`runs/run/v1` under the change's suite and attaches the run and the head to
+the change, so the suite-run check passes. It sends nothing to GitHub. On
+`github::ci::pending`, wait for the checks it names and run it again. On
+`github::ci::failed`, fix the failures, push, attach the new head, and run
+it again once CI passes. On `github::ci::none`, push the head and wait for
+CI to start.
 
 ## Raw git push and gh
 
