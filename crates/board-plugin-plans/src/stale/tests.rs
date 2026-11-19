@@ -167,7 +167,7 @@ fn without_apply_nothing_is_filed_and_with_it_each_item_becomes_one_drop_or_keep
         ("tasks/old", task(&json!({"reviewed": OLD}))),
     ]);
     stale(&board, &json!({"session": SESSION}));
-    assert!(open(&board).is_empty());
+    assert_eq!(open(&board).len(), 0);
     let output = stale(&board, &json!({"session": SESSION, "apply": true}));
     assert_eq!(output["outcomes"], json!({"filed": 2}));
     let questions = open(&board);
@@ -218,7 +218,7 @@ fn apply_without_a_session_is_refused_and_the_twin_with_one_is_admitted() {
         refused(&board, &json!({"apply": true})),
         "plans::stale::no_session"
     );
-    assert!(open(&board).is_empty());
+    assert_eq!(open(&board).len(), 0);
     stale(&board, &json!({"apply": true, "session": SESSION}));
     assert_eq!(open(&board).len(), 1);
 }
@@ -314,5 +314,8 @@ fn a_recent_plan_keeps_a_change_out_and_days_moves_the_window() {
         ("changes/touched", change("plan", "unowned", &ago(10))),
     ]);
     assert_eq!(listed(&stale(&board, &json!({}))), vec!["/changes/touched"]);
-    assert!(listed(&stale(&board, &json!({"days": 30}))).is_empty());
+    assert_eq!(
+        listed(&stale(&board, &json!({"days": 30}))),
+        Vec::<String>::new()
+    );
 }
