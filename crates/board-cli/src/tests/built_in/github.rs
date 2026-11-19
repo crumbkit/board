@@ -431,4 +431,5 @@ mod desk;
 mod hook;
 mod merge;
 mod push;
+mod repin;
 mod send;

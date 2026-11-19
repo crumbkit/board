@@ -25,7 +25,7 @@ pub(crate) struct Origin<'a> {
     pub(crate) top: PathBuf,
     pub(crate) owner: String,
     pub(crate) repo: String,
-    mount: Option<String>,
+    pub(crate) mount: Option<String>,
 }
 
 impl Origin<'_> {

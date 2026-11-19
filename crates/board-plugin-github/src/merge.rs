@@ -1,7 +1,7 @@
 //! `merge`: squash-merges a pull request with gh, only once the change it
 //! lands is in its land phase with every blocking check passing and the
 //! boundary passes the commit's subject and body. The change then moves to
-//! its next phase.
+//! its next phase, and the repository's mount moves to the merged commit.
 
 use std::path::PathBuf;
 
@@ -16,6 +16,7 @@ use serde_json::{Map, Value, json};
 use crate::gh;
 use crate::parts::Parts;
 use crate::records::PullRecord;
+use crate::repin::{Mount, Moved, Warning, repin};
 use crate::send::{Delivered, after_sent, origin, output};
 
 /// The phase a change must be in before its pull request merges.
@@ -58,7 +59,8 @@ pub(crate) struct MergeInput {
 /// The crossing the boundary passed, the pull request's URL in `sent`, the
 /// head commit merged, whether GitHub only queued the merge, and the phase
 /// the change moved to, left out when no change was named or the merge was
-/// queued.
+/// queued. Then either the mount the merge moved to the merged commit, or
+/// why it left the mount at its pin and the command that moves it.
 #[derive(Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 #[schemars(rename = "MergeOutput")]
@@ -71,6 +73,10 @@ pub(crate) struct MergeOutput {
     queued: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     phase: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    mount: Option<Moved>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    mount_warning: Option<Warning>,
 }
 
 /// What this capability reads of `changes.next`'s output. `stop` is there
@@ -111,11 +117,11 @@ pub(crate) fn merge(host: &dyn Host, input: &Value) -> Result<Value, PluginError
         Some(path) => Some((path, own(host)?)),
         None => None,
     };
-    let (head, pulls) = match &changed {
+    let (head, pulls, mounted) = match &changed {
         Some((change, board)) => {
             gate(&**board, &*place.personal, change)?;
-            let (recorded, pulls) = recorded_change(&**board, change)?;
-            (change_head(change, recorded, head)?, Some(pulls))
+            let (recorded, pulls, mounted) = recorded_change(&**board, change)?;
+            (change_head(change, recorded, head)?, Some(pulls), mounted)
         }
         None => (
             head.ok_or_else(|| {
@@ -126,6 +132,7 @@ pub(crate) fn merge(host: &dyn Host, input: &Value) -> Result<Value, PluginError
                 )
             })?,
             None,
+            Mount::personal(place.mount.clone()),
         ),
     };
     let repository = format!("{}/{}", place.owner, place.repo);
@@ -172,6 +179,11 @@ pub(crate) fn merge(host: &dyn Host, input: &Value) -> Result<Value, PluginError
         Some((change, board)) if !queued => Some(advance(&**board, change, &sent)?),
         _ => None,
     };
+    let board: &dyn Host = match &changed {
+        Some((_, board)) => &**board,
+        None => &*place.personal,
+    };
+    let (mount, mount_warning) = repin(host, board, &mounted, queued);
     Ok(output(&MergeOutput {
         digest,
         crossing,
@@ -180,6 +192,8 @@ pub(crate) fn merge(host: &dyn Host, input: &Value) -> Result<Value, PluginError
         head,
         queued,
         phase,
+        mount,
+        mount_warning,
     }))
 }
 
@@ -462,12 +476,12 @@ fn only_pull(
     })
 }
 
-/// The head commit the change at `path` records, if any, and the pull
-/// requests it records.
-fn recorded_change(
-    host: &dyn Host,
-    path: &str,
-) -> Result<(Option<String>, Vec<String>), PluginError> {
+/// What a change records that merge reads: its head commit, if any, its
+/// pull requests, and its mount in the board that holds it.
+type Recorded = (Option<String>, Vec<String>, Mount);
+
+/// What the change at `path` records.
+fn recorded_change(host: &dyn Host, path: &str) -> Result<Recorded, PluginError> {
     let refused =
         |refusal: &board_model::Refusal| PluginError::board_refused("github", "get", refusal);
     let logical: LogicalPath = path.parse().map_err(|_| {
@@ -483,11 +497,12 @@ fn recorded_change(
         .expect("get_each answers each path asked")
         .map_err(|error| refused(&error.refusal("get")))?;
     let record = report.record.map_err(|refusal| refused(&refusal))?;
-    let head = record.get("head").and_then(Value::as_str);
+    let text = |key| record.get(key).and_then(Value::as_str).map(str::to_owned);
     let pulls = (record.get("pulls").and_then(Value::as_array).into_iter())
         .flatten()
         .filter_map(|pull| pull.as_str().map(str::to_owned));
-    Ok((head.map(str::to_owned), pulls.collect()))
+    let mount = Mount::of_change(text("mount"), &report.location.board.repository);
+    Ok((text("head"), pulls.collect(), mount))
 }
 
 /// Moves the change at `path` to its next phase after its pull request at

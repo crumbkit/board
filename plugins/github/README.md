@@ -102,7 +102,30 @@ result it recorded.
   as `phase`. When a merge queue only queued it, it returns `queued: true`
   and no `phase`; run `board changes advance --path <change>` in the same
   board once the queue merges it. It returns the merged commit as `head`; `sent` is the
-  pull request's URL.
+  pull request's URL. Then it moves the mount of the merged repository: the
+  change's `mount` in the change's board, or without `--change` the
+  checkout's mount in the personal board. It resolves the mount with
+  `refs`, splits the ref it follows into a remote of the mounted clone and
+  a branch, fetches `+refs/heads/<branch>:refs/remotes/<remote>/<branch>`
+  there, so the ref moves even when the clone's own refspec leaves the
+  branch out, and moves the pin as `board mount update` does. It returns
+  `mount` with `path`, `old`, `new` and `wrote`. When it leaves the mount
+  at its pin, because the merge was queued, the mount is missing, it
+  follows a local branch, or the fetch or the update failed, it returns
+  `mount_warning` and also prints it. The merge still succeeds. The
+  warning's `code` is `github::merge::mount`. `cause` is the code of the
+  step that failed, and is absent when the only reason is a queued merge.
+  A queued merge's message always says it was queued, beside any other
+  reason. `command` is present only when it can run in a POSIX shell as
+  it is, and every value in it that comes from a record or from git is
+  single-quoted. It is `git -C <clone> fetch <remote> <refspec>
+  && <board> mount update <path>`, or only the `mount update` part when
+  the remote is unknown. `<board>` reaches the board that holds the mount
+  from any directory: `board -C <that board's directory>` with `--change`,
+  and `board --personal` without it. When no mount is known, because the
+  change records none or the personal board mounts the checkout at no one
+  path, there is no `command`, and the message says to run `mount update`
+  with the mount's path.
 
 The destination is `github:<owner>/<repo>` in lower case, from the URL
 configured for the checkout's `origin`. It is read before any `insteadOf`
@@ -212,6 +235,11 @@ Refusals:
   the pull request's URL.
 - `github::merge::unreadable`: `changes.next` answered in a shape this
   plugin does not read.
+- `github::merge::mount`: a warning, never a refusal. The pull request
+  merged, and the mount was left at its pin. `cause` names the code of the
+  step that failed, such as `github::git::failed` or
+  `board::path::not_found`, and `command`, when present, moves the mount
+  by hand.
 - `github::boundary::unreadable`: the boundary answered in a shape this
   plugin does not read, which happens only when the two come from
   different Board builds.

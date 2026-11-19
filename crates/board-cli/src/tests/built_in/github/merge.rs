@@ -6,18 +6,18 @@ use super::desk::{Desk, record_in};
 use super::*;
 
 const PULL_URL: &str = "https://github.com/octo/widgets/pull/12";
-const HEAD: &str = "0123456789abcdef0123456789abcdef01234567";
-const CHANGE: &str = "/changes/lever";
-const TESTED: &str = "# Lever\n\n## What the tests prove\n\nIt lands.\n\n## What the tests do not prove\n\nRetries.\n";
+pub(super) const HEAD: &str = "0123456789abcdef0123456789abcdef01234567";
+pub(super) const CHANGE: &str = "/changes/lever";
+pub(super) const TESTED: &str = "# Lever\n\n## What the tests prove\n\nIt lands.\n\n## What the tests do not prove\n\nRetries.\n";
 /// A plan that also has the section the team board's flow asks for.
-const TEAM_TESTED: &str = "# Lever\n\n## What the tests prove\n\nIt lands.\n\n## What the tests do not prove\n\nRetries.\n\n## Team tests\n\nThe team ran it.\n";
+pub(super) const TEAM_TESTED: &str = "# Lever\n\n## What the tests prove\n\nIt lands.\n\n## What the tests do not prove\n\nRetries.\n\n## Team tests\n\nThe team ran it.\n";
 /// The version of the development flow that only the team board holds.
 const TEAM_FLOW: &str = "/flows/development/7ea3000000000000";
 
 /// Enables the changes plugin and writes a change in `phase` at `head`,
 /// with a plan record whose text holds `plan` and pull request 12. An
 /// empty `head` leaves the change without one.
-fn change(desk: &Desk, phase: &str, head: &str, plan: &str) {
+pub(super) fn change(desk: &Desk, phase: &str, head: &str, plan: &str) {
     let enabled = desk.run_in(
         desk.personal.workdir(),
         &["plugin", "enable", "changes"],
@@ -71,7 +71,7 @@ fn lever(board: &Scenario, record: &Value, plan: &str) {
 /// version it follows: the development flow whose land phase also asks for
 /// a Team tests section under the check `team-tests`, which no shipped
 /// flow has. Then commits the team board and moves the pin.
-fn team_change(desk: &Desk, team: &Scenario, plan: &str) {
+pub(super) fn team_change(desk: &Desk, team: &Scenario, plan: &str) {
     let mut flow: Value = serde_json::from_str(include_str!(
         "../../../../../board-plugin-changes/flows/development.json"
     ))
@@ -101,7 +101,7 @@ fn team_change(desk: &Desk, team: &Scenario, plan: &str) {
 /// Makes the stub gh answer `gh api` with a pull request whose `merged` is
 /// `merged`, and keep each other run's arguments in `gh-merge-argv.txt`,
 /// its stdin in `gh-merge-stdin.txt` and a line in `gh-merges.txt`.
-fn pulls(desk: &Desk, merged: bool) {
+pub(super) fn pulls(desk: &Desk, merged: bool) {
     desk.gh_also(&format!(
         "if [ \"$1\" = api ]; then printf '%s' '{{\"merged\":{merged},\"title\":\"Add a lever\",\"body\":\"Levers lift.\"}}'; exit 0; fi\n\
          cp \"$here/gh-argv.txt\" \"$here/gh-merge-argv.txt\"\n\
@@ -118,7 +118,7 @@ fn merges(desk: &Desk) -> usize {
 
 /// The flags of a merge of pull request 12 with `subject` and `body`, and
 /// `extra`.
-fn merging<'a>(subject: &'a str, body: &'a str, extra: &[&'a str]) -> Vec<&'a str> {
+pub(super) fn merging<'a>(subject: &'a str, body: &'a str, extra: &[&'a str]) -> Vec<&'a str> {
     let mut flags = vec!["--number", "12", "--subject", subject, "--body", body];
     flags.extend_from_slice(extra);
     flags
