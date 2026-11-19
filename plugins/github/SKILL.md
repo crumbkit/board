@@ -28,7 +28,11 @@ add `--personal` after `board`.
 - Push the branch checked out: `board github push`.
 - Push and open a pull request:
   `board github pr-create --title <title> --body <body>`, with
-  `--base <branch>` or `--draft true` when needed.
+  `--base <branch>` or `--draft true` when needed. It attaches the pull
+  request to the open change named after the branch, or to the change
+  `--change /changes/<name>` names, so you do not run `board changes
+  attach --pull`. When the output has `change_note`, it attached none; run
+  the command the note gives.
 - Change a pull request: `board github pr-edit --number <n> --title <title>`,
   or `--body <body>`.
 - Comment: `board github comment --number <n> --body <body>`.

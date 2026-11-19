@@ -9,6 +9,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
+use crate::attach::attach;
 use crate::crossing::{self, Passed};
 use crate::gh;
 use crate::git;
@@ -143,7 +144,8 @@ pub(crate) struct Pushed {
 }
 
 /// The pushed branch and the pull request opened from it; `sent` is its URL
-/// and `path` its record.
+/// and `path` its record. `change` is the change the pull request was
+/// attached to, or `change_note` says why it was attached to none.
 #[derive(Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 #[schemars(rename = "PrCreateOutput")]
@@ -156,6 +158,10 @@ pub(crate) struct Opened {
     commits: Vec<String>,
     number: u64,
     path: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    change: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    change_note: Option<String>,
 }
 
 /// The issue opened; `sent` is its URL and `path` its record.
@@ -289,6 +295,11 @@ pub(crate) struct PrCreateInput {
     base: Option<String>,
     /// Whether to open it as a draft.
     draft: Option<bool>,
+    /// The change in the board this command runs in to attach the pull
+    /// request to, such as /changes/lever. Left out, it is the open change
+    /// on the checkout's mount named after the branch, if there is one.
+    #[schemars(regex(pattern = "^/changes/"))]
+    change: Option<String>,
     /// Ask the owner to let this exact content through when a check fails,
     /// which files one request the owner answers; left out, an earlier answer
     /// still applies but no request is filed.
@@ -296,13 +307,14 @@ pub(crate) struct PrCreateInput {
 }
 
 /// Pushes the branch and opens a pull request from it, once the boundary
-/// passes the commits, title and body.
+/// passes the commits, title and body, then attaches it to its change.
 pub(crate) fn pr_create(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
     let PrCreateInput {
         title,
         body,
         base,
         draft,
+        change,
         ask_owner,
     } = PluginError::read_input("github", "pr-create", input)?;
     let (place, branch, head) = branched(host)?;
@@ -359,6 +371,10 @@ pub(crate) fn pr_create(host: &dyn Host, input: &Value) -> Result<Value, PluginE
         note,
         sent,
     } = place.sent(passed, url)?;
+    let (change, change_note) = match attach(host, &place.top, change.as_deref(), &branch, &path) {
+        Ok(change) => (Some(change), None),
+        Err(note) => (None, Some(note)),
+    };
     Ok(output(&Opened {
         digest,
         crossing,
@@ -368,6 +384,8 @@ pub(crate) fn pr_create(host: &dyn Host, input: &Value) -> Result<Value, PluginE
         commits,
         number,
         path,
+        change,
+        change_note,
     }))
 }
 

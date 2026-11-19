@@ -2,6 +2,7 @@
 //! the boundary passes what it would send.
 
 use super::desk::{Desk, executable, put_file, remove};
+use super::merge::{CHANGE, HEAD, TESTED, change};
 use super::*;
 
 const PULL_URL: &str = "https://github.com/Octo/Widgets/pull/12";
@@ -388,4 +389,92 @@ fn pr_create_files_no_request_without_ask_owner_and_one_with_it() {
     refused(desk.call("pr-create", &asking));
     assert_eq!(filed(), 1);
     assert_eq!(desk.gh_calls(), 0);
+}
+
+/// The record pr-create writes for pull request 12.
+const PULL: &str = "/gh/octo/widgets/pulls/12";
+
+/// Writes the change at [`CHANGE`] on /repos/widgets in `phase`, listing
+/// pull request 12 only when `holding`, and removes the record of pull
+/// request 12, so pr-create writes it. Returns the change's record.
+fn lever_change(desk: &Desk, phase: &str, holding: bool) -> Value {
+    change(desk, phase, HEAD, TESTED);
+    let mut record = desk.record(CHANGE).unwrap();
+    if !holding {
+        record.as_object_mut().unwrap().remove("pulls");
+    }
+    desk.write(&format!("{CHANGE}.json"), &record.to_string());
+    remove(
+        &desk
+            .personal
+            .workdir()
+            .join("gh/octo/widgets/pulls/12.json"),
+    );
+    record
+}
+
+/// The output of pr-create, with `extra` flags, from a new branch
+/// `branch`, which gh answers with pull request 12.
+fn opened(desk: &Desk, branch: &str, extra: &[&str]) -> Value {
+    desk.git(&desk.checkout(), &["switch", "-q", "-c", branch]);
+    desk.commit("Add a lever");
+    desk.gh_answers(&json!(format!("{PULL_URL}\n")), 0, "");
+    let flags = [&["--title", "Add a lever", "--body", "Levers lift."], extra].concat();
+    desk.output("pr-create", &flags)
+}
+
+#[test]
+fn pr_create_attaches_the_pull_request_to_the_change_named_and_without_one_attaches_none() {
+    let desk = Desk::new();
+    lever_change(&desk, "build", false);
+    let result = opened(&desk, "feature", &["--change", CHANGE]);
+    assert_eq!(
+        (&result["change"], result.get("change_note")),
+        (&json!(CHANGE), None)
+    );
+    assert_eq!(desk.record(CHANGE).unwrap()["pulls"], json!([PULL]));
+
+    let desk = Desk::new();
+    let before = lever_change(&desk, "build", false);
+    let result = opened(&desk, "feature", &[]);
+    assert_eq!(result.get("change"), None);
+    let note = result["change_note"].as_str().unwrap();
+    assert!(note.contains("no change is at /changes/feature"), "{note}");
+    let command = format!("`board changes attach --path /changes/<name> --pull {PULL}`");
+    assert!(note.contains(&command), "{note}");
+    assert_eq!(desk.record(CHANGE).unwrap(), before);
+}
+
+#[test]
+fn pr_create_on_a_branch_named_after_an_open_change_attaches_once_and_after_a_done_one_attaches_none()
+ {
+    let desk = Desk::new();
+    lever_change(&desk, "build", false);
+    let result = opened(&desk, "lever", &[]);
+    assert_eq!(
+        (&result["change"], result.get("change_note")),
+        (&json!(CHANGE), None)
+    );
+    assert_eq!(desk.record(CHANGE).unwrap()["pulls"], json!([PULL]));
+
+    // A change that already lists the pull request is not written again.
+    let desk = Desk::new();
+    let before = lever_change(&desk, "build", true);
+    let result = opened(&desk, "lever", &[]);
+    assert_eq!(
+        (&result["change"], result.get("change_note")),
+        (&json!(CHANGE), None)
+    );
+    assert_eq!(desk.record(CHANGE).unwrap(), before);
+
+    let desk = Desk::new();
+    let before = lever_change(&desk, "done", false);
+    let result = opened(&desk, "lever", &[]);
+    assert_eq!(result.get("change"), None);
+    let note = result["change_note"].as_str().unwrap();
+    assert!(
+        note.contains("the change at /changes/lever is done"),
+        "{note}"
+    );
+    assert_eq!(desk.record(CHANGE).unwrap(), before);
 }
