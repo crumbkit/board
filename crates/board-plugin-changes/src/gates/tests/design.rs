@@ -288,8 +288,8 @@ fn an_answer_to_another_question_clears_nothing() {
 
 #[test]
 fn a_waiver_the_owner_signed_passes_the_conformance_check() {
-    let differs = at_review(vec![("/c/1", conformance(&unbuilt()))]);
-    assert_eq!(differs.statuses()["design-conformance"], "missing");
+    let unwaived = at_review(vec![("/c/1", conformance(&unbuilt()))]);
+    assert_eq!(unwaived.statuses()["design-conformance"], "missing");
     let waiver = (
         "/d/waive",
         (
