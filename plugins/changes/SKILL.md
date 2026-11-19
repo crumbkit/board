@@ -68,8 +68,9 @@ blocks is missing.
    repository file where the table lands) and `external` to
    `board -C <board> changes lifecycle`. The builder's brief names its text.
    Set the commit under test with `--head <sha>` after each push, and the
-   check suite with `--suite <path>` when the change names none. Record a
-   GitHub issue or pull request with
+   check suite with `--suite <path>` when the change names none.
+   `board github pr-create --change /changes/<name>` opens the pull request
+   and attaches it. Record any other GitHub issue or pull request with
    `board -C <board> github ref --ref <owner>/<repo>#<number>`, then
    attach the path it returns with `--ticket <path>` or `--pull <path>`.
    An owner check (`owner-approval`, `data-signed`, `rechecks`, `mockups`
