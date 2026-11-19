@@ -53,6 +53,11 @@ on one of a mounted repository when the acting agent did not start from a
 change's brief. The changes plugin's README,
 section "The write guard", says what it checks and what it cannot see.
 
+## board-handoff
+
+[claude-code/handoff.md](claude-code/handoff.md) says how `board-handoff` makes
+sessions hand off near a limit.
+
 ## written_by
 
 A record a hook writes without an agent carries `written_by`, the plugin and

@@ -35,6 +35,10 @@
     {
       "name": "board-attention",
       "source": "./plugins/attention/claude-code"
+    },
+    {
+      "name": "board-handoff",
+      "source": "./plugins/handoff/claude-code"
     }
   ],
   "description": "Claude Code mods of Board and its plugins."
