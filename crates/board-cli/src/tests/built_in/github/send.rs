@@ -440,9 +440,54 @@ fn pr_create_attaches_the_pull_request_to_the_change_named_and_without_one_attac
     assert_eq!(result.get("change"), None);
     let note = result["change_note"].as_str().unwrap();
     assert!(note.contains("no change is at /changes/feature"), "{note}");
-    let command = format!("`board changes attach --path /changes/<name> --pull {PULL}`");
-    assert!(note.contains(&command), "{note}");
+    assert!(
+        note.contains(&attaching(&desk, "/changes/<name>")),
+        "{note}"
+    );
     assert_eq!(desk.record(CHANGE).unwrap(), before);
+}
+
+/// The attach command a note gives for the change `to`, which is quoted
+/// unless it is the `/changes/<name>` placeholder: it names the personal
+/// board and quotes each value.
+fn attaching(desk: &Desk, to: &str) -> String {
+    let board = desk.personal.workdir().canonicalize().unwrap();
+    let to = if to.contains('<') {
+        to.to_owned()
+    } else {
+        format!("'{to}'")
+    };
+    format!(
+        "`board -C '{}' changes attach --path {to} --pull '{PULL}'`",
+        board.display()
+    )
+}
+
+#[test]
+fn pr_create_whose_attach_is_refused_gives_the_cause_and_the_command_for_the_change_and_one_admitted_attaches()
+ {
+    let desk = Desk::new();
+    let before = lever_change(&desk, "build", false);
+    // A folder Board cannot write into, so the change cannot be rewritten.
+    let changes = desk.personal.workdir().join("changes");
+    let mode = |bits| std::os::unix::fs::PermissionsExt::from_mode(bits);
+    std::fs::set_permissions(&changes, mode(0o555)).unwrap();
+    let result = opened(&desk, "lever", &[]);
+    std::fs::set_permissions(&changes, mode(0o755)).unwrap();
+    assert_eq!(result.get("change"), None);
+    let note = result["change_note"].as_str().unwrap();
+    assert!(note.contains(&attaching(&desk, CHANGE)), "{note}");
+    assert!(note.contains("(changes::board::refused)"), "{note}");
+    assert_eq!(desk.record(CHANGE).unwrap(), before);
+
+    let desk = Desk::new();
+    lever_change(&desk, "build", false);
+    let result = opened(&desk, "lever", &[]);
+    assert_eq!(
+        (&result["change"], result.get("change_note")),
+        (&json!(CHANGE), None)
+    );
+    assert_eq!(desk.record(CHANGE).unwrap()["pulls"], json!([PULL]));
 }
 
 #[test]

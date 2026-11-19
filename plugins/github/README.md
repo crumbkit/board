@@ -69,13 +69,15 @@ result it recorded.
   It writes the `github/pull/v1` record and returns `number` and `path`;
   `sent` is the pull request's URL, which replaces git's line on the
   crossing. It then attaches the record to a change in the board the command
-  runs in, as `board changes attach --pull` does: the change `--change`
-  names, or else the change at `/changes/<branch>` when it is on the
-  checkout's mount and not done or dropped. A change that already lists the
-  pull request is not written. `change` names the change it attached to;
-  otherwise `change_note` says why it attached none and gives the attach
-  command. The attach step never fails the call, since the pull request is
-  already open.
+  runs in, as `board changes attach --pull` does. With `--change`, it
+  attaches to that change whatever its phase or mount. Without it, it
+  attaches to the change at `/changes/<branch>` only when that change is on
+  the checkout's mount and not done or dropped. A change that already lists
+  the pull request is not written. `change` names the change it attached
+  to; otherwise `change_note` says why it attached none and gives the
+  attach command, which names the board with `-C` and quotes each value.
+  The attach step never fails the call, since the pull request is already
+  open.
 - `pr-edit --number <n> [--title <t>] [--body <b>]` changes the title, the
   body or both through `gh api`. Board refuses a call with neither as
   `board::plugin::bad_input`.

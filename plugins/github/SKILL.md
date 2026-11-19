@@ -29,9 +29,10 @@ add `--personal` after `board`.
 - Push and open a pull request:
   `board github pr-create --title <title> --body <body>`, with
   `--base <branch>` or `--draft true` when needed. It attaches the pull
-  request to the open change named after the branch, or to the change
-  `--change /changes/<name>` names, so you do not run `board changes
-  attach --pull`. When the output has `change_note`, it attached none; run
+  request to the open change on this checkout's mount that is named after
+  the branch, so you do not run `board changes attach --pull`.
+  `--change /changes/<name>` attaches it to that change instead, without
+  checking the change's phase or mount. When the output has `change_note`, it attached none; run
   the command the note gives.
 - Change a pull request: `board github pr-edit --number <n> --title <title>`,
   or `--body <body>`.
