@@ -34,9 +34,10 @@ add `--personal` after `board`.
 - Comment: `board github comment --number <n> --body <body>`.
 - Open an issue: `board github issue-create --title <title> --body <body>`.
 - Squash-merge the pull request of a change in its land phase:
-  `board github merge --number <n> --subject <subject> --body <body>
-  --change /changes/<name>`. It merges the change's head and moves the
-  change to its next phase. It reads the change in the board the command
+  `board github merge --change /changes/<name>`. It merges the change's
+  head and moves the change to its next phase. The pull request is the
+  change's only one in this repository, and the commit takes the pull
+  request's title and body; `--number`, `--subject` and `--body` override. It reads the change in the board the command
   runs in: for a change in another board, add `-C <that board's directory>`
   and name it as `/changes/<name>`, never through a mount. From the
   checkout of a repository that another board mounts, a change in the
@@ -87,6 +88,8 @@ its message, change what it names, and push again.
   Run the merge in the board that holds the change, with `-C`.
 - `github::merge::gate`: the change is not in its land phase, or its land
   gate misses the checks in `fields.missing`. Run `board changes next`.
+- `github::merge::number`: no `--number`, and the change records no single
+  pull request of this repository. Pass `--number <n>`.
 - `github::merge::head`: no head to merge, or `--head` differs from the
   change's head. Attach the head to the change or pass the right one.
 - `github::merge::advance`: the pull request merged but the change did not

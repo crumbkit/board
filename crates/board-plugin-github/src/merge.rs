@@ -30,14 +30,17 @@ const SAME_BOARD: &str = "in the board this merge ran in, with the same `-C` or 
 #[serde(deny_unknown_fields)]
 #[schemars(rename = "MergeInput")]
 pub(crate) struct MergeInput {
-    /// The pull request's number in the checkout's repository.
+    /// The pull request's number in the checkout's repository. Optional
+    /// with `change` when the change records exactly one pull request of
+    /// this repository, whose number is then used.
     #[schemars(range(min = 1))]
-    number: u64,
-    /// The squash commit's subject.
+    number: Option<u64>,
+    /// The squash commit's subject. Optional: the pull request's title
+    /// followed by ` (#<number>)`.
     #[schemars(length(min = 1))]
-    subject: String,
-    /// The squash commit's body.
-    body: String,
+    subject: Option<String>,
+    /// The squash commit's body. Optional: the pull request's body.
+    body: Option<String>,
     /// The change in the board this command runs in that the pull request
     /// lands, such as /changes/lever. Its land gate must pass, its head is
     /// the commit merged, and it moves to its next phase after the merge.
@@ -83,6 +86,7 @@ struct Gated {
     check: String,
     status: String,
     blocks: bool,
+    remedy: Option<String>,
 }
 
 /// Squash-merges a pull request at its head commit, once the change's land
@@ -105,32 +109,13 @@ pub(crate) fn merge(host: &dyn Host, input: &Value) -> Result<Value, PluginError
         Some(path) => Some((path, own(host)?)),
         None => None,
     };
+    let mut pulls = Vec::new();
     let head = match &changed {
         Some((change, board)) => {
             gate(&**board, &*place.personal, change)?;
-            let recorded = recorded_head(&**board, change)?;
-            match (recorded, head) {
-                (None, _) => {
-                    return Err(head_refused(format!(
-                        "the change at {change} records no head commit; record one with `board \
-                         changes attach --path {change} --head <sha>`"
-                    )));
-                }
-                (Some(recorded), _) if !is_full_commit(&recorded) => {
-                    return Err(head_refused(format!(
-                        "the change at {change} records the head {recorded}, which is not a full \
-                         40-hex commit; attach the full commit with `board changes attach --path \
-                         {change} --head <sha>`"
-                    )));
-                }
-                (Some(recorded), Some(asked)) if asked != recorded => {
-                    return Err(head_refused(format!(
-                        "--head {asked} is not {recorded}, the head the change at {change} \
-                         records; leave --head out or attach the head you mean"
-                    )));
-                }
-                (Some(recorded), _) => recorded,
-            }
+            let (recorded, found) = recorded(&**board, change)?;
+            pulls = found;
+            change_head(change, recorded, head)?
         }
         None => head.ok_or_else(|| {
             head_refused(
@@ -139,12 +124,17 @@ pub(crate) fn merge(host: &dyn Host, input: &Value) -> Result<Value, PluginError
             )
         })?,
     };
+    let repository = format!("{}/{}", place.owner, place.repo);
+    let number = match number {
+        Some(number) => number,
+        None => only_pull(&pulls, &repository)?,
+    };
+    let (subject, body) = commit_text(host, &repository, number, subject, body)?;
     let parts = Parts::from([
         ("pr.merge.subject".to_owned(), subject.clone()),
         ("pr.merge.body".to_owned(), body.clone()),
     ]);
     let passed = place.check("merge", &parts)?;
-    let repository = format!("{}/{}", place.owner, place.repo);
     let number_text = number.to_string();
     let arguments: Vec<String> = [
         "pr",
@@ -185,6 +175,58 @@ pub(crate) fn merge(host: &dyn Host, input: &Value) -> Result<Value, PluginError
         queued,
         phase,
     }))
+}
+
+/// The head `change` records, which `asked` must equal when given, or
+/// `github::merge::head`.
+fn change_head(
+    change: &str,
+    recorded: Option<String>,
+    asked: Option<String>,
+) -> Result<String, PluginError> {
+    match (recorded, asked) {
+        (None, _) => Err(head_refused(format!(
+            "the change at {change} records no head commit; record one with `board changes \
+             attach --path {change} --head <sha>`"
+        ))),
+        (Some(recorded), _) if !is_full_commit(&recorded) => Err(head_refused(format!(
+            "the change at {change} records the head {recorded}, which is not a full 40-hex \
+             commit; attach the full commit with `board changes attach --path {change} --head \
+             <sha>`"
+        ))),
+        (Some(recorded), Some(asked)) if asked != recorded => Err(head_refused(format!(
+            "--head {asked} is not {recorded}, the head the change at {change} records; leave \
+             --head out or attach the head you mean"
+        ))),
+        (Some(recorded), _) => Ok(recorded),
+    }
+}
+
+/// The squash commit's subject and body: each one given, else the pull
+/// request's title and number, or its body.
+fn commit_text(
+    host: &dyn Host,
+    repository: &str,
+    number: u64,
+    subject: Option<String>,
+    body: Option<String>,
+) -> Result<(String, String), PluginError> {
+    if let (Some(subject), Some(body)) = (&subject, &body) {
+        return Ok((subject.clone(), body.clone()));
+    }
+    let endpoint = format!("repos/{repository}/pulls/{number}");
+    let pull = gh::api(host, &endpoint)?.ok_or_else(|| {
+        gh::failed(
+            &endpoint,
+            "answered 404",
+            "check the pull request on GitHub",
+        )
+    })?;
+    let text = |key| pull.get(key).and_then(Value::as_str).unwrap_or_default();
+    Ok((
+        subject.unwrap_or_else(|| format!("{} (#{number})", text("title"))),
+        body.unwrap_or_else(|| text("body").to_owned()),
+    ))
 }
 
 /// Whether `commit` is a full 40-hex commit name.
@@ -276,10 +318,10 @@ fn gate(host: &dyn Host, personal: &dyn Host, path: &str) -> Result<(), PluginEr
         fields: Map::new(),
         hint: Some("update Board so its github and changes plugins agree".to_owned()),
     })?;
-    let missing: Vec<String> = (next.gate.into_iter())
+    let blocking: Vec<Gated> = (next.gate.into_iter())
         .filter(|check| check.status == "missing" && check.blocks)
-        .map(|check| check.check)
         .collect();
+    let missing: Vec<&str> = blocking.iter().map(|check| check.check.as_str()).collect();
     if next.phase == LAND && missing.is_empty() && next.stop.is_none() {
         return Ok(());
     }
@@ -297,6 +339,9 @@ fn gate(host: &dyn Host, personal: &dyn Host, path: &str) -> Result<(), PluginEr
     if let Some(stop) = next.stop {
         fields.insert("stop".to_owned(), stop);
     }
+    let remedies: Vec<String> = (blocking.iter())
+        .filter_map(|check| Some(format!("{}: {}", check.check, check.remedy.as_ref()?)))
+        .collect();
     Err(PluginError {
         code: "github::merge::gate".to_owned(),
         message: format!(
@@ -304,12 +349,42 @@ fn gate(host: &dyn Host, personal: &dyn Host, path: &str) -> Result<(), PluginEr
              for the next step"
         ),
         fields,
-        hint: None,
+        hint: (!remedies.is_empty()).then(|| remedies.join("; ")),
     })
 }
 
-/// The head commit the change at `path` records, if any.
-fn recorded_head(host: &dyn Host, path: &str) -> Result<Option<String>, PluginError> {
+/// The pull request number the change records for `repository`, or
+/// `github::merge::number` when it records none or several, or no change
+/// was named.
+fn only_pull(pulls: &[String], repository: &str) -> Result<u64, PluginError> {
+    let prefix = format!("/gh/{repository}/pulls/");
+    let numbers: Vec<u64> = (pulls.iter())
+        .filter_map(|pull| pull.strip_prefix(&prefix)?.parse().ok())
+        .collect();
+    if let [number] = numbers[..] {
+        return Ok(number);
+    }
+    let found = if numbers.is_empty() {
+        format!("records no pull request of {repository}")
+    } else {
+        format!("records the pull requests {}", pulls.join(", "))
+    };
+    let mut fields = Map::new();
+    fields.insert("pulls".to_owned(), json!(numbers));
+    Err(PluginError {
+        code: "github::merge::number".to_owned(),
+        message: format!(
+            "merge cannot tell which pull request to merge: the change {found}, or no --change \
+             was given"
+        ),
+        fields,
+        hint: Some("pass --number <n>, the pull request's number".to_owned()),
+    })
+}
+
+/// The head commit the change at `path` records, if any, and the pull
+/// requests it records.
+fn recorded(host: &dyn Host, path: &str) -> Result<(Option<String>, Vec<String>), PluginError> {
     let refused =
         |refusal: &board_model::Refusal| PluginError::board_refused("github", "get", refusal);
     let logical: LogicalPath = path.parse().map_err(|_| {
@@ -325,10 +400,11 @@ fn recorded_head(host: &dyn Host, path: &str) -> Result<Option<String>, PluginEr
         .expect("get_each answers each path asked")
         .map_err(|error| refused(&error.refusal("get")))?;
     let record = report.record.map_err(|refusal| refused(&refusal))?;
-    Ok(record
-        .get("head")
-        .and_then(Value::as_str)
-        .map(str::to_owned))
+    let head = record.get("head").and_then(Value::as_str);
+    let pulls = (record.get("pulls").and_then(Value::as_array).into_iter())
+        .flatten()
+        .filter_map(|pull| pull.as_str().map(str::to_owned));
+    Ok((head.map(str::to_owned), pulls.collect()))
 }
 
 /// Moves the change at `path` to its next phase after its pull request at

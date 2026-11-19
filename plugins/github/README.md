@@ -74,10 +74,13 @@ result it recorded.
 - `comment --number <n> --body <b>` comments on a pull request or issue.
 - `issue-create --title <t> --body <b>` opens an issue, writes its
   `github/issue/v1` record and returns `number` and `path`.
-- `merge --number <n> --subject <s> --body <b> [--change <path>] [--head <sha>]`
+- `merge [--change <path>] [--number <n>] [--subject <s>] [--body <b>] [--head <sha>]`
   squash-merges a pull request with `gh pr merge --squash
   --match-head-commit <sha>`, so GitHub refuses it when the pull request's
-  head has moved. With `--change`, it first runs `changes.next` in the
+  head has moved. A left-out `--subject` is the pull request's title and
+  ` (#<n>)`, a left-out `--body` its body, read with `gh api`. A left-out
+  `--number` is the one pull request of the checkout's repository that
+  `--change` records. With `--change`, it first runs `changes.next` in the
   board the command runs in, which `-C <board>` or `--personal` names, and
   refuses unless the change is in its land phase with no blocking check
   missing, and while a run of the change has a stop set. The gate, the
@@ -184,7 +187,10 @@ Refusals:
 - `github::merge::gate`: `merge` named a change that is not in its land
   phase, whose land gate misses a blocking check, or whose run has a stop
   set. `fields.phase` names its phase, `fields.missing` the checks and
-  `fields.stop` the stop. gh does not run.
+  `fields.stop` the stop; the hint gives each missing check's remedy. gh does not run.
+- `github::merge::number`: `merge` got no `--number` and `--change` records
+  no single pull request of the repository, or no `--change` was given.
+  gh does not run.
 - `github::merge::head`: `merge` has no head to match, because the change
   records none or one that is not a full 40-hex commit, or neither
   `--change` nor `--head` was given, or `--head` differs from the change's
