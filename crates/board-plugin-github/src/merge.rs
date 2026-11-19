@@ -129,12 +129,11 @@ pub(crate) fn merge(host: &dyn Host, input: &Value) -> Result<Value, PluginError
         ),
     };
     let repository = format!("{}/{}", place.owner, place.repo);
-    let number = match number {
-        Some(number) => number,
-        None => {
-            let board = changed.as_ref().map_or(host, |(_, board)| &**board);
-            only_pull(board, pulls.as_deref(), &place.owner, &place.repo)?
-        }
+    let number = if let Some(number) = number {
+        number
+    } else {
+        let board = changed.as_ref().map_or(host, |(_, board)| &**board);
+        only_pull(board, pulls.as_deref(), &place.owner, &place.repo)?
     };
     let (subject, body) = commit_text(host, &repository, number, subject, body)?;
     let parts = Parts::from([
@@ -406,8 +405,8 @@ fn gate(host: &dyn Host, personal: &dyn Host, path: &str) -> Result<(), PluginEr
 /// The number of the one pull request of `owner`/`repo` among the
 /// `github/pull/v1` records `pulls` names in `host`, or
 /// `github::merge::number` saying why there is none: no change was named
-/// (`pulls` is `None`), the change records no pull request, none of this
-/// repository, or several. A record keeps owner and repository in lower
+/// (`pulls` is `None`), the change records none of this repository, or
+/// several. The land gate already refuses a change with no pull request. A record keeps owner and repository in lower
 /// case, and GitHub matches them without case, so they compare so here.
 fn only_pull(
     host: &dyn Host,
@@ -438,7 +437,6 @@ fn only_pull(
         None => "merge needs the pull request to merge; pass --change /changes/<name> or \
                  --number <n>"
             .to_owned(),
-        Some([]) => "the change records no pull request; pass --number <n>".to_owned(),
         Some(_) if numbers.is_empty() => format!(
             "the change records no pull request of {owner}/{repo}, only of other repositories; \
              pass --number <n>"

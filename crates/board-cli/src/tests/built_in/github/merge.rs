@@ -577,11 +577,6 @@ fn a_change_with_no_pull_or_two_pulls_in_the_repository_needs_number_and_with_it
              pass --number <n>",
             json!([]),
         ),
-        (
-            vec![],
-            "the change records no pull request; pass --number <n>",
-            json!([]),
-        ),
     ] {
         let desk = Desk::new();
         change(&desk, "land", HEAD, TESTED);
@@ -645,11 +640,17 @@ fn a_pull_the_change_records_through_a_mount_gives_the_number_and_one_of_another
     pulls(&desk, true);
     desk.gh_answers(&json!(""), 0, "");
     pulling(&desk, &["/repos/team/gh/octo/other/pulls/3"]);
-    let (code, _, numbers) = refusal(&desk, &["--change", CHANGE]);
-    assert_eq!((code, numbers), (json!("github::merge::number"), json!([])));
+    let (ran, document) = desk.call_in(&["--personal"], "merge", &["--change", CHANGE]);
+    assert_eq!(ran.code, 1, "{document}");
+    assert_eq!(
+        (&document["code"], &document["fields"]["pulls"]),
+        (&json!("github::merge::number"), &json!([]))
+    );
     assert_eq!(desk.gh_calls(), 0);
     pulling(&desk, &["/repos/team/gh/octo/widgets/pulls/12"]);
-    assert_eq!(desk.output("merge", &["--change", CHANGE])["phase"], "done");
+    let (ran, document) = desk.call_in(&["--personal"], "merge", &["--change", CHANGE]);
+    assert_eq!(ran.code, 0, "{document}");
+    assert_eq!(document["data"]["output"]["phase"], "done", "{document}");
     let argv = desk.gh_file("gh-merge-argv.txt");
     assert_eq!(argv.lines().nth(2), Some("12"), "{argv}");
 }
