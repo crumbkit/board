@@ -75,3 +75,30 @@ fn an_owner_check_says_only_the_owner_can_provide_it_and_an_agent_check_does_not
         check(serde_json::json!({"id": "a", "kind": "records", "type": "plans/decision/v1"}));
     assert!(of(&agent, &values(None)).starts_with("Write the record"));
 }
+
+#[test]
+fn an_owner_approval_check_says_to_attach_the_owners_answer_and_one_with_type_refs_does_not() {
+    let approval = |refs: serde_json::Value| {
+        check(serde_json::json!({
+            "id": "a", "kind": "records", "type": "plans/decision/v1", "actor": "owner",
+            "where": {"owner_signed": true, "refs": refs}
+        }))
+    };
+    let said = of(&approval(serde_json::json!(["plan"])), &values(None));
+    assert_eq!(
+        said,
+        "Ask the owner with /ask, with /changes/t in the text of the option that approves it \
+         and in no other option, because any chosen option that names it counts. Then attach the question and the owner's answer, each with `board changes attach \
+         --path /changes/t --ref <path>`. A plans/decision/v1 the owner signs with by.person \
+         whose refs name /changes/t also counts."
+    );
+    let typed = of(
+        &approval(serde_json::json!(["evals/eval/v1"])),
+        &values(None),
+    );
+    assert_eq!(
+        typed,
+        "Only the owner can provide this: ask the owner, then write the record the detail \
+         describes and attach it with `board changes attach --path /changes/t --ref <path>`."
+    );
+}
