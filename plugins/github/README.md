@@ -43,6 +43,35 @@ the boundary plugin passes it. SKILL.md holds the procedure.
     capitals in `owner`, is `github::record::degraded`, with Board's code in
     `fields.code`. A record whose body does not read as a JSON object is the
     same code with `github::record::unreadable` in `fields.code`.
+- `ci --change <path>` records CI on a change's head as a run of the
+  change's suite. It reads the change's `head`, a full 40-hex commit, and
+  `suite` in the board the command runs in, and the repository from the
+  checkout's origin. It runs `gh api
+  repos/<owner>/<repo>/commits/<head>/check-runs?per_page=100` once. GitHub
+  answers with the latest check run of each name. When every one completed
+  with success, skipped or neutral, it writes a `runs/run/v1` at
+  `<suite>/runs/<stamp>-<name>-<head7>`. `<stamp>` is the last completion
+  time, written `YYYYMMDDTHHMMZ`, so the same check runs give the same path.
+  The run has one result per check run: `case` is the check's name and
+  `outcome` is `pass` for success and `skipped`, with a note, for the rest.
+  It is `full` and not `dirty`. `versions` maps the repository's name to
+  the head, and `started` and `finished` come from the check runs.
+  `measures` holds `checks` and `skipped`. `by` is the program `board` and
+  `written_by` is `github/ci`. Then it calls `changes.attach` with the run
+  and the head. It returns `run`, `head`, `change` and `checks`. It sends
+  nothing to GitHub, and on a refusal it writes nothing.
+  - `github::ci::change`: the change records no full head or no suite.
+    gh does not run.
+  - `github::ci::failed`: a check run completed with another conclusion,
+    such as failure, cancelled or timed_out. It wins over pending.
+  - `github::ci::pending`: a check run is queued or in progress.
+  - `github::ci::none`: GitHub reports no check runs for the head.
+  - Each of the last three names the check runs in the message and in
+    `fields.checks`, and the hint says what to do next.
+  - `github::gh::failed`: gh failed, GitHub answered 404, the answer cannot
+    be read, or it holds more than 100 check runs.
+  - When `changes.attach` refuses, the run is already written; the message
+    gives the attach command.
 
 ### Sending actions
 

@@ -382,6 +382,7 @@ fn board_lists_the_plugin_as_enabled_and_enabling_wrote_the_schemas_it_ships() {
                 "comment",
                 "issue-create",
                 "merge",
+                "ci",
                 "install-hook",
                 "pre-push",
                 "covers"
@@ -427,6 +428,7 @@ fn ref_answers_from_a_warm_index_as_from_a_cold_one_after_the_record_changes() {
     assert_eq!(board.gh_calls(), 0);
 }
 
+mod ci;
 mod desk;
 mod hook;
 mod merge;

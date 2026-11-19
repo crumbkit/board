@@ -65,6 +65,18 @@ so ask before you change one. A refusal files no request for the owner; pass
 `--ask_owner true` on `push`, `pr-create`, `pr-edit`, `comment` or
 `issue-create` only when the exact content must go as it is.
 
+## Record a passing CI run
+
+Once CI has passed on a change's head, run
+`board github ci --change /changes/<name>` from the checkout. It reads the
+check runs GitHub reports for the head. When every one completed with
+success, skipped or neutral, it writes a `runs/run/v1` under the change's
+suite and attaches the run and the head to the change, so the suite-run
+check passes. It sends nothing to GitHub. On `github::ci::pending`, wait for
+the checks it names and run it again. On `github::ci::failed`, fix the
+failures, push, attach the new head, and run it again once CI passes. On
+`github::ci::none`, push the head and wait for CI to start.
+
 ## Raw git push and gh
 
 Do not send to GitHub with `git push` or `gh` directly. In Claude Code, the
@@ -116,6 +128,10 @@ its message, change what it names, and push again.
 - `github::merge::advance`: the pull request merged but the change did not
   move. Do not merge again; run `board changes advance --path <change>` in
   the board the merge ran in.
+- `github::ci::change`: the change records no full head or no suite.
+  Attach the one the message names.
+- `github::ci::pending`, `github::ci::failed`, `github::ci::none`: see
+  Record a passing CI run.
 - `github::hook::exists`: the checkout already has a different `pre-push`
   hook. Ask the owner before you move it aside.
 - `github::record::degraded`: the record already there fails its schema.

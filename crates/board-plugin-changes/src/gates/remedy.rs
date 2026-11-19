@@ -152,9 +152,11 @@ fn default(each: &flow::Check) -> String {
              counts."
             .to_owned(),
         Kind::Records => format!("{ask}write the record the detail describes and {ATTACH}."),
-        Kind::Run => "Run {suite} on {head} with `board runs run` and attach the run with `board \
-             changes attach --path {change} --ref <run>`. When the change names no suite, name \
-             one with `board changes attach --path {change} --suite /suites/<name>`."
+        Kind::Run => "Once CI has passed on {head}, record its check runs as a run of {suite} with \
+             `board github ci --change {change}`, which also attaches the run. Or run {suite} on \
+             {head} yourself, write the run with `board put`, and attach it with `board changes \
+             attach --path {change} --ref <run>`. When the change names no suite, name one with \
+             `board changes attach --path {change} --suite /suites/<name>`."
             .to_owned(),
         Kind::Paths => {
             "Add the files to the plan's paths with `board changes plan --path {change}`, or \
