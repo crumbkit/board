@@ -32,9 +32,10 @@ Then follow that action's refusal the same way.
    On `boundary::boundary::invalid`, a boundary in the personal board is
    broken or misplaced, and the hint says how to fix each one. A
    boundary is a record the owner keeps, so ask before you change one.
-   When the owner wants this content sent as it is, such as when a judged
-   rule misreads it, the refusal names a pending effect. Only the owner
-   can approve it, with `board answer <effect> approve` and Touch ID. Once
+   A failed check files no request for the owner. When the owner wants
+   this content sent as it is, such as when a judged rule misreads it, run
+   the check again with `--ask_owner true`, which files one pending effect
+   the refusal names. Only the owner can approve it, with `board answer <effect> approve` and Touch ID. Once
    approved, check the same content again and it passes, with `override`
    naming the effect. Changed content needs a new approval.
 3. Send only content that passed. After sending, record what the

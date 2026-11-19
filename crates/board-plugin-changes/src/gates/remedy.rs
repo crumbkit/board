@@ -228,9 +228,10 @@ fn field(field: Option<Field>) -> String {
              with `board changes attach --path {change} --ticket <path>`."
         }
         Some(Field::Pulls) => {
-            "Draft the pull request with `board changes pr --path {change}`, open it, record \
-             it with `board github ref` and attach it with `board changes attach --path \
-             {change} --pull <path>`."
+            "Draft the pull request with `board changes pr --path {change}` and open it with \
+             `board github pr-create --change {change}`, which attaches it to the change. \
+             Record one opened another way with `board github ref` and attach it with `board \
+             changes attach --path {change} --pull <path>`."
         }
         None => "Add a field to the check in the flow.",
     }

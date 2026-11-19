@@ -89,6 +89,7 @@ plugin `BOARD_PLUGIN` names may run its capability at the path.
 - With no answer it writes the pending effect and refuses with
   `board::settings::asked`, whose `effect` field is the id. Asking again
   writes nothing new.
+- `Host::decided` reads the answer but files nothing.
 - With no personal board named it refuses with `board::settings::no_personal`.
 - The owner's own decide is admitted and writes nothing.
 

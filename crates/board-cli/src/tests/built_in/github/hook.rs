@@ -105,6 +105,7 @@ fn a_raw_push_of_a_private_name_is_refused_with_the_next_step_and_the_same_push_
     assert_ne!(code, 0);
     assert!(stderr.contains("github::boundary::refused"), "{stderr}");
     assert!(stderr.contains("Next: change commit."), "{stderr}");
+    assert!(!stderr.contains("ask_owner"), "{stderr}");
     assert_eq!(desk.remote_head("main"), before);
     desk.git(
         &desk.checkout(),

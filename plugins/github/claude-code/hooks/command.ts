@@ -411,6 +411,21 @@ export function writes(source: string): Write[] | null {
   return found
 }
 
+/**
+ * The text of each fenced block and inline code span in Markdown `text`:
+ * the fenced blocks first, then the spans outside them. Prose outside code
+ * is not returned.
+ */
+export function codeIn(text: string): string[] {
+  const code: string[] = []
+  const rest = text.replace(/^[ \t]*(`{3,}|~{3,})[^\n]*\n([\s\S]*?)^[ \t]*\1[ \t]*$/gm, (_, _fence, body: string) => {
+    code.push(body)
+    return ''
+  })
+  for (const span of rest.matchAll(/(`+)([^`][\s\S]*?)\1(?!`)/g)) code.push(span[2] ?? '')
+  return code
+}
+
 /** The reason the model reads for a refused write: what it sends where, and the `Next:` step. */
 export function refusal(write: Write, to: string): string {
   const where = write.cd === '' ? '' : `cd ${write.cd} && `
