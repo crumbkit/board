@@ -78,9 +78,13 @@ blocks is missing.
    An owner check (`owner-approval`, `data-signed`, `rechecks`, `mockups`
    and a waiver) counts an attached `plans/decision/v1` only when its
    `by.person` names a person and its `written_by` is empty. A decision the
-   plan lists only in `uses` passes no check. When you record the owner's
-   approval from chat, write the decision as the plans skill says, with
-   `by.person` and the owner's words in `why`.
+   plan lists only in `uses` passes no check. `owner-approval` also counts
+   the owner's `plans/answer/v1` from /ask whose `words` name the change's
+   path, such as `/changes/<name>`, with the same `by.person` and
+   `written_by` rule. Attach it with
+   `board changes attach --path /changes/<name> --ref <answer>`. When you
+   record the owner's approval from chat, write the decision as the plans
+   skill says, with `by.person` and the owner's words in `why`.
 4. Run `board -C <board> changes advance --path /changes/<name>`
    when every check passes. To send a change back to build for a fix
    round, such as after a review asks for fixes, run

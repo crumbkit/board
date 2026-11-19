@@ -851,7 +851,7 @@ evaluated by kind:
 | --- | --- |
 | `sections` | the plan has text under each heading in `sections` |
 | `field` | the change sets `field` (`task`, `route`, `head`, `plan`, `tickets` or `pulls`), with at least `min` references; for `tickets` with `types`, at least `min` tickets Board reads as one of them; for `pulls` with `types`, the newest reads as a `github/pull/v1` |
-| `records` | at least `min` attached records of `type` meet `where` (`at_head`, `values`, `no_findings`, `owner_signed`, which counts only a decision the owner signed, and `refs`, each of which a record's refs must name: `plan` is the plan, its text or the change), from different actors when `distinct` names a part of `by` |
+| `records` | at least `min` attached records of `type` meet `where` (`at_head`, `values`, `no_findings`, `owner_signed`, which counts only a decision or answer the owner signed, and `refs`, each of which a record's refs must name: `plan` is the plan, its text or the change), from different actors when `distinct` names a part of `by` |
 | `run` | an attached run of the change's suite with `scope` is clean, passing and on `head` |
 | `paths` | the diff edits only the plan's paths |
 | `tasks` | every attached task but the change's own is done or dropped |
@@ -891,6 +891,16 @@ Board holds no name for the owner, so it compares `by.person` with nothing.
 A check reads only attached records, the paths in the `records` field of the
 change's plans; a decision the plan lists only in `uses` signs nothing.
 
+A `records` check of `plans/decision/v1` with `owner_signed`, whose `refs`
+name only `plan` or `change`, also counts an attached `plans/answer/v1`. The
+answer passes the same rule on `written_by` and `by.person`, and its `words`
+must name the change's path whole, such as `/changes/timeout`. A path
+that only starts with it, such as `/changes/timeout-two`, does not
+count. The answer meets the check's `refs` condition. A decision still needs
+`refs` that name the plan or the change. Such a check's remedy says to ask
+the owner with /ask and attach the answer with
+`board changes attach --path <change> --ref <answer>`.
+
 These routes still pass a gate without the owner:
 
 1. A false `by.person`. Any writer can set the field, to any name. A
@@ -924,7 +934,7 @@ The development flow's gates:
 
 | Leaving | Checks |
 | --- | --- |
-| plan | `plan-sections`, the eight sections; `considered`; `task`; `route`; `owner-approval`, a `plans/decision/v1` the owner signed, with `by.person`, whose `refs` name the plan or the change, on every route; `mockups`, when the plan answers `ux` mockups; `data-signed`, an `understood` check of the data, when it answers `data` stored; `lifecycle-declared`, a `planned-rule-paths` check of `/rules/{repo}/lifecycle-paths`, when it answers `lifecycle` none; `lifecycle-record`, an `exists` check of `/changes/{name}/lifecycle`, when it answers `lifecycle` record; `obligations`, which does not block |
+| plan | `plan-sections`, the eight sections; `considered`; `task`; `route`; `owner-approval`, a `plans/decision/v1` the owner signed, with `by.person`, whose `refs` name the plan or the change, or the owner's `plans/answer/v1` whose `words` name the change, on every route; `mockups`, when the plan answers `ux` mockups; `data-signed`, an `understood` check of the data, when it answers `data` stored; `lifecycle-declared`, a `planned-rule-paths` check of `/rules/{repo}/lifecycle-paths`, when it answers `lifecycle` none; `lifecycle-record`, an `exists` check of `/changes/{name}/lifecycle`, when it answers `lifecycle` record; `obligations`, which does not block |
 | build | `head`; `suite-run`, waivable; `tasks`; `rechecks`, rechecks of two points, the latest recheck of each matching, when the plan answers `data` stored |
 | review | `review`, a report on `head` with no critical or high finding; `paths`; `ui-paths` and `data-paths`, `rule-paths` checks of `/rules/{repo}/ui-paths` when the plan answers `ux` none and `/rules/{repo}/data-paths` when it answers `data` none; `lifecycle-paths`, the same check of `/rules/{repo}/lifecycle-paths` unless Board reads a `changes/lifecycle/v1` at `/changes/{name}/lifecycle`; `lifecycle-none-paths`, the same check when the plan answers `lifecycle` none, whether or not a record exists; `obligations-settled`, with the escape heading `Obligations left owed` |
 | land | `test-sections`, What the tests prove and What the tests do not prove; `pull-request`; `lifecycle-paths-at-land` and `lifecycle-none-paths-at-land`, the two review checks of `/rules/{repo}/lifecycle-paths` again, so each re-reads the diff at the recorded head and a record removed after review is gated |

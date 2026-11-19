@@ -7,8 +7,8 @@ use std::collections::BTreeSet;
 
 use super::remedy::{Values, fill, unfilled};
 use super::{
-    NO_HEAD, Observed, UNDERSTANDING_TYPE, objects, owner_signed, reviewed_head, route_missing,
-    same_commit, signed_decisions, strings, task_missing, unset,
+    DECISION_TYPE, NO_HEAD, Observed, UNDERSTANDING_TYPE, objects, owner_signed, reviewed_head,
+    route_missing, same_commit, signed_decisions, strings, task_missing, unset,
 };
 use board_plugin::shape::Record;
 
@@ -18,6 +18,19 @@ use crate::rules::current;
 
 /// The most paths a detail names (STANDARDS 23); it counts the rest.
 const SHOWN: usize = 10;
+const ANSWER_TYPE: &str = "plans/answer/v1";
+
+/// Whether `each` also counts the owner's answer whose words name the
+/// change: it counts decisions the owner signed, and its refs name only the
+/// plan or the change.
+pub(super) fn answers_count(each: &flow::Check) -> bool {
+    let Some(rules) = &each.conditions else {
+        return false;
+    };
+    each.record_type.as_deref() == Some(DECISION_TYPE)
+        && rules.owner_signed == Some(true)
+        && (rules.refs.iter().flatten()).all(|target| matches!(target, Target::Named(_)))
+}
 
 /// At most [`SHOWN`] of `paths`, joined, and how many more there are.
 fn bounded(paths: &[&str]) -> String {
@@ -254,6 +267,7 @@ fn meets(
     body: &Map<String, Value>,
     rules: &Where,
     head: Option<&str>,
+    answer: bool,
 ) -> bool {
     if let Some(head) = head
         && !same_commit(reviewed_head(body).as_ref(), head)
@@ -269,9 +283,20 @@ fn meets(
             .is_some_and(|severity| severities.iter().any(|each| each.as_str() == severity))
     });
     let signed = rules.owner_signed != Some(true) || owner_signed(body);
-    let refs = (rules.refs.iter().flatten())
-        .all(|target| strings(body, "refs").any(|each| names(observed, target, each)));
+    let refs = if answer {
+        let words = body.get("words").and_then(Value::as_str).unwrap_or("");
+        names_whole(words, &observed.path)
+    } else {
+        (rules.refs.iter().flatten())
+            .all(|target| strings(body, "refs").any(|each| names(observed, target, each)))
+    };
     values && clean && signed && refs
+}
+
+/// Whether `words` name `path` whole, and not as the start of a longer path.
+fn names_whole(words: &str, path: &str) -> bool {
+    let longer = |next: char| next.is_alphanumeric() || "-_/".contains(next);
+    (words.match_indices(path)).any(|(at, _)| !words[at + path.len()..].starts_with(longer))
 }
 
 /// `items` joined as a reader says a choice: `a`, `a or b`, `a, b or c`.
@@ -302,8 +327,13 @@ pub(super) fn records_missing(observed: &Observed, each: &flow::Check) -> Option
         (Some(_), None) => return Some(NO_HEAD.to_owned()),
         (Some(_), Some(head)) => Some(head.as_str()),
     };
-    let passing =
-        (observed.records.of_type(kind)).filter(|(_, body)| meets(observed, body, rules, head));
+    let answers = answers_count(each).then(|| observed.records.of_type(ANSWER_TYPE));
+    let passing = (observed.records.of_type(kind))
+        .filter(|(_, body)| meets(observed, body, rules, head, false))
+        .chain(
+            (answers.into_iter().flatten())
+                .filter(|(_, body)| meets(observed, body, rules, head, true)),
+        );
     let count = match each.distinct {
         None => passing.count(),
         Some(part) => (passing
@@ -312,7 +342,15 @@ pub(super) fn records_missing(observed: &Observed, each: &flow::Check) -> Option
         .len(),
     };
     let min = each.min.map_or(1, |min| min as usize);
-    (count < min).then(|| records_detail(each, kind, rules, head, min))
+    (count < min).then(|| {
+        let detail = records_detail(each, kind, rules, head, min);
+        if answers_count(each) {
+            let path = &observed.path;
+            format!("{detail}, nor a {ANSWER_TYPE} of the owner's whose words name {path}")
+        } else {
+            detail
+        }
+    })
 }
 
 /// What is missing when too few records meet a `records` check.

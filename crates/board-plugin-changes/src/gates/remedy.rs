@@ -13,6 +13,7 @@ use std::sync::LazyLock;
 use board_plugin::shape::Record;
 use regex::Regex;
 
+use super::kinds::answers_count;
 use super::{Observed, pattern};
 use crate::change::name_in;
 use crate::flow::{self, Actor, Field, Kind};
@@ -143,6 +144,11 @@ fn default(each: &flow::Check) -> String {
                 .to_owned()
         }
         Kind::Field => field(each.field),
+        Kind::Records if answers_count(each) => "Ask the owner with /ask to approve {change}, \
+             then attach his answer, whose words name {change}, with `board changes attach \
+             --path {change} --ref <answer>`. A plans/decision/v1 he signs with by.person whose \
+             refs name {change} also counts."
+            .to_owned(),
         Kind::Records => format!("{ask}write the record the detail describes and {ATTACH}."),
         Kind::Run => "Run {suite} on {head} with `board runs run` and attach the run with `board \
              changes attach --path {change} --ref <run>`. When the change names no suite, name \

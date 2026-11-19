@@ -403,6 +403,40 @@ fn on_every_route_the_plan_gate_needs_a_persons_decision_whose_refs_name_the_pla
     }
 }
 
+/// An attached answer to an /ask question whose words name `named`, with
+/// `fields` over it.
+fn answer(named: &str, fields: &Value) -> Records {
+    let words = format!("Approve the plan at {named}.");
+    let body = json!({"question": "/q/1", "choice": "approve", "words": words});
+    vec![("/a/1", ("plans/answer/v1", by(body, fields)))]
+}
+
+#[test]
+fn the_owners_answer_whose_words_name_the_change_meets_owner_approval_and_others_do_not() {
+    let approval = |records| {
+        (given("plan").with(json!({"route": "owner"})))
+            .records(records)
+            .check("owner-approval")
+    };
+    let [got, wanted] = judged(|fields| approval(answer(PATH, fields)).0 == "pass");
+    assert_eq!(got, wanted);
+    let owners = json!({"by": {"person": PERSON}});
+    let unmet = (
+        "missing",
+        "no plans/decision/v1 that the owner signed with by.person whose refs name the plan or \
+         the change is attached, nor a plans/answer/v1 of the owner's whose words name /changes/t"
+            .to_owned(),
+    );
+    for named in ["/changes/other", "/changes/t-two", "/changes/tea"] {
+        assert_eq!(approval(answer(named, &owners)), unmet, "{named}");
+    }
+    let hook = json!({"by": {"person": PERSON}, "written_by": "hook"});
+    assert_eq!(approval(answer(PATH, &hook)), unmet);
+    let program = json!({"by": {"program": "claude-code"}});
+    assert_eq!(approval(answer(PATH, &program)), unmet);
+    assert_eq!(approval(answer(PATH, &owners)).0, "pass");
+}
+
 #[test]
 fn the_build_gate_passes_with_tasks_done_or_dropped_and_a_passing_run_on_the_head() {
     let records = vec![

@@ -178,6 +178,26 @@ fn records_whose_refs_must_name_an_attached_type_and_be_owner_signed() {
         "no plans/decision/v1 that the owner signed with by.person whose refs name an attached \
          evals/eval/v1 is attached"
     );
+    // An answer of the owner's naming the change stands in for refs naming
+    // the plan or the change, never for refs naming an attached type.
+    let answered = (
+        "/a",
+        "plans/answer/v1",
+        json!({"words": format!("Approve {PATH}."), "by": {"person": PERSON}}),
+    );
+    let records = [eval.clone(), answered];
+    assert_eq!(
+        run(&observed(&json!({}), &records), list)[0].1,
+        Status::Missing
+    );
+    let approval = json!([{
+        "id": "approved", "kind": "records", "type": "plans/decision/v1",
+        "where": {"owner_signed": true, "refs": ["plan", "change"]}
+    }]);
+    assert_eq!(
+        run(&observed(&json!({}), &records), approval)[0].1,
+        Status::Pass
+    );
 }
 
 /// The first check `list` gives for `observed`, whole.
