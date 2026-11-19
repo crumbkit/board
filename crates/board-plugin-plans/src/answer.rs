@@ -67,13 +67,15 @@ pub(crate) struct Output {
     attached: Option<Attached>,
 }
 
-/// The change the answer was attached to, and the code `changes.attach`
-/// refused with when it refused. A refused attach leaves the answer
-/// recorded.
+/// The change the answer was attached to. A refused attach leaves the
+/// answer recorded.
 #[derive(Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 struct Attached {
+    /// The change's logical path, such as /changes/fix-the-sync.
     change: String,
+    /// The code `changes.attach` refused with; left out when it attached
+    /// the answer.
     #[serde(skip_serializing_if = "Option::is_none")]
     refused: Option<String>,
 }
