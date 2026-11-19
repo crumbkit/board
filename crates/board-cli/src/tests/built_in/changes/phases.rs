@@ -123,7 +123,7 @@ fn advance_refuses_an_unmet_gate_naming_what_is_missing_and_moves_on_once_it_is_
         remedies[1]
             .as_str()
             .unwrap()
-            .starts_with("Ask the owner with /ask to approve /changes/t"),
+            .starts_with("Ask the owner with /ask, with /changes/t in the text"),
         "{remedies:?}"
     );
     board.change_at(

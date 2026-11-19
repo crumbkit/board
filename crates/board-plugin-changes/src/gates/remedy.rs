@@ -131,7 +131,7 @@ fn default(each: &flow::Check) -> String {
             .to_owned();
     };
     let ask = match each.actor {
-        Some(Actor::Owner) => "Only the owner can provide this: ask him, then ",
+        Some(Actor::Owner) => "Only the owner can provide this: ask the owner, then ",
         Some(Actor::Reviewer) => {
             "Only a reviewer can provide this: start one with `board review run`, then "
         }
@@ -144,10 +144,11 @@ fn default(each: &flow::Check) -> String {
                 .to_owned()
         }
         Kind::Field => field(each.field),
-        Kind::Records if answers_count(each) => "Ask the owner with /ask to approve {change}, \
-             then attach his answer, whose words name {change}, with `board changes attach \
-             --path {change} --ref <answer>`. A plans/decision/v1 he signs with by.person whose \
-             refs name {change} also counts."
+        Kind::Records if answers_count(each) => "Ask the owner with /ask, with {change} in the \
+             text of the option that approves it. Then attach the question and the owner's \
+             answer, each with `board changes attach --path {change} --ref <path>`. A \
+             plans/decision/v1 the owner signs with by.person whose refs name {change} also \
+             counts."
             .to_owned(),
         Kind::Records => format!("{ask}write the record the detail describes and {ATTACH}."),
         Kind::Run => "Run {suite} on {head} with `board runs run` and attach the run with `board \

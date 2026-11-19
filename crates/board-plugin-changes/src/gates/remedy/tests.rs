@@ -87,16 +87,18 @@ fn an_owner_approval_check_says_to_attach_the_owners_answer_and_one_with_type_re
     let said = of(&approval(serde_json::json!(["plan"])), &values(None));
     assert_eq!(
         said,
-        "Ask the owner with /ask to approve /changes/t, then attach his answer, whose words \
-         name /changes/t, with `board changes attach --path /changes/t --ref <answer>`. A \
-         plans/decision/v1 he signs with by.person whose refs name /changes/t also counts."
+        "Ask the owner with /ask, with /changes/t in the text of the option that approves it. \
+         Then attach the question and the owner's answer, each with `board changes attach \
+         --path /changes/t --ref <path>`. A plans/decision/v1 the owner signs with by.person \
+         whose refs name /changes/t also counts."
     );
     let typed = of(
         &approval(serde_json::json!(["evals/eval/v1"])),
         &values(None),
     );
-    assert!(
-        typed.starts_with("Only the owner can provide this"),
-        "{typed}"
+    assert_eq!(
+        typed,
+        "Only the owner can provide this: ask the owner, then write the record the detail \
+         describes and attach it with `board changes attach --path /changes/t --ref <path>`."
     );
 }

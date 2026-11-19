@@ -19,17 +19,21 @@ use crate::rules::current;
 /// The most paths a detail names (STANDARDS 23); it counts the rest.
 const SHOWN: usize = 10;
 const ANSWER_TYPE: &str = "plans/answer/v1";
+const QUESTION_TYPE: &str = "plans/question/v1";
 
-/// Whether `each` also counts the owner's answer whose words name the
-/// change: it counts decisions the owner signed, and its refs name only the
-/// plan or the change.
+/// Whether `each` also counts the owner's answer whose chosen option names
+/// the change: it counts decisions the owner signed, names no head, and
+/// has refs that name only the plan or the change.
 pub(super) fn answers_count(each: &flow::Check) -> bool {
     let Some(rules) = &each.conditions else {
         return false;
     };
+    let refs = rules.refs.as_deref().unwrap_or_default();
     each.record_type.as_deref() == Some(DECISION_TYPE)
         && rules.owner_signed == Some(true)
-        && (rules.refs.iter().flatten()).all(|target| matches!(target, Target::Named(_)))
+        && rules.at_head.is_none()
+        && !refs.is_empty()
+        && (refs.iter()).all(|target| matches!(target, Target::Named(_)))
 }
 
 /// At most [`SHOWN`] of `paths`, joined, and how many more there are.
@@ -284,8 +288,7 @@ fn meets(
     });
     let signed = rules.owner_signed != Some(true) || owner_signed(body);
     let refs = if answer {
-        let words = body.get("words").and_then(Value::as_str).unwrap_or("");
-        names_whole(words, &observed.path)
+        chose_change(observed, body)
     } else {
         (rules.refs.iter().flatten())
             .all(|target| strings(body, "refs").any(|each| names(observed, target, each)))
@@ -293,10 +296,28 @@ fn meets(
     values && clean && signed && refs
 }
 
-/// Whether `words` name `path` whole, and not as the start of a longer path.
-fn names_whole(words: &str, path: &str) -> bool {
-    let longer = |next: char| next.is_alphanumeric() || "-_/".contains(next);
-    (words.match_indices(path)).any(|(at, _)| !words[at + path.len()..].starts_with(longer))
+/// Whether the option `answer` chose names the change: the attached
+/// question it answers has an option whose `id` is its `choice` and whose
+/// `text` names the change's path whole.
+fn chose_change(observed: &Observed, answer: &Map<String, Value>) -> bool {
+    let field = |key| answer.get(key).and_then(Value::as_str);
+    let (Some(question), Some(choice)) = (field("question"), field("choice")) else {
+        return false;
+    };
+    (observed.records.of_type(QUESTION_TYPE))
+        .filter(|(path, _)| *path == question)
+        .flat_map(|(_, body)| objects(body, "options"))
+        .filter(|option| option.get("id").and_then(Value::as_str) == Some(choice))
+        .filter_map(|option| option.get("text").and_then(Value::as_str))
+        .any(|text| names_whole(text, &observed.path))
+}
+
+/// Whether `text` names `path` whole, and not as part of a longer path.
+fn names_whole(text: &str, path: &str) -> bool {
+    let joined = |next: char| next.is_alphanumeric() || "-_/".contains(next);
+    (text.match_indices(path)).any(|(at, _)| {
+        !text[..at].ends_with(joined) && !text[at + path.len()..].starts_with(joined)
+    })
 }
 
 /// `items` joined as a reader says a choice: `a`, `a or b`, `a, b or c`.
@@ -346,7 +367,10 @@ pub(super) fn records_missing(observed: &Observed, each: &flow::Check) -> Option
         let detail = records_detail(each, kind, rules, head, min);
         if answers_count(each) {
             let path = &observed.path;
-            format!("{detail}, nor a {ANSWER_TYPE} of the owner's whose words name {path}")
+            format!(
+                "{detail}, nor a {ANSWER_TYPE} of the owner's whose chosen option, in its \
+                 attached question, names {path}"
+            )
         } else {
             detail
         }

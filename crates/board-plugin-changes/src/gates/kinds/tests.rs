@@ -178,26 +178,49 @@ fn records_whose_refs_must_name_an_attached_type_and_be_owner_signed() {
         "no plans/decision/v1 that the owner signed with by.person whose refs name an attached \
          evals/eval/v1 is attached"
     );
-    // An answer of the owner's naming the change stands in for refs naming
-    // the plan or the change, never for refs naming an attached type.
-    let answered = (
-        "/a",
-        "plans/answer/v1",
-        json!({"words": format!("Approve {PATH}."), "by": {"person": PERSON}}),
-    );
-    let records = [eval.clone(), answered];
-    assert_eq!(
-        run(&observed(&json!({}), &records), list)[0].1,
-        Status::Missing
-    );
-    let approval = json!([{
-        "id": "approved", "kind": "records", "type": "plans/decision/v1",
-        "where": {"owner_signed": true, "refs": ["plan", "change"]}
-    }]);
-    assert_eq!(
-        run(&observed(&json!({}), &records), approval)[0].1,
-        Status::Pass
-    );
+}
+
+#[test]
+fn an_owners_answer_counts_only_where_refs_name_the_plan_or_the_change_and_no_head_is_named() {
+    let options = json!([{"id": "a", "text": format!("Approve {PATH}.")}]);
+    let records = [
+        ("/q", "plans/question/v1", json!({"options": options})),
+        (
+            "/a",
+            "plans/answer/v1",
+            json!({"question": "/q", "choice": "a", "by": {"person": PERSON}}),
+        ),
+    ];
+    let found = |rules: Value| {
+        let list = json!([{"id": "c", "kind": "records", "type": "plans/decision/v1",
+                           "where": rules}]);
+        let (_, status, detail) = run(&observed(&json!({"head": HEAD}), &records), list).remove(0);
+        (status, detail)
+    };
+    let refused = [
+        (
+            json!({"owner_signed": true, "refs": ["evals/eval/v1"]}),
+            "no plans/decision/v1 that the owner signed with by.person whose refs name an \
+             attached evals/eval/v1 is attached"
+                .to_owned(),
+        ),
+        (
+            json!({"owner_signed": true, "refs": []}),
+            "no plans/decision/v1 that the owner signed with by.person is attached".to_owned(),
+        ),
+        (
+            json!({"owner_signed": true, "refs": ["plan", "change"], "at_head": "range"}),
+            format!(
+                "no attached plans/decision/v1 that the owner signed with by.person covers \
+                 {HEAD} whose refs name the plan or the change and the change"
+            ),
+        ),
+    ];
+    for (rules, detail) in refused {
+        assert_eq!(found(rules.clone()), (Status::Missing, detail), "{rules}");
+    }
+    let admitted = json!({"owner_signed": true, "refs": ["plan", "change"]});
+    assert_eq!(found(admitted).0, Status::Pass);
 }
 
 /// The first check `list` gives for `observed`, whole.
