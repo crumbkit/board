@@ -62,12 +62,22 @@ result it recorded.
   `git push -u` does, which works in a single-branch clone too. It returns `branch`, `commits`, the commits sent, oldest
   first, and `sent`, git's line for the branch, such as
   `<sha>:refs/heads/x [new branch]`.
-- `pr-create --title <t> --body <b> [--base <branch>] [--draft true]` pushes
-  as `push` does, then runs `gh pr create`. One check covers the commits,
-  title and body. It records git's line on the crossing as soon as the push
-  lands, so a gh failure after it still leaves the push recorded. It writes
-  the `github/pull/v1` record and returns `number` and `path`; `sent` is the
-  pull request's URL, which replaces git's line on the crossing.
+- `pr-create --title <t> --body <b> [--base <branch>] [--draft true] [--change <path>]`
+  pushes as `push` does, then runs `gh pr create`. One check covers the
+  commits, title and body. It records git's line on the crossing as soon as
+  the push lands, so a gh failure after it still leaves the push recorded.
+  It writes the `github/pull/v1` record and returns `number` and `path`;
+  `sent` is the pull request's URL, which replaces git's line on the
+  crossing. It then attaches the record to a change in the board the command
+  runs in, as `board changes attach --pull` does. With `--change`, it
+  attaches to that change whatever its phase or mount. Without it, it
+  attaches to the change at `/changes/<branch>` only when that change is on
+  the checkout's mount and not done or dropped. A change that already lists
+  the pull request is not written. `change` names the change it attached
+  to; otherwise `change_note` says why it attached none and gives the
+  attach command, which names the board with `-C` and quotes each value.
+  The attach step never fails the call, since the pull request is already
+  open.
 - `pr-edit --number <n> [--title <t>] [--body <b>]` changes the title, the
   body or both through `gh api`. Board refuses a call with neither as
   `board::plugin::bad_input`.

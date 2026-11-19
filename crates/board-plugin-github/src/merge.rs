@@ -324,7 +324,7 @@ fn merged(host: &dyn Host, repository: &str, number: u64, url: &str) -> Result<b
 /// The board the command runs in, opened again as `board changes next`
 /// and `board changes advance` there open it: it reads each mount at its
 /// pin and may write, even when the command reads a mount at a checkout.
-fn own(host: &dyn Host) -> Result<Box<dyn Host + '_>, PluginError> {
+pub(crate) fn own(host: &dyn Host) -> Result<Box<dyn Host + '_>, PluginError> {
     (host.board(&Elsewhere::Directory(PathBuf::from("."))))
         .map_err(|refusal| PluginError::board_refused("github", "-C .", &refusal))
 }

@@ -3,6 +3,7 @@
 //! through `gh`, every git command through `git`, and every call to the
 //! boundary through `crossing`.
 
+mod attach;
 mod crossing;
 mod gh;
 mod git;
@@ -194,8 +195,8 @@ const CAPABILITIES: [Capability; 10] = [
     Capability {
         name: "pr-create",
         description: "Push the branch checked out and open a pull request from it, once the \
-            boundary passes the commits, title and body in one check, and write the pull \
-            request's record.",
+            boundary passes the commits, title and body in one check, write the pull \
+            request's record and attach it to its change.",
         run: send::pr_create,
         input: input::<send::PrCreateInput>,
         output: output::<send::Opened>,
