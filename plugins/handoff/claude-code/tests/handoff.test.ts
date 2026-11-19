@@ -18,7 +18,8 @@ const whole = { stderr: '', isStdoutTruncated: false, isStderrTruncated: false }
 type Shares = { context?: number; usage?: number } | 'refused' | 'throws'
 
 /** Stands in for `board`, the disk under `STATE` and the session's prompt submission. */
-function host(on: On, id: string, shares: Shares = { context: 70, usage: 85 }, disk = new Map<string, string>()) {
+function host(on: On, who: string | { id: string }, shares: Shares = { context: 70, usage: 85 }, disk = new Map<string, string>()) {
+  const me = typeof who === 'string' ? { id: who } : who
   const submitted: string[] = []
   const logs: string[] = []
   on('process.run', (_, e) => {
@@ -40,7 +41,7 @@ function host(on: On, id: string, shares: Shares = { context: 70, usage: 85 }, d
   on('prompt.submit', (_, e) => (submitted.push(e.text), { text: e.text }))
   on('ui.log', (_, e) => (logs.push(e.text), { value: undefined }))
   on('command.register', () => ({ value: { command: 'handoff-lines' } }))
-  on('session.id', () => ({ value: id }))
+  on('session.id', () => ({ value: me.id }))
   mock.env(on, { HOME: '/home/user' })
   return { disk, submitted, logs }
 }
@@ -229,7 +230,76 @@ test('a failing params call leaves the defaults and does not stop the measure', 
   expect(submitted).toHaveLength(1)
 })
 
-test('a directory with a space is quoted in the resume line, and a session id that is not a plain name is never used as a file name', () => {
+test('a directory with a space is quoted in the resume line', () => {
   expect(resumeLine('s1', "/work/it's here")).toBe("cd '/work/it'\\''s here' && claude --resume s1")
   expect(resumeLine('s1', '/work/a')).toBe('cd /work/a && claude --resume s1')
+})
+
+test('a session is told again for a later window after it handed off, and its new line replaces the old one', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  const { disk, submitted } = host(on, 's1')
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('session.measure', (_, e) => ({ changed: e.changed }))
+  on('turn.complete', (_, e) => ({ text: e.answer }))
+  await start($)
+  await $.session.measure(usage(80))
+  await $.turn.complete({ answer: 'handoff: /a', durationMs: 1, isAborted: false, turnId: 't' } as never)
+  await $.session.measure(usage(80, 90))
+  expect(submitted).toHaveLength(2)
+  await $.turn.complete({ answer: 'handoff: /b', durationMs: 1, isAborted: false, turnId: 't' } as never)
+  expect(JSON.parse(disk.get(`${STATE}/sessions/s1.json`)!).line).toContain('# handoff: /b')
+})
+
+test('after /clear the new session id starts with no state of the old one', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  const who = { id: 's1' }
+  const { disk, submitted } = host(on, who)
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('session.measure', (_, e) => ({ changed: e.changed }))
+  await start($)
+  await $.session.measure(usage(80))
+  who.id = 's2'
+  await $.session.measure(usage(80))
+  expect(submitted).toHaveLength(2)
+  expect(disk.has(`${STATE}/sessions/s2.json`)).toBe(true)
+})
+
+test('a trigger whose reset time cannot be read tells nobody', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const disk = new Map([[`${STATE}/trigger.json`, JSON.stringify({ key: 'k', why: 'x', resetsAt: 'soon', at: '2026-11-19T09:00:00Z' })]])
+  const { submitted } = host(on, 's2', undefined, disk)
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  await start($)
+  await clock.advance(30_000)
+  expect(submitted).toEqual([])
+})
+
+test('a trigger with no reset time still tells sessions while it is under five hours old', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const disk = new Map([[`${STATE}/trigger.json`, JSON.stringify({ key: 'k', why: 'x', at: '2026-11-19T09:00:00Z' })]])
+  const { submitted } = host(on, 's2', undefined, disk)
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  await start($)
+  await clock.advance(30_000)
+  expect(submitted).toHaveLength(1)
+})
+
+test('the usage share comes from params', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  const { submitted } = host(on, 's1', { context: 70, usage: 50 })
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('session.measure', (_, e) => ({ changed: e.changed }))
+  await start($)
+  await $.session.measure(usage(10, 55))
+  expect(submitted).toHaveLength(1)
+})
+
+test('a session id that is not a plain name is never written as a file', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  const { disk } = host(on, '../x')
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('session.measure', (_, e) => ({ changed: e.changed }))
+  await start($)
+  await $.session.measure(usage(80))
+  expect([...disk.keys()].filter(k => k.includes('sessions'))).toEqual([])
 })

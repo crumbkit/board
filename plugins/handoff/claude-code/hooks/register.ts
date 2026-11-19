@@ -17,6 +17,7 @@ export const DEFAULTS: Shares = { context: 75, usage: 85 }
 const POLL_MS = 30_000
 // A trigger whose window gave no reset time stops telling sessions after the longest window.
 const NO_RESET_MS = 5 * 3_600_000
+const MAX_LINES = 20
 const SESSION_ID = /^[A-Za-z0-9_-]+$/
 
 /** Everything a measurement crosses: the context share, then each usage window at or over its share. */
@@ -47,7 +48,7 @@ const message = (why: string) =>
   'Commit and push every branch in each checkout you used, record state in the board, and end your reply with the one-line handoff ' +
   '(`handoff: <board path> — resume: <command>`) and then READY TO ARCHIVE.'
 
-type Mem = { shares: Promise<Shares> | undefined; cwd: string; asked: Set<string>; status: Session['status']; line: string | undefined }
+type Mem = { id: string | undefined; polling: boolean; shares: Promise<Shares> | undefined; cwd: string; asked: Set<string>; status: Session['status']; line: string | undefined }
 
 async function dir($: EngineInterface) {
   const config = (await $.env.get('CLAUDE_CONFIG_DIR')) ?? `${(await $.env.get('HOME')) ?? ''}/.claude`
@@ -97,40 +98,54 @@ async function save($: EngineInterface, mem: Mem) {
   }
 }
 
-/** Records each new crossing; tells the session to hand off only the first time it is asked for anything. */
+/** Loads what the session's own file holds. /clear and /resume change the id without a session.start, so every hook calls this first. */
+async function sync($: EngineInterface, mem: Mem) {
+  const id = await $.session.id()
+  if (id === mem.id) return
+  mem.id = id
+  mem.asked = new Set()
+  mem.status = 'asked'
+  mem.line = undefined
+  const earlier = SESSION_ID.test(id) ? await readJson<Session>($, `${await dir($)}/sessions/${id}.json`) : undefined
+  if (earlier === undefined) return
+  for (const key of earlier.asked) mem.asked.add(key)
+  mem.status = earlier.status
+  mem.line = earlier.line
+}
+
+/** Records each new crossing; tells the session to hand off when it has not been told yet or its last handoff is done. */
 async function ask($: EngineInterface, mem: Mem, found: readonly Crossing[]) {
   const fresh = found.filter(c => !mem.asked.has(c.key))
   if (fresh.length === 0) return
-  const first = mem.asked.size === 0
+  const prompt = mem.asked.size === 0 || mem.status === 'handed-off'
   for (const c of fresh) mem.asked.add(c.key)
+  if (prompt) mem.status = 'asked'
   await save($, mem)
-  if (first) void $.prompt.submit({ text: message(fresh[0]!.why) })
+  if (prompt) void $.prompt.submit({ text: message(fresh[0]!.why) })
 }
 
 export const register: Register = (on) => {
-  const mem: Mem = { shares: undefined, cwd: '', asked: new Set(), status: 'asked', line: undefined }
+  const mem: Mem = { id: undefined, polling: false, shares: undefined, cwd: '', asked: new Set(), status: 'asked', line: undefined }
   on('session.start', async ($, e, next) => {
     mem.cwd = e.cwd
-    const id = await $.session.id()
-    const earlier = SESSION_ID.test(id) ? await readJson<Session>($, `${await dir($)}/sessions/${id}.json`) : undefined
-    if (earlier !== undefined) {
-      for (const key of earlier.asked) mem.asked.add(key)
-      mem.status = earlier.status
-      mem.line = earlier.line
-    }
+    await sync($, mem)
     await $.command.register({ name: 'handoff-lines', description: 'Print the resume line of each session on this account that was told to hand off' })
+    if (mem.polling) return next(e)
+    mem.polling = true
     $.clock.every(POLL_MS, async () => {
+      await sync($, mem)
       const trigger = await readJson<Trigger>($, `${await dir($)}/trigger.json`)
       if (trigger === undefined) return
       const now = await $.clock.now()
       const expires = trigger.resetsAt === undefined ? Date.parse(trigger.at) + NO_RESET_MS : Date.parse(trigger.resetsAt)
-      if (expires <= now) return
+      if (!(expires > now)) return
       await ask($, mem, [{ key: trigger.key, why: trigger.why }])
     })
     return next(e)
   })
 
   on('session.measure', async ($, e, next) => {
+    await sync($, mem)
     const fresh = crossings(e, await loadShares($, mem)).filter(c => !mem.asked.has(c.key))
     for (const c of fresh) {
       if (c.window === undefined) continue
@@ -149,6 +164,7 @@ export const register: Register = (on) => {
   // already running when it was told, or was aborted, is not.
   on('turn.complete', async ($, e, next) => {
     const result = await next(e)
+    await sync($, mem)
     const handoff = handoffLine(e.answer)
     if (e.agentId !== undefined || e.isAborted || mem.status !== 'asked' || mem.asked.size === 0 || handoff === undefined) return result
     mem.status = 'handed-off'
@@ -167,10 +183,11 @@ export const register: Register = (on) => {
       // no session was told yet
     }
     const lines: string[] = []
-    for (const name of names) {
+    for (const name of names.slice(-MAX_LINES)) {
       const session = await readJson<Session>($, `${folder}/${name}`)
       lines.push(session?.line ?? `${resumeLine(name.slice(0, -5), session?.cwd ?? '.')}  # not handed off yet`)
     }
+    if (names.length > MAX_LINES) lines.push(`(${names.length - MAX_LINES} more session files not shown)`)
     return { text: lines.length === 0 ? 'No session has been told to hand off.' : lines.join('\n') }
   })
 }
