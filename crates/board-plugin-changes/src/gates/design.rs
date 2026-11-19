@@ -153,16 +153,14 @@ pub(super) fn versions_missing(found: &BTreeMap<String, String>) -> Option<Strin
 /// side shows.
 fn difference(each: &Map<String, Value>) -> String {
     let text = |key: &str| each.get(key).and_then(Value::as_str).unwrap_or("?");
-    let mut said = format!(
-        "{} is {}, expected {}",
+    let built = (each.get("built").and_then(Value::as_str))
+        .map_or_else(String::new, |built| format!(", built {built}"));
+    format!(
+        "{} is {}, expected {}{built}",
         text("element"),
         text("kind"),
         text("expected")
-    );
-    if let Some(built) = each.get("built").and_then(Value::as_str) {
-        said.push_str(&format!(", built {built}"));
-    }
-    said
+    )
 }
 
 /// Whether a record says the build matches: the verdict `match` and no
