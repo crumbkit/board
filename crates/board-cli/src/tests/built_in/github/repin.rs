@@ -188,11 +188,11 @@ fn a_merge_with_no_known_mount_gives_no_command_and_one_with_a_mount_does() {
         if !known {
             super::desk::remove(&desk.personal.workdir().join("repos/widgets.json"));
         }
-        let result = desk.output(
-            "merge",
-            &merging("Add a lever", "Levers lift.", &["--head", HEAD]),
-        );
-        let warning = &result["mount_warning"];
+        // With no mount of the checkout, only --personal finds a board.
+        let flags = merging("Add a lever", "Levers lift.", &["--head", HEAD]);
+        let (ran, document) = desk.call_in(&["--personal"], "merge", &flags);
+        assert_eq!(ran.code, 0, "{document}");
+        let warning = &document["data"]["output"]["mount_warning"];
         if known {
             assert_eq!(warning["command"], json!(by_hand(&desk, "--personal")));
         } else {
