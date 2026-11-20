@@ -101,6 +101,7 @@ test('a brief line that is not first is advised, and the same brief with it firs
 test('every JSON object in the text is read in any layout, and a broken one is skipped', () => {
   expect(objectsIn('Use {x} here: {"a":1} then {"b":{"c":2}} and {"d":')).toEqual([{ a: 1 }, { b: { c: 2 } }])
   expect(objectsIn('A brace in a string: {"s":"}{"} done.')).toEqual([{ s: '}{' }])
+  expect(objectsIn('{"s":"a\\"}{"} x')).toEqual([{ s: 'a"}{' }])
   const built = JSON.parse(BUILT) as unknown
   expect(objectsIn(GOOD)).toEqual([built])
   expect(objectsIn(`Before.${COMPACT}After.`)).toEqual([built])
