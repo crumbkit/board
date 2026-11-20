@@ -3,7 +3,7 @@ import type { EngineInterface, Register, RenderElement } from 'claude-code'
 
 import type { Checked, Rule, StateBadge } from '../types'
 import type { Configured } from './rules'
-import { SLOT, joinBand } from './band'
+import { SLOT, drawsInto, joinBand, keepOneBand } from './band'
 import {
   BLOCK,
   REMINDER_NOTE,
@@ -191,9 +191,11 @@ export const register: Register = on => {
     return next(e)
   }).catch(($, e, next) => next(e))
 
-  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+  // The host asks each plugin for its own row; this mod draws into every Board mod's.
+  keepOneBand(on)
+  on('ui.render', { component: 'AbovePrompt', plugin: '*' }, async ($, e, next) => {
     const below = await next(e)
-    if (e.props.hasSurvey) return below
+    if (e.props.hasSurvey || !drawsInto(e.plugin)) return below
     const answer = await read($, checked)
     const badges = await read($, state)
     const button = answer === null ? null : rulesBadge(answer)

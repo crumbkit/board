@@ -63,9 +63,17 @@ band draws nothing. While a survey holds the band, no mod draws in it.
 
 ## How the mods share the row
 
-The mods share nothing but the band. Each draws its part in its own
-`ui.render` hook on `AbovePrompt` and reads the parts of the mods beneath it
-from the tree `next(e)` returns. A part is a Box keyed `band:<slot>`. The
+The mods share nothing but the band. Claude Code asks each plugin that hooks
+`AbovePrompt` for a row of its own, names that plugin in `e.plugin`, and
+stacks the rows. Each mod's `ui.render` hook matches every plugin and draws
+its part into the row of each of the four mods, so every Board row holds the
+whole band. Each mod also hooks `AbovePromptList`, the stacking step. Of the
+rows that hold a band, a Box keyed `board-band`, it keeps the one with the
+most parts; every other row passes unchanged. This needs Claude Code 2.1.325 or later, the first to name the
+plugin.
+
+Within a row, each hook reads the parts of the hooks beneath it from the
+tree `next(e)` returns. A part is a Box keyed `band:<slot>`. The
 row is the Box keyed `board-band`, the first child of the band's column.
 Each mod adds its parts to that row, sorts the parts by key, puts a dim `|`
 between sections, and returns the whole band. The row is therefore the same

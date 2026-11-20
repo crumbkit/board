@@ -2,7 +2,7 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, PluginOptions, Register, RenderElement } from 'claude-code'
 
 import type { Open, Question, Unread, Waiting } from '../types'
-import { SLOT, joinBand } from './band'
+import { SLOT, drawsInto, joinBand, keepOneBand } from './band'
 import { answerText, blocking, countBadge, failure, parseAnswered, parseOpen, parseRows, parseWaiting, plain, project, refused, report, REPORT_LIMIT, REPORT_SQL, WRITTEN_BY } from './plans'
 
 // The mod reads the owner's open questions from Board, draws their count in
@@ -155,13 +155,15 @@ export const register: Register = (on, options) => {
     return started
   })
 
-  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+  // The host asks each plugin for its own row; this mod draws into every Board mod's.
+  keepOneBand(on)
+  on('ui.render', { component: 'AbovePrompt', plugin: '*' }, async ($, e, next) => {
     const below = await next(e)
     if (!polling) {
       polling = true
       $.clock.every(REFRESH_MS, () => void refresh($, options, local))
     }
-    if (e.props.hasSurvey) return below
+    if (e.props.hasSurvey || !drawsInto(e.plugin)) return below
     // plans.waiting counts the open questions; when it has not answered, the button counts plans.open's.
     const badge = countBadge(await read($, waiting), await read($, open), await read($, failed))
     if (badge === null) return below

@@ -2,7 +2,7 @@ import { expect, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 import type { Engine } from 'claude-code/testing'
 
-import { SLOT, joinBand } from '../hooks/band'
+import { SLOT, bandRows, drawsInto, joinBand } from '../hooks/band'
 import { contextText, ordersButton, parsePinned } from '../hooks/pinned'
 
 // These prove what a session and the owner are shown from attention.pinned's
@@ -42,6 +42,7 @@ const PANE_PROPS = {
 } as const
 const BAND_PROPS = {
   hasSurvey: false,
+  isCollapsed: false,
   isWorking: false,
   maxRows: 10,
   bodyColumns: 80,
@@ -63,13 +64,21 @@ function engine(on: On, answer: { exitCode: number; stdout: string; stderr?: str
     opened.push(e.id)
     return { value: { isPlaced: true } }
   })
-  on('ui.render', ($, e) => {
-    const { Box, Button } = $.ui.resolve(e)
-    if (beneath === undefined || e.component !== 'AbovePrompt') return Box({})
-    // Another mod's part, as the rules mod beneath this one draws it.
-    const part = Box({ key: SLOT.controls, children: [Button({ key: 'rules', label: 'Rules 5', onPress: () => void pressed.push('rules') })] })
-    return joinBand(Box({}), [part])
+  on('ui.render', ($, e, next) => {
+    if (beneath !== undefined && e.component === 'AbovePrompt') return next(e)
+    return $.ui.resolve(e).Box({})
   })
+  // Another Board mod's part, as the rules mod draws it. The host asks it for
+  // a row of its own, here the test's, and it draws into each Board mod's row.
+  if (beneath === 'controls') {
+    on('ui.render', { component: 'AbovePrompt', plugin: '*' }, async ($, e, next) => {
+      const below = await next(e)
+      if (e.plugin !== 'test' && !drawsInto(e.plugin)) return below
+      const { Box, Button } = $.ui.resolve(e)
+      const part = Box({ key: SLOT.controls, children: [Button({ key: 'rules', label: 'Rules 5', onPress: () => void pressed.push('rules') })] })
+      return joinBand(below, [part])
+    })
+  }
   on('prompt.context', (_, e) => ({ blocks: e.blocks }))
   on('session.start', (_, e) => ({ cwd: e.cwd }))
   return { ran, opened, pressed }
@@ -172,14 +181,13 @@ test('the list names each order left out with its code and message', async ($, o
   expect(await pane.find({ text: "Not in this session's context: the order expired on 2026-10-01 (attention::order::expired)." })).toBeDefined()
 })
 
-test('the Orders button joins the buttons other mods draw beneath, in the same section', async ($, on) => {
+test('the Orders button joins another Board mod\'s buttons in one row, though the host asks each mod for its own row', async ($, on) => {
   const { pressed } = engine(on, { exitCode: 0, stdout: JSON.stringify(REPORT) }, 'controls')
   await start($)
   const band = await $.ui.mount({ plugin: 'board-attention', surface: 'terminal', component: 'AbovePrompt', props: BAND_PROPS })
-  const drawn = await band.drawn()
-  const row = drawn.type === 'Box' ? drawn.children?.[0] : undefined
-  expect(typeof row === 'object' && row.type === 'Box' ? row.props?.key : null).toBe('board-band')
-  const keys = typeof row === 'object' && row.type === 'Box' ? row.children?.map(c => (typeof c === 'object' && c.type === 'Box' ? c.props?.key : 'text')) : []
+  const rows = bandRows(await band.drawn())
+  expect(rows.length).toBe(1)
+  const keys = rows[0]?.children?.map(c => (typeof c === 'object' && c.type === 'Box' ? c.props?.key : 'text'))
   expect(keys).toEqual([SLOT.orders, SLOT.controls])
   expect((await band.find({ key: 'rules' }))?.text).toBe('Rules 5')
   // The other mod's button, moved into this mod's row, still reaches that mod's handler.

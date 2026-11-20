@@ -13,6 +13,7 @@ const SIGNED =
   "Agents can check it with `board --personal call attention.verify --path '/orders/evals'`."
 const BAND_PROPS = {
   hasSurvey: false,
+  isCollapsed: false,
   isWorking: false,
   maxRows: 10,
   bodyColumns: 80,

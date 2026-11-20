@@ -1,7 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 import type { RenderElement, RenderNode } from 'claude-code'
 
-import { ROW, SLOT, joinBand } from '../hooks/band'
+import { ROW, SLOT, drawsInto, joinBand, oneBand } from '../hooks/band'
 
 // These prove how a mod's part joins the band the mods beneath it drew. Each
 // Board mod keeps an identical copy of band.ts, which the mods workflow
@@ -44,4 +44,18 @@ test('the lines a mod adds follow the row, and a tree that is not a band is kept
   const above = joinBand(band, [part(SLOT.state, 'Board personal')])
   expect(row(above)).toEqual([SLOT.state, '|', SLOT.controls])
   expect(above.type === 'Box' ? above.children?.slice(1) : []).toEqual([line, foreign])
+})
+
+test('the band rows keep one band, the one with the most parts, and pass other plugins\' rows unchanged', () => {
+  const other = { plugin: 'turn-band', tree: { type: 'Text', children: ['Last turn: 4s'] } as RenderElement }
+  const orders = { plugin: 'board-attention', tree: joinBand(ENGINE, [part(SLOT.orders, 'Orders 4')]) }
+  const both = { plugin: 'board-rules', tree: joinBand(orders.tree, [part(SLOT.controls, 'Rules 5')]) }
+  expect(oneBand([other, orders, both])).toEqual([other, both])
+  expect(oneBand([both, other, { ...both, plugin: 'board-plans' }])).toEqual([both, other])
+  expect(oneBand([other, orders])).toEqual([other, orders])
+})
+
+test('a mod draws into a Board mod\'s row and not into another plugin\'s row', () => {
+  expect(drawsInto('board-rules')).toBe(true)
+  expect(drawsInto('turn-band')).toBe(false)
 })

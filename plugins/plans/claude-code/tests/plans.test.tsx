@@ -2,6 +2,7 @@ import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 import type { Engine } from 'claude-code/testing'
 
+import { bandRows } from '../hooks/band'
 import { blocking, countBadge, NAMES, parseWaiting, questionsLabel, report, REPORT_SQL, waitingLabel } from '../hooks/plans'
 
 // These prove what the band and the panes draw, which `board` commands the
@@ -50,7 +51,7 @@ const waitingReport = (total: number, blocking: number) =>
     },
   })
 
-const BAND = { plugin: 'board-plans', component: 'AbovePrompt', props: { hasSurvey: false, isWorking: false, maxRows: 10, bodyColumns: 80, scroll: { offset: 0, bodyRows: 10 }, view: {} } } as const
+const BAND = { plugin: 'board-plans', component: 'AbovePrompt', props: { hasSurvey: false, isCollapsed: false, isWorking: false, maxRows: 10, bodyColumns: 80, scroll: { offset: 0, bodyRows: 10 }, view: {} } } as const
 const pane = (requestId: string) =>
   ({ plugin: 'board-plans', component: 'Pane', requestId, props: { title: requestId, isFocused: true, bodyColumns: 60, placement: 'dock', scroll: { offset: 0, bodyRows: 30 }, view: {} } }) as const
 
@@ -156,8 +157,8 @@ test('with plans.waiting the button says what waits and how much blocks, and its
   const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
   expect((await band.find({ key: 'waiting' }))?.text).toBe('Waiting 14 · 11 blocking')
   const drawn = await band.drawn()
-  const row = drawn.type === 'Box' ? drawn.children?.[0] : undefined
-  expect(typeof row === 'object' && row.type === 'Box' ? row.children?.map(c => (typeof c === 'object' && c.type === 'Box' ? c.props?.key : '')) : []).toEqual(['band:b3-waiting'])
+  const row = bandRows(drawn)[0]
+  expect(row !== undefined ? row.children?.map(c => (typeof c === 'object' && c.type === 'Box' ? c.props?.key : '')) : []).toEqual(['band:b3-waiting'])
 })
 
 test('when nothing waits the band draws nothing of the mod\'s, even with open questions counted elsewhere', async ($, on) => {
