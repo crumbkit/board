@@ -1,0 +1,76 @@
+{
+  "$defs": {
+    "Actor": {
+      "additionalProperties": false,
+      "description": "Who wrote a record or acted: the session, the program, the person and\nthe agent's name, each when known, and at least one. Every record type that names who\nacted holds one.",
+      "minProperties": 1,
+      "properties": {
+        "agent": {
+          "description": "The name the agent was given, such as `nightly scheduler`, as\nfree text.",
+          "type": "string",
+          "x-board-prose": true
+        },
+        "person": {
+          "description": "The person who acted, such as `ana`, or their email address.",
+          "pattern": "^([a-z0-9]+(-[a-z0-9]+)*|[^@\\s]+@[^@\\s]+)$",
+          "type": "string"
+        },
+        "program": {
+          "description": "The program that acted, such as `claude-code` or `codex`.",
+          "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+          "type": "string"
+        },
+        "session": {
+          "description": "The Claude Code session's `local_` id.",
+          "pattern": "^local_[0-9a-f-]+$",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "`places/workspace-change/v1`: one mxv workspace on one machine works on\none change, at `/places/<machine>/<workspace>/changes/<change-name>`.",
+  "properties": {
+    "$type": {
+      "const": "places/workspace-change/v1",
+      "description": "The record's type.",
+      "type": "string"
+    },
+    "by": {
+      "$ref": "#/$defs/Actor",
+      "description": "Who wrote the record, when known."
+    },
+    "change": {
+      "description": "The change the workspace works on.",
+      "format": "board-ref",
+      "type": "string",
+      "x-board-type": "changes/change/v2"
+    },
+    "since": {
+      "description": "When the record was written.",
+      "format": "date-time",
+      "pattern": "Z$",
+      "type": "string"
+    },
+    "workspace": {
+      "description": "The workspace's directory, `/places/<machine>/<workspace>`, which\nholds this record's `changes/` directory.",
+      "format": "board-ref",
+      "type": "string"
+    },
+    "workspace_id": {
+      "description": "The mxv workspace's id when the record was written.",
+      "pattern": "^[0-9a-f]{32}$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "$type",
+    "workspace",
+    "change",
+    "workspace_id",
+    "since"
+  ],
+  "title": "WorkspaceChange",
+  "type": "object"
+}

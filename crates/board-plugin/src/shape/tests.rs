@@ -260,7 +260,8 @@ fn the_registry_holds_each_shared_shape_by_name_as_a_field_using_it_sees_it() {
             "Summary",
             "Timestamp",
             "TypeName",
-            "Url"
+            "Url",
+            "WorkspaceId"
         ]
     );
     let properties = &schema_of::<Noted>(SchemaSettings::draft2020_12())["properties"];
@@ -694,6 +695,31 @@ fn a_commit_name_of_7_to_40_hex_digits_is_admitted_and_a_shorter_or_upper_case_o
             "{refused:?}"
         );
         schema.validate(&head(admitted)).unwrap();
+    }
+}
+
+#[test]
+fn a_workspace_id_of_32_lowercase_hex_digits_is_admitted_and_a_shorter_or_upper_case_one_is_refused()
+ {
+    let schema = json!({
+        "type": "object",
+        "properties": {"workspace_id": registry()["WorkspaceId"].clone()},
+    });
+    let schema = board_validate::Schema::compile(schema).unwrap();
+    let id = |text: &str| json!({ "workspace_id": text });
+    let digits = "0123456789abcdef0123456789abcdef";
+    for (refused, admitted) in [
+        (&digits[1..], digits),
+        (&format!("{digits}0"), digits),
+        (&digits.to_uppercase(), digits),
+        (&format!("{}g", &digits[1..]), digits),
+    ] {
+        assert_eq!(
+            schema.validate(&id(refused)).unwrap_err().code(),
+            board_model::Code::RecordInvalid,
+            "{refused:?}"
+        );
+        schema.validate(&id(admitted)).unwrap();
     }
 }
 

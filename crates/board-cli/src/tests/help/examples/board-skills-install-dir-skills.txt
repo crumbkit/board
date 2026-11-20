@@ -9,6 +9,7 @@ written  github               skills/github
 written  jira                 skills/jira
 written  notes                skills/notes
 written  params               skills/params
+written  places               skills/places
 written  plans                skills/plans
 written  prompts              skills/prompts
 written  review               skills/review

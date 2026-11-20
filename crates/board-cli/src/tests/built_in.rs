@@ -839,6 +839,7 @@ mod github;
 mod jira;
 mod notes;
 mod params;
+mod places;
 mod plans;
 mod prompts;
 mod review;

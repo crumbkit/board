@@ -447,6 +447,12 @@ patterned! {
     PathTemplate = "^/\\S*$"
 }
 
+patterned! {
+    /// An mxv workspace's id: 32 lowercase hex digits, which mxv mints when
+    /// it makes the workspace and keeps through archive and restore.
+    WorkspaceId = "^[0-9a-f]{32}$"
+}
+
 /// A regular expression in the syntax of Rust's regex crate, which only
 /// the program that reads the field compiles. A `String` field takes it
 /// with `#[schemars(with = "Pattern")]`.
@@ -620,6 +626,7 @@ pub fn registry() -> Map<String, Value> {
         entry::<Timestamp>(&mut generator),
         entry::<TypeName>(&mut generator),
         entry::<Url>(&mut generator),
+        entry::<WorkspaceId>(&mut generator),
     ])
 }
 
