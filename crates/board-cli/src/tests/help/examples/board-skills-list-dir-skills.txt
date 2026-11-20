@@ -9,6 +9,7 @@ missing  github               skills/github
 missing  jira                 skills/jira
 missing  notes                skills/notes
 missing  params               skills/params
+missing  places               skills/places
 missing  plans                skills/plans
 missing  prompts              skills/prompts
 missing  review               skills/review

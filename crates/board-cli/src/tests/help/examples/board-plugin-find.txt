@@ -49,6 +49,9 @@ notes.add disabled Sync the notes repo, append text under a `## HH:MM` heading t
 notes.daily disabled Sync the notes repo and print a day's daily note, unless the note is private.
 params.get disabled A calibrated value for a scope, or its heuristic's default and why the default applies.
 params.due disabled The values an agent should derive again, oldest first: those on the default, those readers cannot use, those whose latest check failed, and those older than their recheck_after in calendar days.
+places.attach disabled Write the join of an mxv workspace on this machine to a change, at /places/<machine>/<workspace>/changes/<change-name>, with the workspace's id from mxv. The workspace is the one --workspace names, or the one that holds the caller's directory.
+places.detach disabled Remove the join of an mxv workspace on this machine to a change. With --workspace it runs no mxv.
+places.list disabled List this machine's joins, each with its change's title and phase and the workspace's status from mxv: live, replaced, archived, gone or unknown. It writes nothing.
 plans.open disabled The questions under a path whose status is open and that no answer names, grouped by project: a project holding a question that blocks active work comes first, and within a project those questions come first, each oldest first.
 plans.answer disabled Record the owner's answer to an open question. The answer is what marks the question answered; the question's content is left unchanged.
 plans.withdraw disabled Withdraw an open question that no answer names, with the reason, so that plans.open stops listing it.

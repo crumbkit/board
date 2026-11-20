@@ -129,5 +129,9 @@
     "format": "uri",
     "pattern": "^https?://([^/?#@]*@)?[^/?#@:][^/?#@]*([/?#]|$)",
     "type": "string"
+  },
+  "WorkspaceId": {
+    "pattern": "^[0-9a-f]{32}$",
+    "type": "string"
   }
 }
