@@ -113,6 +113,8 @@ impl From<String> for Given {
 #[derive(Debug, clap::Args)]
 pub(crate) struct Putting {
     /// Where to write: a logical path that leaves out .json, such as /tasks/a, or a from /tasks.
+    ///
+    /// A path ending .md writes stdin as that file, as --file does.
     #[arg(required_unless_present_any = ["batch", "new"])]
     pub(crate) path: Option<Given>,
     /// Write at a new name in the folder PATH names, which ends in /, or in the type's folder
@@ -144,7 +146,9 @@ pub(crate) struct Putting {
     /// history can tell a commit that touches many files from an edit.
     #[arg(long, value_name = "REASON", requires = "batch")]
     pub(crate) bulk: Option<String>,
-    /// Write stdin as a file at a path that is its whole name, such as /notes/plan.md.
+    /// Write stdin as a file at a path that is its whole name, such as /notes/plan.txt.
+    ///
+    /// A path ending .md needs no --file.
     ///
     /// With a `store` setting, --file uploads bytes over 1 MiB or not UTF-8 under their digest and
     /// writes a board/attachment/v1 record.
@@ -233,7 +237,7 @@ Examples:
   board put --new /tasks/ < task.json
   board put --new --var project=board < question.json
   board get /tasks/a | board put /tasks/b
-  board put /notes/plan.md --file < plan.md
+  board put /notes/plan.md < plan.md
   board put --batch < writes.jsonl")]
     Put(Putting),
     /// Remove the file at a path.

@@ -162,7 +162,9 @@ Write the record on stdin at a path or --new name, or a file with --file
 
 ### Arguments
 
-- `<PATH>`: Where to write: a logical path that leaves out .json, such as /tasks/a, or a from /tasks
+- `<PATH>`: Where to write: a logical path that leaves out .json, such as /tasks/a, or a from /tasks.
+
+  A path ending .md writes stdin as that file, as --file does.
 - `--new`: Write at a new name in the folder PATH names, which ends in /, or in the type's folder
 
   The name is the put's UTC minute and four random hex digits, such as 20261030T1405Z-c2e1. The put never overwrites a file, and its report names the path. With no PATH, the record's schema names the folder in `x-board-folder`.
@@ -176,7 +178,9 @@ Write the record on stdin at a path or --new name, or a file with --file
 - `--bulk <REASON>`: Mark the batch's commit as a bulk one, ending its message in `Board-Bulk: <REASON>`.
 
   The reason is one line of 1 to 80 characters, such as `migrate flows`, so a reader of history can tell a commit that touches many files from an edit.
-- `--file`: Write stdin as a file at a path that is its whole name, such as /notes/plan.md.
+- `--file`: Write stdin as a file at a path that is its whole name, such as /notes/plan.txt.
+
+  A path ending .md needs no --file.
 
   With a `store` setting, --file uploads bytes over 1 MiB or not UTF-8 under their digest and writes a board/attachment/v1 record.
 - `--wait <DURATION>`: How long to wait for the board's lock, with a unit: 500ms, 30s, 2m or 1h. Default: `5s`.

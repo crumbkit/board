@@ -1703,3 +1703,105 @@ fn rm_r_removes_a_folder_named_with_a_trailing_slash_and_rm_alone_refuses_it() {
         );
     }
 }
+
+#[test]
+fn put_of_a_markdown_path_writes_stdin_as_that_file_and_any_other_path_reads_a_record() {
+    let scenario = board();
+    scenario.identified();
+    let task = "---\n$type: lr/task/v1\ntitle: a\n---\n# A\n";
+    let wrote = board_with(
+        scenario.workdir(),
+        None,
+        &["put", "/tasks/a.md"],
+        task.as_bytes(),
+    );
+    assert_eq!(wrote.code, 0, "{}", text(&wrote.stderr));
+    let head = scenario.head().unwrap();
+    assert_eq!(
+        text(&wrote.stdout),
+        format!(
+            "wrote /tasks/a.md {}\ncommitted {}\n",
+            scenario.blob(task),
+            head.id
+        )
+    );
+    assert_eq!(
+        text(&board_in(scenario.workdir(), &["get", "/tasks/a.md"]).stdout),
+        task
+    );
+    let record = board_with(
+        scenario.workdir(),
+        None,
+        &["put", "/tasks/b"],
+        task.as_bytes(),
+    );
+    assert_eq!(
+        (record.code, record.error.as_deref()),
+        (1, Some("board::json::parse"))
+    );
+    assert!(!scenario.workdir().join("tasks/b.json").exists());
+}
+
+#[test]
+fn put_of_a_markdown_path_checks_its_frontmatter_as_put_file_does() {
+    let scenario = board();
+    scenario.identified();
+    let unparsed = "---\n$type: [lr/task/v1\n---\n# A\n";
+    let untitled = "---\n$type: lr/task/v1\n---\n# A\n";
+    for bad in [unparsed, untitled] {
+        let file = board_with(
+            scenario.workdir(),
+            None,
+            &["put", "/tasks/a.md", "--file"],
+            bad.as_bytes(),
+        );
+        assert_eq!(file.code, 1, "{}", text(&file.stderr));
+        let refused = board_with(
+            scenario.workdir(),
+            None,
+            &["put", "/tasks/a.md"],
+            bad.as_bytes(),
+        );
+        assert_eq!(refused.code, 1, "{}", text(&refused.stderr));
+        assert_eq!(refused.error, file.error, "{bad}");
+        assert!(!scenario.workdir().join("tasks/a.md").exists());
+    }
+    let titled = "---\n$type: lr/task/v1\ntitle: a\n---\n# A\n";
+    let admitted = board_with(
+        scenario.workdir(),
+        None,
+        &["put", "/tasks/a.md"],
+        titled.as_bytes(),
+    );
+    assert_eq!(admitted.code, 0, "{}", text(&admitted.stderr));
+}
+
+#[test]
+fn put_of_a_markdown_path_expecting_a_blob_another_write_replaced_is_stale() {
+    let scenario = board();
+    scenario.identified();
+    let first = board_with(scenario.workdir(), None, &["put", "/notes/a.md"], b"one\n");
+    assert_eq!(first.code, 0, "{}", text(&first.stderr));
+    let old = scenario.blob("one\n").to_string();
+    let second = board_with(
+        scenario.workdir(),
+        None,
+        &["put", "/notes/a.md", "--expect", &old],
+        b"two\n",
+    );
+    assert_eq!(second.code, 0, "{}", text(&second.stderr));
+    let stale = board_with(
+        scenario.workdir(),
+        None,
+        &["put", "/notes/a.md", "--expect", &old],
+        b"three\n",
+    );
+    assert_eq!(
+        (stale.code, stale.error.as_deref()),
+        (1, Some("board::put::stale"))
+    );
+    assert_eq!(
+        text(&board_in(scenario.workdir(), &["get", "/notes/a.md"]).stdout),
+        "two\n"
+    );
+}

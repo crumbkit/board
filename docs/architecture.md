@@ -268,9 +268,9 @@ tables and views, how a refresh decides what to redo, and `board query` and
    `board::put::head_moved`. Any other failure is `board::put::failed`, and
    says whether the commit was made.
 
-`board put <path> --file` writes stdin as a file, as given, at the path that
-is the file's whole name, such as `/notes/plan.md`. It takes steps 1, 3, 4, 5
-and 6, checks the size and frontmatter claiming a `$type`, and follows
+`board put <path> --file`, or `board put` of an `.md` path, writes stdin
+as a file at the path that is its whole name. It takes steps 1, 3,
+4, 5 and 6, checks the size and frontmatter claiming a `$type`, and follows
 Markdown links for the report. A path that names a directory,
 or ends `.json`, which Board reads as a record, is `board::put::not_a_file`.
 Bytes that are UTF-8 are text, and text holding NUL is `board::put::nul`,

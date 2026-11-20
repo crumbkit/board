@@ -3,7 +3,7 @@
 use std::ffi::OsString;
 use std::io::Read;
 
-use board_model::{Code, LogicalPath, MAX_RECORD_BYTES, RecordType, Refusal};
+use board_model::{Code, LogicalPath, MAX_RECORD_BYTES, RecordType, Refusal, Role};
 use board_ops::agent::AGENT_VARIABLE;
 use board_ops::{Board, Expect};
 use board_plugin::Target;
@@ -44,8 +44,8 @@ enum At {
 }
 
 /// `put`: a batch on stdin, or the record on stdin at a path or a new name
-/// in a folder, or with `file`, stdin as a file, read whole, since a file
-/// past the record bound may go to the store.
+/// in a folder, or with `file` or at a Markdown path, stdin as a file, read
+/// whole, since a file past the record bound may go to the store.
 pub(crate) fn put(
     board: &Board,
     printer: Printer,
@@ -76,6 +76,8 @@ pub(crate) fn put(
         Ok(at) => at,
         Err(refusal) => return render::refused(printer, *refusal),
     };
+    let file =
+        file || matches!(&at, At::Path(path) if Role::of(path.as_str()) == Some(Role::Markdown));
     let read = match at {
         At::Batch => Ok(Vec::new()),
         At::Path(_) if file => {
