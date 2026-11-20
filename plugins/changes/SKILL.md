@@ -33,11 +33,17 @@ blocks is missing.
    cannot see writes made through Bash. Start a builder with a prompt
    whose first line is the brief's `brief_line`, followed by the whole
    brief as `changes.brief` prints it now, as plain text, not inside a code
-   fence. The mod advises an Agent call that breaks either rule with
-   `changes::brief::no_line` or `changes::brief::not_rendered`, in the
-   builder's prompt and in your result; fix the prompt for the next
-   builder. A UI change's brief lists its `mockups`, and warns
-   `changes::ux::not_agreed` while one lacks the owner's decision. The brief's `rules_left_out` gives each rule it left out a
+   fence; compact or pretty JSON with keys in any order both pass. The
+   mod checks only a prompt that has a `board-brief:` line or starts with
+   a rendered brief, so a reviewer's or a planner's prompt that names the
+   change is never advised. It advises an Agent call whose brief line is
+   not first with `changes::brief::no_line`, and one that holds no current
+   brief as a JSON object with `brief_line` with
+   `changes::brief::not_rendered`. It never changes the prompt: the advice
+   arrives only in your result, after the agent returns; fix the prompt
+   for the next builder. A UI change's brief lists its `mockups`, and
+   warns `changes::ux::not_agreed` while one lacks the owner's decision.
+   The brief's `rules_left_out` gives each rule it left out a
    `reason`: the rule had no room, or it is a version rule whose capture
    finds no version in the planned files. A missing or unreadable planned
    file keeps a version rule. A rule with no room still applies, so read

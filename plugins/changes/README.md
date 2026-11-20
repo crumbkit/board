@@ -1196,36 +1196,40 @@ as `/repos/notes`.
 
 ### The brief check
 
-The same mod checks each Agent call whose prompt names a change. It takes
-the change in a `board-brief:` line first, then each `/changes/<name>` at the
-start of the prompt or after whitespace, a backtick, a quote or `(`, so a
-path such as `plugins/changes/x` names none. For each of the first three in
-turn it reads the change from each known board with `board get`, and acts on
-the first board that holds one in `build`. Each `get` may take up to 5
-seconds, so a change named fourth or later is not read. A change whose `get`
-fails is skipped. It reads the change's plan record the same way, and runs
-two checks:
+The same mod checks each Agent call whose prompt has a line that is
+`board-brief: /changes/<name>`, or starts with a rendered brief whose
+`brief_line` is one; either marks a builder's prompt. It takes the change
+from that leading brief, else from the first such line, and drops any
+punctuation after the path. A prompt that names a change only by its
+path, as a reviewer's or a planner's does, is not checked and causes no
+`board get`. The mod reads the change from each known board with
+`board get`, and acts on the first board that holds it in `build`. Each
+`get` may take up to 5 seconds, and the agent starts without waiting for
+them. It reads the change's plan record the same way, and runs two checks:
 
-- `changes::brief::no_line`: the prompt's first non-empty line is not
-  `board-brief: /changes/<name>`. The advice names that first line. The
-  edit guard reads the builder's first line, and Claude Code may put the
-  session's context before the rest of the prompt.
+- `changes::brief::no_line`: the brief line is not the prompt's first
+  non-empty line. The advice names that first line. The edit guard reads
+  the builder's first line, and Claude Code may put the session's context
+  before the rest of the prompt. A first line with punctuation after the
+  path is advised too, because the edit guard reads the path as written.
 - `changes::brief::not_rendered`: no JSON object in the prompt that holds
-  `brief_line` has the change's brief line, path, phase and plan text. An
-  object starts at a line that is `{` and ends at the next line that is
-  `}`. The advice names the first field that differs, or says the prompt
-  holds no brief, and names the command that renders the brief.
+  `brief_line` has the change's brief line, path, phase and plan text. The
+  object may be pretty or compact, with its keys in any order and with text
+  before or after it. The advice names the first field that differs, or
+  says the prompt holds no JSON object with a `brief_line` field, and names
+  the command that renders the brief.
 
 `not_rendered` compares only those four fields, so it misses a brief
 rendered in the same plan and phase whose other fields have changed since,
 such as its rules, uses or warnings.
 
-A failed check never blocks the call. The mod appends the advice to the
-builder's prompt and adds it to the lead's tool result. Each piece of advice
-starts "if this agent builds /changes/<name>", because a reviewer or an
-explorer whose prompt names the change gets it too. A prompt that names no
-change, a change no known board holds in `build`, and a plan record that
-cannot be read leave the call untouched. The check does not read the
+A failed check never blocks the call, and the mod never changes the call's
+input: Claude Code's auto-mode classifier refuses a call whose input differs
+from the input it reviewed. The agent runs with the prompt the lead wrote,
+and the mod adds the advice to the lead's tool result once the agent
+returns, so the lead fixes the prompt for the next builder. A prompt with no
+brief line, a change no known board holds in `build`, and a `get` that fails
+leave the call untouched. The check does not read the
 subagent type or the tools the agent has.
 
 `claude plugin test plugins/changes/claude-code` runs the mod's tests.
