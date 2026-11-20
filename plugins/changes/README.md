@@ -1210,7 +1210,8 @@ them. It reads the change's plan record the same way, and runs two checks:
 - `changes::brief::no_line`: the brief line is not the prompt's first
   non-empty line. The advice names that first line. The edit guard reads
   the builder's first line, and Claude Code may put the session's context
-  before the rest of the prompt.
+  before the rest of the prompt. A first line with punctuation after the
+  path is advised too, because the edit guard reads the path as written.
 - `changes::brief::not_rendered`: no JSON object in the prompt that holds
   `brief_line` has the change's brief line, path, phase and plan text. The
   object may be pretty or compact, with its keys in any order and with text

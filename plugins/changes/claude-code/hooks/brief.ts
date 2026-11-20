@@ -9,6 +9,21 @@ import { briefOf } from './guard'
 /** A path with any sentence punctuation after it removed. */
 const bare = (path: string) => path.replace(/[.,;:!?]+$/, '')
 
+/** The change the `brief_line` of the JSON object `prompt` starts with names, pretty or compact, or null. */
+function leadingBrief(prompt: string): string | null {
+  const start = prompt.search(/\S/)
+  if (start < 0 || prompt[start] !== '{') return null
+  const end = closing(prompt, start)
+  if (end < 0) return null
+  try {
+    const line = (JSON.parse(prompt.slice(start, end + 1)) as { brief_line?: unknown }).brief_line
+    // Given one line, briefOf reads only a brief line.
+    return typeof line === 'string' ? briefOf(line) : null
+  } catch {
+    return null
+  }
+}
+
 /**
  * The change a builder's prompt names, or null: the one the brief it starts
  * with names in its `brief_line`, else the one the first line that is
@@ -16,7 +31,7 @@ const bare = (path: string) => path.replace(/[.,;:!?]+$/, '')
  * named any other way, as a reviewer's prompt names one, is none.
  */
 export function briefLineIn(prompt: string): string | null {
-  const leading = briefOf(prompt)
+  const leading = leadingBrief(prompt)
   if (leading !== null) return bare(leading)
   // Given one line, briefOf reads only a brief line: a lone `{` holds no object.
   for (const line of prompt.split('\n')) {

@@ -99,6 +99,11 @@ test('a brief line with trailing punctuation names the change without it', () =>
 
 test('a prompt that starts with the rendered brief and has no brief line names its change', () => {
   expect(briefLineIn(`${BUILT}\nBuild it.`)).toBe(PATH)
+  expect(briefLineIn(`  ${COMPACT}\nBuild it.`)).toBe(PATH)
+})
+
+test('a first brief line with punctuation after its path is advised no_line, since the edit guard reads it as written', () => {
+  expect(noLine(`${LINE}.\nBuild it.`, PATH)).toBe(NO_LINE(`${LINE}.`))
 })
 
 test('a brief line that is not first is advised, and the same brief with it first is not', () => {
