@@ -9,7 +9,7 @@ const JOIN: &str = "/places/quokka/fix-login/changes/fix-login";
 const ID_A: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const ID_B: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 
-/// mxv 0.1.1's refusal of `--fields name,id,path`.
+/// mxv 0.1.1's refusal of `--fields name,id,path,problem`.
 const OLD: &str = r#"{"schema":"mxv/failure/v1","code":"mxv::cli::usage","message":"--fields names an unknown field 'id'","fields":{"argument":"--fields","value":"id"}}"#;
 
 /// A board that enables changes and places and holds the change
@@ -169,7 +169,7 @@ fn attach_writes_a_join_board_checks_whole_and_refs_finds_from_the_change_and_th
     );
     assert_eq!(
         board.mxv_calls(),
-        ["list --all --json --fields name,id,path"]
+        ["list --all --json --fields name,id,path,problem"]
     );
     assert_eq!(board.board.checked("/places/"), codes(&[(JOIN, None)]));
     for target in ["/changes/fix-login", "/places/quokka/fix-login"] {
@@ -323,6 +323,24 @@ fn attach_to_a_workspace_mxv_prints_with_a_null_id_is_refused_and_its_twin_with_
         "{refused}"
     );
     assert_eq!(board.board.checked("/places/"), codes(&[]));
+    board.listing(Some(ID_A));
+    assert_eq!(board.call("attach", &ATTACH)["written"], true);
+}
+
+#[test]
+fn attach_to_a_workspace_mxv_cannot_read_names_mxvs_problem_and_its_readable_twin_is_admitted() {
+    let board = board();
+    let row = json!({"name": "fix-login", "id": null, "path": board.root(), "problem": "the record does not parse"});
+    let live = json!({"schema": "mxv/list/v1", "data": [row], "total": 1, "truncated": false});
+    board.mxv(&live.to_string(), &listing(&[]));
+    let (code, refused) = board.refused("attach", &ATTACH);
+    assert_eq!(
+        (code, &refused["code"]),
+        (1, &json!("places::workspace::no_id")),
+        "{refused}"
+    );
+    let message = refused["message"].as_str().unwrap();
+    assert!(message.contains("the record does not parse"), "{message}");
     board.listing(Some(ID_A));
     assert_eq!(board.call("attach", &ATTACH)["written"], true);
 }

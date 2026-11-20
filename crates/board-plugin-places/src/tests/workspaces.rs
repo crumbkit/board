@@ -36,11 +36,11 @@ fn workspace(name: &str, path: &str, id: Option<&str>) -> Workspace {
 fn the_listings_ask_for_every_workspace_with_its_name_id_and_path() {
     assert_eq!(
         arguments(Listing::Live).join(" "),
-        "list --all --json --fields name,id,path"
+        "list --all --json --fields name,id,path,problem"
     );
     assert_eq!(
         arguments(Listing::Archived).join(" "),
-        "list --archived --all --json --fields name,id,path"
+        "list --archived --all --json --fields name,id,path,problem"
     );
 }
 
@@ -91,7 +91,7 @@ fn a_row_with_no_id_key_is_no_id_and_its_twin_with_a_null_id_is_read() {
     );
 }
 
-/// mxv 0.1.1's refusal of `--fields name,id,path`, which it prints on
+/// mxv 0.1.1's refusal of `--fields name,id,path,problem`, which it prints on
 /// stdout and stderr.
 const OLD: &str = r#"{"schema":"mxv/failure/v1","code":"mxv::cli::usage","message":"--fields names an unknown field 'id'","fields":{"argument":"--fields","value":"id"}}"#;
 

@@ -162,9 +162,9 @@ impl Real {
 }
 
 /// `mxv list` as the plugin runs it.
-pub(crate) const LIVE: &str = "mxv list --all --json --fields name,id,path";
+pub(crate) const LIVE: &str = "mxv list --all --json --fields name,id,path,problem";
 /// `mxv list --archived` as the plugin runs it.
-pub(crate) const ARCHIVED: &str = "mxv list --archived --all --json --fields name,id,path";
+pub(crate) const ARCHIVED: &str = "mxv list --archived --all --json --fields name,id,path,problem";
 
 /// An `mxv/list/v1` document holding `rows`.
 pub(crate) fn listing(rows: &[Value]) -> String {
@@ -172,7 +172,7 @@ pub(crate) fn listing(rows: &[Value]) -> String {
         .to_string()
 }
 
-/// A row of `mxv list --fields name,id,path`.
+/// A row of `mxv list --fields name,id,path,problem`.
 pub(crate) fn row(name: &str, path: &str, id: Option<&str>) -> Value {
     json!({"name": name, "id": id, "path": path})
 }

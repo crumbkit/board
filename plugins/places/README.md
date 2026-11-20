@@ -59,8 +59,8 @@ Board has the plugin built in, so nothing is installed:
 
 `attach --change <path> [--workspace <name>]`:
 
-- It runs `mxv list --all --json --fields name,id,path` with 10 seconds to
-  answer.
+- It runs `mxv list --all --json --fields name,id,path,problem` with 10
+  seconds to answer.
 - The workspace is the live one `--workspace` names, or the one whose
   directory holds the directory `board` was started in.
 - It refuses a change path that holds no `changes/change/v2` record.
@@ -80,6 +80,8 @@ Board has the plugin built in, so nothing is installed:
   `attach` does.
 - It removes the join when it joins the workspace to that change, and
   reports `removed` false otherwise.
+- A join at the path to another change with the same last segment stays in
+  place, and `removed` is false.
 - The output holds `path` and `removed`.
 
 `list [--limit <n>] [--all true]`:
@@ -87,7 +89,7 @@ Board has the plugin built in, so nothing is installed:
 - It reads this machine's joins with one query, and their changes with one
   read.
 - It runs `mxv list` and `mxv list --archived`, each with
-  `--all --json --fields name,id,path`.
+  `--all --json --fields name,id,path,problem`.
 - `limit` is 1 to 10,000 and 100 by default. `all` returns every join.
 - Each row holds `path`, `workspace`, `workspace_id`, `since`, `change` and
   `status`. `change` holds `path`, `title` and `phase`. Title and phase are
@@ -115,7 +117,8 @@ Every capability is given `BOARD_MACHINE`, `MXV_ROOT` and `XDG_STATE_HOME`.
   ran past 10 seconds, printed more than 16 MiB, or printed no `mxv/list/v1`
   document.
 - `places::mxv::no_id`: mxv is older than 0.3.0. It refused
-  `--fields name,id,path`, or printed rows with no `id`.
+  `--fields name,id,path,problem` for naming `id`, or printed rows with no
+  `id`.
 - `places::mxv::cut`: mxv's listing says `truncated` even with `--all`.
 - `places::workspace::no_id`: mxv prints a null `id` for the workspace
   `attach` found. The message names mxv's `problem` when the row has one.

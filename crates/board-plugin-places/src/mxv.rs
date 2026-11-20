@@ -16,8 +16,9 @@ use crate::board::refusal;
 const SECONDS: u64 = 10;
 
 /// The fields each row is asked for. mxv 0.3.0 and later print `id` only
-/// when it is asked for.
-const FIELDS: &str = "name,id,path";
+/// when it is asked for. `problem` says why mxv cannot read a workspace's
+/// record, which `places::workspace::no_id` names.
+const FIELDS: &str = "name,id,path,problem";
 
 /// The variables mxv reads to find its store, which Board passes on only
 /// when a capability names them.
@@ -154,7 +155,9 @@ fn refused_by_mxv(exited: &Exited) -> PluginError {
         && (failure["fields"]["value"] == "id"
             || (failure["message"].as_str()).is_some_and(|message| message.contains("'id'")))
     {
-        return no_id("mxv refused --fields name,id,path, so it is older than 0.3.0");
+        return no_id(&format!(
+            "mxv refused --fields {FIELDS}, so it is older than 0.3.0"
+        ));
     }
     let code = (exited.code).map_or_else(|| "on a signal".to_owned(), |code| code.to_string());
     let said = failure
@@ -171,9 +174,9 @@ fn refused_by_mxv(exited: &Exited) -> PluginError {
 
 fn failed(message: String) -> PluginError {
     PluginError {
-        hint: Some(
-            "run `mxv list --all --json --fields name,id,path` to see mxv's answer".to_owned(),
-        ),
+        hint: Some(format!(
+            "run `mxv list --all --json --fields {FIELDS}` to see mxv's answer"
+        )),
         ..refusal("places::mxv::failed", message, &[])
     }
 }
