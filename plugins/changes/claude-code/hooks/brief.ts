@@ -6,16 +6,22 @@
 // so the object slicing below is this file's own.
 import { briefOf } from './guard'
 
+/** A path with any sentence punctuation after it removed. */
+const bare = (path: string) => path.replace(/[.,;:!?]+$/, '')
+
 /**
- * The change the first line of `prompt` that is `board-brief: /changes/<name>`
- * names, or null. A path named any other way, as a reviewer's prompt names
- * one, is none.
+ * The change a builder's prompt names, or null: the one the brief it starts
+ * with names in its `brief_line`, else the one the first line that is
+ * `board-brief: /changes/<name>` names, without punctuation after it. A path
+ * named any other way, as a reviewer's prompt names one, is none.
  */
 export function briefLineIn(prompt: string): string | null {
+  const leading = briefOf(prompt)
+  if (leading !== null) return bare(leading)
   // Given one line, briefOf reads only a brief line: a lone `{` holds no object.
   for (const line of prompt.split('\n')) {
     const named = briefOf(line)
-    if (named !== null) return named
+    if (named !== null) return bare(named)
   }
   return null
 }

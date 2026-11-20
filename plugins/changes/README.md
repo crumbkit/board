@@ -1197,13 +1197,15 @@ as `/repos/notes`.
 ### The brief check
 
 The same mod checks each Agent call whose prompt has a line that is
-`board-brief: /changes/<name>`, which marks a builder's prompt. It takes the
-change from the first such line. A prompt that names a change only by its
+`board-brief: /changes/<name>`, or starts with a rendered brief whose
+`brief_line` is one; either marks a builder's prompt. It takes the change
+from that leading brief, else from the first such line, and drops any
+punctuation after the path. A prompt that names a change only by its
 path, as a reviewer's or a planner's does, is not checked and causes no
 `board get`. The mod reads the change from each known board with
 `board get`, and acts on the first board that holds it in `build`. Each
-`get` may take up to 5 seconds. It reads the change's plan record the same
-way, and runs two checks:
+`get` may take up to 5 seconds, and the agent starts without waiting for
+them. It reads the change's plan record the same way, and runs two checks:
 
 - `changes::brief::no_line`: the brief line is not the prompt's first
   non-empty line. The advice names that first line. The edit guard reads

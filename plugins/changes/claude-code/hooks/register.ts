@@ -399,7 +399,7 @@ async function guarded<R extends { deny?: string; context?: string[] }>(v: Verdi
 }
 
 /**
- * The advice on a builder's prompt whose `board-brief:` line names a change a
+ * The advice on a builder's prompt whose brief line names a change a
  * known board holds in build: `changes::brief::no_line` and `not_rendered`, or
  * null when both pass, when the prompt has no brief line or names no such
  * change, or when a lookup fails. Never throws.
@@ -439,10 +439,10 @@ export const register: Register = on => {
   // The brief check advises and never refuses. The call runs with the input it
   // was given, since Claude Code's auto-mode classifier refuses a call whose
   // input differs from the input it reviewed. The advice goes only to the lead's
-  // result.
+  // result, so the agent starts at once and the board lookups run beside it.
+  // briefAdvice never throws, so next never runs twice.
   on('tool.call', { tool: 'Agent' }, async ($, e, next) => {
-    const advice = await briefAdvice($, e.prompt)
-    const ran = await next(e)
+    const [advice, ran] = await Promise.all([briefAdvice($, e.prompt), next(e)])
     return advice === null || ran.deny !== undefined ? ran : { ...ran, context: [...(ran.context ?? []), advice] }
   })
 }

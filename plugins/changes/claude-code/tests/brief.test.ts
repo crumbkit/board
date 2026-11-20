@@ -92,6 +92,15 @@ test('the change is the first board-brief line, and a path named any other way i
   expect(briefLineIn('Build the widget.')).toBeNull()
 })
 
+test('a brief line with trailing punctuation names the change without it', () => {
+  expect(briefLineIn(`${LINE}.`)).toBe(PATH)
+  expect(briefLineIn(`Build it from this.\n${LINE},\nThen report.`)).toBe(PATH)
+})
+
+test('a prompt that starts with the rendered brief and has no brief line names its change', () => {
+  expect(briefLineIn(`${BUILT}\nBuild it.`)).toBe(PATH)
+})
+
 test('a brief line that is not first is advised, and the same brief with it first is not', () => {
   expect(noLine(`${BUILT}\n${LINE}`, PATH)).toBe(NO_LINE('{'))
   expect(noLine(`Please build it.\n${LINE}`, PATH)).toBe(NO_LINE('Please build it.'))
@@ -149,6 +158,44 @@ test('a prompt naming a change in build without a brief line runs untouched and 
   expect(ran).toEqual([])
   expect(prompts[0]).toBe(review)
   expect((await agent($, `${LINE}\n${review}`)).context).toEqual([NOT_RENDERED(NO_BRIEF)])
+})
+
+test('a prompt that starts with the rendered brief and has no brief line is advised no_line', async ($, on) => {
+  const { prompts } = engine(on, {})
+  const prompt = `${BUILT}\nBuild it.`
+  expect((await agent($, prompt)).context).toEqual([NO_LINE('{')])
+  expect(prompts[0]).toBe(prompt)
+})
+
+test('the agent starts before the board lookups finish, with the event it was given', async ($, on) => {
+  let started: () => void = () => undefined
+  const agentStarted = new Promise<void>(resolve => (started = resolve))
+  const order: string[] = []
+  on('env.get', (_, e) => ({ value: e.name === 'HOME' ? HOME : undefined }))
+  on('fs.exists', (_, e) => ({ value: e.path === CONFIG }))
+  on('fs.read', () => ({ value: JSON.stringify({ boards: [BOARD] }) }))
+  on('process.run', async (_, e) => {
+    const key = e.argv.slice(4)[1] ?? ''
+    // A hook that ran the agent only after its lookups would wait here for good.
+    const waited = await Promise.race([agentStarted.then(() => true), new Promise(r => setTimeout(() => r(false), 500))])
+    order.push(waited ? `get ${key}` : `get ${key} before the agent`)
+    const stdout = key === PLAN ? PLANNED : change('build')
+    return { value: { exitCode: 0, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
+  })
+  const sent = { tool: 'Agent', description: 'Build it', prompt: LINE } as const
+  let received: Record<string, unknown> = {}
+  on('tool.call', (_, e) => {
+    // The engine gives the call its tool_use_id; every other field is the hook's input.
+    const { tool_use_id: _id, ...rest } = e as unknown as Record<string, unknown>
+    received = rest
+    order.push('agent')
+    started()
+    return { result: {} } as never
+  })
+  const ran = await $.tool.call(sent)
+  expect(order).toEqual(['agent', `get ${PATH}`, `get ${PLAN}`])
+  expect(received).toEqual(sent)
+  expect(ran.context).toEqual([NOT_RENDERED(NO_BRIEF)])
 })
 
 test('a brief line second is advised no_line, and the same prompt with it first is not', async ($, on) => {
