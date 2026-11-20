@@ -24,7 +24,7 @@ import {
   unknownRecord,
 } from './guard'
 import type { Mount } from './guard'
-import { changesIn, noLine, notRendered, planText } from './brief'
+import { briefLineIn, noLine, notRendered, planText } from './brief'
 
 // The write guard. Before an Edit, Write or NotebookEdit, it refuses only a
 // record that Board's own commands write: the board config and each known
@@ -70,8 +70,6 @@ const CHECK = `PATH=${PATH} exec board -C "$1" --json check --healthy "$2"`
 
 // A slow or hung git or board holds the edit no longer than this, then admits it with advice.
 const TIMEOUT_MS = 5000
-// The most changes named in an Agent call's prompt that the brief check reads, brief lines first.
-const CANDIDATES = 3
 // `$.session.messages` returns at most this many entries, the newest.
 const WINDOW = 4096
 
@@ -401,29 +399,25 @@ async function guarded<R extends { deny?: string; context?: string[] }>(v: Verdi
 }
 
 /**
- * The advice on a builder's prompt that names a change a known board holds in
- * build: `changes::brief::no_line` and `not_rendered`, or null when both pass,
- * when the prompt names no such change, or when the plan record cannot be read.
- * A change whose lookup fails is skipped. Never throws.
+ * The advice on a builder's prompt whose `board-brief:` line names a change a
+ * known board holds in build: `changes::brief::no_line` and `not_rendered`, or
+ * null when both pass, when the prompt has no brief line or names no such
+ * change, or when a lookup fails. Never throws.
  */
 async function briefAdvice($: EngineInterface, prompt: string): Promise<string | null> {
-  const paths = changesIn(prompt)
-  if (paths.length === 0) return null
+  const path = briefLineIn(prompt)
+  if (path === null) return null
   try {
-    const boards = await knownBoards($)
-    // Each lookup may take up to TIMEOUT_MS, so only the first CANDIDATES changes the prompt names are read.
-    candidates: for (const path of paths.slice(0, CANDIDATES)) {
-      for (const board of boards) {
-        const change = parseChange((await sh($, GET, [board, path])).stdout)
-        if (change.kind === 'failed') continue candidates
-        if (change.kind === 'missing' || change.phase !== 'build') continue
-        // The brief's `plan` is the text path its plan record names.
-        const plan = change.plan === null ? null : planText((await sh($, GET, [board, change.plan])).stdout)
-        if (change.plan !== null && plan === null) return null
-        const expected = { brief_line: `board-brief: ${path}`, path, phase: change.phase, plan }
-        const advice = [noLine(prompt, path), notRendered(prompt, expected, board)].filter(a => a !== null)
-        return advice.length === 0 ? null : advice.join('\n')
-      }
+    for (const board of await knownBoards($)) {
+      const change = parseChange((await sh($, GET, [board, path])).stdout)
+      if (change.kind === 'failed') return null
+      if (change.kind === 'missing' || change.phase !== 'build') continue
+      // The brief's `plan` is the text path its plan record names.
+      const plan = change.plan === null ? null : planText((await sh($, GET, [board, change.plan])).stdout)
+      if (change.plan !== null && plan === null) return null
+      const expected = { brief_line: `board-brief: ${path}`, path, phase: change.phase, plan }
+      const advice = [noLine(prompt, path), notRendered(prompt, expected, board)].filter(a => a !== null)
+      return advice.length === 0 ? null : advice.join('\n')
     }
   } catch {
     // A lookup that fails leaves the call untouched.
@@ -442,11 +436,13 @@ export const register: Register = on => {
   on('tool.call', { tool: 'NotebookEdit' }, async ($, e, next) =>
     guarded(await verdict($, e.notebook_path, e.agentId), () => next(e)),
   )
-  // The brief check advises and never refuses: the advice goes to the builder's prompt and the lead's result.
+  // The brief check advises and never refuses. The call runs with the input it
+  // was given, since Claude Code's auto-mode classifier refuses a call whose
+  // input differs from the input it reviewed. The advice goes only to the lead's
+  // result.
   on('tool.call', { tool: 'Agent' }, async ($, e, next) => {
     const advice = await briefAdvice($, e.prompt)
-    if (advice === null) return next(e)
-    const ran = await next({ ...e, prompt: `${e.prompt}\n\n${advice}` })
-    return ran.deny !== undefined ? ran : { ...ran, context: [...(ran.context ?? []), advice] }
+    const ran = await next(e)
+    return advice === null || ran.deny !== undefined ? ran : { ...ran, context: [...(ran.context ?? []), advice] }
   })
 }

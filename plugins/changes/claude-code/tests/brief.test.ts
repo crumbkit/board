@@ -2,13 +2,13 @@ import { expect, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 import type { Engine } from 'claude-code/testing'
 
-import { changesIn, noLine, notRendered, objectsIn } from '../hooks/brief'
+import { briefLineIn, noLine, notRendered, objectsIn } from '../hooks/brief'
 import type { Expected } from '../hooks/brief'
 import PRINTED from './brief.golden'
 
-// These prove what the Agent hook advises a lead whose builder prompt names a
-// change in build, and that the advice reaches both the builder's prompt and
-// the lead's result. `board` is stood in by a process.run hook and the board
+// These prove what the Agent hook advises a lead whose builder prompt has a
+// brief line for a change in build, that the advice reaches only the lead's
+// result, and that the builder gets the prompt unchanged. `board` is stood in by a process.run hook and the board
 // config by fs hooks. They do not run board: brief.golden.ts holds what
 // `changes.brief` prints, which a Rust test in board-cli pins.
 
@@ -77,31 +77,35 @@ const NO_LINE = (first: string, path = PATH) =>
 const NOT_RENDERED = (what: string) =>
   `changes::brief::not_rendered: if this agent builds ${PATH}, send it the brief ` +
   `\`board -C ${BOARD} call changes.brief --path ${PATH}\` prints now; ${what}.`
+const NO_BRIEF = 'the prompt holds no JSON object with a `brief_line` field, such as `changes.brief` prints'
 
-test('a brief line names the change first, and otherwise only a path that starts a word does', () => {
-  expect(changesIn(GOOD)).toEqual([PATH])
-  expect(changesIn(`Read /changes/other first.\n${LINE}`)).toEqual([PATH, '/changes/other'])
-  expect(changesIn('Build /changes/fix-it. Then `/changes/b` and "/changes/c" (/changes/d)')).toEqual([
-    '/changes/fix-it',
-    '/changes/b',
-    '/changes/c',
-    '/changes/d',
-  ])
-  expect(changesIn('Edit plugins/changes/claude-code and ~/Code/board/changes/x/plans/1.md.')).toEqual([])
-  expect(changesIn('Build the widget.')).toEqual([])
+const reordered = (json: string) => {
+  const brief = JSON.parse(json) as Record<string, unknown>
+  return JSON.stringify(Object.fromEntries(Object.keys(brief).reverse().map(key => [key, brief[key]])), null, 2)
+}
+const COMPACT = JSON.stringify(JSON.parse(BUILT))
+
+test('the change is the first board-brief line, and a path named any other way is none', () => {
+  expect(briefLineIn(GOOD)).toBe(PATH)
+  expect(briefLineIn(`Read /changes/other first.\n  ${LINE}  \nboard-brief: /changes/u`)).toBe(PATH)
+  expect(briefLineIn('Review /changes/t and `board-brief: /changes/t` in the docs.')).toBeNull()
+  expect(briefLineIn('Build the widget.')).toBeNull()
 })
 
 test('a brief line that is not first is advised, and the same brief with it first is not', () => {
   expect(noLine(`${BUILT}\n${LINE}`, PATH)).toBe(NO_LINE('{'))
   expect(noLine(`Please build it.\n${LINE}`, PATH)).toBe(NO_LINE('Please build it.'))
-  expect(noLine(`board-brief: /changes/other\n${BUILT}`, PATH)).toBe(NO_LINE('board-brief: /changes/other'))
   expect(noLine(`\n  ${LINE}  \n${BUILT}`, PATH)).toBeNull()
 })
 
-test('every JSON object that opens on a line of its own is read, and a broken one is skipped', () => {
+test('every JSON object in the text is read in any layout, and a broken one is skipped', () => {
+  expect(objectsIn('Use {x} here: {"a":1} then {"b":{"c":2}} and {"d":')).toEqual([{ a: 1 }, { b: { c: 2 } }])
+  expect(objectsIn('A brace in a string: {"s":"}{"} done.')).toEqual([{ s: '}{' }])
   const built = JSON.parse(BUILT) as unknown
   expect(objectsIn(GOOD)).toEqual([built])
-  expect(objectsIn(`${BUILT}\n${BUILT.replace('"path":', '"path"')}\n${BUILT}`)).toEqual([built, built])
+  expect(objectsIn(`Before.${COMPACT}After.`)).toEqual([built])
+  const broken = objectsIn(`${BUILT}\n${BUILT.replace('"path":', '"path"')}\n${BUILT}`)
+  expect(broken.filter(sent => typeof sent === 'object' && sent !== null && 'brief_line' in sent)).toEqual([built, built])
   expect(objectsIn('No JSON here.')).toEqual([])
 })
 
@@ -119,89 +123,86 @@ test('a brief whose path, phase or plan differs is advised with that field, and 
   expect(notRendered(GOOD, EXPECTED, BOARD)).toBeNull()
 })
 
-test('a prompt with no JSON brief is advised, and one whose second brief object matches is not', () => {
-  expect(notRendered(`${LINE}\nBuild it.`, EXPECTED, BOARD)).toBe(NOT_RENDERED('the prompt holds no brief as JSON'))
+test('a prompt with no JSON brief is advised what was looked for, and one whose second brief object matches is not', () => {
+  expect(notRendered(`${LINE}\nBuild it.`, EXPECTED, BOARD)).toBe(NOT_RENDERED(NO_BRIEF))
   const stale = JSON.stringify({ ...(JSON.parse(BUILT) as object), phase: 'plan' }, null, 2)
   expect(notRendered(`${LINE}\n${stale}\n${BUILT}`, EXPECTED, BOARD)).toBeNull()
 })
 
-test('a JSON-first prompt is advised no_line, and the same brief with the line first runs untouched', async ($, on) => {
+test('an advised call reaches the agent with its prompt unchanged and the advice only in the result, and a correct brief gets none', async ($, on) => {
   const { ran, prompts } = engine(on, {})
-  const advised = await agent($, `${BUILT}\nBuild it.`)
-  expect(advised.context).toEqual([NO_LINE('{')])
-  expect(prompts[0]).toBe(`${BUILT}\nBuild it.\n\n${NO_LINE('{')}`)
+  const prompt = `Please build it.\n${LINE}\nBuild it.`
+  const advised = await agent($, prompt)
+  expect(advised.context).toEqual([`${NO_LINE('Please build it.')}\n${NOT_RENDERED(NO_BRIEF)}`])
+  expect(prompts[0]).toBe(prompt)
   expect(ran).toEqual([`get ${BOARD} ${PATH}`, `get ${BOARD} ${PLAN}`])
   const plain = await agent($, GOOD)
   expect(plain.context).toBeUndefined()
   expect(prompts[1]).toBe(GOOD)
 })
 
-test('a brief rendered in another phase is advised not_rendered in the prompt and the result, and the current one is not', async ($, on) => {
-  const { prompts } = engine(on, {})
-  const stale = `${LINE}\n${PRINTED}`
-  const advice = NOT_RENDERED('its `phase` is "plan", and the change\'s is "build"')
-  expect((await agent($, stale)).context).toEqual([advice])
-  expect(prompts[0]).toBe(`${stale}\n\n${advice}`)
-  expect((await agent($, GOOD)).context).toBeUndefined()
-})
-
-test('both failed checks advise together', async ($, on) => {
-  const { prompts } = engine(on, {})
-  const advice = `${NO_LINE('Build /changes/t.')}\n${NOT_RENDERED('the prompt holds no brief as JSON')}`
-  expect((await agent($, 'Build /changes/t.')).context).toEqual([advice])
-  expect(prompts[0]).toBe(`Build /changes/t.\n\n${advice}`)
-})
-
-test('a prompt naming no change is untouched and reads nothing, and one naming a change in build is checked', async ($, on) => {
+test('a prompt naming a change in build without a brief line runs untouched and reads nothing, and with the line it is checked', async ($, on) => {
   const { ran, prompts } = engine(on, {})
-  expect((await agent($, 'Find the widget code in plugins/changes/claude-code.')).context).toBeUndefined()
+  const review = 'Review /changes/t against its plan at `/changes/t/plans/1`.'
+  expect((await agent($, review)).context).toBeUndefined()
   expect(ran).toEqual([])
-  expect((await agent($, 'Build /changes/t.')).context).toHaveLength(1)
-  expect(prompts[0]).toBe('Find the widget code in plugins/changes/claude-code.')
+  expect(prompts[0]).toBe(review)
+  expect((await agent($, `${LINE}\n${review}`)).context).toEqual([NOT_RENDERED(NO_BRIEF)])
+})
+
+test('a brief line second is advised no_line, and the same prompt with it first is not', async ($, on) => {
+  engine(on, {})
+  expect((await agent($, `Build this.\n${LINE}\n${BUILT}`)).context).toEqual([NO_LINE('Build this.')])
+  expect((await agent($, `${LINE}\nBuild this.\n${BUILT}`)).context).toBeUndefined()
+})
+
+test('a brief sent compact, reordered or followed by instructions passes, and one in another phase is advised', async ($, on) => {
+  engine(on, {})
+  expect((await agent($, `${LINE}\n${COMPACT}`)).context).toBeUndefined()
+  expect((await agent($, `${LINE}\n\n${reordered(BUILT)}`)).context).toBeUndefined()
+  expect((await agent($, `${LINE}\n\n${BUILT}\n\nThen run the tests.\nReport back.`)).context).toBeUndefined()
+  expect((await agent($, `${LINE}\n${PRINTED}`)).context).toEqual([
+    NOT_RENDERED('its `phase` is "plan", and the change\'s is "build"'),
+  ])
+})
+
+test('a resent prompt that holds the advice gets it once in the result and still reaches the agent unchanged', async ($, on) => {
+  const { prompts } = engine(on, {})
+  const first = `Build this.\n${LINE}`
+  const advice = (await agent($, first)).context?.[0] ?? ''
+  const resent = `${first}\n\n${advice}`
+  expect((await agent($, resent)).context).toEqual([advice])
+  expect(prompts[1]).toBe(resent)
 })
 
 test('a change in plan is untouched, and the same change in build is advised', async ($, on) => {
   const answers: Answers = { changes: { [PATH]: change('plan') } }
   const { ran } = engine(on, answers)
-  expect((await agent($, 'Build /changes/t.')).context).toBeUndefined()
+  expect((await agent($, LINE)).context).toBeUndefined()
   expect(ran).toEqual([`get ${BOARD} ${PATH}`])
   answers.changes = undefined
-  expect((await agent($, 'Build /changes/t.')).context).toHaveLength(1)
+  expect((await agent($, LINE)).context).toHaveLength(1)
 })
 
-test('a later candidate in build is checked when an earlier one is not a change', async ($, on) => {
-  const { ran } = engine(on, {})
-  const prompt = 'See /changes/missing, then build /changes/t.'
-  expect((await agent($, prompt)).context).toEqual([
-    `${NO_LINE(prompt)}\n${NOT_RENDERED('the prompt holds no brief as JSON')}`,
-  ])
-  expect(ran).toEqual([`get ${BOARD} /changes/missing`, `get ${BOARD} ${PATH}`, `get ${BOARD} ${PLAN}`])
-})
-
-test('a change named fourth is not read, and the same change named third is checked', async ($, on) => {
-  const { ran } = engine(on, {})
-  const fourth = 'See /changes/a, /changes/b and /changes/c, then build /changes/t.'
-  expect((await agent($, fourth)).context).toBeUndefined()
-  expect(ran).toEqual(['/changes/a', '/changes/b', '/changes/c'].map(path => `get ${BOARD} ${path}`))
-  expect((await agent($, 'See /changes/a and /changes/b, then build /changes/t.')).context).toHaveLength(1)
-})
-
-test('a change whose lookup fails is skipped for the next one named, and alone it leaves the call untouched', async ($, on) => {
+test('a change whose lookup fails leaves the call untouched, and one that reads is advised', async ($, on) => {
   const failed = JSON.stringify({
     schema: 'board/get-report/v2',
     data: [],
-    failures: [{ key: '/changes/bad', code: 'board::record::invalid', message: '/changes/bad fails its schema' }],
+    failures: [{ key: PATH, code: 'board::record::invalid', message: `${PATH} fails its schema` }],
   })
-  engine(on, { changes: { '/changes/bad': failed, [PATH]: change('build') } })
-  expect((await agent($, 'See /changes/bad, then build /changes/t.')).context).toHaveLength(1)
-  expect((await agent($, 'See /changes/bad.')).context).toBeUndefined()
+  const answers: Answers = { changes: { [PATH]: failed } }
+  const { prompts } = engine(on, answers)
+  expect((await agent($, LINE)).context).toBeUndefined()
+  expect(prompts[0]).toBe(LINE)
+  answers.changes = undefined
+  expect((await agent($, LINE)).context).toHaveLength(1)
 })
 
 test('a plan record that cannot be read leaves the call untouched, and one that reads advises', async ($, on) => {
   const answers: Answers = { plan: 'fails' }
   const { prompts } = engine(on, answers)
-  expect((await agent($, 'Build /changes/t.')).context).toBeUndefined()
-  expect(prompts[0]).toBe('Build /changes/t.')
+  expect((await agent($, LINE)).context).toBeUndefined()
+  expect(prompts[0]).toBe(LINE)
   answers.plan = undefined
-  expect((await agent($, 'Build /changes/t.')).context).toHaveLength(1)
+  expect((await agent($, LINE)).context).toHaveLength(1)
 })

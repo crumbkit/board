@@ -1,24 +1,23 @@
-// What the Agent hook checks in a builder's prompt that names a change in
-// build, and the words of each piece of advice. Pure functions, so the tests
+// What the Agent hook checks in a builder's prompt whose brief line names a
+// change in build, and the words of each piece of advice. Pure functions, so the tests
 // can pin every word.
 
 // briefOf stays as the artifacts mod copies it (a test there compares the two),
 // so the object slicing below is this file's own.
 import { briefOf } from './guard'
 
-const NAME = String.raw`\/changes\/[\w.-]+`
-
 /**
- * The changes `prompt` names, once each: those in a `board-brief:` line first,
- * then each `/changes/<name>` at the start of the text or after whitespace, a
- * backtick, a quote or `(`. So `plugins/changes/x` and `~/board/changes/x` name none.
+ * The change the first line of `prompt` that is `board-brief: /changes/<name>`
+ * names, or null. A path named any other way, as a reviewer's prompt names
+ * one, is none.
  */
-export function changesIn(prompt: string): string[] {
-  const found = [
-    ...[...prompt.matchAll(new RegExp(`board-brief:\\s*(${NAME})`, 'g'))].map(m => m[1] ?? ''),
-    ...[...prompt.matchAll(new RegExp(`(?:^|[\\s\`'"(])(${NAME})`, 'g'))].map(m => m[1] ?? ''),
-  ]
-  return [...new Set(found.map(path => path.replace(/\.+$/, '')))]
+export function briefLineIn(prompt: string): string | null {
+  // Given one line, briefOf reads only a brief line: a lone `{` holds no object.
+  for (const line of prompt.split('\n')) {
+    const named = briefOf(line)
+    if (named !== null) return named
+  }
+  return null
 }
 
 /** The advice when the first non-empty line of `prompt` is not `board-brief: <path>`, or null. */
@@ -33,20 +32,43 @@ export function noLine(prompt: string, path: string): string | null {
 }
 
 /**
- * Every JSON object in `text` that opens on a line that is `{`, in order; one
- * that does not parse is skipped. Board prints the object pretty, so it ends at
- * the next line that is `}` with nothing but a line end after it.
+ * The index of the `}` that closes the `{` at `start` in `text`, skipping
+ * braces inside JSON strings, or -1 when none does.
+ */
+function closing(text: string, start: number): number {
+  let depth = 0
+  let quoted = false
+  for (let at = start; at < text.length; at++) {
+    const c = text[at]
+    if (quoted) {
+      if (c === '\\') at++
+      else if (c === '"') quoted = false
+    } else if (c === '"') quoted = true
+    else if (c === '{') depth++
+    else if (c === '}' && --depth === 0) return at
+  }
+  return -1
+}
+
+/**
+ * Every JSON object in `text`, in order, in any layout and with any text
+ * around it. An object that parses is read whole, so its nested objects are
+ * not listed again. One that does not parse is skipped, and the objects
+ * inside it are still read.
  */
 export function objectsIn(text: string): unknown[] {
-  const lines = text.split('\n')
-  return lines.flatMap((line, at) => {
-    const end = line.trim() === '{' ? lines.findIndex((l, i) => i > at && l.trimEnd() === '}') : -1
+  const found: unknown[] = []
+  for (let at = text.indexOf('{'); at >= 0; at = text.indexOf('{', at + 1)) {
+    const end = closing(text, at)
+    if (end < 0) continue
     try {
-      return end < 0 ? [] : [JSON.parse(lines.slice(at, end + 1).join('\n')) as unknown]
+      found.push(JSON.parse(text.slice(at, end + 1)) as unknown)
+      at = end
     } catch {
-      return []
+      // Not JSON: look for an object from the next brace.
     }
-  })
+  }
+  return found
 }
 
 /** The fields of a brief the change record and its plan record decide. */
@@ -69,7 +91,7 @@ export function notRendered(prompt: string, expected: Expected, board: string): 
   const key = differs[0]
   const what =
     key === undefined
-      ? 'the prompt holds no brief as JSON'
+      ? 'the prompt holds no JSON object with a `brief_line` field, such as `changes.brief` prints'
       : `its \`${key}\` is ${JSON.stringify(briefs[0]?.[key] ?? null)}, and the change's is ${JSON.stringify(expected[key])}`
   return (
     `changes::brief::not_rendered: if this agent builds ${expected.path}, send it the brief ` +
