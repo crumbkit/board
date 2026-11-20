@@ -303,7 +303,7 @@ fn an_mxv_too_old_to_print_ids_is_refused_with_no_id_and_a_current_one_is_admitt
             "{refused}"
         );
         assert!(
-            refused["message"].as_str().unwrap().contains("0.3.0"),
+            refused["message"].as_str().unwrap().contains("0.4.0"),
             "{refused}"
         );
     };

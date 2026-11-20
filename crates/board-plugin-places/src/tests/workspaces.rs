@@ -82,7 +82,7 @@ fn a_row_with_no_id_key_is_no_id_and_its_twin_with_a_null_id_is_read() {
     old.as_object_mut().unwrap().remove("id");
     let refused = rows(&Ok(exited(0, &listing(&[old]), ""))).unwrap_err();
     assert_eq!(refused.code, "places::mxv::no_id");
-    assert!(refused.message.contains("0.3.0"), "{}", refused.message);
+    assert!(refused.message.contains("0.4.0"), "{}", refused.message);
     assert_eq!(
         rows(&Ok(exited(0, &listing(&[row("one", "/w/one", None)]), "")))
             .unwrap()

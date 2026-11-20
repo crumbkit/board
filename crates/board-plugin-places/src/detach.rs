@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use crate::attach::{found, read_join, unreadable};
-use crate::board::{self, Held, logical};
+use crate::board::{self, Held, logical, refusal, warning};
 use crate::mxv::{self, Listing};
 use crate::{join_path, machine};
 
@@ -52,8 +52,9 @@ pub(crate) fn detach(host: &dyn Host, input: &Value) -> Result<Value, PluginErro
         Held::Other => return Err(unreadable(&path)),
         Held::Record(held, blob) => {
             // A join to another change of the same name is that change's
-            // to remove.
-            if read_join(&path, &held)?.change == change.as_str() {
+            // to remove; a warning names it.
+            let joined = read_join(&path, &held)?.change;
+            if joined == change.as_str() {
                 let line = json!({
                     "path": path.as_str(),
                     "expect": blob,
@@ -62,6 +63,15 @@ pub(crate) fn detach(host: &dyn Host, input: &Value) -> Result<Value, PluginErro
                 });
                 board::put(host, &[line])?.absent.is_empty()
             } else {
+                host.warn(&warning(&refusal(
+                    "places::detach::other_change",
+                    format!(
+                        "{path} joins the workspace to {joined}, another change with the same \
+                         name as {change}, so detach leaves it; pass --change {joined} to \
+                         remove it"
+                    ),
+                    &[("path", path.as_str()), ("change", &joined)],
+                )));
                 false
             }
         }

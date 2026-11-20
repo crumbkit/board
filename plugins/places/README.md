@@ -81,7 +81,8 @@ Board has the plugin built in, so nothing is installed:
 - It removes the join when it joins the workspace to that change, and
   reports `removed` false otherwise.
 - A join at the path to another change with the same last segment stays in
-  place, and `removed` is false.
+  place, `removed` is false, and a `places::detach::other_change` warning
+  names that change.
 - The output holds `path` and `removed`.
 
 `list [--machine <label>] [--limit <n>] [--all true]`:
@@ -97,7 +98,9 @@ Board has the plugin built in, so nothing is installed:
 - Each row holds `path`, `machine`, `workspace`, `workspace_id`, `since`,
   `change` and `status`.
 - `change` holds `path`, `title` and `phase`. Title and phase are null when
-  the change cannot be read, and a warning says why.
+  the change cannot be read, and a warning says why. When the path holds a
+  directory or a record of another type, the warning is
+  `places::change::wrong_type`.
 - A join the plugin cannot read is left out with a warning.
 - The output holds `machine`, this machine's label, and `joins`, `total` and
   `truncated`.
@@ -121,7 +124,7 @@ Every capability is given `BOARD_MACHINE`, `MXV_ROOT` and `XDG_STATE_HOME`.
 - `places::mxv::failed`: mxv is not on PATH, did not start, exited non-zero,
   ran past 10 seconds, printed more than 16 MiB, or printed no `mxv/list/v1`
   document.
-- `places::mxv::no_id`: mxv is older than 0.3.0. It refused
+- `places::mxv::no_id`: mxv is older than 0.4.0. It refused
   `--fields name,id,path,problem` for naming `id`, or printed rows with no
   `id`.
 - `places::mxv::cut`: mxv's listing says `truncated` even with `--all`.
@@ -132,7 +135,10 @@ Every capability is given `BOARD_MACHINE`, `MXV_ROOT` and `XDG_STATE_HOME`.
 - `places::workspace::not_found`: no live workspace has the name given.
 - `places::change::not_found`: nothing is at the change's path.
 - `places::change::wrong_type`: the change's path holds a directory or a
-  record of another type.
+  record of another type. `list` gives it as a warning and keeps the row.
+- `places::detach::other_change`: a warning. The join at the path belongs to
+  another change with the same last segment, so `detach` leaves it.
+  `fields.change` names that change.
 - `places::attach::taken`: the path holds a join to another change with the
   same last segment. `fields.change` names it.
 - `places::record::unreadable`: the record at the join's path is not a join

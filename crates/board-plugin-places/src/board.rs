@@ -1,7 +1,7 @@
 //! Reading and writing the board for every capability: one entry by its
 //! path, a batch of puts, and the plugin's own refusals.
 
-use board_model::{Code, Fields, LogicalPath, Object, PathError, Refusal};
+use board_model::{Code, Fields, LogicalPath, Object, PathError, PluginCode, PluginName, Refusal};
 use board_ops::{GetReport, Host, PluginError, PutReport};
 use serde_json::{Map, Value};
 
@@ -20,6 +20,15 @@ pub(crate) fn refusal(code: &str, message: String, fields: &[(&str, &str)]) -> P
             .collect::<Map<_, _>>(),
         hint: None,
     }
+}
+
+/// `error`, one of the plugin's own, as a refusal to warn with.
+pub(crate) fn warning(error: &PluginError) -> Refusal {
+    let places: PluginName = "places".parse().expect("places is a plugin name");
+    let code = PluginCode::parse(&places, error.code.clone()).expect(
+        "every code the plugin gives is `places::<area>::<reason>`; its tests warn with each",
+    );
+    Refusal::plugin(code, error.message.clone(), error.fields.clone())
 }
 
 /// `path` as a logical path, refused as `board get` would refuse it.

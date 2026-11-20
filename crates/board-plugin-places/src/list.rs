@@ -2,14 +2,14 @@
 //! and the status of its workspace. mxv gives the status of this machine's
 //! workspaces at read time; another machine's is unknown.
 
-use board_model::{LogicalPath, PluginCode, PluginName, Refusal};
+use board_model::LogicalPath;
 use board_ops::{Host, Limit, PluginError, literal};
 use board_plugin::shape::{Record, Slug, TREE_CODES, whole};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::board::{Held, held, refusal, refused};
+use crate::board::{Held, held, refusal, refused, warning};
 use crate::machine;
 use crate::mxv::{self, Listing, Workspace};
 use crate::records::{CHANGE_TYPE, WorkspaceChange};
@@ -231,7 +231,7 @@ fn read(logical: &str, body: &Value) -> Option<Joined> {
 
 /// Says that the join at `logical` was left out.
 fn warn(host: &dyn Host, logical: &str) {
-    host.warn(&plain(&refusal(
+    host.warn(&warning(&refusal(
         "places::record::unreadable",
         format!(
             "{logical} is no {} record this plugin reads, so list leaves it out; run \
@@ -265,7 +265,18 @@ fn changes(host: &dyn Host, joins: &[Joined]) -> Result<Vec<Listed>, PluginError
                     change.title = record["title"].as_str().map(str::to_owned);
                     change.phase = record["phase"].as_str().map(str::to_owned);
                 }
-                Some(Ok(Err(error))) => host.warn(&plain(&error)),
+                Some(Ok(Ok(Held::Record(record, _)))) => {
+                    let held = record["$type"].as_str().unwrap_or("untyped");
+                    wrong_type(host, &change.path, &format!("a {held} record"));
+                }
+                Some(Ok(Ok(Held::Other))) => {
+                    wrong_type(
+                        host,
+                        &change.path,
+                        "a directory or a file that is not a record",
+                    );
+                }
+                Some(Ok(Err(error))) => host.warn(&warning(&error)),
                 Some(Err(error)) => host.warn(&error.refusal("get")),
                 _ => {}
             }
@@ -275,11 +286,15 @@ fn changes(host: &dyn Host, joins: &[Joined]) -> Result<Vec<Listed>, PluginError
     Ok(listed)
 }
 
-/// `error` as a refusal to warn with.
-fn plain(error: &PluginError) -> Refusal {
-    let places: PluginName = "places".parse().expect("places is a plugin name");
-    let code = PluginCode::parse(&places, error.code.clone()).expect(
-        "every code the plugin gives is `places::<area>::<reason>`; its tests warn with each",
-    );
-    Refusal::plugin(code, error.message.clone(), error.fields.clone())
+/// Says that the change a join names at `path` is `what`, so its title and
+/// phase are null.
+fn wrong_type(host: &dyn Host, path: &str, what: &str) {
+    host.warn(&warning(&refusal(
+        "places::change::wrong_type",
+        format!(
+            "{path} is {what}, not a {CHANGE_TYPE} record, so list prints no title or phase \
+             for it"
+        ),
+        &[("change", path)],
+    )));
 }

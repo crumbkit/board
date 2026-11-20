@@ -152,6 +152,26 @@ fn a_change_that_cannot_be_read_keeps_its_row_with_null_title_and_phase_and_one_
 }
 
 #[test]
+fn a_change_path_holding_another_record_type_keeps_its_row_with_one_wrong_type_warning() {
+    let host = joined(&["live", "odd"]);
+    host.change("/changes/live", "review");
+    host.write("/changes/odd", &json!({"$type": "board/config/v1"}));
+    host.mxv(&[], &[]);
+    let output = list(&host, &json!({"machine": MACHINE})).unwrap();
+    assert_eq!(output["joins"][0]["change"]["phase"], "review");
+    assert_eq!(
+        output["joins"][1]["change"],
+        json!({"path": "/changes/odd", "title": null, "phase": null})
+    );
+    let warnings = host.warnings.borrow();
+    assert_eq!(warnings.len(), 1, "{warnings:?}");
+    assert!(
+        warnings[0].starts_with("places::change::wrong_type"),
+        "{warnings:?}"
+    );
+}
+
+#[test]
 fn the_limit_leaves_joins_out_and_says_so_and_all_returns_every_one() {
     let host = joined(&["a", "b", "c"]);
     host.mxv(&[], &[]);

@@ -15,7 +15,7 @@ use crate::board::refusal;
 /// How long one `mxv list` may take.
 const SECONDS: u64 = 10;
 
-/// The fields each row is asked for. mxv 0.3.0 and later print `id` only
+/// The fields each row is asked for. mxv 0.4.0 and later print `id` only
 /// when it is asked for. `problem` says why mxv cannot read a workspace's
 /// record, which `places::workspace::no_id` names.
 const FIELDS: &str = "name,id,path,problem";
@@ -25,7 +25,7 @@ const FIELDS: &str = "name,id,path,problem";
 pub(crate) const ENV: [&str; 2] = ["MXV_ROOT", "XDG_STATE_HOME"];
 
 /// The hint of `places::mxv::no_id`.
-const UPGRADE: &str = "upgrade mxv to 0.3.0 or later, which prints each workspace's id";
+const UPGRADE: &str = "upgrade mxv to 0.4.0 or later, which prints each workspace's id";
 
 /// One workspace as `mxv list` prints it.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -110,7 +110,7 @@ pub(crate) fn rows(ran: &Result<Exited, ProcessError>) -> Result<Vec<Workspace>,
 }
 
 /// One row, or `places::mxv::no_id` when it has no `id` key, as an mxv
-/// older than 0.3.0 prints it.
+/// older than 0.4.0 prints it.
 fn row(row: &Value) -> Result<Workspace, PluginError> {
     let (Some(name), Some(path)) = (row["name"].as_str(), row["path"].as_str()) else {
         return Err(failed(format!(
@@ -119,7 +119,7 @@ fn row(row: &Value) -> Result<Workspace, PluginError> {
     };
     let Some(id) = row.get("id") else {
         return Err(no_id(&format!(
-            "mxv printed the workspace {name} with no id, so it is older than 0.3.0"
+            "mxv printed the workspace {name} with no id, so it is older than 0.4.0"
         )));
     };
     let id = (id.as_str()).filter(|id| is_id(id)).map(str::to_owned);
@@ -143,7 +143,7 @@ pub(crate) fn is_id(id: &str) -> bool {
 }
 
 /// mxv's refusal: `places::mxv::no_id` when it refused `--fields` for
-/// naming `id`, as an mxv older than 0.3.0 does, and `places::mxv::failed`
+/// naming `id`, as an mxv older than 0.4.0 does, and `places::mxv::failed`
 /// otherwise, with mxv's message or the end of its stderr.
 fn refused_by_mxv(exited: &Exited) -> PluginError {
     let failure = [&exited.stdout, &exited.stderr]
@@ -156,7 +156,7 @@ fn refused_by_mxv(exited: &Exited) -> PluginError {
             || (failure["message"].as_str()).is_some_and(|message| message.contains("'id'")))
     {
         return no_id(&format!(
-            "mxv refused --fields {FIELDS}, so it is older than 0.3.0"
+            "mxv refused --fields {FIELDS}, so it is older than 0.4.0"
         ));
     }
     let code = (exited.code).map_or_else(|| "on a signal".to_owned(), |code| code.to_string());

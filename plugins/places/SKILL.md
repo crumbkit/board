@@ -18,6 +18,8 @@ description: 'Join an mxv workspace on this machine to the Board change it works
 
 - Run `board --personal places detach --change /changes/<name> --workspace <name>`.
 - `removed` is false when no join of that workspace to that change was there.
+- A `places::detach::other_change` warning means the join belongs to the
+  change it names. Detach that change instead if it is the one meant.
 
 ## List the joins
 
@@ -37,7 +39,7 @@ description: 'Join an mxv workspace on this machine to the Board change it works
 
 ## Codes
 
-- `places::mxv::no_id`: the installed mxv is older than 0.3.0. Tell the
+- `places::mxv::no_id`: the installed mxv is older than 0.4.0. Tell the
   person to upgrade mxv.
 - `places::workspace::no_id`: mxv prints no id for the workspace. Tell the
   person the message, which says what to fix.

@@ -178,7 +178,7 @@ fn attach_with_an_mxv_too_old_to_print_ids_is_refused_and_with_a_current_one_is_
     let refused = attach(&host, &input).unwrap_err();
     assert_eq!(refused.code, "places::mxv::no_id");
     assert!(
-        refused.message.contains("upgrade mxv to 0.3.0"),
+        refused.message.contains("upgrade mxv to 0.4.0"),
         "{}",
         refused.message
     );
@@ -345,8 +345,18 @@ fn detach_leaves_a_join_to_another_change_of_the_same_name_and_removes_its_own()
     let input = json!({"change": "/changes/fix-login", "workspace": "fix-login"});
     assert_eq!(detach(&host, &input).unwrap()["removed"], false);
     assert!(host.record(JOIN).is_some());
+    {
+        let warnings = host.warnings.borrow();
+        assert_eq!(warnings.len(), 1, "{warnings:?}");
+        assert!(
+            warnings[0].starts_with("places::detach::other_change")
+                && warnings[0].contains("/projects/other/changes/fix-login"),
+            "{warnings:?}"
+        );
+    }
     let other = json!({"change": "/projects/other/changes/fix-login", "workspace": "fix-login"});
     assert_eq!(detach(&host, &other).unwrap()["removed"], true);
+    assert_eq!(host.warnings.borrow().len(), 1);
 }
 
 #[test]

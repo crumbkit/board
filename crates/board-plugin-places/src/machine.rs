@@ -2,6 +2,7 @@
 //! from the sources the personal board's runbook script reads, in the same
 //! order, and made into a slug the same way, so both print the same label.
 
+use std::iter::once_with;
 use std::path::Path;
 use std::time::Duration;
 
@@ -52,15 +53,16 @@ pub(crate) fn read(host: &dyn Host) -> Result<String, PluginError> {
             .find(|(each, _)| each == name)
             .map(|(_, value)| value.to_string_lossy().into_owned())
     };
-    let named = variable(VARIABLE);
-    let home = variable("HOME");
-    let sources = [
-        Box::new(move || named) as Box<dyn FnOnce() -> Option<String>>,
-        Box::new(move || home.and_then(|home| first_line(&Path::new(&home).join(FILE)))),
-        Box::new(|| printed(host, "scutil", &["--get", "LocalHostName"], true)),
-        Box::new(|| printed(host, "hostname", &["-s"], false)),
-    ];
-    label(sources.into_iter().map(|source| source())).ok_or_else(|| {
+    // Each source is read only when `label` asks for it.
+    let sources = once_with(|| variable(VARIABLE))
+        .chain(once_with(|| {
+            variable("HOME").and_then(|home| first_line(&Path::new(&home).join(FILE)))
+        }))
+        .chain(once_with(|| {
+            printed(host, "scutil", &["--get", "LocalHostName"], true)
+        }))
+        .chain(once_with(|| printed(host, "hostname", &["-s"], false)));
+    label(sources).ok_or_else(|| {
         refusal(
             "places::machine::unnamed",
             format!(
