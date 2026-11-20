@@ -1,6 +1,6 @@
 ---
 name: places
-description: 'Join an mxv workspace on this machine to the Board change it works on, and list this machine''s joins with each change''s phase and the workspace''s status. Use it when a workspace starts work on a change. Run `board --personal places attach --change /changes/<name>` from inside the workspace. SKILL.md and README.md in the plugin''s directory say more.'
+description: 'Join an mxv workspace on this machine to the Board change it works on, and list every machine''s joins with each change''s phase and the workspace''s status. Use it when a workspace starts work on a change. Run `board --personal places attach --change /changes/<name>` from inside the workspace. SKILL.md and README.md in the plugin''s directory say more.'
 ---
 
 # places
@@ -19,10 +19,15 @@ description: 'Join an mxv workspace on this machine to the Board change it works
 - Run `board --personal places detach --change /changes/<name> --workspace <name>`.
 - `removed` is false when no join of that workspace to that change was there.
 
-## List this machine's joins
+## List the joins
 
-- Run `board --personal places list`. Each row has the change's title and
-  phase, and the workspace's `status`.
+- Run `board --personal places list`. It lists every machine's joins. Each
+  row has its `machine`, the change's title and phase, and the workspace's
+  `status`.
+- Add `--machine <label>` for one machine's joins. A label with no joins
+  lists none.
+- A join of another machine is `unknown`, because only that machine's mxv
+  knows its workspaces.
 - `live`: the workspace exists with the join's id.
 - `replaced`: a workspace of that name exists with another id.
 - `archived`: the workspace is archived with the join's id.

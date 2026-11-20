@@ -253,6 +253,7 @@ fn list_answers_from_a_warm_index_as_from_a_cold_one_after_a_join_is_written_and
         warm["joins"][0],
         json!({
             "path": JOIN,
+            "machine": "quokka",
             "workspace": "fix-login",
             "workspace_id": ID_A,
             "since": warm["joins"][0]["since"],
@@ -293,9 +294,8 @@ fn an_mxv_too_old_to_print_ids_is_refused_with_no_id_and_a_current_one_is_admitt
         "#!/bin/sh\necho \"$@\" >> \"{}\"\ncat <<'EOF'\n{OLD}\nEOF\ncat >&2 <<'EOF'\n{OLD}\nEOF\nexit 2\n",
         log.display()
     );
-    board.bin.write("mxv", Item::Executable(&stub));
-    for capability in ["attach", "list"] {
-        let flags: &[&str] = if capability == "attach" { &ATTACH } else { &[] };
+    let old = || board.bin.write("mxv", Item::Executable(&stub));
+    let refuse = |capability: &str, flags: &[&str]| {
         let (code, refused) = board.refused(capability, flags);
         assert_eq!(
             (code, &refused["code"]),
@@ -306,9 +306,14 @@ fn an_mxv_too_old_to_print_ids_is_refused_with_no_id_and_a_current_one_is_admitt
             refused["message"].as_str().unwrap().contains("0.3.0"),
             "{refused}"
         );
-    }
+    };
+    old();
+    refuse("attach", &ATTACH);
     board.listing(Some(ID_A));
     assert_eq!(board.call("attach", &ATTACH)["written"], true);
+    // list asks mxv only once this machine has a join to show.
+    old();
+    refuse("list", &[]);
 }
 
 #[test]
@@ -407,4 +412,48 @@ fn board_lists_the_plugin_as_enabled_and_enabling_wrote_the_schema_it_ships() {
     for (path, text) in shipped {
         assert_eq!(board.board.read(&path), text, "{path}");
     }
+}
+
+#[test]
+fn list_prints_every_machines_joins_with_other_machines_unknown_and_machine_narrows_it() {
+    let board = board();
+    board.listing(Some(ID_A));
+    board.call("attach", &ATTACH);
+    board.board.write(
+        "places/wombat/elsewhere/changes/fix-login.json",
+        &json!({
+            "$type": "places/workspace-change/v1",
+            "workspace": "/places/wombat/elsewhere",
+            "change": "/changes/fix-login",
+            "workspace_id": ID_B,
+            "since": "2026-11-20T09:00:00Z",
+        })
+        .to_string(),
+    );
+    let every = board.call("list", &[]);
+    let rows: Vec<(&str, &str)> = (every["joins"].as_array().unwrap().iter())
+        .map(|row| {
+            (
+                row["machine"].as_str().unwrap(),
+                row["status"].as_str().unwrap(),
+            )
+        })
+        .collect();
+    assert_eq!(rows, [("quokka", "live"), ("wombat", "unknown")]);
+    let calls = board.mxv_calls().len();
+    let wombat = board.call("list", &["--machine", "wombat"]);
+    assert_eq!(wombat["total"], 1);
+    assert_eq!(wombat["joins"][0]["workspace"], "elsewhere");
+    assert_eq!(
+        board.mxv_calls().len(),
+        calls,
+        "mxv is not asked about wombat"
+    );
+    assert_eq!(
+        board.call("list", &["--machine", "bilby"])["joins"],
+        json!([])
+    );
+    let (code, refused) = board.refused("list", &["--machine", "Wombat"]);
+    assert_eq!(code, 1, "{refused}");
+    assert_eq!(refused["code"], "board::plugin::bad_input", "{refused}");
 }

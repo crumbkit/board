@@ -78,7 +78,7 @@ fn joined(workspaces: &[&str]) -> Real {
 }
 
 #[test]
-fn list_prints_this_machines_joins_with_their_changes_and_statuses() {
+fn list_prints_every_machines_joins_with_their_changes_and_statuses() {
     let host = joined(&["archived", "gone", "live", "null", "replaced"]);
     for name in ["archived", "live", "null", "replaced"] {
         host.change(&format!("/changes/{name}"), "build");
@@ -95,11 +95,12 @@ fn list_prints_this_machines_joins_with_their_changes_and_statuses() {
     let output = list(&host, &json!({})).unwrap();
     assert_eq!(
         (&output["machine"], &output["total"], &output["truncated"]),
-        (&json!(MACHINE), &json!(5), &json!(false))
+        (&json!(MACHINE), &json!(6), &json!(false))
     );
-    let statuses: Vec<(&str, &str)> = (output["joins"].as_array().unwrap().iter())
+    let statuses: Vec<(&str, &str, &str)> = (output["joins"].as_array().unwrap().iter())
         .map(|row| {
             (
+                row["machine"].as_str().unwrap(),
                 row["workspace"].as_str().unwrap(),
                 row["status"].as_str().unwrap(),
             )
@@ -108,17 +109,19 @@ fn list_prints_this_machines_joins_with_their_changes_and_statuses() {
     assert_eq!(
         statuses,
         [
-            ("archived", "archived"),
-            ("gone", "gone"),
-            ("live", "live"),
-            ("null", "unknown"),
-            ("replaced", "replaced"),
+            ("quokka", "archived", "archived"),
+            ("quokka", "gone", "gone"),
+            ("quokka", "live", "live"),
+            ("quokka", "null", "unknown"),
+            ("quokka", "replaced", "replaced"),
+            ("wombat", "elsewhere", "unknown"),
         ]
     );
     assert_eq!(
         output["joins"][2],
         json!({
             "path": "/places/quokka/live/changes/live",
+            "machine": "quokka",
             "workspace": "live",
             "workspace_id": a,
             "since": "2026-11-20T09:00:00Z",
@@ -134,7 +137,7 @@ fn a_change_that_cannot_be_read_keeps_its_row_with_null_title_and_phase_and_one_
     let host = joined(&["gone", "live"]);
     host.change("/changes/live", "review");
     host.mxv(&[row("live", "/w/live", Some(&id('a')))], &[]);
-    let output = list(&host, &json!({})).unwrap();
+    let output = list(&host, &json!({"machine": MACHINE})).unwrap();
     assert_eq!(
         output["joins"][0]["change"],
         json!({"path": "/changes/gone", "title": null, "phase": null})
@@ -152,13 +155,13 @@ fn a_change_that_cannot_be_read_keeps_its_row_with_null_title_and_phase_and_one_
 fn the_limit_leaves_joins_out_and_says_so_and_all_returns_every_one() {
     let host = joined(&["a", "b", "c"]);
     host.mxv(&[], &[]);
-    let limited = list(&host, &json!({"limit": 2})).unwrap();
+    let limited = list(&host, &json!({"limit": 2, "machine": MACHINE})).unwrap();
     assert_eq!(
         (&limited["total"], &limited["truncated"]),
         (&json!(3), &json!(true))
     );
     assert_eq!(limited["joins"].as_array().unwrap().len(), 2);
-    let every = list(&host, &json!({"limit": 2, "all": true})).unwrap();
+    let every = list(&host, &json!({"limit": 2, "all": true, "machine": MACHINE})).unwrap();
     assert_eq!(
         (&every["total"], &every["truncated"]),
         (&json!(3), &json!(false))
@@ -174,7 +177,7 @@ fn a_join_this_plugin_cannot_read_is_left_out_with_a_warning_and_a_whole_one_is_
         &join(&json!({"workspace_id": "short"})),
     );
     host.mxv(&[], &[]);
-    let output = list(&host, &json!({})).unwrap();
+    let output = list(&host, &json!({"machine": MACHINE})).unwrap();
     assert_eq!(output["total"], 1);
     assert_eq!(output["joins"][0]["workspace"], "whole");
     let warnings = host.warnings.borrow();
@@ -238,4 +241,38 @@ fn list_on_an_unnamed_machine_is_refused_before_it_reads_and_on_a_named_one_is_a
     host.mxv(&[], &[]);
     let output: Value = list(&host, &json!({})).unwrap();
     assert_eq!(output["machine"], MACHINE);
+}
+
+#[test]
+fn a_join_of_another_machine_is_unknown_and_listing_only_it_asks_mxv_nothing() {
+    let host = joined(&["live"]);
+    let output = list(&host, &json!({"machine": "wombat"})).unwrap();
+    assert_eq!(
+        (&output["machine"], &output["total"]),
+        (&json!(MACHINE), &json!(1))
+    );
+    assert_eq!(
+        (
+            &output["joins"][0]["machine"],
+            &output["joins"][0]["status"]
+        ),
+        (&json!("wombat"), &json!("unknown"))
+    );
+    assert_eq!(host.runs.borrow().len(), 0);
+    host.mxv(&[row("live", "/w/live", Some(&id('a')))], &[]);
+    let mine = list(&host, &json!({"machine": MACHINE})).unwrap();
+    assert_eq!(mine["joins"][0]["status"], "live");
+    assert_eq!(*host.runs.borrow(), [LIVE, ARCHIVED]);
+}
+
+#[test]
+fn a_machine_with_no_joins_lists_none_and_a_machine_with_joins_lists_its_own() {
+    let host = joined(&["live"]);
+    let none = list(&host, &json!({"machine": "bilby"})).unwrap();
+    assert_eq!(
+        (&none["joins"], &none["total"], &none["truncated"]),
+        (&json!([]), &json!(0), &json!(false))
+    );
+    let wombat = list(&host, &json!({"machine": "wombat"})).unwrap();
+    assert_eq!(wombat["joins"][0]["workspace"], "elsewhere");
 }

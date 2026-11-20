@@ -121,9 +121,10 @@ const CAPABILITIES: [Capability; 3] = [
     },
     Capability {
         name: "list",
-        description: "List this machine's joins, each with its change's title and phase and \
-            the workspace's status from mxv: live, replaced, archived, gone or unknown. It \
-            writes nothing.",
+        description: "List every machine's joins, or one machine's with --machine, each with its \
+            machine, its change's title and phase and the workspace's status: live, replaced, \
+            archived, gone or unknown from this machine's mxv, and unknown for another \
+            machine's. It writes nothing.",
         run: list::list,
         input: input::<list::Input>,
         output: output::<list::Output>,
@@ -157,7 +158,7 @@ fn manifest() -> Value {
         "version": "0.1.0",
         // SKILL.md's description, the callout an agent sees first.
         "description": "Join an mxv workspace on this machine to the Board change it works on, \
-            and list this machine's joins with each change's phase and the workspace's status. \
+            and list every machine's joins with each change's phase and the workspace's status. \
             Use it when a workspace starts work on a change. Run `board --personal places attach \
             --change /changes/<name>` from inside the workspace. SKILL.md and README.md in the \
             plugin's directory say more.",

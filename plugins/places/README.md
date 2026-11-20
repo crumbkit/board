@@ -2,8 +2,8 @@
 
 A Board plugin that joins an mxv workspace on one machine to the Board change
 it works on. `attach` writes a join, `detach` removes one, and `list` prints
-this machine's joins with each change's title and phase and the workspace's
-status from mxv.
+every machine's joins with each change's title and phase and the workspace's
+status.
 
 ## Enabling
 
@@ -84,18 +84,23 @@ Board has the plugin built in, so nothing is installed:
   place, and `removed` is false.
 - The output holds `path` and `removed`.
 
-`list [--limit <n>] [--all true]`:
+`list [--machine <label>] [--limit <n>] [--all true]`:
 
-- It reads this machine's joins with one query, and their changes with one
+- It reads every machine's joins with one query, and their changes with one
   read.
-- It runs `mxv list` and `mxv list --archived`, each with
-  `--all --json --fields name,id,path,problem`.
+- `--machine` keeps one machine's joins. A label with no joins lists none.
+- A join of this machine gets its status from mxv. A join of another
+  machine is `unknown`, and mxv is not asked about it.
+- When it shows a join of this machine, it runs `mxv list` and
+  `mxv list --archived`, each with `--all --json --fields name,id,path,problem`.
 - `limit` is 1 to 10,000 and 100 by default. `all` returns every join.
-- Each row holds `path`, `workspace`, `workspace_id`, `since`, `change` and
-  `status`. `change` holds `path`, `title` and `phase`. Title and phase are
-  null when the change cannot be read, and a warning says why.
+- Each row holds `path`, `machine`, `workspace`, `workspace_id`, `since`,
+  `change` and `status`.
+- `change` holds `path`, `title` and `phase`. Title and phase are null when
+  the change cannot be read, and a warning says why.
 - A join the plugin cannot read is left out with a warning.
-- The output holds `machine`, `joins`, `total` and `truncated`.
+- The output holds `machine`, this machine's label, and `joins`, `total` and
+  `truncated`.
 
 Workspace statuses:
 
@@ -106,7 +111,7 @@ Workspace statuses:
 - `gone`: no workspace of that name is live or archived.
 - `unknown`: mxv prints no id for the live workspace of that name, or no
   live one exists and the archived ones of that name have no id or another
-  id.
+  id, or the join is another machine's.
 
 Every capability is given `BOARD_MACHINE`, `MXV_ROOT` and `XDG_STATE_HOME`.
 

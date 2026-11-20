@@ -1,9 +1,10 @@
-//! `list`: this machine's joins, each with its change's title and phase
-//! and the status of its workspace, which mxv gives at read time.
+//! `list`: every machine's joins, each with its change's title and phase
+//! and the status of its workspace. mxv gives the status of this machine's
+//! workspaces at read time; another machine's is unknown.
 
 use board_model::{LogicalPath, PluginCode, PluginName, Refusal};
 use board_ops::{Host, Limit, PluginError, literal};
-use board_plugin::shape::{Record, TREE_CODES, whole};
+use board_plugin::shape::{Record, Slug, TREE_CODES, whole};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -24,6 +25,9 @@ pub(crate) struct Input {
     limit: u16,
     /// true to return every join, whatever the limit.
     all: bool,
+    /// Only the joins of the machine with this label, such as quokka; every machine's when left out.
+    #[schemars(with = "Option<Slug>")]
+    machine: Option<String>,
 }
 
 impl Default for Input {
@@ -31,11 +35,12 @@ impl Default for Input {
         Self {
             limit: 100,
             all: false,
+            machine: None,
         }
     }
 }
 
-/// This machine's label and its joins by path. `total` counts every join
+/// This machine's label and the joins by path. `total` counts every join
 /// this plugin reads, and `truncated` says whether the limit left some out.
 #[derive(Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -47,13 +52,15 @@ pub(crate) struct Output {
     truncated: bool,
 }
 
-/// One join: its path, the workspace's name, the id the join holds, when
-/// it was written, its change and the workspace's status.
+/// One join: its path, the machine's label, the workspace's name, the id
+/// the join holds, when it was written, its change and the workspace's
+/// status.
 #[derive(Debug, PartialEq, Eq, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 #[schemars(rename = "ListedJoin")]
 pub(crate) struct Row {
     path: String,
+    machine: String,
     workspace: String,
     workspace_id: String,
     since: String,
@@ -86,7 +93,8 @@ pub(crate) enum Status {
     /// No workspace, live or archived, has that name.
     Gone,
     /// mxv prints no id for the live workspace of that name, or the only
-    /// workspaces of that name are archived with no id or another id.
+    /// workspaces of that name are archived with no id or another id, or
+    /// the join is another machine's, whose mxv this one cannot ask.
     Unknown,
 }
 
@@ -103,37 +111,55 @@ pub(crate) fn status(id: &str, live: Option<&Workspace>, archived: &[&Workspace]
     }
 }
 
-/// The statement that reads every join under `/places/<machine>/`. The
-/// label is a slug, so it holds no quote or wildcard.
-pub(crate) fn joins_sql(machine: &str) -> String {
+/// The statement that reads every join under `/places/`, or under
+/// `/places/<machine>/` when a label is given. A label is a slug, so it
+/// holds no wildcard, and `literal` quotes it.
+pub(crate) fn joins_sql(machine: Option<&str>) -> String {
+    let prefix = machine.map_or_else(
+        || "/places/".to_owned(),
+        |machine| format!("/places/{machine}/"),
+    );
     format!(
         "SELECT logical, code, body FROM records WHERE type = {} AND logical LIKE {} \
          ORDER BY logical",
         literal(WorkspaceChange::TYPE),
-        literal(&format!("/places/{machine}/%")),
+        literal(&format!("{prefix}%")),
     )
 }
 
-/// This machine's joins in path order, with their statuses.
+/// One join read from the board, with the machine and workspace its path
+/// names.
+pub(crate) struct Joined {
+    path: String,
+    machine: String,
+    workspace: String,
+    join: WorkspaceChange,
+}
+
+/// The joins in path order, with their statuses. Only this machine's
+/// joins ask mxv; mxv runs only when one of them is shown.
 pub(crate) fn list(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
-    let Input { limit, all } = PluginError::read_input("places", "list", input)?;
+    let Input {
+        limit,
+        all,
+        machine: only,
+    } = PluginError::read_input("places", "list", input)?;
     let machine = machine::read(host)?;
-    let report = (host.query(&joins_sql(&machine), Limit::ALL))
+    let report = (host.query(&joins_sql(only.as_deref()), Limit::ALL))
         .map_err(|error| refused("query", &error.refusal()))?;
-    let prefix = format!("/places/{machine}/");
-    let mut joins: Vec<(String, String, WorkspaceChange)> = Vec::new();
+    let mut joins: Vec<Joined> = Vec::new();
     for row in &report.rows {
         let [Value::String(logical), code, body] = &row[..] else {
             continue;
         };
-        if !logical.starts_with(&prefix) {
-            continue;
-        }
         // A join Board marks degraded for its own content is left out; one
         // whose change is dangling or of another type is still a join.
         let whole = code.is_null() || TREE_CODES.iter().any(|tree| code == *tree);
         match read(logical, body).filter(|_| whole) {
-            Some((workspace, join)) => joins.push((logical.clone(), workspace, join)),
+            Some(joined) if only.as_ref().is_none_or(|only| *only == joined.machine) => {
+                joins.push(joined);
+            }
+            Some(_) => {}
             None => warn(host, logical),
         }
     }
@@ -144,19 +170,30 @@ pub(crate) fn list(host: &dyn Host, input: &Value) -> Result<Value, PluginError>
         usize::from(limit).min(total)
     };
     joins.truncate(shown);
-    let live = mxv::list(host, Listing::Live)?;
-    let archived = mxv::list(host, Listing::Archived)?;
+    let (live, archived) = if joins.iter().any(|joined| joined.machine == machine) {
+        (
+            mxv::list(host, Listing::Live)?,
+            mxv::list(host, Listing::Archived)?,
+        )
+    } else {
+        (Vec::new(), Vec::new())
+    };
     let changes = changes(host, &joins)?;
     let rows = (joins.into_iter().zip(changes))
-        .map(|((path, workspace, join), change)| {
-            let named = |each: &&Workspace| each.name == workspace;
-            let held: Vec<&Workspace> = archived.iter().filter(named).collect();
-            let status = status(&join.workspace_id, live.iter().find(named), &held);
+        .map(|(joined, change)| {
+            let named = |each: &&Workspace| each.name == joined.workspace;
+            let status = if joined.machine == machine {
+                let held: Vec<&Workspace> = archived.iter().filter(named).collect();
+                status(&joined.join.workspace_id, live.iter().find(named), &held)
+            } else {
+                Status::Unknown
+            };
             Row {
-                path,
-                workspace,
-                workspace_id: join.workspace_id,
-                since: join.since,
+                path: joined.path,
+                machine: joined.machine,
+                workspace: joined.workspace,
+                workspace_id: joined.join.workspace_id,
+                since: joined.join.since,
                 change,
                 status,
             }
@@ -171,12 +208,12 @@ pub(crate) fn list(host: &dyn Host, input: &Value) -> Result<Value, PluginError>
     Ok(serde_json::to_value(output).expect("the output is plain strings, numbers and lists"))
 }
 
-/// The workspace's name, the third segment of a join's path
-/// `/places/<machine>/<workspace>/changes/<change-name>`, and the join, or
-/// none when either cannot be read.
-fn read(logical: &str, body: &Value) -> Option<(String, WorkspaceChange)> {
+/// The join at `logical` with the machine and workspace that its path
+/// `/places/<machine>/<workspace>/changes/<change-name>` names, or none
+/// when the path or the join cannot be read.
+fn read(logical: &str, body: &Value) -> Option<Joined> {
     let segments: Vec<&str> = logical.split('/').collect();
-    let ["", "places", _, workspace, "changes", _] = segments[..] else {
+    let ["", "places", machine, workspace, "changes", _] = segments[..] else {
         return None;
     };
     let body: Value = match body {
@@ -184,7 +221,12 @@ fn read(logical: &str, body: &Value) -> Option<(String, WorkspaceChange)> {
         other => other.clone(),
     };
     let join = WorkspaceChange::deserialize(&body).ok()?;
-    Some((workspace.to_owned(), join))
+    Some(Joined {
+        path: logical.to_owned(),
+        machine: machine.to_owned(),
+        workspace: workspace.to_owned(),
+        join,
+    })
 }
 
 /// Says that the join at `logical` was left out.
@@ -202,21 +244,18 @@ fn warn(host: &dyn Host, logical: &str) {
 
 /// Each join's change with its title and phase, read in one call. A change
 /// that cannot be read keeps null ones, with a warning.
-fn changes(
-    host: &dyn Host,
-    joins: &[(String, String, WorkspaceChange)],
-) -> Result<Vec<Listed>, PluginError> {
+fn changes(host: &dyn Host, joins: &[Joined]) -> Result<Vec<Listed>, PluginError> {
     let paths: Vec<Option<LogicalPath>> = (joins.iter())
-        .map(|(_, _, join)| join.change.parse().ok())
+        .map(|joined| joined.join.change.parse().ok())
         .collect();
     let readable: Vec<LogicalPath> = paths.iter().flatten().cloned().collect();
     let mut answers = (host.get_each(&readable))
         .map_err(|error| refused("get", &error.refusal("get")))?
         .into_iter();
     let mut listed = Vec::new();
-    for ((_, _, join), path) in joins.iter().zip(paths) {
+    for (joined, path) in joins.iter().zip(paths) {
         let mut change = Listed {
-            path: join.change.clone(),
+            path: joined.join.change.clone(),
             title: None,
             phase: None,
         };
