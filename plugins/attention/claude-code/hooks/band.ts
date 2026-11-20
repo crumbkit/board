@@ -9,8 +9,12 @@
 // the parts of the mods beneath it from `next(e)`'s tree, adds its own and
 // returns the whole band, so the row holds every installed mod's part, in
 // slot order, whichever mod runs first.
+//
+// The host asks each plugin for a band row of its own, names that plugin in
+// `e.plugin`, and stacks the rows. So each mod draws its part into every
+// Board mod's row, and `keepOneBand` leaves one of those rows on screen.
 
-import type { RenderElement, RenderNode } from 'claude-code'
+import type { On, RenderElement, RenderNode } from 'claude-code'
 
 /** The row's key. */
 export const ROW = 'board-band'
@@ -32,6 +36,36 @@ type Element = RenderElement & { type: 'Box' | 'Text'; props?: Record<string, st
 const isBox = (node: RenderNode | undefined): node is Element => typeof node === 'object' && node.type === 'Box'
 const keyOf = (node: RenderNode | undefined) => (isBox(node) ? String(node.props?.key ?? '') : '')
 const section = (key: string) => key.slice('band:'.length, 'band:'.length + 1)
+
+/** The mods that draw the band. */
+const MODS: readonly string[] = ['board-attention', 'board-effects', 'board-plans', 'board-rules']
+
+/** Whether a mod draws its part into the band row the host asks of `plugin`: only a Board mod's row. */
+export const drawsInto = (plugin: string | undefined) => MODS.includes(plugin ?? '')
+
+/** Each Box keyed as the band's row in `tree`, outermost first. */
+export function bandRows(tree: RenderNode): Element[] {
+  if (!isBox(tree)) return []
+  if (keyOf(tree) === ROW) return [tree]
+  return (tree.children ?? []).flatMap(bandRows)
+}
+
+const partsIn = (tree: RenderNode) => bandRows(tree).flatMap(r => (r.children ?? []).filter(n => keyOf(n).startsWith('band:'))).length
+
+/**
+ * `rows` with one band left: the row that holds the most parts, the earliest
+ * of equals. The rows of other plugins pass unchanged.
+ */
+export function oneBand<R extends { tree: RenderNode }>(rows: readonly R[]): R[] {
+  const bands = rows.filter(r => bandRows(r.tree).length > 0)
+  const kept = bands.reduce<R | undefined>((best, r) => (best === undefined || partsIn(r.tree) > partsIn(best.tree) ? r : best), undefined)
+  return rows.filter(r => r === kept || !bands.includes(r))
+}
+
+/** Hooks the band's arrangement so that it shows one band. Each mod hooks it; after the first there is one band left. */
+export function keepOneBand(on: On) {
+  on('ui.render', { component: 'AbovePromptList' }, ($, e, next) => next({ ...e, props: { ...e.props, rows: oneBand(e.props.rows) } }))
+}
 
 /** The parts and the other lines a band tree from `next(e)` holds; anything else is one other line. */
 function split(below: RenderElement): { parts: Element[]; lines: RenderNode[] } {

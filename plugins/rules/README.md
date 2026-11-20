@@ -372,8 +372,8 @@ before an edit of that file runs. Wherever it lists an obligation, it prints
 the obligation's `close` line beneath it. Load it with
 `claude --plugin-dir "$PWD/claude-code"`, or name that directory in
 `CLAUDE_CODE_PLUGIN_DIRS`. It runs `board` from `PATH`, `~/.local/bin`,
-`/opt/homebrew/bin` or `/usr/local/bin`. It needs Claude Code 2.1.308 or
-later, which has `$.session.append`.
+`/opt/homebrew/bin` or `/usr/local/bin`. It needs Claude Code 2.1.325 or
+later, which names the plugin each band row is asked of.
 [docs/plugins/rules-claude-code.md](../../docs/plugins/rules-claude-code.md)
 explains the design.
 

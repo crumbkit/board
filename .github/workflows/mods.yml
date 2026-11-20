@@ -34,8 +34,8 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
       # The exact version the mods' tests were last run with locally. The
-      # rules mod needs `$.session.append`, which 2.1.289 lacks.
-      - run: npm install --global @anthropic-ai/claude-code@2.1.308 # zizmor: ignore[adhoc-packages]
+      # band mods need 2.1.325, which asks each plugin for its own band row.
+      - run: npm install --global @anthropic-ai/claude-code@2.1.325 # zizmor: ignore[adhoc-packages]
       - name: claude plugin test, for each mod
         run: |
           for mod in plugins/*/claude-code; do

@@ -2,7 +2,7 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, RenderElement } from 'claude-code'
 
 import type { Pinned, Request } from '../types'
-import { SLOT, joinBand } from './band'
+import { SLOT, drawsInto, joinBand, keepOneBand } from './band'
 import { BLOCK, contextText, ordersButton, orderName, parsePinned } from './pinned'
 
 // The mod reads and signs orders in the owner's personal board through
@@ -146,9 +146,11 @@ export const register: Register = on => {
     return { ...context, blocks: [...context.blocks.filter(b => b.name !== BLOCK), { name: BLOCK, text }] }
   })
 
-  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+  // The host asks each plugin for its own row; this mod draws into every Board mod's.
+  keepOneBand(on)
+  on('ui.render', { component: 'AbovePrompt', plugin: '*' }, async ($, e, next) => {
     const below = await next(e)
-    if (e.props.hasSurvey) return below
+    if (e.props.hasSurvey || !drawsInto(e.plugin)) return below
     const { Box, Button, Text } = $.ui.resolve(e)
     const answer = await read($, pinned)
     const button = answer === null ? null : ordersButton(answer)

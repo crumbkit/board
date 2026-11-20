@@ -3,7 +3,7 @@ import type { EngineInterface, Register, RenderElement } from 'claude-code'
 
 import type { Effect, Pending } from '../types'
 import type { Listed } from './effects'
-import { SLOT, joinBand } from './band'
+import { SLOT, drawsInto, joinBand, keepOneBand } from './band'
 import { askedIds, boardFailure, effectsBadge, failure, headline, outputText, parsePending, pendingSql, question, standing, told, visible } from './effects'
 
 // The mod lists the owner's pending effects from the personal board and
@@ -190,14 +190,16 @@ export const register: Register = on => {
     }
   })
 
-  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+  // The host asks each plugin for its own row; this mod draws into every Board mod's.
+  keepOneBand(on)
+  on('ui.render', { component: 'AbovePrompt', plugin: '*' }, async ($, e, next) => {
     const below = await next(e)
     if (!polling) {
       polling = true
       $.clock.every(REFRESH_MS, () => void refresh($))
     }
     const found = await read($, pending)
-    const badge = e.props.hasSurvey || found === null ? null : effectsBadge(found)
+    const badge = e.props.hasSurvey || !drawsInto(e.plugin) || found === null ? null : effectsBadge(found)
     if (badge === null) return below
     const { Box, Button, Text } = $.ui.resolve(e)
     const part = (

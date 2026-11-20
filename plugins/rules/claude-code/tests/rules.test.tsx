@@ -2,7 +2,7 @@ import { expect, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 import type { Engine } from 'claude-code/testing'
 
-import { SLOT } from '../hooks/band'
+import { SLOT, bandRows } from '../hooks/band'
 import { badgeValue, boardName, contextText, parseBadges, parseCheck, parseForPath, parsePersonal, rulesBadge, sections } from '../hooks/rules'
 
 // These prove what a session is told about rules and when, with git and
@@ -22,7 +22,7 @@ const PANE_PROPS = { title: 'Rules', isFocused: false, bodyColumns: 80, placemen
 const BAND = {
   plugin: 'board-rules',
   component: 'AbovePrompt',
-  props: { hasSurvey: false, isWorking: false, maxRows: 10, bodyColumns: 80, scroll: { offset: 0, bodyRows: 10 }, view: {} },
+  props: { hasSurvey: false, isCollapsed: false, isWorking: false, maxRows: 10, bodyColumns: 80, scroll: { offset: 0, bodyRows: 10 }, view: {} },
 } as const
 
 type Answers = {
@@ -346,8 +346,8 @@ test('the parts sit in their own slots in the band row', async ($, on) => {
   await start($)
   const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
   const drawn = await band.drawn()
-  const row = drawn.type === 'Box' ? drawn.children?.[0] : undefined
-  const keys = typeof row === 'object' && row.type === 'Box' ? row.children?.map(c => (typeof c === 'object' && c.type === 'Box' ? c.props?.key : 'bar')) : []
+  const row = bandRows(drawn)[0]
+  const keys = row !== undefined ? row.children?.map(c => (typeof c === 'object' && c.type === 'Box' ? c.props?.key : 'bar')) : []
   expect(keys).toEqual([SLOT.state, 'bar', SLOT.controls])
   expect((await band.findAll({ type: 'Text' })).map(t => t.text)).toEqual(['Board', ' personal ', '|'])
 })

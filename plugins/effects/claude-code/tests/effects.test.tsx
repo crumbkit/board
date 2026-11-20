@@ -2,6 +2,7 @@ import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 import type { Engine } from 'claude-code/testing'
 
+import { bandRows } from '../hooks/band'
 import { askedIds, parsePending, pendingSql, standing } from '../hooks/effects'
 import type { Effect } from '../types'
 
@@ -31,7 +32,7 @@ const ASKED = asking(A)
 const NOTE_LINE = 'In board "~/boards/work", notes asks to notes.publish "/notes/plan.md"'
 const TASK_LINE = 'In board "/srv/work", tasks asks to tasks.close "/tasks/a"'
 
-const BAND = { plugin: 'board-effects', component: 'AbovePrompt', props: { hasSurvey: false, isWorking: false, maxRows: 10, bodyColumns: 80, scroll: { offset: 0, bodyRows: 10 }, view: {} } } as const
+const BAND = { plugin: 'board-effects', component: 'AbovePrompt', props: { hasSurvey: false, isCollapsed: false, isWorking: false, maxRows: 10, bodyColumns: 80, scroll: { offset: 0, bodyRows: 10 }, view: {} } } as const
 const PANE = { plugin: 'board-effects', component: 'Pane', requestId: 'effects', props: { title: 'Pending effects', isFocused: true, bodyColumns: 60, placement: 'dock', scroll: { offset: 0, bodyRows: 30 }, view: {} } } as const
 
 type Ran = { exitCode: number; stdout: string; isStdoutTruncated?: boolean }
@@ -189,8 +190,8 @@ test('board runs through sh with each value its own argument, and the band count
     const band = await $.ui.mount({ ...BAND, surface })
     expect((await band.find({ key: 'effects' }))?.text).toBe('Effects 2')
     const drawn = await band.drawn()
-    const row = drawn.type === 'Box' ? drawn.children?.[0] : undefined
-    expect(typeof row === 'object' && row.type === 'Box' ? row.children?.map(c => (typeof c === 'object' && c.type === 'Box' ? c.props?.key : '')) : []).toEqual(['band:b4-effects'])
+    const row = bandRows(drawn)[0]
+    expect(row !== undefined ? row.children?.map(c => (typeof c === 'object' && c.type === 'Box' ? c.props?.key : '')) : []).toEqual(['band:b4-effects'])
     await band.press({ key: 'effects' })
     await band.unmount()
   }
