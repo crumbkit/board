@@ -11,6 +11,7 @@ rust-version.workspace = true
 board-model.workspace = true
 board-ops.workspace = true
 board-plugin.workspace = true
+board-repos.workspace = true
 regex.workspace = true
 schemars.workspace = true
 serde.workspace = true

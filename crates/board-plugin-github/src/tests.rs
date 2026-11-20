@@ -415,3 +415,91 @@ fn each_shipped_schema_refuses_a_bad_record_and_admits_its_twin() {
         }
     }
 }
+
+/// 2026-11-20T12:00:00Z, the time `ci::judge` judges at here.
+const NOON: u64 = 1_795_176_000;
+
+/// One check suite of the app `slug` named `name`, queued since `minutes`
+/// before [`NOON`] with `runs` check runs.
+fn queued_suite(slug: &str, name: &str, minutes: u64, runs: usize) -> Value {
+    let created = NOON - minutes * 60;
+    let (hour, minute) = (created % 86_400 / 3600, created % 3600 / 60);
+    json!({
+        "status": "queued",
+        "conclusion": null,
+        "app": {"slug": slug, "name": name},
+        "created_at": format!("2026-11-20T{hour:02}:{minute:02}:00Z"),
+        "latest_check_runs_count": runs,
+    })
+}
+
+/// What `ci::judge` gives for one passing check run and `suites` at
+/// [`NOON`]: the apps whose suites it left out, or the refusal's code,
+/// checks and hint.
+fn judged(suites: &[Value]) -> Result<Vec<String>, (String, Value, String)> {
+    let runs: Vec<ci::CheckRun> = serde_json::from_value(json!([{
+        "name": "test",
+        "status": "completed",
+        "conclusion": "success",
+        "started_at": "2026-11-20T11:40:00Z",
+        "completed_at": "2026-11-20T11:45:00Z",
+    }]))
+    .unwrap();
+    let suites: ci::Suites =
+        serde_json::from_value(json!({"total_count": suites.len(), "check_suites": suites}))
+            .unwrap();
+    let combined: ci::Combined =
+        serde_json::from_value(json!({"total_count": 0, "statuses": []})).unwrap();
+    let now = std::time::UNIX_EPOCH + std::time::Duration::from_secs(NOON);
+    ci::judge("/changes/lever", "0123456", &runs, &suites, &combined, now).map_err(|error| {
+        (
+            error.code,
+            json!(error.fields["checks"]),
+            error.hint.unwrap(),
+        )
+    })
+}
+
+#[test]
+fn a_queued_app_suite_with_no_check_runs_is_ignored_after_ten_minutes_and_pending_before() {
+    let old = queued_suite("codecov", "Codecov", 11, 0);
+    assert_eq!(judged(&[old]), Ok(vec!["Codecov".to_owned()]));
+    let (code, checks, hint) = judged(&[queued_suite("codecov", "Codecov", 9, 0)]).unwrap_err();
+    assert_eq!(code, "github::ci::pending");
+    assert_eq!(checks, json!(["the check suite of Codecov"]));
+    assert!(
+        hint.contains("ignored once it is 10 minutes old")
+            && hint.contains("board github ci --change /changes/lever"),
+        "{hint}"
+    );
+}
+
+#[test]
+fn an_old_queued_app_suite_with_a_check_run_is_pending_and_its_twin_with_none_is_ignored() {
+    let (code, _, hint) = judged(&[queued_suite("codecov", "Codecov", 11, 1)]).unwrap_err();
+    assert_eq!(code, "github::ci::pending");
+    assert!(!hint.contains("10 minutes"), "{hint}");
+    assert!(judged(&[queued_suite("codecov", "Codecov", 11, 0)]).is_ok());
+}
+
+#[test]
+fn an_old_queued_github_actions_suite_with_no_check_runs_is_pending_and_another_apps_is_ignored() {
+    let actions = queued_suite("github-actions", "GitHub Actions", 11, 0);
+    let (code, checks, hint) = judged(&[actions]).unwrap_err();
+    assert_eq!(code, "github::ci::pending");
+    assert_eq!(checks, json!(["the check suite of GitHub Actions"]));
+    assert!(!hint.contains("10 minutes"), "{hint}");
+    assert!(judged(&[queued_suite("codecov", "GitHub Actions", 11, 0)]).is_ok());
+}
+
+#[test]
+fn a_completed_failing_app_suite_with_no_check_runs_fails_and_its_passing_twin_is_admitted() {
+    let mut suite = queued_suite("codecov", "Codecov", 11, 0);
+    suite["status"] = json!("completed");
+    suite["conclusion"] = json!("failure");
+    let (code, checks, _) = judged(std::slice::from_ref(&suite)).unwrap_err();
+    assert_eq!(code, "github::ci::failed");
+    assert_eq!(checks, json!(["the check suite of Codecov"]));
+    suite["conclusion"] = json!("success");
+    assert_eq!(judged(&[suite]), Ok(vec![]));
+}

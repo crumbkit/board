@@ -71,7 +71,9 @@ Once CI has passed on a change's head, run
 `board github ci --change /changes/<name>` from the checkout. It reads the
 check runs, check suites and commit statuses GitHub reports for the head.
 Each check run, check suite and commit status must pass, and at least one
-check run must succeed. Then it writes a `runs/run/v1` under the change's
+check run must succeed. A queued check suite with no check runs from an
+app other than GitHub Actions stops counting 10 minutes after GitHub
+created it, and the output's `ignored` names its app. Then it writes a `runs/run/v1` under the change's
 suite and attaches the run to the change, so the suite-run check passes. It sends nothing to GitHub. On
 `github::ci::pending`, wait for the checks it names and run it again. On
 `github::ci::failed`, fix the failures, push, attach the new head, and run
