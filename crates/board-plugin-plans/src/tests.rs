@@ -118,7 +118,8 @@ fn skill_description() -> String {
 /// heading, with each run of whitespace made one space.
 fn skill_section(heading: &str) -> String {
     let skill = include_str!("../../../plugins/plans/SKILL.md");
-    let (_, rest) = skill.split_once(&format!("\n## {heading}\n")).unwrap();
+    let (_, rest) = (skill.split_once(&format!("\n## {heading}\n")))
+        .unwrap_or_else(|| panic!("plugins/plans/SKILL.md has no `## {heading}` section"));
     let section = rest.split("\n## ").next().unwrap();
     section.split_whitespace().collect::<Vec<_>>().join(" ")
 }
@@ -131,6 +132,7 @@ fn the_skill_says_a_project_with_no_mounted_repository_keeps_its_plan_in_its_pro
         "tasks add --title '<project title>' --kind project --text",
         "board -C <board> get <project task> > plan.md",
         "board -C <board> put <project task> --expect <blob> < plan.md",
+        "board -C <board> --json get <project task> | jq -r '.data[0].blob'",
     ] {
         assert!(section.contains(words), "{words:?} not in {section:?}");
     }

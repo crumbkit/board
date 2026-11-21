@@ -108,19 +108,25 @@ project with no mounted repository has no change, so it has no such record.
       board -C <board> tasks add --title '<project title>' --kind project --text "$(cat plan.md)"
 
   It prints the project task's path.
-- Write each decision and ask each question before the body names it. A
-  decision names the project task in `refs`. A question names it in
-  `blocks`.
+- Write each decision and ask each question before the body names it.
+- A decision names the project task in `refs`.
+- A question names the project task in `blocks`.
 - `board -C <board> refs <project task>` lists the decisions and questions
   that name it.
-- To revise the plan, read the body, edit the file and write it back:
+- To revise the plan, read the task into a file, edit the file and write it
+  back:
 
       board -C <board> get <project task> > plan.md
       board -C <board> put <project task> --expect <blob> < plan.md
 
-  `board -C <board> --json get <project task>` prints the `blob`. On
-  `board::put::stale`, read the body again and redo the edit. Git keeps
-  every earlier plan.
+- plan.md holds the task's frontmatter and its body.
+- Edit only the body, and leave the frontmatter as it is.
+- This command prints the `blob`:
+
+      board -C <board> --json get <project task> | jq -r '.data[0].blob'
+
+- On `board::put::stale`, read the task again and redo the edit.
+- Git keeps every earlier plan.
 - A project task in a mounted notes repository refuses this `put` with
   `board::put::through_mount`. Edit it as the tasks skill's Edit section
   says.
