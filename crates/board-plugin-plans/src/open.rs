@@ -253,17 +253,18 @@ fn readable(path: &str, body: &Value, work: Option<&str>) -> Option<(Instant, Wa
     if session.is_none() && person.is_none() {
         return None;
     }
-    let (also_asked, also_people) = (asked.also_by.iter())
-        .map(|actor| (actor.session.clone(), actor.person.clone()))
-        .unzip::<_, _, Vec<_>, Vec<_>>();
     let question = Waiting {
         path: path.to_owned(),
         question: asked.question,
         asked: asked.asked,
         session,
         person,
-        also_asked: also_asked.into_iter().flatten().collect(),
-        also_people: also_people.into_iter().flatten().collect(),
+        also_asked: (asked.also_by.iter())
+            .filter_map(|actor| actor.session.clone())
+            .collect(),
+        also_people: (asked.also_by.iter())
+            .filter_map(|actor| actor.person.clone())
+            .collect(),
         options,
         recommendation: asked.recommendation,
         why: asked.why,

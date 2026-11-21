@@ -141,14 +141,15 @@ needs the owner, with a reason that starts `plans.sweep:`. Each question is
 withdrawn for the first of these that applies:
 
 - `done` or `dropped`: the change or task `blocks` names is done or
-  dropped, and no session is in `also_by`. A merged question waits on its
+  dropped, and no session or person is in `also_by`. A merged question waits on its
   later askers' work too, which `blocks` does not name, so it is withdrawn
   only when it is answered, when every asker is archived, or when a person
   withdraws it.
 - `archived`: the session that asked and every session in `also_by` are
   among `archived`. Board knows nothing of sessions, so the caller names
-  the archived ones. A question a person asked without a session is never
-  withdrawn as `archived`.
+  the archived ones. A question a person asked without a session, or one
+  a person is merged into, is never withdrawn as `archived`, because no
+  session of that person can be archived.
 - `answered`: a question that an answer names, in the same project, asks
   the same words. Words match after lower-casing and keeping only letters
   and digits.

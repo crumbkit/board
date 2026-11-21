@@ -150,6 +150,68 @@ fn a_question_a_person_asked_is_never_withdrawn_as_archived_and_its_sessions_twi
     assert_eq!(open(&board), ["/projects/a/questions/person"]);
 }
 
+/// A question blocking done work stays open while a person is merged into
+/// its `also_by`, because that person waits on the answer. Its twin with no
+/// one merged in is withdrawn as done.
+#[test]
+fn a_question_blocking_done_work_stays_while_a_person_is_merged_into_it_and_its_twin_is_withdrawn()
+{
+    let (_scenario, board) = plans_board(&[
+        ("changes/done", change("done")),
+        (
+            "projects/a/questions/merged",
+            body(
+                ASKED,
+                &json!({"question": "One?", "blocks": "/changes/done", "also_by": [{"person": "bo"}]}),
+            ),
+        ),
+        (
+            "projects/a/questions/alone",
+            body(
+                ASKED,
+                &json!({"question": "Two?", "blocks": "/changes/done"}),
+            ),
+        ),
+    ]);
+    let output = sweep(&board, &json!({"apply": true}));
+    assert_eq!(
+        withdrawn(&output),
+        [("/projects/a/questions/alone".to_owned(), "done".to_owned())]
+    );
+    assert_eq!(open(&board), ["/projects/a/questions/merged"]);
+}
+
+/// A session's question stays open when a person is merged into its
+/// `also_by`, even when every session that asked it is archived, because no
+/// session of that person can be archived. Its twin with no person merged in
+/// is withdrawn as archived.
+#[test]
+fn a_question_a_person_is_merged_into_is_never_withdrawn_as_archived_and_its_twin_is() {
+    let (_scenario, board) = plans_board(&[
+        (
+            "projects/a/questions/merged",
+            asked_by(
+                "local_dead0",
+                1,
+                &json!({"question": "One?", "also_by": [{"person": "bo"}]}),
+            ),
+        ),
+        (
+            "projects/a/questions/alone",
+            asked_by("local_dead0", 1, &json!({"question": "Two?"})),
+        ),
+    ]);
+    let output = sweep(&board, &json!({"apply": true, "archived": ["local_dead0"]}));
+    assert_eq!(
+        withdrawn(&output),
+        [(
+            "/projects/a/questions/alone".to_owned(),
+            "archived".to_owned()
+        )]
+    );
+    assert_eq!(open(&board), ["/projects/a/questions/merged"]);
+}
+
 /// Two open questions in one project with the same words both stay open.
 #[test]
 fn two_open_questions_with_the_same_words_both_stay() {

@@ -5,7 +5,8 @@
 //! A question is dead when the change or task it blocks is done or dropped
 //! and its `also_by` is empty, or when the session that asked it and every
 //! session in its `also_by` are archived. A question a person asked without
-//! a session is never withdrawn as archived. A merged question waits on its
+//! a session, or one a person is merged into, is never withdrawn as
+//! archived, because no session of that person can be archived. A merged question waits on its
 //! later askers' work too, which `blocks` does not name, so the sweep
 //! withdraws it only for archived askers or an answer. Board knows nothing
 //! of sessions, so the caller names the archived ones. Of the questions left, a
@@ -166,17 +167,21 @@ fn find(open: &[Waiting], archived: &BTreeSet<String>, answered: &Answered) -> V
     let mut found = Vec::new();
     for question in open {
         let reason = match (&question.ended, &question.blocks) {
-            (Some(ended), Some(blocks)) if question.also_asked.is_empty() => Some((
-                if ended == "done" { "done" } else { "dropped" },
-                format!("the work it blocks, {blocks}, is {ended}."),
-            )),
-            (_, _)
-                if let Some(session) = &question.session
-                    && archived.contains(session)
-                    && question
-                        .also_asked
-                        .iter()
-                        .all(|other| archived.contains(other)) =>
+            (Some(ended), Some(blocks))
+                if question.also_asked.is_empty() && question.also_people.is_empty() =>
+            {
+                Some((
+                    if ended == "done" { "done" } else { "dropped" },
+                    format!("the work it blocks, {blocks}, is {ended}."),
+                ))
+            }
+            _ if let Some(session) = &question.session
+                && archived.contains(session)
+                && question.also_people.is_empty()
+                && question
+                    .also_asked
+                    .iter()
+                    .all(|other| archived.contains(other)) =>
             {
                 Some(("archived", askers_archived(session, question)))
             }

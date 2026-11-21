@@ -400,6 +400,18 @@ test('a question a person asked without a session is answered and sends nothing,
   expect(toasts.pop()).toBe('Answered, and sent to local_ab12')
 })
 
+test('a question a person asked without a session is sent to the sessions merged into it, and the toast names them', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  const { session: _, ...asked } = MERGE
+  const byPerson = { ...asked, person: 'ana', also_asked: ['local_ef56', 'local_gh78'] }
+  const { sent, toasts } = engine(on, { open: () => ({ exitCode: 0, stdout: opened([byPerson, COUNT]) }) })
+  await start($)
+  const ui = await $.ui.mount({ ...pane('questions'), surface: 'terminal' })
+  await ui.press({ key: `${MERGE.path}#a` })
+  expect(sent.map(s => s.to)).toEqual(['local_ef56', 'local_gh78'])
+  expect(toasts).toEqual(['Answered and recorded in Board; ana asked without a Claude Code session, so it was sent to local_ef56 and local_gh78, which asked the same.'])
+})
+
 test('a send the asking session cannot take still records the answer, and says the message was not delivered', async ($, on) => {
   mock.clock(on, { now: NOW })
   const { ran, toasts } = engine(on, { delivered: false })
