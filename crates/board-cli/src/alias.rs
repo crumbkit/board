@@ -10,7 +10,7 @@
 
 use std::ffi::OsString;
 
-use board_model::{Code, Fields, Refusal};
+use board_model::{Code, Fields, Refusal, RefusalCode};
 use board_ops::MountsAt;
 use board_plugin::Manifest;
 use clap::error::ErrorKind;
@@ -177,8 +177,8 @@ struct External {
 
 /// The first word of `arguments` that is no built-in command, read by clap
 /// with every other root flag, and the manifest of each plugin that the
-/// board those flags lead to enables, or `None` when no board opens there.
-/// A first word that is a built-in command reads no manifest.
+/// board those flags lead to enables, or `None` when no board is found
+/// there. A first word that is a built-in command reads no manifest.
 fn read(arguments: &[OsString], context: &Context) -> (Option<External>, Option<Vec<Manifest>>) {
     let commands = commands();
     let Some(matches) = loose(arguments) else {
@@ -300,18 +300,27 @@ fn resolve(
 }
 
 /// The manifest of each plugin that the board Board runs as from
-/// `directories` and `personal` enables, or `None` when no board can be
-/// opened there.
+/// `directories` and `personal` enables, or `None` when opening the board
+/// there refuses with `board::config::not_found`. Any other failure,
+/// including a personal board the known boards file cannot name, reads no
+/// manifest.
 fn enabled(context: &Context, directories: &[OsString], personal: bool) -> Option<Vec<Manifest>> {
     let base = if personal {
         context.personal().ok()
     } else {
         Some(context.start.clone())
     };
-    let start = base.and_then(|base| entered(&base, directories).ok());
-    let (mut board, _) = start.and_then(|start| context.open(&start, MountsAt::Pins).ok())?;
-    board.build_in(context.built_in.0);
-    Some((board.aliases(context.plugins.as_deref())).unwrap_or_default())
+    let Some(start) = base.and_then(|base| entered(&base, directories).ok()) else {
+        return Some(Vec::new());
+    };
+    match context.open(&start, MountsAt::Pins) {
+        Ok((mut board, _)) => {
+            board.build_in(context.built_in.0);
+            Some((board.aliases(context.plugins.as_deref())).unwrap_or_default())
+        }
+        Err(refusal) if refusal.code == RefusalCode::Board(Code::ConfigNotFound) => None,
+        Err(_) => Some(Vec::new()),
+    }
 }
 
 fn manifest_alias(manifest: &Manifest) -> Option<&str> {

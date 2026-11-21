@@ -83,7 +83,7 @@ pub(crate) fn plugin(
 }
 
 /// The note on stderr of `plugin list` and `plugin find` as text where no
-/// board opens.
+/// board is found.
 const UNOPENED: &str = "note: No board opens here, so no plugin is enabled; `board init` in a git repository makes one, and `board --personal plugin list` lists your personal board's plugins.\n";
 
 /// `board plugin list` and `find` where opening the board was `refused`:
@@ -95,25 +95,29 @@ pub(crate) fn unopened(
     printer: Printer,
     refused: Refusal,
 ) -> Output {
+    let unfound = refused.code == RefusalCode::Board(Code::ConfigNotFound);
     let (built_in, plugins) = (context.built_in, context.plugins.as_deref());
+    // The printer goes to the render, so whether it prints JSON is read first.
     let json = printer.json();
-    if refused.code != RefusalCode::Board(Code::ConfigNotFound) {
-        return render::refused(printer, refused);
-    }
     let mut output = match command {
-        PluginCommand::Enable { .. } => return render::refused(printer, refused),
-        PluginCommand::List { page } => match PluginListReport::unopened(built_in, plugins) {
-            Ok(report) => render::plugin_list(printer, &report, page),
-            Err(error) => return render::refused(printer, plain(error.code(), &error)),
-        },
+        PluginCommand::List { page } if unfound => {
+            match PluginListReport::unopened(built_in, plugins) {
+                Ok(report) => render::plugin_list(printer, &report, page),
+                Err(error) => return render::refused(printer, plain(error.code(), &error)),
+            }
+        }
         PluginCommand::Find {
             capability,
             filters,
             page,
-        } => match PluginFindReport::unopened(built_in, plugins, capability.as_ref(), filters) {
-            Ok(report) => render::plugin_find(printer, &report, page),
-            Err(error) => return render::refused(printer, plain(error.code(), &error)),
-        },
+        } if unfound => {
+            match PluginFindReport::unopened(built_in, plugins, capability.as_ref(), filters) {
+                Ok(report) => render::plugin_find(printer, &report, page),
+                Err(error) => return render::refused(printer, plain(error.code(), &error)),
+            }
+        }
+        // Another refusal, or `enable`, which needs a board.
+        _ => return render::refused(printer, refused),
     };
     if !json {
         output.stderr.extend_from_slice(UNOPENED.as_bytes());
