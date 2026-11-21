@@ -1073,3 +1073,53 @@ fn evals_migrate_with_apply_writes_one_bulk_commit_and_a_second_apply_writes_not
     assert_eq!(again["total"], 0);
     assert_eq!(board.head(), head);
 }
+
+/// The `evals/eval/v1` record in the fenced `json` block under SKILL.md's
+/// "An eval in a board with no mounts", the one an agent copies.
+fn skill_example() -> Value {
+    let skill = include_str!("../../../../../plugins/evals/SKILL.md");
+    let (_, section) = skill
+        .split_once("\n## An eval in a board with no mounts\n")
+        .expect("SKILL.md has the section");
+    let (_, fenced) = section.split_once("```json\n").expect("a json block");
+    let (block, _) = fenced.split_once("```").expect("the block ends");
+    serde_json::from_str(block).unwrap()
+}
+
+#[test]
+fn the_skills_example_eval_is_written_checked_and_found_in_a_board_that_mounts_no_repositories() {
+    let board = board();
+    let unmounted = board.run(&["--json", "ls", "/repos"]);
+    assert_eq!(
+        unmounted.error.as_deref(),
+        Some("board::path::not_found"),
+        "{}",
+        text(&unmounted.stdout)
+    );
+    let example = skill_example();
+    assert_eq!(example.get("mounts"), None, "{example}");
+    assert_eq!(example["status"], "planned");
+    let put = board.run_with(&["put", "/evals/example"], &example.to_string());
+    assert_eq!(put.code, 0, "{}", text(&put.stderr));
+    let checked = board.run(&["check"]);
+    assert_eq!(checked.code, 0, "{}", text(&checked.stdout));
+    let [subject] = example["subjects"].as_array().unwrap().as_slice() else {
+        panic!("one subject in {example}")
+    };
+    let (_, name) = subject.as_str().unwrap().split_once('/').unwrap();
+    assert_eq!(
+        paths(&board, "about", &["--subject", name]),
+        ["/evals/example"]
+    );
+    assert_eq!(paths(&board, "open", &[]), ["/evals/example"]);
+}
+
+#[test]
+fn the_skills_example_eval_with_a_bare_subject_is_refused_as_the_skill_warns() {
+    let board = board();
+    let mut example = skill_example();
+    example["subjects"] = json!(["clap"]);
+    let put = board.run_with(&["put", "/evals/example"], &example.to_string());
+    assert_eq!(put.code, 1, "{}", text(&put.stderr));
+    assert_eq!(put.error.as_deref(), INVALID, "{}", text(&put.stderr));
+}
