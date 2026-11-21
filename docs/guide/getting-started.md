@@ -1,7 +1,7 @@
 # Getting started
 
-This page takes you from the Board dmg to a project, a task and a question in
-your own board.
+This page takes you from the Board dmg or a release folder to a project, a
+task, a question and an eval in your own board.
 
 ## Before you install
 
@@ -30,6 +30,16 @@ your own board.
 - The next section makes the board and enables its plugins.
 - `board plugin list` lists the plugins Board ships, with none enabled,
   until you make a board.
+
+### Install from a release folder
+
+- A release shared as a folder, with no dmg, holds the same installer that
+  Board.app runs.
+- Run `<release folder>/install`, where `<release folder>` is the folder's
+  path.
+- `install` writes `board`, `attention-sign` and the skills.
+- `install --hooks` also installs Board's Claude Code mods, which changes
+  Claude Code's settings. Board.app always runs it so.
 
 ## Make your board
 
@@ -140,9 +150,34 @@ board --personal plans open --path /projects/my-first-project
 
 ## Test something
 
-- The evals skill records a test as an eval, a suite and its runs.
-- In Claude Code, type: "Use the evals skill to record a test of whether
-  `wc -l` counts a last line that has no newline."
+- An eval asks a question about a subject, such as `/topics/wc` for a tool
+  with no repository.
+- A `runs/suite/v1` at `/suites/<name>` says how it is tested.
+- Each `runs/run/v1` under `/suites/<name>/runs/` records one run.
+
+Record a test of whether `wc -l` counts a last line that has no newline:
+
+```sh
+cd ~/board
+me=$(git config --global user.email)
+now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+echo '{"$type": "runs/suite/v1", "subjects": ["/topics/wc"], "method": "Count the lines of two lines whose last has no newline.", "cases": [{"id": "no-final-newline"}], "measures": [{"name": "lines", "unit": "lines"}]}' | board --personal put /suites/wc-last-line
+echo '{"$type": "evals/eval/v1", "question": "Does wc -l count a last line that has no newline?", "subjects": ["/topics/wc"], "suites": ["/suites/wc-last-line"], "status": "planned"}' | board --personal put /evals/wc-last-line
+lines=$(printf 'one\ntwo' | wc -l | tr -d ' ')
+run=$(echo '{"$type": "runs/run/v1", "suite": "/suites/wc-last-line", "by": {"person": "'"$me"'"}, "started": "'"$now"'", "scope": "full", "dirty": false, "results": [{"case": "no-final-newline", "outcome": "pass", "measures": {"lines": '"$lines"'}}]}' | board --personal --json put --new --var suite=wc-last-line | sed -n 's/.*"display":"\([^"]*\)".*/\1/p')
+echo '{"$type": "evals/eval/v1", "question": "Does wc -l count a last line that has no newline?", "subjects": ["/topics/wc"], "suites": ["/suites/wc-last-line"], "runs": ["'"$run"'"], "status": "concluded", "verdict": "refuted", "conclusion": "wc -l counted '"$lines"' for two lines, because it counts newlines."}' | board --personal put /evals/wc-last-line
+board --personal evals about --subject /topics/wc
+```
+
+- The suite goes first, so that the eval's `suites` names a record that
+  exists and `board check` reports no `board::ref::dangling`.
+- `put --new --var suite=wc-last-line` names the run by the time and a
+  random suffix, and the block reads its path from the JSON it prints.
+- The last `put` rewrites the eval as concluded, with its verdict and run.
+- `evals about` lists the eval as concluded.
+- In Claude Code, the evals skill does the same. Type: "Use the evals skill
+  to record a test of whether `wc -l` counts a last line that has no
+  newline."
 
 ## Push your board to a remote
 

@@ -572,39 +572,54 @@ fn repository(relative: &str) -> Vec<u8> {
     std::fs::read(root.join(relative)).unwrap()
 }
 
-#[test]
-fn the_evals_skill_ships_the_topics_document_and_is_stale_without_it() {
+/// Installs the evals skill with `arguments`, asserts that it writes
+/// `shipped` with the bytes of `document`, and that `list` reports the skill
+/// stale once `shipped` is removed.
+fn evals_ships(arguments: &[&str], document: &str, shipped: &str) {
     let home = Scenario::new();
-    skills(&home, "install", &[]);
-    let topics = path(&home, "skills/evals/topics.md");
-    assert_eq!(
-        std::fs::read(&topics).unwrap(),
-        repository("docs/plugins/built-in/topics.md")
-    );
-    let (_, listed) = skills(&home, "list", &[]);
+    skills(&home, "install", arguments);
+    let file = path(&home, &format!("skills/evals/{shipped}"));
+    assert_eq!(std::fs::read(&file).unwrap(), repository(document));
+    let (_, listed) = skills(&home, "list", arguments);
     assert_eq!(state_of(&listed, "evals"), "current");
 
-    std::fs::remove_file(&topics).unwrap();
-    let (_, listed) = skills(&home, "list", &[]);
+    std::fs::remove_file(&file).unwrap();
+    let (_, listed) = skills(&home, "list", arguments);
     assert_eq!(state_of(&listed, "evals"), "stale");
 }
 
 #[test]
-fn every_file_the_evals_readme_names_as_beside_it_is_installed_beside_it() {
+fn the_evals_skill_ships_the_topics_document_and_is_stale_without_it() {
+    evals_ships(&[], "docs/plugins/built-in/topics.md", "topics.md");
+}
+
+#[test]
+fn the_evals_skill_ships_the_runs_readme_as_runs_md_and_is_stale_without_it() {
+    let only_evals = ["--plugins", "evals"];
+    evals_ships(&only_evals, "plugins/runs/README.md", "runs.md");
+}
+
+#[test]
+fn every_file_the_evals_readme_or_skill_names_as_beside_it_is_installed_beside_it() {
     let home = Scenario::new();
     skills(&home, "install", &[]);
-    let readme = text(&path(&home, "skills/evals/README.md"));
-    let pieces: Vec<&str> = readme.split(" beside this file)").collect();
-    let before = &pieces[..pieces.len() - 1];
-    let named: Vec<&str> = before
-        .iter()
-        .map(|piece| piece.rsplit(['(', ' ', '\n']).next().unwrap())
-        .collect();
-    assert!(!named.is_empty(), "the README names no file beside it");
-    for name in named {
-        assert!(
-            path(&home, &format!("skills/evals/{name}")).is_file(),
-            "{name}"
-        );
+    for (document, marker) in [
+        ("README.md", " beside this file)"),
+        ("SKILL.md", "` beside this file"),
+    ] {
+        let read = text(&path(&home, &format!("skills/evals/{document}")));
+        let pieces: Vec<&str> = read.split(marker).collect();
+        let before = &pieces[..pieces.len() - 1];
+        let named: Vec<&str> = before
+            .iter()
+            .map(|piece| piece.rsplit(['(', '`', ' ', '\n']).next().unwrap())
+            .collect();
+        assert!(!named.is_empty(), "{document} names no file beside it");
+        for name in named {
+            assert!(
+                path(&home, &format!("skills/evals/{name}")).is_file(),
+                "{document} names {name}"
+            );
+        }
     }
 }

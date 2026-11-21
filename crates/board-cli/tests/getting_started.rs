@@ -1,7 +1,8 @@
 //! The shell blocks of docs/guide/getting-started.md run as written, in
 //! order, against the `board` this commit builds, in a fresh home. The tests
-//! run every `sh` block under "Make your board", "Write a first record" and
-//! "Plan a project", and refuse any other fence tag under those sections.
+//! run every `sh` block under "Make your board", "Write a first record",
+//! "Plan a project" and "Test something", and refuse any other fence tag
+//! under those sections.
 #![cfg(test)]
 #![expect(
     clippy::disallowed_methods,
@@ -103,10 +104,16 @@ fn board(home: &Path, arguments: &[&str]) -> Value {
 }
 
 #[test]
-fn the_pages_blocks_make_a_board_with_six_plugins_a_project_a_task_and_a_question() {
+fn the_pages_blocks_make_a_board_with_six_plugins_a_project_a_task_a_question_and_an_eval() {
     let page = page();
     let home = home();
-    for section in ["Make your board", "Write a first record", "Plan a project"] {
+    let sections = [
+        "Make your board",
+        "Write a first record",
+        "Plan a project",
+        "Test something",
+    ];
+    for section in sections {
         for block in blocks(&page, section) {
             run(home.path(), &block);
         }
@@ -170,6 +177,67 @@ fn the_pages_blocks_make_a_board_with_six_plugins_a_project_a_task_and_a_questio
             .contains("/projects/my-first-project/decisions/"),
         "{decisions}"
     );
+
+    let about = board(home.path(), &["evals", "about", "--subject", "/topics/wc"]);
+    let evals = about["data"]["output"]["evals"].as_array().unwrap();
+    assert_eq!(evals.len(), 1, "{about}");
+    assert_eq!(evals[0]["path"], "/evals/wc-last-line", "{about}");
+    assert_eq!(evals[0]["status"], "concluded", "{about}");
+    assert_eq!(evals[0]["verdict"], "refuted", "{about}");
+    let latest = board(
+        home.path(),
+        &["runs", "latest", "--suite", "/suites/wc-last-line"],
+    );
+    let run = &latest["data"]["output"]["run"];
+    let path = run["path"].as_str().unwrap_or_default();
+    assert!(path.starts_with("/suites/wc-last-line/runs/"), "{latest}");
+    assert_eq!(run["outcome"], "pass", "{latest}");
+    let got = board(home.path(), &["get", "/evals/wc-last-line"]);
+    let eval: Value = serde_json::from_str(got["data"][0]["text"].as_str().unwrap()).unwrap();
+    assert_eq!(eval["runs"], serde_json::json!([path]), "{eval}");
+}
+
+/// The evals skill tells an agent that a board whose top level lists no
+/// `/repos/` mounts no repositories, so `board ls /` must answer in a fresh
+/// board.
+#[test]
+fn board_ls_of_the_root_answers_in_a_fresh_board_and_lists_no_repos() {
+    let page = page();
+    let home = home();
+    for block in blocks(&page, "Make your board") {
+        run(home.path(), &block);
+    }
+    let listed = board(home.path(), &["ls", "/"]);
+    assert!(!listed.to_string().contains("/repos/"), "{listed}");
+}
+
+/// The Install section's text, up to the next section.
+fn install(page: &str) -> &str {
+    let start = page.find("\n## Install\n").unwrap();
+    let rest = &page[start + 1..];
+    let end = rest[1..].find("\n## ").map_or(rest.len(), |end| end + 1);
+    &rest[..end]
+}
+
+#[test]
+fn the_install_section_names_the_release_folders_installer_and_its_hooks_flag() {
+    let page = page();
+    let section = install(&page);
+    assert!(section.contains("`<release folder>/install`"), "{section}");
+    assert!(section.contains("`install --hooks`"), "{section}");
+    assert!(
+        page.lines()
+            .take(4)
+            .any(|line| line.contains("release folder"))
+    );
+}
+
+#[test]
+fn the_install_section_still_names_board_app_and_the_dmg() {
+    let page = page();
+    let section = install(&page);
+    assert!(section.contains("Board.app"), "{section}");
+    assert!(section.contains("dmg"), "{section}");
 }
 
 #[test]
