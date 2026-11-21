@@ -79,6 +79,19 @@ quotes the owner's words in `why`:
 }
 ```
 
+## A project's plan
+
+The plugin has no plan record. A project with no mounted repository keeps
+its plan in the Markdown body of its project task, a `tasks/task/v2` with
+`kind: project` that
+`board tasks add --title <title> --kind project --text <plan>` writes.
+Its decisions name the task in `refs` and its questions in `blocks`, so
+`board refs <task>` lists them. `board put <task> --expect <blob>` with the
+new Markdown on stdin revises the plan, and git keeps the earlier ones. A
+project task in a mounted notes repository refuses that `put` with
+`board::put::through_mount`; edit it as the tasks skill's Edit steps say. A
+change to a mounted repository keeps its plan as a `changes/plan/v1`.
+
 ## Capabilities
 
 `board plans open [--path /projects/<project>] [--limit <n>]` lists the

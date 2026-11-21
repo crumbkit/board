@@ -95,7 +95,9 @@ it.
 1. When agreed work belongs to a larger goal, add it under that goal:
    `tasks.add --title '<title>' --parent <path>`, with the path as
    `tasks.tree` lists it. Start a project with `--kind project`, and
-   `--brief <path>` when it has a brief.
+   `--brief <path>` when it has a brief. A project with no mounted
+   repository keeps its plan in its body; `--text` writes the first plan,
+   and the plans skill's "A project's plan" says how to revise it.
 2. A task that needs a project another task holds lists the project in
    `after`. Never give a task a second parent.
 3. Reshape the tree with `tasks.move --path <task> --parent <task>`, or

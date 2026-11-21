@@ -114,6 +114,30 @@ fn skill_description() -> String {
     quoted.replace("''", "'")
 }
 
+/// The text of SKILL.md's section `heading`, up to the next `## `
+/// heading, with each run of whitespace made one space.
+fn skill_section(heading: &str) -> String {
+    let skill = include_str!("../../../plugins/plans/SKILL.md");
+    let (_, rest) = (skill.split_once(&format!("\n## {heading}\n")))
+        .unwrap_or_else(|| panic!("plugins/plans/SKILL.md has no `## {heading}` section"));
+    let section = rest.split("\n## ").next().unwrap();
+    section.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+#[test]
+fn the_skill_says_a_project_with_no_mounted_repository_keeps_its_plan_in_its_project_tasks_body() {
+    let section = skill_section("A project's plan");
+    for words in [
+        "A project with no mounted repository keeps its plan in the Markdown body of its project task",
+        "tasks add --title '<project title>' --kind project --text",
+        "board -C <board> get <project task> > plan.md",
+        "board -C <board> put <project task> --expect <blob> < plan.md",
+        "board -C <board> --json get <project task> | jq -r '.data[0].blob'",
+    ] {
+        assert!(section.contains(words), "{words:?} not in {section:?}");
+    }
+}
+
 #[test]
 fn the_manifest_parses_as_a_built_in_one_and_describes_the_plugin_with_the_skills_description() {
     let manifest = Plans.manifest();
