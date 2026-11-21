@@ -247,7 +247,7 @@ fn a_directory_that_is_not_utf8_still_prints_a_groups_help() {
 fn a_long_listing_outside_a_board_fails_as_not_found_and_inside_one_lists() {
     let scenario = board();
     let outside = elsewhere();
-    let arguments = ["--long", "plugin", "list"];
+    let arguments = ["--long", "ui", "kinds"];
     let lost = board_in(outside.workdir(), &arguments);
     assert_eq!(lost.code, 1, "{}", text(&lost.stderr));
     assert!(lost.stdout.is_empty(), "{}", text(&lost.stdout));
@@ -259,7 +259,7 @@ fn a_long_listing_outside_a_board_fails_as_not_found_and_inside_one_lists() {
     let found = board_in(scenario.workdir(), &arguments);
     assert_eq!(found.code, 0, "{}", text(&found.stderr));
     assert!(
-        text(&found.stdout).starts_with("STATUS"),
+        text(&found.stdout).starts_with("NAME"),
         "{}",
         text(&found.stdout)
     );

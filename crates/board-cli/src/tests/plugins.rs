@@ -1004,6 +1004,14 @@ fn plugin_list_outside_any_board_lists_the_plugins_of_a_fresh_board_with_none_en
     let (output, _) =
         super::built_in::built_in(outside.path(), None, &["--json", "plugin", "list"]);
     assert_eq!(text(&output.stderr), "");
+    let arguments = ["--long", "plugin", "list"];
+    let (output, _) = super::built_in::built_in(outside.path(), None, &arguments);
+    assert_eq!(output.code, 0, "{}", text(&output.stderr));
+    assert!(
+        text(&output.stdout).starts_with("STATUS"),
+        "{}",
+        text(&output.stdout)
+    );
 }
 
 #[test]
