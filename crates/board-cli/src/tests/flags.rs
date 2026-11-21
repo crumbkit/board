@@ -4,8 +4,8 @@
 use super::plugins::{RESULT, installed};
 use super::*;
 
-/// A manifest whose capability takes four flag properties and one that
-/// cannot be a flag.
+/// A manifest whose capability takes six flag properties, two of them
+/// boolean, and one that cannot be a flag.
 const FLAGGED: &str = r#"{
   "$type": "board/plugin-manifest/v1",
   "name": "tasks",
@@ -20,6 +20,7 @@ const FLAGGED: &str = r#"{
       "limit": {"type": "integer"},
       "ratio": {"type": "number"},
       "open": {"type": "boolean"},
+      "keep-late": {"type": "boolean", "default": true, "description": "Keep the late tasks."},
       "tags": {"type": "array"}
     }},
     "outputSchema": {"type": "object"}
@@ -186,6 +187,101 @@ fn help_lists_the_flags_of_an_installed_capability_and_refuses_a_target_like_a_r
     assert!(text.contains("go on stdin: tags."), "{text}");
     let nope = call(&board, &data, &["--json", "call", "nope.due", "-h"], "");
     assert_eq!(code(&nope), "board::plugin::not_installed");
+}
+
+#[test]
+fn a_bare_boolean_flag_sends_true_and_its_given_value_is_kept() {
+    let (board, data) = flagged();
+    let given = |arguments: &[&str]| {
+        let output = call(
+            &board,
+            &data,
+            &[&["call", "tasks.due"], arguments].concat(),
+            "",
+        );
+        assert_eq!(output.code, 0, "{arguments:?}: {}", text(&output.stderr));
+        sent(&data)
+    };
+    assert_eq!(given(&["--open"]), json!({"open": true}));
+    assert_eq!(given(&["--open", "true"]), json!({"open": true}));
+    assert_eq!(given(&["--open", "false"]), json!({"open": false}));
+    assert_eq!(given(&["--open=true"]), json!({"open": true}));
+    assert_eq!(given(&["--open=false"]), json!({"open": false}));
+    assert_eq!(given(&["--keep-late"]), json!({"keep-late": true}));
+    assert_eq!(
+        given(&["--keep-late", "false"]),
+        json!({"keep-late": false})
+    );
+    assert_eq!(
+        given(&["--open", "--limit", "3"]),
+        json!({"open": true, "limit": 3})
+    );
+    assert_eq!(
+        given(&["--keep-late", "--open"]),
+        json!({"keep-late": true, "open": true})
+    );
+}
+
+#[test]
+fn a_word_after_a_boolean_flag_that_is_no_boolean_is_a_refused_command_line() {
+    let (board, data) = flagged();
+    let refused = call(
+        &board,
+        &data,
+        &["--json", "call", "tasks.due", "--open", "maybe"],
+        "",
+    );
+    assert_eq!(refused.code, 2);
+    assert_eq!(code(&refused), "board::cli::usage");
+    let admitted = call(
+        &board,
+        &data,
+        &["--json", "call", "tasks.due", "--open", "false"],
+        "",
+    );
+    assert_eq!(admitted.code, 0, "{}", text(&admitted.stderr));
+}
+
+#[test]
+fn a_bare_string_flag_is_still_a_refused_command_line() {
+    let (board, data) = flagged();
+    let refused = call(
+        &board,
+        &data,
+        &["--json", "call", "tasks.due", "--before"],
+        "",
+    );
+    assert_eq!(refused.code, 2);
+    assert_eq!(code(&refused), "board::cli::usage");
+    let admitted = call(
+        &board,
+        &data,
+        &["--json", "call", "tasks.due", "--before", "2026-10-05"],
+        "",
+    );
+    assert_eq!(admitted.code, 0, "{}", text(&admitted.stderr));
+}
+
+#[test]
+fn help_shows_a_boolean_flags_value_as_optional_and_says_bare_means_true() {
+    let (board, data) = flagged();
+    let help = call(&board, &data, &["call", "tasks.due", "-h"], "");
+    assert_eq!(help.code, 0);
+    let text = String::from_utf8(help.stdout).unwrap();
+    assert!(text.contains("--open [<true|false>]"), "{text}");
+    assert!(
+        text.contains("boolean; given bare, it means true."),
+        "{text}"
+    );
+    assert!(text.contains("--keep-late [<true|false>]"), "{text}");
+    assert!(
+        text.contains(
+            "Keep the late tasks; given bare, it means true, which is already the default; \
+             give --keep-late false to turn it off."
+        ),
+        "{text}"
+    );
+    assert!(text.contains("--before <before>"), "{text}");
 }
 
 /// The context of a run in `board` with the plugins in `data`, and stdin a

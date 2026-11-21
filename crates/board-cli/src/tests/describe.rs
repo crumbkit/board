@@ -440,7 +440,8 @@ const CHORES: &str = r#"{
     "name": "add",
     "description": "Add a chore.",
     "inputSchema": {"type": "object", "additionalProperties": false, "properties": {
-      "room": {"type": "string", "enum": ["kitchen", "hall"], "description": "Where."}
+      "room": {"type": "string", "enum": ["kitchen", "hall"], "description": "Where."},
+      "urgent": {"type": "boolean"}
     }},
     "outputSchema": {"type": "object"},
     "annotations": {"readOnlyHint": false, "destructiveHint": false, "idempotentHint": true, "openWorldHint": false}
@@ -655,4 +656,19 @@ fn an_enum_flag_lists_its_values_and_the_input_schema_refuses_another_value() {
     let (rows, ..) = capability_rows(&board, &data);
     let room = &row(&rows, "board call chores.add")["arguments"][0];
     assert_eq!(room["possible_values"], json!(["kitchen", "hall"]));
+}
+
+#[test]
+fn a_boolean_flag_is_described_with_an_optional_true_or_false_value() {
+    let (board, data) = enabling(r#""chores""#);
+    let (rows, ..) = capability_rows(&board, &data);
+    let arguments = row(&rows, "board call chores.add")["arguments"]
+        .as_array()
+        .unwrap();
+    let urgent = (arguments
+        .iter()
+        .find(|argument| argument["name"] == "--urgent"))
+    .unwrap();
+    assert_eq!(urgent["value_names"], json!(["true|false"]));
+    assert_eq!(urgent["possible_values"], json!(["true", "false"]));
 }
