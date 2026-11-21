@@ -565,3 +565,46 @@ fn an_unknown_plugin_or_an_empty_list_is_refused_before_the_directory_is_read() 
         assert_eq!(refused["code"], "board::skills::write_failed");
     }
 }
+
+/// The bytes of `relative` in Board's repository.
+fn repository(relative: &str) -> Vec<u8> {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    std::fs::read(root.join(relative)).unwrap()
+}
+
+#[test]
+fn the_evals_skill_ships_the_topics_document_and_is_stale_without_it() {
+    let home = Scenario::new();
+    skills(&home, "install", &[]);
+    let topics = path(&home, "skills/evals/topics.md");
+    assert_eq!(
+        std::fs::read(&topics).unwrap(),
+        repository("docs/plugins/built-in/topics.md")
+    );
+    let (_, listed) = skills(&home, "list", &[]);
+    assert_eq!(state_of(&listed, "evals"), "current");
+
+    std::fs::remove_file(&topics).unwrap();
+    let (_, listed) = skills(&home, "list", &[]);
+    assert_eq!(state_of(&listed, "evals"), "stale");
+}
+
+#[test]
+fn every_file_the_evals_readme_names_as_beside_it_is_installed_beside_it() {
+    let home = Scenario::new();
+    skills(&home, "install", &[]);
+    let readme = text(&path(&home, "skills/evals/README.md"));
+    let pieces: Vec<&str> = readme.split(" beside this file)").collect();
+    let before = &pieces[..pieces.len() - 1];
+    let named: Vec<&str> = before
+        .iter()
+        .map(|piece| piece.rsplit(['(', ' ', '\n']).next().unwrap())
+        .collect();
+    assert!(!named.is_empty(), "the README names no file beside it");
+    for name in named {
+        assert!(
+            path(&home, &format!("skills/evals/{name}")).is_file(),
+            "{name}"
+        );
+    }
+}

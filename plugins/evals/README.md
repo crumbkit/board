@@ -33,9 +33,8 @@ An eval is a file `/evals/<name>.json`. Its evidence sits beside it, in
   an `owner/name` repository, such as `GitoxideLabs/gitoxide`, or a board
   path, such as `/repos/board`. A tool, model or concept with no
   repository of its own is a topic, named by its path, such as
-  `/topics/seatbelt` (docs/plugins/built-in/topics.md in Board's
-  repository). `evals.about` matches subjects without regard to case. A run
-  holds the versions used.
+  `/topics/seatbelt` (topics.md beside this file). `evals.about` matches
+  subjects without regard to case. A run holds the versions used.
 - `mounts` references the mount of each repository the eval concerns, such as
   `/repos/board`, a `board/mount/v1` record at `/repos/board.json`. `check`
   reports `board::ref::dangling` for a path the board does not have, and

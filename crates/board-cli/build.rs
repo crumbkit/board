@@ -29,6 +29,11 @@ mod commit;
 const SOURCE: [&str; 4] = ["crates", "Cargo.toml", "Cargo.lock", "rust-toolchain.toml"];
 const ROOT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../..");
 
+/// Documents outside a plugin's directory that its own skill ships: the
+/// plugin, the document's path in the repository and its name in the skill.
+const SHIPPED_DOCS: &[(&str, &str, &str)] =
+    &[("evals", "docs/plugins/built-in/topics.md", "topics.md")];
+
 fn git(arguments: &[&str]) -> Option<Vec<u8>> {
     let output = std::process::Command::new("git")
         .args(arguments)
@@ -123,12 +128,17 @@ fn main() {
     skills();
 }
 
+/// A file a skill ships: its path within the skill and its path on disk.
+type Shipped = (PathBuf, PathBuf);
+
 /// Each skill the plugins this build enables ship, as its name, its
-/// plugin's directory name, its directory and its files. A plugin's own
-/// skill, `plugins/<plugin>/SKILL.md`, is named after the plugin and ships
-/// its `SKILL.md` and `README.md`; a skill in
+/// plugin's directory name, its directory and each file's path within the
+/// skill and path on disk. A plugin's own skill, `plugins/<plugin>/SKILL.md`,
+/// is named after the plugin and ships its `SKILL.md`, its `README.md` and
+/// the plugin's rows of `SHIPPED_DOCS`; a skill in
 /// `plugins/<plugin>/skills/<skill>/` ships every file in its directory.
-fn found(plugins: &Path) -> Vec<(String, String, PathBuf, Vec<PathBuf>)> {
+/// A row of `SHIPPED_DOCS` whose document is missing fails the build.
+fn found(plugins: &Path) -> Vec<(String, String, PathBuf, Vec<Shipped>)> {
     let mut found = Vec::new();
     for plugin in sorted(plugins) {
         let Some(name) = plugin.file_name().and_then(OsStr::to_str) else {
@@ -139,8 +149,18 @@ fn found(plugins: &Path) -> Vec<(String, String, PathBuf, Vec<PathBuf>)> {
             continue;
         }
         if plugin.join("SKILL.md").is_file() {
-            let files = ["SKILL.md", "README.md"].map(|file| plugin.join(file));
-            let files = files.into_iter().filter(|file| file.is_file()).collect();
+            let own = ["SKILL.md", "README.md"].map(|file| (file.into(), plugin.join(file)));
+            let mut files: Vec<Shipped> =
+                own.into_iter().filter(|(_, file)| file.is_file()).collect();
+            for (_, document, shipped) in SHIPPED_DOCS.iter().filter(|row| row.0 == name) {
+                let file = Path::new(ROOT).join(document);
+                if !file.is_file() {
+                    fail(&format!(
+                        "SHIPPED_DOCS ships {document} in the {name} skill as {shipped}, and {document} is not a file"
+                    ));
+                }
+                files.push((shipped.into(), file));
+            }
             found.push((name.to_owned(), name.to_owned(), plugin.clone(), files));
         }
         for skill in sorted(&plugin.join("skills")) {
@@ -150,6 +170,10 @@ fn found(plugins: &Path) -> Vec<(String, String, PathBuf, Vec<PathBuf>)> {
             let skill_name = skill.file_name().unwrap_or_default().to_string_lossy();
             let mut files = Vec::new();
             every_file(&skill, &mut files);
+            let files = files
+                .into_iter()
+                .map(|file| (file.strip_prefix(&skill).unwrap_or(&file).to_owned(), file))
+                .collect();
             found.push((
                 skill_name.into_owned(),
                 name.to_owned(),
@@ -203,9 +227,8 @@ fn skills() {
             source,
             "    Skill {{ name: {name:?}, plugin: {plugin:?}, files: &["
         );
-        for file in files {
+        for (relative, file) in files {
             println!("cargo::rerun-if-changed={}", file.display());
-            let relative = file.strip_prefix(&directory).unwrap_or(&file);
             let (Some(relative), Some(absolute)) = (relative.to_str(), file.to_str()) else {
                 return fail(&format!(
                     "the skill file {} has a path that is not UTF-8, which the binary cannot embed",
