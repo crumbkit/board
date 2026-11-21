@@ -245,4 +245,14 @@ pub(super) const BUDGETS: Budgets = Budgets::new()
             1_260,
             "answer says on one page how an approval is signed and checked, its Effects: line says that it is destructive, and its global flags line names --no-input, which a program adds to every run.",
         ),
+        Budget::new(
+            "skills install",
+            1_400,
+            "install says on one page which folders it replaces, removes, keeps and refuses, and shows --plugins, which an installer passes to write only the enabled plugins' skills, in an example of its own.",
+        ),
+        Budget::new(
+            "skills list",
+            1_400,
+            "list names each of its six states on one page, and shows --plugins, which an installer passes to list only the enabled plugins' skills, in an example of its own.",
+        ),
     ]);

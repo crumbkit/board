@@ -123,11 +123,11 @@ fn main() {
     skills();
 }
 
-/// Each skill the plugins this build enables ship, as its name and its
-/// directory. A plugin's own skill, `plugins/<plugin>/SKILL.md`, is named
+/// Each skill the plugins this build enables ship, as its name, its
+/// plugin's directory name, its directory and its files. A plugin's own skill, `plugins/<plugin>/SKILL.md`, is named
 /// after the plugin and ships its `SKILL.md` and `README.md`; a skill in
 /// `plugins/<plugin>/skills/<skill>/` ships every file in its directory.
-fn found(plugins: &Path) -> Vec<(String, PathBuf, Vec<PathBuf>)> {
+fn found(plugins: &Path) -> Vec<(String, String, PathBuf, Vec<PathBuf>)> {
     let mut found = Vec::new();
     for plugin in sorted(plugins) {
         let Some(name) = plugin.file_name().and_then(OsStr::to_str) else {
@@ -140,16 +140,21 @@ fn found(plugins: &Path) -> Vec<(String, PathBuf, Vec<PathBuf>)> {
         if plugin.join("SKILL.md").is_file() {
             let files = ["SKILL.md", "README.md"].map(|file| plugin.join(file));
             let files = files.into_iter().filter(|file| file.is_file()).collect();
-            found.push((name.to_owned(), plugin.clone(), files));
+            found.push((name.to_owned(), name.to_owned(), plugin.clone(), files));
         }
         for skill in sorted(&plugin.join("skills")) {
             if !skill.join("SKILL.md").is_file() {
                 continue;
             }
-            let name = skill.file_name().unwrap_or_default().to_string_lossy();
+            let skill_name = skill.file_name().unwrap_or_default().to_string_lossy();
             let mut files = Vec::new();
             every_file(&skill, &mut files);
-            found.push((name.into_owned(), skill.clone(), files));
+            found.push((
+                skill_name.into_owned(),
+                name.to_owned(),
+                skill.clone(),
+                files,
+            ));
         }
     }
     found
@@ -174,15 +179,15 @@ fn every_file(directory: &Path, files: &mut Vec<PathBuf>) {
     }
 }
 
-/// Writes `skills.rs`: `SKILLS`, each skill's name and each of its files'
-/// path within the skill and bytes, in name order.
+/// Writes `skills.rs`: `SKILLS`, each skill's name, its plugin and each of
+/// its files' path within the skill and bytes, in name order.
 fn skills() {
     let plugins = Path::new(ROOT).join("plugins");
     println!("cargo::rerun-if-changed={}", plugins.display());
     let mut found = found(&plugins);
     found.sort_by(|a, b| a.0.cmp(&b.0));
     let mut source = String::from("&[\n");
-    for (name, directory, files) in found {
+    for (name, plugin, directory, files) in found {
         let mut characters = name.chars();
         let lower = |character: char| character.is_ascii_lowercase() || character.is_ascii_digit();
         let named = characters.next().is_some_and(lower)
@@ -193,7 +198,10 @@ fn skills() {
                 directory.display()
             ));
         }
-        let _ = writeln!(source, "    Skill {{ name: {name:?}, files: &[");
+        let _ = writeln!(
+            source,
+            "    Skill {{ name: {name:?}, plugin: {plugin:?}, files: &["
+        );
         for file in files {
             println!("cargo::rerun-if-changed={}", file.display());
             let relative = file.strip_prefix(&directory).unwrap_or(&file);
