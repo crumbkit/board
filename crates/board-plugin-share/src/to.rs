@@ -64,7 +64,8 @@ pub(crate) struct Input {
 /// with a clone of the destination reads it, and is empty when the
 /// destination's repository has no origin. `unchanged` counts the paths
 /// the destination already held equally. `not_copied` lists, at most 100,
-/// the paths a copied Markdown body names that the share leaves behind.
+/// the paths a copied Markdown body names that the share leaves behind, and
+/// `not_copied_total` counts them all.
 #[derive(Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 #[schemars(rename = "ToOutput")]
@@ -78,6 +79,7 @@ pub(crate) struct Output {
     truncated: bool,
     unchanged: usize,
     not_copied: Vec<NotCopied>,
+    not_copied_total: usize,
 }
 
 /// A path a copied Markdown body names that the share does not copy, why,
@@ -184,6 +186,7 @@ pub(crate) fn share_to(host: &dyn Host, input: &Value) -> Result<Value, PluginEr
         })?;
         commit = Some(mount(host, &to)?.1);
     }
+    let (not_copied, not_copied_total) = capped(not_copied, LIST_LIMIT);
     let listed: Vec<String> = (copied.iter().take(LIST_LIMIT))
         .map(|target| (*target).clone())
         .collect();
@@ -196,9 +199,17 @@ pub(crate) fn share_to(host: &dyn Host, input: &Value) -> Result<Value, PluginEr
         total: copied.len(),
         truncated: copied.len() > LIST_LIMIT,
         unchanged: unchanged.len(),
-        not_copied: not_copied.into_iter().take(LIST_LIMIT).collect(),
+        not_copied,
+        not_copied_total,
     };
     Ok(serde_json::to_value(output).expect("the output is strings, numbers and booleans"))
+}
+
+/// The first `cap` of `items`, and how many there were.
+pub(crate) fn capped<T>(mut items: Vec<T>, cap: usize) -> (Vec<T>, usize) {
+    let total = items.len();
+    items.truncate(cap);
+    (items, total)
 }
 
 /// The URI of each of `paths` in the board whose repository is at

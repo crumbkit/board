@@ -200,6 +200,7 @@ fn one_call_copies_an_eval_its_runs_their_evidence_and_its_schemas_in_one_commit
             "truncated": false,
             "unchanged": 0,
             "not_copied": [],
+            "not_copied_total": 0,
         })
     );
     assert_eq!(boards.changed(&before), FILES);
@@ -661,6 +662,7 @@ fn a_body_naming_a_directory_or_a_path_through_a_mount_copies_nothing_for_it_and
             ])
         )
     );
+    assert_eq!(dry["not_copied_total"], 2);
     let output = boards.share(&["--path", "/tasks/p.md"]);
     assert_eq!(output["copied"], json!(["/tasks/p.md"]));
     assert!(!boards.exists("projects/p/decisions/a.json"));

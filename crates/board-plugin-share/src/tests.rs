@@ -6,7 +6,7 @@
 use serde_json::json;
 
 use super::*;
-use to::{Line, refused, same, scheme};
+use to::{Line, capped, refused, same, scheme};
 
 /// A host that does nothing; each call here is refused before the plugin
 /// reaches the board.
@@ -225,4 +225,10 @@ fn a_capability_the_plugin_does_not_offer_is_refused_and_to_reaches_its_own_chec
         .call(&Nothing, &known, json!({"path": "/evals/x", "to": "team"}))
         .unwrap_err();
     assert_eq!(refused.code, "share::mount::not_found");
+}
+
+#[test]
+fn a_capped_list_keeps_the_first_entries_and_counts_them_all() {
+    assert_eq!(capped(vec!["/a", "/b", "/c"], 2), (vec!["/a", "/b"], 3));
+    assert_eq!(capped(vec!["/a"], 2), (vec!["/a"], 1));
 }
