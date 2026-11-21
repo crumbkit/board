@@ -419,16 +419,21 @@ fn each_shipped_schema_refuses_a_bad_record_and_admits_its_twin() {
 /// 2026-11-20T12:00:00Z, the time `ci::judge` judges at here.
 const NOON: u64 = 1_795_176_000;
 
-/// One check suite of the app `slug` named `name`, queued since `minutes`
-/// before [`NOON`] with `runs` check runs.
-fn queued_suite(slug: &str, name: &str, minutes: u64, runs: usize) -> Value {
-    let created = NOON - minutes * 60;
-    let (hour, minute) = (created % 86_400 / 3600, created % 3600 / 60);
+/// The RFC 3339 time `seconds` before [`NOON`].
+fn before_noon(seconds: u64) -> String {
+    let at = std::time::UNIX_EPOCH + std::time::Duration::from_secs(NOON - seconds);
+    board_model::utc_seconds(at)
+}
+
+/// One check suite of the app `slug` named `name`, queued with `runs`
+/// check runs, created and last updated `seconds` before [`NOON`].
+fn queued_suite(slug: &str, name: &str, seconds: u64, runs: usize) -> Value {
     json!({
         "status": "queued",
         "conclusion": null,
         "app": {"slug": slug, "name": name},
-        "created_at": format!("2026-11-20T{hour:02}:{minute:02}:00Z"),
+        "created_at": before_noon(seconds),
+        "updated_at": before_noon(seconds),
         "latest_check_runs_count": runs,
     })
 }
@@ -462,39 +467,76 @@ fn judged(suites: &[Value]) -> Result<Vec<String>, (String, Value, String)> {
 
 #[test]
 fn a_queued_app_suite_with_no_check_runs_is_ignored_after_ten_minutes_and_pending_before() {
-    let old = queued_suite("codecov", "Codecov", 11, 0);
+    let old = queued_suite("codecov", "Codecov", 660, 0);
     assert_eq!(judged(&[old]), Ok(vec!["Codecov".to_owned()]));
-    let (code, checks, hint) = judged(&[queued_suite("codecov", "Codecov", 9, 0)]).unwrap_err();
+    let (code, checks, hint) = judged(&[queued_suite("codecov", "Codecov", 540, 0)]).unwrap_err();
     assert_eq!(code, "github::ci::pending");
     assert_eq!(checks, json!(["the check suite of Codecov"]));
     assert!(
-        hint.contains("ignored once it is 10 minutes old")
-            && hint.contains("board github ci --change /changes/lever"),
+        hint.ends_with(
+            "; the check suite of Codecov has no check runs, so it will be ignored once it has \
+             been idle for 10 minutes; run `board github ci --change /changes/lever` again then"
+        ),
+        "{hint}"
+    );
+}
+
+#[test]
+fn an_app_suite_idle_for_exactly_ten_minutes_is_pending_and_one_second_more_is_ignored() {
+    let (code, _, _) = judged(&[queued_suite("codecov", "Codecov", 600, 0)]).unwrap_err();
+    assert_eq!(code, "github::ci::pending");
+    let later = queued_suite("codecov", "Codecov", 601, 0);
+    assert_eq!(judged(&[later]), Ok(vec!["Codecov".to_owned()]));
+}
+
+#[test]
+fn an_old_app_suite_re_requested_two_minutes_ago_is_pending_and_one_left_alone_is_ignored() {
+    let mut suite = queued_suite("codecov", "Codecov", 1800, 0);
+    suite["updated_at"] = json!(before_noon(120));
+    let (code, _, _) = judged(std::slice::from_ref(&suite)).unwrap_err();
+    assert_eq!(code, "github::ci::pending");
+    suite["updated_at"] = json!(before_noon(1800));
+    assert!(judged(&[suite]).is_ok());
+}
+
+#[test]
+fn the_pending_hint_names_several_young_app_suites_in_the_plural() {
+    let suites = [
+        queued_suite("codecov", "Codecov", 60, 0),
+        queued_suite("review", "Reviewer", 60, 0),
+        queued_suite("lint", "Linter", 60, 0),
+    ];
+    let (_, _, hint) = judged(&suites).unwrap_err();
+    assert!(
+        hint.contains(
+            "the check suites of Codecov, Reviewer and Linter have no check runs, so they will \
+             be ignored once they have been idle for 10 minutes"
+        ),
         "{hint}"
     );
 }
 
 #[test]
 fn an_old_queued_app_suite_with_a_check_run_is_pending_and_its_twin_with_none_is_ignored() {
-    let (code, _, hint) = judged(&[queued_suite("codecov", "Codecov", 11, 1)]).unwrap_err();
+    let (code, _, hint) = judged(&[queued_suite("codecov", "Codecov", 660, 1)]).unwrap_err();
     assert_eq!(code, "github::ci::pending");
     assert!(!hint.contains("10 minutes"), "{hint}");
-    assert!(judged(&[queued_suite("codecov", "Codecov", 11, 0)]).is_ok());
+    assert!(judged(&[queued_suite("codecov", "Codecov", 660, 0)]).is_ok());
 }
 
 #[test]
 fn an_old_queued_github_actions_suite_with_no_check_runs_is_pending_and_another_apps_is_ignored() {
-    let actions = queued_suite("github-actions", "GitHub Actions", 11, 0);
+    let actions = queued_suite("github-actions", "GitHub Actions", 660, 0);
     let (code, checks, hint) = judged(&[actions]).unwrap_err();
     assert_eq!(code, "github::ci::pending");
     assert_eq!(checks, json!(["the check suite of GitHub Actions"]));
     assert!(!hint.contains("10 minutes"), "{hint}");
-    assert!(judged(&[queued_suite("codecov", "GitHub Actions", 11, 0)]).is_ok());
+    assert!(judged(&[queued_suite("codecov", "GitHub Actions", 660, 0)]).is_ok());
 }
 
 #[test]
 fn a_completed_failing_app_suite_with_no_check_runs_fails_and_its_passing_twin_is_admitted() {
-    let mut suite = queued_suite("codecov", "Codecov", 11, 0);
+    let mut suite = queued_suite("codecov", "Codecov", 660, 0);
     suite["status"] = json!("completed");
     suite["conclusion"] = json!("failure");
     let (code, checks, _) = judged(std::slice::from_ref(&suite)).unwrap_err();

@@ -126,6 +126,7 @@ fn app_suite(slug: &str, name: &str, status: &str, conclusion: Option<&str>, run
         "conclusion": conclusion,
         "app": {"slug": slug, "name": name},
         "created_at": "2026-11-19T10:49:00Z",
+        "updated_at": "2026-11-19T10:49:00Z",
         "latest_check_runs_count": runs,
     })
 }
@@ -340,4 +341,15 @@ fn ci_writes_the_run_past_an_old_app_suite_with_no_check_runs_and_its_twin_with_
             .len(),
         3
     );
+}
+
+#[test]
+fn ci_on_a_check_suite_whose_updated_at_holds_a_multi_byte_character_is_refused_and_its_twin_is_admitted()
+ {
+    let mut suites = suite("completed");
+    suites[0]["updated_at"] = json!("2026-11-19\u{e9}0:49:00Z");
+    let refused = refused_then_admitted(&passing(), &suites, &[]);
+    assert_eq!(refused["code"], "github::gh::failed");
+    let message = refused["message"].as_str().unwrap();
+    assert!(message.contains("is not an RFC 3339 time"), "{message}");
 }

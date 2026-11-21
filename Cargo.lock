@@ -289,7 +289,6 @@ dependencies = [
  "board-model",
  "board-ops",
  "board-plugin",
- "board-repos",
  "board-validate",
  "regex",
  "schemars",

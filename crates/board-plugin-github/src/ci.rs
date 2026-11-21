@@ -3,7 +3,7 @@
 //! writes the check runs as a run of the change's suite and attaches the
 //! run to the change.
 
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime};
 
 use board_ops::{Host, PluginError};
 use board_plugin::Target;
@@ -19,10 +19,10 @@ use crate::{gh, git, remote};
 /// The conclusions that count as passed.
 const PASSED: [&str; 3] = ["success", "skipped", "neutral"];
 
-/// How many seconds after GitHub creates a check suite of an app other
-/// than GitHub Actions, with no check runs, it stops counting. An app that
-/// runs creates its first check run within seconds.
-const IDLE: i64 = 600;
+/// How long after GitHub last updated a check suite of an app other than
+/// GitHub Actions, with no check runs, it stops counting. An app that runs
+/// creates its first check run within seconds.
+const IDLE: Duration = Duration::from_secs(600);
 
 /// Record the check runs GitHub reports for a change's head as a run of
 /// the change's suite, once every one has passed.
@@ -80,9 +80,10 @@ struct CheckSuite {
     status: String,
     conclusion: Option<String>,
     app: Option<App>,
-    /// Seconds since 1970 when GitHub created the suite.
-    #[serde(deserialize_with = "seconds")]
-    created_at: i64,
+    /// When GitHub last updated the suite: its creation, or a re-request
+    /// that queued it again.
+    #[serde(deserialize_with = "moment")]
+    updated_at: SystemTime,
     latest_check_runs_count: usize,
 }
 
@@ -95,28 +96,22 @@ struct App {
 impl CheckSuite {
     /// When it is an app's suite other than GitHub Actions' that has not
     /// completed and has no check runs, the app's name and whether it is
-    /// older than [`IDLE`] at `now`, so ignored.
-    fn idle(&self, now: i64) -> Option<(&str, bool)> {
+    /// idle for longer than [`IDLE`] at `now`, so ignored.
+    fn idle(&self, now: SystemTime) -> Option<(&str, bool)> {
         let app = self.app.as_ref()?;
         let idle = self.status != "completed"
             && self.latest_check_runs_count == 0
             && app.slug != "github-actions";
-        idle.then(|| (app.name.as_str(), now - self.created_at > IDLE))
+        let old = (now.duration_since(self.updated_at)).is_ok_and(|age| age > IDLE);
+        idle.then_some((app.name.as_str(), old))
     }
 }
 
-/// GitHub's `YYYY-MM-DDTHH:MM:SSZ` as seconds since 1970.
-fn seconds<'de, D: Deserializer<'de>>(deserializer: D) -> Result<i64, D::Error> {
+/// The moment GitHub's RFC 3339 text names.
+fn moment<'de, D: Deserializer<'de>>(deserializer: D) -> Result<SystemTime, D::Error> {
     let text = String::deserialize(deserializer)?;
-    let clock = |at: usize| text.get(at..at + 2)?.parse::<i64>().ok();
-    let read = || {
-        let date = board_repos::Date::parse(text.get(..10)?)?;
-        let shape = text.len() == 20 && text.ends_with('Z') && &text[10..11] == "T";
-        let (hour, minute, second) = (clock(11)?, clock(14)?, clock(17)?);
-        (shape && &text[13..14] == ":" && &text[16..17] == ":")
-            .then(|| date.days() * 86_400 + hour * 3600 + minute * 60 + second)
-    };
-    read().ok_or_else(|| D::Error::custom(format!("created_at {text} is not YYYY-MM-DDTHH:MM:SSZ")))
+    board_model::moment(&text)
+        .ok_or_else(|| D::Error::custom(format!("updated_at {text} is not an RFC 3339 time")))
 }
 
 /// What `gh api .../status` answers: the commit statuses, which CI
@@ -288,6 +283,25 @@ fn checked(name: &str, status: &str, conclusion: Option<&str>) -> Check {
     }
 }
 
+/// What the pending hint adds for the `young` apps' suites with no check
+/// runs: when they will be ignored, and to run `again` then.
+fn idle_hint(young: &[&str], again: &str) -> String {
+    let minutes = IDLE.as_secs() / 60;
+    let (suites, verbs) = match young {
+        [] => return String::new(),
+        [app] => (format!("check suite of {app}"), ["has", "it", "it has"]),
+        [apps @ .., last] => (
+            format!("check suites of {} and {last}", apps.join(", ")),
+            ["have", "they", "they have"],
+        ),
+    };
+    let [has, it, it_has] = verbs;
+    format!(
+        "; the {suites} {has} no check runs, so {it} will be ignored once {it_has} been idle for \
+         {minutes} minutes; run `{again}` again then"
+    )
+}
+
 /// The app names of the idle check suites it leaves out, or refuses with
 /// `github::ci::failed` naming each check that finished without passing,
 /// else `github::ci::pending` naming each not finished, else
@@ -300,9 +314,6 @@ pub(crate) fn judge(
     combined: &Combined,
     now: SystemTime,
 ) -> Result<Vec<String>, PluginError> {
-    let now = now.duration_since(UNIX_EPOCH).map_or(0, |since| {
-        i64::try_from(since.as_secs()).unwrap_or(i64::MAX)
-    });
     let (mut ignored, mut young) = (Vec::new(), Vec::new());
     let mut counted = Vec::new();
     for suite in &suites.check_suites {
@@ -354,16 +365,10 @@ pub(crate) fn judge(
         } else {
             "have not finished"
         };
-        let young = if young.is_empty() {
-            String::new()
-        } else {
-            format!(
-                "; the check suite of {} has no check runs, so it will be ignored once it is \
-                 10 minutes old; run `{again}` again then",
-                young.join(", ")
-            )
-        };
-        let hint = format!("wait for them to finish, then run `{again}` again{young}");
+        let hint = format!(
+            "wait for them to finish, then run `{again}` again{}",
+            idle_hint(&young, &again)
+        );
         ("github::ci::pending", verb, hint)
     } else if runs
         .iter()
