@@ -1,27 +1,24 @@
 //! `to`: copy a record and everything a reader needs into a mounted board.
 //!
-//! The set is the entry at the path, the entries under it, and every entry
-//! its records reference, followed transitively, inside this board's own
-//! tree. The references a record's schema declares are followed, including
-//! those in a Markdown file's frontmatter, and so is each absolute path a
-//! Markdown file's body names that holds a record or file. A reference to a
-//! directory reaches the entries under it; a body's path to one does not. A
-//! reference that resolves through a mount or link is not copied, and must
-//! resolve to the same repository in the destination; a body's path through
-//! one is listed and not copied. A link inside the set is refused. The plugin's own refusals are decided before anything is
-//! written, on a dry run too. Then one batch put writes the missing schemas
-//! and the set through the mount, which makes one commit in the mounted
-//! board and moves the mount's pin to it.
+//! `closure` finds the set. A typed reference through a mount or link must
+//! resolve to the same repository in the destination. A link inside the set
+//! is refused. The plugin's own refusals are decided before anything is
+//! written. Without `yes` the call is a preview: it writes nothing and
+//! prints the command that writes. With `yes`, a link or back-ref the share
+//! cannot copy is refused unless `allow-uncopied` is given. Then one batch
+//! put writes the missing schemas and the set through the mount, which makes
+//! one commit in the mounted board and moves the mount's pin to it.
 
 use std::collections::{BTreeMap, BTreeSet};
 
 use board_model::{
-    ATTACHMENT_TYPE, Fields, Location, LogicalPath, Object, PathError, Refusal, Source,
-    canonical_json, parse_json,
+    ATTACHMENT_TYPE, Fields, Location, LogicalPath, PathError, Refusal, canonical_json, parse_json,
 };
 use board_ops::{
     Absent, Board, Host, Limit, PluginError, RefsReport, literal, source_name, uri_of,
 };
+
+use crate::closure::{Closure, Extra, NotCopied, closure};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
@@ -45,31 +42,44 @@ pub(crate) struct Input {
     /// The mount record of the board to copy into, such as /team; the share writes through it. To share into a team's board, clone its repository, run `board init` there if it is empty, commit and push it, then write a `board/mount/v1` here, such as `/team`, whose `repo` is the clone, `follow` its local branch, such as `main`, and `commit` its HEAD. plugins/share/README.md, Setting up a shared board, gives the commands.
     #[schemars(length(min = 1), extend("format" = "board-path"))]
     to: String,
-    /// List what would be copied and the plugin's own refusals, and write nothing, when true. Board's checks for a write through a mount run only on the real call.
+    /// Write the copies, when true; without it the call lists what it would copy and writes nothing.
     #[serde(default)]
-    dry_run: bool,
+    yes: bool,
+    /// With yes, write the set even when a link or back-ref names something the share cannot copy, when true.
+    #[serde(default, rename = "allow-uncopied")]
+    allow_uncopied: bool,
     /// Copy an attachment whose bytes are on this machine, which other readers cannot fetch, when true.
     #[serde(default)]
     local_attachments: bool,
 }
 
-/// What the share copied, or would copy on a dry run.
+/// What the share copied, or would copy without `yes`.
 ///
-/// `repository` is the repository the mount reaches. `commit` is the commit
-/// in it that holds the copies, which the mount's pin now names, null when
-/// nothing was written. `types` are the types whose schemas were added in
-/// that commit. `copied` lists at most 100 paths; `total` counts them all,
-/// and `truncated` says whether some were left out. `uris` gives the
-/// board:// URI of each path `copied` lists, in order, by which a reader
-/// with a clone of the destination reads it, and is empty when the
-/// destination's repository has no origin. `unchanged` counts the paths
-/// the destination already held equally. `not_copied` lists, at most 100,
-/// the paths a copied Markdown body names that the share leaves behind, and
-/// `not_copied_total` counts them all.
+/// `shared` is the path shared. `extras` lists, at most 100, the paths in
+/// the set outside it, each with `via`, how it was reached (`ref`, `link`
+/// or `back_ref`), and `from`, the entry that reached it first;
+/// `extras_total` counts them all. `not_copied` lists, at most 100, the
+/// link and back-ref targets the share leaves behind, each with its
+/// `reason` and `from`; `not_copied_total` counts them all. `next` is the
+/// command that writes, null after a write. `repository` is the repository
+/// the mount reaches. `commit` is the commit in it that holds the copies,
+/// which the mount's pin now names, null when nothing was written. `types`
+/// are the types whose schemas were, or would be, added. `copied` lists at
+/// most 100 paths; `total` counts them all, and `truncated` says whether
+/// some were left out. `uris` gives the board:// URI of each path `copied`
+/// lists, in order, by which a reader with a clone of the destination reads
+/// it, and is empty when the destination's repository has no origin.
+/// `unchanged` counts the paths the destination already held equally.
 #[derive(Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 #[schemars(rename = "ToOutput")]
 pub(crate) struct Output {
+    shared: String,
+    extras: Vec<Extra>,
+    extras_total: usize,
+    not_copied: Vec<NotCopied>,
+    not_copied_total: usize,
+    next: Option<String>,
     repository: String,
     commit: Option<String>,
     types: Vec<String>,
@@ -78,29 +88,6 @@ pub(crate) struct Output {
     total: usize,
     truncated: bool,
     unchanged: usize,
-    not_copied: Vec<NotCopied>,
-    not_copied_total: usize,
-}
-
-/// A path a copied Markdown body names that the share does not copy, why,
-/// and the file that names it first.
-#[derive(Clone, Serialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct NotCopied {
-    path: String,
-    reason: Reason,
-    named_by: String,
-}
-
-/// Why a named path is not copied: it is a directory, whose entries are
-/// not copied; it resolves through a mount or a link; or it names nothing.
-#[derive(Clone, Copy, Serialize, JsonSchema)]
-#[serde(rename_all = "lowercase")]
-pub(crate) enum Reason {
-    Directory,
-    Mount,
-    Link,
-    Missing,
 }
 
 /// What a batch line writes at a path: a record, or a text file.
@@ -110,18 +97,27 @@ pub(crate) enum Line {
     Text(String),
 }
 
-/// Copies `path`'s set into the board mounted at `to`, or lists it on a dry
-/// run.
+/// Copies `path`'s set into the board mounted at `to` with `yes`, or lists
+/// it without.
 pub(crate) fn share_to(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
     let Input {
         path,
         to,
-        dry_run,
+        yes,
+        allow_uncopied,
         local_attachments,
     } = PluginError::read_input("share", "to", input)?;
     let (repository, _) = mount(host, &to)?;
-    let (found, mounted, not_copied) = closure(host, &path)?;
+    let Closure {
+        found,
+        mounted,
+        extras,
+        not_copied,
+    } = closure(host, &path)?;
     unresolved(host, &to, &mounted)?;
+    if yes && !allow_uncopied {
+        uncopied(&not_copied)?;
+    }
     let (lines, types) = read(host, &found, local_attachments)?;
     let targets: Vec<String> = lines.keys().map(|target| format!("{to}{target}")).collect();
     let mut unchanged = BTreeSet::new();
@@ -136,21 +132,7 @@ pub(crate) fn share_to(host: &dyn Host, input: &Value) -> Result<Value, PluginEr
         }
     }
     let local: Vec<String> = types.iter().map(|name| schema_path(name)).collect();
-    let mut schemas = BTreeMap::new();
-    for (name, read) in types.iter().zip(get(host, &local)?) {
-        let bytes = read.map_err(|refusal| PluginError::board_refused("share", "get", &refusal))?;
-        // The index refuses every record of a type whose schema does not
-        // parse, so this is reached only when the tree changed between the
-        // query and this read.
-        let Ok(schema) = serde_json::from_slice::<Value>(&bytes) else {
-            return Err(refusal(
-                "share::record::invalid",
-                "this board's schema does not parse as JSON at",
-                &[schema_path(name)],
-            ));
-        };
-        schemas.insert(name.clone(), schema);
-    }
+    let schemas = schemas(host, &types, &local)?;
     let there: Vec<String> = local.iter().map(|schema| format!("{to}{schema}")).collect();
     let mut missing = Vec::new();
     for ((name, schema), now) in schemas.iter().zip(held(host, &there)?) {
@@ -169,7 +151,7 @@ pub(crate) fn share_to(host: &dyn Host, input: &Value) -> Result<Value, PluginEr
         .filter(|target| !unchanged.contains(*target))
         .collect();
     let mut commit = None;
-    if !(dry_run || missing.is_empty() && copied.is_empty()) {
+    if yes && !(missing.is_empty() && copied.is_empty()) {
         let mut batch: Vec<Value> = (missing.iter())
             .map(|name| json!({"path": format!("{to}{}", schema_path(name)), "record": schemas[name]}))
             .collect();
@@ -186,11 +168,19 @@ pub(crate) fn share_to(host: &dyn Host, input: &Value) -> Result<Value, PluginEr
         })?;
         commit = Some(mount(host, &to)?.1);
     }
+    let next = (!yes).then(|| next(&path, &to, local_attachments, !not_copied.is_empty()));
+    let (extras, extras_total) = capped(extras, LIST_LIMIT);
     let (not_copied, not_copied_total) = capped(not_copied, LIST_LIMIT);
     let listed: Vec<String> = (copied.iter().take(LIST_LIMIT))
         .map(|target| (*target).clone())
         .collect();
     let output = Output {
+        shared: path,
+        extras,
+        extras_total,
+        not_copied,
+        not_copied_total,
+        next,
         uris: uris(&repository, &listed),
         repository,
         commit,
@@ -199,10 +189,50 @@ pub(crate) fn share_to(host: &dyn Host, input: &Value) -> Result<Value, PluginEr
         total: copied.len(),
         truncated: copied.len() > LIST_LIMIT,
         unchanged: unchanged.len(),
-        not_copied,
-        not_copied_total,
     };
     Ok(serde_json::to_value(output).expect("the output is strings, numbers and booleans"))
+}
+
+/// The schema of each of `types`, read from `local`, this board's paths of
+/// them.
+fn schemas(
+    host: &dyn Host,
+    types: &[String],
+    local: &[String],
+) -> Result<BTreeMap<String, Value>, PluginError> {
+    let mut schemas = BTreeMap::new();
+    for (name, read) in types.iter().zip(get(host, local)?) {
+        let bytes = read.map_err(|refusal| PluginError::board_refused("share", "get", &refusal))?;
+        // The index refuses every record of a type whose schema does not
+        // parse, so this is reached only when the tree changed between the
+        // query and this read.
+        let Ok(schema) = serde_json::from_slice::<Value>(&bytes) else {
+            return Err(refusal(
+                "share::record::invalid",
+                "this board's schema does not parse as JSON at",
+                &[schema_path(name)],
+            ));
+        };
+        schemas.insert(name.clone(), schema);
+    }
+    Ok(schemas)
+}
+
+/// The command that writes what the preview of sharing `path` to `to`
+/// lists.
+fn next(path: &str, to: &str, local_attachments: bool, uncopied: bool) -> String {
+    let mut next = format!(
+        "board share to --path {} --to {} --yes",
+        quote(path),
+        quote(to)
+    );
+    if local_attachments {
+        next.push_str(" --local_attachments");
+    }
+    if uncopied {
+        next.push_str(" --allow-uncopied");
+    }
+    next
 }
 
 /// The first `cap` of `items`, and how many there were.
@@ -259,177 +289,27 @@ fn mount(host: &dyn Host, to: &str) -> Result<(String, String), PluginError> {
     }
 }
 
-/// What [`closure`] finds.
-type Closure = (Vec<String>, BTreeMap<String, String>, Vec<NotCopied>);
-
-/// The paths to copy, sorted, each reference through a mount or link with
-/// the repository it reaches, and the paths Markdown bodies name that are
-/// not copied, sorted.
-///
-/// The references a record's schema declares are followed, and so are the
-/// paths a Markdown file's body names (`named`) that hold a record or file
-/// in this board's own tree. A relative link is not followed, so a copied
-/// note's links may dangle in the destination, where `board check` reports
-/// them.
-fn closure(host: &dyn Host, path: &str) -> Result<Closure, PluginError> {
-    let mut found = entries(host, &under(&[path.to_owned()]))?;
-    if found.is_empty() {
-        return Err(PluginError {
-            code: "share::path::not_found".to_owned(),
-            message: format!("{path} names nothing in this board's own tree"),
-            fields: Map::new(),
-            hint: None,
-        });
+/// Refuses, naming each with its reason, the link and back-ref targets the
+/// share cannot copy.
+fn uncopied(not_copied: &[NotCopied]) -> Result<(), PluginError> {
+    if not_copied.is_empty() {
+        return Ok(());
     }
-    let mut mounted = BTreeMap::new();
-    let mut left = BTreeMap::new();
-    let mut frontier = found.clone();
-    while !frontier.is_empty() {
-        let mut reached = BTreeSet::new();
-        let asked: Vec<LogicalPath> = (records(&frontier).iter())
-            .map(|record| logical(record, "refs"))
-            .collect::<Result<_, _>>()?;
-        for report in reports(host, &asked)?.into_iter().flatten() {
-            for reference in report.from {
-                let Some(location) = reference.location.filter(|_| !reference.link) else {
-                    continue;
-                };
-                if !location.pointers.is_empty() || location.board.source != Source::WorkingTree {
-                    mounted.insert(reference.target.to_string(), repository(&location));
-                } else if let Some(display) = location.display_path() {
-                    let display = display.to_string();
-                    if !found.contains_key(&display) {
-                        reached.insert(display);
-                    }
-                }
-            }
-        }
-        let mut named = BTreeMap::new();
-        let markdown: Vec<String> = (frontier.keys())
-            .filter(|target| std::path::Path::new(target).extension() == Some("md".as_ref()))
-            .cloned()
-            .collect();
-        for (file, read) in markdown.iter().zip(get(host, &markdown)?) {
-            let bytes =
-                read.map_err(|refusal| PluginError::board_refused("share", "get", &refusal))?;
-            let Ok(text) = String::from_utf8(bytes) else {
-                continue;
-            };
-            for target in crate::named::named(&text) {
-                named
-                    .entry(target.to_string())
-                    .or_insert_with(|| file.clone());
-            }
-        }
-        named.retain(|target, _| {
-            !(found.contains_key(target) || reached.contains(target) || left.contains_key(target))
-        });
-        if reached.is_empty() && named.is_empty() {
-            break;
-        }
-        let listed: Vec<String> = (reached.iter().chain(named.keys()))
-            .map(|target| literal(target))
-            .collect();
-        let mut held = entries(host, &format!("logical IN ({})", listed.join(", ")))?;
-        // A body's path is copied only when it holds a record or file.
-        held.retain(|target, kind| {
-            !named.contains_key(target) || kind == "record" || kind == "file"
-        });
-        named.retain(|target, _| !held.contains_key(target));
-        left.extend(uncopied(host, path, named)?);
-        // A reference to a directory has no entry of its own, and reaches
-        // the entries under it.
-        let directories: Vec<String> = (reached.into_iter())
-            .filter(|target| !held.contains_key(target))
-            .collect();
-        held.extend(entries(host, &under(&directories))?);
-        held.retain(|target, _| !found.contains_key(target));
-        frontier = held.clone();
-        found.extend(held);
-    }
-    let left = (left.into_iter())
-        .map(|(path, (reason, named_by))| NotCopied {
-            path,
-            reason,
-            named_by,
-        })
+    let paths: Vec<String> = not_copied.iter().map(|left| left.path.clone()).collect();
+    let named: Vec<String> = (not_copied.iter())
+        .map(|left| format!("{} ({})", left.path, left.reason.name()))
         .collect();
-    Ok((found.into_keys().collect(), mounted, left))
-}
-
-/// Why each of `named`, the paths a body names that hold no record or
-/// file here, is not copied, with the file that names it. A directory
-/// under `shared`, whose entries the share copies, is left out.
-fn uncopied(
-    host: &dyn Host,
-    shared: &str,
-    named: BTreeMap<String, String>,
-) -> Result<BTreeMap<String, (Reason, String)>, PluginError> {
-    let (paths, files): (Vec<String>, Vec<String>) = named.into_iter().unzip();
-    let asked: Vec<LogicalPath> = (paths.iter())
-        .map(|target| logical(target, "refs"))
-        .collect::<Result<_, _>>()?;
-    let answers = (host.refs(&asked, Absent::Refuse, &[]))
-        .map_err(|error| PluginError::board_refused("share", "refs", &error.refusal()))?;
-    let inside = format!("{shared}/");
-    Ok((paths.into_iter().zip(files).zip(answers))
-        .filter_map(|((target, file), answer)| {
-            let reason = answer.map_or(Reason::Missing, |report| reason(&report.location));
-            let copied = matches!(reason, Reason::Directory) && target.starts_with(&inside);
-            (!copied).then_some((target, (reason, file)))
-        })
-        .collect())
-}
-
-/// Why a share does not copy what a body's path resolves to: a pointer
-/// to another repository is a mount, one inside this board a link.
-fn reason(location: &Location) -> Reason {
-    match location.pointers.first() {
-        Some(pointer) if pointer.board.repository == location.board.repository => Reason::Link,
-        Some(_) => Reason::Mount,
-        None if location.board.source != Source::WorkingTree => Reason::Mount,
-        None if location.object == Object::Directory => Reason::Directory,
-        None => Reason::Missing,
-    }
-}
-
-/// The paths among `kinds` that hold records, sorted: the entries whose
-/// references a share follows.
-fn records(kinds: &BTreeMap<String, String>) -> Vec<String> {
-    (kinds.iter())
-        .filter(|(_, kind)| *kind == "record")
-        .map(|(target, _)| target.clone())
-        .collect()
-}
-
-/// An `entries` condition matching each of `paths` and every entry under
-/// it, and nothing when there are none.
-fn under(paths: &[String]) -> String {
-    if paths.is_empty() {
-        return "0".to_owned();
-    }
-    let conditions: Vec<String> = (paths.iter())
-        .map(|path| {
-            let (path, prefix) = (literal(path), literal(&format!("{path}/")));
-            format!("logical = {path} OR substr(logical, 1, length({prefix})) = {prefix}")
-        })
-        .collect();
-    conditions.join(" OR ")
-}
-
-/// The logical path and kind of each entry in this board's own tree that
-/// matches `condition`.
-fn entries(host: &dyn Host, condition: &str) -> Result<BTreeMap<String, String>, PluginError> {
-    let sql =
-        format!("SELECT logical, kind FROM entries WHERE source = 'worktree' AND ({condition})");
-    let rows = query(host, &sql)?;
-    Ok(rows
-        .into_iter()
-        .filter_map(|row| match row.as_slice() {
-            [Value::String(logical), Value::String(kind)] => Some((logical.clone(), kind.clone())),
-            _ => None,
-        })
-        .collect())
+    let mut refused = refusal(
+        "share::closure::uncopied",
+        "a link or back-ref names what the share cannot copy:",
+        &named,
+    );
+    refused.fields.insert("paths".to_owned(), json!(paths));
+    refused.hint = Some(
+        "change the records, or run the call again with --allow-uncopied to share without them"
+            .to_owned(),
+    );
+    Err(refused)
 }
 
 /// Refuses each reference through a mount or link that the destination
@@ -617,6 +497,16 @@ pub(crate) fn scheme(url: &str) -> String {
     }
 }
 
+/// `text` quoted for a POSIX shell, as Python's `shlex.quote` quotes it.
+fn quote(text: &str) -> String {
+    let safe =
+        |character: char| character.is_ascii_alphanumeric() || "@%+=:,./-_".contains(character);
+    if !text.is_empty() && text.chars().all(safe) {
+        return text.to_owned();
+    }
+    format!("'{}'", text.replace('\'', "'\"'\"'"))
+}
+
 /// The logical path of a type's schema.
 fn schema_path(record_type: &str) -> String {
     format!("/.board/types/{record_type}.schema")
@@ -671,7 +561,10 @@ fn get(host: &dyn Host, paths: &[String]) -> Result<Vec<Read>, PluginError> {
 /// Answers `paths` as `board refs` does: each one's report, or none where
 /// nothing is there. Board's other refusals are `share::board::refused`,
 /// as the Python plugin's were.
-fn reports(host: &dyn Host, paths: &[LogicalPath]) -> Result<Vec<Option<RefsReport>>, PluginError> {
+pub(crate) fn reports(
+    host: &dyn Host,
+    paths: &[LogicalPath],
+) -> Result<Vec<Option<RefsReport>>, PluginError> {
     let refused = |refusal: &Refusal| PluginError::board_refused("share", "refs", refusal);
     let answers =
         (host.refs(paths, Absent::Refuse, &[])).map_err(|error| refused(&error.refusal()))?;
@@ -699,7 +592,7 @@ fn refs(host: &dyn Host, paths: &[LogicalPath]) -> Result<Vec<Option<Location>>,
 }
 
 /// The rows `sql` selects, all of them.
-fn query(host: &dyn Host, sql: &str) -> Result<Vec<Vec<Value>>, PluginError> {
+pub(crate) fn query(host: &dyn Host, sql: &str) -> Result<Vec<Vec<Value>>, PluginError> {
     let report = (host.query(sql, Limit::ALL))
         .map_err(|error| PluginError::board_refused("share", "query", &error.refusal()))?;
     Ok(report.rows)
@@ -707,7 +600,7 @@ fn query(host: &dyn Host, sql: &str) -> Result<Vec<Vec<Value>>, PluginError> {
 
 /// `path` as a logical path, or `share::board::refused` with Board's code
 /// when it is not one, as `board <command>` would refuse it.
-fn logical(path: &str, command: &str) -> Result<LogicalPath, PluginError> {
+pub(crate) fn logical(path: &str, command: &str) -> Result<LogicalPath, PluginError> {
     path.parse().map_err(|error: PathError| {
         let refusal = Refusal::new(error.code(), &error, &Fields::default());
         PluginError::board_refused("share", command, &refusal)
@@ -715,7 +608,7 @@ fn logical(path: &str, command: &str) -> Result<LogicalPath, PluginError> {
 }
 
 /// The repository a location is in, as `board refs` prints it.
-fn repository(location: &Location) -> String {
+pub(crate) fn repository(location: &Location) -> String {
     location.board.repository.to_string_lossy().into_owned()
 }
 

@@ -111,6 +111,13 @@ fn the_manifest_parses_as_a_built_in_one_and_describes_the_plugin_with_the_skill
         .collect();
     assert_eq!(names, ["to"]);
     assert_eq!(super::manifest()["description"], skill_description());
+    let start = "Start with `board -C <board> share to --path /<record> --to /<mount>`, which \
+                 lists";
+    assert!(
+        skill_description().contains(start),
+        "{}",
+        skill_description()
+    );
 }
 
 #[test]
@@ -129,8 +136,12 @@ fn every_input_property_carries_a_sentence_that_says_what_it_means() {
         );
         described.push(name.as_str());
     }
-    assert_eq!(described, ["dry_run", "local_attachments", "path", "to"]);
-    for flag in ["dry_run", "local_attachments"] {
+    assert_eq!(
+        described,
+        ["allow-uncopied", "local_attachments", "path", "to", "yes"]
+    );
+    for flag in ["allow-uncopied", "local_attachments", "yes"] {
+        assert_eq!(input["properties"][flag]["type"], "boolean", "{flag}");
         assert_eq!(input["properties"][flag]["default"], false, "{flag}");
     }
     for path in ["path", "to"] {

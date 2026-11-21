@@ -1,6 +1,6 @@
 //! The share plugin built into Board (plugins/share/README.md).
 
-mod named;
+mod closure;
 mod to;
 
 use board_model::{CapabilityName, RecordType};
@@ -50,16 +50,18 @@ fn manifest() -> Value {
         "version": "0.1.0",
         // SKILL.md's description, the callout an agent sees first.
         "description": "Copy a record from this board into a mounted board, such as a team's, with \
-            its children, every record and file it references and the schemas of their types, so \
-            a reader there can open it. Use it when someone else needs to read a record you wrote. \
-            Start with `board -C <board> share to --path /<record> --to /<mount> --dry_run \
-            true`, which lists what would be copied. SKILL.md and README.md in the plugin's \
-            directory say more.",
+            its children, the records and files it references or links to, the records that \
+            reference it and the schemas of their types, so a reader there can open it. Use it \
+            when someone else needs to read a record you wrote. Start with `board -C <board> \
+            share to --path /<record> --to /<mount>`, which lists what would be copied and \
+            prints the command that writes it. SKILL.md and README.md in the plugin's directory \
+            say more.",
         "metadata": {"area": "sharing"},
         "capabilities": [{
             "name": "to",
-            "description": "Copy a record, its children, everything they reference and the schemas \
-                it lacks into a mounted board, as one commit there, and move the mount's pin to it.",
+            "description": "Copy a record, its children, what they reference or link to, the records \
+                that reference it and the schemas it lacks into a mounted board, as one commit \
+                there, and move the mount's pin to it; without yes, list them and write nothing.",
             "inputSchema": schema_of::<to::Input>(SchemaSettings::draft2020_12()),
             "outputSchema": schema_of::<to::Output>(SchemaSettings::draft2020_12().for_serialize()),
             "annotations": {

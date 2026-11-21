@@ -1,6 +1,6 @@
 ---
 name: share
-description: 'Copy a record from this board into a mounted board, such as a team''s, with its children, every record and file it references and the schemas of their types, so a reader there can open it. Use it when someone else needs to read a record you wrote. Start with `board -C <board> share to --path /<record> --to /<mount> --dry_run true`, which lists what would be copied. SKILL.md and README.md in the plugin''s directory say more.'
+description: 'Copy a record from this board into a mounted board, such as a team''s, with its children, the records and files it references or links to, the records that reference it and the schemas of their types, so a reader there can open it. Use it when someone else needs to read a record you wrote. Start with `board -C <board> share to --path /<record> --to /<mount>`, which lists what would be copied and prints the command that writes it. SKILL.md and README.md in the plugin''s directory say more.'
 ---
 
 # share
@@ -15,11 +15,23 @@ Copy a record you wrote into a board other people read.
    follows, as any write through a mount does. Run
    `board -C <board> mount update /<mount>` first if the mount's repository
    has moved on since its pin.
-2. Run `board -C <board> share to --path /<record> --to /<mount>
-   --dry_run true`. A flag is named after the input property, with an
-   underscore; `--dry-run` is refused with `board::cli::usage`. It lists what would be copied and the schemas the
-   destination lacks, or refuses with the reason. Nothing is written. Board's
-   checks for a write through a mount run only in step 4.
+2. Run `board -C <board> share to --path /<record> --to /<mount>`. This is
+   the preview, and it writes nothing. A flag is named after the input
+   property; `--dry-run` and `--allow_uncopied` are refused with
+   `board::cli::usage`. The preview prints `copied`, the schemas the
+   destination lacks in `types`, and:
+   - `extras`: each record or file outside `/<record>` that goes with it,
+     with `via` and `from`. `ref` is a typed reference, `link` a Markdown
+     link, and `back_ref` a record whose typed reference names the shared
+     record or an entry under it, such as a decision whose `project` names
+     the shared project.
+   - `not_copied`: each link or back-ref target the share cannot copy, with
+     its `reason`: `directory`, `mount`, `link` or `missing`.
+   - `next`: the command that writes.
+
+   Read `extras` and `not_copied` and agree to them before you go on, or
+   change the records so the set holds what you mean to share. Board's checks
+   for a write through a mount run only in step 4.
 3. Fix what it refuses:
    - `share::path::not_found`: `--path` names nothing in this board's own
      tree. Check the path with `board -C <board> ls`; a record read through
@@ -46,12 +58,11 @@ Copy a record you wrote into a board other people read.
      Move it out of the set.
    - `share::record::invalid`: `board check` reports a listed record, and
      `board put` would refuse it. Fix the record first.
-
-   The share follows only what records reference. A copied note's links are
-   not followed, so a note it links to is not copied. Share that note with
-   its own call, or reference it from a record in the set.
-4. Run the same call without `--dry_run`. It writes the copies through the
-   mount as one commit in the mounted repository and moves the mount's pin
+   - `share::closure::uncopied`: with `--yes`, a link or back-ref names
+     what the share cannot copy. Change the record, or run the command
+     `next` printed, which adds `--allow-uncopied` and shares without them.
+4. Run the command `next` printed, which adds `--yes`. It writes the copies
+   through the mount as one commit in the mounted repository and moves the mount's pin
    to it. It does not push. A refusal with `share::board::refused` carries
    Board's own code, and for a refused batch `refusals` names each path and
    its code: fix what it names and run the call again.
