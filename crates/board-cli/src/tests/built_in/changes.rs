@@ -10,6 +10,7 @@ use std::path::PathBuf;
 
 use super::*;
 
+mod approve;
 mod authoring;
 mod brief;
 mod flows;
@@ -766,7 +767,8 @@ fn board_lists_the_plugin_as_enabled_and_enabling_wrote_the_schema_it_ships() {
             "drop",
             "migrate",
             "run",
-            "stop"
+            "stop",
+            "approve"
         ])
     );
     for (kind, schema) in [

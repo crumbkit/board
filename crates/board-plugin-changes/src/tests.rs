@@ -94,6 +94,7 @@ fn the_manifest_parses_as_a_built_in_one_with_each_capabilitys_variables_and_tim
                 Some(3600)
             ),
             ("stop", vec![], None),
+            ("approve", vec![], None),
         ]
     );
 }
@@ -193,6 +194,7 @@ fn every_input_property_carries_a_sentence_that_says_what_it_means() {
         "migrate.attempts",
         "migrate.flows",
         "migrate.plans",
+        "approve.path",
     ];
     expected.sort_unstable();
     assert_eq!(described, expected);

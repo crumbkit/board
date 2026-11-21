@@ -5,6 +5,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::LazyLock;
 
+use board_model::Refusal;
 use board_plugin::shape::Open;
 use regex::Regex;
 use schemars::JsonSchema;
@@ -132,6 +133,19 @@ pub(crate) struct Observed {
     pub(crate) on_planned_unread: Option<String>,
     /// Which rules a `planned-rule-paths` check names the board holds.
     pub(crate) held: BTreeSet<String>,
+    /// The owner's Touch ID approval of `changes.approve` for the change.
+    pub(crate) approval: Approval,
+}
+
+/// What `Host::decided` found of the owner's approval of `changes.approve`
+/// for the change's current plan and its content: none, the owner's
+/// signed approval, or Board's refusal to read it.
+#[derive(Debug, Default, PartialEq, Eq)]
+pub(crate) enum Approval {
+    #[default]
+    None,
+    Signed,
+    Unread(Box<Refusal>),
 }
 
 impl Observed {
@@ -165,6 +179,7 @@ impl Observed {
             on_planned: Vec::new(),
             on_planned_unread: None,
             held: BTreeSet::new(),
+            approval: Approval::None,
         }
     }
 
@@ -262,6 +277,7 @@ pub(crate) enum Read {
     Exists,
     Absent,
     PlannedRules,
+    Approval,
 }
 
 /// What `checks` read, by their kinds. A waivable check reads the
@@ -291,6 +307,9 @@ pub(crate) fn reads(checks: &[flow::Check]) -> BTreeSet<Read> {
         let needs: &[Read] = match kind {
             CheckKind::Sections | CheckKind::Considered => &[Read::Plan],
             CheckKind::Mockups => &[Read::Plan, Read::References],
+            CheckKind::Records if kinds::answers_count(each) => {
+                &[Read::Plan, Read::References, Read::Approval]
+            }
             CheckKind::Records if refs => &[Read::Plan, Read::References],
             CheckKind::Understood
             | CheckKind::Records
@@ -553,6 +572,17 @@ fn signed_decisions(observed: &Observed) -> impl Iterator<Item = (&str, &Map<Str
 fn owner_signed(body: &Map<String, Value>) -> bool {
     let person = (body.get("by").and_then(|by| by.get("person"))).and_then(Value::as_str);
     !truthy(body.get("written_by")) && person.is_some_and(|person| !person.is_empty())
+}
+
+/// Whether owner checks count the answer `body`: a `by.person` or a
+/// `written_by` that is a string and not empty. On an answer, `written_by`
+/// names the owner's surface that wrote it.
+fn owner_answered(body: &Map<String, Value>) -> bool {
+    let person = (body.get("by").and_then(|by| by.get("person"))).and_then(Value::as_str);
+    let surface = body.get("written_by").and_then(Value::as_str);
+    [person, surface]
+        .into_iter()
+        .any(|each| each.is_some_and(|text| !text.is_empty()))
 }
 
 /// Whether a value is set as Python reads it: not null, false, zero or empty.

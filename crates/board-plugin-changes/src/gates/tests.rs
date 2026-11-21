@@ -283,11 +283,73 @@ fn signers() -> [(&'static str, Value, bool); 4] {
 /// Whether `counts` passes each of [`signers`], by name, beside whether
 /// it should, so one assertion shows every case that differs.
 pub(crate) fn judged(counts: impl Fn(&Value) -> bool) -> [Vec<(&'static str, bool)>; 2] {
-    let (got, wanted) = (signers().into_iter())
+    compared(signers(), counts)
+}
+
+/// The ways an answer says who wrote it, each with whether an owner check
+/// counts it: one that names a person, or a surface of the owner's in
+/// `written_by`, counts; one with neither, or with either not a string,
+/// does not.
+fn answerers() -> [(&'static str, Value, bool); 8] {
+    [
+        (
+            "no person",
+            json!({"by": {"program": "claude-code", "session": "s"}}),
+            false,
+        ),
+        (
+            "empty person",
+            json!({"by": {"person": "", "program": "claude-code"}}),
+            false,
+        ),
+        (
+            "the pane's",
+            json!({"by": {"session": "local_1"}, "written_by": "plans/pane-answer"}),
+            true,
+        ),
+        (
+            "/ask's with a person",
+            json!({"by": {"person": PERSON}, "written_by": "claude-code/ask"}),
+            true,
+        ),
+        ("the owner's", json!({"by": {"person": PERSON}}), true),
+        ("a person not a string", json!({"by": {"person": 1}}), false),
+        (
+            "written_by not a string",
+            json!({"by": {"session": "s"}, "written_by": ["plans/pane-answer"]}),
+            false,
+        ),
+        (
+            "empty written_by",
+            json!({"by": {"session": "s"}, "written_by": ""}),
+            false,
+        ),
+    ]
+}
+
+/// Whether `counts` passes each of [`answerers`], by name, beside whether
+/// it should.
+pub(crate) fn answered(counts: impl Fn(&Value) -> bool) -> [Vec<(&'static str, bool)>; 2] {
+    compared(answerers(), counts)
+}
+
+fn compared<const N: usize>(
+    table: [(&'static str, Value, bool); N],
+    counts: impl Fn(&Value) -> bool,
+) -> [Vec<(&'static str, bool)>; 2] {
+    let (got, wanted) = (table.into_iter())
         .map(|(signer, fields, counted)| ((signer, counts(&fields)), (signer, counted)))
         .unzip();
     [got, wanted]
 }
+
+/// What the owner-approval check of the fixture change says when nothing
+/// passes it.
+const UNMET: &str = "no plans/decision/v1 that the owner signed with by.person whose refs name \
+     the plan or the change is attached, nor a plans/answer/v1 from the owner (one that names \
+     `by.person`, or was written through the owner's questions pane, Board.app or /ask) whose \
+     chosen option, in its attached question, names /changes/t, nor the owner's Touch ID \
+     approval of changes.approve for the current plan";
 
 /// `body` with each of `fields` over it.
 pub(crate) fn by(mut body: Value, fields: &Value) -> Value {
@@ -428,16 +490,10 @@ fn the_owners_answer_whose_chosen_option_names_the_change_meets_owner_approval()
             .records(records)
             .check("owner-approval")
     };
-    let [got, wanted] = judged(|fields| approval(answer(PATH, "a", fields)).0 == "pass");
+    let [got, wanted] = answered(|fields| approval(answer(PATH, "a", fields)).0 == "pass");
     assert_eq!(got, wanted);
     let owners = json!({"by": {"person": PERSON}});
-    let unmet = (
-        "missing",
-        "no plans/decision/v1 that the owner signed with by.person whose refs name the plan or \
-         the change is attached, nor a plans/answer/v1 of the owner's whose chosen option, in \
-         its attached question, names /changes/t"
-            .to_owned(),
-    );
+    let unmet = ("missing", UNMET.to_owned());
     let paths = [
         "/changes/other",
         "/changes/t-two",
@@ -449,8 +505,6 @@ fn the_owners_answer_whose_chosen_option_names_the_change_meets_owner_approval()
     }
     // The other option, though the answer's words name the change.
     assert_eq!(approval(answer(PATH, "b", &owners)), unmet);
-    let hook = json!({"by": {"person": PERSON}, "written_by": "hook"});
-    assert_eq!(approval(answer(PATH, "a", &hook)), unmet);
     let program = json!({"by": {"program": "claude-code"}});
     assert_eq!(approval(answer(PATH, "a", &program)), unmet);
     // The answer alone, without its question attached.
@@ -1374,4 +1428,5 @@ fn a_records_check_reads_an_attempt_whichever_type_it_has_and_not_a_record_of_an
 
 mod answers;
 mod design;
+mod owner_answers;
 mod rechecks;

@@ -3,7 +3,7 @@ import type { On } from 'claude-code'
 import type { Engine } from 'claude-code/testing'
 
 import { bandRows } from '../hooks/band'
-import { blocking, countBadge, NAMES, parseWaiting, questionsLabel, report, REPORT_SQL, waitingLabel } from '../hooks/plans'
+import { approvalText, blocking, countBadge, NAMES, namesWhole, parseWaiting, questionsLabel, report, REPORT_SQL, waitingLabel } from '../hooks/plans'
 
 // These prove what the band and the panes draw, which `board` commands the
 // mod runs with which flags, and what the asking sessions are sent. `board`
@@ -61,6 +61,8 @@ type Answers = {
   waiting?: () => { exitCode: number; stdout: string }
   /** What plans.answer answers, or `timeout` when its run rejects; by default it records the answer. */
   answer?: () => { exitCode: number; stdout: string } | 'timeout'
+  /** What changes.approve answers; by default it asks the owner. */
+  approve?: () => { exitCode: number; stdout: string }
   delivered?: boolean
   report?: string
   host?: string | null
@@ -90,6 +92,9 @@ function engine(on: On, answers: Answers = {}) {
       if (result === 'timeout') throw new Error('timed out after 15000 ms')
       if (result.exitCode === 0) questions = questions.filter(q => q.path !== MERGE.path)
       return { value: { ...result, ...whole } }
+    }
+    if (args[1] === 'changes.approve') {
+      return { value: { ...(answers.approve?.() ?? { exitCode: 0, stdout: JSON.stringify({ schema: 'board/call-report/v2', data: { output: { state: 'asked' } } }) }), ...whole } }
     }
     if (args[0] === 'call') return { value: { ...(answers.open?.() ?? { exitCode: 0, stdout: opened(questions) }), ...whole } }
     return { value: { exitCode: 0, stdout: answers.report ?? rows(['kind', 'path', 'at', 'title', 'detail'], [['since', null, '2026-10-24 07:00:00', null, null]]), ...whole } }
@@ -520,4 +525,72 @@ test('a question shows the change it blocks by name, or the work in words, or no
   expect(blocking({ blocks: '/changes/fix-the-sync', blocked_work: 'the release' })).toBe(' · blocks fix-the-sync')
   expect(blocking({ blocks: null, blocked_work: 'the release' })).toBe(' · blocks the release')
   expect(blocking({ blocks: null, blocked_work: null })).toBe('')
+})
+
+test('an answer whose chosen option names the change it was attached to asks the owner to approve that change, and one that names no change does not', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  const change = '/changes/merge-home'
+  const approving = { ...MERGE, options: [{ id: 'a', text: `Merge, approving ${change}` }] }
+  const longer = { ...MERGE, path: '/projects/home/questions/20261024T1900Z-k4', options: [{ id: 'b', text: `Hold ${change}-two` }] }
+  const { ran, toasts } = engine(on, {
+    open: () => ({ exitCode: 0, stdout: opened([approving, longer]) }),
+    answer: () => ({ exitCode: 0, stdout: answered(ANSWER, { change }) }),
+  })
+  await start($)
+  const ui = await $.ui.mount({ ...pane('questions'), surface: 'terminal' })
+  await ui.press({ key: `${MERGE.path}#a` })
+  expect(ran.slice(-1)).toEqual([['--personal', 'call', 'changes.approve', `--path=${change}`]])
+  expect(toasts.pop()).toBe(`Answered, and sent to local_ab12. The approval of ${change} waits for Touch ID in the effects band`)
+  await ui.unmount()
+  // The twin: its option names only a longer path, so nothing is asked.
+  const twin = await $.ui.mount({ ...pane('questions'), surface: 'terminal' })
+  await twin.press({ key: `${longer.path}#b` })
+  expect(ran.filter(r => r[2] === 'changes.approve')).toHaveLength(1)
+  expect(toasts.pop()).toBe('Answered, and sent to local_ab12')
+})
+
+test('a changes.approve that fails keeps the answer and the toast says no approval was asked and how to ask', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  const change = '/changes/merge-home'
+  const approving = { ...MERGE, options: [{ id: 'a', text: `Approve ${change}.` }] }
+  const refusal = JSON.stringify({ schema: 'board/failure/v1', code: 'changes::approve::not_chosen', message: 'no answer' })
+  const { toasts } = engine(on, {
+    open: () => ({ exitCode: 0, stdout: opened([approving, COUNT]) }),
+    answer: () => ({ exitCode: 0, stdout: answered(ANSWER, { change }) }),
+    approve: () => ({ exitCode: 1, stdout: refusal }),
+  })
+  await start($)
+  const ui = await $.ui.mount({ ...pane('questions'), surface: 'terminal' })
+  await ui.press({ key: `${MERGE.path}#a` })
+  expect(toasts).toEqual([
+    `Answered, and sent to local_ab12. No approval of ${change} was asked (changes::approve::not_chosen no answer); run board call changes.approve --path ${change}`,
+  ])
+})
+
+test('the toast words the approval by the state changes.approve returns', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  const change = '/changes/merge-home'
+  const approving = { ...MERGE, options: [{ id: 'a', text: `Approve ${change}.` }] }
+  let state = 'approved'
+  const { toasts } = engine(on, {
+    open: () => ({ exitCode: 0, stdout: opened([approving, { ...approving, path: '/projects/home/questions/20261024T1900Z-k4' }]) }),
+    answer: () => ({ exitCode: 0, stdout: answered(ANSWER, { change }) }),
+    approve: () => ({ exitCode: 0, stdout: JSON.stringify({ schema: 'board/call-report/v2', data: { output: { state, effect: 'e1' } } }) }),
+  })
+  await start($)
+  const ui = await $.ui.mount({ ...pane('questions'), surface: 'terminal' })
+  await ui.press({ key: `${MERGE.path}#a` })
+  expect(toasts.pop()).toBe(`Answered, and sent to local_ab12. The owner has already approved ${change} as its plan stands`)
+  state = 'refused'
+  await ui.press({ key: '/projects/home/questions/20261024T1900Z-k4#a' })
+  expect(toasts.pop()).toBe(`Answered, and sent to local_ab12. The owner refused the approval of ${change} earlier; delete /effects/seen/e1 in the personal board to ask again`)
+  expect(approvalText(change, { state: 'asked' })).toBe(`. The approval of ${change} waits for Touch ID in the effects band`)
+})
+
+test('a path is named whole only when the code points on either side do not join it, a letter outside the BMP included', () => {
+  expect(namesWhole('Approve /changes/t.', '/changes/t')).toBe(true)
+  expect(namesWhole('\u{1D400}/changes/t', '/changes/t')).toBe(false)
+  expect(namesWhole('/changes/t\u{1D400}', '/changes/t')).toBe(false)
+  expect(namesWhole('\u{1F600} /changes/t', '/changes/t')).toBe(true)
+  expect(namesWhole('/changes/t-two', '/changes/t')).toBe(false)
 })

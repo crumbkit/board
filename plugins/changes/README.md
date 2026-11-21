@@ -894,8 +894,11 @@ change's plans; a decision the plan lists only in `uses` signs nothing.
 
 A `records` check of `plans/decision/v1` with `owner_signed` and no
 `at_head`, whose `refs` list is not empty and names only `plan` or `change`,
-also counts an attached `plans/answer/v1`. The answer passes the same rule
-on `written_by` and `by.person`. Its `question` must also be attached, and
+also counts an attached `plans/answer/v1`. The answer counts when its
+`by.person` or its `written_by` is a string that is not empty. On an answer,
+`written_by` names the owner's surface that wrote it, such as the questions
+pane, Board.app or /ask, where on a decision it marks a hook's stub. Its
+`question` must also be attached, and
 that question's option whose `id` is the answer's `choice` must name the
 change's path whole in its `text`, such as `/changes/timeout`. A longer
 path, such as `/changes/timeout-two` or `/team/changes/timeout`, does not
@@ -906,9 +909,32 @@ change's path in the text of the option that approves it, and to attach
 the question and the answer with
 `board changes attach --path <change> --ref <path>`.
 
+Such a check also counts the owner's Touch ID approval of the current plan.
+`changes.approve --path <change>` refuses with `changes::approve::not_chosen`
+unless an attached answer chose an option that names the change. Otherwise it
+asks Board's `decide` for the capability `changes.approve` at the change's
+path, which writes a pending effect in the personal board. The Touch ID
+statement shows the change, the plan it names, the plan's title, a SHA-256
+of the plan record and its text, the last attached answer whose chosen
+option names the change, and that option's text. The digest leaves out the
+plan record's `records`, so attaching a record keeps the approval; any other
+edit to the record or its text, on disk or through `put`, needs a new one.
+It returns the answer's path, the effect's id and `asked`, `approved` or
+`refused`. The owner approves it with `board answer <id> approve`, in the
+effects band or in Board.app. `next` and `advance` recompute the digest and
+read the approval with `decided`, which checks the signature against the
+allowed signers file each time. When Board cannot read the approval, the
+check's detail says why.
+The questions pane runs `changes.approve` after an answer whose chosen option
+names the change it was attached to.
+
+Only the signed approval proves the owner chose. An answer's `by` and
+`written_by`, and a decision's `by.person`, are claims any writer can make.
+
 These routes still pass a gate without the owner:
 
-1. A false `by.person`. Any writer can set the field, to any name. A
+1. A false `by.person`, or an answer's false `written_by`. Any writer can
+   set either field, to any value. A
    session that relays the owner's approval sets it and quotes the owner's
    words in `why`, and the gate cannot tell a faithful relay from an
    invented one.
@@ -945,7 +971,7 @@ The development flow's gates:
 
 | Leaving | Checks |
 | --- | --- |
-| plan | `plan-sections`, the eight sections; `considered`; `task`; `route`; `owner-approval`, a `plans/decision/v1` the owner signed, with `by.person`, whose `refs` name the plan or the change, or the owner's attached `plans/answer/v1` whose chosen option, in its attached question, names the change, on every route; `mockups` and `mockup-versions`, when the plan answers `ux` mockups; `data-signed`, an `understood` check of the data, when it answers `data` stored; `lifecycle-declared`, a `planned-rule-paths` check of `/rules/{repo}/lifecycle-paths`, when it answers `lifecycle` none; `lifecycle-record`, an `exists` check of `/changes/{name}/lifecycle`, when it answers `lifecycle` record; `obligations`, which does not block |
+| plan | `plan-sections`, the eight sections; `considered`; `task`; `route`; `owner-approval`, a `plans/decision/v1` the owner signed, with `by.person`, whose `refs` name the plan or the change, or the owner's attached `plans/answer/v1` whose chosen option, in its attached question, names the change, or the owner's Touch ID approval of `changes.approve` for the current plan, on every route; `mockups` and `mockup-versions`, when the plan answers `ux` mockups; `data-signed`, an `understood` check of the data, when it answers `data` stored; `lifecycle-declared`, a `planned-rule-paths` check of `/rules/{repo}/lifecycle-paths`, when it answers `lifecycle` none; `lifecycle-record`, an `exists` check of `/changes/{name}/lifecycle`, when it answers `lifecycle` record; `obligations`, which does not block |
 | build | `head`; `suite-run`, waivable; `tasks`; `rechecks`, rechecks of two points, the latest recheck of each matching, when the plan answers `data` stored |
 | review | `review`, a report on `head` with no critical or high finding; `design-conformance`, the `built` part of `mockups`, when the plan answers `ux` mockups; `paths`; `ui-paths` and `data-paths`, `rule-paths` checks of `/rules/{repo}/ui-paths` when the plan answers `ux` none and `/rules/{repo}/data-paths` when it answers `data` none; `lifecycle-paths`, the same check of `/rules/{repo}/lifecycle-paths` unless Board reads a `changes/lifecycle/v1` at `/changes/{name}/lifecycle`; `lifecycle-none-paths`, the same check when the plan answers `lifecycle` none, whether or not a record exists; `obligations-settled`, with the escape heading `Obligations left owed` |
 | land | `test-sections`, What the tests prove and What the tests do not prove; `pull-request`; `lifecycle-paths-at-land` and `lifecycle-none-paths-at-land`, the two review checks of `/rules/{repo}/lifecycle-paths` again, so each re-reads the diff at the recorded head and a record removed after review is gated |

@@ -5,6 +5,7 @@
 //! request closes. Tasks are written through the tasks plugin and rules read
 //! through the rules plugin, each by a nested call.
 
+mod approve;
 mod board;
 mod brief;
 mod change;
@@ -106,7 +107,7 @@ fn output<T: JsonSchema>() -> Value {
 /// Every capability, in the order the manifest lists them. A capability
 /// that rewrites a field of a change, or ends it, is destructive; one that
 /// adds a task or reads GitHub reaches the open world.
-const CAPABILITIES: [Capability; 20] = [
+const CAPABILITIES: [Capability; 21] = [
     Capability {
         name: "start",
         description: "Create a change in the first phase of its flow, its plan to fill in and, \
@@ -371,6 +372,20 @@ const CAPABILITIES: [Capability; 20] = [
         output: output::<stop::Output>,
         // Each stop is a new record.
         hints: [false, false, false, false],
+        env: &[],
+        timeout: None,
+    },
+    Capability {
+        name: "approve",
+        description: "Ask the owner to approve the change's current plan with Touch ID, once an \
+            attached answer chose an option, in its attached question, that names the change. \
+            Writes only the pending effect in the personal board, and returns its id and whether \
+            the owner has approved, refused or not yet answered. The owner-approval check counts \
+            the signed approval.",
+        run: approve::approve,
+        input: input::<phases::PathInput>,
+        output: output::<approve::Output>,
+        hints: [false, false, true, false],
         env: &[],
         timeout: None,
     },
