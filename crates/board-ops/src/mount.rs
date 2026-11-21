@@ -2,6 +2,7 @@
 //! update`: advancing a mount to the commit its `follow` ref names
 //! (docs/architecture.md, Writes).
 
+use std::path::{Component, Path, PathBuf};
 use std::time::Duration;
 
 use board_model::{BINARY_NAME, Code, Fields, LogicalPath, Mount, ObjectId, Refusal};
@@ -20,24 +21,37 @@ pub struct MountUpdateReport {
 }
 
 impl Board {
-    /// Writes at `path`, where nothing is, a `board/mount/v1` record of the
-    /// repository at `repo`, a path as the record holds it, following
+    /// Writes at `path`, which holds nothing yet, a `board/mount/v1` record
+    /// of the repository at `repo`, read against `start`, following
     /// `follow` or else the branch checked out there, at the commit that
-    /// ref names now, found as `mount update` finds it. Returns the mount
-    /// and put's report of its record.
+    /// ref names now, found as `mount update` finds it. A URL is refused as
+    /// a mount record holding it is. Returns the mount and put's report of
+    /// its record.
     pub fn mount_add(
         &self,
         path: &LogicalPath,
-        repo: &str,
+        (repo, start): (&str, &Path),
         follow: Option<String>,
     ) -> Result<(Mount, PutReport), MountError> {
         let repositories = self.repositories();
-        let mounting = repositories.mounting(repositories.root().path(), repo, follow);
         let refused = |code| MountError::Mounting {
             path: path.clone(),
             repo: repo.to_owned(),
             code,
         };
+        // The pointer parser decides what counts as a remote; the commit is
+        // a stand-in, since only `repo` is judged.
+        let probe = serde_json::json!({
+            "$type": "board/mount/v1",
+            "repo": repo,
+            "follow": "main",
+            "commit": ObjectId::Sha1([0; 20]).to_string(),
+        });
+        if let Err(error) = board_model::pointer(probe.to_string().as_bytes()) {
+            return Err(refused(error.code()));
+        }
+        let repo = &stored(repo, start);
+        let mounting = repositories.mounting(repositories.root().path(), repo, follow);
         let mount = mounting
             .map_err(refused)?
             .ok_or_else(|| MountError::Unfollowed {
@@ -128,6 +142,26 @@ impl Board {
                 Failure::Error(error) => error,
             })
     }
+}
+
+/// `repo` as a mount record stores it: as given when it starts with `~/`;
+/// else absolute, read against `start`, the directory the run started in,
+/// with each `.` and `..` taken out.
+fn stored(repo: &str, start: &Path) -> String {
+    if repo.starts_with("~/") {
+        return repo.to_owned();
+    }
+    let mut clean = PathBuf::new();
+    for component in start.join(repo).components() {
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                clean.pop();
+            }
+            other => clean.push(other),
+        }
+    }
+    clean.to_string_lossy().into_owned()
 }
 
 /// A mount update that wrote nothing, or, for a put's `head_moved`, wrote

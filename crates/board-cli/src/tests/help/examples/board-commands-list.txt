@@ -11,7 +11,7 @@ board put            Write the record on stdin at a path or --new name, or a .md
 board rm             Remove the file at a path
 board sync           Fetch the remote branch, merge it into this board, and push
 board mount          Work with mounts
-board mount add      Mount a local clone at a path where nothing is
+board mount add      Mount a local clone at a path that holds nothing yet
 board mount update   Advance the mount at a path, which is not followed, to its `follow` ref
 board plugin         Work with plugins
 board plugin list    List the installed plugins, their capabilities and whether this board enables them

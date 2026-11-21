@@ -221,12 +221,12 @@ Work with mounts
 
 ### Commands
 
-- [`board mount add`](#board-mount-add): Mount a local clone at a path where nothing is
+- [`board mount add`](#board-mount-add): Mount a local clone at a path that holds nothing yet
 - [`board mount update`](#board-mount-update): Advance the mount at a path, which is not followed, to its `follow` ref
 
 ## `board mount add`
 
-Mount a local clone at a path where nothing is
+Mount a local clone at a path that holds nothing yet
 
 ### Arguments
 
