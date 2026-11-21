@@ -3,6 +3,7 @@
 - `AGENTS.md`: what Board is and the rules tooling cannot enforce. Every agent loads it.
 - `PLAN.md`: what comes next, the deferred sketches, and the decisions that still constrain work. `plan/` holds one leaf per milestone too big for it.
 - `STANDARDS.md`: code standards and the gates that enforce them.
+- `docs/guide/getting-started.md`: from the Board dmg to a first project, task and question in your own board.
 - `docs/architecture.md`: boards, records, paths, links and mounts, the index, writes, codes, testing and performance.
 - `docs/plugins.md`: the plugin contract and how plugins are written.
 - `crates/board-cli/docs/commands.md`: every command with its arguments, examples and effects, generated from the help.
