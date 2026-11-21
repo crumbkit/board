@@ -891,6 +891,13 @@ board sync
   run board sync --accept-rewrite
     exits 0
 
+board sync --no-push
+  fails with board::sync::no_branch
+  run board sync
+    exits 0
+  run board plugin enable tasks
+    exits 0
+
 board sync
   fails with board::sync::gave_up
   run board sync --no-push

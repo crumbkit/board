@@ -127,7 +127,7 @@ const OPEN: &str = "ui open or the server gives it; check opens and serves nothi
 
 /// Codes `check` never gives an entry, and why. The seed board has an
 /// exhibit for every other code, so a new code needs one or a line here.
-pub const NOT_CHECKED: [(Code, &str); 85] = [
+pub const NOT_CHECKED: [(Code, &str); 86] = [
     (
         Code::CommitNotFound,
         "get --at and log give it to a commit id the board's repository does not hold; check reads the working tree",
@@ -192,6 +192,7 @@ pub const NOT_CHECKED: [(Code, &str); 85] = [
     (Code::SyncRewound, SYNC),
     (Code::SyncShallow, SYNC),
     (Code::SyncMerging, SYNC),
+    (Code::SyncNoBranch, SYNC),
     (
         Code::SchemaDiffers,
         "type add refuses a schema with it; check compiles each schema alone",

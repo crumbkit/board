@@ -64,12 +64,13 @@ new commit and whether it wrote.
 `board sync` brings a clone of a board up to date with the remote branch
 HEAD's branch follows, as git configures it in `branch.<name>.remote` and
 `branch.<name>.merge`, and pushes what the clone committed. It works in
-rounds of three phases; only the second takes the board's lock. `sync.lock` in the git directory
+rounds of three phases. `sync.lock` in the git directory
 admits one sync per clone: a second exits at once with `board::sync::busy`.
 
 1. Fetch the branch into its remote-tracking ref by running the `git`
    executable, so git's remotes, credentials and SSH settings apply, with
-   `fetch.fsckObjects` on.
+   `fetch.fsckObjects` on. A remote without the branch gets it from HEAD
+   ([first push](writes/sync/refusals.md#first-push)).
 2. Integrate ([refusals](writes/sync/refusals.md)), under the board lock.
    Merge the fetched commit into HEAD
    from their common ancestor, as [merging.md](writes/merging.md) says: a
@@ -98,9 +99,9 @@ fetch or push git refuses is `board::sync::failed`, with the end of git's
 stderr. Neither git nor ssh may ask anything: git runs with
 `GIT_TERMINAL_PROMPT=0`, and the owner's ssh command with `-o BatchMode=yes`
 for OpenSSH, so a remote that needs a passphrase, host key or password fails
-at once. A sync running after 60 seconds, counting every fetch, push, merge and
-wait for the board lock, is `board::sync::timeout`. Board then sends git's group SIGTERM, on which git
-removes its lock files, kills the group, ssh included, up to a second later,
+at once. A sync running after 60 seconds, counting every git run and
+wait for the board lock, is `board::sync::timeout`. Board then sends git's group SIGTERM, so git
+removes its lock files, kills the group up to a second later,
 and frees the board lock. On Ctrl-C, SIGTERM or SIGHUP, git's group gets
 that signal, then SIGKILL once git exits or a second later, and Board frees
 the board lock and stops. `sync.lock` is a kernel file lock, so SIGKILL frees it

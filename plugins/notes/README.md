@@ -168,7 +168,8 @@ plugin pins, reads and appends again, up to three times. Three things park
 the text: a note that keeps moving, a note holding an edit Reflect has not
 committed (`board::mount::stale`, which no new read clears), and a first
 sync refused with `board::sync::edited`, `board::sync::busy`,
-`board::sync::rewound` or `board::sync::shallow`. The
+`board::sync::rewound`, `board::sync::shallow` or `board::sync::no_branch`
+(a clone of an empty remote). The
 text is then appended to the sibling `<name>.agent.md`, such as
 `daily/2026-10-24.agent.md`, and `parked` names the code. Any other refusal
 of the first sync, such as no network, refuses the call before anything is

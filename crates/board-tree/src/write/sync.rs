@@ -15,7 +15,7 @@ use super::entries::{stage_entry, unstage_entry};
 use super::stop::{self, Stop};
 use super::{Lock, Staged, WriteError};
 use crate::git::{GitError, Repository, model_id};
-use crate::transport::{self, Deadline, Pushed, Upstream};
+use crate::transport::{self, Deadline, Pushed, Ssh, Upstream};
 
 mod checkout;
 use checkout::{Recorded, Started};
@@ -165,9 +165,21 @@ impl Repository {
         let ssh = self.ssh();
         let mut summary: Option<Integrated> = None;
         let mut reason = String::new();
+        let mut created = false;
         for attempts in 1..=ATTEMPTS {
             let previous = self.tracking_before(&upstream)?;
-            transport::fetch(self.path(), &upstream, &ssh, deadline)?;
+            if let Err(failed) = transport::fetch(self.path(), &upstream, &ssh, deadline) {
+                match self.start_branch(&upstream, previous, push, &ssh, deadline, failed)? {
+                    // The branch is HEAD now: fetch it, and integrate
+                    // finds nothing to do.
+                    Pushed::Done => created = true,
+                    Pushed::Rejected(why) => {
+                        reason = why;
+                        continue;
+                    }
+                }
+                transport::fetch(self.path(), &upstream, &ssh, deadline)?;
+            }
             let fetched = self.tracking(&upstream)?;
             let before = refuse::Before {
                 previous: previous.filter(|_| !accept_rewrite),
@@ -209,7 +221,7 @@ impl Repository {
                 kept: total.kept,
             };
             if !push || new == fetched {
-                return Ok(done(false, total));
+                return Ok(done(created, total));
             }
             match transport::push(self.path(), &upstream, &new.to_string(), &ssh, deadline)? {
                 Pushed::Done => return Ok(done(true, total)),
@@ -221,6 +233,43 @@ impl Repository {
             attempts: ATTEMPTS,
             reason,
         })
+    }
+
+    /// After a fetch that failed with `failed`, pushes HEAD to create the
+    /// remote branch when the remote answers that it has none, this clone
+    /// never fetched it (`previous` is `None`), the sync may push and HEAD
+    /// has a commit; the caller then fetches what the push made. A remote
+    /// that has the branch, or that does not answer, keeps `failed`; a
+    /// branch this clone fetched before, a sync without push and an unborn
+    /// HEAD are [`SyncError::NoBranch`].
+    fn start_branch(
+        &self,
+        upstream: &Upstream,
+        previous: Option<ObjectId>,
+        push: bool,
+        ssh: &Ssh,
+        deadline: Deadline,
+        failed: SyncError,
+    ) -> Result<Pushed, SyncError> {
+        if !matches!(failed, SyncError::Failed { .. }) {
+            return Err(failed);
+        }
+        match transport::lacks_branch(self.path(), upstream, ssh, deadline) {
+            Ok(true) => {}
+            Err(timed_out @ SyncError::TimedOut { .. }) => return Err(timed_out),
+            Ok(false) | Err(_) => return Err(failed),
+        }
+        let absent = || SyncError::NoBranch {
+            remote: upstream.remote.clone(),
+            branch: upstream.branch.clone(),
+            previous,
+            push,
+        };
+        let head = match self.head()? {
+            Some(head) if previous.is_none() && push => head,
+            _ => return Err(absent()),
+        };
+        transport::push(self.path(), upstream, &head.to_string(), ssh, deadline)
     }
 
     /// Takes an exclusive file lock on `sync.lock` in the git directory, which
@@ -556,12 +605,36 @@ pub enum SyncError {
         fetched: ObjectId,
         unrestored: bool,
     },
+    #[error("{remote} has no branch {branch}{}", absent_note(*previous, *push))]
+    NoBranch {
+        remote: String,
+        branch: String,
+        /// The commit this clone fetched last, when the branch was deleted.
+        previous: Option<ObjectId>,
+        /// Whether the sync could push.
+        push: bool,
+    },
     #[error("the remote refused the push {attempts} times, the last time with {reason}")]
     GaveUp { attempts: u32, reason: String },
     #[error(transparent)]
     Write(#[from] WriteError),
     #[error(transparent)]
     Git(#[from] GitError),
+}
+
+/// Why a sync does not create a branch the remote lacks: this clone
+/// fetched it at `previous`, so it was deleted; the sync may not push; or
+/// HEAD has no commit.
+fn absent_note(previous: Option<ObjectId>, push: bool) -> String {
+    match previous {
+        Some(previous) => format!(
+            ", though this clone fetched it at {previous}, so it was deleted on the remote and Board does not create it again"
+        ),
+        None if !push => {
+            " yet, and a sync without push (`--no-push`) does not create it".to_owned()
+        }
+        None => " yet, and HEAD has no commit to start it with".to_owned(),
+    }
 }
 
 /// The sentence a refusal adds when the remote-tracking ref could not be
@@ -586,6 +659,7 @@ impl SyncError {
             Self::Merging { .. } => Code::SyncMerging,
             Self::Shallow { .. } => Code::SyncShallow,
             Self::Rewound { .. } => Code::SyncRewound,
+            Self::NoBranch { .. } => Code::SyncNoBranch,
             Self::TimedOut { .. } => Code::SyncTimeout,
             Self::Write(error) => error.code(),
             Self::Git(error) => error.code(),

@@ -102,6 +102,7 @@ codes! {
     SyncRewound => "board::sync::rewound",
     SyncShallow => "board::sync::shallow",
     SyncMerging => "board::sync::merging",
+    SyncNoBranch => "board::sync::no_branch",
     RefsTargetChanged => "board::refs::target_changed",
     AttachmentMissing => "board::attachment::missing",
     AttachmentMismatch => "board::attachment::mismatch",

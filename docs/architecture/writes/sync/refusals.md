@@ -34,8 +34,8 @@ there to check that it shows no commit you still need, since the fresh clone
 does not hold its unpushed commits. After a fetch the same command also lists
 the commits the rewrite dropped.
 
-A writer such as `notes.add` or a tasks writer treats `rewound` and `shallow`
-as a sync it can write beside, like `board::sync::edited`: it writes the note or
+A writer such as `notes.add` or a tasks writer treats `rewound`, `shallow`
+and `no_branch` ([first push](#first-push)) as a sync it can write beside, like `board::sync::edited`: it writes the note or
 task in the clone and leaves the sync for a person. It does not do so for
 `merging`, because a put refuses during a git operation too, and nothing is
 written. A note write fails with `notes::board::refused`, whose `code` field is
@@ -44,9 +44,45 @@ fails with `tasks::board::refused`, whose `code` field is `board::put::locked`.
 Finish or abort the operation, then write again.
 
 A call that only reads, such as `notes.daily`, goes on after `merging` as it
-does after the other three: it returns the note as the clone holds it, with
+does after the other four: it returns the note as the clone holds it, with
 `unsynced` set to `board::sync::merging`.
 
 `board::sync::edited` does not fire for a file that a killed sync wrote: the
 checkout record lets the next sync tell it from a person's edit
 ([checkout.md](checkout.md)).
+
+## First push
+
+When the fetch fails, Board asks the remote whether it has the branch with
+`git ls-remote --exit-code`, run as the fetch is: no prompts, its own process
+group, the same deadline. Exit status 2 means the remote has none. Any other
+answer keeps the fetch's `board::sync::failed`.
+
+A remote without the branch, which this clone never fetched, gets it from
+HEAD: the sync pushes HEAD with the same `git push --atomic`, never forced,
+then fetches it, so the report says `pushed` after one attempt. When another
+clone creates the branch first, the push is rejected and the next round
+merges that clone's first commit from an empty base. Otherwise the sync
+refuses with `board::sync::no_branch` and writes nothing:
+
+| When | Way out |
+| --- | --- |
+| `--no-push` | `board sync` |
+| HEAD has no commit | make one, such as with `board plugin enable tasks` |
+| this clone has a remote-tracking ref for the branch, so it was deleted on the remote | check the remote; push by hand with `git push <remote> HEAD:<branch>` only if the branch should come back |
+
+The remote branch, as one clone sees it:
+
+| State | Event | Next state |
+| --- | --- | --- |
+| absent, never fetched | a sync that may push, HEAD has a commit | present at HEAD |
+| absent, never fetched | `--no-push`, or HEAD has no commit | unchanged, refused |
+| absent, never fetched | another clone pushes first | present; the next round merges it |
+| absent, fetched before | any sync | unchanged, refused |
+| present | any sync | as above |
+
+Board creates a branch only when the clone has no remote-tracking ref for it,
+so it never brings back a deleted branch. A sync killed during the first push
+leaves the branch absent or at HEAD, since the push is atomic; the next sync
+fetches it or pushes again. One killed after the push leaves the
+remote-tracking ref behind until the next fetch.

@@ -436,11 +436,12 @@ fn a_landed_write_lists_only_the_conflicts_of_the_syncs_after_the_write() {
     );
 }
 
-/// A rewritten remote and a shallow clone leave the clone as it was and wait
-/// for a person, so a write goes on beside them and is not refused.
+/// A rewritten remote, a shallow clone and a remote with no branch leave the
+/// clone as it was and wait for a person, so a write goes on beside them and
+/// is not refused.
 #[test]
-fn a_sync_refused_for_a_rewound_remote_or_a_shallow_clone_lets_the_write_park() {
-    for code in [Code::SyncRewound, Code::SyncShallow] {
+fn a_sync_refused_for_a_rewound_remote_a_shallow_clone_or_no_branch_lets_the_write_park() {
+    for code in [Code::SyncRewound, Code::SyncShallow, Code::SyncNoBranch] {
         let clones = Recorded::default();
         clones.syncs.borrow_mut().extend([refusal(code)]);
         let host = local(&[]);
@@ -522,4 +523,43 @@ fn a_sync_for_a_read_of_a_clone_in_a_merge_gives_the_syncs_code() {
         repo.sync(writer, false, Access::Read).unwrap(),
         Some(Code::SyncMerging)
     );
+}
+
+/// A write into a clone of an empty remote goes on after the sync before it
+/// is refused with `board::sync::no_branch`, since the clone has no commit;
+/// once the write has made the first commit, the sync after it creates the
+/// remote's branch. The twin refused for a merge in progress fails above.
+#[test]
+fn a_write_into_a_clone_of_an_empty_remote_goes_on_and_its_push_creates_the_branch() {
+    let remote = board_scenario::Scenario::new();
+    remote.accepting_pushes();
+    let clone = board_scenario::Scenario::new();
+    let config = format!(
+        "[remote \"origin\"]\n\turl = {}\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n\
+         [branch \"main\"]\n\tremote = origin\n\tmerge = refs/heads/main\n",
+        remote.path()
+    );
+    clone.write(".git/config", board_scenario::Item::Appended(&config));
+    clone.identified();
+    let board = (".board/board.json", r#"{"$type": "board/config/v1"}"#);
+    clone.write(board.0, board_scenario::Item::File(board.1));
+    let host = local(&[]);
+    let repo = Repo {
+        root: "/repos/work".to_owned(),
+        clone: Some(clone.path().clone()),
+    };
+    let writer = Writer {
+        host: &host,
+        clones: &Real,
+        plugin: "tasks",
+        deadline: Duration::from_secs(10),
+    };
+    assert_eq!(
+        repo.sync(writer, true, Access::Write).unwrap(),
+        Some(Code::SyncNoBranch)
+    );
+    // The write's put, which makes the clone's first commit.
+    let first = clone.commit(&[board, ("tasks/a.md", "a")]);
+    assert_eq!(push(writer, &repo), None);
+    assert_eq!(remote.head().unwrap().id, first);
 }

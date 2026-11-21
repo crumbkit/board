@@ -135,6 +135,21 @@ pub(crate) fn fetch(
     Err(failed("fetch", upstream, &output))
 }
 
+/// Whether the remote answered that it has no branch `upstream.branch`:
+/// `git ls-remote --exit-code` exits 2 for that. Any other exit is `false`,
+/// so the caller keeps the fetch's own failure.
+pub(crate) fn lacks_branch(
+    workdir: &Path,
+    upstream: &Upstream,
+    ssh: &Ssh,
+    deadline: Deadline,
+) -> Result<bool, SyncError> {
+    let branch = format!("refs/heads/{}", upstream.branch);
+    let arguments = ["ls-remote", "--exit-code", "--", &upstream.remote, &branch];
+    let output = run(workdir, &arguments, "check", upstream, ssh, deadline)?;
+    Ok(output.status.code() == Some(2))
+}
+
 /// Pushes `commit` in `workdir` to `upstream`'s branch, all or nothing.
 pub(crate) fn push(
     workdir: &Path,

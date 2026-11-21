@@ -542,6 +542,9 @@ fn generic(code: Code) -> &'static str {
         Code::SyncMerging => {
             "a git merge, rebase, cherry-pick or revert is in progress in this clone, so a sync would move HEAD and the index under it, and a write fails for the same reason: a note write fails with `notes::board::refused` whose code field is this code, and a task write goes on to the put, which refuses, so it fails with `tasks::board::refused` whose code field is `board::put::locked`. The working tree, index and HEAD are unchanged. Finish the operation with `git merge --continue`, `git rebase --continue`, `git cherry-pick --continue` or `git revert --continue`, or stop it with `git merge --abort`, `git rebase --abort`, `git cherry-pick --abort` or `git revert --abort`, then sync or write again; `--accept-rewrite` does not clear this"
         }
+        Code::SyncNoBranch => {
+            "the remote has no branch for HEAD's branch to follow. The working tree, index, HEAD and remote-tracking ref are unchanged. A sync that may push creates the branch from this clone's first commit, so run `board sync` without `--no-push`. A clone with no commit has nothing to start the branch with: make one first, for example with `board plugin enable tasks`. When the message names a commit this clone fetched, the branch was deleted on the remote, and Board does not create it again: check the remote, and only if the branch should come back, push it by hand with `git push <remote> HEAD:<branch>`"
+        }
         Code::RefsTargetChanged => {
             "the target's file changed during this run, so its values were not read; run the same board refs again. If every run refuses it, delete the board's directory under `$XDG_CACHE_HOME/board/` or `~/.cache/board/` so the index is rebuilt from the tree, and if it persists, report it"
         }

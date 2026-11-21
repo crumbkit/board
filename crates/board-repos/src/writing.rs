@@ -24,25 +24,30 @@ pub const EDITED: Code = Code::MountStale;
 pub const ATTEMPTS: usize = 3;
 /// The sync refusals after which a write can still be made: the clone is
 /// left as it was or as an earlier round of the sync made it, and either
-/// way the write parks beside it. A rewound remote and a shallow clone wait
-/// for a person, and the note or task they hold should not wait with them.
-/// A git operation in progress is not here: the put refuses during it too,
-/// so a write fails with the sync's code. A read has [`READ_UNSYNCED`].
-const UNSYNCED: [Code; 4] = [
+/// way the write parks beside it. A rewound remote, a shallow clone and a
+/// remote with no branch the sync may create wait for a person, and the
+/// note or task they hold should not wait with them. In a clone with no
+/// commit, the write makes the first, and the sync after it creates the
+/// branch. A git operation in progress is not here: the put refuses during
+/// it too, so a write fails with the sync's code. A read has
+/// [`READ_UNSYNCED`].
+const UNSYNCED: [Code; 5] = [
     Code::SyncEdited,
     Code::SyncBusy,
     Code::SyncRewound,
     Code::SyncShallow,
+    Code::SyncNoBranch,
 ];
 
 /// The sync refusals after which a read can still be made: those of
 /// [`UNSYNCED`] and a git operation in progress, since a read of the clone
 /// as it is does not move HEAD or the index.
-const READ_UNSYNCED: [Code; 5] = [
+const READ_UNSYNCED: [Code; 6] = [
     Code::SyncEdited,
     Code::SyncBusy,
     Code::SyncRewound,
     Code::SyncShallow,
+    Code::SyncNoBranch,
     Code::SyncMerging,
 ];
 
