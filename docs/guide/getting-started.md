@@ -19,8 +19,8 @@ your own board.
 
 - Get the dmg from the person who shared Board with you.
 - Open the dmg, run Board.app and let it finish.
-- The installer Board.app runs writes `board` and `attention-sign` in
-  `~/.local/bin`.
+- Board.app runs Board's installer.
+- The installer writes `board` and `attention-sign` in `~/.local/bin`.
 - It keeps the release in `~/.local/share/board`.
 - It writes every skill Board ships in `~/.claude/skills`.
 - It installs Board's Claude Code mods when `claude` is on PATH.
@@ -43,8 +43,9 @@ git config --global user.email
 - If one prints nothing, set it with
   `git config --global user.name 'Your Name'` or
   `git config --global user.email you@example.com`.
-- Board commits every write, and it refuses with `board::put::no_identity`
-  when git has no name or email.
+- Board commits every write.
+- Board refuses a write with `board::put::no_identity` when git has no name
+  or email.
 
 Make the board in `~/board` and enable the six plugins it needs:
 
@@ -103,15 +104,17 @@ board --personal tasks add --parent "$project" --title 'My first task'
 board --personal tasks tree --path "$project"
 ```
 
-- `tasks add` prints the path it wrote, such as `/tasks/my-first-project.md`.
+- The second `tasks add` prints the task it wrote, with its path
+  `/tasks/my-first-task.md`.
 - `tasks tree` lists the project with the task under it.
 - In Claude Code, the tasks skill does the same. Type: "Add a project called
   My first project to my board, with a task called My first task under it."
 
 ## Plan a project
 
-- The project's plan goes in the body of its record. In Claude Code, type:
-  "Write this plan in the body of /tasks/my-first-project.md: ..."
+- The project's plan goes in the body of its record.
+- To write it, type in Claude Code: "Write this plan in the body of
+  /tasks/my-first-project.md: ..."
 - A decision is a `plans/decision/v1` under `/projects/<project>/decisions/`.
 - A question waiting on a person is a `plans/question/v1` under
   `/projects/<project>/questions/`.
@@ -161,5 +164,5 @@ board --personal plans open --path /projects/my-first-project
 - Once the board has a remote, as "Push your board to a remote" says, run
   `board sync` in `~/board` after you write.
 - This page does not cover a shared board yet.
-- `claude plugin list` lists Board's mods as `board-<name>@board`. Remove one
-  with `claude plugin uninstall board-<name>@board`.
+- `claude plugin list` lists Board's mods as `board-<name>@board`.
+- Remove one with `claude plugin uninstall board-<name>@board`.
