@@ -593,9 +593,18 @@ fn calling_plugins(starts: &mut Starts) {
         (Code::PluginBadManifest, "call broken.due"),
     ];
     for (code, line) in lines {
-        starts.add(&chores, code, line);
+        if code != Code::PluginNotEnabled {
+            starts.add(&chores, code, line);
+        }
         starts.pair(&chores, code, line, "call chores.due");
     }
+    // The not_enabled hint runs `board plugin enable`, which changes the
+    // board, so that start has a board of its own.
+    let unenabled = starts
+        .keep(enabling(r#""chores""#))
+        .stdin("{}")
+        .xdg(xdg.workdir().join("xdg"));
+    starts.add(&unenabled, Code::PluginNotEnabled, "call journal.due");
     starts.add(
         &chores.clone().stdin("[]"),
         Code::PluginBadInput,

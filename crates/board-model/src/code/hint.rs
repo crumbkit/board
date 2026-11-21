@@ -198,7 +198,9 @@ fn plugin(code: Code, fields: &Fields) -> Option<String> {
     let plugin = fields.plugin.as_ref()?;
     let capability = || fields.capability.as_ref();
     Some(match code {
-        Code::PluginNotEnabled => format!("add `{plugin}` to `plugins` in `.board/board.json`"),
+        Code::PluginNotEnabled => format!(
+            "run `board plugin enable {plugin}`, which writes the schemas the plugin ships and adds it to `plugins` in `.board/board.json`"
+        ),
         Code::PluginSchemaDiffers => format!(
             "run `board plugin enable {plugin}`, which replaces the board's copy with the schema the plugin ships"
         ),

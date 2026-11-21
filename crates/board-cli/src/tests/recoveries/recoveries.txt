@@ -703,10 +703,6 @@ board init
   fails with board::config::not_found
   hint
 
-board call journal.due
-  fails with board::plugin::not_enabled
-  hint
-
 board call nowhere.due
   fails with board::plugin::not_installed
   run board plugin list
@@ -720,6 +716,11 @@ board call chores.dew
 board call broken.due
   fails with board::plugin::bad_manifest
   hint
+
+board call journal.due
+  fails with board::plugin::not_enabled
+  run board plugin enable journal
+    exits 0
 
 board call chores.due
   fails with board::plugin::bad_input

@@ -921,7 +921,7 @@ fn a_plugin_the_board_does_not_enable_is_named_in_the_hint_and_an_enabled_one_ru
     let refused = call(&board, &data, &["call", "journal.due"], "{}");
     assert_eq!(
         hint_of(&refused),
-        "add `journal` to `plugins` in `.board/board.json`"
+        "run `board plugin enable journal`, which writes the schemas the plugin ships and adds it to `plugins` in `.board/board.json`"
     );
     assert_eq!(call(&board, &data, &["call", "tasks.due"], "{}").code, 0);
 }
