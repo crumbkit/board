@@ -1,4 +1,4 @@
-board has 27 opt-outs from the conventions and sets 7 budgets.
+board has 27 opt-outs from the conventions and sets 9 budgets.
 
 effects/yes: board put
   Reason: the command asks no question, so it has no confirmation to skip, and git keeps each commit it makes, which a revert undoes
@@ -135,6 +135,16 @@ help-budget/command: board answer
   Budget: 1260 bytes, where the default is 1200 bytes.
   Reason: answer says on one page how an approval is signed and checked, its Effects: line says that it is destructive, and its global flags line names --no-input, which a program adds to every run.
   Cost: Each read of the page can cost 60 bytes more than the default, about 15 tokens.
+
+help-budget/command: board skills install
+  Budget: 1400 bytes, where the default is 1200 bytes.
+  Reason: install says on one page which folders it replaces, removes, keeps and refuses, and shows --plugins, which an installer passes to write only the enabled plugins' skills, in an example of its own.
+  Cost: Each read of the page can cost 200 bytes more than the default, about 50 tokens.
+
+help-budget/command: board skills list
+  Budget: 1400 bytes, where the default is 1200 bytes.
+  Reason: list names each of its six states on one page, and shows --plugins, which an installer passes to list only the enabled plugins' skills, in an example of its own.
+  Cost: Each read of the page can cost 200 bytes more than the default, about 50 tokens.
 
 output-budget/run: every run of board
   Budget: 67108864 bytes, where the default is 1048576 bytes.

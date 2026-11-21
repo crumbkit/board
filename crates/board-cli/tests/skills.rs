@@ -476,3 +476,60 @@ fn a_failed_read_says_it_could_not_read() {
     let message = refused["message"].as_str().unwrap();
     assert!(message.starts_with("cannot read "), "{message}");
 }
+
+/// The names of the folders in the skills directory, but hidden ones.
+fn folders(home: &Scenario) -> Vec<String> {
+    let entries = std::fs::read_dir(path(home, "skills")).unwrap().flatten();
+    let mut names: Vec<String> = entries
+        .map(|entry| entry.file_name().to_string_lossy().into_owned())
+        .filter(|name| !name.starts_with('.'))
+        .collect();
+    names.sort();
+    names
+}
+
+#[test]
+fn install_with_plugins_writes_only_their_skills_and_a_narrower_run_leaves_the_others() {
+    let home = Scenario::new();
+    let (code, installed) = skills(&home, "install", &["--plugins", "tasks,evals"]);
+    assert_eq!(code, 0, "{installed}");
+    assert_eq!(folders(&home), ["evals", "tasks"]);
+    assert_eq!(
+        states(&installed),
+        [
+            ("evals".to_owned(), "written".to_owned()),
+            ("tasks".to_owned(), "written".to_owned()),
+        ]
+    );
+    let (code, listed) = skills(&home, "list", &["--plugins", "tasks"]);
+    assert_eq!(code, 0);
+    assert_eq!(
+        states(&listed),
+        [("tasks".to_owned(), "current".to_owned())]
+    );
+
+    let evals = text(&path(&home, "skills/evals/SKILL.md"));
+    let (code, again) = skills(&home, "install", &["--plugins", "tasks"]);
+    assert_eq!(code, 0);
+    assert_eq!(
+        states(&again),
+        [("tasks".to_owned(), "unchanged".to_owned())]
+    );
+    assert_eq!(folders(&home), ["evals", "tasks"]);
+    assert_eq!(text(&path(&home, "skills/evals/SKILL.md")), evals);
+}
+
+#[test]
+fn a_plugin_that_ships_no_skill_is_refused_before_anything_is_written() {
+    let home = Scenario::new();
+    for command in ["install", "list"] {
+        let (code, refused) = skills(&home, command, &["--plugins", "tasks,nosuch"]);
+        assert_eq!(code, 2, "{refused}");
+        assert_eq!(refused["code"], "board::cli::usage");
+        let message = refused["message"].as_str().unwrap();
+        assert!(message.contains("nosuch"), "{message}");
+        let hint = refused["recovery"]["text"].as_str().unwrap();
+        assert!(hint.contains("tasks") && hint.contains("evals"), "{hint}");
+    }
+    assert!(!path(&home, "skills").exists());
+}

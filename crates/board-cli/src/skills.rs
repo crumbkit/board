@@ -2,7 +2,7 @@
 //! (docs/plugins.md, Skills), and the one module that writes a skills
 //! directory.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::io;
 use std::path::{Path, PathBuf};
 
@@ -19,10 +19,12 @@ use crate::render::{self, Printer};
 use crate::report::Output;
 use crate::run::{Page, plain};
 
-/// A skill built into this binary: its name and each file's path within
-/// its folder, with the file's bytes.
+/// A skill built into this binary: its name, the directory name of the
+/// plugin that ships it, and each file's path within its folder, with the
+/// file's bytes.
 pub(crate) struct Skill {
     pub(crate) name: &'static str,
+    pub(crate) plugin: &'static str,
     pub(crate) files: &'static [(&'static str, &'static [u8])],
 }
 
@@ -66,6 +68,7 @@ on a refusal or failed write.
 Examples:
   board skills install --dir skills
   board skills install --dir skills --force
+  board skills install --dir skills --plugins tasks,evals
   board skills install --dir skills --json")]
     Install {
         #[command(flatten)]
@@ -92,6 +95,7 @@ directory cannot be read.
 
 Examples:
   board skills list --dir skills
+  board skills list --dir skills --plugins tasks,evals
   board skills list --dir skills --json")]
     List {
         #[command(flatten)]
@@ -107,6 +111,9 @@ pub(crate) struct At {
     /// The skills directory, such as ~/.agents/skills; ~/.claude/skills when left out.
     #[arg(long, value_name = "DIR", value_hint = clap::ValueHint::DirPath)]
     dir: Option<PathBuf>,
+    /// Act only on these plugins' skills, such as tasks,evals.
+    #[arg(long, value_name = "NAMES", value_delimiter = ',')]
+    plugins: Option<Vec<String>>,
 }
 
 /// What a skills directory holds at one name.
@@ -287,6 +294,12 @@ pub(crate) fn skills(
         .with_hint("name the skills directory with `--dir`");
         return render::refused(printer, refusal);
     };
+    let only = match at.plugins.as_deref().map(|names| chosen(names, SKILLS)) {
+        None => None,
+        Some(Ok(only)) => Some(only),
+        Some(Err(refusal)) => return render::refused(printer, refusal),
+    };
+    let only = only.as_ref();
     let dir = context.start.join(&shown);
     let held = match read(&dir).map(|held| keyed(held, SKILLS)) {
         Ok(held) => held,
@@ -294,14 +307,14 @@ pub(crate) fn skills(
     };
     match command {
         SkillsCommand::List { .. } => {
-            let rows = listed(SKILLS, &held).into_iter();
+            let rows = listed(SKILLS, &held, only).into_iter();
             let rows = rows.map(|(name, state)| Skilled::new(&shown, name, state));
             printer.print(
                 LIST_REPORT,
                 Ok(page.first_of(rows.collect()).described("skills")),
             )
         }
-        SkillsCommand::Install { force, .. } => match install(&dir, SKILLS, &held, *force) {
+        SkillsCommand::Install { force, .. } => match install(&dir, SKILLS, &held, *force, only) {
             Ok(done) => {
                 let rows = done.into_iter();
                 let rows = rows.map(|(name, state)| Skilled::new(&shown, name, state));
@@ -315,6 +328,35 @@ pub(crate) fn skills(
     }
 }
 
+/// The plugins `names` lists, once each, when every one of them ships a
+/// skill in `skills` and there is at least one; else a `board::cli::usage`
+/// refusal that names the others and lists the plugins that ship skills.
+fn chosen<'a>(names: &[String], skills: &'a [Skill]) -> Result<BTreeSet<&'a str>, Refusal> {
+    let shipping: BTreeSet<&str> = skills.iter().map(|skill| skill.plugin).collect();
+    let names: BTreeSet<&str> = (names.iter().map(|name| name.trim()))
+        .filter(|name| !name.is_empty())
+        .collect();
+    let unknown: Vec<&str> = (names.iter().copied())
+        .filter(|name| !shipping.contains(name))
+        .collect();
+    let message = if names.is_empty() {
+        "--plugins names no plugin".to_owned()
+    } else if !unknown.is_empty() {
+        format!(
+            "no skill this binary ships belongs to {}",
+            unknown.join(", ")
+        )
+    } else {
+        return Ok(shipping
+            .into_iter()
+            .filter(|name| names.contains(name))
+            .collect());
+    };
+    let plugins: Vec<&str> = shipping.into_iter().collect();
+    let hint = format!("name some of {} in --plugins", plugins.join(", "));
+    Err(plain(Code::CliUsage, &message).with_hint(hint))
+}
+
 /// `skills`' files as `Held::Board` reads a folder.
 fn files(skill: &Skill) -> BTreeMap<String, Option<Vec<u8>>> {
     let files = skill.files.iter();
@@ -323,12 +365,18 @@ fn files(skill: &Skill) -> BTreeMap<String, Option<Vec<u8>>> {
         .collect()
 }
 
-/// Each skill in `skills` and each Board folder in `held` for no skill,
-/// with its state, in name order. A Board folder for no skill is retired
+/// Each skill in `skills` of a plugin in `only`, or every skill when it is
+/// `None`, and each Board folder in `held` for no skill, with its state, in
+/// name order. A folder at the name of a skill of a plugin left out of
+/// `only` is not listed. A Board folder for no skill is retired
 /// only when its marker names the skill its folder is named for; one whose
 /// marker names another skill, or none, is a copy. At a skill's name, a
 /// folder whose marker does not name that skill is not Board's.
-fn listed(skills: &[Skill], held: &BTreeMap<String, Held>) -> Vec<(String, Listed)> {
+fn listed(
+    skills: &[Skill],
+    held: &BTreeMap<String, Held>,
+    only: Option<&BTreeSet<&str>>,
+) -> Vec<(String, Listed)> {
     let mut listed: BTreeMap<String, Listed> = held
         .iter()
         .filter_map(|(name, held)| match held {
@@ -340,6 +388,10 @@ fn listed(skills: &[Skill], held: &BTreeMap<String, Held>) -> Vec<(String, Liste
         })
         .collect();
     for skill in skills {
+        if !selected(skill, only) {
+            listed.remove(skill.name);
+            continue;
+        }
         let state = match held.get(skill.name) {
             None => Listed::Missing,
             Some(Held::Foreign) => Listed::NotBoard,
@@ -354,7 +406,13 @@ fn listed(skills: &[Skill], held: &BTreeMap<String, Held>) -> Vec<(String, Liste
     listed.into_iter().collect()
 }
 
-/// Installs `skills` into `dir`, which held `held`: refuses every folder
+/// Whether `skill` is of a plugin in `only`, or `only` is `None`.
+fn selected(skill: &Skill, only: Option<&BTreeSet<&str>>) -> bool {
+    only.is_none_or(|only| only.contains(skill.plugin))
+}
+
+/// Installs the skills in `skills` of a plugin in `only`, or every skill
+/// when it is `None`, into `dir`, which held `held`: refuses every folder
 /// at a skill's name that is not Board's unless `force`, then removes each
 /// retired Board folder, keeps each copy, and writes each skill whose
 /// folder differs, moving a folder that is not Board's aside to a backup.
@@ -363,8 +421,9 @@ fn install(
     skills: &[Skill],
     held: &BTreeMap<String, Held>,
     force: bool,
+    only: Option<&BTreeSet<&str>>,
 ) -> Result<Vec<(String, Installed)>, SkillsError> {
-    let listed = listed(skills, held);
+    let listed = listed(skills, held, only);
     let foreign: Vec<String> = (listed.iter())
         .filter(|(_, state)| *state == Listed::NotBoard)
         .map(|(name, _)| name.clone())
@@ -382,7 +441,7 @@ fn install(
             done.push((name.clone(), Installed::Kept));
         }
     }
-    for skill in skills {
+    for skill in skills.iter().filter(|skill| selected(skill, only)) {
         let state = listed.iter().find(|(name, _)| name == skill.name);
         let installed = match state.map(|(_, state)| *state) {
             Some(Listed::Current) => Installed::Unchanged,
