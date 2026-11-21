@@ -84,7 +84,7 @@ fn a_file_at_a_json_name_a_record_or_a_directory_is_refused_and_one_at_its_whole
     assert_eq!(record.fields(), Fields::at(&path("/tasks/a")));
     assert_eq!(
         record.code().hint(&record.fields()),
-        "when a record at the name with `.json` added holds the name, replace that record with a record line of put --batch, or remove it with rm; a name ending `.json` is read as a record, and a directory holds no bytes"
+        "a record at this name plus .json holds the name; pipe a JSON record to board put without --file to replace it, or remove it with board rm; a name ending .json is read as a record, and a directory holds no bytes"
     );
     let directory = put_file(&scenario, "/tasks", Expect::Any, b"x").unwrap_err();
     assert_eq!(

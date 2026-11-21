@@ -230,7 +230,7 @@ fn bounded(stdin: &mut dyn Read) -> std::io::Result<Vec<u8>> {
 /// `{`.
 fn json_object(bytes: &[u8]) -> bool {
     bytes.trim_ascii_start().first() == Some(&b'{')
-        && serde_json::from_slice::<Map<String, Value>>(bytes).is_ok()
+        && serde_json::from_slice::<serde::de::IgnoredAny>(bytes).is_ok()
 }
 
 /// Whether `stdin`, which a call left unread, holds more than whitespace.
