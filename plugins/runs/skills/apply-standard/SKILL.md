@@ -11,14 +11,19 @@ can be compared with it.
 
 ## What you need
 
-- The person names a repository checkout on disk. Any git checkout works.
-  The repository does not need to be mounted in the board.
-- The person names a standard file. sample-standard.md, beside this file, is
-  a sample to copy.
-- The person names the board to record in. Pass it to every command as
-  `board -C <board>`. When the person names none, use the board you are in.
-- The board enables the runs plugin. When `board put` refuses the type
-  `runs/suite/v1` as unknown, run `board -C <board> plugin enable runs`.
+- The person names a repository checkout on disk.
+- Any git checkout works, including a worktree.
+- The repository does not need to be mounted in the board.
+- The person names a standard file.
+- sample-standard.md, beside this file, is a sample standard to copy.
+- The person names the board to record in.
+- Pass the board to every command as `board -C <board>`.
+- When the person names no board, use the board you are in.
+- The board must enable the runs plugin.
+- When `board put` refuses the suite with `board::record::unknown_type`, run
+  `board -C <board> plugin enable runs`.
+- Do not write the schema file that Board's hint names by hand.
+  `board plugin enable runs` writes both of the plugin's schemas.
 
 ## The standard file
 
@@ -41,9 +46,17 @@ can be compared with it.
    `git -C <checkout> status --porcelain` to find out whether the checkout
    has uncommitted changes. When the folder is not a git checkout, stop and
    ask the person for one. Change nothing in the repository.
-3. Name the suite `<repository>-<standard>`, in lower case. `<repository>`
-   is the repository's name and `<standard>` the standard file's name
-   without `.md`.
+3. Name the suite `<repository>-<standard>`.
+   - `<repository>` is the last part of the URL that
+     `git -C <checkout> remote get-url origin` prints, without `.git`.
+     Every worktree of one repository has the same origin, so they all write
+     to one suite.
+   - When the checkout has no `origin` remote, `<repository>` is the name of
+     the checkout's top folder, from `git -C <checkout> rev-parse --show-toplevel`.
+   - `<standard>` is the standard file's name without `.md`.
+   - Write both parts in lower case. Replace each run of characters other
+     than letters, digits and `-` with one `-`, and drop a `-` at either end.
+     For example, `Team Standard (v2).md` becomes `team-standard-v2`.
 4. Run `board -C <board> get /suites/<repository>-<standard>`. When the board
    holds no suite there, write one with
    `board -C <board> put /suites/<repository>-<standard>`, with the suite
@@ -51,6 +64,11 @@ can be compared with it.
    standard gained or lost rules, write the suite again with the new cases.
 5. For each rule, read the files its patterns match and decide whether the
    repository meets the rule.
+   - List the checkout's files with
+     `git -C <checkout> ls-files --cached --others --exclude-standard`, and
+     match each pattern against that list.
+   - The list holds tracked files and untracked files that git does not
+     ignore. Ignored files, such as `target/` or `node_modules/`, never count.
    - A rule whose patterns match no file is skipped with the note
      "no file matches".
    - A rule you cannot judge from the files is skipped with a note that says
