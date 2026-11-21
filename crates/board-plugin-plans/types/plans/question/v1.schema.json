@@ -55,8 +55,17 @@
     {
       "properties": {
         "by": {
-          "required": [
-            "session"
+          "anyOf": [
+            {
+              "required": [
+                "session"
+              ]
+            },
+            {
+              "required": [
+                "person"
+              ]
+            }
           ]
         }
       }
@@ -99,7 +108,7 @@
     },
     "by": {
       "$ref": "#/$defs/Actor",
-      "description": "Who asked. It names the asking session, so the answer can be sent\nback to it."
+      "description": "Who asked: the asking session, or the person who asked without one,\nso the answer can be sent back."
     },
     "context_path": {
       "description": "A Markdown file in the board that holds long background.",

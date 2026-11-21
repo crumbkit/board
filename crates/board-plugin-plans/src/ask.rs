@@ -30,8 +30,9 @@ pub(crate) struct Input {
     #[schemars(regex(pattern = r"^[a-z0-9][a-z0-9._-]*$"))]
     project: String,
     /// The question as a `plans/question/v1` holds it, with `question` and
-    /// `by` naming the asking session. `$type`, `status` and `asked` may be
-    /// left out; they are filled in as open and now.
+    /// `by` naming the asking session, or the person who asks without one.
+    /// `$type`, `status` and `asked` may be left out; they are filled in as
+    /// open and now.
     question: Map<String, Value>,
 }
 
@@ -75,7 +76,7 @@ pub(crate) fn ask(host: &dyn Host, input: &Value) -> Result<Value, PluginError> 
     question.entry("asked").or_insert_with(|| json!(now));
     let line = json!({"new": format!("{folder}/questions/"), "record": question.clone()});
     // Filing and merging admit the same questions: one its schema admits,
-    // whose `by` therefore names a session.
+    // whose `by` therefore names a session or a person.
     let put_refused = |error: board_ops::PutError| {
         PluginError::board_refused("plans", "put --batch", &error.refusal())
     };
@@ -84,19 +85,24 @@ pub(crate) fn ask(host: &dyn Host, input: &Value) -> Result<Value, PluginError> 
     let text = (question.get("question").and_then(Value::as_str)).unwrap_or_default();
     let key = (folder.clone(), words(text));
     let asker = question.get("by").cloned().unwrap_or(Value::Null);
-    let session = asker
-        .get("session")
-        .and_then(Value::as_str)
-        .unwrap_or_default();
+    let named = |field: &str| asker.get(field).and_then(Value::as_str).map(str::to_owned);
+    let (session, person) = (named("session"), named("person"));
     let (open, _) = waiting(host, &folder)?;
     let same: Vec<&Waiting> = (open.iter())
         .filter(|each| each.project == folder && words(&each.question) == key.1)
         .collect();
-    // A match the session already asked is the one it waits on. Otherwise
-    // the first match is the one the owner reads first, because `waiting`
-    // lists a project's questions critical first, then oldest first.
-    let known = (same.iter()).find(|each| {
-        each.session == session || each.also_asked.iter().any(|other| other == session)
+    // A match the asker already asked is the one it waits on: by session
+    // when the asker names one, and by person otherwise. Otherwise the
+    // first match is the one the owner reads first, because `waiting` lists
+    // a project's questions critical first, then oldest first.
+    let known = (same.iter()).find(|each| match (&session, &person) {
+        (Some(session), _) => {
+            each.session.as_ref() == Some(session) || each.also_asked.contains(session)
+        }
+        (None, Some(person)) => {
+            each.person.as_ref() == Some(person) || each.also_people.contains(person)
+        }
+        (None, None) => false,
     });
     let output = if let Some(known) = known {
         merged(&known.path)

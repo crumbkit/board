@@ -176,9 +176,10 @@ fn board_refuses_a_project_that_is_no_slug_and_admits_its_twin() {
     );
 }
 
-/// A question its schema refuses, here one whose asker names no session, is
-/// refused with Board's put code and nothing is filed. The twin that names
-/// one is filed.
+/// A question its schema refuses, here one whose asker names neither a
+/// session nor a person, is refused with Board's put code and nothing is
+/// filed. The twin that names a session is filed, and so is the twin that
+/// names only a person.
 #[test]
 fn a_question_its_schema_refuses_is_not_filed_and_its_twin_is() {
     let (_scenario, board) = plans_board(&[]);
@@ -198,6 +199,48 @@ fn a_question_its_schema_refuses_is_not_filed_and_its_twin_is() {
             .unwrap()
             .output["outcome"],
         json!("filed")
+    );
+    let mut person = asking("Ship it today?", "local_aa");
+    person["question"]["by"] = json!({"person": "ana"});
+    assert_eq!(ask(&board, &person)["outcome"], json!("filed"));
+}
+
+/// The input that asks `words` in project `a` for the person `person`, who
+/// has no session.
+fn asking_as(words: &str, person: &str) -> Value {
+    let mut input = asking(words, "local_aa");
+    input["question"]["by"] = json!({"person": person});
+    input
+}
+
+/// A person who asks the same words twice is merged the second time, as a
+/// session is, and the question gains no asker. Another person asking them
+/// is merged into the question's `also_by`.
+#[test]
+fn a_person_asking_again_is_merged_and_another_person_joins_also_by() {
+    let (scenario, board) = plans_board(&[]);
+    let filed = ask(&board, &asking_as("Ship it?", "ana"));
+    assert_eq!(filed["outcome"], json!("filed"));
+    let path = filed["path"].as_str().unwrap().to_owned();
+    let again = ask(&board, &asking_as("ship it", "ana"));
+    assert_eq!(
+        (&again["outcome"], &again["path"]),
+        (&json!("merged"), &json!(path))
+    );
+    let stored = || -> Value {
+        let file = scenario.workdir().join(format!("{}.json", &path[1..]));
+        serde_json::from_str(&std::fs::read_to_string(file).unwrap()).unwrap()
+    };
+    assert_eq!(stored().get("also_by"), None);
+    let other = ask(&board, &asking_as("Ship it?", "bo"));
+    assert_eq!(other["outcome"], json!("merged"));
+    assert_eq!(stored()["also_by"], json!([{"person": "bo"}]));
+    ask(&board, &asking_as("Ship it?", "bo"));
+    assert_eq!(stored()["also_by"], json!([{"person": "bo"}]));
+    let listed = open(&board);
+    assert_eq!(
+        (&listed[0]["person"], &listed[0]["also_asked"]),
+        (&json!("ana"), &json!([]))
     );
 }
 

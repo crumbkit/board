@@ -6,7 +6,10 @@ export type Question = {
   path: string
   question: string
   asked: string
-  session: string
+  /** The session that asked; absent when a person asked without one. */
+  session?: string
+  /** The person who asked, when the asker named one. */
+  person?: string
   /** The other sessions that asked the same question, each of which waits for its answer too. */
   also_asked?: string[]
   options: Option[]

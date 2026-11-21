@@ -488,6 +488,30 @@ fn a_question_is_returned_with_its_original_time_and_null_for_what_it_leaves_out
     );
 }
 
+/// A question a person asked without a session is listed with `person` and
+/// no `session`. Its twin, asked by a program alone, names nobody the answer
+/// can reach and stays unreadable.
+#[test]
+fn a_question_a_person_asked_is_listed_without_a_session_and_a_programs_is_unreadable() {
+    let read = |by: Value| {
+        let rows = vec![row(
+            "/q/a",
+            None,
+            body("2026-10-01T09:00:00Z", &json!({"by": by})),
+        )];
+        opened(rows, &json!({})).1
+    };
+    let output = read(json!({"person": "ana"}));
+    let question = &output["questions"][0];
+    assert_eq!(question["person"], json!("ana"));
+    assert_eq!(question.get("session"), None, "{question}");
+    let output = read(json!({"program": "codex"}));
+    assert_eq!(
+        (output["total"].as_u64(), output["unreadable"].as_u64()),
+        (Some(0), Some(1))
+    );
+}
+
 #[test]
 fn a_question_is_returned_with_the_reasoning_and_background_it_carries() {
     let fields = json!({

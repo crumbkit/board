@@ -13,11 +13,13 @@ so it is written at its path. Its schema declares its folder too, so
 
 - `plans/question/v1` at `/projects/<project>/questions/<id>`. `<id>` is a
   sortable UTC time and a short suffix, such as `20261024T1830Z-k3`.
-  `question`, `by` (an `Actor` whose `session` is the asking session's
-  `local_` id), `asked` and `status` (`open` or `withdrawn`) are required.
+  `question`, `by` (an `Actor` that names the asking session's `local_` id
+  in `session`, or the person who asked without a session in `person`),
+  `asked` and `status` (`open` or `withdrawn`) are required. A `by` that
+  names only a `program` or an `agent` is refused.
   `options`, `recommendation`, `why`, `blocks`, `blocked_work`, `mount`,
   `context_path`, `note`, `also_by` and `withdrawn_reason` are optional.
-  `also_by` lists the other sessions, as `Actor`s, that `plans.ask` merged
+  `also_by` lists the other askers, as `Actor`s, that `plans.ask` merged
   into the question. `blocks` is the
   path of the change or task that cannot proceed until the question is
   answered.
@@ -85,7 +87,9 @@ with their options, recommendation and what each blocks. Each question
 carries `project`, the folder above its `questions/` folder, and `critical`,
 true when `blocks` names a change whose phase is not `done` or `dropped`, or
 a task whose status is `open`. A mounted question's `blocks` is read from its
-own board's root. The questions come grouped by project. Within a project
+own board's root. Each question carries `session` when a session asked it
+and `person` when the asker named a person; a question a person asked
+without a session has no `session`. The questions come grouped by project. Within a project
 the critical ones come first, then the rest, each oldest first. Projects
 come in the order of their first question, so a project holding a critical
 question comes before one that holds none. The limit keeps the first
@@ -108,17 +112,24 @@ stdin files a question, the record as a `plans/question/v1` holds it, under
 first looks in the project for a question that asks the same words, matched
 as `plans.sweep` matches them:
 
-- An open one takes the asker into its `also_by` unless that session already
-  asked it, and nothing is filed. `outcome` is `merged` and `path` names it.
+- An open one takes the asker into its `also_by` unless that asker already
+  asked it, and nothing is filed. An asker is matched by session when it
+  names one, and by person otherwise. `outcome` is `merged` and `path`
+  names it.
 - Otherwise, one that an answer names gives `outcome` `answered`, its `path`,
   the `answer` (`path`, `choice`, `words`) and `decisions`, the decisions
   whose `refs` name the question or the answer. Nothing is filed.
 - Otherwise the question is filed: `outcome` is `filed` and `path` is new.
 
 Each output carries `line`, one sentence that says what happened. A
-question its schema refuses, such as one whose `by` names no session, is
-refused with `plans::board::refused`, carrying Board's code, before any
-question is read, and nothing is written. When the open question is
+question its schema refuses, such as one whose `by` names neither a session
+nor a person, is refused with `plans::board::refused`, carrying Board's code,
+before any question is read, and nothing is written. The refusal's text lists
+each refused line with Board's code and the field at fault, such as
+`line 1: board::record::invalid: ... fails its schema at "/by": ...`; with
+`--json` the lines are in `refusals`. A board that enabled plans before
+questions could name a person keeps a schema that requires a session until
+`board plugin enable plans` runs again. When the open question is
 answered or withdrawn before the merge writes, the call is refused with
 `plans::ask::<reason>`, for the reasons `plans.withdraw` gives, and a hint
 to ask again. `plans.open` lists each question's merged sessions in
@@ -130,13 +141,15 @@ needs the owner, with a reason that starts `plans.sweep:`. Each question is
 withdrawn for the first of these that applies:
 
 - `done` or `dropped`: the change or task `blocks` names is done or
-  dropped, and no session is in `also_by`. A merged question waits on its
+  dropped, and no session or person is in `also_by`. A merged question waits on its
   later askers' work too, which `blocks` does not name, so it is withdrawn
   only when it is answered, when every asker is archived, or when a person
   withdraws it.
 - `archived`: the session that asked and every session in `also_by` are
   among `archived`. Board knows nothing of sessions, so the caller names
-  the archived ones.
+  the archived ones. A question a person asked without a session, or one
+  a person is merged into, is never withdrawn as `archived`, because no
+  session of that person can be archived.
 - `answered`: a question that an answer names, in the same project, asks
   the same words. Words match after lower-casing and keeping only letters
   and digits.

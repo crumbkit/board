@@ -64,7 +64,9 @@ on 2.1.308 showed it refuses a live session's `local_` id. The string is the
 SendMessage tool's spelling of a recipient; it was refused in the same
 headless probe, and its delivery in the desktop app has not been tested. When
 the send to the asking session is refused, the toast says the answer is
-recorded in Board and the message was not delivered.
+recorded in Board and the message was not delivered. When a person asked
+without a session, the toast says so and names any `also_asked` session
+sent the answer.
 
 ## The morning report
 

@@ -333,10 +333,20 @@ impl Printer {
 /// batch, then the end of a plugin's stderr.
 fn text_only(refusal: &Refusal) -> Vec<u8> {
     let mut text = String::new();
-    // Only Board's own batch refusals list lines; a plugin's `refusals`
-    // field is its own.
+    // Board's own batch refusals list lines, and so does a plugin's
+    // `<plugin>::board::refused`, which copies Board's fields and names
+    // Board's code in `code`. Any other plugin's `refusals` field is its own.
+    let board_wrapped = |code: &board_model::PluginCode| {
+        code.as_str().ends_with("::board::refused")
+            && (refusal.fields.get("code").and_then(Value::as_str))
+                .and_then(board_model::Code::parse)
+                .is_some()
+    };
     let lines = match (&refusal.code, refusal.fields.get("refusals")) {
         (RefusalCode::Board(_), Some(Value::Array(lines))) => lines.as_slice(),
+        (RefusalCode::Plugin(code), Some(Value::Array(lines))) if board_wrapped(code) => {
+            lines.as_slice()
+        }
         _ => &[],
     };
     for line in lines {
