@@ -124,8 +124,9 @@ fn main() {
 }
 
 /// Each skill the plugins this build enables ship, as its name, its
-/// plugin's directory name, its directory and its files. A plugin's own skill, `plugins/<plugin>/SKILL.md`, is named
-/// after the plugin and ships its `SKILL.md` and `README.md`; a skill in
+/// plugin's directory name, its directory and its files. A plugin's own
+/// skill, `plugins/<plugin>/SKILL.md`, is named after the plugin and ships
+/// its `SKILL.md` and `README.md`; a skill in
 /// `plugins/<plugin>/skills/<skill>/` ships every file in its directory.
 fn found(plugins: &Path) -> Vec<(String, String, PathBuf, Vec<PathBuf>)> {
     let mut found = Vec::new();

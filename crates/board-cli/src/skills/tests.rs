@@ -329,7 +329,7 @@ fn held_by_two_plugins() -> BTreeMap<String, Held> {
 #[test]
 fn a_selection_of_plugins_lists_only_their_skills_and_never_retires_another_plugins_folder() {
     let held = held_by_two_plugins();
-    let only = BTreeSet::from(["a"]);
+    let only = BTreeSet::from(["a".to_owned()]);
     assert_eq!(
         listed(&[ONE, TWO, THREE], &held, Some(&only)),
         [
@@ -352,7 +352,7 @@ fn a_selection_of_plugins_lists_only_their_skills_and_never_retires_another_plug
 #[test]
 fn a_selection_leaves_another_plugins_foreign_folder_unrefused() {
     let held = BTreeMap::from([("three".to_owned(), Held::Foreign)]);
-    let only = BTreeSet::from(["a"]);
+    let only = BTreeSet::from(["a".to_owned()]);
     assert_eq!(
         listed(&[ONE, THREE], &held, Some(&only)),
         [("one".to_owned(), Listed::Missing)]
@@ -370,7 +370,7 @@ fn install_with_a_selection_writes_its_plugins_skills_and_leaves_another_plugins
     )
     .write("skills/three/SKILL.md", board_scenario::Item::File("old"));
     let held = read(&dir).unwrap();
-    let only = BTreeSet::from(["a"]);
+    let only = BTreeSet::from(["a".to_owned()]);
     let done = install(&dir, &[ONE, THREE], &held, false, Some(&only)).unwrap();
     assert_eq!(done, [("one".to_owned(), Installed::Written)]);
     assert_eq!(std::fs::read(dir.join("one/SKILL.md")).unwrap(), b"one");
@@ -381,13 +381,22 @@ fn install_with_a_selection_writes_its_plugins_skills_and_leaves_another_plugins
     );
 }
 
+/// Each of `names` as an owned string.
+fn strings(names: &[&str]) -> Vec<String> {
+    names.iter().map(|&name| name.to_owned()).collect()
+}
+
 #[test]
-fn plugins_must_each_ship_a_skill_and_name_at_least_one() {
-    let names =
-        |names: &[&str]| -> Vec<String> { names.iter().map(|&name| name.to_owned()).collect() };
-    let chosen_ok = chosen(&names(&["a", "b"]), &[ONE, THREE]).unwrap();
-    assert_eq!(chosen_ok, BTreeSet::from(["a", "b"]));
-    let refusal = chosen(&names(&["a", "nosuch", "other"]), &[ONE, THREE]).unwrap_err();
+fn plugins_must_each_be_known_and_name_at_least_one_and_one_with_no_skill_selects_none() {
+    let known: BTreeSet<String> = strings(&["a", "b", "c"]).into_iter().collect();
+    let only = chosen(&strings(&["a", "c"]), &known).unwrap();
+    let expected: BTreeSet<String> = strings(&["a", "c"]).into_iter().collect();
+    assert_eq!(only, expected);
+    assert_eq!(
+        listed(&[ONE, THREE], &BTreeMap::new(), Some(&only)),
+        [("one".to_owned(), Listed::Missing)]
+    );
+    let refusal = chosen(&strings(&["a", "nosuch", "other"]), &known).unwrap_err();
     assert_eq!(refusal.code.as_str(), "board::cli::usage");
     assert!(
         refusal.message.contains("nosuch, other"),
@@ -395,7 +404,24 @@ fn plugins_must_each_ship_a_skill_and_name_at_least_one() {
         refusal.message
     );
     let hint = refusal.hint.as_deref().unwrap_or_default();
-    assert!(hint.contains("a, b"), "{hint}");
-    let refusal = chosen(&names(&[""]), &[ONE]).unwrap_err();
-    assert_eq!(refusal.code.as_str(), "board::cli::usage");
+    assert!(hint.contains("a, b, c"), "{hint}");
+    for empty in [&[""][..], &[][..], &[" ", ""][..]] {
+        let refusal = chosen(&strings(empty), &known).unwrap_err();
+        assert_eq!(refusal.code.as_str(), "board::cli::usage");
+    }
+}
+
+#[test]
+fn every_embedded_skills_plugin_is_built_in() {
+    let built_in: BTreeSet<String> = (board_plugins::BUILT_IN.0.iter())
+        .map(|plugin| plugin.manifest().name.as_str().to_owned())
+        .collect();
+    for skill in SKILLS {
+        assert!(
+            built_in.contains(skill.plugin),
+            "{} ships {}",
+            skill.plugin,
+            skill.name
+        );
+    }
 }
