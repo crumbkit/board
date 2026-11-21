@@ -32,9 +32,9 @@ as in `board -C ~/Code/personal-board put ...`.
 
 ## When the board mounts repositories
 
-Run `board ls /` in the board, which never refuses there. A board whose top
-level lists no `/repos/` directory mounts no repositories. In such a board,
-skip this section: name each repository the
+Run `board -C <board> ls /`, or `board --personal ls /` for the personal
+board. A board whose top level lists no `repos` directory mounts no
+repositories. In such a board, skip this section: name each repository the
 eval concerns in `subjects` as `owner/name`, and leave `mounts` out. Add a
 mount only in a board that already mounts repositories.
 
@@ -45,8 +45,8 @@ mount of the repository you are in before you test.
 1. Take the repository's path from
    `dirname "$(git rev-parse --path-format=absolute --git-common-dir)"`. It
    gives the main checkout even from a worktree.
-2. Only after `board ls /` shows `/repos/`, run
-   `board -C <personal board> ls /repos`, which lists the mounts. Each is a file
+2. Only after `board -C <personal board> ls /` lists a `repos` directory,
+   run `board -C <personal board> ls /repos`, which lists the mounts. Each is a file
    `repos/<name>.json` in the personal board's directory; read them. The one
    whose `repo` is that path (after expanding a leading `~/`) is the mount.
 3. If none matches, add one named after the repository's directory, with

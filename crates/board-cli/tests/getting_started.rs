@@ -197,34 +197,86 @@ fn the_pages_blocks_make_a_board_with_six_plugins_a_project_a_task_a_question_an
     assert_eq!(eval["runs"], serde_json::json!([path]), "{eval}");
 }
 
-/// The evals skill tells an agent that a board whose top level lists no
-/// `/repos/` mounts no repositories, so `board ls /` must answer in a fresh
-/// board.
-#[test]
-fn board_ls_of_the_root_answers_in_a_fresh_board_and_lists_no_repos() {
+/// Whether any entry `board ls` printed, at any depth of its JSON, is the
+/// directory whose logical path is `/repos`.
+fn lists_repos(listed: &Value) -> bool {
+    match listed {
+        Value::Object(fields) => {
+            fields.get("logical") == Some(&Value::from("/repos"))
+                || fields.values().any(lists_repos)
+        }
+        Value::Array(items) => items.iter().any(lists_repos),
+        _ => false,
+    }
+}
+
+/// A home with the board the page's "Make your board" blocks make.
+fn made_board() -> TempDir {
     let page = page();
     let home = home();
     for block in blocks(&page, "Make your board") {
         run(home.path(), &block);
     }
-    let listed = board(home.path(), &["ls", "/"]);
-    assert!(!listed.to_string().contains("/repos/"), "{listed}");
+    home
 }
 
-/// The Install section's text, up to the next section.
-fn install(page: &str) -> &str {
-    let start = page.find("\n## Install\n").unwrap();
-    let rest = &page[start + 1..];
-    let end = rest[1..].find("\n## ").map_or(rest.len(), |end| end + 1);
+/// The evals skill tells an agent that a board whose top level lists no
+/// `repos` directory mounts no repositories, so `board ls /` must answer in
+/// a fresh board and list none.
+#[test]
+fn board_ls_of_the_root_answers_in_a_fresh_board_and_lists_no_repos_directory() {
+    let home = made_board();
+    let listed = board(home.path(), &["ls", "/"]);
+    assert!(!lists_repos(&listed), "{listed}");
+}
+
+#[test]
+fn board_ls_of_the_root_lists_the_repos_directory_once_the_board_mounts_a_repository() {
+    let home = made_board();
+    let repo = home.path().join("x");
+    run(
+        home.path(),
+        "git init -q -b main x && git -C x commit -q --allow-empty -m first",
+    );
+    let commit = run(home.path(), "git -C x rev-parse HEAD");
+    let commit = String::from_utf8_lossy(&commit.stdout).trim().to_owned();
+    let mount = serde_json::json!({
+        "$type": "board/mount/v1",
+        "repo": repo.to_str().unwrap(),
+        "follow": "main",
+        "commit": commit,
+    });
+    run(
+        home.path(),
+        &format!("echo '{mount}' | board --personal put /repos/x"),
+    );
+    let listed = board(home.path(), &["ls", "/"]);
+    assert!(lists_repos(&listed), "{listed}");
+}
+
+/// The text under `heading` in the page, up to the next heading of any
+/// level.
+fn section<'page>(page: &'page str, heading: &str) -> &'page str {
+    let start = page.find(&format!("\n{heading}\n")).unwrap() + heading.len() + 2;
+    let rest = &page[start..];
+    let end = rest.find("\n#").map_or(rest.len(), |end| end + 1);
     &rest[..end]
 }
 
 #[test]
-fn the_install_section_names_the_release_folders_installer_and_its_hooks_flag() {
+fn the_release_folder_subsection_names_its_installer_and_the_hooks_board_app_runs() {
     let page = page();
-    let section = install(&page);
-    assert!(section.contains("`<release folder>/install`"), "{section}");
-    assert!(section.contains("`install --hooks`"), "{section}");
+    let release = section(&page, "### Install from a release folder");
+    let release = release.split_whitespace().collect::<Vec<_>>().join(" ");
+    assert!(release.contains("`<release folder>/install`"), "{release}");
+    assert!(
+        release.contains("`<release folder>/install --hooks`"),
+        "{release}"
+    );
+    assert!(
+        release.contains("Board.app always runs `install --hooks`"),
+        "{release}"
+    );
     assert!(
         page.lines()
             .take(4)
@@ -233,11 +285,26 @@ fn the_install_section_names_the_release_folders_installer_and_its_hooks_flag() 
 }
 
 #[test]
-fn the_install_section_still_names_board_app_and_the_dmg() {
+fn the_install_section_still_takes_a_reader_through_the_dmg_and_board_app() {
     let page = page();
-    let section = install(&page);
-    assert!(section.contains("Board.app"), "{section}");
-    assert!(section.contains("dmg"), "{section}");
+    let dmg = section(&page, "## Install");
+    assert!(dmg.contains("Open the dmg"), "{dmg}");
+    assert!(dmg.contains("run Board.app"), "{dmg}");
+    assert!(!dmg.contains("release folder"), "{dmg}");
+}
+
+/// A failed `put --new` prints no path, so the block must stop before it
+/// concludes the eval with an empty run.
+#[test]
+fn the_test_something_block_stops_when_the_run_has_no_path() {
+    let page = page();
+    let blocks = blocks(&page, "Test something");
+    let lines: Vec<&str> = blocks.iter().flat_map(|block| block.lines()).collect();
+    let at = lines
+        .iter()
+        .position(|line| line.starts_with("run=$("))
+        .unwrap();
+    assert_eq!(lines[at + 1], "[ -n \"$run\" ]");
 }
 
 #[test]

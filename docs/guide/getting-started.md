@@ -35,11 +35,13 @@ task, a question and an eval in your own board.
 
 - A release shared as a folder, with no dmg, holds the same installer that
   Board.app runs.
-- Run `<release folder>/install`, where `<release folder>` is the folder's
-  path.
-- `install` writes `board`, `attention-sign` and the skills.
-- `install --hooks` also installs Board's Claude Code mods, which changes
-  Claude Code's settings. Board.app always runs it so.
+- Run `<release folder>/install --hooks`, where `<release folder>` is the
+  folder's path. It installs what Board.app installs, because Board.app
+  always runs `install --hooks`.
+- `--hooks` installs Board's Claude Code mods, which changes Claude Code's
+  settings.
+- `<release folder>/install` without `--hooks` writes `board`,
+  `attention-sign` and the skills, and no mods.
 
 ## Make your board
 
@@ -165,6 +167,7 @@ echo '{"$type": "runs/suite/v1", "subjects": ["/topics/wc"], "method": "Count th
 echo '{"$type": "evals/eval/v1", "question": "Does wc -l count a last line that has no newline?", "subjects": ["/topics/wc"], "suites": ["/suites/wc-last-line"], "status": "planned"}' | board --personal put /evals/wc-last-line
 lines=$(printf 'one\ntwo' | wc -l | tr -d ' ')
 run=$(echo '{"$type": "runs/run/v1", "suite": "/suites/wc-last-line", "by": {"person": "'"$me"'"}, "started": "'"$now"'", "scope": "full", "dirty": false, "results": [{"case": "no-final-newline", "outcome": "pass", "measures": {"lines": '"$lines"'}}]}' | board --personal --json put --new --var suite=wc-last-line | sed -n 's/.*"display":"\([^"]*\)".*/\1/p')
+[ -n "$run" ]
 echo '{"$type": "evals/eval/v1", "question": "Does wc -l count a last line that has no newline?", "subjects": ["/topics/wc"], "suites": ["/suites/wc-last-line"], "runs": ["'"$run"'"], "status": "concluded", "verdict": "refuted", "conclusion": "wc -l counted '"$lines"' for two lines, because it counts newlines."}' | board --personal put /evals/wc-last-line
 board --personal evals about --subject /topics/wc
 ```
@@ -173,6 +176,7 @@ board --personal evals about --subject /topics/wc
   exists and `board check` reports no `board::ref::dangling`.
 - `put --new --var suite=wc-last-line` names the run by the time and a
   random suffix, and the block reads its path from the JSON it prints.
+- `[ -n "$run" ]` stops the block when that `put` printed no path.
 - The last `put` rewrites the eval as concluded, with its verdict and run.
 - `evals about` lists the eval as concluded.
 - In Claude Code, the evals skill does the same. Type: "Use the evals skill
