@@ -28,11 +28,14 @@ A path whose corrected line still does not parse, and a refused `--field`
 pointer, get the recovery `board <command> -h` and no `alternatives`.
 
 Three refused command lines name the command meant in place of clap's
-suggestion. `put` given a second argument, such as `board put /notes/a.md
-a.md`, says that put reads what it writes from stdin. Its hint gives the line
+suggestion. `put` given a second argument, such as `board put /notes/a.txt
+a.txt`, says that put reads what it writes from stdin. Its hint gives the line
 with the argument redirected to stdin and `--file` added before any `--`,
-`board put /notes/a.md --file < a.md`, and the same line without `--file` for
-a JSON record; when the line already has `--file`, it gives that line alone.
+`board put /notes/a.txt --file < a.txt`, and the same line without `--file`
+for a JSON record. When the line already has `--file`, or a word in it ends
+`.md`, which `put` writes as a file or a record from its input alone, the hint
+gives the line without the argument alone, such as `board put /notes/a.md <
+a.md`.
 Each word is quoted for a shell. A line that is still refused without that
 argument, such as one with a second stray word, and a line with `--new`, keep
 clap's refusal. A first word that is a common mistake, which is only `cat`

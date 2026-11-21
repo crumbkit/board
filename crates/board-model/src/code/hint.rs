@@ -486,7 +486,7 @@ fn generic(code: Code) -> &'static str {
         }
         Code::PutNul => "remove each NUL byte from the text; a text file Board writes holds none",
         Code::PutNotAFile => {
-            "put a file with `--file` at its whole name, such as `/notes/plan.md`; a name ending `.json` is read as a record, and a directory holds no bytes"
+            "when a record at this name plus .json holds the name, pipe a JSON record to board put without --file to replace it, or remove it with board rm; a name ending .json is read as a record, and a directory holds no bytes"
         }
         Code::PutNoIdentity => {
             "set `git config user.name` and `git config user.email`, or set `commit_on_put` to false in `.board/board.json`"

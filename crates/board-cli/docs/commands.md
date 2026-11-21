@@ -15,7 +15,7 @@ Board: a fast, validated view of a git tree.
 - [`board log`](#board-log): List the commits that changed what a path names, newest first
 - [`board refs`](#board-refs): List the references each entry makes and the entries that reach it
 - [`board uri`](#board-uri): Print the board:// URI that names a record from any known board's clone
-- [`board put`](#board-put): Write the record on stdin at a path or --new name, or a file with --file
+- [`board put`](#board-put): Write the record on stdin at a path or --new name, or a .md file or one with --file
 - [`board rm`](#board-rm): Remove the file at a path
 - [`board sync`](#board-sync): Fetch the remote branch, merge it into this board, and push
 - [`board mount`](#board-mount): Work with mounts
@@ -158,11 +158,13 @@ Effects: read-only, closed-world.
 
 ## `board put`
 
-Write the record on stdin at a path or --new name, or a file with --file
+Write the record on stdin at a path or --new name, or a .md file or one with --file
 
 ### Arguments
 
-- `<PATH>`: Where to write: a logical path that leaves out .json, such as /tasks/a, or a from /tasks
+- `<PATH>`: Where to write: a logical path that leaves out .json, such as /tasks/a, or a, run in /tasks.
+
+  At a path ending .md, stdin that is a JSON object is a record, and other stdin is the file.
 - `--new`: Write at a new name in the folder PATH names, which ends in /, or in the type's folder
 
   The name is the put's UTC minute and four random hex digits, such as 20261030T1405Z-c2e1. The put never overwrites a file, and its report names the path. With no PATH, the record's schema names the folder in `x-board-folder`.
@@ -176,7 +178,9 @@ Write the record on stdin at a path or --new name, or a file with --file
 - `--bulk <REASON>`: Mark the batch's commit as a bulk one, ending its message in `Board-Bulk: <REASON>`.
 
   The reason is one line of 1 to 80 characters, such as `migrate flows`, so a reader of history can tell a commit that touches many files from an edit.
-- `--file`: Write stdin as a file at a path that is its whole name, such as /notes/plan.md.
+- `--file`: Write stdin as a file at a path that is its whole name, such as /notes/plan.txt.
+
+  A path ending .md needs no --file.
 
   With a `store` setting, --file uploads bytes over 1 MiB or not UTF-8 under their digest and writes a board/attachment/v1 record.
 - `--wait <DURATION>`: How long to wait for the board's lock, with a unit: 500ms, 30s, 2m or 1h. Default: `5s`.

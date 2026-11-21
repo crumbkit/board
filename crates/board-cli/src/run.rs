@@ -112,7 +112,9 @@ impl From<String> for Given {
 /// `put`'s arguments.
 #[derive(Debug, clap::Args)]
 pub(crate) struct Putting {
-    /// Where to write: a logical path that leaves out .json, such as /tasks/a, or a from /tasks.
+    /// Where to write: a logical path that leaves out .json, such as /tasks/a, or a, run in /tasks.
+    ///
+    /// At a path ending .md, stdin that is a JSON object is a record, and other stdin is the file.
     #[arg(required_unless_present_any = ["batch", "new"])]
     pub(crate) path: Option<Given>,
     /// Write at a new name in the folder PATH names, which ends in /, or in the type's folder
@@ -144,7 +146,9 @@ pub(crate) struct Putting {
     /// history can tell a commit that touches many files from an edit.
     #[arg(long, value_name = "REASON", requires = "batch")]
     pub(crate) bulk: Option<String>,
-    /// Write stdin as a file at a path that is its whole name, such as /notes/plan.md.
+    /// Write stdin as a file at a path that is its whole name, such as /notes/plan.txt.
+    ///
+    /// A path ending .md needs no --file.
     ///
     /// With a `store` setting, --file uploads bytes over 1 MiB or not UTF-8 under their digest and
     /// writes a board/attachment/v1 record.
@@ -221,7 +225,7 @@ Examples:
         /// The record's logical path, such as /tasks/a, or a from /tasks.
         path: Given,
     },
-    /// Write the record on stdin at a path or --new name, or a file with --file.
+    /// Write the record on stdin at a path or --new name, or a .md file or one with --file.
     #[command(after_help = "\
 The record must satisfy .board/types/<namespace>/<kind>/v<n>.schema.json, the
 schema its `$type` names. Each put is committed unless .board/board.json sets
@@ -233,7 +237,7 @@ Examples:
   board put --new /tasks/ < task.json
   board put --new --var project=board < question.json
   board get /tasks/a | board put /tasks/b
-  board put /notes/plan.md --file < plan.md
+  board put /notes/plan.md < plan.md
   board put --batch < writes.jsonl")]
     Put(Putting),
     /// Remove the file at a path.

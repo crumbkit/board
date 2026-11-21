@@ -1394,10 +1394,10 @@ fn put_given_its_input_as_an_argument_hints_stdin_and_the_hinted_puts_write() {
     );
     assert_eq!(
         hint_of(&refused),
-        "pipe a.md to put: run `board put /notes/a.md --file < a.md` to write it as a file, \
-         or `board put /notes/a.md < a.md` if it holds a JSON record"
+        "pipe a.md to put: run `board put /notes/a.md < a.md`"
     );
     let hints = hinted(&refused);
+    assert_eq!(hints.len(), 1);
     let file = run_hinted(scenario.workdir(), &hints[0].0, b"plan");
     assert_eq!(file.code, 0, "{}", text(&file.stderr));
     let got = board_in(scenario.workdir(), &["get", "/notes/a.md"]);
@@ -1529,7 +1529,7 @@ fn put_hints_quote_each_word_and_a_second_stray_word_keeps_claps_refusal() {
     let scenario = uncommitted();
     let refused = board_in(
         scenario.workdir(),
-        &["put", "/notes/my plan.md", "my plan.md"],
+        &["put", "/notes/my plan.txt", "my plan.txt"],
     );
     assert_eq!(
         (refused.code, refused.error.as_deref()),
@@ -1539,8 +1539,8 @@ fn put_hints_quote_each_word_and_a_second_stray_word_keeps_claps_refusal() {
     assert_eq!(
         hints[0],
         (
-            "board put '/notes/my plan.md' --file".to_owned(),
-            Some("'my plan.md'".to_owned())
+            "board put '/notes/my plan.txt' --file".to_owned(),
+            Some("'my plan.txt'".to_owned())
         )
     );
     let file = run_hinted(scenario.workdir(), &hints[0].0, b"plan");
@@ -1605,7 +1605,7 @@ fn put_new_refuses_a_folder_ending_in_two_slashes_and_admits_one() {
 #[test]
 fn a_put_hint_names_file_before_a_double_dash_and_the_hinted_put_writes() {
     let scenario = uncommitted();
-    let refused = board_in(scenario.workdir(), &["put", "/notes/b.md", "--", "b.md"]);
+    let refused = board_in(scenario.workdir(), &["put", "/notes/b.txt", "--", "b.txt"]);
     assert_eq!(
         (refused.code, refused.error.as_deref()),
         (2, Some("board::cli::usage"))
@@ -1614,8 +1614,8 @@ fn a_put_hint_names_file_before_a_double_dash_and_the_hinted_put_writes() {
     assert_eq!(
         hints[0],
         (
-            "board put /notes/b.md --file --".to_owned(),
-            Some("b.md".to_owned())
+            "board put /notes/b.txt --file --".to_owned(),
+            Some("b.txt".to_owned())
         )
     );
     let file = run_hinted(scenario.workdir(), &hints[0].0, b"b");
@@ -1702,4 +1702,152 @@ fn rm_r_removes_a_folder_named_with_a_trailing_slash_and_rm_alone_refuses_it() {
             "{folder}"
         );
     }
+}
+
+#[test]
+fn put_of_a_markdown_path_writes_stdin_as_that_file_and_any_other_path_reads_a_record() {
+    let scenario = board();
+    scenario.identified();
+    let task = "---\n$type: lr/task/v1\ntitle: a\n---\n# A\n";
+    let wrote = board_with(
+        scenario.workdir(),
+        None,
+        &["put", "/tasks/a.md"],
+        task.as_bytes(),
+    );
+    assert_eq!(wrote.code, 0, "{}", text(&wrote.stderr));
+    let head = scenario.head().unwrap();
+    assert_eq!(
+        text(&wrote.stdout),
+        format!(
+            "wrote /tasks/a.md {}\ncommitted {}\n",
+            scenario.blob(task),
+            head.id
+        )
+    );
+    assert_eq!(
+        text(&board_in(scenario.workdir(), &["get", "/tasks/a.md"]).stdout),
+        task
+    );
+    let record = board_with(
+        scenario.workdir(),
+        None,
+        &["put", "/tasks/b"],
+        task.as_bytes(),
+    );
+    assert_eq!(
+        (record.code, record.error.as_deref()),
+        (1, Some("board::json::parse"))
+    );
+    assert!(!scenario.workdir().join("tasks/b.json").exists());
+}
+
+#[test]
+fn put_of_a_markdown_path_checks_its_frontmatter_as_put_file_does() {
+    let scenario = board();
+    scenario.identified();
+    let unparsed = "---\n$type: [lr/task/v1\n---\n# A\n";
+    let untitled = "---\n$type: lr/task/v1\n---\n# A\n";
+    for (bad, code) in [
+        (unparsed, "board::frontmatter::parse"),
+        (untitled, "board::record::invalid"),
+    ] {
+        let file = board_with(
+            scenario.workdir(),
+            None,
+            &["put", "/tasks/a.md", "--file"],
+            bad.as_bytes(),
+        );
+        assert_eq!(file.code, 1, "{}", text(&file.stderr));
+        let refused = board_with(
+            scenario.workdir(),
+            None,
+            &["put", "/tasks/a.md"],
+            bad.as_bytes(),
+        );
+        assert_eq!(refused.code, 1, "{}", text(&refused.stderr));
+        assert_eq!(refused.error.as_deref(), Some(code), "{bad}");
+        assert_eq!(refused.error, file.error, "{bad}");
+        assert!(!scenario.workdir().join("tasks/a.md").exists());
+    }
+    let titled = "---\n$type: lr/task/v1\ntitle: a\n---\n# A\n";
+    let admitted = board_with(
+        scenario.workdir(),
+        None,
+        &["put", "/tasks/a.md"],
+        titled.as_bytes(),
+    );
+    assert_eq!(admitted.code, 0, "{}", text(&admitted.stderr));
+}
+
+#[test]
+fn put_of_a_markdown_path_expecting_a_blob_another_write_replaced_is_stale() {
+    let scenario = board();
+    scenario.identified();
+    let first = board_with(scenario.workdir(), None, &["put", "/notes/a.md"], b"one\n");
+    assert_eq!(first.code, 0, "{}", text(&first.stderr));
+    let old = scenario.blob("one\n").to_string();
+    let second = board_with(
+        scenario.workdir(),
+        None,
+        &["put", "/notes/a.md", "--expect", &old],
+        b"two\n",
+    );
+    assert_eq!(second.code, 0, "{}", text(&second.stderr));
+    let stale = board_with(
+        scenario.workdir(),
+        None,
+        &["put", "/notes/a.md", "--expect", &old],
+        b"three\n",
+    );
+    assert_eq!(
+        (stale.code, stale.error.as_deref()),
+        (1, Some("board::put::stale"))
+    );
+    assert_eq!(
+        text(&board_in(scenario.workdir(), &["get", "/notes/a.md"]).stdout),
+        "two\n"
+    );
+}
+
+#[test]
+fn put_of_a_json_object_at_a_markdown_path_writes_a_record_and_markdown_there_writes_the_file() {
+    let scenario = board();
+    scenario.identified();
+    let record = r#"{"$type": "lr/task/v1", "title": "a"}"#;
+    let wrote = board_with(
+        scenario.workdir(),
+        None,
+        &["put", "/tasks/a.md"],
+        format!("  \n{record}\n").as_bytes(),
+    );
+    assert_eq!(wrote.code, 0, "{}", text(&wrote.stderr));
+    assert!(scenario.workdir().join("tasks/a.md.json").exists());
+    assert!(!scenario.workdir().join("tasks/a.md").exists());
+    let got = board_in(scenario.workdir(), &["get", "/tasks/a.md"]);
+    assert_eq!(got.code, 0, "{}", text(&got.stderr));
+    let again = board_with(
+        scenario.workdir(),
+        None,
+        &["put", "/tasks/a.md"],
+        &got.stdout,
+    );
+    assert_eq!(again.code, 0, "{}", text(&again.stderr));
+    assert_eq!(
+        board_in(scenario.workdir(), &["get", "/tasks/a.md"]).stdout,
+        got.stdout
+    );
+    assert!(!scenario.workdir().join("tasks/a.md").exists());
+    let markdown = board_with(
+        scenario.workdir(),
+        None,
+        &["put", "/tasks/b.md"],
+        b"{not a record}\n",
+    );
+    assert_eq!(markdown.code, 0, "{}", text(&markdown.stderr));
+    assert_eq!(
+        std::fs::read_to_string(scenario.workdir().join("tasks/b.md")).unwrap(),
+        "{not a record}\n"
+    );
+    assert!(!scenario.workdir().join("tasks/b.md.json").exists());
 }
