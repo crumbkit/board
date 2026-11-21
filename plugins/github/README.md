@@ -51,7 +51,14 @@ the boundary plugin passes it. SKILL.md holds the procedure.
   under `repos/<owner>/<repo>/commits/<head>/`. GitHub answers with the
   latest check run of each name. A job that waits on another has no check
   run until it is queued, but its check suite is already there, so a suite
-  that has not completed keeps the run from passing. When every check run
+  that has not completed keeps the run from passing. It leaves out a
+  suite that has not completed, has no check runs, belongs to an app other
+  than GitHub Actions, and has an `updated_at` more than 10 minutes ago.
+  An app that does not run on the repository, such as a coverage app,
+  leaves its suite queued for good. A re-requested suite has a new
+  `updated_at`, so its app gets another 10 minutes. A GitHub Actions suite
+  always counts, since a workflow can wait longer than 10 minutes. When
+  every check run
   and every check suite completed with success, skipped or neutral, at
   least one check run with success, and every commit status is success, it
   writes a `runs/run/v1` at `<suite>/runs/<stamp>-<name>-<head7>`.
@@ -62,16 +69,20 @@ the boundary plugin passes it. SKILL.md holds the procedure.
   `versions` maps the repository's name to the head, and `started` and
   `finished` come from the check runs. `by` is the program `board` and
   `written_by` is `github/ci`. Then it calls `changes.attach` with the run
-  only, so a newer head attached meanwhile stays. It returns `run`, `head`, `change` and `checks`. It sends
-  nothing to GitHub, and on a refusal it writes nothing.
+  only, so a newer head attached meanwhile stays. It returns `run`,
+  `head`, `change`, `checks` and `ignored`, the app names of the suites it
+  left out. It sends nothing to GitHub, and on a refusal it writes
+  nothing.
   - `github::ci::change`: the change records no full head or no suite.
     gh does not run.
   - `github::ci::failed`: a check run or check suite completed with another
     conclusion, such as failure, cancelled or timed_out, or a commit status
     is failure or error. It wins over pending.
   - `github::ci::pending`: a check run or check suite is queued or in
-    progress, or a commit status is pending. A check suite of an app that
-    never creates check runs can stay queued; record the run by hand then.
+    progress, or a commit status is pending. When it names an app's suite
+    with no check runs that has been idle for 10 minutes or less, the hint
+    says the suite will be ignored once it has been idle for more than 10
+    minutes, and to run the command again then.
   - `github::ci::none`: no check run concluded success, such as when there
     are none or all were skipped.
   - Each of the last three names the checks in the message and in

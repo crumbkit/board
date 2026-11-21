@@ -109,7 +109,26 @@ fn suite(status: &str) -> Vec<Value> {
 
 /// One check suite of GitHub Actions in `status` with `conclusion`.
 fn concluded(status: &str, conclusion: Option<&str>) -> Vec<Value> {
-    vec![json!({"status": status, "conclusion": conclusion, "app": {"name": "GitHub Actions"}})]
+    vec![app_suite(
+        "github-actions",
+        "GitHub Actions",
+        status,
+        conclusion,
+        1,
+    )]
+}
+
+/// One check suite of the app `slug` named `name`, created on 2026-11-19,
+/// with `runs` check runs.
+fn app_suite(slug: &str, name: &str, status: &str, conclusion: Option<&str>, runs: usize) -> Value {
+    json!({
+        "status": status,
+        "conclusion": conclusion,
+        "app": {"slug": slug, "name": name},
+        "created_at": "2026-11-19T10:49:00Z",
+        "updated_at": "2026-11-19T10:49:00Z",
+        "latest_check_runs_count": runs,
+    })
 }
 
 /// Whether any run of the suite was written.
@@ -141,7 +160,7 @@ fn ci_writes_a_passing_run_of_the_changes_suite_from_its_check_runs_and_attaches
     let output = desk.output("ci", &["--change", CHANGE]);
     assert_eq!(
         output,
-        json!({"run": RUN, "head": HEAD, "change": CHANGE, "checks": 3})
+        json!({"run": RUN, "head": HEAD, "change": CHANGE, "checks": 3, "ignored": []})
     );
     let commit = format!("repos/octo/widgets/commits/{HEAD}");
     assert_eq!(
@@ -293,4 +312,44 @@ fn ci_of_a_change_with_no_suite_is_refused_without_gh_and_one_with_a_suite_is_ad
     assert_eq!(desk.gh_calls(), 0);
     lever(&desk, &json!({}));
     assert_eq!(desk.output("ci", &["--change", CHANGE])["run"], RUN);
+}
+
+#[test]
+fn ci_writes_the_run_past_an_old_app_suite_with_no_check_runs_and_its_twin_with_one_is_pending() {
+    let desk = desk();
+    lever(&desk, &json!({}));
+    let mut suites = suite("completed");
+    suites.push(app_suite("codecov", "Codecov", "queued", None, 1));
+    answers(&desk, &passing(), &suites, &[]);
+    let (ran, document) = desk.call("ci", &["--change", CHANGE]);
+    assert_eq!(
+        (ran.code, &document["code"]),
+        (1, &json!("github::ci::pending"))
+    );
+    assert!(!wrote_a_run(&desk));
+    suites[1]["latest_check_runs_count"] = json!(0);
+    answers(&desk, &passing(), &suites, &[]);
+    let output = desk.output("ci", &["--change", CHANGE]);
+    assert_eq!(
+        (&output["run"], &output["ignored"]),
+        (&json!(RUN), &json!(["Codecov"]))
+    );
+    assert_eq!(
+        desk.record(RUN).unwrap()["results"]
+            .as_array()
+            .unwrap()
+            .len(),
+        3
+    );
+}
+
+#[test]
+fn ci_on_a_check_suite_whose_updated_at_holds_a_multi_byte_character_is_refused_and_its_twin_is_admitted()
+ {
+    let mut suites = suite("completed");
+    suites[0]["updated_at"] = json!("2026-11-19\u{e9}0:49:00Z");
+    let refused = refused_then_admitted(&passing(), &suites, &[]);
+    assert_eq!(refused["code"], "github::gh::failed");
+    let message = refused["message"].as_str().unwrap();
+    assert!(message.contains("is not an RFC 3339 time"), "{message}");
 }

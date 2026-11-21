@@ -3,11 +3,13 @@
 //! writes the check runs as a run of the change's suite and attaches the
 //! run to the change.
 
+use std::time::{Duration, SystemTime};
+
 use board_ops::{Host, PluginError};
 use board_plugin::Target;
 use schemars::JsonSchema;
-use serde::de::DeserializeOwned;
-use serde::{Deserialize, Serialize};
+use serde::de::{DeserializeOwned, Error as _};
+use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::{Map, Value, json};
 
 use crate::merge::{is_full_commit, own, recorded_change};
@@ -16,6 +18,11 @@ use crate::{gh, git, remote};
 
 /// The conclusions that count as passed.
 const PASSED: [&str; 3] = ["success", "skipped", "neutral"];
+
+/// How long after GitHub last updated a check suite of an app other than
+/// GitHub Actions, with no check runs, it stops counting. An app that runs
+/// creates its first check run within seconds.
+const IDLE: Duration = Duration::from_secs(600);
 
 /// Record the check runs GitHub reports for a change's head as a run of
 /// the change's suite, once every one has passed.
@@ -31,7 +38,8 @@ pub(crate) struct CiInput {
 }
 
 /// The run written, the head it ran on, the change it was attached to and
-/// how many check runs it records.
+/// how many check runs it records, and the apps whose idle check suites
+/// it left out.
 #[derive(Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 #[schemars(rename = "CiOutput")]
@@ -40,17 +48,18 @@ pub(crate) struct CiOutput {
     head: String,
     change: String,
     checks: usize,
+    ignored: Vec<String>,
 }
 
 /// What `gh api .../check-runs` answers, cut to what this reads.
 #[derive(Deserialize)]
-struct Runs {
+pub(crate) struct Runs {
     total_count: usize,
     check_runs: Vec<CheckRun>,
 }
 
 #[derive(Deserialize)]
-struct CheckRun {
+pub(crate) struct CheckRun {
     name: String,
     status: String,
     conclusion: Option<String>,
@@ -61,7 +70,7 @@ struct CheckRun {
 /// What `gh api .../check-suites` answers. A workflow's suite exists
 /// before its jobs that wait on others have check runs.
 #[derive(Deserialize)]
-struct Suites {
+pub(crate) struct Suites {
     total_count: usize,
     check_suites: Vec<CheckSuite>,
 }
@@ -71,17 +80,42 @@ struct CheckSuite {
     status: String,
     conclusion: Option<String>,
     app: Option<App>,
+    /// When GitHub last updated the suite: its creation, or a re-request
+    /// that queued it again.
+    #[serde(deserialize_with = "moment")]
+    updated_at: SystemTime,
+    latest_check_runs_count: usize,
 }
 
 #[derive(Deserialize)]
 struct App {
+    slug: String,
     name: String,
+}
+
+impl CheckSuite {
+    /// The app's name when it is an app's suite other than GitHub Actions'
+    /// that has not completed and has no check runs.
+    fn idle(&self) -> Option<&str> {
+        let app = self.app.as_ref()?;
+        let idle = self.status != "completed"
+            && self.latest_check_runs_count == 0
+            && app.slug != "github-actions";
+        idle.then_some(app.name.as_str())
+    }
+}
+
+/// The moment GitHub's RFC 3339 text names.
+fn moment<'de, D: Deserializer<'de>>(deserializer: D) -> Result<SystemTime, D::Error> {
+    let text = String::deserialize(deserializer)?;
+    board_model::moment(&text)
+        .ok_or_else(|| D::Error::custom(format!("updated_at {text} is not an RFC 3339 time")))
 }
 
 /// What `gh api .../status` answers: the commit statuses, which CI
 /// outside GitHub's checks reports.
 #[derive(Deserialize)]
-struct Combined {
+pub(crate) struct Combined {
     total_count: usize,
     statuses: Vec<Status>,
 }
@@ -122,37 +156,20 @@ pub(crate) fn ci(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
         });
     };
     let commit = format!("repos/{owner}/{repo}/commits/{head}");
-    let runs: Runs = read(host, &format!("{commit}/check-runs?per_page=100"))?;
-    let suites: Suites = read(host, &format!("{commit}/check-suites?per_page=100"))?;
-    let combined: Combined = read(host, &format!("{commit}/status?per_page=100"))?;
-    let unusable = |what: &str, why: &str| {
-        gh::failed(&format!("{commit}/{what}"), why, "record the run by hand")
-    };
-    for (what, total, got) in [
-        ("check-runs", runs.total_count, runs.check_runs.len()),
-        (
-            "check-suites",
-            suites.total_count,
-            suites.check_suites.len(),
-        ),
-        ("status", combined.total_count, combined.statuses.len()),
-    ] {
-        if total > got {
-            return Err(unusable(what, "reported more than one page of 100"));
-        }
-    }
-    let runs = runs.check_runs;
-    judge(&change, &head, &runs, &suites, &combined)?;
+    let (runs, suites, combined) = reported(host, &commit)?;
+    let now = host.settings().now;
+    let ignored = judge(&change, &head, &runs, &suites, &combined, now)?;
     let finished = (runs.iter())
         .filter_map(|each| each.completed_at.clone())
-        .max();
-    let finished = finished.unwrap_or_default();
+        .max()
+        .unwrap_or_default();
     let stamp: String = (finished.chars())
         .filter(char::is_ascii_digit)
         .take(12)
         .collect();
     if stamp.len() < 12 {
-        return Err(unusable("check-runs", "gave no completed_at timestamp"));
+        let why = "gave no completed_at timestamp";
+        return Err(unusable(&commit, "check-runs", why));
     }
     let name = change.rsplit('/').next().unwrap_or_default();
     let path = format!(
@@ -205,7 +222,39 @@ pub(crate) fn ci(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
         head,
         change,
         checks: runs.len(),
+        ignored,
     }))
+}
+
+/// `github::gh::failed` for the endpoint `what` under `commit`, which
+/// answered something unusable for `why`.
+fn unusable(commit: &str, what: &str, why: &str) -> PluginError {
+    gh::failed(&format!("{commit}/{what}"), why, "record the run by hand")
+}
+
+/// The check runs, check suites and commit statuses GitHub reports for
+/// `commit`, or `github::gh::failed` when one has more than a page of 100.
+fn reported(
+    host: &dyn Host,
+    commit: &str,
+) -> Result<(Vec<CheckRun>, Suites, Combined), PluginError> {
+    let runs: Runs = read(host, &format!("{commit}/check-runs?per_page=100"))?;
+    let suites: Suites = read(host, &format!("{commit}/check-suites?per_page=100"))?;
+    let combined: Combined = read(host, &format!("{commit}/status?per_page=100"))?;
+    for (what, total, got) in [
+        ("check-runs", runs.total_count, runs.check_runs.len()),
+        (
+            "check-suites",
+            suites.total_count,
+            suites.check_suites.len(),
+        ),
+        ("status", combined.total_count, combined.statuses.len()),
+    ] {
+        if total > got {
+            return Err(unusable(commit, what, "reported more than one page of 100"));
+        }
+    }
+    Ok((runs.check_runs, suites, combined))
 }
 
 /// What `gh api <endpoint>` answers, read as `T`, or `github::gh::failed`.
@@ -232,19 +281,34 @@ fn checked(name: &str, status: &str, conclusion: Option<&str>) -> Check {
     }
 }
 
-/// Refuses with `github::ci::failed` naming each check that finished
-/// without passing, else `github::ci::pending` naming each not finished,
-/// else `github::ci::none` when no check run concluded success.
-fn judge(
+/// The app names of the idle check suites it leaves out, or refuses with
+/// `github::ci::failed` naming each check that finished without passing,
+/// else `github::ci::pending` naming each not finished, else
+/// `github::ci::none` when no check run concluded success.
+pub(crate) fn judge(
     change: &str,
     head: &str,
     runs: &[CheckRun],
     suites: &Suites,
     combined: &Combined,
-) -> Result<(), PluginError> {
+    now: SystemTime,
+) -> Result<Vec<String>, PluginError> {
+    let (mut ignored, mut young) = (Vec::new(), Vec::new());
+    let mut counted = Vec::new();
+    for suite in &suites.check_suites {
+        let old = (now.duration_since(suite.updated_at)).is_ok_and(|age| age > IDLE);
+        match suite.idle() {
+            Some(app) if old => ignored.push(app.to_owned()),
+            Some(app) => {
+                young.push(app);
+                counted.push(suite);
+            }
+            None => counted.push(suite),
+        }
+    }
     let ran =
         (runs.iter()).map(|each| checked(&each.name, &each.status, each.conclusion.as_deref()));
-    let suites = (suites.check_suites.iter()).map(|each| {
+    let suites = counted.into_iter().map(|each| {
         let name = (each.app.as_ref()).map_or_else(
             || "a check suite".to_owned(),
             |app| format!("the check suite of {}", app.name),
@@ -281,13 +345,23 @@ fn judge(
         } else {
             "have not finished"
         };
-        let hint = format!("wait for them to finish, then run `{again}` again");
+        let idle = if young.is_empty() {
+            String::new()
+        } else {
+            format!(
+                "; check suites with no check runs ({}) are ignored once idle for more than {} \
+                 minutes; run this again then",
+                young.join(", "),
+                IDLE.as_secs() / 60
+            )
+        };
+        let hint = format!("wait for them to finish, then run `{again}` again{idle}");
         ("github::ci::pending", verb, hint)
     } else if runs
         .iter()
         .any(|each| each.conclusion.as_deref() == Some("success"))
     {
-        return Ok(());
+        return Ok(ignored);
     } else {
         let names: Vec<&String> = runs.iter().map(|each| &each.name).collect();
         let mut fields = Map::new();
