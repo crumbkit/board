@@ -4,6 +4,12 @@ A fast, validated view of a git tree. Start with `DOCS.md`.
 
 `PLAN.md` says what is being built now.
 
+## Getting started
+
+The Board dmg is today's install route.
+[docs/guide/getting-started.md](docs/guide/getting-started.md) takes you from
+the dmg to a project and a task in your own board.
+
 ## Installing a release
 
 A release is a tag `v<version>`. It attaches `board-<version>-<target>.tar.gz`
