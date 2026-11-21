@@ -1,7 +1,7 @@
 //! `board plugin list`, `find` and `enable`.
 
-use board_model::{CapabilityName, PluginName};
-use board_ops::Board;
+use board_model::{CapabilityName, Code, PluginName, Refusal, RefusalCode};
+use board_ops::{Board, PluginFindReport, PluginListReport};
 use board_plugin::MetaFilter;
 use clap::Subcommand;
 
@@ -80,4 +80,47 @@ pub(crate) fn plugin(
             Err(error) => render::refused(printer, plain(error.code(), &error)),
         },
     }
+}
+
+/// The note on stderr of `plugin list` and `plugin find` as text where no
+/// board is found.
+const UNOPENED: &str = "note: No board opens here, so no plugin is enabled; `board init` in a git repository makes one, and `board --personal plugin list` lists your personal board's plugins.\n";
+
+/// `board plugin list` and `find` where opening the board was `refused`:
+/// when no board is found, the plugins Board ships and those in the plugins
+/// directory, each disabled. Otherwise, and for `enable`, the refusal.
+pub(crate) fn unopened(
+    command: &PluginCommand,
+    context: &Context,
+    printer: Printer,
+    refused: Refusal,
+) -> Output {
+    let unfound = refused.code == RefusalCode::Board(Code::ConfigNotFound);
+    let (built_in, plugins) = (context.built_in, context.plugins.as_deref());
+    // The printer goes to the render, so whether it prints JSON is read first.
+    let json = printer.json();
+    let mut output = match command {
+        PluginCommand::List { page } if unfound => {
+            match PluginListReport::unopened(built_in, plugins) {
+                Ok(report) => render::plugin_list(printer, &report, page),
+                Err(error) => return render::refused(printer, plain(error.code(), &error)),
+            }
+        }
+        PluginCommand::Find {
+            capability,
+            filters,
+            page,
+        } if unfound => {
+            match PluginFindReport::unopened(built_in, plugins, capability.as_ref(), filters) {
+                Ok(report) => render::plugin_find(printer, &report, page),
+                Err(error) => return render::refused(printer, plain(error.code(), &error)),
+            }
+        }
+        // Another refusal, or `enable`, which needs a board.
+        _ => return render::refused(printer, refused),
+    };
+    if !json {
+        output.stderr.extend_from_slice(UNOPENED.as_bytes());
+    }
+    output
 }

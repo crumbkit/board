@@ -5,13 +5,13 @@ use std::path::{Path, PathBuf};
 use board_model::{CapabilityName, Code, Fields, PluginName, RecordType, Refusal};
 use board_plugin::{
     CallError, DiscoveryError, Environment, Installed, Limits, Manifest, ManifestError, MetaFilter,
-    Origin, built_in, installed,
+    Origin, installed,
 };
 use board_tree::Reader;
 use serde_json::Value;
 
 use crate::types::Held;
-use crate::{Board, KnownBoards, Signing};
+use crate::{Board, BuiltIn, KnownBoards, Signing};
 
 /// Where plugins are installed, what they inherit and what a run may take.
 #[derive(Clone, Debug, Default)]
@@ -87,6 +87,16 @@ pub struct PluginListReport {
 }
 
 impl PluginListReport {
+    /// The plugins built into Board and those in `plugins`, a plugins
+    /// directory, as `plugin list` lists them where no board opens: each
+    /// with `enabled` false, in name order.
+    pub fn unopened(built_in: BuiltIn, plugins: Option<&Path>) -> Result<Self, DiscoveryError> {
+        let listed = (offered(built_in, plugins)?.into_iter())
+            .map(|installed| entry(installed, false, Vec::new()))
+            .collect();
+        Ok(Self { plugins: listed })
+    }
+
     /// Whether any plugin is broken or missing.
     pub fn degraded(&self) -> bool {
         self.plugins.iter().any(|plugin| plugin.code().is_some())
@@ -141,39 +151,105 @@ pub struct PluginFindReport {
     pub plugins: Vec<Found>,
 }
 
+impl PluginFindReport {
+    /// The plugins built into Board and those in `plugins` that offer
+    /// `capability`, when given, and match every filter, as `plugin find`
+    /// finds them where no board opens: each with `enabled` false.
+    pub fn unopened(
+        built_in: BuiltIn,
+        plugins: Option<&Path>,
+        capability: Option<&CapabilityName>,
+        filters: &[MetaFilter],
+    ) -> Result<Self, DiscoveryError> {
+        let listed = PluginListReport::unopened(built_in, plugins)?;
+        Ok(found(listed, capability, filters))
+    }
+}
+
 #[derive(Debug)]
 pub struct Found {
     pub manifest: Manifest,
     pub enabled: bool,
 }
 
-impl Board {
-    /// The plugins built into Board, then those in `plugins`, a plugins
-    /// directory, in name order. An installed plugin named like a built-in
-    /// one is left out, and the built-in one records its directory.
-    pub(crate) fn offered(&self, plugins: Option<&Path>) -> Result<Vec<Installed>, DiscoveryError> {
-        let mut offered: Vec<Installed> = (self.built_in.0.iter().enumerate())
-            .map(|(index, plugin)| built_in(index, plugin.manifest(), &plugin.schemas()))
-            .collect();
-        let installed = match plugins {
-            Some(plugins) => installed(plugins)?,
-            None => Vec::new(),
-        };
-        for plugin in installed {
-            let same = offered.iter_mut().find(|same| same.name == plugin.name);
-            match (same.map(|same| &mut same.origin), &plugin.origin) {
-                (Some(Origin::BuiltIn { shadows, .. }), Origin::Directory(directory)) => {
-                    *shadows = Some(directory.clone());
-                }
-                _ => offered.push(plugin),
+/// The plugins built into Board, then those in `plugins`, a plugins
+/// directory, in name order. An installed plugin named like a built-in one
+/// is left out, and the built-in one records its directory.
+pub(crate) fn offered(
+    built_in: BuiltIn,
+    plugins: Option<&Path>,
+) -> Result<Vec<Installed>, DiscoveryError> {
+    let mut offered: Vec<Installed> = (built_in.0.iter().enumerate())
+        .map(|(index, plugin)| board_plugin::built_in(index, plugin.manifest(), &plugin.schemas()))
+        .collect();
+    let installed = match plugins {
+        Some(plugins) => installed(plugins)?,
+        None => Vec::new(),
+    };
+    for plugin in installed {
+        let same = offered.iter_mut().find(|same| same.name == plugin.name);
+        match (same.map(|same| &mut same.origin), &plugin.origin) {
+            (Some(Origin::BuiltIn { shadows, .. }), Origin::Directory(directory)) => {
+                *shadows = Some(directory.clone());
             }
+            _ => offered.push(plugin),
         }
-        offered.sort_by(|a, b| a.name.cmp(&b.name));
-        Ok(offered)
+    }
+    offered.sort_by(|a, b| a.name.cmp(&b.name));
+    Ok(offered)
+}
+
+/// `installed` as `plugin list` lists it, with `enabled` and the
+/// `schemas` the board lacks or holds differently.
+fn entry(installed: Installed, enabled: bool, schemas: Vec<SchemaProblem>) -> PluginEntry {
+    PluginEntry {
+        enabled,
+        name: installed.name,
+        shadows: installed.origin.shadows().map(Path::to_path_buf),
+        state: match installed.manifest {
+            Ok(manifest) => PluginState::Installed(manifest),
+            Err(error) => PluginState::BadManifest(error),
+        },
+        schemas,
+    }
+}
+
+/// The plugins of `listed` whose capabilities offer `capability`, when
+/// given, and match every filter. A broken plugin, and a built-in one
+/// installed again, offers nothing.
+fn found(
+    listed: PluginListReport,
+    capability: Option<&CapabilityName>,
+    filters: &[MetaFilter],
+) -> PluginFindReport {
+    let found = (listed.plugins.into_iter())
+        .filter(|plugin| plugin.shadows.is_none())
+        .filter_map(|plugin| match plugin.state {
+            PluginState::Installed(mut manifest) => {
+                manifest.retain(capability, filters);
+                (!manifest.capabilities.is_empty()).then_some(Found {
+                    manifest,
+                    enabled: plugin.enabled,
+                })
+            }
+            PluginState::BadManifest(_) | PluginState::NotInstalled => None,
+        })
+        .collect();
+    PluginFindReport { plugins: found }
+}
+
+impl Board {
+    /// The plugins built into this board's Board, then those in `plugins`,
+    /// in name order, as the free function `offered` lists them.
+    pub(crate) fn offered(&self, plugins: Option<&Path>) -> Result<Vec<Installed>, DiscoveryError> {
+        offered(self.built_in, plugins)
     }
 
     /// The plugins built into Board and those in `plugins`, a plugins
     /// directory; `None` when there is none, as without a home directory.
+    /// Each lists as [`PluginListReport::unopened`] lists it, marked
+    /// enabled when the board enables it, and an enabled plugin that is
+    /// neither is added.
     pub fn plugin_list(&self, plugins: Option<&Path>) -> Result<PluginListReport, DiscoveryError> {
         let enabled = &self.config().plugins;
         let installed = self.offered(plugins)?;
@@ -190,16 +266,7 @@ impl Board {
                 } else {
                     Vec::new()
                 };
-                PluginEntry {
-                    enabled,
-                    name: installed.name,
-                    shadows: installed.origin.shadows().map(Path::to_path_buf),
-                    state: match installed.manifest {
-                        Ok(manifest) => PluginState::Installed(manifest),
-                        Err(error) => PluginState::BadManifest(error),
-                    },
-                    schemas,
-                }
+                entry(installed, enabled, schemas)
             })
             .collect();
         // A former name an installed plugin lists is that plugin, not a missing one.
@@ -280,31 +347,15 @@ impl Board {
     }
 
     /// The plugins offering `capability`, when given, whose capabilities
-    /// match every filter. A broken plugin, and a built-in one installed
-    /// again, offers nothing.
+    /// match every filter, among those [`Board::plugin_list`] lists. A
+    /// broken plugin, and a built-in one installed again, offers nothing.
     pub fn plugin_find(
         &self,
         plugins: Option<&Path>,
         capability: Option<&CapabilityName>,
         filters: &[MetaFilter],
     ) -> Result<PluginFindReport, DiscoveryError> {
-        let found = self
-            .plugin_list(plugins)?
-            .plugins
-            .into_iter()
-            .filter(|plugin| plugin.shadows.is_none())
-            .filter_map(|plugin| match plugin.state {
-                PluginState::Installed(mut manifest) => {
-                    manifest.retain(capability, filters);
-                    (!manifest.capabilities.is_empty()).then_some(Found {
-                        manifest,
-                        enabled: plugin.enabled,
-                    })
-                }
-                PluginState::BadManifest(_) | PluginState::NotInstalled => None,
-            })
-            .collect();
-        Ok(PluginFindReport { plugins: found })
+        Ok(found(self.plugin_list(plugins)?, capability, filters))
     }
 }
 

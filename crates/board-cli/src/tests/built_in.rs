@@ -896,3 +896,109 @@ fn a_built_in_plugins_name_outside_any_board_reports_that_no_board_is_there() {
         }
     }
 }
+
+#[test]
+fn a_built_in_plugins_help_outside_any_board_lists_its_capabilities_and_says_no_board_opens() {
+    let outside = tempfile::tempdir().unwrap();
+    let line =
+        "No board opens here; run this inside a board that enables tasks, or add --personal.";
+    for arguments in [
+        &["tasks", "--help"][..],
+        &["tasks", "-h"],
+        &["help", "tasks"],
+    ] {
+        let (output, _) = built_in(outside.path(), None, arguments);
+        assert_eq!(output.code, 0, "{arguments:?}: {}", text(&output.stderr));
+        let help = text(&output.stdout);
+        let capabilities: Vec<&str> = (help.lines())
+            .filter_map(|line| line.split_whitespace().next())
+            .collect();
+        assert!(capabilities.contains(&"add"), "{arguments:?}: {help}");
+        assert!(capabilities.contains(&"tree"), "{arguments:?}: {help}");
+        assert!(help.contains(line), "{arguments:?}: {help}");
+    }
+    let (output, _) = built_in(outside.path(), None, &["--json", "nosuch", "--help"]);
+    assert_eq!(output.code, 2, "{}", text(&output.stdout));
+    assert_eq!(json(&output)["code"], "board::cli::usage");
+    let (root, _) = built_in(outside.path(), None, &["--help"]);
+    assert!(
+        !text(&root.stdout).contains("Plugins:"),
+        "{}",
+        text(&root.stdout)
+    );
+}
+
+#[test]
+fn a_built_in_plugins_help_in_a_board_that_enables_it_does_not_say_no_board_opens() {
+    let board = planning(true);
+    let (output, _) = built_in(board.workdir(), None, &["plans", "--help"]);
+    assert_eq!(output.code, 0, "{}", text(&output.stderr));
+    assert!(!text(&output.stdout).contains("No board opens here"));
+}
+
+#[test]
+fn a_built_in_plugins_help_in_a_board_whose_config_is_invalid_is_refused_as_before() {
+    let board = Scenario::new();
+    board.write(".board/board.json", Item::File("{not json"));
+    let (output, _) = built_in(board.workdir(), None, &["--json", "tasks", "--help"]);
+    assert_eq!(output.code, 2, "{}", text(&output.stdout));
+    assert_eq!(json(&output)["code"], "board::cli::usage");
+    assert!(!text(&output.stdout).contains("No board opens here"));
+}
+
+/// Runs `board` with the binary's built-in plugins in a directory outside
+/// any board, with a known boards file naming as the personal board a
+/// repository that holds no board.
+fn personal_without_a_board(arguments: &[&str]) -> Output {
+    let (outside, personal, xdg) = (
+        tempfile::tempdir().unwrap(),
+        Scenario::new(),
+        Scenario::new(),
+    );
+    let known = json!({"personal": personal.workdir()}).to_string();
+    xdg.write("board/config.json", Item::File(&known));
+    let context = Context {
+        start: outside.path().to_path_buf(),
+        home: None,
+        cache: None,
+        plugins: None,
+        boards: Some(xdg.workdir().join("board/config.json")),
+        signer: None,
+        allowed_signers: None,
+        attention_allowed_signers: None,
+        environment: board_plugin::Environment::default(),
+        complete: None,
+        terminal: false,
+        browser: None,
+        binary: None,
+        cursor: None,
+        built_in: board_plugins::BUILT_IN,
+    };
+    let arguments = std::iter::once(BINARY_NAME)
+        .chain(arguments.iter().copied())
+        .map(OsString::from);
+    run(arguments, &context, &mut &b""[..], &mut Ran::default())
+}
+
+/// `--personal` naming a repository that holds no board is refused before
+/// any board opens, with the known boards file's own advice, so neither the
+/// help nor the listing tells the person to add the `--personal` they gave.
+#[test]
+fn with_personal_naming_no_board_the_refusal_does_not_say_to_add_personal() {
+    let help = personal_without_a_board(&["--json", "--personal", "tasks", "--help"]);
+    assert_eq!(help.code, 2, "{}", text(&help.stdout));
+    assert_eq!(json(&help)["code"], "board::cli::usage");
+    let listed = personal_without_a_board(&["--json", "--personal", "plugin", "list"]);
+    assert_eq!(listed.code, 1, "{}", text(&listed.stdout));
+    assert_eq!(json(&listed)["code"], "board::config::not_found");
+    for output in [&help, &listed] {
+        let printed = format!("{}{}", text(&output.stdout), text(&output.stderr));
+        assert!(!printed.contains("add --personal"), "{printed}");
+        assert!(
+            !printed.contains("board --personal plugin list"),
+            "{printed}"
+        );
+    }
+    let hint = json(&listed)["recovery"]["text"].to_string();
+    assert!(hint.contains("config.json"), "{hint}");
+}
