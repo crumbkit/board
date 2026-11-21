@@ -80,26 +80,37 @@ fn board_environment(
     stdin: &[u8],
 ) -> Output {
     let context = Context {
-        start: directory.to_path_buf(),
-        home: None,
         cache: cache.map(Path::to_path_buf),
         plugins: plugins.map(Path::to_path_buf),
+        environment,
+        ..context_in(directory)
+    };
+    let arguments = std::iter::once(BINARY_NAME)
+        .chain(arguments.iter().copied())
+        .map(OsString::from);
+    run(arguments, &context, &mut &stdin[..], &mut Ran::default())
+}
+
+/// The context of a run in `directory` with no cache, plugins, home or
+/// built-in plugins.
+fn context_in(directory: &Path) -> Context {
+    Context {
+        start: directory.to_path_buf(),
+        home: None,
+        cache: None,
+        plugins: None,
         boards: None,
         signer: None,
         allowed_signers: None,
         attention_allowed_signers: None,
-        environment,
+        environment: board_plugin::Environment::default(),
         complete: None,
         terminal: false,
         browser: None,
         binary: None,
         cursor: None,
         built_in: board_ops::BuiltIn::default(),
-    };
-    let arguments = std::iter::once(BINARY_NAME)
-        .chain(arguments.iter().copied())
-        .map(OsString::from);
-    run(arguments, &context, &mut &stdin[..], &mut Ran::default())
+    }
 }
 
 fn json(output: &Output) -> Value {
@@ -1879,6 +1890,268 @@ fn mount_update_of_a_missing_path_says_nothing_is_there_and_of_a_mount_runs() {
     );
     let mounted = board_in(scenario.workdir(), &["mount", "update", "/lib"]);
     assert_eq!(mounted.code, 0, "{}", text(&mounted.stderr));
+}
+
+/// A board that does not commit its puts.
+fn uncommitting() -> Scenario {
+    let scenario = board();
+    scenario.write(
+        ".board/board.json",
+        Item::File(r#"{"$type": "board/config/v1", "commit_on_put": false}"#),
+    );
+    scenario
+}
+
+/// The mount record at `file` in `scenario`'s working tree.
+fn pointer_at(scenario: &Scenario, file: &str) -> Value {
+    serde_json::from_str(&std::fs::read_to_string(scenario.workdir().join(file)).unwrap()).unwrap()
+}
+
+#[test]
+fn mount_add_follows_the_checked_out_branch_and_get_reads_through_the_mount_it_wrote() {
+    let library = Scenario::new();
+    let old = library.commit(&[("a.md", "one")]);
+    let scenario = uncommitting();
+    let added = board_in(
+        scenario.workdir(),
+        &["mount", "add", "/lib", &library.path()],
+    );
+    assert_eq!(added.code, 0, "{}", text(&added.stderr));
+    assert_eq!(
+        text(&added.stdout),
+        format!(
+            "mounted /lib: {}, following main, at {old}\n",
+            library.path()
+        )
+    );
+    assert_eq!(
+        pointer_at(&scenario, "lib.json"),
+        json!({"$type": "board/mount/v1", "repo": library.path(), "follow": "main", "commit": old.to_string()})
+    );
+    let got = board_in(scenario.workdir(), &["get", "/lib/a.md"]);
+    assert_eq!(text(&got.stdout), "one");
+    let new = library.commit(&[("a.md", "two")]);
+    let moved = board_in(scenario.workdir(), &["mount", "update", "/lib"]);
+    assert_eq!(
+        text(&moved.stdout),
+        format!("updated /lib {old} -> {new}\n")
+    );
+}
+
+#[test]
+fn mount_add_json_is_puts_report_and_a_committing_board_names_its_commit() {
+    let library = Scenario::new();
+    let commit = library.commit(&[("a.md", "one")]);
+    let scenario = committing();
+    let path = library.path();
+    let added = board_in(scenario.workdir(), &["mount", "add", "/lib", &path]);
+    let head = scenario.head().unwrap().id;
+    assert_eq!(
+        text(&added.stdout),
+        format!("mounted /lib: {path}, following main, at {commit}\ncommit {head}\n")
+    );
+    let library = Scenario::new();
+    library.commit(&[("a.md", "one")]);
+    let report = json(&board_in(
+        scenario.workdir(),
+        &["--json", "mount", "add", "/other", &library.path()],
+    ));
+    assert_eq!(report["schema"], "board/put-report/v2");
+    assert_eq!(
+        report["data"]["commit"],
+        scenario.head().unwrap().id.to_string()
+    );
+}
+
+#[test]
+fn mount_add_where_something_is_refuses_as_put_does_and_writes_nothing_and_elsewhere_writes() {
+    let library = Scenario::new();
+    library.commit(&[("a.md", "one")]);
+    let scenario = uncommitting();
+    scenario.write("lib.json", Item::File(r#"{"$type": "lr/project/v1"}"#));
+    let refused = board_in(
+        scenario.workdir(),
+        &["mount", "add", "/lib", &library.path()],
+    );
+    assert_eq!(refused.code, 1);
+    assert!(
+        text(&refused.stderr).contains("\n  code:  board::put::stale\n"),
+        "{}",
+        text(&refused.stderr)
+    );
+    assert_eq!(
+        pointer_at(&scenario, "lib.json"),
+        json!({"$type": "lr/project/v1"})
+    );
+    let admitted = board_in(
+        scenario.workdir(),
+        &["mount", "add", "/vendor/lib", &library.path()],
+    );
+    assert_eq!(admitted.code, 0, "{}", text(&admitted.stderr));
+}
+
+#[test]
+fn mount_add_of_a_directory_without_a_repository_is_repo_missing_and_of_a_clone_writes() {
+    let library = Scenario::new();
+    library.commit(&[("a.md", "one")]);
+    let scenario = uncommitting();
+    let empty = tempfile::tempdir().unwrap();
+    let missing = board_in(
+        scenario.workdir(),
+        &["mount", "add", "/lib", empty.path().to_str().unwrap()],
+    );
+    assert_eq!(missing.code, 1);
+    let stderr = text(&missing.stderr);
+    assert!(
+        stderr.contains("\n  code:  board::mount::repo_missing\n"),
+        "{stderr}"
+    );
+    assert!(stderr.contains("clone"), "{stderr}");
+    assert!(!scenario.workdir().join("lib.json").exists());
+    let admitted = board_in(
+        scenario.workdir(),
+        &["mount", "add", "/lib", &library.path()],
+    );
+    assert_eq!(admitted.code, 0, "{}", text(&admitted.stderr));
+}
+
+#[test]
+fn mount_add_of_a_detached_head_needs_follow_and_with_it_writes_the_commit_follow_names() {
+    let library = Scenario::new();
+    let old = library.commit(&[("a.md", "one")]);
+    let new = library.commit(&[("a.md", "two")]);
+    library.write(".git/HEAD", Item::File(&format!("{old}\n")));
+    let scenario = uncommitting();
+    let detached = board_in(
+        scenario.workdir(),
+        &["mount", "add", "/lib", &library.path()],
+    );
+    assert_eq!(detached.code, 2);
+    let stderr = text(&detached.stderr);
+    assert!(
+        stderr.contains("\n  code:  board::cli::usage\n"),
+        "{stderr}"
+    );
+    assert!(stderr.contains(&library.path()), "{stderr}");
+    assert!(stderr.contains("--follow"), "{stderr}");
+    assert!(!scenario.workdir().join("lib.json").exists());
+    let followed = board_in(
+        scenario.workdir(),
+        &["mount", "add", "/lib", &library.path(), "--follow", "main"],
+    );
+    assert_eq!(followed.code, 0, "{}", text(&followed.stderr));
+    assert_eq!(pointer_at(&scenario, "lib.json")["commit"], new.to_string());
+}
+
+#[test]
+fn mount_add_of_a_ref_that_names_no_commit_is_follow_missing_and_of_one_that_does_writes() {
+    let library = Scenario::new();
+    library.commit(&[("a.md", "one")]);
+    let scenario = uncommitting();
+    let run = |follow: &str| {
+        board_in(
+            scenario.workdir(),
+            &["mount", "add", "/lib", &library.path(), "--follow", follow],
+        )
+    };
+    let missing = run("nowhere");
+    assert_eq!(missing.code, 1);
+    let stderr = text(&missing.stderr);
+    assert!(
+        stderr.contains("\n  code:  board::mount::follow_missing\n"),
+        "{stderr}"
+    );
+    assert_eq!(run("main").code, 0);
+}
+
+#[test]
+fn mount_add_reads_a_relative_repo_against_the_directory_the_run_started_in() {
+    let library = Scenario::new();
+    library.commit(&[("a.md", "one")]);
+    let scenario = uncommitting();
+    let clone = std::path::PathBuf::from(library.path());
+    let (parent, name) = (clone.parent().unwrap(), clone.file_name().unwrap());
+    let board = scenario.path();
+    let added = board_in(
+        parent,
+        &["-C", &board, "mount", "add", "/lib", name.to_str().unwrap()],
+    );
+    assert_eq!(added.code, 0, "{}", text(&added.stderr));
+    assert_eq!(pointer_at(&scenario, "lib.json")["repo"], library.path());
+}
+
+#[test]
+fn mount_add_as_its_help_shows_stores_a_home_relative_repo_as_given_and_reads_through_it() {
+    let team = Scenario::new();
+    let commit = team.commit(&[("a.md", "one")]);
+    let home = tempfile::tempdir().unwrap();
+    std::os::unix::fs::symlink(team.workdir(), home.path().join("team-board")).unwrap();
+    let scenario = uncommitting();
+    let run = |arguments: &[&str]| {
+        let context = Context {
+            home: Some(home.path().to_path_buf()),
+            ..context_in(scenario.workdir())
+        };
+        let arguments = std::iter::once(BINARY_NAME)
+            .chain(arguments.iter().copied())
+            .map(OsString::from);
+        run(arguments, &context, &mut &b""[..], &mut Ran::default())
+    };
+    let added = run(&["mount", "add", "/team", "~/team-board"]);
+    assert_eq!(added.code, 0, "{}", text(&added.stderr));
+    assert_eq!(
+        text(&added.stdout),
+        format!("mounted /team: ~/team-board, following main, at {commit}\n")
+    );
+    assert_eq!(pointer_at(&scenario, "team.json")["repo"], "~/team-board");
+    assert_eq!(text(&run(&["get", "/team/a.md"]).stdout), "one");
+    let followed = run(&["mount", "add", "/other", "~/team-board", "--follow", "main"]);
+    assert_eq!(followed.code, 0, "{}", text(&followed.stderr));
+}
+
+/// Runs `board` in `directory` with Board's built-in plugins.
+fn board_built_in(directory: &Path, arguments: &[&str]) -> Output {
+    let context = Context {
+        environment: board_plugin::Environment {
+            path: Some("/usr/bin:/bin".into()),
+            ..board_plugin::Environment::default()
+        },
+        built_in: board_plugins::BUILT_IN,
+        ..context_in(directory)
+    };
+    let arguments = std::iter::once(BINARY_NAME)
+        .chain(arguments.iter().copied())
+        .map(OsString::from);
+    run(arguments, &context, &mut &b""[..], &mut Ran::default())
+}
+
+#[test]
+fn share_writes_through_a_mount_that_mount_add_wrote_with_its_default_follow() {
+    let team = Scenario::new();
+    let config = r#"{"$type": "board/config/v1", "commit_on_put": true}"#;
+    team.write(".board/board.json", Item::File(config));
+    let first = team.commit(&[(".board/board.json", config)]);
+    team.track(first).identified();
+    let personal = uncommitting();
+    let enabled = board_built_in(personal.workdir(), &["plugin", "enable", "share"]);
+    assert_eq!(enabled.code, 0, "{}", text(&enabled.stderr));
+    let added = board_in(personal.workdir(), &["mount", "add", "/team", &team.path()]);
+    assert_eq!(added.code, 0, "{}", text(&added.stderr));
+    let shared = board_built_in(
+        personal.workdir(),
+        &["call", "share.to", "--path", "/projects/p", "--to", "/team"],
+    );
+    assert_eq!(shared.code, 0, "{}", text(&shared.stderr));
+    let head = team.head().unwrap();
+    assert!(
+        head.files.contains_key("projects/p.json"),
+        "{:?}",
+        head.files.keys()
+    );
+    assert_eq!(
+        pointer_at(&personal, "team.json")["commit"],
+        head.id.to_string()
+    );
 }
 
 /// A board that commits each put as a test identity.

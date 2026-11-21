@@ -1,9 +1,10 @@
-//! `board mount update`: advancing a mount to the commit its `follow` ref
-//! names (docs/architecture.md, Writes).
+//! `board mount add`: writing a mount of a local clone, and `board mount
+//! update`: advancing a mount to the commit its `follow` ref names
+//! (docs/architecture.md, Writes).
 
 use std::time::Duration;
 
-use board_model::{BINARY_NAME, Code, LogicalPath, ObjectId, Refusal};
+use board_model::{BINARY_NAME, Code, Fields, LogicalPath, Mount, ObjectId, Refusal};
 use board_tree::{LOCK_WAIT, Lock, Pin, PinError, Target};
 
 use crate::board::Board;
@@ -19,6 +20,39 @@ pub struct MountUpdateReport {
 }
 
 impl Board {
+    /// Writes at `path`, where nothing is, a `board/mount/v1` record of the
+    /// repository at `repo`, a path as the record holds it, following
+    /// `follow` or else the branch checked out there, at the commit that
+    /// ref names now, found as `mount update` finds it. Returns the mount
+    /// and put's report of its record.
+    pub fn mount_add(
+        &self,
+        path: &LogicalPath,
+        repo: &str,
+        follow: Option<String>,
+    ) -> Result<(Mount, PutReport), MountError> {
+        let repositories = self.repositories();
+        let mounting = repositories.mounting(repositories.root().path(), repo, follow);
+        let refused = |code| MountError::Mounting {
+            path: path.clone(),
+            repo: repo.to_owned(),
+            code,
+        };
+        let mount = mounting
+            .map_err(refused)?
+            .ok_or_else(|| MountError::Unfollowed {
+                repo: repo.to_owned(),
+            })?;
+        let record = serde_json::json!({
+            "$type": "board/mount/v1",
+            "repo": mount.repo,
+            "follow": mount.follow,
+            "commit": mount.commit.to_string(),
+        });
+        let put = self.put(path, Expect::Absent, record.to_string().as_bytes())?;
+        Ok((mount, put))
+    }
+
     /// Rewrites the mount pointer at `path`, which is not followed, to the
     /// commit its `follow` ref names now, through put with the pointer's
     /// blob as the expect. The pointer is read under the lock the write
@@ -100,6 +134,16 @@ impl Board {
 /// but did not commit.
 #[derive(Debug, thiserror::Error)]
 pub enum MountError {
+    #[error("{repo} cannot be mounted at {path}: {code}")]
+    Mounting {
+        path: LogicalPath,
+        repo: String,
+        code: Code,
+    },
+    #[error(
+        "{repo} has no branch with a commit checked out, so `mount add` cannot choose what to follow"
+    )]
+    Unfollowed { repo: String },
     #[error(transparent)]
     Pin(#[from] PinError),
     #[error(transparent)]
@@ -109,6 +153,8 @@ pub enum MountError {
 impl MountError {
     pub fn code(&self) -> Code {
         match self {
+            Self::Mounting { code, .. } => *code,
+            Self::Unfollowed { .. } => Code::CliUsage,
             Self::Pin(error) => error.code(),
             Self::Put(error) => error.code(),
         }
@@ -116,10 +162,18 @@ impl MountError {
 
     pub fn refusal(&self) -> Refusal {
         let fields = match self {
+            Self::Mounting { path, .. } => Fields::at(path),
+            Self::Unfollowed { .. } => Fields::default(),
             Self::Pin(error) => error.fields(),
             Self::Put(error) => error.fields(),
         };
-        Refusal::new(self.code(), self, &fields)
+        let refusal = Refusal::new(self.code(), self, &fields);
+        match self {
+            Self::Unfollowed { .. } => refusal.with_hint(
+                "give the ref to follow with --follow, such as --follow main, or make the first commit in the repository",
+            ),
+            _ => refusal,
+        }
     }
 }
 
