@@ -31,8 +31,10 @@ const ROOT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../..");
 
 /// Documents outside a plugin's directory that its own skill ships: the
 /// plugin, the document's path in the repository and its name in the skill.
-const SHIPPED_DOCS: &[(&str, &str, &str)] =
-    &[("evals", "docs/plugins/built-in/topics.md", "topics.md")];
+const SHIPPED_DOCS: &[(&str, &str, &str)] = &[
+    ("evals", "docs/plugins/built-in/topics.md", "topics.md"),
+    ("evals", "plugins/runs/README.md", "runs.md"),
+];
 
 fn git(arguments: &[&str]) -> Option<Vec<u8>> {
     let output = std::process::Command::new("git")

@@ -1,7 +1,8 @@
 //! The shell blocks of docs/guide/getting-started.md run as written, in
 //! order, against the `board` this commit builds, in a fresh home. The tests
-//! run every `sh` block under "Make your board", "Write a first record" and
-//! "Plan a project", and refuse any other fence tag under those sections.
+//! run every `sh` block under "Make your board", "Write a first record",
+//! "Plan a project" and "Test something", and refuse any other fence tag
+//! under those sections.
 #![cfg(test)]
 #![expect(
     clippy::disallowed_methods,
@@ -103,10 +104,16 @@ fn board(home: &Path, arguments: &[&str]) -> Value {
 }
 
 #[test]
-fn the_pages_blocks_make_a_board_with_six_plugins_a_project_a_task_and_a_question() {
+fn the_pages_blocks_make_a_board_with_six_plugins_a_project_a_task_a_question_and_an_eval() {
     let page = page();
     let home = home();
-    for section in ["Make your board", "Write a first record", "Plan a project"] {
+    let sections = [
+        "Make your board",
+        "Write a first record",
+        "Plan a project",
+        "Test something",
+    ];
+    for section in sections {
         for block in blocks(&page, section) {
             run(home.path(), &block);
         }
@@ -170,6 +177,134 @@ fn the_pages_blocks_make_a_board_with_six_plugins_a_project_a_task_and_a_questio
             .contains("/projects/my-first-project/decisions/"),
         "{decisions}"
     );
+
+    let about = board(home.path(), &["evals", "about", "--subject", "/topics/wc"]);
+    let evals = about["data"]["output"]["evals"].as_array().unwrap();
+    assert_eq!(evals.len(), 1, "{about}");
+    assert_eq!(evals[0]["path"], "/evals/wc-last-line", "{about}");
+    assert_eq!(evals[0]["status"], "concluded", "{about}");
+    assert_eq!(evals[0]["verdict"], "refuted", "{about}");
+    let latest = board(
+        home.path(),
+        &["runs", "latest", "--suite", "/suites/wc-last-line"],
+    );
+    let run = &latest["data"]["output"]["run"];
+    let path = run["path"].as_str().unwrap_or_default();
+    assert!(path.starts_with("/suites/wc-last-line/runs/"), "{latest}");
+    assert_eq!(run["outcome"], "pass", "{latest}");
+    let got = board(home.path(), &["get", "/evals/wc-last-line"]);
+    let eval: Value = serde_json::from_str(got["data"][0]["text"].as_str().unwrap()).unwrap();
+    assert_eq!(eval["runs"], serde_json::json!([path]), "{eval}");
+}
+
+/// Whether any entry `board ls` printed, at any depth of its JSON, is the
+/// directory whose logical path is `/repos`.
+fn lists_repos(listed: &Value) -> bool {
+    match listed {
+        Value::Object(fields) => {
+            fields.get("logical") == Some(&Value::from("/repos"))
+                || fields.values().any(lists_repos)
+        }
+        Value::Array(items) => items.iter().any(lists_repos),
+        _ => false,
+    }
+}
+
+/// A home with the board the page's "Make your board" blocks make.
+fn made_board() -> TempDir {
+    let page = page();
+    let home = home();
+    for block in blocks(&page, "Make your board") {
+        run(home.path(), &block);
+    }
+    home
+}
+
+/// The evals skill tells an agent that a board whose top level lists no
+/// `repos` directory mounts no repositories, so `board ls /` must answer in
+/// a fresh board and list none.
+#[test]
+fn board_ls_of_the_root_answers_in_a_fresh_board_and_lists_no_repos_directory() {
+    let home = made_board();
+    let listed = board(home.path(), &["ls", "/"]);
+    assert!(!lists_repos(&listed), "{listed}");
+}
+
+#[test]
+fn board_ls_of_the_root_lists_the_repos_directory_once_the_board_mounts_a_repository() {
+    let home = made_board();
+    let repo = home.path().join("x");
+    run(
+        home.path(),
+        "git init -q -b main x && git -C x commit -q --allow-empty -m first",
+    );
+    let commit = run(home.path(), "git -C x rev-parse HEAD");
+    let commit = String::from_utf8_lossy(&commit.stdout).trim().to_owned();
+    let mount = serde_json::json!({
+        "$type": "board/mount/v1",
+        "repo": repo.to_str().unwrap(),
+        "follow": "main",
+        "commit": commit,
+    });
+    run(
+        home.path(),
+        &format!("echo '{mount}' | board --personal put /repos/x"),
+    );
+    let listed = board(home.path(), &["ls", "/"]);
+    assert!(lists_repos(&listed), "{listed}");
+}
+
+/// The text under `heading` in the page, up to the next heading of any
+/// level.
+fn section<'page>(page: &'page str, heading: &str) -> &'page str {
+    let start = page.find(&format!("\n{heading}\n")).unwrap() + heading.len() + 2;
+    let rest = &page[start..];
+    let end = rest.find("\n#").map_or(rest.len(), |end| end + 1);
+    &rest[..end]
+}
+
+#[test]
+fn the_release_folder_subsection_names_its_installer_and_the_hooks_board_app_runs() {
+    let page = page();
+    let release = section(&page, "### Install from a release folder");
+    let release = release.split_whitespace().collect::<Vec<_>>().join(" ");
+    assert!(release.contains("`<release folder>/install`"), "{release}");
+    assert!(
+        release.contains("`<release folder>/install --hooks`"),
+        "{release}"
+    );
+    assert!(
+        release.contains("Board.app always runs `install --hooks`"),
+        "{release}"
+    );
+    assert!(
+        page.lines()
+            .take(4)
+            .any(|line| line.contains("release folder"))
+    );
+}
+
+#[test]
+fn the_install_section_still_takes_a_reader_through_the_dmg_and_board_app() {
+    let page = page();
+    let dmg = section(&page, "## Install");
+    assert!(dmg.contains("Open the dmg"), "{dmg}");
+    assert!(dmg.contains("run Board.app"), "{dmg}");
+    assert!(!dmg.contains("release folder"), "{dmg}");
+}
+
+/// A failed `put --new` prints no path, so the block must stop before it
+/// concludes the eval with an empty run.
+#[test]
+fn the_test_something_block_stops_when_the_run_has_no_path() {
+    let page = page();
+    let blocks = blocks(&page, "Test something");
+    let lines: Vec<&str> = blocks.iter().flat_map(|block| block.lines()).collect();
+    let at = lines
+        .iter()
+        .position(|line| line.starts_with("run=$("))
+        .unwrap();
+    assert_eq!(lines[at + 1], "[ -n \"$run\" ]");
 }
 
 #[test]

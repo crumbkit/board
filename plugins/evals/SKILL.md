@@ -32,7 +32,8 @@ as in `board -C ~/Code/personal-board put ...`.
 
 ## When the board mounts repositories
 
-A board where `board ls /repos` fails with `board::path::not_found` mounts no
+Run `board -C <board> ls /`, or `board --personal ls /` for the personal
+board. A board whose top level lists no `repos` directory mounts no
 repositories. In such a board, skip this section: name each repository the
 eval concerns in `subjects` as `owner/name`, and leave `mounts` out. Add a
 mount only in a board that already mounts repositories.
@@ -44,8 +45,8 @@ mount of the repository you are in before you test.
 1. Take the repository's path from
    `dirname "$(git rev-parse --path-format=absolute --git-common-dir)"`. It
    gives the main checkout even from a worktree.
-2. `board -C <personal board> ls /repos` lists the mounts, and fails with
-   `board::path::not_found` when there are none. Each is a file
+2. Only after `board -C <personal board> ls /` lists a `repos` directory,
+   run `board -C <personal board> ls /repos`, which lists the mounts. Each is a file
    `repos/<name>.json` in the personal board's directory; read them. The one
    whose `repo` is that path (after expanding a leading `~/`) is the mount.
 3. If none matches, add one named after the repository's directory, with
@@ -124,7 +125,8 @@ verdict.
 3. Say how it is tested in a `runs/suite/v1` at `/suites/<suite>`: the
    subjects, the method, the cases and the measures, each with its unit.
    `board ls /suites` lists the suites; reuse one that already tests this.
-   List the suite in the eval's `suites`.
+   List the suite in the eval's `suites`. `runs.md` beside this file
+   gives a whole suite record and a whole run record, with each field.
 4. Write one `runs/run/v1` per run at `/suites/<suite>/runs/<id>`, where the
    id is a UTC timestamp and a short random suffix, such as
    `20261018T101500Z-a3f9`. Give `by`, `started`, `scope` (`full` when every
@@ -136,7 +138,8 @@ verdict.
    repository, commit them, and reference them from the results. Add the
    run to the eval's `runs`, and set `status: running` at the first run.
 5. Conclude with `verdict` and `conclusion`, and set `status: concluded`.
-   The eval's `runs` lists the runs the verdict rests on. If you stop
+   The eval's `runs` lists the runs the verdict rests on.
+   `README.md` beside this file gives a concluded eval. If you stop
    before concluding, set `status: abandoned` and say why in `conclusion`.
 6. After an `inconclusive` verdict, the `conclusion` says what would make
    the question conclusive, such as more trials, fixing a cause of error,

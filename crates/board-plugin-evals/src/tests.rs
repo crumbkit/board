@@ -383,7 +383,7 @@ fn the_skill_works_in_a_board_with_no_mounts_and_gives_only_subjects_the_schema_
     let skill = unwrapped(include_str!("../../../plugins/evals/SKILL.md"));
     for phrase in [
         "## When the board mounts repositories",
-        "fails with `board::path::not_found` mounts no repositories",
+        "lists no `repos` directory mounts no repositories",
         "skip this section",
         "leave `mounts` out",
         "## An eval in a board with no mounts",
