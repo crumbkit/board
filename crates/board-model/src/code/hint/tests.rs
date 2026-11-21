@@ -69,3 +69,12 @@ fn the_locked_hint_says_board_clears_a_lock_a_killed_board_left_and_a_person_cle
     assert!(text.contains("the next put or sync removes"), "{text}");
     assert!(text.contains("any other lock file"), "{text}");
 }
+
+#[test]
+fn the_no_branch_hint_names_the_way_out_of_each_case() {
+    let text = hint(Code::SyncNoBranch);
+    assert!(text.contains("without `--no-push`"), "{text}");
+    assert!(text.contains("board plugin enable tasks"), "{text}");
+    assert!(text.contains("git push <remote> HEAD:<branch>"), "{text}");
+    assert!(!text.contains("ssh-add"), "{text}");
+}

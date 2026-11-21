@@ -269,3 +269,49 @@ fn sync_reports_the_local_version_kept_when_the_remote_deleted_a_file_this_clone
         }
     }
 }
+
+/// A repository with no commit that accepts pushes, standing in for a new
+/// empty remote, and a clone of it, as `git clone` leaves one, whose first
+/// commit holds the test board.
+pub(super) fn empty_remote() -> (Scenario, Scenario) {
+    let remote = Scenario::new();
+    remote.accepting_pushes();
+    let clone = Scenario::new();
+    let config = format!(
+        "[remote \"origin\"]\n\turl = {}\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n\
+         [branch \"main\"]\n\tremote = origin\n\tmerge = refs/heads/main\n",
+        remote.path()
+    );
+    clone.write(".git/config", Item::Appended(&config));
+    clone.identified();
+    let files = [
+        (".board/board.json", CONFIG),
+        (
+            ".board/types/lr/project/v1.schema.json",
+            r#"{"type": "object"}"#,
+        ),
+        ("projects/p.json", PROJECT),
+    ];
+    let first = clone.commit(&files);
+    for (path, text) in files {
+        clone.write(path, Item::File(text));
+    }
+    clone.track(first);
+    (remote, clone)
+}
+
+#[test]
+fn the_first_sync_of_a_clone_of_an_empty_remote_prints_that_it_pushed_the_new_branch() {
+    let (remote, clone) = empty_remote();
+    let first = clone.head().unwrap().id;
+    let output = board_in(clone.workdir(), &["sync", "--no-push", "--json"]);
+    assert_eq!(output.code, 1);
+    assert_eq!(json(&output)["code"], "board::sync::no_branch");
+    let output = board_in(clone.workdir(), &["sync"]);
+    assert_eq!(output.code, 0, "{}", text(&output.stderr));
+    assert_eq!(
+        text(&output.stdout),
+        format!("fetched origin/main {first}\npushed {first}\nHEAD is at {first} already\n")
+    );
+    assert_eq!(remote.head().unwrap().id, first);
+}

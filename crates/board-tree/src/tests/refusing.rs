@@ -213,3 +213,54 @@ fn the_refusals_come_before_the_board_lock_is_taken() {
     let error = sync(&clone, false, false).unwrap_err();
     assert_eq!(error.code(), Code::SyncRewound, "{error}");
 }
+
+/// Whether `remote` holds a `main` branch.
+fn has_main(remote: &Scenario) -> bool {
+    remote.workdir().join(".git/refs/heads/main").exists()
+}
+
+#[test]
+fn a_sync_without_push_to_an_empty_remote_is_refused_and_with_push_creates_the_branch() {
+    let (remote, clone) = super::syncing::empty_remote();
+    let first = clone.commit(&[("a.json", "{}")]);
+    let error = sync(&clone, false, false).unwrap_err();
+    assert_eq!(error.code(), Code::SyncNoBranch, "{error}");
+    assert!(error.to_string().contains("--no-push"), "{error}");
+    assert!(!has_main(&remote));
+    assert_eq!(clone.head().unwrap().id, first);
+    assert!(sync(&clone, true, false).unwrap().pushed);
+    assert_eq!(remote.head().unwrap().id, first);
+}
+
+#[test]
+fn a_clone_with_no_commit_of_an_empty_remote_is_refused_and_one_with_a_commit_is_admitted() {
+    let (remote, clone) = super::syncing::empty_remote();
+    let error = sync(&clone, true, false).unwrap_err();
+    assert_eq!(error.code(), Code::SyncNoBranch, "{error}");
+    assert!(error.to_string().contains("no commit"), "{error}");
+    assert!(!has_main(&remote));
+    assert!(clone.head().is_none());
+    clone.commit(&[("a.json", "{}")]);
+    assert!(sync(&clone, true, false).unwrap().pushed);
+}
+
+/// A branch this clone fetched before and the remote then deleted is never
+/// created again by a sync; its twin, whose branch is still there, syncs.
+#[test]
+fn a_branch_deleted_on_the_remote_is_refused_and_not_recreated_and_one_still_there_syncs() {
+    let (remote, clone) = pair();
+    let (_still_there, kept) = pair();
+    let fetched = clone.head().unwrap().id;
+    remote.write(".git/refs/heads/main", Item::Deleted);
+    let before = state(&clone);
+    let tracking = tracking_ref(&clone);
+    let error = sync(&clone, true, false).unwrap_err();
+    assert_eq!(error.code(), Code::SyncNoBranch, "{error}");
+    assert!(error.to_string().contains(&fetched.to_string()), "{error}");
+    assert!(!has_main(&remote));
+    assert_eq!(state(&clone), before);
+    assert_eq!(tracking_ref(&clone), tracking);
+    let accepted = sync(&clone, true, true).unwrap_err();
+    assert_eq!(accepted.code(), Code::SyncNoBranch, "{accepted}");
+    assert!(sync(&kept, true, false).is_ok());
+}

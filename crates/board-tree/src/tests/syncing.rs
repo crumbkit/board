@@ -429,3 +429,138 @@ fn a_sync_whose_deadline_is_spent_while_a_put_holds_the_board_lock_times_out() {
         .unwrap_err();
     assert_eq!(error.code(), Code::SyncTimeout, "{error}");
 }
+
+/// A repository with no commit that accepts pushes, standing in for a new
+/// empty remote, and a clone of it that can commit, whose `main` follows
+/// `origin/main` as `git clone` of an empty repository leaves it.
+pub(super) fn empty_remote() -> (Scenario, Scenario) {
+    let remote = Scenario::new();
+    remote.accepting_pushes();
+    let clone = Scenario::new();
+    let config = format!(
+        "[remote \"origin\"]\n\turl = {}\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n\
+         [branch \"main\"]\n\tremote = origin\n\tmerge = refs/heads/main\n",
+        remote.path()
+    );
+    clone.write(".git/config", Item::Appended(&config));
+    clone.identified();
+    (remote, clone)
+}
+
+/// The first sync of a clone of an empty remote creates the remote's
+/// branch at HEAD; the next sync finds it there and changes nothing.
+#[test]
+fn the_first_sync_of_a_clone_of_an_empty_remote_creates_its_branch() {
+    let (remote, clone) = empty_remote();
+    let first = clone.commit(&[("a.json", "{}")]);
+    let repository = clone.open();
+    let synced = repository
+        .sync(true, Deadline::after(GIT_DEADLINE), Duration::ZERO)
+        .unwrap();
+    assert_eq!(
+        synced,
+        Synced {
+            upstream: repository.upstream().unwrap(),
+            fetched: first,
+            old: Some(first),
+            new: first,
+            merged: false,
+            conflicts: Vec::new(),
+            pins: Vec::new(),
+            failing: Vec::new(),
+            pushed: true,
+            attempts: 1,
+            kept: Vec::new(),
+        }
+    );
+    assert_eq!(remote.head().unwrap().id, first);
+    let again = repository
+        .sync(true, Deadline::after(GIT_DEADLINE), Duration::ZERO)
+        .unwrap();
+    assert_eq!((again.new, again.pushed, again.attempts), (first, false, 1));
+    assert_eq!(clone.head().unwrap().id, first);
+}
+
+/// Git's stderr from a fetch, in a refusal.
+fn stderr(error: &crate::SyncError) -> String {
+    String::from_utf8_lossy(error.stderr()).into_owned()
+}
+
+/// A remote git cannot reach still fails as the fetch did, with git's
+/// stderr, after the check for a missing branch; the same clone pointed at a
+/// reachable empty remote creates its branch.
+#[test]
+fn an_unreachable_remote_still_fails_with_the_fetchs_stderr_and_a_reachable_one_is_admitted() {
+    let (_remote, clone) = empty_remote();
+    clone.commit(&[("a.json", "{}")]);
+    let (_other, reachable) = empty_remote();
+    reachable.commit(&[("a.json", "{}")]);
+    clone.unreachable_origin();
+    let error = clone
+        .open()
+        .sync(true, Deadline::after(GIT_DEADLINE), Duration::ZERO)
+        .unwrap_err();
+    assert_eq!(error.code(), Code::SyncFailed, "{error}");
+    assert!(error.to_string().contains("fetch"), "{error}");
+    assert!(
+        stderr(&error).contains("/nowhere/at/all"),
+        "{}",
+        stderr(&error)
+    );
+    let synced = reachable
+        .open()
+        .sync(true, Deadline::after(GIT_DEADLINE), Duration::ZERO)
+        .unwrap();
+    assert!(synced.pushed);
+}
+
+/// Another clone creates the branch between this sync's check and its
+/// push: the push is rejected, and the next round fetches the other
+/// clone's first commit, merges it from an empty base and pushes. A stand-in
+/// for git-upload-pack pushes the other clone's commit right after it
+/// answers the check, which is the second time git asks the remote.
+#[test]
+fn a_branch_another_clone_creates_after_the_check_is_merged_on_the_next_round() {
+    let (remote, clone) = empty_remote();
+    let other = Scenario::new();
+    other.write(
+        ".git/config",
+        Item::Appended(&format!("[remote \"origin\"]\n\turl = {}\n", remote.path())),
+    );
+    let theirs = other.commit(&[("b.json", "[]")]);
+    let ours = clone.commit(&[("a.json", "{}")]);
+    let count = clone.workdir().join(".git/asked");
+    let script = format!(
+        "#!/bin/sh\n\
+         n=$(( $(cat '{count}' 2>/dev/null || echo 0) + 1 ))\n\
+         echo $n > '{count}'\n\
+         git upload-pack \"$@\"\n\
+         status=$?\n\
+         if [ $n = 2 ]; then\n\
+         env -u GIT_DIR -u GIT_PROTOCOL git -C '{other}' push -q origin HEAD:refs/heads/main >/dev/null 2>&1\n\
+         fi\n\
+         exit $status\n",
+        count = count.display(),
+        other = other.path(),
+    );
+    let upload = clone.workdir().join(".git/upload-pack");
+    clone
+        .write(".git/upload-pack", Item::Executable(&script))
+        .write(
+            ".git/config",
+            Item::Appended(&format!(
+                "[remote \"origin\"]\n\tuploadpack = {}\n",
+                upload.display()
+            )),
+        );
+    let synced = clone
+        .open()
+        .sync(true, Deadline::after(GIT_DEADLINE), Duration::ZERO)
+        .unwrap();
+    assert_eq!(synced.fetched, theirs);
+    assert!(synced.merged && synced.pushed, "{synced:?}");
+    assert_eq!(synced.attempts, 2);
+    let head = clone.head().unwrap();
+    assert_eq!(head.parents, vec![ours, theirs]);
+    assert_eq!(remote.head().unwrap().id, head.id);
+}

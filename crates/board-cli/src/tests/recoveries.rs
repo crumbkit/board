@@ -838,7 +838,7 @@ fn at_commits(starts: &mut Starts) {
 /// Clones of one remote that `sync` refuses: one following no remote
 /// branch, one whose remote git cannot reach, one that committed a record
 /// the remote also changed, one holding an edit of a file the remote
-/// changed, and one whose remote was rewritten since its last fetch, one that is shallow, one in the middle of a git merge, and one whose remote refuses every push. `-C` names the clone,
+/// changed, and one whose remote was rewritten since its last fetch, one that is shallow, one in the middle of a git merge, one whose remote has no branch yet, and one whose remote refuses every push. `-C` names the clone,
 /// which is the reason; the pushed clone's twin leaves the push for later.
 fn syncing(starts: &mut Starts) {
     let files = [
@@ -908,6 +908,10 @@ fn syncing(starts: &mut Starts) {
     let place = RuntimeFailing::at(rewound.workdir());
     starts.add(&place, Code::SyncRewound, "sync");
     starts.pair(&place, Code::SyncRewound, "sync", "sync --accept-rewrite");
+    let (empty, first) = super::sync::empty_remote();
+    let place = RuntimeFailing::at(first.workdir());
+    starts.add(&place, Code::SyncNoBranch, "sync --no-push");
+    starts.pair(&place, Code::SyncNoBranch, "sync --no-push", "sync");
     let place = RuntimeFailing::at(refused.workdir());
     starts.add(&place, Code::SyncGaveUp, "sync");
     starts.pair(&place, Code::SyncGaveUp, "sync", "sync --no-push");
@@ -928,6 +932,9 @@ fn syncing(starts: &mut Starts) {
     starts
         .kept
         .extend(kept.map(|kept| Box::new(kept) as Box<dyn std::any::Any>));
+    starts
+        .kept
+        .extend([empty, first].map(|kept| Box::new(kept) as Box<dyn std::any::Any>));
 }
 
 /// A repository two known boards mount, run from inside it.
