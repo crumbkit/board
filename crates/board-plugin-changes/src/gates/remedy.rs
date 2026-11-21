@@ -149,7 +149,9 @@ fn default(each: &flow::Check) -> String {
              option that names it counts. Then attach the question and the owner's \
              answer, each with `board changes attach --path {change} --ref <path>`. A \
              plans/decision/v1 the owner signs with by.person whose refs name {change} also \
-             counts."
+             counts. The owner's Touch ID approval of changes.approve for the current plan also \
+             counts: run `board call changes.approve --path {change}` and approve the effect it \
+             names."
             .to_owned(),
         Kind::Records => format!("{ask}write the record the detail describes and {ATTACH}."),
         Kind::Run => "Once CI has passed on {head}, record its check runs as a run of {suite} with \

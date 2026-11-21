@@ -87,9 +87,15 @@ blocks is missing.
    plan lists only in `uses` passes no check. An owner check that counts
    such decisions with refs naming the plan or the change, such as
    `owner-approval` or `owner-confirms`, also counts the owner's
-   `plans/answer/v1` from /ask, with the same `by.person` and `written_by`
-   rule, when the option the owner chose names the change's path, such as
-   `/changes/<name>`, in its text. When you ask for approval with /ask, put
+   `plans/answer/v1` when its `by.person` or its `written_by` is a string
+   that is not empty, as an answer from the questions pane, Board.app or
+   /ask is, and the option the owner chose names the change's path, such
+   as `/changes/<name>`, in its text. Such a check also counts the owner's
+   Touch ID approval of the current plan: run
+   `board call changes.approve --path /changes/<name>`, which the pane runs
+   after such an answer, and the owner approves the effect it names. Only
+   that signed approval proves the owner chose; `by` and `written_by` are
+   claims any writer can make. When you ask for approval with /ask, put
    the change's path in the text of the option that approves it and in no
    other option, because any chosen option that names the path counts.
    Attach the question and the answer, each with

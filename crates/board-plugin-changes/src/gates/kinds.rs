@@ -7,8 +7,9 @@ use std::collections::BTreeSet;
 
 use super::remedy::{Values, fill, unfilled};
 use super::{
-    DECISION_TYPE, NO_HEAD, Observed, UNDERSTANDING_TYPE, objects, owner_signed, reviewed_head,
-    route_missing, same_commit, signed_decisions, strings, task_missing, unset,
+    Approval, DECISION_TYPE, NO_HEAD, Observed, UNDERSTANDING_TYPE, objects, owner_answered,
+    owner_signed, reviewed_head, route_missing, same_commit, signed_decisions, strings,
+    task_missing, unset,
 };
 use board_plugin::shape::Record;
 
@@ -18,7 +19,7 @@ use crate::rules::current;
 
 /// The most paths a detail names (STANDARDS 23); it counts the rest.
 const SHOWN: usize = 10;
-const ANSWER_TYPE: &str = "plans/answer/v1";
+pub(crate) const ANSWER_TYPE: &str = "plans/answer/v1";
 const QUESTION_TYPE: &str = "plans/question/v1";
 
 /// Whether `each` also counts the owner's answer whose chosen option names
@@ -286,7 +287,12 @@ fn meets(
         (finding.get("severity").and_then(Value::as_str))
             .is_some_and(|severity| severities.iter().any(|each| each.as_str() == severity))
     });
-    let signed = rules.owner_signed != Some(true) || owner_signed(body);
+    let signed = rules.owner_signed != Some(true)
+        || if answer {
+            owner_answered(body)
+        } else {
+            owner_signed(body)
+        };
     let refs = if answer {
         chose_change(observed, body)
     } else {
@@ -299,7 +305,7 @@ fn meets(
 /// Whether the option `answer` chose names the change: the attached
 /// question it answers has an option whose `id` is its `choice` and whose
 /// `text` names the change's path whole.
-fn chose_change(observed: &Observed, answer: &Map<String, Value>) -> bool {
+pub(crate) fn chose_change(observed: &Observed, answer: &Map<String, Value>) -> bool {
     let field = |key| answer.get(key).and_then(Value::as_str);
     let (Some(question), Some(choice)) = (field("question"), field("choice")) else {
         return false;
@@ -362,14 +368,25 @@ pub(super) fn records_missing(observed: &Observed, each: &flow::Check) -> Option
             .collect::<BTreeSet<_>>())
         .len(),
     };
+    // The owner's Touch ID approval of the current plan counts once.
+    let approved = answers_count(each)
+        && matches!(&observed.approval, Approval::Signed { plan }
+            if Some(plan.as_str()) == observed.change.plan.as_deref());
+    let count = count + usize::from(approved);
     let min = each.min.map_or(1, |min| min as usize);
     (count < min).then(|| {
         let detail = records_detail(each, kind, rules, head, min);
         if answers_count(each) {
             let path = &observed.path;
+            let unread = match &observed.approval {
+                Approval::Unread(why) => format!("; Board could not read that approval: {why}"),
+                Approval::None | Approval::Signed { .. } => String::new(),
+            };
             format!(
-                "{detail}, nor a {ANSWER_TYPE} of the owner's whose chosen option, in its \
-                 attached question, names {path}"
+                "{detail}, nor a {ANSWER_TYPE} from the owner (one that names `by.person`, or was \
+                 written through the owner's questions pane, Board.app or /ask) whose chosen \
+                 option, in its attached question, names {path}, nor the owner's Touch ID \
+                 approval of changes.approve for the current plan{unread}"
             )
         } else {
             detail

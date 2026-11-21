@@ -56,7 +56,13 @@ Such a stub names its plugin and hook in `written_by`, such as
 
 The changes plugin's owner checks count a decision as the owner's only when
 its `written_by` is empty and its `by.person` is a string that is not empty.
-They compare the person with no name, so any writer can set it. An agent that
+They count an answer as the owner's when its `by.person` or its
+`written_by` is a string that is not empty, since an answer's `written_by`
+names the owner's surface. They compare the person with no name, so any
+writer can set it, and any writer can set `written_by` too. Only the owner's
+Touch ID approval of `changes.approve` proves the owner chose; the questions
+pane asks for it after an answer whose chosen option names the change it was
+attached to. An agent that
 records an approval the owner gave in chat names the owner as `person` and
 quotes the owner's words in `why`:
 
@@ -203,7 +209,9 @@ question (`plans::answer::already_answered`), the question's status is not
 (`plans::answer::unknown_option`), or the option is `none` without words
 (`plans::answer::words_needed`). A question changed after the read fails with
 `plans::board::refused`, carrying Board's `board::put::stale`. It asks for no
-Touch ID, as the pane does not.
+Touch ID. The pane then runs `changes.approve` on the attached change when
+the chosen option's text names it, and the owner approves that effect with
+Touch ID.
 
 `board plans withdraw --path <question> --reason <text>` withdraws a
 question that no longer matters: it rewrites the question with `status:

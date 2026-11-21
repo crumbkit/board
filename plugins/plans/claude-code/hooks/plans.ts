@@ -36,6 +36,25 @@ export function parseAnswered(stdout: string): Answered {
   return typeof output === 'object' && output !== null ? output : {}
 }
 
+/** True when `text` names `path` whole, and not as part of a longer path, as the changes gate reads an option. */
+export function namesWhole(text: string, path: string): boolean {
+  const joined = (c: string | undefined) => c !== undefined && /[\p{L}\p{N}_/-]/u.test(c)
+  for (let at = text.indexOf(path); at !== -1; at = text.indexOf(path, at + 1)) {
+    if (!joined(text[at - 1]) && !joined(text[at + path.length])) return true
+  }
+  return false
+}
+
+/**
+ * The change the owner's answer approves: the change plans.answer attached
+ * the answer to, when the chosen option's text names it. Null otherwise.
+ */
+export function approvedChange(q: Question, choice: string | undefined, attached: Answered['attached']): string | null {
+  if (attached === undefined || attached.refused !== undefined) return null
+  const text = q.options.find(o => o.id === choice)?.text
+  return text !== undefined && namesWhole(text, attached.change) ? attached.change : null
+}
+
 /** Reads `board --json call plans.open`; null when it printed no call report. */
 export function parseOpen(stdout: string): Open | null {
   const report = parseJson(stdout)

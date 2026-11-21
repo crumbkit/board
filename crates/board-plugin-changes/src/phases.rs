@@ -17,8 +17,7 @@ use crate::change::{
     pull_of, read, referenced, sync_reads, touch, whole_record_at,
 };
 use crate::diff::{edited, outside};
-use crate::flow::Kind as CheckKind;
-use crate::flow::{Actor, FlowSummary, of_change};
+use crate::flow::{Actor, FlowSummary, Kind as CheckKind, of_change};
 use crate::gates::kinds::named_rules;
 use crate::gates::remedy::{fill, unfilled, values};
 use crate::gates::{Check, Observed, Read, gate, reads};
@@ -367,6 +366,7 @@ pub(crate) fn observe(
     if wanted.contains(&Read::PlannedRules) {
         planned_rules(host, &mut found)?;
     }
+    crate::approve::read_approval(host, &mut found, &wanted);
     Ok(found)
 }
 

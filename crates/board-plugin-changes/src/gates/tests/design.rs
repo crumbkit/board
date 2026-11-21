@@ -5,7 +5,7 @@
 
 use serde_json::{Value, json};
 
-use super::{Given, HEAD, MOCKUP, NEIGHBOURS, PERSON, agreed, given, planned_ux};
+use super::{Given, HEAD, MOCKUP, NEIGHBOURS, PERSON, agreed, answered, given, planned_ux};
 
 const VERSION: &str = "1793473476-1c42";
 const NOTHING_WRONG: &str = "match";
@@ -301,6 +301,25 @@ fn the_owners_answer_to_the_builders_question_clears_that_difference() {
         by_agent.code("design-conformance"),
         "changes::ux::not_conformed"
     );
+}
+
+/// The table of who wrote an answer, run through the answer that clears
+/// a difference: an answer naming a person, or written through a surface
+/// of the owner's, clears it.
+#[test]
+fn an_answer_from_any_surface_of_the_owners_clears_the_difference_it_answers() {
+    let [got, wanted] = answered(|fields| {
+        let mut body = json!({"question": "/q/1", "words": "Skip it."});
+        for (key, value) in fields.as_object().unwrap() {
+            body[key] = value.clone();
+        }
+        let records = vec![
+            ("/c/1", conformance(&unbuilt())),
+            ("/q/1/answer", ("plans/answer/v1", body)),
+        ];
+        at_review(records).statuses()["design-conformance"] == "pass"
+    });
+    assert_eq!(got, wanted);
 }
 
 #[test]

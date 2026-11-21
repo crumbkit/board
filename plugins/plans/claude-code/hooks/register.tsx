@@ -3,7 +3,7 @@ import type { EngineInterface, PluginOptions, Register, RenderElement } from 'cl
 
 import type { Open, Question, Unread, Waiting } from '../types'
 import { SLOT, drawsInto, joinBand, keepOneBand } from './band'
-import { answerText, blocking, countBadge, failure, parseAnswered, parseOpen, parseRows, parseWaiting, plain, project, refused, report, REPORT_LIMIT, REPORT_SQL, WRITTEN_BY } from './plans'
+import { answerText, approvedChange, blocking, countBadge, failure, parseAnswered, parseOpen, parseRows, parseWaiting, plain, project, refused, report, REPORT_LIMIT, REPORT_SQL, WRITTEN_BY } from './plans'
 
 // The mod reads the owner's open questions from Board, draws their count in
 // the band above the prompt and lists them in a pane, where the owner answers
@@ -125,14 +125,28 @@ async function answer($: EngineInterface, options: PluginOptions, q: Question, c
     const [sent] = await Promise.all([send(q.session), ...others.map(send)])
     const { attached } = answered
     const unattached = attached?.refused === undefined ? null : `not attached to ${attached.change}: ${attached.refused}`
+    const approval = await askApproval($, options, approvedChange(q, choice, attached))
     $.ui.toast(
-      sent
+      (sent
         ? `Answered, and sent to ${q.session}${unattached === null ? '' : `. The answer is recorded but was ${unattached}`}`
-        : `Answered and recorded in Board${unattached === null ? '' : `, but ${unattached}`}. The message to ${q.session} was not delivered`,
+        : `Answered and recorded in Board${unattached === null ? '' : `, but ${unattached}`}. The message to ${q.session} was not delivered`) + approval,
     )
   } catch (error) {
     $.ui.toast(`No answer was recorded: ${String(error)}`)
   }
+}
+
+/**
+ * Asks the owner, through `changes.approve`, to approve with Touch ID the
+ * change the answer approves, which only that signed approval proves. The
+ * toast's sentence about it; empty when the answer approves no change.
+ */
+async function askApproval($: EngineInterface, options: PluginOptions, change: string | null): Promise<string> {
+  if (change === null) return ''
+  const ran = await board($, options, ['call', 'changes.approve', `--path=${change}`], ANSWER_MS).catch(() => null)
+  if (ran?.exitCode === 0) return `. The approval of ${change} waits for Touch ID in the effects band`
+  const why = ran === null ? 'board did not finish' : failure(ran.exitCode, ran.stdout, ran.stderr)
+  return `. No approval of ${change} was asked (${why}); run board call changes.approve --path ${change}`
 }
 
 const age = (asked: string, now: number) => {

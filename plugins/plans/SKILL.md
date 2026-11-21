@@ -38,7 +38,8 @@ in. `<project>` names what the record concerns, such as the repository
    at it.
 
    A change's owner checks count a decision only when its `by.person` is
-   set and its `written_by` is empty. When the owner approves in chat,
+   set and its `written_by` is empty. They count an answer when its
+   `by.person` or its `written_by` is set. When the owner approves in chat,
    record his approval with his name as `person` and his words, quoted, in
    `why`:
 

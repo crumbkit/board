@@ -9,7 +9,7 @@ use regex::Regex;
 use serde_json::{Map, Value};
 
 use super::{
-    NO_HEAD, Observed, objects, owner_signed, pattern, same_commit, signed_decisions, strings,
+    NO_HEAD, Observed, objects, owner_answered, pattern, same_commit, signed_decisions, strings,
 };
 use crate::plan::answers::Ux;
 
@@ -179,14 +179,14 @@ fn difference(each: &Map<String, Value>) -> String {
 }
 
 /// Whether the owner has answered the question a difference names, so the
-/// difference no longer blocks: an attached plans/answer/v1 for it, written
-/// by a person and no hook.
+/// difference no longer blocks: an attached plans/answer/v1 for it that
+/// names a person or the owner's surface that wrote it.
 fn cleared(observed: &Observed, each: &Map<String, Value>) -> bool {
     let Some(question) = each.get("question").and_then(Value::as_str) else {
         return false;
     };
     (observed.records.of_type(ANSWER_TYPE)).any(|(_, answer)| {
-        answer.get("question").and_then(Value::as_str) == Some(question) && owner_signed(answer)
+        answer.get("question").and_then(Value::as_str) == Some(question) && owner_answered(answer)
     })
 }
 
