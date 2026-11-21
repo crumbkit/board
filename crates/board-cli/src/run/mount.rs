@@ -1,7 +1,7 @@
 //! `board mount add` and `board mount update`: their arguments and the
 //! mount writes they ask for (docs/architecture/paths.md, Pointers).
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use board_model::LogicalPath;
 use board_ops::Board;
@@ -15,8 +15,8 @@ pub(super) const HELP: &str = "\
 A mount holds `repo`, `follow` and `commit`: a board/mount/v1 record, or the
 `checkout` of a board/repo/v1 record, which also names the repository's
 `remote`. Board reads the mounted repository at `commit`. `mount add` writes
-a mount of a local clone; `mount update` moves `commit` to the commit
-`follow` names.
+a mount of a local clone; `mount update` moves `commit` to what `follow`
+names.
 
 Examples:
   board mount add /team ~/team-board
@@ -24,14 +24,14 @@ Examples:
 
 #[derive(Debug, Subcommand)]
 pub(crate) enum MountCommand {
-    /// Mount a local clone at a path where nothing is.
+    /// Mount a local clone at a path that holds nothing yet.
     #[command(after_help = "\
 Writes a board/mount/v1 record at the path, through put with --expect none.
 `follow` is the branch checked out in the clone, unless --follow names
 another ref. A write through the mount needs `follow` to name a local
-branch. `commit` is the commit `follow` names now. A `repo` that is absolute
-or starts with ~/ is stored as given; a relative one is made absolute
-against the directory the run started in.
+branch. `commit` is the commit `follow` names now. `repo` is stored as the
+shell passes it, so ~/team-board is stored as an absolute path. A relative
+`repo` is made absolute against the directory the run started in.
 
 Examples:
   board mount add /team ~/team-board
@@ -60,7 +60,7 @@ Examples:
 pub(super) fn run(board: &Board, printer: Printer, start: &Path, command: MountCommand) -> Output {
     match command {
         MountCommand::Add { path, repo, follow } => {
-            match board.mount_add(&path, &stored(start, repo), follow) {
+            match board.mount_add(&path, (&repo, start), follow) {
                 Ok((mount, report)) => render::mount_add(printer, &mount, &report),
                 Err(error) => render::refused(printer, error.refusal()),
             }
@@ -70,15 +70,4 @@ pub(super) fn run(board: &Board, printer: Printer, start: &Path, command: MountC
             Err(error) => render::refused(printer, error.refusal()),
         },
     }
-}
-
-/// `repo` as a mount record stores it: as given when it is absolute or
-/// starts with `~/`, else made absolute against `start`, since the record
-/// reads a relative `repo` against the board's working tree.
-fn stored(start: &Path, repo: String) -> String {
-    if repo.starts_with("~/") || Path::new(&repo).is_absolute() {
-        return repo;
-    }
-    let joined: PathBuf = start.join(&repo).components().collect();
-    joined.to_string_lossy().into_owned()
 }

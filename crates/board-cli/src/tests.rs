@@ -2078,10 +2078,61 @@ fn mount_add_reads_a_relative_repo_against_the_directory_the_run_started_in() {
     );
     assert_eq!(added.code, 0, "{}", text(&added.stderr));
     assert_eq!(pointer_at(&scenario, "lib.json")["repo"], library.path());
+    let climbed = format!("../{}", name.to_str().unwrap());
+    let added = board_in(
+        library.workdir(),
+        &["-C", &board, "mount", "add", "/again", &climbed],
+    );
+    assert_eq!(added.code, 0, "{}", text(&added.stderr));
+    assert_eq!(pointer_at(&scenario, "again.json")["repo"], library.path());
 }
 
 #[test]
-fn mount_add_as_its_help_shows_stores_a_home_relative_repo_as_given_and_reads_through_it() {
+fn mount_add_of_a_url_is_remote_unsupported_and_writes_nothing_and_of_a_clone_writes() {
+    let library = Scenario::new();
+    library.commit(&[("a.md", "one")]);
+    let scenario = uncommitting();
+    for url in [
+        "https://github.com/example-org/team-board",
+        "git@github.com:example-org/team-board",
+    ] {
+        let refused = board_in(scenario.workdir(), &["mount", "add", "/lib", url]);
+        assert_eq!(refused.code, 1, "{url}");
+        let stderr = text(&refused.stderr);
+        assert!(
+            stderr.contains("\n  code:  board::mount::remote_unsupported\n"),
+            "{stderr}"
+        );
+        assert!(!scenario.workdir().join("lib.json").exists());
+    }
+    let admitted = board_in(
+        scenario.workdir(),
+        &["mount", "add", "/lib", &library.path()],
+    );
+    assert_eq!(admitted.code, 0, "{}", text(&admitted.stderr));
+}
+
+#[test]
+fn mount_add_run_by_a_plugin_is_refused_as_its_put_would_be_and_run_by_the_person_writes() {
+    let library = Scenario::new();
+    library.commit(&[("a.md", "one")]);
+    let scenario = uncommitting();
+    let environment = board_plugin::Environment {
+        plugin: Some("tasks".parse().unwrap()),
+        ..board_plugin::Environment::default()
+    };
+    let arguments = ["mount", "add", "/lib", &library.path()];
+    let refused = board_environment(scenario.workdir(), None, None, environment, &arguments, b"");
+    assert_eq!(refused.code, 1);
+    let stderr = text(&refused.stderr);
+    assert!(stderr.contains("put the link or mount /lib"), "{stderr}");
+    assert!(!scenario.workdir().join("lib.json").exists());
+    let admitted = board_in(scenario.workdir(), &arguments);
+    assert_eq!(admitted.code, 0, "{}", text(&admitted.stderr));
+}
+
+#[test]
+fn mount_add_stores_repo_as_given_whether_a_shell_expanded_its_home_or_not_and_reads_through_it() {
     let team = Scenario::new();
     let commit = team.commit(&[("a.md", "one")]);
     let home = tempfile::tempdir().unwrap();
@@ -2107,6 +2158,13 @@ fn mount_add_as_its_help_shows_stores_a_home_relative_repo_as_given_and_reads_th
     assert_eq!(text(&run(&["get", "/team/a.md"]).stdout), "one");
     let followed = run(&["mount", "add", "/other", "~/team-board", "--follow", "main"]);
     assert_eq!(followed.code, 0, "{}", text(&followed.stderr));
+    // A shell expands an unquoted ~/team-board before Board reads it, and
+    // Board stores the absolute path it is given.
+    let expanded = home.path().join("team-board");
+    let expanded = expanded.to_str().unwrap();
+    let added = run(&["mount", "add", "/expanded", expanded]);
+    assert_eq!(added.code, 0, "{}", text(&added.stderr));
+    assert_eq!(pointer_at(&scenario, "expanded.json")["repo"], expanded);
 }
 
 /// Runs `board` in `directory` with Board's built-in plugins.
