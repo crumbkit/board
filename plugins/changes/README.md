@@ -913,13 +913,18 @@ Such a check also counts the owner's Touch ID approval of the current plan.
 `changes.approve --path <change>` refuses with `changes::approve::not_chosen`
 unless an attached answer chose an option that names the change. Otherwise it
 asks Board's `decide` for the capability `changes.approve` at the change's
-path, showing `{"change": <change>, "plan": <the plan the change names>}`,
-which writes a pending effect in the personal board. It returns the effect's
-id and `asked`, `approved` or `refused`. The owner approves it with
-`board answer <id> approve`, in the effects band or in Board.app. `next` and
-`advance` read the approval with `decided`, which checks the signature
-against the allowed signers file each time. A revised plan needs a new
-approval. When Board cannot read the approval, the check's detail says why.
+path, which writes a pending effect in the personal board. The Touch ID
+statement shows the change, the plan it names, the plan's title, a SHA-256
+of the plan record and its text, the last attached answer whose chosen
+option names the change, and that option's text. The digest leaves out the
+plan record's `records`, so attaching a record keeps the approval; any other
+edit to the record or its text, on disk or through `put`, needs a new one.
+It returns the answer's path, the effect's id and `asked`, `approved` or
+`refused`. The owner approves it with `board answer <id> approve`, in the
+effects band or in Board.app. `next` and `advance` recompute the digest and
+read the approval with `decided`, which checks the signature against the
+allowed signers file each time. When Board cannot read the approval, the
+check's detail says why.
 The questions pane runs `changes.approve` after an answer whose chosen option
 names the change it was attached to.
 

@@ -3,7 +3,7 @@ import type { EngineInterface, PluginOptions, Register, RenderElement } from 'cl
 
 import type { Open, Question, Unread, Waiting } from '../types'
 import { SLOT, drawsInto, joinBand, keepOneBand } from './band'
-import { answerText, approvedChange, blocking, countBadge, failure, parseAnswered, parseOpen, parseRows, parseWaiting, plain, project, refused, report, REPORT_LIMIT, REPORT_SQL, WRITTEN_BY } from './plans'
+import { answerText, approvalText, approvedChange, blocking, countBadge, failure, parseAnswered, parseApproved, parseOpen, parseRows, parseWaiting, plain, project, refused, report, REPORT_LIMIT, REPORT_SQL, WRITTEN_BY } from './plans'
 
 // The mod reads the owner's open questions from Board, draws their count in
 // the band above the prompt and lists them in a pane, where the owner answers
@@ -144,7 +144,7 @@ async function answer($: EngineInterface, options: PluginOptions, q: Question, c
 async function askApproval($: EngineInterface, options: PluginOptions, change: string | null): Promise<string> {
   if (change === null) return ''
   const ran = await board($, options, ['call', 'changes.approve', `--path=${change}`], ANSWER_MS).catch(() => null)
-  if (ran?.exitCode === 0) return `. The approval of ${change} waits for Touch ID in the effects band`
+  if (ran?.exitCode === 0) return approvalText(change, parseApproved(ran.stdout))
   const why = ran === null ? 'board did not finish' : failure(ran.exitCode, ran.stdout, ran.stderr)
   return `. No approval of ${change} was asked (${why}); run board call changes.approve --path ${change}`
 }

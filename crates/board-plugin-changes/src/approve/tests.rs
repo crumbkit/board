@@ -5,7 +5,7 @@ use board_model::{Code, Fields, Refusal};
 use board_ops::DecideReport;
 use serde_json::{Map, Value, json};
 
-use super::{Output, State, chosen, outcome};
+use super::{Output, State, followed, outcome};
 use crate::change::Referenced;
 use crate::gates::Observed;
 use crate::records::Kind;
@@ -49,14 +49,19 @@ fn observed(named: &str) -> Observed {
 
 #[test]
 fn approve_refuses_without_an_answer_whose_option_names_the_change_and_asks_with_one() {
-    let refused = chosen(&observed("/changes/other")).unwrap_err();
+    let refused = followed(&observed("/changes/other")).unwrap_err();
     assert_eq!(refused.code, "changes::approve::not_chosen");
-    assert_eq!(chosen(&observed(PATH)).unwrap(), PLAN);
+    let named = observed(PATH);
+    assert_eq!(
+        followed(&named).unwrap(),
+        (PLAN.to_owned(), "/a/1", "Approve the plan at /changes/t.")
+    );
+    // A change with no plan holds no attached answer, so it is not chosen.
     let mut unplanned = observed(PATH);
     unplanned.change.plan = None;
     assert_eq!(
-        chosen(&unplanned).unwrap_err().code,
-        "changes::approve::no_plan"
+        followed(&unplanned).unwrap_err().code,
+        "changes::approve::not_chosen"
     );
 }
 
@@ -72,6 +77,7 @@ fn output(effect: &str, state: State) -> Output {
     Output {
         path: PATH.to_owned(),
         plan: PLAN.to_owned(),
+        answer: "/a/1".to_owned(),
         effect: Some(effect.to_owned()),
         state,
     }
@@ -79,7 +85,7 @@ fn output(effect: &str, state: State) -> Output {
 
 #[test]
 fn the_decide_answers_asked_refused_or_approved_and_any_other_refusal_is_passed_on() {
-    let of = |decided| outcome(PATH.to_owned(), PLAN.to_owned(), decided);
+    let of = |decided| outcome(PATH.to_owned(), PLAN.to_owned(), "/a/1".to_owned(), decided);
     assert_eq!(
         of(answered(Code::SettingsAsked)).unwrap(),
         output("e1", State::Asked)

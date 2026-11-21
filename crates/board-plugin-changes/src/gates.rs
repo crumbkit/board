@@ -5,6 +5,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::LazyLock;
 
+use board_model::Refusal;
 use board_plugin::shape::Open;
 use regex::Regex;
 use schemars::JsonSchema;
@@ -137,16 +138,14 @@ pub(crate) struct Observed {
 }
 
 /// What `Host::decided` found of the owner's approval of `changes.approve`
-/// for the change: none, an approval of the plan it names, or why Board
-/// could not read it.
+/// for the change's current plan and its content: none, the owner's
+/// signed approval, or Board's refusal to read it.
 #[derive(Debug, Default, PartialEq, Eq)]
 pub(crate) enum Approval {
     #[default]
     None,
-    Signed {
-        plan: String,
-    },
-    Unread(String),
+    Signed,
+    Unread(Box<Refusal>),
 }
 
 impl Observed {

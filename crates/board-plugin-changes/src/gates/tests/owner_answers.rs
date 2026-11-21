@@ -2,6 +2,7 @@
 //! the owner's, and the owner's Touch ID approval of `changes.approve` for
 //! the current plan. Each refusal has an admitted twin.
 
+use board_model::{Code, Fields, Refusal};
 use serde_json::json;
 
 use super::{PATH, PERSON, UNMET, answer, given};
@@ -51,21 +52,10 @@ fn a_decision_written_by_a_hook_still_does_not_pass_owner_approval_though_an_ans
 }
 
 #[test]
-fn the_owners_signed_approval_of_the_current_plan_passes_owner_approval_and_one_of_an_older_plan_does_not()
- {
-    let current = Approval::Signed {
-        plan: "/changes/t/plans/1".to_owned(),
-    };
+fn the_owners_signed_approval_passes_owner_approval_and_no_approval_does_not() {
     assert_eq!(
-        approval_with(Vec::new(), current),
+        approval_with(Vec::new(), Approval::Signed),
         (Status::Pass, String::new())
-    );
-    let older = Approval::Signed {
-        plan: "/changes/t/plans/0".to_owned(),
-    };
-    assert_eq!(
-        approval_with(Vec::new(), older),
-        (Status::Missing, UNMET.to_owned())
     );
     assert_eq!(
         approval_with(Vec::new(), Approval::None),
@@ -75,13 +65,17 @@ fn the_owners_signed_approval_of_the_current_plan_passes_owner_approval_and_one_
 
 #[test]
 fn an_approval_board_could_not_read_does_not_pass_and_the_detail_says_why() {
-    let unread = Approval::Unread("board::effects::unsigned the signature is bad".to_owned());
+    let refusal = Refusal::new(
+        Code::SettingsUnsigned,
+        "the signature is bad",
+        &Fields::default(),
+    );
     assert_eq!(
-        approval_with(Vec::new(), unread),
+        approval_with(Vec::new(), Approval::Unread(Box::new(refusal))),
         (
             Status::Missing,
             format!(
-                "{UNMET}; Board could not read that approval: board::effects::unsigned the \
+                "{UNMET}; Board could not read that approval: board::settings::unsigned the \
                  signature is bad"
             )
         )

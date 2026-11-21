@@ -8,6 +8,7 @@ use std::sync::LazyLock;
 use regex::Regex;
 use serde_json::{Map, Value};
 
+use super::kinds::ANSWER_TYPE;
 use super::{
     NO_HEAD, Observed, objects, owner_answered, pattern, same_commit, signed_decisions, strings,
 };
@@ -15,8 +16,6 @@ use crate::plan::answers::Ux;
 
 /// The record type of a critic's comparison of a build with a design.
 pub(crate) const CONFORMANCE_TYPE: &str = "changes/conformance/v1";
-/// The record type of the owner's answer to a question.
-const ANSWER_TYPE: &str = "plans/answer/v1";
 
 /// How a UX section says it lists no mockups, at its start, without case.
 static NO_UI: LazyLock<Regex> = LazyLock::new(|| pattern(r"(?i)^no ui change\b[\s.:,;-]*\w"));

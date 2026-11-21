@@ -302,20 +302,28 @@ fn meets(
     values && clean && signed && refs
 }
 
-/// Whether the option `answer` chose names the change: the attached
-/// question it answers has an option whose `id` is its `choice` and whose
-/// `text` names the change's path whole.
-pub(crate) fn chose_change(observed: &Observed, answer: &Map<String, Value>) -> bool {
+/// Whether the option `answer` chose names the change.
+fn chose_change(observed: &Observed, answer: &Map<String, Value>) -> bool {
+    chosen_text(observed, answer).is_some()
+}
+
+/// The text of the option `answer` chose, when it names the change: the
+/// attached question it answers has an option whose `id` is its `choice`
+/// and whose `text` names the change's path whole.
+pub(crate) fn chosen_text<'a>(
+    observed: &'a Observed,
+    answer: &Map<String, Value>,
+) -> Option<&'a str> {
     let field = |key| answer.get(key).and_then(Value::as_str);
     let (Some(question), Some(choice)) = (field("question"), field("choice")) else {
-        return false;
+        return None;
     };
     (observed.records.of_type(QUESTION_TYPE))
         .filter(|(path, _)| *path == question)
         .flat_map(|(_, body)| objects(body, "options"))
         .filter(|option| option.get("id").and_then(Value::as_str) == Some(choice))
         .filter_map(|option| option.get("text").and_then(Value::as_str))
-        .any(|text| names_whole(text, &observed.path))
+        .find(|text| names_whole(text, &observed.path))
 }
 
 /// Whether `text` names `path` whole, and not as part of a longer path.
@@ -369,9 +377,7 @@ pub(super) fn records_missing(observed: &Observed, each: &flow::Check) -> Option
         .len(),
     };
     // The owner's Touch ID approval of the current plan counts once.
-    let approved = answers_count(each)
-        && matches!(&observed.approval, Approval::Signed { plan }
-            if Some(plan.as_str()) == observed.change.plan.as_deref());
+    let approved = answers_count(each) && observed.approval == Approval::Signed;
     let count = count + usize::from(approved);
     let min = each.min.map_or(1, |min| min as usize);
     (count < min).then(|| {
@@ -379,8 +385,12 @@ pub(super) fn records_missing(observed: &Observed, each: &flow::Check) -> Option
         if answers_count(each) {
             let path = &observed.path;
             let unread = match &observed.approval {
-                Approval::Unread(why) => format!("; Board could not read that approval: {why}"),
-                Approval::None | Approval::Signed { .. } => String::new(),
+                Approval::Unread(refusal) => format!(
+                    "; Board could not read that approval: {} {}",
+                    refusal.code.as_str(),
+                    refusal.message
+                ),
+                Approval::None | Approval::Signed => String::new(),
             };
             format!(
                 "{detail}, nor a {ANSWER_TYPE} from the owner (one that names `by.person`, or was \

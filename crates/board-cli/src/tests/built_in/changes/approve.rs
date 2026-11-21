@@ -5,6 +5,8 @@
 use super::*;
 
 const QUESTION: &str = "/projects/a/questions/q";
+/// Where `plans.answer` records the answer to [`QUESTION`].
+const ANSWER: &str = "/projects/a/answers/q";
 
 /// The owner's personal board, enabling plans and changes, holding the
 /// change /changes/t in plan with its plan, and an open question that
@@ -108,8 +110,29 @@ fn approve_asks_the_owner_and_owner_approval_passes_once_the_owner_signs_it() {
     let output = &asked["data"]["output"];
     assert_eq!(output["state"], "asked");
     assert_eq!(output["plan"], "/changes/t/plans/1");
+    assert_eq!(output["answer"], ANSWER);
     let effect = output["effect"].as_str().unwrap().to_owned();
     assert_eq!(personal.pending(), std::slice::from_ref(&effect));
+    // The Touch ID statement shows the plan's title and digest, the answer
+    // and the text of the option the owner chose.
+    let pending = personal
+        .record(&format!("/effects/pending/{effect}"))
+        .unwrap();
+    let shown = &pending["record"];
+    assert_eq!(
+        (&shown["plan_title"], &shown["answer"], &shown["chosen"]),
+        (
+            &json!("Timeout"),
+            &json!(ANSWER),
+            &json!("Approve the plan at /changes/t.")
+        )
+    );
+    assert!(
+        shown["plan_digest"]
+            .as_str()
+            .unwrap()
+            .starts_with("sha256:")
+    );
     assert_eq!(approval(&personal).0, "missing");
     personal.answer(&effect, "approve");
     assert_eq!(approval(&personal), ("pass".to_owned(), String::new()));
@@ -131,4 +154,112 @@ fn approve_asks_the_owner_and_owner_approval_passes_once_the_owner_signs_it() {
         detail.contains("; Board could not read that approval: "),
         "{detail}"
     );
+}
+
+/// The fixture with an answer that chose the option naming the change, and
+/// the owner's signed approval of the plan as it is: owner-approval passes.
+fn signed() -> Personal {
+    let personal = asked("Approve the plan at /changes/t.");
+    answered(&personal, &[]);
+    let asked = called(&personal, "changes.approve", &["--path", "/changes/t"]).1;
+    let effect = asked["data"]["output"]["effect"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    personal.answer(&effect, "approve");
+    assert_eq!(approval(&personal).0, "pass");
+    personal
+}
+
+/// Writes a plan record at `/changes/t/plans/<name>` whose text is `text`.
+fn plan_record(personal: &Personal, name: &str, text: &str) {
+    let plan = json!({
+        "$type": "changes/plan/v1", "text": text, "uses": [], "answers": answers(),
+    });
+    personal.write(&format!("changes/t/plans/{name}.json"), &plan.to_string());
+}
+
+/// Points the change at the plan record `plan`.
+fn point_at(personal: &Personal, plan: &str) {
+    let mut change = personal.record("/changes/t").unwrap();
+    change["plan"] = json!(plan);
+    personal.write("changes/t.json", &change.to_string());
+}
+
+#[test]
+fn attaching_a_record_after_the_owner_signs_keeps_the_approval() {
+    let personal = signed();
+    let attach = [
+        "call",
+        "changes.attach",
+        "--path",
+        "/changes/t",
+        "--ref",
+        "/changes/t",
+    ];
+    let attached = personal.run(&attach);
+    assert_eq!(attached.code, 0, "{}", text(&attached.stderr));
+    assert_eq!(approval(&personal).0, "pass");
+}
+
+#[test]
+fn new_plan_text_put_after_the_owner_signs_makes_the_approval_missing() {
+    let personal = signed();
+    let edited = format!("{PLAN}\nAnd one more thing.\n");
+    let put = personal.run_in(
+        personal.board.workdir(),
+        &["put", "/changes/t/plans/1.md"],
+        &edited,
+    );
+    assert_eq!(put.code, 0, "{}", text(&put.stderr));
+    assert_eq!(approval(&personal).0, "missing");
+}
+
+#[test]
+fn plan_text_written_on_disk_after_the_owner_signs_makes_the_approval_missing() {
+    let personal = signed();
+    personal.write("changes/t/plans/1.md", &format!("{PLAN}\nEdited.\n"));
+    assert_eq!(approval(&personal).0, "missing");
+}
+
+#[test]
+fn a_plan_record_repointed_to_other_text_after_the_owner_signs_makes_the_approval_missing() {
+    let personal = signed();
+    // The same words in another file: the record itself changed.
+    personal.write("changes/t/plans/other.md", PLAN);
+    plan_record(&personal, "1", "/changes/t/plans/other.md");
+    assert_eq!(approval(&personal).0, "missing");
+}
+
+#[test]
+fn repointing_the_plan_away_makes_the_approval_missing_and_back_only_while_its_text_is_unchanged() {
+    let personal = signed();
+    personal.write("changes/t/plans/2.md", PLAN);
+    plan_record(&personal, "2", "/changes/t/plans/2.md");
+    point_at(&personal, "/changes/t/plans/2");
+    assert_eq!(approval(&personal).0, "missing");
+    point_at(&personal, "/changes/t/plans/1");
+    assert_eq!(approval(&personal).0, "pass");
+    personal.write(
+        "changes/t/plans/1.md",
+        &format!("{PLAN}\nRewound and edited.\n"),
+    );
+    assert_eq!(approval(&personal).0, "missing");
+}
+
+#[test]
+fn approve_reports_a_refusal_the_owner_gave_and_owner_approval_stays_missing() {
+    let personal = asked("Approve the plan at /changes/t.");
+    answered(&personal, &[]);
+    let asked = called(&personal, "changes.approve", &["--path", "/changes/t"]).1;
+    let effect = asked["data"]["output"]["effect"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    personal.answer(&effect, "refuse");
+    let (code, refused) = called(&personal, "changes.approve", &["--path", "/changes/t"]);
+    assert_eq!(code, 0, "{refused}");
+    assert_eq!(refused["data"]["output"]["state"], "refused");
+    assert_eq!(refused["data"]["output"]["effect"], effect.as_str());
+    assert_eq!(approval(&personal).0, "missing");
 }

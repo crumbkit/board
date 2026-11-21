@@ -3,7 +3,7 @@ import type { On } from 'claude-code'
 import type { Engine } from 'claude-code/testing'
 
 import { bandRows } from '../hooks/band'
-import { blocking, countBadge, NAMES, parseWaiting, questionsLabel, report, REPORT_SQL, waitingLabel } from '../hooks/plans'
+import { approvalText, blocking, countBadge, NAMES, namesWhole, parseWaiting, questionsLabel, report, REPORT_SQL, waitingLabel } from '../hooks/plans'
 
 // These prove what the band and the panes draw, which `board` commands the
 // mod runs with which flags, and what the asking sessions are sent. `board`
@@ -565,4 +565,32 @@ test('a changes.approve that fails keeps the answer and the toast says no approv
   expect(toasts).toEqual([
     `Answered, and sent to local_ab12. No approval of ${change} was asked (changes::approve::not_chosen no answer); run board call changes.approve --path ${change}`,
   ])
+})
+
+test('the toast words the approval by the state changes.approve returns', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  const change = '/changes/merge-home'
+  const approving = { ...MERGE, options: [{ id: 'a', text: `Approve ${change}.` }] }
+  let state = 'approved'
+  const { toasts } = engine(on, {
+    open: () => ({ exitCode: 0, stdout: opened([approving, { ...approving, path: '/projects/home/questions/20261024T1900Z-k4' }]) }),
+    answer: () => ({ exitCode: 0, stdout: answered(ANSWER, { change }) }),
+    approve: () => ({ exitCode: 0, stdout: JSON.stringify({ schema: 'board/call-report/v2', data: { output: { state, effect: 'e1' } } }) }),
+  })
+  await start($)
+  const ui = await $.ui.mount({ ...pane('questions'), surface: 'terminal' })
+  await ui.press({ key: `${MERGE.path}#a` })
+  expect(toasts.pop()).toBe(`Answered, and sent to local_ab12. The owner has already approved ${change} as its plan stands`)
+  state = 'refused'
+  await ui.press({ key: '/projects/home/questions/20261024T1900Z-k4#a' })
+  expect(toasts.pop()).toBe(`Answered, and sent to local_ab12. The owner refused the approval of ${change} earlier; delete /effects/seen/e1 in the personal board to ask again`)
+  expect(approvalText(change, { state: 'asked' })).toBe(`. The approval of ${change} waits for Touch ID in the effects band`)
+})
+
+test('a path is named whole only when the code points on either side do not join it, a letter outside the BMP included', () => {
+  expect(namesWhole('Approve /changes/t.', '/changes/t')).toBe(true)
+  expect(namesWhole('\u{1D400}/changes/t', '/changes/t')).toBe(false)
+  expect(namesWhole('/changes/t\u{1D400}', '/changes/t')).toBe(false)
+  expect(namesWhole('\u{1F600} /changes/t', '/changes/t')).toBe(true)
+  expect(namesWhole('/changes/t-two', '/changes/t')).toBe(false)
 })

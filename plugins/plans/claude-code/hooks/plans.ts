@@ -36,11 +36,38 @@ export function parseAnswered(stdout: string): Answered {
   return typeof output === 'object' && output !== null ? output : {}
 }
 
+/** What `board --json call changes.approve` returned: the owner's answer so far, and the effect that asks. */
+export type Approved = { state?: 'asked' | 'approved' | 'refused'; effect?: string }
+
+/** Reads `board --json call changes.approve`'s output; empty when it printed no call report. */
+export function parseApproved(stdout: string): Approved {
+  const output = (parseJson(stdout)?.data as { output?: Approved } | undefined)?.output
+  return typeof output === 'object' && output !== null ? output : {}
+}
+
+/** The toast's sentence about the approval of `change`, by the state changes.approve returned. */
+export function approvalText(change: string, approved: Approved): string {
+  switch (approved.state) {
+    case 'asked':
+      return `. The approval of ${change} waits for Touch ID in the effects band`
+    case 'approved':
+      return `. The owner has already approved ${change} as its plan stands`
+    case 'refused':
+      return `. The owner refused the approval of ${change} earlier; delete /effects/seen/${approved.effect ?? '<effect>'} in the personal board to ask again`
+    default:
+      return `. changes.approve gave no state for ${change}; run board call changes.approve --path ${change}`
+  }
+}
+
 /** True when `text` names `path` whole, and not as part of a longer path, as the changes gate reads an option. */
 export function namesWhole(text: string, path: string): boolean {
+  // Whole code points on each side, as Rust's chars are, so a letter outside the BMP counts as one.
   const joined = (c: string | undefined) => c !== undefined && /[\p{L}\p{N}_/-]/u.test(c)
   for (let at = text.indexOf(path); at !== -1; at = text.indexOf(path, at + 1)) {
-    if (!joined(text[at - 1]) && !joined(text[at + path.length])) return true
+    const preceding = Array.from(text.slice(0, at))
+    const before = preceding[preceding.length - 1]
+    const after = Array.from(text.slice(at + path.length))[0]
+    if (!joined(before) && !joined(after)) return true
   }
   return false
 }
