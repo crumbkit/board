@@ -134,8 +134,11 @@ fn of_type<'a>(blocks: &'a [Value], kind: &str) -> &'a Value {
         .unwrap_or_else(|| panic!("no {kind} example"))
 }
 
-#[test]
-fn the_skills_example_suite_and_run_are_admitted_and_latest_names_the_failed_rule() {
+/// The note the skill gives a rule whose patterns match no file.
+const ABSENT: &str = "passes by absence: no file matches";
+
+/// The suite and the run SKILL.md shows, with their placeholders filled.
+fn examples() -> (Value, Value) {
     let fill = [
         ("<owner>/<name>", "example/app"),
         ("<standard file>", "standards/sample-standard.md"),
@@ -147,33 +150,106 @@ fn the_skills_example_suite_and_run_are_admitted_and_latest_names_the_failed_rul
         ("<hex>", &"ab".repeat(32)),
     ];
     let blocks = json_blocks(&shipped_file("SKILL.md"), &fill);
-    let (suite, run) = (
-        of_type(&blocks, "runs/suite/v1"),
-        of_type(&blocks, "runs/run/v1"),
-    );
-    let board = Fixture::enabling(&["runs"]);
-    let put = board.run_with(&["put", "/suites/app-sample-standard"], &suite.to_string());
+    let suite = of_type(&blocks, "runs/suite/v1").clone();
+    (suite, of_type(&blocks, "runs/run/v1").clone())
+}
+
+const SUITE: &str = "/suites/app-sample-standard";
+const NEW_RUN: [&str; 4] = ["put", "--new", "--var", "suite=app-sample-standard"];
+
+/// Writes `record` with `arguments` and asserts that `board put` admits it.
+fn admitted(board: &Fixture, arguments: &[&str], record: &Value) {
+    let put = board.run_with(arguments, &record.to_string());
     assert_eq!(put.code, 0, "{}", text(&put.stderr));
-    let new = ["put", "--new", "--var", "suite=app-sample-standard"];
-    let failed = (run["results"].as_array().unwrap().iter())
-        .find(|result| result["outcome"] == "fail")
-        .expect("the example run has a failed rule");
+}
+
+/// The cases the run's results give `outcome`.
+fn cases(run: &Value, outcome: &str) -> Vec<Value> {
+    (run["results"].as_array().unwrap().iter())
+        .filter(|result| result["outcome"] == outcome)
+        .map(|result| result["case"].clone())
+        .collect()
+}
+
+#[test]
+fn the_skills_example_suite_and_run_are_admitted_and_latest_names_the_failed_rule() {
+    let (suite, run) = examples();
+    let board = Fixture::enabling(&["runs"]);
+    admitted(&board, &["put", SUITE], &suite);
+    let failed = cases(&run, "fail");
+    assert_eq!(failed.len(), 1, "{run}");
     let mut noteless = run.clone();
     for result in noteless["results"].as_array_mut().unwrap() {
         if result["outcome"] == "fail" {
             result.as_object_mut().unwrap().remove("note");
         }
     }
-    let refused = board.run_with(&new, &noteless.to_string());
+    let refused = board.run_with(&NEW_RUN, &noteless.to_string());
     assert_eq!(
         refused.error.as_deref(),
         INVALID,
         "{}",
         text(&refused.stderr)
     );
-    let put = board.run_with(&new, &run.to_string());
-    assert_eq!(put.code, 0, "{}", text(&put.stderr));
-    let latest = board.call("runs.latest", &["--suite", "/suites/app-sample-standard"]);
+    admitted(&board, &NEW_RUN, &run);
+    let latest = board.call("runs.latest", &["--suite", SUITE]);
     assert_eq!(latest["run"]["outcome"], json!("fail"), "{latest}");
-    assert_eq!(latest["run"]["failed"], json!([failed["case"]]), "{latest}");
+    assert_eq!(latest["run"]["failed"], json!(failed), "{latest}");
+}
+
+#[test]
+fn a_rule_that_passes_by_absence_is_a_passed_result_that_latest_does_not_count_as_failed() {
+    let (suite, run) = examples();
+    let absent: Vec<&Value> = (run["results"].as_array().unwrap().iter())
+        .filter(|result| result["note"] == ABSENT)
+        .collect();
+    assert_eq!(absent.len(), 1, "{run}");
+    assert_eq!(absent[0]["outcome"], json!("pass"));
+    let board = Fixture::enabling(&["runs"]);
+    admitted(&board, &["put", SUITE], &suite);
+    admitted(&board, &NEW_RUN, &run);
+    let latest = board.call("runs.latest", &["--suite", SUITE]);
+    assert_eq!(
+        latest["run"]["failed"],
+        json!(cases(&run, "fail")),
+        "{latest}"
+    );
+    let mut failing = run.clone();
+    failing["started"] = json!("2026-11-22T09:00:00Z");
+    failing["finished"] = json!("2026-11-22T09:04:00Z");
+    for result in failing["results"].as_array_mut().unwrap() {
+        if result["note"] == ABSENT {
+            result["outcome"] = json!("fail");
+        }
+    }
+    admitted(&board, &NEW_RUN, &failing);
+    let latest = board.call("runs.latest", &["--suite", SUITE]);
+    let mut failed = cases(&run, "fail");
+    failed.push(absent[0]["case"].clone());
+    let mut listed = latest["run"]["failed"].as_array().unwrap().clone();
+    let key = |case: &Value| case.as_str().unwrap().to_owned();
+    listed.sort_by_key(key);
+    failed.sort_by_key(key);
+    assert_eq!(listed, failed, "{latest}");
+}
+
+#[test]
+fn rewriting_the_suite_without_a_rule_keeps_the_earlier_runs_result_for_it() {
+    let (suite, run) = examples();
+    let board = Fixture::enabling(&["runs"]);
+    admitted(&board, &["put", SUITE], &suite);
+    admitted(&board, &NEW_RUN, &run);
+    let removed = cases(&run, "fail");
+    let mut fewer = suite.clone();
+    (fewer["cases"].as_array_mut().unwrap()).retain(|case| !removed.contains(&case["id"]));
+    assert_eq!(
+        fewer["cases"].as_array().unwrap().len() + removed.len(),
+        suite["cases"].as_array().unwrap().len()
+    );
+    admitted(&board, &["put", SUITE], &fewer);
+    let checked = board.checked("/suites/app-sample-standard");
+    assert!(checked.values().all(Option::is_none), "{checked:?}");
+    assert_eq!(checked.len(), 2, "{checked:?}");
+    let latest = board.call("runs.latest", &["--suite", SUITE]);
+    assert_eq!(latest["run"]["failed"], json!(removed), "{latest}");
 }

@@ -57,11 +57,22 @@ can be compared with it.
    - Write both parts in lower case. Replace each run of characters other
      than letters, digits and `-` with one `-`, and drop a `-` at either end.
      For example, `Team Standard (v2).md` becomes `team-standard-v2`.
-4. Run `board -C <board> get /suites/<repository>-<standard>`. When the board
-   holds no suite there, write one with
-   `board -C <board> put /suites/<repository>-<standard>`, with the suite
-   below on stdin and one case per rule ID. When the suite exists and the
-   standard gained or lost rules, write the suite again with the new cases.
+4. Run `board -C <board> get /suites/<repository>-<standard>`.
+   - When the board holds no suite there, write one with
+     `board -C <board> put /suites/<repository>-<standard>`, with the suite
+     below on stdin and one case per rule ID.
+   - When the suite's cases match the standard's rule IDs, leave the suite
+     as it is.
+   - When the standard has gained or lost rules, never change the suite
+     silently. Tell the person which cases you would add and which you would
+     remove.
+   - Change the suite only when the person agrees. The change is one step:
+     run `board -C <board> put /suites/<repository>-<standard>` with the
+     suite on stdin and one case per rule ID of the standard as it is now.
+   - Earlier runs keep their results, including the results for removed
+     rules.
+   - When the person does not agree, stop and write no run. A run names
+     only rules that its suite lists.
 5. For each rule, read the files its patterns match and decide whether the
    repository meets the rule.
    - List the checkout's files with
@@ -69,8 +80,9 @@ can be compared with it.
      match each pattern against that list.
    - The list holds tracked files and untracked files that git does not
      ignore. Ignored files, such as `target/` or `node_modules/`, never count.
-   - A rule whose patterns match no file is skipped with the note
-     "no file matches".
+   - A rule whose patterns match no file passes by absence. Record it as a
+     result with outcome `pass` and the note
+     "passes by absence: no file matches".
    - A rule you cannot judge from the files is skipped with a note that says
      why.
    - A rule the repository does not meet fails. Its note names the files and
@@ -78,7 +90,8 @@ can be compared with it.
    - Never copy a secret into a note. Name the file and line instead.
 6. Write one run with
    `board -C <board> put --new --var suite=<repository>-<standard>`, with the
-   run below on stdin. Leave out the rules that passed.
+   run below on stdin. Leave out the rules that passed after you checked
+   their files. Keep each rule that passed by absence.
 7. Tell the person the run's path, which `board put` prints, the number of
    rules that failed, and each failure in one line.
 
@@ -124,7 +137,7 @@ Fix what Board names and write the run again.
   "measures": {"rules": 6, "failures": 1},
   "results": [
     {"case": "SAMPLE-2", "outcome": "fail", "note": "README.md lines 10 to 14 give two test commands, and neither runs the tests in web/."},
-    {"case": "SAMPLE-5", "outcome": "skipped", "note": "no file matches"}
+    {"case": "SAMPLE-5", "outcome": "pass", "note": "passes by absence: no file matches"}
   ],
   "summary": "One of six rules failed: no single command runs every test."
 }
@@ -140,8 +153,10 @@ Fix what Board names and write the run again.
   `<owner>/<name>` or its name, and the standard file's SHA-256, from
   `shasum -a 256 <standard file>`.
 - `measures` counts the rules in the standard and the rules that failed.
-- `results` lists each failed rule with outcome `fail` and each rule you did
-  not judge with outcome `skipped`. Each result needs a `note`.
+- `results` lists each failed rule with outcome `fail`.
+- `results` lists each rule you did not judge with outcome `skipped`.
+- `results` lists each rule that passed by absence with outcome `pass`.
+- Each result has a `note`.
 - `summary` is one sentence.
 
 ## Earlier results

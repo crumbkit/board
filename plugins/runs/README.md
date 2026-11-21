@@ -123,6 +123,8 @@ have no capability: query the `records` view with `json_each` over
   file and records the result as a run of a suite.
 - `skills/apply-standard/sample-standard.md` is a sample standard to copy and
   edit.
+- A run that apply-standard writes keeps each rule that passes by absence,
+  meaning no file matches its patterns, as a `pass` result with a note.
 
 ## The Claude Code mod
 
