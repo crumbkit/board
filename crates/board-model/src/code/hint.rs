@@ -670,7 +670,7 @@ fn generic(code: Code) -> &'static str {
             "give the board's repository an origin with `git remote add origin <url>`; a URI names a board by its origin"
         }
         Code::UriNotFound => {
-            "clone the board the URI names and list the clone in `$XDG_CONFIG_HOME/board/config.json` as {\"boards\": [\"<board directory>\"]}"
+            "if you have a clone of the board the URI names, run `board -C <dir> get` with the clone as <dir> and the record's path; otherwise clone that board and list the clone in `$XDG_CONFIG_HOME/board/config.json` as {\"boards\": [\"<board directory>\"]}"
         }
         Code::UriAmbiguous => {
             "leave one clone of the URI's remote among the boards in `$XDG_CONFIG_HOME/board/config.json`, or choose one with -C and the record's path"

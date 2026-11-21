@@ -12,7 +12,7 @@
 
 use std::cell::{Cell, OnceCell, RefCell};
 use std::collections::{HashMap, HashSet};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use board_index::{Decided, Index, IndexError, Storage, View, Writer};
 use board_model::{
@@ -147,6 +147,21 @@ impl Board {
             Ok((places, Vec::new()))
         })?;
         Ok(places)
+    }
+
+    /// The directory of each repository that a `board/mount/v1` record, or
+    /// a `board/repo/v1` record with a `checkout`, in the working tree names
+    /// ([`board_tree::Repositories::mounted_repositories`]), its pointers
+    /// read from the index after a refresh, which is all this decides.
+    pub fn mounted_repositories(&self, cache: Option<&Path>) -> Result<Vec<PathBuf>, RefreshError> {
+        let index = self.index(cache)?;
+        let (mounted, _, _) = transact(index, |writer| {
+            let refresh = self.refresh(writer)?;
+            let is_pointer = |path: &str| Indexing::is_pointer(&refresh.facts, path);
+            let mounted = (self.repositories()).mounted_repositories(&refresh.entries, &is_pointer);
+            Ok((mounted, Vec::new()))
+        })?;
+        Ok(mounted)
     }
 
     /// Decides each entry, and returns the report, the references, the

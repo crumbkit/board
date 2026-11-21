@@ -1,5 +1,5 @@
-//! Paths given as `board://` URIs, which choose the known board a run
-//! reads (docs/architecture/paths/uris.md).
+//! Paths given as `board://` URIs, which choose the board a run reads
+//! (docs/architecture/paths/uris.md).
 
 use std::path::{Path, PathBuf};
 
@@ -10,9 +10,10 @@ use super::lookup::Refs;
 use super::{Cli, Command, Given, plain};
 use crate::config::Context;
 
-/// The root of the known board the URIs among the paths `cli`'s command
-/// reads name, with each URI replaced by its record's path in that board,
-/// or none when no path is a URI. A URI chooses the board, so a run that
+/// The root of the board the URIs among the paths `cli`'s command reads
+/// name, looked up from the directory the run started in, with each URI
+/// replaced by its record's path in that board, or none when no path is a
+/// URI. A URI chooses the board, so a run that
 /// gives one beside a plain path, -C or --personal is refused, and so are
 /// URIs that name two boards and a URI given to a command that writes.
 pub(super) fn chosen(cli: &mut Cli, context: &Context) -> Result<Option<PathBuf>, Box<Refusal>> {
@@ -48,7 +49,8 @@ pub(super) fn chosen(cli: &mut Cli, context: &Context) -> Result<Option<PathBuf>
             Some(known) => known,
             None => known.insert(context.known()?),
         };
-        let (root, path) = known.by_uri(&given.0, context.home.as_deref())?;
+        let (home, cache) = (context.home.as_deref(), context.cache.as_deref());
+        let (root, path) = known.by_uri_from(&given.0, home, Some(&context.start), cache)?;
         if let Some((first, named)) = &chosen
             && *first != root
         {
