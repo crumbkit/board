@@ -739,3 +739,47 @@ fn a_uri_beside_a_plain_path_c_or_personal_is_refused_and_the_uri_alone_is_admit
     );
     assert_eq!(plain.code, 0, "{}", text(&plain.stderr));
 }
+
+/// A board with no origin that mounts `clone` at `/repos/team`.
+fn mounting_board(clone: &Scenario) -> Scenario {
+    let scenario = uncommitted();
+    let commit = clone.commit(&[("x.json", "1")]);
+    let mount = mount_of(&clone.path(), commit);
+    scenario.write("repos/team.json", Item::File(&mount));
+    scenario
+}
+
+#[test]
+fn a_uri_read_inside_a_board_that_mounts_its_clone_prints_the_record_and_from_outside_any_board_is_not_found()
+ {
+    let team = originated("git@github.com:acme/team-board.git");
+    let mine = mounting_board(&team);
+    let xdg = config(None);
+    let (read, _) = known(mine.workdir(), &xdg, None, &["get", URI]);
+    assert_eq!(text(&read.stderr), "");
+    assert_eq!(text(&read.stdout), r#"{"$type": "lr/project/v1"}"#);
+    let elsewhere = Scenario::new();
+    let (lost, _) = known(elsewhere.workdir(), &xdg, None, &["get", URI]);
+    assert_eq!(lost.code, 1);
+    assert_eq!(code(&lost), "board::uri::not_found");
+    let stderr = text(&lost.stderr);
+    assert!(
+        stderr.contains("`board -C <dir> get /projects/p`"),
+        "{stderr}"
+    );
+}
+
+#[test]
+fn a_uri_read_inside_a_clone_of_its_remote_reads_that_clone_and_inside_a_clone_of_another_is_not_found()
+ {
+    let team = originated("git@github.com:acme/team-board.git");
+    let xdg = config(None);
+    let projects = team.workdir().join("projects");
+    let (read, prefix) = known(&projects, &xdg, None, &["get", URI]);
+    assert_eq!(text(&read.stderr), "");
+    assert_eq!(text(&read.stdout), r#"{"$type": "lr/project/v1"}"#);
+    assert_eq!(prefix, "/");
+    let other = originated("git@github.com:acme/other-board.git");
+    let (lost, _) = known(other.workdir(), &xdg, None, &["get", URI]);
+    assert_eq!(code(&lost), "board::uri::not_found");
+}
