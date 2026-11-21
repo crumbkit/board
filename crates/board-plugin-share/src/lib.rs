@@ -1,5 +1,6 @@
 //! The share plugin built into Board (plugins/share/README.md).
 
+mod named;
 mod to;
 
 use board_model::{CapabilityName, RecordType};
