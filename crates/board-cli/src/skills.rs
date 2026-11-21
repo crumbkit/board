@@ -294,10 +294,16 @@ pub(crate) fn skills(
         .with_hint("name the skills directory with `--dir`");
         return render::refused(printer, refusal);
     };
-    let only = match at.plugins.as_deref().map(|names| chosen(names, SKILLS)) {
-        None => None,
-        Some(Ok(only)) => Some(only),
-        Some(Err(refusal)) => return render::refused(printer, refusal),
+    let built_in = || {
+        let plugins = context.built_in.0.iter();
+        plugins.map(|plugin| plugin.manifest().name.as_str().to_owned())
+    };
+    let only = match (at.plugins.as_deref())
+        .map(|names| chosen(names, &built_in().collect()))
+        .transpose()
+    {
+        Ok(only) => only,
+        Err(refusal) => return render::refused(printer, refusal),
     };
     let only = only.as_ref();
     let dir = context.start.join(&shown);
@@ -328,33 +334,30 @@ pub(crate) fn skills(
     }
 }
 
-/// The plugins `names` lists, once each, when every one of them ships a
-/// skill in `skills` and there is at least one; else a `board::cli::usage`
-/// refusal that names the others and lists the plugins that ship skills.
-fn chosen<'a>(names: &[String], skills: &'a [Skill]) -> Result<BTreeSet<&'a str>, Refusal> {
-    let shipping: BTreeSet<&str> = skills.iter().map(|skill| skill.plugin).collect();
-    let names: BTreeSet<&str> = (names.iter().map(|name| name.trim()))
+/// The plugins `names` lists, once each, when each is one of the plugins
+/// `known` and there is at least one; else a `board::cli::usage` refusal
+/// that names the others and lists the known plugins. A known plugin that
+/// ships no skill selects none.
+fn chosen(names: &[String], known: &BTreeSet<String>) -> Result<BTreeSet<String>, Refusal> {
+    let names: BTreeSet<String> = (names.iter().map(|name| name.trim()))
         .filter(|name| !name.is_empty())
+        .map(str::to_owned)
         .collect();
-    let unknown: Vec<&str> = (names.iter().copied())
-        .filter(|name| !shipping.contains(name))
-        .collect();
-    let message = if names.is_empty() {
-        "--plugins names no plugin".to_owned()
-    } else if !unknown.is_empty() {
-        format!(
-            "no skill this binary ships belongs to {}",
-            unknown.join(", ")
-        )
-    } else {
-        return Ok(shipping
-            .into_iter()
-            .filter(|name| names.contains(name))
-            .collect());
-    };
-    let plugins: Vec<&str> = shipping.into_iter().collect();
+    let plugins: Vec<&str> = known.iter().map(String::as_str).collect();
     let hint = format!("name some of {} in --plugins", plugins.join(", "));
-    Err(plain(Code::CliUsage, &message).with_hint(hint))
+    if names.is_empty() {
+        let refusal = plain(Code::CliUsage, &"--plugins names no plugin");
+        return Err(refusal.with_hint(hint));
+    }
+    let unknown: Vec<&str> = (names.iter())
+        .filter(|name| !known.contains(*name))
+        .map(String::as_str)
+        .collect();
+    if !unknown.is_empty() {
+        let message = format!("this binary has no plugin {}", unknown.join(", "));
+        return Err(plain(Code::CliUsage, &message).with_hint(hint));
+    }
+    Ok(names)
 }
 
 /// `skills`' files as `Held::Board` reads a folder.
@@ -375,7 +378,7 @@ fn files(skill: &Skill) -> BTreeMap<String, Option<Vec<u8>>> {
 fn listed(
     skills: &[Skill],
     held: &BTreeMap<String, Held>,
-    only: Option<&BTreeSet<&str>>,
+    only: Option<&BTreeSet<String>>,
 ) -> Vec<(String, Listed)> {
     let mut listed: BTreeMap<String, Listed> = held
         .iter()
@@ -407,7 +410,7 @@ fn listed(
 }
 
 /// Whether `skill` is of a plugin in `only`, or `only` is `None`.
-fn selected(skill: &Skill, only: Option<&BTreeSet<&str>>) -> bool {
+fn selected(skill: &Skill, only: Option<&BTreeSet<String>>) -> bool {
     only.is_none_or(|only| only.contains(skill.plugin))
 }
 
@@ -421,7 +424,7 @@ fn install(
     skills: &[Skill],
     held: &BTreeMap<String, Held>,
     force: bool,
-    only: Option<&BTreeSet<&str>>,
+    only: Option<&BTreeSet<String>>,
 ) -> Result<Vec<(String, Installed)>, SkillsError> {
     let listed = listed(skills, held, only);
     let foreign: Vec<String> = (listed.iter())

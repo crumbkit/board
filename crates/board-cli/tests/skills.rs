@@ -520,16 +520,48 @@ fn install_with_plugins_writes_only_their_skills_and_a_narrower_run_leaves_the_o
 }
 
 #[test]
-fn a_plugin_that_ships_no_skill_is_refused_before_anything_is_written() {
+fn a_built_in_plugin_that_ships_no_skill_selects_none_and_the_installers_list_installs() {
     let home = Scenario::new();
+    let (code, installed) = skills(&home, "install", &["--plugins", "tasks,runs"]);
+    assert_eq!(code, 0, "{installed}");
+    assert_eq!(
+        states(&installed),
+        [("tasks".to_owned(), "written".to_owned())]
+    );
+    assert_eq!(folders(&home), ["tasks"]);
+
+    let six = "tasks,runs,evals,rules,plans,share";
+    let (code, installed) = skills(&home, "install", &["--plugins", six]);
+    assert_eq!(code, 0, "{installed}");
+    assert_eq!(
+        folders(&home),
+        ["evals", "plans", "rules", "share", "tasks"]
+    );
+}
+
+#[test]
+fn an_unknown_plugin_or_an_empty_list_is_refused_before_the_directory_is_read() {
+    let home = Scenario::new();
+    home.write("file", Item::File("not a directory\n"));
+    let at_file = |command: &str, plugins: &str| {
+        let arguments = ["skills", command, "--dir", "file", plugins];
+        board(&home, &arguments)
+    };
     for command in ["install", "list"] {
-        let (code, refused) = skills(&home, command, &["--plugins", "tasks,nosuch"]);
+        let (code, refused) = at_file(command, "--plugins=tasks,nosuch");
         assert_eq!(code, 2, "{refused}");
         assert_eq!(refused["code"], "board::cli::usage");
         let message = refused["message"].as_str().unwrap();
         assert!(message.contains("nosuch"), "{message}");
         let hint = refused["recovery"]["text"].as_str().unwrap();
-        assert!(hint.contains("tasks") && hint.contains("evals"), "{hint}");
+        assert!(hint.contains("runs") && hint.contains("evals"), "{hint}");
+
+        let (code, refused) = at_file(command, "--plugins=");
+        assert_eq!(code, 2, "{refused}");
+        assert_eq!(refused["code"], "board::cli::usage");
+
+        let (code, refused) = at_file(command, "--plugins=tasks");
+        assert_eq!(code, 1, "{refused}");
+        assert_eq!(refused["code"], "board::skills::write_failed");
     }
-    assert!(!path(&home, "skills").exists());
 }
