@@ -12,8 +12,9 @@ Record every test of a library, tool, model or agent as an eval.
 Use the board your instructions name. If they name none, run
 `board --personal ls /`: it lists the personal board when the known boards
 file names one, and refuses with `board::config::not_found` when it names
-none. Then ask the person you work for the board's path. An eval goes in the
-personal board unless one of these applies:
+none. When it lists the board, use `board --personal` where this skill says
+`-C <path>`. When it refuses, ask the person you work for the board's path.
+An eval goes in the personal board unless one of these applies:
 
 - The owner names another board to share it in, such as a team's board.
   Write it there.
@@ -36,9 +37,9 @@ repositories. In such a board, skip this section: name each repository the
 eval concerns in `subjects` as `owner/name`, and leave `mounts` out. Add a
 mount only in a board that already mounts repositories.
 
-Such a board mounts each repository at `/repos/<name>`: a `board/mount/v1`
-record whose `repo` is the repository's path. Find the mount of the
-repository you are in before you test.
+A board that mounts repositories mounts each one at `/repos/<name>`: a
+`board/mount/v1` record whose `repo` is the repository's path. Find the
+mount of the repository you are in before you test.
 
 1. Take the repository's path from
    `dirname "$(git rev-parse --path-format=absolute --git-common-dir)"`. It
@@ -76,10 +77,11 @@ verdict.
 1. Before testing anything, look for earlier evals. Run
    `board evals about --subject <name>` with each thing you will test.
    When the board mounts the repository you are in, also run
-   `board evals about --mount /repos/<name>` with its mount. The `mount` lookup finds the evals that
-   name it in `mounts` and the evals stored in the repository's own
-   board. It reads that board through the mount at the mount's `commit`, so
-   it misses evals the repository added after that commit. To see them, run
+   `board evals about --mount /repos/<name>` with its mount. The `mount`
+   lookup finds the evals that name it in `mounts` and the evals stored in
+   the repository's own board. It reads that board through the mount at the
+   mount's `commit`, so it misses evals the repository added after that
+   commit. To see them, run
    `git -C <path> fetch`, then `board mount update /repos/<name>`, which
    moves `commit` to the fetched `origin/main`. After `board github merge`
    of the repository's pull request, the mount is already at the merged
