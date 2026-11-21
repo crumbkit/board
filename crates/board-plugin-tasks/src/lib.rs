@@ -140,6 +140,19 @@ pub(crate) fn refusal<'a>(
     }
 }
 
+/// [`refusal`] with `hint` as its next step.
+pub(crate) fn hinted<'a>(
+    code: &str,
+    message: String,
+    fields: impl IntoIterator<Item = (&'a str, Value)>,
+    hint: &str,
+) -> PluginError {
+    PluginError {
+        hint: Some(hint.to_owned()),
+        ..refusal(code, message, fields)
+    }
+}
+
 /// What a call writes through: the host, its clones, and git's deadline on
 /// each sync and pin.
 fn writer<'a>(host: &'a dyn Host, clones: &'a Through<'a>) -> Writer<'a> {
@@ -152,11 +165,13 @@ fn writer<'a>(host: &'a dyn Host, clones: &'a Through<'a>) -> Writer<'a> {
 }
 
 /// The origin of the git repository Board was started in, and why there
-/// is none inside a repository. Both are none outside a git repository.
+/// is none inside a repository. Both are none outside a git repository, and
+/// in the board's own repository when it has no origin.
 fn caller_origin(host: &dyn Host) -> (Option<String>, Option<String>) {
     match host.caller_remote() {
         Origin::Url(url) => (Some(url), None),
         Origin::Outside => (None, None),
+        Origin::Unread(_) if host.caller_in_board() => (None, None),
         Origin::Unread(why) => (None, Some(why)),
     }
 }

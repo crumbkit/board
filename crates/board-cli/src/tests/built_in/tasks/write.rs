@@ -626,12 +626,60 @@ fn add_inside_a_git_repository_without_origin_is_refused_and_admitted_with_remot
     assert_eq!(refused["code"], "tasks::repo::origin_unread");
     let why = refused["fields"]["origin_unread"].as_str().unwrap();
     assert!(why.starts_with("git gave no origin for "), "{why}");
+    let hint = refused["recovery"]["text"].as_str().unwrap();
+    assert!(hint.contains("--repo /"), "{hint}");
+    assert!(hint.contains("--remote <owner/name>"), "{hint}");
     let flags = ["--title", "Ship it", "--remote", EXAMPLE_ORG];
     let output = tasks.call_with("add", &flags, 0, &checkout, "").unwrap();
     assert_eq!(output["path"], "/repos/work/tasks/ship-it.md");
     let clones = tasks.clones.borrow();
     let personal = clones[0].1.workdir().join("tasks");
     assert!(!personal.exists(), "no task went to the personal repo");
+}
+
+#[test]
+fn add_in_the_boards_own_repository_without_origin_writes_to_the_board_from_its_root_and_below() {
+    let tasks = Tasks::new();
+    tasks.write("notes/keep.md", "kept\n");
+    let root = tasks.board.workdir().to_path_buf();
+    let flags = ["--title", "Ship it"];
+    let output = tasks.call_with("add", &flags, 0, &root, "").unwrap();
+    assert_eq!(
+        (&output["repo"], &output["path"]),
+        (&json!("/"), &json!("/tasks/ship-it.md"))
+    );
+    let below = root.join("notes");
+    let output = tasks.call_with("add", &flags, 0, &below, "").unwrap();
+    assert_eq!(output["path"], "/tasks/ship-it-2.md");
+    assert!(
+        tasks
+            .read("tasks/ship-it.md")
+            .contains("title: \"Ship it\"")
+    );
+}
+
+#[test]
+fn add_in_a_clone_without_origin_nested_in_the_board_is_refused_and_admitted_with_repo_root() {
+    let tasks = Tasks::new();
+    let nested = tasks.board.workdir().join("clone");
+    git(
+        tasks.board.workdir(),
+        &["init", "-q", nested.to_str().unwrap()],
+    );
+    let refused = tasks
+        .call_with("add", &["--title", "Ship it"], 0, &nested, "")
+        .unwrap_err();
+    assert_eq!(refused["code"], "tasks::repo::origin_unread");
+    assert!(
+        refused["recovery"]["text"]
+            .as_str()
+            .unwrap()
+            .contains("--repo /")
+    );
+    assert!(!tasks.board.workdir().join("tasks/ship-it.md").exists());
+    let flags = ["--title", "Ship it", "--repo", "/"];
+    let output = tasks.call_with("add", &flags, 0, &nested, "").unwrap();
+    assert_eq!(output["path"], "/tasks/ship-it.md");
 }
 
 #[test]

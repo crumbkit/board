@@ -25,7 +25,7 @@ use crate::records::TaskRecord;
 use crate::repeat::completed;
 use crate::task::model;
 use crate::tree::{Forest, descendants};
-use crate::{PLUGIN, caller_origin, refusal, writer};
+use crate::{PLUGIN, caller_origin, hinted, refusal, writer};
 
 mod inputs;
 
@@ -176,8 +176,8 @@ pub(crate) fn add(host: &dyn Host, input: &Value) -> Result<Value, PluginError> 
 
 /// The caller's origin to route a new task by, unless `repo` names its
 /// repo; refused when git gave none. A caller inside a git repository whose
-/// origin git did not give may be in a work repository, so the task is not
-/// written to the personal repo.
+/// origin git did not give, other than the board's own, may be in a work
+/// repository, so the task is not written to the personal repo.
 fn origin(host: &dyn Host, repo: Option<&str>) -> Result<Option<String>, PluginError> {
     if repo.is_some() {
         return Ok(None);
@@ -188,10 +188,12 @@ fn origin(host: &dyn Host, repo: Option<&str>) -> Result<Option<String>, PluginE
                 "{unread}, so the repo the task belongs to is not known; name it with --remote or \
                  --repo"
             );
-            Err(refusal(
+            Err(hinted(
                 "tasks::repo::origin_unread",
                 why,
                 [("origin_unread", json!(unread))],
+                "run it again with `--repo /` to keep the task in this board, or with \
+                 `--remote <owner/name>` for the repository it belongs to",
             ))
         }
         (remote, None) => Ok(remote),
