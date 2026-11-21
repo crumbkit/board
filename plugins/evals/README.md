@@ -94,16 +94,18 @@ the same.
 
 The query reads the `records` view, which includes every mounted board, so
 the capabilities answer across repositories without knowing about mounts. A
-personal board mounts each repository at `/repos/<name>`, and `about` then
-lists `/repos/<name>/evals/<eval>`. `board ls /repos` lists the mounts. A
-mounted board's own schemas govern its records, so a repository that holds
-evals must enable `runs` and `evals` and commit the result; an eval it
-cannot validate is not listed. A mount is pinned to a commit, so run
-`board mount update /repos/<name>` to see new commits. The
-personal board can put an eval at `/repos/<name>/evals/...` when the
-repository's board sets `commit_on_put`, the mount's `follow` is a local
-branch, and the repository's HEAD is on that branch and descends from the pin.
-The put commits in the repository and moves the pin.
+board that mounts no repository holds its evals without `mounts`, naming
+each repository in `subjects` as `owner/name`. `about --subject` and `open`
+answer the same there. A personal board mounts each repository at
+`/repos/<name>`, and `about` then lists `/repos/<name>/evals/<eval>`.
+`board ls /repos` lists the mounts. A mounted board's own schemas govern its
+records, so a repository that holds evals must enable `runs` and `evals` and
+commit the result; an eval it cannot validate is not listed. A mount is
+pinned to a commit, so run `board mount update /repos/<name>` to see new
+commits. The personal board can put an eval at `/repos/<name>/evals/...`
+when the repository's board sets `commit_on_put`, the mount's `follow` is a
+local branch, and the repository's HEAD is on that branch and descends from
+the pin. The put commits in the repository and moves the pin.
 
 ## Enabling
 
