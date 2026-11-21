@@ -54,8 +54,23 @@ const PATH_FORMAT: &str = "board-path";
 /// What a path flag's help adds, after its own text without a final `.`.
 const RELATIVE: &str = "; a path without a leading / is read from the current directory.";
 
-/// An input property's name, help and parser, and whether it is a path.
-type Flag = (String, String, ValueParser, bool);
+/// What a boolean flag's help adds, after its own text without a final `.`.
+const BARE: &str = "; given bare, it means true";
+
+/// The value name of a boolean flag, whose value may be left out.
+const TRUE_OR_FALSE: &str = "true|false";
+
+/// A flag for one input property.
+struct Flag {
+    /// The property's name, which is the flag's long name.
+    name: String,
+    help: String,
+    parser: ValueParser,
+    /// Whether the property is a logical path, given relative to the prefix.
+    path: bool,
+    /// Whether the property is boolean, so the flag may be given bare.
+    boolean: bool,
+}
 
 /// A parsed command line, with the target and flags of a grafted command.
 pub(crate) struct Parsed {
@@ -96,11 +111,11 @@ pub(crate) fn resolve(
     at: Option<&Prefix>,
 ) {
     let offered = found.and_then(|found| found.offered.as_ref()).into_iter();
-    for (name, ..) in offered
+    for flag in offered
         .flat_map(|(_, flags, ..)| flags)
-        .filter(|flag| flag.3)
+        .filter(|flag| flag.path)
     {
-        if let Some(Value::String(text)) = flags.get_mut(name)
+        if let Some(Value::String(text)) = flags.get_mut(&flag.name)
             && let Ok(from) = at.cloned().unwrap_or(Ok(LogicalPath::root()))
             && let Ok(path) = from.join(text)
         {
@@ -189,7 +204,7 @@ fn graft(name: &str, offered: &Capability) -> Grafted {
         .into_iter()
         .flatten()
         .map(|(name, _)| name.as_str()))
-    .filter(|name| flags.iter().all(|(flag, ..)| flag != name))
+    .filter(|name| flags.iter().all(|flag| flag.name != *name))
     .collect();
     // A schema that admits properties it does not name takes them only on stdin.
     let open = document.get("additionalProperties") != Some(&Value::Bool(false))
@@ -247,7 +262,7 @@ fn ignored(found: Option<&Grafted>, flags: &Map<String, Value>) -> Option<String
     if !found.stdin {
         let names = (found.offered.iter())
             .flat_map(|(_, flags, ..)| flags)
-            .map(|(name, ..)| format!("--{name}"))
+            .map(|flag| format!("--{}", flag.name))
             .collect::<Vec<_>>();
         let names = match names.as_slice() {
             // A capability without flags takes no input that stdin could give.
@@ -280,7 +295,8 @@ fn ignored(found: Option<&Grafted>, flags: &Map<String, Value>) -> Option<String
 
 /// Each top-level string, integer, number or boolean input property whose
 /// name is lowercase letters, digits, `-` and `_` and is not in
-/// `RESERVED_FLAGS`. A flag's help is the property's description, or its type.
+/// `RESERVED_FLAGS`. A flag's help is the property's description, or its type,
+/// and a boolean flag's help says that it may be given bare.
 fn flags(capability: &Capability) -> Vec<Flag> {
     let document = capability.input.document();
     let properties = document
@@ -318,10 +334,27 @@ fn flags(capability: &Capability) -> Vec<Flag> {
                 .and_then(Value::as_str)
                 .unwrap_or(kind);
             let path = property.get("format").and_then(Value::as_str) == Some(PATH_FORMAT);
-            let relative = if path { RELATIVE } else { "" };
-            let help = help.strip_suffix('.').filter(|_| path).unwrap_or(help);
-            let help = format!("{help}{relative}");
-            Some((name.clone(), help, parser, path))
+            let boolean = kind == "boolean";
+            let added = match (path, boolean) {
+                (true, _) => RELATIVE.to_owned(),
+                // A bare flag sends true, whatever the default.
+                (_, true) if property.get("default") == Some(&Value::Bool(true)) => format!(
+                    "{BARE}, which is already the default; give --{name} false to turn it off."
+                ),
+                (_, true) => format!("{BARE}."),
+                _ => String::new(),
+            };
+            let help = help
+                .strip_suffix('.')
+                .filter(|_| !added.is_empty())
+                .unwrap_or(help);
+            Some(Flag {
+                name: name.clone(),
+                help: format!("{help}{added}"),
+                parser,
+                path,
+                boolean,
+            })
         })
         .collect()
 }
@@ -367,14 +400,21 @@ pub(crate) fn command(grafted: &[Grafted], root: Command) -> Command {
         match &grafted.offered {
             Some((about, flags, stdin, _)) => {
                 let leaf = leaf.about(about.clone()).after_help(stdin.clone());
-                flags.iter().fold(leaf, |leaf, (name, help, parser, _)| {
-                    leaf.arg(
-                        Arg::new(name.clone())
-                            .long(name.clone())
-                            .value_parser(parser.clone())
-                            .allow_negative_numbers(true)
-                            .help(help.clone()),
-                    )
+                flags.iter().fold(leaf, |leaf, flag| {
+                    let arg = Arg::new(flag.name.clone())
+                        .long(flag.name.clone())
+                        .value_parser(flag.parser.clone())
+                        .allow_negative_numbers(true)
+                        .help(flag.help.clone());
+                    // A bare boolean flag reads as `true`, as `--flag true` does.
+                    let arg = if flag.boolean {
+                        arg.num_args(0..=1)
+                            .default_missing_value("true")
+                            .value_name(TRUE_OR_FALSE)
+                    } else {
+                        arg
+                    };
+                    leaf.arg(arg)
                 })
             }
             // Its words are values; Board refuses the target whatever they are.
