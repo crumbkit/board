@@ -2017,7 +2017,7 @@ fn mount_add_where_a_record_is_refuses_writes_nothing_and_names_the_commands_tha
         "board::put::stale",
         "/lib already holds a record, and mount add writes only where nothing is",
         &format!(
-            "mount at another path, or move the record aside and run mount add again: copy it with `board get /lib | board put <new path> --expect none`, then remove it with `board rm /lib --expect {blob}`"
+            "mount at another path, or move the record aside and run mount add again: copy it and, once the copy succeeds, remove it with `board get /lib | board put <new path> --expect none && board rm /lib --expect {blob}`"
         ),
     );
     assert_eq!(

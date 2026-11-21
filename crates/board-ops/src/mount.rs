@@ -300,7 +300,7 @@ impl MountError {
                     path,
                     found: Some(blob),
                 } => refusal.with_hint(format!(
-                    "mount at another path, or move the record aside and run mount add again: copy it with `board get {path} | board put <new path> --expect none`, then remove it with `board rm {path} --expect {blob}`"
+                    "mount at another path, or move the record aside and run mount add again: copy it and, once the copy succeeds, remove it with `board get {path} | board put <new path> --expect none && board rm {path} --expect {blob}`"
                 )),
                 PutError::Write(WriteError::Degraded { path, .. }) => refusal.with_hint(format!(
                     "mount at another path, or clear {path} and run mount add again: `board ls {}` shows what already has its name, and `board rm -r {path}` removes a directory, since no command moves one",
