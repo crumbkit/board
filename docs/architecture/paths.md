@@ -79,7 +79,7 @@ mount; architecture/paths/repos.md describes repo records.
 
 The first links within the board; the second mounts another repository at
 one commit. `board mount add` writes a mount of a clone, following its
-checked-out branch, with `repo` as the shell passes it, normally absolute.
+checked-out branch, with `repo` absolute unless it starts with `~/`.
 `board mount update` advances `commit`, which Board reads, to what `follow`
 names. A URL is `board::mount::remote_unsupported`. A mount's `repo` is a
 local path, read from `~/` or relative to the board; without a clone it
