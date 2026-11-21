@@ -109,26 +109,25 @@ offers, or the nearest offered name, and so do its `fields`
 
 `board call <plugin>.<capability>` takes each top-level string, integer,
 number or boolean property of the capability's `inputSchema` as a flag of the
-same name, such as `--path /docs`, `--open true` or `--offset -1`, and
-`board call <plugin>.<capability> -h` lists them. A boolean flag may be given
-bare, so `--open` sends `true`, and `--open false` sends `false`. Board reads
-input JSON on stdin only when no flag is given and the schema admits a
-property that is not a flag, such as an array. A schema also admits properties it does not name,
-which no flag can give, unless it sets `additionalProperties` to `false` and
-has no `patternProperties`. A capability whose schema admits only flag
-properties never reads stdin, so a pipe nobody closes does not hold it up.
-Neither does a target nobody offers, which Board refuses whatever the input.
-`board call --capability <name>` takes no flags and always reads stdin.
-A string property's `enum` lists the flag's values in its help. In a board,
-`board commands list`, `board schemas list` and `board schemas show` also
-describe `call <plugin>.<capability>` for each capability of each plugin the
-board enables, with its flags. Its effects follow MCP's hints and defaults:
-read-only with `readOnlyHint: true`, otherwise additive with
-`destructiveHint: false` and destructive without it, idempotent with
+same name, such as `--path /docs`, `--open false` or `--offset -1`, and
+`board call <plugin>.<capability> -h` lists them. A bare boolean flag means
+`true`. Board reads JSON on stdin only when no flag is given and the schema
+admits a property that is not a flag, such as an array. A schema also admits
+properties it does not name, which no flag can give, unless it sets
+`additionalProperties` to `false` and has no `patternProperties`. A
+capability whose schema admits only flag properties never reads stdin, so an
+unclosed pipe cannot hold it up. Neither does a target nobody offers, which
+Board refuses whatever the input. `board call --capability <name>` takes no
+flags and always reads stdin. A string property's `enum` lists the flag's
+values in its help. In a board, `board commands list`, `board schemas list`
+and `board schemas show` also describe `call <plugin>.<capability>` for each
+capability of each enabled plugin, with its flags. Its effects follow MCP's
+hints and defaults: read-only with `readOnlyHint: true`, otherwise additive
+with `destructiveHint: false` and destructive without it, idempotent with
 `idempotentHint: true`, and open-world unless `openWorldHint` is `false`.
 Only these commands read the manifests for it. They skip a plugin they
-cannot read, and a board that does not open, with a note on stderr that
-names the code.
+cannot read, and a board that does not open, with a note on stderr naming
+the code.
 A flag whose property has `"format": "board-path"` may be given relative to
 the run's prefix, such as `--path docs` from inside a mounted repository;
 Board sends the absolute logical path (architecture.md, Typed references).
