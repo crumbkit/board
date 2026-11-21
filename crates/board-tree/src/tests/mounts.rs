@@ -811,3 +811,47 @@ fn a_path_that_is_a_mount_that_can_be_read_resolves_into_the_mount() {
     assert_eq!(location.object, Object::Directory);
     assert_eq!(location.board.source, pinned.source());
 }
+
+#[test]
+fn mounting_a_clone_follows_its_branch_or_a_given_ref_and_without_a_branch_finds_nothing() {
+    let inner = Scenario::new();
+    let first = inner.commit(&[("x.json", "1")]);
+    let second = inner.commit(&[("x.json", "2")]);
+    inner.write(".git/refs/tags/first", Item::File(&format!("{first}\n")));
+    let outer = Scenario::new();
+    let repositories = outer.repositories();
+    let from = outer.workdir();
+    let mounting = |follow: Option<&str>| {
+        repositories.mounting(from, &inner.path(), follow.map(str::to_owned))
+    };
+    let branch = mounting(None).unwrap().unwrap();
+    assert_eq!(
+        (branch.repo.as_str(), branch.follow.as_str(), branch.commit),
+        (inner.path().as_str(), "main", second)
+    );
+    assert_eq!(mounting(Some("first")).unwrap().unwrap().commit, first);
+    assert_eq!(
+        mounting(Some("nowhere")).unwrap_err(),
+        Code::MountFollowMissing
+    );
+    let absent = format!("{}/nowhere", inner.path());
+    assert_eq!(
+        repositories.mounting(from, &absent, None).unwrap_err(),
+        Code::MountRepoMissing
+    );
+    inner.write(".git/HEAD", Item::File(&format!("{first}\n")));
+    assert_eq!(mounting(None).unwrap(), None);
+    assert_eq!(mounting(Some("main")).unwrap().unwrap().commit, second);
+}
+
+#[test]
+fn mounting_an_empty_clone_without_a_ref_finds_nothing_and_after_its_first_commit_finds_main() {
+    let inner = Scenario::new();
+    let outer = Scenario::new();
+    let repositories = outer.repositories();
+    let mounting = || repositories.mounting(outer.workdir(), &inner.path(), None);
+    assert_eq!(mounting().unwrap(), None);
+    let first = inner.commit(&[("x.json", "1")]);
+    let mount = mounting().unwrap().unwrap();
+    assert_eq!((mount.follow.as_str(), mount.commit), ("main", first));
+}

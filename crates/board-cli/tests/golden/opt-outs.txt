@@ -157,7 +157,7 @@ terminal-detection/off: every run of board
   Cost: Progress never prints, help prints without clap's colours at a terminal, and a table's cells print without their styles.
   Cost: A text table never fits the terminal's width, so the terminal wraps each line of a table that is wider than the terminal.
 
-board has 33 declarations.
+board has 34 declarations.
 
 refusal-alternatives: every run of board
   Declares: A refused command line for a command without its own function also offers the tool's own alternatives.
@@ -204,6 +204,9 @@ document-name: board rm
 
 document-name: board sync
   Declares: The command prints board/sync-report/v3, where its path gives the name sync.
+
+document-name: board mount add
+  Declares: The command prints board/put-report/v2, where its path gives the name mount-add.
 
 document-name: board mount update
   Declares: The command prints board/mount-update-report/v2, where its path gives the name mount-update.
