@@ -7,7 +7,7 @@ board ls             List the directory at a path, without following pointers in
 board log            List the commits that changed what a path names, newest first
 board refs           List the references each entry makes and the entries that reach it
 board uri            Print the board:// URI that names a record from any known board's clone
-board put            Write the record on stdin at a path or --new name, or a file with --file
+board put            Write the record on stdin at a path or --new name, or a .md file or one with --file
 board rm             Remove the file at a path
 board sync           Fetch the remote branch, merge it into this board, and push
 board mount          Work with mounts

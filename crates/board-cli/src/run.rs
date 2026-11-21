@@ -112,9 +112,9 @@ impl From<String> for Given {
 /// `put`'s arguments.
 #[derive(Debug, clap::Args)]
 pub(crate) struct Putting {
-    /// Where to write: a logical path that leaves out .json, such as /tasks/a, or a from /tasks.
+    /// Where to write: a logical path that leaves out .json, such as /tasks/a, or a, run in /tasks.
     ///
-    /// A path ending .md writes stdin as that file, as --file does.
+    /// At a path ending .md, stdin that is a JSON object is a record, and other stdin is the file.
     #[arg(required_unless_present_any = ["batch", "new"])]
     pub(crate) path: Option<Given>,
     /// Write at a new name in the folder PATH names, which ends in /, or in the type's folder
@@ -225,7 +225,7 @@ Examples:
         /// The record's logical path, such as /tasks/a, or a from /tasks.
         path: Given,
     },
-    /// Write the record on stdin at a path or --new name, or a file with --file.
+    /// Write the record on stdin at a path or --new name, or a .md file or one with --file.
     #[command(after_help = "\
 The record must satisfy .board/types/<namespace>/<kind>/v<n>.schema.json, the
 schema its `$type` names. Each put is committed unless .board/board.json sets

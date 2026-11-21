@@ -44,8 +44,10 @@ enum At {
 }
 
 /// `put`: a batch on stdin, or the record on stdin at a path or a new name
-/// in a folder, or with `file` or at a Markdown path, stdin as a file, read
-/// whole, since a file past the record bound may go to the store.
+/// in a folder, or with `file`, stdin as a file, read whole, since a file
+/// past the record bound may go to the store. At a Markdown path, stdin is
+/// a record when it is a JSON object, such as a mount pointer `get` printed,
+/// and a file otherwise.
 pub(crate) fn put(
     board: &Board,
     printer: Printer,
@@ -76,11 +78,11 @@ pub(crate) fn put(
         Ok(at) => at,
         Err(refusal) => return render::refused(printer, *refusal),
     };
-    let file =
-        file || matches!(&at, At::Path(path) if Role::of(path.as_str()) == Some(Role::Markdown));
+    let markdown =
+        !file && matches!(&at, At::Path(path) if Role::of(path.as_str()) == Some(Role::Markdown));
     let read = match at {
         At::Batch => Ok(Vec::new()),
-        At::Path(_) if file => {
+        At::Path(_) if file || markdown => {
             let mut bytes = Vec::new();
             stdin.read_to_end(&mut bytes).map(|_| bytes)
         }
@@ -90,6 +92,7 @@ pub(crate) fn put(
         Ok(bytes) => bytes,
         Err(refusal) => return render::refused(printer, refusal),
     };
+    let file = file || markdown && !json_object(&bytes);
     let expect = expect.unwrap_or(Expect::Any);
     let written = match &at {
         At::Batch => board.put_batch_waiting(&mut std::io::BufReader::new(stdin), wait),
@@ -221,6 +224,13 @@ fn bounded(stdin: &mut dyn Read) -> std::io::Result<Vec<u8>> {
         .take(MAX_RECORD_BYTES as u64 + 1)
         .read_to_end(&mut bytes)?;
     Ok(bytes)
+}
+
+/// Whether `bytes` are a JSON object, whose first byte past whitespace is
+/// `{`.
+fn json_object(bytes: &[u8]) -> bool {
+    bytes.trim_ascii_start().first() == Some(&b'{')
+        && serde_json::from_slice::<Map<String, Value>>(bytes).is_ok()
 }
 
 /// Whether `stdin`, which a call left unread, holds more than whitespace.

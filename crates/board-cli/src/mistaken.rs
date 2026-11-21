@@ -5,7 +5,7 @@
 
 use std::ffi::OsString;
 
-use board_model::{Code, Fields, LogicalPath, Refusal};
+use board_model::{Code, Fields, LogicalPath, Refusal, Role};
 use clap::error::{ContextKind, ContextValue, ErrorKind};
 
 use clap::Parser as _;
@@ -84,7 +84,12 @@ fn put_input(arguments: &[OsString], value: &str) -> Option<Refusal> {
     }
     let input = quote(value);
     let record = format!("`{} < {input}`", shown(&line));
-    let hint = if line.iter().any(|word| word == "--file") {
+    // A put of a Markdown path writes its input as a file, or as a record
+    // when it is a JSON object, so the line needs no `--file`.
+    let markdown = line
+        .iter()
+        .any(|word| word.to_str().and_then(Role::of) == Some(Role::Markdown));
+    let hint = if markdown || line.iter().any(|word| word == "--file") {
         format!("pipe {value} to put: run {record}")
     } else {
         // Before any `--`, after which every word is a value.
