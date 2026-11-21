@@ -94,7 +94,9 @@ the same.
 
 The query reads the `records` view, which includes every mounted board, so
 the capabilities answer across repositories without knowing about mounts. A
-personal board mounts each repository at `/repos/<name>`, and `about` then
+board that mounts no repository holds its evals without `mounts`, naming
+each repository in `subjects` as `owner/name`. `about --subject` and `open`
+answer the same there. A personal board mounts each repository at `/repos/<name>`, and `about` then
 lists `/repos/<name>/evals/<eval>`. `board ls /repos` lists the mounts. A
 mounted board's own schemas govern its records, so a repository that holds
 evals must enable `runs` and `evals` and commit the result; an eval it

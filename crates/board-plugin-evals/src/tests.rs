@@ -377,3 +377,41 @@ fn the_skill_and_readme_say_a_concluded_eval_that_covers_the_question_is_cited_a
     let write = skill.find("2. Run the remaining steps").unwrap();
     assert!(lookup < settled && settled < write, "{skill}");
 }
+
+#[test]
+fn the_skill_works_in_a_board_with_no_mounts_and_gives_only_subjects_the_schema_admits() {
+    let skill = unwrapped(include_str!("../../../plugins/evals/SKILL.md"));
+    for phrase in [
+        "## When the board mounts repositories",
+        "fails with `board::path::not_found` mounts no repositories",
+        "skip this section",
+        "leave `mounts` out",
+        "## An eval in a board with no mounts",
+    ] {
+        assert!(skill.contains(phrase), "no {phrase:?} in {skill}");
+    }
+    assert!(!skill.contains("such as `crumbkit` or `clap`"), "{skill}");
+    let limit = skill
+        .find("When the board mounts the repository you are in")
+        .unwrap();
+    let mount = skill.find("about --mount").unwrap();
+    assert!(limit < mount, "{skill}");
+
+    let [(_, schema)] = &Evals.schemas()[..] else {
+        panic!("one schema")
+    };
+    let schema = board_validate::Schema::compile(schema.clone()).unwrap();
+    let step = &skill[skill.find("2. Run the remaining steps").unwrap()..];
+    let start = step.find("Each subject is").unwrap();
+    let sentence = &step[start..start + step[start..].find(". ").unwrap()];
+    let examples: Vec<&str> = sentence.split('`').skip(1).step_by(2).collect();
+    assert!(examples.len() >= 2, "{sentence}");
+    for example in examples {
+        let mut record = concluded();
+        record["subjects"] = json!([example]);
+        assert!(
+            schema.validate(&record).is_ok(),
+            "{example} in {sentence:?} is refused"
+        );
+    }
+}

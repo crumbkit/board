@@ -9,8 +9,11 @@ Record every test of a library, tool, model or agent as an eval.
 
 ## Which board
 
-Your instructions name your personal board. If they name none, ask the owner
-for its path. An eval goes in the personal board unless one of these applies:
+Use the board your instructions name. If they name none, run
+`board --personal ls /`: it lists the personal board when the known boards
+file names one, and refuses with `board::config::not_found` when it names
+none. Then ask the person you work for the board's path. An eval goes in the
+personal board unless one of these applies:
 
 - The owner names another board to share it in, such as a team's board.
   Write it there.
@@ -26,11 +29,16 @@ board.
 To run a command in a board other than the one you are in, add `-C <path>`,
 as in `board -C ~/Code/personal-board put ...`.
 
-## Find the repository's mount
+## When the board mounts repositories
 
-The personal board mounts each repository at `/repos/<name>`: a
-`board/mount/v1` record whose `repo` is the repository's path. Find the mount
-of the repository you are in before you test.
+A board where `board ls /repos` fails with `board::path::not_found` mounts no
+repositories. In such a board, skip this section: name each repository the
+eval concerns in `subjects` as `owner/name`, and leave `mounts` out. Add a
+mount only in a board that already mounts repositories.
+
+Such a board mounts each repository at `/repos/<name>`: a `board/mount/v1`
+record whose `repo` is the repository's path. Find the mount of the
+repository you are in before you test.
 
 1. Take the repository's path from
    `dirname "$(git rev-parse --path-format=absolute --git-common-dir)"`. It
@@ -48,12 +56,27 @@ of the repository you are in before you test.
    `board mount update /repos/<name>` later moves `commit` to the current
    `origin/main`. It cannot create a mount.
 
+## An eval in a board with no mounts
+
+This planned eval names its repository as `owner/name` and has no `mounts`.
+Write it with `board put /evals/<name>`; steps 3 to 5 add its suite, runs and
+verdict.
+
+```json
+{
+  "$type": "evals/eval/v1",
+  "question": "Does clap parse a flag given twice as the last value?",
+  "subjects": ["clap-rs/clap"],
+  "status": "planned"
+}
+```
+
 ## Steps
 
 1. Before testing anything, look for earlier evals. Run
-   `board evals about --mount /repos/<name>` with the repository's
-   mount, and `board evals about --subject <name>` with each thing you
-   will test. The `mount` lookup finds the evals that
+   `board evals about --subject <name>` with each thing you will test.
+   When the board mounts the repository you are in, also run
+   `board evals about --mount /repos/<name>` with its mount. The `mount` lookup finds the evals that
    name it in `mounts` and the evals stored in the repository's own
    board. It reads that board through the mount at the mount's `commit`, so
    it misses evals the repository added after that commit. To see them, run
@@ -85,14 +108,17 @@ of the repository you are in before you test.
    edit the earlier eval.
 2. Run the remaining steps in the board you chose. Before gathering
    evidence, write `evals/eval/v1` with `board put /evals/<name> < eval.json`.
-   Give the question, the subjects and `status: planned`. The subjects are
-   the names of what is tested, such as `crumbkit` or `clap`. Put
-   `mounts: ["/repos/<name>"]` with the mount of each repository the eval
-   concerns, so an agent working there finds it. A `mounts` path is read in
-   the board that holds the eval, and `board check` reports
-   `board::ref::dangling` when that board has no such mount. In the
-   repository's own board, or a shared board without the mount, leave
-   `mounts` out.
+   Give the question, the subjects and `status: planned`. Each subject is a
+   repository as `owner/name`, such as `clap-rs/clap`, or a board path, such
+   as `/topics/<name>` for a tool or model with no repository. The schema
+   refuses a bare name such as `clap` with `board::record::invalid`, but
+   `board evals about --subject clap` still finds `clap-rs/clap`. In a board
+   that mounts repositories, put `mounts: ["/repos/<name>"]` with the mount
+   of each repository the eval concerns, so an agent working there finds it.
+   A `mounts` path is read in the board that holds the eval, and
+   `board check` reports `board::ref::dangling` when that board has no such
+   mount. In the repository's own board, a shared board without the mount,
+   or a board with no mounts, leave `mounts` out.
 3. Say how it is tested in a `runs/suite/v1` at `/suites/<suite>`: the
    subjects, the method, the cases and the measures, each with its unit.
    `board ls /suites` lists the suites; reuse one that already tests this.
