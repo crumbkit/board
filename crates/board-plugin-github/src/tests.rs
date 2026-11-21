@@ -474,8 +474,8 @@ fn a_queued_app_suite_with_no_check_runs_is_ignored_after_ten_minutes_and_pendin
     assert_eq!(checks, json!(["the check suite of Codecov"]));
     assert!(
         hint.ends_with(
-            "; the check suite of Codecov has no check runs, so it will be ignored once it has \
-             been idle for 10 minutes; run `board github ci --change /changes/lever` again then"
+            "; check suites with no check runs (Codecov) are ignored once idle for more than 10 \
+             minutes; run this again then"
         ),
         "{hint}"
     );
@@ -500,7 +500,7 @@ fn an_old_app_suite_re_requested_two_minutes_ago_is_pending_and_one_left_alone_i
 }
 
 #[test]
-fn the_pending_hint_names_several_young_app_suites_in_the_plural() {
+fn the_pending_hint_names_every_young_app_suite_in_one_list() {
     let suites = [
         queued_suite("codecov", "Codecov", 60, 0),
         queued_suite("review", "Reviewer", 60, 0),
@@ -509,8 +509,8 @@ fn the_pending_hint_names_several_young_app_suites_in_the_plural() {
     let (_, _, hint) = judged(&suites).unwrap_err();
     assert!(
         hint.contains(
-            "the check suites of Codecov, Reviewer and Linter have no check runs, so they will \
-             be ignored once they have been idle for 10 minutes"
+            "check suites with no check runs (Codecov, Reviewer, Linter) are ignored once idle \
+             for more than 10 minutes"
         ),
         "{hint}"
     );

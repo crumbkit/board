@@ -81,8 +81,8 @@ the boundary plugin passes it. SKILL.md holds the procedure.
   - `github::ci::pending`: a check run or check suite is queued or in
     progress, or a commit status is pending. When it names an app's suite
     with no check runs that has been idle for 10 minutes or less, the hint
-    says the suite will be ignored once it has been idle for 10 minutes,
-    and to run the command again then.
+    says the suite will be ignored once it has been idle for more than 10
+    minutes, and to run the command again then.
   - `github::ci::none`: no check run concluded success, such as when there
     are none or all were skipped.
   - Each of the last three names the checks in the message and in

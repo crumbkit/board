@@ -94,16 +94,14 @@ struct App {
 }
 
 impl CheckSuite {
-    /// When it is an app's suite other than GitHub Actions' that has not
-    /// completed and has no check runs, the app's name and whether it is
-    /// idle for longer than [`IDLE`] at `now`, so ignored.
-    fn idle(&self, now: SystemTime) -> Option<(&str, bool)> {
+    /// The app's name when it is an app's suite other than GitHub Actions'
+    /// that has not completed and has no check runs.
+    fn idle(&self) -> Option<&str> {
         let app = self.app.as_ref()?;
         let idle = self.status != "completed"
             && self.latest_check_runs_count == 0
             && app.slug != "github-actions";
-        let old = (now.duration_since(self.updated_at)).is_ok_and(|age| age > IDLE);
-        idle.then_some((app.name.as_str(), old))
+        idle.then_some(app.name.as_str())
     }
 }
 
@@ -283,25 +281,6 @@ fn checked(name: &str, status: &str, conclusion: Option<&str>) -> Check {
     }
 }
 
-/// What the pending hint adds for the `young` apps' suites with no check
-/// runs: when they will be ignored, and to run `again` then.
-fn idle_hint(young: &[&str], again: &str) -> String {
-    let minutes = IDLE.as_secs() / 60;
-    let (suites, verbs) = match young {
-        [] => return String::new(),
-        [app] => (format!("check suite of {app}"), ["has", "it", "it has"]),
-        [apps @ .., last] => (
-            format!("check suites of {} and {last}", apps.join(", ")),
-            ["have", "they", "they have"],
-        ),
-    };
-    let [has, it, it_has] = verbs;
-    format!(
-        "; the {suites} {has} no check runs, so {it} will be ignored once {it_has} been idle for \
-         {minutes} minutes; run `{again}` again then"
-    )
-}
-
 /// The app names of the idle check suites it leaves out, or refuses with
 /// `github::ci::failed` naming each check that finished without passing,
 /// else `github::ci::pending` naming each not finished, else
@@ -317,9 +296,10 @@ pub(crate) fn judge(
     let (mut ignored, mut young) = (Vec::new(), Vec::new());
     let mut counted = Vec::new();
     for suite in &suites.check_suites {
-        match suite.idle(now) {
-            Some((app, true)) => ignored.push(app.to_owned()),
-            Some((app, false)) => {
+        let old = (now.duration_since(suite.updated_at)).is_ok_and(|age| age > IDLE);
+        match suite.idle() {
+            Some(app) if old => ignored.push(app.to_owned()),
+            Some(app) => {
                 young.push(app);
                 counted.push(suite);
             }
@@ -365,10 +345,17 @@ pub(crate) fn judge(
         } else {
             "have not finished"
         };
-        let hint = format!(
-            "wait for them to finish, then run `{again}` again{}",
-            idle_hint(&young, &again)
-        );
+        let idle = if young.is_empty() {
+            String::new()
+        } else {
+            format!(
+                "; check suites with no check runs ({}) are ignored once idle for more than {} \
+                 minutes; run this again then",
+                young.join(", "),
+                IDLE.as_secs() / 60
+            )
+        };
+        let hint = format!("wait for them to finish, then run `{again}` again{idle}");
         ("github::ci::pending", verb, hint)
     } else if runs
         .iter()
