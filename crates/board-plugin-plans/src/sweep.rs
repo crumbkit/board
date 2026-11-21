@@ -4,7 +4,8 @@
 //!
 //! A question is dead when the change or task it blocks is done or dropped
 //! and its `also_by` is empty, or when the session that asked it and every
-//! session in its `also_by` are archived. A merged question waits on its
+//! session in its `also_by` are archived. A question a person asked without
+//! a session is never withdrawn as archived. A merged question waits on its
 //! later askers' work too, which `blocks` does not name, so the sweep
 //! withdraws it only for archived askers or an answer. Board knows nothing
 //! of sessions, so the caller names the archived ones. Of the questions left, a
@@ -169,13 +170,15 @@ fn find(open: &[Waiting], archived: &BTreeSet<String>, answered: &Answered) -> V
                 if ended == "done" { "done" } else { "dropped" },
                 format!("the work it blocks, {blocks}, is {ended}."),
             )),
-            _ if archived.contains(&question.session)
-                && question
-                    .also_asked
-                    .iter()
-                    .all(|other| archived.contains(other)) =>
+            (_, _)
+                if let Some(session) = &question.session
+                    && archived.contains(session)
+                    && question
+                        .also_asked
+                        .iter()
+                        .all(|other| archived.contains(other)) =>
             {
-                Some(("archived", askers_archived(question)))
+                Some(("archived", askers_archived(session, question)))
             }
             _ => {
                 let key = (question.project.clone(), words(&question.question));
@@ -193,19 +196,14 @@ fn find(open: &[Waiting], archived: &BTreeSet<String>, answered: &Answered) -> V
     found
 }
 
-/// Why a question every asker of which is archived is withdrawn.
-fn askers_archived(question: &Waiting) -> String {
+/// Why a question every asker of which is archived is withdrawn, where
+/// `session` asked it.
+fn askers_archived(session: &str, question: &Waiting) -> String {
     if question.also_asked.is_empty() {
-        return format!(
-            "the session that asked it, {}, is archived.",
-            question.session
-        );
+        return format!("the session that asked it, {session}, is archived.");
     }
     let others = question.also_asked.join(", ");
-    format!(
-        "the sessions that asked it, {} and {others}, are archived.",
-        question.session
-    )
+    format!("the sessions that asked it, {session} and {others}, are archived.")
 }
 
 fn withdrawn(question: &Waiting, kind: &'static str, why: &str) -> Withdrawn {

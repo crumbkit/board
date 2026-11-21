@@ -123,6 +123,33 @@ fn a_question_from_an_archived_session_is_withdrawn_and_its_twin_from_a_live_one
     assert_eq!(open(&board), ["/projects/a/questions/live"]);
 }
 
+/// A question a person asked names no session that could be archived, so it
+/// stays even when every session merged into it is archived. Its twin,
+/// asked by one of those sessions, is withdrawn.
+#[test]
+fn a_question_a_person_asked_is_never_withdrawn_as_archived_and_its_sessions_twin_is() {
+    let by_person = body(
+        ASKED,
+        &json!({"question": "One?", "by": {"person": "ana"}, "also_by": [{"session": "local_dead0"}]}),
+    );
+    let (_scenario, board) = plans_board(&[
+        ("projects/a/questions/person", by_person),
+        (
+            "projects/a/questions/session",
+            asked_by("local_dead0", 1, &json!({"question": "Two?"})),
+        ),
+    ]);
+    let output = sweep(&board, &json!({"apply": true, "archived": ["local_dead0"]}));
+    assert_eq!(
+        withdrawn(&output),
+        [(
+            "/projects/a/questions/session".to_owned(),
+            "archived".to_owned()
+        )]
+    );
+    assert_eq!(open(&board), ["/projects/a/questions/person"]);
+}
+
 /// Two open questions in one project with the same words both stay open.
 #[test]
 fn two_open_questions_with_the_same_words_both_stay() {

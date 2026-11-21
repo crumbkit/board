@@ -17,7 +17,7 @@ use board_plugin::shape::{Accepts, Actor, Prose, Record, Ref, Tag, Url};
 #[serde(deny_unknown_fields)]
 #[schemars(extend(
     "x-board-folder" = "/projects/{project}/questions/",
-    "allOf" = [{"properties": {"by": {"required": ["session"]}}}],
+    "allOf" = [{"properties": {"by": {"anyOf": [{"required": ["session"]}, {"required": ["person"]}]}}}],
 ))]
 pub struct QuestionRecord {
     /// The record's type.
@@ -26,8 +26,8 @@ pub struct QuestionRecord {
     /// What the owner is asked.
     #[schemars(length(min = 1))]
     pub question: String,
-    /// Who asked. It names the asking session, so the answer can be sent
-    /// back to it.
+    /// Who asked: the asking session, or the person who asked without one,
+    /// so the answer can be sent back.
     pub by: Actor,
     /// The other sessions that asked the same question, which `plans.ask`
     /// merged into it, so the answer can be sent to each of them too.

@@ -84,6 +84,8 @@ async function refresh($: EngineInterface, options: PluginOptions, local: { abse
  * that is no longer open or already has an answer at any id, and attaches the
  * answer to the change the question blocks. Then it tries to send the answer
  * to the session that asked and to each session that asked the same question.
+ * A question a person asked without a session is sent to no one but those
+ * other sessions.
  *
  * Only Board's own failure report says nothing was written; a run that timed
  * out or was killed may have recorded the answer, so nothing is sent then.
@@ -122,14 +124,18 @@ async function answer($: EngineInterface, options: PluginOptions, q: Question, c
     }
     // A board from before plans.ask merged questions lists no `also_asked`.
     const others = (q.also_asked ?? []).filter(to => to !== q.session)
-    const [sent] = await Promise.all([send(q.session), ...others.map(send)])
+    // A person who asked without a Claude Code session has no session to send to.
+    const asker = q.session === undefined ? Promise.resolve(null) : send(q.session)
+    const [sent] = await Promise.all([asker, ...others.map(send)])
     const { attached } = answered
     const unattached = attached?.refused === undefined ? null : `not attached to ${attached.change}: ${attached.refused}`
     const approval = await askApproval($, options, approvedChange(q, choice, attached))
     $.ui.toast(
-      (sent
-        ? `Answered, and sent to ${q.session}${unattached === null ? '' : `. The answer is recorded but was ${unattached}`}`
-        : `Answered and recorded in Board${unattached === null ? '' : `, but ${unattached}`}. The message to ${q.session} was not delivered`) + approval,
+      (sent === null
+        ? `Answered and recorded in Board${unattached === null ? '' : `, but ${unattached}`}; ${q.person ?? 'the asker'} asked without a Claude Code session, so nothing was sent${approval === '' ? '.' : ''}`
+        : sent
+          ? `Answered, and sent to ${q.session}${unattached === null ? '' : `. The answer is recorded but was ${unattached}`}`
+          : `Answered and recorded in Board${unattached === null ? '' : `, but ${unattached}`}. The message to ${q.session} was not delivered`) + approval,
     )
   } catch (error) {
     $.ui.toast(`No answer was recorded: ${String(error)}`)

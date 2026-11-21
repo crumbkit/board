@@ -6,7 +6,7 @@ mod asked;
 
 use board_model::parse_json;
 use board_ops::{Host, Limit, PluginError};
-use board_plugin::shape::{Actor, TREE_CODES, whole};
+use board_plugin::shape::{Actor, Person, TREE_CODES, whole};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
@@ -110,10 +110,21 @@ pub(crate) struct Waiting {
     pub(crate) question: String,
     #[schemars(extend("format" = "date-time"))]
     asked: String,
-    pub(crate) session: String,
+    /// The session that asked, when the asker named one.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) session: Option<String>,
+    /// The person who asked, when the asker named one, such as a person
+    /// who asked without a Claude Code session.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "Option<Person>")]
+    pub(crate) person: Option<String>,
     /// The sessions `plans.ask` merged into the question, each of which
     /// waits for its answer too.
     pub(crate) also_asked: Vec<String>,
+    /// The people `plans.ask` merged into the question, so that a person
+    /// who asks again is not merged twice.
+    #[serde(skip)]
+    pub(crate) also_people: Vec<String>,
     options: Vec<Choice>,
     recommendation: Option<String>,
     why: Option<String>,
@@ -236,14 +247,23 @@ fn readable(path: &str, body: &Value, work: Option<&str>) -> Option<(Instant, Wa
     let asked = Stored::deserialize(&record).ok()?;
     let when = instant(&asked.asked)?;
     let options = asked.options.iter().map(choice).collect::<Option<_>>()?;
+    let Actor {
+        session, person, ..
+    } = asked.by;
+    if session.is_none() && person.is_none() {
+        return None;
+    }
+    let (also_asked, also_people) = (asked.also_by.iter())
+        .map(|actor| (actor.session.clone(), actor.person.clone()))
+        .unzip::<_, _, Vec<_>, Vec<_>>();
     let question = Waiting {
         path: path.to_owned(),
         question: asked.question,
         asked: asked.asked,
-        session: asked.by.session?,
-        also_asked: (asked.also_by.into_iter())
-            .filter_map(|actor| actor.session)
-            .collect(),
+        session,
+        person,
+        also_asked: also_asked.into_iter().flatten().collect(),
+        also_people: also_people.into_iter().flatten().collect(),
         options,
         recommendation: asked.recommendation,
         why: asked.why,

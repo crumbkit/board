@@ -250,7 +250,7 @@ fn a_question_whose_only_fault_is_a_dangling_reference_is_listed_and_an_invalid_
         )
         .write(
             "projects/a/questions/bad.json",
-            &open(&json!({"by": {"person": "someone"}})),
+            &open(&json!({"by": {"program": "codex"}})),
         );
     let (paths, output) = listed(&board, &[]);
     assert_eq!(paths, ["/projects/a/questions/dangling"]);
@@ -565,7 +565,7 @@ fn a_decision_refers_to_board_entries_in_refs_and_to_web_pages_in_urls() {
 }
 
 #[test]
-fn a_question_is_open_or_withdrawn_and_names_an_asking_session() {
+fn a_question_is_open_or_withdrawn_and_names_an_asking_session_or_person() {
     let board = board();
     let asked = "2026-10-01T09:00:00Z";
     board
@@ -583,8 +583,12 @@ fn a_question_is_open_or_withdrawn_and_names_an_asking_session() {
             &question("answered", asked, &json!({})),
         )
         .write(
-            "projects/a/questions/nameless.json",
+            "projects/a/questions/person.json",
             &open(&json!({"by": {"person": "someone"}})),
+        )
+        .write(
+            "projects/a/questions/nameless.json",
+            &open(&json!({"by": {"program": "codex"}})),
         );
     assert_eq!(
         board.checked("/projects/a/questions/"),
@@ -593,9 +597,44 @@ fn a_question_is_open_or_withdrawn_and_names_an_asking_session() {
             ("/projects/a/questions/withdrawn", None),
             ("/projects/a/questions/closed", INVALID),
             ("/projects/a/questions/answered", INVALID),
+            ("/projects/a/questions/person", None),
             ("/projects/a/questions/nameless", INVALID),
         ])
     );
+}
+
+/// The input `plans.ask` takes to ask "Ship it?" in project `a` as `by`.
+fn asking(by: &Value) -> String {
+    json!({"project": "a", "question": {"question": "Ship it?", "by": by}}).to_string()
+}
+
+/// `plans.ask` refuses a question whose `by` names only a program, and its
+/// text lists the refused line with the field at fault. The twin asked by
+/// a person is filed, and `plans.open` lists it with `person` and no
+/// `session`.
+#[test]
+fn ask_lists_the_line_its_schema_refuses_and_files_the_twin_a_person_asked() {
+    let board = board();
+    let refused = board.run_with(
+        &["call", "plans.ask"],
+        &asking(&json!({"program": "codex"})),
+    );
+    let stderr = text(&refused.stderr);
+    assert_eq!(refused.code, 1, "{stderr}");
+    assert!(
+        stderr.contains("line 1: board::record::invalid:"),
+        "{stderr}"
+    );
+    assert!(stderr.contains("\"/by\""), "{stderr}");
+    let filed = board.run_with(
+        &["--json", "call", "plans.ask"],
+        &asking(&json!({"person": "ana"})),
+    );
+    assert_eq!(filed.code, 0, "{}", text(&filed.stderr));
+    let (_, output) = listed(&board, &[]);
+    let question = &output["questions"][0];
+    assert_eq!(question["person"], json!("ana"), "{output}");
+    assert_eq!(question.get("session"), None, "{output}");
 }
 
 /// A `plans/answer/v1` record of the question at `question`, with `fields`.
