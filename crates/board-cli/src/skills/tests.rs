@@ -74,6 +74,26 @@ fn a_plugins_own_skill_embeds_its_skill_and_readme_and_a_skills_folder_embeds_it
 }
 
 #[test]
+fn every_embedded_skill_names_the_plugin_directory_it_was_found_in() {
+    let plugins = Path::new(ROOT).join("plugins");
+    for skill in SKILLS {
+        let directory = plugins.join(skill.plugin);
+        let found = if skill.name == skill.plugin {
+            directory.join("SKILL.md")
+        } else {
+            directory.join("skills").join(skill.name).join("SKILL.md")
+        };
+        assert!(found.is_file(), "{} in plugin {}", skill.name, skill.plugin);
+    }
+    let changes = SKILLS.iter().find(|skill| skill.name == "changes").unwrap();
+    assert_eq!(changes.plugin, "changes");
+    let check = SKILLS
+        .iter()
+        .find(|skill| skill.name == "understanding-check");
+    assert_eq!(check.unwrap().plugin, "changes");
+}
+
+#[test]
 fn no_claude_code_mod_ships_a_skill() {
     let plugins = Path::new(ROOT).join("plugins");
     let shipping: Vec<String> = subdirectories(&plugins)
@@ -88,14 +108,17 @@ fn no_claude_code_mod_ships_a_skill() {
 
 const ONE: Skill = Skill {
     name: "one",
+    plugin: "a",
     files: &[("SKILL.md", b"one")],
 };
 const TWO: Skill = Skill {
     name: "two",
+    plugin: "a",
     files: &[("SKILL.md", b"two")],
 };
 const THREE: Skill = Skill {
     name: "three",
+    plugin: "b",
     files: &[("SKILL.md", b"three")],
 };
 
@@ -135,10 +158,11 @@ fn a_folder_is_current_stale_missing_not_boards_or_retired_by_what_it_holds() {
     ]);
     let four = Skill {
         name: "four",
+        plugin: "b",
         files: &[("SKILL.md", b"four")],
     };
     assert_eq!(
-        listed(&[ONE, TWO, THREE, four], &held),
+        listed(&[ONE, TWO, THREE, four], &held, None),
         [
             ("four".to_owned(), Listed::Missing),
             ("gone".to_owned(), Listed::Retired),
@@ -168,7 +192,7 @@ fn only_its_own_name_in_a_marker_retires_a_folder_or_makes_one_at_a_skills_name_
         ("three".to_owned(), board(&[("SKILL.md", b"three")])),
     ]);
     assert_eq!(
-        listed(&[ONE, TWO, THREE], &held),
+        listed(&[ONE, TWO, THREE], &held, None),
         [
             ("copy".to_owned(), Listed::Copy),
             ("older".to_owned(), Listed::Copy),
@@ -199,7 +223,10 @@ fn a_board_folder_with_an_extra_file_or_an_entry_that_is_no_file_is_stale() {
     };
     for held in [extra, odd] {
         let held = BTreeMap::from([("one".to_owned(), held)]);
-        assert_eq!(listed(&[ONE], &held), [("one".to_owned(), Listed::Stale)]);
+        assert_eq!(
+            listed(&[ONE], &held, None),
+            [("one".to_owned(), Listed::Stale)]
+        );
     }
 }
 
@@ -211,6 +238,7 @@ fn a_folder_named_as_a_skill_in_other_case_is_read_as_that_skills_folder() {
     ]);
     let changes = Skill {
         name: "changes",
+        plugin: "changes",
         files: &[("SKILL.md", b"x")],
     };
     let held = keyed(raw, &[changes, ONE]);
@@ -277,4 +305,97 @@ fn a_hint_quotes_a_directory_a_shell_would_split() {
     assert_eq!(quote(Path::new("skills")), "skills");
     assert_eq!(quote(Path::new("my skills")), "'my skills'");
     assert_eq!(quote(Path::new("it's")), r"'it'\''s'");
+}
+
+/// Board folders for `one`, of plugin `a`, and `three`, of plugin `b`,
+/// each stale, and a retired folder for `gone`, which no plugin ships.
+fn held_by_two_plugins() -> BTreeMap<String, Held> {
+    BTreeMap::from([
+        (
+            "one".to_owned(),
+            marked(Some("one"), &[("SKILL.md", b"old")]),
+        ),
+        (
+            "three".to_owned(),
+            marked(Some("three"), &[("SKILL.md", b"old")]),
+        ),
+        (
+            "gone".to_owned(),
+            marked(Some("gone"), &[("SKILL.md", b"gone")]),
+        ),
+    ])
+}
+
+#[test]
+fn a_selection_of_plugins_lists_only_their_skills_and_never_retires_another_plugins_folder() {
+    let held = held_by_two_plugins();
+    let only = BTreeSet::from(["a"]);
+    assert_eq!(
+        listed(&[ONE, TWO, THREE], &held, Some(&only)),
+        [
+            ("gone".to_owned(), Listed::Retired),
+            ("one".to_owned(), Listed::Stale),
+            ("two".to_owned(), Listed::Missing),
+        ]
+    );
+    assert_eq!(
+        listed(&[ONE, TWO, THREE], &held, None),
+        [
+            ("gone".to_owned(), Listed::Retired),
+            ("one".to_owned(), Listed::Stale),
+            ("three".to_owned(), Listed::Stale),
+            ("two".to_owned(), Listed::Missing),
+        ]
+    );
+}
+
+#[test]
+fn a_selection_leaves_another_plugins_foreign_folder_unrefused() {
+    let held = BTreeMap::from([("three".to_owned(), Held::Foreign)]);
+    let only = BTreeSet::from(["a"]);
+    assert_eq!(
+        listed(&[ONE, THREE], &held, Some(&only)),
+        [("one".to_owned(), Listed::Missing)]
+    );
+}
+
+#[test]
+fn install_with_a_selection_writes_its_plugins_skills_and_leaves_another_plugins_folder_as_it_was()
+{
+    let home = board_scenario::Scenario::new();
+    let dir = home.workdir().join("skills");
+    home.write(
+        "skills/three/.board-skill",
+        board_scenario::Item::File("board 0.1.0 three\n"),
+    )
+    .write("skills/three/SKILL.md", board_scenario::Item::File("old"));
+    let held = read(&dir).unwrap();
+    let only = BTreeSet::from(["a"]);
+    let done = install(&dir, &[ONE, THREE], &held, false, Some(&only)).unwrap();
+    assert_eq!(done, [("one".to_owned(), Installed::Written)]);
+    assert_eq!(std::fs::read(dir.join("one/SKILL.md")).unwrap(), b"one");
+    assert_eq!(std::fs::read(dir.join("three/SKILL.md")).unwrap(), b"old");
+    assert_eq!(
+        std::fs::read(dir.join("three/.board-skill")).unwrap(),
+        b"board 0.1.0 three\n"
+    );
+}
+
+#[test]
+fn plugins_must_each_ship_a_skill_and_name_at_least_one() {
+    let names =
+        |names: &[&str]| -> Vec<String> { names.iter().map(|&name| name.to_owned()).collect() };
+    let chosen_ok = chosen(&names(&["a", "b"]), &[ONE, THREE]).unwrap();
+    assert_eq!(chosen_ok, BTreeSet::from(["a", "b"]));
+    let refusal = chosen(&names(&["a", "nosuch", "other"]), &[ONE, THREE]).unwrap_err();
+    assert_eq!(refusal.code.as_str(), "board::cli::usage");
+    assert!(
+        refusal.message.contains("nosuch, other"),
+        "{}",
+        refusal.message
+    );
+    let hint = refusal.hint.as_deref().unwrap_or_default();
+    assert!(hint.contains("a, b"), "{hint}");
+    let refusal = chosen(&names(&[""]), &[ONE]).unwrap_err();
+    assert_eq!(refusal.code.as_str(), "board::cli::usage");
 }
