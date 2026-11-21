@@ -16,6 +16,7 @@ design and the reasons for it; this file says how to call it.
   share writes through the mount, so Board's checks for a write through a
   mount apply: the mounted checkout is on the branch the mount follows, its
   board commits on put, and no path in the set changed since the pin.
+  [Setting up a shared board](#setting-up-a-shared-board) says how to make one.
 - `dry_run` lists what would be copied, decides the plugin's own refusals,
   and writes nothing. Board's checks for a write through a mount run only on
   the real call.
@@ -29,10 +30,27 @@ record in the set references, followed until nothing new is reached. Sharing
 `/evals/x` copies the eval, the evidence under `/evals/x/evidence/`, the
 suites and runs it references, and a cases file a suite references, such as
 `/notes/cases.md`. A reference to a directory reaches every entry under it.
-Only the references a record's schema declares are followed, including a
-Markdown record's frontmatter references. A copied Markdown file's links are
-not, so a note it links to stays behind, and `board check` reports the link
-as dangling in the destination.
+The references a record's schema declares are followed, including a
+Markdown record's frontmatter references.
+
+A Markdown file in the set also brings each record or file that its body
+names by an absolute board path:
+
+- A path counts in prose, in a code span or as a link, such as
+  `Decision: /projects/x/decisions/a`.
+- A path in frontmatter that claims a `$type` does not count, because the
+  record's schema says which of its fields are references.
+- A relative link, such as `[other](other.md)`, is not followed. The note it
+  links to stays behind, and `board check` reports the link as dangling in
+  the destination.
+- A path to a directory does not bring the entries under it, so a body that
+  mentions `/tasks` does not copy every task.
+- A path to a directory, a path through a mount or a link, and a path that
+  holds nothing are not copied and not refused. `not_copied` lists each one,
+  except a directory under `path`, whose entries are copied anyway.
+- A record or file that a body names is read in turn, so its own references
+  and named paths are followed too.
+
 Each entry lands at the same path in the destination, so no
 reference is rewritten. The schema of every record type in the set goes too,
 except Board's own `board/*` types.
@@ -59,7 +77,44 @@ was written; `types`, the types
 whose schemas were added; `copied`, at most 100 paths, with `total` and
 `truncated`; `uris`, the `board://` URI of each path in `copied`, empty when
 the destination's repository has no origin; and `unchanged`, the number of
-paths the destination already held equally. A dry run returns the same with `commit` null.
+paths the destination already held equally; and `not_copied`, at most 100
+paths that a copied Markdown body names and the share leaves behind. Each
+item of `not_copied` gives the `path`, the file that names it as `named_by`,
+and a `reason`: `directory`, `mount`, `link` or `missing`.
+A dry run returns the same with `commit` null.
+
+## Setting up a shared board
+
+A team's shared board is a git repository that each colleague clones.
+Make the board in it once, from an empty repository:
+
+    git clone git@github.com:<owner>/<team-board>.git ~/team-board
+    cd ~/team-board
+    git checkout -b main
+    board init
+    board plugin enable evals
+    board plugin enable runs
+    git add .board
+    git commit -m 'Start the team board'
+    git push -u origin main
+
+- Run `git checkout -b main` only when the clone has no branch, as an empty
+  repository's clone has none.
+- Enable the plugins whose records you will share, here evals and runs.
+- A colleague whose repository already holds a board only clones it.
+
+Then mount the clone in your own board as `/team`:
+
+    board put /team <<'EOF'
+    {"$type": "board/mount/v1", "repo": "/Users/<you>/team-board", "follow": "main", "commit": "<HEAD of the clone>"}
+    EOF
+
+- `repo` is the clone's directory.
+- `follow` must name the clone's local branch, such as `main`, because the
+  share writes through the mount. Board refuses a write through a mount whose
+  `follow` is a remote branch, such as `origin/main`.
+- `commit` is the clone's HEAD, which `git -C ~/team-board rev-parse HEAD`
+  prints.
 
 ## Refusals
 

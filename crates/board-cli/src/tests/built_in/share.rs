@@ -36,6 +36,9 @@ const TYPES: [&str; 3] = ["evals/eval/v1", "runs/run/v1", "runs/suite/v1"];
 /// A Markdown task's type, whose frontmatter references are followed.
 const TASK_SCHEMA: &str = ".board/types/lr/task/v1.schema.json";
 const TASK_TYPE: &str = r#"{"type": "object", "properties": {"eval": {"type": "string", "format": "board-ref"}, "see": {"type": "string", "format": "board-ref"}}}"#;
+/// A record type with no references, for the decisions and questions a
+/// project's body names.
+const NOTE_SCHEMA: &str = ".board/types/lr/note/v1.schema.json";
 
 fn eval() -> Value {
     json!({
@@ -196,6 +199,7 @@ fn one_call_copies_an_eval_its_runs_their_evidence_and_its_schemas_in_one_commit
             "total": 5,
             "truncated": false,
             "unchanged": 0,
+            "not_copied": [],
         })
     );
     assert_eq!(boards.changed(&before), FILES);
@@ -488,7 +492,8 @@ fn a_note_a_record_references_is_copied_and_the_notes_and_directories_it_links_t
 }
 
 #[test]
-fn a_markdown_records_frontmatter_references_and_schema_are_copied_and_its_body_links_are_not() {
+fn a_markdown_records_frontmatter_references_and_schema_are_copied_and_its_relative_body_links_are_not()
+ {
     let boards = boards();
     boards.standard();
     let task =
@@ -577,4 +582,101 @@ fn a_share_answers_from_a_warm_index_as_from_a_cold_one_after_the_set_changes() 
     let warm = boards.personal.answer("share.to", &dry, false);
     assert_ne!(warm, before, "the change is seen");
     assert_eq!(warm, boards.personal.answer("share.to", &dry, true));
+}
+
+impl Boards {
+    /// Writes the project `/tasks/p.md` with `body`, the decision
+    /// `/projects/p/decisions/a` and the question `/projects/p/questions/b`.
+    fn project(&self, body: &str) -> &Self {
+        let note = |text: &str| json!({"$type": "lr/note/v1", "text": text}).to_string();
+        self.personal
+            .write(TASK_SCHEMA, TASK_TYPE)
+            .write(NOTE_SCHEMA, r#"{"type": "object"}"#)
+            .write("projects/p/decisions/a.json", &note("Keep one file."))
+            .write("projects/p/questions/b.json", &note("Which file?"))
+            .write(
+                "tasks/p.md",
+                &format!("---\n$type: lr/task/v1\n---\n# Project\n\n{body}"),
+            );
+        self
+    }
+}
+
+#[test]
+fn a_project_whose_body_names_a_decision_in_prose_and_a_question_as_a_link_copies_both() {
+    let boards = boards();
+    boards.project(
+        "2. Keep one file. Decision: /projects/p/decisions/a\n\
+         3. Asked in [the question](/projects/p/questions/b).\n",
+    );
+    let output = boards.share(&["--path", "/tasks/p.md"]);
+    assert_eq!(
+        (&output["copied"], &output["types"], &output["not_copied"]),
+        (
+            &json!([
+                "/projects/p/decisions/a",
+                "/projects/p/questions/b",
+                "/tasks/p.md"
+            ]),
+            &json!(["lr/note/v1", "lr/task/v1"]),
+            &json!([])
+        )
+    );
+    let clone = Scenario::clone_of(&boards.team);
+    for path in ["/projects/p/decisions/a", "/projects/p/questions/b"] {
+        let got = board_in(clone.workdir(), &["--json", "get", path]);
+        assert_eq!(got.code, 0, "{path}: {}", text(&got.stdout));
+    }
+}
+
+#[test]
+fn a_body_naming_a_path_that_holds_nothing_copies_only_the_project_and_lists_the_path() {
+    let boards = boards();
+    boards.project("Decision: /projects/p/decisions/gone.\n");
+    let output = boards.share(&["--path", "/tasks/p.md"]);
+    assert_eq!(
+        (&output["copied"], &output["not_copied"]),
+        (
+            &json!(["/tasks/p.md"]),
+            &json!([{"path": "/projects/p/decisions/gone", "reason": "missing", "named_by": "/tasks/p.md"}])
+        )
+    );
+    assert!(boards.exists("tasks/p.md"));
+    assert!(!boards.exists("projects/p/decisions/a.json"));
+}
+
+#[test]
+fn a_body_naming_a_directory_or_a_path_through_a_mount_copies_nothing_for_it_and_lists_each() {
+    let boards = boards();
+    boards.publish(&[("notes/team.md", "# Team\n")]);
+    boards.project("See /projects and `/team/notes/team.md`.\n");
+    let dry = boards.share(&["--path", "/tasks/p.md", "--dry_run", "true"]);
+    assert_eq!(
+        (&dry["copied"], &dry["not_copied"]),
+        (
+            &json!(["/tasks/p.md"]),
+            &json!([
+                {"path": "/projects", "reason": "directory", "named_by": "/tasks/p.md"},
+                {"path": "/team/notes/team.md", "reason": "mount", "named_by": "/tasks/p.md"},
+            ])
+        )
+    );
+    let output = boards.share(&["--path", "/tasks/p.md"]);
+    assert_eq!(output["copied"], json!(["/tasks/p.md"]));
+    assert!(!boards.exists("projects/p/decisions/a.json"));
+}
+
+#[test]
+fn a_path_named_by_a_copied_note_is_copied_in_turn() {
+    let boards = boards();
+    boards.project("See /notes/plan.md\n");
+    boards.personal.write(
+        "notes/plan.md",
+        "# Plan\n\nDecided in /projects/p/decisions/a\n",
+    );
+    let output = boards.share(&["--path", "/tasks/p.md", "--dry_run", "true"]);
+    assert_eq!(
+        output["copied"],
+        json!(["/notes/plan.md", "/projects/p/decisions/a", "/tasks/p.md"])
+    );
 }

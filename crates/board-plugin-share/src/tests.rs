@@ -140,6 +140,24 @@ fn every_input_property_carries_a_sentence_that_says_what_it_means() {
 }
 
 #[test]
+fn the_to_flag_says_how_to_set_up_a_shared_board_and_its_mount() {
+    let manifest = super::manifest();
+    let to = manifest["capabilities"][0]["inputSchema"]["properties"]["to"]["description"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert!(
+        to.contains(
+            "To share into a team's board, clone its repository, run `board init` there if it \
+             is empty, commit and push it, then write a `board/mount/v1` here, such as `/team`, \
+             whose `repo` is the clone, `follow` its local branch, such as `main`, and `commit` \
+             its HEAD. plugins/share/README.md, Setting up a shared board, gives the commands."
+        ),
+        "{to}"
+    );
+}
+
+#[test]
 fn a_record_held_with_true_where_the_source_has_1_is_different_and_one_in_another_key_order_is_the_same()
  {
     let line = Line::Record(json!({"a": 1, "b": "c"}));

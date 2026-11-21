@@ -2,12 +2,13 @@
 //!
 //! The set is the entry at the path, the entries under it, and every entry
 //! its records reference, followed transitively, inside this board's own
-//! tree. Only the references a record's schema declares are followed,
-//! including those in a Markdown file's frontmatter; a Markdown file's links
-//! are not. A reference to a directory reaches the entries under it. A
+//! tree. The references a record's schema declares are followed, including
+//! those in a Markdown file's frontmatter, and so is each absolute path a
+//! Markdown file's body names that holds a record or file. A reference to a
+//! directory reaches the entries under it; a body's path to one does not. A
 //! reference that resolves through a mount or link is not copied, and must
-//! resolve to the same repository in the destination; a link inside the set
-//! is refused. The plugin's own refusals are decided before anything is
+//! resolve to the same repository in the destination; a body's path through
+//! one is listed and not copied. A link inside the set is refused. The plugin's own refusals are decided before anything is
 //! written, on a dry run too. Then one batch put writes the missing schemas
 //! and the set through the mount, which makes one commit in the mounted
 //! board and moves the mount's pin to it.
@@ -15,8 +16,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use board_model::{
-    ATTACHMENT_TYPE, Fields, Location, LogicalPath, PathError, Refusal, Source, canonical_json,
-    parse_json,
+    ATTACHMENT_TYPE, Fields, Location, LogicalPath, Object, PathError, Refusal, Source,
+    canonical_json, parse_json,
 };
 use board_ops::{
     Absent, Board, Host, Limit, PluginError, RefsReport, literal, source_name, uri_of,
@@ -41,7 +42,7 @@ pub(crate) struct Input {
     /// The record or file to share, such as /evals/x; its children under /evals/x/ go with it.
     #[schemars(length(min = 1), extend("format" = "board-path"))]
     path: String,
-    /// The mount record of the board to copy into, such as /team; the share writes through it.
+    /// The mount record of the board to copy into, such as /team; the share writes through it. To share into a team's board, clone its repository, run `board init` there if it is empty, commit and push it, then write a `board/mount/v1` here, such as `/team`, whose `repo` is the clone, `follow` its local branch, such as `main`, and `commit` its HEAD. plugins/share/README.md, Setting up a shared board, gives the commands.
     #[schemars(length(min = 1), extend("format" = "board-path"))]
     to: String,
     /// List what would be copied and the plugin's own refusals, and write nothing, when true. Board's checks for a write through a mount run only on the real call.
@@ -62,7 +63,8 @@ pub(crate) struct Input {
 /// board:// URI of each path `copied` lists, in order, by which a reader
 /// with a clone of the destination reads it, and is empty when the
 /// destination's repository has no origin. `unchanged` counts the paths
-/// the destination already held equally.
+/// the destination already held equally. `not_copied` lists, at most 100,
+/// the paths a copied Markdown body names that the share leaves behind.
 #[derive(Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 #[schemars(rename = "ToOutput")]
@@ -75,6 +77,28 @@ pub(crate) struct Output {
     total: usize,
     truncated: bool,
     unchanged: usize,
+    not_copied: Vec<NotCopied>,
+}
+
+/// A path a copied Markdown body names that the share does not copy, why,
+/// and the file that names it first.
+#[derive(Clone, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct NotCopied {
+    path: String,
+    reason: Reason,
+    named_by: String,
+}
+
+/// Why a named path is not copied: it is a directory, whose entries are
+/// not copied; it resolves through a mount or a link; or it names nothing.
+#[derive(Clone, Copy, Serialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum Reason {
+    Directory,
+    Mount,
+    Link,
+    Missing,
 }
 
 /// What a batch line writes at a path: a record, or a text file.
@@ -94,7 +118,7 @@ pub(crate) fn share_to(host: &dyn Host, input: &Value) -> Result<Value, PluginEr
         local_attachments,
     } = PluginError::read_input("share", "to", input)?;
     let (repository, _) = mount(host, &to)?;
-    let (found, mounted) = closure(host, &path)?;
+    let (found, mounted, not_copied) = closure(host, &path)?;
     unresolved(host, &to, &mounted)?;
     let (lines, types) = read(host, &found, local_attachments)?;
     let targets: Vec<String> = lines.keys().map(|target| format!("{to}{target}")).collect();
@@ -172,6 +196,7 @@ pub(crate) fn share_to(host: &dyn Host, input: &Value) -> Result<Value, PluginEr
         total: copied.len(),
         truncated: copied.len() > LIST_LIMIT,
         unchanged: unchanged.len(),
+        not_copied: not_copied.into_iter().take(LIST_LIMIT).collect(),
     };
     Ok(serde_json::to_value(output).expect("the output is strings, numbers and booleans"))
 }
@@ -223,16 +248,19 @@ fn mount(host: &dyn Host, to: &str) -> Result<(String, String), PluginError> {
     }
 }
 
-/// The paths to copy, sorted, and each reference through a mount or link
-/// with the repository it reaches.
+/// What [`closure`] finds.
+type Closure = (Vec<String>, BTreeMap<String, String>, Vec<NotCopied>);
+
+/// The paths to copy, sorted, each reference through a mount or link with
+/// the repository it reaches, and the paths Markdown bodies name that are
+/// not copied, sorted.
 ///
-/// Only the references a record's schema declares are followed, and a
-/// Markdown file's links are not. A copied note's links may dangle in the
-/// destination, where `board check` reports them.
-fn closure(
-    host: &dyn Host,
-    path: &str,
-) -> Result<(Vec<String>, BTreeMap<String, String>), PluginError> {
+/// The references a record's schema declares are followed, and so are the
+/// paths a Markdown file's body names (`named`) that hold a record or file
+/// in this board's own tree. A relative link is not followed, so a copied
+/// note's links may dangle in the destination, where `board check` reports
+/// them.
+fn closure(host: &dyn Host, path: &str) -> Result<Closure, PluginError> {
     let mut found = entries(host, &under(&[path.to_owned()]))?;
     if found.is_empty() {
         return Err(PluginError {
@@ -243,10 +271,11 @@ fn closure(
         });
     }
     let mut mounted = BTreeMap::new();
-    let mut frontier = records(&found);
+    let mut left = BTreeMap::new();
+    let mut frontier = found.clone();
     while !frontier.is_empty() {
         let mut reached = BTreeSet::new();
-        let asked: Vec<LogicalPath> = (frontier.iter())
+        let asked: Vec<LogicalPath> = (records(&frontier).iter())
             .map(|record| logical(record, "refs"))
             .collect::<Result<_, _>>()?;
         for report in reports(host, &asked)?.into_iter().flatten() {
@@ -264,11 +293,39 @@ fn closure(
                 }
             }
         }
-        if reached.is_empty() {
+        let mut named = BTreeMap::new();
+        let markdown: Vec<String> = (frontier.keys())
+            .filter(|target| std::path::Path::new(target).extension() == Some("md".as_ref()))
+            .cloned()
+            .collect();
+        for (file, read) in markdown.iter().zip(get(host, &markdown)?) {
+            let bytes =
+                read.map_err(|refusal| PluginError::board_refused("share", "get", &refusal))?;
+            let Ok(text) = String::from_utf8(bytes) else {
+                continue;
+            };
+            for target in crate::named::named(&text) {
+                named
+                    .entry(target.to_string())
+                    .or_insert_with(|| file.clone());
+            }
+        }
+        named.retain(|target, _| {
+            !(found.contains_key(target) || reached.contains(target) || left.contains_key(target))
+        });
+        if reached.is_empty() && named.is_empty() {
             break;
         }
-        let listed: Vec<String> = reached.iter().map(|target| literal(target)).collect();
+        let listed: Vec<String> = (reached.iter().chain(named.keys()))
+            .map(|target| literal(target))
+            .collect();
         let mut held = entries(host, &format!("logical IN ({})", listed.join(", ")))?;
+        // A body's path is copied only when it holds a record or file.
+        held.retain(|target, kind| {
+            !named.contains_key(target) || kind == "record" || kind == "file"
+        });
+        named.retain(|target, _| !held.contains_key(target));
+        left.extend(uncopied(host, path, named)?);
         // A reference to a directory has no entry of its own, and reaches
         // the entries under it.
         let directories: Vec<String> = (reached.into_iter())
@@ -276,10 +333,53 @@ fn closure(
             .collect();
         held.extend(entries(host, &under(&directories))?);
         held.retain(|target, _| !found.contains_key(target));
-        frontier = records(&held);
+        frontier = held.clone();
         found.extend(held);
     }
-    Ok((found.into_keys().collect(), mounted))
+    let left = (left.into_iter())
+        .map(|(path, (reason, named_by))| NotCopied {
+            path,
+            reason,
+            named_by,
+        })
+        .collect();
+    Ok((found.into_keys().collect(), mounted, left))
+}
+
+/// Why each of `named`, the paths a body names that hold no record or
+/// file here, is not copied, with the file that names it. A directory
+/// under `shared`, whose entries the share copies, is left out.
+fn uncopied(
+    host: &dyn Host,
+    shared: &str,
+    named: BTreeMap<String, String>,
+) -> Result<BTreeMap<String, (Reason, String)>, PluginError> {
+    let (paths, files): (Vec<String>, Vec<String>) = named.into_iter().unzip();
+    let asked: Vec<LogicalPath> = (paths.iter())
+        .map(|target| logical(target, "refs"))
+        .collect::<Result<_, _>>()?;
+    let answers = (host.refs(&asked, Absent::Refuse, &[]))
+        .map_err(|error| PluginError::board_refused("share", "refs", &error.refusal()))?;
+    let inside = format!("{shared}/");
+    Ok((paths.into_iter().zip(files).zip(answers))
+        .filter_map(|((target, file), answer)| {
+            let reason = answer.map_or(Reason::Missing, |report| reason(&report.location));
+            let copied = matches!(reason, Reason::Directory) && target.starts_with(&inside);
+            (!copied).then_some((target, (reason, file)))
+        })
+        .collect())
+}
+
+/// Why a share does not copy what a body's path resolves to: a pointer
+/// to another repository is a mount, one inside this board a link.
+fn reason(location: &Location) -> Reason {
+    match location.pointers.first() {
+        Some(pointer) if pointer.board.repository == location.board.repository => Reason::Link,
+        Some(_) => Reason::Mount,
+        None if location.board.source != Source::WorkingTree => Reason::Mount,
+        None if location.object == Object::Directory => Reason::Directory,
+        None => Reason::Missing,
+    }
 }
 
 /// The paths among `kinds` that hold records, sorted: the entries whose
