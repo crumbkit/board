@@ -962,6 +962,36 @@ fn a_clones_origin_is_read_at_the_clone_itself_and_a_directory_inside_another_re
 }
 
 #[test]
+fn the_caller_is_in_the_board_at_its_root_and_below_and_not_outside_it_in_a_nested_repository_or_without_a_caller()
+ {
+    let scenario = board(&[("fixture", true)], &["fixture"], Holds::Same);
+    scenario.write("below/a.txt", Item::File("a"));
+    let nested = Scenario::within(&scenario);
+    let outside = tempfile::tempdir().unwrap();
+    let mut board = open(&scenario);
+    board.build_in(built(vec![answering(
+        "fixture",
+        Box::new(|host| Ok(json!({"count": i64::from(host.caller_in_board())}))),
+    )]));
+    let in_board = |caller: Option<&std::path::Path>| {
+        let plugins = Plugins {
+            environment: Environment {
+                caller: caller.map(|caller| caller.as_os_str().to_owned()),
+                ..Environment::default()
+            },
+            ..Plugins::default()
+        };
+        call_base(&board, &plugins).unwrap().output["count"].clone()
+    };
+    assert_eq!(in_board(Some(scenario.workdir())), json!(1));
+    assert_eq!(in_board(Some(&scenario.workdir().join("below"))), json!(1));
+    assert_eq!(in_board(Some(outside.path())), json!(0));
+    assert_eq!(in_board(Some(nested.workdir())), json!(0));
+    assert_eq!(in_board(None), json!(0));
+    assert!(!Caller::at(Some(scenario.workdir())).caller_in_board());
+}
+
+#[test]
 fn a_cache_place_is_plain_names_under_the_cache_home_and_none_without_one() {
     let mut settings = Settings {
         now: UNIX_EPOCH,

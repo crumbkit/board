@@ -191,7 +191,10 @@ nothing. Two
 repos that could each hold it are refused with `tasks::repo::ambiguous`. A
 caller inside a git repository whose origin git does not give is refused with
 `tasks::repo::origin_unread`, since the task may belong to a work repo; pass
-`--remote` or `--repo`.
+`--remote` or `--repo`, such as `--repo /` for the board itself. The board's
+own repository is the exception: a caller in a board with no origin is routed
+as one outside any repository, so the board takes the task when it lists no
+personal repo. A repository nested inside the board is not the board's own.
 
 `claim`, `done`, `defer --until`, `drop` and `reviewed` take the task's
 `--path` in the board, such as `/repos/personal/tasks/call-the-bank.md`. The path is not

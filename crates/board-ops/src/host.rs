@@ -187,6 +187,11 @@ pub trait Host {
             read => read,
         }
     }
+    /// Whether the caller's directory is in the called board's own git
+    /// working tree, not a repository nested in it. By default it is not.
+    fn caller_in_board(&self) -> bool {
+        false
+    }
     /// The `origin` of the git repository at `clone` itself, as `git remote
     /// get-url origin` gives it there with `GIT_CEILING_DIRECTORIES` set to
     /// the clone's parent, read from git's config so no process starts. A
@@ -653,6 +658,16 @@ impl Host for Hosted<'_> {
             refusal.code.as_str(),
             refusal.message
         ));
+    }
+
+    /// The canonical working-tree roots above each are the same one.
+    fn caller_in_board(&self) -> bool {
+        let caller = self
+            .settings
+            .caller
+            .as_deref()
+            .and_then(board_tree::repository_root);
+        caller.is_some_and(|caller| board_tree::repository_root(self.root) == Some(caller))
     }
 
     fn board(&self, elsewhere: &Elsewhere) -> Result<Box<dyn Host + '_>, Box<Refusal>> {
