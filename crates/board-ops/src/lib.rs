@@ -50,7 +50,7 @@ pub use crate::init::{InitError, InitReport, init};
 pub use crate::known::{
     KnownBoards, MountsAt, Prefix, asker, entered, open, open_at, unopened, uri_of,
 };
-pub use crate::mount::{MountError, MountUpdateReport};
+pub use crate::mount::{MountError, MountUpdateReport, Taken};
 pub use crate::plugins::{
     CallFailed, Found, PluginEntry, PluginFindReport, PluginListReport, PluginState, Plugins,
     SchemaProblem,

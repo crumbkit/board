@@ -6,7 +6,7 @@ use std::path::{Component, Path, PathBuf};
 use std::time::Duration;
 
 use board_model::{BINARY_NAME, Code, Fields, LogicalPath, Mount, ObjectId, Refusal};
-use board_tree::{LOCK_WAIT, Lock, Pin, PinError, Target};
+use board_tree::{LOCK_WAIT, Lock, Pin, PinError, Target, WriteError};
 
 use crate::board::Board;
 use crate::put::{Expect, Failure, Prepared, PutError, PutReport, Schemas};
@@ -63,7 +63,16 @@ impl Board {
             "follow": mount.follow,
             "commit": mount.commit.to_string(),
         });
-        let put = self.put(path, Expect::Absent, record.to_string().as_bytes())?;
+        let put = self
+            .put(path, Expect::Absent, record.to_string().as_bytes())
+            .map_err(|error| match Taken::of(path, &error) {
+                Some(taken) => MountError::Taken {
+                    path: path.clone(),
+                    taken,
+                    source: Box::new(error),
+                },
+                None => error.into(),
+            })?;
         Ok((mount, put))
     }
 
@@ -164,6 +173,52 @@ fn stored(repo: &str, start: &Path) -> String {
     clean.to_string_lossy().into_owned()
 }
 
+/// What already holds the path `mount add` was given.
+#[derive(Debug, Clone, Copy)]
+pub enum Taken {
+    /// A file holding this blob, such as a record.
+    File(ObjectId),
+    /// A mount or link record.
+    Mount,
+    /// A directory, or another entry with the path's name.
+    Name,
+}
+
+impl Taken {
+    /// What holds `path`, when `error`, put's refusal of a new file there,
+    /// says something does.
+    fn of(path: &LogicalPath, error: &PutError) -> Option<Self> {
+        match error {
+            PutError::Stale {
+                found: Some(blob), ..
+            } => Some(Self::File(*blob)),
+            PutError::Write(WriteError::ThroughMount { mount, .. }) if mount == path => {
+                Some(Self::Mount)
+            }
+            _ if error.code() == Code::PathShadowed => Some(Self::Name),
+            _ => None,
+        }
+    }
+
+    /// The commands that move what holds `path` aside. Board has no command
+    /// that moves an entry, so they copy and remove it.
+    fn hint(self, path: &LogicalPath) -> String {
+        let moves = match self {
+            Self::File(blob) => format!(
+                "move the record at {path} aside and run mount add again: copy it with `board get {path} | board put <new path> --expect none`, then remove it with `board rm {path} --expect {blob}`"
+            ),
+            Self::Mount => format!(
+                "move the mount at {path} aside and run mount add again: `board rm {path}` removes it and leaves its clone, then `board mount add <new path> <its clone>` mounts the clone there"
+            ),
+            Self::Name => format!(
+                "clear {path} and run mount add again: `board ls {}` shows what already has its name, and `board rm -r {path}` removes a directory, since no command moves one",
+                path.parent()
+            ),
+        };
+        format!("mount add writes only where nothing is; mount at another path, or {moves}")
+    }
+}
+
 /// A mount update that wrote nothing, or, for a put's `head_moved`, wrote
 /// but did not commit.
 #[derive(Debug, thiserror::Error)]
@@ -178,6 +233,13 @@ pub enum MountError {
         "{repo} has no branch with a commit checked out, so `mount add` cannot choose what to follow"
     )]
     Unfollowed { repo: String },
+    /// Put refused the record because something already holds `path`.
+    #[error("{source}")]
+    Taken {
+        path: LogicalPath,
+        taken: Taken,
+        source: Box<PutError>,
+    },
     #[error(transparent)]
     Pin(#[from] PinError),
     #[error(transparent)]
@@ -191,6 +253,7 @@ impl MountError {
             Self::Unfollowed { .. } => Code::CliUsage,
             Self::Pin(error) => error.code(),
             Self::Put(error) => error.code(),
+            Self::Taken { source, .. } => source.code(),
         }
     }
 
@@ -200,12 +263,14 @@ impl MountError {
             Self::Unfollowed { .. } => Fields::default(),
             Self::Pin(error) => error.fields(),
             Self::Put(error) => error.fields(),
+            Self::Taken { source, .. } => source.fields(),
         };
         let refusal = Refusal::new(self.code(), self, &fields);
         match self {
             Self::Unfollowed { .. } => refusal.with_hint(
                 "give the ref to follow with --follow, such as --follow main, or make the first commit in the repository",
             ),
+            Self::Taken { path, taken, .. } => refusal.with_hint(taken.hint(path)),
             _ => refusal,
         }
     }
