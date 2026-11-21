@@ -5,6 +5,7 @@
 
 use super::*;
 
+mod apply_standard;
 mod check;
 mod checkout;
 mod evaluate;
