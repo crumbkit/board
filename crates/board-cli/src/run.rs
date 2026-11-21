@@ -476,7 +476,7 @@ fn run_command(
         return render::refused(printer, *refusal);
     }
     if let Command::Completion(_) | Command::Skills(_) = cli.command {
-        return without_a_board(&cli, context, printer);
+        return unopened(&cli, context, printer, None);
     }
     let base = cli.personal.then(|| context.personal());
     let base = base.unwrap_or_else(|| Ok(context.start.clone()));
@@ -500,7 +500,7 @@ fn run_command(
     ran.trace.add("open", opening);
     let (mut board, prefix) = match opened {
         Ok(opened) => opened,
-        Err(refusal) => return render::refused(printer, *refusal),
+        Err(refusal) => return unopened(&cli, context, printer, Some(*refusal)),
     };
     board.build_in(context.built_in.0);
     if let Err(refusal) = ask(&mut board, context, &cli.command) {
@@ -530,14 +530,19 @@ fn run_command(
     output
 }
 
-/// Runs completion and skills, which need no board.
-fn without_a_board(cli: &Cli, context: &Context, printer: Printer) -> Output {
-    match &cli.command {
-        Command::Completion(command) => crate::completion::completion(command, printer),
-        Command::Skills(command) => {
+/// Runs completion and skills, which need no board, and `plugin list` and
+/// `find` once opening the board was `refused`, which any other command prints.
+fn unopened(cli: &Cli, context: &Context, printer: Printer, refused: Option<Refusal>) -> Output {
+    match (&cli.command, refused) {
+        (Command::Completion(command), _) => crate::completion::completion(command, printer),
+        (Command::Skills(command), _) => {
             crate::skills::skills(command, context, printer, cli.chooses_board())
         }
-        _ => unreachable!("only completion and skills run without a board"),
+        (Command::Plugin(command), Some(refused)) => {
+            crate::plugin::unopened(command, context, printer, refused)
+        }
+        (_, Some(refused)) => render::refused(printer, refused),
+        (_, None) => unreachable!("only completion and skills run without a board"),
     }
 }
 

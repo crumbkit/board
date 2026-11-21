@@ -896,3 +896,42 @@ fn a_built_in_plugins_name_outside_any_board_reports_that_no_board_is_there() {
         }
     }
 }
+
+#[test]
+fn a_built_in_plugins_help_outside_any_board_lists_its_capabilities_and_says_no_board_opens() {
+    let outside = tempfile::tempdir().unwrap();
+    let line =
+        "No board opens here; run this inside a board that enables tasks, or add --personal.";
+    for arguments in [
+        &["tasks", "--help"][..],
+        &["tasks", "-h"],
+        &["help", "tasks"],
+    ] {
+        let (output, _) = built_in(outside.path(), None, arguments);
+        assert_eq!(output.code, 0, "{arguments:?}: {}", text(&output.stderr));
+        let help = text(&output.stdout);
+        let capabilities: Vec<&str> = (help.lines())
+            .filter_map(|line| line.split_whitespace().next())
+            .collect();
+        assert!(capabilities.contains(&"add"), "{arguments:?}: {help}");
+        assert!(capabilities.contains(&"tree"), "{arguments:?}: {help}");
+        assert!(help.contains(line), "{arguments:?}: {help}");
+    }
+    let (output, _) = built_in(outside.path(), None, &["--json", "nosuch", "--help"]);
+    assert_eq!(output.code, 2, "{}", text(&output.stdout));
+    assert_eq!(json(&output)["code"], "board::cli::usage");
+    let (root, _) = built_in(outside.path(), None, &["--help"]);
+    assert!(
+        !text(&root.stdout).contains("Plugins:"),
+        "{}",
+        text(&root.stdout)
+    );
+}
+
+#[test]
+fn a_built_in_plugins_help_in_a_board_that_enables_it_does_not_say_no_board_opens() {
+    let board = planning(true);
+    let (output, _) = built_in(board.workdir(), None, &["plans", "--help"]);
+    assert_eq!(output.code, 0, "{}", text(&output.stderr));
+    assert!(!text(&output.stdout).contains("No board opens here"));
+}

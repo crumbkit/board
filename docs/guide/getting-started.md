@@ -28,8 +28,8 @@ your own board.
   personal board".
 - That warning is expected on a fresh home.
 - The next section makes the board and enables its plugins.
-- `board plugin list` fails with `board::config::not_found` until you make a
-  board.
+- `board plugin list` lists the plugins Board ships, with none enabled,
+  until you make a board.
 
 ## Make your board
 

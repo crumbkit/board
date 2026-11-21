@@ -971,3 +971,67 @@ fn input_the_capability_refuses_hints_how_to_see_its_schema_and_valid_input_runs
     assert_eq!(call(&board, &data, &schema, "").code, 0);
     assert_eq!(call(&board, &data, &["call", "tasks.due"], "{}").code, 0);
 }
+
+/// The note `plugin list` and `plugin find` print when no board opens.
+const UNOPENED: &str = "note: No board opens here, so no plugin is enabled; `board init` in a git repository makes one, and `board --personal plugin list` lists your personal board's plugins.\n";
+
+#[test]
+fn plugin_list_outside_any_board_lists_the_plugins_of_a_fresh_board_with_none_enabled() {
+    let outside = tempfile::tempdir().unwrap();
+    let fresh = Scenario::new();
+    let (made, _) = super::built_in::built_in(fresh.workdir(), None, &["init"]);
+    assert_eq!(made.code, 0, "{}", text(&made.stderr));
+    let rows = |directory: &Path| {
+        let arguments = ["--json", "plugin", "list", "--all"];
+        let (output, _) = super::built_in::built_in(directory, None, &arguments);
+        assert_eq!(output.code, 0, "{directory:?}: {}", text(&output.stdout));
+        json(&output)["data"].clone()
+    };
+    let listed = rows(outside.path());
+    assert_eq!(listed, rows(fresh.workdir()));
+    let names: Vec<String> = (board_plugins::BUILT_IN.0.iter())
+        .map(|plugin| plugin.manifest().name.to_string())
+        .collect();
+    let listed = listed.as_array().unwrap();
+    assert_eq!(listed.len(), names.len());
+    for row in listed {
+        assert_eq!(row["enabled"], false, "{row}");
+        assert!(names.iter().any(|name| *name == row["name"]), "{row}");
+    }
+    let (output, _) = super::built_in::built_in(outside.path(), None, &["plugin", "list"]);
+    assert_eq!(output.code, 0);
+    assert_eq!(text(&output.stderr), UNOPENED);
+    let (output, _) =
+        super::built_in::built_in(outside.path(), None, &["--json", "plugin", "list"]);
+    assert_eq!(text(&output.stderr), "");
+}
+
+#[test]
+fn plugin_list_in_a_board_whose_config_is_invalid_still_refuses_as_the_open_does() {
+    let board = Scenario::new();
+    board.write(".board/board.json", Item::File("{not json"));
+    let (opened, _) = super::built_in::built_in(board.workdir(), None, &["--json", "ls"]);
+    let (listed, _) =
+        super::built_in::built_in(board.workdir(), None, &["--json", "plugin", "list"]);
+    assert_eq!(listed.code, 1, "{}", text(&listed.stdout));
+    assert_ne!(json(&listed)["code"], "board::config::not_found");
+    assert_eq!(json(&listed)["code"], json(&opened)["code"]);
+}
+
+#[test]
+fn plugin_find_outside_any_board_finds_a_built_in_capability_with_its_plugin_disabled() {
+    let outside = tempfile::tempdir().unwrap();
+    let arguments = ["plugin", "find", "--capability", "open"];
+    let (output, _) = super::built_in::built_in(outside.path(), None, &arguments);
+    assert_eq!(output.code, 0, "{}", text(&output.stderr));
+    let line = (text(&output.stdout).lines())
+        .find(|line| line.starts_with("plans.open "))
+        .map(ToOwned::to_owned);
+    assert!(
+        line.as_deref()
+            .is_some_and(|line| line.starts_with("plans.open disabled ")),
+        "{}",
+        text(&output.stdout)
+    );
+    assert_eq!(text(&output.stderr), UNOPENED);
+}

@@ -45,19 +45,38 @@ pub(crate) type Resolved = Result<Vec<OsString>, Box<Refusal>>;
 /// command for each enabled plugin, whose own help lists its capabilities,
 /// and a line naming them, and the words with a plugin's word and its
 /// capability read as `board call`, whose help lists the flags. Help on a
-/// built-in command reads no manifest.
+/// built-in command reads no manifest. Where no board opens, help on a
+/// built-in plugin's word comes from the manifest Board ships, with a line
+/// saying that no board opens.
 pub(crate) fn before(arguments: &mut Vec<OsString>, context: &Context, root: Command) -> Command {
     let helps = |word: &OsString| ["-h", "--help", HELP].map(OsString::from).contains(word);
     if arguments.len() > 1 && !arguments.iter().skip(1).any(helps) {
         return root;
     }
     let (external, manifests) = read(arguments, context);
+    let unopened = manifests.is_none();
+    let manifests = match (&external, manifests) {
+        (_, Some(manifests)) => manifests,
+        (Some(external), None) => shipped(external, context),
+        (None, None) => Vec::new(),
+    };
     if let Some(external) = &external
         && let Some(Ok(called)) = resolve(arguments, external, &manifests)
     {
         *arguments = called;
     }
-    let commands = help(&manifests);
+    let mut commands = help(&manifests);
+    if unopened {
+        commands = (commands.into_iter())
+            .map(|command| {
+                let line = format!(
+                    "No board opens here; run this inside a board that enables {}, or add --personal.",
+                    command.get_name()
+                );
+                command.after_help(line)
+            })
+            .collect();
+    }
     let Some(line) = listed(&commands) else {
         return root;
     };
@@ -105,8 +124,31 @@ pub(crate) fn after(
         return None;
     }
     let (external, manifests) = read(arguments, context);
-    let external = external?;
+    let (external, manifests) = (external?, manifests.unwrap_or_default());
     resolve(arguments, &external, &manifests).or_else(|| built_in(arguments, &external, context))
+}
+
+/// The manifest of the built-in plugin whose name or alias is
+/// `external`'s word, or the word after `help`; none when no built-in
+/// plugin answers to it.
+fn shipped(external: &External, context: &Context) -> Vec<Manifest> {
+    let word = if external.alias == HELP {
+        external.rest.first().and_then(|word| word.to_str())
+    } else {
+        Some(external.alias.as_str())
+    };
+    let Some(word) = word else {
+        return Vec::new();
+    };
+    let manifests: Vec<Manifest> = (context.built_in.0.iter())
+        .map(|plugin| plugin.manifest())
+        .collect();
+    let names: Vec<_> = (named(&manifests, word).into_iter())
+        .map(|manifest| manifest.name.clone())
+        .collect();
+    (manifests.into_iter())
+        .filter(|manifest| names.contains(&manifest.name))
+        .collect()
 }
 
 /// The `board call` line of a built-in plugin's name and capability when no
@@ -135,12 +177,12 @@ struct External {
 
 /// The first word of `arguments` that is no built-in command, read by clap
 /// with every other root flag, and the manifest of each plugin that the
-/// board those flags lead to enables. A first word that is a built-in
-/// command reads no manifest.
-fn read(arguments: &[OsString], context: &Context) -> (Option<External>, Vec<Manifest>) {
+/// board those flags lead to enables, or `None` when no board opens there.
+/// A first word that is a built-in command reads no manifest.
+fn read(arguments: &[OsString], context: &Context) -> (Option<External>, Option<Vec<Manifest>>) {
     let commands = commands();
     let Some(matches) = loose(arguments) else {
-        return (None, Vec::new());
+        return (None, Some(Vec::new()));
     };
     let directories: Vec<OsString> = (matches
         .try_get_many::<OsString>("directories")
@@ -151,7 +193,7 @@ fn read(arguments: &[OsString], context: &Context) -> (Option<External>, Vec<Man
     let personal = matches.get_flag("personal");
     let first = matches.subcommand();
     if first.is_some_and(|(word, _)| word != HELP && commands.iter().any(|c| c == word)) {
-        return (None, Vec::new());
+        return (None, Some(Vec::new()));
     }
     let external = first.and_then(|(alias, words)| {
         let (at, rest) = placed(arguments, words)?;
@@ -258,21 +300,18 @@ fn resolve(
 }
 
 /// The manifest of each plugin that the board Board runs as from
-/// `directories` and `personal` enables, or none when no board can be
+/// `directories` and `personal` enables, or `None` when no board can be
 /// opened there.
-fn enabled(context: &Context, directories: &[OsString], personal: bool) -> Vec<Manifest> {
+fn enabled(context: &Context, directories: &[OsString], personal: bool) -> Option<Vec<Manifest>> {
     let base = if personal {
         context.personal().ok()
     } else {
         Some(context.start.clone())
     };
     let start = base.and_then(|base| entered(&base, directories).ok());
-    let Some((mut board, _)) = start.and_then(|start| context.open(&start, MountsAt::Pins).ok())
-    else {
-        return Vec::new();
-    };
+    let (mut board, _) = start.and_then(|start| context.open(&start, MountsAt::Pins).ok())?;
     board.build_in(context.built_in.0);
-    (board.aliases(context.plugins.as_deref())).unwrap_or_default()
+    Some((board.aliases(context.plugins.as_deref())).unwrap_or_default())
 }
 
 fn manifest_alias(manifest: &Manifest) -> Option<&str> {
