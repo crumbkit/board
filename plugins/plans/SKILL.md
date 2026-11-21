@@ -94,4 +94,35 @@ in. `<project>` names what the record concerns, such as the repository
 
        board -C <board> plans withdraw --path /projects/<project>/questions/<id> --reason '<why>'
 
+## A project's plan
+
+A change's plan is a `changes/plan/v1` that `changes.plan` writes. A
+project with no mounted repository has no change, so it has no such record.
+
+- A project with no mounted repository keeps its plan in the Markdown body
+  of its project task, a `tasks/task/v2` with `kind: project`.
+- The body holds a `## Steps` list, then a `## Decisions` and a
+  `## Questions` list, each item a board path.
+- Start the project with its first plan as the body:
+
+      board -C <board> tasks add --title '<project title>' --kind project --text "$(cat plan.md)"
+
+  It prints the project task's path.
+- Write each decision and ask each question before the body names it. A
+  decision names the project task in `refs`. A question names it in
+  `blocks`.
+- `board -C <board> refs <project task>` lists the decisions and questions
+  that name it.
+- To revise the plan, read the body, edit the file and write it back:
+
+      board -C <board> get <project task> > plan.md
+      board -C <board> put <project task> --expect <blob> < plan.md
+
+  `board -C <board> --json get <project task>` prints the `blob`. On
+  `board::put::stale`, read the body again and redo the edit. Git keeps
+  every earlier plan.
+- A project task in a mounted notes repository refuses this `put` with
+  `board::put::through_mount`. Edit it as the tasks skill's Edit section
+  says.
+
 The plugin's README.md gives every field of the three record types.
