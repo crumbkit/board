@@ -1,5 +1,7 @@
 //! The shell blocks of docs/guide/getting-started.md run as written, in
-//! order, against the `board` this commit builds, in a fresh home.
+//! order, against the `board` this commit builds, in a fresh home. The tests
+//! run every `sh` block under "Make your board", "Write a first record" and
+//! "Plan a project", and refuse any other fence tag under those sections.
 #![cfg(test)]
 #![expect(
     clippy::disallowed_methods,
@@ -18,7 +20,8 @@ fn page() -> String {
     std::fs::read_to_string(root.join("docs/guide/getting-started.md")).unwrap()
 }
 
-/// Every fenced block tagged `sh` under the `## <section>` heading, in order.
+/// Every fenced block under the `## <section>` heading, in order. Each must
+/// be tagged `sh`, so that no block in a tested section goes untested.
 fn blocks(page: &str, section: &str) -> Vec<String> {
     let heading = format!("## {section}");
     let mut lines = page.lines().skip_while(|line| *line != heading).skip(1);
@@ -27,7 +30,8 @@ fn blocks(page: &str, section: &str) -> Vec<String> {
         if line.starts_with("## ") {
             break;
         }
-        if line == "```sh" {
+        if let Some(tag) = line.strip_prefix("```") {
+            assert_eq!(tag, "sh", "a block under {heading} is not tagged sh");
             let body: Vec<&str> = lines.by_ref().take_while(|line| *line != "```").collect();
             found.push(body.join("\n"));
         }
@@ -139,8 +143,26 @@ fn the_pages_blocks_make_a_board_with_six_plugins_a_project_a_task_and_a_questio
         &["plans", "open", "--path", "/projects/my-first-project"],
     );
     let questions = open["data"]["output"]["questions"].as_array().unwrap();
-    assert_eq!(questions.len(), 1, "{open}");
-    assert_eq!(questions[0]["person"], "ana@example.com");
+    assert!(
+        questions.is_empty(),
+        "the answered question is still open: {open}"
+    );
+    let answers = board(home.path(), &["ls", "/projects/my-first-project/answers"]);
+    assert!(
+        answers
+            .to_string()
+            .contains("/projects/my-first-project/answers/"),
+        "{answers}"
+    );
+    let asked = board(home.path(), &["ls", "/projects/my-first-project/questions"]);
+    let listed = asked.to_string();
+    let start = listed
+        .find("/projects/my-first-project/questions/")
+        .unwrap();
+    let path = listed[start..].split('"').next().unwrap();
+    let got = board(home.path(), &["get", path]);
+    let question: Value = serde_json::from_str(got["data"][0]["text"].as_str().unwrap()).unwrap();
+    assert_eq!(question["by"]["person"], "ana@example.com", "{question}");
     let decisions = board(home.path(), &["ls", "/projects/my-first-project/decisions"]);
     assert!(
         decisions
