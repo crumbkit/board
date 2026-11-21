@@ -855,3 +855,20 @@ fn mounting_an_empty_clone_without_a_ref_finds_nothing_and_after_its_first_commi
     let mount = mounting().unwrap().unwrap();
     assert_eq!((mount.follow.as_str(), mount.commit), ("main", first));
 }
+
+#[test]
+fn pointer_at_gives_a_link_unfollowed_with_its_own_blob_and_nothing_for_a_record() {
+    let outer = Scenario::new();
+    let link = r#"{"$type": "board/mount/v1", "path": "/x"}"#;
+    let record = r#"{"$type": "lr/project/v1"}"#;
+    outer.write("ln.json", Item::File(link));
+    outer.write("x.json", Item::File(record));
+    let repositories = outer.repositories();
+    let at = |path: &str| repositories.pointer_at(&self::path(path));
+    let (target, contents, pointer) = at("/ln").unwrap().unwrap();
+    assert_eq!(target.path, "ln.json");
+    assert_eq!(contents.blob, outer.blob(link));
+    assert_eq!(pointer, board_model::Pointer::Link(self::path("/x")));
+    assert!(at("/x").unwrap().is_none());
+    assert!(at("/nowhere").is_err());
+}

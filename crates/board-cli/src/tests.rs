@@ -1963,12 +1963,41 @@ fn mount_add_json_is_puts_report_and_a_committing_board_names_its_commit() {
     );
 }
 
-/// Asserts that `refused` failed with `code` and the help line `hint`.
-fn refused_with(refused: &Output, code: &str, hint: &str) {
+/// Asserts that `refused` failed with `code`, the error line `error` and
+/// the help line `hint`.
+fn refused_with(refused: &Output, code: &str, error: &str, hint: &str) {
     let stderr = text(&refused.stderr);
     assert_eq!(refused.code, 1, "{stderr}");
+    assert!(stderr.starts_with(&format!("error: {error}\n")), "{stderr}");
     assert!(stderr.contains(&format!("\n  code:  {code}\n")), "{stderr}");
     assert!(stderr.contains(&format!("\n  help:  {hint}\n")), "{stderr}");
+}
+
+/// Runs in `directory` each command between backticks in `refused`'s help
+/// line, with `/old` for `<new path>`, and asserts that each one succeeds.
+/// An `echo '<json>' | board ...` command sends the JSON on stdin.
+fn run_hinted(directory: &Path, refused: &Output) {
+    let stderr = text(&refused.stderr);
+    let hint = stderr.split("\n  help:  ").nth(1).unwrap();
+    let hint = hint.lines().next().unwrap();
+    for command in hint.split('`').skip(1).step_by(2) {
+        let command = command.replace("<new path>", "/old");
+        let (stdin, command) = match command.strip_prefix("echo '") {
+            Some(rest) => {
+                let (json, command) = rest.split_once("' | ").unwrap();
+                (json.as_bytes().to_vec(), command.to_owned())
+            }
+            None => (Vec::new(), command),
+        };
+        let arguments: Vec<&str> = command
+            .strip_prefix("board ")
+            .unwrap()
+            .split_whitespace()
+            .map(|argument| argument.trim_matches('\''))
+            .collect();
+        let ran = board_with(directory, None, &arguments, &stdin);
+        assert_eq!(ran.code, 0, "{command}: {}", text(&ran.stderr));
+    }
 }
 
 #[test]
@@ -1976,10 +2005,9 @@ fn mount_add_where_a_record_is_refuses_writes_nothing_and_names_the_commands_tha
     let library = Scenario::new();
     library.commit(&[("a.md", "one")]);
     let scenario = uncommitting();
-    scenario.write("lib.json", Item::File(r#"{"$type": "lr/project/v1"}"#));
-    let blob = board_in(scenario.workdir(), &["--json", "get", "/lib"]);
-    let blob = serde_json::from_slice::<Value>(&blob.stdout).unwrap()["data"][0]["blob"].clone();
-    let blob = blob.as_str().unwrap();
+    let record = r#"{"$type": "lr/project/v1"}"#;
+    scenario.write("lib.json", Item::File(record));
+    let blob = scenario.blob(record);
     let refused = board_in(
         scenario.workdir(),
         &["mount", "add", "/lib", &library.path()],
@@ -1987,8 +2015,9 @@ fn mount_add_where_a_record_is_refuses_writes_nothing_and_names_the_commands_tha
     refused_with(
         &refused,
         "board::put::stale",
+        "/lib already holds a record, and mount add writes only where nothing is",
         &format!(
-            "mount add writes only where nothing is; mount at another path, or move the record at /lib aside and run mount add again: copy it with `board get /lib | board put <new path> --expect none`, then remove it with `board rm /lib --expect {blob}`"
+            "mount at another path, or move the record aside and run mount add again: copy it with `board get /lib | board put <new path> --expect none`, then remove it with `board rm /lib --expect {blob}`"
         ),
     );
     assert_eq!(
@@ -2003,7 +2032,8 @@ fn mount_add_where_a_record_is_refuses_writes_nothing_and_names_the_commands_tha
 }
 
 #[test]
-fn mount_add_where_a_mount_is_refuses_writes_nothing_and_names_the_commands_that_move_it_aside() {
+fn mount_add_where_a_mount_is_refuses_writes_nothing_and_its_hint_remounts_the_same_clone_elsewhere()
+ {
     let library = Scenario::new();
     library.commit(&[("a.md", "one")]);
     let other = Scenario::new();
@@ -2015,11 +2045,18 @@ fn mount_add_where_a_mount_is_refuses_writes_nothing_and_names_the_commands_that
     );
     assert_eq!(added.code, 0, "{}", text(&added.stderr));
     let before = pointer_at(&scenario, "lib.json");
+    let blob = scenario.blob_of(&std::fs::read(scenario.workdir().join("lib.json")).unwrap());
     let refused = board_in(scenario.workdir(), &["mount", "add", "/lib", &other.path()]);
+    let repo = library.path();
     refused_with(
         &refused,
-        "board::put::through_mount",
-        "mount add writes only where nothing is; mount at another path, or move the mount at /lib aside and run mount add again: `board rm /lib` removes it and leaves its clone, then `board mount add <new path> <its clone>` mounts the clone there",
+        "board::put::stale",
+        &format!(
+            "/lib already holds a mount of {repo}, and mount add writes only where nothing is"
+        ),
+        &format!(
+            "mount at another path, or move the mount aside and run mount add again: `board rm /lib --expect {blob}` removes it and leaves its clone, then `board mount add <new path> {repo}` mounts the clone there"
+        ),
     );
     assert_eq!(pointer_at(&scenario, "lib.json"), before);
     // A path beneath a mount is not taken, so put's own refusal stands.
@@ -2034,13 +2071,92 @@ fn mount_add_where_a_mount_is_refuses_writes_nothing_and_names_the_commands_that
     );
     assert!(stderr.contains("`board mount update /lib`"), "{stderr}");
     assert!(!stderr.contains("mount add writes only"), "{stderr}");
-    let removed = board_in(scenario.workdir(), &["rm", "/lib"]);
-    assert_eq!(removed.code, 0, "{}", text(&removed.stderr));
+    run_hinted(scenario.workdir(), &refused);
+    assert_eq!(pointer_at(&scenario, "old.json")["repo"], json!(repo));
+    assert_eq!(pointer_at(&scenario, "old.json")["follow"], json!("main"));
     let admitted = board_in(scenario.workdir(), &["mount", "add", "/lib", &other.path()]);
     assert_eq!(admitted.code, 0, "{}", text(&admitted.stderr));
     assert_eq!(
         pointer_at(&scenario, "lib.json")["repo"],
         json!(other.path())
+    );
+}
+
+#[test]
+fn mount_add_where_a_mount_follows_a_ref_other_than_the_clones_branch_names_it_in_the_hint() {
+    let library = Scenario::new();
+    let old = library.commit(&[("a.md", "one")]);
+    library.commit(&[("a.md", "two")]);
+    library.write(".git/HEAD", Item::File(&format!("{old}\n")));
+    let scenario = uncommitting();
+    let added = board_in(
+        scenario.workdir(),
+        &["mount", "add", "/lib", &library.path(), "--follow", "main"],
+    );
+    assert_eq!(added.code, 0, "{}", text(&added.stderr));
+    let refused = board_in(
+        scenario.workdir(),
+        &["mount", "add", "/lib", &library.path(), "--follow", "main"],
+    );
+    let stderr = text(&refused.stderr);
+    let remount = format!(
+        "`board mount add <new path> {} --follow main`",
+        library.path()
+    );
+    assert!(stderr.contains(&remount), "{stderr}");
+    run_hinted(scenario.workdir(), &refused);
+    assert_eq!(pointer_at(&scenario, "old.json")["follow"], json!("main"));
+}
+
+#[test]
+fn mount_add_where_a_link_is_names_the_links_own_blob_whatever_it_leads_to() {
+    let library = Scenario::new();
+    library.commit(&[("a.md", "one")]);
+    let scenario = uncommitting();
+    scenario.write("x.json", Item::File(r#"{"$type": "lr/project/v1"}"#));
+    scenario.write("dir/a.json", Item::File(r#"{"$type": "lr/project/v1"}"#));
+    // A link to a record, a link to nothing and a link to a directory.
+    for to in ["/x", "/gone", "/dir"] {
+        let link = format!(r#"{{"$type": "board/mount/v1", "path": "{to}"}}"#);
+        scenario.write("ln.json", Item::File(&link));
+        let blob = scenario.blob(&link);
+        let refused = board_in(
+            scenario.workdir(),
+            &["mount", "add", "/ln", &library.path()],
+        );
+        refused_with(
+            &refused,
+            "board::put::stale",
+            &format!(
+                "/ln already holds a link to {to}, and mount add writes only where nothing is"
+            ),
+            &format!(
+                r#"mount at another path, or move the link aside and run mount add again: `board rm /ln --expect {blob}` removes the link and leaves {to}, then `echo '{{"$type": "board/mount/v1", "path": "{to}"}}' | board put <new path> --expect none` links {to} there"#
+            ),
+        );
+        assert_eq!(
+            std::fs::read_to_string(scenario.workdir().join("ln.json")).unwrap(),
+            link
+        );
+        run_hinted(scenario.workdir(), &refused);
+        assert_eq!(pointer_at(&scenario, "old.json")["path"], json!(to));
+        let admitted = board_in(
+            scenario.workdir(),
+            &["mount", "add", "/ln", &library.path()],
+        );
+        assert_eq!(admitted.code, 0, "{to}: {}", text(&admitted.stderr));
+        for path in ["/ln", "/old"] {
+            let removed = board_in(scenario.workdir(), &["rm", path]);
+            assert_eq!(removed.code, 0, "{path}: {}", text(&removed.stderr));
+        }
+    }
+    assert_eq!(
+        pointer_at(&scenario, "x.json"),
+        json!({"$type": "lr/project/v1"})
+    );
+    assert_eq!(
+        pointer_at(&scenario, "dir/a.json"),
+        json!({"$type": "lr/project/v1"})
     );
 }
 
@@ -2057,7 +2173,8 @@ fn mount_add_where_a_directory_is_refuses_writes_nothing_and_names_what_clears_i
     refused_with(
         &refused,
         "board::path::shadowed",
-        "mount add writes only where nothing is; mount at another path, or clear /lib and run mount add again: `board ls /` shows what already has its name, and `board rm -r /lib` removes a directory, since no command moves one",
+        "/lib would share its name with another entry beside it, and mount add writes only where nothing is",
+        "mount at another path, or clear /lib and run mount add again: `board ls /` shows what already has its name, and `board rm -r /lib` removes a directory, since no command moves one",
     );
     assert!(!scenario.workdir().join("lib.json").exists());
     assert_eq!(
@@ -2069,6 +2186,32 @@ fn mount_add_where_a_directory_is_refuses_writes_nothing_and_names_what_clears_i
     let admitted = board_in(
         scenario.workdir(),
         &["mount", "add", "/lib", &library.path()],
+    );
+    assert_eq!(admitted.code, 0, "{}", text(&admitted.stderr));
+}
+
+#[test]
+fn mount_add_beneath_a_shadowed_directory_keeps_puts_hint_and_beside_it_writes() {
+    let library = Scenario::new();
+    library.commit(&[("a.md", "one")]);
+    let scenario = uncommitting();
+    // A file `a` beside `a.json` leaves /a naming two entries.
+    scenario.write("a", Item::File("x"));
+    scenario.write("a.json", Item::File(r#"{"$type": "lr/project/v1"}"#));
+    let refused = board_in(
+        scenario.workdir(),
+        &["mount", "add", "/a/lib", &library.path()],
+    );
+    let stderr = text(&refused.stderr);
+    assert_eq!(refused.code, 1, "{stderr}");
+    assert!(
+        stderr.contains("\n  code:  board::path::shadowed\n"),
+        "{stderr}"
+    );
+    assert!(!stderr.contains("mount add writes only"), "{stderr}");
+    let admitted = board_in(
+        scenario.workdir(),
+        &["mount", "add", "/b/lib", &library.path()],
     );
     assert_eq!(admitted.code, 0, "{}", text(&admitted.stderr));
 }

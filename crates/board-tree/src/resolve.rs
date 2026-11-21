@@ -7,11 +7,13 @@ use std::path::Path;
 use board_model::{Board, Code, Location, LogicalPath, Mount, Object, ObjectId, Pointer, Source};
 
 use crate::address::{Named, Pointers};
-use crate::git::{CommitTree, Contents, GitError, Repository, Sizes};
+use crate::git::{CommitTree, Contents, GitError, Repository, Sizes, latest};
+use crate::mounts::PinError;
 use crate::repositories::Repositories;
 use crate::symlink::{Chains, End, Node, ROOT, Refused};
 use crate::tree::{Kind, RawEntry, Tree};
 use crate::worktree::{Known, Listings, WorkingTree};
+use crate::write::Target;
 
 mod error;
 
@@ -310,6 +312,38 @@ impl Repositories {
         mount.follow = follow;
         mount.commit = at_ref(&mounted, &mount.follow)?;
         Ok(Some(mount))
+    }
+
+    /// The pointer file at `path` in the working tree, which is not
+    /// followed: where it is, its blob and bytes, and what it points at.
+    /// `None` when `path` names a file that is not a pointer.
+    pub fn pointer_at(
+        &self,
+        path: &LogicalPath,
+    ) -> Result<Option<(Target, Contents, Pointer)>, PinError> {
+        let refused = |code| PinError::Mount {
+            path: path.clone(),
+            code,
+        };
+        let target = self.pointer_target(path)?;
+        let Object::Blob(resolved) = target.location.object else {
+            return Ok(None);
+        };
+        if !board_model::can_hold_pointer(&target.path) {
+            return Ok(None);
+        }
+        let root = self.root();
+        let read = root
+            .reader()
+            .read(&Source::WorkingTree, &target.path, resolved);
+        let Some(contents) = latest(read).map_err(|error| refused(error.code()))? else {
+            return Ok(None);
+        };
+        match board_model::pointer(&contents.bytes) {
+            Ok(Some(pointer)) => Ok(Some((target, contents, pointer))),
+            Ok(None) => Ok(None),
+            Err(error) => Err(refused(error.code())),
+        }
     }
 
     /// Continues with `remaining` at the root of the tree `mount`, a pointer
