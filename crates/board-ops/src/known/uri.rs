@@ -41,20 +41,24 @@ fn after<'a>(rest: &'a str, remote: &str) -> Option<&'a str> {
 }
 
 /// A board whose origin begins a URI: the origin's length, the board's
-/// root, and the rest of the URI.
-type Match<'a> = (usize, PathBuf, &'a str);
+/// root, its repository's path, and the rest of the URI.
+type Match<'a> = (usize, PathBuf, PathBuf, &'a str);
 
-/// What one URI's lookup has read: what follows `board://`, the boards
-/// read, by repository path, and those passed over, the origins read, the
-/// boards whose origin begins the URI, and each board opened, to read its
-/// mounts.
+/// What one URI's lookup has read.
 struct Lookup<'a> {
+    /// What follows `board://` in the URI.
     rest: &'a str,
+    /// What a mount's `~/` means.
     home: Option<&'a Path>,
+    /// The repository path of each board read.
     seen: HashSet<PathBuf>,
+    /// The boards that could not be opened, or whose mounts could not be read.
     skipped: Vec<String>,
+    /// The origin of each board read.
     origins: Vec<String>,
+    /// The boards whose origin begins the URI.
     best: Vec<Match<'a>>,
+    /// Each board read, to read its mounts.
     opened: Vec<(PathBuf, Board)>,
 }
 
@@ -63,30 +67,32 @@ impl Lookup<'_> {
     /// boards that could not be opened when it is no board and `named`. A
     /// board that is not `named` is known by its repository's root, since
     /// `root` may be a directory inside it. `Err` when the URI names this
-    /// board and no path.
-    fn read(&mut self, root: PathBuf, named: bool) -> Result<(), ()> {
+    /// board and no path; otherwise the board's repository path, if it
+    /// opened.
+    fn read(&mut self, root: PathBuf, named: bool) -> Result<Option<PathBuf>, ()> {
         let Ok(board) = Board::open(&root, self.home.map(Path::to_path_buf)) else {
             if named {
                 self.skipped.push(root.display().to_string());
             }
-            return Ok(());
+            return Ok(None);
         };
         let repository = board.repository().path().to_path_buf();
         if !self.seen.insert(repository.clone()) {
-            return Ok(());
+            return Ok(Some(repository));
         }
-        let root = if named { root } else { repository };
+        let root = if named { root } else { repository.clone() };
         if let Some(remote) = board.repository().remote() {
             if after(&format!("{}/", self.rest), &remote) == Some("/") {
                 return Err(());
             }
             if let Some(tail) = after(self.rest, &remote) {
-                self.best.push((remote.len(), root.clone(), tail));
+                let found = (remote.len(), root.clone(), repository.clone(), tail);
+                self.best.push(found);
             }
             self.origins.push(remote);
         }
         self.opened.push((root, board));
-        Ok(())
+        Ok(Some(repository))
     }
 
     /// The repositories the boards opened so far mount, naming each board
@@ -96,7 +102,9 @@ impl Lookup<'_> {
         for (root, board) in &self.opened {
             match board.mounted_repositories(cache) {
                 Ok(repositories) => mounted.extend(repositories),
-                Err(_) => (self.skipped).push(format!("the mounts of {}", root.display())),
+                Err(_) => self
+                    .skipped
+                    .push(format!("the mounts of {}", root.display())),
             }
         }
         mounted
@@ -119,7 +127,8 @@ impl KnownBoards {
     /// `/`, and the record's path, the rest of the URI. The boards listed
     /// under `boards` are read first. When none has the URI's remote, the
     /// personal board, the board holding `start` and each board that one of
-    /// these or a listed board mounts are read, their index in `cache`.
+    /// these or a listed board mounts are read, their index in `cache`, and
+    /// the board holding `start` wins over the others with that origin.
     /// `home` is what a mount's `~/` means.
     pub fn by_uri_from(
         &self,
@@ -152,14 +161,16 @@ impl KnownBoards {
         for root in self.known.boards.iter().map(|root| against(file, root)) {
             lookup.read(root, true).map_err(no_path)?;
         }
-        if lookup.best.is_empty() {
+        let second = lookup.best.is_empty();
+        let mut holding = None;
+        if second {
             if let Some(personal) = &self.known.personal {
                 lookup
                     .read(against(file, personal), true)
                     .map_err(no_path)?;
             }
             if let Some(start) = start {
-                lookup.read(start.to_path_buf(), false).map_err(no_path)?;
+                holding = lookup.read(start.to_path_buf(), false).map_err(no_path)?;
             }
             for root in lookup.mounted(cache) {
                 lookup.read(root, false).map_err(no_path)?;
@@ -178,50 +189,57 @@ impl KnownBoards {
                 skipped.join(", ")
             ),
         };
-        let longest = best.iter().map(|(length, _, _)| *length).max();
-        best.retain(|(length, _, _)| Some(*length) == longest);
+        let longest = best.iter().map(|(length, ..)| *length).max();
+        best.retain(|(length, ..)| Some(*length) == longest);
+        if best
+            .iter()
+            .any(|(.., repository, _)| Some(repository) == holding.as_ref())
+        {
+            best.retain(|(.., repository, _)| Some(repository) == holding.as_ref());
+        }
         match best.as_slice() {
             [] => Err(Box::new(self.not_found(uri, rest, &origins, &passed))),
-            [(_, root, tail)] => {
+            [(_, root, _, tail)] => {
                 let path = (LogicalPath::root().join(tail))
                     .map_err(|error| invalid(&format!("{error}")))?;
                 Ok((root.clone(), path))
             }
-            [(_, _, tail), ..] => {
+            [(.., tail), ..] => {
                 let roots: Vec<String> = (best.iter())
-                    .map(|(_, root, _)| root.display().to_string())
+                    .map(|(_, root, ..)| root.display().to_string())
                     .collect();
                 let message = format!(
                     "{uri} names a remote that more than one board has as its origin: {}{passed}",
                     roots.join(", ")
                 );
-                let hint = format!(
-                    "leave one clone of that remote among the boards in `{}`, or choose one with `board -C <dir> get {tail}`",
-                    shown(file),
-                );
+                let hint = if second {
+                    format!(
+                        "run the command inside the clone you mean, or choose one with `board -C <dir> get {tail}`"
+                    )
+                } else {
+                    format!(
+                        "leave one clone of that remote among the boards in `{}`, or choose one with `board -C <dir> get {tail}`",
+                        shown(file),
+                    )
+                };
                 let refusal = Refusal::new(Code::UriAmbiguous, message, &Fields::default());
                 Err(Box::new(refusal.with_hint(hint)))
             }
         }
     }
 
-    /// `board::uri::not_found` for `uri`, naming the origins of the boards
-    /// read, those `passed` over, how to read a clone the person has, with
-    /// the record's path when the remote is a GitHub `owner/name`, and the
-    /// remote to clone: that `owner/name`, or else the part of the URI
-    /// before the record's path.
+    /// `board::uri::not_found` for `uri`. The message names the origins of
+    /// the boards read and those `passed` over. The hint says how to read a
+    /// clone the person has, with the record's path when the remote is a
+    /// GitHub `owner/name`, and which remote to clone: that `owner/name`,
+    /// or else the part of the URI before the record's path.
     fn not_found(&self, uri: &str, rest: &str, origins: &[String], passed: &str) -> Refusal {
         let file = shown(self.file.as_deref());
         let read = match origins {
-            [] => format!(
-                "the boards read, those in `{file}`, the personal board, the board holding the directory the run started in and the boards they mount, have no origin"
-            ),
-            _ => format!(
-                "the boards read, those in `{file}`, the personal board, the board holding the directory the run started in and the boards they mount, have the origins {}",
-                origins.join(", ")
-            ),
+            [] => "no board read has an origin".to_owned(),
+            _ => format!("the boards read have the origins {}", origins.join(", ")),
         };
-        let message = format!("no board has the remote {uri} names; {read}{passed}");
+        let message = format!("no board read has the remote {uri} names; {read}{passed}");
         let parts: Vec<&str> = rest.splitn(3, '/').collect();
         let owner_name = parts[..2].join("/");
         let (remote, read) = match (github_remote(&owner_name), parts.get(2)) {

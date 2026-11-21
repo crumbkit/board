@@ -155,3 +155,52 @@ fn a_mount_that_is_not_a_board_and_a_missing_personal_board_are_passed_over() {
         lost.message
     );
 }
+
+#[test]
+fn the_board_holding_the_start_wins_over_another_clone_and_without_it_two_clones_are_ambiguous() {
+    let one = originated("https://github.com/acme/team-board.git");
+    let two = originated("git@github.com:acme/team-board.git");
+    let personal = mounting(&[&one, &two]);
+    let (named, xdg) = known(&json!({"personal": personal.path()}));
+    let (root, _) = by_uri(&named, URI, Some(two.workdir())).unwrap();
+    assert_eq!(real(&root), real(two.workdir()));
+    let outside = Scenario::new();
+    let refusal = *by_uri(&named, URI, Some(outside.workdir())).unwrap_err();
+    assert_eq!(refusal.code.as_str(), "board::uri::ambiguous");
+    let hint = refusal.hint.unwrap();
+    assert!(hint.contains("`board -C <dir> get /tasks/a`"), "{hint}");
+    assert!(hint.contains("inside the clone"), "{hint}");
+    let file = xdg.workdir().join("board/config.json");
+    assert!(!hint.contains(&file.display().to_string()), "{hint}");
+}
+
+#[test]
+fn a_mount_of_a_mounted_board_is_not_read_and_the_same_board_mounted_directly_is() {
+    let team = originated("git@github.com:acme/team-board.git");
+    let middle = mounting(&[&team]);
+    let (deep, _xdg) = known(&json!({"personal": mounting(&[&middle]).path()}));
+    let lost = *by_uri(&deep, URI, None).unwrap_err();
+    assert_eq!(lost.code.as_str(), "board::uri::not_found");
+    let (direct, _xdg) = known(&json!({"personal": middle.path()}));
+    let (root, _) = by_uri(&direct, URI, None).unwrap();
+    assert_eq!(real(&root), real(team.workdir()));
+}
+
+#[test]
+fn a_board_whose_mounts_cannot_be_read_is_named_and_one_whose_mounts_can_be_is_not() {
+    let team = originated("git@github.com:acme/team-board.git");
+    let personal = mounting(&[&team]);
+    let other = "board://acme/other-board/tasks/a";
+    let (named, _xdg) = known(&json!({"personal": personal.path()}));
+    let lost = *by_uri(&named, other, None).unwrap_err();
+    assert!(!lost.message.contains("the mounts of"), "{}", lost.message);
+    personal.write(".git/HEAD", Item::File("ref: refs/heads/main\n"));
+    personal.write(
+        ".git/refs/heads/main",
+        Item::File("1111111111111111111111111111111111111111\n"),
+    );
+    let lost = *by_uri(&named, other, None).unwrap_err();
+    assert_eq!(lost.code.as_str(), "board::uri::not_found");
+    let mounts = format!("the mounts of {}", personal.path());
+    assert!(lost.message.contains(&mounts), "{}", lost.message);
+}

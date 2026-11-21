@@ -38,11 +38,12 @@ second round of boards by the same longest-prefix rule:
 - The second round reads mounts one level deep, so it does not read a mounted board's own mounts.
 - A board reached twice counts once, by its repository's path.
 - A board listed under `boards` with the URI's remote wins over every board of the second round.
+- In the second round, the board that holds the start directory wins over other boards with the same origin.
 
 | Code | When |
 | --- | --- |
 | `board::uri::not_found` | no board of either round has the URI's remote; the hint names `board -C <dir> get` for a clone the person has, and the remote to clone and list in the known boards file |
-| `board::uri::ambiguous` | two boards of one round have that origin; the message names both |
+| `board::uri::ambiguous` | two boards of one round have that origin; the message names both, and for the second round the hint says to run inside the clone meant or to use `board -C <dir> get` |
 | `board::uri::invalid` | the text after `board://` is not a remote and a path, or the path is malformed |
 | `board::uri::read_only` | `put` or `rm` is given a URI; write in the clone with `-C` |
 | `board::cli::usage` | the URIs of one run name two boards, or a URI is given beside a plain path, `-C` or `--personal`, which would choose the board too |

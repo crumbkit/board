@@ -330,6 +330,22 @@ impl Place {
 }
 
 impl Repositories {
+    /// The directory of each repository that a mount among `entries`, the
+    /// working tree's, names: its `repo` read against the root's directory,
+    /// or against the home directory for `~/`. A `~/` path with no home is
+    /// left out. `is_pointer` says, from a cache,
+    /// which physical paths hold a pointer that parses.
+    pub fn mounted_repositories(
+        &self,
+        entries: &[Entry],
+        is_pointer: &dyn Fn(&str) -> bool,
+    ) -> Vec<PathBuf> {
+        let root = self.root();
+        let mounts = pointers(root, &Source::WorkingTree, entries, is_pointer);
+        let named = |(_, _, mount): &(_, _, Mount)| self.named(root.path(), mount);
+        mounts.iter().filter_map(named).collect()
+    }
+
     /// The mounts among `entries`, the working tree's, that hold
     /// `directory`, of the smallest [`Place::rank`]. A mount holds it when
     /// its repository is the directory's, compared by the git directory a

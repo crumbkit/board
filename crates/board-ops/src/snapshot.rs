@@ -16,11 +16,10 @@ use std::path::{Path, PathBuf};
 
 use board_index::{Decided, Index, IndexError, Storage, View, Writer};
 use board_model::{
-    Change, Code, Digest, Kind, LogicalPath, ObjectId, Pointer, REPO_TYPE, RecordType, Role,
-    Source, Stat,
+    Change, Code, Digest, Kind, LogicalPath, ObjectId, REPO_TYPE, RecordType, Role, Source, Stat,
 };
 use board_tree::{
-    Cache, Entry, Held, Mounted, Place, Repository, Scopes, TreeRow, TreeRows, in_scope, latest,
+    Cache, Entry, Held, Mounted, Place, Repository, Scopes, TreeRow, TreeRows, in_scope,
 };
 
 use crate::board::Board;
@@ -151,34 +150,18 @@ impl Board {
     }
 
     /// The directory of each repository that a `board/mount/v1` record, or
-    /// a `board/repo/v1` record with a `checkout`, in the working tree
-    /// names: its `repo` read against the board's root, or against the home
-    /// directory for `~/`. A pointer whose `~/` has no home is left out.
-    /// Only the refresh reads the index; this decides nothing.
+    /// a `board/repo/v1` record with a `checkout`, in the working tree names
+    /// ([`board_tree::Repositories::mounted_repositories`]), its pointers
+    /// read from the index after a refresh, which is all this decides.
     pub fn mounted_repositories(&self, cache: Option<&Path>) -> Result<Vec<PathBuf>, RefreshError> {
         let index = self.index(cache)?;
-        let (entries, _, _) = transact(index, |writer| {
+        let (mounted, _, _) = transact(index, |writer| {
             let refresh = self.refresh(writer)?;
             let is_pointer = |path: &str| Indexing::is_pointer(&refresh.facts, path);
-            let held = refresh
-                .entries
-                .into_iter()
-                .filter(|entry| is_pointer(&entry.path));
-            Ok((held.collect::<Vec<_>>(), Vec::new()))
+            let mounted = (self.repositories()).mounted_repositories(&refresh.entries, &is_pointer);
+            Ok((mounted, Vec::new()))
         })?;
-        let root = self.repositories().root();
-        let reader = &mut root.reader();
-        let named = |entry: &Entry| {
-            let read = latest(reader.read(&Source::WorkingTree, &entry.path, entry.blob?));
-            let Ok(Some(Pointer::Mount(mount))) = board_model::pointer(&read.ok()??.bytes) else {
-                return None;
-            };
-            Some(match mount.repo.strip_prefix("~/") {
-                Some(rest) => self.repositories().home()?.join(rest),
-                None => root.path().join(&mount.repo),
-            })
-        };
-        Ok(entries.iter().filter_map(named).collect())
+        Ok(mounted)
     }
 
     /// Decides each entry, and returns the report, the references, the
