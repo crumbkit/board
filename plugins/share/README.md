@@ -78,7 +78,8 @@ whose schemas were added; `copied`, at most 100 paths, with `total` and
 `truncated`; `uris`, the `board://` URI of each path in `copied`, empty when
 the destination's repository has no origin; and `unchanged`, the number of
 paths the destination already held equally; and `not_copied`, at most 100
-paths that a copied Markdown body names and the share leaves behind. Each
+paths that a copied Markdown body names and the share leaves behind, with
+`not_copied_total` counting them all. Each
 item of `not_copied` gives the `path`, the file that names it as `named_by`,
 and a `reason`: `directory`, `mount`, `link` or `missing`.
 A dry run returns the same with `commit` null.
