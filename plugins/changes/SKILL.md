@@ -98,6 +98,10 @@ blocks is missing.
    claims any writer can make. When you ask for approval with /ask, put
    the change's path in the text of the option that approves it and in no
    other option, because any chosen option that names the path counts.
+   A path followed by `#` is a longer name: an option naming
+   `/changes/<name>#<check id>` waives that waivable check and approves
+   nothing. An option naming a mockup's URL or board path agrees it for
+   the `mockups` check.
    Attach the question and the answer, each with
    `board changes attach --path /changes/<name> --ref <path>`. When you
    record the owner's approval from chat, write the decision as the plans
@@ -213,8 +217,9 @@ to replace the flow copies changes kept before versions.
 - `changes::run::worktree`: fix the clone the mount reads, or pass
   `--inline true`.
 - `changes::change::not_migrated`: run `changes.migrate --apply true`.
-- `changes::ux::not_agreed`: a mockup has no owner decision naming it, or
-  the plan answers `ux` mockups and UX lists none.
+- `changes::ux::not_agreed`: no owner decision names a mockup, and no
+  attached owner answer chose an option naming it, or the plan answers
+  `ux` mockups and UX lists none.
 - `changes::ux::no_version`: name the agreed version of each mockup in its
   item, such as `version <id>`.
 - `changes::ux::not_conformed`: the built page differs from a mockup version,
@@ -222,8 +227,8 @@ to replace the flow copies changes kept before versions.
   `plans/question/v1` for one that cannot be built, then have a clean-context
   critic write a `changes/conformance/v1` for the new head. The newest
   record at the head decides. An owner's answer to the question a difference
-  names clears it, and the owner's waiver decision naming
-  `<change>#design-conformance` passes a partial build or a page
+  names clears it, and the owner's waiver decision, or answer whose chosen
+  option names `<change>#design-conformance`, passes a partial build or a page
   Playwright cannot screenshot.
 - `changes::plan::no_answers`: send the plan again with the `answers` the
   message names, such as `{"ux": "none", "data": "none", "lifecycle": "none"}`.

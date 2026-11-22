@@ -65,6 +65,13 @@ fn approve_refuses_without_an_answer_whose_option_names_the_change_and_asks_with
     );
 }
 
+#[test]
+fn approve_refuses_a_waiver_answer_naming_a_check_after_the_change_and_asks_with_the_bare_path() {
+    let waiver = followed(&observed("/changes/t#design-conformance")).unwrap_err();
+    assert_eq!(waiver.code, "changes::approve::not_chosen");
+    assert_eq!(followed(&observed(PATH)).unwrap().1, "/a/1");
+}
+
 fn answered(code: Code) -> Result<DecideReport, Box<Refusal>> {
     let fields = Fields {
         effect: Some("e1".to_owned()),

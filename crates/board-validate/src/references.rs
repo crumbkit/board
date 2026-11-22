@@ -200,6 +200,13 @@ fn applied<'a>(keyword: &str, value: &'a Value) -> Option<(&'static str, Vec<&'a
     Some((name, schemas))
 }
 
+/// The path a `board-ref` value names: the text before its first `#`, as a
+/// Markdown link drops its fragment. The record keeps the whole text.
+pub(crate) fn target(text: &str) -> Option<LogicalPath> {
+    let path = text.split_once('#').map_or(text, |(path, _)| path);
+    path.parse().ok()
+}
+
 /// A reference a record makes.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Reference {
@@ -295,7 +302,7 @@ impl Search<'_> {
             return;
         };
         if keywords.get("format").and_then(Value::as_str) == Some(REFERENCE_FORMAT)
-            && let Some(path) = instance.as_str().and_then(|text| text.parse().ok())
+            && let Some(path) = instance.as_str().and_then(target)
         {
             let reference = Reference {
                 pointer: pointer(steps),

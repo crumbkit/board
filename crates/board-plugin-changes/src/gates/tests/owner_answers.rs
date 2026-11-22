@@ -89,3 +89,15 @@ fn only_a_check_that_counts_answers_reads_the_signed_approval() {
     let built = given("build").observed();
     assert!(!reads(built.checks()).contains(&Read::Approval));
 }
+
+#[test]
+fn an_answer_naming_a_check_after_the_change_does_not_approve_its_plan_and_the_bare_path_does() {
+    let owner = json!({"by": {"person": PERSON}});
+    let anchored = approval_with(
+        answer("/changes/t#design-conformance", "a", &owner),
+        Approval::None,
+    );
+    assert_eq!(anchored, (Status::Missing, UNMET.to_owned()));
+    let bare = approval_with(answer(PATH, "a", &owner), Approval::None);
+    assert_eq!(bare, (Status::Pass, String::new()));
+}

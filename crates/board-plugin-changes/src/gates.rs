@@ -372,8 +372,12 @@ pub(crate) fn interpret(observed: &Observed, checks: &[flow::Check]) -> Vec<Chec
             };
             let waiver = missing.as_ref().and_then(|_| waived_by(observed, each));
             let (status, detail) = match (missing, waiver) {
-                (Some(_), Some(decision)) => {
-                    (Status::Pass, format!("the owner waived it in {decision}"))
+                (Some(_), Some(record)) => {
+                    (Status::Pass, format!("the owner waived it in {record}"))
+                }
+                (Some(detail), None) if each.waivable == Some(true) => {
+                    let unanchored = kinds::unanchored(observed, &each.id);
+                    (Status::Missing, format!("{detail}{unanchored}"))
                 }
                 (Some(detail), None) => (Status::Missing, detail),
                 (None, _) => (Status::Pass, kinds::passed(observed, each, &values)),
@@ -399,7 +403,8 @@ pub(crate) fn interpret(observed: &Observed, checks: &[flow::Check]) -> Vec<Chec
 }
 
 /// The attached decision the owner signed whose refs name
-/// `<change>#<id>`, when the check is waivable.
+/// `<change>#<id>`, or else the owner's attached answer whose chosen option
+/// names it, when the check is waivable.
 fn waived_by<'a>(observed: &'a Observed, each: &flow::Check) -> Option<&'a str> {
     if each.waivable != Some(true) {
         return None;
@@ -408,6 +413,7 @@ fn waived_by<'a>(observed: &'a Observed, each: &flow::Check) -> Option<&'a str> 
     (signed_decisions(observed))
         .find(|(_, body)| strings(body, "refs").any(|each| each == named))
         .map(|(path, _)| path)
+        .or_else(|| kinds::answered_waiver(observed, &named))
 }
 
 /// Whether every condition of the check's `when` holds, or why a pattern

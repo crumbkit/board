@@ -159,7 +159,8 @@ broken one is `plugin::bad_manifest`. Any other `board/*` type is
 A schema marks a string as a reference with `"format": "board-ref"`, and may
 name the types it accepts with `"x-board-type"` (a string or a list of exact
 `$type` values). A reference is an absolute logical path, read in the referring
-record's board. Board finds references through `properties`,
+record's board. A `#` fragment after the path is kept in the record and
+dropped when the reference resolves, as in a Markdown link. Board finds references through `properties`,
 `patternProperties`, `additionalProperties`, `items`, `prefixItems`, `allOf`
 and local `$ref`. A schema that marks one under any other keyword that
 applies subschemas, or behind a `$dynamicRef`, is `schema::invalid`.

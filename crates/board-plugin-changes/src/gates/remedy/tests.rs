@@ -50,17 +50,26 @@ fn a_flows_remedy_wins_over_its_kinds_and_a_waivable_check_says_how_to_waive_it(
     let waivable = check(serde_json::json!({"id": "t", "kind": "tasks", "waivable": true}));
     assert!(of(&waivable, &values(None)).ends_with(
         "The owner may waive this check with a plans/decision/v1 he signs with by.person whose \
-             refs name /changes/t#t, attached with `board changes attach --path /changes/t --ref \
-             <decision>`."
+             refs name /changes/t#t, or with an attached plans/answer/v1 from the owner whose \
+             chosen option, in its attached question, names /changes/t#t; attach the decision, or \
+             the answer and its question, with `board changes attach --path /changes/t --ref \
+             <path>`."
     ));
 }
 
 #[test]
-fn the_mockups_remedy_asks_for_the_owners_decision_with_by_person() {
+fn the_mockups_remedy_asks_for_the_owners_decision_with_by_person_or_answer() {
     let mockups = check(serde_json::json!({"id": "m", "kind": "mockups"}));
     let said = of(&mockups, &values(None));
     assert!(
         said.contains("attach the owner's plans/decision/v1 with by.person that names each"),
+        "{said}"
+    );
+    assert!(
+        said.contains(
+            "or the owner's plans/answer/v1 and its plans/question/v1, whose chosen option names \
+             each"
+        ),
         "{said}"
     );
 }

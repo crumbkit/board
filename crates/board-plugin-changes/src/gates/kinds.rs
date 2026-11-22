@@ -307,10 +307,17 @@ fn chose_change(observed: &Observed, answer: &Map<String, Value>) -> bool {
     chosen_text(observed, answer).is_some()
 }
 
-/// The text of the option `answer` chose, when it names the change: the
-/// attached question it answers has an option whose `id` is its `choice`
-/// and whose `text` names the change's path whole.
+/// The text of the option `answer` chose, when it names the change whole.
 pub(crate) fn chosen_text<'a>(
+    observed: &'a Observed,
+    answer: &Map<String, Value>,
+) -> Option<&'a str> {
+    chosen_option(observed, answer).filter(|text| names_whole(text, &observed.path))
+}
+
+/// The text of the option `answer` chose: the attached question it
+/// answers has an option whose `id` is its `choice`.
+pub(super) fn chosen_option<'a>(
     observed: &'a Observed,
     answer: &Map<String, Value>,
 ) -> Option<&'a str> {
@@ -322,16 +329,58 @@ pub(crate) fn chosen_text<'a>(
         .filter(|(path, _)| *path == question)
         .flat_map(|(_, body)| objects(body, "options"))
         .filter(|option| option.get("id").and_then(Value::as_str) == Some(choice))
-        .filter_map(|option| option.get("text").and_then(Value::as_str))
-        .find(|text| names_whole(text, &observed.path))
+        .find_map(|option| option.get("text").and_then(Value::as_str))
 }
 
-/// Whether `text` names `path` whole, and not as part of a longer path.
-fn names_whole(text: &str, path: &str) -> bool {
+/// Each attached answer from the owner, by path, with the text of the
+/// option it chose.
+pub(super) fn owner_choices(observed: &Observed) -> impl Iterator<Item = (&str, &str)> {
+    (observed.records.of_type(ANSWER_TYPE))
+        .filter(|(_, body)| owner_answered(body))
+        .filter_map(|(path, body)| Some((path, chosen_option(observed, body)?)))
+}
+
+/// Whether `text` names `path` whole, and not as part of a longer path: a
+/// `#`, or a `?` before a letter or digit, after it joins it, as a
+/// fragment or a query does.
+pub(super) fn names_whole(text: &str, path: &str) -> bool {
     let joined = |next: char| next.is_alphanumeric() || "-_/".contains(next);
     (text.match_indices(path)).any(|(at, _)| {
-        !text[..at].ends_with(joined) && !text[at + path.len()..].starts_with(joined)
+        let after = &text[at + path.len()..];
+        let query = after
+            .strip_prefix('?')
+            .is_some_and(|rest| rest.starts_with(char::is_alphanumeric));
+        !text[..at].ends_with(joined)
+            && !after.starts_with(joined)
+            && !after.starts_with('#')
+            && !query
     })
+}
+
+/// The attached answer from the owner whose chosen option names `named`,
+/// a `<change>#<check id>`, whole.
+pub(super) fn answered_waiver<'a>(observed: &'a Observed, named: &str) -> Option<&'a str> {
+    owner_choices(observed)
+        .find(|(_, text)| names_whole(text, named))
+        .map(|(path, _)| path)
+}
+
+/// What the detail of the waivable check `id` adds when an attached answer
+/// from the owner chose an option that names the check and the bare change
+/// path, but not `<change>#<id>`.
+pub(super) fn unanchored(observed: &Observed, id: &str) -> String {
+    let change = &observed.path;
+    let named = format!("{change}#{id}");
+    owner_choices(observed)
+        .find(|(_, text)| {
+            text.contains(id) && names_whole(text, change) && !names_whole(text, &named)
+        })
+        .map_or_else(String::new, |(path, _)| {
+            format!(
+                "; the owner's answer {path} names {change} but not {named}, so it does not \
+                 waive this check"
+            )
+        })
 }
 
 /// `items` joined as a reader says a choice: `a`, `a or b`, `a, b or c`.

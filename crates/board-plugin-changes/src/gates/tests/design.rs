@@ -361,3 +361,103 @@ fn a_waiver_the_owner_signed_passes_the_conformance_check() {
     let waived = at_review(vec![("/c/1", conformance(&unbuilt())), decision]);
     assert_eq!(waived.statuses()["design-conformance"], "pass");
 }
+
+/// An attached question whose option `agree` says `text` and whose option
+/// `change` names nothing, and an attached answer that chose `choice`, by
+/// `by`.
+fn asked(text: &str, choice: &str, by: &Value) -> super::Records {
+    let options = json!([{"id": "agree", "text": text}, {"id": "change", "text": "Change it."}]);
+    let answer = json!({"question": "/q/m", "choice": choice, "words": "Yes.", "by": by});
+    vec![
+        (
+            "/q/m",
+            (
+                "plans/question/v1",
+                json!({"question": "Agree?", "options": options}),
+            ),
+        ),
+        ("/a/m", ("plans/answer/v1", answer)),
+    ]
+}
+
+#[test]
+fn the_owners_answer_whose_chosen_option_names_the_mockup_agrees_it() {
+    let owner = json!({"person": PERSON});
+    let agreeing = |records| at_plan(&named_version()).records(records).check("mockups");
+    let text = format!("Agree the screenshots at {MOCKUP} version {VERSION} as the mockup");
+    assert_eq!(
+        agreeing(asked(&text, "agree", &owner)),
+        ("pass", String::new())
+    );
+    let unagreed = (
+        "missing",
+        format!(
+            "these mockups have neither an attached plans/decision/v1 the owner signed that \
+             names them in its urls or refs, nor an attached plans/answer/v1 from the owner whose \
+             chosen option, in its attached question, names them: {MOCKUP}"
+        ),
+    );
+    let agent = json!({"program": "claude-code", "session": "s"});
+    assert_eq!(
+        agreeing(asked(&text, "agree", &agent)),
+        unagreed,
+        "no person"
+    );
+    let alone = asked(&text, "agree", &owner).split_off(1);
+    assert_eq!(agreeing(alone), unagreed, "the question is not attached");
+    assert_eq!(
+        agreeing(asked(&text, "change", &owner)),
+        unagreed,
+        "the other option"
+    );
+    for other in [
+        "Agree https://claude.ai/artifact/m9",
+        "Agree https://claude.ai/artifact/m10",
+        "Agree https://claude.ai/artifact/m1/",
+        "Agree https://claude.ai/artifact/m1?v=2",
+    ] {
+        assert_eq!(agreeing(asked(other, "agree", &owner)), unagreed, "{other}");
+    }
+}
+
+#[test]
+fn an_answer_naming_the_artifact_agrees_its_versioned_path_and_one_naming_another_does_not() {
+    let owner = json!({"person": PERSON});
+    let item = "`/artifacts/m1/versions/v7`";
+    let found = |text: &str| {
+        at_plan(&plan_listing(item))
+            .records(asked(text, "agree", &owner))
+            .statuses()["mockups"]
+    };
+    assert_eq!(found("Agree /artifacts/m1 as the mockup"), "pass");
+    assert_eq!(found("Agree /artifacts/m1/versions/v7"), "pass");
+    assert_eq!(found("Agree /artifacts/m2 as the mockup"), "missing");
+}
+
+#[test]
+fn the_owners_answer_naming_the_check_after_the_change_waives_conformance_and_the_bare_path_does_not()
+ {
+    let owner = json!({"person": PERSON});
+    let waiving = |text: &str| {
+        let mut records = vec![("/c/1", conformance(&unbuilt()))];
+        records.extend(asked(text, "agree", &owner));
+        at_review(records).check("design-conformance")
+    };
+    assert_eq!(
+        waiving("Waive /changes/t#design-conformance"),
+        ("pass", "the owner waived it in /a/m".to_owned())
+    );
+    let bare = waiving("Waive the design-conformance comparison for /changes/t");
+    assert_eq!(bare.0, "missing");
+    assert!(
+        bare.1.ends_with(
+            "; the owner's answer /a/m names /changes/t but not /changes/t#design-conformance, \
+             so it does not waive this check"
+        ),
+        "{}",
+        bare.1
+    );
+    let other = waiving("Waive /changes/t#suite-run");
+    assert_eq!(other.0, "missing");
+    assert!(!other.1.contains("/a/m"), "{}", other.1);
+}

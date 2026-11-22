@@ -1,3 +1,4 @@
+use board_model::LogicalPath;
 use serde_json::json;
 
 use super::*;
@@ -237,6 +238,30 @@ fn references_carry_their_pointer_path_and_accepted_types() {
         }]
     );
     assert_eq!(schema.references(&json!({"title": "t"})), Vec::new());
+}
+
+#[test]
+fn a_reference_with_a_fragment_names_the_path_before_it_and_its_twin_without_one_is_unchanged() {
+    let schema = task_schema();
+    let parent = |value: &str| schema.references(&json!({"title": "t", "parent": value}));
+    let found = |value: &str| {
+        vec![Reference {
+            pointer: "/parent".to_owned(),
+            path: path(value),
+            accepts: Some(vec!["lr/project/v1".parse().unwrap()]),
+        }]
+    };
+    let anchored = json!({"title": "t", "parent": "/changes/x#design-conformance"});
+    assert!(schema.validate(&anchored).is_ok());
+    assert_eq!(parent("/changes/x#design-conformance"), found("/changes/x"));
+    assert_eq!(parent("/changes/x"), found("/changes/x"));
+    for bare in ["#x", "changes/x#y", "/a//b#y"] {
+        let error = schema
+            .validate(&json!({"title": "t", "parent": bare}))
+            .unwrap_err();
+        assert_eq!(error.code(), Code::RefMalformed, "{bare}");
+        assert_eq!(parent(bare), Vec::new(), "{bare}");
+    }
 }
 
 #[test]

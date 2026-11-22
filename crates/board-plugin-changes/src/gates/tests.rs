@@ -842,8 +842,9 @@ fn a_mockup_with_no_decision_naming_it_is_not_agreed_and_one_named_in_urls_or_re
     let plan = planned_ux(&format!("{}\n{NEIGHBOURS}", mockups_list()));
     assert_eq!(
         detail(&plan, "mockups", agreed(&[MOCKUP])),
-        "these mockups have no attached plans/decision/v1 that names them in its urls or refs: \
-         /artifacts/m2"
+        "these mockups have neither an attached plans/decision/v1 the owner signed that names \
+         them in its urls or refs, nor an attached plans/answer/v1 from the owner whose chosen \
+         option, in its attached question, names them: /artifacts/m2"
     );
     assert_eq!(plan_checks(&plan, both())["mockups"], "pass");
 }

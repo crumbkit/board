@@ -455,6 +455,42 @@ fn a_waivable_check_passes_only_on_a_decision_naming_it_that_names_a_person_and_
 }
 
 #[test]
+fn a_waivable_check_passes_on_the_owners_answer_whose_chosen_option_names_it() {
+    let list = json!([{"id": "suite-run", "kind": "run", "scope": "full", "waivable": true}]);
+    let found = |text: &str, fields: &Value| {
+        let options = json!([{"id": "w", "text": text}, {"id": "k", "text": "Keep it."}]);
+        let asked = ("/q/w", "plans/question/v1", json!({"options": options}));
+        let answered = (
+            "/a/w",
+            "plans/answer/v1",
+            by(json!({"question": "/q/w", "choice": "w"}), fields),
+        );
+        let observed = observed(&json!({"head": HEAD}), &[asked, answered]);
+        first(&observed, list.clone())
+    };
+    let owner = json!({"by": {"person": PERSON}});
+    let waived = found("Waive /changes/t#suite-run", &owner);
+    assert_eq!(
+        (waived.status, waived.detail),
+        (Status::Pass, "the owner waived it in /a/w".to_owned())
+    );
+    let agent = json!({"by": {"program": "claude-code"}});
+    assert_eq!(
+        found("Waive /changes/t#suite-run", &agent).status,
+        Status::Missing
+    );
+    let other = found("Waive /changes/t#suite-runs", &owner);
+    assert_eq!(other.status, Status::Missing);
+    assert!(
+        other.remedy.unwrap().contains(
+            "or with an attached plans/answer/v1 from the owner whose chosen option, in its \
+             attached question, names /changes/t#suite-run"
+        ),
+        "the remedy names the answer route"
+    );
+}
+
+#[test]
 fn a_check_that_is_not_waivable_ignores_a_decision_naming_it() {
     let list = json!([{"id": "suite-run", "kind": "run", "scope": "full"}]);
     let signed = (
