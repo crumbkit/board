@@ -208,7 +208,9 @@ of the rename deletes them.
   `not_zero`, `no_run`, `stale`, `missing_measure` (absent or not a
   number) or `unreadable`, which carries the refused call's `code`, such
   as `runs::suite::not_found` or the code for a board without the runs
-  plugin. Each zero rule calls `runs.latest` once. `stated` holds the rest,
+  plugin, or `rules::zero::run_unreadable` when the suite holds a run
+  `runs.latest` could not read, which may be newer than the run it gives.
+  Each zero rule calls `runs.latest` once. `stated` holds the rest,
   with their `paths` patterns and `files`, the number of their files under
   the path, so the output stays short; `board get <rule>` shows its
   `applies_to`, `paths` and `sources`. Every item carries `kind` and the

@@ -16,13 +16,25 @@ use crate::records::{Checker, Kind, ShowAt, Zero};
 /// Seconds in a day, for `within_days`.
 const DAY_S: u64 = 86_400;
 
-/// A zero rule and what its suite's latest qualifying run reports.
+/// The code of a suite with a run `runs.latest` could not read, which may
+/// be newer than the run it gives.
+const RUN_UNREADABLE: &str = "rules::zero::run_unreadable";
+
+/// A zero rule and what its suite's latest qualifying run reports: the
+/// run's path and age, null when there is none, each named measure's value,
+/// null when the run lacks it, and the state. `code` says why the state is
+/// `unreadable`, and is left out otherwise.
 #[derive(Serialize, JsonSchema)]
 pub(crate) struct Zeroed {
     rule: String,
     requirement: String,
-    #[serde(flatten)]
-    found: Found,
+    suite: String,
+    run: Option<String>,
+    age_s: Option<u64>,
+    measures: Vec<Measured>,
+    state: State,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    code: Option<String>,
     kind: Kind,
     show: ShowAt,
     /// How to close an obligation; left out for a standing control.
@@ -37,49 +49,8 @@ pub(crate) struct Zeroed {
 impl Zeroed {
     /// Whether the rule's measures are all 0 in a recent enough run.
     pub(crate) fn passed(&self) -> bool {
-        self.found.state == State::Zero
+        self.state == State::Zero
     }
-}
-
-/// Each zero rule among `applying`, judged against its suite's latest run.
-pub(crate) fn zeroed(
-    host: &dyn Host,
-    applying: &[&String],
-    controls: &BTreeMap<String, Control>,
-) -> Vec<Zeroed> {
-    (applying.iter())
-        .filter_map(|logical| {
-            let control = &controls[*logical];
-            let Some(Checker::Zero(rule)) = &control.checker else {
-                return None;
-            };
-            Some(Zeroed {
-                rule: (*logical).clone(),
-                requirement: control.requirement.clone(),
-                found: found(host, rule),
-                kind: control.kind(),
-                show: control.show(),
-                close: control.kind().close(logical),
-                owed_by: control.owed(),
-            })
-        })
-        .collect()
-}
-
-/// What a zero rule found in its suite's latest qualifying run: the run's
-/// path and age, null when there is none, each named measure's value, null
-/// when the run lacks it, and the state. `code` is the refusal of the
-/// `runs.latest` call, given only when the state is `unreadable`.
-#[derive(Serialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct Found {
-    pub(crate) suite: String,
-    pub(crate) run: Option<String>,
-    pub(crate) age_s: Option<u64>,
-    pub(crate) measures: Vec<Measured>,
-    pub(crate) state: State,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) code: Option<String>,
 }
 
 /// One named measure and the value the run recorded, null when it recorded
@@ -105,58 +76,86 @@ pub(crate) enum State {
     Unreadable,
 }
 
-/// The verdict of `rule`, read through one `runs.latest` call. A refused
-/// call, such as for a suite that is gone or a board without the runs
-/// plugin, is `unreadable` with its code and fails only this rule. A
-/// measure that is absent or not a number is `missing_measure`; a measure
-/// other than 0 is `not_zero`; a run older than `within_days` is `stale`.
-pub(crate) fn found(host: &dyn Host, rule: &Zero) -> Found {
+/// Each zero rule among `applying`, judged against its suite's latest run.
+pub(crate) fn zeroed(
+    host: &dyn Host,
+    applying: &[&String],
+    controls: &BTreeMap<String, Control>,
+) -> Vec<Zeroed> {
+    (applying.iter())
+        .filter_map(|logical| {
+            let control = &controls[*logical];
+            let Some(Checker::Zero(rule)) = &control.checker else {
+                return None;
+            };
+            let (run, code) = match latest(host, &rule.suite) {
+                Ok(run) => (run, None),
+                Err(code) => (Value::Null, Some(code)),
+            };
+            let measures: Vec<Measured> = (rule.measures.iter())
+                .map(|name| Measured {
+                    name: name.clone(),
+                    value: run["measures"].get(name).cloned(),
+                })
+                .collect();
+            Some(Zeroed {
+                rule: (*logical).clone(),
+                requirement: control.requirement.clone(),
+                suite: rule.suite.clone(),
+                run: run["path"].as_str().map(str::to_owned),
+                age_s: run["age_s"].as_u64(),
+                state: state(rule, &run, &measures, code.is_some()),
+                measures,
+                code,
+                kind: control.kind(),
+                show: control.show(),
+                close: control.kind().close(logical),
+                owed_by: control.owed(),
+            })
+        })
+        .collect()
+}
+
+/// The latest qualifying run of `suite`, null when it has none, through one
+/// `runs.latest` call. A refused call, such as for a suite that is gone or a
+/// board without the runs plugin, gives its code. A suite with a run
+/// `runs.latest` could not read gives [`RUN_UNREADABLE`], since that run may
+/// be newer than the one it gives.
+fn latest(host: &dyn Host, suite: &str) -> Result<Value, String> {
     let target: Target = "runs.latest"
         .parse()
         .expect("runs.latest is <plugin>.<capability>");
-    let mut found = Found {
-        suite: rule.suite.clone(),
-        run: None,
-        age_s: None,
-        measures: (rule.measures.iter())
-            .map(|name| Measured {
-                name: name.clone(),
-                value: None,
-            })
-            .collect(),
-        state: State::NoRun,
-        code: None,
-    };
-    let latest = match host.call(&target, &json!({"suite": rule.suite})) {
-        Ok(report) => report.output,
-        Err(refusal) => {
-            found.state = State::Unreadable;
-            found.code = Some(refusal.code.as_str().to_owned());
-            return found;
-        }
-    };
-    let Some(run) = latest.get("run").filter(|run| !run.is_null()) else {
-        return found;
-    };
-    found.run = run["path"].as_str().map(str::to_owned);
-    found.age_s = run["age_s"].as_u64();
-    for measured in &mut found.measures {
-        measured.value = run["measures"].get(&measured.name).cloned();
+    let latest = (host.call(&target, &json!({"suite": suite})))
+        .map_err(|refusal| refusal.code.as_str().to_owned())?
+        .output;
+    if latest["unreadable"].as_u64().is_some_and(|count| count > 0) {
+        return Err(RUN_UNREADABLE.to_owned());
     }
-    let numbers: Vec<Option<f64>> = (found.measures.iter())
-        .map(|measured| measured.value.as_ref().and_then(Value::as_f64))
-        .collect();
-    let too_old = rule
-        .within_days
-        .is_some_and(|days| found.age_s.is_none_or(|age| age > u64::from(days) * DAY_S));
-    found.state = if numbers.iter().any(Option::is_none) {
+    Ok(latest["run"].clone())
+}
+
+/// The state of `rule` given its `run` and `measures`. A measure that is
+/// absent or not a number is `missing_measure`; a measure other than 0 is
+/// `not_zero`; a run older than `within_days` is `stale`.
+fn state(rule: &Zero, run: &Value, measures: &[Measured], unreadable: bool) -> State {
+    let numbers =
+        || (measures.iter()).map(|measured| measured.value.as_ref().and_then(Value::as_f64));
+    let too_old = (rule.within_days).is_some_and(|days| {
+        run["age_s"]
+            .as_u64()
+            .is_none_or(|age| age > u64::from(days) * DAY_S)
+    });
+    if unreadable {
+        State::Unreadable
+    } else if run.is_null() {
+        State::NoRun
+    } else if numbers().any(|number| number.is_none()) {
         State::MissingMeasure
-    } else if numbers.iter().flatten().any(|number| number.abs() > 0.0) {
+    } else if numbers().flatten().any(|number| number.abs() > 0.0) {
         State::NotZero
     } else if too_old {
         State::Stale
     } else {
         State::Zero
-    };
-    found
+    }
 }

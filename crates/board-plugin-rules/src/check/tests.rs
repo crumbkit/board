@@ -917,6 +917,56 @@ fn a_zero_rule_reads_the_latest_qualifying_run_and_ignores_a_newer_dirty_one() {
 }
 
 #[test]
+fn a_zero_rule_is_unreadable_when_a_run_it_cannot_read_may_be_newer_than_a_clean_one() {
+    let rule = zero_rule(&["remaining"], &json!({"within_days": 2}));
+    let older = (
+        "suites/old-path-users/runs/1.json",
+        run("1970-01-01T00:00:00Z", &json!({"remaining": 0}), &json!({})),
+    );
+    let newer = |result: Value| {
+        (
+            "suites/old-path-users/runs/2.json",
+            run(
+                "1970-01-01T00:01:00Z",
+                &json!({"remaining": 5}),
+                &json!({"results": [result]}),
+            ),
+        )
+    };
+    let unread = zero_check(
+        &rule,
+        &[
+            older.clone(),
+            newer(json!({"case": "a", "outcome": "fail"})),
+        ],
+        120,
+    );
+    assert_eq!(unread["passed"], false, "{unread}");
+    let zero = the_zero(&unread);
+    assert_eq!(
+        (&zero["state"], &zero["code"], &zero["run"]),
+        (
+            &json!("unreadable"),
+            &json!("rules::zero::run_unreadable"),
+            &Value::Null
+        )
+    );
+    let read = zero_check(
+        &rule,
+        &[
+            older,
+            newer(json!({"case": "a", "outcome": "fail", "note": "n"})),
+        ],
+        120,
+    );
+    assert_eq!(read["passed"], false, "{read}");
+    assert_eq!(
+        (&the_zero(&read)["state"], &the_zero(&read)["run"]),
+        (&json!("not_zero"), &json!("/suites/old-path-users/runs/2"))
+    );
+}
+
+#[test]
 fn a_zero_rule_fails_as_no_run_when_the_suite_has_no_qualifying_run() {
     let rule = zero_rule(&["remaining"], &json!({}));
     let runs = [(
