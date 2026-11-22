@@ -91,8 +91,9 @@ A target the share does not copy is listed in `not_copied` with a reason:
 A typed reference through a mount or link that only back-refs make, and
 that the destination does not resolve into the same repository, is listed
 with `from` the back-ref. Its reason is `mount` through a mount and `link`
-through a link in this board. A path listed for several reasons is listed
-once.
+through a link in this board. When a Markdown link and a back-ref's typed
+reference name the same path, the path is listed once, with the Markdown
+link's entry.
 
 Each entry lands at the same path in the destination, so no
 reference is rewritten. The schema of every record type in the set goes too,

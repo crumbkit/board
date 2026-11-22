@@ -1353,3 +1353,28 @@ fn a_decisions_reference_through_a_link_in_this_board_is_listed_as_link_and_thro
         ])
     );
 }
+
+#[test]
+fn a_back_refs_reference_through_a_link_in_this_board_is_listed_as_link_from_the_back_ref() {
+    let boards = tasks_boards();
+    boards.reading_list();
+    boards
+        .personal
+        .write("notes/why.md", "# Why\n")
+        .write(
+            "latest.json",
+            r#"{"$type": "board/mount/v1", "path": "/notes"}"#,
+        )
+        .write(
+            "projects/tidy/decisions/e.json",
+            &plan_decision(&["/tasks/remove.md", "/latest/why.md"]),
+        );
+    let preview = boards.preview(&["--path", "/tasks/remove.md"]);
+    assert_eq!(
+        (&preview["not_copied"], &preview["not_copied_total"]),
+        (
+            &json!([{"path": "/latest/why.md", "reason": "link", "from": "/projects/tidy/decisions/e"}]),
+            &json!(1)
+        )
+    );
+}
