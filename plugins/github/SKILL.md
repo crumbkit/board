@@ -1,6 +1,6 @@
 ---
 name: github
-description: 'Record a GitHub pull request or issue as a typed record, and push, open or edit pull requests, comment and open issues only after the boundary passes what they send, and merge pull requests once the land gate of their change passes. Use it to name a pull request or issue in a record, and in place of git push and gh for sending. Run `board github ref --ref <owner>/<repo>#<number>`, or `board github push`, `pr-create`, `pr-edit`, `comment`, `issue-create` or `merge` from the checkout. SKILL.md and README.md in the plugin''s directory say more.'
+description: 'Record a GitHub pull request or issue as a typed record, and push, open or edit pull requests, comment, open issues, create release tags and publish releases only after the boundary passes what they send, and merge pull requests once the land gate of their change passes. Use it to name a pull request or issue in a record, and in place of git push and gh for sending. Run `board github ref --ref <owner>/<repo>#<number>`, or `board github push`, `pr-create`, `pr-edit`, `comment`, `issue-create`, `tag`, `release-create` or `merge` from the checkout. SKILL.md and README.md in the plugin''s directory say more.'
 ---
 
 # github
@@ -38,6 +38,17 @@ add `--personal` after `board`.
   or `--body <body>`.
 - Comment: `board github comment --number <n> --body <body>`.
 - Open an issue: `board github issue-create --title <title> --body <body>`.
+- Tag a release, once it is approved and merged:
+  `board github tag --name v0.1.0 --target <40-hex sha> --message <text>`.
+  It creates a new annotated tag on GitHub at a commit on the default
+  branch. It never moves or deletes a tag. Then run
+  `git fetch origin tag <name>` to get the tag in the checkout.
+- Publish a release of a tag GitHub has:
+  `board github release-create --tag v0.1.0 --title <title> --notes <markdown> --assets <directory>`.
+  Every regular file directly inside the directory is uploaded. Put only
+  the files to publish there. It publishes only once every file is
+  uploaded. After a failure, run the same command again: it resumes the
+  draft.
 - Squash-merge the pull request of a change in its land phase:
   `board github merge --change /changes/<name>`. It merges the change's
   head and moves the change to its next phase. It also fetches the branch
@@ -62,8 +73,8 @@ message, and the hint after it, which is the boundary's `Next:` step. Change
 what it names, such as a commit message with `git commit --amend` or the body
 you pass, and run the action again. A boundary is a record the owner keeps,
 so ask before you change one. A refusal files no request for the owner; pass
-`--ask_owner true` on `push`, `pr-create`, `pr-edit`, `comment` or
-`issue-create` only when the exact content must go as it is.
+`--ask_owner true` on `push`, `pr-create`, `pr-edit`, `comment`,
+`issue-create`, `tag` or `release-create` only when the exact content must go as it is.
 
 ## Record a passing CI run
 
@@ -118,6 +129,19 @@ its message, change what it names, and push again.
   or body. Run
   `gh auth status`. After a check passed, look on GitHub before you run the
   action again, since the content may have been sent.
+- `github::tag::exists`: GitHub already has the tag. Release the next
+  version under a new name; never move a tag.
+- `github::tag::target_not_merged`, `github::tag::target_not_found`: the
+  target is not on the default branch on GitHub. Merge it first, or give
+  the merged commit's full SHA.
+- `github::tag::no_tagger`: set `git config user.name` and
+  `git config user.email` in the checkout.
+- `github::release::no_tag`: run `board github tag` first.
+- `github::release::exists`: the tag's release is published, and
+  release-create never changes it. Release a new version.
+- `github::release::asset_refused`: the `--assets` directory holds
+  something other than regular files with plain names, a file over 2 GiB,
+  or more than 100 files. Fix what the message names.
 - `github::merge::change`: the `--change` path is not under `/changes/`.
   Run the merge in the board that holds the change, with `-C`.
 - `github::merge::gate`: the change is not in its land phase, or its land

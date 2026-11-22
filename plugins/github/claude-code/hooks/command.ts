@@ -192,7 +192,7 @@ const GH_SWITCHES = [
 const SWITCHES: Record<string, string[]> = {
   'pr review': ['-a', '--approve', '-r', '--request-changes', '-c', '--comment'],
   'pr merge': ['-s', '--squash', '-m', '--merge', '-r', '--rebase', '--admin', '--auto', '--disable-auto', '--delete-branch'],
-  'release create': ['--prerelease', '--latest', '--generate-notes', '--verify-tag'],
+  'release create': ['--prerelease', '--latest', '--generate-notes', '--verify-tag', '--notes-from-tag'],
   'release edit': ['--prerelease', '--latest', '--verify-tag'],
 }
 const API_SWITCHES = new Set(['-i', '--include', '--paginate', '--silent', '--slurp', '--verbose'])
@@ -209,7 +209,6 @@ const TEXT: Record<string, string[]> = {
   'issue close': ['-c', '--comment'],
   'issue reopen': ['-c', '--comment'],
   'issue edit': ['-t', '--title', '-b', '--body', '-F', '--body-file'],
-  'release create': ['-t', '--title', '-n', '--notes', '-F', '--notes-file'],
   'release edit': ['-t', '--title', '-n', '--notes', '-F', '--notes-file'],
   'repo edit': ['-d', '--description'],
 }
@@ -256,12 +255,14 @@ function command(action: string, given: [string, Word | string | undefined][]): 
   return [`${BOARD_COMMAND}${action}`, ...parts].join(' ')
 }
 
-/** The body a gh command gives by `--body` or `--body-file`, as a word to pass on. */
-function body(named: Map<string, Word>): Word | string | undefined {
-  const file = pick(named, '-F', '--body-file')
-  if (file !== undefined) return file.text === '-' ? '<body>' : `"$(cat ${quoted(file)})"`
-  return pick(named, '-b', '--body')
+/** The text a gh command gives by `--<name>` or `--<name>-file`, as a word to pass on. */
+function text(named: Map<string, Word>, name: 'body' | 'notes'): Word | string | undefined {
+  const file = pick(named, '-F', `--${name}-file`)
+  if (file !== undefined) return file.text === '-' ? `<${name}>` : `"$(cat ${quoted(file)})"`
+  return pick(named, name === 'body' ? '-b' : '-n', `--${name}`)
 }
+
+const body = (named: Map<string, Word>) => text(named, 'body')
 
 /** The number a gh command names by number or URL, or a placeholder. */
 function number(w: Word | undefined): string {
@@ -304,6 +305,17 @@ function ghWrite(words: Word[], cd: Place): Write | null {
   if (group === 'issue' && verb === 'create') {
     return { action: 'issue-create', ...at, next: command('issue-create', [['title', title ?? '<title>'], ['body', body(named) ?? '<body>']]) }
   }
+  if (group === 'release' && verb === 'create') {
+    const files = positional.length > 1
+    const next = command('release-create', [
+      ['tag', positional[0] ?? '<tag>'],
+      ['title', title],
+      ['notes', text(named, 'notes') ?? '<notes>'],
+      ['assets', files ? '<directory>' : undefined],
+    ])
+    const note = files ? { note: ' It uploads every file directly inside the --assets directory, so put the files to publish in a directory of their own.' } : {}
+    return { action: 'release-create', ...at, next, ...note }
+  }
   if (TEXT[key]?.some(flag => named.has(flag))) return { action: 'api', label: `gh ${key}`, ...at, next: '' }
   if (group !== 'api') return null
   return apiWrite(named, positional[0], cd)
@@ -325,6 +337,9 @@ function apiWrite(named: Map<string, Word>, endpoint: Word | undefined, cd: Plac
   const verb = method || 'POST'
   const numbered = /^\/(pulls|issues)\/(\d+)(\/comments)?$/.exec(rest)
   if (verb === 'POST' && rest === '/pulls') return { action: 'pr-create', ...at, next: command('pr-create', [['title', '<title>'], ['body', '<body>']]) }
+  if (verb === 'POST' && rest === '/releases') {
+    return { action: 'release-create', ...at, next: command('release-create', [['tag', '<tag>'], ['notes', '<notes>']]) }
+  }
   if (verb === 'POST' && rest === '/issues') return { action: 'issue-create', ...at, next: command('issue-create', [['title', '<title>'], ['body', '<body>']]) }
   if (verb === 'PATCH' && numbered?.[1] === 'pulls' && !numbered[3]) {
     return { action: 'pr-edit', ...at, next: command('pr-edit', [['number', numbered[2]], ['title', '<title>']]) }
@@ -349,15 +364,31 @@ function gitWrite(words: Word[], cd: Place): Write | null {
     }
   }
   if (words[i]?.text !== 'push') return null
-  let remote = ''
+  let repo = ''
+  let tags = false
+  let deletes = false
+  const positional: Word[] = []
   for (let j = i + 1; j < words.length; j++) {
     const w = words[j] as Word
-    if (w.text === '--repo' || w.text.startsWith('--repo=')) remote = w.text === '--repo' ? (words[j + 1]?.text ?? '') : w.text.slice(7)
-    if (PUSH_VALUED.has(w.text)) j++
-    else if (!w.text.startsWith('-') && remote === '') {
-      remote = w.dynamic ? '' : w.text
-      break
-    }
+    const t = w.text
+    if (t === '--repo' || t.startsWith('--repo=')) repo = t === '--repo' ? (words[j + 1]?.text ?? '') : t.slice(7)
+    if (PUSH_VALUED.has(t)) j++
+    else if (t === '--tags' || t === '--follow-tags') tags = true
+    else if (t === '--delete' || t === '-d') deletes = true
+    else if (!t.startsWith('-')) positional.push(w)
+  }
+  const [first, ...refspecs] = positional
+  const remote = first === undefined ? repo : first.dynamic ? '' : first.text
+  // A refspec with an empty source, such as `:refs/tags/v1`, deletes its destination.
+  if (deletes || refspecs.some(w => w.text.startsWith(':'))) {
+    return { action: 'push', ...at, remote, next: `${BOARD_COMMAND}push`, note: ' Board never deletes tags or branches.' }
+  }
+  const keyword = refspecs.findIndex(w => w.text === 'tag')
+  const named = keyword >= 0 ? refspecs[keyword + 1] : refspecs.find(w => w.text.includes('refs/tags/'))
+  if (tags || named !== undefined) {
+    const name = named === undefined || named.dynamic ? '<name>' : named.text.replace(/^.*refs\/tags\//, '')
+    const next = command('tag', [['name', name], ['target', '<40-hex sha>'], ['message', '<message>']])
+    return { action: 'tag', ...at, remote, next }
   }
   return { action: 'push', ...at, remote, next: `${BOARD_COMMAND}push` }
 }
@@ -376,7 +407,7 @@ const move = (from: Place, word: Word | undefined): Place =>
 
 /**
  * Every write to GitHub `source` makes, in order: `git push`, `gh pr
- * create|edit|comment`, `gh issue create|comment`, the gh commands in TEXT
+ * create|edit|comment`, `gh issue create|comment`, `gh release create`, the gh commands in TEXT
  * with text to send, and `gh api` calls that write to a repository. `cd
  * <dir>` moves the commands after it, until the end of a subshell it is in. `null` when
  * the text cannot be read as a command, such as an unclosed quote.
@@ -426,22 +457,30 @@ export function codeIn(text: string): string[] {
   return code
 }
 
+/** What the board command a refusal names does, beyond sending the same content. */
+const SCOPE: Record<string, string> = {
+  push: ` It pushes the branch checked out to origin. It sends no tags, and \`${BOARD_COMMAND}tag\` sends a new one.`,
+  tag: ' It creates a new tag at a commit on the default branch, and never moves or deletes one.',
+}
+
 /** The reason the model reads for a refused write: what it sends where, and the `Next:` step. */
 export function refusal(write: Write, to: string): string {
   const where = write.cd === '' ? '' : `cd ${write.cd} && `
   const what =
     write.action === 'push'
       ? 'This git push sends commits'
-      : write.action === 'api'
+      : write.action === 'tag'
+        ? 'This git push sends a tag'
+        : write.action === 'api'
         ? `This ${write.label ?? 'gh'} call writes`
         : `This gh command sends content that github.${write.action} sends`
   const head = `${what} to ${to}, which a boundary in the personal board covers. Content for it goes through Board, which has the boundary check it first.`
   if (write.action === 'api') {
     return (
       `${head} Board has no action for this write. Next: send it with one of \`${BOARD_COMMAND}push\`, ` +
-      '`pr-create`, `pr-edit`, `comment` or `issue-create` if one fits, or ask the owner how to send it.'
+      '`pr-create`, `pr-edit`, `comment`, `issue-create`, `tag` or `release-create` if one fits, or ask the owner how to send it.'
     )
   }
-  const scope = write.action === 'push' ? ' It pushes the branch checked out to origin.' : ''
+  const scope = SCOPE[write.action] ?? ''
   return `${head} Next: run \`${where}${write.next}\`.${scope}${write.note ?? ''}`
 }

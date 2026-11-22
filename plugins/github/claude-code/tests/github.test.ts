@@ -39,7 +39,7 @@ const agent = async ($: Engine, prompt: string) => (await $.tool.call({ tool: 'A
 const PUSH_ADVICE =
   'github::brief::covered: This git push sends commits to github:octo/widgets, which a boundary in the personal ' +
   'board covers. Content for it goes through Board, which has the boundary check it first. Next: run `cd ../widgets && ' +
-  'board call github.push`. It pushes the branch checked out to origin.'
+  'board call github.push`. It pushes the branch checked out to origin. It sends no tags, and `board call github.tag` sends a new one.'
 
 test('a builder prompt whose code span pushes to a covered repository is advised, and one to another repository is not', async ($, on) => {
   const { asked, ran } = engine(on, { covers: ({ dir }) => (dir === '../widgets' ? TO : null) })
@@ -94,7 +94,7 @@ test('a git push to a covered repository is refused with the board command, and 
   expect(await bash($, 'git push')).toBe(
     'This git push sends commits to github:octo/widgets, which a boundary in the personal board covers. Content ' +
       'for it goes through Board, which has the boundary check it first. Next: run `board call github.push`. It ' +
-      'pushes the branch checked out to origin.',
+      'pushes the branch checked out to origin. It sends no tags, and `board call github.tag` sends a new one.',
   )
   expect(asked).toEqual(["covers in '' --action push"])
   expect(ran).toEqual([])
@@ -134,11 +134,58 @@ test('gh api reads its own flags: -f takes a field, and -X and -f take a value j
 
 test('gh commands with no matching action that send text are refused, and the same commands without text run', async ($, on) => {
   const { ran } = engine(on, { covers: always })
-  const sending = ['gh pr merge 3 --squash --body "Merged"', 'gh issue close 4 -c "Done"', 'gh release create v1 --notes x', 'gh pr review 3 --approve -b ok']
+  const sending = ['gh pr merge 3 --squash --body "Merged"', 'gh issue close 4 -c "Done"', 'gh release edit v1 --notes x', 'gh pr review 3 --approve -b ok']
   for (const command of sending) expect(await bash($, command)).toContain('Board has no action for this write.')
   expect(await bash($, 'gh pr merge 3 --squash')).toBeNull()
   expect(await bash($, 'gh issue close 4')).toBeNull()
   expect(ran).toEqual(['gh pr merge 3 --squash', 'gh issue close 4'])
+})
+
+test('a git push of a tag is refused with github.tag, whichever way it names the tag', async ($, on) => {
+  const { asked } = engine(on, { covers: always })
+  const tag =
+    'This git push sends a tag to github:octo/widgets, which a boundary in the personal board covers. Content for it ' +
+    'goes through Board, which has the boundary check it first. Next: run `board call github.tag --name v1 --target ' +
+    '<40-hex sha> --message <message>`. It creates a new tag at a commit on the default branch, and never moves or deletes one.'
+  expect(await bash($, 'git push origin tag v1')).toBe(tag)
+  expect(await bash($, 'git push origin refs/tags/v1')).toBe(tag)
+  expect(await bash($, 'git push origin v1:refs/tags/v1')).toBe(tag)
+  expect(await bash($, 'git push origin v1 --tags')).toContain('Next: run `board call github.tag --name <name> --target')
+  expect(await bash($, 'git push --follow-tags')).toContain('Next: run `board call github.tag --name <name> --target')
+  expect(asked.slice(0, 2)).toEqual(["covers in '' --action tag --remote origin", "covers in '' --action tag --remote origin"])
+  expect(await bash($, 'git push origin main')).toContain('Next: run `board call github.push`.')
+})
+
+test('a git push that deletes a tag or branch is refused as a push that says Board never deletes them', async ($, on) => {
+  engine(on, { covers: always })
+  for (const command of ['git push --delete origin v1', 'git push origin :refs/tags/v1', 'git push -d origin old']) {
+    const refused = await bash($, command)
+    expect(refused).toContain('This git push sends commits')
+    expect(refused).toContain('Board never deletes tags or branches.')
+  }
+  expect(await bash($, 'git push origin main')).not.toContain('never deletes')
+})
+
+test('gh release create, with or without notes, and a POST of a release are refused with github.release-create', async ($, on) => {
+  const { asked, ran } = engine(on, { covers: always })
+  expect(await bash($, 'gh release create v1 a.dmg --notes "It turns." --title "Widgets 1"')).toBe(
+    'This gh command sends content that github.release-create sends to github:octo/widgets, which a boundary in the ' +
+      'personal board covers. Content for it goes through Board, which has the boundary check it first. Next: run ' +
+      '`board call github.release-create --tag v1 --title "Widgets 1" --notes "It turns." --assets <directory>`. It ' +
+      'uploads every file directly inside the --assets directory, so put the files to publish in a directory of their own.',
+  )
+  expect(await bash($, 'gh release create v1 a.dmg')).toContain(
+    'Next: run `board call github.release-create --tag v1 --notes <notes> --assets <directory>`.',
+  )
+  expect(await bash($, 'gh release create v1 -F notes.md')).toContain(
+    'Next: run `board call github.release-create --tag v1 --notes "$(cat notes.md)"`.',
+  )
+  expect(await bash($, 'gh api -X POST repos/octo/widgets/releases -f tag_name=v1')).toContain(
+    'Next: run `board call github.release-create --tag <tag> --notes <notes>`.',
+  )
+  expect(asked.at(-1)).toBe("covers in '' --action release-create --repo octo/widgets")
+  expect(await bash($, 'gh release view v1')).toBeNull()
+  expect(ran).toEqual(['gh release view v1'])
 })
 
 test('assignments, wrappers and redirections around a push leave the push and its remote', () => {

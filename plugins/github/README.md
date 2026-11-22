@@ -94,7 +94,7 @@ the boundary plugin passes it. SKILL.md holds the procedure.
 
 ### Sending actions
 
-`push`, `pr-create`, `pr-edit`, `comment`, `issue-create` and `merge` send content
+`push`, `pr-create`, `pr-edit`, `comment`, `issue-create`, `tag`, `release-create` and `merge` send content
 from the checkout Board was started in, which Board names in
 `BOARD_CALLER_DIR`. Each action works out where the content goes, collects
 it as named parts, and calls `boundary.check` in the personal board on them
@@ -132,6 +132,36 @@ result it recorded.
 - `comment --number <n> --body <b>` comments on a pull request or issue.
 - `issue-create --title <t> --body <b>` opens an issue, writes its
   `github/issue/v1` record and returns `number` and `path`.
+- `tag --name <name> --target <sha> --message <text>` creates a new
+  annotated tag through GitHub's git data API. It runs no `git push`, so
+  the pre-push hook does not run, and it reads no history.
+  - `--name` matches `^[0-9A-Za-z][0-9A-Za-z._+-]{0,99}$`, holds no `..`
+    and does not end in `.lock`. `--target` is a full 40-hex SHA.
+  - The tagger is the checkout's `git config user.name` and `user.email`.
+  - Before the check, it reads `git/ref/tags/<name>`, which must be 404,
+    and `compare/<default branch>...<target>`, whose status must be
+    `behind` or `identical`.
+  - After the check, it posts the tag object to `git/tags` and the ref to
+    `git/refs`. GitHub answers 422 when the ref exists, so a tag is never
+    moved.
+  - It returns `name`, `target` and `object`, the tag object's SHA. `sent`
+    is the tag's page. `note` gives `git fetch origin tag <name>`.
+- `release-create --tag <tag> [--title <t>] --notes <markdown> [--assets <directory>]`
+  publishes a release of a tag GitHub has. `--title` defaults to the tag.
+  - `--assets` is relative to the directory Board was started in. Each
+    entry directly inside it must be a regular file named by
+    `^[0-9A-Za-z][0-9A-Za-z._+-]*$`, at most 2 GiB. It takes at most 100.
+  - Before the check, it reads `git/ref/tags/<tag>` and
+    `gh release view <tag> --json isDraft,assets,url`.
+  - With no release, it runs `gh release create --verify-tag --draft`, so
+    gh never creates the tag. With a draft, it resumes it.
+  - It uploads each file the draft lacks with `gh release upload
+    --clobber`, 600 seconds each. A file on the draft with the same name,
+    the same size and state `uploaded` is skipped.
+  - It publishes with `gh release edit --draft=false`.
+  - It returns `tag`, `assets` and `resumed`. `sent` is the release's page.
+  - A draft left by an abandoned run is visible to the repository's
+    writers. A rerun publishes it; `gh release delete <tag>` removes it.
 - `merge [--change <path>] [--number <n>] [--subject <s>] [--body <b>] [--head <sha>]`
   squash-merges a pull request with `gh pr merge --squash
   --match-head-commit <sha>`, so GitHub refuses it when the pull request's
@@ -230,6 +260,11 @@ The parts, which a boundary's `checks` name by glob:
 | `comment.body` | `comment` | The comment. |
 | `issue.title`, `issue.body` | `issue-create` | The issue's title and body. |
 | `pr.merge.subject`, `pr.merge.body` | `merge` | The squash commit's subject and body. |
+| `tag.name`, `tag.message` | `tag` | The tag's name and message. |
+| `tag.tagger_name`, `tag.tagger_email` | `tag` | The tagger, from the checkout's git config. |
+| `tag.target` | `tag` | The SHA of the commit tagged. |
+| `release.tag`, `release.title`, `release.notes` | `release-create` | The tag, the title and the notes. |
+| `release.assets` | `release-create` | The asset file names, one per line, sorted. The boundary checks names only, not bytes. |
 
 `<sha>` is the commit's first 12 hex digits, so `commit.*.message` names
 every commit's message. A push sends the commits that no ref on origin
@@ -244,8 +279,8 @@ Refusals:
   boundary's, followed by its `Next:` step, which is also the hint. The
   other fields are the boundary's own, unchanged: `failures`, `digest`,
   `crossing` and, when the call passed `--ask_owner true`, `effect`; without
-  it no request is filed. `push`, `pr-create`, `pr-edit`, `comment` and
-  `issue-create` take `ask_owner`; `merge` and the hook never ask. A code the
+  it no request is filed. `push`, `pr-create`, `pr-edit`, `comment`,
+  `issue-create`, `tag` and `release-create` take `ask_owner`; `merge` and the hook never ask. A code the
   boundary's refusal carried, such as `rules::rule::not_found` inside
   `boundary::board::refused`, is in `cause`. Nothing is sent.
 - Any other refusal of the check, such as boundary not being enabled in the
@@ -315,6 +350,17 @@ Refusals:
   request was not opened, and that running `pr-create` again opens it.
 - `github::remote::unknown`: a URL could reach GitHub, but the plugin cannot
   tell which repository it names.
+- `github::tag::exists`: GitHub has the tag, found by the read or by a 422
+  from `git/refs`.
+- `github::tag::target_not_merged`: the target is not on the default
+  branch. `fields.status` is GitHub's compare status.
+- `github::tag::target_not_found`: GitHub has no such commit.
+- `github::tag::no_tagger`: git config lacks `user.name` or `user.email`.
+- `github::release::no_tag`: GitHub has no such tag.
+- `github::release::exists`: the tag has a published release.
+- `github::release::asset_refused`: the `--assets` directory cannot be read,
+  holds something other than a regular file with a plain name, a file over
+  2 GiB, or more than 100 files.
 - `github::push::not_commit`: the pre-push hook found a ref whose object is a
   tree or a blob, which it cannot check as commits.
 - `github::git::not_utf8`: a commit changes a file git counts as text whose
@@ -349,7 +395,7 @@ Git runs the checkout's `pre-push` hook during the push, as it does for any
 push. The plugin does not check what a hook sends. When the hook is this
 plugin's own, it reuses the check the action passed, as below.
 
-The sending actions may run for 2,400 seconds, since the check alone may take 1,800.
+The sending actions may run for 2,400 seconds, since the check alone may take 1,800. `release-create` may run for 3,600.
 
 Owner and repository are stored in lower case, in the path and the fields,
 because GitHub matches them without case; `url` keeps GitHub's own case. The
@@ -458,18 +504,23 @@ GitHub's controls stay:
 ### The Claude Code mod
 
 The mod in `claude-code/`, `board-github`, adds a hook on Bash calls. It
-refuses `git push`, `gh pr create`, `gh pr edit`, `gh pr comment`,
+refuses `git push`, `gh pr create`, `gh release create`, `gh pr edit`, `gh pr comment`,
 `gh issue create`, `gh issue comment` and `gh api` calls that write to a
 repository, when a boundary in the personal board covers the destination.
 It also refuses these commands when they carry text by flag, with no
 matching action: `gh pr review`, `gh pr merge`, `gh pr close`,
 `gh pr reopen`, `gh issue close`, `gh issue reopen`, `gh issue edit`,
-`gh release create`, `gh release edit` and `gh repo edit`. It does not read
+`gh release edit` and `gh repo edit`. It does not read
 other gh commands, such as `gh repo create --push`, `gh gist create` or
 `gh workflow run`.
 The refusal names the github action that sends the same content, with the
 title, body, base and number the command gave, such as
 `Next: run \`board github pr-create --title "Add a gear" --body "..."\``.
+A push of a tag, by `--tags`, `--follow-tags`, `tag <name>` or a
+`refs/tags/` refspec, names `tag`. A push that deletes, by `--delete`, `-d`
+or a refspec starting with `:`, is refused as a push, and the refusal says
+Board never deletes tags or branches. A `gh api` POST to
+`repos/<o>/<r>/releases` names `release-create`.
 The command name is the constant `BOARD_COMMAND` in `claude-code/hooks/command.ts`.
 
 The mod refuses only when it is sure. It must be sure the command writes to
@@ -525,7 +576,7 @@ advice to the builder's prompt and adds it to the lead's tool result. When
 `covers --action <action> [--remote <remote>] [--repo <owner>/<repo>]`
 returns `covered`, each destination a boundary covers, with `to` and
 `boundaries`. The action is `push`, `pr-create`, `pr-edit`, `comment`,
-`issue-create`, or `api` for a gh write Board has no action for, which a
+`issue-create`, `tag`, `release-create`, or `api` for a gh write Board has no action for, which a
 boundary matches as `github.api`; any other is refused as bad input. It
 checks nothing and writes nothing.
 

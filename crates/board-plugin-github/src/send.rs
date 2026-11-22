@@ -43,7 +43,7 @@ impl Origin<'_> {
 
     /// [`Origin::check`] for a call that offers `--ask_owner`, which asks the
     /// owner on a failure when `ask_owner`.
-    fn check_asking(
+    pub(crate) fn check_asking(
         &self,
         action: &str,
         parts: &Parts,
@@ -529,7 +529,7 @@ pub(crate) fn issue_create(host: &dyn Host, input: &Value) -> Result<Value, Plug
 }
 
 /// `error`, a failure after GitHub took the content at `url`, saying so.
-fn sent_already(url: &str, error: PluginError) -> PluginError {
+pub(crate) fn sent_already(url: &str, error: PluginError) -> PluginError {
     let lead = format!("{url} was already sent, so do not send it again");
     after_sent(&lead, url, error)
 }

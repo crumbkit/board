@@ -3,7 +3,7 @@ ok attention 0.2.0 disabled offers verify, pinned, sign
 ok boundary 0.1.0 disabled offers check, covers, verify, record
 ok changes 0.1.0 disabled offers start, next, attach, advance, open, pr, plan, lifecycle, brief, prototype, verdict, pause, resume, reopen, reflow, sync, drop, migrate, run, stop, approve
 ok evals 0.1.0 disabled offers about, open, migrate
-ok github 0.1.0 disabled offers ref, push, pr-create, pr-edit, comment, issue-create, merge, ci, install-hook, pre-push, covers
+ok github 0.1.0 disabled offers ref, push, pr-create, pr-edit, comment, issue-create, tag, release-create, merge, ci, install-hook, pre-push, covers
 ok jira 0.1.0 disabled offers ref
 ok notes 0.1.0 disabled offers add, daily
 ok params 0.1.0 disabled offers get, due
