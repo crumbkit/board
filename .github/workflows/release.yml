@@ -145,10 +145,13 @@ jobs:
 
   # The release gets the archives, SHA256SUMS and an attestation of each
   # archive. The attestation comes before the upload, so a refused one
-  # publishes nothing. A run again after a failure replaces the files of the
-  # release that the failed run created.
+  # publishes nothing. gh creates the release as a draft, uploads, then
+  # publishes, and deletes the draft when an upload fails, so a failed run
+  # leaves no release and a run again creates it. `--verify-tag` and gh
+  # refuse a release that already exists, so no run replaces published
+  # archives.
   release:
-    if: github.ref_type == 'tag'
+    if: github.event_name == 'push' && github.ref_type == 'tag'
     needs: [version, ci, slow, install]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -176,8 +179,4 @@ jobs:
           subject-path: dist/*.tar.gz
       - run: |
           notes="board $VERSION for aarch64-apple-darwin, x86_64-apple-darwin, aarch64-unknown-linux-gnu and x86_64-unknown-linux-gnu, with SHA256SUMS. Install it with Homebrew or the Board dmg, as https://github.com/$GITHUB_REPOSITORY/blob/$GITHUB_REF_NAME/docs/guide/getting-started.md says."
-          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
-            gh release upload "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --clobber dist/*
-          else
-            gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --verify-tag --title "$GITHUB_REF_NAME" --notes "$notes" dist/*
-          fi
+          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --verify-tag --title "$GITHUB_REF_NAME" --notes "$notes" dist/*

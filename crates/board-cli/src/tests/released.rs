@@ -47,6 +47,19 @@ const PROTOCOL: &[&str] = &[
     board_plugin::ERROR_TYPE,
 ];
 
+/// The codes about an external plugin's process or its manifest, which
+/// released.json may list as unstable. Board returns the other
+/// `board::plugin::` codes for built-in plugins and CLI users too, so they
+/// are frozen.
+const PROTOCOL_CODES: &[board_model::Code] = &[
+    board_model::Code::PluginBadManifest,
+    board_model::Code::PluginBadOutput,
+    board_model::Code::PluginFailed,
+    board_model::Code::PluginNotStarted,
+    board_model::Code::PluginTimeout,
+    board_model::Code::PluginTooLarge,
+];
+
 /// The crates of the built-in plugins, whose sources name their codes.
 const PLUGIN_CRATES: &str = "crates";
 
@@ -89,6 +102,18 @@ struct Unstable {
 impl Unstable {
     fn is_empty(&self) -> bool {
         self.types.is_empty() && self.codes.is_empty()
+    }
+
+    /// Each entry that is not the external plugin protocol's, so a list
+    /// that exempts a frozen type or code is refused.
+    fn misnamed(&self) -> Vec<String> {
+        let types = (self.types.iter())
+            .filter(|id| !PROTOCOL.contains(&id.as_str()))
+            .map(|id| format!("{id} is not a protocol type"));
+        let codes = (self.codes.iter())
+            .filter(|code| !PROTOCOL_CODES.iter().any(|known| known.as_str() == *code))
+            .map(|code| format!("{code} is not a protocol code"));
+        types.chain(codes).collect()
     }
 
     /// Whether the entry at `key` names an unstable type: a report's
@@ -1263,14 +1288,9 @@ fn every_released_type_report_and_code_is_as_it_was_released() {
     let (overwrite, all) = mode();
     let released: Released = serde_json::from_slice(&std::fs::read(FILE).unwrap()).unwrap();
     // The unstable list names only the external plugin protocol's types and
-    // codes Board has, so a misspelt entry exempts nothing unnoticed.
+    // codes, so it exempts no frozen interface and no misspelt entry.
     let unstable = &released.unstable;
-    for id in &unstable.types {
-        assert!(
-            PROTOCOL.contains(&id.as_str()),
-            "{id} is not a protocol type"
-        );
-    }
+    assert_eq!(unstable.misnamed(), Vec::<String>::new());
     for code in &unstable.codes {
         assert!(
             present.codes.contains(code),
@@ -1752,6 +1772,27 @@ fn a_changed_protocol_type_and_a_gone_protocol_code_are_admitted_while_unstable_
         ["board::plugin::other", "board::x::kept"]
     );
     assert_eq!(written.unstable, released.unstable);
+    // The list may name only the protocol's types and codes, so it cannot
+    // exempt a frozen one.
+    assert_eq!(released.unstable.misnamed(), Vec::<String>::new());
+    let frozen_named = listed(
+        &one,
+        "data.kept",
+        "board::plugin::bad_output",
+        &[
+            "board/x/v1",
+            "board::put::stale",
+            "board::plugin::not_installed",
+        ],
+    );
+    assert_eq!(
+        frozen_named.unstable.misnamed(),
+        [
+            "board/x/v1 is not a protocol type",
+            "board::plugin::not_installed is not a protocol code",
+            "board::put::stale is not a protocol code",
+        ]
+    );
 }
 
 /// A capability `x.y` whose input requires `required`, types `path` as

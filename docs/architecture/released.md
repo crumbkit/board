@@ -39,4 +39,3 @@ A release writes the file by running that test with `SNAPSHOTS=overwrite`,
 then checks it with `RELEASED=all`, which fails unless the file lists
 everything the checkout ships. It lists 0.1.0, except the
 [unstable interfaces](released/unstable.md).
-
