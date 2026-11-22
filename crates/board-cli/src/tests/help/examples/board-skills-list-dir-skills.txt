@@ -1,4 +1,5 @@
 STATE    NAME                 PATH
+missing  apply-standard       skills/apply-standard
 missing  artifacts            skills/artifacts
 missing  attention            skills/attention
 missing  boundary             skills/boundary

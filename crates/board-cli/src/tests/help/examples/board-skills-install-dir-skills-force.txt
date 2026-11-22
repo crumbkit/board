@@ -1,4 +1,5 @@
 STATE    NAME                 PATH
+written  apply-standard       skills/apply-standard
 written  artifacts            skills/artifacts
 written  attention            skills/attention
 written  boundary             skills/boundary
