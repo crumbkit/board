@@ -168,12 +168,16 @@ pub(crate) fn closure(host: &dyn Host, path: &str) -> Result<Closure, PluginErro
         left,
         expanded,
     } = walk;
-    // A directory under the shared path, or one a typed reference reached,
-    // has its entries copied anyway.
+    // A directory under the shared path, or at or under one a typed
+    // reference reached, has its entries copied anyway.
+    let copied = |target: &str| {
+        inside(target)
+            || (expanded.iter()).any(|directory| {
+                target == directory || target.starts_with(&format!("{directory}/"))
+            })
+    };
     let not_copied = (left.into_iter())
-        .filter(|(target, (reason, _))| {
-            !(matches!(reason, Reason::Directory) && (inside(target) || expanded.contains(target)))
-        })
+        .filter(|(target, (reason, _))| !(matches!(reason, Reason::Directory) && copied(target)))
         .map(|(path, (reason, from))| NotCopied { path, reason, from })
         .collect();
     let extras = (extras.into_iter())

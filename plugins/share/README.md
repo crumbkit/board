@@ -94,8 +94,9 @@ The output is:
   behind, each with its `path`, `reason` and `from`, with
   `not_copied_total` counting them all;
 - `next`, the command that writes: the same call with `--yes`, and with
-  `--allow-uncopied` when `not_copied` is not empty. It is null after a
-  write;
+  `--allow-uncopied` when `not_copied` is not empty. It starts
+  `board -C <root>`, where `<root>` is this board's repository, so it writes
+  the same board from any directory. It is null after a write;
 - `repository`, the repository the mount reaches;
 - `commit`, the commit in it that holds the copies, which the pin now names,
   null when nothing was written;

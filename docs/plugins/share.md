@@ -21,16 +21,15 @@ have to go as well.
 Because each entry keeps its path, no reference is rewritten. The set is found
 from the index, which holds every typed reference, so no relation is declared
 by hand: an eval's evidence is its children, and its suites and runs are
-what it references. A reference to a directory reaches every entry under it.
+what it references. A typed reference to a directory reaches every entry under it.
 The references a record's schema declares are followed, including those in
 a Markdown record's frontmatter, which is copied as text with its type's
 schema and checked again by the destination's `put`. Markdown links are
 followed, and so are back-refs: records whose typed reference names a shared
 entry, such as a project's decisions. Only shared entries collect back-refs.
-The owner chose on 2026-11-21 not to follow paths in prose. A link or
-back-ref share cannot copy is listed, and a write refuses it unless allowed. A
-reference through a mount is not copied, because the
-mounted repository is not this board's to copy; it must resolve to the same
+A path written in prose is not followed. A link or back-ref share cannot copy
+is listed, and a write refuses it unless allowed. A reference through a mount
+is not copied, because the mounted repository is not this board's to copy; it must resolve to the same
 repository in the destination, or the reader would meet a dangling reference.
 There is no flag to copy one dangling until a need shows. A link inside the
 set is refused, because `board get` reads through it and a batch would write a
@@ -41,13 +40,14 @@ in the destination.
 ## One commit, decided first
 
 Without `yes` a share is a preview that writes nothing, so the person
-agrees to the extras first. The plugin's own
-refusals are decided before anything is written, in the preview too: a path the destination holds differently, a schema it holds
-differently, a reference it cannot resolve, a file a batch cannot hold, a
-link, a record the index already reports with a code that `put` would refuse,
-and an attachment its readers cannot fetch. A broken reference is not refused, because `put` admits it.
-There is no override for a difference; the person renames the record or
-settles which copy is right.
+agrees to the extras first. The plugin's own refusals are decided before
+anything is written, in the preview too: a path the destination holds
+differently, a schema it holds differently, a reference it cannot resolve, a
+file a batch cannot hold, a link, a record the index already reports with a
+code that `put` would refuse, and an attachment its readers cannot fetch. A
+broken reference is not refused, because `put` admits it. There is no
+override for a difference; the person renames the record or settles which
+copy is right.
 
 The share is one `put` of batch lines through the mount, as `board put
 --batch` takes them. It holds a schema

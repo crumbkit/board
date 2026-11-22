@@ -141,6 +141,12 @@ impl Boards {
         commit
     }
 
+    /// The command `next` prints, which names this board with `-C`, with
+    /// `rest` after `board -C <root>`.
+    fn next(&self, rest: &str) -> String {
+        format!("board -C {} {rest}", real(self.personal.board.workdir()))
+    }
+
     /// The commit the mount of the team board is pinned to.
     fn pin(&self) -> String {
         let pointer: Value = serde_json::from_str(&self.personal.read("team.json")).unwrap();
@@ -424,9 +430,20 @@ fn the_documented_command_line_runs_with_flags_named_after_the_input_and_a_dashe
     assert_eq!(preview["copied"], json!(SHARED));
     assert_eq!(
         preview["next"],
-        "board share to --path /evals/x --to /team --yes --local_attachments"
+        boards.next("share to --path /evals/x --to /team --yes --local_attachments")
     );
     assert_eq!(boards.head().id, before);
+    let arguments: Vec<&str> = ["--json", "share", "to"]
+        .into_iter()
+        .chain(with_to(&call))
+        .chain(["--local_attachments"])
+        .collect();
+    let bare = boards.personal.run(&arguments);
+    assert_eq!(bare.code, 0, "{}", text(&bare.stdout));
+    assert_eq!(
+        json(&bare)["data"]["output"]["next"],
+        boards.next("share to --path /evals/x --to /team --yes --local_attachments")
+    );
     for wrong in ["--local-attachments", "--allow_uncopied"] {
         let dashed = [&call[..], &[wrong]].concat();
         let arguments: Vec<&str> = ["--json", "call", "share.to"]
@@ -475,7 +492,7 @@ fn without_yes_the_share_lists_what_it_would_copy_and_the_command_that_writes_an
     );
     assert_eq!(
         output["next"],
-        "board share to --path /evals/x --to /team --yes"
+        boards.next("share to --path /evals/x --to /team --yes")
     );
     assert_eq!(boards.head().id, before);
     assert_eq!(boards.pin(), before.to_string());
@@ -507,10 +524,14 @@ fn the_eval_record_is_copied_as_its_value() {
 }
 
 #[test]
-fn a_reference_to_a_directory_copies_the_entries_under_it() {
+fn a_reference_to_a_directory_copies_the_entries_under_it_and_a_link_to_a_directory_under_it_is_not_listed()
+ {
     let boards = boards();
     boards.experiment("/notes", &json!({}));
-    boards.personal.write("notes/more/other.md", "# Other\n");
+    boards
+        .personal
+        .write("notes/more/other.md", "# Other\n")
+        .write("notes/cases.md", "# Cases\n\nSee [more](more/).\n");
     let output = boards.share(&["--path", "/evals/x"]);
     let mut expected: Vec<&str> = SHARED.to_vec();
     expected.push("/notes/more/other.md");
@@ -706,14 +727,17 @@ fn not_copied() -> Value {
 }
 
 #[test]
-fn a_projects_decision_and_question_that_name_it_by_typed_ref_are_copied_and_one_naming_it_in_prose_is_not()
+fn a_projects_decision_and_question_that_name_it_by_typed_ref_are_copied_and_records_naming_it_in_prose_or_a_link_are_not()
  {
     let boards = boards();
     boards.project("Decided in /projects/p/decisions/c.\n");
-    boards.personal.write(
-        "projects/p/decisions/c.json",
-        &decision(&json!({"text": "For /tasks/p.md: keep one file."})),
-    );
+    boards
+        .personal
+        .write(
+            "projects/p/decisions/c.json",
+            &decision(&json!({"text": "For /tasks/p.md: keep one file."})),
+        )
+        .write("notes/mentions.md", "# Mentions\n\nSee [p](/tasks/p.md).\n");
     let preview = boards.preview(&["--path", "/tasks/p.md"]);
     assert_eq!(
         (&preview["extras"], &preview["extras_total"]),
@@ -737,6 +761,7 @@ fn a_projects_decision_and_question_that_name_it_by_typed_ref_are_copied_and_one
         assert_eq!(got.code, 0, "{path}: {}", text(&got.stdout));
     }
     assert!(!boards.exists("projects/p/decisions/c.json"));
+    assert!(!boards.exists("notes/mentions.md"));
 }
 
 #[test]
@@ -770,8 +795,30 @@ fn a_link_to_a_directory_and_one_through_the_mount_are_listed_as_not_copied_and_
             &json!(PROJECT),
             &not_copied(),
             &json!(2),
-            &json!("board share to --path /tasks/p.md --to /team --yes --allow-uncopied")
+            &json!(boards.next("share to --path /tasks/p.md --to /team --yes --allow-uncopied"))
         )
     );
     assert_eq!(boards.head().id, before);
+}
+
+#[test]
+fn a_link_through_a_link_in_this_board_and_one_to_nothing_are_listed_with_reasons_link_and_missing()
+{
+    let boards = boards();
+    boards.project("See [why](/latest/why.md) and [gone](/notes/gone.md).\n");
+    boards.personal.write(
+        "latest.json",
+        r#"{"$type": "board/mount/v1", "path": "/notes"}"#,
+    );
+    let preview = boards.preview(&["--path", "/tasks/p.md"]);
+    assert_eq!(
+        (&preview["copied"], &preview["not_copied"]),
+        (
+            &json!(PROJECT),
+            &json!([
+                {"path": "/latest/why.md", "reason": "link", "from": "/tasks/p.md"},
+                {"path": "/notes/gone.md", "reason": "missing", "from": "/tasks/p.md"},
+            ])
+        )
+    );
 }

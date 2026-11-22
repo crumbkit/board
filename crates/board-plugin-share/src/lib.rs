@@ -60,8 +60,9 @@ fn manifest() -> Value {
         "capabilities": [{
             "name": "to",
             "description": "Copy a record, its children, what they reference or link to, the records \
-                that reference it and the schemas it lacks into a mounted board, as one commit \
-                there, and move the mount's pin to it; without yes, list them and write nothing.",
+                that reference it or its children and the schemas it lacks into a mounted board, \
+                as one commit there, and move the mount's pin to it; without `yes`, list them and \
+                write nothing.",
             "inputSchema": schema_of::<to::Input>(SchemaSettings::draft2020_12()),
             "outputSchema": schema_of::<to::Output>(SchemaSettings::draft2020_12().for_serialize()),
             "annotations": {

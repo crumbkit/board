@@ -168,7 +168,10 @@ pub(crate) fn share_to(host: &dyn Host, input: &Value) -> Result<Value, PluginEr
         })?;
         commit = Some(mount(host, &to)?.1);
     }
-    let next = (!yes).then(|| next(&path, &to, local_attachments, !not_copied.is_empty()));
+    let uncopied = !not_copied.is_empty();
+    let next = (!yes)
+        .then(|| next(host, &path, &to, local_attachments, uncopied))
+        .transpose()?;
     let (extras, extras_total) = capped(extras, LIST_LIMIT);
     let (not_copied, not_copied_total) = capped(not_copied, LIST_LIMIT);
     let listed: Vec<String> = (copied.iter().take(LIST_LIMIT))
@@ -219,10 +222,27 @@ fn schemas(
 }
 
 /// The command that writes what the preview of sharing `path` to `to`
-/// lists.
-fn next(path: &str, to: &str, local_attachments: bool, uncopied: bool) -> String {
+/// lists. It names this board with `-C`, so it writes the same board from
+/// any directory.
+fn next(
+    host: &dyn Host,
+    path: &str,
+    to: &str,
+    local_attachments: bool,
+    uncopied: bool,
+) -> Result<String, PluginError> {
+    let rows = query(
+        host,
+        "SELECT repository FROM sources WHERE source = 'worktree'",
+    )?;
+    let board = (rows.first().and_then(|row| row.first()))
+        .and_then(Value::as_str)
+        .map_or_else(
+            || "board".to_owned(),
+            |root| format!("board -C {}", quote(root)),
+        );
     let mut next = format!(
-        "board share to --path {} --to {} --yes",
+        "{board} share to --path {} --to {} --yes",
         quote(path),
         quote(to)
     );
@@ -232,7 +252,7 @@ fn next(path: &str, to: &str, local_attachments: bool, uncopied: bool) -> String
     if uncopied {
         next.push_str(" --allow-uncopied");
     }
-    next
+    Ok(next)
 }
 
 /// The first `cap` of `items`, and how many there were.
