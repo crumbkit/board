@@ -169,5 +169,6 @@
   ],
   "title": "QuestionRecord",
   "type": "object",
-  "x-board-folder": "/projects/{project}/questions/"
+  "x-board-folder": "/projects/{project}/questions/",
+  "x-board-goes-with-whole": true
 }

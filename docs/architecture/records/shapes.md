@@ -59,6 +59,15 @@ needs to know.
     `format`. A field named `urls` holds `Url` items, `mount` and `mounts`
     are references to `board/mount/v1`, and `remote` is a `Remote`.
 
+15. A reference field that names the record this one is part of carries
+    `"x-board-part-of": true` beside `format: board-ref`, on `items` for a
+    list, such as `tasks/task/v2`'s `parent`. A type whose records go with
+    a whole they name carries `"x-board-goes-with-whole": true` at its top
+    level, such as `plans/decision/v1` and `plans/question/v1`. Neither
+    keyword changes any record's validity. The share plugin reads them to
+    find a shared record's wholes and the records each brings
+    (plugins/share/README.md), and never infers either from a name.
+
 `xtask/tests/shapes.rs` checks rules 1, 2, 5, 10, 11, 12 and 14 on every
 committed record schema. It lists the schemas that break rules 1 to 12
 today, until their plugins are ported. For rule 14 it lists each field by

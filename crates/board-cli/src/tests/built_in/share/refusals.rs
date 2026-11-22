@@ -346,3 +346,61 @@ fn links_share_cannot_copy_refuse_the_share_naming_each_and_allow_uncopied_write
     );
     assert!(boards.exists("tasks/p.md"));
 }
+
+#[test]
+fn a_back_refs_reference_through_a_mount_the_team_lacks_is_listed_as_not_copied_and_allow_uncopied_writes()
+ {
+    let boards = tasks_boards();
+    let (library, commit) = library();
+    boards
+        .personal
+        .write("repos/library.json", &mount_of(&library.path(), commit));
+    boards.reading_list().personal.write(
+        "projects/tidy/decisions/d.json",
+        &plan_decision(&["/tasks/tidy.md", "/repos/library"]),
+    );
+    let call = ["--path", "/tasks/tidy.md"];
+    let preview = boards.preview(&call);
+    assert_eq!(
+        (&preview["not_copied"], &preview["next"]),
+        (
+            &json!([{"path": "/repos/library", "reason": "mount", "from": "/projects/tidy/decisions/d"}]),
+            &json!(boards.next("share to --path /tasks/tidy.md --to /team --yes --allow-uncopied"))
+        )
+    );
+    let before = boards.head().id;
+    let refused = boards.refused(&call);
+    assert_eq!(
+        (&refused["code"], &refused["fields"]["paths"]),
+        (
+            &json!("share::closure::uncopied"),
+            &strings(&["/repos/library"])
+        )
+    );
+    assert_eq!(boards.head().id, before);
+    boards.share(&["--path", "/tasks/tidy.md", "--allow-uncopied"]);
+    assert!(boards.exists("projects/tidy/decisions/d.json"));
+}
+
+#[test]
+fn the_shared_tasks_own_reference_through_a_mount_the_team_lacks_is_still_refused() {
+    let boards = tasks_boards();
+    let (library, commit) = library();
+    boards
+        .personal
+        .write("repos/library.json", &mount_of(&library.path(), commit));
+    boards.reading_list().personal.write(
+        "tasks/remove.md",
+        &task("Remove", "parent: /tasks/tidy.md\nbrief: /repos/library\n"),
+    );
+    let call = ["--path", "/tasks/remove.md", "--allow-uncopied"];
+    let refused = boards.refused_preview(&call);
+    assert_eq!(
+        (&refused["code"], &refused["fields"]["paths"]),
+        (
+            &json!("share::closure::unresolved"),
+            &strings(&["/repos/library"])
+        )
+    );
+    assert_eq!(boards.refused(&call)["code"], "share::closure::unresolved");
+}

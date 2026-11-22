@@ -41,6 +41,23 @@ fn the_committed_schema_is_what_its_struct_generates() {
     }
 }
 
+/// Only `parent` names the record a task is part of, so share treats the
+/// task's project as a whole and its `after` and `brief` as plain
+/// references.
+#[test]
+fn the_schema_marks_parent_alone_as_naming_the_record_a_task_is_part_of() {
+    let (_, schema) = Tasks.schemas().remove(0);
+    let marked: Vec<&String> = (schema["properties"].as_object().unwrap().iter())
+        .filter(|(_, field)| {
+            field["x-board-part-of"] == true || field["items"]["x-board-part-of"] == true
+        })
+        .map(|(name, _)| name)
+        .collect();
+    assert_eq!(marked, ["parent"]);
+    assert_eq!(schema["properties"]["parent"]["format"], "board-ref");
+    assert!(!schema["$defs"].to_string().contains("x-board-part-of"));
+}
+
 /// The `description` of SKILL.md's frontmatter, a single-quoted YAML
 /// scalar on one line.
 fn skill_description() -> String {

@@ -122,6 +122,7 @@
       "description": "The task in the same repo this one is part of, by path.",
       "format": "board-ref",
       "type": "string",
+      "x-board-part-of": true,
       "x-board-type": "tasks/task/v2"
     },
     "pinned": {

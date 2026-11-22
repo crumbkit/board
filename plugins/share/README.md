@@ -22,9 +22,8 @@ design and the reasons for it; this file says how to call it.
   writes nothing. Board's checks for a write through a mount run only when
   the call writes. `next` gives the command that writes.
 - `yes` writes the set.
-- `allow-uncopied`, with `yes`, writes the set even when a link or back-ref
-  names something the share cannot copy. Without it, such a target makes
-  the call refuse.
+- `allow-uncopied`, with `yes`, writes the set even when `not_copied` lists
+  something. Without it, such a target makes the call refuse.
 - `local_attachments` copies an attachment whose bytes are on this machine.
   Pass it only when every reader of the destination can read that location.
 
@@ -42,34 +41,67 @@ followed until nothing new is reached:
   or absolute;
 - each record in this board's own tree whose typed reference names the entry
   at `path` or an entry under it. This is a back-ref, such as a decision
-  whose `project` field names the shared project.
+  whose `refs` names the shared project.
 
 Only the entry at `path` and the entries under it collect back-refs, so
 sharing an eval does not bring every record that names the eval's suite. A
-back-ref's own references and links are followed. A path written in prose is
-not followed, because only a typed reference or a link is one.
+back-ref's own references and links are followed. A path written in prose
+is not followed, because only a typed reference or a link is one.
+
+### Wholes
+
+A whole is a record that the entry at `path`, an entry under it, or another
+whole names through a part-of field. A part-of field's schema in this
+board's `.board/types/` carries `"x-board-part-of": true`, on `items` for a
+list. The `parent` of a `tasks/task/v2` task is one, so a shared task's
+project is a whole, and so is that project's parent, up the chain.
+
+A whole brings the records that name it by a typed reference and whose
+type's schema carries `"x-board-goes-with-whole": true` at its top level.
+`plans/decision/v1` and `plans/question/v1` carry it, so sharing a task
+brings its project's decisions and questions. Its other tasks, its change
+records and every other record that names it stay out. These decisions and
+questions are copied as they are, and none of their references or links is
+followed. Each one to a path the set does not hold is listed in
+`not_copied`, and the copy names that path dangling. A typed reference
+through a mount is listed only when the destination does not resolve it
+into the same repository.
+
+A board whose copy of a schema lacks a keyword finds no wholes, or keeps no
+decisions, through that type until `board plugin enable` refreshes the
+copy.
 
 Sharing `/evals/x` copies the eval, the evidence under `/evals/x/evidence/`,
 the suites and runs it references, and a cases file a suite references, such
 as `/notes/cases.md`. A typed reference to a directory reaches every entry
 under it.
 
-A link or back-ref target the share cannot copy is listed in `not_copied`
-with a reason:
+A target the share does not copy is listed in `not_copied` with a reason:
 
 - `directory`: a link to a directory, whose entries are not copied. A
   directory under `path`, or one a typed reference reaches, is not listed,
   because its entries are copied anyway.
 - `mount`: the target is reached through a mount.
 - `link`: the target is reached through a link in this board.
-- `missing`: the link names nothing.
+- `missing`: the link, or a whole's decision's or question's reference,
+  names nothing.
+- `beyond`: a whole's decision or question names an entry in this board
+  that the set does not hold.
+
+A typed reference through a mount or link that only back-refs make, and
+that the destination does not resolve into the same repository, is listed
+with `from` the back-ref. Its reason is `mount` through a mount and `link`
+through a link in this board. When a Markdown link and a back-ref's typed
+reference name the same path, the path is listed once, with the Markdown
+link's entry.
 
 Each entry lands at the same path in the destination, so no
 reference is rewritten. The schema of every record type in the set goes too,
 except Board's own `board/*` types.
 
 A typed reference that resolves through a mount or a link is not copied. It
-must resolve, in the destination, into the same repository. A reference
+must resolve, in the destination, into the same repository, unless only
+back-refs make it. A reference
 through a link inside this board can therefore be shared only if the record
 names the link's target path directly, or the destination mounts this board.
 A link inside the set is refused. A record with a broken reference is copied
@@ -90,9 +122,12 @@ The output is:
 - `extras`, at most 100 paths in the set outside `path`, each with `via`,
   how it was reached (`ref`, `link` or `back_ref`), and `from`, the entry
   that reached it first, with `extras_total` counting them all;
-- `not_copied`, at most 100 link and back-ref targets the share leaves
-  behind, each with its `path`, `reason` and `from`, with
-  `not_copied_total` counting them all;
+- `not_copied`, at most 100 targets the share leaves behind, each with its
+  `path`, `reason` and `from`, with `not_copied_total` counting them all;
+- `wholes`, at most 100 of every whole outside `path`, each with `path`,
+  `from`, the part that names it, and `back_refs`, how many decisions and
+  questions it added, which may be none, with `wholes_total` counting them
+  all;
 - `next`, the command that writes: the same call with `--yes`, and with
   `--allow-uncopied` when `not_copied` is not empty. It starts
   `board -C <root>`, where `<root>` is this board's repository, so it writes
@@ -152,8 +187,8 @@ refuses in its `paths` field.
 | `share::mount::not_found` | `to` is not the mount record of another repository: it reaches no board, mounts this board's own repository, or is a path inside a mount, a mount inside a mounted board or a link to a mount |
 | `share::link::unsupported` | a link, such as a `board/mount/v1` record, is in the set; a batch would write a copy of its target in its place |
 | `share::record::invalid` | a record in the set carries a code other than a broken reference's, so `board put` would refuse it, or a schema it needs stopped parsing after the set was read |
-| `share::closure::unresolved` | a typed reference through a mount or link does not resolve into the same repository in the destination |
-| `share::closure::uncopied` | with `yes` and without `allow-uncopied`, a link or back-ref names something the share cannot copy; the message gives each path's reason |
+| `share::closure::unresolved` | a typed reference through a mount or link, made by an entry that is not a back-ref, does not resolve into the same repository in the destination |
+| `share::closure::uncopied` | with `yes` and without `allow-uncopied`, `not_copied` lists a path; the message gives each path's reason |
 | `share::file::unsupported` | a file in the set is not UTF-8, or is a `.json` file without `$type`, which a batch line cannot write |
 | `share::attachment::local` | an attachment's `location` is a path on this machine, without `local_attachments` |
 | `share::target::differs` | the destination holds a different record, file or schema at a path in the set |

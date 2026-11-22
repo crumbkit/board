@@ -116,5 +116,6 @@
   },
   "title": "DecisionRecord",
   "type": "object",
-  "x-board-folder": "/projects/{project}/decisions/"
+  "x-board-folder": "/projects/{project}/decisions/",
+  "x-board-goes-with-whole": true
 }

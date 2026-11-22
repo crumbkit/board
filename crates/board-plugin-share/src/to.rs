@@ -1,11 +1,12 @@
 //! `to`: copy a record and everything a reader needs into a mounted board.
 //!
 //! `closure` finds the set. A typed reference through a mount or link must
-//! resolve to the same repository in the destination. A link inside the set
-//! is refused. The plugin's own refusals are decided before anything is
-//! written. Without `yes` the call is a preview: it writes nothing and
-//! prints the command that writes. With `yes`, a link or back-ref the share
-//! cannot copy is refused unless `allow-uncopied` is given. Then one batch
+//! resolve to the same repository in the destination, except one only
+//! back-refs make, which is listed as not copied when it does not. A link
+//! inside the set is refused. The plugin's own refusals are decided before
+//! anything is written. Without `yes` the call is a preview: it writes
+//! nothing and prints the command that writes. With `yes`, anything listed
+//! as not copied is refused unless `allow-uncopied` is given. Then one batch
 //! put writes the missing schemas and the set through the mount, which makes
 //! one commit in the mounted board and moves the mount's pin to it.
 
@@ -18,7 +19,7 @@ use board_ops::{
     Absent, Board, Host, Limit, PluginError, RefsReport, literal, source_name, uri_of,
 };
 
-use crate::closure::{Closure, Extra, NotCopied, closure};
+use crate::closure::{Closure, Extra, Mounted, NotCopied, Whole, closure};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
@@ -45,7 +46,7 @@ pub(crate) struct Input {
     /// Write the copies, when true; without it the call lists what it would copy and writes nothing.
     #[serde(default)]
     yes: bool,
-    /// With yes, write the set even when a link or back-ref names something the share cannot copy, when true.
+    /// With yes, write the set even when it names something the share does not copy, as the preview's `not_copied` lists, when true.
     #[serde(default, rename = "allow-uncopied")]
     allow_uncopied: bool,
     /// Copy an attachment whose bytes are on this machine, which other readers cannot fetch, when true.
@@ -59,8 +60,14 @@ pub(crate) struct Input {
 /// the set outside it, each with `via`, how it was reached (`ref`, `link`
 /// or `back_ref`), and `from`, the entry that reached it first;
 /// `extras_total` counts them all. `not_copied` lists, at most 100, the
-/// link and back-ref targets the share leaves behind, each with its
-/// `reason` and `from`; `not_copied_total` counts them all. `next` is the
+/// targets the share leaves behind: link and back-ref targets it cannot
+/// copy, references through a mount that only back-refs make, and the
+/// references of the records that go with a whole, which it does not
+/// follow. Each has its `reason` and `from`; `not_copied_total` counts them
+/// all. `wholes` lists, at most 100, every whole outside the shared path,
+/// each with `path`, `from`, the part that names it, and `back_refs`, how
+/// many records that go with it, such as decisions and questions, it added,
+/// which may be none; `wholes_total` counts them all. `next` is the
 /// command that writes, null after a write. `repository` is the repository
 /// the mount reaches. `commit` is the commit in it that holds the copies,
 /// which the mount's pin now names, null when nothing was written. `types`
@@ -79,6 +86,8 @@ pub(crate) struct Output {
     extras_total: usize,
     not_copied: Vec<NotCopied>,
     not_copied_total: usize,
+    wholes: Vec<Whole>,
+    wholes_total: usize,
     next: Option<String>,
     repository: String,
     commit: Option<String>,
@@ -112,9 +121,14 @@ pub(crate) fn share_to(host: &dyn Host, input: &Value) -> Result<Value, PluginEr
         found,
         mounted,
         extras,
-        not_copied,
+        mut not_copied,
+        wholes,
     } = closure(host, &path)?;
-    unresolved(host, &to, &mounted)?;
+    not_copied.extend(unresolved(host, &to, &mounted)?);
+    not_copied.sort_by(|one, other| one.path.cmp(&other.path));
+    // A path a link reaches through a mount and a back-ref's typed reference
+    // names too is listed once, as the link's.
+    not_copied.dedup_by(|one, other| one.path == other.path);
     if yes && !allow_uncopied {
         uncopied(&not_copied)?;
     }
@@ -174,6 +188,7 @@ pub(crate) fn share_to(host: &dyn Host, input: &Value) -> Result<Value, PluginEr
         .transpose()?;
     let (extras, extras_total) = capped(extras, LIST_LIMIT);
     let (not_copied, not_copied_total) = capped(not_copied, LIST_LIMIT);
+    let (wholes, wholes_total) = capped(wholes, LIST_LIMIT);
     let listed: Vec<String> = (copied.iter().take(LIST_LIMIT))
         .map(|target| (*target).clone())
         .collect();
@@ -183,6 +198,8 @@ pub(crate) fn share_to(host: &dyn Host, input: &Value) -> Result<Value, PluginEr
         extras_total,
         not_copied,
         not_copied_total,
+        wholes,
+        wholes_total,
         next,
         uris: uris(&repository, &listed),
         repository,
@@ -309,8 +326,8 @@ fn mount(host: &dyn Host, to: &str) -> Result<(String, String), PluginError> {
     }
 }
 
-/// Refuses, naming each with its reason, the link and back-ref targets the
-/// share cannot copy.
+/// Refuses, naming each with its reason, the targets the share does not
+/// copy.
 fn uncopied(not_copied: &[NotCopied]) -> Result<(), PluginError> {
     if not_copied.is_empty() {
         return Ok(());
@@ -321,7 +338,7 @@ fn uncopied(not_copied: &[NotCopied]) -> Result<(), PluginError> {
         .collect();
     let mut refused = refusal(
         "share::closure::uncopied",
-        "a link or back-ref names what the share cannot copy:",
+        "the set names what the share does not copy:",
         &named,
     );
     refused.fields.insert("paths".to_owned(), json!(paths));
@@ -333,27 +350,37 @@ fn uncopied(not_copied: &[NotCopied]) -> Result<(), PluginError> {
 }
 
 /// Refuses each reference through a mount or link that the destination
-/// does not resolve into the same repository.
+/// does not resolve into the same repository, and lists as not copied each
+/// such reference that only back-refs make.
 fn unresolved(
     host: &dyn Host,
     to: &str,
-    mounted: &BTreeMap<String, String>,
-) -> Result<(), PluginError> {
-    let mut lost = Vec::new();
-    for (target, reaches) in mounted {
+    mounted: &BTreeMap<String, Mounted>,
+) -> Result<Vec<NotCopied>, PluginError> {
+    let (mut lost, mut left) = (Vec::new(), Vec::new());
+    for (target, made) in mounted {
         let resolved = match format!("{to}{target}").parse::<LogicalPath>() {
             Ok(path) => refs(host, &[path])?.into_iter().next().flatten(),
             Err(_) => None,
         };
-        if !matches!(resolved, Some(location) if repository(&location) == *reaches) {
-            lost.push(target.clone());
+        if matches!(resolved, Some(location) if repository(&location) == made.repository()) {
+            continue;
+        }
+        match made {
+            Mounted::Kept { .. } => lost.push(target.clone()),
+            Mounted::BackRef { from, reason, .. } => left.push(NotCopied {
+                path: target.clone(),
+                reason: *reason,
+                from: from.clone(),
+            }),
         }
     }
     refuse(
         "share::closure::unresolved",
         "the destination does not resolve, into the same repository,",
         &lost,
-    )
+    )?;
+    Ok(left)
 }
 
 /// What one entry of the set is, by the index.
@@ -528,7 +555,7 @@ fn quote(text: &str) -> String {
 }
 
 /// The logical path of a type's schema.
-fn schema_path(record_type: &str) -> String {
+pub(crate) fn schema_path(record_type: &str) -> String {
     format!("/.board/types/{record_type}.schema")
 }
 
@@ -547,7 +574,7 @@ pub(crate) fn same(line: &Line, now: &[u8]) -> bool {
 
 /// The bytes at each of `paths`, or none where the destination holds
 /// nothing. Board's other refusals are `share::board::refused`.
-fn held(host: &dyn Host, paths: &[String]) -> Result<Vec<Option<Vec<u8>>>, PluginError> {
+pub(crate) fn held(host: &dyn Host, paths: &[String]) -> Result<Vec<Option<Vec<u8>>>, PluginError> {
     (get(host, paths)?.into_iter())
         .map(|read| match read {
             Ok(bytes) => Ok(Some(bytes)),
@@ -643,7 +670,7 @@ fn refuse(code: &str, why: &str, paths: &[String]) -> Result<(), PluginError> {
 
 /// `code`, naming every one of `paths` in its message and its `paths`
 /// field.
-fn refusal(code: &str, why: &str, paths: &[String]) -> PluginError {
+pub(crate) fn refusal(code: &str, why: &str, paths: &[String]) -> PluginError {
     let mut named = paths
         .iter()
         .take(10)

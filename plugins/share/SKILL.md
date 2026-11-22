@@ -23,13 +23,18 @@ Copy a record you wrote into a board other people read.
    - `extras`: each record or file outside `/<record>` that goes with it,
      with `via` and `from`. `ref` is a typed reference, `link` a Markdown
      link, and `back_ref` a record whose typed reference names the shared
-     record or an entry under it, such as a decision whose `project` names
-     the shared project.
-   - `not_copied`: each link or back-ref target the share cannot copy, with
-     its `reason`: `directory`, `mount`, `link` or `missing`.
+     record, an entry under it or a whole, such as a decision whose `refs`
+     names the shared project.
+   - `wholes`: each record the shared one is part of, such as a task's
+     project named by its `parent`, with `back_refs`, how many decisions
+     and questions it brought. A whole brings only those, and the share
+     follows none of their references.
+   - `not_copied`: each target the share does not copy, with its `reason`:
+     `directory`, `mount`, `link`, `missing`, or `beyond` for an entry a
+     whole's decision or question names that the set does not hold.
    - `next`: the command that writes.
 
-   Read `extras` and `not_copied` and agree to them before you go on, or
+   Read `extras`, `wholes` and `not_copied` and agree to them before you go on, or
    change the records so the set holds what you mean to share. Board's checks
    for a write through a mount run only in step 4.
 3. Fix what it refuses:
@@ -39,8 +44,9 @@ Copy a record you wrote into a board other people read.
    - `share::target::differs`: the destination holds a different file at a
      listed path. Share is a copy, never a merge. Rename your record, or ask
      the destination's owner which copy is right.
-   - `share::closure::unresolved`: a record references a path through a mount
-     or link that the destination does not resolve into the same repository.
+   - `share::closure::unresolved`: a record other than a back-ref references
+     a path through a mount or link that the destination does not resolve
+     into the same repository.
      For a mount, remove the reference or ask the destination's owner to
      mount the same repository at the same path. For a link inside this
      board, such as `/latest` linking to `/notes`, the reference can be
@@ -58,8 +64,8 @@ Copy a record you wrote into a board other people read.
      Move it out of the set.
    - `share::record::invalid`: `board check` reports a listed record, and
      `board put` would refuse it. Fix the record first.
-   - `share::closure::uncopied`: with `--yes`, a link or back-ref names
-     what the share cannot copy. Change the record, or run the command
+   - `share::closure::uncopied`: with `--yes`, `not_copied` lists what the
+     share cannot copy. Change the record, or run the command
      `next` printed, which adds `--allow-uncopied` and shares without them.
 4. Run the command `next` printed, which adds `--yes`. It writes the copies
    through the mount as one commit in the mounted repository and moves the mount's pin
