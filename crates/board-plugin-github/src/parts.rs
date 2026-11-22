@@ -10,7 +10,7 @@ use board_ops::{Host, PluginError};
 use regex::Regex;
 use serde_json::json;
 
-use crate::git::{error, git, lossy, outgoing};
+use crate::git::{error, git, git_adding, lossy, outgoing};
 
 /// The short SHA that names a commit's or tag's parts, at a fixed length so
 /// part names never change.
@@ -247,9 +247,28 @@ fn refuse_lfs(
     let stdin: String = (changed.iter())
         .flat_map(|(path, _)| [path.as_str(), "\0"])
         .collect();
-    let source = format!("--source={sha}");
-    let arguments = ["check-attr", "-z", &source, "--stdin", "filter"];
-    let answer = git(host, at, &arguments, &stdin)?;
+    // `check-attr --source` needs git 2.40, so the commit's tree is read
+    // into an index of the call's own, and `--cached` reads .gitattributes
+    // from it alone. The checkout's index, working tree and HEAD are left
+    // as they were, and the directory is removed on return.
+    let unmade = |why: String| {
+        error(
+            "github::git::failed",
+            format!(
+                "Board could not make the temporary index `git check-attr` reads: {why}; check \
+                 the system's temporary directory"
+            ),
+            json!({"command": "git check-attr"}),
+        )
+    };
+    let scratch = tempfile::tempdir().map_err(|cause| unmade(cause.to_string()))?;
+    let index = scratch.path().join("index");
+    let index =
+        (index.to_str()).ok_or_else(|| unmade(format!("{} is not UTF-8", index.display())))?;
+    let added = [("GIT_INDEX_FILE", index)];
+    git_adding(host, at, &["read-tree", sha], "", &added)?;
+    let arguments = ["check-attr", "-z", "--cached", "--stdin", "filter"];
+    let answer = git_adding(host, at, &arguments, &stdin, &added)?;
     let fields: Vec<&str> = answer.split('\0').collect();
     let stored: Vec<&str> = (fields.chunks(3))
         .filter(|triple| triple.len() == 3 && triple[2] == "lfs")

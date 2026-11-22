@@ -1,8 +1,9 @@
 # STANDARDS.md 21: the slow lane. It runs what costs too much or catches too
-# little to run on every pull request: the gates on macOS, mutation testing,
-# fuzzing and the timing job. It runs nightly on main, by hand, and from
-# release.yml before a release, which skips mutants. The jobs on macOS run in
-# the Monday night run only, and in every hand-run and release run.
+# little to run on every pull request: the gates on macOS, the tests that
+# spawn git against git 2.39, mutation testing, fuzzing and the timing job.
+# It runs nightly on main, by hand, and from release.yml before a release,
+# which skips mutants. The jobs on macOS run in the Monday night run only, and
+# in every hand-run and release run.
 name: slow
 
 on:
@@ -145,6 +146,38 @@ jobs:
       # Docker, so this job skips it. ci.yml runs it on Linux.
       - run: bin/lint rust
       - run: bin/test rust && bin/test doc
+
+  # The tests that spawn git, against git 2.39, the oldest Board supports.
+  # Debian bookworm's git is 2.39.5, and the image's toolchain is the one
+  # rust-toolchain.toml pins. ci.yml runs only a newer git, so a flag newer
+  # than 2.39 fails here, on the first night main has it or at release.
+  # Container jobs run as root, which reads files a test made unreadable, so
+  # the tests run as an unprivileged user.
+  git-floor:
+    needs: base
+    if: needs.base.outputs.run == 'true'
+    runs-on: ubuntu-24.04
+    container: rust:1.99.1-bookworm
+    timeout-minutes: 45
+    steps:
+      - run: git --version
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: taiki-e/install-action@e407f7bafb71fd004bc5c2da3032e5470cbb6ef0 # v2.87.24
+        with:
+          tool: cargo-nextest@0.9.146
+      # cargo installs the components rust-toolchain.toml names, which the
+      # unprivileged user could not.
+      - run: |
+          cargo --version
+          useradd --create-home tester
+          chown -R tester .
+      - run: |
+          runuser -u tester -- env CARGO_HOME=/home/tester/.cargo PATH="$PATH" \
+            bin/test rust -E "$TESTS"
+        env:
+          TESTS: package(board-plugin-github) | package(board-tree) | (package(board-cli) & test(/^tests::built_in::(github|changes|review)::/))
 
   # Fuzzing is randomised, so it runs every night, even on an unchanged main.
   fuzz:
@@ -317,7 +350,7 @@ jobs:
   # stays false for the jobs after it, so it is reported. A run cancelled by
   # hand makes cancelled() true and reports nothing.
   report:
-    needs: [base, macos, fuzz, timing, mutants-crate, mutants-misses, mutants-workspace]
+    needs: [base, macos, git-floor, fuzz, timing, mutants-crate, mutants-misses, mutants-workspace]
     if: ${{ !cancelled() && github.event_name == 'schedule' && (contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -328,7 +361,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          RESULTS: "base: ${{ needs.base.result }}, macos: ${{ needs.macos.result }}, fuzz: ${{ needs.fuzz.result }}, timing: ${{ needs.timing.result }}, mutants-crate: ${{ needs.mutants-crate.result }}, mutants-misses: ${{ needs.mutants-misses.result }}, mutants-workspace: ${{ needs.mutants-workspace.result }}"
+          RESULTS: "base: ${{ needs.base.result }}, macos: ${{ needs.macos.result }}, git-floor: ${{ needs.git-floor.result }}, fuzz: ${{ needs.fuzz.result }}, timing: ${{ needs.timing.result }}, mutants-crate: ${{ needs.mutants-crate.result }}, mutants-misses: ${{ needs.mutants-misses.result }}, mutants-workspace: ${{ needs.mutants-workspace.result }}"
         run: |
           title="Slow lane failed"
           body="$RUN failed ($RESULTS). A fuzz failure's crash inputs are in its crashes-* artifacts, and missed mutants are in the mutants-workspace-* artifacts."

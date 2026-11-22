@@ -155,7 +155,8 @@ impl Desk {
     }
 
     /// The `PATH` the desk's processes see: the stub gh, the `board` cargo
-    /// built, then the system's.
+    /// built, then the system's. On a macOS runner the git in `/usr/bin` is
+    /// Apple's, which can be older than the git that checked the code out.
     fn path(&self) -> String {
         let board = PathBuf::from(crate::tests::help::binary());
         let board = board.parent().unwrap().display().to_string();

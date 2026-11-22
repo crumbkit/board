@@ -23,6 +23,7 @@ and the version names it. Setting it asserts that the source is that commit:
 the local git still decides whether `.dirty.` follows, and with no local git
 the build reads as clean and shares index decisions with every build that
 names the same commit. Every plugin Board ships is built into the binary.
+Board runs git, and needs git 2.39 or later on `PATH`.
 
 Then run `board skills install`, which writes the skills built into `board`
 into `~/.claude/skills`. For an agent that reads `~/.agents/skills`, run

@@ -34,7 +34,7 @@ the reports a change attaches cover the commits of the repository it changes.
     --full-index <commit> | git patch-id --verbatim`, run without global or
     system git config.
   - `--verbatim` keeps whitespace, so a change of indentation alone is a
-    different patch. It needs git 2.40 or later.
+    different patch.
   - A merge or an empty commit has no patch id.
   - For a binary file git hashes the full blob ids, so two binary changes to
     one path get different ids.
