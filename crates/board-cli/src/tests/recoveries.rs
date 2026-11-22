@@ -965,15 +965,32 @@ fn known_boards(starts: &mut Starts) {
     let line = |dir: &Path| format!("-C {} check", dir.display());
     let (refused, admitted) = (line(library.workdir()), line(one.workdir()));
     starts.pair(&place, Code::ConfigAmbiguous, &refused, &admitted);
-    let place = RuntimeFailing::at(one.workdir()).xdg(xdg.workdir().join("xdg"));
+    // Its hint runs `board init --personal`, which writes, so it runs in a
+    // board of its own.
+    let alone = enabling("");
+    let place = RuntimeFailing::at(alone.workdir()).xdg(xdg.workdir().join("xdg"));
     starts.add(&place, Code::ConfigNotFound, "--personal check");
     starts.pair(&place, Code::ConfigNotFound, "--personal check", "check");
+    // A repository where the known boards file names `one` as the personal board.
+    let named = Scenario::new();
+    let naming = json!({"boards": [one.path()], "personal": one.path()});
+    named.write(
+        "xdg/config/board/config.json",
+        Item::File(&naming.to_string()),
+    );
+    let repository = Scenario::new();
+    identified(&repository);
+    let place = RuntimeFailing::at(repository.workdir()).xdg(named.workdir().join("xdg"));
+    let line = "init --personal";
+    starts.add(&place, Code::ConfigPersonalElsewhere, line);
+    starts.pair(&place, Code::ConfigPersonalElsewhere, line, "init");
     starts
         .shared
         .extend([one.workdir().to_path_buf(), two.workdir().to_path_buf()]);
-    starts
-        .kept
-        .extend([library, one, two, xdg].map(|kept| Box::new(kept) as Box<dyn std::any::Any>));
+    starts.kept.extend(
+        [library, one, two, xdg, alone, named, repository]
+            .map(|kept| Box::new(kept) as Box<dyn std::any::Any>),
+    );
 }
 
 /// Effects a plugin asks for: a decide the owner has not answered or

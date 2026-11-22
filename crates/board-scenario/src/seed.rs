@@ -127,7 +127,7 @@ const OPEN: &str = "ui open or the server gives it; check opens and serves nothi
 
 /// Codes `check` never gives an entry, and why. The seed board has an
 /// exhibit for every other code, so a new code needs one or a line here.
-pub const NOT_CHECKED: [(Code, &str); 86] = [
+pub const NOT_CHECKED: [(Code, &str); 87] = [
     (
         Code::CommitNotFound,
         "get --at and log give it to a commit id the board's repository does not hold; check reads the working tree",
@@ -159,6 +159,10 @@ pub const NOT_CHECKED: [(Code, &str); 86] = [
     (
         Code::ConfigAmbiguous,
         "a board that cannot be chosen does not open, so it has no entries",
+    ),
+    (
+        Code::ConfigPersonalElsewhere,
+        "only init --personal gives it, reading the known boards file; check reads the board",
     ),
     (
         Code::ConfigBoardTooOld,

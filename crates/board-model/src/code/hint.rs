@@ -381,6 +381,9 @@ fn generic(code: Code) -> &'static str {
         Code::ConfigAmbiguous => {
             "choose a board with `board -C <dir> check`, naming one of the boards listed, or leave one mount or repo record of this repository among the boards in `$XDG_CONFIG_HOME/board/config.json`"
         }
+        Code::ConfigPersonalElsewhere => {
+            "the personal board the known boards file names stays as it is; to make this board the personal one, edit `personal` in that file by hand to name this board's directory, then run init --personal again"
+        }
         Code::SchemaInvalid => {
             "fix the schema so it compiles as JSON Schema 2020-12; the message says what failed"
         }
@@ -618,7 +621,7 @@ fn generic(code: Code) -> &'static str {
             "no pending effect with that id reads as the effect its id names: the owner already answered it, `/effects/seen/<id>` holds the answer and `/effects/answered/<id>` the effect, or it was never asked; `board --personal ls /effects/pending` lists the pending effects"
         }
         Code::SettingsNoPersonal => {
-            "name the personal board in the known boards file, `~/.config/board/config.json`, as {\"personal\": \"<board directory>\"}; it holds the owner's pending effects and answers"
+            "the owner runs `board init --personal` in the personal board's directory, or names it in the known boards file, `~/.config/board/config.json`, as {\"personal\": \"<board directory>\"}; it holds the owner's pending effects and answers"
         }
         Code::SettingsUnsigned => {
             "when an answer or an owner's put under `effects/` fails: install attention-sign at ~/.local/bin/attention-sign, list the owner's key as `owner` in ~/.config/board/allowed_signers, both in the home your account's passwd entry names, and sign again; a refusal needs no signature. When a plugin's decide fails: delete the seen record from /effects/seen/ in the personal board, so the decide asks again"

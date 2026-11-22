@@ -9,6 +9,7 @@ mod config;
 mod describe;
 mod effects;
 mod graft;
+mod init;
 mod mistaken;
 mod plugin;
 mod render;

@@ -836,6 +836,7 @@ mod boundary;
 mod changes;
 mod evals;
 mod github;
+mod init;
 mod jira;
 mod notes;
 mod params;

@@ -808,6 +808,11 @@ board check
 
 board --personal check
   fails with board::config::not_found
+  run board init --personal
+    exits 0
+
+board init --personal
+  fails with board::config::personal_elsewhere
   hint
 
 board get board://acme/other-board/projects/p
@@ -845,7 +850,9 @@ board answer 9a44d25ced5cd0ddd2c346de95bdde8f0d3441a73bf9106a8448172d7846e82c re
 
 board decide --capability review.comment --path /y (with BOARD_PLUGIN=tasks)
   fails with board::settings::no_personal
-  hint
+  run board init --personal
+    fails with board::settings::from_plugin
+    hint
 
 board decide --capability review.comment --path /y (with BOARD_PLUGIN=tasks)
   fails with board::config::invalid
