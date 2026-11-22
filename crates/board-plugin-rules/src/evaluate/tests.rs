@@ -133,3 +133,26 @@ fn a_pattern_match_is_numbered_by_the_same_line_breaks_a_judged_part_is_split_at
     assert_eq!(lines("a\n"), ["a"]);
     assert_eq!(lines(""), Vec::<&str>::new());
 }
+
+#[test]
+fn evaluate_states_a_zero_rule_for_each_part_and_calls_no_plugin() {
+    let rule = json!({
+        "$type": "rules/rule/v1",
+        "requirement": "Delete the old path once nothing uses it.",
+        "purpose": "P.",
+        "checker": {"check": "zero", "suite": "/suites/old-path-users", "measures": ["remaining"]},
+    })
+    .to_string();
+    let (_scenario, host) = recording(&[("rules/old-path.json", &rule)]);
+    let given = json!({"rules": ["/rules/old-path"], "parts": {"pr.body": "remaining 3"}});
+    let output = evaluate(&host, &given).unwrap();
+    assert_eq!(output["passed"], true);
+    assert_eq!(
+        (
+            &output["results"][0]["checker"],
+            &output["results"][0]["status"]
+        ),
+        (&json!("zero"), &json!("stated"))
+    );
+    assert_eq!(host.resolved(), []);
+}

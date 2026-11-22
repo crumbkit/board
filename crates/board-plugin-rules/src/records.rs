@@ -6,7 +6,9 @@
 
 use std::borrow::Cow;
 
-use board_plugin::shape::{Accepts, Date, Glob, Open, Prose, Record, Ref, Summary, Tag, Url};
+use board_plugin::shape::{
+    Accepts, Date, Glob, Open, PathKey, Prose, Record, Ref, Summary, Tag, Url,
+};
 use schemars::{JsonSchema, Schema, SchemaGenerator, json_schema};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::{Map, Value, json};
@@ -50,7 +52,7 @@ pub struct RuleRecord {
     /// When to show the control: `start` at session start, `edit` before
     /// the first edit of a file it covers, or `failing` only when `check`
     /// reports it failing. Left out, an obligation shows at `start`, a
-    /// control with a budget when `failing`, and any other at `edit`.
+    /// control `check` measures when `failing`, and any other at `edit`.
     pub show: Option<ShowAt>,
     /// What justifies the rule, such as a source note (`rules/source/v1`)
     /// or an eval.
@@ -171,7 +173,7 @@ pub enum ShowAt {
 impl ShowAt {
     /// `show` as the record sets it, or, left out, `start` for an
     /// obligation, `failing` for a control `check` measures (one with a
-    /// budget or a version rule), and `edit` for any other.
+    /// budget, version or zero rule), and `edit` for any other.
     pub fn effective(show: Option<Self>, kind: Kind, measured: bool) -> Self {
         match (show, kind, measured) {
             (Some(show), _, _) => show,
@@ -191,10 +193,17 @@ pub enum Check {
     Pattern,
     Judged,
     Version,
+    Zero,
 }
 
 impl Check {
-    const ALL: [Self; 4] = [Self::Budget, Self::Pattern, Self::Judged, Self::Version];
+    const ALL: [Self; 5] = [
+        Self::Budget,
+        Self::Pattern,
+        Self::Judged,
+        Self::Version,
+        Self::Zero,
+    ];
 
     fn name(self) -> &'static str {
         match self {
@@ -202,6 +211,7 @@ impl Check {
             Self::Pattern => "pattern",
             Self::Judged => "judged",
             Self::Version => "version",
+            Self::Zero => "zero",
         }
     }
 }
@@ -216,6 +226,7 @@ pub enum Checker {
     Pattern(Pattern),
     Judged(Judged),
     Version(Version),
+    Zero(Zero),
     Other(Map<String, Value>),
 }
 
@@ -227,7 +238,7 @@ impl Checker {
         match self {
             Self::Budget(budget) => budget.known().is_some(),
             Self::Pattern(pattern) => pattern.quote.known().is_some(),
-            Self::Judged(_) | Self::Version(_) => true,
+            Self::Judged(_) | Self::Version(_) | Self::Zero(_) => true,
             Self::Other(_) => false,
         }
     }
@@ -237,11 +248,12 @@ impl Checker {
 /// beside `check`.
 #[derive(Deserialize, Serialize)]
 #[serde(tag = "check", rename_all = "lowercase")]
-enum Tagged<B, P, J, V> {
+enum Tagged<B, P, J, V, Z> {
     Budget(B),
     Pattern(P),
     Judged(J),
     Version(V),
+    Zero(Z),
 }
 
 impl<'de> Deserialize<'de> for Checker {
@@ -260,24 +272,27 @@ impl<'de> Deserialize<'de> for Checker {
         {
             return Ok(Self::Other(fields));
         }
-        let tagged = Tagged::<Budget, Pattern, Judged, Version>::deserialize(Value::Object(fields))
-            .map_err(D::Error::custom)?;
+        let tagged =
+            Tagged::<Budget, Pattern, Judged, Version, Zero>::deserialize(Value::Object(fields))
+                .map_err(D::Error::custom)?;
         Ok(match tagged {
             Tagged::Budget(rule) => Self::Budget(rule),
             Tagged::Pattern(rule) => Self::Pattern(rule),
             Tagged::Judged(rule) => Self::Judged(rule),
             Tagged::Version(rule) => Self::Version(rule),
+            Tagged::Zero(rule) => Self::Zero(rule),
         })
     }
 }
 
 impl Serialize for Checker {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let tagged: Tagged<&Budget, &Pattern, &Judged, &Version> = match self {
+        let tagged: Tagged<&Budget, &Pattern, &Judged, &Version, &Zero> = match self {
             Self::Budget(rule) => Tagged::Budget(rule),
             Self::Pattern(rule) => Tagged::Pattern(rule),
             Self::Judged(rule) => Tagged::Judged(rule),
             Self::Version(rule) => Tagged::Version(rule),
+            Self::Zero(rule) => Tagged::Zero(rule),
             Self::Other(fields) => return fields.serialize(serializer),
         };
         tagged.serialize(serializer)
@@ -356,6 +371,32 @@ pub struct Version {
     pub capture: String,
 }
 
+/// A zero rule: each of `measures` is 0 in the latest full run of a clean
+/// revision of `suite`, which `runs.latest` gives.
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+#[schemars(rename = "ZeroChecker")]
+pub struct Zero {
+    /// The suite whose runs record the measures, by its logical path, such
+    /// as `/suites/old-path-users`. It is no reference, so a suite that is
+    /// gone fails this rule alone.
+    #[schemars(with = "PathKey")]
+    pub suite: String,
+    /// The run-level measures that must each be 0, by the names the suite's
+    /// runs record.
+    #[schemars(
+        length(min = 1, max = 8),
+        inner(length(min = 1, max = 64)),
+        extend("uniqueItems" = true)
+    )]
+    pub measures: Vec<String>,
+    /// The most days since the run finished; left out, a run of any age
+    /// counts.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(range(min = 1, max = 365))]
+    pub within_days: Option<u16>,
+}
+
 /// A rule's schema: `check` names its kind, and each kind's `$defs` entry
 /// holds that kind's fields, which it requires when `check` names the kind
 /// and refuses otherwise. The kinds are applied through `allOf`, where
@@ -373,6 +414,7 @@ impl JsonSchema for Checker {
             kind::<Pattern>(generator, Check::Pattern),
             kind::<Judged>(generator, Check::Judged),
             kind::<Version>(generator, Check::Version),
+            kind::<Zero>(generator, Check::Zero),
         ];
         let mut check = generator.subschema_for::<Check>();
         check.insert(
@@ -381,7 +423,7 @@ impl JsonSchema for Checker {
         );
         json_schema!({
             "type": "object",
-            "description": "What a program checks: a budget, a pattern file, a judged rubric or a version floor, named by `check`.",
+            "description": "What a program checks: a budget, a pattern file, a judged rubric, a version floor or measures a suite's latest run must report as 0, named by `check`.",
             "properties": {"check": check},
             "required": ["check"],
             "allOf": kinds,

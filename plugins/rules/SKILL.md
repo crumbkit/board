@@ -27,11 +27,13 @@ To run a command in a board other than the one you are in, add `-C <path>`.
    its own: `used` is its `largest` file's, and `over` lists each file over
    `max`. `versions` lists the rules with a version rule, and `behind`
    names each file and line that pins a version older than `at_least`.
+   `zeros` lists the rules whose named measures must be 0 in their suite's
+   latest run, with the run, its age, each measure's value and `state`.
    `stated` lists the written requirements, with
    their `paths` patterns and how many of their files are under the path;
    `board get <rule>` shows which files a rule names. `passed` is
-   false when a budget is exceeded, a pin is behind or a measured rule
-   lists a file in `unreadable`; the call still exits 0. It exits 1 when a
+   false when a budget is exceeded, a pin is behind, a measured rule
+   lists a file in `unreadable` or a zero rule's `state` is not `zero`; the call still exits 0. It exits 1 when a
    rule is degraded or a version rule's capture is invalid, and the error
    names each rule.
 

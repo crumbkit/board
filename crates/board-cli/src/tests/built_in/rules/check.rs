@@ -778,3 +778,48 @@ fn a_pattern_or_judged_control_is_stated_and_a_budget_beside_it_is_measured() {
         )
     );
 }
+
+#[test]
+fn board_rules_check_lists_a_failing_zero_rule_and_exits_with_passed_false() {
+    let board = Fixture::enabling(&["rules", "runs"]);
+    let rule = json!({
+        "$type": "rules/rule/v1",
+        "requirement": "Delete the old path once nothing uses it.",
+        "purpose": "A test.",
+        "paths": ["src/*"],
+        "checker": {"check": "zero", "suite": "/suites/old-path-users", "measures": ["remaining", "unknown"]},
+    });
+    let suite = json!({"$type": "runs/suite/v1", "method": "Count what still uses the old path."});
+    let run = json!({
+        "$type": "runs/run/v1",
+        "suite": "/suites/old-path-users",
+        "by": {"program": "claude-code"},
+        "started": "2026-11-01T09:00:00Z",
+        "scope": "full",
+        "dirty": false,
+        "results": [],
+        "measures": {"remaining": 3, "unknown": 0},
+    });
+    board
+        .write("src/old.rs", "fn old() {}")
+        .write("rules/old-path.json", &rule.to_string())
+        .write("suites/old-path-users.json", &suite.to_string())
+        .write("suites/old-path-users/runs/1.json", &run.to_string());
+    let output = failing(&board, &[]);
+    let [zero] = output["zeros"].as_array().unwrap().as_slice() else {
+        panic!("one zero entry: {output}")
+    };
+    assert_eq!(
+        (&zero["rule"], &zero["state"], &zero["run"]),
+        (
+            &json!("/rules/old-path"),
+            &json!("not_zero"),
+            &json!("/suites/old-path-users/runs/1")
+        )
+    );
+    assert_eq!(
+        zero["measures"],
+        json!([{"name": "remaining", "value": 3}, {"name": "unknown", "value": 0}])
+    );
+    assert!(zero["age_s"].as_u64().unwrap() > 0, "{zero}");
+}

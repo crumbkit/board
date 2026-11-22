@@ -6,7 +6,8 @@ use std::cell::RefCell;
 
 use board_model::LogicalPath;
 use board_ops::{
-    Board, GetReport, Limit, QueryError, QueryReport, ReadError, RefsError, RefsReport, Settings,
+    Board, GetReport, Limit, Plugin, QueryError, QueryReport, ReadError, RefsError, RefsReport,
+    Settings,
 };
 use board_scenario::{Item, Scenario};
 
@@ -21,12 +22,14 @@ pub(crate) enum Call {
     Query,
     Refs(Vec<String>),
     GetEach(Vec<String>),
+    /// A call of another plugin's capability, by `<plugin>.<capability>`.
+    Called(String),
 }
 
 /// A host that passes each call to `board` and records it.
 pub(crate) struct Recording {
     board: Board,
-    settings: Settings,
+    pub(crate) settings: Settings,
     calls: RefCell<Vec<Call>>,
 }
 
@@ -82,12 +85,31 @@ impl Host for Recording {
         panic!("this plugin writes no records")
     }
 
+    /// Runs a capability of the runs plugin, built in, over this host, so
+    /// it reads the same board at the same time.
     fn call(
         &self,
-        _target: &board_plugin::Target,
-        _input: &serde_json::Value,
+        target: &board_plugin::Target,
+        input: &serde_json::Value,
     ) -> Result<board_plugin::CallReport, Box<board_model::Refusal>> {
-        panic!("this plugin calls no plugin")
+        let board_plugin::Target::Named { plugin, capability } = target else {
+            panic!("the plugin names the plugin it calls")
+        };
+        (self.calls.borrow_mut()).push(Call::Called(format!("{plugin}.{capability}")));
+        assert_eq!(plugin.as_str(), "runs", "the plugin calls only runs");
+        match board_plugin_runs::Runs.call(self, capability, input.clone()) {
+            Ok(output) => Ok(board_plugin::CallReport {
+                plugin: plugin.clone(),
+                capability: capability.clone(),
+                output,
+                warnings: Vec::new(),
+            }),
+            Err(error) => Err(Box::new(board_model::Refusal::plugin(
+                board_model::PluginCode::parse(plugin, error.code).unwrap(),
+                error.message,
+                error.fields,
+            ))),
+        }
     }
 
     fn board(
@@ -128,12 +150,20 @@ impl Host for Recording {
 /// A board that enables controls, built in, holding `files` by path, and a
 /// host recording the calls made of it.
 pub(crate) fn recording(files: &[(&str, &str)]) -> (Scenario, Recording) {
+    enabling(&["controls"], files)
+}
+
+/// A board that enables each of `plugins`, built in, holding `files` by
+/// path, and a host recording the calls made of it.
+pub(crate) fn enabling(plugins: &[&str], files: &[(&str, &str)]) -> (Scenario, Recording) {
     let scenario = Scenario::new();
     let config = r#"{"$type": "board/config/v1", "commit_on_put": false}"#;
     scenario.write(".board/board.json", Item::File(config));
     let mut board = Board::open(scenario.workdir(), None).unwrap();
-    board.build_in(&[&Rules]);
-    (board.plugin_enable(None, None, &"controls".parse().unwrap(), &[])).unwrap();
+    board.build_in(&[&Rules, &board_plugin_runs::Runs]);
+    for plugin in plugins {
+        (board.plugin_enable(None, None, &plugin.parse().unwrap(), &[])).unwrap();
+    }
     for (path, text) in files {
         scenario.write(path, Item::File(text));
     }
@@ -732,5 +762,255 @@ fn read_names_the_own_tree_and_each_mount_the_files_came_from_and_a_scoped_check
     assert_eq!(
         scoped["read"],
         json!([{"mount": "/repos/lib", "commit": commit.to_string()}])
+    );
+}
+
+/// The suite a zero rule names in these tests.
+const SUITE: &str = "/suites/old-path-users";
+
+/// A `runs/suite/v1` record.
+fn suite() -> String {
+    json!({"$type": "runs/suite/v1", "method": "Count what still uses the old path."}).to_string()
+}
+
+/// A full run of a clean revision of [`SUITE`] that started at `started`
+/// with `measures`, and `fields` added or replacing its own.
+fn run(started: &str, measures: &Value, fields: &Value) -> String {
+    let mut record = json!({
+        "$type": "runs/run/v1",
+        "suite": SUITE,
+        "by": {"program": "claude-code"},
+        "started": started,
+        "scope": "full",
+        "dirty": false,
+        "results": [],
+        "measures": measures,
+    });
+    for (name, value) in fields.as_object().unwrap() {
+        record[name] = value.clone();
+    }
+    record.to_string()
+}
+
+/// A rule on `src/*` that `measures` of [`SUITE`] are 0, with `fields`
+/// added to its checker.
+fn zero_rule(measures: &[&str], fields: &Value) -> String {
+    let mut checker = json!({"check": "zero", "suite": SUITE, "measures": measures});
+    for (name, value) in fields.as_object().unwrap() {
+        checker[name] = value.clone();
+    }
+    json!({
+        "$type": "rules/rule/v1",
+        "requirement": "Delete the old path once nothing uses it.",
+        "purpose": "P.",
+        "paths": ["src/*"],
+        "checker": checker,
+    })
+    .to_string()
+}
+
+/// `check` under `/` of a board that enables rules and runs, holding the
+/// old path, the rule `rule`, [`SUITE`] and `runs` by file name, at
+/// `seconds` after 1970 began.
+fn zero_check(rule: &str, runs: &[(&str, String)], seconds: u64) -> Value {
+    let mut files = vec![
+        ("src/old.rs", "fn old() {}".to_owned()),
+        ("rules/old-path.json", rule.to_owned()),
+        ("suites/old-path-users.json", suite()),
+    ];
+    for (name, text) in runs {
+        files.push((name, text.clone()));
+    }
+    let files: Vec<(&str, &str)> = (files.iter())
+        .map(|(path, text)| (*path, text.as_str()))
+        .collect();
+    let (_scenario, mut host) = enabling(&["rules", "runs"], &files);
+    host.settings.now = std::time::UNIX_EPOCH + std::time::Duration::from_secs(seconds);
+    check(&host, &json!({})).unwrap()
+}
+
+/// The one zero entry of `output`.
+fn the_zero(output: &Value) -> &Value {
+    let [zero] = output["zeros"].as_array().unwrap().as_slice() else {
+        panic!("one zero entry: {output}")
+    };
+    zero
+}
+
+const DAY: u64 = 86_400;
+
+#[test]
+fn a_zero_rule_passes_when_the_latest_run_reports_every_named_measure_as_0() {
+    let rule = zero_rule(&["remaining", "unknown"], &json!({}));
+    let measures = json!({"remaining": 0, "unknown": 0.0, "users": 12});
+    let runs = [(
+        "suites/old-path-users/runs/1.json",
+        run("1970-01-01T00:00:00Z", &measures, &json!({})),
+    )];
+    let output = zero_check(&rule, &runs, 72_000);
+    assert_eq!(output["passed"], true, "{output}");
+    assert_eq!(
+        the_zero(&output),
+        &json!({
+            "rule": "/rules/old-path",
+            "requirement": "Delete the old path once nothing uses it.",
+            "suite": SUITE,
+            "run": "/suites/old-path-users/runs/1",
+            "age_s": 72_000,
+            "measures": [{"name": "remaining", "value": 0}, {"name": "unknown", "value": 0.0}],
+            "state": "zero",
+            "kind": "standing",
+            "show": "failing",
+        })
+    );
+    let stated: Vec<&Value> = (output["stated"].as_array().unwrap().iter())
+        .map(|item| &item["rule"])
+        .collect();
+    assert!(stated.is_empty(), "a zero rule is measured: {output}");
+}
+
+#[test]
+fn a_zero_rule_fails_when_a_named_measure_is_not_0_and_names_its_value() {
+    let rule = zero_rule(&["remaining", "unknown"], &json!({}));
+    let runs = [(
+        "suites/old-path-users/runs/1.json",
+        run(
+            "1970-01-01T00:00:00Z",
+            &json!({"remaining": 3, "unknown": 0}),
+            &json!({}),
+        ),
+    )];
+    let output = zero_check(&rule, &runs, 10);
+    assert_eq!(output["passed"], false, "{output}");
+    let zero = the_zero(&output);
+    assert_eq!(zero["state"], "not_zero");
+    assert_eq!(
+        zero["measures"],
+        json!([{"name": "remaining", "value": 3}, {"name": "unknown", "value": 0}])
+    );
+}
+
+#[test]
+fn a_zero_rule_reads_the_latest_qualifying_run_and_ignores_a_newer_dirty_one() {
+    let rule = zero_rule(&["remaining"], &json!({}));
+    let runs = [
+        (
+            "suites/old-path-users/runs/1.json",
+            run("1970-01-01T00:00:00Z", &json!({"remaining": 0}), &json!({})),
+        ),
+        (
+            "suites/old-path-users/runs/2.json",
+            run(
+                "1970-01-01T00:01:00Z",
+                &json!({"remaining": 5}),
+                &json!({"dirty": true}),
+            ),
+        ),
+    ];
+    let output = zero_check(&rule, &runs, 120);
+    assert_eq!(output["passed"], true, "{output}");
+    let zero = the_zero(&output);
+    assert_eq!(
+        (&zero["run"], &zero["state"]),
+        (&json!("/suites/old-path-users/runs/1"), &json!("zero"))
+    );
+}
+
+#[test]
+fn a_zero_rule_fails_as_no_run_when_the_suite_has_no_qualifying_run() {
+    let rule = zero_rule(&["remaining"], &json!({}));
+    let runs = [(
+        "suites/old-path-users/runs/1.json",
+        run(
+            "1970-01-01T00:00:00Z",
+            &json!({"remaining": 0}),
+            &json!({"scope": "targeted"}),
+        ),
+    )];
+    let output = zero_check(&rule, &runs, 10);
+    assert_eq!(output["passed"], false, "{output}");
+    let zero = the_zero(&output);
+    assert_eq!(zero["state"], "no_run");
+    assert_eq!((&zero["run"], &zero["age_s"]), (&Value::Null, &Value::Null));
+    assert_eq!(
+        zero["measures"],
+        json!([{"name": "remaining", "value": null}])
+    );
+}
+
+#[test]
+fn a_zero_rule_fails_as_missing_measure_when_the_run_lacks_a_named_measure() {
+    let rule = zero_rule(&["remaining", "unknown"], &json!({}));
+    for measures in [
+        json!({"remaining": 0}),
+        json!({"remaining": 0, "unknown": "none"}),
+    ] {
+        let runs = [(
+            "suites/old-path-users/runs/1.json",
+            run("1970-01-01T00:00:00Z", &measures, &json!({})),
+        )];
+        let output = zero_check(&rule, &runs, 10);
+        assert_eq!(output["passed"], false, "{output}");
+        let zero = the_zero(&output);
+        assert_eq!(zero["state"], "missing_measure", "{measures}");
+        assert_eq!(
+            zero["measures"][0],
+            json!({"name": "remaining", "value": 0})
+        );
+        assert_eq!(zero["measures"][1]["name"], "unknown");
+    }
+}
+
+#[test]
+fn a_zero_rule_fails_as_stale_when_the_run_is_older_than_within_days() {
+    let rule = zero_rule(&["remaining"], &json!({"within_days": 2}));
+    let runs = [(
+        "suites/old-path-users/runs/1.json",
+        run("1970-01-01T00:00:00Z", &json!({"remaining": 0}), &json!({})),
+    )];
+    let stale = zero_check(&rule, &runs, 2 * DAY + 1);
+    assert_eq!(stale["passed"], false, "{stale}");
+    assert_eq!(the_zero(&stale)["state"], "stale");
+    let fresh = zero_check(&rule, &runs, 2 * DAY);
+    assert_eq!(fresh["passed"], true, "{fresh}");
+    assert_eq!(the_zero(&fresh)["state"], "zero");
+}
+
+#[test]
+fn a_zero_rule_is_unreadable_and_check_still_answers_when_the_suite_is_missing() {
+    let budget = json!({
+        "$type": "rules/rule/v1",
+        "requirement": "Short.",
+        "purpose": "P.",
+        "paths": ["src/*"],
+        "checker": words(9),
+    })
+    .to_string();
+    let missing = zero_rule(&["remaining"], &json!({})).replace(SUITE, "/suites/gone");
+    let files = [
+        ("src/old.rs", "fn old() {}"),
+        ("rules/budget.json", budget.as_str()),
+        ("rules/old-path.json", missing.as_str()),
+    ];
+    let (_scenario, host) = enabling(&["rules", "runs"], &files);
+    let output = check(&host, &json!({})).unwrap();
+    assert_eq!(output["passed"], false, "{output}");
+    assert_eq!(output["measured"][0]["used"], 3);
+    let zero = the_zero(&output);
+    assert_eq!(
+        (&zero["state"], &zero["code"], &zero["suite"]),
+        (
+            &json!("unreadable"),
+            &json!("runs::suite::not_found"),
+            &json!("/suites/gone")
+        )
+    );
+    assert_eq!(
+        host.resolved(),
+        [
+            Call::GetEach(vec!["/src/old.rs".to_owned()]),
+            Call::Called("runs.latest".to_owned()),
+        ],
+        "the zero rule reads no file and calls runs.latest once"
     );
 }

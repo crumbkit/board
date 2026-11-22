@@ -14,6 +14,7 @@ mod rename;
 mod standards;
 mod summary;
 mod version;
+mod zero;
 
 use board_model::{CapabilityName, Code, Fields, LogicalPath, RecordType, Refusal};
 use board_ops::{Host, Plugin, PluginError};
@@ -96,6 +97,12 @@ fn logical(path: &str) -> Result<LogicalPath, PluginError> {
     })
 }
 
+/// What the `check` capability does, as its manifest describes it.
+const CHECK: &str = "Check the rules under a path, `/` when left out, measuring only the files \
+    under it. A rule with no checker is described. `passed` is false when a budget is over, a pin \
+    is behind, a file is unreadable or a zero rule's measures are not all 0 in its suite's latest \
+    run; fails when a rule is degraded or a version checker's capture is invalid.";
+
 fn manifest() -> Value {
     let settings = || SchemaSettings::draft2020_12().for_serialize();
     json!({
@@ -139,10 +146,7 @@ fn manifest() -> Value {
             "_meta": {},
         }, {
             "name": "check",
-            "description": "Check the rules under a path, `/` when left out, measuring only \
-                the files under it. A rule with no checker is described. `passed` is false \
-                when a budget is over, a pin is behind or a file is unreadable; fails when a \
-                rule is degraded or a version checker's capture is invalid.",
+            "description": CHECK,
             "inputSchema": schema_of::<check::Input>(SchemaSettings::draft2020_12()),
             "outputSchema": schema_of::<check::Output>(settings()),
             "annotations": {

@@ -1,5 +1,6 @@
 //! `check`: the controls that apply under a path, each budget and version
-//! rule measured against the files it applies to.
+//! rule measured against the files it applies to, and each zero rule
+//! against its suite's latest run.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -14,6 +15,7 @@ use crate::index::{self, Control, File, Health};
 use crate::logical;
 use crate::records::{Checker, Kind, Measure, Per, ShowAt, Version};
 use crate::version;
+use crate::zero;
 
 /// Check the controls that apply to a file at or under `path`, `/` when left out.
 #[derive(Deserialize, JsonSchema)]
@@ -27,7 +29,8 @@ pub(crate) struct Input {
 /// The controls that apply under the path, by the control's path, each
 /// budget and version rule measured over the files under the path.
 /// `passed` is false when a budget is over its max, a file pins a version
-/// older than a rule's, or a file is unreadable.
+/// older than a rule's, a file is unreadable, or a zero rule's state is not
+/// `zero`.
 #[derive(Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 #[schemars(rename = "CheckOutput")]
@@ -35,6 +38,7 @@ pub(crate) struct Output {
     passed: bool,
     measured: Vec<Checked>,
     versions: Vec<Pinned>,
+    zeros: Vec<zero::Zeroed>,
     stated: Vec<Stated>,
     read: Vec<Read>,
     /// What Board wrote nothing about but wants read: for now, a standing
@@ -269,7 +273,8 @@ fn path_or_null(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
 /// budget or version rule is measured over its files under the path alone,
 /// so another repository's files never decide one repository's check; any
 /// other, such as one with a pattern or judged rule, is stated, with its
-/// patterns and the number of its files under the path. A path that names
+/// patterns and the number of its files under the path. A zero rule that
+/// applies is measured through one `runs.latest` call for its suite. A path that names
 /// a link or mount is checked where it leads. A budget over its max, a pin
 /// older than a version rule's and a file Board cannot read are reported in
 /// the output, and `passed` is false; none fails the call. A control Board
@@ -327,6 +332,7 @@ pub(crate) fn check(host: &dyn Host, input: &Value) -> Result<Value, PluginError
         .collect();
     let (measured_controls, versions) =
         measure_files(host, &applying, &controls, &files, &unreadable)?;
+    let zeros = zero::zeroed(host, &applying, &controls);
     let own = root && (applying.iter()).any(|logical| unnamed.contains_key(*logical));
     let read = sources(
         host,
@@ -367,12 +373,11 @@ pub(crate) fn check(host: &dyn Host, input: &Value) -> Result<Value, PluginError
         })
         .collect();
     let checkout = unmeasured(host, &scope, &read, path.as_deref().unwrap_or("/"));
-    let passed = (measured_controls.iter()).all(Checked::passed)
-        && (versions.iter()).all(|item| item.behind.is_empty() && item.unreadable.is_empty());
     let output = Output {
-        passed,
+        passed: passed(&measured_controls, &versions, &zeros),
         measured: measured_controls,
         versions,
+        zeros,
         stated,
         read,
         warnings,
@@ -393,7 +398,7 @@ fn measure_files(
     unreadable: &BTreeMap<String, Vec<Unreadable>>,
 ) -> Result<(Vec<Checked>, Vec<Pinned>), PluginError> {
     let read_by: Vec<&String> = (applying.iter().copied())
-        .filter(|logical| controls[*logical].measured())
+        .filter(|logical| controls[*logical].reads_files())
         .collect();
     // A degraded file is degraded for every control that reaches it.
     let skipped: BTreeMap<&str, &Unreadable> = (read_by.iter())
@@ -424,6 +429,14 @@ fn measure_files(
         }
     }
     Ok((budgets, versions))
+}
+
+/// Whether every budget is met, no pin is behind, every file was read and
+/// every zero rule's measures are 0.
+fn passed(budgets: &[Checked], versions: &[Pinned], zeros: &[zero::Zeroed]) -> bool {
+    budgets.iter().all(Checked::passed)
+        && (versions.iter()).all(|item| item.behind.is_empty() && item.unreadable.is_empty())
+        && (zeros.iter()).all(zero::Zeroed::passed)
 }
 
 /// The bytes of each of `reached` that was read, and each file that was

@@ -43,7 +43,7 @@ such as a pull request body, instead of files.
   that board's own `board check` reports it.
 - `checker` is optional. Without it, the rule is a written requirement,
   and `check` reports it as described. A checker's `check` names its kind,
-  which decides its other fields. There are four kinds of checker:
+  which decides its other fields. There are five kinds of checker:
   - A budget, `check` `budget`, limits the `unit` of the files the rule
     applies to: `words` (separated by any whitespace) or `bytes`, at most
     `max`. Its optional `per` says how: `total`, the default, limits the
@@ -71,13 +71,25 @@ such as a pull request body, instead of files.
     `26.13.0` and `24.16.0` does not. A capture that is not numbers
     separated by dots, such as `stable`, is skipped. The checker holds the
     version as data: raise `at_least` when a newer release ships.
+  - A zero checker, such as
+    `{"check": "zero", "suite": "/suites/old-path-users", "measures": ["remaining", "unknown"], "within_days": 2}`,
+    says that each of 1 to 8 named run-level `measures` is the number 0 in
+    the latest full run of a clean revision of `suite`, as `runs.latest`
+    gives it. `suite` is a logical path, not a reference, so a suite that
+    is gone fails this rule alone. `within_days`, 1 to 365, is optional;
+    with it, a run older than that many days fails. Set it on any rule
+    that gates a deletion, so a check that stopped running fails the rule.
+    A board whose stored schema predates this kind refuses a zero rule at
+    `put` with `board::put::invalid`; `board plugin enable rules` writes
+    the new schema.
 
   A checker holds `check` and the fields of its kind alone, and is never null.
   A pattern checker's `file` and a judged checker's `rubric` are references, so
   `board check` marks the rule
   `board::ref::dangling` when one is missing, and `rules.check` then
   fails with `rules::rule::degraded`. `check` measures budgets over
-  files and version rules over the versions files pin; it lists a pattern
+  files, version rules over the versions files pin, and zero rules
+  against their suite's latest run; it lists a pattern
   or judged rule as stated, and only `evaluate` applies those checkers.
   It also lists as stated, unmeasured, a rule whose `check`, budget
   `unit`, `per` or pattern `quote` holds a value this Board does not know,
@@ -96,8 +108,8 @@ such as a pull request body, instead of files.
 - `show` says when to show the rule: `start` at session start, `edit`
   before the first edit of a file it covers, or `failing` only when `check`
   reports it failing. Left out, an obligation shows at `start`, a rule
-  with a budget or a version checker when `failing`, and any other rule at
-  `edit`. `check` reports failing only a rule with a budget or a version checker, so a rule without one that says
+  with a budget, version or zero checker when `failing`, and any other rule at
+  `edit`. `check` reports failing only a rule with a budget, version or zero checker, so a rule without one that says
   `failing` is never shown.
 - `sources` holds references to what justifies the rule, such as a
   source note or an eval. Board checks them as it checks `applies_to`, so a
@@ -190,13 +202,20 @@ of the rename deletes them.
   and version rule carries `unreadable`: each `file` it reaches that is
   not a readable file, such as a directory, a degraded file or a blob a
   partial clone lacks, with Board's `code`; it counts nothing toward
-  `used`. `stated` holds the rest,
+  `used`. `zeros` holds the zero rules, with `suite`, the `run` read and
+  its `age_s` (both `null` without one), each of `measures` as `name`
+  and `value` (`null` when the run lacks it), and `state`: `zero`,
+  `not_zero`, `no_run`, `stale`, `missing_measure` (absent or not a
+  number) or `unreadable`, which carries the refused call's `code`, such
+  as `runs::suite::not_found` or the code for a board without the runs
+  plugin. Each zero rule calls `runs.latest` once. `stated` holds the rest,
   with their `paths` patterns and `files`, the number of their files under
   the path, so the output stays short; `board get <rule>` shows its
   `applies_to`, `paths` and `sources`. Every item carries `kind` and the
-  effective `show`, and every obligation, in `measured`, `versions` or
-  `stated`, carries `close`, as `for-path` gives it. `passed` is false
-  when a budget is over its max, a pin is behind or a file is unreadable.
+  effective `show`, and every obligation, in `measured`, `versions`,
+  `zeros` or `stated`, carries `close`, as `for-path` gives it. `passed`
+  is false when a budget is over its max, a pin is behind, a file is
+  unreadable or a zero rule's `state` is not `zero`.
   These are answers, so the call still exits 0, and a reader sees the
   whole report. It fails with
   `rules::capture::invalid` when a version checker's `capture` does not
@@ -237,10 +256,10 @@ of the rename deletes them.
   false when any result failed, and `results`, one per rule and part,
   ordered by rule as given and then by part name. Each result holds
   `rule`, `part`, `checker` (the checker's `check`: `budget`, `pattern`,
-  `judged` or `version`, or null),
+  `judged`, `version` or `zero`, or null),
   `status` and `findings`:
-  - `status` is `passed` or `failed`; `stated` for a rule without a checker
-    or whose `check`, budget `unit`, `per` or pattern `quote` holds a value
+  - `status` is `passed` or `failed`; `stated` for a rule without a checker,
+    a zero checker, which reads runs and not text, or one whose `check`, budget `unit`, `per` or pattern `quote` holds a value
     this Board does not know;
     `skipped` for a judged checker when the part failed a budget or pattern
     checker. Budget and pattern checkers always run first, whatever the order of
