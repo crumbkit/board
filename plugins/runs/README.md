@@ -115,6 +115,17 @@ one `board query`, so a run stored elsewhere is not counted. Flaky cases
 have no capability: query the `records` view with `json_each` over
 `$.results`.
 
+## Skills
+
+- Each folder under `skills/` is a skill that ships with the plugin.
+- `board skills install` writes them into a skills directory.
+- `skills/apply-standard` audits a repository checkout against a standard
+  file and records the result as a run of a suite.
+- `skills/apply-standard/sample-standard.md` is a sample standard to copy and
+  edit.
+- A run that apply-standard writes keeps each rule that passes by absence,
+  meaning no file matches its patterns, as a `pass` result with a note.
+
 ## The Claude Code mod
 
 `claude-code/` holds a Claude Code mod that records each subagent and task a

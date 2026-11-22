@@ -522,7 +522,7 @@ fn install_with_plugins_writes_only_their_skills_and_a_narrower_run_leaves_the_o
 #[test]
 fn a_built_in_plugin_that_ships_no_skill_selects_none_and_the_installers_list_installs() {
     let home = Scenario::new();
-    let (code, installed) = skills(&home, "install", &["--plugins", "tasks,runs"]);
+    let (code, installed) = skills(&home, "install", &["--plugins", "tasks,requests"]);
     assert_eq!(code, 0, "{installed}");
     assert_eq!(
         states(&installed),
@@ -535,7 +535,14 @@ fn a_built_in_plugin_that_ships_no_skill_selects_none_and_the_installers_list_in
     assert_eq!(code, 0, "{installed}");
     assert_eq!(
         folders(&home),
-        ["evals", "plans", "rules", "share", "tasks"]
+        [
+            "apply-standard",
+            "evals",
+            "plans",
+            "rules",
+            "share",
+            "tasks"
+        ]
     );
 }
 

@@ -66,7 +66,17 @@ const SERVES: &str = "the command starts a server that outlives the example's ti
 /// The fixture board has no commit of its own, so that `sync` has a commit
 /// to check out and each `put` makes the first.
 const NO_COMMIT: &str = "the fixture board has no commit of its own, so its sync example checks one out; history.rs in these tests pins log's output on a board with history";
+/// `mount add`'s examples name a clone in the home directory, and the runs
+/// have no HOME, which would put a temporary path in completion's goldens.
+/// The `mount add` tests in tests.rs run the example with a home.
+const NO_HOME: &str = "the example names a clone in the home directory, and the example runs have no HOME; tests.rs runs it with one";
 const ALLOW: &[Allow] = &[
+    Allow::example("mount add", &["/team", "~/team-board"], NO_HOME),
+    Allow::example(
+        "mount add",
+        &["/team", "~/team-board", "--follow", "main"],
+        NO_HOME,
+    ),
     Allow::example("log", &["/tasks/a"], NO_COMMIT),
     Allow::example("log", &["/tasks/a", "--limit", "1", "--json"], NO_COMMIT),
     Allow::example(

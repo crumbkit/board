@@ -811,3 +811,64 @@ fn a_path_that_is_a_mount_that_can_be_read_resolves_into_the_mount() {
     assert_eq!(location.object, Object::Directory);
     assert_eq!(location.board.source, pinned.source());
 }
+
+#[test]
+fn mounting_a_clone_follows_its_branch_or_a_given_ref_and_without_a_branch_finds_nothing() {
+    let inner = Scenario::new();
+    let first = inner.commit(&[("x.json", "1")]);
+    let second = inner.commit(&[("x.json", "2")]);
+    inner.write(".git/refs/tags/first", Item::File(&format!("{first}\n")));
+    let outer = Scenario::new();
+    let repositories = outer.repositories();
+    let from = outer.workdir();
+    let mounting = |follow: Option<&str>| {
+        repositories.mounting(from, &inner.path(), follow.map(str::to_owned))
+    };
+    let branch = mounting(None).unwrap().unwrap();
+    assert_eq!(
+        (branch.repo.as_str(), branch.follow.as_str(), branch.commit),
+        (inner.path().as_str(), "main", second)
+    );
+    assert_eq!(mounting(Some("first")).unwrap().unwrap().commit, first);
+    assert_eq!(
+        mounting(Some("nowhere")).unwrap_err(),
+        Code::MountFollowMissing
+    );
+    let absent = format!("{}/nowhere", inner.path());
+    assert_eq!(
+        repositories.mounting(from, &absent, None).unwrap_err(),
+        Code::MountRepoMissing
+    );
+    inner.write(".git/HEAD", Item::File(&format!("{first}\n")));
+    assert_eq!(mounting(None).unwrap(), None);
+    assert_eq!(mounting(Some("main")).unwrap().unwrap().commit, second);
+}
+
+#[test]
+fn mounting_an_empty_clone_without_a_ref_finds_nothing_and_after_its_first_commit_finds_main() {
+    let inner = Scenario::new();
+    let outer = Scenario::new();
+    let repositories = outer.repositories();
+    let mounting = || repositories.mounting(outer.workdir(), &inner.path(), None);
+    assert_eq!(mounting().unwrap(), None);
+    let first = inner.commit(&[("x.json", "1")]);
+    let mount = mounting().unwrap().unwrap();
+    assert_eq!((mount.follow.as_str(), mount.commit), ("main", first));
+}
+
+#[test]
+fn pointer_at_gives_a_link_unfollowed_with_its_own_blob_and_nothing_for_a_record() {
+    let outer = Scenario::new();
+    let link = r#"{"$type": "board/mount/v1", "path": "/x"}"#;
+    let record = r#"{"$type": "lr/project/v1"}"#;
+    outer.write("ln.json", Item::File(link));
+    outer.write("x.json", Item::File(record));
+    let repositories = outer.repositories();
+    let at = |path: &str| repositories.pointer_at(&self::path(path));
+    let (target, contents, pointer) = at("/ln").unwrap().unwrap();
+    assert_eq!(target.path, "ln.json");
+    assert_eq!(contents.blob, outer.blob(link));
+    assert_eq!(pointer, board_model::Pointer::Link(self::path("/x")));
+    assert!(at("/x").unwrap().is_none());
+    assert!(at("/nowhere").is_err());
+}

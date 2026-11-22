@@ -454,6 +454,11 @@
     },
     {
       "declaration": "document-name",
+      "applies_to": "board mount add",
+      "declares": "The command prints board/put-report/v2, where its path gives the name mount-add."
+    },
+    {
+      "declaration": "document-name",
       "applies_to": "board mount update",
       "declares": "The command prints board/mount-update-report/v2, where its path gives the name mount-update."
     },

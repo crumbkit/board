@@ -5,7 +5,7 @@
 use std::fmt;
 use std::fmt::Write as _;
 
-use board_model::{Code, Fields, Location, LogicalPath, Refusal};
+use board_model::{Code, Fields, Location, LogicalPath, Mount, Refusal};
 use board_ops::MAX_LIMIT;
 use board_ops::{
     Budget, CheckReport, Checked, Detail, EnableReport, Fallback, InitReport, Listed, LsReport,
@@ -60,6 +60,7 @@ pub(crate) const LEAVES: &[Leaf] = &[
     Leaf::new(&["sync"])
         .document(SYNC)
         .effects(ADDS.open_world()),
+    Leaf::new(&["mount", "add"]).document(PUT).effects(ADDS),
     (Leaf::new(&["mount", "update"]).document(MOUNT_UPDATE)).effects(CHANGES.idempotent()),
     plugins::LIST.effects(READS),
     plugins::FIND.effects(READS),
@@ -266,6 +267,33 @@ const CHECK: Document<Listing<Flagged, Said>> = Document::new(
 /// blob, and the commit when one was made. A write left degraded gets a
 /// note on stderr in either format, and `note` follows as text.
 pub(crate) fn put(printer: Printer, report: &PutReport, note: Option<String>) -> Output {
+    put_as(printer, report, put_text(report), note)
+}
+
+/// `mount add`: put's report, whose text names the mount's repository,
+/// the ref it follows and the commit it is read at, then the commit the
+/// put made, when it made one.
+pub(crate) fn mount_add(printer: Printer, mount: &Mount, report: &PutReport) -> Output {
+    let path = report
+        .writes
+        .first()
+        .map(|written| written.display.to_string());
+    let mut text = format!(
+        "mounted {}: {}, following {}, at {}\n",
+        path.unwrap_or_default(),
+        mount.repo,
+        mount.follow,
+        mount.commit
+    );
+    if let Some(commit) = report.commit {
+        let _ = writeln!(text, "commit {commit}");
+    }
+    put_as(printer, report, text, None)
+}
+
+/// Put's report as `text`, with a note on stderr for each write left
+/// degraded or mounting a temporary directory, then `note` as text.
+fn put_as(printer: Printer, report: &PutReport, text: String, note: Option<String>) -> Output {
     let notes = (report.writes.iter()).filter_map(|written| {
         let (code, detail) = written.degraded.as_ref()?;
         let (display, why) = (&written.display, detail_text(detail));
@@ -280,7 +308,7 @@ pub(crate) fn put(printer: Printer, report: &PutReport, note: Option<String>) ->
             written.display
         )))
     });
-    let answer = said(json!(put_data(report)), put_text(report));
+    let answer = said(json!(put_data(report)), text);
     let notes = notes.chain(temporary).chain(note.map(Note::Text));
     printer.noted(PUT, answer, notes.collect())
 }
