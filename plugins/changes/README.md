@@ -883,9 +883,19 @@ its kind's own. A `waivable` check passes when an attached
 `plans/decision/v1` that the owner signed names `<change>#<id>` in its
 `refs`, or when the owner's attached `plans/answer/v1` chose an option, in
 its attached question, whose text names `<change>#<id>`. Its detail names
-the decision or the answer; its remedy says so. A path followed by `#`
-is a longer name, so a waiver option approves no plan. A `board-ref`
-with a `#` fragment resolves to the path before it.
+the decision or the answer; its remedy says so. A path followed by `#`,
+or by `?` or `.` and a letter or digit, is a longer name, so a waiver
+option approves no plan and `.../m1.png` does not name `.../m1`. A `board-ref`
+with a `#` fragment resolves to the path before it, and a fragment after
+`/` alone is malformed.
+
+The `mockups` check, a waiver and `owner-approval` read only which paths
+the chosen option names, never its wording. So only the option that agrees
+a mockup or waives a check may name the mockup's URL or board path or
+`<change>#<id>`, and that option must not name the bare change path. An
+option that names both the mockup and `/changes/<name>` also approves the
+plan, and an option such as "Revise <mockup URL>" agrees the mockup.
+Tests in `gates/tests/design.rs` pin both cases, so this rule is the guard.
 
 Every owner check (`owner_signed`, `understood`, `mockups` and a waiver)
 reads one rule. A decision counts as the owner's signature only when its

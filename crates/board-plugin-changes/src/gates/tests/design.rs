@@ -410,6 +410,13 @@ fn the_owners_answer_whose_chosen_option_names_the_mockup_agrees_it() {
         unagreed,
         "the other option"
     );
+    for choice in ["none", "zzz"] {
+        assert_eq!(
+            agreeing(asked(&text, choice, &owner)),
+            unagreed,
+            "the choice {choice} names no option"
+        );
+    }
     for other in [
         "Agree https://claude.ai/artifact/m9",
         "Agree https://claude.ai/artifact/m10",
@@ -460,4 +467,31 @@ fn the_owners_answer_naming_the_check_after_the_change_waives_conformance_and_th
     let other = waiving("Waive /changes/t#suite-run");
     assert_eq!(other.0, "missing");
     assert!(!other.1.contains("/a/m"), "{}", other.1);
+}
+
+/// The gates read only which paths the chosen option names, never its
+/// wording, so the skill's rule is the guard: only the agreeing option names
+/// the mockup, and it does not name the bare change path. These cases pin
+/// what happens when an option breaks that rule.
+#[test]
+fn a_chosen_option_counts_for_every_path_it_names_whatever_it_says() {
+    let owner = json!({"person": PERSON});
+    let both = format!("Agree {MOCKUP} as the mockup for /changes/t");
+    let given = at_plan(&named_version()).records(asked(&both, "agree", &owner));
+    let statuses = given.statuses();
+    assert_eq!(
+        (statuses["mockups"], statuses["owner-approval"]),
+        ("pass", "pass"),
+        "an option naming the mockup and the bare change path also approves the plan"
+    );
+    let mockup_only = format!("Agree {MOCKUP} as the mockup");
+    let given = at_plan(&named_version()).records(asked(&mockup_only, "agree", &owner));
+    assert_eq!(given.statuses()["owner-approval"], "missing");
+    let revise = format!("Revise {MOCKUP}: make the header blue");
+    let given = at_plan(&named_version()).records(asked(&revise, "agree", &owner));
+    assert_eq!(
+        given.statuses()["mockups"],
+        "pass",
+        "an option that rejects the mockup but names it agrees it"
+    );
 }

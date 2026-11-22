@@ -877,4 +877,25 @@ fn a_decision_whose_ref_names_a_check_after_a_path_that_exists_checks_clean_and_
     let stored: Value =
         serde_json::from_str(&board.read("projects/a/decisions/waive.json")).unwrap();
     assert_eq!(stored["refs"], json!(["/changes/x#design-conformance"]));
+    for fragment in ["#design-conformance", "/#design-conformance"] {
+        let by = json!({"person": "pat"});
+        let refused = board.run_with(
+            &["put", "/projects/a/decisions/bare"],
+            &decision(&json!({"by": by, "refs": [fragment]})),
+        );
+        assert_ne!(refused.code, 0, "{fragment}");
+        assert!(
+            text(&refused.stderr).contains("board::ref::malformed"),
+            "{fragment}: {}",
+            text(&refused.stderr)
+        );
+        assert!(
+            !board
+                .board
+                .workdir()
+                .join("projects/a/decisions/bare.json")
+                .exists(),
+            "{fragment} wrote nothing"
+        );
+    }
 }

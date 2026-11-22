@@ -101,7 +101,12 @@ blocks is missing.
    A path followed by `#` is a longer name: an option naming
    `/changes/<name>#<check id>` waives that waivable check and approves
    nothing. An option naming a mockup's URL or board path agrees it for
-   the `mockups` check.
+   the `mockups` check. The gates read only which paths the chosen option
+   names, never what it says, so name the mockup's URL or board path, or
+   `/changes/<name>#<check id>`, only in the option that agrees the mockup
+   or waives the check. Never name them in an option that rejects or
+   revises, and never name the bare change path in the agreeing or
+   waiving option, because that option would then approve the plan too.
    Attach the question and the answer, each with
    `board changes attach --path /changes/<name> --ref <path>`. When you
    record the owner's approval from chat, write the decision as the plans

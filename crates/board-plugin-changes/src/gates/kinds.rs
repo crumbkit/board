@@ -341,19 +341,20 @@ pub(super) fn owner_choices(observed: &Observed) -> impl Iterator<Item = (&str, 
 }
 
 /// Whether `text` names `path` whole, and not as part of a longer path: a
-/// `#`, or a `?` before a letter or digit, after it joins it, as a
-/// fragment or a query does.
+/// `#` after it joins it, as a fragment does, and so does a `?` or a `.`
+/// before a letter or digit, as a query or an extension does. A `.` that
+/// ends a sentence does not join.
 pub(super) fn names_whole(text: &str, path: &str) -> bool {
     let joined = |next: char| next.is_alphanumeric() || "-_/".contains(next);
     (text.match_indices(path)).any(|(at, _)| {
         let after = &text[at + path.len()..];
-        let query = after
-            .strip_prefix('?')
+        let longer = after
+            .strip_prefix(['?', '.'])
             .is_some_and(|rest| rest.starts_with(char::is_alphanumeric));
         !text[..at].ends_with(joined)
             && !after.starts_with(joined)
             && !after.starts_with('#')
-            && !query
+            && !longer
     })
 }
 

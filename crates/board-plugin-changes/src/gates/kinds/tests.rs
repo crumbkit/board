@@ -588,3 +588,26 @@ fn an_exists_check_with_a_when_condition_fills_change_in_its_path() {
     let (_, status, detail) = run(&applied, list).remove(0);
     assert_eq!((status, detail.as_str()), (Status::Pass, ""));
 }
+
+/// The twin of the questions pane's `namesWhole` cases in plans.test.tsx.
+#[test]
+fn a_path_followed_by_a_fragment_a_query_or_an_extension_is_part_of_a_longer_name() {
+    use super::names_whole;
+    let mock = "https://claude.ai/artifact/m1";
+    for (text, path, whole) in [
+        ("Approve /changes/t.", PATH, true),
+        ("Approve /changes/t. Then build it.", PATH, true),
+        ("Approve /changes/t?", PATH, true),
+        ("/changes/t-two", PATH, false),
+        ("/changes/t#suite-run", PATH, false),
+        ("https://claude.ai/artifact/m1?v=2", mock, false),
+        ("Agree https://claude.ai/artifact/m1.png", mock, false),
+        ("Agree /mockups/x.html", "/mockups/x", false),
+        ("Agree /mockups/x.", "/mockups/x", true),
+        ("Waive /changes/t#suite-run", "/changes/t#suite-run", true),
+        ("Waive /changes/t#suite-run.", "/changes/t#suite-run", true),
+        ("Waive /changes/t#suite-runs", "/changes/t#suite-run", false),
+    ] {
+        assert_eq!(names_whole(text, path), whole, "{text} names {path}");
+    }
+}

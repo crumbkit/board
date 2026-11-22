@@ -201,10 +201,14 @@ fn applied<'a>(keyword: &str, value: &'a Value) -> Option<(&'static str, Vec<&'a
 }
 
 /// The path a `board-ref` value names: the text before its first `#`, as a
-/// Markdown link drops its fragment. The record keeps the whole text.
+/// Markdown link drops its fragment. The record keeps the whole text. A
+/// fragment needs an entry before it, so `/#x` names nothing.
 pub(crate) fn target(text: &str) -> Option<LogicalPath> {
-    let path = text.split_once('#').map_or(text, |(path, _)| path);
-    path.parse().ok()
+    let Some((path, _)) = text.split_once('#') else {
+        return text.parse().ok();
+    };
+    let path: LogicalPath = path.parse().ok()?;
+    (path != LogicalPath::root()).then_some(path)
 }
 
 /// A reference a record makes.

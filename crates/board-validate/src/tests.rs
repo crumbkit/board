@@ -255,7 +255,7 @@ fn a_reference_with_a_fragment_names_the_path_before_it_and_its_twin_without_one
     assert!(schema.validate(&anchored).is_ok());
     assert_eq!(parent("/changes/x#design-conformance"), found("/changes/x"));
     assert_eq!(parent("/changes/x"), found("/changes/x"));
-    for bare in ["#x", "changes/x#y", "/a//b#y"] {
+    for bare in ["#x", "/#x", "changes/x#y", "/a//b#y"] {
         let error = schema
             .validate(&json!({"title": "t", "parent": bare}))
             .unwrap_err();

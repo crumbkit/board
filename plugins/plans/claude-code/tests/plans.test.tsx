@@ -629,3 +629,11 @@ test('a path followed by a fragment or a query is part of a longer name, and a s
   expect(namesWhole('Waive /changes/t#suite-run', '/changes/t#suite-run')).toBe(true)
   expect(namesWhole('Waive /changes/t#suite-runs', '/changes/t#suite-run')).toBe(false)
 })
+
+test('a path followed by a dot and a letter or digit is part of a longer name, and a dot that ends a sentence is not', () => {
+  expect(namesWhole('Agree https://claude.ai/artifact/m1.png', 'https://claude.ai/artifact/m1')).toBe(false)
+  expect(namesWhole('Agree /mockups/x.html', '/mockups/x')).toBe(false)
+  expect(namesWhole('Agree /mockups/x.', '/mockups/x')).toBe(true)
+  expect(namesWhole('Approve /changes/t. Then build it.', '/changes/t')).toBe(true)
+  expect(namesWhole('Waive /changes/t#suite-run.', '/changes/t#suite-run')).toBe(true)
+})
