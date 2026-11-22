@@ -1,7 +1,7 @@
 //! Writing a repository record once, at the path its remote's identity
 //! gives, and the put line later writers add to their own batches.
 
-use board_model::{Code, repo_identity};
+use board_model::{Code, LogicalPath, repo_identity};
 use board_scenario::{Item, Scenario};
 use serde_json::{Value, json};
 
@@ -31,9 +31,13 @@ fn ensure_gives_a_put_line_that_expects_nothing_for_a_missing_record_and_nothing
 {
     let scenario = board();
     let board = open(&scenario);
-    let line = ensure(&board, &remote("git@github.com:CrumbKit/Board.git"))
-        .unwrap()
-        .unwrap();
+    let line = ensure(
+        &board,
+        &LogicalPath::root(),
+        &remote("git@github.com:CrumbKit/Board.git"),
+    )
+    .unwrap()
+    .unwrap();
     assert_eq!(
         serde_json::to_value(&line).unwrap(),
         json!({
@@ -44,7 +48,10 @@ fn ensure_gives_a_put_line_that_expects_nothing_for_a_missing_record_and_nothing
     );
     let batch = format!("{}\n", serde_json::to_string(&line).unwrap());
     board.put_batch(&mut batch.as_bytes()).unwrap();
-    assert_eq!(ensure(&board, &remote("crumbkit/board")).unwrap(), None);
+    assert_eq!(
+        ensure(&board, &LogicalPath::root(), &remote("crumbkit/board")).unwrap(),
+        None
+    );
 }
 
 #[test]
@@ -52,8 +59,12 @@ fn two_batches_that_ensure_one_record_leave_one_record_and_the_second_is_stale()
     let scenario = board();
     let board = open(&scenario);
     let identity = remote("crumbkit/board");
-    let first = ensure(&board, &identity).unwrap().unwrap();
-    let second = ensure(&board, &identity).unwrap().unwrap();
+    let first = ensure(&board, &LogicalPath::root(), &identity)
+        .unwrap()
+        .unwrap();
+    let second = ensure(&board, &LogicalPath::root(), &identity)
+        .unwrap()
+        .unwrap();
     let batch = |line| format!("{}\n", serde_json::to_string(&line).unwrap());
     board.put_batch(&mut batch(first).as_bytes()).unwrap();
     let head = scenario.head().unwrap().id;
@@ -141,4 +152,104 @@ fn repo_add_from_a_clone_reads_its_origin_and_one_with_no_origin_or_a_local_one_
     };
     assert_eq!(remote.as_str(), "gitlab.com/Example-Org/App");
     assert!(file(&scenario, "repositories/gitlab.com/Example-Org/App.json").is_some());
+}
+
+#[test]
+fn ensure_through_a_mount_gives_a_line_under_the_mount_and_reads_the_record_there() {
+    let team = Scenario::board();
+    let first = team.commit(&[(".board/board.json", r#"{"$type": "board/config/v1"}"#)]);
+    let scenario = board();
+    scenario.write(
+        "team.json",
+        Item::File(&board_scenario::seed::mount_of(&team.path(), first)),
+    );
+    let board = open(&scenario);
+    let team_path: LogicalPath = "/team".parse().unwrap();
+    let identity = remote("crumbkit/board");
+    let line = ensure(&board, &team_path, &identity).unwrap().unwrap();
+    assert_eq!(
+        serde_json::to_value(&line).unwrap()["path"],
+        "/team/repositories/crumbkit/board"
+    );
+    scenario.write(
+        "repositories/crumbkit/board.json",
+        Item::File(r#"{"$type": "board/repo/v2", "remote": "crumbkit/board"}"#),
+    );
+    assert!(ensure(&board, &team_path, &identity).unwrap().is_some());
+    assert_eq!(
+        ensure(&board, &LogicalPath::root(), &identity).unwrap(),
+        None
+    );
+    let second = team.commit(&[
+        (".board/board.json", r#"{"$type": "board/config/v1"}"#),
+        (
+            "repositories/crumbkit/board.json",
+            r#"{"$type": "board/repo/v2", "remote": "crumbkit/board"}"#,
+        ),
+    ]);
+    scenario.write(
+        "team.json",
+        Item::File(&board_scenario::seed::mount_of(&team.path(), second)),
+    );
+    assert_eq!(ensure(&board, &team_path, &identity).unwrap(), None);
+}
+
+#[test]
+fn an_invalid_or_misplaced_record_at_the_path_is_not_present_and_repo_add_refuses_it() {
+    let identity = remote("crumbkit/board");
+    for (held, code) in [
+        (
+            r#"{"$type": "board/repo/v2", "remote": "CrumbKit/Board"}"#,
+            Code::RepoInvalid,
+        ),
+        (
+            r#"{"$type": "board/repo/v1", "remote": "crumbkit/board"}"#,
+            Code::RepoInvalid,
+        ),
+        ("{not json", Code::RepoInvalid),
+        (
+            r#"{"$type": "board/repo/v2", "remote": "crumbkit/other"}"#,
+            Code::RepoPathMismatch,
+        ),
+    ] {
+        let scenario = board();
+        scenario.write("repositories/crumbkit/board.json", Item::File(held));
+        let board = open(&scenario);
+        let error = ensure(&board, &LogicalPath::root(), &identity).unwrap_err();
+        assert_eq!(error.code(), code, "{held}: {error}");
+        assert!(
+            error.to_string().starts_with(
+                "/repositories/crumbkit/board holds no valid record of crumbkit/board: "
+            ),
+            "{error}"
+        );
+        let error = board.repo_add("crumbkit/board").unwrap_err();
+        assert_eq!(error.code(), code, "{held}");
+        assert!(
+            (error.refusal().hint.as_deref()).is_some_and(|hint| hint.contains("board rm")),
+            "{:?}",
+            error.refusal()
+        );
+        assert!(scenario.head().is_none(), "{held}");
+    }
+}
+
+#[test]
+fn repo_add_from_a_clone_whose_origin_is_a_relative_path_refuses_it_as_local() {
+    let scenario = board();
+    let board = open(&scenario);
+    let clone = Scenario::new();
+    clone.commit(&[("a.md", "one")]);
+    clone.write(
+        ".git/config",
+        Item::File("[remote \"origin\"]\n\turl = upstream/app\n"),
+    );
+    let error = board.repo_add_from(clone.workdir()).unwrap_err();
+    assert_eq!(error.code(), Code::RepoLocalRemote);
+    assert_eq!(
+        error.to_string(),
+        "the origin upstream/app is a local path, which names no repository outside this machine"
+    );
+    assert!(scenario.head().is_none());
+    assert!(board.repo_add("upstream/app").is_ok());
 }

@@ -19,14 +19,25 @@ reference to that path, `"x-board-type": "board/repo/v2"`, so `board refs`,
   the table in `crates/board-model/src/repo/remotes.json`.
   - A GitHub remote, over https, ssh, git or scp-like `git@github.com:`, with
     or without a host alias such as `github.com-work`, is `owner/name` in
-    lower case, because GitHub ignores case.
+    lower case, because GitHub ignores case. The hosts `ssh.github.com`,
+    which GitHub serves ssh on port 443 from, and `www.github.com` are
+    GitHub's too. No other `*.github.com` host is, because
+    `gist.github.com/<user>/<id>` names a gist.
   - Any other host is `<host>/<path>`, with the host in lower case and no
     scheme, user, password, port, trailing `.git` or trailing `/`, such as
-    `gitlab.com/example-org/app`. A GitHub owner holds no dot and a host
-    does, so the two forms never collide.
+    `gitlab.com/example-org/app`. The host's last label is letters, so an
+    ssh alias such as `gitlab.com-work`, or an IP address, is refused. Each
+    path segment holds `[A-Za-z0-9._~-]` and does not start with `.`. A
+    GitHub owner holds no dot and a host does, so the two forms never
+    collide.
+  - A remote with a query or a fragment, or with any other character in
+    its path, is refused with `board::repo::invalid`.
   - A local path, a `file://` URL or a relative path names a directory on
     one machine. It has no identity form and is refused with
-    `board::repo::local_remote`.
+    `board::repo::local_remote`. git reads a clone's origin with no `://`
+    and no scp-like `host:` as a directory beside the clone, so
+    `board_model::origin_identity` refuses such an origin, even
+    `owner/name`, which names GitHub only as an argument.
 - The path is the identity, so one repository has the same path and the
   same bytes in every board, and two records of one repository cannot
   exist. The record holds no clone path, branch or commit.
@@ -46,8 +57,12 @@ reference to that path, `"x-board-type": "board/repo/v2"`, so `board refs`,
 A reference is read in the referring record's board, so a record in a
 mounted board names that board's own copy, never the parent's. Each writer
 that names a repository adds the line `board_ops::repo::ensure` gives to
-the batch that writes its own record: a put with `"expect": "none"` when the
-record is missing, and nothing when something is at the path. Two writers
+the batch that writes its own record, naming the board that batch writes
+in: `/`, or the path of a mount, so the line goes under that mount. The
+line is a put with `"expect": "none"` when the record is missing, and
+there is no line when the record is there. Anything else at the path, such
+as a hand-edited record that is invalid or names another repository, is
+refused with `board::repo::invalid` or `board::repo::path_mismatch`. Two writers
 that race leave one record, and the second batch is `board::put::stale`.
 `share.to` copies a repository record through the reference, as it copies
 any referenced record; the bytes are the same in every board, so the
@@ -56,7 +71,8 @@ destination's copy counts as present.
 `board repo add <remote>` writes the record from any remote form, and
 `board repo add --from <dir>` reads the origin of the clone that holds the
 directory. Each prints the path. When the record exists it writes nothing
-and says `unchanged`. A clone with no origin is `board::mount::no_remote`.
+and says `unchanged`; when anything else is at the path it is refused as
+`ensure` refuses it. A clone with no origin is `board::mount::no_remote`.
 
 ## board/repo/v1
 

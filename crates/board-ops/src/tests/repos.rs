@@ -234,10 +234,24 @@ fn a_reference_to_a_repository_record_in_a_mounted_board_dangles_until_that_boar
     let copy = repository("crumbkit/board");
     let mut files = team_files.to_vec();
     files.push(("repositories/crumbkit/board.json", &copy));
+    files.push(("repositories/crumbkit/other.json", &copy));
     let second = team.commit(&files);
     scenario.write(
         "team.json",
         Item::File(&board_scenario::seed::mount_of(&team.path(), second)),
     );
     assert_eq!(status(&scenario, "pulls/a.json"), Status::Ok);
+    let report = check(&scenario);
+    let at = |logical: &str| {
+        (report.entries.iter())
+            .find(|entry| entry.logical.as_ref().map(LogicalPath::as_str) == Some(logical))
+            .unwrap_or_else(|| panic!("{logical} is not an entry"))
+    };
+    assert_eq!(at("/team/repositories/crumbkit/board").status, Status::Ok);
+    let misplaced = at("/team/repositories/crumbkit/other");
+    assert_eq!(misplaced.status, Status::Degraded(Code::RepoPathMismatch));
+    assert_eq!(
+        misplaced.detail.as_ref().unwrap().reason,
+        "names the repository crumbkit/board, whose record belongs at /team/repositories/crumbkit/board"
+    );
 }

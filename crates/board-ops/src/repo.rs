@@ -6,7 +6,8 @@
 use std::path::{Path, PathBuf};
 
 use board_model::{
-    Code, Fields, IdentityError, Refusal, Remote, RepositoryRecord, canonical_json, repo_identity,
+    Code, Fields, IdentityError, LogicalPath, PathError, Refusal, Remote, RepositoryRecord,
+    canonical_json, origin_identity, repo_identity,
 };
 use board_tree::Origin;
 use board_types::BatchLine;
@@ -35,27 +36,102 @@ impl RepoAdded {
     }
 }
 
-/// The line of a `put --batch` that writes the record of `remote` in
-/// `board` when nothing is at its path yet, expecting nothing there so a
-/// writer that got there first makes the batch stale; `None` when
-/// something is there. A writer that names a repository adds this line to
-/// the batch that writes its own record.
-pub fn ensure(board: &Board, remote: &Remote) -> Result<Option<BatchLine<Value>>, ReadError> {
-    match board.get(remote.path()) {
-        Ok(_) => Ok(None),
-        Err(error) if error.code() == Code::PathNotFound => Ok(Some(BatchLine::Record {
-            path: remote.path().to_string(),
+/// The line of a `put --batch` that writes the record of `remote` in the
+/// board at `within`, `/` for `board` itself or the path of a board it
+/// mounts, when that board holds no record there yet. The line expects
+/// nothing at the path, so a writer that got there first makes the batch
+/// stale. It is `None` when the board already holds the record. A writer
+/// that names a repository adds this line to the batch that writes its own
+/// record, giving `within` as the board that batch writes in.
+pub fn ensure(
+    board: &Board,
+    within: &LogicalPath,
+    remote: &Remote,
+) -> Result<Option<BatchLine<Value>>, EnsureError> {
+    let path = within
+        .beneath(remote.path())
+        .map_err(|source| EnsureError::Path { source })?;
+    Ok(
+        (!present(board, &path, remote)?).then(|| BatchLine::Record {
+            path: path.to_string(),
             expect: Some("none".to_owned()),
             record: RepositoryRecord::new(remote.clone()).to_value(),
-        })),
-        Err(error) => Err(error),
+        }),
+    )
+}
+
+/// Whether `path` in `board` holds the valid record of `remote`. A path
+/// that holds anything else is refused, so a hand-edited record is never
+/// taken for the right one.
+fn present(board: &Board, path: &LogicalPath, remote: &Remote) -> Result<bool, EnsureError> {
+    let report = match board.get(path) {
+        Ok(report) => report,
+        Err(error) if error.code() == Code::PathNotFound => return Ok(false),
+        Err(error) => return Err(error.into()),
+    };
+    let occupied = |code, why: String| EnsureError::Occupied {
+        path: report.display.clone(),
+        remote: remote.clone(),
+        code,
+        why,
+    };
+    let value = (report.record.as_ref())
+        .map_err(|refusal| occupied(Code::RepoInvalid, refusal.message.clone()))?;
+    let record = RepositoryRecord::from_value(value)
+        .map_err(|error| occupied(Code::RepoInvalid, error.to_string()))?;
+    if record.remote == *remote {
+        Ok(true)
+    } else {
+        Err(occupied(
+            Code::RepoPathMismatch,
+            format!("it names the repository {}", record.remote),
+        ))
+    }
+}
+
+/// Why [`ensure`] gave no line.
+#[derive(Debug, thiserror::Error)]
+pub enum EnsureError {
+    /// Something other than the record of `remote` is at its path.
+    #[error("{path} holds no valid record of {remote}: {why}")]
+    Occupied {
+        path: LogicalPath,
+        remote: Remote,
+        code: Code,
+        why: String,
+    },
+    /// The record's path beneath the mount is not a board path.
+    #[error("the record's path beneath the mount is not a board path: {source}")]
+    Path { source: PathError },
+    #[error(transparent)]
+    Read(#[from] ReadError),
+}
+
+impl EnsureError {
+    pub fn code(&self) -> Code {
+        match self {
+            Self::Occupied { code, .. } => *code,
+            Self::Path { .. } => Code::RepoTooLong,
+            Self::Read(error) => error.code(),
+        }
+    }
+
+    pub fn refusal(&self) -> Refusal {
+        match self {
+            Self::Read(error) => error.refusal("repo add"),
+            Self::Occupied { path, .. } => Refusal::new(self.code(), self, &Fields::default())
+                .with_hint(format!(
+                    "look at the file with `board get {path}`; if it is not needed, remove it with `board rm {path}` and run repo add again"
+                )),
+            Self::Path { .. } => Refusal::new(self.code(), self, &Fields::default()),
+        }
     }
 }
 
 impl Board {
     /// Writes the record of the repository `remote` names, a remote in any
     /// form [`repo_identity`] reads, at `/repositories/<remote>`, through
-    /// put with `--expect none`; or writes nothing when something is
+    /// put with `--expect none`; or writes nothing when the record is
     /// already there.
     pub fn repo_add(&self, remote: &str) -> Result<RepoAdded, RepoError> {
         let identity = repo_identity(remote).map_err(|source| RepoError::Remote {
@@ -66,7 +142,8 @@ impl Board {
     }
 
     /// [`Board::repo_add`] of the `origin` remote of the git repository
-    /// that holds `directory`.
+    /// that holds `directory`, which [`origin_identity`] reads, so a
+    /// relative origin is a local path.
     pub fn repo_add_from(&self, directory: &Path) -> Result<RepoAdded, RepoError> {
         let url = match board_tree::origin(directory) {
             Origin::Url(url) => url,
@@ -82,7 +159,7 @@ impl Board {
                 });
             }
         };
-        let identity = repo_identity(&url).map_err(|source| RepoError::Remote {
+        let identity = origin_identity(&url).map_err(|source| RepoError::Remote {
             source,
             origin: true,
         })?;
@@ -90,11 +167,11 @@ impl Board {
     }
 
     fn repo_write(&self, remote: Remote) -> Result<RepoAdded, RepoError> {
-        let Some(BatchLine::Record { record, .. }) = ensure(self, &remote)? else {
+        if present(self, remote.path(), &remote)? {
             return Ok(RepoAdded::Unchanged { remote });
-        };
-        let bytes = canonical_json(&record);
-        let report = self.put(remote.path(), Expect::Absent, bytes.as_bytes())?;
+        }
+        let record = canonical_json(&RepositoryRecord::new(remote.clone()).to_value());
+        let report = self.put(remote.path(), Expect::Absent, record.as_bytes())?;
         Ok(RepoAdded::Wrote { remote, report })
     }
 }
@@ -110,7 +187,7 @@ pub enum RepoError {
     #[error("{} is in no git repository", directory.display())]
     Outside { directory: PathBuf },
     #[error(transparent)]
-    Read(#[from] ReadError),
+    Ensure(#[from] EnsureError),
     #[error(transparent)]
     Put(#[from] PutError),
 }
@@ -121,14 +198,14 @@ impl RepoError {
             Self::Remote { source, .. } => source.code(),
             Self::NoRemote { .. } => Code::MountNoRemote,
             Self::Outside { .. } => Code::MountRepoMissing,
-            Self::Read(error) => error.code(),
+            Self::Ensure(error) => error.code(),
             Self::Put(error) => error.code(),
         }
     }
 
     pub fn refusal(&self) -> Refusal {
         match self {
-            Self::Read(error) => error.refusal("repo add"),
+            Self::Ensure(error) => error.refusal(),
             Self::Put(error) => error.refusal(),
             Self::Outside { .. } => Refusal::new(self.code(), self, &Fields::default()).with_hint(
                 "give --from the directory of a git clone, or give repo add the remote itself",
