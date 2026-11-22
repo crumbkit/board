@@ -6,7 +6,7 @@ export type Rule = {
   kind: Kind
   rule: string
   requirement: string
-  /** For a measured rule, its usage, such as `412 of 1000 words`. */
+  /** For a measured rule, its usage, such as `412 of 1000 words` or `remaining 0 in /suites/s/runs/1, 20 h old`. */
   usage?: string
   /** True for a rule with no checker, which only a reader judges. */
   described?: boolean

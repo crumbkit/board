@@ -42,6 +42,14 @@ function failure(exitCode: number, stdout: string, stderr: string): { code: stri
 type Stated = { rule: string; requirement: string; kind?: string; state?: string; close?: string }
 type Measured = Stated & { budget: string; used: number; max: number; unreadable?: unknown[] }
 type Pinned = Stated & { at_least: string; behind?: unknown[]; unreadable?: unknown[] }
+type Zeroed = Stated & {
+  suite: string
+  run: string | null
+  age_s: number | null
+  measures: { name: string; value: unknown }[]
+  state: string
+  code?: string
+}
 
 /** `, N unreadable` when a measured rule could not read N of its files. */
 function unread(list: unknown[] | undefined): string {
@@ -52,6 +60,22 @@ function unread(list: unknown[] | undefined): string {
 function pins(v: Pinned): string {
   const behind = Array.isArray(v.behind) ? v.behind.length : 0
   return behind > 0 ? `${behind} older than ${v.at_least}` : `every pin at least ${v.at_least}`
+}
+
+/** A run's age in whole minutes, hours or days. */
+function age(seconds: number): string {
+  if (seconds < 3600) return `${Math.floor(seconds / 60)} min old`
+  if (seconds < 172800) return `${Math.floor(seconds / 3600)} h old`
+  return `${Math.floor(seconds / 86400)} d old`
+}
+
+/** What a zero rule's suite reports, such as `remaining 3, unknown 0 in /suites/s/runs/1, 20 h old`. */
+function zeroes(z: Zeroed): string {
+  if (z.state === 'unreadable') return `${z.suite} unreadable: ${z.code ?? 'no code'}`
+  if (z.run === null) return `no qualifying run of ${z.suite}`
+  const values = (Array.isArray(z.measures) ? z.measures : []).map(m => `${m.name} ${m.value === null || m.value === undefined ? 'missing' : String(m.value)}`)
+  const stale = z.state === 'stale' ? ', stale' : ''
+  return `${values.join(', ')} in ${z.run}${z.age_s === null ? '' : `, ${age(z.age_s)}`}${stale}`
 }
 
 /** An obligation's `close` line, as the rules plugin gives it; nothing for a standing rule. */
@@ -74,7 +98,8 @@ export function parseCheck(root: string, exitCode: number, stdout: string, stder
   const found = exitCode === 0 ? output(stdout) : null
   if (found !== null && Array.isArray(found.stated) && Array.isArray(found.measured)) {
     const versionList = Array.isArray(found.versions) ? (found.versions as Pinned[]) : []
-    const all = [...(found.measured as Measured[]), ...versionList, ...(found.stated as Stated[])]
+    const zeroList = Array.isArray(found.zeros) ? (found.zeros as Zeroed[]) : []
+    const all = [...(found.measured as Measured[]), ...versionList, ...zeroList, ...(found.stated as Stated[])]
     if (!all.every(item => typeof item.rule === 'string')) {
       return { kind: 'failed', root, code: UNREADABLE, message: 'rules.check named a rule in a way this mod does not read; update the mod and Board together' }
     }
@@ -92,6 +117,13 @@ export function parseCheck(root: string, exitCode: number, stdout: string, stder
       usage: `${pins(v)}${unread(v.unreadable)}`,
       ...closing(v),
     }))
+    const zeros = zeroList.map(z => ({
+      kind: (z.kind === 'obligation' ? 'obligation' : 'standing') as Kind,
+      rule: z.rule,
+      requirement: z.requirement,
+      usage: zeroes(z),
+      ...closing(z),
+    }))
     const stated = (found.stated as Stated[]).map(s => ({
       kind: (s.kind === 'obligation' ? 'obligation' : 'standing') as Kind,
       rule: s.rule,
@@ -99,7 +131,7 @@ export function parseCheck(root: string, exitCode: number, stdout: string, stder
       ...(s.state === 'described' ? { described: true } : {}),
       ...closing(s),
     }))
-    return { kind: 'read', root, rules: [...measured, ...versions, ...stated] }
+    return { kind: 'read', root, rules: [...measured, ...versions, ...zeros, ...stated] }
   }
   const failed = failure(exitCode, stdout, stderr)
   if (failed.code === NO_BOARD) return null

@@ -24,6 +24,8 @@ pulldown-cmark.workspace = true
 toml.workspace = true
 
 [dev-dependencies]
+# The tests run runs.latest, which a zero rule calls, in process.
+board-plugin-runs.workspace = true
 board-scenario.workspace = true
 
 [lints]

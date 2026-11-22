@@ -109,9 +109,15 @@ impl Control {
         self.kind() == Kind::Standing && self.owed_by.is_some()
     }
 
-    /// Whether `check` measures the control's files: it has a budget or a
-    /// version rule this Board can apply.
+    /// Whether `check` measures the control: it has a budget, version or
+    /// zero rule this Board can apply.
     pub(crate) fn measured(&self) -> bool {
+        self.reads_files() || matches!(self.checker, Some(Checker::Zero(_)))
+    }
+
+    /// Whether `check` measures the control's files: it has a budget or a
+    /// version rule this Board can apply. A zero rule reads a suite's runs.
+    pub(crate) fn reads_files(&self) -> bool {
         (self.checker.as_ref()).is_some_and(|checker| {
             matches!(checker, Checker::Budget(_) | Checker::Version(_)) && checker.applies()
         })

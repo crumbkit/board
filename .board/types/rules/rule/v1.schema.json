@@ -77,9 +77,12 @@
         },
         {
           "$ref": "#/$defs/VersionChecker"
+        },
+        {
+          "$ref": "#/$defs/ZeroChecker"
         }
       ],
-      "description": "What a program checks: a budget, a pattern file, a judged rubric or a version floor, named by `check`.",
+      "description": "What a program checks: a budget, a pattern file, a judged rubric, a version floor or measures a suite's latest run must report as 0, named by `check`.",
       "properties": {
         "check": {
           "description": "The kind of rule, which decides its other fields.",
@@ -87,7 +90,8 @@
             "budget",
             "pattern",
             "judged",
-            "version"
+            "version",
+            "zero"
           ],
           "type": "string"
         }
@@ -230,6 +234,71 @@
           "capture"
         ]
       }
+    },
+    "ZeroChecker": {
+      "description": "A zero rule: each of `measures` is 0 in the latest full run of a clean\nrevision of `suite`, which `runs.latest` gives.",
+      "else": {
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "measures"
+              ]
+            },
+            {
+              "required": [
+                "suite"
+              ]
+            },
+            {
+              "required": [
+                "within_days"
+              ]
+            }
+          ]
+        }
+      },
+      "if": {
+        "properties": {
+          "check": {
+            "const": "zero"
+          }
+        },
+        "required": [
+          "check"
+        ]
+      },
+      "properties": {
+        "measures": {
+          "description": "The run-level measures that must each be 0, by the names the suite's\nruns record.",
+          "items": {
+            "maxLength": 64,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 8,
+          "minItems": 1,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "suite": {
+          "description": "The suite whose runs record the measures, by its logical path, such\nas `/suites/old-path-users`. It is no reference, so a suite that is\ngone fails this rule alone.",
+          "pattern": "^/[^\\s{}]*$",
+          "type": "string"
+        },
+        "within_days": {
+          "description": "The most days since the run finished; left out, a run of any age\ncounts.",
+          "maximum": 365,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "then": {
+        "required": [
+          "suite",
+          "measures"
+        ]
+      }
     }
   },
   "additionalProperties": false,
@@ -290,7 +359,7 @@
       "x-board-prose": true
     },
     "show": {
-      "description": "When to show the control: `start` at session start, `edit` before\nthe first edit of a file it covers, or `failing` only when `check`\nreports it failing. Left out, an obligation shows at `start`, a\ncontrol with a budget when `failing`, and any other at `edit`.",
+      "description": "When to show the control: `start` at session start, `edit` before\nthe first edit of a file it covers, or `failing` only when `check`\nreports it failing. Left out, an obligation shows at `start`, a\ncontrol `check` measures when `failing`, and any other at `edit`.",
       "enum": [
         "start",
         "edit",
