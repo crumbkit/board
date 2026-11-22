@@ -293,6 +293,27 @@ fn the_install_section_still_takes_a_reader_through_the_dmg_and_board_app() {
     assert!(!dmg.contains("release folder"), "{dmg}");
 }
 
+#[test]
+fn the_page_says_which_of_the_dmg_and_the_formula_to_install_and_never_both() {
+    let page = page();
+    let choose = section(&page, "## Choose how to install");
+    let choose = choose.split_whitespace().collect::<Vec<_>>().join(" ");
+    assert!(
+        choose.contains("On an Apple silicon Mac, use the Board dmg"),
+        "{choose}"
+    );
+    assert!(
+        choose.contains("On an Intel Mac or on Linux, run `brew install crumbkit/tap/board`"),
+        "{choose}"
+    );
+    assert!(choose.contains("never both"), "{choose}");
+    assert!(choose.contains("`board skills install`"), "{choose}");
+    assert!(
+        choose.contains("Touch ID signing needs Board.app"),
+        "{choose}"
+    );
+}
+
 /// A failed `put --new` prints no path, so the block must stop before it
 /// concludes the eval with an empty run.
 #[test]

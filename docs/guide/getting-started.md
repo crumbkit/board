@@ -1,7 +1,25 @@
 # Getting started
 
-This page takes you from the Board dmg or a release folder to a project, a
-task, a question and an eval in your own board.
+This page takes you from the Board dmg, Homebrew or a release folder to a
+project, a task, a question and an eval in your own board.
+
+## Choose how to install
+
+- On an Apple silicon Mac, use the Board dmg. It installs `board`,
+  `attention-sign` for Touch ID signing, Board's skills and its Claude Code
+  mods.
+- On an Intel Mac or on Linux, run `brew install crumbkit/tap/board`.
+- The formula also works on an Apple silicon Mac when you want only the
+  `board` command.
+- The formula installs only `board`. Run `board skills install` after it to
+  write Board's skills.
+- Touch ID signing needs Board.app, so it needs the dmg.
+- Install one of the two, never both. Each puts a `board` on your PATH, the
+  dmg's in `~/.local/bin` and the formula's in Homebrew's `bin`, and the
+  first on PATH runs, possibly an older version.
+- Do not unpack a release archive by hand on a Mac. A browser quarantines
+  the download, and macOS then blocks the unsigned `board` inside it.
+  Homebrew does not quarantine it, and the dmg is notarised.
 
 ## Before you install
 
