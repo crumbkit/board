@@ -227,7 +227,20 @@ Work with mounts
 
 ### Commands
 
+- [`board mount add`](#board-mount-add): Mount a local clone at a path that holds nothing yet
 - [`board mount update`](#board-mount-update): Advance the mount at a path, which is not followed, to its `follow` ref
+
+## `board mount add`
+
+Mount a local clone at a path that holds nothing yet
+
+### Arguments
+
+- `<PATH>`: The mount's logical path, such as /team. Required.
+- `<REPO>`: The directory of a local git clone, such as \~/team-board. Required.
+- `--follow <FOLLOW>`: The ref `mount update` advances the mount to, such as main
+
+Effects: additive, not idempotent, closed-world.
 
 ## `board mount update`
 

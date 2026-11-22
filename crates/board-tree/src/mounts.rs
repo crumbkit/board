@@ -6,8 +6,8 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use board_model::{
-    Code, Digest, Fields, LogicalPath, Malformation, Mount, Object, ObjectId, PathError, Pointer,
-    Repo, Source,
+    Code, Digest, Fields, LogicalPath, Malformation, Mount, ObjectId, PathError, Pointer, Repo,
+    Source,
 };
 
 use crate::git::{Contents, GitError, Identity, Repository, latest, remote_url};
@@ -265,23 +265,12 @@ impl Repositories {
             path: path.clone(),
             code,
         };
-        let target = self.pointer_target(path)?;
-        let Object::Blob(resolved) = target.location.object else {
+        let (target, Contents { blob, bytes }, pointer) =
+            self.pointer_at(path)?.ok_or_else(not_a_mount)?;
+        let Pointer::Mount(mount) = pointer else {
             return Err(not_a_mount());
         };
-        if !board_model::can_hold_pointer(&target.path) {
-            return Err(not_a_mount());
-        }
         let root = self.root();
-        let Contents { blob, bytes } =
-            latest((root.reader()).read(&Source::WorkingTree, &target.path, resolved))
-                .map_err(|error| refused(error.code()))?
-                .ok_or_else(not_a_mount)?;
-        let mount = match board_model::pointer(&bytes) {
-            Ok(Some(Pointer::Mount(mount))) => mount,
-            Ok(_) => return Err(not_a_mount()),
-            Err(error) => return Err(refused(error.code())),
-        };
         let new = self.followed(root.path(), &mount).map_err(refused)?;
         let canonical =
             board_model::repinned(&bytes, new).map_err(|error| refused(error.code()))?;

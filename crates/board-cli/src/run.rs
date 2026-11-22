@@ -14,6 +14,7 @@ use board_plugin::{Limits, Target};
 mod checkout;
 mod history;
 mod lookup;
+mod mount;
 mod remove;
 mod syncing;
 mod uri;
@@ -40,6 +41,7 @@ use crate::stdin::{Input, Stdin, TypeCommand, call, put};
 use crate::timing::Ran;
 use crate::values::{duration, expect, var};
 use crate::{effects, graft};
+use mount::MountCommand;
 
 const ROOT_EXAMPLES: &str = "\
 Start here:
@@ -272,17 +274,7 @@ Examples:
   board sync --no-push")]
     Sync(syncing::Syncing),
     /// Work with mounts.
-    #[command(
-        subcommand,
-        after_help = "\
-A mount holds `repo`, `follow` and `commit`: a record of `$type`
-board/mount/v1, or the `checkout` of a board/repo/v1 record, which also names
-the repository's `remote`. Board reads the mounted repository at `commit`;
-`mount update` advances `commit` to the commit `follow` names.
-
-Examples:
-  board mount update /vendor/lib"
-    )]
+    #[command(subcommand, after_help = mount::HELP)]
     Mount(MountCommand),
     /// Work with plugins.
     #[command(
@@ -383,18 +375,6 @@ Examples:
     /// Describe the JSON documents that Board prints.
     #[command(subcommand, after_help = crate::describe::SCHEMAS_HELP)]
     Schemas(crate::describe::SchemasCommand),
-}
-
-#[derive(Debug, Subcommand)]
-enum MountCommand {
-    /// Advance the mount at a path, which is not followed, to its `follow` ref.
-    #[command(after_help = "\
-Examples:
-  board mount update /vendor/lib")]
-    Update {
-        /// The mount's logical path, such as /vendor/lib.
-        path: LogicalPath,
-    },
 }
 
 impl Command {
@@ -608,7 +588,7 @@ fn ask(board: &mut Board, context: &Context, command: &Command) -> Result<(), Bo
         board.mark_bulk(Bulk::new(reason).map_err(|error| Box::new(error.refusal()))?);
     }
     let personal = match command {
-        Command::Put(_) | Command::Rm(_) => false,
+        Command::Put(_) | Command::Rm(_) | Command::Mount(MountCommand::Add { .. }) => false,
         Command::Decide(_) => context.environment.plugin.is_some(),
         _ => return Ok(()),
     };
@@ -675,12 +655,7 @@ fn command(
         Command::Put(putting) => put(board, printer, prefix, putting, stdin),
         Command::Rm(asked) => remove::remove(board, printer, prefix, asked),
         Command::Sync(asked) => syncing::run(board, printer, &asked),
-        Command::Mount(MountCommand::Update { path }) => {
-            match board.mount_update(&path, board_tree::LOCK_WAIT) {
-                Ok(report) => render::mount_update(printer, &report),
-                Err(error) => render::refused(printer, error.refusal()),
-            }
-        }
+        Command::Mount(asked) => mount::run(board, printer, &context.start, asked),
         Command::Refs(asked) => {
             let paths = or_refuse!(at(&asked.paths, "refs"));
             lookup::refs(printer, board, context, &asked, &paths, &behind)

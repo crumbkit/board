@@ -7,11 +7,13 @@ use std::path::Path;
 use board_model::{Board, Code, Location, LogicalPath, Mount, Object, ObjectId, Pointer, Source};
 
 use crate::address::{Named, Pointers};
-use crate::git::{CommitTree, Contents, GitError, Repository, Sizes};
+use crate::git::{CommitTree, Contents, GitError, Repository, Sizes, latest};
+use crate::mounts::PinError;
 use crate::repositories::Repositories;
 use crate::symlink::{Chains, End, Node, ROOT, Refused};
 use crate::tree::{Kind, RawEntry, Tree};
 use crate::worktree::{Known, Listings, WorkingTree};
+use crate::write::Target;
 
 mod error;
 
@@ -275,16 +277,73 @@ impl Repositories {
     /// peeled to a commit is `mount::follow_missing`.
     pub(crate) fn followed(&self, from: &Path, mount: &Mount) -> Result<ObjectId, Code> {
         let mounted = self.mounted(from, mount).ok_or(Code::MountRepoMissing)?;
-        let mut reference = mounted
-            .git()
-            .try_find_reference(mount.follow.as_str())
-            .ok()
-            .flatten()
-            .ok_or(Code::MountFollowMissing)?;
-        let commit = reference
-            .peel_to_commit()
-            .map_err(|_| Code::MountFollowMissing)?;
-        Ok(crate::git::model_id(&commit.id))
+        at_ref(&mounted, &mount.follow)
+    }
+
+    /// A new mount of the repository at `repo`, a path as a pointer in the
+    /// repository at `from` would hold it, following `follow` or else the
+    /// branch checked out there, at the commit that ref names now, found as
+    /// `mount update` finds it. `None` when no `follow` is
+    /// given and the checked-out branch has no commit, or HEAD is detached.
+    /// A repository that cannot be opened is `mount::repo_missing`, and a
+    /// ref that names no commit is `mount::follow_missing`.
+    pub fn mounting(
+        &self,
+        from: &Path,
+        repo: &str,
+        follow: Option<String>,
+    ) -> Result<Option<Mount>, Code> {
+        // `mounted` reads only `repo`; `follow` and `commit` are set below.
+        let mut mount = Mount {
+            repo: repo.to_owned(),
+            follow: String::new(),
+            commit: ObjectId::Sha1([0; 20]),
+        };
+        let mounted = self.mounted(from, &mount).ok_or(Code::MountRepoMissing)?;
+        let git = mounted.git();
+        let branch = || {
+            let head = git.head_name().ok().flatten();
+            let head = head.filter(|_| git.head_id().is_ok());
+            head.map(|name| name.shorten().to_string())
+        };
+        let Some(follow) = follow.or_else(branch) else {
+            return Ok(None);
+        };
+        mount.follow = follow;
+        mount.commit = at_ref(&mounted, &mount.follow)?;
+        Ok(Some(mount))
+    }
+
+    /// The pointer file at `path` in the working tree, which is not
+    /// followed: where it is, its blob and bytes, and what it points at.
+    /// `None` when `path` names a file that is not a pointer.
+    pub fn pointer_at(
+        &self,
+        path: &LogicalPath,
+    ) -> Result<Option<(Target, Contents, Pointer)>, PinError> {
+        let refused = |code| PinError::Mount {
+            path: path.clone(),
+            code,
+        };
+        let target = self.pointer_target(path)?;
+        let Object::Blob(resolved) = target.location.object else {
+            return Ok(None);
+        };
+        if !board_model::can_hold_pointer(&target.path) {
+            return Ok(None);
+        }
+        let root = self.root();
+        let read = root
+            .reader()
+            .read(&Source::WorkingTree, &target.path, resolved);
+        let Some(contents) = latest(read).map_err(|error| refused(error.code()))? else {
+            return Ok(None);
+        };
+        match board_model::pointer(&contents.bytes) {
+            Ok(Some(pointer)) => Ok(Some((target, contents, pointer))),
+            Ok(None) => Ok(None),
+            Err(error) => Err(refused(error.code())),
+        }
     }
 
     /// Continues with `remaining` at the root of the tree `mount`, a pointer
@@ -685,4 +744,20 @@ fn not_found(path: &LogicalPath, remaining: usize) -> ResolveError {
         path: path.clone(),
         ancestor: path.prefix(resolved),
     }
+}
+
+/// The commit the ref `follow` names now in `mounted`, or
+/// `mount::follow_missing` when it is missing, not a valid name, or not
+/// peeled to a commit.
+fn at_ref(mounted: &Repository, follow: &str) -> Result<ObjectId, Code> {
+    let mut reference = mounted
+        .git()
+        .try_find_reference(follow)
+        .ok()
+        .flatten()
+        .ok_or(Code::MountFollowMissing)?;
+    let commit = reference
+        .peel_to_commit()
+        .map_err(|_| Code::MountFollowMissing)?;
+    Ok(crate::git::model_id(&commit.id))
 }
