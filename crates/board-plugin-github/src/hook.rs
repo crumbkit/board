@@ -343,6 +343,8 @@ pub(crate) enum Action {
     PrEdit,
     Comment,
     IssueCreate,
+    Tag,
+    ReleaseCreate,
     Api,
 }
 
@@ -355,13 +357,16 @@ impl Action {
             Self::PrEdit => "github.pr-edit",
             Self::Comment => "github.comment",
             Self::IssueCreate => "github.issue-create",
+            Self::Tag => "github.tag",
+            Self::ReleaseCreate => "github.release-create",
             Self::Api => "github.api",
         }
     }
 
-    /// How the write leaves the checkout.
+    /// How the write leaves the checkout: a tag by the remote a push names,
+    /// and the rest by the repository gh writes to.
     fn via(self) -> Via {
-        if self == Self::Push {
+        if matches!(self, Self::Push | Self::Tag) {
             Via::Push
         } else {
             Via::Gh

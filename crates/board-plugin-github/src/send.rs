@@ -30,9 +30,14 @@ pub(crate) struct Origin<'a> {
 }
 
 impl Origin<'_> {
+    /// The repository as gh names it, such as octo/widgets.
+    pub(crate) fn repository(&self) -> String {
+        format!("{}/{}", self.owner, self.repo)
+    }
+
     /// The destination the boundary matches, in lower case.
     fn to(&self) -> String {
-        format!("github:{}/{}", self.owner, self.repo)
+        format!("github:{}", self.repository())
     }
 
     /// The boundary's check of the parts of `github.<action>`, which never
@@ -43,7 +48,7 @@ impl Origin<'_> {
 
     /// [`Origin::check`] for a call that offers `--ask_owner`, which asks the
     /// owner on a failure when `ask_owner`.
-    fn check_asking(
+    pub(crate) fn check_asking(
         &self,
         action: &str,
         parts: &Parts,
@@ -335,7 +340,7 @@ pub(crate) fn pr_create(host: &dyn Host, input: &Value) -> Result<Value, PluginE
         extra,
         ask_owner == Some(true),
     )?;
-    let repository = format!("{}/{}", place.owner, place.repo);
+    let repository = place.repository();
     let mut arguments: Vec<String> = ["pr", "create", "--repo", &repository, "--head", &branch]
         .into_iter()
         .chain(["--title", &title, "--body-file", "-"])
@@ -429,7 +434,7 @@ pub(crate) fn pr_edit(host: &dyn Host, input: &Value) -> Result<Value, PluginErr
         }
     }
     let passed = place.check_asking("pr-edit", &parts, ask_owner == Some(true))?;
-    let endpoint = format!("repos/{}/{}/pulls/{number}", place.owner, place.repo);
+    let endpoint = format!("repos/{}/pulls/{number}", place.repository());
     let (_, url) = gh::send_json(host, "PATCH", &endpoint, &Value::Object(fields))?;
     Ok(output(&place.sent(passed, url)?))
 }
@@ -463,10 +468,7 @@ pub(crate) fn comment(host: &dyn Host, input: &Value) -> Result<Value, PluginErr
     let place = origin(host)?;
     let parts = Parts::from([("comment.body".to_owned(), body.clone())]);
     let passed = place.check_asking("comment", &parts, ask_owner == Some(true))?;
-    let endpoint = format!(
-        "repos/{}/{}/issues/{number}/comments",
-        place.owner, place.repo
-    );
+    let endpoint = format!("repos/{}/issues/{number}/comments", place.repository());
     let (_, url) = gh::send_json(host, "POST", &endpoint, &json!({"body": body}))?;
     Ok(output(&place.sent(passed, url)?))
 }
@@ -501,7 +503,7 @@ pub(crate) fn issue_create(host: &dyn Host, input: &Value) -> Result<Value, Plug
         ("issue.body".to_owned(), body.clone()),
     ]);
     let passed = place.check_asking("issue-create", &parts, ask_owner == Some(true))?;
-    let endpoint = format!("repos/{}/{}/issues", place.owner, place.repo);
+    let endpoint = format!("repos/{}/issues", place.repository());
     let body = json!({"title": title, "body": body});
     let (answer, url) = gh::send_json(host, "POST", &endpoint, &body)?;
     let Some(number) = answer.get("number").and_then(Value::as_u64) else {

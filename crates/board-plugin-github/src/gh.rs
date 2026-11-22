@@ -11,7 +11,7 @@ use serde_json::{Map, Value};
 use crate::git::{MODEL_VARIABLES, tail, unfinished};
 
 /// How long gh may run.
-const TIMEOUT: Duration = Duration::from_secs(20);
+pub(crate) const TIMEOUT: Duration = Duration::from_secs(20);
 /// The code of every failure of gh.
 const FAILED: &str = "github::gh::failed";
 /// What gh prints on stderr when GitHub answers 404.
@@ -89,21 +89,74 @@ pub(crate) fn send(
     named: &str,
     at: Option<&Path>,
 ) -> Result<String, PluginError> {
-    let run = Run {
-        program: "gh",
-        arguments,
-        directory: at,
-        input: stdin.as_bytes(),
-        deadline: TIMEOUT,
-        added: &[],
-    };
-    let exited = (host.run_hiding(&run, &MODEL_VARIABLES))
-        .map_err(|error| unsent(named, &unfinished(&error, TIMEOUT)))?;
+    send_within(host, arguments, stdin, named, at, TIMEOUT)
+}
+
+/// [`send`] given `deadline` in place of 20 seconds.
+pub(crate) fn send_within(
+    host: &dyn Host,
+    arguments: &[String],
+    stdin: &str,
+    named: &str,
+    at: Option<&Path>,
+    deadline: Duration,
+) -> Result<String, PluginError> {
+    let exited = exit(host, arguments, stdin, named, at, deadline)?;
     if exited.code != Some(0) {
         let stderr = String::from_utf8_lossy(&exited.stderr);
         return Err(unsent(named, &exited_with(&exited, stderr.trim())));
     }
     Ok(String::from_utf8_lossy(&exited.stdout).into_owned())
+}
+
+/// How `gh <arguments>` exited in `at` after reading `stdin`, whatever its
+/// code, or `github::gh::failed` naming `named` when it did not finish
+/// within `deadline`. gh never sees the model credentials.
+pub(crate) fn exit(
+    host: &dyn Host,
+    arguments: &[String],
+    stdin: &str,
+    named: &str,
+    at: Option<&Path>,
+    deadline: Duration,
+) -> Result<Exited, PluginError> {
+    let run = Run {
+        program: "gh",
+        arguments,
+        directory: at,
+        input: stdin.as_bytes(),
+        deadline,
+        added: &[],
+    };
+    (host.run_hiding(&run, &MODEL_VARIABLES))
+        .map_err(|error| unsent(named, &unfinished(&error, deadline)))
+}
+
+/// The object GitHub answers `gh api --method POST <endpoint>` with `body`,
+/// or none when gh fails saying `refused`, such as "Reference already
+/// exists". Any other failure carries the end of gh's stderr, which holds
+/// GitHub's message.
+pub(crate) fn post(
+    host: &dyn Host,
+    endpoint: &str,
+    body: &Value,
+    refused: Option<&str>,
+) -> Result<Option<Map<String, Value>>, PluginError> {
+    let named = format!("gh api --method POST {endpoint}");
+    let arguments = ["api", "--method", "POST", endpoint, "--input", "-"].map(str::to_owned);
+    let exited = exit(host, &arguments, &body.to_string(), &named, None, TIMEOUT)?;
+    let stderr = String::from_utf8_lossy(&exited.stderr);
+    let stderr = stderr.trim();
+    if exited.code != Some(0) {
+        if refused.is_some_and(|refused| stderr.contains(refused)) {
+            return Ok(None);
+        }
+        return Err(unsent(&named, &exited_with(&exited, stderr)));
+    }
+    match serde_json::from_slice(&exited.stdout) {
+        Ok(Value::Object(answer)) => Ok(Some(answer)),
+        _ => Err(unsent(&named, "answered with no JSON object")),
+    }
 }
 
 /// The object GitHub answers `gh api --method <method> <endpoint>` with

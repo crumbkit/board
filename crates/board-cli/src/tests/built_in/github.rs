@@ -381,6 +381,8 @@ fn board_lists_the_plugin_as_enabled_and_enabling_wrote_the_schemas_it_ships() {
                 "pr-edit",
                 "comment",
                 "issue-create",
+                "tag",
+                "release-create",
                 "merge",
                 "ci",
                 "install-hook",
@@ -433,5 +435,6 @@ mod desk;
 mod hook;
 mod merge;
 mod push;
+mod release;
 mod repin;
 mod send;

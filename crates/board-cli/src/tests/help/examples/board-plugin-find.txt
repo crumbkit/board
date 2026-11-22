@@ -40,6 +40,8 @@ github.pr-create disabled Push the branch checked out and open a pull request fr
 github.pr-edit disabled Change a pull request's title or body, once the boundary passes the new text.
 github.comment disabled Comment on a pull request or issue, once the boundary passes the comment.
 github.issue-create disabled Open an issue, once the boundary passes its title and body, and write the issue's record.
+github.tag disabled Create a new annotated tag on GitHub at a commit on the default branch, once the boundary passes its name, message, tagger and target; refuse a tag that exists, which it never moves or deletes.
+github.release-create disabled Publish a GitHub release of a tag GitHub has, with every file in a directory as an asset, once the boundary passes its tag, title, notes and asset names; it drafts the release, uploads the files, then publishes it, and a rerun resumes the draft.
 github.merge disabled Squash-merge a pull request at its head commit, once the change it lands passes its land gate and the boundary passes the commit's subject and body, then move the change to its next phase and its repository's mount to the merged commit.
 github.ci disabled Read the check runs, check suites and commit statuses GitHub reports for a change's head and, when every one passed, write a run of the change's suite and attach the run to the change; refuse and write nothing while one is pending, after one failed, or when no check run succeeded.
 github.install-hook disabled Print the command that installs a git pre-push hook in the checkout, which has the boundary check what each push sends; refuse when a different pre-push hook is there. It writes nothing.

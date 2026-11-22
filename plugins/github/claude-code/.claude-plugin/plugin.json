@@ -1,6 +1,6 @@
 {
   "name": "board-github",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Refuses a raw git push or gh write to a GitHub repository a boundary covers, and names the board command that checks the content first. Advises a lead whose builder prompt holds such a write in code.",
   "author": {
     "name": "crumbkit"

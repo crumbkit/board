@@ -14,9 +14,11 @@ mod objects;
 mod parts;
 pub mod records;
 mod reference;
+mod release;
 mod remote;
 mod repin;
 mod send;
+mod tag;
 
 use board_model::{CapabilityName, RecordType};
 use board_ops::{Host, Plugin, PluginError};
@@ -110,6 +112,9 @@ const PRE_PUSH_ENV: [&str; 9] = [
 /// How long a sending action may run, in seconds: the boundary's 1,800 for
 /// its check, then the push and gh.
 const SEND_TIMEOUT: u64 = 2400;
+/// How long `release-create` may run, in seconds: the boundary's 1,800,
+/// then the uploads.
+const RELEASE_TIMEOUT: u64 = 3600;
 
 /// One capability: its name, what it does, the function that runs it, its
 /// input and output schemas, what it does to what is there, whether it
@@ -168,7 +173,7 @@ fn output<T: JsonSchema>() -> Value {
 }
 
 /// Every capability, in the order the manifest lists them.
-const CAPABILITIES: [Capability; 11] = [
+const CAPABILITIES: [Capability; 13] = [
     Capability {
         name: "ref",
         description: "Write the record of a pull request or issue, asking gh which it is and its \
@@ -239,6 +244,32 @@ const CAPABILITIES: [Capability; 11] = [
         open_world: true,
         env: &SEND_ENV,
         timeout: Some(SEND_TIMEOUT),
+    },
+    Capability {
+        name: "tag",
+        description: "Create a new annotated tag on GitHub at a commit on the default branch, once \
+            the boundary passes its name, message, tagger and target; refuse a tag that exists, \
+            which it never moves or deletes.",
+        run: tag::tag,
+        input: input::<tag::TagInput>,
+        output: output::<tag::Tagged>,
+        effect: Effect::OverwritesEachTime,
+        open_world: true,
+        env: &SEND_ENV,
+        timeout: Some(SEND_TIMEOUT),
+    },
+    Capability {
+        name: "release-create",
+        description: "Publish a GitHub release of a tag GitHub has, with every file in a directory \
+            as an asset, once the boundary passes its tag, title, notes and asset names; it drafts \
+            the release, uploads the files, then publishes it, and a rerun resumes the draft.",
+        run: release::release_create,
+        input: input::<release::ReleaseCreateInput>,
+        output: output::<release::Released>,
+        effect: Effect::OverwritesEachTime,
+        open_world: true,
+        env: &SEND_ENV,
+        timeout: Some(RELEASE_TIMEOUT),
     },
     Capability {
         name: "merge",
@@ -332,12 +363,13 @@ fn manifest() -> Value {
         "version": "0.1.0",
         // SKILL.md's description, the callout an agent sees first.
         "description": "Record a GitHub pull request or issue as a typed record, and push, open or \
-            edit pull requests, comment and open issues only after the boundary passes what they \
-            send, and merge pull requests once the land gate of their change passes. Use it to name a \
-            pull request or issue in a record, and in place of git push and gh for sending. Run \
-            `board github ref --ref <owner>/<repo>#<number>`, or `board github push`, \
-            `pr-create`, `pr-edit`, `comment`, `issue-create` or `merge` from the checkout. SKILL.md and README.md in the plugin's \
-            directory say more.",
+            edit pull requests, comment, open issues, create release tags and publish releases \
+            only after the boundary passes what they send, and merge pull requests once the land \
+            gate of their change passes. Use it to name a pull request or issue in a record, and \
+            in place of git push and gh for sending. Run `board github ref --ref \
+            <owner>/<repo>#<number>`, or `board github push`, `pr-create`, `pr-edit`, `comment`, \
+            `issue-create`, `tag`, `release-create` or `merge` from the checkout. SKILL.md and \
+            README.md in the plugin's directory say more.",
         "metadata": {"area": "delivery"},
         "types": [PullRecord::TYPE, IssueRecord::TYPE],
         "capabilities": capabilities,

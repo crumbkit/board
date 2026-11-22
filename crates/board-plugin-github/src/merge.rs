@@ -135,7 +135,7 @@ pub(crate) fn merge(host: &dyn Host, input: &Value) -> Result<Value, PluginError
             Mount::personal(place.mount.clone()),
         ),
     };
-    let repository = format!("{}/{}", place.owner, place.repo);
+    let repository = place.repository();
     let number = if let Some(number) = number {
         number
     } else {
