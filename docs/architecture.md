@@ -148,8 +148,7 @@ and so is each record of its type. `record::invalid` names the first failing
 instance pointer in sorted order.
 
 Board's own documents (`board/*`) refuse unknown fields. User records follow
-their schema. Board knows `board/config/v1`, `board/mount/v1`, `board/repo/v1`, `board/repo/v2`
-(a repository record, docs/architecture/paths/repos.md),
+their schema. Board knows `board/config/v1`, `board/mount/v1`, `board/repo/v1`, `board/repo/v2`,
 `board/plugin-manifest/v1`, `board/attachment/v1`, `board/conflict/v1`, and the effects types
 `board/effect/v1` and `board/seen/v1` wherever they are stored. A manifest is checked by its content alone; a
 broken one is `plugin::bad_manifest`. Any other `board/*` type is
