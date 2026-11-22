@@ -357,17 +357,15 @@ fn a_back_refs_reference_through_a_mount_the_team_lacks_is_listed_as_not_copied_
         .write("repos/library.json", &mount_of(&library.path(), commit));
     boards.reading_list().personal.write(
         "projects/tidy/decisions/d.json",
-        &plan_record(&json!({"refs": ["/tasks/tidy.md", "/repos/library"]})),
+        &plan_decision(&["/tasks/tidy.md", "/repos/library"]),
     );
-    let call = ["--path", "/tasks/remove.md"];
+    let call = ["--path", "/tasks/tidy.md"];
     let preview = boards.preview(&call);
     assert_eq!(
         (&preview["not_copied"], &preview["next"]),
         (
             &json!([{"path": "/repos/library", "reason": "mount", "from": "/projects/tidy/decisions/d"}]),
-            &json!(
-                boards.next("share to --path /tasks/remove.md --to /team --yes --allow-uncopied")
-            )
+            &json!(boards.next("share to --path /tasks/tidy.md --to /team --yes --allow-uncopied"))
         )
     );
     let before = boards.head().id;
@@ -380,7 +378,7 @@ fn a_back_refs_reference_through_a_mount_the_team_lacks_is_listed_as_not_copied_
         )
     );
     assert_eq!(boards.head().id, before);
-    boards.share(&["--path", "/tasks/remove.md", "--allow-uncopied"]);
+    boards.share(&["--path", "/tasks/tidy.md", "--allow-uncopied"]);
     assert!(boards.exists("projects/tidy/decisions/d.json"));
 }
 

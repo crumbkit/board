@@ -23,9 +23,7 @@ design and the reasons for it; this file says how to call it.
   the call writes. `next` gives the command that writes.
 - `yes` writes the set.
 - `allow-uncopied`, with `yes`, writes the set even when `not_copied` lists
-  something: a link or back-ref the share cannot copy, or a back-ref's
-  reference through a mount the destination does not resolve. Without it,
-  such a target makes the call refuse.
+  something. Without it, such a target makes the call refuse.
 - `local_attachments` copies an attachment whose bytes are on this machine.
   Pass it only when every reader of the destination can read that location.
 
@@ -41,42 +39,52 @@ followed until nothing new is reached:
   references;
 - each record or file a Markdown link in a file in the set names, relative
   or absolute;
-- each record in this board's own tree whose typed reference names an entry
-  that collects back-refs. This is a back-ref, such as a decision whose
-  `refs` names the shared project.
+- each record in this board's own tree whose typed reference names the entry
+  at `path` or an entry under it. This is a back-ref, such as a decision
+  whose `refs` names the shared project.
 
-The entry at `path`, the entries under it and wholes collect back-refs. A
-whole is a record that an entry collecting back-refs names through a
-part-of field: a field whose schema in this board's `.board/types/` carries
-`"x-board-part-of": true`, on `items` for a list. The `parent` of a
-`tasks/task/v2` task is one. Sharing a task therefore brings its project,
-the project's decisions and questions that name it, and the same for the
-project's own parent, up the chain. A whole's back-ref is skipped when each
-typed reference it makes to the whole is a part-of field, so a shared task
-does not bring the other tasks of its project. Sharing the project itself
-still brings them.
+Only the entry at `path` and the entries under it collect back-refs, so
+sharing an eval does not bring every record that names the eval's suite. A
+back-ref's own references and links are followed. A path written in prose
+is not followed, because only a typed reference or a link is one.
 
-Back-refs, and records reached by a reference or link that are not wholes,
-collect none, so sharing an eval does not bring every record that names the
-eval's suite. A back-ref's own references and links are followed. A path
-written in prose is not followed, because only a typed reference or a link
-is one. A board whose copy of a type's schema lacks the keyword finds no
-wholes through that type until `board plugin enable` refreshes the copy.
+### Wholes
+
+A whole is a record that the entry at `path`, an entry under it, or another
+whole names through a part-of field. A part-of field's schema in this
+board's `.board/types/` carries `"x-board-part-of": true`, on `items` for a
+list. The `parent` of a `tasks/task/v2` task is one, so a shared task's
+project is a whole, and so is that project's parent, up the chain.
+
+A whole brings the records that name it by a typed reference and whose
+type's schema carries `"x-board-goes-with-whole": true` at its top level.
+`plans/decision/v1` and `plans/question/v1` carry it, so sharing a task
+brings its project's decisions and questions. Its other tasks, its change
+records and every other record that names it stay out. These decisions and
+questions are copied as they are, and none of their references or links is
+followed: each one to a path the set does not hold is listed in
+`not_copied`, and the copy names it dangling.
+
+A board whose copy of a schema lacks a keyword finds no wholes, or keeps no
+decisions, through that type until `board plugin enable` refreshes the
+copy.
 
 Sharing `/evals/x` copies the eval, the evidence under `/evals/x/evidence/`,
 the suites and runs it references, and a cases file a suite references, such
 as `/notes/cases.md`. A typed reference to a directory reaches every entry
 under it.
 
-A link or back-ref target the share cannot copy is listed in `not_copied`
-with a reason:
+A target the share does not copy is listed in `not_copied` with a reason:
 
 - `directory`: a link to a directory, whose entries are not copied. A
   directory under `path`, or one a typed reference reaches, is not listed,
   because its entries are copied anyway.
 - `mount`: the target is reached through a mount.
 - `link`: the target is reached through a link in this board.
-- `missing`: the link names nothing.
+- `missing`: the link, or a whole's decision's or question's reference,
+  names nothing.
+- `beyond`: a whole's decision or question names an entry in this board
+  that the set does not hold.
 
 A typed reference through a mount that only back-refs make, and that the
 destination does not resolve into the same repository, is listed as
@@ -109,13 +117,12 @@ The output is:
 - `extras`, at most 100 paths in the set outside `path`, each with `via`,
   how it was reached (`ref`, `link` or `back_ref`), and `from`, the entry
   that reached it first, with `extras_total` counting them all;
-- `not_copied`, at most 100 link and back-ref targets, and back-refs'
-  references through a mount, that the share leaves behind, each with its
+- `not_copied`, at most 100 targets the share leaves behind, each with its
   `path`, `reason` and `from`, with `not_copied_total` counting them all;
-- `wholes`, at most 100 wholes outside `path`, each with `path`, `from`,
-  the part that names it, and `back_refs`, how many records it added to the
-  set, with `wholes_total` counting them all. It names each whole even when
-  `extras` is cut at 100;
+- `wholes`, at most 100 of every whole outside `path`, each with `path`,
+  `from`, the part that names it, and `back_refs`, how many decisions and
+  questions it added, which may be none, with `wholes_total` counting them
+  all;
 - `next`, the command that writes: the same call with `--yes`, and with
   `--allow-uncopied` when `not_copied` is not empty. It starts
   `board -C <root>`, where `<root>` is this board's repository, so it writes

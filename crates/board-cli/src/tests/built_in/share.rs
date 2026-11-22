@@ -825,48 +825,97 @@ fn a_link_through_a_link_in_this_board_and_one_to_nothing_are_listed_with_reason
     );
 }
 
-/// A plan record's type, whose `refs` and `blocks` are lists of references,
-/// as a decision's and a question's are.
-const PLAN_SCHEMA: &str = ".board/types/lr/plan/v1.schema.json";
-const PLAN_TYPE: &str = r#"{"type": "object", "properties": {"refs": {"type": "array", "items": {"type": "string", "format": "board-ref"}}, "blocks": {"type": "array", "items": {"type": "string", "format": "board-ref"}}}}"#;
-/// The board's copy of the tasks plugin's schema.
+/// The board's copies of the tasks and plans plugins' schemas.
 const TASKS_SCHEMA: &str = ".board/types/tasks/task/v2.schema.json";
+const DECISIONS_SCHEMA: &str = ".board/types/plans/decision/v1.schema.json";
+/// A change record's type, whose `task` names a task and whose `paths`
+/// name what it edits.
+const CHANGE_SCHEMA: &str = ".board/types/lr/change/v1.schema.json";
+const CHANGE_TYPE: &str = r#"{"type": "object", "properties": {"task": {"type": "string", "format": "board-ref"}, "paths": {"type": "array", "items": {"type": "string", "format": "board-ref"}}}}"#;
+/// What sharing `/tasks/remove.md` copies from [`Boards::reading_list`].
+const READING: [&str; 4] = [
+    "/projects/tidy/decisions/d",
+    "/projects/tidy/questions/q",
+    "/tasks/remove.md",
+    "/tasks/tidy.md",
+];
 
 /// A `tasks/task/v2` task titled `title`, with `fields` in its frontmatter.
 fn task(title: &str, fields: &str) -> String {
     format!("---\n$type: tasks/task/v2\ntitle: {title}\nstatus: open\n{fields}---\n# {title}\n")
 }
 
-fn plan_record(fields: &Value) -> String {
-    record(json!({"$type": "lr/plan/v1"}), fields)
+/// A `plans/decision/v1` whose `refs` names each of `refs`.
+fn plan_decision(refs: &[&str]) -> String {
+    json!({
+        "$type": "plans/decision/v1",
+        "decision": "Keep one list.",
+        "why": "Two lists drift.",
+        "by": {"person": "ana"},
+        "decided": "2026-11-20T09:00:00Z",
+        "refs": refs,
+    })
+    .to_string()
 }
 
-/// The source board also enables tasks.
+/// A `plans/question/v1` that `blocks` the work at `blocks`.
+fn plan_question(blocks: &str) -> String {
+    json!({
+        "$type": "plans/question/v1",
+        "question": "Which list stays?",
+        "by": {"person": "ana"},
+        "asked": "2026-11-20T09:00:00Z",
+        "status": "open",
+        "blocks": blocks,
+    })
+    .to_string()
+}
+
+/// A change record whose `task` names `task` and whose `paths` names each
+/// of `paths`.
+fn change(task: &str, paths: &[&str]) -> String {
+    json!({"$type": "lr/change/v1", "task": task, "paths": paths}).to_string()
+}
+
+/// The source board also enables tasks and plans.
 fn tasks_boards() -> Boards {
     let boards = boards();
-    let enabled = boards.personal.run(&["plugin", "enable", "tasks"]);
-    assert_eq!(enabled.code, 0, "{}", text(&enabled.stderr));
+    for plugin in ["tasks", "plans"] {
+        let enabled = boards.personal.run(&["plugin", "enable", plugin]);
+        assert_eq!(enabled.code, 0, "{}", text(&enabled.stderr));
+    }
     boards
+}
+
+/// A repository holding `a.md`, which the source board mounts at
+/// `/repos/library` and the team board does not, and its pointer.
+fn library_mount(boards: &Boards) -> (Scenario, String) {
+    let library = Scenario::new();
+    let commit = library.commit(&[("a.md", "# A\n")]);
+    library.track(commit);
+    let pointer = mount_of(&library.path(), commit);
+    boards.personal.write("repos/library.json", &pointer);
+    (library, pointer)
 }
 
 impl Boards {
     /// Writes the project `/tasks/tidy.md`, its tasks `/tasks/remove.md`
     /// and `/tasks/other.md` whose `parent` names it, a decision whose
-    /// `refs` names it and a question whose `blocks` names it.
+    /// `refs` names it and a question that `blocks` it.
     fn reading_list(&self) -> &Self {
         let parent = "parent: /tasks/tidy.md\n";
         self.personal
-            .write(PLAN_SCHEMA, PLAN_TYPE)
+            .write(CHANGE_SCHEMA, CHANGE_TYPE)
             .write("tasks/tidy.md", &task("Tidy", "kind: project\n"))
             .write("tasks/remove.md", &task("Remove", parent))
             .write("tasks/other.md", &task("Other", parent))
             .write(
                 "projects/tidy/decisions/d.json",
-                &plan_record(&json!({"refs": ["/tasks/tidy.md"]})),
+                &plan_decision(&["/tasks/tidy.md"]),
             )
             .write(
                 "projects/tidy/questions/q.json",
-                &plan_record(&json!({"blocks": ["/tasks/tidy.md"]})),
+                &plan_question("/tasks/tidy.md"),
             );
         self
     }
@@ -881,7 +930,8 @@ fn a_shared_task_brings_its_projects_decision_and_question_and_not_its_sibling_t
         (
             &preview["extras"],
             &preview["wholes"],
-            &preview["wholes_total"]
+            &preview["wholes_total"],
+            &preview["not_copied"]
         ),
         (
             &json!([
@@ -890,23 +940,89 @@ fn a_shared_task_brings_its_projects_decision_and_question_and_not_its_sibling_t
                 {"path": "/tasks/tidy.md", "via": "ref", "from": "/tasks/remove.md"},
             ]),
             &json!([{"path": "/tasks/tidy.md", "from": "/tasks/remove.md", "back_refs": 2}]),
-            &json!(1)
+            &json!(1),
+            &json!([])
         )
     );
     let output = boards.share(&["--path", "/tasks/remove.md"]);
-    assert_eq!(
-        output["copied"],
-        json!([
-            "/projects/tidy/decisions/d",
-            "/projects/tidy/questions/q",
-            "/tasks/remove.md",
-            "/tasks/tidy.md",
-        ])
-    );
+    assert_eq!(output["copied"], json!(READING));
     assert!(!boards.exists("tasks/other.md"));
     let clone = Scenario::clone_of(&boards.team);
     let checked = board_in(clone.workdir(), &["check"]);
     assert_eq!(checked.code, 0, "{}", text(&checked.stdout));
+}
+
+#[test]
+fn a_shared_task_brings_no_change_record_of_its_project_however_many_name_it() {
+    let boards = tasks_boards();
+    boards.reading_list();
+    let _library = library_mount(&boards);
+    for number in 0..300 {
+        boards.personal.write(
+            &format!("changes/c{number:03}.json"),
+            &change(
+                "/tasks/tidy.md",
+                &["/repos/library/a.md", "/repos/library/b.md"],
+            ),
+        );
+    }
+    let started = std::time::Instant::now();
+    let preview = boards.preview(&["--path", "/tasks/remove.md"]);
+    let took = started.elapsed();
+    assert_eq!(
+        (
+            &preview["copied"],
+            &preview["extras_total"],
+            &preview["not_copied"]
+        ),
+        (&json!(READING), &json!(3), &json!([]))
+    );
+    assert!(took < std::time::Duration::from_secs(10), "{took:?}");
+}
+
+#[test]
+fn a_decisions_reference_to_a_change_and_through_a_mount_is_listed_and_neither_is_copied_nor_refused()
+ {
+    let boards = tasks_boards();
+    boards.reading_list();
+    let _library = library_mount(&boards);
+    boards
+        .personal
+        .write(
+            "changes/c.json",
+            &change("/tasks/tidy.md", &["/repos/library/a.md"]),
+        )
+        .write(
+            "projects/tidy/decisions/d.json",
+            &plan_decision(&["/tasks/tidy.md", "/changes/c", "/repos/library/a.md"]),
+        );
+    let call = ["--path", "/tasks/remove.md"];
+    let preview = boards.preview(&call);
+    let decision = "/projects/tidy/decisions/d";
+    assert_eq!(
+        (&preview["copied"], &preview["not_copied"], &preview["next"]),
+        (
+            &json!(READING),
+            &json!([
+                {"path": "/changes/c", "reason": "beyond", "from": decision},
+                {"path": "/repos/library/a.md", "reason": "mount", "from": decision},
+            ]),
+            &json!(
+                boards.next("share to --path /tasks/remove.md --to /team --yes --allow-uncopied")
+            )
+        )
+    );
+    let refused = boards.refused(&call);
+    assert_eq!(
+        (&refused["code"], &refused["fields"]["paths"]),
+        (
+            &json!("share::closure::uncopied"),
+            &strings(&["/changes/c", "/repos/library/a.md"])
+        )
+    );
+    let output = boards.share(&["--path", "/tasks/remove.md", "--allow-uncopied"]);
+    assert_eq!(output["copied"], json!(READING));
+    assert!(!boards.exists("changes/c.json"));
 }
 
 #[test]
@@ -922,7 +1038,7 @@ fn a_shared_task_brings_the_decisions_of_every_project_above_it() {
         )
         .write(
             "projects/root/decisions/e.json",
-            &plan_record(&json!({"refs": ["/tasks/root.md"]})),
+            &plan_decision(&["/tasks/root.md"]),
         );
     let preview = boards.preview(&["--path", "/tasks/remove.md"]);
     assert_eq!(
@@ -945,17 +1061,65 @@ fn a_shared_task_brings_the_decisions_of_every_project_above_it() {
 }
 
 #[test]
-fn a_shared_project_brings_its_tasks_and_a_shared_eval_brings_no_other_eval_of_its_suite() {
+fn a_cycle_of_parents_ends_with_each_whole_found_once() {
+    let boards = tasks_boards();
+    boards.reading_list();
+    boards
+        .personal
+        .write(
+            "tasks/root.md",
+            &task("Root", "kind: project\nparent: /tasks/tidy.md\n"),
+        )
+        .write(
+            "tasks/tidy.md",
+            &task("Tidy", "kind: project\nparent: /tasks/root.md\n"),
+        );
+    let preview = boards.preview(&["--path", "/tasks/remove.md"]);
+    assert_eq!(
+        (&preview["copied"], &preview["wholes"]),
+        (
+            &json!([
+                "/projects/tidy/decisions/d",
+                "/projects/tidy/questions/q",
+                "/tasks/remove.md",
+                "/tasks/root.md",
+                "/tasks/tidy.md",
+            ]),
+            &json!([
+                {"path": "/tasks/root.md", "from": "/tasks/tidy.md", "back_refs": 0},
+                {"path": "/tasks/tidy.md", "from": "/tasks/remove.md", "back_refs": 2},
+            ])
+        )
+    );
+}
+
+#[test]
+fn a_shared_project_brings_its_tasks_and_change_records_and_a_shared_eval_no_other_eval_or_run_of_its_suite()
+ {
     let boards = tasks_boards();
     boards.reading_list().standard();
     boards
         .personal
-        .write("evals/y.json", &record(eval(), &json!({"runs": []})));
+        .write(
+            "changes/c.json",
+            &change("/tasks/tidy.md", &["/notes/n.md"]),
+        )
+        .write("notes/n.md", "# N\n")
+        .write("evals/y.json", &record(eval(), &json!({"runs": []})))
+        .write(
+            "suites/y/runs/1.json",
+            &record(
+                run_record(),
+                &json!({"results": [{"case": "cold", "outcome": "pass"}]}),
+            ),
+        );
     let project = boards.preview(&["--path", "/tasks/tidy.md"]);
     assert_eq!(
         (&project["copied"], &project["wholes"]),
         (
             &json!([
+                "/changes/c",
+                "/notes/n.md",
                 "/projects/tidy/decisions/d",
                 "/projects/tidy/questions/q",
                 "/tasks/other.md",
@@ -1001,22 +1165,89 @@ fn a_project_a_task_waits_on_brings_none_of_its_records_and_one_it_is_part_of_do
     assert_eq!(output["wholes_total"], json!(1));
 }
 
+/// The board's copy of the schema at `at`, without `keyword` at `pointer`.
+fn unmark(boards: &Boards, at: &str, pointer: &str, keyword: &str) {
+    let mut schema: Value = serde_json::from_str(&boards.personal.read(at)).unwrap();
+    (schema
+        .pointer_mut(pointer)
+        .unwrap()
+        .as_object_mut()
+        .unwrap())
+    .remove(keyword)
+    .expect("the plugin's schema carries the keyword");
+    boards.personal.write(at, &schema.to_string());
+}
+
 #[test]
 fn a_task_schema_without_the_part_of_keyword_shares_a_task_and_its_project_alone() {
     let boards = tasks_boards();
     boards.reading_list();
-    let marked = boards.personal.read(TASKS_SCHEMA);
-    let unmarked: Value = serde_json::from_str(&marked).unwrap();
-    let mut unmarked = unmarked;
-    unmarked["properties"]["parent"]
-        .as_object_mut()
-        .unwrap()
-        .remove("x-board-part-of")
-        .expect("the plugin's schema marks parent");
-    boards.personal.write(TASKS_SCHEMA, &unmarked.to_string());
+    unmark(
+        &boards,
+        TASKS_SCHEMA,
+        "/properties/parent",
+        "x-board-part-of",
+    );
     let output = boards.preview(&["--path", "/tasks/remove.md"]);
     assert_eq!(
         (&output["copied"], &output["wholes"]),
         (&json!(["/tasks/remove.md", "/tasks/tidy.md"]), &json!([]))
     );
+}
+
+#[test]
+fn a_decision_schema_without_the_goes_with_whole_keyword_leaves_the_decision_out() {
+    let boards = tasks_boards();
+    boards.reading_list();
+    unmark(&boards, DECISIONS_SCHEMA, "", "x-board-goes-with-whole");
+    let output = boards.preview(&["--path", "/tasks/remove.md"]);
+    assert_eq!(
+        (&output["copied"], &output["wholes"]),
+        (
+            &json!([
+                "/projects/tidy/questions/q",
+                "/tasks/remove.md",
+                "/tasks/tidy.md"
+            ]),
+            &json!([{"path": "/tasks/tidy.md", "from": "/tasks/remove.md", "back_refs": 1}])
+        )
+    );
+}
+
+#[test]
+fn a_board_without_the_decision_schema_shares_the_rest_of_the_project() {
+    let boards = tasks_boards();
+    boards.reading_list();
+    boards.personal.board.write(DECISIONS_SCHEMA, Item::Deleted);
+    let output = boards.preview(&["--path", "/tasks/remove.md"]);
+    assert_eq!(
+        output["copied"],
+        json!([
+            "/projects/tidy/questions/q",
+            "/tasks/remove.md",
+            "/tasks/tidy.md"
+        ])
+    );
+}
+
+#[test]
+fn a_wholes_own_reference_through_a_mount_the_team_lacks_is_refused_and_one_it_mounts_is_kept() {
+    let boards = tasks_boards();
+    boards.reading_list();
+    let (_library, pointer) = library_mount(&boards);
+    boards.personal.write(
+        "tasks/tidy.md",
+        &task("Tidy", "kind: project\nbrief: /repos/library/a.md\n"),
+    );
+    let call = ["--path", "/tasks/remove.md", "--allow-uncopied"];
+    let refused = boards.refused_preview(&call);
+    assert_eq!(
+        (&refused["code"], &refused["fields"]["paths"]),
+        (
+            &json!("share::closure::unresolved"),
+            &strings(&["/repos/library/a.md"])
+        )
+    );
+    boards.publish(&[("repos/library.json", &pointer)]);
+    assert_eq!(boards.preview(&call)["copied"], json!(READING));
 }

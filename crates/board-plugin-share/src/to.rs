@@ -3,10 +3,10 @@
 //! `closure` finds the set. A typed reference through a mount or link must
 //! resolve to the same repository in the destination, except one only
 //! back-refs make, which is listed as not copied when it does not. A link
-//! inside the set is refused. The plugin's own refusals are decided before anything is
-//! written. Without `yes` the call is a preview: it writes nothing and
-//! prints the command that writes. With `yes`, a link or back-ref the share
-//! cannot copy is refused unless `allow-uncopied` is given. Then one batch
+//! inside the set is refused. The plugin's own refusals are decided before
+//! anything is written. Without `yes` the call is a preview: it writes
+//! nothing and prints the command that writes. With `yes`, anything listed
+//! as not copied is refused unless `allow-uncopied` is given. Then one batch
 //! put writes the missing schemas and the set through the mount, which makes
 //! one commit in the mounted board and moves the mount's pin to it.
 
@@ -46,7 +46,7 @@ pub(crate) struct Input {
     /// Write the copies, when true; without it the call lists what it would copy and writes nothing.
     #[serde(default)]
     yes: bool,
-    /// With yes, write the set even when a link or back-ref names something the share cannot copy, when true.
+    /// With yes, write the set even when it names something the share does not copy, as the preview's `not_copied` lists, when true.
     #[serde(default, rename = "allow-uncopied")]
     allow_uncopied: bool,
     /// Copy an attachment whose bytes are on this machine, which other readers cannot fetch, when true.
@@ -60,12 +60,14 @@ pub(crate) struct Input {
 /// the set outside it, each with `via`, how it was reached (`ref`, `link`
 /// or `back_ref`), and `from`, the entry that reached it first;
 /// `extras_total` counts them all. `not_copied` lists, at most 100, the
-/// link and back-ref targets, and the references through a mount that only
-/// back-refs make, that the share leaves behind, each with its `reason`
-/// and `from`; `not_copied_total` counts them all. `wholes` lists, at most
-/// 100, the wholes outside the shared path whose back-refs the set holds,
+/// targets the share leaves behind: link and back-ref targets it cannot
+/// copy, references through a mount that only back-refs make, and the
+/// references of the records that go with a whole, which it does not
+/// follow. Each has its `reason` and `from`; `not_copied_total` counts them
+/// all. `wholes` lists, at most 100, every whole outside the shared path,
 /// each with `path`, `from`, the part that names it, and `back_refs`, how
-/// many records it added; `wholes_total` counts them all. `next` is the
+/// many records that go with it, such as decisions and questions, it added,
+/// which may be none; `wholes_total` counts them all. `next` is the
 /// command that writes, null after a write. `repository` is the repository
 /// the mount reaches. `commit` is the commit in it that holds the copies,
 /// which the mount's pin now names, null when nothing was written. `types`
@@ -321,8 +323,8 @@ fn mount(host: &dyn Host, to: &str) -> Result<(String, String), PluginError> {
     }
 }
 
-/// Refuses, naming each with its reason, the link and back-ref targets the
-/// share cannot copy.
+/// Refuses, naming each with its reason, the targets the share does not
+/// copy.
 fn uncopied(not_copied: &[NotCopied]) -> Result<(), PluginError> {
     if not_copied.is_empty() {
         return Ok(());
@@ -333,7 +335,7 @@ fn uncopied(not_copied: &[NotCopied]) -> Result<(), PluginError> {
         .collect();
     let mut refused = refusal(
         "share::closure::uncopied",
-        "a link or back-ref names what the share cannot copy:",
+        "the set names what the share does not copy:",
         &named,
     );
     refused.fields.insert("paths".to_owned(), json!(paths));

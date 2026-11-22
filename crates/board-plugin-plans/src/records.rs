@@ -17,6 +17,7 @@ use board_plugin::shape::{Accepts, Actor, Prose, Record, Ref, Tag, Url};
 #[serde(deny_unknown_fields)]
 #[schemars(extend(
     "x-board-folder" = "/projects/{project}/questions/",
+    "x-board-goes-with-whole" = true,
     "allOf" = [{"properties": {"by": {"anyOf": [{"required": ["session"]}, {"required": ["person"]}]}}}],
 ))]
 pub struct QuestionRecord {
@@ -170,6 +171,7 @@ pub struct Evidence {
 #[serde(deny_unknown_fields)]
 #[schemars(extend(
     "x-board-folder" = "/projects/{project}/decisions/",
+    "x-board-goes-with-whole" = true,
     "if" = {"not": {"required": ["written_by"]}},
     "then" = {"properties": {"why": {"minLength": 1}}},
 ))]

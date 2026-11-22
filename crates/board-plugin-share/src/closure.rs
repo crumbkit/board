@@ -8,17 +8,19 @@
 //!   Markdown file's frontmatter, reaches its target, and one to a directory
 //!   reaches the entries under it;
 //! - a Markdown link reaches the record or file it names;
-//! - a record whose typed reference names an entry that collects back-refs
-//!   is a back-ref, and is reached.
+//! - a record whose typed reference names a shared entry is a back-ref, and
+//!   is reached. Only the shared entries collect back-refs.
 //!
-//! The shared entries collect back-refs, and so do wholes. A whole is a
-//! record that an entry collecting back-refs names through a part-of field,
-//! one whose schema in this board's `.board/types/` carries
-//! `"x-board-part-of": true`, such as a task's `parent`. Wholes are found
-//! upward until no new one appears. A whole's back-ref is skipped when each
-//! typed reference it makes to the whole is a part-of field: it is a
-//! sibling part. Back-refs and the records a reference or link reaches
-//! collect none.
+//! A whole is a record that a shared entry, or another whole, names through
+//! a part-of field, one whose schema in this board's `.board/types/`
+//! carries `"x-board-part-of": true`, such as a task's `parent`. Wholes are
+//! found upward before the walk, and the walk reaches each by its
+//! reference. A whole brings, as back-refs, the records that name it by a
+//! typed reference and whose type's schema carries
+//! `"x-board-goes-with-whole": true`, such as a project's decisions and
+//! questions. Those are leaves: they are copied, none of their references
+//! or links is followed, and each one to a path the set does not hold is
+//! listed as not copied.
 //!
 //! A typed reference through a mount or link is not copied; the caller
 //! checks that the destination resolves it, and lists one a back-ref makes
@@ -36,7 +38,7 @@ use serde_json::{Map, Value};
 use crate::to::{held, logical, query, refusal, reports, repository, schema_path};
 
 /// How an extra path was reached: a typed reference, a Markdown link, or
-/// a record whose typed reference names an entry that collects back-refs.
+/// a record whose typed reference names a shared entry or a whole.
 #[derive(Clone, Copy, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum Via {
@@ -55,8 +57,8 @@ pub(crate) struct Extra {
     from: String,
 }
 
-/// A link or back-ref target the share does not copy, why, and the entry
-/// that reached it first.
+/// A target the share does not copy, why, and the entry that reached it
+/// first.
 #[derive(Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct NotCopied {
@@ -66,7 +68,7 @@ pub(crate) struct NotCopied {
 }
 
 /// A whole outside the shared path, the part that names it, and how many
-/// records its back-refs added to the set.
+/// records that go with it it added to the set.
 #[derive(Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Whole {
@@ -76,7 +78,8 @@ pub(crate) struct Whole {
 }
 
 /// Why a target is not copied: it is a directory, whose entries a link does
-/// not reach; it resolves through a mount or a link; or it names nothing.
+/// not reach; it resolves through a mount or a link; it names nothing; or a
+/// whole's back-ref names it, whose references the share does not follow.
 #[derive(Clone, Copy, Serialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub(crate) enum Reason {
@@ -84,6 +87,7 @@ pub(crate) enum Reason {
     Mount,
     Link,
     Missing,
+    Beyond,
 }
 
 impl Reason {
@@ -93,6 +97,7 @@ impl Reason {
             Self::Mount => "mount",
             Self::Link => "link",
             Self::Missing => "missing",
+            Self::Beyond => "beyond",
         }
     }
 }
@@ -134,15 +139,20 @@ pub(crate) struct Closure {
 /// A path reached, how, and from which entry.
 type Reached = BTreeMap<String, (Via, String)>;
 
-/// Each candidate back-ref, with each entry it may name and that entry's
-/// location.
-type Candidates = BTreeMap<String, Vec<(String, Location)>>;
-
 /// An entry in this board's own tree: its kind and its record type.
 #[derive(Clone)]
 struct Held {
     kind: String,
     record_type: Option<String>,
+}
+
+/// A record that goes with a whole: its entry, the whole, and the
+/// references it makes, which the share does not follow.
+struct Leaf {
+    path: String,
+    held: Held,
+    whole: String,
+    from: Vec<Outgoing>,
 }
 
 /// The set sharing `path` copies.
@@ -158,33 +168,40 @@ pub(crate) fn closure(host: &dyn Host, path: &str) -> Result<Closure, PluginErro
     }
     let inside = |target: &str| target == path || target.starts_with(&format!("{path}/"));
     let mut walk = Walk::default();
+    let leaves = walk.wholes(host, &found, &inside)?;
     let mut extras = Reached::new();
     let mut frontier = found.clone();
-    // The entries that collect back-refs this round: the shared entries
-    // first, then each round's new wholes.
-    let mut collect: BTreeSet<String> = found.keys().cloned().collect();
-    let mut collected = BTreeSet::new();
-    while !frontier.is_empty() || !collect.is_empty() {
+    let mut shared = true;
+    while !frontier.is_empty() {
         let asked: Vec<String> = (frontier.iter())
             .filter(|(_, held)| held.kind == "record" || held.kind == "file")
             .map(|(target, _)| target.clone())
-            .chain(
-                collect
-                    .iter()
-                    .filter(|whole| !frontier.contains_key(*whole))
-                    .cloned(),
-            )
             .collect();
-        let (mut reached, mut candidates, next) =
-            walk.ask(host, &asked, &found, (&collect, &collected), &inside)?;
-        collected.append(&mut collect);
-        collect = next;
+        let logicals: Vec<LogicalPath> = (asked.iter())
+            .map(|target| logical(target, "refs"))
+            .collect::<Result<_, _>>()?;
+        let mut reached = Reached::new();
+        let mut candidates: BTreeMap<String, Vec<(String, Location)>> = BTreeMap::new();
+        for (entry, report) in asked.iter().zip(reports(host, &logicals)?) {
+            let Some(report) = report else { continue };
+            for reference in report.from {
+                walk.follow(entry, reference, &mut reached);
+            }
+            // Only the shared entries collect back-refs.
+            for incoming in report.to.into_iter().filter(|_| shared) {
+                if let (Source::WorkingTree, Some(candidate)) = (incoming.source, incoming.logical)
+                {
+                    (candidates.entry(candidate.to_string()).or_default())
+                        .push((entry.clone(), report.location.clone()));
+                }
+            }
+        }
         candidates.retain(|candidate, _| !found.contains_key(candidate));
         walk.back_refs(host, candidates, &mut reached)?;
+        shared = false;
         reached.retain(|target, _| !found.contains_key(target));
         if reached.is_empty() {
-            frontier.clear();
-            continue;
+            break;
         }
         let listed: Vec<String> = reached.keys().map(|target| literal(target)).collect();
         let mut held = entries(host, &format!("logical IN ({})", listed.join(", ")))?;
@@ -196,7 +213,15 @@ pub(crate) fn closure(host: &dyn Host, path: &str) -> Result<Closure, PluginErro
             .collect();
         held.extend(entries(host, &under(&directories))?);
         held.retain(|target, _| !found.contains_key(target));
-        walk.count(held.keys(), &reached);
+        for target in held.keys() {
+            // A whole is kept whole even when a shared entry's back-ref
+            // reached it.
+            if let Some((Via::BackRef, _)) = reached.get(target)
+                && !walk.wholes.contains_key(target)
+            {
+                walk.back.insert(target.clone());
+            }
+        }
         for target in held.keys().filter(|target| !inside(target)) {
             let origin = (directories.iter())
                 .find(|directory| target.starts_with(&format!("{directory}/")))
@@ -209,6 +234,7 @@ pub(crate) fn closure(host: &dyn Host, path: &str) -> Result<Closure, PluginErro
         frontier = held.clone();
         found.extend(held);
     }
+    walk.add(leaves, &mut found, &mut extras, &inside);
     Ok(walk.finish(found.into_keys().collect(), extras, &inside))
 }
 
@@ -219,70 +245,161 @@ struct Walk {
     left: BTreeMap<String, (Reason, String)>,
     expanded: BTreeSet<String>,
     /// Each whole outside the shared path, with the part that named it and
-    /// how many back-refs it added.
+    /// how many records that go with it it added.
     wholes: BTreeMap<String, (String, usize)>,
-    /// The entries in the set that were reached as back-refs.
+    /// The entries in the set that were reached as back-refs of the shared
+    /// entries.
     back: BTreeSet<String>,
     /// Each record type's schema in this board, or none when it has none.
     schemas: BTreeMap<String, Option<Value>>,
 }
 
 impl Walk {
-    /// Asks for the references from and to each of `asked`. Each of
-    /// `collect`, the first of `collecting`, gives its candidate back-refs
-    /// and names its new wholes, which are neither inside the shared path
-    /// nor among `collecting`.
-    fn ask(
+    /// Finds the wholes above the records in `shared`, upward along
+    /// part-of fields, and the records that go with each of them.
+    fn wholes(
         &mut self,
         host: &dyn Host,
-        asked: &[String],
-        found: &BTreeMap<String, Held>,
-        collecting: (&BTreeSet<String>, &BTreeSet<String>),
+        shared: &BTreeMap<String, Held>,
         inside: &dyn Fn(&str) -> bool,
-    ) -> Result<(Reached, Candidates, BTreeSet<String>), PluginError> {
-        let (collect, collected) = collecting;
-        let logicals: Vec<LogicalPath> = (asked.iter())
-            .map(|target| logical(target, "refs"))
-            .collect::<Result<_, _>>()?;
-        let mut reached = Reached::new();
-        let mut candidates = Candidates::new();
-        let mut next = BTreeSet::new();
-        for (entry, report) in asked.iter().zip(reports(host, &logicals)?) {
-            let Some(report) = report else { continue };
-            let collects = collect.contains(entry);
-            let record_type = found.get(entry).and_then(|held| held.record_type.clone());
-            for reference in report.from {
-                if collects
-                    && let Some(whole) = self.whole(host, record_type.as_deref(), &reference)?
-                    && !inside(&whole)
-                    && !collected.contains(&whole)
-                    && !collect.contains(&whole)
-                {
-                    self.back.remove(&whole);
-                    (self.wholes.entry(whole.clone())).or_insert_with(|| (entry.clone(), 0));
-                    next.insert(whole);
+    ) -> Result<Vec<Leaf>, PluginError> {
+        let mut frontier: Vec<(String, Option<String>)> = (shared.iter())
+            .filter(|(_, held)| held.record_type.is_some())
+            .map(|(path, held)| (path.clone(), held.record_type.clone()))
+            .collect();
+        let mut leaves = Vec::new();
+        while !frontier.is_empty() {
+            let logicals: Vec<LogicalPath> = (frontier.iter())
+                .map(|(target, _)| logical(target, "refs"))
+                .collect::<Result<_, _>>()?;
+            let mut next = Vec::new();
+            let mut candidates: BTreeMap<String, (String, Location)> = BTreeMap::new();
+            for ((entry, record_type), report) in frontier.iter().zip(reports(host, &logicals)?) {
+                let Some(report) = report else { continue };
+                for reference in &report.from {
+                    if let Some(whole) = self.whole(host, record_type.as_deref(), reference)?
+                        && !inside(&whole)
+                        && !self.wholes.contains_key(&whole)
+                    {
+                        self.wholes.insert(whole.clone(), (entry.clone(), 0));
+                        next.push(whole);
+                    }
                 }
-                self.follow(entry, reference, &mut reached);
-            }
-            for incoming in report.to.into_iter().filter(|_| collects) {
-                if let (Source::WorkingTree, Some(candidate)) = (incoming.source, incoming.logical)
-                {
-                    (candidates.entry(candidate.to_string()).or_default())
-                        .push((entry.clone(), report.location.clone()));
+                if !self.wholes.contains_key(entry) {
+                    continue;
+                }
+                for incoming in report.to {
+                    if let (Source::WorkingTree, Some(candidate)) =
+                        (incoming.source, incoming.logical)
+                    {
+                        (candidates.entry(candidate.to_string()))
+                            .or_insert_with(|| (entry.clone(), report.location.clone()));
+                    }
                 }
             }
+            candidates
+                .retain(|candidate, _| !inside(candidate) && !self.wholes.contains_key(candidate));
+            leaves.extend(self.goes_with(host, candidates)?);
+            let types = typed(host, &next)?;
+            frontier = (next.into_iter())
+                .map(|whole| {
+                    let record_type = types.get(&whole).and_then(|held| held.record_type.clone());
+                    (whole, record_type)
+                })
+                .collect();
         }
-        Ok((reached, candidates, next))
+        Ok(leaves)
     }
 
-    /// Notes each of `added` that `reached` reached as a back-ref, and
-    /// counts it for the whole that brought it.
-    fn count<'a>(&mut self, added: impl Iterator<Item = &'a String>, reached: &Reached) {
-        for target in added {
-            if let Some((Via::BackRef, from)) = reached.get(target) {
-                self.back.insert(target.clone());
-                if let Some((_, count)) = self.wholes.get_mut(from) {
-                    *count += 1;
+    /// Each of `candidates` whose type's schema carries
+    /// `x-board-goes-with-whole` and whose typed reference names the whole
+    /// it is listed with.
+    fn goes_with(
+        &mut self,
+        host: &dyn Host,
+        candidates: BTreeMap<String, (String, Location)>,
+    ) -> Result<Vec<Leaf>, PluginError> {
+        let mut types = typed(host, &candidates.keys().cloned().collect::<Vec<_>>())?;
+        let mut kept = Vec::new();
+        for (candidate, named) in candidates {
+            let Some(held) = types.remove(&candidate) else {
+                continue;
+            };
+            let goes = match held.record_type.as_deref() {
+                Some(record_type) => (self.schema(host, record_type)?)
+                    .is_some_and(|schema| schema["x-board-goes-with-whole"] == true),
+                None => false,
+            };
+            if goes {
+                kept.push((candidate, held, named));
+            }
+        }
+        let logicals: Vec<LogicalPath> = (kept.iter())
+            .map(|(target, _, _)| logical(target, "refs"))
+            .collect::<Result<_, _>>()?;
+        let mut leaves = Vec::new();
+        for ((path, held, (whole, location)), report) in
+            kept.into_iter().zip(reports(host, &logicals)?)
+        {
+            let Some(report) = report else { continue };
+            let names = (report.from.iter()).any(|reference| {
+                !reference.link
+                    && (reference.location.as_ref()).is_some_and(|reached| {
+                        reached.board == location.board && reached.path == location.path
+                    })
+            });
+            if names && reason(&report.location).is_none() {
+                leaves.push(Leaf {
+                    path,
+                    held,
+                    whole,
+                    from: report.from,
+                });
+            }
+        }
+        Ok(leaves)
+    }
+
+    /// Adds each of `leaves` the walk did not reach to `found`, counts it
+    /// for its whole, and lists each reference it makes to a path the set
+    /// does not hold.
+    fn add(
+        &mut self,
+        leaves: Vec<Leaf>,
+        found: &mut BTreeMap<String, Held>,
+        extras: &mut Reached,
+        inside: &dyn Fn(&str) -> bool,
+    ) {
+        let mut added = Vec::new();
+        for leaf in leaves {
+            if found.contains_key(&leaf.path) {
+                continue;
+            }
+            found.insert(leaf.path.clone(), leaf.held.clone());
+            if !inside(&leaf.path) {
+                (extras.entry(leaf.path.clone()))
+                    .or_insert_with(|| (Via::BackRef, leaf.whole.clone()));
+            }
+            if let Some((_, count)) = self.wholes.get_mut(&leaf.whole) {
+                *count += 1;
+            }
+            added.push(leaf);
+        }
+        for leaf in added {
+            for reference in leaf.from {
+                let target = reference.target.to_string();
+                let why = match reference.location {
+                    None => Some(Reason::Missing),
+                    Some(location) => match reason(&location) {
+                        Some(Reason::Directory) => Some(Reason::Beyond),
+                        Some(reason) => Some(reason),
+                        None => (location.display_path())
+                            .filter(|display| !found.contains_key(display.as_str()))
+                            .map(|_| Reason::Beyond),
+                    },
+                };
+                if let Some(why) = why {
+                    self.leave(target, why, &leaf.path);
                 }
             }
         }
@@ -307,7 +424,7 @@ impl Walk {
         };
         let not_copied = (left.into_iter())
             .filter(|(target, (reason, _))| {
-                !(matches!(reason, Reason::Directory) && copied(target))
+                !(matches!(reason, Reason::Directory | Reason::Beyond) && copied(target))
             })
             .map(|(path, (reason, from))| NotCopied { path, reason, from })
             .collect();
@@ -384,26 +501,23 @@ impl Walk {
         let Some(location) = reference.location.as_ref().filter(|_| !reference.link) else {
             return Ok(None);
         };
-        if reason(location).is_some() || outside(location) {
+        let Some(record_type) = record_type.filter(|_| reason(location).is_none()) else {
             return Ok(None);
-        }
-        if !self.part_of(host, record_type, &reference.pointer)? {
-            return Ok(None);
-        }
-        Ok(location.display_path().map(|display| display.to_string()))
+        };
+        let marked = (self.schema(host, record_type)?)
+            .is_some_and(|schema| part_of(schema, &reference.pointer));
+        Ok(marked
+            .then(|| location.display_path().map(|display| display.to_string()))
+            .flatten())
     }
 
-    /// Whether `pointer`, in a record of `record_type`, is a part-of field
-    /// by this board's schema of the type.
-    fn part_of(
+    /// This board's schema of `record_type`, read once, or none when the
+    /// board holds none.
+    fn schema(
         &mut self,
         host: &dyn Host,
-        record_type: Option<&str>,
-        pointer: &str,
-    ) -> Result<bool, PluginError> {
-        let Some(record_type) = record_type else {
-            return Ok(false);
-        };
+        record_type: &str,
+    ) -> Result<Option<&Value>, PluginError> {
         if !self.schemas.contains_key(record_type) {
             let local = schema_path(record_type);
             let read = held(host, std::slice::from_ref(&local))?.pop().flatten();
@@ -419,57 +533,39 @@ impl Walk {
             };
             self.schemas.insert(record_type.to_owned(), schema);
         }
-        Ok((self.schemas[record_type].as_ref()).is_some_and(|schema| part_of(schema, pointer)))
+        Ok(self.schemas[record_type].as_ref())
     }
 
     /// Adds to `reached` each of `candidates` whose typed reference names
-    /// one of the entries it lists, with its location. A whole's candidate
-    /// is skipped when every such reference is a part-of field.
+    /// one of the shared entries it lists, with its location.
     fn back_refs(
         &mut self,
         host: &dyn Host,
-        candidates: Candidates,
+        candidates: BTreeMap<String, Vec<(String, Location)>>,
         reached: &mut Reached,
     ) -> Result<(), PluginError> {
-        if candidates.is_empty() {
-            return Ok(());
-        }
         let (paths, named): (Vec<String>, Vec<_>) = candidates.into_iter().unzip();
-        let listed: Vec<String> = paths.iter().map(|path| literal(path)).collect();
-        let types = entries(host, &format!("logical IN ({})", listed.join(", ")))?;
         let logicals: Vec<LogicalPath> = (paths.iter())
             .map(|target| logical(target, "refs"))
             .collect::<Result<_, _>>()?;
         let answers = reports(host, &logicals)?;
         for ((candidate, named), report) in paths.into_iter().zip(named).zip(answers) {
             let Some(report) = report else { continue };
-            let record_type = types
-                .get(&candidate)
-                .and_then(|held| held.record_type.as_deref());
-            let mut by = None;
-            for (entry, location) in &named {
-                let sibling = self.wholes.contains_key(entry);
-                for reference in &report.from {
-                    let to_entry = !reference.link
+            let typed = |location: &Location| {
+                (report.from.iter()).any(|reference| {
+                    !reference.link
                         && (reference.location.as_ref()).is_some_and(|reached| {
                             reached.board == location.board && reached.path == location.path
-                        });
-                    if to_entry
-                        && !(sibling && self.part_of(host, record_type, &reference.pointer)?)
-                    {
-                        by = Some(entry.clone());
-                        break;
-                    }
-                }
-                if by.is_some() {
-                    break;
-                }
-            }
-            let Some(entry) = by else { continue };
+                        })
+                })
+            };
+            let Some((entry, _)) = named.iter().find(|(_, location)| typed(location)) else {
+                continue;
+            };
             match reason(&report.location) {
-                Some(reason) => self.leave(candidate, reason, &entry),
+                Some(reason) => self.leave(candidate, reason, entry),
                 None => {
-                    (reached.entry(candidate)).or_insert_with(|| (Via::BackRef, entry));
+                    (reached.entry(candidate)).or_insert_with(|| (Via::BackRef, entry.clone()));
                 }
             }
         }
@@ -479,6 +575,15 @@ impl Walk {
     fn leave(&mut self, target: String, reason: Reason, entry: &str) {
         (self.left.entry(target)).or_insert_with(|| (reason, entry.to_owned()));
     }
+}
+
+/// The entry and type of each of `paths` in this board's own tree.
+fn typed(host: &dyn Host, paths: &[String]) -> Result<BTreeMap<String, Held>, PluginError> {
+    if paths.is_empty() {
+        return Ok(BTreeMap::new());
+    }
+    let listed: Vec<String> = paths.iter().map(|path| literal(path)).collect();
+    entries(host, &format!("logical IN ({})", listed.join(", ")))
 }
 
 /// The most local `$ref`s one step of [`part_of`] follows, which ends a

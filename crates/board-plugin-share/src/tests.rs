@@ -299,3 +299,185 @@ fn a_pointer_that_reaches_no_field_schema_is_not_part_of() {
     let not_true = json!({"properties": {"a": {"x-board-part-of": "yes"}}});
     assert!(!part_of(&not_true, "/a"));
 }
+
+/// A host over a real Board in `board`'s working tree, which notes each
+/// path a call asks `refs` about.
+struct Counting {
+    board: board_scenario::Scenario,
+    asked: std::cell::RefCell<Vec<String>>,
+}
+
+impl Counting {
+    fn open(&self) -> board_ops::Board {
+        board_ops::Board::open(self.board.workdir(), None).unwrap()
+    }
+}
+
+impl Host for Counting {
+    fn query(
+        &self,
+        sql: &str,
+        _limit: board_ops::Limit,
+    ) -> Result<board_ops::QueryReport, board_ops::QueryError> {
+        self.open().query(sql, usize::MAX, None, None)
+    }
+
+    fn refs(
+        &self,
+        paths: &[board_model::LogicalPath],
+        absent: board_ops::Absent,
+        fields: &[String],
+    ) -> Result<Vec<Result<board_ops::RefsReport, board_ops::RefsError>>, board_ops::RefsError>
+    {
+        (self.asked.borrow_mut()).extend(paths.iter().map(ToString::to_string));
+        Ok(self
+            .open()
+            .refs(paths, absent, fields, None, None)?
+            .collect())
+    }
+
+    fn get_each(
+        &self,
+        paths: &[board_model::LogicalPath],
+    ) -> Result<Vec<Result<board_ops::GetReport, board_ops::ReadError>>, board_ops::ReadError> {
+        Ok(self.open().get_each(paths)?.collect())
+    }
+
+    fn put(&self, _lines: &[Value]) -> Result<board_ops::PutReport, board_ops::PutError> {
+        panic!("closure writes nothing")
+    }
+
+    fn call(
+        &self,
+        _target: &board_plugin::Target,
+        _input: &Value,
+    ) -> Result<board_plugin::CallReport, Box<board_model::Refusal>> {
+        panic!("share calls no plugin")
+    }
+
+    fn board(
+        &self,
+        _elsewhere: &board_ops::Elsewhere,
+    ) -> Result<Box<dyn Host + '_>, Box<board_model::Refusal>> {
+        panic!("share opens no other board")
+    }
+
+    fn decide(
+        &self,
+        _op: &str,
+        _path: &board_model::LogicalPath,
+        _shown: Option<&board_ops::Shown>,
+    ) -> Result<board_ops::DecideReport, Box<board_model::Refusal>> {
+        panic!("share asks the owner nothing")
+    }
+
+    fn sync(
+        &self,
+        _: bool,
+        _: std::time::Duration,
+    ) -> Result<board_ops::Synced, board_ops::SyncError> {
+        unreachable!("closure syncs nothing")
+    }
+
+    fn mount_update(
+        &self,
+        _: &board_model::LogicalPath,
+        _: std::time::Duration,
+    ) -> Result<board_ops::MountUpdateReport, board_ops::MountError> {
+        unreachable!("closure updates no mount")
+    }
+
+    fn settings(&self) -> &board_ops::Settings {
+        panic!("closure reads no settings")
+    }
+}
+
+/// A board holding the project `/tasks/p.md`, its task `/tasks/c.md`, 300
+/// change records whose `task` names the project, and two decisions whose
+/// `refs` name it. Every change and decision also names `/notes/far.md`.
+fn three_hundred_changes() -> Counting {
+    use board_scenario::{Item, Scenario};
+    let board = Scenario::board();
+    let change_type = r#"{"type": "object", "properties": {"task": {"type": "string", "format": "board-ref"}, "paths": {"type": "array", "items": {"type": "string", "format": "board-ref"}}}}"#;
+    let decision = |name: &str| {
+        json!({
+            "$type": "plans/decision/v1", "decision": name, "why": "It reads well.",
+            "by": {"person": "ana"}, "decided": "2026-11-20T09:00:00Z",
+            "refs": ["/tasks/p.md", "/notes/far.md"],
+        })
+        .to_string()
+    };
+    board
+        .write(
+            ".board/types/tasks/task/v2.schema.json",
+            Item::File(include_str!(
+                "../../board-plugin-tasks/types/tasks/task/v2.schema.json"
+            )),
+        )
+        .write(
+            ".board/types/plans/decision/v1.schema.json",
+            Item::File(include_str!(
+                "../../board-plugin-plans/types/plans/decision/v1.schema.json"
+            )),
+        )
+        .write(
+            ".board/types/lr/change/v1.schema.json",
+            Item::File(change_type),
+        )
+        .write(
+            "tasks/p.md",
+            Item::File("---\n$type: tasks/task/v2\ntitle: P\nstatus: open\nkind: project\n---\n"),
+        )
+        .write(
+            "tasks/c.md",
+            Item::File(
+                "---\n$type: tasks/task/v2\ntitle: C\nstatus: open\nparent: /tasks/p.md\n---\n",
+            ),
+        )
+        .write("notes/far.md", Item::File("# Far\n"))
+        .write("projects/p/decisions/a.json", Item::File(&decision("A")))
+        .write("projects/p/decisions/b.json", Item::File(&decision("B")));
+    let change =
+        json!({"$type": "lr/change/v1", "task": "/tasks/p.md", "paths": ["/notes/far.md"]});
+    for number in 0..300 {
+        let at = format!("changes/c{number:03}.json");
+        board.write(&at, Item::File(&change.to_string()));
+    }
+    Counting {
+        board,
+        asked: std::cell::RefCell::default(),
+    }
+}
+
+/// STANDARDS.md 20: a whole's decisions cost one `refs` question each, and
+/// the change records that name the whole and the paths a decision names
+/// cost none.
+#[test]
+fn a_wholes_decisions_are_asked_about_once_each_and_its_change_records_and_their_targets_never() {
+    let host = three_hundred_changes();
+    let found = closure::closure(&host, "/tasks/c.md").unwrap();
+    assert_eq!(
+        found.found,
+        [
+            "/projects/p/decisions/a",
+            "/projects/p/decisions/b",
+            "/tasks/c.md",
+            "/tasks/p.md"
+        ]
+    );
+    let asked = host.asked.borrow();
+    let count = |path: &str| asked.iter().filter(|asked| *asked == path).count();
+    assert_eq!(
+        (
+            count("/projects/p/decisions/a"),
+            count("/projects/p/decisions/b"),
+            count("/notes/far.md")
+        ),
+        (1, 1, 0),
+        "{asked:?}"
+    );
+    assert!(
+        !asked.iter().any(|path| path.starts_with("/changes/")),
+        "{asked:?}"
+    );
+}

@@ -60,7 +60,7 @@ fn manifest() -> Value {
         "capabilities": [{
             "name": "to",
             "description": "Copy a record, its children, what they reference or link to, the records \
-                that reference it, its children or a record it is part of, and the schemas it lacks into a mounted board, \
+                that reference it or its children, the decisions and questions of what it is part of, and the schemas it lacks into a mounted board, \
                 as one commit there, and move the mount's pin to it; without `yes`, list them and \
                 write nothing.",
             "inputSchema": schema_of::<to::Input>(SchemaSettings::draft2020_12()),

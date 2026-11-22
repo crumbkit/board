@@ -26,12 +26,12 @@ Copy a record you wrote into a board other people read.
      record, an entry under it or a whole, such as a decision whose `refs`
      names the shared project.
    - `wholes`: each record the shared one is part of, such as a task's
-     project named by its `parent`, with `back_refs`, how many records it
-     brought. A whole brings the records that name it, except its other
-     parts, so sharing a task brings its project's decisions and questions.
-   - `not_copied`: each link or back-ref target the share cannot copy, and
-     each back-ref's reference through a mount the destination lacks, with
-     its `reason`: `directory`, `mount`, `link` or `missing`.
+     project named by its `parent`, with `back_refs`, how many decisions
+     and questions it brought. A whole brings only those, and the share
+     follows none of their references.
+   - `not_copied`: each target the share does not copy, with its `reason`:
+     `directory`, `mount`, `link`, `missing`, or `beyond` for an entry a
+     whole's decision or question names that the set does not hold.
    - `next`: the command that writes.
 
    Read `extras`, `wholes` and `not_copied` and agree to them before you go on, or

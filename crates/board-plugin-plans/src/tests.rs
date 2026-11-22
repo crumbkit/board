@@ -631,3 +631,14 @@ fn input_that_does_not_read_is_refused_and_a_whole_number_written_as_a_decimal_i
     assert_eq!(refused.code, "plans::call::bad_input");
     assert!(call(json!({"limit": 2.0})).is_ok());
 }
+
+/// A decision and a question go with a whole they name, such as a project,
+/// when share copies a task of it; an answer names a question, not a whole.
+#[test]
+fn decisions_and_questions_go_with_a_whole_they_name_and_answers_do_not() {
+    let marked: Vec<String> = (Plans.schemas().into_iter())
+        .filter(|(_, schema)| schema["x-board-goes-with-whole"] == true)
+        .map(|(record_type, _)| record_type.as_str().to_owned())
+        .collect();
+    assert_eq!(marked, ["plans/question/v1", "plans/decision/v1"]);
+}
