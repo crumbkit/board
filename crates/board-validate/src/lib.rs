@@ -5,7 +5,7 @@
 
 mod references;
 
-use board_model::{Code, DISPLAY_NAME, Fields, LogicalPath, RecordType};
+use board_model::{Code, DISPLAY_NAME, Fields, RecordType};
 use jsonschema::{
     Draft, PatternOptions, Retrieve, Uri, ValidationError, Validator, error::ValidationErrorKind,
 };
@@ -66,7 +66,7 @@ impl Schema {
             .with_pattern_options(PatternOptions::regex())
             .with_retriever(Refuse)
             .with_format(REFERENCE_FORMAT, |text: &str| {
-                text.parse::<LogicalPath>().is_ok()
+                references::target(text).is_some()
             })
             .should_validate_formats(true)
             .build(&document)

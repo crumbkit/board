@@ -745,6 +745,49 @@ fn advance_refuses_a_mockup_the_owner_has_not_agreed_and_moves_on_once_a_decisio
 }
 
 #[test]
+fn advance_refuses_a_mockup_the_owner_has_not_agreed_and_moves_on_once_his_answer_names_it() {
+    let board = Changes::new();
+    planned_change(
+        &board,
+        &ux_plan(
+            &format!(
+                "### Mockups\n\n- {MOCKUP}, version v1\n\n### Neighbours\n\n- /changes/other\n"
+            ),
+            "None.",
+        ),
+        "mockups",
+        "none",
+    );
+    for kind in ["question", "answer"] {
+        board.write(
+            &format!(".board/types/plans/{kind}/v1.schema.json"),
+            r#"{"type": "object"}"#,
+        );
+    }
+    let options = json!([
+        {"id": "agree", "text": format!("Agree {MOCKUP} version v1 as the mockup")},
+        {"id": "change", "text": "Change something"},
+    ]);
+    let question = json!({
+        "$type": "plans/question/v1", "question": "Agree the mockup?", "options": options,
+        "by": {"session": "s"}, "asked": "2026-11-01T10:00:00Z", "status": "open",
+    });
+    board.write("questions/ux.json", &question.to_string());
+    let answer = json!({
+        "$type": "plans/answer/v1", "question": "/questions/ux", "choice": "agree",
+        "words": "Agree it.", "answered": "2026-11-01T10:01:00Z", "by": {"person": PERSON},
+    });
+    board.write("answers/ux.json", &answer.to_string());
+    board.call("attach", &at(&json!({"ref": "/answers/ux"})));
+    assert_eq!(
+        board.refusal("advance", &path())["code"],
+        "changes::ux::not_agreed"
+    );
+    board.call("attach", &at(&json!({"ref": "/questions/ux"})));
+    assert_eq!(advanced(&board), "build");
+}
+
+#[test]
 fn advance_refuses_mockups_with_no_neighbours_list_and_moves_on_once_one_is_written() {
     let board = Changes::new();
     board.write("decisions/ux.json", &decision(&json!({"urls": [MOCKUP]})));

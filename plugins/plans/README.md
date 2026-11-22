@@ -64,7 +64,8 @@ names the owner's surface. They compare the person with no name, so any
 writer can set it, and any writer can set `written_by` too. Only the owner's
 Touch ID approval of `changes.approve` proves the owner chose; the questions
 pane asks for it after an answer whose chosen option names the change it was
-attached to. An agent that
+attached to. An option that names `<change>#<check id>` names a check,
+not the change, so it waives that check and asks for no approval. An agent that
 records an approval the owner gave in chat names the owner as `person` and
 quotes the owner's words in `why`:
 

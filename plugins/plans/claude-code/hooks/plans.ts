@@ -59,15 +59,20 @@ export function approvalText(change: string, approved: Approved): string {
   }
 }
 
-/** True when `text` names `path` whole, and not as part of a longer path, as the changes gate reads an option. */
+/**
+ * True when `text` names `path` whole, and not as part of a longer path, as the changes gate reads an option.
+ * A `#` after the path joins it, as a fragment does, and so does a `?` or a `.` before a letter or digit,
+ * as a query or an extension does. A `.` that ends a sentence does not join.
+ */
 export function namesWhole(text: string, path: string): boolean {
   // Whole code points on each side, as Rust's chars are, so a letter outside the BMP counts as one.
   const joined = (c: string | undefined) => c !== undefined && /[\p{L}\p{N}_/-]/u.test(c)
   for (let at = text.indexOf(path); at !== -1; at = text.indexOf(path, at + 1)) {
     const preceding = Array.from(text.slice(0, at))
     const before = preceding[preceding.length - 1]
-    const after = Array.from(text.slice(at + path.length))[0]
-    if (!joined(before) && !joined(after)) return true
+    const [after, next] = Array.from(text.slice(at + path.length))
+    const fragment = after === '#' || ((after === '?' || after === '.') && /[\p{L}\p{N}]/u.test(next ?? ''))
+    if (!joined(before) && !joined(after) && !fragment) return true
   }
   return false
 }

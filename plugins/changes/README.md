@@ -565,7 +565,7 @@ of `changes` still fails `review`.
   not exist, so only the plan's typed answers guard what it would list,
   and whose `changes::ux::not_agreed` entry, for a plan that answers `ux`
   mockups, says what the plan gate's mockups check would say, such as a
-  mockup no attached owner's decision names,
+  mockup no attached owner's decision or answer names,
   `mockups`, the artifacts such a plan's Mockups list names, left out when
   it names none,
   `answers`, the plan's typed answers, left out when it gives none,
@@ -857,7 +857,7 @@ evaluated by kind:
 | `paths` | the diff edits only the plan's paths |
 | `tasks` | every attached task but the change's own is done or dropped |
 | `understood` | a decision the owner signed references an attached understanding check of this change's `subject`; with `rechecks`, each such check also holds rechecks of that many points, and the latest recheck of every point matches |
-| `mockups` | the `agreed` part: each mockup under UX is named by a decision the owner signed; the `neighbours` part: UX lists its neighbours; the `versioned` part: each mockup item names a version, as `version <id>` or a `/artifacts/<id>/versions/<id>` path; the `built` part: for each mockup version the plan names, a `changes/conformance/v1` at `head` says `match` with no difference listed, and the detail lists each element that is missing or different; both `agreed` and `neighbours` when `part` is left out |
+| `mockups` | the `agreed` part: each mockup under UX is named by a decision the owner signed, or by the chosen option of the owner's attached answer in its attached question; the `neighbours` part: UX lists its neighbours; the `versioned` part: each mockup item names a version, as `version <id>` or a `/artifacts/<id>/versions/<id>` path; the `built` part: for each mockup version the plan names, a `changes/conformance/v1` at `head` says `match` with no difference listed, and the detail lists each element that is missing or different; both `agreed` and `neighbours` when `part` is left out |
 | `considered` | each path in the change's `surfaced` that still reaches something is in the plan's `uses` or its `considered` field |
 | `obligations` | no obligation rule applies to the plan's paths, except those in the plan's `owed` field; a board without the rules plugin enabled has none |
 | `rule-paths` | the diff edits no file that the rules in `rules` list in their `paths` or `applies_to`; the detail names at most ten such files and counts the rest |
@@ -881,7 +881,21 @@ can make it pass. A check with `blocks: false` is reported but never
 refuses `advance`. A missing check carries a `remedy`: the flow's, or else
 its kind's own. A `waivable` check passes when an attached
 `plans/decision/v1` that the owner signed names `<change>#<id>` in its
-`refs`, and its detail names the decision; its remedy says so.
+`refs`, or when the owner's attached `plans/answer/v1` chose an option, in
+its attached question, whose text names `<change>#<id>`. Its detail names
+the decision or the answer; its remedy says so. A path followed by `#`,
+or by `?` or `.` and a letter or digit, is a longer name, so a waiver
+option approves no plan and `.../m1.png` does not name `.../m1`. A `board-ref`
+with a `#` fragment resolves to the path before it, and a fragment after
+`/` alone is malformed.
+
+The `mockups` check, a waiver and `owner-approval` read only which paths
+the chosen option names, never its wording. So only the option that agrees
+a mockup or waives a check may name the mockup's URL or board path or
+`<change>#<id>`, and that option must not name the bare change path. An
+option that names both the mockup and `/changes/<name>` also approves the
+plan, and an option such as "Revise <mockup URL>" agrees the mockup.
+Tests in `gates/tests/design.rs` pin both cases, so this rule is the guard.
 
 Every owner check (`owner_signed`, `understood`, `mockups` and a waiver)
 reads one rule. A decision counts as the owner's signature only when its
@@ -1014,7 +1028,7 @@ only when none is. A builder that cannot build an element stops and files a
 difference's `question`; the owner's `plans/answer/v1` to it clears that
 difference. The newest record at the head, by its `at`, decides each
 mockup version. `design-conformance` is waivable, so an owner's decision
-naming `<change>#design-conformance` passes a partial build or a page
+or answer naming `<change>#design-conformance` passes a partial build or a page
 Playwright cannot screenshot, such as an iOS or terminal screen. An attached understanding
 check Board does not read fails an `understood` check. A repeating task
 never reaches `done`, so drop it to release the `tasks` check. A run counts

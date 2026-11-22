@@ -882,8 +882,9 @@ fn a_ui_brief_lists_its_mockups_and_warns_until_a_decision_names_each_one() {
     let unagreed = brief(&board);
     assert_eq!(unagreed["mockups"], json!([MOCKUP]), "{unagreed}");
     let detail = format!(
-        "these mockups have no attached plans/decision/v1 that names them in its urls or refs: \
-         {MOCKUP}"
+        "these mockups have neither an attached plans/decision/v1 the owner signed that names \
+         them in its urls or refs, nor an attached plans/answer/v1 from the owner whose chosen \
+         option, in its attached question, names them: {MOCKUP}"
     );
     assert_eq!(not_agreed(&unagreed), Some(json!(detail)));
     assert!(spent(&unagreed) <= BRIEF_WORDS, "{unagreed}");

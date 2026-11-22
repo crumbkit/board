@@ -455,6 +455,42 @@ fn a_waivable_check_passes_only_on_a_decision_naming_it_that_names_a_person_and_
 }
 
 #[test]
+fn a_waivable_check_passes_on_the_owners_answer_whose_chosen_option_names_it() {
+    let list = json!([{"id": "suite-run", "kind": "run", "scope": "full", "waivable": true}]);
+    let found = |text: &str, fields: &Value| {
+        let options = json!([{"id": "w", "text": text}, {"id": "k", "text": "Keep it."}]);
+        let asked = ("/q/w", "plans/question/v1", json!({"options": options}));
+        let answered = (
+            "/a/w",
+            "plans/answer/v1",
+            by(json!({"question": "/q/w", "choice": "w"}), fields),
+        );
+        let observed = observed(&json!({"head": HEAD}), &[asked, answered]);
+        first(&observed, list.clone())
+    };
+    let owner = json!({"by": {"person": PERSON}});
+    let waived = found("Waive /changes/t#suite-run", &owner);
+    assert_eq!(
+        (waived.status, waived.detail),
+        (Status::Pass, "the owner waived it in /a/w".to_owned())
+    );
+    let agent = json!({"by": {"program": "claude-code"}});
+    assert_eq!(
+        found("Waive /changes/t#suite-run", &agent).status,
+        Status::Missing
+    );
+    let other = found("Waive /changes/t#suite-runs", &owner);
+    assert_eq!(other.status, Status::Missing);
+    assert!(
+        other.remedy.unwrap().contains(
+            "or with an attached plans/answer/v1 from the owner whose chosen option, in its \
+             attached question, names /changes/t#suite-run"
+        ),
+        "the remedy names the answer route"
+    );
+}
+
+#[test]
 fn a_check_that_is_not_waivable_ignores_a_decision_naming_it() {
     let list = json!([{"id": "suite-run", "kind": "run", "scope": "full"}]);
     let signed = (
@@ -551,4 +587,27 @@ fn an_exists_check_with_a_when_condition_fills_change_in_its_path() {
         .insert("/changes/t/lifecycle".to_owned(), true);
     let (_, status, detail) = run(&applied, list).remove(0);
     assert_eq!((status, detail.as_str()), (Status::Pass, ""));
+}
+
+/// The twin of the questions pane's `namesWhole` cases in plans.test.tsx.
+#[test]
+fn a_path_followed_by_a_fragment_a_query_or_an_extension_is_part_of_a_longer_name() {
+    use super::names_whole;
+    let mock = "https://claude.ai/artifact/m1";
+    for (text, path, whole) in [
+        ("Approve /changes/t.", PATH, true),
+        ("Approve /changes/t. Then build it.", PATH, true),
+        ("Approve /changes/t?", PATH, true),
+        ("/changes/t-two", PATH, false),
+        ("/changes/t#suite-run", PATH, false),
+        ("https://claude.ai/artifact/m1?v=2", mock, false),
+        ("Agree https://claude.ai/artifact/m1.png", mock, false),
+        ("Agree /mockups/x.html", "/mockups/x", false),
+        ("Agree /mockups/x.", "/mockups/x", true),
+        ("Waive /changes/t#suite-run", "/changes/t#suite-run", true),
+        ("Waive /changes/t#suite-run.", "/changes/t#suite-run", true),
+        ("Waive /changes/t#suite-runs", "/changes/t#suite-run", false),
+    ] {
+        assert_eq!(names_whole(text, path), whole, "{text} names {path}");
+    }
 }

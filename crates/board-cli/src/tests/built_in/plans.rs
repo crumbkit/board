@@ -849,3 +849,53 @@ fn migrate_with_apply_writes_one_bulk_commit_and_a_second_apply_writes_nothing()
     assert_eq!(again["total"], 0);
     assert_eq!(board.head(), head);
 }
+
+#[test]
+fn a_decision_whose_ref_names_a_check_after_a_path_that_exists_checks_clean_and_its_twin_dangles() {
+    let board = board();
+    board.write("changes/x.json", &open(&json!({})));
+    let waiver = |change: &str| {
+        let by = json!({"person": "pat"});
+        decision(&json!({"by": by, "refs": [format!("{change}#design-conformance")]}))
+    };
+    for (path, change) in [
+        ("/projects/a/decisions/waive", "/changes/x"),
+        ("/projects/a/decisions/lost", "/changes/gone"),
+    ] {
+        let put = board.run_with(&["put", path], &waiver(change));
+        assert_eq!(put.code, 0, "{}", text(&put.stderr));
+    }
+    assert_eq!(
+        board.checked("/projects/a/decisions"),
+        codes(&[
+            ("/projects/a/decisions/lost", Some("board::ref::dangling")),
+            ("/projects/a/decisions/waive", None),
+        ])
+    );
+    let checked = board.run(&["check", "/projects/a/decisions/waive"]);
+    assert_eq!(checked.code, 0, "{}", text(&checked.stdout));
+    let stored: Value =
+        serde_json::from_str(&board.read("projects/a/decisions/waive.json")).unwrap();
+    assert_eq!(stored["refs"], json!(["/changes/x#design-conformance"]));
+    for fragment in ["#design-conformance", "/#design-conformance"] {
+        let by = json!({"person": "pat"});
+        let refused = board.run_with(
+            &["put", "/projects/a/decisions/bare"],
+            &decision(&json!({"by": by, "refs": [fragment]})),
+        );
+        assert_ne!(refused.code, 0, "{fragment}");
+        assert!(
+            text(&refused.stderr).contains("board::ref::malformed"),
+            "{fragment}: {}",
+            text(&refused.stderr)
+        );
+        assert!(
+            !board
+                .board
+                .workdir()
+                .join("projects/a/decisions/bare.json")
+                .exists(),
+            "{fragment} wrote nothing"
+        );
+    }
+}

@@ -1,5 +1,5 @@
 //! The checks of the `mockups` kind: the UX section lists each mockup, an
-//! owner decision agrees it, the plan names its version, and the review
+//! owner decision or answer agrees it, the plan names its version, and the review
 //! holds a record that the built page matches that version.
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -8,7 +8,7 @@ use std::sync::LazyLock;
 use regex::Regex;
 use serde_json::{Map, Value};
 
-use super::kinds::ANSWER_TYPE;
+use super::kinds::{ANSWER_TYPE, names_whole, owner_choices};
 use super::{
     NO_HEAD, Observed, objects, owner_answered, pattern, same_commit, signed_decisions, strings,
 };
@@ -95,16 +95,17 @@ pub(crate) fn ux_missing(observed: &Observed, found: &BTreeMap<String, String>) 
         ));
     }
     let agreed = named_by_decisions(observed);
+    let chosen: Vec<&str> = owner_choices(observed).map(|(_, text)| text).collect();
+    let named =
+        |name: &str| agreed.contains(name) || (chosen.iter()).any(|text| names_whole(text, name));
     let unagreed: Vec<String> = (mockups(found).into_iter())
-        .filter(|mockup| {
-            !agreed.contains(mockup.as_str())
-                && !artifact_of(mockup).is_some_and(|artifact| agreed.contains(artifact))
-        })
+        .filter(|mockup| !named(mockup) && !artifact_of(mockup).is_some_and(named))
         .collect();
     (!unagreed.is_empty()).then(|| {
         format!(
-            "these mockups have no attached plans/decision/v1 that names them in its urls or \
-             refs: {}",
+            "these mockups have neither an attached plans/decision/v1 the owner signed that \
+             names them in its urls or refs, nor an attached plans/answer/v1 from the owner whose \
+             chosen option, in its attached question, names them: {}",
             unagreed.join(", ")
         )
     })
