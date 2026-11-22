@@ -38,6 +38,15 @@ const UNFROZEN: &[&str] = &["plugins/changes/", "crates/board-plugin-changes/typ
 /// Where the repository keeps the vectors other repositories test against.
 const VECTORS: &str = "vectors";
 
+/// The documents an external plugin and Board exchange (docs/plugins.md),
+/// which released.json may list as unstable.
+const PROTOCOL: &[&str] = &[
+    board_plugin::MANIFEST_TYPE,
+    board_plugin::CALL_TYPE,
+    board_plugin::CALL_RESULT_TYPE,
+    board_plugin::ERROR_TYPE,
+];
+
 /// The crates of the built-in plugins, whose sources name their codes.
 const PLUGIN_CRATES: &str = "crates";
 
@@ -59,6 +68,50 @@ struct Released {
     /// Each vector file but a README, by its path from the repository root,
     /// with the git blob id of its bytes.
     vectors: BTreeMap<String, String>,
+    /// What the release ships unfrozen, which the check skips and the file
+    /// does not list (released.md).
+    #[serde(default, skip_serializing_if = "Unstable::is_empty")]
+    unstable: Unstable,
+}
+
+/// The types and codes a release ships without freezing them, with a note
+/// saying until when: in 0.1.0, the external plugin protocol's.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Unstable {
+    note: String,
+    /// Type ids, such as `board/call/v1`: a schema file of that type and a
+    /// report with that `schema`.
+    types: BTreeSet<String>,
+    codes: BTreeSet<String>,
+}
+
+impl Unstable {
+    fn is_empty(&self) -> bool {
+        self.types.is_empty() && self.codes.is_empty()
+    }
+
+    /// Whether the entry at `key` names an unstable type: a report's
+    /// `schema`, or a schema file at `.../types/<namespace>/<kind>/v<n>.schema.json`.
+    fn holds_type(&self, key: &str) -> bool {
+        let id = (key.split_once("/types/"))
+            .and_then(|(_, id)| id.strip_suffix(".schema.json"))
+            .unwrap_or(key);
+        self.types.contains(id)
+    }
+}
+
+impl Released {
+    /// `self` without what `unstable` names, and holding `unstable`, as the
+    /// file lists a release.
+    fn without(mut self, unstable: &Unstable) -> Self {
+        self.types.retain(|path, _| !unstable.holds_type(path));
+        self.reports
+            .retain(|schema, _| !unstable.holds_type(schema));
+        self.codes.retain(|code| !unstable.codes.contains(code));
+        self.unstable = unstable.clone();
+        self
+    }
 }
 
 /// A schema as the freeze holds it: its shape, which may not change, and
@@ -193,8 +246,10 @@ fn emptied(
     }
 }
 
-/// What a listed entry would have to change in place to be as it is now.
+/// What a listed entry would have to change in place to be as it is now,
+/// apart from what the listed `unstable` names.
 fn violations(released: &Released, present: &Released) -> Vec<String> {
+    let released = &released.clone().without(&released.unstable);
     let mut found = Vec::new();
     for (path, was) in &released.types {
         let Some(now) = present.types.get(path) else {
@@ -1163,6 +1218,7 @@ fn present() -> Released {
         capabilities: capabilities(),
         codes,
         vectors,
+        unstable: Unstable::default(),
     }
 }
 
@@ -1206,6 +1262,22 @@ fn every_released_type_report_and_code_is_as_it_was_released() {
     let present = present();
     let (overwrite, all) = mode();
     let released: Released = serde_json::from_slice(&std::fs::read(FILE).unwrap()).unwrap();
+    // The unstable list names only the external plugin protocol's types and
+    // codes Board has, so a misspelt entry exempts nothing unnoticed.
+    let unstable = &released.unstable;
+    for id in &unstable.types {
+        assert!(
+            PROTOCOL.contains(&id.as_str()),
+            "{id} is not a protocol type"
+        );
+    }
+    for code in &unstable.codes {
+        assert!(
+            present.codes.contains(code),
+            "{code} is not a code Board has"
+        );
+    }
+    let present = present.without(unstable);
     let present = overwritten(&released, present).unwrap_or_else(|found| {
         panic!(
             "released.json lists an interface that changed in place:\n{}",
@@ -1525,6 +1597,7 @@ fn a_changed_schema_a_dropped_field_and_a_gone_code_are_refused_and_the_unchange
         .into(),
         codes: [code.to_owned()].into(),
         vectors: BTreeMap::new(),
+        unstable: Unstable::default(),
     };
     let now = listed(&one, "data.kept", "board::x::kept");
     assert_eq!(violations(&now, &now), Vec::<String>::new());
@@ -1593,6 +1666,92 @@ fn an_overwrite_that_would_change_a_released_vector_is_refused_and_one_that_adds
             "vectors/signing/v1/approval.sig changed; a changed vector is a new version".to_owned()
         ])
     );
+}
+
+#[test]
+fn a_changed_protocol_type_and_a_gone_protocol_code_are_admitted_while_unstable_names_them_and_refused_once_it_does_not()
+ {
+    let hasher = Scenario::new();
+    let (one, two) = (frozen(&hasher, b"{}"), frozen(&hasher, b"[]"));
+    let listed = |frozen: &Frozen, field: &str, code: &str, unstable: &[&str]| Released {
+        types: [
+            (
+                "crates/board-plugin-x/types/board/call/v1.schema.json".to_owned(),
+                frozen.clone(),
+            ),
+            (
+                "crates/board-plugin-x/types/x/y/v1.schema.json".to_owned(),
+                frozen.clone(),
+            ),
+        ]
+        .into(),
+        reports: [
+            ("board/call-result/v1".to_owned(), [field.to_owned()].into()),
+            ("board/x-report/v2".to_owned(), [field.to_owned()].into()),
+        ]
+        .into(),
+        codes: [code.to_owned(), "board::x::kept".to_owned()].into(),
+        unstable: Unstable {
+            note: "unstable until 0.2.0".to_owned(),
+            types: (unstable.iter())
+                .filter(|name| name.contains('/'))
+                .map(|name| (*name).to_owned())
+                .collect(),
+            codes: (unstable.iter())
+                .filter(|name| name.contains("::"))
+                .map(|name| (*name).to_owned())
+                .collect(),
+        },
+        ..Released::default()
+    };
+    let named = [
+        "board/call/v1",
+        "board/call-result/v1",
+        "board::plugin::bad_output",
+    ];
+    let released = listed(&one, "data.kept", "board::plugin::bad_output", &named);
+    let mut changed = listed(&two, "data.gone", "board::plugin::other", &named);
+    // The entries the list does not name stay as they were released.
+    changed.types.insert(
+        "crates/board-plugin-x/types/x/y/v1.schema.json".to_owned(),
+        one.clone(),
+    );
+    changed.reports.insert(
+        "board/x-report/v2".to_owned(),
+        ["data.kept".to_owned()].into(),
+    );
+    assert_eq!(violations(&released, &changed), Vec::<String>::new());
+    let frozen = listed(&one, "data.kept", "board::plugin::bad_output", &[]);
+    assert_eq!(
+        violations(&frozen, &changed),
+        [
+            "crates/board-plugin-x/types/board/call/v1.schema.json changed; a changed type is a new version",
+            "board/call-result/v1 no longer holds data.kept",
+            "board::plugin::bad_output is gone; a code is never renamed",
+        ]
+    );
+    // The list exempts only what it names.
+    let mut other = changed.clone();
+    other.codes.remove("board::x::kept");
+    assert_eq!(
+        violations(&released, &other),
+        ["board::x::kept is gone; a code is never renamed"]
+    );
+    // A release's file names what the list names only under `unstable`.
+    let written = changed.without(&released.unstable);
+    assert_eq!(
+        written.types.keys().collect::<Vec<_>>(),
+        ["crates/board-plugin-x/types/x/y/v1.schema.json"]
+    );
+    assert_eq!(
+        written.reports.keys().collect::<Vec<_>>(),
+        ["board/x-report/v2"]
+    );
+    assert_eq!(
+        written.codes.iter().collect::<Vec<_>>(),
+        ["board::plugin::other", "board::x::kept"]
+    );
+    assert_eq!(written.unstable, released.unstable);
 }
 
 /// A capability `x.y` whose input requires `required`, types `path` as
