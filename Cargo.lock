@@ -165,6 +165,7 @@ dependencies = [
  "proptest",
  "pulldown-cmark",
  "saphyr-parser",
+ "schemars",
  "serde",
  "serde_json",
  "sha2",

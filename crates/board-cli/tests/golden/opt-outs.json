@@ -240,15 +240,15 @@
     {
       "rule": "help-budget/root",
       "applies_to": "board",
-      "reason": "The root page lists all twenty-one commands under the goal each serves, the commands a newcomer runs first, and what a logical path and a record are, which STANDARDS.md 24 requires on one page. It also lists the global flags -C and --personal, which choose the board a run uses, and one line naming at most six of the plugins the board enables, which run as `board <plugin> <capability>`.",
+      "reason": "The root page lists all twenty-two commands under the goal each serves, the commands a newcomer runs first, and what a logical path and a record are, which STANDARDS.md 24 requires on one page. It also lists the global flags -C and --personal, which choose the board a run uses, and one line naming at most six of the plugins the board enables, which run as `board <plugin> <capability>`.",
       "costs": [
-        "Each read of the page can cost 1550 bytes more than the default, about 388 tokens."
+        "Each read of the page can cost 1600 bytes more than the default, about 400 tokens."
       ],
       "budget": {
-        "bytes": 3050,
+        "bytes": 3100,
         "default": 1500,
-        "extra_bytes": 1550,
-        "extra_tokens": 388
+        "extra_bytes": 1600,
+        "extra_tokens": 400
       }
     },
     {
@@ -461,6 +461,11 @@
       "declaration": "document-name",
       "applies_to": "board mount update",
       "declares": "The command prints board/mount-update-report/v2, where its path gives the name mount-update."
+    },
+    {
+      "declaration": "document-name",
+      "applies_to": "board repo add",
+      "declares": "The command prints board/repo-add-report/v2, where its path gives the name repo-add."
     },
     {
       "declaration": "document-name",

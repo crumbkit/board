@@ -445,6 +445,21 @@ fn generic(code: Code) -> &'static str {
         Code::RepoSubmodule => {
             "Board does not read submodules; mount the repository with a `board/repo/v1` record instead"
         }
+        Code::RepoLocalRemote => {
+            "name the repository by its hosted remote, such as `owner/name` for GitHub or `https://gitlab.com/group/app`, or push it to a host first; git reads an origin with no `://` and no `host:` as a directory beside the clone, so give repo add the remote itself rather than --from such a clone"
+        }
+        Code::RepoInvalid => {
+            "a board/repo/v2 record holds `$type` and `remote` and nothing else, and `remote` is in the identity form the message gives: owner/name in lower case for GitHub, else the host in lower case and the path; when no file is at that path, repo add with the remote writes the record there"
+        }
+        Code::RepoPathMismatch => {
+            "a repository record lives at /repositories/ and its remote in the board that holds it: run repo add with the remote in that board, giving board -C the path of that board's clone when the message names a path through a mount, then remove this record with rm"
+        }
+        Code::RepoTooLong => {
+            "a segment of a repository record's path holds at most 250 bytes, and the whole path 4,096 with `.json`; Board cannot record this repository"
+        }
+        Code::MountNoRemote => {
+            "add an origin remote to the clone with git remote add, or give repo add the remote itself"
+        }
         Code::RepoDuplicateRemote => {
             "a repository has one repo record: remove all but one of the records the message names, or fix the `remote` of the one that names another repository"
         }

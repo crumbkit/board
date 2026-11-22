@@ -148,7 +148,7 @@ and so is each record of its type. `record::invalid` names the first failing
 instance pointer in sorted order.
 
 Board's own documents (`board/*`) refuse unknown fields. User records follow
-their schema. Board knows `board/config/v1`, `board/mount/v1`, `board/repo/v1`,
+their schema. Board knows `board/config/v1`, `board/mount/v1`, `board/repo/v1`, `board/repo/v2`,
 `board/plugin-manifest/v1`, `board/attachment/v1`, `board/conflict/v1`, and the effects types
 `board/effect/v1` and `board/seen/v1` wherever they are stored. A manifest is checked by its content alone; a
 broken one is `plugin::bad_manifest`. Any other `board/*` type is
@@ -245,7 +245,7 @@ tables and views, how a refresh decides what to redo, and `board query` and
 2. checks it with the codes `check` uses: size and strict parse, `$type`,
    schema, validity, and that references parse. A reference need not resolve.
    Input that is not one JSON object with a `$type` is `board::put::invalid`.
-   `board/mount/v1`, `board/repo/v1`, `board/config/v1` and `board/attachment/v1` are checked
+   `board/mount/v1`, `board/repo/v1`, `board/repo/v2`, `board/config/v1` and `board/attachment/v1` are checked
    as their own types;
 3. resolves and checks the path, as architecture/paths.md says under Writes;
 4. with `--expect <blob>`, or `--expect none` for a new file, refuses with

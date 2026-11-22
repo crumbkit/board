@@ -1,0 +1,22 @@
+{
+  "additionalProperties": false,
+  "description": "A repository record: the repository's remote in identity form, and\nnothing else.",
+  "properties": {
+    "$type": {
+      "const": "board/repo/v2",
+      "description": "The record's type.",
+      "type": "string"
+    },
+    "remote": {
+      "description": "The repository's remote in identity form: `owner/name` in lower case\nfor GitHub, such as `crumbkit/board`, and otherwise the host in lower\ncase and the path, such as `gitlab.com/example-org/app`. The record\nlives at `/repositories/<remote>`.",
+      "pattern": "^([a-z0-9-]+/[a-z0-9._-]+|[a-z0-9-]+(\\.[a-z0-9-]+)*\\.[a-z]+(/[A-Za-z0-9_~-][A-Za-z0-9._~-]*)+)$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "$type",
+    "remote"
+  ],
+  "title": "Repository",
+  "type": "object"
+}

@@ -1,11 +1,84 @@
-# Repo records
+# Repository records
 
 This file holds detail for docs/architecture/paths.md. It says how a board
-names a repository, with a clone mounted or without one.
+names a repository.
 
-A repository gets one record, conventionally at `/repos/<name>.json`, whether
-or not the board mounts it. Other records name the repository by that path,
-so `board check` reports a reference to a repository the board does not know.
+## board/repo/v2
+
+A repository has one record, at `/repositories/<remote>`, in each board
+whose records name it. A record that names a repository holds a typed
+reference to that path, `"x-board-type": "board/repo/v2"`, so `board refs`,
+`board check` and `share.to` see it.
+
+```json
+{"$type": "board/repo/v2", "remote": "crumbkit/board"}
+```
+
+- `remote` is the only field. It is the repository's identity form, which
+  `board_model::repo_identity` computes from an origin URL. Its tests read
+  the table in `crates/board-model/src/repo/remotes.json`.
+  - A GitHub remote, over https, ssh, git or scp-like `git@github.com:`, with
+    or without a host alias such as `github.com-work`, is `owner/name` in
+    lower case, because GitHub ignores case. The hosts `ssh.github.com`,
+    which GitHub serves ssh on port 443 from, and `www.github.com` are
+    GitHub's too. No other `*.github.com` host is, because
+    `gist.github.com/<user>/<id>` names a gist.
+  - Any other host is `<host>/<path>`, with the host in lower case and no
+    scheme, user, password, port, trailing `.git` or trailing `/`, such as
+    `gitlab.com/example-org/app`. The host's last label is letters, so an
+    ssh alias such as `gitlab.com-work`, or an IP address, is refused. Each
+    path segment holds `[A-Za-z0-9._~-]` and does not start with `.`. A
+    GitHub owner holds no dot and a host does, so the two forms never
+    collide.
+  - A remote with a query or a fragment, or with any other character in
+    its path, is refused with `board::repo::invalid`.
+  - A local path, a `file://` URL or a relative path names a directory on
+    one machine. It has no identity form and is refused with
+    `board::repo::local_remote`. git reads a clone's origin with no `://`
+    and no scp-like `host:` as a directory beside the clone, so
+    `board_model::origin_identity` refuses such an origin, even
+    `owner/name`, which names GitHub only as an argument.
+- The path is the identity, so one repository has the same path and the
+  same bytes in every board, and two records of one repository cannot
+  exist. The record holds no clone path, branch or commit.
+- `check` degrades a record whose path is not `/repositories/<remote>` with
+  `board::repo::path_mismatch`, naming the path it belongs at. It degrades
+  one whose `remote` is not in identity form, or that holds any other field,
+  with `board::repo::invalid`, naming the identity form. `put` refuses an
+  invalid one with that code.
+- A segment of the path holds at most 250 bytes, so the file's name fits
+  with `.json`. A longer identity is refused with `board::repo::too_long`.
+  GitHub names never reach it.
+- The schema, generated from the Rust struct, is
+  `crates/board-model/types/board/repo/v2.schema.json`. Board reads the type
+  by its Rust type and needs no schema in `.board/types/`. `remote` has the
+  shared shape `Remote`.
+
+A reference is read in the referring record's board, so a record in a
+mounted board names that board's own copy, never the parent's. Each writer
+that names a repository adds the line `board_ops::repo::ensure` gives to
+the batch that writes its own record, naming the board that batch writes
+in: `/`, or the path of a mount, so the line goes under that mount. The
+line is a put with `"expect": "none"` when the record is missing, and
+there is no line when the record is there. Anything else at the path, such
+as a hand-edited record that is invalid or names another repository, is
+refused with `board::repo::invalid` or `board::repo::path_mismatch`. Two writers
+that race leave one record, and the second batch is `board::put::stale`.
+`share.to` copies a repository record through the reference, as it copies
+any referenced record; the bytes are the same in every board, so the
+destination's copy counts as present.
+
+`board repo add <remote>` writes the record from any remote form, and
+`board repo add --from <dir>` reads the origin of the clone that holds the
+directory. Each prints the path. When the record exists it writes nothing
+and says `unchanged`; when anything else is at the path it is refused as
+`ensure` refuses it. A clone with no origin is `board::mount::no_remote`.
+
+## board/repo/v1
+
+`board/repo/v1` is read until `board mount migrate`, from
+/changes/mounts-follow-the-clone, replaces each one with a `board/repo/v2`
+and a mount.
 
 ```json
 {
@@ -22,11 +95,9 @@ so `board check` reports a reference to a repository the board does not know.
 - `remote` is required. It is the origin URL in its stored form: `owner/name`
   for GitHub, over https, ssh, git or scp-like `user@github.com:`, with or
   without a host alias such as `github.com-work`; otherwise the URL without
-  its user and password. Two clones of one repository give the same value.
-  A `remote` that is not its own stored form, such as
-  `git@github.com:crumbkit/board.git`, is `board::mount::invalid`.
-  `board_model::shown_remote` computes the stored form, and its tests read
-  the table in `crates/board-model/src/repo/remotes.json`.
+  its user and password. A `remote` that is not its own stored form is
+  `board::mount::invalid`. `board_model::shown_remote` computes the stored
+  form.
 - `remote` is unique within a board's tree. `check` degrades every repo
   record whose `remote` another repo record in the same tree also holds with
   `board::repo::duplicate_remote`, naming the others, even when its scope
@@ -35,14 +106,10 @@ so `board check` reports a reference to a repository the board does not know.
   and `commit` mean exactly what they mean in a `board/mount/v1` mount, the
   repository's tree appears beneath the record's path, and the same codes
   refuse a bad one. `board mount update` moves `checkout.commit`. Without
-  it, the record is an identity only: nothing appears beneath it, and a path
-  below it is `board::path::not_found`.
+  it, nothing appears beneath it, and a path below it is
+  `board::path::not_found`.
 - Any other field, a missing `remote` or a bad `checkout` is
   `board::mount::invalid`.
-
-`board/mount/v1` stays for links and for mounts of boards that are not
-repositories of work, such as a shared team board. A repo record is written
-with `board put`.
 
 ## Finding the record from a directory
 
@@ -51,7 +118,7 @@ boards (docs/architecture.md, Boards and entries). In each known board it
 first looks for a mount whose clone is the directory's repository, with a
 `board/mount/v1` mount or a repo record's checkout alike. When no known board
 has such a mount, it reads that repository's `origin`, as `git remote get-url origin` gives it,
-and looks for a repo record in the known board's working tree whose `remote`
+and looks for a `board/repo/v1` record in the known board's working tree whose `remote`
 is the origin's stored form. Such a record gives the prefix `/repos/<name>`,
 its own path, from any directory in the clone. A mount in any known board outranks a repo record matched by remote in
 another. Remote matches count across all known boards, so two boards with a record for one `remote` are

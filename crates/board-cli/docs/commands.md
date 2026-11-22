@@ -19,6 +19,7 @@ Board: a fast, validated view of a git tree.
 - [`board rm`](#board-rm): Remove the file at a path
 - [`board sync`](#board-sync): Fetch the remote branch, merge it into this board, and push
 - [`board mount`](#board-mount): Work with mounts
+- [`board repo`](#board-repo): Work with repository records
 - [`board plugin`](#board-plugin): Work with plugins
 - [`board type`](#board-type): Add types
 - [`board call`](#board-call): Call a plugin's capability with flags, or else JSON on stdin
@@ -251,6 +252,25 @@ Advance the mount at a path, which is not followed, to its `follow` ref
 - `<PATH>`: The mount's logical path, such as /vendor/lib. Required.
 
 Effects: destructive, idempotent, closed-world.
+
+## `board repo`
+
+Work with repository records
+
+### Commands
+
+- [`board repo add`](#board-repo-add): Write a repository's record under /repositories, once
+
+## `board repo add`
+
+Write a repository's record under /repositories, once
+
+### Arguments
+
+- `<REMOTE>`: The repository's remote, such as git@github.com:crumbkit/board.git
+- `--from <DIR>`: A directory in a clone whose origin remote names the repository
+
+Effects: additive, idempotent, closed-world.
 
 ## `board plugin`
 

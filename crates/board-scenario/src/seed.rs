@@ -127,7 +127,19 @@ const OPEN: &str = "ui open or the server gives it; check opens and serves nothi
 
 /// Codes `check` never gives an entry, and why. The seed board has an
 /// exhibit for every other code, so a new code needs one or a line here.
-pub const NOT_CHECKED: [(Code, &str); 87] = [
+pub const NOT_CHECKED: [(Code, &str); 90] = [
+    (
+        Code::RepoLocalRemote,
+        "only repo add gives it, to a remote that names a local path; a record's remote is checked as board::repo::invalid",
+    ),
+    (
+        Code::RepoTooLong,
+        "only repo add gives it, before any write; a record's path is checked as board::path::malformed",
+    ),
+    (
+        Code::MountNoRemote,
+        "only repo add --from gives it, to a clone with no origin; check reads no clone's origin",
+    ),
     (
         Code::CommitNotFound,
         "get --at and log give it to a commit id the board's repository does not hold; check reads the working tree",
@@ -305,7 +317,7 @@ const TASK_SCHEMA: &str = r#"{
 
 /// Exhibits in the root board that are text: path, text and code.
 #[rustfmt::skip]
-const TEXT: [(&str, &str, Option<Code>); 35] = [
+const TEXT: [(&str, &str, Option<Code>); 38] = [
     ("json/parse.json", "{", Some(Code::JsonParse)),
     ("json/conflict.json", "{\n<<<<<<< HEAD\n}\n", Some(Code::JsonMergeConflict)),
     ("json/duplicate.json", r#"{"a": 1, "a": 2}"#, Some(Code::JsonDuplicateKey)),
@@ -342,6 +354,9 @@ const TEXT: [(&str, &str, Option<Code>); 35] = [
     ("repos/a.json", r#"{"$type": "board/repo/v1", "remote": "example-org/a"}"#, Some(Code::RepoDuplicateRemote)),
     ("repos/again.json", r#"{"$type": "board/repo/v1", "remote": "example-org/a"}"#, Some(Code::RepoDuplicateRemote)),
     ("repos/b.json", r#"{"$type": "board/repo/v1", "remote": "example-org/b"}"#, None),
+    ("repositories/example-org/c.json", r#"{"$type": "board/repo/v2", "remote": "example-org/c"}"#, None),
+    ("repositories/example-org/elsewhere.json", r#"{"$type": "board/repo/v2", "remote": "example-org/c"}"#, Some(Code::RepoPathMismatch)),
+    ("repositories/example-org/d.json", r#"{"$type": "board/repo/v2", "remote": "Example-Org/D"}"#, Some(Code::RepoInvalid)),
     // Only `.board/board.json` configures the board, but any file of its type must read as one.
     ("config/stray.json", r#"{"$type": "board/config/v1", "colour": "red"}"#, Some(Code::ConfigInvalid)),
     ("plugins/broken/plugin.json", r#"{"$type": "board/plugin-manifest/v1"}"#, Some(Code::PluginBadManifest)),

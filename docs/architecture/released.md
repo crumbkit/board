@@ -16,8 +16,8 @@ must read the records and reports of a later one, so:
 - `plugin enable` reports each schema it replaced, in `replaced`.
 
 Until a later release, the `changes/*` types change in place while the
-changes plugin is ported, and Board's own `board/*` types, which have no
-schema files, are not listed. The index may change freely.
+changes plugin is ported, and Board's own `board/*` types, which the
+released test skips, are not listed. The index may change freely.
 
 ## released.json
 

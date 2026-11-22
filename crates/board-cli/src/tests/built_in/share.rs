@@ -1378,3 +1378,36 @@ fn a_back_refs_reference_through_a_link_in_this_board_is_listed_as_link_from_the
         )
     );
 }
+
+const PULL_SCHEMA: &str = ".board/types/lr/pull/v1.schema.json";
+const PULL_TYPE: &str = r#"{"type": "object", "properties": {"repository": {"type": "string", "format": "board-ref", "x-board-type": "board/repo/v2"}}}"#;
+const REPOSITORY: &str = r#"{"$type": "board/repo/v2", "remote": "crumbkit/board"}"#;
+
+#[test]
+fn a_shared_record_brings_the_repository_record_it_names_and_one_the_team_holds_already_is_unchanged()
+ {
+    let boards = boards();
+    let pull = r#"{"$type": "lr/pull/v1", "repository": "/repositories/crumbkit/board"}"#;
+    boards
+        .personal
+        .write(PULL_SCHEMA, PULL_TYPE)
+        .write("repositories/crumbkit/board.json", REPOSITORY)
+        .write("pulls/a.json", pull)
+        .write("pulls/b.json", pull);
+    let output = boards.share(&["--path", "/pulls/a"]);
+    assert_eq!(
+        (&output["copied"], &output["types"]),
+        (
+            &json!(["/pulls/a", "/repositories/crumbkit/board"]),
+            &json!(["lr/pull/v1"])
+        )
+    );
+    assert!(!boards.exists(".board/types/board"));
+    let before = boards.head();
+    let output = boards.share(&["--path", "/pulls/b"]);
+    assert_eq!(
+        (&output["copied"], &output["unchanged"]),
+        (&json!(["/pulls/b"]), &json!(1))
+    );
+    assert_eq!(boards.changed(&before), ["pulls/b.json"]);
+}

@@ -422,6 +422,11 @@ patterned! {
     Repository = "^[A-Za-z0-9-]+/[A-Za-z0-9._-]+$"
 }
 
+/// A repository's remote in identity form, such as `crumbkit/board` or
+/// `gitlab.com/example-org/app`, as a `board/repo/v2` record holds it. A
+/// `String` field takes it with `#[schemars(with = "Remote")]`.
+pub use board_model::Remote;
+
 patterned! {
     /// What an eval or a suite tests: a repository as `owner/name`, such as
     /// `crumbkit/board`, or a board path, such as `/repos/board/crates`.
@@ -617,6 +622,7 @@ pub fn registry() -> Map<String, Value> {
         entry::<Person>(&mut generator),
         object::<Pinned>(),
         entry::<Prose>(&mut generator),
+        entry::<Remote>(&mut generator),
         entry::<Repository>(&mut generator),
         entry::<SessionId>(&mut generator),
         entry::<Digest>(&mut generator),

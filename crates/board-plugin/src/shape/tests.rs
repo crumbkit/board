@@ -253,6 +253,7 @@ fn the_registry_holds_each_shared_shape_by_name_as_a_field_using_it_sees_it() {
             "Person",
             "Pinned",
             "Prose",
+            "Remote",
             "Repository",
             "SessionId",
             "Slug",
@@ -472,6 +473,32 @@ fn a_repository_that_is_not_owner_and_name_is_refused_and_its_twin_is_admitted()
         ("/repos/board", "crumbkit/board"),
         ("crumbkit/board/crates", "TanStack/query"),
         ("a b/c", "llvm/llvm-project"),
+    ] {
+        assert_eq!((refused, code(json!(refused))), (refused, invalid));
+        assert_eq!((admitted, code(json!(admitted))), (admitted, None));
+    }
+}
+
+/// A remote is a repository's identity form: GitHub's `owner/name` in
+/// lower case, or a host with a dot whose last label is letters, and a path
+/// of segments of `[A-Za-z0-9._~-]` that do not start with a dot.
+#[test]
+fn a_remote_not_in_identity_form_is_refused_and_its_twin_is_admitted() {
+    let code = refusal_of::<Remote>();
+    let invalid = Some(board_model::Code::RecordInvalid);
+    for (refused, admitted) in [
+        ("CrumbKit/Board", "crumbkit/board"),
+        (
+            "git@github.com:crumbkit/board.git",
+            "gitlab.com/example-org/app",
+        ),
+        ("https://gitlab.com/group/app", "gitlab.com/group/sub/App"),
+        ("/srv/git/app", "example-org/app.js"),
+        ("gitlab.com", "gitlab.com/app"),
+        ("gitlab.com-work/group/app", "gitlab.com/group/app"),
+        ("10.0.0.1/group/app", "git.example.org/group/app"),
+        ("gitlab.com/group/.hidden", "gitlab.com/group/app~1.x_y-z"),
+        ("gitlab.com/group/app?x=1", "gitlab.com/group/app.js"),
     ] {
         assert_eq!((refused, code(json!(refused))), (refused, invalid));
         assert_eq!((admitted, code(json!(admitted))), (admitted, None));

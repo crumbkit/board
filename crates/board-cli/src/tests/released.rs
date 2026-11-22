@@ -1027,6 +1027,7 @@ fn samples() -> Vec<(String, Value)> {
             b"",
         ),
         (&["mount", "update", "/vendor/lib"], b""),
+        (&["repo", "add", "crumbkit/board"], b""),
         (&["plugin", "list"], b""),
         (&["plugin", "find"], b""),
         (&["plugin", "enable", "tasks"], b""),

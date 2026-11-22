@@ -8,7 +8,8 @@ use std::convert::Infallible;
 use board_index::{IndexError, Resolved, ValidationFact, Writer};
 use board_model::{
     BINDING_TYPE, Board, Change, Classified, Code, Content, Kind, Location, LogicalPath, Object,
-    ObjectId, REPO_TYPE, RecordType, Repo, Role, Source, classify, parse_json,
+    ObjectId, REPO_TYPE, REPOSITORY_TYPE, RecordType, Repo, RepositoryRecord, Role, Source,
+    classify, parse_json,
 };
 use board_tree::{
     Contents, Entry, GitError, Mounted, Reader, Refused, Repositories, ResolveError, Status, latest,
@@ -241,6 +242,9 @@ impl Decide<'_> {
         if let Some(failure) = self.duplicate(entry, fact) {
             return Ok(Ok(Some(failure)));
         }
+        if let Some(failure) = self.misplaced(entry, fact) {
+            return Ok(Ok(Some(failure)));
+        }
         if let Some(repeats) = self.cycles.get(&(self.source(), entry.path.clone())) {
             let detail = Detail {
                 reason: format!(
@@ -311,6 +315,38 @@ impl Decide<'_> {
     /// The `remote` of each valid repo record the walk listed, by physical
     /// path, with its path from the root.
     fn read_remotes(&self) -> HashMap<String, (String, String)> {
+        let repo = |entry: &Entry| {
+            (entry.status == Status::Ok && super::is_repo(self.facts, &entry.path)).then_some(())?;
+            let indexed = self.facts.get(&entry.path)?;
+            let remote = Repo::from_value(&self.value(entry, indexed)?).ok()?.remote;
+            let shown = self.display(entry.logical.as_ref()?)?.to_string();
+            Some((entry.path.clone(), (remote, shown)))
+        };
+        self.listed.iter().filter_map(repo).collect()
+    }
+
+    /// The failure of a repository record whose path is not the one its
+    /// `remote` gives, `/repositories/<remote>` in its own board.
+    fn misplaced(&self, entry: &Entry, fact: &Indexed) -> Option<Failure> {
+        (fact.fact.record_type.as_ref()?.as_str() == REPOSITORY_TYPE).then_some(())?;
+        let record = RepositoryRecord::from_value(&self.value(entry, fact)?).ok()?;
+        let wanted = record.remote.path();
+        (entry.logical.as_ref() != Some(wanted)).then_some(())?;
+        let shown = self.display(wanted).unwrap_or_else(|| wanted.clone());
+        let detail = Detail {
+            reason: format!(
+                "names the repository {}, whose record belongs at {shown}",
+                record.remote
+            ),
+            failures: 1,
+            ..Detail::default()
+        };
+        Some((Code::RepoPathMismatch, Some(detail)))
+    }
+
+    /// The JSON value the record `entry`, whose fact is `indexed`, holds,
+    /// read from the source being decided.
+    fn value(&self, entry: &Entry, indexed: &Indexed) -> Option<serde_json::Value> {
         let board = match self.mounted {
             Some(mounted) => Board {
                 repository: mounted.repository.path().to_path_buf(),
@@ -321,24 +357,15 @@ impl Decide<'_> {
                 source: Source::WorkingTree,
             },
         };
-        let repo = |entry: &Entry| {
-            (entry.status == Status::Ok && super::is_repo(self.facts, &entry.path)).then_some(())?;
-            let indexed = self.facts.get(&entry.path)?;
-            let location = Location {
-                board: board.clone(),
-                path: entry.path.clone(),
-                object: Object::Blob(indexed.blob),
-                pointers: Vec::new(),
-                follow: None,
-            };
-            let contents = self.read(&location, indexed.blob).ok()??;
-            let remote = Repo::from_value(&parse_json(&contents.bytes).ok()?)
-                .ok()?
-                .remote;
-            let shown = self.display(entry.logical.as_ref()?)?.to_string();
-            Some((entry.path.clone(), (remote, shown)))
+        let location = Location {
+            board,
+            path: entry.path.clone(),
+            object: Object::Blob(indexed.blob),
+            pointers: Vec::new(),
+            follow: None,
         };
-        self.listed.iter().filter_map(repo).collect()
+        let contents = self.read(&location, indexed.blob).ok()??;
+        parse_json(&contents.bytes).ok()
     }
 
     /// Follows the links of a Markdown file, each from the file's own path,

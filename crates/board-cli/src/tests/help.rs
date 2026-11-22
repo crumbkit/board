@@ -70,7 +70,10 @@ const NO_COMMIT: &str = "the fixture board has no commit of its own, so its sync
 /// have no HOME, which would put a temporary path in completion's goldens.
 /// The `mount add` tests in tests.rs run the example with a home.
 const NO_HOME: &str = "the example names a clone in the home directory, and the example runs have no HOME; tests.rs runs it with one";
+/// tests/repo.rs runs `repo add --from` in a clone with a hosted origin.
+const LOCAL_ORIGIN: &str = "the fixture board's clone has a local path as its origin, which names no repository; tests/repo.rs runs `repo add --from` on a clone with a hosted one";
 const ALLOW: &[Allow] = &[
+    Allow::example("repo add", &["--from", "."], LOCAL_ORIGIN),
     Allow::example("mount add", &["/team", "~/team-board"], NO_HOME),
     Allow::example(
         "mount add",
@@ -226,8 +229,8 @@ fn files_of(root: &Path) -> Vec<(String, String)> {
 /// such as `plugin` and 1,200 for each other command.
 pub(super) const BUDGETS: Budgets = Budgets::new()
     .root(
-        3_050,
-        "The root page lists all twenty-one commands under the goal each serves, the commands a newcomer runs first, and what a logical path and a record are, which STANDARDS.md 24 requires on one page. It also lists the global flags -C and --personal, which choose the board a run uses, and one line naming at most six of the plugins the board enables, which run as `board <plugin> <capability>`.",
+        3_100,
+        "The root page lists all twenty-two commands under the goal each serves, the commands a newcomer runs first, and what a logical path and a record are, which STANDARDS.md 24 requires on one page. It also lists the global flags -C and --personal, which choose the board a run uses, and one line naming at most six of the plugins the board enables, which run as `board <plugin> <capability>`.",
     )
     .nodes(&[
         Budget::new(

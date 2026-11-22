@@ -113,7 +113,7 @@ Built-in plugins generate schemas from structs with schemars, through
   `T`, to a marker that lists several types, or to any entry when `T` is left
   out. Both are always inlined.
 - `Prose`, `Date`, `Timestamp`, `Url`, `Digest`, `Glob`, `LogicalGlob`, `Summary`,
-  `SessionId`, `Slug`, `Person`, `ObjectId`, `CommitName`, `Repository`, `Subject`, `TypeName`,
+  `SessionId`, `Slug`, `Person`, `ObjectId`, `CommitName`, `Remote`, `Repository`, `Subject`, `TypeName`,
   `PathKey`, `PathTemplate`, `Pattern` and `WorkspaceId` are shared string
   shapes, and `Actor` and `Pinned` are shared object shapes. A `String` field takes one with
   `#[schemars(with = "Prose")]`, and a `urls` field with `#[schemars(with = "Vec<Url>")]`. `Digest` is `sha256:` and 64
@@ -131,7 +131,9 @@ Built-in plugins generate schemas from structs with schemars, through
   placeholder, where a reference cannot go, such as the key of an object. `PathTemplate` is a logical path that
   may hold `{name}` placeholders, which its reader fills in. `Pattern` is a regular
   expression in the syntax of Rust's regex crate, which only its reader compiles.
-  `WorkspaceId` is an mxv workspace's id, 32 lowercase hex digits.
+  `WorkspaceId` is an mxv workspace's id, 32 lowercase hex digits. `Remote` is a
+  repository's identity form, as a `board/repo/v2` record holds it, such as
+  `crumbkit/board` or `gitlab.com/example-org/app`.
 - `Actor` is who wrote or acted: `{session, program, person, agent}`, each part
   optional and at least one present. `agent` is the name the agent was
   given, as free text. Every field that names who acted is an `Actor`. `Pinned` is `{record, blob}`, a reference and the `ObjectId`
