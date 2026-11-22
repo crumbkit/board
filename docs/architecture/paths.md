@@ -77,13 +77,13 @@ mount; architecture/paths/repos.md describes repo records.
 }
 ```
 
-The first links to a path in the same board; the second mounts another
-repository at an exact commit. `follow` names what `board mount update`
-advances `commit` to; `commit` is what Board reads. v0 mounts local
-repositories only; a URL is `board::mount::remote_unsupported`. A mount's
-`repo` is a local path, read from `~/` or relative to the board, so on a
-machine with no clone at that path the mount degrades to
-`board::mount::repo_missing` until M8 (PLAN.md) adds remotes.
+The first links within the board; the second mounts another repository at
+one commit. `board mount add` writes a mount of a clone, following its
+checked-out branch, with `repo` absolute unless it starts with `~/`.
+`board mount update` advances `commit`, which Board reads, to what `follow`
+names. A URL is `board::mount::remote_unsupported`. A mount's `repo` is a
+local path, read from `~/` or relative to the board; without a clone it
+degrades to `board::mount::repo_missing` until M8 (PLAN.md) adds remotes.
 
 A pointer at `dir/name.json` makes `/dir/name` its point: resolution continues
 through it. Only a plain `.json` record file is a pointer; a schema under
