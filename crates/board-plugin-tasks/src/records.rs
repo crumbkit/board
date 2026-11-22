@@ -67,7 +67,7 @@ pub struct TaskRecord {
     pub owner: Option<Actor>,
     /// The task in the same repo this one is part of, by path.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(schema_with = "task_ref")]
+    #[schemars(schema_with = "parent")]
     pub parent: Option<String>,
     /// Whether this is a `task`, as when it is left out, or a `project`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -118,6 +118,14 @@ fn defer(_: &mut SchemaGenerator) -> Schema {
 
 fn task_ref(_: &mut SchemaGenerator) -> Schema {
     json_schema!({"type": "string", "format": "board-ref", "x-board-type": TaskRecord::TYPE})
+}
+
+/// `parent` names the record a task is part of, which share reads as a
+/// whole whose back-refs a shared task brings.
+fn parent(generator: &mut SchemaGenerator) -> Schema {
+    let mut schema = task_ref(generator);
+    schema.insert("x-board-part-of".into(), true.into());
+    schema
 }
 
 fn file_ref(_: &mut SchemaGenerator) -> Schema {

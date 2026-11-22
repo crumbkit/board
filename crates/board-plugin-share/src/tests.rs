@@ -1,11 +1,13 @@
 //! The manifest parses as Board reads it and carries the skill's description,
 //! the record comparison, the refusal of index codes and the attachment
-//! scheme read as the Python plugin read them, and a capability the plugin
-//! does not offer is refused.
+//! scheme read as the Python plugin read them, a capability the plugin
+//! does not offer is refused, and a reference's pointer is resolved through
+//! a schema to tell a part-of field.
 
 use serde_json::json;
 
 use super::*;
+use closure::part_of;
 use to::{Line, capped, refused, same, scheme};
 
 /// A host that does nothing; each call here is refused before the plugin
@@ -242,4 +244,58 @@ fn a_capability_the_plugin_does_not_offer_is_refused_and_to_reaches_its_own_chec
 fn a_capped_list_keeps_the_first_entries_and_counts_them_all() {
     assert_eq!(capped(vec!["/a", "/b", "/c"], 2), (vec!["/a", "/b"], 3));
     assert_eq!(capped(vec!["/a"], 2), (vec!["/a"], 1));
+}
+
+/// A schema that marks `parent`, the items of `parts` and, through a local
+/// `$ref`, `whole`, as naming the record this one is part of, and leaves
+/// `after` unmarked.
+fn parts_schema() -> Value {
+    let marked = json!({"type": "string", "format": "board-ref", "x-board-part-of": true});
+    json!({
+        "$defs": {"Whole": marked, "Holder": {"type": "object", "properties": {"whole": {"$ref": "#/$defs/Whole"}}}},
+        "type": "object",
+        "properties": {
+            "parent": marked,
+            "after": {"type": "array", "items": {"type": "string", "format": "board-ref"}},
+            "parts": {"type": "array", "items": marked},
+            "holder": {"$ref": "#/$defs/Holder"},
+            "whole": {"$ref": "#/$defs/Whole", "description": "The whole."},
+        },
+    })
+}
+
+#[test]
+fn a_pointer_reaches_a_part_of_field_through_properties_items_and_a_local_ref() {
+    let schema = parts_schema();
+    for pointer in [
+        "/parent",
+        "/parts/0",
+        "/parts/12",
+        "/whole",
+        "/holder/whole",
+    ] {
+        assert!(part_of(&schema, pointer), "{pointer}");
+    }
+    for pointer in ["/after/0", "/parts", "/holder", ""] {
+        assert!(!part_of(&schema, pointer), "{pointer}");
+    }
+}
+
+#[test]
+fn a_pointer_that_reaches_no_field_schema_is_not_part_of() {
+    let schema = parts_schema();
+    for pointer in ["/missing", "/parent/0", "/parts/x", "/holder/missing"] {
+        assert!(!part_of(&schema, pointer), "{pointer}");
+    }
+    let dangling = json!({"properties": {"a": {"$ref": "#/$defs/None"}}});
+    assert!(!part_of(&dangling, "/a"));
+    let looping =
+        json!({"$defs": {"A": {"$ref": "#/$defs/A"}}, "properties": {"a": {"$ref": "#/$defs/A"}}});
+    assert!(!part_of(&looping, "/a"));
+    let remote = json!({"properties": {"a": {"$ref": "https://example.com/a"}}});
+    assert!(!part_of(&remote, "/a"));
+    let escaped = json!({"properties": {"a/b": {"x-board-part-of": true}}});
+    assert!(part_of(&escaped, "/a~1b"));
+    let not_true = json!({"properties": {"a": {"x-board-part-of": "yes"}}});
+    assert!(!part_of(&not_true, "/a"));
 }

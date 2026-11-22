@@ -26,11 +26,14 @@ The references a record's schema declares are followed, including those in
 a Markdown record's frontmatter, which is copied as text with its type's
 schema and checked again by the destination's `put`. Markdown links are
 followed, and so are back-refs: records whose typed reference names a shared
-entry, such as a project's decisions. Only shared entries collect back-refs.
-A path written in prose is not followed. A link or back-ref share cannot copy
-is listed, and a write refuses it unless allowed. A reference through a mount
-is not copied, because the mounted repository is not this board's to copy; it must resolve to the same
-repository in the destination, or the reader would meet a dangling reference.
+entry or a whole. A whole is what either names through a field its schema
+marks `x-board-part-of`, such as a task's `parent`, so a shared task brings
+its project's decisions but not its sibling tasks. Nothing else collects
+back-refs, or an eval would bring every record naming its suite. A link or back-ref share cannot copy is
+listed, and a write refuses it unless allowed. A reference through a mount is
+not copied; it must resolve to the same repository in the destination, or
+the reader would meet a dangling reference. One only back-refs make is
+listed as not copied instead.
 There is no flag to copy one dangling until a need shows. A link inside the
 set is refused, because `board get` reads through it and a batch would write a
 copy of its target in its place. A reference through a link is treated as one
@@ -79,9 +82,7 @@ mounted commit leaves files uncommitted in the mounted checkout. Board wrote
 them as canonical bytes, and a write through a mount admits a path whose
 working file equals the blob it writes, so running the share again finishes
 it too. If a shared file was changed in between, Board refuses with
-`board::mount::stale` naming it. A SIGKILL can leave `board.lock` and git's
-`index.lock` in the git directories of both repositories; the next put or sync
-in each clears the lock files Board left, so run the call again. A kill after Board rewrote the pin and before it committed the mount
+`board::mount::stale` naming it. A kill after Board rewrote the pin and before it committed the mount
 record leaves the record modified, and a second share finds nothing to copy.
 The plugin cannot finish that case: it reads git state only through Board,
 which does not report an uncommitted pin, and `board mount update` writes
