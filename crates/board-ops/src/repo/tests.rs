@@ -150,8 +150,8 @@ fn repo_add_from_a_clone_reads_its_origin_and_one_with_no_origin_or_a_local_one_
     let RepoAdded::Wrote { remote, .. } = added else {
         panic!("{added:?}");
     };
-    assert_eq!(remote.as_str(), "gitlab.com/Example-Org/App");
-    assert!(file(&scenario, "repositories/gitlab.com/Example-Org/App.json").is_some());
+    assert_eq!(remote.as_str(), "gitlab.com/example-org/app");
+    assert!(file(&scenario, "repositories/gitlab.com/example-org/app.json").is_some());
 }
 
 #[test]

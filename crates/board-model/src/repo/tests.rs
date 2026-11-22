@@ -133,6 +133,10 @@ fn a_repository_record_holds_only_its_remote_in_identity_form_and_its_twins_are_
     let cases = [
         (r#", "remote": "CrumbKit/Board""#, Some("crumbkit/board")),
         (
+            r#", "remote": "gitlab.com/Example-Org/App""#,
+            Some("gitlab.com/example-org/app"),
+        ),
+        (
             r#", "remote": "git@github.com:crumbkit/board.git""#,
             Some("crumbkit/board"),
         ),
