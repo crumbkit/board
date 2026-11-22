@@ -18,9 +18,9 @@ the board that holds or mounts it. The answer goes into one `prompt.context`
 block, which the engine sends in the first request and again after a
 compaction. A repository that no board holds gives `board::config::not_found`,
 and the mod then adds nothing. Any other failure is said in the block, with
-the command to run by hand. A budget over its max, a pin behind or an unreadable file is
-data in a passing answer, and the block says so beside the rule, such as
-"now 300 of 200 words, over budget".
+the command to run by hand. A budget over its max, a pin behind, a nonzero measure or an
+unreadable file is data in a passing answer, and the block says so beside
+the rule, such as "now 300 of 200 words, over budget".
 
 The mod's badges in the band above the prompt are described in
 [claude-code/band.md](claude-code/band.md).
@@ -44,5 +44,5 @@ stops lets the edit run as it would without the mod.
 ## Testing
 
 `claude plugin test plugins/rules/claude-code` runs the mod's tests, which
-stand in for git and Board. CI does not run them yet. The tests in
+stand in for git and Board. CI runs them. The tests in
 `crates/board-cli/src/tests/built_in/rules.rs` prove what `rules.check` and `rules.for-path` answer.

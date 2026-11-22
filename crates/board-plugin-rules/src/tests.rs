@@ -102,6 +102,18 @@ fn the_check_output_schema_admits_a_null_or_string_largest_and_refuses_a_number(
                 "over": [],
             }],
             "versions": [],
+            "zeros": [{
+                "rule": "/rules/old-path",
+                "requirement": "Delete the old path.",
+                "suite": "/suites/old-path-users",
+                "run": null,
+                "age_s": null,
+                "measures": [{"name": "remaining", "value": null}],
+                "state": "unreadable",
+                "code": "runs::suite::not_found",
+                "kind": "standing",
+                "show": "failing",
+            }],
             "stated": [],
             "read": [],
             "warnings": [],
@@ -421,7 +433,7 @@ fn a_capability_the_plugin_does_not_offer_is_refused_and_check_is_answered() {
     let answered = Rules.call(&host, &check, json!({})).unwrap();
     assert_eq!(
         answered,
-        json!({"passed": true, "measured": [], "versions": [], "stated": [], "read": [], "warnings": []})
+        json!({"passed": true, "measured": [], "versions": [], "zeros": [], "stated": [], "read": [], "warnings": []})
     );
 }
 
@@ -525,5 +537,76 @@ fn a_rule_whose_check_is_not_a_string_is_an_invalid_type_and_one_left_out_is_mis
                 .unwrap()
                 .clone()
         )
+    );
+}
+
+/// A `rules/rule/v1` record on `src/*` whose checker is `checker`.
+fn ruled(checker: Value) -> Value {
+    let mut rule = json!({
+        "$type": "rules/rule/v1",
+        "requirement": "R.",
+        "purpose": "P.",
+        "paths": ["src/*"],
+    });
+    rule["checker"] = checker;
+    rule
+}
+
+/// A zero checker on `/suites/old-path-users` with `fields` added.
+fn zero(fields: &Value) -> Value {
+    let base =
+        json!({"check": "zero", "suite": "/suites/old-path-users", "measures": ["remaining"]});
+    with(base, fields)
+}
+
+#[test]
+fn the_schema_refuses_a_zero_rule_with_no_measures_and_admits_one_with_one() {
+    let names = |count: usize| json!((0..count).map(|n| format!("m{n}")).collect::<Vec<_>>());
+    let measures = |value: Value| ruled(zero(&json!({"measures": value})));
+    pairs(
+        &shipped(RuleRecord::TYPE),
+        &[
+            (measures(json!([])), measures(json!(["remaining"]))),
+            (measures(names(9)), measures(names(8))),
+            (measures(json!([""])), measures(json!(["r"]))),
+            (
+                measures(json!(["r".repeat(65)])),
+                measures(json!(["r".repeat(64)])),
+            ),
+            (
+                measures(json!(["remaining", "remaining"])),
+                measures(json!(["remaining", "unknown"])),
+            ),
+            (
+                ruled(without(zero(&json!({})), "suite")),
+                ruled(zero(&json!({}))),
+            ),
+            (
+                ruled(zero(&json!({"suite": "suites/old-path-users"}))),
+                ruled(zero(&json!({}))),
+            ),
+            (
+                ruled(without(zero(&json!({})), "measures")),
+                ruled(zero(&json!({}))),
+            ),
+        ],
+    );
+}
+
+#[test]
+fn the_schema_refuses_within_days_of_0_and_admits_1() {
+    let within = |days: Value| ruled(zero(&json!({"within_days": days})));
+    pairs(
+        &shipped(RuleRecord::TYPE),
+        &[
+            (within(json!(0)), within(json!(1))),
+            (within(json!(366)), within(json!(365))),
+            (within(json!(1.5)), within(json!(2))),
+            // A zero rule's field under another kind.
+            (
+                ruled(json!({"check": "judged", "rubric": "/r.md", "within_days": 1})),
+                ruled(json!({"check": "judged", "rubric": "/r.md"})),
+            ),
+        ],
     );
 }

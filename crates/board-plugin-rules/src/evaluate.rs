@@ -1,5 +1,6 @@
 //! `evaluate`: check named parts of text against controls' budget, pattern,
-//! version and judged rules.
+//! version and judged rules. A zero rule reads a suite's runs, not text, so
+//! `evaluate` states it.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -47,7 +48,8 @@ pub(crate) struct Output {
 /// One control's verdict on one part.
 ///
 /// `status` is `skipped` for a judged rule when the part failed a budget or
-/// pattern rule, and `stated` for a control without a rule. `used` and `max`
+/// pattern rule, and `stated` for a control without a rule or with a zero
+/// rule, which reads runs, not text. `used` and `max`
 /// are null except in a budget result. `omitted` counts the findings left out
 /// past the first 20, and is null when none is.
 #[derive(Serialize, JsonSchema)]
@@ -150,7 +152,7 @@ pub(crate) fn evaluate(host: &dyn Host, input: &Value) -> Result<Value, PluginEr
         };
         for (part, text) in &parts {
             let result = match rule {
-                None => Some(stated(control, part)),
+                None => Some(stated(control, part, None)),
                 Some(Checker::Budget(budget)) => (budget.known())
                     .map(|(measure, _)| budgeted(control, part, text, measure, budget.max)),
                 Some(Checker::Pattern(pattern)) => {
@@ -172,6 +174,7 @@ pub(crate) fn evaluate(host: &dyn Host, input: &Value) -> Result<Value, PluginEr
                 Some(Checker::Version(_)) => floor
                     .as_ref()
                     .map(|(expression, rule)| floored(control, part, text, expression, rule)),
+                Some(Checker::Zero(_)) => Some(stated(control, part, Some(Check::Zero))),
                 Some(Checker::Judged(_) | Checker::Other(_)) => None,
             };
             if let Some(result) = result {
@@ -282,8 +285,8 @@ fn failed_if(found: bool) -> Status {
 }
 
 /// The result for a control without a rule, which never fails.
-fn stated(control: &str, part: &str) -> Evaluated {
-    result(control, part, None, Status::Stated, Vec::new(), 0)
+fn stated(control: &str, part: &str, checker: Option<Check>) -> Evaluated {
+    result(control, part, checker, Status::Stated, Vec::new(), 0)
 }
 
 /// The verdict of a budget on `text`, with what it used.

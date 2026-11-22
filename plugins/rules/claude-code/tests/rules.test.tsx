@@ -150,6 +150,29 @@ test('a version rule with pins behind and a budget over its max with an unreadab
   )
 })
 
+test('parseCheck shows a zero rule with its measures and run age', () => {
+  const zero = (fields: object) => ({
+    rule: '/rules/old-path',
+    requirement: 'Delete the old path once nothing uses it.',
+    suite: '/suites/old-path-users',
+    run: '/suites/old-path-users/runs/7',
+    age_s: 72000,
+    measures: [{ name: 'remaining', value: 3 }, { name: 'unknown', value: 0 }],
+    state: 'not_zero',
+    kind: 'standing',
+    show: 'failing',
+    ...fields,
+  })
+  const passing = zero({ rule: '/rules/old-flag', measures: [{ name: 'remaining', value: 0 }], state: 'zero', age_s: 600 })
+  const missing = zero({ rule: '/rules/old-api', run: null, age_s: null, measures: [{ name: 'remaining', value: null }], state: 'unreadable', code: 'runs::suite::not_found' })
+  const checked = parseCheck(ROOT, 0, report({ passed: false, measured: [], zeros: [zero({}), passing, missing], stated: [] }), '')
+  expect(checked === null ? null : contextText(checked)).toContain(
+    '- /rules/old-path: Delete the old path once nothing uses it. (now remaining 3, unknown 0 in /suites/old-path-users/runs/7, 20 h old)\n' +
+      '- /rules/old-flag: Delete the old path once nothing uses it. (now remaining 0 in /suites/old-path-users/runs/7, 10 min old)\n' +
+      '- /rules/old-api: Delete the old path once nothing uses it. (now /suites/old-path-users unreadable: runs::suite::not_found)',
+  )
+})
+
 test('the context block shows a rule with no checker as described, and a rule with one as plain', () => {
   const checked = parseCheck(ROOT, 0, report({ measured: [], stated: [DESCRIBED, README] }), '')
   expect(checked === null ? null : contextText(checked)).toContain(

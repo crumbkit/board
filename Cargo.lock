@@ -418,6 +418,7 @@ dependencies = [
  "board-model",
  "board-ops",
  "board-plugin",
+ "board-plugin-runs",
  "board-scenario",
  "board-validate",
  "pulldown-cmark",
