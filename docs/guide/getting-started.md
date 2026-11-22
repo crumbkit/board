@@ -33,7 +33,7 @@ project, a task, a question and an eval in your own board.
 - The skills Board installs are for Claude Code.
 - The installer adds Board's Claude Code mods only when it finds `claude`.
 
-## Install from the dmg
+## Install
 
 - Get the dmg from the person who shared Board with you.
 - Open the dmg, run Board.app and let it finish.
