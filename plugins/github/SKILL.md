@@ -142,6 +142,9 @@ its message, change what it names, and push again.
 - `github::release::asset_refused`: the `--assets` directory holds
   something other than regular files with plain names, a file over 2 GiB,
   or more than 100 files. Fix what the message names.
+- `github::release::stray_asset`: the draft being resumed holds a file
+  `--assets` lacks. Delete it from the draft on GitHub, or add it to the
+  directory.
 - `github::merge::change`: the `--change` path is not under `/changes/`.
   Run the merge in the board that holds the change, with `-C`.
 - `github::merge::gate`: the change is not in its land phase, or its land

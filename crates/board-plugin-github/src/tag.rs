@@ -16,6 +16,8 @@ use crate::send::{Delivered, origin, output};
 
 /// The compare statuses that put the target on the default branch.
 const MERGED: [&str; 2] = ["behind", "identical"];
+/// What gh prints when GitHub refuses a ref because it exists.
+const REF_EXISTS: &str = "Reference already exists";
 
 /// Create a new annotated tag on GitHub, once the boundary passes it.
 #[derive(Deserialize, JsonSchema)]
@@ -24,9 +26,9 @@ const MERGED: [&str; 2] = ["behind", "identical"];
 pub(crate) struct TagInput {
     /// The tag's name, such as v0.1.0: up to 100 letters, digits, `.`, `_`,
     /// `+` and `-`, starting with a letter or digit, with no `..` and not
-    /// ending in `.lock`.
+    /// ending in `.` or `.lock`, which git refuses.
     #[schemars(regex(pattern = r"^[0-9A-Za-z][0-9A-Za-z._+-]{0,99}$"))]
-    #[schemars(extend("not" = {"anyOf": [{"pattern": r"\.\."}, {"pattern": r"\.lock$"}]}))]
+    #[schemars(extend("not" = {"anyOf": [{"pattern": r"\.\."}, {"pattern": r"\.(lock)?$"}]}))]
     name: String,
     /// The commit to tag, as its full 40-hex SHA. It must be on the
     /// repository's default branch on GitHub.
@@ -68,7 +70,7 @@ pub(crate) fn tag(host: &dyn Host, input: &Value) -> Result<Value, PluginError> 
     } = PluginError::read_input("github", "tag", input)?;
     let place = origin(host)?;
     let (tagger_name, tagger_email) = tagger(host, &place.top)?;
-    let repository = format!("repos/{}/{}", place.owner, place.repo);
+    let repository = format!("repos/{}", place.repository());
     let fields = json!({"name": name, "target": target});
     if gh::api(host, &format!("{repository}/git/ref/tags/{name}"))?.is_some() {
         return Err(exists(&name, fields));
@@ -86,9 +88,9 @@ pub(crate) fn tag(host: &dyn Host, input: &Value) -> Result<Value, PluginError> 
         return Err(error(
             "github::tag::target_not_found",
             format!(
-                "GitHub has no commit {target} in {}/{}, so nothing was tagged; push and merge \
-                 it first, or give the SHA of a commit GitHub has",
-                place.owner, place.repo
+                "GitHub has no commit {target} in {}, so nothing was tagged; push and merge it \
+                 first, or give the SHA of a commit GitHub has",
+                place.repository()
             ),
             fields,
         ));
@@ -119,7 +121,7 @@ pub(crate) fn tag(host: &dyn Host, input: &Value) -> Result<Value, PluginError> 
         "type": "commit",
         "tagger": {"name": tagger_name, "email": tagger_email},
     });
-    let made = gh::post(host, &format!("{repository}/git/tags"), &body, "422")?;
+    let made = gh::post(host, &format!("{repository}/git/tags"), &body, None)?;
     let object = (made.as_ref())
         .and_then(|made| made.get("sha"))
         .and_then(Value::as_str)
@@ -131,14 +133,15 @@ pub(crate) fn tag(host: &dyn Host, input: &Value) -> Result<Value, PluginError> 
         ));
     };
     let reference = json!({"ref": format!("refs/tags/{name}"), "sha": object});
-    // GitHub refuses a ref that exists with 422, so a tag made meanwhile is
-    // never moved.
-    if gh::post(host, &format!("{repository}/git/refs"), &reference, "422")?.is_none() {
+    // GitHub refuses a ref that exists, so a tag made meanwhile is never
+    // moved. Its other refusals carry GitHub's message.
+    let refs = format!("{repository}/git/refs");
+    if gh::post(host, &refs, &reference, Some(REF_EXISTS))?.is_none() {
         return Err(exists(&name, fields));
     }
     let url = format!(
-        "https://github.com/{}/{}/releases/tag/{name}",
-        place.owner, place.repo
+        "https://github.com/{}/releases/tag/{name}",
+        place.repository()
     );
     let Delivered {
         digest,

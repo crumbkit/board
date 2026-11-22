@@ -136,14 +136,14 @@ result it recorded.
   annotated tag through GitHub's git data API. It runs no `git push`, so
   the pre-push hook does not run, and it reads no history.
   - `--name` matches `^[0-9A-Za-z][0-9A-Za-z._+-]{0,99}$`, holds no `..`
-    and does not end in `.lock`. `--target` is a full 40-hex SHA.
+    and does not end in `.` or `.lock`. `--target` is a full 40-hex SHA.
   - The tagger is the checkout's `git config user.name` and `user.email`.
   - Before the check, it reads `git/ref/tags/<name>`, which must be 404,
     and `compare/<default branch>...<target>`, whose status must be
     `behind` or `identical`.
   - After the check, it posts the tag object to `git/tags` and the ref to
-    `git/refs`. GitHub answers 422 when the ref exists, so a tag is never
-    moved.
+    `git/refs`. GitHub refuses a ref that exists, so a tag is never moved.
+    Its other refusals fail with GitHub's message.
   - It returns `name`, `target` and `object`, the tag object's SHA. `sent`
     is the tag's page. `note` gives `git fetch origin tag <name>`.
 - `release-create --tag <tag> [--title <t>] --notes <markdown> [--assets <directory>]`
@@ -154,11 +154,14 @@ result it recorded.
   - Before the check, it reads `git/ref/tags/<tag>` and
     `gh release view <tag> --json isDraft,assets,url`.
   - With no release, it runs `gh release create --verify-tag --draft`, so
-    gh never creates the tag. With a draft, it resumes it.
+    gh never creates the tag. With a draft, it resumes it, unless the
+    draft holds a file `--assets` lacks.
   - It uploads each file the draft lacks with `gh release upload
-    --clobber`, 600 seconds each. A file on the draft with the same name,
+    --clobber`, 600 seconds each, run in the `--assets` directory with the
+    file's bare name. A file on the draft with the same name,
     the same size and state `uploaded` is skipped.
-  - It publishes with `gh release edit --draft=false`.
+  - It publishes with `gh release edit --draft=false` and the checked
+    title and notes, which replace a resumed draft's.
   - It returns `tag`, `assets` and `resumed`. `sent` is the release's page.
   - A draft left by an abandoned run is visible to the repository's
     writers. A rerun publishes it; `gh release delete <tag>` removes it.
@@ -350,8 +353,8 @@ Refusals:
   request was not opened, and that running `pr-create` again opens it.
 - `github::remote::unknown`: a URL could reach GitHub, but the plugin cannot
   tell which repository it names.
-- `github::tag::exists`: GitHub has the tag, found by the read or by a 422
-  from `git/refs`.
+- `github::tag::exists`: GitHub has the tag, found by the read or by
+  `git/refs` answering "Reference already exists".
 - `github::tag::target_not_merged`: the target is not on the default
   branch. `fields.status` is GitHub's compare status.
 - `github::tag::target_not_found`: GitHub has no such commit.
@@ -361,6 +364,9 @@ Refusals:
 - `github::release::asset_refused`: the `--assets` directory cannot be read,
   holds something other than a regular file with a plain name, a file over
   2 GiB, or more than 100 files.
+- `github::release::stray_asset`: the draft being resumed holds a file the
+  `--assets` directory lacks, which the boundary never checked.
+  `fields.asset` names it.
 - `github::push::not_commit`: the pre-push hook found a ref whose object is a
   tree or a blob, which it cannot check as commits.
 - `github::git::not_utf8`: a commit changes a file git counts as text whose

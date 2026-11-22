@@ -14,7 +14,8 @@ use super::desk::{Desk, digest, executable, put_bytes, put_file};
 use super::*;
 
 /// The stub gh. Each run appends its arguments, joined by spaces, as one
-/// line of `gh-log.txt` and keeps its stdin in `gh-stdin-<n>.txt`. Then the
+/// line of `gh-log.txt` and keeps its stdin in `gh-stdin-<n>.txt` and its
+/// working directory in `gh-pwd-<n>.txt`. Then the
 /// first rule in `rules/` whose `pattern`, a shell glob, matches the
 /// arguments prints its `out` and `err` and exits with its `exit`.
 const GH: &str = r#"#!/bin/sh
@@ -22,6 +23,7 @@ here="$(dirname "$0")"
 printf '%s\n' "$*" >> "$here/gh-log.txt"
 n=$(wc -l < "$here/gh-log.txt" | tr -d ' ')
 cat > "$here/gh-stdin-$n.txt"
+pwd -P > "$here/gh-pwd-$n.txt"
 for rule in "$here"/rules/*; do
   [ -e "$rule/pattern" ] || continue
   pattern=$(cat "$rule/pattern")
@@ -143,6 +145,11 @@ fn reads(target: &str) -> Vec<String> {
     ]
 }
 
+/// The working directory of the stub gh's run numbered `n`, from 1.
+fn pwd(desk: &Desk, n: usize) -> std::path::PathBuf {
+    desk.gh_file(&format!("gh-pwd-{n}.txt")).trim().into()
+}
+
 /// The code of a call that failed.
 fn code_of((ran, document): (Output, Value)) -> Value {
     assert_eq!(ran.code, 1, "{document}");
@@ -248,6 +255,38 @@ fn a_ref_made_after_the_read_is_refused_as_existing_and_never_moved_and_a_free_o
 }
 
 #[test]
+fn githubs_other_refusals_of_the_tag_object_or_the_ref_carry_its_message_and_not_exists() {
+    let desk = desk();
+    let target = desk.head();
+    let flags = tag_flags(&target, "Widgets 1.0");
+    let refusals = [
+        (
+            "git/tags",
+            "gh: Validation Failed: tagger.email is invalid (HTTP 422)",
+        ),
+        ("git/refs", "gh: Reference update failed (HTTP 422)"),
+    ];
+    for (endpoint, said) in refusals {
+        reset(&desk);
+        let pattern = format!("api --method POST repos/octo/widgets/{endpoint} --input -");
+        answer(&desk, &pattern, 1, "", said);
+        taggable(&desk);
+        let (ran, document) = desk.call("tag", &flags);
+        assert_eq!(
+            code_of((ran, document.clone())),
+            "github::gh::failed",
+            "{endpoint}"
+        );
+        let message = document["message"].as_str().unwrap();
+        let github = said.trim_start_matches("gh: ");
+        assert!(message.contains(github), "{endpoint}: {message}");
+    }
+    reset(&desk);
+    taggable(&desk);
+    assert_eq!(desk.output("tag", &flags)["object"], OBJECT);
+}
+
+#[test]
 fn a_target_not_on_the_default_branch_is_refused_and_one_identical_to_it_is_tagged() {
     let desk = desk();
     let target = desk.head();
@@ -326,6 +365,7 @@ fn an_abbreviated_target_or_an_invalid_name_is_refused_by_board_and_their_twins_
         ".v1",
         "_v1",
         "v1..0",
+        "v1.",
         "v1.lock",
         "v 1",
         "v1/0",
@@ -338,6 +378,7 @@ fn an_abbreviated_target_or_an_invalid_name_is_refused_by_board_and_their_twins_
     for name in [
         TAG,
         "v1.0.0-rc.1+build.2",
+        "v1.0",
         "release_7.lockdown",
         longest.as_str(),
     ] {
@@ -450,10 +491,22 @@ const RELEASE_FLAGS: [&str; 8] = [
     "dist",
 ];
 
-/// The run of `gh release <verb>` for `tag` in the stub's log, without its
-/// file.
+/// The run of `gh release <verb>` for `tag` in the stub's log.
 fn release(verb: &str, rest: &str) -> String {
     format!("release {verb} {TAG} --repo octo/widgets{rest}")
+}
+
+/// The run of `gh release upload` of the file `name`.
+fn upload(name: &str) -> String {
+    release("upload", &format!(" {name} --clobber"))
+}
+
+/// The run of `gh release edit` that publishes the draft titled `title`.
+fn publish(title: &str) -> String {
+    release(
+        "edit",
+        &format!(" --draft=false --title {title} --notes-file -"),
+    )
 }
 
 #[test]
@@ -470,18 +523,15 @@ fn release_create_drafts_uploads_each_file_then_publishes_and_records_the_crossi
             "api repos/octo/widgets/git/ref/tags/v1.0.0".to_owned(),
             release("view", view),
             release("create", create),
-            format!(
-                "release upload {TAG} {} --repo octo/widgets --clobber",
-                dist.join("SHA256SUMS").display()
-            ),
-            format!(
-                "release upload {TAG} {} --repo octo/widgets --clobber",
-                dist.join("widgets.dmg").display()
-            ),
-            release("edit", " --draft=false"),
+            upload("SHA256SUMS"),
+            upload("widgets.dmg"),
+            publish("Widgets 1.0"),
         ]
     );
     assert_eq!(stdin(&desk, 3), "It turns.");
+    assert_eq!(stdin(&desk, 6), "It turns.");
+    let dist = dist.canonicalize().unwrap();
+    assert_eq!((pwd(&desk, 4), pwd(&desk, 5)), (dist.clone(), dist));
     let parts = json!({
         "release.assets": "SHA256SUMS\nwidgets.dmg",
         "release.notes": "It turns.",
@@ -642,7 +692,7 @@ fn a_rerun_after_a_failed_upload_resumes_the_draft_skips_the_file_uploaded_and_p
     let dist = dist(&desk);
     answer(
         &desk,
-        "release upload * */widgets.dmg *",
+        "release upload * widgets.dmg *",
         1,
         "",
         "upload timed out",
@@ -674,11 +724,8 @@ fn a_rerun_after_a_failed_upload_resumes_the_draft_skips_the_file_uploaded_and_p
         log(&desk)[1..],
         [
             release("view", " --json isDraft,assets,url"),
-            format!(
-                "release upload {TAG} {} --repo octo/widgets --clobber",
-                dist.join("widgets.dmg").display()
-            ),
-            release("edit", " --draft=false"),
+            upload("widgets.dmg"),
+            publish("Widgets 1.0"),
         ]
     );
     assert_eq!(
@@ -690,7 +737,7 @@ fn a_rerun_after_a_failed_upload_resumes_the_draft_skips_the_file_uploaded_and_p
 #[test]
 fn a_draft_file_of_another_size_is_uploaded_again() {
     let desk = desk();
-    let dist = dist(&desk);
+    dist(&desk);
     let draft = json!({
         "isDraft": true,
         "url": "https://github.com/octo/widgets/releases/tag/untagged-1a2b",
@@ -705,14 +752,64 @@ fn a_draft_file_of_another_size_is_uploaded_again() {
     let uploads: Vec<String> = (log(&desk).into_iter())
         .filter(|line| line.starts_with("release upload"))
         .collect();
-    let sums = dist.join("SHA256SUMS");
+    assert_eq!(uploads, [upload("SHA256SUMS")]);
+}
+
+#[test]
+fn a_draft_holding_a_file_the_assets_lack_is_refused_and_one_without_it_is_published_as_checked() {
+    let desk = desk();
+    dist(&desk);
+    // A draft made elsewhere, with its own notes and a file Board never saw.
+    let draft = |assets: Value| {
+        json!({
+            "isDraft": true,
+            "name": "Old title",
+            "body": "Notes nobody checked.",
+            "url": "https://github.com/octo/widgets/releases/tag/untagged-1a2b",
+            "assets": assets,
+        })
+        .to_string()
+    };
+    let extra = json!([{"name": "acme-notes.txt", "size": 9, "state": "uploaded"}]);
+    answer(&desk, "release view *", 0, &draft(extra), "");
+    releasable(&desk);
+    let (ran, document) = desk.call("release-create", &RELEASE_FLAGS);
     assert_eq!(
-        uploads,
-        [format!(
-            "release upload {TAG} {} --repo octo/widgets --clobber",
-            sums.display()
-        )]
+        code_of((ran, document.clone())),
+        "github::release::stray_asset"
     );
+    assert_eq!(document["fields"]["asset"], "acme-notes.txt");
+    let wrote = (log(&desk).iter()).any(|line| {
+        ["release upload", "release edit"]
+            .iter()
+            .any(|verb| line.starts_with(verb))
+    });
+    assert!(!wrote, "{:?}", log(&desk));
+    reset(&desk);
+    answer(&desk, "release view *", 0, &draft(json!([])), "");
+    releasable(&desk);
+    let result = desk.output("release-create", &RELEASE_FLAGS);
+    assert_eq!(result["resumed"], true);
+    let ran = log(&desk);
+    assert_eq!(ran.last(), Some(&publish("Widgets 1.0")));
+    assert_eq!(stdin(&desk, ran.len()), "It turns.");
+}
+
+#[test]
+fn an_asset_directory_whose_path_holds_a_hash_uploads_each_file_by_its_bare_name() {
+    let desk = desk();
+    releasable(&desk);
+    let dist = desk.checkout().join("dist#2");
+    put_file(&dist.join("widgets.dmg"), "x");
+    let flags = ["--tag", TAG, "--notes", "It turns.", "--assets", "dist#2"];
+    let result = desk.output("release-create", &flags);
+    assert_eq!(result["assets"], json!(["widgets.dmg"]));
+    let ran = log(&desk);
+    let at = ran
+        .iter()
+        .position(|line| line.starts_with("release upload"));
+    assert_eq!(ran[at.unwrap()], upload("widgets.dmg"));
+    assert_eq!(pwd(&desk, at.unwrap() + 1), dist.canonicalize().unwrap());
 }
 
 #[test]

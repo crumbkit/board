@@ -133,12 +133,14 @@ pub(crate) fn exit(
 }
 
 /// The object GitHub answers `gh api --method POST <endpoint>` with `body`,
-/// or none when GitHub answers with HTTP status `refused`, such as 422.
+/// or none when gh fails saying `refused`, such as "Reference already
+/// exists". Any other failure carries the end of gh's stderr, which holds
+/// GitHub's message.
 pub(crate) fn post(
     host: &dyn Host,
     endpoint: &str,
     body: &Value,
-    refused: &str,
+    refused: Option<&str>,
 ) -> Result<Option<Map<String, Value>>, PluginError> {
     let named = format!("gh api --method POST {endpoint}");
     let arguments = ["api", "--method", "POST", endpoint, "--input", "-"].map(str::to_owned);
@@ -146,7 +148,7 @@ pub(crate) fn post(
     let stderr = String::from_utf8_lossy(&exited.stderr);
     let stderr = stderr.trim();
     if exited.code != Some(0) {
-        if stderr.contains(&format!("(HTTP {refused})")) {
+        if refused.is_some_and(|refused| stderr.contains(refused)) {
             return Ok(None);
         }
         return Err(unsent(&named, &exited_with(&exited, stderr)));
