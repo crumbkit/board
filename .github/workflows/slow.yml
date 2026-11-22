@@ -152,12 +152,16 @@ jobs:
   # rust-toolchain.toml pins. ci.yml runs only a newer git, so a flag newer
   # than 2.39 fails here, on the first night main has it or at release.
   # Container jobs run as root, which reads files a test made unreadable, so
-  # the tests run as an unprivileged user.
+  # the tests run as an unprivileged user. The container's own first process
+  # never reaps an orphan, so a process a test killed would stay a zombie
+  # that still counts as running; --init starts one that reaps them.
   git-floor:
     needs: base
     if: needs.base.outputs.run == 'true'
     runs-on: ubuntu-24.04
-    container: rust:1.99.1-bookworm
+    container:
+      image: rust:1.99.1-bookworm
+      options: --init
     timeout-minutes: 45
     steps:
       - run: git --version
