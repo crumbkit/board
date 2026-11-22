@@ -123,3 +123,121 @@ fn an_invalid_repo_record_is_degraded_and_its_valid_twin_is_ok() {
     );
     assert_eq!(status(&scenario, "repos/good.json"), Status::Ok);
 }
+
+fn repository(remote: &str) -> String {
+    format!(r#"{{"$type": "board/repo/v2", "remote": "{remote}"}}"#)
+}
+
+#[test]
+fn a_repository_record_at_its_identity_path_is_ok_and_one_elsewhere_names_the_path_it_belongs_at() {
+    let scenario = board();
+    scenario
+        .write(
+            "repositories/crumbkit/board.json",
+            Item::File(&repository("crumbkit/board")),
+        )
+        .write(
+            "repositories/crumbkit/other.json",
+            Item::File(&repository("crumbkit/board")),
+        )
+        .write(
+            "repositories/Acme/App.json",
+            Item::File(&repository("acme/app")),
+        );
+    assert_eq!(
+        status(&scenario, "repositories/crumbkit/board.json"),
+        Status::Ok
+    );
+    for (misplaced, remote) in [
+        ("repositories/crumbkit/other.json", "crumbkit/board"),
+        ("repositories/Acme/App.json", "acme/app"),
+    ] {
+        assert_eq!(
+            status(&scenario, misplaced),
+            Status::Degraded(Code::RepoPathMismatch),
+            "{misplaced}"
+        );
+        let (_, reason, _) = detail(&scenario, misplaced).unwrap();
+        assert_eq!(
+            reason,
+            format!(
+                "names the repository {remote}, whose record belongs at /repositories/{remote}"
+            )
+        );
+    }
+}
+
+#[test]
+fn a_repository_record_not_in_identity_form_or_with_another_field_is_invalid_and_names_the_identity()
+ {
+    let scenario = board();
+    scenario
+        .write(
+            "repositories/crumbkit/board.json",
+            Item::File(&repository("CrumbKit/Board")),
+        )
+        .write(
+            "repositories/crumbkit/app.json",
+            Item::File(r#"{"$type": "board/repo/v2", "remote": "crumbkit/app", "branch": "main"}"#),
+        )
+        .write(
+            "repositories/crumbkit/ok.json",
+            Item::File(&repository("crumbkit/ok")),
+        );
+    let invalid = Status::Degraded(Code::RepoInvalid);
+    assert_eq!(
+        status(&scenario, "repositories/crumbkit/board.json"),
+        invalid
+    );
+    assert_eq!(status(&scenario, "repositories/crumbkit/app.json"), invalid);
+    assert_eq!(
+        status(&scenario, "repositories/crumbkit/ok.json"),
+        Status::Ok
+    );
+    let (_, reason, _) = detail(&scenario, "repositories/crumbkit/board.json").unwrap();
+    assert!(
+        reason.contains("its identity form is `crumbkit/board`"),
+        "{reason}"
+    );
+    let (_, reason, _) = detail(&scenario, "repositories/crumbkit/app.json").unwrap();
+    assert!(reason.contains("unknown field `branch`"), "{reason}");
+}
+
+#[test]
+fn a_reference_to_a_repository_record_in_a_mounted_board_dangles_until_that_board_holds_its_own_copy()
+ {
+    let pull = r#"{"type": "object", "properties": {"repository": {"type": "string", "format": "board-ref", "x-board-type": "board/repo/v2"}}}"#;
+    let team_files = [
+        (".board/board.json", r#"{"$type": "board/config/v1"}"#),
+        (".board/types/lr/pull/v1.schema.json", pull),
+        (
+            "pulls/a.json",
+            r#"{"$type": "lr/pull/v1", "repository": "/repositories/crumbkit/board"}"#,
+        ),
+    ];
+    let team = Scenario::new();
+    let first = team.commit(&team_files);
+    let scenario = board();
+    scenario
+        .write(
+            "repositories/crumbkit/board.json",
+            Item::File(&repository("crumbkit/board")),
+        )
+        .write(
+            "team.json",
+            Item::File(&board_scenario::seed::mount_of(&team.path(), first)),
+        );
+    assert_eq!(
+        status(&scenario, "pulls/a.json"),
+        Status::Degraded(Code::RefDangling)
+    );
+    let copy = repository("crumbkit/board");
+    let mut files = team_files.to_vec();
+    files.push(("repositories/crumbkit/board.json", &copy));
+    let second = team.commit(&files);
+    scenario.write(
+        "team.json",
+        Item::File(&board_scenario::seed::mount_of(&team.path(), second)),
+    );
+    assert_eq!(status(&scenario, "pulls/a.json"), Status::Ok);
+}

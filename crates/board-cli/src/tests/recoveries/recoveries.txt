@@ -329,6 +329,14 @@ board check /repos/again
   fails with board::repo::duplicate_remote
   hint
 
+board check /repositories/example-org/d
+  fails with board::repo::invalid
+  hint
+
+board check /repositories/example-org/elsewhere
+  fails with board::repo::path_mismatch
+  hint
+
 board check /symlink/dangling
   fails with board::symlink::dangling
   hint
@@ -918,6 +926,18 @@ board skills install --dir skills
 
 board skills install --dir file
   fails with board::skills::write_failed
+  hint
+
+board repo add /srv/git/app.git
+  fails with board::repo::local_remote
+  hint
+
+board repo add gitlab.com/group/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  fails with board::repo::too_long
+  hint
+
+board repo add --from .
+  fails with board::mount::no_remote
   hint
 
 codes that no start provokes:

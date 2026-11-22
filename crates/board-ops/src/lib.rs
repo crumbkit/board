@@ -22,6 +22,7 @@ mod put;
 mod query;
 mod read;
 mod refs;
+pub mod repo;
 mod snapshot;
 mod sync;
 mod trace;

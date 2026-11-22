@@ -16,6 +16,7 @@ mod history;
 mod lookup;
 mod mount;
 mod remove;
+mod repo;
 mod syncing;
 mod uri;
 
@@ -42,6 +43,7 @@ use crate::timing::Ran;
 use crate::values::{duration, expect, var};
 use crate::{effects, graft};
 use mount::MountCommand;
+use repo::RepoCommand;
 
 const ROOT_EXAMPLES: &str = "\
 Start here:
@@ -276,6 +278,9 @@ Examples:
     /// Work with mounts.
     #[command(subcommand, after_help = mount::HELP)]
     Mount(MountCommand),
+    /// Work with repository records.
+    #[command(subcommand, after_help = repo::HELP)]
+    Repo(RepoCommand),
     /// Work with plugins.
     #[command(
         subcommand,
@@ -588,7 +593,10 @@ fn ask(board: &mut Board, context: &Context, command: &Command) -> Result<(), Bo
         board.mark_bulk(Bulk::new(reason).map_err(|error| Box::new(error.refusal()))?);
     }
     let personal = match command {
-        Command::Put(_) | Command::Rm(_) | Command::Mount(MountCommand::Add { .. }) => false,
+        Command::Put(_)
+        | Command::Rm(_)
+        | Command::Mount(MountCommand::Add { .. })
+        | Command::Repo(_) => false,
         Command::Decide(_) => context.environment.plugin.is_some(),
         _ => return Ok(()),
     };
@@ -656,6 +664,7 @@ fn command(
         Command::Rm(asked) => remove::remove(board, printer, prefix, asked),
         Command::Sync(asked) => syncing::run(board, printer, &asked),
         Command::Mount(asked) => mount::run(board, printer, &context.start, asked),
+        Command::Repo(asked) => repo::run(board, printer, &context.start, asked),
         Command::Refs(asked) => {
             let paths = or_refuse!(at(&asked.paths, "refs"));
             lookup::refs(printer, board, context, &asked, &paths, &behind)

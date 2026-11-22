@@ -2592,5 +2592,6 @@ mod refs;
 mod refused;
 mod relative;
 mod released;
+mod repo;
 mod sync;
 mod types;

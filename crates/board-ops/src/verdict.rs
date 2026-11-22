@@ -4,7 +4,8 @@
 
 use board_model::{
     ATTACHMENT_TYPE, Attachment, BINDING_TYPE, Binding, CONFIG_TYPE, CONFLICT_TYPE, Classified,
-    Code, Conflict, Content, Fields, MANIFEST_TYPE, RecordType, Role, UiError, effect_record,
+    Code, Conflict, Content, Fields, MANIFEST_TYPE, REPOSITORY_TYPE, RecordType, RepositoryError,
+    RepositoryRecord, Role, UiError, effect_record,
 };
 use board_plugin::{Manifest, ManifestError};
 use board_tree::Refused;
@@ -33,6 +34,10 @@ pub enum Fault {
     },
     #[error(transparent)]
     Ui(#[from] UiError),
+    /// A repository record whose fields or `remote` are not as its type
+    /// says, with the value that would be.
+    #[error(transparent)]
+    Repository(#[from] RepositoryError),
     /// A record of a user's type with no usable schema at its schema path.
     #[error("{}", match found {
         SchemaFound::Missing => format!("no schema for {record_type} at {}", record_type.schema_path()),
@@ -55,6 +60,7 @@ impl Fault {
             Self::Record(error) => error.code(),
             Self::Core { .. } => Code::RecordInvalid,
             Self::Ui(error) => error.code(),
+            Self::Repository(error) => error.code(),
             Self::NoSchema { found, .. } => match found {
                 SchemaFound::Missing => Code::RecordUnknownType,
                 SchemaFound::Unreadable => Code::RepoUnreadable,
@@ -86,6 +92,10 @@ impl Fault {
             },
             Self::Core { record_type, .. } => Fields {
                 record_type: Some(record_type.clone()),
+                ..Fields::default()
+            },
+            Self::Repository(_) => Fields {
+                record_type: REPOSITORY_TYPE.parse().ok(),
                 ..Fields::default()
             },
             Self::Code(_) | Self::Manifest(_) | Self::Schema(_) => Fields::default(),
@@ -143,6 +153,10 @@ pub(crate) fn judge(classified: &Classified) -> Result<Option<Schema>, Fault> {
             Attachment::from_value(value)
                 .map(|_| None)
                 .map_err(|_| Fault::Code(Code::RecordInvalid))
+        }
+        Content::Record { record_type, value } if record_type.as_str() == REPOSITORY_TYPE => {
+            RepositoryRecord::from_value(value)?;
+            Ok(None)
         }
         Content::Record { record_type, value } if record_type.as_str() == CONFLICT_TYPE => {
             Conflict::from_value(value)

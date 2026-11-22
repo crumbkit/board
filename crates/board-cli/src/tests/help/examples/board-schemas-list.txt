@@ -10,6 +10,7 @@ board/uri-report/v2             output  document  A record's board:// URI and it
 board/put-report/v2             output  document  What each write wrote or removed, and its commit.
 board/sync-report/v3            output  document  What a sync fetched, merged and pushed, and where HEAD moved.
 board/mount-update-report/v2    output  document  Where a mount moved from and to.
+board/repo-add-report/v2        output  document  The repository record's path and remote, whether it was written, and its commit.
 board/plugin-list-report/v2     output  document  The installed and enabled plugins.
 board/plugin-find-report/v2     output  document  The installed capabilities, or those that match every filter given.
 board/plugin-enable-report/v2   output  document  What enabling a plugin wrote.
@@ -23,4 +24,3 @@ board/ui-template-report/v2     output  document  A slot's fill for a component 
 board/ui-open-report/v2         output  document  The page opened, and whether its server was started.
 board/skills-install-report/v2  output  document  What install wrote, updated, left unchanged, removed, kept or backed up in a skills directory.
 board/skills-list-report/v2     output  document  Each skill this binary ships and each Board folder in a skills directory, with its state.
-board/completion-install/v1     output  document  What install did with the shell's completion file: written, unchanged, skipped or failed.

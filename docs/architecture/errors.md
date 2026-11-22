@@ -1,7 +1,6 @@
 # Errors
 
-This file holds detail for docs/architecture.md. It lists the codes and the
-values an error names.
+This file lists the codes and the values an error names.
 
 ## Codes
 
@@ -16,9 +15,9 @@ The codes, which change as STANDARDS.md 3 and 4 say:
 | `schema` | `invalid`, `differs` |
 | `ref` | `malformed`, `dangling`, `wrong_type` |
 | `path` | `malformed`, `shadowed`, `case_collision`, `not_found` |
-| `repo` | `unreadable`, `submodule`, `duplicate_remote` |
+| `repo` | `unreadable`, `submodule`, `duplicate_remote`, `local_remote`, `invalid`, `path_mismatch`, `too_long` |
 | `symlink` | `outside`, `loop`, `dangling`; see docs/architecture/paths/symlinks.md |
-| `mount` | `invalid`, `repo_missing`, `commit_missing`, `remote_unsupported`, `follow_missing`, `not_ancestor`, `stale`, `cycle` |
+| `mount` | `invalid`, `repo_missing`, `commit_missing`, `remote_unsupported`, `follow_missing`, `not_ancestor`, `stale`, `cycle`, `no_remote` |
 | `resolve` | `cycle`, `too_many_hops` |
 | `index` | `failed`: the disposable index could not be used, even in memory |
 | `query` | `invalid`: the SQL does not parse, would write, or is more than one statement |

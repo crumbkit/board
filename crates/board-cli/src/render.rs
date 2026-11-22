@@ -62,6 +62,7 @@ pub(crate) const LEAVES: &[Leaf] = &[
         .effects(ADDS.open_world()),
     Leaf::new(&["mount", "add"]).document(PUT).effects(ADDS),
     (Leaf::new(&["mount", "update"]).document(MOUNT_UPDATE)).effects(CHANGES.idempotent()),
+    (Leaf::new(&["repo", "add"]).document(REPO_ADD)).effects(ADDS.idempotent()),
     plugins::LIST.effects(READS),
     plugins::FIND.effects(READS),
     (Leaf::new(&["plugin", "enable"]).document(ENABLE)).effects(ADDS.idempotent()),
@@ -135,7 +136,7 @@ pub(crate) const GOALS: Group = Group::new(
         ),
         Goal::new(
             "These commands follow remotes and mounts",
-            &["sync", "mount"],
+            &["sync", "mount", "repo"],
         ),
         Goal::new(
             "These commands find and run plugins and install skills",
@@ -176,6 +177,10 @@ const PUT: Document<Answer> = prose(
 const ENABLE: Document<Answer> = prose("plugin-enable-report", "What enabling a plugin wrote.");
 const MOUNT_UPDATE: Document<Answer> =
     prose("mount-update-report", "Where a mount moved from and to.");
+const REPO_ADD: Document<Answer> = prose(
+    "repo-add-report",
+    "The repository record's path and remote, whether it was written, and its commit.",
+);
 const URI: Document<Answer> = prose("uri-report", "A record's board:// URI and its path.");
 /// The sync report is at version 3: `replayed` gave way to `merged`,
 /// `conflicts`, `pins` and `failing`. Nothing reads version 2.
@@ -563,6 +568,32 @@ pub(crate) fn mount_update(printer: Printer, report: &MountUpdateReport) -> Outp
         "wrote": report.wrote,
     });
     printer.print(MOUNT_UPDATE, Ok(said(value, text)))
+}
+
+/// `repo add`: the record's path, and whether it was written or was there
+/// already.
+pub(crate) fn repo_add(printer: Printer, added: &board_ops::repo::RepoAdded) -> Output {
+    use board_ops::repo::RepoAdded;
+    let remote = added.remote();
+    let (wrote, commit) = match added {
+        RepoAdded::Wrote { report, .. } => (true, report.commit),
+        RepoAdded::Unchanged { .. } => (false, None),
+    };
+    let mut text = if wrote {
+        format!("wrote {}\n", remote.path())
+    } else {
+        format!("unchanged {}: the record is there already\n", remote.path())
+    };
+    if let Some(commit) = commit {
+        let _ = writeln!(text, "commit {commit}");
+    }
+    let value = json!({
+        "path": remote.path().to_string(),
+        "remote": remote.as_str(),
+        "wrote": wrote,
+        "commit": commit.map(|commit| commit.to_string()),
+    });
+    printer.print(REPO_ADD, Ok(said(value, text)))
 }
 
 /// `sync`: as text, a line for the fetch, the merge, each conflict and pin, the push

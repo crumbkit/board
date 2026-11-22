@@ -1137,8 +1137,40 @@ fn starts(twins: bool) -> Starts {
     effects(&mut starts);
     syncing(&mut starts);
     installing_skills(&mut starts);
+    adding_repositories(&mut starts);
     starts
 }
+
+/// `repo add` of a local path, of a name too long for a record's path, and
+/// from a clone with no origin, each beside a twin one word apart that
+/// writes the record.
+fn adding_repositories(starts: &mut Starts) {
+    let scenario = board();
+    identified(&scenario);
+    let place = starts.keep(scenario);
+    let long = format!("repo add gitlab.com/group/{}", "a".repeat(251));
+    for (code, refused, admitted) in [
+        (
+            Code::RepoLocalRemote,
+            "repo add /srv/git/app.git",
+            "repo add example-org/app",
+        ),
+        (
+            Code::RepoTooLong,
+            long.as_str(),
+            "repo add gitlab.com/group/app",
+        ),
+    ] {
+        starts.add(&place, code, refused);
+        starts.pair(&place, code, refused, admitted);
+    }
+    // The board's own clone has no origin.
+    starts.add(&place, Code::MountNoRemote, "repo add --from .");
+    starts.untwinned(&place, Code::MountNoRemote, "repo add --from .", NO_ORIGIN);
+}
+
+/// Why `mount::no_remote` has no twin here.
+const NO_ORIGIN: &str = "the clone's git config, which no word of the line names, lacks an origin; repo_add_from_a_clone_with_no_origin_is_refused_and_one_with_an_origin_writes_its_record in board-cli/src/tests/repo.rs pairs the code";
 
 /// Why `uri::ambiguous` has no twin.
 const URI_AMBIGUOUS: &str = "the known boards file, which no word of the line names, lists two clones of one remote; two_known_boards_with_one_remote_are_ambiguous_for_a_uri_and_one_is_admitted in board-ops/src/known/tests.rs pairs the code";

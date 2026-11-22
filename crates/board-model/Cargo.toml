@@ -12,6 +12,7 @@ jiff.workspace = true
 percent-encoding.workspace = true
 pulldown-cmark.workspace = true
 saphyr-parser.workspace = true
+schemars.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true

@@ -284,6 +284,7 @@ fn every_listing_command_takes_limit_and_all() {
         "rm",
         "mount add",
         "mount update",
+        "repo add",
         "plugin enable",
         "type add",
         "call",

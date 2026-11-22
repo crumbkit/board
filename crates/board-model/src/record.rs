@@ -15,7 +15,7 @@ use crate::effect::EFFECT_TYPES;
 use crate::frontmatter::frontmatter;
 use crate::json::{JsonError, parse_commented_json, parse_json};
 use crate::pointer::{POINTER_TYPE, Pointer, pointer_from_value};
-use crate::repo::REPO_TYPE;
+use crate::repo::{REPO_TYPE, REPOSITORY_TYPE};
 use crate::ui::{BINDING_TYPE, DERIVED_TYPE, VIEW_TYPE};
 
 /// The `$type` of `.board/board.json`.
@@ -66,6 +66,7 @@ impl RecordType {
                 | BINDING_TYPE
                 | DERIVED_TYPE
                 | REPO_TYPE
+                | REPOSITORY_TYPE
         ) || EFFECT_TYPES.contains(&self.0.as_str())
     }
 

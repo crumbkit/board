@@ -96,6 +96,10 @@
     "type": "string",
     "x-board-prose": true
   },
+  "Remote": {
+    "pattern": "^([a-z0-9-]+/[a-z0-9._-]+|[a-z0-9-]+(\\.[a-z0-9-]+)+(/[^/\\s]+)+)$",
+    "type": "string"
+  },
   "Repository": {
     "pattern": "^[A-Za-z0-9-]+/[A-Za-z0-9._-]+$",
     "type": "string"

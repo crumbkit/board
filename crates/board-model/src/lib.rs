@@ -54,7 +54,11 @@ pub use crate::record::{
     RecordTypeError, Role, TYPES_DIRECTORY, classify, is_json_file,
 };
 pub use crate::refusal::{Refusal, RefusalCode};
-pub use crate::repo::{REPO_TYPE, Repo, URI_SCHEME, github_remote, record_uri, shown_remote};
+pub use crate::repo::{
+    IdentityError, MAX_REMOTE_SEGMENT_BYTES, REPO_TYPE, REPOSITORIES, REPOSITORY_TYPE, Remote,
+    Repo, RepositoryError, RepositoryRecord, URI_SCHEME, github_remote, record_uri, repo_identity,
+    repository_schema, shown_remote,
+};
 pub use crate::stat::{Change, Stat};
 pub use crate::time::{moment, utc, utc_seconds};
 pub use crate::ui::{
