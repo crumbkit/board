@@ -88,9 +88,11 @@ A target the share does not copy is listed in `not_copied` with a reason:
 - `beyond`: a whole's decision or question names an entry in this board
   that the set does not hold.
 
-A typed reference through a mount that only back-refs make, and that the
-destination does not resolve into the same repository, is listed as
-`mount`, with `from` the back-ref.
+A typed reference through a mount or link that only back-refs make, and
+that the destination does not resolve into the same repository, is listed
+with `from` the back-ref. Its reason is `mount` through a mount and `link`
+through a link in this board. A path listed for several reasons is listed
+once.
 
 Each entry lands at the same path in the destination, so no
 reference is rewritten. The schema of every record type in the set goes too,

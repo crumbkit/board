@@ -1272,7 +1272,8 @@ fn a_decisions_reference_through_a_mount_the_team_also_mounts_is_not_listed() {
 }
 
 #[test]
-fn a_path_through_a_mount_the_team_lacks_that_a_back_ref_and_a_decision_name_is_listed_once() {
+fn a_path_through_a_mount_that_a_back_ref_and_a_decision_both_name_is_listed_once_from_the_back_ref()
+ {
     let boards = tasks_boards();
     boards.reading_list();
     let _library = library_mount(&boards);
@@ -1294,5 +1295,61 @@ fn a_path_through_a_mount_the_team_lacks_that_a_back_ref_and_a_decision_name_is_
             &json!([{"path": mounted, "reason": "mount", "from": "/projects/tidy/decisions/e"}]),
             &json!(1)
         )
+    );
+}
+
+#[test]
+fn a_path_a_link_and_a_back_ref_both_name_through_a_mount_the_team_lacks_is_listed_once() {
+    let boards = tasks_boards();
+    boards.reading_list();
+    let _library = library_mount(&boards);
+    let mounted = "/repos/library/a.md";
+    boards
+        .personal
+        .write(
+            "tasks/remove.md",
+            &format!(
+                "---\n$type: tasks/task/v2\ntitle: Remove\nstatus: open\nparent: /tasks/tidy.md\n---\nSee [a]({mounted}).\n"
+            ),
+        )
+        .write(
+            "projects/tidy/decisions/e.json",
+            &plan_decision(&["/tasks/remove.md", mounted]),
+        );
+    let preview = boards.preview(&["--path", "/tasks/remove.md"]);
+    assert_eq!(
+        (&preview["not_copied"], &preview["not_copied_total"]),
+        (
+            &json!([{"path": mounted, "reason": "mount", "from": "/tasks/remove.md"}]),
+            &json!(1)
+        )
+    );
+}
+
+#[test]
+fn a_decisions_reference_through_a_link_in_this_board_is_listed_as_link_and_through_a_mount_as_mount()
+ {
+    let boards = tasks_boards();
+    boards.reading_list();
+    let _library = library_mount(&boards);
+    boards
+        .personal
+        .write("notes/why.md", "# Why\n")
+        .write(
+            "latest.json",
+            r#"{"$type": "board/mount/v1", "path": "/notes"}"#,
+        )
+        .write(
+            "projects/tidy/decisions/d.json",
+            &plan_decision(&["/tasks/tidy.md", "/latest/why.md", "/repos/library/a.md"]),
+        );
+    let preview = boards.preview(&["--path", "/tasks/remove.md"]);
+    let decision = "/projects/tidy/decisions/d";
+    assert_eq!(
+        preview["not_copied"],
+        json!([
+            {"path": "/latest/why.md", "reason": "link", "from": decision},
+            {"path": "/repos/library/a.md", "reason": "mount", "from": decision},
+        ])
     );
 }

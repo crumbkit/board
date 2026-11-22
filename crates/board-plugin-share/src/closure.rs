@@ -111,8 +111,13 @@ pub(crate) enum Mounted {
     /// resolve it.
     Kept { repository: String },
     /// Only back-refs made it, the first `from`; the share lists it as not
-    /// copied when the destination does not resolve it.
-    BackRef { repository: String, from: String },
+    /// copied, with `reason`, `link` or `mount`, when the destination does
+    /// not resolve it.
+    BackRef {
+        repository: String,
+        from: String,
+        reason: Reason,
+    },
 }
 
 impl Mounted {
@@ -396,6 +401,7 @@ impl Walk {
                         let made = Mounted::BackRef {
                             repository: repository(&location),
                             from: leaf.path.clone(),
+                            reason: reason(&location).unwrap_or(Reason::Mount),
                         };
                         self.mount(target, made);
                         continue;
@@ -470,6 +476,7 @@ impl Walk {
                     Mounted::BackRef {
                         repository,
                         from: entry.to_owned(),
+                        reason: reason(&location).unwrap_or(Reason::Mount),
                     }
                 } else {
                     Mounted::Kept { repository }

@@ -19,7 +19,7 @@ use board_ops::{
     Absent, Board, Host, Limit, PluginError, RefsReport, literal, source_name, uri_of,
 };
 
-use crate::closure::{Closure, Extra, Mounted, NotCopied, Reason, Whole, closure};
+use crate::closure::{Closure, Extra, Mounted, NotCopied, Whole, closure};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
@@ -126,6 +126,8 @@ pub(crate) fn share_to(host: &dyn Host, input: &Value) -> Result<Value, PluginEr
     } = closure(host, &path)?;
     not_copied.extend(unresolved(host, &to, &mounted)?);
     not_copied.sort_by(|one, other| one.path.cmp(&other.path));
+    // A path a link reaches through a mount and a back-ref's typed reference
+    // names too is listed once, as the link's.
     not_copied.dedup_by(|one, other| one.path == other.path);
     if yes && !allow_uncopied {
         uncopied(&not_copied)?;
@@ -366,9 +368,9 @@ fn unresolved(
         }
         match made {
             Mounted::Kept { .. } => lost.push(target.clone()),
-            Mounted::BackRef { from, .. } => left.push(NotCopied {
+            Mounted::BackRef { from, reason, .. } => left.push(NotCopied {
                 path: target.clone(),
-                reason: Reason::Mount,
+                reason: *reason,
                 from: from.clone(),
             }),
         }
