@@ -6,10 +6,18 @@ use board_scenario::{Item, Scenario};
 use serde_json::{Value, json};
 
 use super::{RepoAdded, ensure};
-use crate::tests::{board, open};
+use crate::tests::open;
 
 fn remote(text: &str) -> board_model::Remote {
     repo_identity(text).unwrap()
+}
+
+/// The test board, committing each put as a test identity, since CI has
+/// no git identity of its own.
+fn board() -> Scenario {
+    let scenario = crate::tests::board();
+    scenario.identified();
+    scenario
 }
 
 /// The file at `physical` in `scenario`'s working tree, if any.
