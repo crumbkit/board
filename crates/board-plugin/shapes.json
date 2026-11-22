@@ -97,7 +97,7 @@
     "x-board-prose": true
   },
   "Remote": {
-    "pattern": "^([a-z0-9-]+/[a-z0-9._-]+|[a-z0-9-]+(\\.[a-z0-9-]+)+(/[^/\\s]+)+)$",
+    "pattern": "^([a-z0-9-]+/[a-z0-9._-]+|[a-z0-9-]+(\\.[a-z0-9-]+)*\\.[a-z]+(/[A-Za-z0-9_~-][A-Za-z0-9._~-]*)+)$",
     "type": "string"
   },
   "Repository": {

@@ -63,6 +63,35 @@ fn a_local_path_a_file_url_and_a_relative_path_name_no_repository_and_a_hosted_t
     assert!(repo_identity("https://example.com/srv/git/app.git").is_ok());
 }
 
+/// git reads an origin with no scheme and no scp-like colon as a directory
+/// relative to the clone, so `owner/name` names GitHub only as an argument.
+#[test]
+fn an_origin_with_no_scheme_and_no_scp_colon_is_a_local_path_and_a_hosted_origin_is_not() {
+    for relative in ["upstream/app", "gitlab.com/group/app", "app"] {
+        let error = origin_identity(relative).unwrap_err();
+        assert_eq!(error.code(), Code::RepoLocalRemote, "{relative}");
+        assert_eq!(
+            error.to_string(),
+            format!("{relative} is a local path, which names no repository outside this machine")
+        );
+    }
+    assert_eq!(
+        repo_identity("upstream/app").unwrap().as_str(),
+        "upstream/app"
+    );
+    for (hosted, identity) in [
+        ("git@github.com:upstream/app.git", "upstream/app"),
+        ("https://github.com/upstream/app", "upstream/app"),
+        ("gitlab.com:group/app.git", "gitlab.com/group/app"),
+    ] {
+        assert_eq!(origin_identity(hosted).unwrap().as_str(), identity);
+    }
+    assert_eq!(
+        origin_identity("/srv/git/app.git").unwrap_err().code(),
+        Code::RepoLocalRemote
+    );
+}
+
 #[test]
 fn a_refused_remote_never_shows_its_user_or_password() {
     for remote in [

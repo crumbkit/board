@@ -72,13 +72,14 @@ impl JsonSchema for Remote {
     }
 
     /// `owner/name` in lower case for GitHub, or a host with a dot, in lower
-    /// case, and one or more path segments. The schema cannot say every
+    /// case and with a last label of letters, and one or more path segments
+    /// of `[A-Za-z0-9._~-]` that do not start with a dot. The schema cannot say every
     /// rule; Board checks a repository record's `remote` with
     /// [`repo_identity`].
     fn json_schema(_: &mut SchemaGenerator) -> Schema {
         json_schema!({
             "type": "string",
-            "pattern": "^([a-z0-9-]+/[a-z0-9._-]+|[a-z0-9-]+(\\.[a-z0-9-]+)+(/[^/\\s]+)+)$"
+            "pattern": "^([a-z0-9-]+/[a-z0-9._-]+|[a-z0-9-]+(\\.[a-z0-9-]+)*\\.[a-z]+(/[A-Za-z0-9_~-][A-Za-z0-9._~-]*)+)$"
         })
     }
 }
@@ -121,8 +122,10 @@ impl IdentityError {
 ///   itself, is `owner/name` in lower case, since GitHub ignores case.
 /// - Any other host is `<host>/<path>`, with the host in lower case and no
 ///   scheme, user, password, port, trailing `.git` or trailing `/`, such as
-///   `gitlab.com/example-org/app`. A GitHub owner holds no dot and a host
-///   does, so the two never collide.
+///   `gitlab.com/example-org/app`. The host's last label is letters, and
+///   each path segment holds `[A-Za-z0-9._~-]` and does not start with `.`.
+///   A GitHub owner holds no dot and a host does, so the two never collide.
+/// - A query or a fragment names no repository, and is refused.
 /// - A local path, a `file://` URL or a relative path names a directory on
 ///   one machine and has no identity form.
 ///
@@ -142,6 +145,9 @@ pub fn repo_identity(remote: &str) -> Result<Remote, IdentityError> {
         Hosted::Local => return Err(local()),
         Hosted::Unnamed(why) => return Err(unnamed(why)),
     };
+    if path.contains(['?', '#']) {
+        return Err(unnamed("it has a query or a fragment"));
+    }
     let mut path = path.trim_start_matches('/');
     while let Some(shorter) = path.strip_suffix('/').or_else(|| path.strip_suffix(".git")) {
         path = shorter;
@@ -168,10 +174,24 @@ pub fn repo_identity(remote: &str) -> Result<Remote, IdentityError> {
                     .bytes()
                     .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
         };
-        if !host.contains('.') || !host.split('.').all(label) {
+        let last = host.rsplit_once('.').map(|(_, last)| last);
+        if !host.split('.').all(label)
+            || !last.is_some_and(|last| last.bytes().all(|b| b.is_ascii_lowercase()))
+        {
             return Err(unnamed(
-                "its host is not a domain name with a dot, such as gitlab.com; \
-                 an ssh alias names no host Board can read",
+                "its host is not a domain name with a dot and a last label of letters, \
+                 such as gitlab.com; an ssh alias names no host Board can read",
+            ));
+        }
+        let in_segment =
+            |b: u8| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'~' | b'-');
+        if segments
+            .iter()
+            .any(|segment| segment.starts_with('.') || !segment.bytes().all(in_segment))
+        {
+            return Err(unnamed(
+                "a path segment on a host other than GitHub holds letters, digits, \
+                 `.`, `_`, `~` and `-`, and does not start with `.`",
             ));
         }
         format!("{host}/{path}")
@@ -206,6 +226,21 @@ pub fn repo_identity(remote: &str) -> Result<Remote, IdentityError> {
         .parse()
         .map_err(|_| unnamed("its path is not a board path"))?;
     Ok(Remote { remote, path })
+}
+
+/// The identity form of `url`, a clone's `origin` remote. git reads an
+/// origin with no `://` scheme and no scp-like colon as a directory relative
+/// to the clone, so such an origin is a local path, even one that reads as
+/// `owner/name`, which only [`repo_identity`] reads as GitHub's.
+pub fn origin_identity(url: &str) -> Result<Remote, IdentityError> {
+    let slash = url.find('/').unwrap_or(url.len());
+    if url.contains("://") || url[..slash].contains(':') {
+        repo_identity(url)
+    } else {
+        Err(IdentityError::Local {
+            shown: without_userinfo(url),
+        })
+    }
 }
 
 /// Where a remote says its repository is.
@@ -269,9 +304,15 @@ fn hosted(remote: &str) -> Hosted<'_> {
     }
 }
 
-/// Whether `host`, in lower case, is GitHub's, or an ssh alias of it such
-/// as `github.com-work`.
+/// Whether `host`, in lower case, is GitHub's: `github.com`, the
+/// `ssh.github.com` GitHub serves ssh on port 443 from, `www.github.com`, or
+/// an ssh alias of `github.com` such as `github.com-work`. No other
+/// `*.github.com` host is, because `gist.github.com/<user>/<id>` names a
+/// gist and no repository.
 fn github_host(host: &str) -> bool {
+    if matches!(host, "ssh.github.com" | "www.github.com") {
+        return true;
+    }
     match host.strip_prefix("github.com") {
         Some("") => true,
         Some(alias) => alias.strip_prefix('-').is_some_and(|alias| {
@@ -330,7 +371,7 @@ impl JsonSchema for RepositoryTag {
 #[serde(deny_unknown_fields)]
 struct RawRepository {
     #[serde(rename = "$type")]
-    _tag: IgnoredAny,
+    tag: String,
     remote: String,
 }
 
@@ -340,6 +381,8 @@ struct RawRepository {
 pub enum RepositoryError {
     #[error("a {REPOSITORY_TYPE} record holds `$type` and `remote` and nothing else, but {source}")]
     Shape { source: serde_json::Error },
+    #[error("its `$type` is `{found}`, not {REPOSITORY_TYPE}")]
+    WrongType { found: String },
     #[error("its remote `{shown}` is not in identity form; its identity form is `{identity}`")]
     NotIdentity { shown: String, identity: Remote },
     #[error("its remote is not a repository's: {source}")]
@@ -366,6 +409,9 @@ impl RepositoryRecord {
     pub fn from_value(value: &Value) -> Result<Self, RepositoryError> {
         let raw = RawRepository::deserialize(value)
             .map_err(|source| RepositoryError::Shape { source })?;
+        if raw.tag != REPOSITORY_TYPE {
+            return Err(RepositoryError::WrongType { found: raw.tag });
+        }
         let identity =
             repo_identity(&raw.remote).map_err(|source| RepositoryError::Unnamed { source })?;
         if identity.as_str() != raw.remote {
@@ -378,8 +424,12 @@ impl RepositoryRecord {
     }
 
     /// The record as JSON.
+    ///
+    /// # Panics
+    ///
+    /// Never: the record holds two strings, which always serialize.
     pub fn to_value(&self) -> Value {
-        serde_json::json!({"$type": REPOSITORY_TYPE, "remote": self.remote.as_str()})
+        serde_json::to_value(self).expect("a repository record serializes: it holds two strings")
     }
 }
 

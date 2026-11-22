@@ -56,8 +56,8 @@ pub use crate::record::{
 pub use crate::refusal::{Refusal, RefusalCode};
 pub use crate::repo::{
     IdentityError, MAX_REMOTE_SEGMENT_BYTES, REPO_TYPE, REPOSITORIES, REPOSITORY_TYPE, Remote,
-    Repo, RepositoryError, RepositoryRecord, URI_SCHEME, github_remote, record_uri, repo_identity,
-    repository_schema, shown_remote,
+    Repo, RepositoryError, RepositoryRecord, URI_SCHEME, github_remote, origin_identity,
+    record_uri, repo_identity, repository_schema, shown_remote,
 };
 pub use crate::stat::{Change, Stat};
 pub use crate::time::{moment, utc, utc_seconds};
