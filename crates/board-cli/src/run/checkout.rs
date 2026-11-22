@@ -12,7 +12,7 @@ impl Cli {
     pub(super) fn mounts_at(&self) -> Result<MountsAt, Box<Refusal>> {
         let command = match (self.checkout, &self.command) {
             (false, _) => return Ok(MountsAt::Pins),
-            (true, Command::Init) => "init",
+            (true, Command::Init(_)) => "init",
             (true, Command::Answer(_)) => "answer",
             (true, Command::Serve { .. }) => "serve",
             (true, Command::Ui(_)) => "ui",

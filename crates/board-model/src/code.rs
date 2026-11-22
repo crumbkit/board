@@ -43,6 +43,7 @@ codes! {
     ConfigNotFound => "board::config::not_found",
     ConfigInvalid => "board::config::invalid",
     ConfigAmbiguous => "board::config::ambiguous",
+    ConfigPersonalElsewhere => "board::config::personal_elsewhere",
     ConfigBoardTooOld => "board::config::board_too_old",
     ConfigMinBoardUnreadable => "board::config::min_board_unreadable",
     SchemaInvalid => "board::schema::invalid",

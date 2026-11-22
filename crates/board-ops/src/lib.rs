@@ -46,9 +46,9 @@ pub use crate::host::{
     BuiltIn, Elsewhere, Host, Limit, Origin, Plugin, PluginError, Run, Settings, Variables, literal,
 };
 pub use crate::index::{RefreshError, Refreshed};
-pub use crate::init::{InitError, InitReport, init};
+pub use crate::init::{InitError, InitReport, PERSONAL_PLUGINS, init};
 pub use crate::known::{
-    KnownBoards, MountsAt, Prefix, asker, entered, open, open_at, unopened, uri_of,
+    KnownBoards, MountsAt, Naming, Prefix, asker, entered, open, open_at, unopened, uri_of,
 };
 pub use crate::mount::{MountError, MountUpdateReport};
 pub use crate::plugins::{

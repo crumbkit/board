@@ -332,7 +332,7 @@ fn personal_is_refused_when_the_known_boards_file_names_no_personal_board_and_ad
             format!("`{shown}` names no personal board")
         );
         let hint = format!(
-            "name the personal board in `{shown}` as {{\"personal\": \"<board directory>\"}}, the directory that holds .board/board.json"
+            "run `board init --personal` in the personal board's directory, or name it in `{shown}` as {{\"personal\": \"<board directory>\"}}, the directory that holds .board/board.json"
         );
         assert_eq!(refusal.hint.unwrap(), hint);
     }
@@ -357,7 +357,10 @@ fn personal_naming_anything_but_a_boards_root_is_refused_and_the_root_is_admitte
             named.display()
         );
         assert_eq!(refusal.message, message);
-        let hint = format!("name the personal board in `{}` as", file(&xdg).display());
+        let hint = format!(
+            "run `board init --personal` in the personal board's directory, or name it in `{}` as",
+            file(&xdg).display()
+        );
         assert!(refusal.hint.unwrap().starts_with(&hint));
     }
     let known_boards = json!({"boards": [work.path()], "personal": work.path()});

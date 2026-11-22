@@ -78,3 +78,19 @@ fn the_no_branch_hint_names_the_way_out_of_each_case() {
     assert!(text.contains("git push <remote> HEAD:<branch>"), "{text}");
     assert!(!text.contains("ssh-add"), "{text}");
 }
+
+#[test]
+fn the_unnamed_personal_board_hint_names_init_personal_before_the_hand_written_file() {
+    let text = hint(Code::SettingsNoPersonal);
+    let init = text.find("`board init --personal`").expect(&text);
+    let file = text.find("~/.config/board/config.json").expect(&text);
+    assert!(init < file, "{text}");
+}
+
+#[test]
+fn the_personal_elsewhere_hint_says_the_named_board_stays_and_how_to_move_it_by_hand() {
+    let text = hint(Code::ConfigPersonalElsewhere);
+    assert!(text.contains("edit `personal`"), "{text}");
+    assert!(text.contains("by hand"), "{text}");
+    assert!(!text.contains("`board "), "{text}");
+}

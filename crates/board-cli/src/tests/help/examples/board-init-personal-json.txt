@@ -1,0 +1,1 @@
+{"schema":"board/init-report/v2","data":{"created":false,"enabled":["tasks","runs","evals","rules","plans","share"],"personal":{"file":"[XDG_CONFIG_HOME]/board/config.json","named":true},"root":"[ROOT]"},"failures":[]}

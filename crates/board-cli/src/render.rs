@@ -5,7 +5,7 @@
 use std::fmt;
 use std::fmt::Write as _;
 
-use board_model::{Code, Fields, Location, LogicalPath, Refusal};
+use board_model::{Code, Fields, Location, LogicalPath, PluginName, Refusal};
 use board_ops::MAX_LIMIT;
 use board_ops::{
     Budget, CheckReport, Checked, Detail, EnableReport, Fallback, InitReport, Listed, LsReport,
@@ -445,22 +445,41 @@ fn memory_note(fallback: Fallback) -> String {
 }
 
 /// `init`: as text, what was written, and on stderr what to run next.
-pub(crate) fn init(printer: Printer, report: &InitReport) -> Output {
+pub(crate) fn init(
+    printer: Printer,
+    report: &InitReport,
+    personal: Option<&crate::init::Personal>,
+) -> Output {
     let root = report.root.display();
-    let text = if report.created {
+    let mut text = if report.created {
         format!("created .board/board.json in {root}\n")
     } else {
         format!("{root} is already a board\n")
     };
-    let value = json!({"root": report.root.to_string_lossy(), "created": report.created});
+    let mut value = json!({"root": report.root.to_string_lossy(), "created": report.created});
+    let note = match personal {
+        None => report.created.then_some(INIT_NEXT),
+        Some(personal) => {
+            text.push_str(&personal.lines(&report.root));
+            let enabled: Vec<&str> = personal.enabled.iter().map(PluginName::as_str).collect();
+            value["enabled"] = json!(enabled);
+            let file = personal.file.to_string_lossy();
+            value["personal"] = json!({"file": file, "named": personal.named});
+            (report.created || personal.changed()).then_some(PERSONAL_NEXT)
+        }
+    };
     let answer = said(value, text);
-    let answer = if report.created {
-        answer.note("next: run `board check`; it checks every file and says how to fix any it cannot read. Then commit .board/board.json")
-    } else {
-        answer
+    let answer = match note {
+        Some(note) => answer.note(note),
+        None => answer,
     };
     printer.print(INIT, Ok(answer))
 }
+
+/// The note after `init` made a board.
+const INIT_NEXT: &str = "next: run `board check`; it checks every file and says how to fix any it cannot read. Then commit .board/board.json";
+/// The note after `init --personal` changed something.
+const PERSONAL_NEXT: &str = "next: run `board --personal tasks add --kind project --title '<title>'`, or ask Claude Code to add a project with the tasks skill";
 
 pub(crate) fn ls(printer: Printer, report: &LsReport, page: &crate::run::Page) -> Output {
     let rows = report.listed.iter().map(|listed| match listed {

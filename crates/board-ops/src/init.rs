@@ -9,6 +9,10 @@ use serde_json::json;
 
 use crate::board::read_config;
 
+/// The plugins `board init --personal` enables, in this order: those the
+/// first shareable Board ships (docs/architecture/paths/personal.md).
+pub const PERSONAL_PLUGINS: [&str; 6] = ["tasks", "runs", "evals", "rules", "plans", "share"];
+
 /// The board `init` made, or found already made.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct InitReport {

@@ -163,13 +163,16 @@ pub(crate) struct Putting {
 enum Command {
     /// Make this git repository a board.
     #[command(after_help = "\
-It writes a minimal .board/board.json, or leaves an existing one as it is.
-Nothing is committed.
+It writes a minimal .board/board.json, or leaves an existing one as it is,
+and commits nothing. --personal also enables six plugins, one commit each,
+and names the board in the known boards file.
 
 Examples:
   board init
-  board init --json")]
-    Init,
+  board init --json
+  board init --personal
+  board init --personal --json")]
+    Init(crate::init::Initing),
     /// Check every entry, or those at or beneath a path; list and fail on the degraded ones.
     #[command(after_help = "\
 By default it lists only the degraded entries, and its summary counts the
@@ -400,7 +403,7 @@ impl Command {
     fn owner_only(&self) -> bool {
         matches!(
             self,
-            Command::Init
+            Command::Init(_)
                 | Command::Type(_)
                 | Command::Plugin(crate::plugin::PluginCommand::Enable { .. })
                 | Command::Skills(crate::skills::SkillsCommand::Install { .. })
@@ -488,8 +491,8 @@ fn run_command(
         Err(refusal) => return render::refused(printer, *refusal),
     };
     let start = clone.clone().unwrap_or(start);
-    if let Command::Init = cli.command {
-        return init(printer, &start);
+    if let Command::Init(initing) = &cli.command {
+        return crate::init::init(printer, context, &start, initing);
     }
     if let Command::Answer(answering) = cli.command {
         let no_input = printer.view.no_input();
@@ -543,21 +546,6 @@ fn unopened(cli: &Cli, context: &Context, printer: Printer, refused: Option<Refu
         }
         (_, Some(refused)) => render::refused(printer, refused),
         (_, None) => unreachable!("only completion and skills run without a board"),
-    }
-}
-
-/// `board init`, which makes the directory at `start` a board without
-/// opening one.
-fn init(printer: Printer, start: &std::path::Path) -> Output {
-    match board_ops::init(start) {
-        Ok(report) => render::init(printer, &report),
-        Err(error) => {
-            let outside = matches!(error, board_ops::InitError::NotARepository { .. });
-            render::refused(
-                printer,
-                board_ops::unopened(error.code(), &error, &Fields::default(), outside),
-            )
-        }
     }
 }
 
@@ -657,7 +645,7 @@ fn command(
     match command {
         // `run` takes these before this match: init, answer, completion and skills open
         // no board, and decide is matched there to keep this function short.
-        Command::Init
+        Command::Init(_)
         | Command::Answer(_)
         | Command::Decide(_)
         | Command::Commands(_)

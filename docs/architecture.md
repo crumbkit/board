@@ -53,14 +53,9 @@ than one match that sorts first, counting every known board, is
 cannot be opened or refreshed is passed over, and a `not_found` message
 names it. `-C` into a mounted repository finds its board the same way.
 
-The same file may name the user's personal board, as in
-`{"boards": [...], "personal": "/Users/me/Code/board"}`, read against the
-file's directory when relative. `--personal` runs as that board from its
-root, from any directory: inside another board, in a repository no board
-mounts, or outside git. Any `-C` is taken from that root. A file
-that names no personal board, or names a directory that is not a board's
-root, refuses `--personal` with `board::config::not_found`, and the hint
-names the file.
+The same file may name the user's personal board, which `--personal` runs
+as and `board init --personal` sets
+([architecture/paths/personal.md](architecture/paths/personal.md)).
 
 `--checkout` reads the mount holding the directory at its checkout's HEAD
 for one run ([architecture/paths/checkout.md](architecture/paths/checkout.md)).

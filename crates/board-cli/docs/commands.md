@@ -51,6 +51,12 @@ Board: a fast, validated view of a git tree.
 
 Make this git repository a board
 
+### Arguments
+
+- `--personal`: Also enable tasks, runs, evals, rules, plans and share, and name this board as your personal board.
+
+  It sets `personal` in `$XDG_CONFIG_HOME/board/config.json`, adds the board to `boards`, and refuses before writing anything when the file names another personal board. The global `board --personal`, given before the command, runs a command as the personal board instead.
+
 Effects: additive, idempotent, closed-world.
 
 ## `board check`

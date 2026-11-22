@@ -1,0 +1,3 @@
+[ROOT] is already a board
+enabled tasks, runs, evals, rules, plans and share
+named [ROOT] as the personal board in [XDG_CONFIG_HOME]/board/config.json

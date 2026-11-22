@@ -13,12 +13,14 @@ use board_model::{Code, Fields, LogicalPath, PathError, PluginName, Refusal};
 use board_tree::{Checkout, Matched, Place};
 
 use crate::checkout::Refused;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::{Asker, Board, OpenError, Signing};
 
+mod personal;
 mod uri;
 
+pub use personal::Naming;
 pub use uri::uri_of;
 
 /// Where the run started, as a logical path in its board, or the refusal of
@@ -28,19 +30,25 @@ pub type Prefix = Result<LogicalPath, PathError>;
 /// The file's shape: `{"boards": ["/Users/me/Code/board"], "personal":
 /// "/Users/me/Code/board", "day_start": "07:00", "agent": ["claude", "-p"]}`,
 /// every key optional. A relative path is read against the file's directory.
-#[derive(Clone, Debug, Default, Deserialize)]
+/// `board init --personal` writes it back in this order, leaving out what is unset.
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct RawKnown {
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     boards: Vec<PathBuf>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     personal: Option<PathBuf>,
     /// When the person's day starts, such as `"07:00"`, which a plugin
     /// receives as `BOARD_DAY_START`.
-    #[serde(default, deserialize_with = "hh_mm")]
+    #[serde(
+        default,
+        deserialize_with = "hh_mm",
+        skip_serializing_if = "Option::is_none"
+    )]
     day_start: Option<String>,
     /// The argv of the agent `changes.run` starts, such as `["claude",
     /// "-p"]`, which the `BOARD_AGENT` variable overrides.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     agent: Option<Vec<String>>,
 }
 
@@ -139,7 +147,7 @@ impl KnownBoards {
     fn no_personal(&self, message: String) -> Refusal {
         let shown = shown(self.file.as_deref());
         let hint = format!(
-            "name the personal board in `{shown}` as {{\"personal\": \"<board directory>\"}}, the directory that holds .board/board.json"
+            "run `board init --personal` in the personal board's directory, or name it in `{shown}` as {{\"personal\": \"<board directory>\"}}, the directory that holds .board/board.json"
         );
         let refusal = Refusal::new(Code::ConfigNotFound, message, &Fields::default());
         refusal.with_hint(hint)
