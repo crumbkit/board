@@ -62,8 +62,10 @@ type's schema carries `"x-board-goes-with-whole": true` at its top level.
 brings its project's decisions and questions. Its other tasks, its change
 records and every other record that names it stay out. These decisions and
 questions are copied as they are, and none of their references or links is
-followed: each one to a path the set does not hold is listed in
-`not_copied`, and the copy names it dangling.
+followed. Each one to a path the set does not hold is listed in
+`not_copied`, and the copy names that path dangling. A typed reference
+through a mount is listed only when the destination does not resolve it
+into the same repository.
 
 A board whose copy of a schema lacks a keyword finds no wholes, or keeps no
 decisions, through that type until `board plugin enable` refreshes the

@@ -1251,3 +1251,48 @@ fn a_wholes_own_reference_through_a_mount_the_team_lacks_is_refused_and_one_it_m
     boards.publish(&[("repos/library.json", &pointer)]);
     assert_eq!(boards.preview(&call)["copied"], json!(READING));
 }
+
+#[test]
+fn a_decisions_reference_through_a_mount_the_team_also_mounts_is_not_listed() {
+    let boards = tasks_boards();
+    boards.reading_list();
+    let (_library, pointer) = library_mount(&boards);
+    boards.personal.write(
+        "projects/tidy/decisions/d.json",
+        &plan_decision(&["/tasks/tidy.md", "/repos/library/a.md"]),
+    );
+    boards.publish(&[("repos/library.json", &pointer)]);
+    let call = ["--path", "/tasks/remove.md"];
+    let preview = boards.preview(&call);
+    assert_eq!(
+        (&preview["copied"], &preview["not_copied"]),
+        (&json!(READING), &json!([]))
+    );
+    assert_eq!(boards.share(&call)["copied"], json!(READING));
+}
+
+#[test]
+fn a_path_through_a_mount_the_team_lacks_that_a_back_ref_and_a_decision_name_is_listed_once() {
+    let boards = tasks_boards();
+    boards.reading_list();
+    let _library = library_mount(&boards);
+    let mounted = "/repos/library/a.md";
+    boards
+        .personal
+        .write(
+            "projects/tidy/decisions/d.json",
+            &plan_decision(&["/tasks/tidy.md", mounted]),
+        )
+        .write(
+            "projects/tidy/decisions/e.json",
+            &plan_decision(&["/tasks/remove.md", mounted]),
+        );
+    let preview = boards.preview(&["--path", "/tasks/remove.md"]);
+    assert_eq!(
+        (&preview["not_copied"], &preview["not_copied_total"]),
+        (
+            &json!([{"path": mounted, "reason": "mount", "from": "/projects/tidy/decisions/e"}]),
+            &json!(1)
+        )
+    );
+}

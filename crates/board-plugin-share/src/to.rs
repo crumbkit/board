@@ -126,6 +126,7 @@ pub(crate) fn share_to(host: &dyn Host, input: &Value) -> Result<Value, PluginEr
     } = closure(host, &path)?;
     not_copied.extend(unresolved(host, &to, &mounted)?);
     not_copied.sort_by(|one, other| one.path.cmp(&other.path));
+    not_copied.dedup_by(|one, other| one.path == other.path);
     if yes && !allow_uncopied {
         uncopied(&not_copied)?;
     }

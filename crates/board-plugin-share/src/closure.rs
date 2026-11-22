@@ -20,7 +20,8 @@
 //! `"x-board-goes-with-whole": true`, such as a project's decisions and
 //! questions. Those are leaves: they are copied, none of their references
 //! or links is followed, and each one to a path the set does not hold is
-//! listed as not copied.
+//! listed as not copied, except a typed reference through a mount or link,
+//! which the caller lists only when the destination does not resolve it.
 //!
 //! A typed reference through a mount or link is not copied; the caller
 //! checks that the destination resolves it, and lists one a back-ref makes
@@ -389,6 +390,16 @@ impl Walk {
             for reference in leaf.from {
                 let target = reference.target.to_string();
                 let why = match reference.location {
+                    // The destination may resolve it, which `share.to`
+                    // decides.
+                    Some(location) if !reference.link && outside(&location) => {
+                        let made = Mounted::BackRef {
+                            repository: repository(&location),
+                            from: leaf.path.clone(),
+                        };
+                        self.mount(target, made);
+                        continue;
+                    }
                     None => Some(Reason::Missing),
                     Some(location) => match reason(&location) {
                         Some(Reason::Directory) => Some(Reason::Beyond),
@@ -463,17 +474,7 @@ impl Walk {
                 } else {
                     Mounted::Kept { repository }
                 };
-                let target = reference.target.to_string();
-                // A reference an entry other than a back-ref makes is kept
-                // even when a back-ref made it first.
-                let replace = match self.mounted.get(&target) {
-                    None => true,
-                    Some(Mounted::BackRef { .. }) => matches!(made, Mounted::Kept { .. }),
-                    Some(Mounted::Kept { .. }) => false,
-                };
-                if replace {
-                    self.mounted.insert(target, made);
-                }
+                self.mount(reference.target.to_string(), made);
             }
             (_, None) => self.leave(reference.target.to_string(), Reason::Missing, entry),
             (_, Some(location)) => match (via, reason(&location)) {
@@ -570,6 +571,20 @@ impl Walk {
             }
         }
         Ok(())
+    }
+
+    /// Records a typed reference through a mount or link. One an entry
+    /// other than a back-ref makes is kept even when a back-ref made it
+    /// first.
+    fn mount(&mut self, target: String, made: Mounted) {
+        let replace = match self.mounted.get(&target) {
+            None => true,
+            Some(Mounted::BackRef { .. }) => matches!(made, Mounted::Kept { .. }),
+            Some(Mounted::Kept { .. }) => false,
+        };
+        if replace {
+            self.mounted.insert(target, made);
+        }
     }
 
     fn leave(&mut self, target: String, reason: Reason, entry: &str) {
