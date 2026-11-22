@@ -71,12 +71,6 @@ pub(crate) struct Released {
     resumed: bool,
 }
 
-/// One file to upload, named within its directory.
-struct Asset {
-    name: String,
-    size: u64,
-}
-
 /// What `gh release view --json` prints of a draft's assets.
 #[derive(Deserialize)]
 struct Viewed {
@@ -89,11 +83,9 @@ struct Viewed {
 #[derive(Deserialize)]
 struct Uploaded {
     name: String,
-    size: u64,
-    state: String,
 }
 
-/// Drafts the release, uploads the files the draft lacks, then publishes
+/// Drafts the release, uploads every file to it, then publishes
 /// it, once the tag is on GitHub, no published release has it and the
 /// boundary passes the tag, title, notes and asset names.
 pub(crate) fn release_create(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
@@ -104,10 +96,10 @@ pub(crate) fn release_create(host: &dyn Host, input: &Value) -> Result<Value, Pl
         assets,
         ask_owner,
     } = PluginError::read_input("github", "release-create", input)?;
-    let (directory, files) = match assets {
+    let (directory, names) = match assets {
         Some(directory) => {
-            let (directory, files) = listed(host, &directory)?;
-            (Some(directory), files)
+            let (directory, names) = listed(host, &directory)?;
+            (Some(directory), names)
         }
         None => (None, Vec::new()),
     };
@@ -116,7 +108,6 @@ pub(crate) fn release_create(host: &dyn Host, input: &Value) -> Result<Value, Pl
     tagged(host, &repository, &tag)?;
     let draft = viewed(host, &place, &tag)?;
     let title = title.unwrap_or_else(|| tag.clone());
-    let names: Vec<String> = files.iter().map(|file| file.name.clone()).collect();
     let resumed = draft.is_some();
     let uploaded = draft.map(|draft| draft.assets).unwrap_or_default();
     if let Some(stray) = (uploaded.iter()).find(|there| !names.contains(&there.name)) {
@@ -137,11 +128,13 @@ pub(crate) fn release_create(host: &dyn Host, input: &Value) -> Result<Value, Pl
         let arguments = release("create", &tag, &repository, &create);
         gh::send(host, &arguments, &notes, "gh release create", at)?;
     }
-    for file in files.iter().filter(|file| !held(&uploaded, file)) {
-        // The release is still a draft, so replacing a file of the same name
-        // changes nothing anyone sees. gh reads what follows a `#` in a file
-        // argument as its label, so it is given the bare name in its directory.
-        let arguments = release("upload", &tag, &repository, &[&file.name, "--clobber"]);
+    for name in &names {
+        // A resumed draft's file of the same name may hold other bytes, so
+        // every file is uploaded again. The release is still a draft, so
+        // replacing a file changes nothing anyone sees. gh reads what follows
+        // a `#` in a file argument as its label, so it is given the bare name
+        // in its directory.
+        let arguments = release("upload", &tag, &repository, &[name.as_str(), "--clobber"]);
         let at = directory.as_deref();
         gh::send_within(host, &arguments, "", "gh release upload", at, UPLOAD)?;
     }
@@ -198,14 +191,6 @@ fn tagged(host: &dyn Host, repository: &str, tag: &str) -> Result<(), PluginErro
     ))
 }
 
-/// Whether the draft's `uploaded` files hold `file` whole, with its name
-/// and size.
-fn held(uploaded: &[Uploaded], file: &Asset) -> bool {
-    (uploaded.iter()).any(|there| {
-        there.name == file.name && there.size == file.size && there.state == "uploaded"
-    })
-}
-
 /// `github::release::stray_asset` for a file `name` on the draft of `tag`
 /// that the directory --assets names does not hold, which the boundary
 /// never checked.
@@ -225,7 +210,7 @@ fn stray_asset(tag: &str, name: &str) -> PluginError {
 /// The draft release of `tag`, none when the tag has no release, or
 /// `github::release::exists` when its release is published.
 fn viewed(host: &dyn Host, place: &Origin<'_>, tag: &str) -> Result<Option<Viewed>, PluginError> {
-    let json = ["--json", "isDraft,assets,url"];
+    let json = ["--json", "isDraft,assets"];
     let arguments = release("view", tag, &place.repository(), &json);
     let named = "gh release view";
     let at = Some(place.top.as_path());
@@ -266,7 +251,7 @@ fn viewed(host: &dyn Host, place: &Origin<'_>, tag: &str) -> Result<Option<Viewe
 /// `github::release::asset_refused` naming what cannot be published as it
 /// is: an entry that is not a regular file, a name GitHub would change, a
 /// file over 2 GiB, or more than 100 files.
-fn listed(host: &dyn Host, directory: &str) -> Result<(PathBuf, Vec<Asset>), PluginError> {
+fn listed(host: &dyn Host, directory: &str) -> Result<(PathBuf, Vec<String>), PluginError> {
     let path = match &host.settings().caller {
         Some(caller) => caller.join(directory),
         None => PathBuf::from(directory),
@@ -313,10 +298,7 @@ fn listed(host: &dyn Host, directory: &str) -> Result<(PathBuf, Vec<Asset>), Plu
                 kind.len()
             )));
         }
-        files.push(Asset {
-            name,
-            size: kind.len(),
-        });
+        files.push(name);
     }
     if files.len() > MOST {
         return Err(refused(format!(
@@ -325,6 +307,6 @@ fn listed(host: &dyn Host, directory: &str) -> Result<(PathBuf, Vec<Asset>), Plu
             files.len()
         )));
     }
-    files.sort_by(|a, b| a.name.cmp(&b.name));
+    files.sort();
     Ok((path, files))
 }

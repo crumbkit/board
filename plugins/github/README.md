@@ -152,14 +152,14 @@ result it recorded.
     entry directly inside it must be a regular file named by
     `^[0-9A-Za-z][0-9A-Za-z._+-]*$`, at most 2 GiB. It takes at most 100.
   - Before the check, it reads `git/ref/tags/<tag>` and
-    `gh release view <tag> --json isDraft,assets,url`.
+    `gh release view <tag> --json isDraft,assets`.
   - With no release, it runs `gh release create --verify-tag --draft`, so
     gh never creates the tag. With a draft, it resumes it, unless the
     draft holds a file `--assets` lacks.
-  - It uploads each file the draft lacks with `gh release upload
-    --clobber`, 600 seconds each, run in the `--assets` directory with the
-    file's bare name. A file on the draft with the same name,
-    the same size and state `uploaded` is skipped.
+  - It uploads every file with `gh release upload --clobber`, 600 seconds
+    each, run in the `--assets` directory with the file's bare name. A
+    resumed draft's file of the same name is replaced, because it may hold
+    other bytes than the file in the directory.
   - It publishes with `gh release edit --draft=false` and the checked
     title and notes, which replace a resumed draft's.
   - It returns `tag`, `assets` and `resumed`. `sent` is the release's page.

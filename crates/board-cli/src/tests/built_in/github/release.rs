@@ -515,7 +515,7 @@ fn release_create_drafts_uploads_each_file_then_publishes_and_records_the_crossi
     releasable(&desk);
     let dist = dist(&desk);
     let result = desk.output("release-create", &RELEASE_FLAGS);
-    let view = " --json isDraft,assets,url";
+    let view = " --json isDraft,assets";
     let create = " --verify-tag --draft --title Widgets 1.0 --notes-file -";
     assert_eq!(
         log(&desk),
@@ -608,7 +608,7 @@ fn a_release_of_a_tag_github_lacks_is_refused_before_any_write_and_one_it_has_is
 fn a_tag_with_a_published_release_is_refused_and_one_with_none_is_published() {
     let desk = desk();
     dist(&desk);
-    let published = json!({"isDraft": false, "url": TAG_URL, "assets": []}).to_string();
+    let published = json!({"isDraft": false, "assets": []}).to_string();
     answer(&desk, "release view *", 0, &published, "");
     releasable(&desk);
     assert_eq!(
@@ -687,7 +687,7 @@ fn more_than_a_hundred_assets_are_refused_and_a_hundred_are_published() {
 }
 
 #[test]
-fn a_rerun_after_a_failed_upload_resumes_the_draft_skips_the_file_uploaded_and_publishes() {
+fn a_rerun_after_a_failed_upload_resumes_the_draft_uploads_every_file_again_and_publishes() {
     let desk = desk();
     let dist = dist(&desk);
     answer(
@@ -711,7 +711,6 @@ fn a_rerun_after_a_failed_upload_resumes_the_draft_skips_the_file_uploaded_and_p
     let sums = std::fs::metadata(dist.join("SHA256SUMS")).unwrap().len();
     let draft = json!({
         "isDraft": true,
-        "url": "https://github.com/octo/widgets/releases/tag/untagged-1a2b",
         "assets": [
             {"name": "SHA256SUMS", "size": sums, "state": "uploaded"},
             {"name": "widgets.dmg", "size": 4, "state": "starter"},
@@ -723,7 +722,8 @@ fn a_rerun_after_a_failed_upload_resumes_the_draft_skips_the_file_uploaded_and_p
     assert_eq!(
         log(&desk)[1..],
         [
-            release("view", " --json isDraft,assets,url"),
+            release("view", " --json isDraft,assets"),
+            upload("SHA256SUMS"),
             upload("widgets.dmg"),
             publish("Widgets 1.0"),
         ]
@@ -735,24 +735,30 @@ fn a_rerun_after_a_failed_upload_resumes_the_draft_skips_the_file_uploaded_and_p
 }
 
 #[test]
-fn a_draft_file_of_another_size_is_uploaded_again() {
+fn a_draft_file_of_the_same_name_and_size_is_replaced_by_the_file_in_the_directory() {
     let desk = desk();
-    dist(&desk);
+    let dist = dist(&desk);
+    // An earlier build left files of the same names and sizes, and other bytes.
+    let size = |name: &str| std::fs::metadata(dist.join(name)).unwrap().len();
     let draft = json!({
         "isDraft": true,
-        "url": "https://github.com/octo/widgets/releases/tag/untagged-1a2b",
         "assets": [
-            {"name": "SHA256SUMS", "size": 1, "state": "uploaded"},
-            {"name": "widgets.dmg", "size": 4, "state": "uploaded"},
+            {"name": "SHA256SUMS", "size": size("SHA256SUMS"), "state": "uploaded"},
+            {"name": "widgets.dmg", "size": size("widgets.dmg"), "state": "uploaded"},
         ],
     });
     answer(&desk, "release view *", 0, &draft.to_string(), "");
     releasable(&desk);
-    desk.output("release-create", &RELEASE_FLAGS);
-    let uploads: Vec<String> = (log(&desk).into_iter())
-        .filter(|line| line.starts_with("release upload"))
-        .collect();
-    assert_eq!(uploads, [upload("SHA256SUMS")]);
+    let result = desk.output("release-create", &RELEASE_FLAGS);
+    assert_eq!(
+        log(&desk)[2..],
+        [
+            upload("SHA256SUMS"),
+            upload("widgets.dmg"),
+            publish("Widgets 1.0"),
+        ]
+    );
+    assert_eq!(result["resumed"], true);
 }
 
 #[test]
@@ -765,7 +771,6 @@ fn a_draft_holding_a_file_the_assets_lack_is_refused_and_one_without_it_is_publi
             "isDraft": true,
             "name": "Old title",
             "body": "Notes nobody checked.",
-            "url": "https://github.com/octo/widgets/releases/tag/untagged-1a2b",
             "assets": assets,
         })
         .to_string()
