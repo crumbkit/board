@@ -143,6 +143,43 @@ fn init_personal_says_what_it_enabled_and_named_and_what_to_run_next() {
 }
 
 #[test]
+fn init_personal_on_a_board_with_two_of_the_six_enabled_enables_only_the_other_four() {
+    let board = Scenario::new();
+    board.identified();
+    let elsewhere = "/elsewhere/board";
+    let known = json!({"boards": [elsewhere], "day_start": "07:00"});
+    let before = Scenario::new();
+    before.write("board/config.json", Item::File(&known.to_string()));
+    let xdg = before.workdir();
+    assert_eq!(personal(board.workdir(), xdg, &["init"]).code, 0);
+    for name in ["runs", "tasks"] {
+        let enabled = personal(board.workdir(), xdg, &["plugin", "enable", name]);
+        assert_eq!(enabled.code, 0, "{}", text(&enabled.stderr));
+    }
+    let output = personal(board.workdir(), xdg, &["init", "--personal"]);
+    assert_eq!(output.code, 0, "{}", text(&output.stderr));
+    let root = board.workdir().canonicalize().unwrap();
+    let file = file(xdg);
+    let expected = format!(
+        "{root} is already a board\nenabled evals, rules, plans and share\nnamed {root} as the personal board in {file}\n",
+        root = root.display(),
+        file = file.display()
+    );
+    assert_eq!(text(&output.stdout), expected);
+    assert!(text(&output.stderr).starts_with("next: run `board --personal tasks add"));
+    let mut listed = enabled(&board, xdg);
+    listed.sort();
+    assert_eq!(
+        listed,
+        ["evals", "plans", "rules", "runs", "share", "tasks"]
+    );
+    let written: Value = serde_json::from_slice(&std::fs::read(&file).unwrap()).unwrap();
+    let shown = root.display().to_string();
+    let expected = json!({"boards": [elsewhere, shown], "personal": shown, "day_start": "07:00"});
+    assert_eq!(written, expected);
+}
+
+#[test]
 fn init_personal_where_the_file_names_another_board_writes_nothing_and_its_twin_naming_this_one_succeeds()
  {
     let other = Scenario::board();

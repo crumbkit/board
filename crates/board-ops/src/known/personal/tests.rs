@@ -172,3 +172,40 @@ fn writing_makes_the_directory_and_replaces_the_file_whole_past_a_stray_temporar
         .collect();
     assert_eq!(names, ["config.json"]);
 }
+
+#[test]
+fn a_root_json_cannot_hold_is_refused_and_writes_nothing_and_a_utf8_root_is_admitted() {
+    use std::os::unix::ffi::OsStrExt as _;
+    let place = place();
+    let missing = || Err(io::Error::from(ErrorKind::NotFound));
+    let bytes = place.root.as_os_str().as_bytes().to_vec();
+    let unprintable = PathBuf::from(std::ffi::OsStr::from_bytes(&[&bytes[..], b"\xff"].concat()));
+    let refusal = Naming::plan(&place.file, missing(), &unprintable).unwrap_err();
+    assert_eq!(refusal.code.as_str(), "board::config::invalid");
+    assert!(refusal.message.contains("UTF-8"), "{}", refusal.message);
+    assert!(!place.file.exists());
+    let naming = Naming::plan(&place.file, missing(), &place.root).unwrap();
+    assert!(naming.rewritten().is_some());
+}
+
+#[test]
+fn writing_through_a_symlinked_file_rewrites_its_target_and_keeps_the_link() {
+    let place = place();
+    place
+        .xdg
+        .write("dotfiles/config.json", Item::File("{}"))
+        .write(FILE, Item::Symlink("../dotfiles/config.json"));
+    let read = std::fs::read(&place.file);
+    let naming = Naming::plan(&place.file, read, &place.root).unwrap();
+    assert!(naming.write().unwrap());
+    let link = std::fs::symlink_metadata(&place.file).unwrap();
+    assert!(link.is_symlink(), "the link survives");
+    let target = place.xdg.workdir().join("dotfiles/config.json");
+    assert_eq!(std::fs::read(target).unwrap(), naming.rewritten().unwrap());
+    // Its twin, a regular file, is replaced in place.
+    let plain = self::place();
+    let read = Err(io::Error::from(ErrorKind::NotFound));
+    let naming = Naming::plan(&plain.file, read, &plain.root).unwrap();
+    assert!(naming.write().unwrap());
+    assert!(std::fs::symlink_metadata(&plain.file).unwrap().is_file());
+}
