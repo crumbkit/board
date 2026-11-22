@@ -3,6 +3,11 @@
 This is the v0 design. docs/architecture.md says what is built, and PLAN.md
 says what comes next.
 
+The external plugin protocol is unstable in 0.1.0 and frozen in 0.2.0: its
+four types and six of its codes may change, so an external plugin written
+against 0.1.0 may need changes
+([unstable interfaces](architecture/released/unstable.md)).
+
 A plugin teaches Board a higher-level construct, such as tasks, a reading list
 or a changelog. It is compiled into Board
 ([plugins/built-in.md](plugins/built-in.md)), or installed as a separate
