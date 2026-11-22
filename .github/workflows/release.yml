@@ -1,18 +1,21 @@
 # A release: the pull-request lane and the slow lane without mutants (the
-# gates on macOS, fuzzing and the timing job), then
-# `board` built for each target, bin/install-check run from the archives on
-# each platform, and the archives attached to a GitHub release with
-# SHA256SUMS. The tag is `v<version>`, where <version> is board-cli's version
-# in its Cargo.toml, and released.json must list what the release ships
+# gates on macOS, fuzzing and the timing job), then `board` built with
+# `cargo auditable` for each target, bin/install-check run from the archives
+# on each platform, and the archives attached to a GitHub release with
+# SHA256SUMS and a build provenance attestation for each archive. The tag is
+# `v<version>`, where <version> is board-cli's version in its Cargo.toml, and
+# released.json must list what the release ships
 # (docs/architecture/released.md).
-# workflow_dispatch runs everything but publishes nothing. Until released.json
-# lists a release, the version job's `released` test fails, on a dispatch and
-# on a tag push alike, so build, install and release are skipped.
+# A pull request that changes this file, and workflow_dispatch, build and
+# install-check every archive and publish nothing. A pull request skips the
+# two lanes, which ci.yml already runs on it.
 name: release
 
 on:
   push:
     tags: ["v*"]
+  pull_request:
+    paths: [.github/workflows/release.yml]
   workflow_dispatch:
 
 permissions:
@@ -71,6 +74,10 @@ jobs:
         include:
           - target: aarch64-apple-darwin
             os: macos-15
+          # Built and install-checked natively on Intel. When GitHub retires
+          # this image, cross-compile on macos-15 or drop the target.
+          - target: x86_64-apple-darwin
+            os: macos-15-intel
           - target: aarch64-unknown-linux-gnu
             os: ubuntu-24.04-arm
           - target: x86_64-unknown-linux-gnu
@@ -85,7 +92,13 @@ jobs:
         with:
           persist-credentials: false
       - run: rustup target add "$TARGET"
-      - run: cargo build --release --locked --package board-cli --target "$TARGET"
+      - uses: taiki-e/install-action@e407f7bafb71fd004bc5c2da3032e5470cbb6ef0 # v2.87.24
+        with:
+          tool: cargo-auditable@0.7.7
+          fallback: none
+      # rust-standards BASE-30: the binary records the dependency versions it
+      # contains.
+      - run: cargo auditable build --release --locked --package board-cli --target "$TARGET"
       - run: |
           mkdir dist
           tar -C "target/$TARGET/release" -czf "dist/board-$VERSION-$TARGET.tar.gz" board
@@ -105,6 +118,10 @@ jobs:
         include:
           - target: aarch64-apple-darwin
             os: macos-15
+          # Built and install-checked natively on Intel. When GitHub retires
+          # this image, cross-compile on macos-15 or drop the target.
+          - target: x86_64-apple-darwin
+            os: macos-15-intel
           - target: aarch64-unknown-linux-gnu
             os: ubuntu-24.04-arm
           - target: x86_64-unknown-linux-gnu
@@ -124,13 +141,22 @@ jobs:
           path: dist
       - run: bin/install-check "dist/board-$VERSION-$TARGET.tar.gz" "$VERSION"
 
+  # The release gets the archives, SHA256SUMS and an attestation of each
+  # archive. The attestation comes before the upload, so a refused one
+  # publishes nothing. A run again after a failure replaces the files of the
+  # release that the failed run created.
   release:
     if: github.ref_type == 'tag'
     needs: [version, ci, slow, install]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
-      contents: write
+      contents: write # gh creates the release and uploads its files.
+      id-token: write # the attestation signs with the run's OIDC identity.
+      attestations: write # the attestation is stored with the repository.
+    env:
+      GH_TOKEN: ${{ github.token }}
+      VERSION: ${{ needs.version.outputs.version }}
     steps:
       # Only the build archives: the slow lane's artifacts are in
       # this run too.
@@ -143,7 +169,13 @@ jobs:
           cd dist
           sha256sum -- *.tar.gz > SHA256SUMS
           cat SHA256SUMS
-      - run: gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --verify-tag --title "$GITHUB_REF_NAME" --notes "board $VERSION for aarch64-apple-darwin, aarch64-unknown-linux-gnu and x86_64-unknown-linux-gnu, with SHA256SUMS." dist/*
-        env:
-          GH_TOKEN: ${{ github.token }}
-          VERSION: ${{ needs.version.outputs.version }}
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: dist/*.tar.gz
+      - run: |
+          notes="board $VERSION for aarch64-apple-darwin, x86_64-apple-darwin, aarch64-unknown-linux-gnu and x86_64-unknown-linux-gnu, with SHA256SUMS. Install it with Homebrew or the Board dmg, as https://github.com/$GITHUB_REPOSITORY/blob/$GITHUB_REF_NAME/docs/guide/getting-started.md says."
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --clobber dist/*
+          else
+            gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --verify-tag --title "$GITHUB_REF_NAME" --notes "$notes" dist/*
+          fi
