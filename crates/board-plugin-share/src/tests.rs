@@ -6,7 +6,7 @@
 use serde_json::json;
 
 use super::*;
-use to::{Line, refused, same, scheme};
+use to::{Line, capped, refused, same, scheme};
 
 /// A host that does nothing; each call here is refused before the plugin
 /// reaches the board.
@@ -111,6 +111,13 @@ fn the_manifest_parses_as_a_built_in_one_and_describes_the_plugin_with_the_skill
         .collect();
     assert_eq!(names, ["to"]);
     assert_eq!(super::manifest()["description"], skill_description());
+    let start = "Start with `board -C <board> share to --path /<record> --to /<mount>`, which \
+                 lists";
+    assert!(
+        skill_description().contains(start),
+        "{}",
+        skill_description()
+    );
 }
 
 #[test]
@@ -129,14 +136,36 @@ fn every_input_property_carries_a_sentence_that_says_what_it_means() {
         );
         described.push(name.as_str());
     }
-    assert_eq!(described, ["dry_run", "local_attachments", "path", "to"]);
-    for flag in ["dry_run", "local_attachments"] {
+    assert_eq!(
+        described,
+        ["allow-uncopied", "local_attachments", "path", "to", "yes"]
+    );
+    for flag in ["allow-uncopied", "local_attachments", "yes"] {
+        assert_eq!(input["properties"][flag]["type"], "boolean", "{flag}");
         assert_eq!(input["properties"][flag]["default"], false, "{flag}");
     }
     for path in ["path", "to"] {
         assert_eq!(input["properties"][path]["format"], "board-path", "{path}");
         assert_eq!(input["properties"][path]["minLength"], 1, "{path}");
     }
+}
+
+#[test]
+fn the_to_flag_says_how_to_set_up_a_shared_board_and_its_mount() {
+    let manifest = super::manifest();
+    let to = manifest["capabilities"][0]["inputSchema"]["properties"]["to"]["description"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert!(
+        to.contains(
+            "To share into a team's board, clone its repository, run `board init` there if it \
+             is empty, commit and push it, then run `board mount add /team <clone>` here, which \
+             follows the branch checked out in the clone. plugins/share/README.md, Setting up a \
+             shared board, gives the commands."
+        ),
+        "{to}"
+    );
 }
 
 #[test]
@@ -207,4 +236,10 @@ fn a_capability_the_plugin_does_not_offer_is_refused_and_to_reaches_its_own_chec
         .call(&Nothing, &known, json!({"path": "/evals/x", "to": "team"}))
         .unwrap_err();
     assert_eq!(refused.code, "share::mount::not_found");
+}
+
+#[test]
+fn a_capped_list_keeps_the_first_entries_and_counts_them_all() {
+    assert_eq!(capped(vec!["/a", "/b", "/c"], 2), (vec!["/a", "/b"], 3));
+    assert_eq!(capped(vec!["/a"], 2), (vec!["/a"], 1));
 }

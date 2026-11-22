@@ -2423,7 +2423,15 @@ fn share_writes_through_a_mount_that_mount_add_wrote_with_its_default_follow() {
     assert_eq!(added.code, 0, "{}", text(&added.stderr));
     let shared = board_built_in(
         personal.workdir(),
-        &["call", "share.to", "--path", "/projects/p", "--to", "/team"],
+        &[
+            "call",
+            "share.to",
+            "--path",
+            "/projects/p",
+            "--to",
+            "/team",
+            "--yes",
+        ],
     );
     assert_eq!(shared.code, 0, "{}", text(&shared.stderr));
     let head = team.head().unwrap();
