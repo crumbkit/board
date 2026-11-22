@@ -128,16 +128,15 @@ Make the board in it once, from an empty repository:
 
 Then mount the clone in your own board as `/team`:
 
-    board put /team <<'EOF'
-    {"$type": "board/mount/v1", "repo": "/Users/<you>/team-board", "follow": "main", "commit": "<HEAD of the clone>"}
-    EOF
+    board mount add /team ~/team-board
 
-- `repo` is the clone's directory.
-- `follow` must name the clone's local branch, such as `main`, because the
-  share writes through the mount. Board refuses a write through a mount whose
-  `follow` is a remote branch, such as `origin/main`.
-- `commit` is the clone's HEAD, which `git -C ~/team-board rev-parse HEAD`
-  prints.
+- `board mount add <path> <repo>` writes a `board/mount/v1` record at the
+  path. Its `repo` is the clone's directory, its `follow` the branch checked
+  out in the clone, and its `commit` that branch's commit now.
+- `follow` must name a local branch, such as `main`, because the share
+  writes through the mount. Board refuses a write through a mount whose
+  `follow` is a remote branch, such as `origin/main`. Pass `--follow main`
+  when the clone has another branch checked out.
 
 ## Refusals
 

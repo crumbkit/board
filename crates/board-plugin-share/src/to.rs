@@ -39,7 +39,7 @@ pub(crate) struct Input {
     /// The record or file to share, such as /evals/x; its children under /evals/x/ go with it.
     #[schemars(length(min = 1), extend("format" = "board-path"))]
     path: String,
-    /// The mount record of the board to copy into, such as /team; the share writes through it. To share into a team's board, clone its repository, run `board init` there if it is empty, commit and push it, then write a `board/mount/v1` here, such as `/team`, whose `repo` is the clone, `follow` its local branch, such as `main`, and `commit` its HEAD. plugins/share/README.md, Setting up a shared board, gives the commands.
+    /// The mount record of the board to copy into, such as /team; the share writes through it. To share into a team's board, clone its repository, run `board init` there if it is empty, commit and push it, then run `board mount add /team <clone>` here, which follows the branch checked out in the clone. plugins/share/README.md, Setting up a shared board, gives the commands.
     #[schemars(length(min = 1), extend("format" = "board-path"))]
     to: String,
     /// Write the copies, when true; without it the call lists what it would copy and writes nothing.
