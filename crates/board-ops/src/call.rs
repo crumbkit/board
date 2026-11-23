@@ -47,9 +47,12 @@ impl Board {
         let read_only = (chosen.capability().annotations.as_ref())
             .and_then(|annotations| annotations.read_only_hint)
             == Some(true);
-        // A built-in plugin's puts drop the memo it shares; a process
-        // plugin's own `board put` moves HEAD only when the board commits
-        // on put.
+        // Every write a built-in plugin's host offers (put, sync, mount
+        // update, decide, a nested call that may write, a process in the
+        // board's tree) drops the memo it shares, and a commit moves HEAD,
+        // so a wrong hint cannot leave a stale read through the host. A
+        // process plugin's own `board put` moves HEAD only when the board
+        // commits on put.
         let built_in = matches!(chosen.origin, Origin::BuiltIn { .. });
         let memo = if read_only && (built_in || self.config().commit_on_put) {
             Rc::clone(memo)

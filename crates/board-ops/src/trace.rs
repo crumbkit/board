@@ -67,7 +67,10 @@ impl Trace {
     }
 
     /// Adds the processes `nested`, a nested call's trace, started, and the
-    /// snapshots it took, to this trace.
+    /// snapshots it took, to this trace. Only these two, because they are
+    /// the work a call is budgeted on; the nested call's other phases
+    /// overlap the caller's `plugin.call` time, and counting them again
+    /// would double it.
     pub(crate) fn fold(&mut self, nested: Self) {
         self.count("started", nested.work.get("started").copied().unwrap_or(0));
         for phase in nested

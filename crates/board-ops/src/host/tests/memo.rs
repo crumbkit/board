@@ -31,9 +31,9 @@ enum Between {
     /// The call calls `reader.due`, which queries the note but does not
     /// say it is read-only.
     UnmarkedCall,
-    /// The call calls `liar.due`, which says it is read-only and puts the
-    /// note.
-    LyingCall,
+    /// The call calls `liar.due`, which says it is read-only and writes
+    /// by `Route`.
+    LyingCall(Route),
     /// The call opens a second board with `-C` and calls `reader.due`
     /// there.
     Elsewhere,
@@ -41,6 +41,19 @@ enum Between {
     Commit,
     /// A second handle on the index prunes it.
     Prune,
+}
+
+/// How `liar` writes though it says it is read-only.
+#[derive(Clone, Copy, Debug)]
+enum Route {
+    /// It puts the note.
+    Put,
+    /// It syncs the board, which has no remote.
+    Sync,
+    /// It updates a mount the board does not hold.
+    MountUpdate,
+    /// It asks the owner to decide a capability.
+    Decide,
 }
 
 /// A board with `fixture`, `writer`, `reader` and `liar` enabled,
@@ -109,7 +122,7 @@ fn querying(between: Between, root: PathBuf, cache: PathBuf, elsewhere: PathBuf)
                 Between::ReadOnlyCall | Between::UnmarkedCall => {
                     host.call(&target("reader.due"), &json!({"n": 1})).unwrap();
                 }
-                Between::LyingCall => {
+                Between::LyingCall(_) => {
                     host.call(&target("liar.due"), &json!({"n": 1})).unwrap();
                 }
                 Between::Elsewhere => {
@@ -153,12 +166,25 @@ fn reader() -> Fixture {
     answering("reader", Box::new(|host| Ok(json!({"count": notes(host)}))))
 }
 
-/// `liar`, which says `due` is read-only and puts the note as its own item.
-fn liar() -> Fixture {
+/// `liar`, which says `due` is read-only and writes by `route`. Only the
+/// put succeeds; each other route is refused in this board, after the host
+/// dropped the snapshots it shares.
+fn liar(route: Route) -> Fixture {
     answering(
         "liar",
-        Box::new(|host| {
-            host.put(&[note_line("liar")]).unwrap();
+        Box::new(move |host| {
+            let mount: LogicalPath = "/repos/none".parse().unwrap();
+            let deadline = Duration::from_secs(5);
+            match route {
+                Route::Put => {
+                    host.put(&[note_line("liar")]).unwrap();
+                }
+                Route::Sync => assert!(host.sync(false, deadline).is_err()),
+                Route::MountUpdate => assert!(host.mount_update(&mount, deadline).is_err()),
+                Route::Decide => {
+                    let _ = host.decide("liar.due", &mount, None);
+                }
+            }
             Ok(json!({"count": 1}))
         }),
     )
@@ -216,7 +242,10 @@ fn around_in(between: Between, commits: bool) -> (Value, usize) {
         ),
         writer(),
         reading,
-        liar(),
+        liar(match between {
+            Between::LyingCall(route) => route,
+            _ => Route::Put,
+        }),
     ];
     called(&scenario, cache.path(), fixtures)
 }
@@ -287,7 +316,7 @@ fn a_put_a_process_a_nested_call_or_a_commit_between_queries_shows_the_note() {
         Between::Run,
         Between::Call,
         Between::Commit,
-        Between::LyingCall,
+        Between::LyingCall(Route::Put),
     ] {
         let (output, taken) = around(between);
         assert_eq!(output["first"], 0, "{between:?}");
@@ -347,4 +376,17 @@ fn a_call_in_another_board_takes_its_own_snapshots_and_leaves_the_callers_count_
         (&json!(0), &json!(0))
     );
     assert_eq!(taken, 1);
+}
+
+#[test]
+fn a_read_only_callee_that_syncs_updates_a_mount_or_decides_drops_the_snapshots_it_shares() {
+    for route in [Route::Sync, Route::MountUpdate, Route::Decide] {
+        let (output, taken) = around(Between::LyingCall(route));
+        assert_eq!(
+            (&output["first"], &output["second"]),
+            (&json!(0), &json!(0)),
+            "{route:?}"
+        );
+        assert_eq!(taken, 2, "{route:?}");
+    }
 }

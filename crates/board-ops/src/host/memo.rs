@@ -53,11 +53,9 @@ impl Memo {
     }
 
     /// Drops both snapshots before a process runs in `directory`, unless
-    /// it runs outside `board`'s canonical working tree, in a new temporary
-    /// directory when `directory` is none, and `board` commits on put. A
-    /// process can put through its own `board`, which leaves HEAD where it
-    /// was when the board does not commit on put. A directory that does
-    /// not canonicalize drops them.
+    /// it runs outside `board`'s tree (none is a new temporary directory)
+    /// and `board` commits on put, so HEAD shows any put the process makes.
+    /// `directory` is canonicalized to compare with the canonical root.
     pub(crate) fn forget_running(&self, board: &Board, directory: Option<&Path>) {
         let root = board.repository().path();
         let outside = directory.is_none_or(|directory| {

@@ -1600,6 +1600,26 @@ fn an_open_task_beneath_a_mount_that_cannot_be_read_refuses_next_and_advance_nam
     }
 }
 
+/// `attach` reads the change and its plan, writes the reference and reads
+/// the plan back in one call. The fixture board does not commit on put, so
+/// HEAD stays where it was and only the put dropping the call's snapshots
+/// lets the read-back see the new reference.
+#[test]
+fn attach_reads_back_each_reference_it_wrote_in_the_same_call() {
+    let board = Changes::new();
+    board.change_at("changes/t.json", "plan", &json!({"records": []}));
+    board.write("tasks/a.md", &task("open"));
+    board.write("tasks/b.md", &task("open"));
+    let counts: Vec<Value> = (["/tasks/a.md", "/tasks/b.md"].iter())
+        .map(|reference| board.call("attach", &at(&json!({"ref": reference})))["records"].clone())
+        .collect();
+    assert_eq!(counts, [json!(1), json!(2)]);
+    assert_eq!(
+        board.read("changes/t/plans/1.json")["records"],
+        json!(["/tasks/a.md", "/tasks/b.md"])
+    );
+}
+
 #[test]
 fn next_and_advance_from_plan_to_build_read_through_one_view_and_one_report_snapshot() {
     let board = Changes::new();
