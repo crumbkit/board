@@ -195,10 +195,15 @@ impl Host for Mac {
             .collect::<Vec<_>>()
             .join(" ");
         self.runs.borrow_mut().push(line);
-        if run.program == "launchctl" {
+        if run.program == "launchctl" || run.program == "id" {
+            let stdout = if run.program == "id" {
+                b"501\n".to_vec()
+            } else {
+                Vec::new()
+            };
             return Ok(Exited {
                 code: Some(0),
-                stdout: Vec::new(),
+                stdout,
                 stderr: Vec::new(),
             });
         }
@@ -352,11 +357,18 @@ fn install_writes_and_bootstraps_the_agent_and_uninstall_boots_it_out_and_delete
             .contains("<integer>300</integer>")
     );
     let runs = mac.runs.borrow().clone();
-    assert_eq!(runs.len(), 2);
-    assert!(runs[0].starts_with("launchctl bootout gui/"), "{runs:?}");
-    assert!(runs[1].starts_with("launchctl bootstrap gui/"), "{runs:?}");
-    assert!(runs[1].ends_with("board.autosync.plist"), "{runs:?}");
+    assert_eq!(runs.len(), 3, "{runs:?}");
+    assert_eq!(runs[0], "id -u");
+    assert_eq!(runs[1], "launchctl bootout gui/501/board.autosync");
+    assert!(
+        runs[2].starts_with("launchctl bootstrap gui/501 "),
+        "{runs:?}"
+    );
+    assert!(runs[2].ends_with("board.autosync.plist"), "{runs:?}");
     mac.call("uninstall", json!({})).unwrap();
     assert!(!plist.exists());
-    assert!(mac.runs.borrow()[2].starts_with("launchctl bootout gui/"));
+    assert_eq!(
+        mac.runs.borrow()[4],
+        "launchctl bootout gui/501/board.autosync"
+    );
 }

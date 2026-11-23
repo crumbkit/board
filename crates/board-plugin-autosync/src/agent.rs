@@ -111,24 +111,36 @@ pub(crate) fn text(board: &str, interval: u64, path: &str, home: &str, logs: &Pa
     )
 }
 
-/// The launchd domain of this user's agents.
-fn domain() -> String {
-    format!("gui/{}", rustix::process::getuid().as_raw())
+/// The launchd domain of this user's agents, `gui/<uid>`, with the uid
+/// that `id -u` prints.
+fn domain(host: &dyn Host) -> Result<String, String> {
+    let (code, stdout) = command(host, "id", &["-u"])?;
+    let uid = String::from_utf8_lossy(&stdout).trim().parse::<u32>();
+    match (code, uid) {
+        (0, Ok(uid)) => Ok(format!("gui/{uid}")),
+        _ => Err("`id -u` printed no user id".to_owned()),
+    }
 }
 
-fn launchctl(host: &dyn Host, arguments: &[&str]) -> Result<i32, String> {
+/// Runs `program` and returns its exit code, -1 when a signal ended it, and
+/// its stdout.
+fn command(host: &dyn Host, program: &str, arguments: &[&str]) -> Result<(i32, Vec<u8>), String> {
     let arguments: Vec<String> = arguments.iter().map(|&word| word.to_owned()).collect();
     let exited = host
         .run(&Run {
-            program: "launchctl",
+            program,
             arguments: &arguments,
             directory: None,
             input: &[],
             deadline: Duration::from_secs(30),
             added: &[],
         })
-        .map_err(|error| format!("launchctl did not run: {error}"))?;
-    Ok(exited.code.unwrap_or(-1))
+        .map_err(|error| format!("{program} did not run: {error}"))?;
+    Ok((exited.code.unwrap_or(-1), exited.stdout))
+}
+
+fn launchctl(host: &dyn Host, arguments: &[&str]) -> Result<i32, String> {
+    command(host, "launchctl", arguments).map(|(code, _)| code)
 }
 
 /// Writes and loads the agent, or with `dry_run` prints its plist.
@@ -175,13 +187,14 @@ pub(crate) fn install(host: &dyn Host, input: &Value) -> Result<Value, PluginErr
             "run `board --personal autosync install` again; `--dry-run` shows the plist",
         )
     };
-    let target = format!("{}/{LABEL}", domain());
+    let domain = domain(host).map_err(failed)?;
+    let target = format!("{domain}/{LABEL}");
     // A loaded agent is booted out first, so the new plist is the one read.
     launchctl(host, &["bootout", &target]).map_err(failed)?;
     board_index::replace_file(&file, written.as_bytes(), 0o644)
         .map_err(|error| failed(format!("{} cannot be written: {error}", file.display())))?;
     let file_text = file.display().to_string();
-    match launchctl(host, &["bootstrap", &domain(), &file_text]).map_err(failed)? {
+    match launchctl(host, &["bootstrap", &domain, &file_text]).map_err(failed)? {
         0 => Ok(json!(output(true))),
         code => Err(failed(format!("launchctl bootstrap exited with {code}"))),
     }
@@ -207,7 +220,8 @@ pub(crate) fn uninstall(host: &dyn Host, input: &Value) -> Result<Value, PluginE
             "run `board --personal autosync uninstall` again",
         )
     };
-    launchctl(host, &["bootout", &format!("{}/{LABEL}", domain())]).map_err(failed)?;
+    let domain = domain(host).map_err(failed)?;
+    launchctl(host, &["bootout", &format!("{domain}/{LABEL}")]).map_err(failed)?;
     board_index::remove_state(&file)
         .map_err(|error| failed(format!("{} cannot be removed: {error}", file.display())))?;
     Ok(json!(output(true)))

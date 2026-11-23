@@ -247,7 +247,6 @@ dependencies = [
  "board-ops",
  "board-plugin",
  "board-scenario",
- "rustix",
  "schemars",
  "serde",
  "serde_json",
