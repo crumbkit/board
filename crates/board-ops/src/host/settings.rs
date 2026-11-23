@@ -1,9 +1,14 @@
 //! What a built-in plugin reads in place of a process plugin's
 //! environment.
 
+use std::ffi::OsString;
 use std::fmt;
 use std::path::PathBuf;
 use std::time::SystemTime;
+
+use board_plugin::child::{Exited, Process, ProcessError};
+
+use super::Run;
 
 /// What a built-in plugin reads in place of a process plugin's environment.
 #[derive(Clone, Debug)]
@@ -45,5 +50,40 @@ impl fmt::Debug for Variables {
         (formatter.debug_list())
             .entries(self.0.iter().map(|(name, _)| name))
             .finish()
+    }
+}
+
+impl Settings {
+    /// Runs `run` as [`super::Host::run_hiding`] says, with this environment.
+    pub(crate) fn run_hidden(
+        &self,
+        run: &Run<'_>,
+        hidden: &[&str],
+    ) -> Result<Exited, ProcessError> {
+        let empty;
+        let directory = if let Some(directory) = run.directory {
+            directory
+        } else {
+            empty = board_index::empty_directory()
+                .map_err(|source| ProcessError::NotStarted { source })?;
+            empty.path()
+        };
+        let process = Process {
+            program: run.program,
+            arguments: run.arguments,
+            directory,
+            input: run.input,
+            deadline: run.deadline,
+        };
+        let added = run.added.iter().map(|(name, _)| *name);
+        let replaced: Vec<&str> = hidden.iter().copied().chain(added).collect();
+        let environment: Vec<_> = (self.environment.0.iter())
+            .filter(|(name, _)| !replaced.contains(&name.as_str()))
+            .cloned()
+            .chain(
+                (run.added.iter()).map(|(name, value)| ((*name).to_owned(), OsString::from(value))),
+            )
+            .collect();
+        board_plugin::child::run(&process, &environment)
     }
 }

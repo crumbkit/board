@@ -30,6 +30,15 @@ on git and their remotes, and has no budget. The row times the snapshot and
 the query and refs the plugin makes. The first call is discarded. Bench skips
 the row, and says why, when the board does not enable tasks.
 
+A built-in plugin call takes at most one snapshot of each kind. Its queries
+share one View snapshot, and its `refs` share one Report snapshot, which
+decides every mount and so never answers a query. The call drops both when
+the board's `HEAD` moves, and before it puts, syncs, updates a mount,
+decides, runs a process or calls another plugin. A kept View that another
+process prunes under (index.md) is dropped, and the query runs on a fresh
+one within the same three tries. A call does not see an uncommitted edit
+that another process makes after its first read; the next call does.
+
 The generated board commits its records in one commit, so git's index and
 HEAD hold them as a real board's do; a put pays for both, and a put into a
 board whose records are untracked takes a fifteenth of the time. The put row

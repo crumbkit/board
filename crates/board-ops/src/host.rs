@@ -11,7 +11,7 @@ use std::time::Duration;
 use board_model::{
     CapabilityName, Code, Fields, LogicalPath, Moved, Order, PluginName, RecordType, Refusal,
 };
-use board_plugin::child::{Exited, Process, ProcessError};
+use board_plugin::child::{Exited, ProcessError};
 use board_plugin::{CallReport, Manifest, Target};
 pub use board_tree::Origin;
 use serde_json::Value;
@@ -30,8 +30,10 @@ use crate::sync::{Guard, SyncError, Synced};
 use crate::{Board, OpenError};
 
 mod error;
+mod memo;
 mod settings;
 pub use error::PluginError;
+pub(crate) use memo::Memo;
 pub use settings::{Settings, Variables};
 
 /// A plugin compiled into Board, which runs in Board's own process.
@@ -232,31 +234,7 @@ pub trait Host {
     /// credentials that only a nested call needs. The settings' other
     /// variables are kept.
     fn run_hiding(&self, run: &Run<'_>, hidden: &[&str]) -> Result<Exited, ProcessError> {
-        let empty;
-        let directory = if let Some(directory) = run.directory {
-            directory
-        } else {
-            empty = board_index::empty_directory()
-                .map_err(|source| ProcessError::NotStarted { source })?;
-            empty.path()
-        };
-        let process = Process {
-            program: run.program,
-            arguments: run.arguments,
-            directory,
-            input: run.input,
-            deadline: run.deadline,
-        };
-        let added = run.added.iter().map(|(name, _)| *name);
-        let replaced: Vec<&str> = hidden.iter().copied().chain(added).collect();
-        let environment: Vec<_> = (self.settings().environment.0.iter())
-            .filter(|(name, _)| !replaced.contains(&name.as_str()))
-            .cloned()
-            .chain(
-                (run.added.iter()).map(|(name, value)| ((*name).to_owned(), OsString::from(value))),
-            )
-            .collect();
-        board_plugin::child::run(&process, &environment)
+        self.settings().run_hidden(run, hidden)
     }
     /// The logical path of `directory` at each mount of this board whose
     /// repository holds it, or else whose repository has its repository's
@@ -412,6 +390,8 @@ pub(crate) struct Hosted<'a> {
     /// What [`Host::warn`] was told, one line each, without repeats. A host
     /// [`Host::board`] opens adds to the same list.
     pub(crate) warnings: &'a RefCell<Vec<String>>,
+    /// The snapshots this call's reads share.
+    pub(crate) memo: Memo,
 }
 
 impl Hosted<'_> {
@@ -544,7 +524,7 @@ impl Hosted<'_> {
 
 impl Host for Hosted<'_> {
     fn query(&self, sql: &str, limit: Limit) -> Result<QueryReport, QueryError> {
-        self.board.query(sql, limit.0, None, self.plugins.cache)
+        (self.memo).query(&self.board, self.plugins.cache, sql, limit.0)
     }
 
     fn refs(
@@ -553,10 +533,7 @@ impl Host for Hosted<'_> {
         absent: Absent,
         fields: &[String],
     ) -> Result<Vec<Result<RefsReport, RefsError>>, RefsError> {
-        Ok(self
-            .board
-            .refs(paths, absent, fields, None, self.plugins.cache)?
-            .collect())
+        (self.memo).refs(&self.board, self.plugins.cache, paths, absent, fields)
     }
 
     fn get_each(
@@ -576,10 +553,12 @@ impl Host for Hosted<'_> {
     /// the mounted board, so every check reads the plugin where it already
     /// does.
     fn put(&self, lines: &[Value]) -> Result<PutReport, PutError> {
+        self.memo.forget();
         self.put_marked(lines, None)
     }
 
     fn put_bulk(&self, lines: &[Value], bulk: &crate::Bulk) -> Result<PutReport, PutError> {
+        self.memo.forget();
         self.put_marked(lines, Some(bulk))
     }
 
@@ -589,6 +568,7 @@ impl Host for Hosted<'_> {
     }
 
     fn call(&self, target: &Target, input: &Value) -> Result<CallReport, Box<Refusal>> {
+        self.memo.forget();
         let board = self.again().map_err(|error| Box::new(opened(&error)))?;
         // As bytes, so the input passes the size limit and parse a process
         // plugin's `board call` reads it through.
@@ -643,6 +623,7 @@ impl Host for Hosted<'_> {
             plugins: self.plugins.clone(),
             root: self.root,
             warnings: self.warnings,
+            memo: Memo::default(),
         }))
     }
 
@@ -652,6 +633,7 @@ impl Host for Hosted<'_> {
         path: &LogicalPath,
         shown: Option<&Shown>,
     ) -> Result<DecideReport, Box<Refusal>> {
+        self.memo.forget();
         (self
             .asking(capability)?
             .decide_capability(capability, path, shown))
@@ -671,6 +653,7 @@ impl Host for Hosted<'_> {
     }
 
     fn sync(&self, push: bool, deadline: Duration) -> Result<Synced, SyncError> {
+        self.memo.forget();
         self.board.sync(push, deadline)
     }
 
@@ -680,6 +663,7 @@ impl Host for Hosted<'_> {
         deadline: Duration,
         wait: Duration,
     ) -> Result<Synced, SyncError> {
+        self.memo.forget();
         self.board.sync_waiting(push, deadline, wait)
     }
 
@@ -689,6 +673,7 @@ impl Host for Hosted<'_> {
         guard: &mut Guard<'_>,
         deadline: Duration,
     ) -> Result<Synced, SyncError> {
+        self.memo.forget();
         self.board.sync_guarded(push, guard, deadline)
     }
 
@@ -697,11 +682,17 @@ impl Host for Hosted<'_> {
         path: &LogicalPath,
         deadline: Duration,
     ) -> Result<MountUpdateReport, MountError> {
+        self.memo.forget();
         self.board.mount_update(path, deadline)
     }
 
     fn settings(&self) -> &Settings {
         &self.settings
+    }
+
+    fn run_hiding(&self, run: &Run<'_>, hidden: &[&str]) -> Result<Exited, ProcessError> {
+        self.memo.forget();
+        self.settings.run_hidden(run, hidden)
     }
 
     fn started_in(&self) -> Option<crate::StartedIn> {

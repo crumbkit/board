@@ -10,7 +10,7 @@ use board_plugin::{
 use serde_json::Value;
 
 use crate::Board;
-use crate::host::{HostBoard, Hosted, PluginError, Settings, Variables};
+use crate::host::{HostBoard, Hosted, Memo, PluginError, Settings, Variables};
 use crate::plugins::{CallFailed, Plugins};
 
 impl Board {
@@ -138,6 +138,7 @@ impl Board {
             },
             root,
             warnings: &warnings,
+            memo: Memo::default(),
         };
         let plugin = &chosen.manifest.name;
         let capability = &chosen.capability().name;
