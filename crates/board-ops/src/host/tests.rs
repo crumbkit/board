@@ -26,16 +26,32 @@ const ITEM_SCHEMA: &str = r#"{"type": "object"}"#;
 type Answer = Box<dyn Fn(&dyn Host) -> Result<Value, PluginError> + Sync>;
 
 /// A built-in plugin offering `due` and shipping `<name>/item/v1`, or not
-/// shipping its schema when `ships` is false.
+/// shipping its schema when `ships` is false. `due` has the annotation
+/// `readOnlyHint` when `read_only` is true.
 struct Fixture {
     name: &'static str,
     ships: bool,
+    read_only: bool,
     answer: Answer,
+}
+
+impl Fixture {
+    /// This fixture, its `due` annotated `readOnlyHint`.
+    fn read_only(self) -> Self {
+        Self {
+            read_only: true,
+            ..self
+        }
+    }
 }
 
 impl Plugin for Fixture {
     fn manifest(&self) -> Manifest {
-        Manifest::built_in(manifest(self.name)).unwrap()
+        let mut manifest = manifest(self.name);
+        if self.read_only {
+            manifest["capabilities"][0]["annotations"] = json!({"readOnlyHint": true});
+        }
+        Manifest::built_in(manifest).unwrap()
     }
 
     fn schemas(&self) -> Vec<(RecordType, Value)> {
@@ -222,6 +238,7 @@ impl Case {
                 Source::BuiltIn => fixtures.push(Fixture {
                     name,
                     ships,
+                    read_only: false,
                     answer: self.reply.answer(),
                 }),
                 Source::Process => install(&data, name, ships, self.reply),
@@ -407,6 +424,7 @@ fn answering(name: &'static str, answer: Answer) -> Fixture {
     Fixture {
         name,
         ships: true,
+        read_only: false,
         answer,
     }
 }
