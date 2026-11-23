@@ -33,11 +33,17 @@ fn a_write_the_owner_signs_verifies_and_the_same_signature_of_another_path_or_re
     let signature = sign_owner_write(&signing, signer.directory(), PATH, &record()).unwrap();
     verify_owner_write(&signing, PATH, &record(), &signature).unwrap();
     let moved = verify_owner_write(&signing, "/autosync/boards/other", &record(), &signature);
-    assert!(matches!(moved, Err(OwnerWriteError::Bad { .. })), "{moved:?}");
+    assert!(
+        matches!(moved, Err(OwnerWriteError::Bad { .. })),
+        "{moved:?}"
+    );
     let mut edited = record();
     edited["origins"] = json!(["git@example.com:someone/else.git"]);
     let edited = verify_owner_write(&signing, PATH, &edited, &signature);
-    assert!(matches!(edited, Err(OwnerWriteError::Bad { .. })), "{edited:?}");
+    assert!(
+        matches!(edited, Err(OwnerWriteError::Bad { .. })),
+        "{edited:?}"
+    );
 }
 
 #[test]

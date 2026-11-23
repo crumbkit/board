@@ -226,9 +226,12 @@ pub(crate) fn task(host: &dyn Host, entry: &Entry, before: Option<&Entry>) -> Op
             json!({"title": title(&entry.name), "text": body(entry), "repo": "/"}),
         ),
         (true, Some(path)) => {
-            let changed = before
-                .is_none_or(|before| before.outcome != entry.outcome || before.found != entry.found);
-            changed.then(|| rewrite(host, &path, &body(entry))).flatten()
+            let changed = before.is_none_or(|before| {
+                before.outcome != entry.outcome || before.found != entry.found
+            });
+            changed
+                .then(|| rewrite(host, &path, &body(entry)))
+                .flatten()
         }
         (false, Some(path)) => called("done", json!({"path": path, "push": false})),
         (false, None) => None,

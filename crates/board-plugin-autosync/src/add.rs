@@ -22,9 +22,9 @@ pub(crate) struct Input {
     /// The board's directory: absolute, or under the home as `~/...`.
     #[schemars(regex(pattern = r"^(/|~/).+"))]
     pub(crate) path: String,
-    /// Each URL the board may push to.
-    #[schemars(length(min = 1))]
-    pub(crate) origin: Vec<String>,
+    /// Each URL the board may push to, separated by spaces.
+    #[schemars(regex(pattern = r"\S"))]
+    pub(crate) origin: String,
     /// The branch to keep in step, `main` when left out.
     #[schemars(regex(pattern = r"^[A-Za-z0-9._/-]+$"))]
     pub(crate) branch: Option<String>,
@@ -40,7 +40,8 @@ pub(crate) struct Output {
 pub(crate) fn add(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
     let given: Input = PluginError::read_input(PLUGIN, "add", input)?;
     let path = format!("{BOARDS}{}", given.name);
-    let mut record = json!({"$type": BoardRecord::TYPE, "path": given.path, "origins": given.origin});
+    let origins: Vec<&str> = given.origin.split_whitespace().collect();
+    let mut record = json!({"$type": BoardRecord::TYPE, "path": given.path, "origins": origins});
     if let Some(branch) = given.branch {
         record["branch"] = json!(branch);
     }
@@ -58,7 +59,7 @@ fn unsigned(error: &OwnerWriteError) -> PluginError {
         OwnerWriteError::NoSigner | OwnerWriteError::NotOffered => (
             "autosync::sign::no_signer",
             "run `board --personal autosync add` from a release build of board on the owner's \
-             Mac, where attention-sign shows the record for Touch ID",
+             Mac, where the signer shows the record for Touch ID",
         ),
         OwnerWriteError::Changes { .. } => (
             "autosync::sign::declined",
@@ -74,7 +75,7 @@ fn unsigned(error: &OwnerWriteError) -> PluginError {
         | OwnerWriteError::Failed { .. }
         | OwnerWriteError::Bad { .. } => (
             "autosync::sign::failed",
-            "check that attention-sign and the allowed signers file are installed, then run \
+            "check that the signer and the allowed signers file are installed, then run \
              `board --personal autosync add` again",
         ),
     };

@@ -34,7 +34,9 @@ pub struct Variables(pub Vec<(String, std::ffi::OsString)>);
 impl Variables {
     /// The value of the variable `name`, when it is set.
     pub fn get(&self, name: &str) -> Option<&std::ffi::OsStr> {
-        (self.0.iter()).find(|(set, _)| set == name).map(|(_, value)| value.as_os_str())
+        (self.0.iter())
+            .find(|(set, _)| set == name)
+            .map(|(_, value)| value.as_os_str())
     }
 }
 

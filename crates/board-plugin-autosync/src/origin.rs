@@ -89,7 +89,12 @@ pub(crate) fn allowed(
     let Some(remote) = remote.map(|ran| ran.stdout.trim().to_owned()) else {
         return Err(Unfit::NotAllowed { urls: Vec::new() });
     };
-    let urls = git(host, path, &["remote", "get-url", "--push", "--all", &remote]).filter(Ran::ok);
+    let urls = git(
+        host,
+        path,
+        &["remote", "get-url", "--push", "--all", &remote],
+    )
+    .filter(Ran::ok);
     let urls: Vec<&str> = urls
         .as_ref()
         .map(|ran| ran.stdout.lines().filter(|line| !line.is_empty()).collect())
@@ -116,11 +121,15 @@ pub(crate) fn normalised(url: &str) -> String {
         if scheme == "file" {
             format!("/{path}")
         } else {
-            let host = authority.rsplit_once('@').map_or(authority, |(_, host)| host);
+            let host = authority
+                .rsplit_once('@')
+                .map_or(authority, |(_, host)| host);
             format!("{}/{path}", host.to_lowercase())
         }
     } else if let Some((authority, path)) = scp_like(url) {
-        let host = authority.rsplit_once('@').map_or(authority, |(_, host)| host);
+        let host = authority
+            .rsplit_once('@')
+            .map_or(authority, |(_, host)| host);
         format!("{}/{path}", host.to_lowercase())
     } else {
         url.to_owned()

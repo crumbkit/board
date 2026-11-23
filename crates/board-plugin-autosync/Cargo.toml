@@ -18,9 +18,7 @@ serde.workspace = true
 serde_json.workspace = true
 
 [dev-dependencies]
-board-plugin-tasks.workspace = true
 board-scenario.workspace = true
-proptest.workspace = true
 tempfile.workspace = true
 
 [lints]

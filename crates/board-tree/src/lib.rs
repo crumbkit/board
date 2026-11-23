@@ -40,6 +40,6 @@ pub use crate::worktree::{
 };
 pub use crate::write::outside::write_outside;
 pub use crate::write::sync::{
-    ATTEMPTS, BeforePush, Conflicted, Guard, Pushing, PinBasis, PinResolution, SyncError, Synced,
+    ATTEMPTS, BeforePush, Conflicted, Guard, PinBasis, PinResolution, Pushing, SyncError, Synced,
 };
 pub use crate::write::{LOCK_WAIT, Lock, Removes, Staged, Target, WriteError};

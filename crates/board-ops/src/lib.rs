@@ -38,8 +38,8 @@ pub use crate::board::{Backend, Board, Config, OpenError, StartedIn, Store};
 pub use crate::check::{CheckError, CheckReport, Checked, Detail};
 pub use crate::checkout::Refused as CheckoutRefused;
 pub use crate::effects::{
-    AnswerReport, Asker, DecideReport, EffectError, OwnerWriteError, Shown, SignOrderError, Signing,
-    VerifyOrderError, answer,
+    AnswerReport, Asker, DecideReport, EffectError, OwnerWriteError, Shown, SignOrderError,
+    Signing, VerifyOrderError, answer,
 };
 pub use crate::enable::{EnableError, EnableReport, Kept};
 pub use crate::history::{At, LogReport};

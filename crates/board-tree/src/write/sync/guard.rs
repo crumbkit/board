@@ -105,15 +105,18 @@ impl Repository {
         let mut paths: Vec<String> = Vec::new();
         for entry in index.entries() {
             let path = entry.path(&index);
-            let same = held.get(path).is_some_and(|committed| {
-                committed.id == entry.id && committed.mode == entry.mode
-            });
+            let same = held
+                .get(path)
+                .is_some_and(|committed| committed.id == entry.id && committed.mode == entry.mode);
             if !same || entry.stage() != Stage::Unconflicted {
                 paths.push(path.to_string());
             }
         }
-        let indexed: std::collections::HashSet<&BStr> =
-            index.entries().iter().map(|entry| entry.path(&index)).collect();
+        let indexed: std::collections::HashSet<&BStr> = index
+            .entries()
+            .iter()
+            .map(|entry| entry.path(&index))
+            .collect();
         paths.extend(
             (held.keys())
                 .filter(|path| !indexed.contains(*path))

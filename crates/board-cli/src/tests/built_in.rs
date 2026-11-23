@@ -832,6 +832,7 @@ fn uncommitted() -> Scenario {
 
 mod artifacts;
 mod attention;
+mod autosync;
 mod boundary;
 mod changes;
 mod evals;

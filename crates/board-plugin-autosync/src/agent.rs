@@ -30,7 +30,7 @@ pub(crate) struct InstallInput {
     #[schemars(range(min = 60, max = 3600))]
     pub(crate) interval: Option<u64>,
     /// Prints the plist and loads nothing.
-    #[serde(default)]
+    #[serde(default, rename = "dry-run")]
     pub(crate) dry_run: bool,
 }
 
@@ -40,7 +40,7 @@ pub(crate) struct InstallInput {
 #[schemars(rename = "UninstallInput")]
 pub(crate) struct UninstallInput {
     /// Says what it would remove and removes nothing.
-    #[serde(default)]
+    #[serde(default, rename = "dry-run")]
     pub(crate) dry_run: bool,
 }
 
@@ -152,7 +152,13 @@ pub(crate) fn install(host: &dyn Host, input: &Value) -> Result<Value, PluginErr
     let board = std::env::current_exe()
         .map_or_else(|_| "board".to_owned(), |board| board.display().to_string());
     let file = plist(&home);
-    let written = text(&board, interval, &path, &home.display().to_string(), &state(&home));
+    let written = text(
+        &board,
+        interval,
+        &path,
+        &home.display().to_string(),
+        &state(&home),
+    );
     let output = |loaded| Output {
         plist: file.display().to_string(),
         text: written.clone(),

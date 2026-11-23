@@ -65,7 +65,7 @@ personal board:
 3. Every push URL of the remote its branch follows, as git gives it with
    `pushInsteadOf` applied, must equal an entry of `origins` once scheme,
    user, `.git` and trailing slash are dropped (`autosync::origin::not_allowed`).
-4. The guarded sync (docs/architecture/writes.md, Sync) refuses another
+4. The guarded sync (docs/architecture/writes/sync/guarded.md) refuses another
    branch, staged files and a git operation in progress before it fetches,
    and a merge with any conflict before HEAD moves. It never accepts a
    rewritten remote. Uncommitted edits are never staged, stashed or pushed.

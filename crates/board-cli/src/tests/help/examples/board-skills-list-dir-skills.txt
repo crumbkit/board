@@ -2,6 +2,7 @@ STATE    NAME                 PATH
 missing  apply-standard       skills/apply-standard
 missing  artifacts            skills/artifacts
 missing  attention            skills/attention
+missing  autosync             skills/autosync
 missing  boundary             skills/boundary
 missing  changes              skills/changes
 missing  evals                skills/evals

@@ -18,7 +18,7 @@ description: 'Keep each board the owner listed in step with its remote on an int
 ## Add a board
 
 - Only the owner adds a board. `board --personal autosync add --name <name>
-  --path <directory> --origin <url>` shows the owner the record and asks for
+  --path <directory> --origin '<url> <url>'` shows the owner the record and asks for
   Touch ID. Never write an `autosync/board/v1` record with `board put`:
   autosync refuses a record without the owner's signature.
 

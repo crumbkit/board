@@ -2,6 +2,7 @@ STATE    NAME                 PATH
 written  apply-standard       skills/apply-standard
 written  artifacts            skills/artifacts
 written  attention            skills/attention
+written  autosync             skills/autosync
 written  boundary             skills/boundary
 written  changes              skills/changes
 written  evals                skills/evals

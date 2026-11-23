@@ -103,7 +103,12 @@ impl Repository {
     /// Returns whether the ref is where it should be: true when there is
     /// nothing to restore, false when the commit is missing from the store or
     /// the ref moved or could not be updated.
-    pub(super) fn put_back(&self, upstream: &Upstream, fetched: ObjectId, commit: Option<ObjectId>) -> bool {
+    pub(super) fn put_back(
+        &self,
+        upstream: &Upstream,
+        fetched: ObjectId,
+        commit: Option<ObjectId>,
+    ) -> bool {
         use gix::refs::transaction::PreviousValue;
         let Some(commit) = commit.filter(|commit| *commit != fetched) else {
             return true;

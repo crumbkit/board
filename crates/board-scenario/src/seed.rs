@@ -135,7 +135,7 @@ const OPEN: &str = "ui open or the server gives it; check opens and serves nothi
 
 /// Codes `check` never gives an entry, and why. The seed board has an
 /// exhibit for every other code, so a new code needs one or a line here.
-pub const NOT_CHECKED: [(Code, &str); 90] = [
+pub const NOT_CHECKED: [(Code, &str); 94] = [
     (
         Code::RepoLocalRemote,
         "only repo add gives it, to a remote that names a local path; a record's remote is checked as board::repo::invalid",
@@ -217,6 +217,10 @@ pub const NOT_CHECKED: [(Code, &str); 90] = [
     (Code::SyncShallow, SYNC),
     (Code::SyncMerging, SYNC),
     (Code::SyncNoBranch, SYNC),
+    (Code::SyncOtherBranch, SYNC),
+    (Code::SyncStaged, SYNC),
+    (Code::SyncConflicted, SYNC),
+    (Code::SyncHeld, SYNC),
     (
         Code::SchemaDiffers,
         "type add refuses a schema with it; check compiles each schema alone",

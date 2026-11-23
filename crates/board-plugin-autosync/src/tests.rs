@@ -116,7 +116,13 @@ impl Mac {
         reason = "the test signs the owner's write as the effects module would"
     )]
     fn signed(signer: &Signer, path: &str, record: &Value) -> String {
-        signer.sign(&Effect::owner_write("personal", "put", path, Some(record), None))
+        signer.sign(&Effect::owner_write(
+            "personal",
+            "put",
+            path,
+            Some(record),
+            None,
+        ))
     }
 }
 
@@ -139,10 +145,7 @@ impl Host for Mac {
     ) -> Result<Vec<Result<RefsReport, RefsError>>, RefsError> {
         panic!("autosync resolves no refs")
     }
-    fn get_each(
-        &self,
-        _: &[LogicalPath],
-    ) -> Result<Vec<Result<GetReport, ReadError>>, ReadError> {
+    fn get_each(&self, _: &[LogicalPath]) -> Result<Vec<Result<GetReport, ReadError>>, ReadError> {
         panic!("this host holds no task")
     }
     fn put(&self, lines: &[Value]) -> Result<PutReport, PutError> {
@@ -169,7 +172,12 @@ impl Host for Mac {
     fn board(&self, _: &Elsewhere) -> Result<Box<dyn Host + '_>, Box<Refusal>> {
         panic!("a board on this host is never reached")
     }
-    fn decide(&self, _: &str, _: &LogicalPath, _: Option<&Shown>) -> Result<DecideReport, Box<Refusal>> {
+    fn decide(
+        &self,
+        _: &str,
+        _: &LogicalPath,
+        _: Option<&Shown>,
+    ) -> Result<DecideReport, Box<Refusal>> {
         panic!("autosync asks for no approval")
     }
     fn sync(&self, _: bool, _: Duration) -> Result<Synced, SyncError> {
@@ -295,7 +303,7 @@ fn only_a_record_the_owner_signed_for_its_own_path_is_trusted() {
 
 #[test]
 fn add_without_a_signer_writes_nothing_and_with_one_writes_the_signed_record() {
-    let input = json!({"name": "team", "path": "~/team", "origin": ["git@example.com:t/b.git"]});
+    let input = json!({"name": "team", "path": "~/team", "origin": "git@example.com:t/b.git"});
     let mut mac = Mac::new();
     mac.signer = None;
     let refused = mac.call("add", input.clone()).unwrap_err();
@@ -307,15 +315,19 @@ fn add_without_a_signer_writes_nothing_and_with_one_writes_the_signed_record() {
     let put = mac.puts.borrow()[0].clone();
     let mut record = put["record"].clone();
     let signature = record.as_object_mut().unwrap().remove("signature").unwrap();
-    mac.verify_owner_write("/autosync/boards/team", &record, signature.as_str().unwrap())
-        .unwrap();
+    mac.verify_owner_write(
+        "/autosync/boards/team",
+        &record,
+        signature.as_str().unwrap(),
+    )
+    .unwrap();
 }
 
 #[test]
 fn install_dry_run_prints_the_plist_with_its_interval_and_path_and_loads_nothing() {
     let mac = Mac::new();
     let printed = mac
-        .call("install", json!({"interval": 120, "dry_run": true}))
+        .call("install", json!({"interval": 120, "dry-run": true}))
         .unwrap();
     let text = printed["text"].as_str().unwrap();
     assert!(text.contains("<integer>120</integer>"), "{text}");
@@ -334,7 +346,11 @@ fn install_writes_and_bootstraps_the_agent_and_uninstall_boots_it_out_and_delete
     let installed = mac.call("install", json!({})).unwrap();
     let plist = Path::new(installed["plist"].as_str().unwrap()).to_path_buf();
     assert!(plist.starts_with(mac.home.path()));
-    assert!(std::fs::read_to_string(&plist).unwrap().contains("<integer>300</integer>"));
+    assert!(
+        std::fs::read_to_string(&plist)
+            .unwrap()
+            .contains("<integer>300</integer>")
+    );
     let runs = mac.runs.borrow().clone();
     assert_eq!(runs.len(), 2);
     assert!(runs[0].starts_with("launchctl bootout gui/"), "{runs:?}");

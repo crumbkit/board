@@ -12,10 +12,10 @@ use serde_json::{Map, Value, json};
 
 use crate::origin::{self, Unfit, git};
 use crate::records::{BOARDS, BoardRecord};
-use board_plugin::shape::Record as _;
 use crate::report::{self, Entry, MAX_FINDINGS, Outcome, Status};
 use crate::scan::{self, Finding, SCRATCH, Scan, ScanFailure, Scanned, Scanner};
 use crate::{PLUGIN, home, refusal, state};
+use board_plugin::shape::Record as _;
 
 /// The Mac's fingerprints file, under the home.
 const FINGERPRINTS: &str = ".config/board/autosync/gitleaksignore";
@@ -33,10 +33,11 @@ const SYNC_TIME: Duration = Duration::from_secs(60);
 pub(crate) struct Input {
     /// Checks each board's signature and origins and prints the range a
     /// push would scan; fetches, merges, pushes and writes nothing.
-    #[serde(default)]
+    #[serde(default, rename = "dry-run")]
     pub(crate) dry_run: bool,
     /// Seconds a scan may run, 600 when left out, such as for a first run
     /// with a long backlog.
+    #[serde(rename = "scan-timeout")]
     #[schemars(range(min = 1, max = 86400))]
     pub(crate) scan_timeout: Option<u64>,
 }
@@ -140,6 +141,7 @@ pub(crate) fn run(host: &dyn Host, input: &Value) -> Result<Value, PluginError> 
     }
     let mut fields = Map::new();
     fields.insert("boards".to_owned(), json!(boards));
+    fields.insert("warnings".to_owned(), json!(warnings));
     Err(refusal(
         "autosync::run::failed",
         format!(
@@ -256,12 +258,12 @@ impl Round<'_> {
             origin::allowed(self.host, directory, record.branch(), &record.origins)
         {
             let message = if urls.is_empty() {
-                format!(
-                    "{} follows no remote with a push URL",
-                    record.branch()
-                )
+                format!("{} follows no remote with a push URL", record.branch())
             } else {
-                format!("it would push to {}, which its record does not allow", urls.join(", "))
+                format!(
+                    "it would push to {}, which its record does not allow",
+                    urls.join(", ")
+                )
             };
             return self.entry(
                 name,
@@ -281,7 +283,8 @@ impl Round<'_> {
     fn dry(&self, name: &str, directory: &Path, record: &BoardRecord) -> Entry {
         let upstream = format!("{}@{{upstream}}", record.branch());
         let range = format!("{upstream}..{}", record.branch());
-        let counted = git(self.host, directory, &["rev-list", "--count", &range]).filter(origin::Ran::ok);
+        let counted =
+            git(self.host, directory, &["rev-list", "--count", &range]).filter(origin::Ran::ok);
         let message = match counted {
             Some(ran) => format!(
                 "signature and origins check; a push would scan {} commits, {range}",
@@ -296,7 +299,9 @@ impl Round<'_> {
 
     /// Syncs the board through the guarded sync, scanning before each push.
     fn synced(&self, name: &str, directory: &Path, record: &BoardRecord) -> Entry {
-        let opened = self.host.board(&Elsewhere::Directory(directory.to_path_buf()));
+        let opened = self
+            .host
+            .board(&Elsewhere::Directory(directory.to_path_buf()));
         let board = match opened {
             Ok(board) => board,
             Err(refused) => {
@@ -308,7 +313,11 @@ impl Round<'_> {
                 );
             }
         };
-        let scan = self.scan.as_ref().ok().filter(|_| self.scanner == Scanner::Ready);
+        let scan = self
+            .scan
+            .as_ref()
+            .ok()
+            .filter(|_| self.scanner == Scanner::Ready);
         let mut held = None;
         let mut before_push = |pushing: &Pushing| {
             let Some(scan) = scan else {
@@ -339,7 +348,12 @@ impl Round<'_> {
         match result {
             Ok(synced) => {
                 let mut entry = self.unpushable(name).unwrap_or_else(|| {
-                    self.entry(name, Outcome::Synced, None, "in step with its remote".to_owned())
+                    self.entry(
+                        name,
+                        Outcome::Synced,
+                        None,
+                        "in step with its remote".to_owned(),
+                    )
                 });
                 entry.merged = synced.merged || synced.old != Some(synced.new);
                 entry.pushed = synced.pushed;
@@ -356,13 +370,19 @@ impl Round<'_> {
                     | Code::SyncStaged
                     | Code::SyncMerging
                     | Code::SyncBusy => Outcome::Skipped,
-                    Code::SyncFailed | Code::SyncTimeout | Code::SyncNoRemote | Code::SyncNoBranch => {
-                        Outcome::Unreachable
-                    }
+                    Code::SyncFailed
+                    | Code::SyncTimeout
+                    | Code::SyncNoRemote
+                    | Code::SyncNoBranch => Outcome::Unreachable,
                     Code::SyncGaveUp => Outcome::PushFailed,
                     _ => Outcome::Refused,
                 };
-                self.entry(name, outcome, Some(error.code().as_str()), error.to_string())
+                self.entry(
+                    name,
+                    outcome,
+                    Some(error.code().as_str()),
+                    error.to_string(),
+                )
             }
         }
     }
@@ -380,12 +400,15 @@ impl Round<'_> {
         }
         match &self.scanner {
             Scanner::Ready => None,
-            Scanner::Missing => Some(self.entry(
-                name,
-                Outcome::ScannerMissing,
-                Some("autosync::scan::scanner_missing"),
-                "gitleaks is not on the PATH, so the board merged and nothing was pushed".to_owned(),
-            )),
+            Scanner::Missing => Some(
+                self.entry(
+                    name,
+                    Outcome::ScannerMissing,
+                    Some("autosync::scan::scanner_missing"),
+                    "gitleaks is not on the PATH, so the board merged and nothing was pushed"
+                        .to_owned(),
+                ),
+            ),
             Scanner::TooOld { version } => Some(self.entry(
                 name,
                 Outcome::ScannerMissing,
@@ -444,9 +467,10 @@ impl Round<'_> {
         (self.host.known_boards().iter())
             .filter(|board| !synced.contains(&canonical(board)))
             .map(|board| {
-                let name = board
-                    .file_name()
-                    .map_or_else(|| board.display().to_string(), |name| name.to_string_lossy().into_owned());
+                let name = board.file_name().map_or_else(
+                    || board.display().to_string(),
+                    |name| name.to_string_lossy().into_owned(),
+                );
                 self.entry(
                     &name,
                     Outcome::NotSynced,
