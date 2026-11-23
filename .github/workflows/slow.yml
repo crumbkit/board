@@ -1,9 +1,9 @@
 # STANDARDS.md 21: the slow lane. It runs what costs too much or catches too
 # little to run on every pull request: the gates on macOS, the tests that
 # spawn git against git 2.39, mutation testing, fuzzing and the timing job.
-# It runs nightly on main, by hand, and from release.yml before a release,
-# which skips mutants. The jobs on macOS run in the Monday night run only, and
-# in every hand-run and release run.
+# It runs nightly on main and by hand. release.yml calls it before a release,
+# and a release run runs only the base and git-floor jobs. The jobs on macOS
+# run in the Monday night run only, and in every hand-run.
 name: slow
 
 on:
@@ -18,7 +18,7 @@ on:
   workflow_call:
     inputs:
       release:
-        description: Run for a release, which skips mutants.
+        description: Run for a release, which runs only the base and git-floor jobs.
         type: boolean
         default: false
 
@@ -131,9 +131,11 @@ jobs:
           echo "run=$run" >> "$GITHUB_OUTPUT"
           echo "macos=$macos" >> "$GITHUB_OUTPUT"
 
+  # A release skips the jobs on macOS, fuzzing and timing, so a release does
+  # not wait for a macOS runner; the Monday run catches a macOS-only failure.
   macos:
     needs: base
-    if: needs.base.outputs.macos == 'true'
+    if: needs.base.outputs.macos == 'true' && !inputs.release
     runs-on: macos-15
     timeout-minutes: 45
     steps:
@@ -187,12 +189,13 @@ jobs:
 
   # Fuzzing is randomised, so it runs every night, even on an unchanged main.
   fuzz:
+    if: ${{ !inputs.release }}
     uses: $/.github/workflows/fuzz.yml
 
   # A Monday run on an unchanged main still times Linux when it times macOS.
   timing:
     needs: base
-    if: needs.base.outputs.run == 'true' || needs.base.outputs.macos == 'true'
+    if: (needs.base.outputs.run == 'true' || needs.base.outputs.macos == 'true') && !inputs.release
     uses: $/.github/workflows/timing.yml
     with:
       macos: ${{ needs.base.outputs.macos == 'true' }}
