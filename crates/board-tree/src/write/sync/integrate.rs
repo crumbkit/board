@@ -13,6 +13,7 @@ use board_model::{
 use board_validate::Schema;
 use gix::object::tree::EntryKind;
 
+use super::guard::OnConflict;
 use super::merge::{self, Ancestry};
 use super::{Conflicted, Files, Integrated, Started, SyncError, Written};
 use crate::git::{Repository, model_id};
@@ -40,6 +41,7 @@ impl Repository {
         upstream: &Upstream,
         fetched: ObjectId,
         before: super::refuse::Before,
+        on_conflict: OnConflict,
         deadline: Deadline,
     ) -> Result<Integrated, SyncError> {
         self.refuse_unsafe(upstream, fetched, before)?;
@@ -50,7 +52,23 @@ impl Repository {
         let recorded = self.recorded_checkouts(&lock, old)?;
         let (new, merged, outcome) = match old {
             None => (fetched, false, Outcome::default()),
-            Some(head) => self.merge_into(upstream, head, fetched)?,
+            Some(head) => match self.merge_into(upstream, head, fetched, on_conflict) {
+                Err(SyncError::Conflicted {
+                    remote,
+                    branch,
+                    paths,
+                    ..
+                }) => {
+                    let unrestored = !self.put_back(upstream, fetched, before.restore);
+                    return Err(SyncError::Conflicted {
+                        remote,
+                        branch,
+                        paths,
+                        unrestored,
+                    });
+                }
+                merged => merged?,
+            },
         };
         let kept = if old == Some(new) && recorded.is_empty() {
             Vec::new()
@@ -89,6 +107,7 @@ impl Repository {
         upstream: &Upstream,
         head: ObjectId,
         fetched: ObjectId,
+        on_conflict: OnConflict,
     ) -> Result<(ObjectId, bool, Outcome), SyncError> {
         let (local, remote) = (self.gix_id(head)?, self.gix_id(fetched)?);
         let base = self.merge_base(local, remote)?;
@@ -115,8 +134,30 @@ impl Repository {
             self.descends_in(home.as_deref(), mount, candidate, of)
         };
         let merged = merge::merge_trees(self, base_tree, local_tree, remote_tree, &descends)?;
+        let failing = self.failing_records(&merged.schemas, base_tree, local_tree)?;
+        if on_conflict == OnConflict::Refuse {
+            let unsettled = (merged.pins.iter())
+                .filter(|pin| pin.basis != merge::PinBasis::Descendant)
+                .map(|pin| pin.path.clone());
+            let mut paths: Vec<String> = (merged.conflicts.iter())
+                .map(|found| found.path.clone())
+                .chain(unsettled)
+                .chain(failing.iter().cloned())
+                .collect();
+            paths.sort();
+            paths.dedup();
+            if !paths.is_empty() {
+                return Err(SyncError::Conflicted {
+                    remote: upstream.remote.clone(),
+                    branch: upstream.branch.clone(),
+                    paths,
+                    unrestored: false,
+                });
+            }
+        }
         let mut outcome = Outcome {
             pins: merged.pins,
+            failing,
             ..Outcome::default()
         };
         let mut tree = self.gix_id(merged.tree)?;
@@ -151,7 +192,6 @@ impl Repository {
                 .map_err(|source| self.unreadable(source))?
                 .detach();
         }
-        outcome.failing = self.failing_records(&merged.schemas, base_tree, local_tree)?;
         let message = format!(
             "board sync: merge {}/{}\n",
             upstream.remote, upstream.branch

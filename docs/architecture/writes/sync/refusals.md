@@ -51,6 +51,9 @@ does after the other four: it returns the note as the clone holds it, with
 checkout record lets the next sync tell it from a person's edit
 ([checkout.md](checkout.md)).
 
+A [guarded sync](guarded.md) refuses more before it fetches and before HEAD
+moves, and asks before each push.
+
 ## First push
 
 When the fetch fails, Board asks the remote whether it has the branch with

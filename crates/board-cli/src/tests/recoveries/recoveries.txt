@@ -959,6 +959,10 @@ codes that no start provokes:
   board::sync::busy: a second sync must start while the first holds sync.lock; board-ops/src/sync/tests.rs holds a fetch open
   board::plugin::timeout: the CLI's 30-second plugin limit is too slow for a test; board-ops/src/call/tests.rs uses a 500 ms limit
   board::ui::open_failed: ui open must fail to start a server or a browser, and a test must not start one; board-serve/src/tests.rs pairs a binary that cannot start with a running server
+  board::sync::other_branch: only a guarded sync, which the autosync plugin asks for, refuses with it; board-tree/src/write/sync/guard/tests.rs pairs it with a sync that is admitted
+  board::sync::staged: only a guarded sync, which the autosync plugin asks for, refuses with it; board-tree/src/write/sync/guard/tests.rs pairs it with a sync that is admitted
+  board::sync::conflicted: only a guarded sync, which the autosync plugin asks for, refuses with it; board-tree/src/write/sync/guard/tests.rs pairs it with a sync that is admitted
+  board::sync::held: only a guarded sync, which the autosync plugin asks for, refuses with it; board-tree/src/write/sync/guard/tests.rs pairs it with a sync that is admitted
   board::serve::host: the server gives it to an HTTP request, never to a command line; board-serve/src/tests.rs pairs each refused request with an admitted twin
   board::serve::origin: the server gives it to an HTTP request, never to a command line; board-serve/src/tests.rs pairs each refused request with an admitted twin
   board::serve::token: the server gives it to an HTTP request, never to a command line; board-serve/src/tests.rs pairs each refused request with an admitted twin

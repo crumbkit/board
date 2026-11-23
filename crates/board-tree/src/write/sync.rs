@@ -19,10 +19,13 @@ use crate::transport::{self, Deadline, Pushed, Ssh, Upstream};
 
 mod checkout;
 use checkout::{Recorded, Started};
+mod guard;
+use guard::OnConflict;
 mod integrate;
 mod merge;
 mod refuse;
 
+pub use guard::{BeforePush, Guard, Pushing};
 pub use merge::{PinBasis, PinResolution};
 
 /// How many times a sync fetches and pushes before it gives up.
@@ -160,8 +163,41 @@ impl Repository {
         deadline: Deadline,
         wait: Duration,
     ) -> Result<Synced, SyncError> {
+        self.sync_with(push, accept_rewrite, None, deadline, wait)
+    }
+
+    /// As [`Self::sync`], with `guard`'s checks: HEAD on another branch than
+    /// the guard's, an index that differs from HEAD and a git operation in
+    /// progress are refused before the fetch, a merge with any conflict,
+    /// any pin neither side's commit descends from or any failing record
+    /// is refused before HEAD moves, writing no conflict record, and each
+    /// push runs only when the guard's `before_push` answers
+    /// [`BeforePush::Push`]. A rewritten remote is always refused.
+    pub fn sync_guarded(
+        &self,
+        push: bool,
+        guard: &mut Guard<'_>,
+        deadline: Deadline,
+        wait: Duration,
+    ) -> Result<Synced, SyncError> {
+        self.refuse_unguarded(&guard.branch)?;
+        self.sync_with(push, false, Some(guard), deadline, wait)
+    }
+
+    fn sync_with(
+        &self,
+        push: bool,
+        accept_rewrite: bool,
+        mut guard: Option<&mut Guard<'_>>,
+        mut deadline: Deadline,
+        wait: Duration,
+    ) -> Result<Synced, SyncError> {
         let upstream = self.upstream()?;
         let _only = self.sync_lock(wait.min(deadline.left()))?;
+        let on_conflict = match guard {
+            Some(_) => OnConflict::Refuse,
+            None => OnConflict::Record,
+        };
         let ssh = self.ssh();
         let mut summary: Option<Integrated> = None;
         let mut reason = String::new();
@@ -169,7 +205,9 @@ impl Repository {
         for attempts in 1..=ATTEMPTS {
             let previous = self.tracking_before(&upstream)?;
             if let Err(failed) = transport::fetch(self.path(), &upstream, &ssh, deadline) {
-                match self.start_branch(&upstream, previous, push, &ssh, deadline, failed)? {
+                let head = self.start_branch(&upstream, previous, push, &ssh, deadline, failed)?;
+                Self::push_held(guard.as_deref_mut(), &mut deadline, None, head)?;
+                match transport::push(self.path(), &upstream, &head.to_string(), &ssh, deadline)? {
                     // The branch is HEAD now: fetch it, and integrate
                     // finds nothing to do.
                     Pushed::Done => created = true,
@@ -185,7 +223,7 @@ impl Repository {
                 previous: previous.filter(|_| !accept_rewrite),
                 restore: previous,
             };
-            let round = match self.integrate(&upstream, fetched, before, deadline) {
+            let round = match self.integrate(&upstream, fetched, before, on_conflict, deadline) {
                 Ok(round) => round,
                 Err(SyncError::Write(WriteError::HeadMoved)) if attempts < ATTEMPTS => continue,
                 // A board lock still held when the deadline is spent is the
@@ -223,6 +261,7 @@ impl Repository {
             if !push || new == fetched {
                 return Ok(done(created, total));
             }
+            Self::push_held(guard.as_deref_mut(), &mut deadline, Some(fetched), new)?;
             match transport::push(self.path(), &upstream, &new.to_string(), &ssh, deadline)? {
                 Pushed::Done => return Ok(done(true, total)),
                 Pushed::Rejected(why) => reason = why,
@@ -235,8 +274,8 @@ impl Repository {
         })
     }
 
-    /// After a fetch that failed with `failed`, pushes HEAD to create the
-    /// remote branch when the remote answers that it has none, this clone
+    /// After a fetch that failed with `failed`, gives HEAD, to push to create
+    /// the remote branch, when the remote answers that it has none, this clone
     /// never fetched it (`previous` is `None`), the sync may push and HEAD
     /// has a commit; the caller then fetches what the push made. A remote
     /// that has the branch, or that does not answer, keeps `failed`; a
@@ -250,7 +289,7 @@ impl Repository {
         ssh: &Ssh,
         deadline: Deadline,
         failed: SyncError,
-    ) -> Result<Pushed, SyncError> {
+    ) -> Result<ObjectId, SyncError> {
         if !matches!(failed, SyncError::Failed { .. }) {
             return Err(failed);
         }
@@ -265,11 +304,33 @@ impl Repository {
             previous,
             push,
         };
-        let head = match self.head()? {
-            Some(head) if previous.is_none() && push => head,
-            _ => return Err(absent()),
+        match self.head()? {
+            Some(head) if previous.is_none() && push => Ok(head),
+            _ => Err(absent()),
+        }
+    }
+
+    /// Asks `guard`, when there is one, whether to push `new` over
+    /// `fetched`, and stops the sync with [`SyncError::Held`] when it says
+    /// hold. The time the guard takes moves `deadline` later.
+    fn push_held(
+        guard: Option<&mut Guard<'_>>,
+        deadline: &mut Deadline,
+        fetched: Option<ObjectId>,
+        new: ObjectId,
+    ) -> Result<(), SyncError> {
+        let Some(guard) = guard else {
+            return Ok(());
         };
-        transport::push(self.path(), upstream, &head.to_string(), ssh, deadline)
+        let asked = std::time::Instant::now();
+        let answer = (guard.before_push)(&Pushing { fetched, new });
+        // The guard's own work, such as a scan, has its own limit; the sync
+        // deadline covers git's fetches and pushes.
+        deadline.excluding(asked.elapsed());
+        match answer {
+            BeforePush::Push => Ok(()),
+            BeforePush::Hold => Err(SyncError::Held { new }),
+        }
     }
 
     /// Takes an exclusive file lock on `sync.lock` in the git directory, which
@@ -616,6 +677,22 @@ pub enum SyncError {
     },
     #[error("the remote refused the push {attempts} times, the last time with {reason}")]
     GaveUp { attempts: u32, reason: String },
+    #[error("HEAD is on {}, not {expected}, so the guarded sync did not fetch", found.as_deref().unwrap_or("no branch"))]
+    OtherBranch {
+        expected: String,
+        found: Option<String>,
+    },
+    #[error("the index differs from HEAD at {}, so the guarded sync did not fetch", paths.join(", "))]
+    Staged { paths: Vec<String> },
+    #[error("the merge with {remote}/{branch} conflicts at {}, so HEAD, the index and the working tree did not move{}", paths.join(", "), unrestored_note(*unrestored))]
+    Conflicted {
+        remote: String,
+        branch: String,
+        paths: Vec<String>,
+        unrestored: bool,
+    },
+    #[error("the push of {new} was held before it was sent; HEAD holds it unpushed")]
+    Held { new: ObjectId },
     #[error(transparent)]
     Write(#[from] WriteError),
     #[error(transparent)]
@@ -660,6 +737,10 @@ impl SyncError {
             Self::Shallow { .. } => Code::SyncShallow,
             Self::Rewound { .. } => Code::SyncRewound,
             Self::NoBranch { .. } => Code::SyncNoBranch,
+            Self::OtherBranch { .. } => Code::SyncOtherBranch,
+            Self::Staged { .. } => Code::SyncStaged,
+            Self::Conflicted { .. } => Code::SyncConflicted,
+            Self::Held { .. } => Code::SyncHeld,
             Self::TimedOut { .. } => Code::SyncTimeout,
             Self::Write(error) => error.code(),
             Self::Git(error) => error.code(),

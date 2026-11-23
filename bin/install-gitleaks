@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# Installs the pinned gitleaks into $RUNNER_TEMP/gitleaks and adds it to the
+# job's PATH. The autosync tests run it. The archive's sha256 must match the
+# one written here.
+#
+#   bin/install-gitleaks
+set -euo pipefail
+
+version=8.30.1
+case "$(uname -s)/$(uname -m)" in
+  Linux/x86_64) platform=linux_x64 sha=551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb ;;
+  Linux/aarch64) platform=linux_arm64 sha=e4a487ee7ccd7d3a7f7ec08657610aa3606637dab924210b3aee62570fb4b080 ;;
+  Darwin/arm64) platform=darwin_arm64 sha=b40ab0ae55c505963e365f271a8d3846efbc170aa17f2607f13df610a9aeb6a5 ;;
+  *) echo "install-gitleaks: no pinned archive for $(uname -s)/$(uname -m)" >&2; exit 1 ;;
+esac
+
+directory=${RUNNER_TEMP:?install-gitleaks runs in a GitHub Actions job}/gitleaks
+mkdir -p "$directory"
+archive="$directory/gitleaks.tar.gz"
+curl --fail --silent --show-error --location --output "$archive" \
+  "https://github.com/gitleaks/gitleaks/releases/download/v${version}/gitleaks_${version}_${platform}.tar.gz"
+echo "$sha  $archive" | shasum -a 256 --check --quiet
+tar -C "$directory" -xzf "$archive" gitleaks
+"$directory/gitleaks" version
+echo "$directory" >> "${GITHUB_PATH:?}"

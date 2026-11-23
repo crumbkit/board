@@ -1,5 +1,6 @@
 ok artifacts 0.1.0 disabled offers list, import, record, set, agree
 ok attention 0.2.0 disabled offers verify, pinned, sign
+ok autosync 0.1.0 disabled offers add, run, status, install, uninstall
 ok boundary 0.1.0 disabled offers check, covers, verify, record
 ok changes 0.1.0 disabled offers start, next, attach, advance, open, pr, plan, lifecycle, brief, prototype, verdict, pause, resume, reopen, reflow, sync, drop, migrate, run, stop, approve
 ok evals 0.1.0 disabled offers about, open, migrate
