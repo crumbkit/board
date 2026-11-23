@@ -32,9 +32,10 @@ jobs:
   # The commit the mutants start from. A hand-run may name one with
   # mutants-base; it does not move the nightly base, which comes only from
   # scheduled runs. Otherwise the base is the head of the newest scheduled run
-  # of the last 3 days whose mutants jobs all passed, not counting a second
-  # pass skipped because the first missed nothing, so a night that fails
-  # for another reason still moves it. A shard cancelled by its timeout never
+  # of the last 3 days whose mutants jobs and missed-mutants job all passed,
+  # not counting a job skipped because the first pass missed nothing, so a
+  # night whose missed mutants were not filed does not move it, and a night
+  # that fails for another reason still moves it. A shard cancelled by its timeout never
   # passes, so the window bounds a failing streak's range to about 4 days of
   # changes. With no such run, it is the last commit before 00:00 UTC of the
   # previous day. A scheduled run whose main has not changed since the
@@ -79,7 +80,7 @@ jobs:
             window=$(date -u -d '3 days ago' +%s)
             for run in $(jq -r --argjson since "$window" '.[] | select((.createdAt | fromdateiso8601) >= $since) | .databaseId' runs.json); do
               passed=$(gh api "repos/$GH_REPO/actions/runs/$run/jobs?per_page=100" \
-                --jq '[.jobs[] | select(.name | startswith("mutants")) | .conclusion | select(. != "skipped")] | length > 0 and all(. == "success")')
+                --jq '[.jobs[] | select((.name | startswith("mutants")) or .name == "missed-mutants") | .conclusion | select(. != "skipped")] | length > 0 and all(. == "success")')
               if [ "$passed" = true ]; then
                 base=$(jq -r --argjson run "$run" '.[] | select(.databaseId == $run) | .headSha' runs.json)
                 how="the head of scheduled run $run, the newest of the last 3 days whose mutants all passed"
@@ -375,8 +376,9 @@ jobs:
   # Files the mutants the second pass missed or timed out as GitHub issues,
   # one for each source file, titled "Mutants missed in <file>". It comments
   # on that file's issue while one is open, and opens one otherwise. Scheduled
-  # runs and hand-runs file; a release skips mutants, so it files nothing. Its
-  # name does not start with "mutants", so the base job does not count it.
+  # runs and hand-runs file; a release skips mutants, so it files nothing.
+  # The base job moves the nightly base only past a run whose missed-mutants
+  # job passed, so a night whose filing failed is mutated again.
   missed-mutants:
     needs: [base, mutants-workspace]
     if: ${{ !cancelled() && needs.mutants-workspace.result != 'skipped' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') }}
