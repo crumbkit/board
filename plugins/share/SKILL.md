@@ -33,7 +33,7 @@ Copy a record you wrote into a board other people read.
      `directory`, `mount`, `link`, `missing`, or `beyond` for an entry a
      whole's decision or question names that the set does not hold, or
      `withheld` for a back-ref whose type stays out of shares, such as
-     the owner's priorities.
+     the owner's priorities, which never needs `--allow-uncopied`.
    - `next`: the command that writes.
 
    Read `extras`, `wholes` and `not_copied` and agree to them before you go on, or

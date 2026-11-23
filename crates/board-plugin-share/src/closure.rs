@@ -70,6 +70,14 @@ pub(crate) struct NotCopied {
     pub(crate) from: String,
 }
 
+impl NotCopied {
+    /// Whether a share refuses it without `allow_uncopied`. A withheld
+    /// back-ref is listed only.
+    pub(crate) fn refused(&self) -> bool {
+        !matches!(self.reason, Reason::Withheld)
+    }
+}
+
 /// A whole outside the shared path, the part that names it, and how many
 /// records that go with it it added to the set.
 #[derive(Serialize, JsonSchema)]

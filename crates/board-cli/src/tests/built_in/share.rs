@@ -1448,7 +1448,7 @@ fn a_shared_task_leaves_out_the_priorities_record_that_covers_it_and_brings_a_de
             "projects/tidy/decisions/e.json",
             &plan_decision(&["/tasks/remove.md"]),
         );
-    let call = ["--path", "/tasks/remove.md", "--allow-uncopied"];
+    let call = ["--path", "/tasks/remove.md"];
     let preview = boards.preview(&call);
     let mut copied = READING.to_vec();
     copied.insert(1, "/projects/tidy/decisions/e");
@@ -1459,6 +1459,26 @@ fn a_shared_task_leaves_out_the_priorities_record_that_covers_it_and_brings_a_de
             &json!([{"path": "/priorities", "reason": "withheld", "from": "/tasks/remove.md"}])
         )
     );
+    let next = preview["next"].as_str().unwrap();
+    assert!(!next.contains("--allow-uncopied"), "{next}");
     assert_eq!(boards.share(&call)["copied"], json!(copied));
     assert!(!boards.exists("priorities.json"));
+    // A target that names nothing is still refused beside the withheld one.
+    boards.personal.write(
+        "tasks/remove.md",
+        &task(
+            "Remove",
+            "parent: /tasks/tidy.md
+",
+        )
+        .replace("# Remove\n", "# Remove\n\nSee [gone](/notes/gone.md).\n"),
+    );
+    let refused = boards.refused(&call);
+    assert_eq!(
+        (&refused["code"], &refused["fields"]["paths"]),
+        (
+            &json!("share::closure::uncopied"),
+            &json!(["/notes/gone.md"])
+        )
+    );
 }

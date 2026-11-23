@@ -288,6 +288,14 @@ fn each_refusal_writes_nothing_and_its_twin_is_admitted() {
     assert_eq!(dropped["code"], "priorities::id::not_found");
     let unnamed = board.refusal("priorities.confirm", &[]);
     assert_eq!(unnamed["code"], "priorities::confirm::unnamed");
+    let kept = board.read("priorities.json");
+    board.write(
+        "priorities.json",
+        r#"{"$type": "priorities/list/v1", "short": []}"#,
+    );
+    let unreadable = board.refusal("priorities.drop", &["--id", "a"]);
+    assert_eq!(unreadable["code"], "priorities::record::unreadable");
+    board.write("priorities.json", &kept);
     assert_eq!(board.head(), head);
     // The twins.
     board.set(&entry("short", "a"));
