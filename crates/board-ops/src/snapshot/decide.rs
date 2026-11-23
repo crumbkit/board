@@ -386,7 +386,7 @@ impl Decide<'_> {
                 continue;
             };
             let Ok((location, failure)) =
-                follow::<Infallible>(&target, None, self.resolve(&target), |_| Ok(None));
+                follow::<Infallible>(&target, (None, false), self.resolve(&target), |_| Ok(None));
             tally.add(link, failure.as_ref());
             reached.push(Reached {
                 pointer: link.clone(),
@@ -450,7 +450,7 @@ impl Decide<'_> {
         for reference in references {
             let (location, failure) = follow(
                 &reference.target,
-                reference.accepts.as_deref(),
+                (reference.accepts.as_deref(), reference.local),
                 self.resolve(&reference.target),
                 |location| self.record_type(location),
             )?;

@@ -68,6 +68,11 @@ plans.waiting disabled How many questions under a path wait for the owner, and o
 plans.sweep disabled Withdraw, with a reason, each open question whose blocked change or task is done or dropped, whose asking session and every also_by session are archived, or whose words a question answered in its project already asked. apply writes each board's withdrawals in one commit with a Board-Bulk trailer; without it nothing is written.
 plans.ask disabled File a question for the owner under /projects/<project>/questions/, unless an open question in the project asks the same words, which then takes the asker into its also_by, or a question answered in the project asked them, whose answer and decisions are returned instead.
 plans.stale disabled List the changes in plan with no owner, the evals planned or running with no verdict, and the open tasks with no owner that show no activity for more than days (7), or task_days (30) for a task. apply asks the owner about each with a drop-or-keep question through plans.ask, as session; without it nothing is written.
+priorities.list disabled Each entry in rank order with what it covers, and whether it is unconfirmed or stale.
+priorities.set disabled Add an entry or replace one by its id, at a rank or in its place. A new title or covers leaves it unconfirmed.
+priorities.move disabled Move an entry to another rank in its horizon.
+priorities.drop disabled Remove an entry.
+priorities.confirm disabled Record that the owner confirmed an entry, or every entry, today.
 prompts.get disabled Read one prompt at its pin and render its body and runs_in with the input values given on stdin.
 prompts.list disabled List the prompts in the board's own tree and the marked repos the caller's remote chooses, at their pins, by repo then title.
 requests.thread disabled Every version of the effect's request, oldest first, with its answer, and the owner's replies to them, oldest first.
@@ -92,3 +97,4 @@ tasks.defer disabled Defer a task until a date or a horizon from today, written 
 tasks.drop disabled Mark a task dropped. It syncs the task's repo first and pushes after, and sets reviewed.
 tasks.reviewed disabled Mark a task reviewed today. It syncs the task's repo first and pushes after, and sets reviewed.
 tasks.move disabled Set a task's parent to another task in its repo, or clear it with none, refused when the parent is the task or under it. It syncs the task's repo first and pushes after, and changes nothing else.
+tasks.ref disabled Add a record or file in a tasks/task/v3 task's own repository to the end of its refs, or remove one, refused when the path holds nothing or is reached through a mount. It syncs the task's repo first and pushes after, sets reviewed, and writes nothing when the refs stay as they were.

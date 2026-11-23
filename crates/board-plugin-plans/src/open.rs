@@ -13,7 +13,7 @@ use serde_json::{Map, Value};
 
 use self::asked::{Instant, instant};
 use crate::question::{NAMED, OWN_PATH};
-use crate::records::{CHANGE_TYPES, Choice, TASK_TYPE};
+use crate::records::{CHANGE_TYPES, Choice, TASK_TYPES};
 
 /// Every question whose status is open and that no answer names. The path's
 /// prefix is matched in Rust: `starts_with` compares as `substr` and `length`
@@ -38,6 +38,7 @@ use crate::records::{CHANGE_TYPES, Choice, TASK_TYPE};
 /// `blocks`; the lookup is one equality on `logical`.
 pub(crate) fn questions() -> String {
     let changes = CHANGE_TYPES.map(|each| format!("'{each}'")).join(", ");
+    let tasks = TASK_TYPES.map(|each| format!("'{each}'")).join(", ");
     format!(
         "WITH named AS MATERIALIZED (SELECT a.source AS source, CAST(json_extract(a.body, '$.question') AS TEXT) AS target \
          FROM records a WHERE a.type = 'plans/answer/v1') \
@@ -46,7 +47,7 @@ pub(crate) fn questions() -> String {
            WHEN w.type IN ({changes}) AND json_extract(w.body, '$.phase') IS NOT NULL THEN \
              CASE json_extract(w.body, '$.phase') WHEN 'done' THEN 'done' WHEN 'dropped' THEN 'dropped' \
              ELSE 'active' END \
-           WHEN w.type = '{TASK_TYPE}' AND json_extract(w.body, '$.status') IS NOT NULL THEN \
+           WHEN w.type IN ({tasks}) AND json_extract(w.body, '$.status') IS NOT NULL THEN \
              CASE json_extract(w.body, '$.status') WHEN 'done' THEN 'done' WHEN 'dropped' THEN 'dropped' \
              ELSE 'active' END \
            END \

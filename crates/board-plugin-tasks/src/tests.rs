@@ -41,21 +41,46 @@ fn the_committed_schema_is_what_its_struct_generates() {
     }
 }
 
+/// The fields of `schema` that carry `keyword`, on themselves or on their
+/// items, and whether its `$defs` mention it.
+fn marked(schema: &Value, keyword: &str) -> (Vec<String>, bool) {
+    let fields = (schema["properties"].as_object().unwrap().iter())
+        .filter(|(_, field)| field[keyword] == true || field["items"][keyword] == true)
+        .map(|(name, _)| name.clone())
+        .collect();
+    (fields, schema["$defs"].to_string().contains(keyword))
+}
+
 /// Only `parent` names the record a task is part of, so share treats the
 /// task's project as a whole and its `after` and `brief` as plain
-/// references.
+/// references. Only v3's `refs` must stay in the task's own board.
 #[test]
-fn the_schema_marks_parent_alone_as_naming_the_record_a_task_is_part_of() {
-    let (_, schema) = Tasks.schemas().remove(0);
-    let marked: Vec<&String> = (schema["properties"].as_object().unwrap().iter())
-        .filter(|(_, field)| {
-            field["x-board-part-of"] == true || field["items"]["x-board-part-of"] == true
-        })
-        .map(|(name, _)| name)
-        .collect();
-    assert_eq!(marked, ["parent"]);
-    assert_eq!(schema["properties"]["parent"]["format"], "board-ref");
-    assert!(!schema["$defs"].to_string().contains("x-board-part-of"));
+fn the_schemas_mark_parent_alone_as_part_of_and_v3_refs_alone_as_local() {
+    let schemas = Tasks.schemas();
+    let names: Vec<&str> = schemas.iter().map(|(name, _)| name.as_str()).collect();
+    assert_eq!(names, ["tasks/task/v2", "tasks/task/v3"]);
+    for (name, schema) in &schemas {
+        assert_eq!(
+            marked(schema, "x-board-part-of"),
+            (vec!["parent".to_owned()], false),
+            "{name}"
+        );
+        assert_eq!(schema["properties"]["parent"]["format"], "board-ref");
+    }
+    let (v2, v3) = (&schemas[0].1, &schemas[1].1);
+    assert_eq!(marked(v2, "x-board-local"), (vec![], false));
+    assert_eq!(
+        marked(v3, "x-board-local"),
+        (vec!["refs".to_owned()], false)
+    );
+    assert_eq!(v3["properties"]["refs"]["maxItems"], 100);
+    assert!(v3["properties"].get("kind").is_none());
+    assert_eq!(v2["properties"]["kind"]["enum"], json!(["task", "project"]));
+    assert_eq!(
+        v3["properties"]["parent"]["x-board-type"],
+        json!(["tasks/task/v2", "tasks/task/v3"])
+    );
+    assert_eq!(v2["properties"]["parent"]["x-board-type"], "tasks/task/v2");
 }
 
 /// The `description` of SKILL.md's frontmatter, a single-quoted YAML
@@ -74,11 +99,11 @@ fn the_manifest_parses_as_a_built_in_one_and_describes_the_plugin_with_the_skill
     let manifest = Tasks.manifest();
     assert_eq!(
         (manifest.name.as_str(), manifest.version.as_str()),
-        ("tasks", "0.4.0")
+        ("tasks", "0.5.0")
     );
     assert_eq!(manifest.run, Vec::<String>::new());
     let types: Vec<&str> = manifest.types.iter().map(RecordType::as_str).collect();
-    assert_eq!(types, ["tasks/task/v2"]);
+    assert_eq!(types, ["tasks/task/v2", "tasks/task/v3"]);
     let names: Vec<&str> = (manifest.capabilities.iter())
         .map(|capability| capability.name.as_str())
         .collect();
@@ -93,14 +118,16 @@ fn the_manifest_parses_as_a_built_in_one_and_describes_the_plugin_with_the_skill
             "defer",
             "drop",
             "reviewed",
-            "move"
+            "move",
+            "ref",
+            "migrate"
         ]
     );
     assert_eq!(super::manifest()["description"], skill_description());
 }
 
 #[test]
-fn every_write_but_done_and_move_says_it_syncs_pushes_and_sets_reviewed() {
+fn every_write_but_done_move_ref_and_migrate_says_it_syncs_pushes_and_sets_reviewed() {
     let manifest = super::manifest();
     for capability in manifest["capabilities"].as_array().unwrap() {
         let name = capability["name"].as_str().unwrap();
@@ -108,7 +135,7 @@ fn every_write_but_done_and_move_says_it_syncs_pushes_and_sets_reviewed() {
         let stamps = description.ends_with(WRITES);
         assert_eq!(
             stamps,
-            !["available", "tree", "done", "move"].contains(&name),
+            !["available", "tree", "done", "move", "ref", "migrate"].contains(&name),
             "{name}"
         );
         if name == "done" {
@@ -159,6 +186,7 @@ fn every_input_property_carries_a_sentence_that_says_what_it_means() {
         "add.from_hour",
         "add.kind",
         "add.parent",
+        "add.refs",
         "add.remote",
         "add.repeat",
         "add.repo",
@@ -178,6 +206,10 @@ fn every_input_property_carries_a_sentence_that_says_what_it_means() {
         "reviewed.path",
         "move.parent",
         "move.path",
+        "ref.path",
+        "ref.add",
+        "ref.remove",
+        "migrate.yes",
     ];
     expected.sort_unstable();
     assert_eq!(described, expected);
@@ -312,7 +344,7 @@ fn a_capability_the_plugin_does_not_offer_is_refused_naming_what_it_offers() {
     assert_eq!(
         refused.message,
         "tasks offers no capability find; it offers available, tree, add, claim, done, defer, \
-         drop, reviewed and move"
+         drop, reviewed, move, ref and migrate"
     );
 }
 

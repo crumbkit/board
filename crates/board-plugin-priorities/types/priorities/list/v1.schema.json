@@ -1,0 +1,79 @@
+{
+  "$defs": {
+    "Entry": {
+      "additionalProperties": false,
+      "description": "One priority.",
+      "properties": {
+        "confirmed": {
+          "description": "The day the owner last confirmed the entry. It is left out until\nthe owner confirms it, and a change to its title or covers removes\nit.",
+          "format": "date",
+          "type": "string"
+        },
+        "covers": {
+          "description": "The tasks and changes in this board that the priority covers. It\nmay be empty when the work lives in another board.",
+          "items": {
+            "format": "board-ref",
+            "type": "string",
+            "x-board-local": true,
+            "x-board-type": [
+              "changes/change/v2",
+              "tasks/task/v2",
+              "tasks/task/v3"
+            ]
+          },
+          "maxItems": 20,
+          "type": "array"
+        },
+        "id": {
+          "description": "The entry's name, which stays the same when its title changes or it\nmoves, unique across both horizons.",
+          "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+          "type": "string"
+        },
+        "title": {
+          "description": "What the priority is, in one line.",
+          "pattern": "^\\S+( \\S+){0,24}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "covers"
+      ],
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "`priorities/list/v1`: the owner's priorities, ranked, in two horizons.\nAn entry's rank is its place in its list, highest first. Sharing a\nrecord that an entry covers never copies this record, which\n`x-board-goes-with-share` says.",
+  "properties": {
+    "$type": {
+      "const": "priorities/list/v1",
+      "description": "The record's type.",
+      "type": "string"
+    },
+    "long": {
+      "description": "Priorities beyond this week, highest first.",
+      "items": {
+        "$ref": "#/$defs/Entry"
+      },
+      "maxItems": 7,
+      "type": "array"
+    },
+    "short": {
+      "description": "This week's priorities, highest first.",
+      "items": {
+        "$ref": "#/$defs/Entry"
+      },
+      "maxItems": 7,
+      "type": "array"
+    }
+  },
+  "required": [
+    "$type",
+    "short",
+    "long"
+  ],
+  "title": "PrioritiesRecord",
+  "type": "object",
+  "x-board-goes-with-share": false
+}

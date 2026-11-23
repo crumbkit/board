@@ -526,6 +526,7 @@ fn validate(schema: &Schema, record: &Value) -> ValidationFact {
                     pointer: reference.pointer,
                     target: reference.path,
                     accepts: reference.accepts,
+                    local: reference.local,
                 })
                 .collect(),
         ),

@@ -12,7 +12,7 @@ name = "board"
 path = "src/main.rs"
 
 [features]
-default = ["artifacts", "attention", "autosync", "boundary", "changes", "evals", "github", "jira", "map", "notes", "params", "places", "plans", "prompts", "requests", "review", "rules", "runs", "share", "tasks", "topics"]
+default = ["artifacts", "attention", "autosync", "boundary", "changes", "evals", "github", "jira", "map", "notes", "params", "places", "plans", "priorities", "prompts", "requests", "review", "rules", "runs", "share", "tasks", "topics"]
 artifacts = ["board-plugins/artifacts"]
 attention = ["board-plugins/attention"]
 autosync = ["board-plugins/autosync"]
@@ -26,6 +26,7 @@ notes = ["board-plugins/notes"]
 params = ["board-plugins/params"]
 places = ["board-plugins/places"]
 plans = ["board-plugins/plans"]
+priorities = ["board-plugins/priorities"]
 prompts = ["board-plugins/prompts"]
 requests = ["board-plugins/requests"]
 review = ["board-plugins/review"]

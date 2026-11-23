@@ -21,7 +21,7 @@ directory of each other board whose recorded root it can see is gone.
 | `blobs` | parse result in the role the path gives (`json`, `schema`, `reserved_schema`, `markdown`): kind, type, code, and the parser's or compiler's reason; a schema's code says whether it compiles | blob, role |
 | `bodies` | the canonical form of each record that parses; a Markdown record's is its frontmatter | blob |
 | `validations` | schema result: code, failing JSON pointer, reason, failure count | record blob, schema blob |
-| `refs` | references a valid record makes, in order: JSON pointer, target path, accepted types | record blob, schema blob, ordinal |
+| `refs` | references a valid record makes, ordered: JSON pointer, target path, accepted types, `x-board-local` | record blob, schema blob, ordinal |
 | `links` | a Markdown file's links to board paths outside its frontmatter, in order, as written | blob, ordinal |
 | `mounts` | each mount point and the commit it reaches, or its code | source, path |
 | `pointers` | a mounted tree's mount pointers | scan key, path |
@@ -34,9 +34,9 @@ entry: `source`, `path`, `logical` (the display path), `blob`, `size`, `kind`,
 record was checked against). A pointer's `type` is `board/mount/v1` or
 `board/repo/v1`. The `records` view is its rows of kind `record`,
 with `source`, `path`, `logical`, `blob`, `type`, `status`, `code` and `body`;
-`body` is NULL when the record does not parse. A `code` of `board::ref::dangling` or
-`board::ref::wrong_type` marks a broken reference in a record its schema
-admits; only the first marks a Markdown file that is not a record. Tables, views and columns are an
+`body` is NULL when the record does not parse. A `code` of `board::ref::dangling`,
+`board::ref::wrong_type` or `board::ref::through_mount` marks a broken reference in a record its schema
+admits; only `dangling` marks a Markdown file that is not a record. Tables, views and columns are an
 interface for agents' SQL; changing one changes the index format. A
 commit mounted in several places appears once, with `logical` through the
 shortest display path, then the first lexically.

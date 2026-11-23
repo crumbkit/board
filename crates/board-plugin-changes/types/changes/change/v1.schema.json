@@ -77,7 +77,10 @@
       "description": "The task the change does.",
       "format": "board-ref",
       "type": "string",
-      "x-board-type": "tasks/task/v2"
+      "x-board-type": [
+        "tasks/task/v2",
+        "tasks/task/v3"
+      ]
     },
     "tickets": {
       "description": "The Jira or GitHub issues the change works on.",

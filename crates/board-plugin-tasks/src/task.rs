@@ -1,4 +1,5 @@
-//! A task's record as the plugin reads it: the fields of `tasks/task/v2`,
+//! A task's record as the plugin reads it: the fields of `tasks/task/v2`
+//! and `tasks/task/v3`,
 //! each checked as the Python plugin's pydantic model checked it. The
 //! model refuses what the schema admits only where Python did: a date-time
 //! with a leap second.
@@ -9,9 +10,10 @@ use serde_json::{Map, Value};
 use board_plugin::shape::{Actor, Record as _};
 
 use crate::dates::Defer;
-use crate::records::TaskRecord;
+use crate::records::{MOST_REFS, TASK_TYPES, TaskRecord};
 
-/// A `tasks/task/v2` record's fields, read.
+/// A `tasks/task/v2` or `tasks/task/v3` record's fields, read. `kind` is
+/// v2's alone, and `refs` v3's.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Model {
     pub(crate) title: String,
@@ -27,6 +29,7 @@ pub(crate) struct Model {
     pub(crate) parent: Option<String>,
     pub(crate) kind: Option<String>,
     pub(crate) brief: Option<String>,
+    pub(crate) refs: Vec<String>,
 }
 
 /// `record` read as a task, or how many of its fields the model refuses.
@@ -43,7 +46,8 @@ pub(crate) fn model(record: &Value, offset: i32) -> Result<Model, usize> {
         }
     };
     let tag = fields.get("$type").and_then(Value::as_str);
-    count(tag == Some(TaskRecord::TYPE));
+    count(tag.is_some_and(|tag| TASK_TYPES.contains(&tag)));
+    let v3 = tag == Some(TaskRecord::TYPE);
     let title = fields.get("title").and_then(Value::as_str);
     count(title.is_some());
     let status = (fields.get("status").and_then(Value::as_str))
@@ -85,10 +89,17 @@ pub(crate) fn model(record: &Value, offset: i32) -> Result<Model, usize> {
     let kind = optional(fields, "kind", &mut count, |value| {
         value
             .as_str()
-            .filter(|kind| ["task", "project"].contains(kind))
+            .filter(|kind| !v3 && ["task", "project"].contains(kind))
             .map(str::to_owned)
     });
     let brief = optional(fields, "brief", &mut count, text);
+    let refs = if v3 {
+        list(fields, "refs", &mut count, |_| true)
+    } else {
+        count(!fields.contains_key("refs"));
+        Vec::new()
+    };
+    count(refs.len() <= MOST_REFS);
     match (title, status) {
         (Some(title), Some(status)) if errors == 0 => Ok(Model {
             title: title.to_owned(),
@@ -103,6 +114,7 @@ pub(crate) fn model(record: &Value, offset: i32) -> Result<Model, usize> {
             parent,
             kind,
             brief,
+            refs,
         }),
         _ => Err(errors.max(1)),
     }

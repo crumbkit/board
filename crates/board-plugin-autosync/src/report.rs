@@ -241,7 +241,8 @@ pub(crate) fn task(host: &dyn Host, entry: &Entry, before: Option<&Entry>) -> Op
 /// The path of the open task titled for `name`'s board, if there is one.
 fn open_task(host: &dyn Host, name: &str) -> Result<Option<String>, String> {
     let sql = format!(
-        "SELECT logical FROM records WHERE type = 'tasks/task/v2' AND logical LIKE '/tasks/%' \
+        "SELECT logical FROM records WHERE type IN ('tasks/task/v2', 'tasks/task/v3') \
+         AND logical LIKE '/tasks/%' \
          AND json_extract(body, '$.title') = {} AND json_extract(body, '$.status') = 'open' \
          ORDER BY logical LIMIT 1",
         literal(&title(name))

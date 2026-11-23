@@ -443,7 +443,7 @@ impl Board {
         for reference in &item.admitted.references {
             let Ok((_, failure)) = follow::<Infallible>(
                 &reference.path,
-                reference.accepts.as_deref(),
+                (reference.accepts.as_deref(), reference.local),
                 resolve(&reference.path),
                 |location| match location.object {
                     Object::Blob(blob) => Ok(read_type(self.repositories(), root, location, blob)),

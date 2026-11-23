@@ -174,6 +174,7 @@ fn references(path: &LogicalPath, bytes: &[u8]) -> Vec<Reference> {
                 path: board_model::reached(path, &link)?,
                 pointer: link,
                 accepts: None,
+                local: false,
             })
         })
         .collect()

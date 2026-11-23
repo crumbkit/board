@@ -16,7 +16,7 @@ use serde::Serialize;
 
 use crate::board::{rows, text, tree_codes};
 use crate::change::name_in;
-use crate::records::TASK_TYPE;
+use crate::records::TASK_TYPES;
 use crate::tasks::split_task;
 
 /// The most records each list holds (STANDARDS 23).
@@ -64,18 +64,20 @@ impl Surfaced {
     }
 }
 
-/// The logical paths of the readable records of `kind` that `filter`, an SQL
+/// The logical paths of the readable records of `kinds` that `filter`, an SQL
 /// condition on `logical` and `body`, admits, in `order`.
 fn paths(
     host: &dyn Host,
-    kind: &str,
+    kinds: &[&str],
     filter: &str,
     order: &str,
 ) -> Result<Vec<String>, PluginError> {
     let sql = format!(
-        "SELECT logical FROM records WHERE type = {} AND (code IS NULL OR code IN ({})) AND \
+        "SELECT logical FROM records WHERE type IN ({}) AND (code IS NULL OR code IN ({})) AND \
          ({filter}) ORDER BY {order}",
-        literal(kind),
+        (kinds.iter().map(|kind| literal(kind)))
+            .collect::<Vec<_>>()
+            .join(", "),
         tree_codes()
     );
     Ok((rows(host, &sql)?.iter())
@@ -108,7 +110,7 @@ pub(crate) fn surfaced(host: &dyn Host, mount: &str, task: &str) -> Result<Surfa
     };
     let tasks = paths(
         host,
-        TASK_TYPE,
+        &TASK_TYPES,
         &format!(
             "({notes} OR {project}) AND json_extract(body, '$.status') = 'open' AND logical != {}",
             literal(task)
@@ -128,13 +130,13 @@ pub(crate) fn surfaced(host: &dyn Host, mount: &str, task: &str) -> Result<Surfa
     };
     let decisions = paths(
         host,
-        DECISION_TYPE,
+        &[DECISION_TYPE],
         &format!("{project} OR {named}"),
         "json_extract(body, '$.decided') DESC, logical",
     )?;
     let evals = paths(
         host,
-        EVAL_TYPE,
+        &[EVAL_TYPE],
         &format!(
             "{project} OR EXISTS (SELECT 1 FROM json_each(body, '$.mounts') AS m WHERE m.value = \
              {})",

@@ -29,9 +29,11 @@ const MOUNTS: usize = 20;
 /// The tasks plugin's tasks in a generated board: as many as one section of
 /// `tasks.available` shows.
 const TASKS: usize = 100;
-/// The schema the tasks plugin ships, which `board plugin enable` writes.
+/// The schemas the tasks plugin ships, which `board plugin enable` writes.
 const TASK_SCHEMA: &str =
     include_str!("../../crates/board-plugin-tasks/types/tasks/task/v2.schema.json");
+const TASK_SCHEMA_V3: &str =
+    include_str!("../../crates/board-plugin-tasks/types/tasks/task/v3.schema.json");
 
 /// The operation that times a call to the built-in tasks plugin.
 pub(crate) const CALL: &str = "`board call tasks.available --repo /`, warm";
@@ -370,6 +372,7 @@ pub(crate) fn generate(
         r#"{"type": "object"}"#,
     )?;
     write(".board/types/tasks/task/v2.schema.json", TASK_SCHEMA)?;
+    write(".board/types/tasks/task/v3.schema.json", TASK_SCHEMA_V3)?;
     for task in 0..TASKS {
         let after = if task % 5 == 4 {
             "after: [\"/todo/tasks/t0.md\"]\n"
@@ -378,7 +381,7 @@ pub(crate) fn generate(
         };
         write(
             &format!("todo/tasks/t{task}.md"),
-            &format!("---\n$type: tasks/task/v2\ntitle: task {task}\nstatus: open\n{after}---\n"),
+            &format!("---\n$type: tasks/task/v3\ntitle: task {task}\nstatus: open\n{after}---\n"),
         )?;
     }
     for project in 0..100 {

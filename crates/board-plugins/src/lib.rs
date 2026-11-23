@@ -31,6 +31,8 @@ pub const BUILT_IN: BuiltIn = BuiltIn(&[
     &board_plugin_places::Places,
     #[cfg(feature = "plans")]
     &board_plugin_plans::Plans,
+    #[cfg(feature = "priorities")]
+    &board_plugin_priorities::Priorities,
     #[cfg(feature = "prompts")]
     &board_plugin_prompts::Prompts,
     #[cfg(feature = "requests")]

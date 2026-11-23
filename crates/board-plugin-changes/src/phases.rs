@@ -19,7 +19,7 @@ use crate::flow::{Actor, FlowSummary};
 use crate::gates::remedy::{fill, values};
 use crate::gates::{Check, Observed, gate};
 use crate::records::{
-    BUILD, ChangeRecord, DONE, DROPPED, Kind, PAUSED, PULL_TYPES, Route, SUITE_TYPE, TASK_TYPE,
+    BUILD, ChangeRecord, DONE, DROPPED, Kind, PAUSED, PULL_TYPES, Route, SUITE_TYPE, TASK_TYPES,
     TICKET_TYPES, is_final,
 };
 use crate::stop::{Shown, holds, reached, stop_reached};
@@ -108,7 +108,7 @@ pub(crate) struct AttachInput {
     #[schemars(
         regex(pattern = "^/"),
         extend("format" = "board-path"),
-        description = "The task the change does, a tasks/task/v2 record."
+        description = "The task the change does, a tasks/task/v2 or tasks/task/v3 record."
     )]
     task: Option<String>,
     #[schemars(description = "The route: owner, ask-first or unowned.")]
@@ -425,7 +425,7 @@ pub(crate) fn attach(host: &dyn Host, input: &Value) -> Result<Value, PluginErro
         add(&mut change.pulls, pull);
     }
     if let Some(task) = asked.task {
-        check_target(host, &task, &[TASK_TYPE])?;
+        check_target(host, &task, &TASK_TYPES)?;
         change.task = Some(task);
     }
     if let Some(suite) = asked.suite {

@@ -23,7 +23,8 @@ design and the reasons for it; this file says how to call it.
   the call writes. `next` gives the command that writes.
 - `yes` writes the set.
 - `allow-uncopied`, with `yes`, writes the set even when `not_copied` lists
-  something. Without it, such a target makes the call refuse.
+  something other than a `withheld` back-ref. Without it, such a target
+  makes the call refuse.
 - `local_attachments` copies an attachment whose bytes are on this machine.
   Pass it only when every reader of the destination can read that location.
 
@@ -41,7 +42,10 @@ followed until nothing new is reached:
   or absolute;
 - each record in this board's own tree whose typed reference names the entry
   at `path` or an entry under it. This is a back-ref, such as a decision
-  whose `refs` names the shared project.
+  whose `refs` names the shared project. A back-ref whose type's schema
+  carries `"x-board-goes-with-share": false` at its top level, such as
+  `priorities/list/v1`, is listed in `not_copied` instead, and needs no
+  `--allow-uncopied`.
 
 Only the entry at `path` and the entries under it collect back-refs, so
 sharing an eval does not bring every record that names the eval's suite. A
@@ -53,7 +57,7 @@ is not followed, because only a typed reference or a link is one.
 A whole is a record that the entry at `path`, an entry under it, or another
 whole names through a part-of field. A part-of field's schema in this
 board's `.board/types/` carries `"x-board-part-of": true`, on `items` for a
-list. The `parent` of a `tasks/task/v2` task is one, so a shared task's
+list. The `parent` of a `tasks/task/v2` or `v3` task is one, so a shared task's
 project is a whole, and so is that project's parent, up the chain.
 
 A whole brings the records that name it by a typed reference and whose
@@ -87,6 +91,7 @@ A target the share does not copy is listed in `not_copied` with a reason:
   names nothing.
 - `beyond`: a whole's decision or question names an entry in this board
   that the set does not hold.
+- `withheld`: a back-ref whose type keeps its records out of shares.
 
 A typed reference through a mount or link that only back-refs make, and
 that the destination does not resolve into the same repository, is listed
@@ -129,7 +134,8 @@ The output is:
   questions it added, which may be none, with `wholes_total` counting them
   all;
 - `next`, the command that writes: the same call with `--yes`, and with
-  `--allow-uncopied` when `not_copied` is not empty. It starts
+  `--allow-uncopied` when `not_copied` lists anything but a `withheld`
+  back-ref. It starts
   `board -C <root>`, where `<root>` is this board's repository, so it writes
   the same board from any directory. It is null after a write;
 - `repository`, the repository the mount reaches;
@@ -188,7 +194,7 @@ refuses in its `paths` field.
 | `share::link::unsupported` | a link, such as a `board/mount/v1` record, is in the set; a batch would write a copy of its target in its place |
 | `share::record::invalid` | a record in the set carries a code other than a broken reference's, so `board put` would refuse it, or a schema it needs stopped parsing after the set was read |
 | `share::closure::unresolved` | a typed reference through a mount or link, made by an entry that is not a back-ref, does not resolve into the same repository in the destination |
-| `share::closure::uncopied` | with `yes` and without `allow-uncopied`, `not_copied` lists a path; the message gives each path's reason |
+| `share::closure::uncopied` | with `yes` and without `allow-uncopied`, `not_copied` lists a path that is not `withheld`; the message gives each path's reason |
 | `share::file::unsupported` | a file in the set is not UTF-8, or is a `.json` file without `$type`, which a batch line cannot write |
 | `share::attachment::local` | an attachment's `location` is a path on this machine, without `local_attachments` |
 | `share::target::differs` | the destination holds a different record, file or schema at a path in the set |
