@@ -3,7 +3,7 @@
 
 /// The index format, which names the index file. `open.rs` and
 /// docs/architecture/index.md say what a new format does to older files.
-pub const INDEX_VERSION: u32 = 25;
+pub const INDEX_VERSION: u32 = 26;
 
 /// Every table, created in an empty database. Object ids are lowercase hex
 /// and codes are their spelling, so a reader needs no Board types. A
@@ -79,6 +79,7 @@ CREATE TABLE refs (
     pointer TEXT NOT NULL,
     target TEXT NOT NULL,
     accepts TEXT,
+    local INTEGER NOT NULL,
     PRIMARY KEY (record, schema, ordinal)
 ) WITHOUT ROWID;
 CREATE TABLE links (

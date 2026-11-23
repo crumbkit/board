@@ -57,7 +57,7 @@ plans, a prototype's record and its understanding checks. Git history holds earl
   github plugins write those records; `board github ref --ref
   owner/repo#number` writes a GitHub one. `board refs <ticket>` lists the
   changes that reference a ticket.
-- `task` references the `tasks/task/v2` the change does. `start` always
+- `task` references the `tasks/task/v2` or `tasks/task/v3` the change does. `start` always
   sets it; the development flow's `task` check needs it.
 - `head` is the commit under test and review.
 - `touched` is the UTC day, `YYYY-MM-DD`, on which `start`, `run`,
@@ -325,7 +325,7 @@ of `changes` still fails `review`.
   at the stored version of its flow, and `start` writes that version when
   the board lacks it. "Flows" below says how the flow is chosen; `flow` in the output
   names it and its phases. `--task` names the task the change
-  does, and must be a `tasks/task/v2` (`changes::ref::wrong_type`). Without
+  does, and must be a `tasks/task/v2` or `tasks/task/v3` (`changes::ref::wrong_type`). Without
   it, `start` adds a task titled as the change through `board
   tasks add`, in `--task-repo` or, when that is left out, in the repo the
   caller's git remote routes to. A caller in a git repository with no
@@ -396,7 +396,7 @@ of `changes` still fails `review`.
   read-only and work offline.
 - `attach --path /changes/<name> [--ref <path>] [--ticket <path>] [--pull <path>] [--task <path>] [--route <route>] [--head <sha>] [--suite <path>]`
   adds a reference once or sets the fields. `--task` sets `task`, and must
-  be a `tasks/task/v2`. `--suite` sets `suite`, and must be a
+  be a `tasks/task/v2` or `tasks/task/v3`. `--suite` sets `suite`, and must be a
   `runs/suite/v1`. `--ref` adds to the `records` of the plan the change names, and
   refuses a change whose `plan` names no plan record
   (`changes::attach::no_plan`).
@@ -465,7 +465,7 @@ of `changes` still fails `review`.
   | `status` | When | What sync does | `code` |
   | --- | --- | --- | --- |
   | `merged` | GitHub says it merged | `to` is `done`, and `merge_commit_url` is set; `detail` says when the change left `build` or `review`, whose gates it did not pass, and says when sync moved it from `land` without evaluating the land gates | none |
-  | `owed` | It merged, but a `tasks/task/v2` that its plans' `records` reach, through any link, is not done or dropped | Leaves it; `detail` names the tasks | `changes::sync::owed` |
+  | `owed` | It merged, but a `tasks/task/v2` or `tasks/task/v3` that its plans' `records` reach, through any link, is not done or dropped | Leaves it; `detail` names the tasks | `changes::sync::owed` |
   | `closed` | It closed without merging | `to` is `dropped`, and `dropped_reason` says so with the day it closed | none |
   | `open` | It is open | Leaves it | none |
   | `not_found` | GitHub answers 404, which it also answers when gh's account cannot see the repository | Leaves it; `detail` says to check `gh auth status`, and `command` drops it | `changes::sync::pull_not_found` |

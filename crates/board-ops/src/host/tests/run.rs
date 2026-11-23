@@ -97,7 +97,7 @@ fn settings(variables: &[(&str, &str)]) -> Settings {
 }
 
 /// `sh -c <script>`, run in a new empty directory.
-fn shell(arguments: &[String]) -> Run<'_> {
+pub(super) fn shell(arguments: &[String]) -> Run<'_> {
     Run {
         program: "sh",
         arguments,

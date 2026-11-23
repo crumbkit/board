@@ -13,6 +13,8 @@
 //! board lacks it, and the change's `flow` references it. The gates read
 //! that version, so editing a board's flow never moves a change in flight.
 
+use std::collections::HashMap;
+
 use board_model::flow_version;
 use board_ops::{Host, PluginError, literal};
 use board_plugin::shape::Record;
@@ -32,7 +34,7 @@ const FLOWS: &str = "/flows/";
 const LINK_TYPE: &str = "board/mount/v1";
 
 /// A flow's name and its phases in order, which `next` and `open` show.
-#[derive(Debug, Serialize, JsonSchema)]
+#[derive(Clone, Debug, Serialize, JsonSchema)]
 pub(crate) struct FlowSummary {
     pub(crate) name: String,
     pub(crate) phases: Vec<String>,
@@ -244,4 +246,28 @@ pub(crate) fn of_change(
             [("path", json!(copy))],
         )
     })
+}
+
+/// The flow of each change a walk lists, read once for each flow path
+/// however many changes name it.
+#[derive(Default)]
+pub(crate) struct Flows(HashMap<String, Option<FlowSummary>>);
+
+impl Flows {
+    /// The summary of the flow the change at `path` follows, as
+    /// [`of_change`] reads it, or none when it follows none or that fails.
+    pub(crate) fn of_change(
+        &mut self,
+        host: &dyn Host,
+        path: &str,
+        change: &ChangeRecord,
+    ) -> Option<FlowSummary> {
+        let read = || of_change(host, path, change).ok().flatten();
+        match change.flow.as_ref().filter(|_| !change.v1) {
+            Some(copy) => (self.0.entry(copy.clone()))
+                .or_insert_with(|| read().map(|flow| FlowSummary::from(&flow)))
+                .clone(),
+            None => read().map(|flow| FlowSummary::from(&flow)),
+        }
+    }
 }

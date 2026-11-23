@@ -31,6 +31,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use crate::ask;
+use crate::records::TASK_TYPES;
 use crate::sweep::{answered, words};
 
 /// The most items the output lists (STANDARDS 23).
@@ -363,14 +364,17 @@ fn evals(host: &dyn Host, given: &Input) -> Result<Vec<Candidate>, PluginError> 
 }
 
 fn tasks(host: &dyn Host, given: &Input) -> Result<Vec<Candidate>, PluginError> {
-    let sql = "SELECT logical, source, path, json_extract(body, '$.reviewed') FROM records \
-               WHERE type = 'tasks/task/v2' AND '/' || path IN (logical, logical || '.json') \
-               AND json_extract(body, '$.status') = 'open' \
-               AND json_extract(body, '$.owner') IS NULL \
-               AND json_extract(body, '$.defer') IS NULL \
-               AND COALESCE(json_extract(body, '$.kind'), 'task') = 'task'";
+    let types = TASK_TYPES.map(|each| format!("'{each}'")).join(", ");
+    let sql = format!(
+        "SELECT logical, source, path, json_extract(body, '$.reviewed') FROM records \
+         WHERE type IN ({types}) AND '/' || path IN (logical, logical || '.json') \
+         AND json_extract(body, '$.status') = 'open' \
+         AND json_extract(body, '$.owner') IS NULL \
+         AND json_extract(body, '$.defer') IS NULL \
+         AND COALESCE(json_extract(body, '$.kind'), 'task') = 'task'"
+    );
     let mut found = Vec::new();
-    for row in rows(host, sql)? {
+    for row in rows(host, &sql)? {
         let (Some(path), Some(source), Some(file)) = (text(&row[0]), text(&row[1]), text(&row[2]))
         else {
             continue;

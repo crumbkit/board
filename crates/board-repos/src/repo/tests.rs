@@ -66,3 +66,17 @@ fn a_repos_logical_path_joins_its_root_and_the_path() {
     };
     assert_eq!(mounted.logical("daily/x.md"), "/repos/work/daily/x.md");
 }
+
+#[test]
+fn a_path_in_the_repo_and_its_board_path_convert_both_ways_at_the_root_and_in_a_mount() {
+    let mount = Repo {
+        root: "/repos/x".to_owned(),
+        clone: None,
+    };
+    assert_eq!(own().board_path("/tasks/a.md"), "/tasks/a.md");
+    assert_eq!(mount.board_path("/tasks/a.md"), "/repos/x/tasks/a.md");
+    assert_eq!(own().repo_path("/tasks/a.md"), "/tasks/a.md");
+    assert_eq!(mount.repo_path("/repos/x/tasks/a.md"), "/tasks/a.md");
+    assert_eq!(mount.repo_path("/repos/xy/a.md"), "/repos/xy/a.md");
+    assert_eq!(mount.repo_path("/elsewhere/a.md"), "/elsewhere/a.md");
+}

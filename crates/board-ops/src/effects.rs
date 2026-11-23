@@ -499,10 +499,13 @@ fn root(board: &Board) -> String {
 
 mod decide;
 mod order;
+mod write;
 
 pub use decide::{AnswerReport, DecideReport, Shown, answer};
 pub use order::{SignOrderError, VerifyOrderError};
 pub(crate) use order::{sign_order, verify_order};
+pub use write::OwnerWriteError;
+pub(crate) use write::{sign_owner_write, verify_owner_write};
 
 #[cfg(test)]
 mod tests;

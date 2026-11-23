@@ -102,7 +102,7 @@ pub fn remove_opener(file: &Path) -> io::Result<()> {
     clippy::disallowed_methods,
     reason = "board-index owns the cache's files"
 )]
-fn private_directory(directory: &Path) -> io::Result<&Path> {
+pub(crate) fn private_directory(directory: &Path) -> io::Result<&Path> {
     std::fs::create_dir_all(directory)?;
     std::fs::set_permissions(directory, std::fs::Permissions::from_mode(0o700))?;
     Ok(directory)
@@ -111,7 +111,7 @@ fn private_directory(directory: &Path) -> io::Result<&Path> {
 /// Writes `bytes` at `file`, readable only by its owner, in a directory only
 /// its owner can enter, renamed into place so a reader never sees it half
 /// written.
-fn write_private(file: &Path, bytes: &[u8]) -> io::Result<()> {
+pub(crate) fn write_private(file: &Path, bytes: &[u8]) -> io::Result<()> {
     let directory = private_directory(file.parent().unwrap_or(Path::new(".")))?;
     let mut temporary = tempfile::NamedTempFile::new_in(directory)?;
     temporary

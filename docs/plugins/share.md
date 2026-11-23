@@ -27,7 +27,8 @@ Markdown record's frontmatter, which is copied as text with its type's schema
 and checked again by the destination's `put`. Markdown links are followed, and
 so are back-refs: records whose typed reference names a shared entry. Only
 shared entries collect them, or an eval would bring every record naming its
-suite. A task's project is a whole through `parent`, marked `x-board-part-of`,
+suite. A back-ref whose type sets `x-board-goes-with-share: false` is
+listed as `withheld` and not copied. A task's project is a whole through `parent`, marked `x-board-part-of`,
 and brings only records of types marked `x-board-goes-with-whole`: its
 decisions and questions. Their references to paths outside the set are listed,
 not followed. A link or back-ref share cannot copy is listed, and a write
@@ -65,9 +66,8 @@ through the mount as well, so it compares against the pin.
 Board's checks for a write through a mount run only when the share writes,
 because Board has no dry-run put. For the same reason the plugin compares
 schemas itself, although Board would refuse a different one with
-`board::schema::differs`: only the plugin can report a differing schema in a
-preview, and it reads the destination's schemas anyway to know which are
-missing. It reads the repository and the pin from `board refs <mount>`,
+`board::schema::differs`: only the plugin can report it in a preview,
+and it reads those schemas anyway. It reads the repository and the pin from `board refs <mount>`,
 because `board get` on a mount point reads through it and finds a directory.
 `--to` must name the mount record itself, with one pointer that reaches
 another repository. A path inside a mount, a mount inside a mounted board and
@@ -103,6 +103,6 @@ holds UTF-8 only. Putting it in a store turns it into an attachment record,
 which can be.
 
 The share does not push. `board sync` pushes the destination when the person
-chooses, and a reviewer then opens the record at its path in the repository at
-the commit the share printed. No provenance record is written; the
+chooses, and a reviewer then opens the record at the
+commit the share printed. No provenance record is written; the
 destination's history shows the set arriving in one commit.

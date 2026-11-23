@@ -832,16 +832,19 @@ fn uncommitted() -> Scenario {
 
 mod artifacts;
 mod attention;
+mod autosync;
 mod boundary;
 mod changes;
 mod evals;
 mod github;
 mod init;
 mod jira;
+mod map;
 mod notes;
 mod params;
 mod places;
 mod plans;
+mod priorities;
 mod prompts;
 mod review;
 mod rules;

@@ -46,13 +46,15 @@ pub(crate) fn string_pairs<C: FromIterator<(String, String)>>(
 }
 
 /// Every valid control in the board's own tree. That includes one Board
-/// marks degraded only because a reference dangles or reaches the wrong
-/// type, which Board checks only of a valid record.
+/// marks degraded only because a reference dangles, reaches the wrong
+/// type or reaches through a mount, which Board checks only of a valid
+/// record.
 const CONTROLS: &str = concat!(
     "SELECT logical, body FROM records WHERE type IN ",
     rule_types!(),
     " AND source = 'worktree' \
-     AND (status = 'ok' OR code IN ('board::ref::dangling', 'board::ref::wrong_type'))"
+     AND (status = 'ok' OR code IN ('board::ref::dangling', 'board::ref::wrong_type', \
+     'board::ref::through_mount'))"
 );
 
 /// Each control in the board's own tree that Board marks degraded, by its

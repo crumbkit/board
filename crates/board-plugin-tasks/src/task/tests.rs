@@ -95,3 +95,24 @@ fn repeat_is_one_of_the_five_rule_forms() {
         assert!(!repeats(rule), "{rule}");
     }
 }
+
+#[test]
+fn a_v3_task_reads_its_refs_and_refuses_a_kind_and_a_v2_task_refuses_refs() {
+    let v3 = |extra: Value| {
+        let mut record = task(extra);
+        record["$type"] = json!("tasks/task/v3");
+        record
+    };
+    let read = model(&v3(json!({"refs": ["/exchange/sent/a.md"]})), 0).unwrap();
+    assert_eq!(read.refs, ["/exchange/sent/a.md"]);
+    assert_eq!(read.kind, None);
+    assert_eq!(model(&v3(json!({"kind": "task"})), 0), Err(1));
+    assert_eq!(model(&task(json!({"refs": ["/a.md"]})), 0), Err(1));
+    let most: Vec<String> = (0..=MOST_REFS).map(|at| format!("/r/{at}.md")).collect();
+    assert_eq!(
+        model(&v3(json!({"refs": most[1..]})), 0).map(|read| read.refs.len()),
+        Ok(100)
+    );
+    assert_eq!(model(&v3(json!({"refs": most})), 0), Err(1));
+    assert_eq!(model(&v3(json!({"refs": [5]})), 0), Err(1));
+}

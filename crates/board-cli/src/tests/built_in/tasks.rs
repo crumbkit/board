@@ -13,14 +13,18 @@ use std::path::PathBuf;
 use super::*;
 
 mod available;
+mod migrate;
 mod owner;
+mod refs;
 mod schema;
 mod trees;
 mod write;
 
-/// The schema the tasks plugin ships, which a notes repo holds so its
+/// The schemas the tasks plugin ships, which a notes repo holds so its
 /// tasks read as valid there.
 const SCHEMA: &str = include_str!("../../../../board-plugin-tasks/types/tasks/task/v2.schema.json");
+const SCHEMA_V3: &str =
+    include_str!("../../../../board-plugin-tasks/types/tasks/task/v3.schema.json");
 const NOTES_SCHEMA: &str =
     include_str!("../../../../board-plugin-notes/types/notes/repo/v1.schema.json");
 
@@ -221,6 +225,10 @@ impl Tasks {
                 Item::Fresh(SCHEMA),
             )
             .write(
+                ".board/types/tasks/task/v3.schema.json",
+                Item::Fresh(SCHEMA_V3),
+            )
+            .write(
                 ".board/types/notes/repo/v1.schema.json",
                 Item::Fresh(NOTES_SCHEMA),
             )
@@ -414,7 +422,9 @@ fn board_lists_tasks_as_built_in_enabled_and_working_and_enabling_wrote_the_sche
         "defer",
         "drop",
         "reviewed",
-        "move"
+        "move",
+        "ref",
+        "migrate"
     ]);
     assert_eq!(
         (&listed["status"], &listed["offers"], listed.get("run")),
@@ -423,6 +433,8 @@ fn board_lists_tasks_as_built_in_enabled_and_working_and_enabling_wrote_the_sche
     assert_eq!(listed["enabled"], true);
     let shipped = tasks.read(".board/types/tasks/task/v2.schema.json");
     assert_eq!(shipped, SCHEMA, "the Python plugin's bytes");
+    let shipped = tasks.read(".board/types/tasks/task/v3.schema.json");
+    assert_eq!(shipped, SCHEMA_V3);
     assert!(
         !tasks
             .board

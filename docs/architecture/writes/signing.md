@@ -58,8 +58,7 @@ own effects.
   of its stderr is
   `attention-sign: the owner cancelled, so nothing was signed`, which Board
   reports as a cancel; AppKit may write other lines before it.
-- When the owner cancels at the Touch ID sheet instead, attention-sign
-  exits 1 with the LAError text on stderr and no cancel line, so Board
+- A cancel at the Touch ID sheet exits 1 with no cancel line, so Board
   reports a failed signer.
 - Under `approve` attention-sign signs only a statement whose first
   line is `board/approve/v1` or `board/write/v1`; under `sign` it refuses
@@ -104,10 +103,11 @@ records it.
   `Effect::owner_write` and `Order::statement`; each caller carries an
   `#[expect]` that names it.
 - A built-in plugin signs and verifies an order only through
-  `Host::sign_order` and `Host::verify_order`. Their provided bodies refuse,
-  and only `Hosted`, Board's own host, overrides them, by calling the
-  effects module's `sign_order` and `verify_order`. Clippy refuses any other
-  caller of those two functions.
+  `Host::sign_order` and `Host::verify_order`, and an owner's write only
+  through `Host::sign_owner_write` and `Host::verify_owner_write`. Their
+  provided bodies refuse, and only `Hosted`, Board's own host, overrides
+  them, by calling the effects module's functions of the same names. Clippy
+  refuses any other caller of those four functions.
 - `cargo xtask lint` fails with `xtask::signing::outside_owner`, naming the
   file, line and literal, when source code outside `signing.owners` in
   `lint.toml` names a namespace, `ssh-keygen`, `attention-sign`, the allowed

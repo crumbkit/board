@@ -49,7 +49,8 @@ pub(crate) struct Input {
 /// A task in a tree, with its children by title.
 ///
 /// `blocked_by` holds its open `after` targets, then its open descendants
-/// nearest to it.
+/// nearest to it. `refs` holds the first 10 of its refs, as paths in the
+/// board, and `refs_total` counts them all.
 #[derive(Debug, Serialize, JsonSchema)]
 #[schemars(deny_unknown_fields)]
 pub(crate) struct TreeNode {
@@ -62,6 +63,8 @@ pub(crate) struct TreeNode {
     pub(crate) blocked_by: Vec<String>,
     pub(crate) subtasks: Subtasks,
     pub(crate) tree_path: String,
+    pub(crate) refs: Vec<String>,
+    pub(crate) refs_total: usize,
     pub(crate) children: Vec<TreeNode>,
 }
 
@@ -170,6 +173,7 @@ impl Grove<'_> {
     fn node(&self, at: &str) -> TreeNode {
         let task = self.by_path[at];
         let children = self.forest.children.get(at).map_or(&[][..], Vec::as_slice);
+        let (refs, refs_total) = task.shown_refs();
         TreeNode {
             path: at.to_owned(),
             title: task.title.clone(),
@@ -180,6 +184,8 @@ impl Grove<'_> {
             blocked_by: waited(self.links, self.forest, self.nodes, at),
             subtasks: subtasks(self.forest, self.nodes, at),
             tree_path: tree_path(self.forest, at),
+            refs,
+            refs_total,
             children: children.iter().map(|child| self.node(child)).collect(),
         }
     }

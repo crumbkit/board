@@ -151,8 +151,8 @@ fn a_parent_marked_done_early_still_holds_its_open_subtasks_back_from_its_own_pa
 
 /// A tree node's fields that most nodes leave as they are, with `fields`.
 fn node(fields: Value) -> Value {
-    let mut node =
-        json!({"brief": null, "kind": "task", "owner": null, "blocked_by": [], "children": []});
+    let mut node = json!({"brief": null, "kind": "task", "owner": null, "blocked_by": [], "children": [],
+               "refs": [], "refs_total": 0});
     let Value::Object(fields) = fields else {
         panic!("{fields} is an object")
     };

@@ -22,7 +22,7 @@ pub struct Exhibit {
 /// Codes the CLI's recovery and twin checks cannot provoke through the
 /// `board` command line, why, and where each is tested instead. The checks
 /// provoke every other code, from the seed board or another small fixture.
-pub const NOT_REPRODUCED: [(Code, &str); 23] = [
+pub const NOT_REPRODUCED: [(Code, &str); 27] = [
     (
         Code::AttachmentMissing,
         "the store must lose an object between the put and the fetch; \
@@ -93,6 +93,10 @@ pub const NOT_REPRODUCED: [(Code, &str); 23] = [
         "ui open must fail to start a server or a browser, and a test must not start one; \
          board-serve/src/tests.rs pairs a binary that cannot start with a running server",
     ),
+    (Code::SyncOtherBranch, GUARDED),
+    (Code::SyncStaged, GUARDED),
+    (Code::SyncConflicted, GUARDED),
+    (Code::SyncHeld, GUARDED),
     (Code::ServeHost, SERVED),
     (Code::ServeOrigin, SERVED),
     (Code::ServeToken, SERVED),
@@ -112,6 +116,10 @@ pub const NOT_REPRODUCED: [(Code, &str); 23] = [
     ),
 ];
 
+/// Why the guarded sync's refusals are not provoked through `board sync`.
+const GUARDED: &str = "only a guarded sync, which the autosync plugin asks for, refuses with it; \
+     board-tree/src/write/sync/guard/tests.rs pairs it with a sync that is admitted";
+
 const SERVED: &str = "the server gives it to an HTTP request, never to a command line; \
      board-serve/src/tests.rs pairs each refused request with an admitted twin";
 
@@ -127,7 +135,7 @@ const OPEN: &str = "ui open or the server gives it; check opens and serves nothi
 
 /// Codes `check` never gives an entry, and why. The seed board has an
 /// exhibit for every other code, so a new code needs one or a line here.
-pub const NOT_CHECKED: [(Code, &str); 90] = [
+pub const NOT_CHECKED: [(Code, &str); 94] = [
     (
         Code::RepoLocalRemote,
         "only repo add gives it, to a remote that names a local path; a record's remote is checked as board::repo::invalid",
@@ -209,6 +217,10 @@ pub const NOT_CHECKED: [(Code, &str); 90] = [
     (Code::SyncShallow, SYNC),
     (Code::SyncMerging, SYNC),
     (Code::SyncNoBranch, SYNC),
+    (Code::SyncOtherBranch, SYNC),
+    (Code::SyncStaged, SYNC),
+    (Code::SyncConflicted, SYNC),
+    (Code::SyncHeld, SYNC),
     (
         Code::SchemaDiffers,
         "type add refuses a schema with it; check compiles each schema alone",
@@ -296,7 +308,7 @@ impl Default for Seed {
 }
 
 /// What exhibits rely on: the configuration, two types and one project.
-const SUPPORT: [(&str, &str); 4] = [
+const SUPPORT: [(&str, &str); 5] = [
     (".board/board.json", r#"{"$type": "board/config/v1"}"#),
     (".board/types/lr/task/v1.schema.json", TASK_SCHEMA),
     (
@@ -304,7 +316,16 @@ const SUPPORT: [(&str, &str); 4] = [
         r#"{"type": "object"}"#,
     ),
     ("projects/p.json", r#"{"$type": "lr/project/v1"}"#),
+    (".board/types/lr/local/v1.schema.json", LOCAL_SCHEMA),
 ];
+
+/// A type whose `see` must name a file in the record's own board.
+const LOCAL_SCHEMA: &str = r#"{
+  "type": "object",
+  "properties": {
+    "see": {"type": "string", "format": "board-ref", "x-board-local": true}
+  }
+}"#;
 
 const TASK_SCHEMA: &str = r#"{
   "type": "object",
@@ -317,7 +338,7 @@ const TASK_SCHEMA: &str = r#"{
 
 /// Exhibits in the root board that are text: path, text and code.
 #[rustfmt::skip]
-const TEXT: [(&str, &str, Option<Code>); 38] = [
+const TEXT: [(&str, &str, Option<Code>); 40] = [
     ("json/parse.json", "{", Some(Code::JsonParse)),
     ("json/conflict.json", "{\n<<<<<<< HEAD\n}\n", Some(Code::JsonMergeConflict)),
     ("json/duplicate.json", r#"{"a": 1, "a": 2}"#, Some(Code::JsonDuplicateKey)),
@@ -337,6 +358,8 @@ const TEXT: [(&str, &str, Option<Code>); 38] = [
     ("ref/malformed.json", r#"{"$type": "lr/task/v1", "title": "t", "project": "projects/p"}"#, Some(Code::RefMalformed)),
     ("ref/dangling.json", r#"{"$type": "lr/task/v1", "title": "t", "project": "/projects/q"}"#, Some(Code::RefDangling)),
     ("ref/wrong.json", r#"{"$type": "lr/task/v1", "title": "t", "project": "/ref/dangling"}"#, Some(Code::RefWrongType)),
+    ("ref/local.json", r#"{"$type": "lr/local/v1", "see": "/projects/p"}"#, None),
+    ("ref/through.json", r#"{"$type": "lr/local/v1", "see": "/mount/m"}"#, Some(Code::RefThroughMount)),
     ("path/.json", "{}", Some(Code::PathMalformed)),
     ("path/x", "", Some(Code::PathShadowed)),
     ("path/x.json", "{}", Some(Code::PathShadowed)),

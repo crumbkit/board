@@ -1,0 +1,387 @@
+{
+  "title": "Basin coral delta",
+  "sheet": {
+    "width": 720,
+    "height": 600
+  },
+  "regions": [
+    {
+      "id": "north",
+      "title": "Fjord grove harbo",
+      "x": 20,
+      "y": 20,
+      "width": 400,
+      "height": 250
+    },
+    {
+      "id": "south",
+      "title": "Inlet",
+      "x": 436,
+      "y": 20,
+      "width": 264,
+      "height": 250
+    },
+    {
+      "id": "east",
+      "title": "Juniper kestrel lagoon",
+      "x": 20,
+      "y": 286,
+      "width": 680,
+      "height": 150
+    },
+    {
+      "id": "west",
+      "title": "Meadow ne",
+      "x": 20,
+      "y": 452,
+      "width": 680,
+      "height": 128
+    }
+  ],
+  "items": [
+    {
+      "id": "alder",
+      "region": "north",
+      "label": [
+        "Amber",
+        "basin coral de"
+      ],
+      "radius": 8,
+      "at": {
+        "x": 260,
+        "y": 130,
+        "set": "pinned"
+      },
+      "side": "above"
+    },
+    {
+      "id": "birch",
+      "region": "north",
+      "label": [
+        "Ember fjo",
+        "grove harbor inlet"
+      ],
+      "radius": 8,
+      "at": {
+        "x": 100,
+        "y": 225,
+        "set": "pinned"
+      },
+      "side": "below"
+    },
+    {
+      "id": "cedar",
+      "region": "north",
+      "label": [
+        "Junip",
+        "kestrel lago"
+      ],
+      "radius": 8,
+      "at": {
+        "x": 80,
+        "y": 90,
+        "set": "pinned"
+      },
+      "side": "above"
+    },
+    {
+      "id": "dogwood",
+      "region": "north",
+      "label": [
+        "Meadow necta",
+        "orchard prairie q"
+      ],
+      "radius": 8,
+      "at": {
+        "x": 360,
+        "y": 170,
+        "set": "pinned"
+      },
+      "side": "below"
+    },
+    {
+      "id": "elm",
+      "region": "south",
+      "label": [
+        "Ridge summ",
+        "tundra upland val"
+      ],
+      "radius": 8,
+      "at": {
+        "x": 590,
+        "y": 195,
+        "set": "pinned"
+      },
+      "side": "above"
+    },
+    {
+      "id": "fir",
+      "region": "east",
+      "label": [
+        "Wil",
+        "yarrow zep"
+      ],
+      "radius": 8,
+      "at": {
+        "x": 600,
+        "y": 340,
+        "set": "pinned"
+      },
+      "side": "right"
+    },
+    {
+      "id": "ginkgo",
+      "region": "east",
+      "label": [
+        "Amber ba",
+        "coral del"
+      ],
+      "radius": 8,
+      "at": {
+        "x": 420,
+        "y": 380,
+        "set": "pinned"
+      },
+      "side": "left"
+    },
+    {
+      "id": "hazel",
+      "region": "east",
+      "label": [
+        "Ember fj",
+        "grove harborx"
+      ],
+      "radius": 8,
+      "at": {
+        "x": 190,
+        "y": 360,
+        "set": "pinned"
+      },
+      "side": "left"
+    },
+    {
+      "id": "ivy",
+      "region": "west",
+      "label": [
+        "Juniperx",
+        "lagoon meadow n"
+      ],
+      "radius": 8,
+      "at": {
+        "x": 360,
+        "y": 530,
+        "set": "pinned"
+      },
+      "side": "below"
+    },
+    {
+      "id": "jasmine",
+      "region": "west",
+      "label": [
+        "Orchard pra",
+        "quarry ridge sum"
+      ],
+      "radius": 8,
+      "at": {
+        "x": 200,
+        "y": 548,
+        "set": "pinned"
+      },
+      "side": "above"
+    },
+    {
+      "id": "kapok",
+      "region": "west",
+      "label": [
+        "Tundrax",
+        "valley willow"
+      ],
+      "radius": 8,
+      "at": {
+        "x": 560,
+        "y": 500,
+        "set": "pinned"
+      },
+      "side": "right"
+    },
+    {
+      "id": "larch",
+      "region": "west",
+      "label": [
+        "Yarrow zephyr amb",
+        "basin coral deltax"
+      ],
+      "radius": 8,
+      "at": {
+        "x": 90,
+        "y": 525,
+        "set": "pinned"
+      },
+      "side": "below"
+    }
+  ],
+  "lines": [
+    {
+      "from": "alder",
+      "to": "ivy",
+      "kind": "lib"
+    },
+    {
+      "from": "ginkgo",
+      "to": "ivy",
+      "kind": "lib"
+    },
+    {
+      "from": "fir",
+      "to": "ivy",
+      "kind": "lib"
+    },
+    {
+      "from": "fir",
+      "to": "ginkgo",
+      "kind": "lib"
+    },
+    {
+      "from": "elm",
+      "to": "ivy",
+      "kind": "lib"
+    },
+    {
+      "from": "elm",
+      "to": "kapok",
+      "kind": "lib"
+    },
+    {
+      "from": "hazel",
+      "to": "ivy",
+      "kind": "lib"
+    },
+    {
+      "from": "hazel",
+      "to": "kapok",
+      "kind": "lib"
+    },
+    {
+      "from": "jasmine",
+      "to": "ivy",
+      "kind": "run"
+    },
+    {
+      "from": "cedar",
+      "to": "alder",
+      "kind": "run"
+    },
+    {
+      "from": "birch",
+      "to": "alder",
+      "kind": "run"
+    },
+    {
+      "from": "dogwood",
+      "to": "alder",
+      "kind": "run"
+    },
+    {
+      "from": "dogwood",
+      "to": "birch",
+      "kind": "run"
+    },
+    {
+      "from": "elm",
+      "to": "alder",
+      "kind": "run"
+    },
+    {
+      "from": "elm",
+      "to": "fir",
+      "kind": "run"
+    },
+    {
+      "from": "elm",
+      "to": "ginkgo",
+      "kind": "run"
+    },
+    {
+      "from": "elm",
+      "to": "hazel",
+      "kind": "run"
+    },
+    {
+      "from": "hazel",
+      "to": "fir",
+      "kind": "run"
+    },
+    {
+      "from": "hazel",
+      "to": "larch",
+      "kind": "plan"
+    }
+  ],
+  "notes": [
+    {
+      "text": "orcha",
+      "anchor": {
+        "line": {
+          "from": "alder",
+          "to": "ivy",
+          "along": 0.35,
+          "offset": 9
+        }
+      }
+    },
+    {
+      "text": "prair",
+      "anchor": {
+        "line": {
+          "from": "ginkgo",
+          "to": "ivy",
+          "along": 0.5,
+          "offset": -10
+        }
+      }
+    },
+    {
+      "text": "quarr",
+      "anchor": {
+        "line": {
+          "from": "fir",
+          "to": "ivy",
+          "along": 0.35,
+          "offset": 9
+        }
+      }
+    },
+    {
+      "text": "ridge",
+      "anchor": {
+        "line": {
+          "from": "elm",
+          "to": "ivy",
+          "along": 0.35,
+          "offset": 9
+        }
+      }
+    },
+    {
+      "text": "summi",
+      "anchor": {
+        "line": {
+          "from": "hazel",
+          "to": "ivy",
+          "along": 0.35,
+          "offset": 9
+        }
+      }
+    },
+    {
+      "text": "tundra upland valley wil",
+      "anchor": {
+        "item": {
+          "id": "cedar",
+          "dx": -60,
+          "dy": 45
+        }
+      }
+    }
+  ]
+}

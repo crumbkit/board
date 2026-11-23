@@ -57,6 +57,7 @@ fn task(title: &str) -> Task {
         linked: false,
         kind: "task".to_owned(),
         brief: None,
+        refs: Vec::new(),
     }
 }
 

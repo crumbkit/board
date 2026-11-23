@@ -219,6 +219,9 @@ pub struct Reference {
     pub path: LogicalPath,
     /// The record types the target may have, from `x-board-type`.
     pub accepts: Accepts,
+    /// Whether the target must be in the record's own board, from
+    /// `"x-board-local": true`: one reached through a mount fails.
+    pub local: bool,
 }
 
 /// Refuses a schema whose `x-board-type` anywhere is not a record type or a
@@ -312,6 +315,7 @@ impl Search<'_> {
                 pointer: pointer(steps),
                 path,
                 accepts: keywords.get("x-board-type").and_then(accepts),
+                local: keywords.get("x-board-local") == Some(&Value::Bool(true)),
             };
             self.found.push((steps.clone(), reference));
         }

@@ -22,6 +22,9 @@
     "crates/board-plugin-attention/types/attention/order/v1.schema.json": {
       "shape": "e248b8f20cd20b242e8de485ed94346e95e8cb21"
     },
+    "crates/board-plugin-autosync/types/autosync/board/v1.schema.json": {
+      "shape": "d65a3f79b8360e0399f96d2da4da97f3f466ed4f"
+    },
     "crates/board-plugin-boundary/types/boundary/boundary/v1.schema.json": {
       "shape": "26f8686f79e237aa645d02cb6c0bcc0aaa685ed6"
     },
@@ -104,6 +107,9 @@
           "withdrawn"
         ]
       }
+    },
+    "crates/board-plugin-priorities/types/priorities/list/v1.schema.json": {
+      "shape": "399f9b4aec73bca8d4205e51225a9e2c713e643c"
     },
     "crates/board-plugin-prompts/types/prompts/prompt/v1.schema.json": {
       "shape": "5b719a5dca5fc211ab1c3004424b70cd161a0ebe"
@@ -233,6 +239,22 @@
         "/properties/kind/enum": [
           "task",
           "project"
+        ],
+        "/properties/status/enum": [
+          "open",
+          "done",
+          "dropped"
+        ]
+      }
+    },
+    "crates/board-plugin-tasks/types/tasks/task/v3.schema.json": {
+      "shape": "31d6d10f693eaf3823a58b71c490e9b2d4c5313c",
+      "enums": {
+        "/properties/defer/anyOf/2/enum": [
+          "not-today",
+          "not-this-week",
+          "soon",
+          "someday"
         ],
         "/properties/status/enum": [
           "open",
@@ -1334,6 +1356,81 @@
       "data[].to",
       "data[].total",
       "data[].truncated",
+      "dry_run",
+      "failures",
+      "failures[].alternatives",
+      "failures[].alternatives[].all",
+      "failures[].alternatives[].args",
+      "failures[].alternatives[].call",
+      "failures[].alternatives[].kind",
+      "failures[].alternatives[].program",
+      "failures[].alternatives[].reason",
+      "failures[].alternatives[].repair",
+      "failures[].alternatives[].run",
+      "failures[].alternatives[].text",
+      "failures[].alternatives[].then",
+      "failures[].alternatives[].then.all",
+      "failures[].alternatives[].then.call",
+      "failures[].alternatives[].then.kind",
+      "failures[].cause",
+      "failures[].causes",
+      "failures[].code",
+      "failures[].fields",
+      "failures[].index",
+      "failures[].key",
+      "failures[].labels",
+      "failures[].labels[].column",
+      "failures[].labels[].excerpt",
+      "failures[].labels[].excerpt.line",
+      "failures[].labels[].excerpt.text",
+      "failures[].labels[].length",
+      "failures[].labels[].line",
+      "failures[].labels[].name",
+      "failures[].labels[].offset",
+      "failures[].labels[].text",
+      "failures[].message",
+      "failures[].recovery",
+      "failures[].recovery.all",
+      "failures[].recovery.args",
+      "failures[].recovery.call",
+      "failures[].recovery.kind",
+      "failures[].recovery.program",
+      "failures[].recovery.reason",
+      "failures[].recovery.repair",
+      "failures[].recovery.run",
+      "failures[].recovery.text",
+      "failures[].recovery.then",
+      "failures[].recovery.then.all",
+      "failures[].recovery.then.call",
+      "failures[].recovery.then.kind",
+      "failures[].related",
+      "failures[].related[].cause",
+      "failures[].related[].code",
+      "failures[].related[].help",
+      "failures[].related[].labels",
+      "failures[].related[].labels[].column",
+      "failures[].related[].labels[].excerpt",
+      "failures[].related[].labels[].excerpt.line",
+      "failures[].related[].labels[].excerpt.text",
+      "failures[].related[].labels[].length",
+      "failures[].related[].labels[].line",
+      "failures[].related[].labels[].name",
+      "failures[].related[].labels[].offset",
+      "failures[].related[].labels[].text",
+      "failures[].related[].message",
+      "failures[].related[].related",
+      "failures[].related[].severity",
+      "failures[].related[].url",
+      "failures[].sentence",
+      "failures[].url",
+      "schema"
+    ],
+    "board/repo-add-report/v2": [
+      "data",
+      "data.commit",
+      "data.path",
+      "data.remote",
+      "data.wrote",
       "dry_run",
       "failures",
       "failures[].alternatives",
@@ -2720,6 +2817,441 @@
         ]
       },
       "output.signer": {
+        "type": [
+          "string"
+        ]
+      }
+    },
+    "autosync.add": {
+      "input": {
+        "type": [
+          "object"
+        ],
+        "requires": [
+          [
+            "name",
+            "origin",
+            "path"
+          ]
+        ]
+      },
+      "input.branch": {
+        "type": [
+          "string"
+        ]
+      },
+      "input.name": {
+        "type": [
+          "string"
+        ]
+      },
+      "input.origin": {
+        "type": [
+          "string"
+        ]
+      },
+      "input.path": {
+        "type": [
+          "string"
+        ]
+      },
+      "output": {
+        "type": [
+          "object"
+        ],
+        "requires": [
+          [
+            "path"
+          ]
+        ]
+      },
+      "output.path": {
+        "type": [
+          "string"
+        ]
+      }
+    },
+    "autosync.install": {
+      "input": {
+        "type": [
+          "object"
+        ]
+      },
+      "input.dry-run": {
+        "type": [
+          "boolean"
+        ]
+      },
+      "input.interval": {
+        "type": [
+          "integer"
+        ]
+      },
+      "output": {
+        "type": [
+          "object"
+        ],
+        "requires": [
+          [
+            "loaded",
+            "plist",
+            "text"
+          ]
+        ]
+      },
+      "output.loaded": {
+        "type": [
+          "boolean"
+        ]
+      },
+      "output.plist": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.text": {
+        "type": [
+          "string"
+        ]
+      }
+    },
+    "autosync.run": {
+      "input": {
+        "type": [
+          "object"
+        ]
+      },
+      "input.dry-run": {
+        "type": [
+          "boolean"
+        ]
+      },
+      "input.scan-timeout": {
+        "type": [
+          "integer"
+        ]
+      },
+      "output": {
+        "type": [
+          "object"
+        ],
+        "requires": [
+          [
+            "boards",
+            "warnings"
+          ]
+        ]
+      },
+      "output.boards": {
+        "type": [
+          "array"
+        ]
+      },
+      "output.boards[]": {
+        "type": [
+          "object"
+        ],
+        "requires": [
+          [
+            "found",
+            "merged",
+            "message",
+            "name",
+            "outcome",
+            "pushed",
+            "time"
+          ]
+        ]
+      },
+      "output.boards[].code": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.boards[].findings": {
+        "type": [
+          "array"
+        ]
+      },
+      "output.boards[].findings[]": {
+        "type": [
+          "object"
+        ],
+        "requires": [
+          [
+            "commit",
+            "file",
+            "fingerprint",
+            "line",
+            "rule"
+          ]
+        ]
+      },
+      "output.boards[].findings[].commit": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.boards[].findings[].file": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.boards[].findings[].fingerprint": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.boards[].findings[].line": {
+        "type": [
+          "integer"
+        ]
+      },
+      "output.boards[].findings[].rule": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.boards[].found": {
+        "type": [
+          "integer"
+        ]
+      },
+      "output.boards[].merged": {
+        "type": [
+          "boolean"
+        ]
+      },
+      "output.boards[].message": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.boards[].name": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.boards[].outcome": {
+        "type": [
+          "string"
+        ],
+        "enum": [
+          "unsigned",
+          "missing",
+          "nested",
+          "origin_not_allowed",
+          "board_config",
+          "findings",
+          "scan_error",
+          "scanner_missing",
+          "fingerprints_too_large",
+          "push_failed",
+          "synced",
+          "checked",
+          "not_synced",
+          "skipped",
+          "unreachable",
+          "refused",
+          "out_of_time"
+        ]
+      },
+      "output.boards[].pushed": {
+        "type": [
+          "boolean"
+        ]
+      },
+      "output.boards[].time": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.warnings": {
+        "type": [
+          "array"
+        ]
+      },
+      "output.warnings[]": {
+        "type": [
+          "string"
+        ]
+      }
+    },
+    "autosync.status": {
+      "input": {
+        "type": [
+          "object"
+        ]
+      },
+      "output": {
+        "type": [
+          "object"
+        ],
+        "requires": [
+          [
+            "boards"
+          ]
+        ]
+      },
+      "output.boards": {
+        "type": [
+          "array"
+        ]
+      },
+      "output.boards[]": {
+        "type": [
+          "object"
+        ],
+        "requires": [
+          [
+            "found",
+            "merged",
+            "message",
+            "name",
+            "outcome",
+            "pushed",
+            "time"
+          ]
+        ]
+      },
+      "output.boards[].code": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.boards[].findings": {
+        "type": [
+          "array"
+        ]
+      },
+      "output.boards[].findings[]": {
+        "type": [
+          "object"
+        ],
+        "requires": [
+          [
+            "commit",
+            "file",
+            "fingerprint",
+            "line",
+            "rule"
+          ]
+        ]
+      },
+      "output.boards[].findings[].commit": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.boards[].findings[].file": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.boards[].findings[].fingerprint": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.boards[].findings[].line": {
+        "type": [
+          "integer"
+        ]
+      },
+      "output.boards[].findings[].rule": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.boards[].found": {
+        "type": [
+          "integer"
+        ]
+      },
+      "output.boards[].merged": {
+        "type": [
+          "boolean"
+        ]
+      },
+      "output.boards[].message": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.boards[].name": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.boards[].outcome": {
+        "type": [
+          "string"
+        ],
+        "enum": [
+          "unsigned",
+          "missing",
+          "nested",
+          "origin_not_allowed",
+          "board_config",
+          "findings",
+          "scan_error",
+          "scanner_missing",
+          "fingerprints_too_large",
+          "push_failed",
+          "synced",
+          "checked",
+          "not_synced",
+          "skipped",
+          "unreachable",
+          "refused",
+          "out_of_time"
+        ]
+      },
+      "output.boards[].pushed": {
+        "type": [
+          "boolean"
+        ]
+      },
+      "output.boards[].time": {
+        "type": [
+          "string"
+        ]
+      }
+    },
+    "autosync.uninstall": {
+      "input": {
+        "type": [
+          "object"
+        ]
+      },
+      "input.dry-run": {
+        "type": [
+          "boolean"
+        ]
+      },
+      "output": {
+        "type": [
+          "object"
+        ],
+        "requires": [
+          [
+            "loaded",
+            "plist",
+            "text"
+          ]
+        ]
+      },
+      "output.loaded": {
+        "type": [
+          "boolean"
+        ]
+      },
+      "output.plist": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.text": {
         "type": [
           "string"
         ]
@@ -10015,6 +10547,503 @@
         ]
       }
     },
+    "priorities.confirm": {
+      "input": {
+        "type": [
+          "object"
+        ]
+      },
+      "input.all": {
+        "type": [
+          "boolean"
+        ]
+      },
+      "input.id": {
+        "type": [
+          "string"
+        ]
+      },
+      "output": {
+        "type": [
+          "object"
+        ],
+        "requires": [
+          [
+            "confirmed",
+            "day"
+          ]
+        ]
+      },
+      "output.confirmed": {
+        "type": [
+          "array"
+        ]
+      },
+      "output.confirmed[]": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.day": {
+        "type": [
+          "string"
+        ]
+      }
+    },
+    "priorities.drop": {
+      "input": {
+        "type": [
+          "object"
+        ],
+        "requires": [
+          [
+            "id"
+          ]
+        ]
+      },
+      "input.id": {
+        "type": [
+          "string"
+        ]
+      },
+      "output": {
+        "type": [
+          "object"
+        ],
+        "requires": [
+          [
+            "horizon",
+            "id",
+            "rank",
+            "unconfirmed"
+          ]
+        ]
+      },
+      "output.horizon": {
+        "type": [
+          "string"
+        ],
+        "enum": [
+          "short",
+          "long"
+        ]
+      },
+      "output.id": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.rank": {
+        "type": [
+          "integer"
+        ]
+      },
+      "output.unconfirmed": {
+        "type": [
+          "boolean"
+        ]
+      }
+    },
+    "priorities.list": {
+      "input": {
+        "type": [
+          "object"
+        ]
+      },
+      "input.horizon": {
+        "type": [
+          "string"
+        ],
+        "enum": [
+          "short",
+          "long"
+        ]
+      },
+      "output": {
+        "type": [
+          "object"
+        ],
+        "requires": [
+          [
+            "long",
+            "short",
+            "stale_after"
+          ]
+        ]
+      },
+      "output.long": {
+        "type": [
+          "array"
+        ]
+      },
+      "output.long[]": {
+        "type": [
+          "object"
+        ],
+        "requires": [
+          [
+            "confirmed",
+            "covers",
+            "horizon",
+            "id",
+            "rank",
+            "stale",
+            "title",
+            "unconfirmed"
+          ]
+        ]
+      },
+      "output.long[].confirmed": {
+        "type": [
+          "null",
+          "string"
+        ]
+      },
+      "output.long[].covers": {
+        "type": [
+          "array"
+        ]
+      },
+      "output.long[].covers[]": {
+        "type": [
+          "object"
+        ],
+        "requires": [
+          [
+            "missing",
+            "path"
+          ],
+          [
+            "path",
+            "status",
+            "title",
+            "type"
+          ]
+        ]
+      },
+      "output.long[].covers[].missing": {
+        "type": [
+          "boolean"
+        ]
+      },
+      "output.long[].covers[].path": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.long[].covers[].status": {
+        "type": [
+          "null",
+          "string"
+        ]
+      },
+      "output.long[].covers[].title": {
+        "type": [
+          "null",
+          "string"
+        ]
+      },
+      "output.long[].covers[].type": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.long[].horizon": {
+        "type": [
+          "string"
+        ],
+        "enum": [
+          "short",
+          "long"
+        ]
+      },
+      "output.long[].id": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.long[].rank": {
+        "type": [
+          "integer"
+        ]
+      },
+      "output.long[].stale": {
+        "type": [
+          "boolean"
+        ]
+      },
+      "output.long[].title": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.long[].unconfirmed": {
+        "type": [
+          "boolean"
+        ]
+      },
+      "output.short": {
+        "type": [
+          "array"
+        ]
+      },
+      "output.short[]": {
+        "type": [
+          "object"
+        ],
+        "requires": [
+          [
+            "confirmed",
+            "covers",
+            "horizon",
+            "id",
+            "rank",
+            "stale",
+            "title",
+            "unconfirmed"
+          ]
+        ]
+      },
+      "output.short[].confirmed": {
+        "type": [
+          "null",
+          "string"
+        ]
+      },
+      "output.short[].covers": {
+        "type": [
+          "array"
+        ]
+      },
+      "output.short[].covers[]": {
+        "type": [
+          "object"
+        ],
+        "requires": [
+          [
+            "missing",
+            "path"
+          ],
+          [
+            "path",
+            "status",
+            "title",
+            "type"
+          ]
+        ]
+      },
+      "output.short[].covers[].missing": {
+        "type": [
+          "boolean"
+        ]
+      },
+      "output.short[].covers[].path": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.short[].covers[].status": {
+        "type": [
+          "null",
+          "string"
+        ]
+      },
+      "output.short[].covers[].title": {
+        "type": [
+          "null",
+          "string"
+        ]
+      },
+      "output.short[].covers[].type": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.short[].horizon": {
+        "type": [
+          "string"
+        ],
+        "enum": [
+          "short",
+          "long"
+        ]
+      },
+      "output.short[].id": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.short[].rank": {
+        "type": [
+          "integer"
+        ]
+      },
+      "output.short[].stale": {
+        "type": [
+          "boolean"
+        ]
+      },
+      "output.short[].title": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.short[].unconfirmed": {
+        "type": [
+          "boolean"
+        ]
+      },
+      "output.stale_after": {
+        "type": [
+          "number"
+        ]
+      }
+    },
+    "priorities.move": {
+      "input": {
+        "type": [
+          "object"
+        ],
+        "requires": [
+          [
+            "id",
+            "to"
+          ]
+        ]
+      },
+      "input.id": {
+        "type": [
+          "string"
+        ]
+      },
+      "input.to": {
+        "type": [
+          "integer"
+        ]
+      },
+      "output": {
+        "type": [
+          "object"
+        ],
+        "requires": [
+          [
+            "horizon",
+            "id",
+            "rank",
+            "unconfirmed"
+          ]
+        ]
+      },
+      "output.horizon": {
+        "type": [
+          "string"
+        ],
+        "enum": [
+          "short",
+          "long"
+        ]
+      },
+      "output.id": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.rank": {
+        "type": [
+          "integer"
+        ]
+      },
+      "output.unconfirmed": {
+        "type": [
+          "boolean"
+        ]
+      }
+    },
+    "priorities.set": {
+      "input": {
+        "type": [
+          "object"
+        ],
+        "requires": [
+          [
+            "horizon",
+            "id",
+            "title"
+          ]
+        ]
+      },
+      "input.at": {
+        "type": [
+          "integer"
+        ]
+      },
+      "input.covers": {
+        "type": [
+          "array"
+        ]
+      },
+      "input.covers[]": {
+        "type": [
+          "string"
+        ]
+      },
+      "input.horizon": {
+        "type": [
+          "string"
+        ],
+        "enum": [
+          "short",
+          "long"
+        ]
+      },
+      "input.id": {
+        "type": [
+          "string"
+        ]
+      },
+      "input.title": {
+        "type": [
+          "string"
+        ]
+      },
+      "output": {
+        "type": [
+          "object"
+        ],
+        "requires": [
+          [
+            "horizon",
+            "id",
+            "rank",
+            "unconfirmed"
+          ]
+        ]
+      },
+      "output.horizon": {
+        "type": [
+          "string"
+        ],
+        "enum": [
+          "short",
+          "long"
+        ]
+      },
+      "output.id": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.rank": {
+        "type": [
+          "integer"
+        ]
+      },
+      "output.unconfirmed": {
+        "type": [
+          "boolean"
+        ]
+      }
+    },
     "prompts.get": {
       "input": {
         "type": [
@@ -12375,7 +13404,8 @@
           "mount",
           "link",
           "missing",
-          "beyond"
+          "beyond",
+          "withheld"
         ]
       },
       "output.not_copied_total": {
@@ -12532,6 +13562,16 @@
         ]
       },
       "input.parent": {
+        "type": [
+          "string"
+        ]
+      },
+      "input.refs": {
+        "type": [
+          "array"
+        ]
+      },
+      "input.refs[]": {
         "type": [
           "string"
         ]
@@ -12754,6 +13794,8 @@
             "owner",
             "parent",
             "path",
+            "refs",
+            "refs_total",
             "repo",
             "reviewed",
             "subtasks",
@@ -12830,6 +13872,21 @@
       "output.available.tasks[].path": {
         "type": [
           "string"
+        ]
+      },
+      "output.available.tasks[].refs": {
+        "type": [
+          "array"
+        ]
+      },
+      "output.available.tasks[].refs[]": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.available.tasks[].refs_total": {
+        "type": [
+          "integer"
         ]
       },
       "output.available.tasks[].repo": {
@@ -12953,6 +14010,8 @@
             "owner",
             "parent",
             "path",
+            "refs",
+            "refs_total",
             "repo",
             "reviewed",
             "subtasks",
@@ -13029,6 +14088,21 @@
       "output.due_soon.tasks[].path": {
         "type": [
           "string"
+        ]
+      },
+      "output.due_soon.tasks[].refs": {
+        "type": [
+          "array"
+        ]
+      },
+      "output.due_soon.tasks[].refs[]": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.due_soon.tasks[].refs_total": {
+        "type": [
+          "integer"
         ]
       },
       "output.due_soon.tasks[].repo": {
@@ -13112,6 +14186,8 @@
             "owner",
             "parent",
             "path",
+            "refs",
+            "refs_total",
             "repo",
             "reviewed",
             "subtasks",
@@ -13188,6 +14264,21 @@
       "output.held.tasks[].path": {
         "type": [
           "string"
+        ]
+      },
+      "output.held.tasks[].refs": {
+        "type": [
+          "array"
+        ]
+      },
+      "output.held.tasks[].refs[]": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.held.tasks[].refs_total": {
+        "type": [
+          "integer"
         ]
       },
       "output.held.tasks[].repo": {
@@ -13287,6 +14378,8 @@
             "owner",
             "parent",
             "path",
+            "refs",
+            "refs_total",
             "repo",
             "reviewed",
             "subtasks",
@@ -13363,6 +14456,21 @@
       "output.stale.tasks[].path": {
         "type": [
           "string"
+        ]
+      },
+      "output.stale.tasks[].refs": {
+        "type": [
+          "array"
+        ]
+      },
+      "output.stale.tasks[].refs[]": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.stale.tasks[].refs_total": {
+        "type": [
+          "integer"
         ]
       },
       "output.stale.tasks[].repo": {
@@ -13944,6 +15052,183 @@
         ]
       }
     },
+    "tasks.migrate": {
+      "input": {
+        "type": [
+          "object"
+        ]
+      },
+      "input.yes": {
+        "type": [
+          "boolean"
+        ]
+      },
+      "output": {
+        "type": [
+          "object"
+        ],
+        "requires": [
+          [
+            "naming",
+            "naming_total",
+            "projects",
+            "projects_total",
+            "repos",
+            "unchanged",
+            "wrote"
+          ]
+        ]
+      },
+      "output.naming": {
+        "type": [
+          "array"
+        ]
+      },
+      "output.naming[]": {
+        "type": [
+          "object"
+        ],
+        "requires": [
+          [
+            "path",
+            "task"
+          ]
+        ]
+      },
+      "output.naming[].path": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.naming[].task": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.naming_total": {
+        "type": [
+          "integer"
+        ]
+      },
+      "output.projects": {
+        "type": [
+          "array"
+        ]
+      },
+      "output.projects[]": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.projects_total": {
+        "type": [
+          "integer"
+        ]
+      },
+      "output.repos": {
+        "type": [
+          "array"
+        ]
+      },
+      "output.repos[]": {
+        "type": [
+          "object"
+        ],
+        "requires": [
+          [
+            "commit",
+            "refused",
+            "repo",
+            "tasks",
+            "total",
+            "unpushed",
+            "unsynced"
+          ]
+        ]
+      },
+      "output.repos[].commit": {
+        "type": [
+          "null",
+          "string"
+        ]
+      },
+      "output.repos[].refused": {
+        "type": [
+          "null",
+          "object"
+        ],
+        "requires": [
+          [
+            "code",
+            "message"
+          ]
+        ]
+      },
+      "output.repos[].refused.code": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.repos[].refused.message": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.repos[].repo": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.repos[].tasks": {
+        "type": [
+          "array"
+        ]
+      },
+      "output.repos[].tasks[]": {
+        "type": [
+          "object"
+        ],
+        "requires": [
+          [
+            "path",
+            "record"
+          ]
+        ]
+      },
+      "output.repos[].tasks[].path": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.repos[].tasks[].record": {},
+      "output.repos[].total": {
+        "type": [
+          "integer"
+        ]
+      },
+      "output.repos[].unpushed": {
+        "type": [
+          "null",
+          "string"
+        ]
+      },
+      "output.repos[].unsynced": {
+        "type": [
+          "null",
+          "string"
+        ]
+      },
+      "output.unchanged": {
+        "type": [
+          "boolean"
+        ]
+      },
+      "output.wrote": {
+        "type": [
+          "boolean"
+        ]
+      }
+    },
     "tasks.move": {
       "input": {
         "type": [
@@ -14012,6 +15297,103 @@
       "output.repo": {
         "type": [
           "string"
+        ]
+      },
+      "output.unpushed": {
+        "type": [
+          "null",
+          "string"
+        ]
+      },
+      "output.unsynced": {
+        "type": [
+          "null",
+          "string"
+        ]
+      }
+    },
+    "tasks.ref": {
+      "input": {
+        "type": [
+          "object"
+        ],
+        "requires": [
+          [
+            "path"
+          ]
+        ]
+      },
+      "input.add": {
+        "type": [
+          "string"
+        ]
+      },
+      "input.path": {
+        "type": [
+          "string"
+        ]
+      },
+      "input.remove": {
+        "type": [
+          "string"
+        ]
+      },
+      "output": {
+        "type": [
+          "object"
+        ],
+        "requires": [
+          [
+            "commit",
+            "conflicts",
+            "path",
+            "refs",
+            "repo",
+            "unchanged",
+            "unpushed",
+            "unsynced"
+          ]
+        ]
+      },
+      "output.commit": {
+        "type": [
+          "null",
+          "string"
+        ]
+      },
+      "output.conflicts": {
+        "type": [
+          "array"
+        ]
+      },
+      "output.conflicts[]": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.path": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.refs": {
+        "type": [
+          "array"
+        ]
+      },
+      "output.refs[]": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.repo": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.unchanged": {
+        "type": [
+          "boolean"
         ]
       },
       "output.unpushed": {
@@ -14256,6 +15638,8 @@
             "kind",
             "owner",
             "path",
+            "refs",
+            "refs_total",
             "status",
             "subtasks",
             "title",
@@ -14321,6 +15705,21 @@
           "string"
         ]
       },
+      "output.roots[].refs": {
+        "type": [
+          "array"
+        ]
+      },
+      "output.roots[].refs[]": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.roots[].refs_total": {
+        "type": [
+          "integer"
+        ]
+      },
       "output.roots[].status": {
         "type": [
           "string"
@@ -14375,6 +15774,8 @@
             "kind",
             "owner",
             "path",
+            "refs",
+            "refs_total",
             "status",
             "subtasks",
             "title",
@@ -14438,6 +15839,21 @@
       "output.tree.path": {
         "type": [
           "string"
+        ]
+      },
+      "output.tree.refs": {
+        "type": [
+          "array"
+        ]
+      },
+      "output.tree.refs[]": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.tree.refs_total": {
+        "type": [
+          "integer"
         ]
       },
       "output.tree.status": {
@@ -14508,6 +15924,28 @@
     "attention::signers::missing",
     "attention::signers::untrusted",
     "attention::verify::failed",
+    "autosync::agent::failed",
+    "autosync::agent::interval",
+    "autosync::board::missing",
+    "autosync::board::nested",
+    "autosync::board::refused",
+    "autosync::board::unsigned",
+    "autosync::call::bad_input",
+    "autosync::call::unknown_capability",
+    "autosync::origin::not_allowed",
+    "autosync::run::busy",
+    "autosync::run::failed",
+    "autosync::scan::board_config",
+    "autosync::scan::failed",
+    "autosync::scan::fingerprints_too_large",
+    "autosync::scan::found",
+    "autosync::scan::scanner_missing",
+    "autosync::sign::cancelled",
+    "autosync::sign::declined",
+    "autosync::sign::failed",
+    "autosync::sign::no_signer",
+    "autosync::state::no_home",
+    "autosync::state::unwritable",
     "board::attachment::mismatch",
     "board::attachment::missing",
     "board::cli::usage",
@@ -14531,6 +15969,7 @@
     "board::mount::cycle",
     "board::mount::follow_missing",
     "board::mount::invalid",
+    "board::mount::no_remote",
     "board::mount::not_ancestor",
     "board::mount::remote_unsupported",
     "board::mount::repo_missing",
@@ -14575,10 +16014,15 @@
     "board::record::unknown_type",
     "board::ref::dangling",
     "board::ref::malformed",
+    "board::ref::through_mount",
     "board::ref::wrong_type",
     "board::refs::target_changed",
     "board::repo::duplicate_remote",
+    "board::repo::invalid",
+    "board::repo::local_remote",
+    "board::repo::path_mismatch",
     "board::repo::submodule",
+    "board::repo::too_long",
     "board::repo::unreadable",
     "board::resolve::cycle",
     "board::resolve::too_many_hops",
@@ -14605,15 +16049,19 @@
     "board::symlink::loop",
     "board::symlink::outside",
     "board::sync::busy",
+    "board::sync::conflicted",
     "board::sync::edited",
     "board::sync::failed",
     "board::sync::gave_up",
+    "board::sync::held",
     "board::sync::kept",
     "board::sync::merging",
     "board::sync::no_branch",
     "board::sync::no_remote",
+    "board::sync::other_branch",
     "board::sync::rewound",
     "board::sync::shallow",
+    "board::sync::staged",
     "board::sync::timeout",
     "board::ui::not_a_binding",
     "board::ui::open_failed",
@@ -14826,6 +16274,19 @@
     "plans::withdraw::no_question",
     "plans::withdraw::not_a_question_path",
     "plans::withdraw::not_open",
+    "priorities::board::refused",
+    "priorities::call::bad_input",
+    "priorities::call::unknown_capability",
+    "priorities::confirm::unnamed",
+    "priorities::covers::through_mount",
+    "priorities::covers::too_many",
+    "priorities::covers::wrong_type",
+    "priorities::horizon::full",
+    "priorities::id::invalid",
+    "priorities::id::not_found",
+    "priorities::record::unreadable",
+    "priorities::repo::invalid_record",
+    "priorities::repo::not_found",
     "prompts::board::refused",
     "prompts::call::bad_input",
     "prompts::call::unknown_capability",
@@ -14911,15 +16372,21 @@
     "share::record::invalid",
     "share::target::differs",
     "tasks::add::cross_repo",
+    "tasks::add::no_v3_schema",
     "tasks::add::parent_not_found",
     "tasks::board::refused",
     "tasks::call::bad_input",
     "tasks::call::unknown_capability",
     "tasks::claim::no_owner",
+    "tasks::migrate::project_task",
     "tasks::move::cross_repo",
     "tasks::move::cycle",
     "tasks::move::parent_not_found",
     "tasks::owner::twice",
+    "tasks::ref::missing",
+    "tasks::ref::not_v3",
+    "tasks::ref::through_mount",
+    "tasks::ref::too_many",
     "tasks::repo::ambiguous",
     "tasks::repo::invalid_record",
     "tasks::repo::not_found",

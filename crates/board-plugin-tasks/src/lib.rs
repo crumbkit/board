@@ -9,7 +9,9 @@ mod claim;
 mod dates;
 mod lines;
 mod listing;
+mod migrate;
 pub mod records;
+mod refs;
 mod repeat;
 mod task;
 mod tree;
@@ -24,7 +26,7 @@ use board_repos::{Through, Writer};
 use schemars::generate::SchemaSettings;
 use serde_json::{Map, Value, json};
 
-use records::TaskRecord;
+use records::{TaskRecord, V2_SCHEMA, V2_TYPE};
 
 /// The plugin's name, which its codes start with.
 const PLUGIN: &str = "tasks";
@@ -35,14 +37,16 @@ pub struct Tasks;
 /// The capabilities that change an existing task. `add` writes a new
 /// task, a second one on a repeat, and `done` defers a repeating task
 /// again on each call.
-const EDITS: [&str; 6] = ["claim", "done", "defer", "drop", "reviewed", "move"];
+const EDITS: [&str; 8] = [
+    "claim", "done", "defer", "drop", "reviewed", "move", "ref", "migrate",
+];
 /// What every write call but `done` and `move` says after its own
 /// description; `done` says it in its own words, since it may not push.
 const WRITES: &str = " It syncs the task's repo first and pushes after, and sets reviewed.";
 
 /// Each capability's name and description, in the order the manifest
 /// lists them.
-const CAPABILITIES: [(&str, &str); 9] = [
+const CAPABILITIES: [(&str, &str); 11] = [
     (
         "available",
         "Sync the repos the caller's remote chooses, then list their open tasks available now, \
@@ -79,6 +83,19 @@ const CAPABILITIES: [(&str, &str); 9] = [
          parent is the task or under it. It syncs the task's repo first and pushes after, and \
          changes nothing else.",
     ),
+    (
+        "ref",
+        "Add a record or file in a tasks/task/v3 task's own repository to the end of its refs, or \
+         remove one, refused when the path holds nothing or is reached through a mount. It syncs \
+         the task's repo first and pushes after, sets reviewed, and writes nothing when the refs \
+         stay as they were.",
+    ),
+    (
+        "migrate",
+        "List each tasks/task/v2 task that is not a project and the tasks/task/v3 record it \
+         becomes, and with --yes rewrite them, one commit per repo, each synced first and \
+         pushed after; refused while a v2 project task remains.",
+    ),
 ];
 
 impl Plugin for Tasks {
@@ -89,11 +106,18 @@ impl Plugin for Tasks {
     }
 
     fn schemas(&self) -> Vec<(RecordType, Value)> {
-        let name = (TaskRecord::TYPE.parse()).expect("TYPE is a record type; a test parses it");
-        vec![(
-            name,
-            schema_of::<TaskRecord>(SchemaSettings::draft2020_12()),
-        )]
+        let name = |text: &str| {
+            text.parse()
+                .expect("TYPE is a record type; a test parses it")
+        };
+        let settings = SchemaSettings::draft2020_12;
+        vec![
+            (
+                name(V2_TYPE),
+                serde_json::from_str(V2_SCHEMA).expect("a committed schema; a test reads it"),
+            ),
+            (name(TaskRecord::TYPE), schema_of::<TaskRecord>(settings())),
+        ]
     }
 
     fn call(
@@ -112,11 +136,13 @@ impl Plugin for Tasks {
             "drop" => write::drop(host, &input),
             "reviewed" => write::reviewed(host, &input),
             "move" => write::move_task(host, &input),
+            "ref" => refs::ref_task(host, &input),
+            "migrate" => migrate::migrate(host, &input),
             other => Err(refusal(
                 "tasks::call::unknown_capability",
                 format!(
                     "tasks offers no capability {other}; it offers available, tree, add, claim, \
-                     done, defer, drop, reviewed and move"
+                     done, defer, drop, reviewed, move, ref and migrate"
                 ),
                 [],
             )),
@@ -213,10 +239,18 @@ fn manifest() -> Value {
             schema_of::<write::MoveInput>(input()),
             schema_of::<write::Moved>(output()),
         ),
+        (
+            schema_of::<write::RefInput>(input()),
+            schema_of::<refs::Reffed>(output()),
+        ),
+        (
+            schema_of::<write::MigrateInput>(input()),
+            schema_of::<migrate::Output>(output()),
+        ),
     ];
     let capabilities: Vec<Value> = (CAPABILITIES.iter().zip(schemas))
         .map(|((name, description), (input, output))| {
-            let writes = !["available", "tree", "done", "move"].contains(name);
+            let writes = !["available", "tree", "done", "move", "ref", "migrate"].contains(name);
             let description = if writes {
                 format!("{description}{WRITES}")
             } else {
@@ -251,7 +285,7 @@ fn manifest() -> Value {
     json!({
         "$type": "board/plugin-manifest/v1",
         "name": PLUGIN,
-        "version": "0.4.0",
+        "version": "0.5.0",
         // SKILL.md's description, the callout an agent sees first.
         "description": "Before you fix a bug or build a feature, use it to check whether an open \
             task already covers the work, and claim that task and finish it with tasks.done \
@@ -263,7 +297,7 @@ fn manifest() -> Value {
             notes repos that repository's git remote routes to and lists the tasks to sweep. \
             SKILL.md and README.md in the plugin's directory say more.",
         "metadata": {"area": "planning"},
-        "types": [TaskRecord::TYPE],
+        "types": records::TASK_TYPES,
         "capabilities": capabilities,
     })
 }
