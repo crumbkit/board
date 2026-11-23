@@ -91,10 +91,13 @@ pub(crate) fn board_config(host: &dyn Host, board: &Path, new: &str) -> Option<&
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, serde::Deserialize, schemars::JsonSchema)]
 pub(crate) struct Finding {
     pub(crate) rule: String,
-    /// The commit's first 12 hex digits.
+    /// The commit's full id.
     pub(crate) commit: String,
     pub(crate) file: String,
     pub(crate) line: u64,
+    /// `<commit>:<file>:<rule>:<line>`, the line that makes gitleaks ignore
+    /// this finding when it is added to the fingerprints file.
+    pub(crate) fingerprint: String,
 }
 
 /// What a scan found.
@@ -222,11 +225,14 @@ fn read_report(report: &Path) -> Option<Vec<Finding>> {
     (found.iter())
         .map(|finding| {
             let text = |key: &str| finding.get(key)?.as_str().map(str::to_owned);
+            let (rule, commit, file) = (text("RuleID")?, text("Commit")?, text("File")?);
+            let line = finding.get("StartLine")?.as_u64()?;
             Some(Finding {
-                rule: text("RuleID")?,
-                commit: text("Commit")?.chars().take(12).collect(),
-                file: text("File")?,
-                line: finding.get("StartLine")?.as_u64()?,
+                fingerprint: format!("{commit}:{file}:{rule}:{line}"),
+                rule,
+                commit,
+                file,
+                line,
             })
         })
         .collect()

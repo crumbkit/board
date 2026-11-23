@@ -90,15 +90,17 @@ personal board:
 ## False positives
 
 The fingerprints file is `~/.config/board/autosync/gitleaksignore` on each
-Mac. Each line is a gitleaks fingerprint, `<commit>:<file>:<rule>:<line>`,
-which the owner adds by hand after reading `status`. A file over 1 MiB
+Mac. Each line is a gitleaks fingerprint. `<commit>:<file>:<rule>:<line>`
+ignores one finding in one commit; `status` prints it as each finding's
+`fingerprint`, which the owner copies by hand. `<file>:<rule>:<line>`
+ignores that finding in every commit. A file over 1 MiB
 stops every push with `autosync::scan::fingerprints_too_large`.
 
 ## Reports
 
 - `~/Library/Logs/board-autosync/status.json` holds each board's last
   round: its outcome, code, message and, for findings, each one's rule,
-  short commit, file and line, at most 50. `autosync.log` beside it gets one
+  commit, file, line and fingerprint, at most 50. `autosync.log` beside it gets one
   line per board per run, rotated above 1 MB.
 - A notification shows when a board's outcome changes.
 - A failing board has one open task in the personal board, written with

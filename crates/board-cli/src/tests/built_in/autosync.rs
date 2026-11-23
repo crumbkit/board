@@ -373,10 +373,19 @@ fn a_fingerprint_on_this_mac_lets_its_finding_push_and_gitleaks_config_from_the_
     let inherited = [("GITLEAKS_CONFIG", allow.as_str())];
     let (code, _) = mac.run_with(&["autosync", "run"], &mac.path(), true, &inherited);
     assert_ne!(code, 0, "GITLEAKS_CONFIG reached gitleaks");
-    let fingerprint = format!("{commit}:notes/config.json:github-pat:1\n");
+    // The fingerprint status prints is the line gitleaks ignores, with the
+    // whole commit id.
+    let (_, status) = mac.run(&["autosync", "status"]);
+    let finding = &status["data"]["output"]["boards"][0]["findings"][0];
+    let fingerprint = finding["fingerprint"].as_str().unwrap();
+    assert_eq!(
+        fingerprint,
+        format!("{commit}:notes/config.json:github-pat:1")
+    );
+    assert_eq!(finding["commit"], commit.to_string());
     mac.home.write(
         ".config/board/autosync/gitleaksignore",
-        Item::File(&fingerprint),
+        Item::File(&format!("{fingerprint}\n")),
     );
     let (ok, boards) = mac.round();
     assert!(ok, "{boards:?}");

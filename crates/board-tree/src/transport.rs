@@ -13,7 +13,8 @@ use crate::git::Repository;
 use crate::write::sync::SyncError;
 
 /// How long `board sync` may run before Board stops git. It starts before
-/// the wait for the board lock and covers every fetch, push and replay.
+/// the wait for the board lock and covers every fetch, push and replay. The
+/// time a guarded sync's `before_push` takes is not counted.
 pub const GIT_DEADLINE: Duration = Duration::from_mins(1);
 
 /// How long git has to exit after SIGTERM, such as to remove its lock
@@ -25,7 +26,8 @@ const STDOUT: usize = 16 * 1024 * 1024;
 const STDERR: usize = 64 * 1024;
 
 /// How long one sync may run, from when it was made: every fetch and push
-/// it starts shares it.
+/// it starts shares it. Time spent in a guard's `before_push` is not
+/// counted, because the sync moves the deadline later by that time.
 #[derive(Clone, Copy, Debug)]
 pub struct Deadline {
     started: Instant,
