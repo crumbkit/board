@@ -4,6 +4,7 @@
 
 use std::path::Path;
 
+use board_model::{PluginCode, PluginName, Refusal};
 use board_ops::{Host, PluginError};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -11,7 +12,7 @@ use serde_json::{Value, json};
 
 use crate::crossing;
 use crate::git::{self, error, git, run, variable};
-use crate::parts::{Parts, ref_parts};
+use crate::parts::{Parts, SHORT, Skipped, ref_parts};
 use crate::remote::{Via, destinations};
 use crate::send::output;
 
@@ -255,7 +256,10 @@ fn check_pushed(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
     let mut checked = Vec::new();
     for fields in pushed {
         let (sha, reference) = (fields[1], fields[2]);
-        let parts = ref_parts(host, &top, reference, sha, &have)?;
+        let (parts, left_out_files) = ref_parts(host, &top, reference, sha, &have)?;
+        for file in &left_out_files {
+            host.warn(&left_out(file));
+        }
         for to in &destinations {
             let (digest, note) = if let Some(handed) =
                 reused(personal, handed.as_ref(), to, from.as_deref(), &parts)?
@@ -275,6 +279,25 @@ fn check_pushed(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
         }
     }
     Ok(output(&PrePushOutput { checked }))
+}
+
+/// The warning that a binary file was left out of the text checked, so the
+/// person sees it on git's stderr.
+fn left_out(file: &Skipped) -> Refusal {
+    let plugin: PluginName = "github".parse().expect("github is a plugin name");
+    let code = PluginCode::parse(&plugin, "github::push::binary_skipped".to_owned())
+        .expect("the code is github's");
+    let message = format!(
+        "commit {} adds or changes {}, a binary file that was not scanned: no rule checked its \
+         bytes, so any text inside it went unchecked",
+        &file.commit[..SHORT.min(file.commit.len())],
+        file.path
+    );
+    let fields = serde_json::json!({"commit": file.commit, "path": file.path});
+    let Value::Object(fields) = fields else {
+        unreachable!("json! of an object is an object")
+    };
+    Refusal::plugin(code, message, fields)
 }
 
 /// The digest of the check the action handed the hook, when it can stand

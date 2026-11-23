@@ -8,21 +8,34 @@ use std::sync::LazyLock;
 
 use board_ops::{Host, PluginError};
 use regex::Regex;
+use schemars::JsonSchema;
+use serde::Serialize;
 use serde_json::json;
 
-use crate::git::{error, git, git_adding, lossy, outgoing};
+use crate::git::{error, git, git_adding, lossy, outgoing, run};
 
 /// The short SHA that names a commit's or tag's parts, at a fixed length so
 /// part names never change.
 pub(crate) const SHORT: usize = 12;
 /// The flags of `git show` that give a commit's patch against its first
-/// parent with every file's bytes: no colour, external diff or textconv.
-const DIFF: [&str; 5] = [
+/// parent with every file's bytes, a rename as a deletion and an addition
+/// so each is judged alone: no colour, external diff or textconv.
+const DIFF: [&str; 6] = [
+    "--no-renames",
     "--format=",
     "--diff-merges=first-parent",
     "--no-color",
     "--no-ext-diff",
     "--no-textconv",
+];
+/// The options before `show`: file names unquoted, and no
+/// `GIT_LITERAL_PATHSPECS` in the environment, which would turn the
+/// exclusions of left-out files into literal paths that match nothing.
+const UNQUOTED: [&str; 4] = [
+    "-c",
+    "core.quotePath=false",
+    "--no-literal-pathspecs",
+    "show",
 ];
 /// A tag object's tagger line: name, email, then the time and zone.
 static TAGGER: LazyLock<Regex> = LazyLock::new(|| {
@@ -31,6 +44,17 @@ static TAGGER: LazyLock<Regex> = LazyLock::new(|| {
 
 /// Named texts, sorted by name, as the boundary takes them.
 pub(crate) type Parts = BTreeMap<String, String>;
+
+/// A binary file left out of its commit's diff because its bytes are not
+/// text. No rule scans a skipped file's bytes, so text inside it, such as
+/// UTF-16 text, a database or an executable, is not checked.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct Skipped {
+    /// The commit's full SHA.
+    pub(crate) commit: String,
+    pub(crate) path: String,
+}
 
 /// The commits a push of `head` sends past `have`, and the parts that name
 /// `branch` and each commit. `github.push` and the pre-push hook both build
@@ -42,11 +66,11 @@ pub(crate) fn push_parts(
     branch: &str,
     head: &str,
     have: &[String],
-) -> Result<(Vec<String>, Parts), PluginError> {
+) -> Result<(Vec<String>, Parts, Vec<Skipped>), PluginError> {
     let commits = outgoing(host, at, head, have)?;
-    let mut parts = commit_parts(host, at, &commits)?;
+    let (mut parts, left_out) = commit_parts(host, at, &commits)?;
     parts.insert("push.branch".to_owned(), branch.to_owned());
-    Ok((commits, parts))
+    Ok((commits, parts, left_out))
 }
 
 /// The parts of a push of object `sha` to the ref `name` past `have`: the
@@ -61,7 +85,7 @@ pub(crate) fn ref_parts(
     name: &str,
     sha: &str,
     have: &[String],
-) -> Result<Parts, PluginError> {
+) -> Result<(Parts, Vec<Skipped>), PluginError> {
     let mut parts = Parts::new();
     let mut sha = sha.to_owned();
     let mut kind = git(host, at, &["cat-file", "-t", &sha], "")?
@@ -97,27 +121,29 @@ pub(crate) fn ref_parts(
         ));
     }
     let branch = name.strip_prefix("refs/heads/").unwrap_or(name);
-    let (_, commits) = push_parts(host, at, branch, &sha, have)?;
+    let (_, commits, left_out) = push_parts(host, at, branch, &sha, have)?;
     parts.extend(commits);
-    Ok(parts)
+    Ok((parts, left_out))
 }
 
-/// Each commit's message, names, emails, headers, diff and binary paths, as
-/// parts named `commit.<short sha>.<field>`. The diff is git's text of
-/// every file, binary or not, with no textconv or external diff and with
-/// file names unquoted, so a text file's lines are the bytes sent. A
-/// binary file's bytes that are not UTF-8 are replaced by U+FFFD, and a
-/// text file's are `github::git::not_utf8`. A commit that changes a file
-/// Git LFS stores is `github::push::lfs`.
+/// Each commit's message, names, emails, headers, diff, binary paths and
+/// skipped paths, as parts named `commit.<short sha>.<field>`. The diff is
+/// git's text of every file but the binary ones whose decoded characters
+/// are not text,
+/// with no textconv or external diff and with file names unquoted, so a
+/// text file's lines are the bytes sent. The `skipped` part names the files
+/// left out. A text file's bytes that are not UTF-8 are
+/// `github::git::not_utf8`. A commit that changes a file Git LFS stores is
+/// `github::push::lfs`.
 pub(crate) fn commit_parts(
     host: &dyn Host,
     at: &Path,
     shas: &[String],
-) -> Result<Parts, PluginError> {
+) -> Result<(Parts, Vec<Skipped>), PluginError> {
     let mut parts = Parts::new();
-    let unquoted = ["-c", "core.quotePath=false", "show"];
+    let mut left = Vec::new();
     for sha in shas {
-        let numstat: Vec<&str> = (unquoted.iter().chain(&DIFF).copied())
+        let numstat: Vec<&str> = (UNQUOTED.iter().chain(&DIFF).copied())
             .chain(["--numstat", "-z", sha])
             .collect();
         let changed = changed(&git(host, at, &numstat, "")?);
@@ -140,27 +166,78 @@ pub(crate) fn commit_parts(
         let object = git(host, at, &["cat-file", "commit", sha], "")?;
         let skipped = ["tree", "parent", "author", "committer"];
         parts.insert(format!("{prefix}headers"), headers(&object, &skipped));
-        parts.insert(format!("{prefix}diff"), diff(host, at, sha)?);
-        let binary: String = (changed.iter())
-            .filter(|(_, binary)| *binary)
-            .flat_map(|(path, _)| [path.as_str(), "\n"])
-            .collect();
-        parts.insert(format!("{prefix}binary"), binary);
+        let mut left_out = Vec::new();
+        for (path, binary) in &changed {
+            if !*binary {
+                continue;
+            }
+            let text = blob(host, at, sha, path)?;
+            if !is_text(&text) {
+                left_out.push(path.as_str());
+            }
+        }
+        parts.insert(format!("{prefix}diff"), diff(host, at, sha, &left_out)?);
+        let lines = |paths: Vec<&str>| -> String {
+            paths.into_iter().flat_map(|path| [path, "\n"]).collect()
+        };
+        let binary = (changed.iter())
+            .filter(|(_, b)| *b)
+            .map(|(p, _)| p.as_str());
+        parts.insert(format!("{prefix}binary"), lines(binary.collect()));
+        left.extend(left_out.iter().map(|path| Skipped {
+            commit: sha.clone(),
+            path: (*path).to_owned(),
+        }));
+        parts.insert(format!("{prefix}skipped"), lines(left_out));
     }
-    Ok(parts)
+    Ok((parts, left))
 }
 
-/// The commit's patch, with every file's bytes, or `github::git::not_utf8`
-/// when a file git counts as text holds bytes that are not UTF-8, which
-/// could not be checked as sent. A binary file's bytes that are not UTF-8
-/// are checked with each such byte replaced by U+FFFD, and its path is in
-/// the commit's `binary` part.
-fn diff(host: &dyn Host, at: &Path, sha: &str) -> Result<String, PluginError> {
-    let unquoted = ["-c", "core.quotePath=false", "show"];
+/// The bytes of `path` that the commit `sha` sends, each byte that is not
+/// UTF-8 replaced by U+FFFD. A file the commit deletes is read from the
+/// first parent. A blob that cannot be read is `github::git::failed`, so no
+/// file is skipped unread.
+fn blob(host: &dyn Host, at: &Path, sha: &str, path: &str) -> Result<String, PluginError> {
+    let new = format!("{sha}:{path}");
+    let present = run(host, at, &["cat-file", "-e", &new], "").code == 0;
+    let object = if present {
+        new
+    } else {
+        format!("{sha}^:{path}")
+    };
+    Ok(lossy(host, at, &["cat-file", "blob", &object], "")?.0)
+}
+
+/// Whether `text`, a blob after lossy decoding, is text: NULs and U+FFFD
+/// make up at most a tenth of its characters. Text with a stray NUL or
+/// invalid byte is still text; random bytes, as in a compressed font, are
+/// mostly NULs and invalid sequences.
+fn is_text(text: &str) -> bool {
+    let total = text.chars().count();
+    let bad = (text.chars())
+        .filter(|c| matches!(c, '\0' | '\u{fffd}'))
+        .count();
+    bad * 10 <= total
+}
+
+/// The commit's patch, with the bytes of every file but those in
+/// `left_out`, or `github::git::not_utf8` when a file git counts as text
+/// holds bytes that are not UTF-8, which could not be checked as sent. A
+/// binary file whose decoded characters are text is checked as sent; one that is not is
+/// left out, and is in the commit's `binary` and `skipped` parts.
+fn diff(host: &dyn Host, at: &Path, sha: &str, left_out: &[&str]) -> Result<String, PluginError> {
+    let excluded: Vec<String> = (left_out.iter())
+        .map(|path| format!(":(exclude,literal){path}"))
+        .collect();
     let arguments = |text: &'static [&'static str]| -> Vec<&str> {
-        (unquoted.iter().chain(&DIFF).chain(text).copied())
+        let mut arguments: Vec<&str> = (UNQUOTED.iter().chain(&DIFF).chain(text).copied())
             .chain([sha])
-            .collect()
+            .collect();
+        if !excluded.is_empty() {
+            arguments.push("--");
+            arguments.extend(excluded.iter().map(String::as_str));
+        }
+        arguments
     };
     let (diff, utf8) = lossy(host, at, &arguments(&["--text"]), "")?;
     if utf8 {
