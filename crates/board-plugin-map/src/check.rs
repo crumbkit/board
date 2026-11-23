@@ -185,7 +185,7 @@ pub(crate) fn accept(map: &LayoutRecord, findings: Vec<Finding>) -> (Vec<Finding
 }
 
 /// The map at `path`.
-fn read(host: &dyn Host, path: &str) -> Result<LayoutRecord, PluginError> {
+pub(crate) fn read(host: &dyn Host, path: &str) -> Result<LayoutRecord, PluginError> {
     read_held(host, path).map(|(map, _)| map)
 }
 
@@ -402,6 +402,7 @@ fn known(map: &LayoutRecord) -> Result<(), PluginError> {
             return Err(unknown("region", region, format!("the item {}", item.id)));
         }
     }
+    shape::shaded_and_tabled(map, &items)?;
     let mut lines = BTreeSet::new();
     for line in &map.lines {
         for end in [&line.from, &line.to] {
@@ -764,6 +765,8 @@ pub(crate) fn notes_of(map: &LayoutRecord) -> Vec<Box2> {
         .map(|note| note.area)
         .collect()
 }
+
+mod shape;
 
 #[cfg(test)]
 mod tests;

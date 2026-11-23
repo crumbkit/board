@@ -56,6 +56,8 @@ github.pre-push disabled Run by the pre-push hook: check the refs git pushes as 
 github.covers disabled Name the boundaries that cover a git push or gh write from the checkout, and where it goes, checking nothing and writing nothing.
 jira.ref disabled Write the issue at /jira/<site>/<key> with its title, read once through acli, unless a record is already there.
 map.check disabled What a reader would see as broken in a map: labels over labels, marks or region titles, labels off the sheet or outside their region, lines through labels or marks, lines leaving an item at nearly one angle, overlapping marks, and labels or notes nearer another mark or line than their own. Each finding gives the box estimated for each text it names; findings the map accepts are counted apart.
+map.place disabled Choose the position and label side of each item that has no stored position, and the place of each line note along its line, by scoring every candidate with the checker, then write the whole map in one put. A pinned item never moves, and an item the engine placed before moves only with relayout. Exits non-zero with the findings left when no spot clears them; the best spots are stored.
+map.page disabled Draw the map as one self-contained HTML page that makes no network request: its regions, items with shades, a style for each kind of line, notes that follow their anchors, a key with the ramp, and its tables. The page is the `html` field of the output; save it as a file to publish it. Items with no stored position are listed in `unplaced` and not drawn.
 notes.add disabled Sync the notes repo, append text under a `## HH:MM` heading to today's daily note or a topic's note, commit it and push it.
 notes.daily disabled Sync the notes repo and print a day's daily note, unless the note is private.
 params.get disabled A calibrated value for a scope, or its heuristic's default and why the default applies.
@@ -96,5 +98,3 @@ tasks.available disabled Sync the repos the caller's remote chooses, then list t
 tasks.tree disabled List a task and its descendants in every status, nested by title, or with --root every top-level tree in the repos the caller's remote chooses, read at their pins.
 tasks.add disabled Write a new open task to tasks/<slug>.md in the repo the caller's remote routes to. It syncs the task's repo first and pushes after, and sets reviewed.
 tasks.claim disabled Claim an open task for an owner, refused when another owner holds it. It syncs the task's repo first and pushes after, and sets reviewed.
-tasks.done disabled Mark a task done, or defer a repeating one to its next occurrence. It syncs the task's repo first and pushes after, unless --push false makes it commit in the clone alone, and sets reviewed.
-tasks.defer disabled Defer a task until a date or a horizon from today, written as a date. It syncs the task's repo first and pushes after, and sets reviewed.

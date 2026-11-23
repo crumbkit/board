@@ -21,6 +21,7 @@ JSON Schema and the record types a `ref` may name (`*` is any).
 | `markdown` | `ui/derived/v1` | `{markdown: string}` |
 | `record` | any record | any object |
 | `diff` | nothing; data only | `{patch: string}` |
+| `map` | `map/layout/v1` | a `map/layout/v1` record |
 
 ## Checks
 

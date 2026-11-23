@@ -43,6 +43,21 @@ pub struct LayoutRecord {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[schemars(length(min = 1))]
     pub notes: Vec<Note>,
+    /// The shades that an item's `bin` picks from, with what each stands
+    /// for; left out when no item is shaded.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ramp: Option<Ramp>,
+    /// How the page draws each kind of line, with its entry in the key; a
+    /// kind with no entry is drawn solid, with an arrow, labelled by its
+    /// name. Left out when the map styles none.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[schemars(length(min = 1))]
+    pub line_kinds: Vec<LineKind>,
+    /// Tables shown under the map, one after another; left out when the
+    /// map has none.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[schemars(length(min = 1))]
+    pub tables: Vec<Table>,
     /// Findings the map's maker accepts, each with why, such as two lines
     /// that must leave an item in one direction. `map.check` counts them
     /// apart from its findings. Left out when the map accepts none.
@@ -118,6 +133,100 @@ pub struct Item {
     /// The side of the mark the label sits on; right when left out.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub side: Option<Side>,
+    /// Which of the ramp's bins shades the mark, counted from 0 for the
+    /// first; the mark is unshaded when left out.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(range(max = 4))]
+    pub bin: Option<u8>,
+}
+
+/// The shades of a map, from low to high, and what each stands for.
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Ramp {
+    /// What the shade measures, such as `Open tasks`.
+    #[schemars(with = "Prose", length(min = 1))]
+    pub label: String,
+    /// What each bin stands for, lowest first, such as `none`, `1`, `2+`.
+    #[schemars(with = "Vec<Prose>", length(min = 2, max = 5), inner(length(min = 1)))]
+    pub bins: Vec<String>,
+}
+
+/// How lines of one kind are drawn.
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct LineKind {
+    /// The kind, as a line's `kind` names it.
+    #[schemars(with = "Slug")]
+    pub kind: String,
+    /// What the key says the line means, such as `builds after`.
+    #[schemars(with = "Prose", length(min = 1))]
+    pub label: String,
+    /// How the stroke is drawn; solid when left out.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub style: Option<Stroke>,
+    /// Whether the line ends in an arrow; true when left out.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub arrow: Option<bool>,
+}
+
+// How a line's stroke is drawn. No doc comment, which would describe the
+// inlined enum.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+#[schemars(inline)]
+pub enum Stroke {
+    Solid,
+    Dashed,
+    Dotted,
+}
+
+/// A table shown under the map.
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Table {
+    /// The table's name, unique among the map's tables.
+    #[schemars(with = "Slug")]
+    pub id: String,
+    /// The heading above the table.
+    #[schemars(with = "Prose", length(min = 1))]
+    pub title: String,
+    /// A sentence below the table; left out when it has none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "Option<Prose>")]
+    pub caption: Option<String>,
+    /// The columns, left to right.
+    #[schemars(length(min = 1))]
+    pub columns: Vec<Column>,
+    /// The rows, top to bottom; each has one cell for each column.
+    pub rows: Vec<Row>,
+}
+
+/// One column of a table.
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Column {
+    /// The column's heading.
+    #[schemars(with = "Prose", length(min = 1))]
+    pub label: String,
+    /// Whether the column's cells are numbers, drawn right aligned; false
+    /// when left out.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub numeric: Option<bool>,
+}
+
+/// One row of a table.
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Row {
+    /// The item the row describes, which the page lights with the row;
+    /// left out when the row describes no item.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "Option<Slug>")]
+    pub item: Option<String>,
+    /// The cells, one for each column.
+    #[schemars(with = "Vec<Prose>")]
+    pub cells: Vec<String>,
 }
 
 /// An item's stored centre and who set it.

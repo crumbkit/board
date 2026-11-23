@@ -2,8 +2,9 @@
 
 This file holds detail for docs/plugins/built-in.md. The `map` plugin keeps
 a map as one record, `map/layout/v1`, at `/maps/<name>`, and its `check`
-capability lists what a reader of the map would see as broken, and its
-`place` capability chooses positions and label sides.
+capability lists what a reader of the map would see as broken, its
+`place` capability chooses positions and label sides, and its `page`
+capability draws the map as an HTML page.
 plugins/map/README.md lists its fields, capabilities and codes.
 
 ## Stored positions and anchored notes
@@ -60,3 +61,13 @@ in one `put` that expects the blob it read, so a map changed meanwhile is
 refused with `board::put::stale` and left as it was. When no spot clears every
 finding, `place` stores the best spots and is refused with
 `map::place::findings_left`.
+
+## What page draws
+
+`page` returns one HTML document in its output and writes no file, because
+plugins leave file writes to the tree. The page has inline styles and a small
+script and requests nothing from the network. It draws regions, each item as a
+mark shaded by its `bin` in the map's `ramp`, labels on their stored sides,
+lines in the style their `line_kinds` entry gives, notes from their anchors, a
+key, and each table. Pointing at an item lights it, its lines and the table
+rows that name it. The Board UI draws the same record with its `map` kind.

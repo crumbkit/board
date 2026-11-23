@@ -1,6 +1,6 @@
 ---
 name: map
-description: 'Maps of items, regions, typed lines and notes, each one map/layout/v1 record at /maps/<name>. Use it when you build or change a map, before you publish it. Run `board map check --path /maps/<name>`, which lists what a reader would see as broken, such as overlapping labels and lines through labels, with the box it estimated for each text, and `board map place --path /maps/<name>`, which chooses positions and label sides for items that have none. SKILL.md and README.md in the plugin''s directory say more.'
+description: 'Maps of items, regions, typed lines and notes, each one map/layout/v1 record at /maps/<name>. Use it when you build or change a map, before you publish it. Run `board map check --path /maps/<name>`, which lists what a reader would see as broken, such as overlapping labels and lines through labels, with the box it estimated for each text, `board map place --path /maps/<name>`, which chooses positions and label sides for items that have none, and `board map page --path /maps/<name>`, which returns the map as one HTML page. SKILL.md and README.md in the plugin''s directory say more.'
 ---
 
 # map
@@ -32,6 +32,14 @@ to choose engine positions again. When it is refused with
 `map::place::findings_left`, it has stored its best spots; pin the item a
 finding names where it belongs, or accept the finding, and run it again.
 
+## Draw a map
+
+Run `board map page --path /maps/<name>`. Its `html` is one page with no
+network requests, which you save where the page belongs. Add a `ramp` and an
+item `bin` to shade marks, `line_kinds` to style each kind of line, and
+`tables` to show figures under the map. Items with no `at` are left out and
+listed in `unplaced`.
+
 ## Accept a finding
 
 When a finding is part of the design, such as two lines that must leave an
@@ -58,6 +66,9 @@ the page and a finding disagree, compare the drawn text with the finding's
   names the field.
 - `map::layout::unknown_id`: an item, line or note names a region, item or
   line the map does not hold.
-- `map::layout::duplicate_id`: two items or two regions share a name.
+- `map::layout::duplicate_id`: two items, regions, line kinds or tables
+  share a name.
+- `map::layout::bin_out_of_range`: an item's `bin` is outside the ramp.
+- `map::layout::table_shape`: a table row's cells do not match its columns.
 - `map::board::refused`: Board refused to read the path; the refusal
   names Board's own code in `code`. Run `board get` on the path to see it.

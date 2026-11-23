@@ -35,6 +35,12 @@ This writes the schema it ships to `.board/types/map/`.
   ],
   "accepts": [
     {"kind": "lines-share-angle", "message": "...", "reason": "..."}
+  ],
+  "ramp": {"label": "Open tasks", "bins": ["none", "1 to 3", "4+"]},
+  "line_kinds": [{"kind": "reads", "label": "reads", "style": "dashed", "arrow": true}],
+  "tables": [
+    {"id": "tasks", "title": "Open tasks", "columns": [{"label": "Area"}, {"label": "Open", "numeric": true}],
+     "rows": [{"item": "board", "cells": ["Board", "3"]}]}
   ]
 }
 ```
@@ -57,6 +63,16 @@ with x to the right and y down from the sheet's top left corner.
   out). A note's position is computed from its anchor, so it moves with
   what it describes.
 - `accepts` lists findings the map keeps on purpose, each with a `reason`.
+- `ramp` names a scale of 2 to 5 `bins`, lightest first. An item's `bin`
+  (0 up to the last bin) shades its mark from the ramp, and the page draws
+  the ramp as a key.
+- `line_kinds` gives each line `kind` a `label`, a `style` (`solid`,
+  `dashed` or `dotted`; `solid` when left out) and whether it has an `arrow`
+  (true when left out). A kind with no entry is drawn solid with an arrow.
+- `tables` are tables drawn under the map. Each has an `id`, a `title`, an
+  optional `caption`, `columns` (a `label` and whether the column is
+  `numeric`) and `rows`, each with `cells`, one string for each column, and
+  an optional `item` that the row lights when a reader points at it.
 
 ## Capabilities
 
@@ -81,6 +97,14 @@ with x to the right and y down from the sheet's top left corner.
   findings are left it stores the best spots and is refused with
   `map::place::findings_left`, whose `result` field holds that output.
 
+- `page --path /maps/<name>` gives `html`, one self-contained page that
+  draws the map: regions, shaded items with their labels, lines in their
+  kind's style, notes, the key and the tables. The page loads nothing from
+  the network; its small script lights an item, its lines and its table
+  rows when a reader points at one. It also gives `unplaced`, the ids of
+  items with no `at`, which the page leaves out. The capability writes no
+  file; save `html` where the page belongs.
+
 ## Codes
 
 - `map::place::findings_left`: placement stored its best spots and
@@ -90,6 +114,11 @@ with x to the right and y down from the sheet's top left corner.
   breaks the schema; the message names the field.
 - `map::layout::unknown_id`: an item, line or note names what the map does
   not hold.
-- `map::layout::duplicate_id`: two items or two regions share an id.
+- `map::layout::duplicate_id`: two items, regions, line kinds or tables
+  share an id.
+- `map::layout::bin_out_of_range`: an item's `bin` is not below the
+  ramp's bin count, or the map has no ramp.
+- `map::layout::table_shape`: a table row has a different number of cells
+  from the table's columns.
 - `map::board::refused`: Board refused to read the path; the refusal
   names Board's own code in `code`. Run `board get` on the path to see it.

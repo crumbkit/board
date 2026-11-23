@@ -42,7 +42,7 @@ fn the_manifest_parses_and_names_its_type_and_capability() {
     let capabilities: Vec<&str> = (manifest.capabilities.iter())
         .map(|capability| capability.name.as_str())
         .collect();
-    assert_eq!(capabilities, ["check", "place"]);
+    assert_eq!(capabilities, ["check", "place", "page"]);
     assert_eq!(
         (MapPlugin.schemas().into_iter())
             .map(|(name, _)| name.as_str().to_owned())
