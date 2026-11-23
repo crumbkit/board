@@ -289,8 +289,10 @@ impl Run {
                         Reach::Near
                     };
                     let spots = spots(map, from, reach);
-                    let (x, y) = spots[random.below(spots.len())];
-                    set(&mut map.items[from], x, y, SIDES[random.below(SIDES.len())]);
+                    if !spots.is_empty() {
+                        let (x, y) = spots[random.below(spots.len())];
+                        set(&mut map.items[from], x, y, SIDES[random.below(SIDES.len())]);
+                    }
                 } else {
                     // A held item keeps its position and may change its side.
                     map.items[from].side = Some(SIDES[random.below(SIDES.len())]);
@@ -490,8 +492,7 @@ fn home(map: &LayoutRecord, from: usize) -> (f64, f64) {
 fn bounds(map: &LayoutRecord, item: &Item) -> ((f64, f64, f64, f64), bool) {
     let r = item.radius.unwrap_or(RADIUS);
     if let Some(region) = item
-        .region
-        .as_deref()
+        .band()
         .and_then(|id| map.regions.iter().find(|region| region.id == id))
     {
         return (
@@ -542,7 +543,34 @@ fn spots(map: &LayoutRecord, from: usize, reach: Reach) -> Vec<(f64, f64)> {
     {
         spots.insert(0, (at.x, at.y));
     }
+    let (after, before) = column_limits(map, item);
+    spots.retain(|&(x, _)| after < x && x < before);
     spots
+}
+
+/// The x a laned item must stay right of and left of, to keep its lane's
+/// column order: the largest x of a placed item in a lower column of the
+/// same lane, and the smallest x of a placed item in a higher one. An item
+/// with no lane or no column has no limit.
+fn column_limits(map: &LayoutRecord, item: &Item) -> (f64, f64) {
+    let (Some(lane), Some(column)) = (item.lane.as_deref(), item.column) else {
+        return (f64::NEG_INFINITY, f64::INFINITY);
+    };
+    let mut limits = (f64::NEG_INFINITY, f64::INFINITY);
+    for other in &map.items {
+        let (Some(at), Some(there)) = (other.at, other.column) else {
+            continue;
+        };
+        if other.id == item.id || other.lane.as_deref() != Some(lane) {
+            continue;
+        }
+        if there < column {
+            limits.0 = limits.0.max(at.x);
+        } else if there > column {
+            limits.1 = limits.1.min(at.x);
+        }
+    }
+    limits
 }
 
 /// `ids` and the items whose labels lie within one label width of one of

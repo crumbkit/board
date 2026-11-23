@@ -338,10 +338,7 @@ pub fn check(map: &LayoutRecord) -> Result<Vec<Finding>, PluginError> {
             id: &item.id,
             mark,
             label: label_box(&mark, item.side.unwrap_or_default(), &item.label),
-            region: item
-                .region
-                .as_deref()
-                .and_then(|id| regions.get(id).copied()),
+            region: item.band().and_then(|id| regions.get(id).copied()),
         });
     }
     let index: BTreeMap<&str, usize> = (placed.iter().enumerate())
@@ -400,6 +397,29 @@ fn known(map: &LayoutRecord) -> Result<(), PluginError> {
     for item in &map.items {
         if let Some(region) = item.region.as_deref().filter(|id| !regions.contains(id)) {
             return Err(unknown("region", region, format!("the item {}", item.id)));
+        }
+    }
+    for item in &map.items {
+        let Some(lane) = item.lane.as_deref() else {
+            continue;
+        };
+        if !regions.contains(lane) {
+            return Err(unknown(
+                "region",
+                lane,
+                format!("the lane of the item {}", item.id),
+            ));
+        }
+        if let Some(region) = item.region.as_deref().filter(|region| *region != lane) {
+            return Err(refusal(
+                "map::layout::lane_region_mismatch",
+                format!(
+                    "the item {} has the lane {lane} and the region {region}, which differ",
+                    item.id
+                ),
+                "name one region, or give the same id as lane and region",
+                [("id", item.id.as_str())],
+            ));
         }
     }
     shape::shaded_and_tabled(map, &items)?;

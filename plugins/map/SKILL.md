@@ -40,6 +40,14 @@ item `bin` to shade marks, `line_kinds` to style each kind of line, and
 `tables` to show figures under the map. Items with no `at` are left out and
 listed in `unplaced`.
 
+## Lanes and columns
+
+Give an item a `lane`, the id of a region, to keep it in that region's band,
+and a `column`, a number from 0, to order a lane's items from left to right.
+`place` then puts a lower column left of a higher one in the same lane. Items
+that share a column are not ordered. A `lane` and a `region` on one item must
+name the same region.
+
 ## Accept a finding
 
 When a finding is part of the design, such as two lines that must leave an
@@ -64,10 +72,11 @@ the page and a finding disagree, compare the drawn text with the finding's
 - `map::layout::unreadable`: the record is not a `map/layout/v1`, or it
   breaks the schema, such as an item with an empty label. The message
   names the field.
-- `map::layout::unknown_id`: an item, line or note names a region, item or
+- `map::layout::unknown_id`: an item, lane, line or note names a region, item or
   line the map does not hold.
 - `map::layout::duplicate_id`: two items, regions, line kinds or tables
   share a name.
+- `map::layout::lane_region_mismatch`: an item's lane and region differ.
 - `map::layout::bin_out_of_range`: an item's `bin` is outside the ramp.
 - `map::layout::table_shape`: a table row's cells do not match its columns.
 - `map::board::refused`: Board refused to read the path; the refusal

@@ -222,3 +222,143 @@ fn place_refuses_what_is_not_a_map() {
         );
     }
 }
+
+/// The fixture's items given a lane (their region) and a column (the rank
+/// of their x among the lane's distinct x values), with no stored
+/// positions.
+fn laned(name: &str) -> Value {
+    let done = fixture(&format!("{name}-final"));
+    let mut map = bare(name);
+    for at in 0..map["items"].as_array().unwrap().len() {
+        let region = done["items"][at]["region"].clone();
+        let mut xs: Vec<f64> = (done["items"].as_array().unwrap().iter())
+            .filter(|item| item["region"] == region)
+            .map(|item| item["at"]["x"].as_f64().unwrap())
+            .collect();
+        xs.sort_by(f64::total_cmp);
+        xs.dedup();
+        let x = done["items"][at]["at"]["x"].as_f64().unwrap();
+        map["items"][at]["lane"] = region;
+        map["items"][at]["column"] =
+            json!(xs.iter().position(|v| v.total_cmp(&x).is_eq()).unwrap());
+    }
+    map
+}
+
+/// Each lane's items, as (column, x) sorted by column then x.
+fn lanes(map: &LayoutRecord) -> std::collections::BTreeMap<String, Vec<(u32, f64)>> {
+    let mut lanes = std::collections::BTreeMap::<String, Vec<(u32, f64)>>::new();
+    for item in &map.items {
+        let (Some(lane), Some(column), Some(at)) = (&item.lane, item.column, item.at) else {
+            continue;
+        };
+        lanes.entry(lane.clone()).or_default().push((column, at.x));
+    }
+    for items in lanes.values_mut() {
+        items.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    }
+    lanes
+}
+
+/// Placing a laned map clears the checker, keeps each item inside its
+/// lane's region, and puts a lane's columns left to right.
+#[test]
+fn placing_a_laned_map_keeps_each_lane_in_column_order() {
+    for name in ["services", "work", "queue"] {
+        let mut map = read(&laned(name));
+        placed(&mut map, false);
+        let left: Vec<String> = (check(&map).unwrap().into_iter())
+            .map(|finding| finding.message)
+            .collect();
+        assert_eq!(left, Vec::<String>::new(), "{name}");
+        for (lane, items) in lanes(&map) {
+            for pair in items.windows(2) {
+                assert!(
+                    pair[0].0 == pair[1].0 || pair[0].1 < pair[1].1,
+                    "{name} {lane}: {pair:?}"
+                );
+            }
+        }
+        for item in &map.items {
+            let region = (map.regions.iter())
+                .find(|region| Some(&region.id) == item.lane.as_ref())
+                .unwrap();
+            let at = item.at.unwrap();
+            assert!(
+                (region.x..=region.x + region.width).contains(&at.x)
+                    && (region.y..=region.y + region.height).contains(&at.y),
+                "{name} {}",
+                item.id
+            );
+        }
+    }
+}
+
+/// An item whose only region is its lane is placed inside that lane.
+#[test]
+fn an_item_with_a_lane_and_no_region_is_placed_in_the_lane() {
+    let mut value = laned("queue");
+    for item in value["items"].as_array_mut().unwrap() {
+        item.as_object_mut().unwrap().remove("region");
+    }
+    let mut map = read(&value);
+    placed(&mut map, false);
+    for item in &map.items {
+        let region = (map.regions.iter())
+            .find(|region| Some(&region.id) == item.lane.as_ref())
+            .unwrap();
+        let at = item.at.unwrap();
+        assert!(
+            (region.y..=region.y + region.height).contains(&at.y),
+            "{}",
+            item.id
+        );
+    }
+}
+
+/// Columns do not change the order-independence of placement.
+#[test]
+fn the_order_of_a_laned_maps_parts_changes_no_position() {
+    let forward = laned("queue");
+    let mut backward = forward.clone();
+    for list in ["regions", "items", "lines", "notes"] {
+        backward[list].as_array_mut().unwrap().reverse();
+    }
+    let (mut one, mut two) = (read(&forward), read(&backward));
+    placed(&mut one, false);
+    placed(&mut two, false);
+    assert_eq!(spots_of(&one), spots_of(&two));
+}
+
+/// A pinned item in a lane limits where its neighbours may stand: an item
+/// of a lower column stays left of it and one of a higher column right.
+#[test]
+fn a_pinned_item_bounds_the_columns_beside_it() {
+    let mut value = laned("queue");
+    let done = fixture("queue-final");
+    // Pin the second column of the first lane with a stored position.
+    let (target, _) = value["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .enumerate()
+        .find(|(_, item)| item["column"] == 1)
+        .map(|(at, item)| (at, item.clone()))
+        .unwrap();
+    value["items"][target]["at"] = done["items"][target]["at"].clone();
+    let mut map = read(&value);
+    placed(&mut map, false);
+    let pinned = map.items[target].clone();
+    let (lane, x) = (pinned.lane.clone().unwrap(), pinned.at.unwrap().x);
+    for item in &map.items {
+        if item.lane.as_ref() != Some(&lane) || item.column == pinned.column {
+            continue;
+        }
+        let at = item.at.unwrap();
+        if item.column < pinned.column {
+            assert!(at.x < x, "{} stays left", item.id);
+        } else {
+            assert!(at.x > x, "{} stays right", item.id);
+        }
+    }
+}

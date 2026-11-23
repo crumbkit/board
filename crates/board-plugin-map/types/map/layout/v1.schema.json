@@ -138,6 +138,11 @@
           "minimum": 0,
           "type": "integer"
         },
+        "column": {
+          "description": "The item's place in its lane's left to right order. Placement keeps\nan item with a lower column left of one with a higher column in the\nsame lane; items sharing a column are not ordered.",
+          "minimum": 0,
+          "type": "integer"
+        },
         "id": {
           "description": "The item's name, unique among the map's items, which lines and notes\nname.",
           "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
@@ -152,6 +157,11 @@
           },
           "minItems": 1,
           "type": "array"
+        },
+        "lane": {
+          "description": "The region whose band the item stays in, when it has no `region` of\nits own; with a `region`, the two must name the same one.",
+          "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+          "type": "string"
         },
         "radius": {
           "description": "The mark's radius; 8 when left out.",

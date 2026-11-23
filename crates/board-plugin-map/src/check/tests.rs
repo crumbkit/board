@@ -121,6 +121,50 @@ fn a_map_naming_what_it_does_not_hold_is_refused_and_its_twin_is_admitted() {
     }
 }
 
+/// A lane names a region and, with a region, must name the same one; each
+/// refusal has an admitted twin.
+#[test]
+fn a_lane_must_name_a_region_and_agree_with_the_items_region() {
+    let mut good = fixture("queue-final");
+    let region = good["items"][0]["region"].as_str().unwrap().to_owned();
+    good["items"][0]["lane"] = json!(region);
+    good["items"][0]["column"] = json!(2);
+    check(&map(&good)).unwrap();
+    let other = good["regions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|region| region["id"].as_str().unwrap().to_owned())
+        .find(|id| *id != region)
+        .unwrap();
+    for (lane, code) in [
+        (json!("nowhere"), "map::layout::unknown_id"),
+        (json!(other), "map::layout::lane_region_mismatch"),
+    ] {
+        let mut twin = good.clone();
+        twin["items"][0]["lane"] = lane;
+        let refused = check(&map(&twin)).map(|_| ()).map_err(|error| error.code);
+        assert_eq!(refused, Err(code.to_owned()));
+    }
+    // With no region of its own, an item's lane is its region.
+    let mut laned = good.clone();
+    laned["items"][0].as_object_mut().unwrap().remove("region");
+    check(&map(&laned)).unwrap();
+}
+
+/// A negative column is refused by the schema; the twin with column 0 is
+/// admitted.
+#[test]
+fn the_schema_refuses_a_negative_column() {
+    let mut good = fixture("queue-final");
+    good["items"][0]["lane"] = good["items"][0]["region"].clone();
+    good["items"][0]["column"] = json!(0);
+    let schema = board_validate::Schema::compile(crate::layout_schema()).unwrap();
+    schema.validate(&good).unwrap();
+    good["items"][0]["column"] = json!(-1);
+    assert!(schema.validate(&good).is_err());
+}
+
 /// An item with no stored position is reported and left out of the
 /// drawing, with its lines and notes.
 #[test]

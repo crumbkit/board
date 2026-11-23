@@ -138,6 +138,25 @@ pub struct Item {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(range(max = 4))]
     pub bin: Option<u8>,
+    /// The region whose band the item stays in, when it has no `region` of
+    /// its own; with a `region`, the two must name the same one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "Option<Slug>")]
+    pub lane: Option<String>,
+    /// The item's place in its lane's left to right order. Placement keeps
+    /// an item with a lower column left of one with a higher column in the
+    /// same lane; items sharing a column are not ordered.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(range(min = 0))]
+    pub column: Option<u32>,
+}
+
+impl Item {
+    /// The region the item must stay in: its `region`, or else its `lane`.
+    #[must_use]
+    pub fn band(&self) -> Option<&str> {
+        self.region.as_deref().or(self.lane.as_deref())
+    }
 }
 
 /// The shades of a map, from low to high, and what each stands for.

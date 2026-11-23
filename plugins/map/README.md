@@ -63,6 +63,12 @@ with x to the right and y down from the sheet's top left corner.
   out). A note's position is computed from its anchor, so it moves with
   what it describes.
 - `accepts` lists findings the map keeps on purpose, each with a `reason`.
+- `lane` and `column` put an item in a band and an order. A `lane` names a
+  region: the item stays in that region, as a `region` does, and the two
+  must name the same region when both are given. A `column` (0 or more)
+  orders the items of one lane from left to right: `place` keeps an item of
+  a lower column left of an item of a higher column, and items sharing a
+  column are not ordered. A `column` has no effect without a `lane`.
 - `ramp` names a scale of 2 to 5 `bins`, lightest first. An item's `bin`
   (0 up to the last bin) shades its mark from the ramp, and the page draws
   the ramp as a key.
@@ -112,10 +118,12 @@ with x to the right and y down from the sheet's top left corner.
 - `map::layout::not_found`: no record is at the path.
 - `map::layout::unreadable`: the record is not a `map/layout/v1`, or it
   breaks the schema; the message names the field.
-- `map::layout::unknown_id`: an item, line or note names what the map does
-  not hold.
+- `map::layout::unknown_id`: an item, lane, line, note or table row names
+  what the map does not hold.
 - `map::layout::duplicate_id`: two items, regions, line kinds or tables
   share an id.
+- `map::layout::lane_region_mismatch`: an item's `lane` and `region` name
+  different regions.
 - `map::layout::bin_out_of_range`: an item's `bin` is not below the
   ramp's bin count, or the map has no ramp.
 - `map::layout::table_shape`: a table row has a different number of cells

@@ -55,6 +55,11 @@ one. If findings remain it searches by simulated annealing, from a fixed seed
 and in the order of the items' ids, so a map gives the same result whatever
 order it lists its parts in.
 
+An item with a `lane` is placed inside that region's band, and items with a
+`column` keep their lane's left to right order: an item's x must lie right of
+every placed item of a lower column and left of every placed item of a higher
+one in the same lane. A pinned item therefore bounds its neighbours.
+
 A pinned item never moves, though its label side may change. An item the
 engine placed before moves only with `relayout`. `place` writes the whole map
 in one `put` that expects the blob it read, so a map changed meanwhile is
