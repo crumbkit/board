@@ -82,6 +82,22 @@ pub struct Suite {
     pub cases_file: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub measures: Option<Vec<Measure>>,
+    /// What the suite is; a suite that tests nothing has no kind.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<SuiteKind>,
+}
+
+/// What a suite is: a compliance check, a benchmark, an eval or a test. A
+/// kind a later Board adds reads as `Other`, holding it as written.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SuiteKind {
+    Compliance,
+    Benchmark,
+    Eval,
+    Test,
+    #[serde(untagged)]
+    Other(String),
 }
 
 impl Suite {

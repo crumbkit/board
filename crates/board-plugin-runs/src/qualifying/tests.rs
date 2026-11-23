@@ -15,13 +15,15 @@ use serde_json::json;
 use super::*;
 use crate::Runs;
 
-/// A host that passes each query to a real board and records it.
+/// A host that passes each query and put to a real board and
+/// records each query's limit. It runs `between` before the first put.
 pub(crate) struct Real {
     board: Board,
     pub(crate) settings: Settings,
     asked: RefCell<Vec<Limit>>,
     /// Whether each query names a table that does not exist, so Board refuses it.
     failing: bool,
+    pub(crate) between: RefCell<Option<Box<dyn FnOnce()>>>,
 }
 
 impl Host for Real {
@@ -53,9 +55,12 @@ impl Host for Real {
 
     fn put(
         &self,
-        _lines: &[serde_json::Value],
+        lines: &[serde_json::Value],
     ) -> Result<board_ops::PutReport, board_ops::PutError> {
-        panic!("this plugin writes no records")
+        if let Some(between) = self.between.take() {
+            between();
+        }
+        self.board.put_batch(&mut batch(lines).as_bytes())
     }
 
     fn call(
@@ -99,6 +104,13 @@ impl Host for Real {
     fn settings(&self) -> &Settings {
         &self.settings
     }
+}
+
+/// `lines` as the text of `board put --batch`.
+fn batch(lines: &[serde_json::Value]) -> String {
+    (lines.iter().map(Value::to_string))
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 /// A board that enables runs, built in, holding `files` by path.
@@ -201,6 +213,7 @@ pub(crate) fn board(files: &[(&str, String)]) -> (Scenario, Real) {
         },
         asked: RefCell::default(),
         failing: false,
+        between: RefCell::default(),
     };
     (scenario, host)
 }
@@ -363,6 +376,7 @@ fn a_suite_that_does_not_exist_is_refused_naming_it_and_one_that_does_is_answere
         settings: host.settings,
         asked: RefCell::default(),
         failing: false,
+        between: RefCell::default(),
     };
     let counted = qualifying(&host, "/suites/a").unwrap();
     assert_eq!(counted.runs.len(), 1);

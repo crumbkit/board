@@ -21,7 +21,7 @@ pin to a newer commit for newer types; the compiler then shows what changed.
 | `PutReport` | the data of `board/put-report/v2` |
 | `File<R>` | each file in the data of `board/get-report/v2`; the default `R` skips records unread |
 | `BatchLine<R>` | one line of `board put --batch` |
-| `Run`, `Suite` | the records `runs/run/v1` and `runs/suite/v1` |
+| `Run`, `Suite`, `SuiteKind` | the records `runs/run/v1` and `runs/suite/v1`, and a suite's `kind` |
 
 Each type names its id as a constant, such as `PutReport::SCHEMA` and
 `Run::TYPE`. A report, a failure and a record ignore fields they do not

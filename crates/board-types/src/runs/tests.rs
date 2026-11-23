@@ -130,6 +130,33 @@ fn a_suite_reads_and_writes_back_the_same_json_and_skips_its_cases() {
     assert_eq!(read.cases_file, None);
 }
 
+#[test]
+fn a_suite_reads_and_writes_back_its_kind_and_one_without_a_kind_writes_none() {
+    let mut suite = json!({"$type": "runs/suite/v1", "method": "Run it."});
+    let read: Suite = serde_json::from_value(suite.clone()).unwrap();
+    assert_eq!(read.kind, None);
+    assert_eq!(serde_json::to_value(&read).unwrap(), suite);
+    for (written, kind) in [
+        ("compliance", SuiteKind::Compliance),
+        ("benchmark", SuiteKind::Benchmark),
+        ("eval", SuiteKind::Eval),
+        ("test", SuiteKind::Test),
+    ] {
+        suite["kind"] = json!(written);
+        let read: Suite = serde_json::from_value(suite.clone()).unwrap();
+        assert_eq!(read.kind, Some(kind));
+        assert_eq!(serde_json::to_value(&read).unwrap(), suite);
+    }
+}
+
+#[test]
+fn a_kind_a_later_board_adds_reads_as_written() {
+    let suite = json!({"$type": "runs/suite/v1", "method": "Run it.", "kind": "audit"});
+    let read: Suite = serde_json::from_value(suite.clone()).unwrap();
+    assert_eq!(read.kind, Some(SuiteKind::Other("audit".to_owned())));
+    assert_eq!(serde_json::to_value(read).unwrap(), suite);
+}
+
 fn text() -> impl Strategy<Value = String> {
     "[a-z/:0-9-]{0,12}"
 }

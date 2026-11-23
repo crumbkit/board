@@ -11,7 +11,7 @@ use std::collections::BTreeMap;
 
 use board_plugin::shape::{Actor, Record, Ref, Subject, Tag};
 use schemars::{JsonSchema, Schema, SchemaGenerator, json_schema};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
 /// `runs/suite/v1`: what gets run, how, and what a run of it measures.
@@ -19,7 +19,7 @@ use serde_json::{Map, Value};
 #[serde(deny_unknown_fields)]
 #[schemars(
     title = "SuiteRecord",
-    description = "`runs/suite/v1`: what gets run, how, and what a run of it measures.\n\nA suite's name is its path: the suite at `/suites/<name>.json` is\n`<name>`, and its runs sit in `/suites/<name>/runs/`. `subjects`, when\npresent, name what is tested: a repository as `owner/name`, or a board path. `cases` lists the cases inline, or `cases_file`\nreferences a file that does; a suite whose cases are found when it runs,\nsuch as a test suite, has neither.",
+    description = "`runs/suite/v1`: what gets run, how, and what a run of it measures.\n\nA suite's name is its path: the suite at `/suites/<name>.json` is\n`<name>`, and its runs sit in `/suites/<name>/runs/`. `subjects`, when\npresent, name what is tested: a repository as `owner/name`, or a board path. `cases` lists the cases inline, or `cases_file`\nreferences a file that does; a suite whose cases are found when it runs,\nsuch as a test suite, has neither. `kind` says what the suite is: a\ncompliance check, a benchmark, an eval or a test; a suite that tests\nnothing has none.",
     extend("not" = {"required": ["cases", "cases_file"]})
 )]
 pub struct SuiteRecord {
@@ -45,10 +45,25 @@ pub struct SuiteRecord {
     pub cases_file: Option<Ref>,
     #[schemars(title = "Measures", extend("type" = "array"))]
     pub measures: Option<Vec<Measure>>,
+    // A suite that tests nothing has no kind.
+    #[schemars(title = "Kind", extend("type" = "string"))]
+    pub kind: Option<SuiteKind>,
 }
 
 impl Record for SuiteRecord {
     const TYPE: &'static str = "runs/suite/v1";
+}
+
+// What a suite is. No doc comment, which would describe the inlined enum
+// in the committed schema.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+#[schemars(inline)]
+pub enum SuiteKind {
+    Compliance,
+    Benchmark,
+    Eval,
+    Test,
 }
 
 /// One case of a suite. A run's result names it by `id`.

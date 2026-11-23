@@ -18,3 +18,6 @@ the list. An external plugin written against 0.1.0 may need changes in
 `bad_input`, are frozen from 0.1.0, because Board returns them for built-in
 plugins and to CLI users too. Built-in plugins' types, capabilities and
 codes are frozen from 0.1.0.
+
+After 0.1.1, `runs/suite/v1` gained an optional `kind` in place, because
+the release had few users. `runs.migrate` adds it to existing suites.

@@ -1,6 +1,7 @@
 //! The runs plugin built into Board (plugins/runs/README.md).
 
 mod latest;
+mod migrate;
 mod qualifying;
 pub mod records;
 mod time;
@@ -52,9 +53,12 @@ impl Plugin for Runs {
         match capability.as_str() {
             "latest" => latest::latest(host, &input),
             "trend" => trend::trend(host, &input),
+            "migrate" => migrate::migrate(host, &input),
             other => Err(PluginError {
                 code: "runs::call::unknown_capability".to_owned(),
-                message: format!("runs offers no capability {other}; it offers latest and trend"),
+                message: format!(
+                    "runs offers no capability {other}; it offers latest, trend and migrate"
+                ),
                 fields: Map::new(),
                 hint: None,
             }),
@@ -96,6 +100,20 @@ fn manifest() -> Value {
             "annotations": {
                 "readOnlyHint": true,
                 "destructiveHint": false,
+                "idempotentHint": true,
+                "openWorldHint": false,
+            },
+            "_meta": {},
+        }, {
+            "name": "migrate",
+            "description": "Give each suite of this board that has no kind the kind its name, its evals \
+                and its zero rules imply, and list the suites no rule classifies. apply writes every \
+                suite in one commit with a Board-Bulk trailer; without it nothing is written.",
+            "inputSchema": schema_of::<migrate::Input>(SchemaSettings::draft2020_12()),
+            "outputSchema": schema_of::<migrate::Output>(output()),
+            "annotations": {
+                "readOnlyHint": false,
+                "destructiveHint": true,
                 "idempotentHint": true,
                 "openWorldHint": false,
             },

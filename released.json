@@ -225,7 +225,15 @@
       }
     },
     "crates/board-plugin-runs/types/runs/suite/v1.schema.json": {
-      "shape": "6ad3dea9135e98d93c42a9d57853c78625da334b"
+      "shape": "cc3243bbad3afa031f522daa8e1d2afdda475c20",
+      "enums": {
+        "/properties/kind/enum": [
+          "compliance",
+          "benchmark",
+          "eval",
+          "test"
+        ]
+      }
     },
     "crates/board-plugin-tasks/types/tasks/task/v2.schema.json": {
       "shape": "5e0c5c6127ac0d5fe88cc4a1cc7e7a83e4b93465",
