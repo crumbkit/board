@@ -404,8 +404,8 @@ pub(crate) fn accepted(
                     .collect();
                 if !other.is_empty() {
                     return Err(format!(
-                        "the later commit {commit} edits {}, which is not a record path; review \
-                         the head",
+                        "the later commit {commit} edits {}, which is neither a record path nor \
+                         the lifecycle doc; review the head",
                         other.join(", ")
                     ));
                 }

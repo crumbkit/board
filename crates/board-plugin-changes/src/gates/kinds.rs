@@ -341,7 +341,7 @@ fn passed_after(observed: &Observed, each: &flow::Check) -> Option<String> {
             let shown: Vec<&str> = commits.iter().map(String::as_str).collect();
             Some(format!(
                 "{path} covers an earlier commit; the commits after it, {}, edit only record \
-                 paths or cleanly merge main, so it still counts",
+                 paths or the lifecycle doc, or cleanly merge main, so it still counts",
                 bounded(&shown)
             ))
         })

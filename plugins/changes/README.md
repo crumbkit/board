@@ -994,11 +994,11 @@ lists each check of the phase whose `when` does not hold in `not_required`.
 A `records` check whose `where` names `at_head` and `unchanged_by`, a list of
 rules, also counts a record on an earlier commit when that commit is on the
 head's first-parent chain and each commit after it edits only files those
-rules list, or is a merge whose second parent is on the branch the mount
-follows and whose tree is the one `git merge-tree --write-tree` gives. A commit
-that edits a file outside the directory the mount shows does not count. The pass
-detail names those commits, and `changes.pr`
-lists them under Review. A rebase leaves the record off the chain, so the
+rules list or the change's lifecycle `doc`, or is a merge whose second parent
+is on the branch the mount follows and whose tree is the one `git merge-tree
+--write-tree` gives. A commit that edits a file outside the directory the
+mount shows does not count. The pass detail names those commits, and
+`changes.pr` lists them under Review. A rebase leaves the record off the chain, so the
 detail says to merge main in place of rebasing. A rule the board does not hold
 lists nothing, and the detail names it.
 
@@ -1008,7 +1008,7 @@ The development flow's gates:
 | --- | --- |
 | plan | `plan-sections`, the eight sections; `considered`; `task`; `route`; `owner-approval`, unless the plan answers `ux` none and `data` none, a `plans/decision/v1` the owner signed, with `by.person`, whose `refs` name the plan or the change, or the owner's attached `plans/answer/v1` whose chosen option, in its attached question, names the change, or the owner's Touch ID approval of `changes.approve` for the current plan, on every route; `mockups` and `mockup-versions`, when the plan answers `ux` mockups; `data-signed`, an `understood` check of the data, when it answers `data` stored; `lifecycle-declared`, a `planned-rule-paths` check of `/rules/{repo}/lifecycle-paths`, when it answers `lifecycle` none; `lifecycle-record`, an `exists` check of `/changes/{name}/lifecycle`, when it answers `lifecycle` record; `obligations`, which does not block |
 | build | `head`; `suite-run`, waivable; `tasks` |
-| review | `review`, a report on `head`, or on an earlier commit when each commit after it edits only paths `/rules/{repo}/record-paths` lists, or cleanly merges the branch the mount follows, with no critical or high finding; `design-conformance`, the `built` part of `mockups`, when the plan answers `ux` mockups; `paths`; `ui-paths` and `data-paths`, `rule-paths` checks of `/rules/{repo}/ui-paths` when the plan answers `ux` none and `/rules/{repo}/data-paths` when it answers `data` none; `lifecycle-paths`, the same check of `/rules/{repo}/lifecycle-paths` unless Board reads a `changes/lifecycle/v1` at `/changes/{name}/lifecycle`; `lifecycle-none-paths`, the same check when the plan answers `lifecycle` none, whether or not a record exists; `obligations-settled`, with the escape heading `Obligations left owed` |
+| review | `review`, a report on `head`, or on an earlier commit when each commit after it edits only paths `/rules/{repo}/record-paths` lists or the lifecycle record's `doc`, or cleanly merges the branch the mount follows, with no critical or high finding; `design-conformance`, the `built` part of `mockups`, when the plan answers `ux` mockups; `paths`; `ui-paths` and `data-paths`, `rule-paths` checks of `/rules/{repo}/ui-paths` when the plan answers `ux` none and `/rules/{repo}/data-paths` when it answers `data` none; `lifecycle-paths`, the same check of `/rules/{repo}/lifecycle-paths` unless Board reads a `changes/lifecycle/v1` at `/changes/{name}/lifecycle`; `lifecycle-none-paths`, the same check when the plan answers `lifecycle` none, whether or not a record exists; `obligations-settled`, with the escape heading `Obligations left owed` |
 | land | `test-sections`, What the tests prove and What the tests do not prove; `pull-request`; `rechecks`, which does not block, rechecks of two points, the latest recheck of each matching, when the plan answers `data` stored; `lifecycle-paths-at-land` and `lifecycle-none-paths-at-land`, the two review checks of `/rules/{repo}/lifecycle-paths` again, so each re-reads the diff at the recorded head and a record removed after review is gated |
 | build, for a prototype | Never passes: `verdict` ends a prototype instead. |
 

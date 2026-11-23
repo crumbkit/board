@@ -405,8 +405,9 @@ pub(crate) struct Where {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) refs: Option<Vec<Target>>,
     /// With `at_head`, the rules whose paths the commits after the record's
-    /// commit may edit: such a commit, or a clean merge of the branch the
-    /// mount follows, leaves the record counting.
+    /// commit may edit: such a commit, a clean merge of the branch the
+    /// mount follows, or one that edits only the change's lifecycle doc
+    /// leaves the record counting.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "Option<Vec<PathTemplate>>")]
     pub(crate) unchanged_by: Option<Vec<String>>,

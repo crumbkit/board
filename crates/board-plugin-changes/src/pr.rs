@@ -210,7 +210,8 @@ fn accepted_line(observed: &Observed, report: &Map<String, Value>) -> String {
     commits.map_or_else(String::new, |commits| {
         let shown: Vec<String> = commits.iter().map(|commit| quoted_text(commit)).collect();
         format!(
-            "; accepted after it, editing only record paths or cleanly merging main: {}",
+            "; accepted after it, editing only record paths or the lifecycle doc or cleanly \
+             merging main: {}",
             shown.join(", ")
         )
     })

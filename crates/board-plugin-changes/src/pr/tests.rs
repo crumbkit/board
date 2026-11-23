@@ -126,8 +126,8 @@ fn the_review_line_names_the_commits_accepted_after_the_report() {
         .insert(reviewed.to_owned(), Ok(vec![later.to_owned()]));
     assert!(
         review(&observed).ends_with(&format!(
-            "; accepted after it, editing only record paths or cleanly merging main: \
-             `{later}`"
+            "; accepted after it, editing only record paths or the lifecycle doc or cleanly \
+             merging main: `{later}`"
         )),
         "{}",
         review(&observed)

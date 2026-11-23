@@ -243,7 +243,7 @@ fn a_commit_that_edits_only_a_record_path_keeps_the_review_and_a_code_commit_doe
     let refused = repo.judged(&reviewed, &code).unwrap_err();
     assert!(
         refused.starts_with(&format!(
-            "the later commit {code} edits /repos/x/src/c.rs, which is not a record path"
+            "the later commit {code} edits /repos/x/src/c.rs, which is neither"
         )),
         "{refused}"
     );
@@ -389,11 +389,11 @@ fn the_review_check_passes_a_report_whose_later_commits_were_accepted_and_names_
         detail,
         format!(
             "/r/1 covers an earlier commit; the commits after it, {later}, edit only record \
-             paths or cleanly merge main, so it still counts"
+             paths or the lifecycle doc, or cleanly merge main, so it still counts"
         )
     );
-    let why = "the later commit c edits /repos/x/src/c.rs, which is not a record path; review \
-               the head";
+    let why = "the later commit c edits /repos/x/src/c.rs, which is neither a record path nor \
+               the lifecycle doc; review the head";
     observed
         .after_review
         .insert(reviewed.to_owned(), Err(why.to_owned()));
