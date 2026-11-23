@@ -23,7 +23,7 @@ use crate::dates::horizon;
 use crate::lines::with_fields;
 use crate::listing::{grown, held_by, listing, read, resolve};
 use crate::records::{TaskRecord, V2_TYPE};
-use crate::refs::{local_refs, not_v3};
+use crate::refs::{local_refs, no_v3_schema, not_v3, v3_held};
 use crate::repeat::completed;
 use crate::task::model;
 use crate::tree::{Forest, descendants};
@@ -113,11 +113,14 @@ pub(crate) fn add(host: &dyn Host, input: &Value) -> Result<Value, PluginError> 
     let found = listed(host, PLUGIN)?;
     let repo = routed(&found, given.repo.as_deref(), remote.as_deref())?;
     let day = day(host);
-    // A project task stays v2 until `board projects migrate` moves it.
+    // A project task stays v2 until `board projects migrate` moves it, and
+    // a repo that holds only the v2 schema takes v2 until it gains v3's.
     let project = given.kind.as_deref() == Some("project");
-    let tag = if project { V2_TYPE } else { TaskRecord::TYPE };
+    let v3 = !project && v3_held(host, &repo)?;
+    let tag = if v3 { TaskRecord::TYPE } else { V2_TYPE };
     let refs = match &given.refs {
         Some(_) if project => return Err(not_v3("a project task", "add")),
+        Some(_) if !v3 => return Err(no_v3_schema(&repo)),
         Some(refs) => Some(local_refs(host, &repo, refs)?),
         None => None,
     };

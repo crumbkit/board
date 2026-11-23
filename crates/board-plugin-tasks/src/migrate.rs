@@ -31,9 +31,6 @@ const SHOWN: usize = 100;
 const SHOWN_PROJECTS: usize = 20;
 /// The most questions and artifacts the listing names.
 const SHOWN_NAMING: usize = 100;
-/// The code `board check` gives a question or artifact that names a v3
-/// task.
-const WRONG_TYPE: &str = "board::ref::wrong_type";
 /// The reason the bulk commit's trailer gives.
 const BULK: &str = "tasks migrate to tasks/task/v3";
 
@@ -45,14 +42,13 @@ pub(crate) struct Migrated {
     pub(crate) record: Value,
 }
 
-/// A question or artifact, `path`, that names the task `task`, and the code
-/// `board check` gives it once the task is v3.
+/// A question or artifact, `path`, that names the task `task`, which
+/// `board check` reports as `board::ref::wrong_type` once the task is v3.
 #[derive(Debug, Serialize, JsonSchema)]
 #[schemars(deny_unknown_fields)]
 pub(crate) struct Naming {
     pub(crate) path: String,
     pub(crate) task: String,
-    pub(crate) code: String,
 }
 
 /// A repo whose rewrite was refused: the call's code and message.
@@ -261,7 +257,6 @@ fn naming(host: &dyn Host, tasks: &Found) -> Result<Vec<Naming>, PluginError> {
         .map(|(path, task)| Naming {
             path: path.to_owned(),
             task: task.to_owned(),
-            code: WRONG_TYPE.to_owned(),
         })
         .collect())
 }

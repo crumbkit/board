@@ -11,7 +11,11 @@ one tree. `add`, `claim`, `done`, `defer`, `drop`, `reviewed`, `move` and
 Run `board plugin enable tasks` in a board, which writes the schemas the
 plugin ships to `.board/types/tasks/task/` and names the plugin in
 `.board/board.json`. A notes repo needs a copy of the schema in its own
-`.board/types/tasks/task/` for its tasks to be checked, v3 included. An installed copy of
+`.board/types/tasks/task/` for its tasks to be checked. `add` writes a v2
+task into a notes repo that holds only the v2 schema, and refuses `refs`
+there with `tasks::add::no_v3_schema`; copy
+`.board/types/tasks/task/v3.schema.json` into the repo and commit it to
+write v3 there. An installed copy of
 the former Python plugin under `$XDG_DATA_HOME/board/plugins/tasks` must be
 removed, or Board refuses every tasks call with `board::plugin::duplicate`.
 
@@ -71,11 +75,14 @@ The plan covers ...
   `board check` reports one that resolves through a mount as
   `board::ref::through_mount`, and the task is still listed. `ref` edits it.
 - `brief` names a project's brief, such as `/projects/flows/README.md`, a
-  reference to any file in the repo. `parent` and `after` may name a v2 or a
-  v3 task.
+  reference to any file in the repo. A v3 task's `parent` and `after` may
+  name a v2 or a v3 task.
 - `tasks/task/v2` is v3 without `refs` and with `kind`: `task`, as when it
   is left out, or `project`. A project task stays v2 until projects move to
-  their own records; any task or project may be the parent of either.
+  their own records. A v2 task's `parent` and `after` accept a v2 task
+  only, so `board check` reports a v2 task whose `parent` or `after` names
+  a v3 task as `board::ref::wrong_type`. A v3 task may have a v2 project
+  as its parent.
 - `id` and `pinned` are fields Reflect writes, and the plugin ignores them.
   `id` is the note's id, a slug. `pinned` is `true` or `false`, or the
   note's place in Reflect's sidebar, a whole number.

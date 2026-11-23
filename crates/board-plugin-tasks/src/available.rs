@@ -137,7 +137,7 @@ pub(crate) struct Unsynced {
 /// `held` lists the ones that owner holds that are not available; without
 /// it, `held` is empty. `repos` are the repos read, `degraded` counts their
 /// Markdown files under `tasks/` that are not a readable `tasks/task/v2`
-/// task, or hold a date that cannot be read, and `unsynced` lists the repos
+/// or `tasks/task/v3` task, or hold a date that cannot be read, and `unsynced` lists the repos
 /// whose sync or pin failed. `cross_repo` lists the `after` and `parent`
 /// entries that name another repo's task, which are not followed.
 /// `origin_unread` says why the caller's git repository gave no origin,

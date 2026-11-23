@@ -147,6 +147,13 @@ from another board, such as a team board's lead:
 
        board -C <board> tasks ref --path <task> --add /exchange/sent/<id>.md
 
+   A project task is v2 and takes no refs until projects move to their own
+   records, so `tasks ref` on it is refused with `tasks::ref::not_v3`. Add a
+   v3 child task that names the copy instead, with JSON on stdin:
+
+       echo '{"title": "<what waits>", "parent": "<project task>",
+         "refs": ["/exchange/sent/<id>.md"]}' | board -C <board> tasks add
+
 5. When a reply arrives, check it with action `exchange.receive`, copy it
    under `/exchange/sent/<id>/replies/`, and add that copy the same way.
 

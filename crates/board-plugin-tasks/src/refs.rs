@@ -183,6 +183,48 @@ fn local_ref(host: &dyn Host, repo: &Repo, path: &str) -> Result<String, PluginE
     Ok(repo.repo_path(path).to_owned())
 }
 
+/// The path of the v3 schema in `repo`'s own `.board/types/`.
+fn v3_schema(repo: &Repo) -> String {
+    let root = repo.root.trim_end_matches('/');
+    format!("{root}/.board/types/{}.schema", TaskRecord::TYPE)
+}
+
+/// Whether `repo` holds the v3 schema, which a mounted notes repo lacks
+/// until someone copies it there; its records are checked against its own
+/// `.board/types/`.
+pub(crate) fn v3_held(host: &dyn Host, repo: &Repo) -> Result<bool, PluginError> {
+    let refused = |error: &board_ops::ReadError| {
+        PluginError::board_refused(PLUGIN, "get", &error.refusal("get"))
+    };
+    let path: LogicalPath = (v3_schema(repo).parse()).expect("a repo's root is a board path");
+    match host
+        .get_each(&[path])
+        .map_err(|error| refused(&error))?
+        .pop()
+    {
+        Some(Ok(_)) => Ok(true),
+        Some(Err(error)) if error.code() == Code::PathNotFound => Ok(false),
+        Some(Err(error)) => Err(refused(&error)),
+        None => Ok(false),
+    }
+}
+
+/// The refusal of refs on a new task in `repo`, which holds no v3 schema.
+pub(crate) fn no_v3_schema(repo: &Repo) -> PluginError {
+    let schema = v3_schema(repo);
+    let why = format!(
+        "{} holds no {schema}.json, so a task there is tasks/task/v2, which holds no refs",
+        repo.root
+    );
+    hinted(
+        "tasks::add::no_v3_schema",
+        why,
+        [("repo", json!(repo.root)), ("schema", json!(schema))],
+        "copy .board/types/tasks/task/v3.schema.json from the board into the repo and commit \
+         it, or add the task without refs",
+    )
+}
+
 /// The refusal of refs on a `tasks/task/v2` task, `what`.
 pub(crate) fn not_v3(what: &str, call: &str) -> PluginError {
     let why = format!(

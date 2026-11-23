@@ -169,3 +169,66 @@ fn check_degrades_a_v3_ref_through_a_mount_and_still_lists_the_task_while_a_v2_b
     assert_eq!(shown(&listed), ["Brief", "Through"]);
     assert_eq!(listed["degraded"], 0);
 }
+
+#[test]
+fn add_writes_v2_into_a_notes_repo_that_holds_only_the_v2_schema_and_refuses_refs_there() {
+    let tasks = Tasks::new();
+    tasks.configure(true);
+    let personal = tasks.notes_repo(
+        "personal",
+        Some(json!({"covers": [], "personal": true})),
+        &[],
+        true,
+    );
+    git(
+        &personal,
+        &["rm", "-q", ".board/types/tasks/task/v3.schema.json"],
+    );
+    git(&personal, &["commit", "-qm", "only v2"]);
+    git(&personal, &["push", "-q"]);
+    tasks.mount("personal", &personal);
+    git(tasks.board.workdir(), &["add", "."]);
+    git(tasks.board.workdir(), &["commit", "-qm", "mount"]);
+    let output = tasks.call("add", &["--title", "Buy milk"]).unwrap();
+    assert_eq!(output["path"], "/repos/personal/tasks/buy-milk.md");
+    let written = std::fs::read_to_string(personal.join("tasks/buy-milk.md")).unwrap();
+    assert!(
+        written.starts_with("---\n$type: \"tasks/task/v2\"\n"),
+        "{written}"
+    );
+    let before = git(&personal, &["rev-parse", "HEAD"]);
+    let stdin = json!({"title": "Wait", "refs": ["/repos/personal/repo.txt"]}).to_string();
+    let refused = tasks.call_with("add", &[], 0, tasks.outside.path(), &stdin);
+    let refused = refused.unwrap_err();
+    assert_eq!(refused["code"], "tasks::add::no_v3_schema", "{refused}");
+    assert_eq!(git(&personal, &["rev-parse", "HEAD"]), before);
+}
+
+#[test]
+fn ref_refuses_a_101st_ref_and_add_refuses_101_refs_writing_nothing() {
+    let files: Vec<String> = (0..=MOST)
+        .map(|at| format!("exchange/sent/{at}.md"))
+        .collect();
+    let tasks = committing(&files.iter().map(String::as_str).collect::<Vec<_>>());
+    let paths: Vec<String> = files.iter().map(|file| format!("/{file}")).collect();
+    let held = format!("refs: {}\n", json!(paths[..MOST]));
+    tasks.write("tasks/full.md", &v3("Full", &held, ""));
+    git(tasks.board.workdir(), &["add", "."]);
+    git(tasks.board.workdir(), &["commit", "-qm", "task"]);
+    let before = head(&tasks);
+    let flags = ["--path", "/tasks/full.md", "--add", paths[MOST].as_str()];
+    let refused = tasks.refused("ref", &flags);
+    assert_eq!(refused["code"], "tasks::ref::too_many", "{refused}");
+    assert_eq!(head(&tasks), before);
+    let stdin = json!({"title": "Too many", "refs": paths}).to_string();
+    let refused = (tasks.call_with("add", &[], 0, tasks.outside.path(), &stdin)).unwrap_err();
+    assert_eq!(
+        (&refused["code"], &refused["fields"]["pointer"]),
+        (&json!("board::plugin::bad_input"), &json!("/refs")),
+        "{refused}"
+    );
+    assert_eq!(head(&tasks), before);
+}
+
+/// The most refs a task holds.
+const MOST: usize = 100;

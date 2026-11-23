@@ -156,8 +156,8 @@ fn migrate_lists_the_questions_and_artifacts_that_name_a_task_it_rewrites_and_no
         (&listed["naming"], &listed["naming_total"]),
         (
             &json!([
-                {"path": "/artifacts/page", "task": "/tasks/typed.md", "code": "board::ref::wrong_type"},
-                {"path": "/questions/typed", "task": "/tasks/typed.md", "code": "board::ref::wrong_type"},
+                {"path": "/artifacts/page", "task": "/tasks/typed.md"},
+                {"path": "/questions/typed", "task": "/tasks/typed.md"},
             ]),
             &json!(2)
         ),
