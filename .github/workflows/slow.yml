@@ -180,6 +180,14 @@ jobs:
   # mutated crates' tests, so it does not check that every test finishes
   # within that minute. Once a correct test approaches 60 s here, every mutant
   # fails it and counts as caught, which would hide missed mutants.
+  #
+  # The first pass shards round-robin, so mutant i runs on shard i mod 12.
+  # cargo-mutants' default gives each shard one slice of the sorted list, and
+  # every board-cli mutant then lands on the first shards. board-cli's own
+  # tests take about ten minutes, and a mutant they catch late or miss costs
+  # that much, so those shards ran past their timeout while the rest finished
+  # in minutes. Round-robin spreads the board-cli mutants over every shard;
+  # each shard's baseline then runs board-cli's tests once.
   mutants-crate:
     needs: base
     if: needs.base.outputs.run == 'true' && needs.base.outputs.base != '' && !inputs.release
@@ -188,7 +196,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [0, 1, 2, 3, 4, 5, 6, 7]
+        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -211,7 +219,7 @@ jobs:
       - if: steps.diff.outputs.changed == 'true'
         run: |
           status=0
-          cargo mutants --in-diff changes.diff --test-tool nextest --test-workspace=false --exclude 'crates/board-scenario/**' --minimum-test-timeout 180 --shard "${SHARD}/8" || status=$?
+          cargo mutants --in-diff changes.diff --test-tool nextest --test-workspace=false --exclude 'crates/board-scenario/**' --minimum-test-timeout 180 --sharding round-robin --shard "${SHARD}/12" || status=$?
           [ "$status" = 0 ] || [ "$status" = 2 ] || [ "$status" = 3 ]
         env:
           SHARD: ${{ matrix.shard }}
@@ -226,8 +234,10 @@ jobs:
 
   # Gathers every first-pass shard's caught and unviable mutants into one
   # caught.txt. --iterate skips the mutants it names, so the second pass's
-  # shards split only what the first pass missed or timed out: eight mutants
-  # a shard, at most eight shards.
+  # shards split only what the first pass missed or timed out: six mutants a
+  # shard, at most sixteen shards. Each mutant there can run the whole
+  # workspace's tests, about nine minutes, so six of them and a baseline fit
+  # in the 120-minute timeout. Past 96 misses a shard takes more than six.
   mutants-misses:
     needs: [base, mutants-crate]
     runs-on: ubuntu-24.04
@@ -260,7 +270,7 @@ jobs:
             cargo mutants --list --iterate --in-diff changes.diff --exclude 'crates/board-scenario/**' > misses.txt
           fi
           count=$(wc -l < misses.txt)
-          total=$(( (count + 7) / 8 > 8 ? 8 : (count + 7) / 8 ))
+          total=$(( (count + 5) / 6 > 16 ? 16 : (count + 5) / 6 ))
           echo "The first pass left $count mutants for the whole workspace's tests, on $total shards." >> "$GITHUB_STEP_SUMMARY"
           echo "total=$total" >> "$GITHUB_OUTPUT"
           echo "shards=$(jq -cn --argjson n "$total" '[range($n)]')" >> "$GITHUB_OUTPUT"
@@ -295,9 +305,13 @@ jobs:
           path: mutants.out
       # Without debug info each mutant rebuilds faster. A panic in a mutant's
       # log still names its file and line; only backtrace frames lose them.
+      # The baseline runs only the mutated crates' tests, which for a plugin
+      # crate take under a second, so five times it falls to the floor. One
+      # run of the whole workspace's tests takes about 530 s, so the floor is
+      # 900 s; at 180 s a mutant only a late test catches timed out undecided.
       - run: |
           git diff --end-of-options "$BASE...HEAD" -- '*.rs' > changes.diff
-          cargo mutants --iterate --in-diff changes.diff --test-tool nextest --test-workspace=true --exclude 'crates/board-scenario/**' --minimum-test-timeout 180 --shard "${SHARD}/${TOTAL}"
+          cargo mutants --iterate --in-diff changes.diff --test-tool nextest --test-workspace=true --exclude 'crates/board-scenario/**' --minimum-test-timeout 900 --shard "${SHARD}/${TOTAL}"
         env:
           BASE: ${{ needs.base.outputs.base }}
           SHARD: ${{ matrix.shard }}
