@@ -1,6 +1,6 @@
 # STANDARDS.md 19: the bolero targets the gate runs as quick randomised tests
 # are fuzzed here, coverage-guided, on the nightly toolchain. slow.yml calls
-# this workflow nightly and before a release, and reports a failure.
+# this workflow nightly, and reports a failure.
 name: fuzz
 
 on:
