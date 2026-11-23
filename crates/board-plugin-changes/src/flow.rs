@@ -86,7 +86,8 @@ impl Flow {
     /// The answers each check's `when` names, in order.
     pub(crate) fn answers(&self) -> impl Iterator<Item = Answers> + '_ {
         (self.phases.iter().flat_map(|phase| &phase.checks))
-            .filter_map(|check| check.when.as_ref()?.answers)
+            .filter_map(|check| check.when.as_ref())
+            .flat_map(|when| when.answers.into_iter().chain(when.answers_not))
     }
 
     /// The names of its phases, in order.
@@ -323,6 +324,9 @@ pub(crate) struct When {
     /// The plan's typed answers each equal the one given here.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) answers: Option<Answers>,
+    /// The check applies unless the plan gives each of these answers.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) answers_not: Option<Answers>,
     /// No record of this type that Board reads is at this path.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) absent: Option<Absent>,
@@ -400,6 +404,13 @@ pub(crate) struct Where {
     /// What the record's `refs` must each name.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) refs: Option<Vec<Target>>,
+    /// With `at_head`, the rules whose paths the commits after the record's
+    /// commit may edit: such a commit, a clean merge of the branch the
+    /// mount follows, or one that edits only the change's lifecycle doc
+    /// leaves the record counting.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "Option<Vec<PathTemplate>>")]
+    pub(crate) unchanged_by: Option<Vec<String>>,
 }
 
 /// The field that names the commit a record covers: `range`, whose right

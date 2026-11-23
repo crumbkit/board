@@ -333,7 +333,7 @@ fn the_shipped_flows_new_sections_reach_a_change_in_flight_only_when_it_reflows(
     assert_eq!(status(&board, "lifecycle-declared"), Some(json!("pass")));
 }
 
-/// A change in build whose plan was written under the stored version of the
+/// A change in land whose plan was written under the stored version of the
 /// development flow that reads the plan's prose, so the plan gives no typed
 /// answers, and that then reflows to the shipped flow.
 #[test]
@@ -352,7 +352,7 @@ fn a_reflowed_plan_with_no_answers_leaves_its_checks_to_the_agent_and_not_the_ow
         &json!({"path": "/changes/a", "text": PLAN, "uses": [], "paths": PATHS}),
     );
     let mut change = board.read("changes/a.json");
-    change["phase"] = json!("build");
+    change["phase"] = json!("land");
     board.write("changes/a.json", &change.to_string());
     assert_eq!(status(&board, "rechecks"), None);
     board.call(
@@ -646,7 +646,8 @@ fn next_names_the_owner_and_what_to_ask_when_only_the_owner_can_pass_the_checks_
     board.write(&format!("{}.md", text.trim_start_matches('/')), PLAN);
     let held = format!("{}.json", text.trim_start_matches('/'));
     let mut record = board.read(&held);
-    record["answers"] = answers();
+    // A plan that stores data needs the owner's approval.
+    record["answers"] = json!({"ux": "none", "data": "stored", "lifecycle": "none"});
     board.write(&held, &record.to_string());
     let output = board.call("next", &json!({"path": "/changes/a"}));
     assert_eq!(output["waiting_on"], json!(["owner"]));

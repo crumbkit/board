@@ -190,13 +190,13 @@ records how the owner showed he understands a change's `data` or `ux`.
 Each of `questions` holds the `question`, the owner's `answer` in his own
 words, and the `design`'s answer, and may say its `kind` (`predict`,
 `choose`, `explain` or `edge`) and whether the answers `matches`.
-`rechecks` holds the questions asked again before review. Each recheck
+`rechecks` holds the questions asked again after the merge. Each recheck
 names its `point`, a slug. The gate reads only the latest recheck of each
 point, so a missed recheck stays in the record and passes once a later
 recheck of its point matches.
 
 A board that holds understanding checks written before `point` existed
-reports them as degraded (`board::record::invalid`), and the build gate refuses
+reports them as degraded (`board::record::invalid`), and the land gate's rechecks check misses
 them, until each stored recheck has a `point`. Run
 `board plugin enable changes`, then give every stored recheck its `point`
 in one batch.
@@ -292,7 +292,8 @@ A v1 change and a migrated one both meet the development flow's gates,
 below, which block on more than the gates before flows did:
 
 - leaving plan, `owner-approval` needs a `plans/decision/v1` that the owner
-  signed, whose `refs` name the plan or the change, on every route. Before
+  signed, whose `refs` name the plan or the change, on every route, unless
+  the plan answers `ux` none and `data` none. Before
   flows only an `ask-first` change needed a decision, and any decision
   passed, a rejection or an agent's stub included. `considered` is new, and
   passes for a migrated change, whose `surfaced` is empty;
@@ -794,10 +795,12 @@ The plugin ships three flows, compiled in from
 `crates/board-plugin-changes/flows/`. `development` has the phases plan,
 build, review and land, and stops through plan. `small` has build, review
 and land, and stops through review. Its `not-small` check at build refuses a
-diff that edits a path the `ui-paths`, `data-paths` or `lifecycle-paths`
-rule lists, and its `lifecycle-paths` check at review, repeated at land, refuses a
-lifecycle path, so a change reflowed to `small` at review meets it too; each sends the
-change to the development flow. `flow-authoring` writes a flow, on
+diff that edits a path the `ui-paths` or `data-paths` rule lists, and sends
+the change to the development flow. Its `lifecycle-recorded` check at build,
+`lifecycle-paths` at review and `lifecycle-paths-at-land` refuse a diff that
+edits a path the `lifecycle-paths` rule lists until Board reads a
+`changes/lifecycle/v1` at `/changes/<name>/lifecycle`, so the builder writes
+that record and the change stays small. `flow-authoring` writes a flow, on
 `--mount /` or the mount it is for: interview the owner, draft the flow at
 `<change>/draft`, dry-run it with `run --sandbox`, and adopt it at
 `/flows/<name>` once the owner signs a decision naming the draft and the
@@ -852,11 +855,11 @@ evaluated by kind:
 | --- | --- |
 | `sections` | the plan has text under each heading in `sections` |
 | `field` | the change sets `field` (`task`, `route`, `head`, `plan`, `tickets` or `pulls`), with at least `min` references; for `tickets` with `types`, at least `min` tickets Board reads as one of them; for `pulls` with `types`, the newest reads as a `github/pull/v1` |
-| `records` | at least `min` attached records of `type` meet `where` (`at_head`, `values`, `no_findings`, `owner_signed`, which counts only a decision the owner signed, or for some checks the owner's answer as below, and `refs`, each of which a record's refs must name: `plan` is the plan, its text or the change), from different actors when `distinct` names a part of `by` |
+| `records` | at least `min` attached records of `type` meet `where` (`at_head`, with `unchanged_by` as below, `values`, `no_findings`, `owner_signed`, which counts only a decision the owner signed, or for some checks the owner's answer as below, and `refs`, each of which a record's refs must name: `plan` is the plan, its text or the change), from different actors when `distinct` names a part of `by` |
 | `run` | an attached run of the change's suite with `scope` is clean, passing and on `head` |
 | `paths` | the diff edits only the plan's paths |
 | `tasks` | every attached task but the change's own is done or dropped |
-| `understood` | a decision the owner signed references an attached understanding check of this change's `subject`; with `rechecks`, each such check also holds rechecks of that many points, and the latest recheck of every point matches |
+| `understood` | a decision the owner signed references an attached understanding check of this change's `subject`, or the option the owner's attached answer chose names both the change and that record; with `rechecks`, each such check also holds rechecks of that many points, and the latest recheck of every point matches |
 | `mockups` | the `agreed` part: each mockup under UX is named by a decision the owner signed, or by the chosen option of the owner's attached answer in its attached question; the `neighbours` part: UX lists its neighbours; the `versioned` part: each mockup item names a version, as `version <id>` or a `/artifacts/<id>/versions/<id>` path; the `built` part: for each mockup version the plan names, a `changes/conformance/v1` at `head` says `match` with no difference listed, and the detail lists each element that is missing or different; both `agreed` and `neighbours` when `part` is left out |
 | `considered` | each path in the change's `surfaced` that still reaches something is in the plan's `uses` or its `considered` field |
 | `obligations` | no obligation rule applies to the plan's paths, except those in the plan's `owed` field; a board without the rules plugin enabled has none |
@@ -981,14 +984,32 @@ obligations on the plan's paths, the rules a check names, its
 tickets' types, whether something is at each path an `exists` check
 names, and the rules `rules.for-paths` finds on the plan's paths. A referenced record Board marks degraded satisfies nothing.
 
+A check's `when` holds when each condition it gives holds: `route`,
+`section`, `section_not`, `answers`, each of which the plan's answer must
+equal, `answers_not`, which holds unless the plan gives each answer it names,
+and `absent`. A plan that leaves out an answer `answers` or `answers_not`
+reads keeps the check, missing with `changes::plan::no_answers`. `next`
+lists each check of the phase whose `when` does not hold in `not_required`.
+
+A `records` check whose `where` names `at_head` and `unchanged_by`, a list of
+rules, also counts a record on an earlier commit when that commit is on the
+head's first-parent chain and each commit after it edits only files those
+rules list or the change's lifecycle `doc`, or is a merge whose second parent
+is on the branch the mount follows and whose tree is the one `git merge-tree
+--write-tree` gives. A commit that edits a file outside the directory the
+mount shows does not count. The pass detail names those commits, and
+`changes.pr` lists them under Review. A rebase leaves the record off the chain, so the
+detail says to merge main in place of rebasing. A rule the board does not hold
+lists nothing, and the detail names it.
+
 The development flow's gates:
 
 | Leaving | Checks |
 | --- | --- |
-| plan | `plan-sections`, the eight sections; `considered`; `task`; `route`; `owner-approval`, a `plans/decision/v1` the owner signed, with `by.person`, whose `refs` name the plan or the change, or the owner's attached `plans/answer/v1` whose chosen option, in its attached question, names the change, or the owner's Touch ID approval of `changes.approve` for the current plan, on every route; `mockups` and `mockup-versions`, when the plan answers `ux` mockups; `data-signed`, an `understood` check of the data, when it answers `data` stored; `lifecycle-declared`, a `planned-rule-paths` check of `/rules/{repo}/lifecycle-paths`, when it answers `lifecycle` none; `lifecycle-record`, an `exists` check of `/changes/{name}/lifecycle`, when it answers `lifecycle` record; `obligations`, which does not block |
-| build | `head`; `suite-run`, waivable; `tasks`; `rechecks`, rechecks of two points, the latest recheck of each matching, when the plan answers `data` stored |
-| review | `review`, a report on `head` with no critical or high finding; `design-conformance`, the `built` part of `mockups`, when the plan answers `ux` mockups; `paths`; `ui-paths` and `data-paths`, `rule-paths` checks of `/rules/{repo}/ui-paths` when the plan answers `ux` none and `/rules/{repo}/data-paths` when it answers `data` none; `lifecycle-paths`, the same check of `/rules/{repo}/lifecycle-paths` unless Board reads a `changes/lifecycle/v1` at `/changes/{name}/lifecycle`; `lifecycle-none-paths`, the same check when the plan answers `lifecycle` none, whether or not a record exists; `obligations-settled`, with the escape heading `Obligations left owed` |
-| land | `test-sections`, What the tests prove and What the tests do not prove; `pull-request`; `lifecycle-paths-at-land` and `lifecycle-none-paths-at-land`, the two review checks of `/rules/{repo}/lifecycle-paths` again, so each re-reads the diff at the recorded head and a record removed after review is gated |
+| plan | `plan-sections`, the eight sections; `considered`; `task`; `route`; `owner-approval`, unless the plan answers `ux` none and `data` none, a `plans/decision/v1` the owner signed, with `by.person`, whose `refs` name the plan or the change, or the owner's attached `plans/answer/v1` whose chosen option, in its attached question, names the change, or the owner's Touch ID approval of `changes.approve` for the current plan, on every route; `mockups` and `mockup-versions`, when the plan answers `ux` mockups; `data-signed`, an `understood` check of the data, when it answers `data` stored; `lifecycle-declared`, a `planned-rule-paths` check of `/rules/{repo}/lifecycle-paths`, when it answers `lifecycle` none; `lifecycle-record`, an `exists` check of `/changes/{name}/lifecycle`, when it answers `lifecycle` record; `obligations`, which does not block |
+| build | `head`; `suite-run`, waivable; `tasks` |
+| review | `review`, a report on `head`, or on an earlier commit when each commit after it edits only paths `/rules/{repo}/record-paths` lists or the lifecycle record's `doc`, or cleanly merges the branch the mount follows, with no critical or high finding; `design-conformance`, the `built` part of `mockups`, when the plan answers `ux` mockups; `paths`; `ui-paths` and `data-paths`, `rule-paths` checks of `/rules/{repo}/ui-paths` when the plan answers `ux` none and `/rules/{repo}/data-paths` when it answers `data` none; `lifecycle-paths`, the same check of `/rules/{repo}/lifecycle-paths` unless Board reads a `changes/lifecycle/v1` at `/changes/{name}/lifecycle`; `lifecycle-none-paths`, the same check when the plan answers `lifecycle` none, whether or not a record exists; `obligations-settled`, with the escape heading `Obligations left owed` |
+| land | `test-sections`, What the tests prove and What the tests do not prove; `pull-request`; `rechecks`, which does not block, rechecks of two points, the latest recheck of each matching, when the plan answers `data` stored; `lifecycle-paths-at-land` and `lifecycle-none-paths-at-land`, the two review checks of `/rules/{repo}/lifecycle-paths` again, so each re-reads the diff at the recorded head and a record removed after review is gated |
 | build, for a prototype | Never passes: `verdict` ends a prototype instead. |
 
 Three layers identify a lifecycle change. The `lifecycle` answer is required,
@@ -1295,3 +1316,24 @@ interpret, the four flows of the configurable-flows design read and checked
 against the flow schema, the WIP limit's window and origin forms, the pull
 request body, the brief's fitting of rules, and the manifest and its
 committed schemas.
+
+## Asking the owner and what is owed after the merge
+
+`changes.ask`, with `path`, `project` and `by`, the asking session or person,
+on stdin, files one `plans/question/v1` through `plans.ask` and attaches it to the change. Its
+approving option names the change, each attached data understanding check
+and each mockup the plan lists with its version, so one answer passes
+`owner-approval`, `data-signed` and `mockups`. Its other option names none of
+them. Run again, it finds the same open question and attaches it once.
+
+The development flow asks the rechecks at land without blocking, so a change
+merges first. `changes.owed` lists each change done in the last 14 days whose
+last phase has a missing check that does not block, with its detail and
+remedy and the predict and edge questions of its understanding checks to ask
+again. `changes.open` warns `changes::owed::rechecks` with the count while
+that list is not empty.
+
+A change in flight keeps the flow version it stored; `changes reflow --path
+<change> --flow development` takes up these gates. A board that wants the
+former gates writes its own `/flows/development`, which wins over the shipped
+flow.

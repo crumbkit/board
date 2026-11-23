@@ -204,9 +204,12 @@ fn check_problems<'a>(
         .when
         .iter()
         .flat_map(|when| when.absent.iter().map(|absent| &absent.path));
+    let unchanged_by =
+        (each.conditions.iter()).flat_map(|rules| rules.unchanged_by.iter().flatten());
     let texts = (each.remedy.iter().chain(each.path.iter()))
         .chain(each.rules.iter().flatten())
-        .chain(absent);
+        .chain(absent)
+        .chain(unchanged_by);
     for word in texts.flat_map(|text| unknown_placeholders(text)) {
         found.push(at(
             "changes::flow::unknown_placeholder",

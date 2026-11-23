@@ -6,6 +6,7 @@
 //! through the rules plugin, each by a nested call.
 
 mod approve;
+mod ask;
 mod board;
 mod brief;
 mod change;
@@ -15,6 +16,7 @@ mod gates;
 mod lifecycle;
 mod migrate;
 mod open;
+mod owed;
 mod phases;
 mod plan;
 mod pr;
@@ -107,7 +109,7 @@ fn output<T: JsonSchema>() -> Value {
 /// Every capability, in the order the manifest lists them. A capability
 /// that rewrites a field of a change, or ends it, is destructive; one that
 /// adds a task or reads GitHub reaches the open world.
-const CAPABILITIES: [Capability; 21] = [
+const CAPABILITIES: [Capability; 23] = [
     Capability {
         name: "start",
         description: "Create a change in the first phase of its flow, its plan to fill in and, \
@@ -163,14 +165,40 @@ const CAPABILITIES: [Capability; 21] = [
     Capability {
         name: "open",
         description: "The changes that are not done or dropped, with their flow, phase, route, task \
-            and kind; by kind, every prototype with its question, state, verdict and branch; and the \
-            day of the last sync.",
+            and kind; by kind, every prototype with its question, state, verdict and branch; the \
+            day of the last sync; and a warning while a done change still owes a check.",
         run: open::open,
         input: input::<open::Input>,
         output: output::<open::Output>,
         hints: [true, false, true, false],
         env: &[],
         timeout: None,
+    },
+    Capability {
+        name: "owed",
+        description: "Each change done in the last 14 days whose last phase has a check that does \
+            not block and is missing, such as the owner's rechecks asked after the merge, with the \
+            questions to ask again.",
+        run: owed::owed,
+        input: input::<owed::Input>,
+        output: output::<owed::Output>,
+        hints: [true, false, true, false],
+        env: &[],
+        timeout: None,
+    },
+    Capability {
+        name: "ask",
+        description: "File one question through plans.ask asking the owner to approve the change's \
+            plan, its data understanding checks and its mockups, whose approving option names each, \
+            and attach it to the change.",
+        run: ask::ask,
+        input: input::<ask::Input>,
+        output: output::<ask::Output>,
+        // A retry finds the same open question through plans.ask and
+        // attaches it once.
+        hints: [false, false, true, false],
+        env: &[],
+        timeout: Some(NESTED_TIMEOUT),
     },
     Capability {
         name: "pr",

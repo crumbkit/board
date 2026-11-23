@@ -17,7 +17,7 @@ use crate::change::{
 };
 use crate::flow::{Actor, FlowSummary};
 use crate::gates::remedy::{fill, values};
-use crate::gates::{Check, Observed, gate};
+use crate::gates::{Check, Observed, gate, not_required};
 use crate::records::{
     BUILD, ChangeRecord, DONE, DROPPED, Kind, PAUSED, PULL_TYPES, Route, SUITE_TYPE, TASK_TYPES,
     TICKET_TYPES, is_final,
@@ -32,7 +32,7 @@ mod reflow;
 
 use moves::latest_reason;
 pub(crate) use moves::{ReopenInput, pause, reopen, resume};
-pub(crate) use observe::observe;
+pub(crate) use observe::{after_review, observe, observe_in};
 pub(crate) use reflow::{ReflowInput, Reflowed, reflow};
 
 /// One change, by path.
@@ -138,7 +138,10 @@ pub(crate) struct AttachInput {
 /// remedies, which a session running without the owner records as a
 /// plans/question/v1 whose `blocks` names the change. `stop` is where the
 /// change's run stops, which `changes.run` set, and whether the change has
-/// reached it; it is left out when no run set one.
+/// reached it; it is left out when no run set one. `not_required` lists the
+/// checks of the phase whose `when` does not hold, so the gate leaves them
+/// out, such as `owner-approval` for a plan that answers `ux` none and
+/// `data` none.
 #[derive(Debug, Serialize, JsonSchema)]
 pub(crate) struct NextOutput {
     pub(crate) path: String,
@@ -146,6 +149,8 @@ pub(crate) struct NextOutput {
     pub(crate) phase: String,
     pub(crate) route: Option<Route>,
     pub(crate) gate: Vec<Check>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub(crate) not_required: Vec<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub(crate) waiting_on: Vec<Actor>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -384,6 +389,7 @@ pub(crate) fn step_of(host: &dyn Host, path: &str) -> Result<(NextOutput, Observ
         route: change.route,
         instruction,
         gate: checks,
+        not_required: not_required(&observed, observed.checks()),
         waiting_on,
         ask,
         stop,

@@ -51,7 +51,7 @@ fn a_plan_that_answers_mockups_lists_them_even_under_no_ui_change_and_passes_onc
 }
 
 #[test]
-fn stored_data_needs_the_sign_off_at_plan_and_two_rechecks_at_build() {
+fn stored_data_needs_the_sign_off_at_plan_and_two_rechecks_at_land() {
     let answers = json!({"ux": "none", "data": "stored", "lifecycle": "none"});
     let signed_off = vec![
         (UNDERSTOOD, understanding(&json!({}))),
@@ -64,7 +64,7 @@ fn stored_data_needs_the_sign_off_at_plan_and_two_rechecks_at_build() {
     let plan = owned("plan", answers.clone()).records(signed_off);
     assert_eq!(plan.statuses()["data-signed"], "pass");
     let built = |rechecks: &[bool]| {
-        owned("build", answers.clone()).records(vec![
+        owned("land", answers.clone()).records(vec![
             (RUN, run(&json!({}))),
             (
                 UNDERSTOOD,
@@ -76,10 +76,11 @@ fn stored_data_needs_the_sign_off_at_plan_and_two_rechecks_at_build() {
     assert_eq!(built(&[true]).statuses()["rechecks"], "missing");
     assert_eq!(built(&[true, true]).statuses()["rechecks"], "pass");
     let none = owned(
-        "build",
+        "land",
         json!({"ux": "none", "data": "none", "lifecycle": "none"}),
     );
     assert!(!none.statuses().contains_key("rechecks"));
+    assert!(!owned("build", answers).statuses().contains_key("rechecks"));
 }
 
 fn lifecycle(phase: &'static str, answer: &str) -> Given {
@@ -194,4 +195,60 @@ fn a_change_on_the_stored_prose_flow_passes_and_fails_by_its_prose_with_no_answe
     for id in ["ui-paths", "data-paths", "lifecycle-none-paths"] {
         assert_eq!(review[id], "pass", "{id}");
     }
+}
+
+/// Decision 1308Z: a plan that answers `ux` none and `data` none needs no
+/// owner approval, and `next` lists the check it leaves out.
+#[test]
+fn owner_approval_is_left_out_for_none_and_none_and_applies_to_every_other_pair() {
+    let none = owned(
+        "plan",
+        json!({"ux": "none", "data": "none", "lifecycle": "record"}),
+    );
+    assert!(!none.statuses().contains_key("owner-approval"));
+    let observed = none.observed();
+    let skipped = crate::gates::not_required(&observed, observed.checks());
+    assert!(
+        skipped.contains(&"owner-approval".to_owned()),
+        "{skipped:?}"
+    );
+    for (ux, data) in [
+        ("mockups", "none"),
+        ("none", "stored"),
+        ("mockups", "stored"),
+    ] {
+        let other = owned("plan", json!({"ux": ux, "data": data, "lifecycle": "none"}));
+        assert_eq!(other.statuses()["owner-approval"], "missing", "{ux} {data}");
+        let observed = other.observed();
+        let skipped = crate::gates::not_required(&observed, observed.checks());
+        assert!(
+            !skipped.contains(&"owner-approval".to_owned()),
+            "{skipped:?}"
+        );
+    }
+}
+
+/// A plan that leaves out `ux` or `data` keeps owner-approval, which the
+/// agent clears by giving the answers; its twin that gives both is left
+/// out.
+#[test]
+fn owner_approval_without_the_answers_it_reads_is_refused_with_no_answers() {
+    for given in [
+        json!({"data": "none", "lifecycle": "none"}),
+        json!({"ux": "none", "lifecycle": "none"}),
+        json!({"lifecycle": "none"}),
+    ] {
+        let untyped = owned("plan", given.clone());
+        assert_eq!(untyped.statuses()["owner-approval"], "missing", "{given}");
+        assert_eq!(
+            untyped.code("owner-approval"),
+            "changes::plan::no_answers",
+            "{given}"
+        );
+    }
+    let typed = owned(
+        "plan",
+        json!({"ux": "none", "data": "none", "lifecycle": "none"}),
+    );
+    assert!(!typed.statuses().contains_key("owner-approval"));
 }

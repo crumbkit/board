@@ -135,6 +135,11 @@ pub(crate) struct Observed {
     pub(crate) held: BTreeSet<String>,
     /// The owner's Touch ID approval of `changes.approve` for the change.
     pub(crate) approval: Approval,
+    /// For each commit an attached record covers that is not the change's
+    /// head, as the record names it: the commits after it to the head,
+    /// when each edits only paths a check's `unchanged_by` allows or
+    /// cleanly merges main, or else why not.
+    pub(crate) after_review: BTreeMap<String, Result<Vec<String>, String>>,
 }
 
 /// What `Host::decided` found of the owner's approval of `changes.approve`
@@ -180,6 +185,7 @@ impl Observed {
             on_planned_unread: None,
             held: BTreeSet::new(),
             approval: Approval::None,
+            after_review: BTreeMap::new(),
         }
     }
 
@@ -278,6 +284,7 @@ pub(crate) enum Read {
     Absent,
     PlannedRules,
     Approval,
+    AfterReview,
 }
 
 /// What `checks` read, by their kinds. A waivable check reads the
@@ -286,7 +293,10 @@ pub(crate) fn reads(checks: &[flow::Check]) -> BTreeSet<Read> {
     let mut reads = BTreeSet::new();
     for each in checks {
         if (each.when.as_ref()).is_some_and(|when| {
-            when.section.is_some() || when.section_not.is_some() || when.answers.is_some()
+            when.section.is_some()
+                || when.section_not.is_some()
+                || when.answers.is_some()
+                || when.answers_not.is_some()
         }) {
             reads.insert(Read::Plan);
         }
@@ -304,6 +314,9 @@ pub(crate) fn reads(checks: &[flow::Check]) -> BTreeSet<Read> {
             continue;
         };
         let refs = (each.conditions.as_ref()).is_some_and(|rules| rules.refs.is_some());
+        if (each.conditions.as_ref()).is_some_and(|rules| rules.unchanged_by.is_some()) {
+            reads.insert(Read::AfterReview);
+        }
         let needs: &[Read] = match kind {
             CheckKind::Sections | CheckKind::Considered => &[Read::Plan],
             CheckKind::Mockups => &[Read::Plan, Read::References],
@@ -359,8 +372,7 @@ pub(crate) fn interpret(observed: &Observed, checks: &[flow::Check]) -> Vec<Chec
         .filter_map(|each| {
             // A check that reads an answer the plan does not give is the
             // agent's to clear, by writing the plan again.
-            let left_out = (each.when.as_ref().and_then(|when| when.answers))
-                .map_or_else(Vec::new, |wanted| observed.answers.left_out(wanted));
+            let left_out = left_out(observed, each);
             let missing = match applies(observed, &plan, each) {
                 Ok(false) => return None,
                 Ok(true) if !left_out.is_empty() => Some(format!(
@@ -399,6 +411,33 @@ pub(crate) fn interpret(observed: &Observed, checks: &[flow::Check]) -> Vec<Chec
                 remedy: (status == Status::Missing).then_some(said),
             })
         })
+        .collect()
+}
+
+/// The answers the check's `when` reads that the plan leaves out, each
+/// once.
+fn left_out(observed: &Observed, each: &flow::Check) -> Vec<String> {
+    let Some(when) = &each.when else {
+        return Vec::new();
+    };
+    let mut found: Vec<String> = Vec::new();
+    for field in (when.answers.into_iter().chain(when.answers_not))
+        .flat_map(|wanted| observed.answers.left_out(wanted))
+    {
+        if !found.contains(&field) {
+            found.push(field);
+        }
+    }
+    found
+}
+
+/// The ids of `checks` whose `when` does not hold, so the gate leaves them
+/// out, in order.
+pub(crate) fn not_required(observed: &Observed, checks: &[flow::Check]) -> Vec<String> {
+    let plan = sections(observed.plan.as_deref().unwrap_or_default());
+    (checks.iter())
+        .filter(|each| applies(observed, &plan, each) == Ok(false))
+        .map(|each| each.id.clone())
         .collect()
 }
 
@@ -446,6 +485,11 @@ fn applies(
     {
         return Ok(false);
     }
+    if let Some(unless) = when.answers_not
+        && hold(observed.answers, unless)
+    {
+        return Ok(false);
+    }
     if let Some(absent) = &when.absent
         && observed
             .records_held
@@ -454,6 +498,14 @@ fn applies(
         return Ok(false);
     }
     Ok(true)
+}
+
+/// Whether the plan gives each answer `wanted` names, equal to it; an
+/// answer the plan leaves out does not hold.
+fn hold(given: Answers, wanted: Answers) -> bool {
+    (wanted.ux.is_none() || given.ux == wanted.ux)
+        && (wanted.data.is_none() || given.data == wanted.data)
+        && (wanted.lifecycle.is_none() || given.lifecycle == wanted.lifecycle)
 }
 
 /// Whether the text under the plan's `heading` matches `text`, a pattern,
@@ -726,7 +778,7 @@ fn paths_missing(observed: &Observed) -> Option<String> {
 
 /// The head commit a report covers: the right side of its `base..head`
 /// range.
-fn reviewed_head(report: &Map<String, Value>) -> Option<Value> {
+pub(crate) fn reviewed_head(report: &Map<String, Value>) -> Option<Value> {
     let covered = report.get("range")?.as_str()?;
     let (_, head) = covered.rsplit_once("..")?;
     Some(Value::from(head.trim_start_matches('.')))

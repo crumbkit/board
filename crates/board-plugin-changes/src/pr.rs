@@ -10,8 +10,9 @@ use serde_json::{Map, Value, json};
 
 use crate::board;
 use crate::change::{attached, kind_of, pull_of, read, referenced};
-use crate::gates::{Observed, REPORT_TYPE, RUN_TYPE, objects, ran_on, sections};
-use crate::phases::{PathInput, plan_file, plan_text};
+use crate::flow::of_change;
+use crate::gates::{Observed, REPORT_TYPE, RUN_TYPE, objects, ran_on, reviewed_head, sections};
+use crate::phases::{PathInput, after_review, plan_file, plan_text};
 use crate::{PLUGIN, to_value};
 
 /// Severities in the order a report's findings are counted.
@@ -198,6 +199,24 @@ fn report_line(path: &str, report: &Map<String, Value>) -> String {
     )
 }
 
+/// What a report's line adds when commits after the one it covers left it
+/// counting: those commits.
+fn accepted_line(observed: &Observed, report: &Map<String, Value>) -> String {
+    let reviewed = reviewed_head(report);
+    let commits = (reviewed.as_ref().and_then(Value::as_str))
+        .and_then(|commit| observed.after_review.get(commit))
+        .and_then(|walked| walked.as_ref().ok())
+        .filter(|commits| !commits.is_empty());
+    commits.map_or_else(String::new, |commits| {
+        let shown: Vec<String> = commits.iter().map(|commit| quoted_text(commit)).collect();
+        format!(
+            "; accepted after it, editing only record paths or the lifecycle doc or cleanly \
+             merging main: {}",
+            shown.join(", ")
+        )
+    })
+}
+
 /// `lines` as a Markdown list.
 fn bullets(lines: &[String]) -> String {
     let items: Vec<String> = lines.iter().map(|line| format!("- {line}")).collect();
@@ -262,7 +281,7 @@ pub(crate) fn body(observed: &Observed, closes: &[String]) -> String {
         or_missing(limits, DOES_NOT_PROVE)
     ));
     let reports: Vec<String> = (observed.records.of_type(REPORT_TYPE))
-        .map(|(path, report)| report_line(path, report))
+        .map(|(path, report)| report_line(path, report) + &accepted_line(observed, report))
         .collect();
     if !reports.is_empty() {
         parts.push(format!("## Review\n\n{}", bullets(&reports)));
@@ -349,6 +368,10 @@ pub(crate) fn pr(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
     observed.cited = cited;
     observed.plan = plan;
     observed.plan_file = plan_file;
+    if let Some(flow) = of_change(host, &path, &observed.change)? {
+        let checks = flow.phases.iter().flat_map(|phase| &phase.checks);
+        observed.after_review = after_review(host, &observed, checks)?;
+    }
     board::put(
         host,
         &[json!({"path": target, "text": body(&observed, &closes)})],
