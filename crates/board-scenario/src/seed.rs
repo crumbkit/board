@@ -22,7 +22,7 @@ pub struct Exhibit {
 /// Codes the CLI's recovery and twin checks cannot provoke through the
 /// `board` command line, why, and where each is tested instead. The checks
 /// provoke every other code, from the seed board or another small fixture.
-pub const NOT_REPRODUCED: [(Code, &str); 23] = [
+pub const NOT_REPRODUCED: [(Code, &str); 27] = [
     (
         Code::AttachmentMissing,
         "the store must lose an object between the put and the fetch; \
@@ -93,6 +93,10 @@ pub const NOT_REPRODUCED: [(Code, &str); 23] = [
         "ui open must fail to start a server or a browser, and a test must not start one; \
          board-serve/src/tests.rs pairs a binary that cannot start with a running server",
     ),
+    (Code::SyncOtherBranch, GUARDED),
+    (Code::SyncStaged, GUARDED),
+    (Code::SyncConflicted, GUARDED),
+    (Code::SyncHeld, GUARDED),
     (Code::ServeHost, SERVED),
     (Code::ServeOrigin, SERVED),
     (Code::ServeToken, SERVED),
@@ -112,6 +116,10 @@ pub const NOT_REPRODUCED: [(Code, &str); 23] = [
     ),
 ];
 
+/// Why the guarded sync's refusals are not provoked through `board sync`.
+const GUARDED: &str = "only a guarded sync, which the autosync plugin asks for, refuses with it; \
+     board-tree/src/write/sync/guard/tests.rs pairs it with a sync that is admitted";
+
 const SERVED: &str = "the server gives it to an HTTP request, never to a command line; \
      board-serve/src/tests.rs pairs each refused request with an admitted twin";
 
@@ -127,7 +135,7 @@ const OPEN: &str = "ui open or the server gives it; check opens and serves nothi
 
 /// Codes `check` never gives an entry, and why. The seed board has an
 /// exhibit for every other code, so a new code needs one or a line here.
-pub const NOT_CHECKED: [(Code, &str); 90] = [
+pub const NOT_CHECKED: [(Code, &str); 94] = [
     (
         Code::RepoLocalRemote,
         "only repo add gives it, to a remote that names a local path; a record's remote is checked as board::repo::invalid",
@@ -209,6 +217,10 @@ pub const NOT_CHECKED: [(Code, &str); 90] = [
     (Code::SyncShallow, SYNC),
     (Code::SyncMerging, SYNC),
     (Code::SyncNoBranch, SYNC),
+    (Code::SyncOtherBranch, SYNC),
+    (Code::SyncStaged, SYNC),
+    (Code::SyncConflicted, SYNC),
+    (Code::SyncHeld, SYNC),
     (
         Code::SchemaDiffers,
         "type add refuses a schema with it; check compiles each schema alone",

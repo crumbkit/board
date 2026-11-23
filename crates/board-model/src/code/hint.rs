@@ -565,6 +565,18 @@ fn generic(code: Code) -> &'static str {
         Code::SyncNoBranch => {
             "the remote has no branch for HEAD's branch to follow. The working tree, index, HEAD and remote-tracking ref are unchanged. A sync that may push creates the branch from this clone's first commit, so run `board sync` without `--no-push`. A clone with no commit has nothing to start the branch with: make one first, for example with `board plugin enable tasks`. When the message names a commit this clone fetched, the branch was deleted on the remote, and Board does not create it again: check the remote, and only if the branch should come back, push it by hand with `git push <remote> HEAD:<branch>`"
         }
+        Code::SyncOtherBranch => {
+            "an unattended sync syncs only the branch its board's record names, and HEAD is on another branch or none. Nothing was fetched and the working tree, index and HEAD are unchanged. Switch back with `git switch <branch>` when the work on this branch is done, and the next run syncs the board"
+        }
+        Code::SyncStaged => {
+            "an unattended sync never commits, stashes or unstages your changes, and the index holds changes HEAD does not. Nothing was fetched and the working tree, index and HEAD are unchanged. Commit the staged files, or unstage them with `git restore --staged <path>`, and the next run syncs the board"
+        }
+        Code::SyncConflicted => {
+            "the merge an unattended sync would make has a conflict, a mount pin neither side's commit descends from, or a record that fails a schema both sides changed, at the paths the message names. Nothing moved, no conflict record was written, and nothing was pushed. Merge by hand: run `board sync`, which keeps the remote's side and records each conflict, then check its records under conflicts/"
+        }
+        Code::SyncHeld => {
+            "the check an unattended sync runs before each push held this push, so HEAD holds the merged commits, unpushed. The reason is the check's own, which its report names; fix what it names, and the next run checks and pushes again"
+        }
         Code::RefsTargetChanged => {
             "the target's file changed during this run, so its values were not read; run the same board refs again. If every run refuses it, delete the board's directory under `$XDG_CACHE_HOME/board/` or `~/.cache/board/` so the index is rebuilt from the tree, and if it persists, report it"
         }

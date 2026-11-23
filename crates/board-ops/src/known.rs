@@ -99,6 +99,14 @@ impl KnownBoards {
         Ok(Self { file, known })
     }
 
+    /// Each board the file lists, read against the file's directory.
+    pub fn boards(&self) -> Vec<PathBuf> {
+        let file = self.file.as_deref();
+        (self.known.boards.iter())
+            .map(|root| against(file, root))
+            .collect()
+    }
+
     /// When the person's day starts, if the file says.
     pub fn day_start(&self) -> Option<&str> {
         self.known.day_start.as_deref()

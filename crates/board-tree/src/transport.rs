@@ -13,7 +13,8 @@ use crate::git::Repository;
 use crate::write::sync::SyncError;
 
 /// How long `board sync` may run before Board stops git. It starts before
-/// the wait for the board lock and covers every fetch, push and replay.
+/// the wait for the board lock and covers every fetch, push and replay. The
+/// time a guarded sync's `before_push` takes is not counted.
 pub const GIT_DEADLINE: Duration = Duration::from_mins(1);
 
 /// How long git has to exit after SIGTERM, such as to remove its lock
@@ -25,7 +26,8 @@ const STDOUT: usize = 16 * 1024 * 1024;
 const STDERR: usize = 64 * 1024;
 
 /// How long one sync may run, from when it was made: every fetch and push
-/// it starts shares it.
+/// it starts shares it. Time spent in a guard's `before_push` is not
+/// counted, because the sync moves the deadline later by that time.
 #[derive(Clone, Copy, Debug)]
 pub struct Deadline {
     started: Instant,
@@ -39,6 +41,12 @@ impl Deadline {
             started: Instant::now(),
             given,
         }
+    }
+
+    /// Moves the deadline `spent` later, so time spent outside the sync,
+    /// such as in a guard's check before a push, is not charged to it.
+    pub(crate) fn excluding(&mut self, spent: Duration) {
+        self.started += spent;
     }
 
     /// The time left, zero once it has passed.
@@ -118,21 +126,35 @@ pub(crate) fn fetch(
     ssh: &Ssh,
     deadline: Deadline,
 ) -> Result<(), SyncError> {
-    let refspec = format!("+refs/heads/{}:{}", upstream.branch, upstream.tracking);
-    let arguments = [
-        "-c",
-        "fetch.fsckObjects=true",
-        "fetch",
-        "--quiet",
-        "--",
-        &upstream.remote,
-        &refspec,
-    ];
+    let arguments = fetch_arguments(upstream);
+    let arguments: Vec<&str> = arguments.iter().map(String::as_str).collect();
     let output = run(workdir, &arguments, "fetch", upstream, ssh, deadline)?;
     if output.status.success() {
         return Ok(());
     }
     Err(failed("fetch", upstream, &output))
+}
+
+/// git's arguments for [`fetch`]. The `+` lets the fetch move only the
+/// remote-tracking ref, which a rewritten remote moves backwards; the
+/// rewound refusal then puts it back.
+fn fetch_arguments(upstream: &Upstream) -> Vec<String> {
+    let refspec = format!("+refs/heads/{}:{}", upstream.branch, upstream.tracking);
+    ["-c", "fetch.fsckObjects=true", "fetch", "--quiet", "--"]
+        .into_iter()
+        .map(str::to_owned)
+        .chain([upstream.remote.clone(), refspec])
+        .collect()
+}
+
+/// git's arguments for [`push`]: atomic, never forced.
+fn push_arguments(upstream: &Upstream, commit: &str) -> Vec<String> {
+    let refspec = format!("{commit}:refs/heads/{}", upstream.branch);
+    ["push", "--atomic", "--porcelain", "--quiet", "--"]
+        .into_iter()
+        .map(str::to_owned)
+        .chain([upstream.remote.clone(), refspec])
+        .collect()
 }
 
 /// Whether the remote answered that it has no branch `upstream.branch`:
@@ -158,16 +180,8 @@ pub(crate) fn push(
     ssh: &Ssh,
     deadline: Deadline,
 ) -> Result<Pushed, SyncError> {
-    let refspec = format!("{commit}:refs/heads/{}", upstream.branch);
-    let arguments = [
-        "push",
-        "--atomic",
-        "--porcelain",
-        "--quiet",
-        "--",
-        &upstream.remote,
-        &refspec,
-    ];
+    let arguments = push_arguments(upstream, commit);
+    let arguments: Vec<&str> = arguments.iter().map(String::as_str).collect();
     let output = run(workdir, &arguments, "push", upstream, ssh, deadline)?;
     if output.status.success() {
         return Ok(Pushed::Done);
@@ -295,3 +309,7 @@ fn failed(operation: &'static str, upstream: &Upstream, output: &Output) -> Sync
         stderr: output.stderr.clone(),
     }
 }
+
+#[cfg(test)]
+#[path = "transport/tests.rs"]
+mod tests;

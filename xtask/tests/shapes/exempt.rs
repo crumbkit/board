@@ -16,7 +16,7 @@ pub(super) enum Kind {
 use Kind::{Local, UntilAdopted};
 
 #[rustfmt::skip]
-pub(super) const UNSHARED: [(&str, &str, Kind, &str); 93] = [
+pub(super) const UNSHARED: [(&str, &str, Kind, &str); 97] = [
     // This repository's board's copies of the rules plugin's schemas.
     (".board/controls/control/v1", "/rule/at_least", Local, "a version floor of dotted numbers, which only a version rule compares"),
     (".board/controls/control/v1", "/rule/capture", Local, "a regular expression in the syntax of Rust's regex crate, which only a version rule compiles"),
@@ -30,6 +30,10 @@ pub(super) const UNSHARED: [(&str, &str, Kind, &str); 93] = [
     ("artifacts/version/v1", "/at", UntilAdopted, "Timestamp, as plans' (audit rows 37 to 41)"),
     ("artifacts/version/v1", "/source", Local, "a file path on the machine that published, which only artifacts records"),
     ("artifacts/version/v1", "/version", Local, "an Artifact tool version id is the artifacts plugin's own identifier"),
+    ("autosync/board/v1", "/branch", Local, "a git branch name, which only autosync syncs by"),
+    ("autosync/board/v1", "/origins/-", Local, "a git remote URL in any form git takes, which only autosync compares once normalised"),
+    ("autosync/board/v1", "/path", Local, "a directory on the owner's Mac, absolute or under the home, which only autosync opens"),
+    ("autosync/board/v1", "/signature", Local, "SSH signature armor, which only the signing owner names"),
     // The order type is named through its owner's constant (STANDARDS.md 29).
     (board_model::ORDER_TYPE, "/order", UntilAdopted, "Prose, which changes the schema's bytes"),
     (board_model::ORDER_TYPE, "/signature", Local, "SSH signature armor, which only the signing owner names"),

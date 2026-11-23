@@ -6,7 +6,7 @@ use std::ffi::OsString;
 use std::fmt;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
-use std::time::{Duration, SystemTime};
+use std::time::Duration;
 
 use board_model::{
     CapabilityName, Code, Fields, LogicalPath, Moved, Order, PluginName, RecordType, Refusal,
@@ -14,10 +14,11 @@ use board_model::{
 use board_plugin::child::{Exited, Process, ProcessError};
 use board_plugin::{CallReport, Manifest, Target};
 pub use board_tree::Origin;
-use serde::de::DeserializeOwned;
-use serde_json::{Map, Value};
+use serde_json::Value;
 
-use crate::effects::{Asker, DecideReport, Shown, SignOrderError, VerifyOrderError};
+use crate::effects::{
+    Asker, DecideReport, OwnerWriteError, Shown, SignOrderError, VerifyOrderError,
+};
 use crate::known::{self, KnownBoards};
 use crate::mount::{MountError, MountUpdateReport};
 use crate::plugins::Plugins;
@@ -25,8 +26,13 @@ use crate::put::{PutError, PutReport};
 use crate::query::{MAX_LIMIT, QueryError, QueryReport};
 use crate::read::{GetReport, ReadError};
 use crate::refs::{Absent, RefsError, RefsReport};
-use crate::sync::{SyncError, Synced};
+use crate::sync::{Guard, SyncError, Synced};
 use crate::{Board, OpenError};
+
+mod error;
+mod settings;
+pub use error::PluginError;
+pub use settings::{Settings, Variables};
 
 /// A plugin compiled into Board, which runs in Board's own process.
 pub trait Plugin: Sync {
@@ -145,6 +151,18 @@ pub trait Host {
         _wait: Duration,
     ) -> Result<Synced, SyncError> {
         self.sync(push, deadline)
+    }
+    /// Syncs this host's board as [`Board::sync_guarded`] does, with
+    /// `guard`'s checks. A host with no board of its own, such as a test's,
+    /// follows no remote, which is `board::sync::no_remote`.
+    fn sync_guarded(
+        &self,
+        push: bool,
+        guard: &mut Guard<'_>,
+        deadline: Duration,
+    ) -> Result<Synced, SyncError> {
+        let _ = (push, guard, deadline);
+        Err(board_tree::SyncError::NoRemote { branch: None }.into())
     }
     /// Moves the mount at `path` to the commit its `follow` names, as
     /// `board mount update` does, waiting for the board lock no longer than
@@ -284,6 +302,31 @@ pub trait Host {
     ) -> Result<&'static str, VerifyOrderError> {
         Err(VerifyOrderError::NotOffered)
     }
+    /// Each board the known boards file lists. A host with no known boards
+    /// file, such as a test's, lists none.
+    fn known_boards(&self) -> Vec<PathBuf> {
+        Vec::new()
+    }
+    /// Shows the owner the statement of their put of `record` at `path` in
+    /// the personal board through the signer, and returns their armored
+    /// signature once it verifies against the allowed signers file. A
+    /// record a plugin trusts only with this signature carries it beside
+    /// these fields. Only Board's own host signs; any other refuses with
+    /// [`OwnerWriteError::NotOffered`].
+    fn sign_owner_write(&self, _path: &str, _record: &Value) -> Result<String, OwnerWriteError> {
+        Err(OwnerWriteError::NotOffered)
+    }
+    /// Checks that `signature` is the owner's signature of their put of
+    /// `record` at `path` in the personal board. Only Board's own host
+    /// verifies; any other refuses with [`OwnerWriteError::NotOffered`].
+    fn verify_owner_write(
+        &self,
+        _path: &str,
+        _record: &Value,
+        _signature: &str,
+    ) -> Result<(), OwnerWriteError> {
+        Err(OwnerWriteError::NotOffered)
+    }
 }
 
 /// `place` under the settings' cache home, when there is one and `place`
@@ -321,40 +364,6 @@ pub enum Elsewhere {
     Directory(PathBuf),
 }
 
-/// What a built-in plugin reads in place of a process plugin's environment.
-#[derive(Clone, Debug)]
-pub struct Settings {
-    /// The time the call started.
-    pub now: SystemTime,
-    /// `BOARD_DAY_START`: when the person's day starts, such as `07:00`.
-    pub day_start: Option<String>,
-    /// How many seconds the local clock runs ahead of UTC, negative west of
-    /// it, by the time zone board-cli's config module read. A process
-    /// plugin reads `TZ` instead.
-    pub utc_offset: i32,
-    /// `BOARD_CALLER_DIR`: the directory Board was started in.
-    pub caller: Option<PathBuf>,
-    /// The variables a process plugin offering the capability would see,
-    /// its `env` among them, which `Host::run` gives a process it starts.
-    pub environment: Variables,
-    /// Where the person's caches go: `XDG_CACHE_HOME` when it is absolute,
-    /// else `~/.cache`; none when neither is known.
-    pub cache_home: Option<PathBuf>,
-}
-
-/// Variables by name and value. Its `Debug` shows only the names, since the
-/// values may be secrets.
-#[derive(Clone, Default)]
-pub struct Variables(pub Vec<(String, std::ffi::OsString)>);
-
-impl fmt::Debug for Variables {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        (formatter.debug_list())
-            .entries(self.0.iter().map(|(name, _)| name))
-            .finish()
-    }
-}
-
 /// How many rows a query returns: 1 to `MAX_LIMIT`, or all of them.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Limit(usize);
@@ -372,62 +381,6 @@ impl Limit {
 /// [`Host::query`], which takes no parameters.
 pub fn literal(text: &str) -> String {
     format!("'{}'", text.replace('\'', "''"))
-}
-
-/// A built-in plugin's own refusal, whose code is
-/// `<plugin>::<area>::<reason>` with the plugin's own name, as in
-/// `board/error/v1`.
-#[derive(Clone, Debug)]
-pub struct PluginError {
-    pub code: String,
-    pub message: String,
-    pub fields: Map<String, Value>,
-    /// The next thing to try, which Board prints after the message, as a
-    /// process plugin's `hint`.
-    pub hint: Option<String>,
-}
-
-impl PluginError {
-    /// `<plugin>::board::refused`, as a process plugin's Python helper
-    /// reports it. Its hint is the hint of Board's refusal. When that
-    /// refusal has none, the hint says to fix what Board's code names and
-    /// to run the command alone to see Board's own refusal.
-    pub fn board_refused(plugin: &str, command: &str, refusal: &Refusal) -> Self {
-        let code = refusal.code.as_str();
-        let hint = (refusal.hint.clone().filter(|hint| !hint.is_empty())).unwrap_or_else(|| {
-            format!(
-                "fix what {code} names, then run `board {command}` on its own to see Board's \
-                 refusal and its help"
-            )
-        });
-        let mut fields = refusal.fields.clone();
-        fields.insert("code".to_owned(), Value::from(code));
-        Self {
-            code: format!("{plugin}::board::refused"),
-            message: format!("`board {command}` refused with {code}: {}", refusal.message),
-            fields,
-            hint: Some(hint),
-        }
-    }
-
-    /// Reads `input`, which passed `capability`'s input schema, as `T`, or
-    /// refuses with `<plugin>::call::bad_input`, since then `T` and the
-    /// schema disagree.
-    pub fn read_input<T: DeserializeOwned>(
-        plugin: &str,
-        capability: &str,
-        input: &Value,
-    ) -> Result<T, Self> {
-        T::deserialize(input).map_err(|error| Self {
-            code: format!("{plugin}::call::bad_input"),
-            message: format!(
-                "{capability}'s input {input} passed its schema but does not read: {error}; \
-                 the input struct and its schema disagree, so report this to Board's developers"
-            ),
-            fields: Map::new(),
-            hint: None,
-        })
-    }
 }
 
 /// The plugins built into a Board.
@@ -730,6 +683,15 @@ impl Host for Hosted<'_> {
         self.board.sync_waiting(push, deadline, wait)
     }
 
+    fn sync_guarded(
+        &self,
+        push: bool,
+        guard: &mut Guard<'_>,
+        deadline: Duration,
+    ) -> Result<Synced, SyncError> {
+        self.board.sync_guarded(push, guard, deadline)
+    }
+
     fn mount_update(
         &self,
         path: &LogicalPath,
@@ -768,6 +730,35 @@ impl Host for Hosted<'_> {
         signature: &str,
     ) -> Result<&'static str, VerifyOrderError> {
         crate::effects::verify_order(&self.plugins.signing, order, signature)
+    }
+
+    fn known_boards(&self) -> Vec<PathBuf> {
+        self.plugins
+            .known
+            .map(KnownBoards::boards)
+            .unwrap_or_default()
+    }
+
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "Hosted::sign_owner_write is the one caller of the effects module's write signer"
+    )]
+    fn sign_owner_write(&self, path: &str, record: &Value) -> Result<String, OwnerWriteError> {
+        let root = self.board.repository().path();
+        crate::effects::sign_owner_write(&self.plugins.signing, root, path, record)
+    }
+
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "Hosted::verify_owner_write is the one caller of the effects module's write verifier"
+    )]
+    fn verify_owner_write(
+        &self,
+        path: &str,
+        record: &Value,
+        signature: &str,
+    ) -> Result<(), OwnerWriteError> {
+        crate::effects::verify_owner_write(&self.plugins.signing, path, record, signature)
     }
 }
 
