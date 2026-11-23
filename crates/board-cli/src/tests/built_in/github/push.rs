@@ -55,6 +55,7 @@ pub(super) fn commit_parts_skipping(
         format!("commit.{short}.headers"): "",
         format!("commit.{short}.binary"): binary,
         format!("commit.{short}.skipped"): skipped,
+        format!("commit.{short}.strings"): "",
     })
 }
 
@@ -953,7 +954,8 @@ fn a_deleted_binary_file_is_skipped_by_the_bytes_it_removed() {
 }
 
 #[test]
-fn literal_pathspecs_in_the_environment_do_not_hide_a_text_file_beside_a_skipped_binary_file() {
+fn git_literal_pathspecs_set_by_the_caller_is_stripped_and_a_text_file_beside_a_skipped_binary_file_is_still_refused()
+ {
     let desk = Desk::new();
     let checkout = desk.checkout();
     desk.refuse(&["commit.*.diff"], "github.*");
@@ -989,7 +991,7 @@ fn a_renamed_binary_file_brings_no_bytes_back_into_the_diff() {
 }
 
 #[test]
-fn a_text_file_with_one_nul_is_still_scanned_and_a_file_of_mostly_nuls_is_not() {
+fn a_text_file_with_one_nul_is_still_scanned_and_a_file_of_mostly_nuls_is_skipped() {
     let desk = Desk::new();
     desk.refuse(&["commit.*.diff"], "github.*");
     let mut text = b"A note for the team.\n\x00\n".to_vec();
@@ -998,4 +1000,31 @@ fn a_text_file_with_one_nul_is_still_scanned_and_a_file_of_mostly_nuls_is_not() 
     let (ran, failure) = desk.call("push", &[]);
     assert_eq!(ran.code, 1, "{failure}");
     assert_eq!(failure["fields"]["binary_skipped"], json!([]));
+    desk.git(&desk.checkout(), &["reset", "-q", "--hard", "HEAD~1"]);
+    let mut nuls = vec![0_u8; 200];
+    nuls.extend(b"token acme-123\n");
+    let sha = commit_bytes(&desk, &nuls, "blank.dat");
+    let result = desk.output("push", &[]);
+    assert_eq!(
+        result["binary_skipped"],
+        json!([{"commit": sha, "path": "blank.dat"}])
+    );
+}
+
+#[test]
+fn text_inside_a_skipped_binary_file_is_checked_as_strings_and_a_font_of_random_bytes_passes() {
+    let desk = Desk::new();
+    desk.refuse(&["commit.*.strings"], "github.*");
+    let mut database = b"SQLite format 3\x00".to_vec();
+    database.extend(vec![0_u8; 400]);
+    database.extend(b"row: secret token acme-123 stored here\n");
+    let sha = commit_bytes(&desk, &database, "app.db");
+    let (ran, failure) = desk.call("push", &[]);
+    assert_eq!(ran.code, 1, "{failure}");
+    let part = format!("commit.{}.strings", &sha[..12]);
+    assert_eq!(failure["fields"]["failures"][0]["part"], part);
+    desk.git(&desk.checkout(), &["reset", "-q", "--hard", "HEAD~1"]);
+    let sha = commit_bytes(&desk, &font(), "font.woff2");
+    let result = desk.output("push", &[]);
+    assert_eq!(result["commits"], json!([sha]));
 }

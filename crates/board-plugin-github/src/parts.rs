@@ -37,6 +37,9 @@ const UNQUOTED: [&str; 4] = [
     "--no-literal-pathspecs",
     "show",
 ];
+/// The shortest run of printable ASCII characters in a skipped file that is
+/// checked as text.
+const RUN: usize = 20;
 /// A tag object's tagger line: name, email, then the time and zone.
 static TAGGER: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"^tagger (.*) <([^>]*)> \d+ [+-]\d{4}$").expect("the pattern is a constant")
@@ -127,7 +130,8 @@ pub(crate) fn ref_parts(
 
 /// Each commit's message, names, emails, headers, diff, binary paths and
 /// skipped paths, as parts named `commit.<short sha>.<field>`. The diff is
-/// git's text of every file but the binary ones whose bytes are not text,
+/// git's text of every file but the binary ones whose decoded characters
+/// are not text, whose printable ASCII runs are the `strings` part,
 /// with no textconv or external diff and with file names unquoted, so a
 /// text file's lines are the bytes sent. The `skipped` part names the files
 /// left out. A text file's bytes that are not UTF-8 are
@@ -140,9 +144,8 @@ pub(crate) fn commit_parts(
 ) -> Result<(Parts, Vec<Skipped>), PluginError> {
     let mut parts = Parts::new();
     let mut left = Vec::new();
-    let unquoted = UNQUOTED;
     for sha in shas {
-        let numstat: Vec<&str> = (unquoted.iter().chain(&DIFF).copied())
+        let numstat: Vec<&str> = (UNQUOTED.iter().chain(&DIFF).copied())
             .chain(["--numstat", "-z", sha])
             .collect();
         let changed = changed(&git(host, at, &numstat, "")?);
@@ -166,11 +169,18 @@ pub(crate) fn commit_parts(
         let skipped = ["tree", "parent", "author", "committer"];
         parts.insert(format!("{prefix}headers"), headers(&object, &skipped));
         let mut left_out = Vec::new();
+        let mut found = String::new();
         for (path, binary) in &changed {
-            if *binary && !holds_text(host, at, sha, path)? {
+            if !*binary {
+                continue;
+            }
+            let text = blob(host, at, sha, path)?;
+            if !is_text(&text) {
                 left_out.push(path.as_str());
+                found.push_str(&strings(&text));
             }
         }
+        parts.insert(format!("{prefix}strings"), found);
         parts.insert(format!("{prefix}diff"), diff(host, at, sha, &left_out)?);
         let lines = |paths: Vec<&str>| -> String {
             paths.into_iter().flat_map(|path| [path, "\n"]).collect()
@@ -188,12 +198,11 @@ pub(crate) fn commit_parts(
     Ok((parts, left))
 }
 
-/// Whether the bytes of `path` that the commit `sha` sends are text: NULs
-/// and bytes that are not UTF-8 make up at most a tenth of them. A file git counts as binary whose bytes are text, such
-/// as a text file marked `-diff`, is still scanned. A file the commit
-/// deletes is read from the first parent. A blob that cannot be read is
-/// `github::git::failed`, so no file is skipped unread.
-fn holds_text(host: &dyn Host, at: &Path, sha: &str, path: &str) -> Result<bool, PluginError> {
+/// The bytes of `path` that the commit `sha` sends, each byte that is not
+/// UTF-8 replaced by U+FFFD. A file the commit deletes is read from the
+/// first parent. A blob that cannot be read is `github::git::failed`, so no
+/// file is skipped unread.
+fn blob(host: &dyn Host, at: &Path, sha: &str, path: &str) -> Result<String, PluginError> {
     let new = format!("{sha}:{path}");
     let present = run(host, at, &["cat-file", "-e", &new], "").code == 0;
     let object = if present {
@@ -201,32 +210,46 @@ fn holds_text(host: &dyn Host, at: &Path, sha: &str, path: &str) -> Result<bool,
     } else {
         format!("{sha}^:{path}")
     };
-    let (bytes, utf8) = lossy(host, at, &["cat-file", "blob", &object], "")?;
-    if utf8 && !bytes.contains('\0') {
-        return Ok(true);
-    }
-    // Text with a stray NUL or invalid byte is still text; random bytes,
-    // as in a compressed font, are mostly NULs and invalid sequences.
-    let total = bytes.chars().count();
-    let bad = bytes
-        .chars()
+    Ok(lossy(host, at, &["cat-file", "blob", &object], "")?.0)
+}
+
+/// Whether `text`, a blob after lossy decoding, is text: NULs and U+FFFD
+/// make up at most a tenth of its characters. Text with a stray NUL or
+/// invalid byte is still text; random bytes, as in a compressed font, are
+/// mostly NULs and invalid sequences.
+fn is_text(text: &str) -> bool {
+    let total = text.chars().count();
+    let bad = (text.chars())
         .filter(|c| matches!(c, '\0' | '\u{fffd}'))
         .count();
-    Ok(bad * 10 <= total)
+    bad * 10 <= total
+}
+
+/// The runs of at least [`RUN`] printable ASCII characters in `text`, one
+/// per line, so text inside a binary file, such as a secret in a database,
+/// is still checked. Random bytes rarely hold such a run.
+fn strings(text: &str) -> String {
+    let mut found = String::new();
+    for run in text.split(|c: char| !(c == ' ' || c.is_ascii_graphic())) {
+        if run.len() >= RUN {
+            found.push_str(run);
+            found.push('\n');
+        }
+    }
+    found
 }
 
 /// The commit's patch, with the bytes of every file but those in
 /// `left_out`, or `github::git::not_utf8` when a file git counts as text
 /// holds bytes that are not UTF-8, which could not be checked as sent. A
-/// binary file whose bytes are text is checked as sent; one that is not is
+/// binary file whose decoded characters are text is checked as sent; one that is not is
 /// left out, and is in the commit's `binary` and `skipped` parts.
 fn diff(host: &dyn Host, at: &Path, sha: &str, left_out: &[&str]) -> Result<String, PluginError> {
-    let unquoted = UNQUOTED;
     let excluded: Vec<String> = (left_out.iter())
         .map(|path| format!(":(exclude,literal){path}"))
         .collect();
     let arguments = |text: &'static [&'static str]| -> Vec<&str> {
-        let mut arguments: Vec<&str> = (unquoted.iter().chain(&DIFF).chain(text).copied())
+        let mut arguments: Vec<&str> = (UNQUOTED.iter().chain(&DIFF).chain(text).copied())
             .chain([sha])
             .collect();
         if !excluded.is_empty() {
