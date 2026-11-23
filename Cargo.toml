@@ -222,5 +222,11 @@ opt-level = 3
 [profile.dev.package.sha2]
 opt-level = 3
 
+# `map.place` scores tens of thousands of candidate layouts with the map
+# checker, which takes about a minute unoptimised in a test and a second
+# optimised.
+[profile.dev.package.board-plugin-map]
+opt-level = 3
+
 [profile.dev.package.zlib-rs]
 opt-level = 3

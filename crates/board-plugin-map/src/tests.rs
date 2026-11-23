@@ -42,7 +42,7 @@ fn the_manifest_parses_and_names_its_type_and_capability() {
     let capabilities: Vec<&str> = (manifest.capabilities.iter())
         .map(|capability| capability.name.as_str())
         .collect();
-    assert_eq!(capabilities, ["check"]);
+    assert_eq!(capabilities, ["check", "place"]);
     assert_eq!(
         (MapPlugin.schemas().into_iter())
             .map(|(name, _)| name.as_str().to_owned())
@@ -127,7 +127,7 @@ fn a_map_with_a_malformed_field_is_refused_and_its_twin_is_admitted() {
 
 /// A board that enables map and holds `map` at /maps/m.json, beside its
 /// config at /.board/board.json, a record that is not a map.
-fn board_with(map: &Value) -> (Scenario, Board) {
+pub(crate) fn board_with(map: &Value) -> (Scenario, Board) {
     let scenario = Scenario::new();
     scenario.write(
         ".board/board.json",
@@ -146,7 +146,12 @@ fn board_with(map: &Value) -> (Scenario, Board) {
 
 /// The output of `map.check` on `input`, or the code it was refused with.
 fn called(board: &mut Board, input: &Value) -> Result<Value, String> {
-    let target: Target = "map.check".parse().unwrap();
+    called_as(board, "map.check", input)
+}
+
+/// The output of `target` on `input`, or the code it was refused with.
+pub(crate) fn called_as(board: &mut Board, target: &str, input: &Value) -> Result<Value, String> {
+    let target: Target = target.parse().unwrap();
     let answer = board.call(&target, input.to_string().as_bytes(), &Plugins::default());
     let output = answer
         .map(|report| report.output)
@@ -227,7 +232,7 @@ fn check_counts_an_accepted_finding_apart_and_lists_an_unused_accept() {
 #[test]
 fn an_unknown_capability_is_refused_before_the_plugin_runs() {
     let (_scenario, board) = board_with(&fixture("work-final"));
-    let target: Target = "map.place".parse().unwrap();
+    let target: Target = "map.nothing".parse().unwrap();
     let code = (board.call(&target, b"{}", &Plugins::default()))
         .map(|_| ())
         .map_err(|failed| failed.refusal().code.as_str().to_owned());

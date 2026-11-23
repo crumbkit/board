@@ -69,7 +69,7 @@ pub struct Sheet {
 
 /// A titled rectangle that groups items. Its title sits in its top left
 /// corner, and a label of an item in it must stay inside it.
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Region {
     /// The region's name, unique among the map's regions, which an item's
@@ -93,7 +93,7 @@ pub struct Region {
 
 /// One thing the map shows, drawn as a round mark with a label of one or
 /// more lines beside it.
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Item {
     /// The item's name, unique among the map's items, which lines and notes
@@ -159,7 +159,7 @@ pub enum Side {
 
 /// A line from one item to another, drawn between the edges of their
 /// marks.
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Line {
     /// The item the line starts at.
@@ -177,7 +177,7 @@ pub struct Line {
 /// A short text that belongs to an item or to a line, placed from its
 /// anchor's position whenever the map is drawn, so it moves with what it
 /// describes.
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Note {
     /// The note's text.
@@ -189,7 +189,7 @@ pub struct Note {
 
 /// What a note belongs to: an item, with the note's start offset from the
 /// item's centre, or a line, with a point along it and an offset across it.
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum Anchor {
     Item(
@@ -203,7 +203,7 @@ pub enum Anchor {
 }
 
 /// A note's start, offset from an item's centre.
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ItemAnchor {
     /// The item.
@@ -218,7 +218,7 @@ pub struct ItemAnchor {
 /// A note's place on a line: a fraction of the way from `from` to `to`,
 /// then `offset` units across the line, to the right of the line where
 /// `offset` is positive.
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct LineAnchor {
     /// The line's first item.
@@ -237,7 +237,7 @@ pub struct LineAnchor {
 
 /// A finding the map's maker accepts: its kind and message as `map.check`
 /// gives them, and why the map keeps it.
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Accept {
     /// The finding's kind.

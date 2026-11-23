@@ -6,7 +6,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use board_model::{Code, Fields, LogicalPath, PathError, Refusal};
+use board_model::{Code, Fields, LogicalPath, Object, PathError, Refusal};
 use board_ops::{Host, PluginError};
 use board_plugin::shape::{Prose, Ref};
 use board_validate::Schema;
@@ -161,7 +161,7 @@ pub(crate) fn call(host: &dyn Host, input: &Value) -> Result<Value, PluginError>
 /// `findings` without those `map` accepts, with how many it accepted. An
 /// accept that matches no finding is itself a finding, so a stale one is
 /// seen.
-fn accept(map: &LayoutRecord, findings: Vec<Finding>) -> (Vec<Finding>, usize) {
+pub(crate) fn accept(map: &LayoutRecord, findings: Vec<Finding>) -> (Vec<Finding>, usize) {
     let accepts = |finding: &Finding| {
         (map.accepts.iter())
             .any(|accept| accept.kind == finding.kind && accept.message == finding.message)
@@ -186,14 +186,28 @@ fn accept(map: &LayoutRecord, findings: Vec<Finding>) -> (Vec<Finding>, usize) {
 
 /// The map at `path`.
 fn read(host: &dyn Host, path: &str) -> Result<LayoutRecord, PluginError> {
+    read_held(host, path).map(|(map, _)| map)
+}
+
+/// The map at `path` and the blob it was read as, which a write expects.
+pub(crate) fn read_held(
+    host: &dyn Host,
+    path: &str,
+) -> Result<(LayoutRecord, String), PluginError> {
     let logical: LogicalPath = path.parse().map_err(|error: PathError| {
         let refusal = Refusal::new(error.code(), &error, &Fields::default());
         PluginError::board_refused("map", "get", &refusal)
     })?;
     let refused = |refusal: &Refusal| PluginError::board_refused("map", "get", refusal);
     let answers = (host.get_each(&[logical])).map_err(|error| refused(&error.refusal("get")))?;
+    let mut blob = String::new();
     let record = match answers.into_iter().next() {
-        Some(Ok(report)) => report.record.map_err(|refusal| refused(&refusal))?,
+        Some(Ok(report)) => {
+            if let Object::Blob(id) = &report.location.object {
+                blob = id.to_string();
+            }
+            report.record.map_err(|refusal| refused(&refusal))?
+        }
         Some(Err(error)) if error.code() == Code::PathNotFound => {
             return Err(refusal(
                 "map::layout::not_found",
@@ -227,10 +241,11 @@ fn read(host: &dyn Host, path: &str) -> Result<LayoutRecord, PluginError> {
     schema
         .validate(&record)
         .map_err(|error| unreadable(error.to_string()))?;
-    serde_json::from_value(record).map_err(|error| unreadable(error.to_string()))
+    let map = serde_json::from_value(record).map_err(|error| unreadable(error.to_string()))?;
+    Ok((map, blob))
 }
 
-fn refusal<const N: usize>(
+pub(crate) fn refusal<const N: usize>(
     code: &str,
     message: String,
     hint: &str,
@@ -717,6 +732,37 @@ fn note_clashes(placed: &[Placed], lines: &[Drawn], notes: &[Written], found: &m
             }
         }
     }
+}
+
+/// The box of each note of `map`, in the order the map lists them, for
+/// tests of anchoring.
+#[cfg(test)]
+pub(crate) fn notes_of(map: &LayoutRecord) -> Vec<Box2> {
+    let regions: BTreeMap<&str, &Region> = BTreeMap::new();
+    let _ = regions;
+    let placed: Vec<Placed> = (map.items.iter())
+        .filter_map(|item| {
+            let at = item.at?;
+            let mark = Mark {
+                x: at.x,
+                y: at.y,
+                r: item.radius.unwrap_or(RADIUS),
+            };
+            Some(Placed {
+                id: &item.id,
+                mark,
+                label: label_box(&mark, item.side.unwrap_or_default(), &item.label),
+                region: None,
+            })
+        })
+        .collect();
+    let index: BTreeMap<&str, usize> = (placed.iter().enumerate())
+        .map(|(at, i)| (i.id, at))
+        .collect();
+    written(map, &placed, &index)
+        .into_iter()
+        .map(|note| note.area)
+        .collect()
 }
 
 #[cfg(test)]

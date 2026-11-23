@@ -4,6 +4,7 @@
 
 pub mod check;
 mod geom;
+mod place;
 pub mod records;
 
 use board_model::{CapabilityName, RecordType};
@@ -39,9 +40,10 @@ impl Plugin for MapPlugin {
     ) -> Result<Value, PluginError> {
         match capability.as_str() {
             "check" => check::call(host, &input),
+            "place" => place::call(host, &input),
             other => Err(PluginError {
                 code: "map::call::unknown_capability".to_owned(),
-                message: format!("map offers no capability {other}; it offers check"),
+                message: format!("map offers no capability {other}; it offers check and place"),
                 fields: Map::new(),
                 hint: None,
             }),
@@ -59,7 +61,7 @@ fn manifest() -> Value {
             record at /maps/<name>. Use it when you build or change a map, before you publish it. \
             Run `board map check --path /maps/<name>`, which lists what a reader would see as \
             broken, such as overlapping labels and lines through labels, with the box it \
-            estimated for each text. SKILL.md and README.md in the plugin's directory say more.",
+            estimated for each text, and `board map place --path /maps/<name>`, which chooses positions and label sides for items that have none. SKILL.md and README.md in the plugin's directory say more.",
         "metadata": {"area": "planning"},
         "types": [LayoutRecord::TYPE],
         "capabilities": [{
@@ -73,6 +75,23 @@ fn manifest() -> Value {
             "outputSchema": schema_of::<check::Output>(settings().for_serialize()),
             "annotations": {
                 "readOnlyHint": true,
+                "destructiveHint": false,
+                "idempotentHint": true,
+                "openWorldHint": false,
+            },
+            "_meta": {},
+        }, {
+            "name": "place",
+            "description": "Choose the position and label side of each item that has no stored \
+                position, and the place of each line note along its line, by scoring every \
+                candidate with the checker, then write the whole map in one put. A pinned item \
+                never moves, and an item the engine placed before moves only with relayout. \
+                Exits non-zero with the findings left when no spot clears them; the best spots \
+                are stored.",
+            "inputSchema": schema_of::<place::Input>(settings()),
+            "outputSchema": schema_of::<place::Output>(settings().for_serialize()),
+            "annotations": {
+                "readOnlyHint": false,
                 "destructiveHint": false,
                 "idempotentHint": true,
                 "openWorldHint": false,

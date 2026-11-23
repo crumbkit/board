@@ -2,7 +2,8 @@
 
 This file holds detail for docs/plugins/built-in.md. The `map` plugin keeps
 a map as one record, `map/layout/v1`, at `/maps/<name>`, and its `check`
-capability lists what a reader of the map would see as broken.
+capability lists what a reader of the map would see as broken, and its
+`place` capability chooses positions and label sides.
 plugins/map/README.md lists its fields, capabilities and codes.
 
 ## Stored positions and anchored notes
@@ -39,3 +40,23 @@ and lists an accept that matches no finding as `accept-unused`.
 The constants and tests come from the map prototype's `geom.js`, which
 three real maps were checked with. The plugin's fixtures keep those maps'
 geometry and label lengths with every name replaced.
+
+## What place does
+
+`place` fills in what a map leaves out. It gives each item with no `at` a
+position and a label side, and each line note with no `offset` a place along
+its line. It tries every grid position (10 units apart) in the item's region
+with each of the four sides, scores each with `check`, and keeps the spot with
+the fewest findings, breaking ties by nearness to the item's line neighbours.
+It then moves each placed item within 60 units to cut findings, and chooses a
+side again for each item whose label lies within one label width of a placed
+one. If findings remain it searches by simulated annealing, from a fixed seed
+and in the order of the items' ids, so a map gives the same result whatever
+order it lists its parts in.
+
+A pinned item never moves, though its label side may change. An item the
+engine placed before moves only with `relayout`. `place` writes the whole map
+in one `put` that expects the blob it read, so a map changed meanwhile is
+refused with `board::put::stale` and left as it was. When no spot clears every
+finding, `place` stores the best spots and is refused with
+`map::place::findings_left`.

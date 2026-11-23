@@ -70,8 +70,21 @@ with x to the right and y down from the sheet's top left corner.
   `item-unplaced`, `note-adrift`, `note-nearer-other`, `note-overlap` and
   `accept-unused`.
 
+- `place --path /maps/<name> [--relayout] [--limit <n>]` chooses a
+  position and label side for each item with no `at`, and a place along
+  its line (`along` and `offset`) for each line note with no `offset`, by
+  scoring every candidate with `check`. It writes the whole map in one
+  `put`. A pinned item never moves, though its label side may change; an
+  item the engine placed before moves only with `--relayout`, which also
+  chooses every line note again. It gives `placed`, `moved`,
+  `sides_changed`, `notes_placed`, `problems` and `findings`. When
+  findings are left it stores the best spots and is refused with
+  `map::place::findings_left`, whose `result` field holds that output.
+
 ## Codes
 
+- `map::place::findings_left`: placement stored its best spots and
+  findings remain. Pin the item a finding names, or accept the finding.
 - `map::layout::not_found`: no record is at the path.
 - `map::layout::unreadable`: the record is not a `map/layout/v1`, or it
   breaks the schema; the message names the field.
