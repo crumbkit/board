@@ -15,7 +15,7 @@ use crate::gh;
 use crate::git;
 use crate::hook::{Handed, Pushing};
 use crate::objects::{Kind, Object, write};
-use crate::parts::{Parts, Skipped, push_parts, skipped};
+use crate::parts::{Parts, Skipped, push_parts};
 use crate::remote;
 
 /// Where a call sends from and to: the personal board, the checkout's root,
@@ -218,9 +218,8 @@ fn pushed(
 ) -> Result<Push, PluginError> {
     let (host, top) = (place.host, &place.top);
     let have = git::advertised(host, top, "origin")?;
-    let (commits, mut parts) = push_parts(host, top, &branch, head, &have)?;
+    let (commits, mut parts, binary_skipped) = push_parts(host, top, &branch, head, &have)?;
     parts.extend(extra.clone());
-    let binary_skipped = skipped(&parts, &commits);
     let passed = place
         .check_asking(action.capability(), &parts, ask_owner)
         .map_err(|mut refusal| {

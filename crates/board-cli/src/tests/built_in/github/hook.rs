@@ -741,10 +741,7 @@ fn a_raw_push_names_each_binary_file_left_out_of_the_check_on_stderr() {
     install(&desk);
     desk.refuse(&["commit.*.diff"], "github.*");
     let checkout = desk.checkout();
-    put_bytes(
-        &checkout.join("font.woff2"),
-        b"wOF2\x00\xfftoken acme-123\n",
-    );
+    put_bytes(&checkout.join("font.woff2"), &super::push::font());
     desk.git(&checkout, &["add", "font.woff2"]);
     desk.git(&checkout, &["commit", "-q", "-m", "Add a font"]);
     let sha = desk.head();

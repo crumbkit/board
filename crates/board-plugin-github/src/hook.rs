@@ -12,7 +12,7 @@ use serde_json::{Value, json};
 
 use crate::crossing;
 use crate::git::{self, error, git, run, variable};
-use crate::parts::{Parts, SHORT, Skipped, ref_parts, skipped};
+use crate::parts::{Parts, SHORT, Skipped, ref_parts};
 use crate::remote::{Via, destinations};
 use crate::send::output;
 
@@ -256,9 +256,9 @@ fn check_pushed(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
     let mut checked = Vec::new();
     for fields in pushed {
         let (sha, reference) = (fields[1], fields[2]);
-        let parts = ref_parts(host, &top, reference, sha, &have)?;
-        for file in skipped(&parts, &[]) {
-            host.warn(&left_out(&file));
+        let (parts, left_out_files) = ref_parts(host, &top, reference, sha, &have)?;
+        for file in &left_out_files {
+            host.warn(&left_out(file));
         }
         for to in &destinations {
             let (digest, note) = if let Some(handed) =

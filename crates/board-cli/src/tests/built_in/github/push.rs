@@ -30,6 +30,7 @@ pub(super) fn commit_parts_skipping(
         "--no-color",
         "--no-ext-diff",
         "--no-textconv",
+        "--no-renames",
         "--text",
         sha,
     ];
@@ -853,8 +854,8 @@ fn only_the_calls_that_take_ask_owner_name_it_in_a_refusal_so_merge_does_not_and
 
 /// Bytes with a NUL and the text the test rule matches, as random bytes in a
 /// vendored font might.
-fn font() -> Vec<u8> {
-    let mut bytes = b"wOF2\x00\x01\xff\xfe".to_vec();
+pub(super) fn font() -> Vec<u8> {
+    let mut bytes = b"wOF2\x00\x01\xff\xfe".repeat(8);
     bytes.extend(b"token acme-123\n".iter().copied());
     bytes
 }
@@ -949,4 +950,52 @@ fn a_deleted_binary_file_is_skipped_by_the_bytes_it_removed() {
         result["binary_skipped"],
         json!([{"commit": sha, "path": "font.woff2"}])
     );
+}
+
+#[test]
+fn literal_pathspecs_in_the_environment_do_not_hide_a_text_file_beside_a_skipped_binary_file() {
+    let desk = Desk::new();
+    let checkout = desk.checkout();
+    desk.refuse(&["commit.*.diff"], "github.*");
+    put_bytes(&checkout.join("font.woff2"), &font());
+    put_file(&checkout.join("notes.txt"), "token acme-123\n");
+    desk.git(&checkout, &["add", "font.woff2", "notes.txt"]);
+    desk.git(&checkout, &["commit", "-q", "-m", "Add files"]);
+    let extra = [("GIT_LITERAL_PATHSPECS", "1")];
+    let (ran, failure) = desk.call_at(None, false, "push", &[], &extra);
+    assert_eq!(ran.code, 1, "{failure}");
+    let sha = desk.head();
+    let part = format!("commit.{}.diff", &sha[..12]);
+    assert_eq!(failure["fields"]["failures"][0]["part"], part);
+}
+
+#[test]
+fn a_renamed_binary_file_brings_no_bytes_back_into_the_diff() {
+    let desk = Desk::new();
+    let checkout = desk.checkout();
+    desk.refuse(&["commit.*.diff"], "github.*");
+    commit_bytes(&desk, &font(), "font.woff2");
+    desk.output("push", &[]);
+    desk.git(&checkout, &["mv", "font.woff2", "moved.woff2"]);
+    desk.git(&checkout, &["commit", "-q", "-m", "Move the font"]);
+    let sha = desk.head();
+    let result = desk.output("push", &[]);
+    let mut paths: Vec<String> = (result["binary_skipped"].as_array().unwrap().iter())
+        .map(|file| file["path"].as_str().unwrap().to_owned())
+        .collect();
+    paths.sort();
+    assert_eq!(paths, ["font.woff2", "moved.woff2"]);
+    assert_eq!(desk.remote_head("main"), Some(sha));
+}
+
+#[test]
+fn a_text_file_with_one_nul_is_still_scanned_and_a_file_of_mostly_nuls_is_not() {
+    let desk = Desk::new();
+    desk.refuse(&["commit.*.diff"], "github.*");
+    let mut text = b"A note for the team.\n\x00\n".to_vec();
+    text.extend(b"token acme-123\nand a few more words to make it a file.\n");
+    commit_bytes(&desk, &text, "notes.txt");
+    let (ran, failure) = desk.call("push", &[]);
+    assert_eq!(ran.code, 1, "{failure}");
+    assert_eq!(failure["fields"]["binary_skipped"], json!([]));
 }

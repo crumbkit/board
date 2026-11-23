@@ -18,13 +18,24 @@ use crate::git::{error, git, git_adding, lossy, outgoing, run};
 /// part names never change.
 pub(crate) const SHORT: usize = 12;
 /// The flags of `git show` that give a commit's patch against its first
-/// parent with every file's bytes: no colour, external diff or textconv.
-const DIFF: [&str; 5] = [
+/// parent with every file's bytes, a rename as a deletion and an addition
+/// so each is judged alone: no colour, external diff or textconv.
+const DIFF: [&str; 6] = [
+    "--no-renames",
     "--format=",
     "--diff-merges=first-parent",
     "--no-color",
     "--no-ext-diff",
     "--no-textconv",
+];
+/// The options before `show`: file names unquoted, and no
+/// `GIT_LITERAL_PATHSPECS` in the environment, which would turn the
+/// exclusions of left-out files into literal paths that match nothing.
+const UNQUOTED: [&str; 4] = [
+    "-c",
+    "core.quotePath=false",
+    "--no-literal-pathspecs",
+    "show",
 ];
 /// A tag object's tagger line: name, email, then the time and zone.
 static TAGGER: LazyLock<Regex> = LazyLock::new(|| {
@@ -39,28 +50,9 @@ pub(crate) type Parts = BTreeMap<String, String>;
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Skipped {
-    /// The commit, by its full SHA when the push's commits are known, and
-    /// by the short SHA that names its parts otherwise.
+    /// The commit's full SHA.
     pub(crate) commit: String,
     pub(crate) path: String,
-}
-
-/// The files the `commit.<sha>.skipped` parts list, in part order, each
-/// commit named by `commits`' full SHA when one starts with its short SHA.
-pub(crate) fn skipped(parts: &Parts, commits: &[String]) -> Vec<Skipped> {
-    let mut found = Vec::new();
-    for (name, text) in parts {
-        let short = (name.strip_prefix("commit.")).and_then(|rest| rest.strip_suffix(".skipped"));
-        let Some(short) = short else { continue };
-        let commit = commits.iter().find(|full| full.starts_with(short));
-        for path in text.lines() {
-            found.push(Skipped {
-                commit: commit.map_or(short, String::as_str).to_owned(),
-                path: path.to_owned(),
-            });
-        }
-    }
-    found
 }
 
 /// The commits a push of `head` sends past `have`, and the parts that name
@@ -73,11 +65,11 @@ pub(crate) fn push_parts(
     branch: &str,
     head: &str,
     have: &[String],
-) -> Result<(Vec<String>, Parts), PluginError> {
+) -> Result<(Vec<String>, Parts, Vec<Skipped>), PluginError> {
     let commits = outgoing(host, at, head, have)?;
-    let mut parts = commit_parts(host, at, &commits)?;
+    let (mut parts, left_out) = commit_parts(host, at, &commits)?;
     parts.insert("push.branch".to_owned(), branch.to_owned());
-    Ok((commits, parts))
+    Ok((commits, parts, left_out))
 }
 
 /// The parts of a push of object `sha` to the ref `name` past `have`: the
@@ -92,7 +84,7 @@ pub(crate) fn ref_parts(
     name: &str,
     sha: &str,
     have: &[String],
-) -> Result<Parts, PluginError> {
+) -> Result<(Parts, Vec<Skipped>), PluginError> {
     let mut parts = Parts::new();
     let mut sha = sha.to_owned();
     let mut kind = git(host, at, &["cat-file", "-t", &sha], "")?
@@ -128,9 +120,9 @@ pub(crate) fn ref_parts(
         ));
     }
     let branch = name.strip_prefix("refs/heads/").unwrap_or(name);
-    let (_, commits) = push_parts(host, at, branch, &sha, have)?;
+    let (_, commits, left_out) = push_parts(host, at, branch, &sha, have)?;
     parts.extend(commits);
-    Ok(parts)
+    Ok((parts, left_out))
 }
 
 /// Each commit's message, names, emails, headers, diff, binary paths and
@@ -145,9 +137,10 @@ pub(crate) fn commit_parts(
     host: &dyn Host,
     at: &Path,
     shas: &[String],
-) -> Result<Parts, PluginError> {
+) -> Result<(Parts, Vec<Skipped>), PluginError> {
     let mut parts = Parts::new();
-    let unquoted = ["-c", "core.quotePath=false", "show"];
+    let mut left = Vec::new();
+    let unquoted = UNQUOTED;
     for sha in shas {
         let numstat: Vec<&str> = (unquoted.iter().chain(&DIFF).copied())
             .chain(["--numstat", "-z", sha])
@@ -179,22 +172,24 @@ pub(crate) fn commit_parts(
             }
         }
         parts.insert(format!("{prefix}diff"), diff(host, at, sha, &left_out)?);
-        let lines = |paths: &mut dyn Iterator<Item = &str>| -> String {
-            paths.flat_map(|path| [path, "\n"]).collect()
+        let lines = |paths: Vec<&str>| -> String {
+            paths.into_iter().flat_map(|path| [path, "\n"]).collect()
         };
-        let binary = lines(
-            &mut (changed.iter())
-                .filter(|(_, b)| *b)
-                .map(|(p, _)| p.as_str()),
-        );
-        parts.insert(format!("{prefix}binary"), binary);
-        parts.insert(format!("{prefix}skipped"), lines(&mut left_out.into_iter()));
+        let binary = (changed.iter())
+            .filter(|(_, b)| *b)
+            .map(|(p, _)| p.as_str());
+        parts.insert(format!("{prefix}binary"), lines(binary.collect()));
+        left.extend(left_out.iter().map(|path| Skipped {
+            commit: sha.clone(),
+            path: (*path).to_owned(),
+        }));
+        parts.insert(format!("{prefix}skipped"), lines(left_out));
     }
-    Ok(parts)
+    Ok((parts, left))
 }
 
-/// Whether the bytes of `path` that the commit `sha` sends are text: valid
-/// UTF-8 with no NUL. A file git counts as binary whose bytes are text, such
+/// Whether the bytes of `path` that the commit `sha` sends are text: NULs
+/// and bytes that are not UTF-8 make up at most a tenth of them. A file git counts as binary whose bytes are text, such
 /// as a text file marked `-diff`, is still scanned. A file the commit
 /// deletes is read from the first parent. A blob that cannot be read is
 /// `github::git::failed`, so no file is skipped unread.
@@ -207,7 +202,17 @@ fn holds_text(host: &dyn Host, at: &Path, sha: &str, path: &str) -> Result<bool,
         format!("{sha}^:{path}")
     };
     let (bytes, utf8) = lossy(host, at, &["cat-file", "blob", &object], "")?;
-    Ok(utf8 && !bytes.contains('\0'))
+    if utf8 && !bytes.contains('\0') {
+        return Ok(true);
+    }
+    // Text with a stray NUL or invalid byte is still text; random bytes,
+    // as in a compressed font, are mostly NULs and invalid sequences.
+    let total = bytes.chars().count();
+    let bad = bytes
+        .chars()
+        .filter(|c| matches!(c, '\0' | '\u{fffd}'))
+        .count();
+    Ok(bad * 10 <= total)
 }
 
 /// The commit's patch, with the bytes of every file but those in
@@ -216,7 +221,7 @@ fn holds_text(host: &dyn Host, at: &Path, sha: &str, path: &str) -> Result<bool,
 /// binary file whose bytes are text is checked as sent; one that is not is
 /// left out, and is in the commit's `binary` and `skipped` parts.
 fn diff(host: &dyn Host, at: &Path, sha: &str, left_out: &[&str]) -> Result<String, PluginError> {
-    let unquoted = ["-c", "core.quotePath=false", "show"];
+    let unquoted = UNQUOTED;
     let excluded: Vec<String> = (left_out.iter())
         .map(|path| format!(":(exclude,literal){path}"))
         .collect();
