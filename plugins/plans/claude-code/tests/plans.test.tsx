@@ -3,6 +3,7 @@ import type { On } from 'claude-code'
 import type { Engine } from 'claude-code/testing'
 
 import { bandRows } from '../hooks/band'
+import { countLists, endList, schedule } from '../hooks/refresh'
 import { approvalText, blocking, countBadge, NAMES, namesWhole, parseWaiting, questionsLabel, report, REPORT_SQL, waitingLabel } from '../hooks/plans'
 
 // These prove what the band and the panes draw, which `board` commands the
@@ -189,14 +190,14 @@ test('with no open question, or no plans plugin, the band draws nothing of the m
   expect(await again.find({ key: 'waiting' })).toBeUndefined()
 })
 
-test('once the band is drawn, the count is read again every minute, in a desktop session too', { options: { board: '/boards/me' } }, async ($, on) => {
+test('once the band is drawn, each minute it is drawn in reads the count again, in a desktop session too', { options: { board: '/boards/me' } }, async ($, on) => {
   const clock = mock.clock(on, { now: NOW })
   const { ran } = engine(on)
   // Desktop sessions run through the Agent SDK and report isInteractive false.
   await $.session.start({ cwd: '/work', surface: 'desktop', isInteractive: false })
   await (await $.ui.mount({ ...BAND, surface: 'desktop' })).unmount()
-  await (await $.ui.mount({ ...BAND, surface: 'desktop' })).unmount()
   await clock.advance(60_000)
+  await (await $.ui.mount({ ...BAND, surface: 'desktop' })).unmount()
   await clock.advance(60_000)
   expect(ran).toEqual(Array(3).fill(['-C', '/boards/me', 'call', 'plans.open', '--limit', '100']))
 })
@@ -343,7 +344,8 @@ test('the pane lists each question with its options, and an option answers it th
 
   await ui.press({ key: `${MERGE.path}#a` })
 
-  expect(ran.slice(1)).toEqual([['--personal', ...answerCall(MERGE.path, 'a', 'Merge', 'local_cd34')]])
+  // The answer reads the open list again after it.
+  expect(ran.slice(1)).toEqual([['--personal', ...answerCall(MERGE.path, 'a', 'Merge', 'local_cd34')], ['--personal', 'call', 'plans.open', '--limit', '100']])
   // plans.answer may wait for board's lock twice, so it gets longer than a read's 5 seconds.
   expect(limits).toEqual([15_000])
   expect(sent).toEqual([
@@ -370,7 +372,7 @@ test('the owner answers in words where the surface has a field, as option none, 
   }
   const ui = await $.ui.mount({ ...pane('questions'), surface: 'terminal' })
   await ui.input({ key: `${COUNT.path}#words`, text: '-40, so ask Kechen for the exact figure.' })
-  expect(ran.slice(1)).toEqual([['--personal', ...answerCall(COUNT.path, 'none', '-40, so ask Kechen for the exact figure.')]])
+  expect(ran.slice(1, 2)).toEqual([['--personal', ...answerCall(COUNT.path, 'none', '-40, so ask Kechen for the exact figure.')]])
 })
 
 test('the answer is also sent to each session that asked the same question', async ($, on) => {
@@ -418,7 +420,7 @@ test('a send the asking session cannot take still records the answer, and says t
   await start($)
   const ui = await $.ui.mount({ ...pane('questions'), surface: 'terminal' })
   await ui.press({ key: `${MERGE.path}#b` })
-  expect(ran.map(r => r[2])).toEqual(['plans.open', 'plans.answer'])
+  expect(ran.map(r => r[2])).toEqual(['plans.open', 'plans.answer', 'plans.open'])
   expect(toasts).toEqual(['Answered and recorded in Board. The message to local_ab12 was not delivered'])
 })
 
@@ -566,7 +568,7 @@ test('an answer whose chosen option names the change it was attached to asks the
   await start($)
   const ui = await $.ui.mount({ ...pane('questions'), surface: 'terminal' })
   await ui.press({ key: `${MERGE.path}#a` })
-  expect(ran.slice(-1)).toEqual([['--personal', 'call', 'changes.approve', `--path=${change}`]])
+  expect(ran.filter(r => r[2] === 'changes.approve')).toEqual([['--personal', 'call', 'changes.approve', `--path=${change}`]])
   expect(toasts.pop()).toBe(`Answered, and sent to local_ab12. The approval of ${change} waits for Touch ID in the effects band`)
   await ui.unmount()
   // The twin: its option names only a longer path, so nothing is asked.
@@ -636,4 +638,125 @@ test('a path followed by a dot and a letter or digit is part of a longer name, a
   expect(namesWhole('Agree /mockups/x.', '/mockups/x')).toBe(true)
   expect(namesWhole('Approve /changes/t. Then build it.', '/changes/t')).toBe(true)
   expect(namesWhole('Waive /changes/t#suite-run.', '/changes/t#suite-run')).toBe(true)
+})
+
+// When the count and the list are read again. A draw here mounts the band and
+// unmounts it at once, because a band left mounted is drawn again by each
+// count the mod reads, which a session nobody looks at does not do.
+type Clock = ReturnType<typeof mock.clock>
+const draw = async ($: Engine, clock: Clock, component: typeof BAND | ReturnType<typeof pane> = BAND) => {
+  await (await $.ui.mount({ ...component, surface: 'terminal' })).unmount()
+  // A read the draw starts runs once the draw is done.
+  await clock.advance(0)
+}
+const reads = (ran: string[][], waited: string[][]) => ({ waiting: waited.length, open: ran.filter(r => r.includes('plans.open')).length })
+
+test('a minute with no draw of the band reads nothing, and its twin with a draw before each tick reads what waits each minute', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const { ran, waited } = engine(on, { waiting: () => ({ exitCode: 0, stdout: waitingReport(3, 1) }) })
+  await start($)
+  await draw($, clock)
+  await clock.advance(60_000)
+  expect(reads(ran, waited)).toEqual({ waiting: 2, open: 1 })
+  for (let i = 0; i < 10; i++) await clock.advance(60_000)
+  expect(reads(ran, waited)).toEqual({ waiting: 2, open: 1 })
+  for (let i = 0; i < 10; i++) {
+    await draw($, clock)
+    await clock.advance(60_000)
+  }
+  // The first of these draws comes ten minutes after the last read, so it reads at once.
+  expect(reads(ran, waited)).toEqual({ waiting: 13, open: 1 })
+})
+
+test('a draw after skipped minutes reads at once, and a second draw within the minute does not', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const { ran, waited } = engine(on, { waiting: () => ({ exitCode: 0, stdout: waitingReport(3, 1) }) })
+  await start($)
+  await draw($, clock)
+  for (let i = 0; i < 6; i++) await clock.advance(60_000)
+  expect(reads(ran, waited)).toEqual({ waiting: 2, open: 1 })
+  await clock.advance(10_000)
+  await draw($, clock)
+  expect(reads(ran, waited)).toEqual({ waiting: 3, open: 1 })
+  await clock.advance(30_000)
+  await draw($, clock)
+  expect(reads(ran, waited)).toEqual({ waiting: 3, open: 1 })
+})
+
+test('the open list is read again only when the count of what waits changes', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  let total = 3
+  const { ran, waited } = engine(on, { waiting: () => ({ exitCode: 0, stdout: waitingReport(total, 1) }) })
+  await start($)
+  for (let i = 0; i < 10; i++) {
+    await draw($, clock)
+    await clock.advance(60_000)
+  }
+  expect(reads(ran, waited)).toEqual({ waiting: 11, open: 1 })
+  total = 4
+  await draw($, clock)
+  await clock.advance(60_000)
+  expect(reads(ran, waited)).toEqual({ waiting: 12, open: 2 })
+  await draw($, clock)
+  await clock.advance(60_000)
+  expect(reads(ran, waited)).toEqual({ waiting: 13, open: 2 })
+})
+
+test('the questions pane reads the open list when it is older than a minute, and not again within the minute', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const { ran, waited } = engine(on, { waiting: () => ({ exitCode: 0, stdout: waitingReport(3, 1) }) })
+  await start($)
+  await draw($, clock, pane('questions'))
+  expect(reads(ran, waited)).toEqual({ waiting: 1, open: 1 })
+  await clock.advance(61_000)
+  await draw($, clock, pane('questions'))
+  expect(reads(ran, waited)).toEqual({ waiting: 1, open: 2 })
+  await clock.advance(30_000)
+  await draw($, clock, pane('questions'))
+  expect(reads(ran, waited)).toEqual({ waiting: 1, open: 2 })
+})
+
+test('without plans.waiting each drawn minute reads the open list, because the button counts it', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const { ran, waited } = engine(on)
+  await start($)
+  for (let i = 0; i < 3; i++) {
+    await draw($, clock)
+    await clock.advance(60_000)
+  }
+  expect(reads(ran, waited)).toEqual({ waiting: 1, open: 4 })
+})
+
+test('an answer reads what waits and the open list again', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  const { ran, waited } = engine(on, { waiting: () => ({ exitCode: 0, stdout: waitingReport(2, 1) }) })
+  await start($)
+  const ui = await $.ui.mount({ ...pane('questions'), surface: 'terminal' })
+  await ui.press({ key: `${MERGE.path}#a` })
+  expect(ran.map(r => r[2])).toEqual(['plans.open', 'plans.answer', 'plans.open'])
+  expect(waited).toHaveLength(2)
+})
+
+test('a failed count reads no open list, and a count read beside no earlier list reads it', () => {
+  const s = schedule()
+  expect(countLists(s, { kind: 'failed' }, NOW)).toBe(false)
+  expect(countLists(s, { kind: 'read', total: 0 }, NOW)).toBe(true)
+  endList(s, true, 0)
+  expect(countLists(s, { kind: 'read', total: 0 }, NOW)).toBe(false)
+  // A list read that failed leaves the total it was read beside, so the changed count retries it.
+  expect(countLists(s, { kind: 'read', total: 1 }, NOW)).toBe(true)
+  endList(s, false, 1)
+  expect(countLists(s, { kind: 'read', total: 1 }, NOW)).toBe(true)
+})
+
+test('a band that stays on screen is drawn again by each read, so it reads what waits every minute', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const { ran, waited } = engine(on, { waiting: () => ({ exitCode: 0, stdout: waitingReport(3, 1) }) })
+  await start($)
+  const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  for (let i = 0; i < 5; i++) await clock.advance(60_000)
+  expect(reads(ran, waited)).toEqual({ waiting: 6, open: 1 })
+  await band.unmount()
+  for (let i = 0; i < 5; i++) await clock.advance(60_000)
+  expect(reads(ran, waited)).toEqual({ waiting: 7, open: 1 })
 })

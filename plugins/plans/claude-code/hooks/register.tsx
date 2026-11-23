@@ -3,6 +3,8 @@ import type { EngineInterface, PluginOptions, Register, RenderElement } from 'cl
 
 import type { Open, Question, Unread, Waiting } from '../types'
 import { SLOT, drawsInto, joinBand, keepOneBand } from './band'
+import { countLists, drawReads, endList, endRead, paneLists, REFRESH_MS, schedule, startList, startRead, tickReads } from './refresh'
+import type { Counted, Schedule } from './refresh'
 import { answerText, approvalText, approvedChange, blocking, countBadge, failure, parseAnswered, parseApproved, parseOpen, parseRows, parseWaiting, plain, project, refused, report, REPORT_LIMIT, REPORT_SQL, WRITTEN_BY } from './plans'
 
 // The mod reads the owner's open questions from Board, draws their count in
@@ -26,7 +28,6 @@ const TIMEOUT_MS = 5000
 // plans.answer takes board's lock twice, for the answer and for the attach,
 // and each take may wait up to 5 seconds.
 const ANSWER_MS = 15_000
-const REFRESH_MS = 60_000
 // The pane lists this many questions; the band counts them all.
 const LISTED = 100
 
@@ -43,8 +44,8 @@ function board($: EngineInterface, options: PluginOptions, args: string[], timeo
  * Reads what waits on the owner. Until the plans plugin has `waiting`, it
  * says so once and is not asked again while the module is loaded.
  */
-async function refreshWaiting($: EngineInterface, options: PluginOptions, local: { absent: boolean }) {
-  if (local.absent) return
+async function refreshWaiting($: EngineInterface, options: PluginOptions, local: { absent: boolean }): Promise<Counted> {
+  if (local.absent) return { kind: 'absent' }
   try {
     const ran = await board($, options, ['call', 'plans.waiting'])
     const read = parseWaiting(ran.exitCode, ran.stdout, ran.stderr)
@@ -52,14 +53,16 @@ async function refreshWaiting($: EngineInterface, options: PluginOptions, local:
     if (read.kind === 'failed') $.ui.log(`board: plans.waiting failed: ${read.why}`, { to: 'debug' })
     if (read.kind === 'read') await update($, waiting, () => read.waiting)
     await update($, failed, last => ({ ...last, waiting: read.kind === 'failed' ? read.why : null }))
+    return read.kind === 'read' ? { kind: 'read', total: read.waiting.total } : { kind: read.kind }
   } catch (error) {
     $.ui.log(`board: plans.waiting did not run: ${String(error)}`, { to: 'debug' })
     await update($, failed, last => ({ ...last, waiting: `plans.waiting did not run: ${String(error)}` }))
+    return { kind: 'failed' }
   }
 }
 
-/** Reads the open questions again. A failure is logged, kept for the band and keeps the last count read. */
-async function refreshOpen($: EngineInterface, options: PluginOptions) {
+/** Reads the open questions again, and says whether the read worked. A failure is logged, kept for the band and keeps the last count read. */
+async function refreshOpen($: EngineInterface, options: PluginOptions): Promise<boolean> {
   let found: Open | null = null
   let why: string | null = null
   try {
@@ -72,11 +75,47 @@ async function refreshOpen($: EngineInterface, options: PluginOptions) {
   if (why !== null) $.ui.log(`board: plans.open failed: ${why}`, { to: 'debug' })
   if (found !== null) await update($, open, () => found)
   await update($, failed, last => ({ ...last, open: why }))
+  return found !== null
 }
 
-/** Reads the open questions and what waits on the owner, side by side. */
-async function refresh($: EngineInterface, options: PluginOptions, local: { absent: boolean }) {
-  await Promise.all([refreshOpen($, options), refreshWaiting($, options, local)])
+/** What the mod keeps between reads: whether plans.waiting is absent, and its schedule. */
+type Local = { absent: boolean; schedule: Schedule }
+
+/** Reads the open questions, whose read the schedule marks started, and marks it ended beside the count `total`. */
+async function list($: EngineInterface, options: PluginOptions, s: Schedule, total: () => number | null) {
+  let worked = false
+  try {
+    worked = await refreshOpen($, options)
+  } finally {
+    endList(s, worked, total())
+  }
+}
+
+/** Reads the open questions and what waits on the owner, side by side, as a session starts and after an answer. */
+async function refreshBoth($: EngineInterface, options: PluginOptions, local: Local) {
+  const s = local.schedule
+  const now = await $.clock.now()
+  startRead(s, now)
+  startList(s, now)
+  let worked = false
+  let counted: Counted = { kind: 'failed' }
+  try {
+    ;[worked, counted] = await Promise.all([refreshOpen($, options), refreshWaiting($, options, local)])
+  } finally {
+    endRead(s)
+    endList(s, worked, counted.kind === 'read' ? counted.total : null)
+  }
+}
+
+/** Reads what waits on the owner, whose read the schedule marks started, and the open questions only when `countLists` says the count calls for them. */
+async function refreshCount($: EngineInterface, options: PluginOptions, local: Local) {
+  const s = local.schedule
+  try {
+    const counted = await refreshWaiting($, options, local)
+    if (countLists(s, counted, await $.clock.now())) await list($, options, s, () => (counted.kind === 'read' ? counted.total : null))
+  } finally {
+    endRead(s)
+  }
 }
 
 /**
@@ -94,7 +133,7 @@ async function refresh($: EngineInterface, options: PluginOptions, local: { abse
  * names each asking session's `local_` id as a string, the SendMessage tool's
  * spelling of a recipient, because `{ sessionId }` refuses a `local_` id.
  */
-async function answer($: EngineInterface, options: PluginOptions, q: Question, choice: string | undefined, words: string) {
+async function answer($: EngineInterface, options: PluginOptions, local: Local, q: Question, choice: string | undefined, words: string) {
   try {
     // The desktop app names this session's `local_` id, the form questions use.
     const host = await $.env.get('CLAUDE_CODE_HOST_SESSION_ID')
@@ -137,6 +176,8 @@ async function answer($: EngineInterface, options: PluginOptions, q: Question, c
           ? `Answered, and sent to ${q.session}${unattached === null ? '' : `. The answer is recorded but was ${unattached}`}`
           : `Answered and recorded in Board${unattached === null ? '' : `, but ${unattached}`}. The message to ${q.session} was not delivered`) + approval,
     )
+    // The answer changes what waits, so the count and the list are read again.
+    await refreshBoth($, options, local)
   } catch (error) {
     $.ui.toast(`No answer was recorded: ${String(error)}`)
   }
@@ -164,7 +205,7 @@ const age = (asked: string, now: number) => {
 }
 
 export const register: Register = (on, options) => {
-  const local = { absent: false }
+  const local: Local = { absent: false, schedule: schedule() }
 
   // The minute's refresh starts with the first band drawn, which a `-p` run
   // never draws. Desktop sessions report `isInteractive: false`, so that flag
@@ -174,7 +215,7 @@ export const register: Register = (on, options) => {
   on('session.start', async ($, e, next) => {
     const started = await next(e)
     await $.command.register({ name: 'yesterday', description: "Show the morning report of yesterday's Board records, from 07:00" })
-    await refresh($, options, local)
+    await refreshBoth($, options, local)
     return started
   })
 
@@ -184,8 +225,13 @@ export const register: Register = (on, options) => {
     const below = await next(e)
     if (!polling) {
       polling = true
-      $.clock.every(REFRESH_MS, () => void refresh($, options, local))
+      // A tick reads only when the band was drawn since the last read, so a session nobody draws runs no board.
+      $.clock.every(REFRESH_MS, async () => {
+        if (tickReads(local.schedule, await $.clock.now())) void refreshCount($, options, local)
+      })
     }
+    // Drawing may not write state, so a read the draw starts runs once the draw is done.
+    if (drawReads(local.schedule, await $.clock.now())) $.clock.after(0, () => void refreshCount($, options, local))
     if (e.props.hasSurvey || !drawsInto(e.plugin)) return below
     // plans.waiting counts the open questions; when it has not answered, the button counts plans.open's.
     const badge = countBadge(await read($, waiting), await read($, open), await read($, failed))
@@ -202,6 +248,9 @@ export const register: Register = (on, options) => {
   })
 
   on('ui.render', { component: 'Pane', requestId: QUESTIONS }, async ($, e) => {
+    // The pane's read stands beside the count last read, so an unchanged count does not read the list again.
+    const shown = (await read($, waiting))?.total ?? null
+    if (paneLists(local.schedule, await $.clock.now())) $.clock.after(0, () => void list($, options, local.schedule, () => shown))
     const found = await read($, open)
     const unread = (await read($, failed)).open
     const now = await $.clock.now()
@@ -231,13 +280,13 @@ export const register: Register = (on, options) => {
                   key={`${q.path}#${o.id}`}
                   label={`${o.id}: ${o.text}`}
                   variant={o.id === q.recommendation ? 'primary' : undefined}
-                  onPress={() => answer($, options, q, o.id, o.text)}
+                  onPress={() => answer($, options, local, q, o.id, o.text)}
                 />
               ))}
             </Box>
             {Input === undefined ? null : (
               <Input key={`${q.path}#words`} placeholder="Answer in your own words" submitLabel="answer" onSubmit={words => {
-                if (words.trim() !== '') void answer($, options, q, undefined, words)
+                if (words.trim() !== '') void answer($, options, local, q, undefined, words)
               }} />
             )}
           </Box>

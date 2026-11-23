@@ -17,13 +17,13 @@ through `plans.open`. When the call fails, the debug log gives the code.
 
 ## Open questions
 
-When the session starts, the mod runs
-`board --json call plans.open --limit 100`. Its button in the band above the
-prompt is described in [claude-code/band.md](claude-code/band.md). From the
-first time the band is drawn, the mod runs the call again
-every minute, so a `-p` run, which draws no band, reads Board once. The
-refresh does not depend on `isInteractive`, because desktop sessions run
-through the Agent SDK and report it as false. A failed refresh is logged, keeps
+When the session starts, the mod runs `plans.open --limit 100` and
+`plans.waiting`; [claude-code/band.md](claude-code/band.md) describes its
+button. A minute's tick runs `plans.waiting` only if the band was drawn
+since the last read, and a draw runs it once that read is a minute old, so an
+undrawn session reads Board once. `plans.open` runs again for a pane whose
+list is a minute old, a changed count, an answer, or every read without
+`plans.waiting`. A failed refresh is logged, keeps
 the last count read and marks the band's button. The pane says why for a
 failed `plans.open`; a failed `plans.waiting` is in the debug log. The band is drawn on the terminal and the desktop app only.
 
