@@ -37,9 +37,6 @@ const UNQUOTED: [&str; 4] = [
     "--no-literal-pathspecs",
     "show",
 ];
-/// The shortest run of printable ASCII characters in a skipped file that is
-/// checked as text.
-const RUN: usize = 20;
 /// A tag object's tagger line: name, email, then the time and zone.
 static TAGGER: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"^tagger (.*) <([^>]*)> \d+ [+-]\d{4}$").expect("the pattern is a constant")
@@ -49,7 +46,8 @@ static TAGGER: LazyLock<Regex> = LazyLock::new(|| {
 pub(crate) type Parts = BTreeMap<String, String>;
 
 /// A binary file left out of its commit's diff because its bytes are not
-/// text, so no text rule scanned it.
+/// text. No rule scans a skipped file's bytes, so text inside it, such as
+/// UTF-16 text, a database or an executable, is not checked.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Skipped {
@@ -131,7 +129,7 @@ pub(crate) fn ref_parts(
 /// Each commit's message, names, emails, headers, diff, binary paths and
 /// skipped paths, as parts named `commit.<short sha>.<field>`. The diff is
 /// git's text of every file but the binary ones whose decoded characters
-/// are not text, whose printable ASCII runs are the `strings` part,
+/// are not text,
 /// with no textconv or external diff and with file names unquoted, so a
 /// text file's lines are the bytes sent. The `skipped` part names the files
 /// left out. A text file's bytes that are not UTF-8 are
@@ -169,7 +167,6 @@ pub(crate) fn commit_parts(
         let skipped = ["tree", "parent", "author", "committer"];
         parts.insert(format!("{prefix}headers"), headers(&object, &skipped));
         let mut left_out = Vec::new();
-        let mut found = String::new();
         for (path, binary) in &changed {
             if !*binary {
                 continue;
@@ -177,10 +174,8 @@ pub(crate) fn commit_parts(
             let text = blob(host, at, sha, path)?;
             if !is_text(&text) {
                 left_out.push(path.as_str());
-                found.push_str(&strings(&text));
             }
         }
-        parts.insert(format!("{prefix}strings"), found);
         parts.insert(format!("{prefix}diff"), diff(host, at, sha, &left_out)?);
         let lines = |paths: Vec<&str>| -> String {
             paths.into_iter().flat_map(|path| [path, "\n"]).collect()
@@ -223,20 +218,6 @@ fn is_text(text: &str) -> bool {
         .filter(|c| matches!(c, '\0' | '\u{fffd}'))
         .count();
     bad * 10 <= total
-}
-
-/// The runs of at least [`RUN`] printable ASCII characters in `text`, one
-/// per line, so text inside a binary file, such as a secret in a database,
-/// is still checked. Random bytes rarely hold such a run.
-fn strings(text: &str) -> String {
-    let mut found = String::new();
-    for run in text.split(|c: char| !(c == ' ' || c.is_ascii_graphic())) {
-        if run.len() >= RUN {
-            found.push_str(run);
-            found.push('\n');
-        }
-    }
-    found
 }
 
 /// The commit's patch, with the bytes of every file but those in

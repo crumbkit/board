@@ -55,7 +55,6 @@ pub(super) fn commit_parts_skipping(
         format!("commit.{short}.headers"): "",
         format!("commit.{short}.binary"): binary,
         format!("commit.{short}.skipped"): skipped,
-        format!("commit.{short}.strings"): "",
     })
 }
 
@@ -1009,22 +1008,4 @@ fn a_text_file_with_one_nul_is_still_scanned_and_a_file_of_mostly_nuls_is_skippe
         result["binary_skipped"],
         json!([{"commit": sha, "path": "blank.dat"}])
     );
-}
-
-#[test]
-fn text_inside_a_skipped_binary_file_is_checked_as_strings_and_a_font_of_random_bytes_passes() {
-    let desk = Desk::new();
-    desk.refuse(&["commit.*.strings"], "github.*");
-    let mut database = b"SQLite format 3\x00".to_vec();
-    database.extend(vec![0_u8; 400]);
-    database.extend(b"row: secret token acme-123 stored here\n");
-    let sha = commit_bytes(&desk, &database, "app.db");
-    let (ran, failure) = desk.call("push", &[]);
-    assert_eq!(ran.code, 1, "{failure}");
-    let part = format!("commit.{}.strings", &sha[..12]);
-    assert_eq!(failure["fields"]["failures"][0]["part"], part);
-    desk.git(&desk.checkout(), &["reset", "-q", "--hard", "HEAD~1"]);
-    let sha = commit_bytes(&desk, &font(), "font.woff2");
-    let result = desk.output("push", &[]);
-    assert_eq!(result["commits"], json!([sha]));
 }

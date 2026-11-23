@@ -288,8 +288,8 @@ fn left_out(file: &Skipped) -> Refusal {
     let code = PluginCode::parse(&plugin, "github::push::binary_skipped".to_owned())
         .expect("the code is github's");
     let message = format!(
-        "commit {} adds or changes {}, a binary file whose bytes are not text, so no text rule \
-         checked it",
+        "commit {} adds or changes {}, a binary file that was not scanned: no rule checked its \
+         bytes, so any text inside it went unchecked",
         &file.commit[..SHORT.min(file.commit.len())],
         file.path
     );
