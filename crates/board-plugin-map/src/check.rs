@@ -313,33 +313,13 @@ enum On<'a> {
 pub fn check(map: &LayoutRecord) -> Result<Vec<Finding>, PluginError> {
     known(map)?;
     let mut found = Found(Vec::new());
-    let regions: BTreeMap<&str, &Region> = (map.regions.iter())
-        .map(|region| (region.id.as_str(), region))
-        .collect();
-    let mut placed = Vec::new();
-    for item in &map.items {
-        let Some(at) = item.at else {
-            found.add(
-                Kind::ItemUnplaced,
-                format!(
-                    "{} has no stored position, so the map does not draw it",
-                    item.id
-                ),
-                &[],
-            );
-            continue;
-        };
-        let mark = Mark {
-            x: at.x,
-            y: at.y,
-            r: item.radius.unwrap_or(RADIUS),
-        };
-        placed.push(Placed {
-            id: &item.id,
-            mark,
-            label: label_box(&mark, item.side.unwrap_or_default(), &item.label),
-            region: item.band().and_then(|id| regions.get(id).copied()),
-        });
+    let (placed, unplaced) = placed_items(map);
+    for id in unplaced {
+        found.add(
+            Kind::ItemUnplaced,
+            format!("{id} has no stored position, so the map does not draw it"),
+            &[],
+        );
     }
     let index: BTreeMap<&str, usize> = (placed.iter().enumerate())
         .map(|(at, item)| (item.id, at))
@@ -755,30 +735,41 @@ fn note_clashes(placed: &[Placed], lines: &[Drawn], notes: &[Written], found: &m
     }
 }
 
+/// Each item of `map` with a stored position as the checker sees it, in
+/// the map's order, and the ids of the items with none.
+fn placed_items(map: &LayoutRecord) -> (Vec<Placed<'_>>, Vec<&str>) {
+    let regions: BTreeMap<&str, &Region> = (map.regions.iter())
+        .map(|region| (region.id.as_str(), region))
+        .collect();
+    let mut placed = Vec::new();
+    let mut unplaced = Vec::new();
+    for item in &map.items {
+        let Some(at) = item.at else {
+            unplaced.push(item.id.as_str());
+            continue;
+        };
+        let mark = Mark {
+            x: at.x,
+            y: at.y,
+            r: item.radius.unwrap_or(RADIUS),
+        };
+        placed.push(Placed {
+            id: &item.id,
+            mark,
+            label: label_box(&mark, item.side.unwrap_or_default(), &item.label),
+            region: item.band().and_then(|id| regions.get(id).copied()),
+        });
+    }
+    (placed, unplaced)
+}
+
 /// The box of each note of `map`, in the order the map lists them, for
 /// tests of anchoring.
 #[cfg(test)]
 pub(crate) fn notes_of(map: &LayoutRecord) -> Vec<Box2> {
-    let regions: BTreeMap<&str, &Region> = BTreeMap::new();
-    let _ = regions;
-    let placed: Vec<Placed> = (map.items.iter())
-        .filter_map(|item| {
-            let at = item.at?;
-            let mark = Mark {
-                x: at.x,
-                y: at.y,
-                r: item.radius.unwrap_or(RADIUS),
-            };
-            Some(Placed {
-                id: &item.id,
-                mark,
-                label: label_box(&mark, item.side.unwrap_or_default(), &item.label),
-                region: None,
-            })
-        })
-        .collect();
+    let (placed, _) = placed_items(map);
     let index: BTreeMap<&str, usize> = (placed.iter().enumerate())
-        .map(|(at, i)| (i.id, at))
+        .map(|(at, item)| (item.id, at))
         .collect();
     written(map, &placed, &index)
         .into_iter()

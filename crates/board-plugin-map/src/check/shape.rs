@@ -8,7 +8,7 @@ use super::refusal;
 use crate::records::LayoutRecord;
 
 /// Refuses a map whose items name a bin its ramp does not hold, whose line
-/// kinds or tables repeat a name, or whose table rows do not fit their
+/// kinds or tables repeat a name, which styles a line kind no line has, or whose table rows do not fit their
 /// columns or name an item the map does not hold.
 pub(super) fn shaded_and_tabled(
     map: &LayoutRecord,
@@ -35,6 +35,17 @@ pub(super) fn shaded_and_tabled(
                 "map::layout::duplicate_id",
                 format!("the map styles the line kind {} twice", kind.kind),
                 "give each line kind one entry in line_kinds",
+                [("id", kind.kind.as_str())],
+            ));
+        }
+        if !map.lines.iter().any(|line| line.kind == kind.kind) {
+            return Err(refusal(
+                "map::layout::unknown_id",
+                format!(
+                    "the map styles the line kind {}, which no line of the map has",
+                    kind.kind
+                ),
+                "remove the entry, or give it the kind of a line the map has",
                 [("id", kind.kind.as_str())],
             ));
         }

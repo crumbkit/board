@@ -74,7 +74,8 @@ with x to the right and y down from the sheet's top left corner.
   the ramp as a key.
 - `line_kinds` gives each line `kind` a `label`, a `style` (`solid`,
   `dashed` or `dotted`; `solid` when left out) and whether it has an `arrow`
-  (true when left out). A kind with no entry is drawn solid with an arrow.
+  (true when left out). A kind with no entry is drawn solid with an arrow,
+  and an entry for a kind no line has is refused.
 - `tables` are tables drawn under the map. Each has an `id`, a `title`, an
   optional `caption`, `columns` (a `label` and whether the column is
   `numeric`) and `rows`, each with `cells`, one string for each column, and
@@ -122,7 +123,8 @@ with x to the right and y down from the sheet's top left corner.
 - `map::layout::unreadable`: the record is not a `map/layout/v1`, or it
   breaks the schema; the message names the field.
 - `map::layout::unknown_id`: an item, lane, line, note or table row names
-  what the map does not hold.
+  what the map does not hold, or a `line_kinds` entry names a kind no line
+  has.
 - `map::layout::duplicate_id`: two items, regions, line kinds or tables
   share an id.
 - `map::layout::lane_region_mismatch`: an item's `lane` and `region` name

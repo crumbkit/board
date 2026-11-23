@@ -73,7 +73,8 @@ the page and a finding disagree, compare the drawn text with the finding's
   breaks the schema, such as an item with an empty label. The message
   names the field.
 - `map::layout::unknown_id`: an item, lane, line or note names a region, item or
-  line the map does not hold.
+  line the map does not hold, or a `line_kinds` entry names a kind no line
+  has.
 - `map::layout::duplicate_id`: two items, regions, line kinds or tables
   share a name.
 - `map::layout::lane_region_mismatch`: an item's lane and region differ.

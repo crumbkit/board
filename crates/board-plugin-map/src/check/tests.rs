@@ -162,7 +162,29 @@ fn the_schema_refuses_a_negative_column() {
     let schema = board_validate::Schema::compile(crate::layout_schema()).unwrap();
     schema.validate(&good).unwrap();
     good["items"][0]["column"] = json!(-1);
-    assert!(schema.validate(&good).is_err());
+    let refused = schema.validate(&good).unwrap_err();
+    assert_eq!(refused.code(), board_model::Code::RecordInvalid);
+    assert_eq!(
+        refused.reason(),
+        "fails its schema at \"/items/0/column\": -1 is less than the minimum of 0"
+    );
+}
+
+/// A line_kinds entry names a kind some line has; an entry for a kind no
+/// line has is refused, and its twin naming a kind a line has is admitted.
+#[test]
+fn a_line_kind_no_line_uses_is_refused_and_its_twin_is_admitted() {
+    let mut good = fixture("services-final");
+    good["line_kinds"] = json!([{"kind": "lib", "label": "builds on"}]);
+    check(&map(&good)).unwrap();
+    let mut twin = good.clone();
+    twin["line_kinds"][0]["kind"] = json!("ferry");
+    let refused = check(&map(&twin)).map(|_| ()).unwrap_err();
+    assert_eq!(refused.code, "map::layout::unknown_id");
+    assert_eq!(
+        refused.message,
+        "the map styles the line kind ferry, which no line of the map has"
+    );
 }
 
 /// An item with no stored position is reported and left out of the
