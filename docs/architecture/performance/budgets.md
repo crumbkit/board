@@ -32,9 +32,19 @@ the row, and says why, when the board does not enable tasks.
 
 A built-in plugin call takes at most one snapshot of each kind. Its queries
 share one View snapshot, and its `refs` share one Report snapshot, which
-decides every mount and so never answers a query. The call drops both when
-the board's `HEAD` moves, and before it puts, syncs, updates a mount,
-decides, runs a process or calls another plugin. A kept View that another
+decides every mount and so never answers a query. A capability the call
+calls in the same board whose `readOnlyHint` is true keeps both and reads
+through them, and the snapshots it takes count in the call's trace. A call
+into another board, through `--personal` or `-C`, keeps its own. The call
+drops both when the board's `HEAD` moves, and before it puts, syncs, updates
+a mount, decides, calls a capability without `readOnlyHint: true`, or runs a
+process in the board's own working tree. A process that runs elsewhere, such
+as `git diff` in a mounted clone or one in a new temporary directory, keeps
+both, because a snapshot reads each mount at the commit its mount record
+names, and the `HEAD` check catches any commit the process makes to the
+board. In a board whose `commit_on_put` is false, a put leaves `HEAD` where
+it was, so there every process, and every installed plugin's capability,
+drops both. A kept View that another
 process prunes under (index.md) is dropped, and the query runs on a fresh
 one within the same three tries. A call does not see an uncommitted edit
 that another process makes after its first read; the next call does.

@@ -2,6 +2,7 @@
 
 use std::cell::RefCell;
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 use std::time::SystemTime;
 
 use board_plugin::{
@@ -24,11 +25,41 @@ impl Board {
         input: &[u8],
         plugins: &Plugins<'_>,
     ) -> Result<CallReport, CallFailed> {
+        self.call_sharing(target, input, plugins, &Rc::default())
+    }
+
+    /// [`Board::call`] from a built-in plugin's call, whose snapshots are
+    /// `memo`. A built-in capability whose `readOnlyHint` is true reads
+    /// through them, and an installed one keeps them when the board commits
+    /// on put; before any other runs they are dropped.
+    pub(crate) fn call_sharing(
+        &self,
+        target: &Target,
+        input: &[u8],
+        plugins: &Plugins<'_>,
+        memo: &Rc<Memo>,
+    ) -> Result<CallReport, CallFailed> {
         plugins.environment.depth()?;
         let offered = self
             .offered(plugins.directory)
             .map_err(|source| CallError::Discovery { source })?;
         let chosen = board_plugin::choose(offered, &self.config().plugins, target)?;
+        let read_only = (chosen.capability().annotations.as_ref())
+            .and_then(|annotations| annotations.read_only_hint)
+            == Some(true);
+        // Every write a built-in plugin's host offers (put, sync, mount
+        // update, decide, a nested call that may write, a process in the
+        // board's tree) drops the memo it shares, and a commit moves HEAD,
+        // so a wrong hint cannot leave a stale read through the host. A
+        // process plugin's own `board put` moves HEAD only when the board
+        // commits on put.
+        let built_in = matches!(chosen.origin, Origin::BuiltIn { .. });
+        let memo = if read_only && (built_in || self.config().commit_on_put) {
+            Rc::clone(memo)
+        } else {
+            memo.forget();
+            Rc::default()
+        };
         self.trace.borrow_mut().capability = Some(format!(
             "{}.{}",
             chosen.manifest.name,
@@ -87,7 +118,7 @@ impl Board {
             }
             Origin::BuiltIn { index, .. } => {
                 self.trace.borrow_mut().started(Vec::new());
-                self.hosted(&chosen, *index, input?, plugins)?
+                self.hosted(&chosen, *index, input?, plugins, memo)?
             }
         };
         report.warnings.splice(0..0, chosen.warnings);
@@ -102,6 +133,7 @@ impl Board {
         index: usize,
         input: Value,
         plugins: &Plugins<'_>,
+        memo: Rc<Memo>,
     ) -> Result<CallReport, CallError> {
         let environment = &plugins.environment;
         let root = self.repository().path();
@@ -138,7 +170,7 @@ impl Board {
             },
             root,
             warnings: &warnings,
-            memo: Memo::default(),
+            memo,
         };
         let plugin = &chosen.manifest.name;
         let capability = &chosen.capability().name;
