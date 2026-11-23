@@ -49,8 +49,8 @@ knows what the plan does, and records what he showed.
 8. **Ask for the sign-off.** The owner signs a `plans/decision/v1` whose
    `refs` name the record. Attach that decision too. The plan gate refuses
    with `changes::data::not_signed` until both are attached.
-9. **Check again before review.** An answer given minutes after reading the
-   plan can be short-term recall. Before the change moves to `review`, ask
+9. **Check again after the merge.** An answer given minutes after reading the
+   plan can be short-term recall. After the change merges, ask
    two of the predict or edge questions again, worded differently, and add
    them to `rechecks`, each with its question, his answer, the design's
    answer, its `kind`, whether it `matches`, and its `point`: a short
@@ -61,9 +61,9 @@ knows what the plan does, and records what he showed.
    `point`. When the plan changed so that the point no longer exists, ask
    about the new design under the same `point`. Never remove a missed
    recheck or change its question, answers or `matches`; correcting a
-   `point`'s spelling is allowed. The build gate refuses with
-   `changes::gate::unmet` until the record holds rechecks of two points and
-   the latest recheck of every point matched.
+   `point`'s spelling is allowed. The land gate's `rechecks` check does not
+   block; `board changes owed` lists the change until the record holds
+   rechecks of two points and the latest recheck of every point matched.
 
 The owner can take the check live in chat or as a written questionnaire:
 the most important questions first, one idea per question, room for an

@@ -11,8 +11,9 @@ use crate::change::{
     LastSync, branch_of, change_types, kind_in, last_sync, parsed, prototypes, state_of, sync_reads,
 };
 use crate::flow::{FlowSummary, Flows};
+use crate::owed::{OWED_DAYS, owing};
 use crate::records::{ChangeRecord, Kind, PrototypeRecord, Route, State};
-use crate::{PLUGIN, to_value};
+use crate::{PLUGIN, Warning, to_value};
 
 /// The default `limit` (STANDARDS 23).
 pub(crate) const OPEN_LIMIT: usize = 100;
@@ -72,7 +73,9 @@ struct Listed {
 /// `total` counts every open change and `truncated` says whether the limit
 /// left some out. `unreadable` is how many were left out because Board
 /// marks them degraded. `sync` is the day of the last sync, stale only when
-/// some change records a pull request that sync reads.
+/// some change records a pull request that sync reads. `warnings` holds
+/// `changes::owed::rechecks` while a recently done change still owes a
+/// check that does not block, which `changes.owed` lists.
 #[derive(Debug, Serialize, JsonSchema)]
 #[schemars(rename = "OpenOutput")]
 pub(crate) struct Output {
@@ -81,6 +84,25 @@ pub(crate) struct Output {
     truncated: bool,
     unreadable: usize,
     sync: LastSync,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    warnings: Vec<Warning>,
+}
+
+/// The warning that done changes still owe checks, when any does.
+fn owed_warning(host: &dyn Host) -> Result<Option<Warning>, PluginError> {
+    let (owed, _) = owing(host)?;
+    if owed.is_empty() {
+        return Ok(None);
+    }
+    Ok(Some(Warning {
+        code: "changes::owed::rechecks",
+        detail: format!(
+            "{} changes done in the last {OWED_DAYS} days still owe a check asked after the \
+             merge, such as the owner's rechecks; run `board changes owed` for each and the \
+             questions to ask",
+            owed.len()
+        ),
+    }))
 }
 
 fn listed(
@@ -164,6 +186,7 @@ pub(crate) fn open(host: &dyn Host, input: &Value) -> Result<Value, PluginError>
         truncated: total > limit,
         unreadable,
         sync: last_sync(host, reads)?,
+        warnings: owed_warning(host)?.into_iter().collect(),
     }))
 }
 

@@ -111,6 +111,13 @@ blocks is missing.
    `board changes attach --path /changes/<name> --ref <path>`. When you
    record the owner's approval from chat, write the decision as the plans
    skill says, with `by.person` and the owner's words in `why`.
+   Piping `{"path": "/changes/<name>", "project": "<project>", "by":
+   {"session": "<your local_ id>"}}` to `board -C <board> changes ask`
+   files and attaches one question whose approving option names the
+   change, each data understanding check and each mockup, so one answer
+   passes `owner-approval`, `data-signed` and `mockups`. A plan that
+   answers `ux` none and `data` none needs no approval. After a change
+   lands, `board -C <board> changes owed` lists the rechecks it still owes.
 4. Run `board -C <board> changes advance --path /changes/<name>`
    when every check passes. To send a change back to build for a fix
    round, such as after a review asks for fixes, run

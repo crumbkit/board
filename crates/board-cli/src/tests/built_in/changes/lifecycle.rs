@@ -362,12 +362,28 @@ fn only_a_lifecycle_record_board_reads_at_the_path_switches_off_lifecycle_paths(
 }
 
 #[test]
-fn a_small_change_in_build_over_a_lifecycle_path_misses_not_small_and_one_elsewhere_passes() {
+fn a_small_change_in_build_over_a_lifecycle_path_misses_lifecycle_recorded_and_one_elsewhere_passes()
+ {
     for (file, want) in [("src/sync.rs", "missing"), ("src/a.rs", "pass")] {
         let (board, head) = started_over("small", file);
         moved(&board, "build", &head);
-        assert_eq!(status_of(&board, "not-small"), Some(json!(want)), "{file}");
+        assert_eq!(
+            status_of(&board, "lifecycle-recorded"),
+            Some(json!(want)),
+            "{file}"
+        );
+        assert_eq!(
+            status_of(&board, "not-small"),
+            Some(json!("pass")),
+            "{file}"
+        );
     }
+    // Decision 1308Z: the change stays small once it has its lifecycle
+    // record.
+    let (board, head) = started_over("small", "src/sync.rs");
+    moved(&board, "build", &head);
+    board.call_stdin("lifecycle", &lifecycle(TABLE, "/repos/x/docs/states.md"));
+    assert_eq!(status_of(&board, "lifecycle-recorded"), None);
 }
 
 #[test]
@@ -697,11 +713,17 @@ fn two_old_flow_versions_that_rename_alike_are_stored_once_and_a_flow_off_its_ha
 
 #[test]
 fn a_change_on_a_flow_stored_before_the_rename_gates_as_one_on_the_flow_with_the_new_names() {
+    // The lifecycle checks of a gate; the shipped flow's other checks have
+    // changed since the rename.
+    let lifecycle_of = |gate: Value| -> Vec<Value> {
+        (gate.as_array().unwrap().iter())
+            .filter(|each| each["check"].as_str().unwrap().starts_with("lifecycle"))
+            .cloned()
+            .collect()
+    };
     for phase in ["plan", "review", "land"] {
         let now = lifecycle_gate(false, "rules", "rules/rule/v1", phase);
-        let lifecycle_checks: Vec<&Value> = (now.as_array().unwrap().iter())
-            .filter(|each| each["check"].as_str().unwrap().starts_with("lifecycle"))
-            .collect();
+        let lifecycle_checks = lifecycle_of(now.clone());
         assert!(
             !lifecycle_checks.is_empty()
                 && lifecycle_checks
@@ -715,8 +737,8 @@ fn a_change_on_a_flow_stored_before_the_rename_gates_as_one_on_the_flow_with_the
             (true, "controls", "controls/control/v1"),
         ] {
             assert_eq!(
-                lifecycle_gate(stored, prefix, rule_type, phase),
-                now,
+                lifecycle_of(lifecycle_gate(stored, prefix, rule_type, phase)),
+                lifecycle_checks,
                 "{phase} {stored} {prefix}"
             );
         }

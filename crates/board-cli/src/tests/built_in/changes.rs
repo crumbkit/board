@@ -754,6 +754,8 @@ fn board_lists_the_plugin_as_enabled_and_enabling_wrote_the_schema_it_ships() {
             "attach",
             "advance",
             "open",
+            "owed",
+            "ask",
             "pr",
             "plan",
             "lifecycle",

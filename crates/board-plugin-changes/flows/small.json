@@ -1,20 +1,24 @@
 {
   "$type": "changes/flow/v1",
   "name": "small",
-  "summary": "Build and review a small change that touches no UI, data or lifecycle path, with no plan gate.",
+  "summary": "Build and review a small change that touches no UI or data path, and a lifecycle path only with a lifecycle record, with no plan gate.",
   "stop": {"through": "review"},
   "phases": [
     {
       "name": "build",
       "agent": "lead",
-      "instruction": "Read every record in the change's surfaced list; adopt a matching open task with `changes.attach --task` instead of working beside it. Write a one-paragraph plan with `board changes plan` naming the paths you will edit. Build test-first, record the head and attach a run of {suite} on it.",
+      "instruction": "Read every record in the change's surfaced list; adopt a matching open task with `changes.attach --task` instead of working beside it. Write a one-paragraph plan with `board changes plan` naming the paths you will edit. Build test-first, record the head and attach a run of {suite} on it. When the diff edits a lifecycle path, write the lifecycle record by piping JSON with `path`, `text`, `doc` and `external` to `board changes lifecycle`.",
       "checks": [
         {"id": "considered", "kind": "considered"},
         {"id": "head", "kind": "field", "field": "head"},
         {"id": "suite-run", "kind": "run", "scope": "full", "waivable": true},
         {"id": "not-small", "kind": "rule-paths",
-         "rules": ["/rules/{repo}/ui-paths", "/rules/{repo}/data-paths", "/rules/{repo}/lifecycle-paths"],
-         "remedy": "This change touches a UI, data or lifecycle path, so it needs the development flow: run `board changes reflow --path {change} --flow development`."}
+         "rules": ["/rules/{repo}/ui-paths", "/rules/{repo}/data-paths"],
+         "remedy": "This change touches a UI or data path, so it needs the development flow: run `board changes reflow --path {change} --flow development`."},
+        {"id": "lifecycle-recorded", "kind": "rule-paths",
+         "rules": ["/rules/{repo}/lifecycle-paths"],
+         "when": {"absent": {"path": "/changes/{name}/lifecycle", "type": "changes/lifecycle/v1"}},
+         "remedy": "This change touches a lifecycle path and has no lifecycle record. Write one by piping JSON with `path`, `text`, `doc` and `external` to `board changes lifecycle`, or revert the edit."}
       ]
     },
     {
@@ -23,10 +27,11 @@
       "instruction": "Review {head} with clean context with `board review run`, fix every critical or high finding and review again.",
       "checks": [
         {"id": "review", "kind": "records", "actor": "reviewer", "type": "review/report/v1",
-         "where": {"at_head": "range", "values": {"verdict": ["approve", "comment"]}, "no_findings": ["critical", "high"]}},
+         "where": {"at_head": "range", "values": {"verdict": ["approve", "comment"]}, "no_findings": ["critical", "high"], "unchanged_by": ["/rules/{repo}/record-paths"]}},
         {"id": "lifecycle-paths", "kind": "rule-paths",
          "rules": ["/rules/{repo}/lifecycle-paths"],
-         "remedy": "This change touches a lifecycle path, so it needs the development flow: run `board changes reflow --path {change} --flow development`."}
+         "when": {"absent": {"path": "/changes/{name}/lifecycle", "type": "changes/lifecycle/v1"}},
+         "remedy": "This change touches a lifecycle path and has no lifecycle record. Write one by piping JSON with `path`, `text`, `doc` and `external` to `board changes lifecycle`, or revert the edit."}
       ]
     },
     {
@@ -37,7 +42,8 @@
         {"id": "pull-request", "kind": "field", "field": "pulls", "types": ["github/pull/v1"]},
         {"id": "lifecycle-paths-at-land", "kind": "rule-paths",
          "rules": ["/rules/{repo}/lifecycle-paths"],
-         "remedy": "This change touches a lifecycle path, so it needs the development flow: run `board changes reflow --path {change} --flow development`."}
+         "when": {"absent": {"path": "/changes/{name}/lifecycle", "type": "changes/lifecycle/v1"}},
+         "remedy": "This change touches a lifecycle path and has no lifecycle record. Write one by piping JSON with `path`, `text`, `doc` and `external` to `board changes lifecycle`, or revert the edit."}
       ]
     }
   ]

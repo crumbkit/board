@@ -4,7 +4,7 @@
 
 use serde_json::{Map, Value, json};
 
-use super::{quote, quoted, run_lines};
+use super::{body, quote, quoted, run_lines};
 use crate::gates::sections;
 
 const HEAD: &str = "a3f9c0de1234567890abcdef1234567890abcdef";
@@ -82,4 +82,54 @@ fn quoting_leaves_safe_words_bare_and_quotes_the_rest_for_a_posix_shell() {
     assert_eq!(quote(""), "''");
     assert_eq!(quote("a b"), "'a b'");
     assert_eq!(quote("it's $(rm x)"), "'it'\"'\"'s $(rm x)'");
+}
+
+/// Decision 1318Z: the body names the commits after a review that left it
+/// counting, and says nothing more for a review on the head.
+#[test]
+fn the_review_line_names_the_commits_accepted_after_the_report() {
+    let base = "0123456789abcdef0123456789abcdef01234567";
+    let reviewed = "a3f9c0de1234567890abcdef1234567890abcdef";
+    let later = "b3f9c0de1234567890abcdef1234567890abcdef";
+    let report = json!({"range": format!("{base}..{reviewed}"), "verdict": "approve",
+                        "by": "a reviewer", "findings": []});
+    let records = crate::change::Referenced {
+        records: [(
+            "/reviews/r/report".to_owned(),
+            (
+                "review/report/v1".to_owned(),
+                report.as_object().unwrap().clone(),
+            ),
+        )]
+        .into_iter()
+        .collect(),
+        ..crate::change::Referenced::default()
+    };
+    let change = crate::change::from_value(json!({
+        "$type": "changes/change/v1", "title": "T", "mount": "/repos/x", "phase": "land",
+        "head": later,
+    }))
+    .unwrap();
+    let mut observed =
+        crate::gates::Observed::new("/changes/t", change, crate::records::Kind::Build, records);
+    let review = |observed: &crate::gates::Observed| {
+        let text = body(observed, &[]);
+        let line = text
+            .lines()
+            .find(|line| line.contains("/reviews/r/report"))
+            .unwrap();
+        line.to_owned()
+    };
+    assert!(!review(&observed).contains("accepted after it"));
+    observed
+        .after_review
+        .insert(reviewed.to_owned(), Ok(vec![later.to_owned()]));
+    assert!(
+        review(&observed).ends_with(&format!(
+            "; accepted after it, editing only record paths or the lifecycle doc or cleanly \
+             merging main: `{later}`"
+        )),
+        "{}",
+        review(&observed)
+    );
 }

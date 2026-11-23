@@ -145,7 +145,7 @@ fn version_in(item: &str) -> Option<String> {
 }
 
 /// Each mockup the plan lists with the version it names.
-fn versioned(found: &BTreeMap<String, String>) -> Vec<(String, String)> {
+pub(crate) fn versioned(found: &BTreeMap<String, String>) -> Vec<(String, String)> {
     (under_ux(found, "mockups").iter())
         .filter_map(|item| Some((named_in(item)?, version_in(item)?)))
         .collect()
