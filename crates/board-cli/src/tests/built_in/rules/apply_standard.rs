@@ -174,6 +174,7 @@ fn cases(run: &Value, outcome: &str) -> Vec<Value> {
 #[test]
 fn the_skills_example_suite_and_run_are_admitted_and_latest_names_the_failed_rule() {
     let (suite, run) = examples();
+    assert_eq!(suite["kind"], "compliance", "{suite}");
     let board = Fixture::enabling(&["runs"]);
     admitted(&board, &["put", SUITE], &suite);
     let failed = cases(&run, "fail");

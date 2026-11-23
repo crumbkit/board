@@ -13,6 +13,7 @@ sit in `/suites/<name>/runs/`.
 ```json
 {
   "$type": "runs/suite/v1",
+  "kind": "benchmark",
   "subjects": ["crumbkit/board"],
   "method": "Time each operation over a 10,000-file board; take the median of 20 runs.",
   "command": "cargo xtask bench",
@@ -31,6 +32,9 @@ sit in `/suites/<name>/runs/`.
   test suite, has neither. The schema refuses both.
 - `measures` declares what a run records: a `name`, a `unit` and optionally a
   `description`.
+- `kind` says what the suite is: `compliance`, `benchmark`, `eval` or
+  `test`. A suite that tests nothing, such as one that only collects runs,
+  leaves it out.
 
 ## The run record
 
@@ -114,6 +118,24 @@ Each capability reads the records under the suite's `runs/` directory with
 one `board query`, so a run stored elsewhere is not counted. Flaky cases
 have no capability: query the `records` view with `json_each` over
 `$.results`.
+
+`board call runs.migrate` gives each suite of the board that has no `kind`
+the kind of the first rule that matches it:
+
+1. `compliance` when a zero rule names the suite or its method starts
+   "Audited by the apply-standard skill";
+2. `eval` when `/evals/<name>` exists or an eval lists the suite in `suites`;
+3. `compliance` when the name ends `-review`;
+4. `test` when the name ends `-gates`, `-ci`, `-checks`, `-pr-lane`,
+   `-ready` or `-lane`;
+5. `benchmark` when the name starts `bench-` or ends `-latency`, `-timing`,
+   `-benchmark`, `-overhead` or `-cost`.
+
+It prints the counts, the suites no rule matches, and each classified suite
+with its kind and rule. With `--apply true` it writes every classified suite
+in one commit; a second run writes nothing. Board refuses the call with
+`board::plugin::schema_differs` before anything is written while the board
+holds an older `runs/suite/v1` schema; run `board plugin enable runs` first.
 
 ## Skills
 

@@ -11,5 +11,6 @@ pub use report::{
     Data, Excerpt, Failure, FieldValue, Label, Printed, Recovery, Related, Report, Severity,
 };
 pub use runs::{
-    Actor, CaseResult, Host, Measure, MeasureValue, Outcome, Run, Scope, Suite, Tag, Typed,
+    Actor, CaseResult, Host, Measure, MeasureValue, Outcome, Run, Scope, Suite, SuiteKind, Tag,
+    Typed,
 };

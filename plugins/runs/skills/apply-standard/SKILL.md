@@ -105,6 +105,7 @@ Fix what Board names and write the run again.
 ```json
 {
   "$type": "runs/suite/v1",
+  "kind": "compliance",
   "subjects": ["<owner>/<name>"],
   "method": "Audited by the apply-standard skill against <standard file>. Each case is one rule.",
   "cases": [
@@ -118,6 +119,8 @@ Fix what Board names and write the run again.
 }
 ```
 
+- `kind` is `compliance`, because the suite checks a repository against a
+  standard.
 - `subjects` names the repository as `<owner>/<name>` when its `origin`
   remote gives one. Leave `subjects` out otherwise.
 - `cases` lists every rule ID in the standard's order.

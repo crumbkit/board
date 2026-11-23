@@ -8,7 +8,7 @@ use std::path::Path;
 
 use board_model::{Code, canonical_json};
 use board_types::{
-    Actor, CaseResult, Host, Measure, MeasureValue, Outcome, Run, Scope, Suite, Tag,
+    Actor, CaseResult, Host, Measure, MeasureValue, Outcome, Run, Scope, Suite, SuiteKind, Tag,
 };
 use serde_json::json;
 
@@ -72,6 +72,7 @@ fn full_suite() -> Value {
             unit: "ms".to_owned(),
             description: Some("The median.".to_owned()),
         }]),
+        kind: Some(SuiteKind::Benchmark),
     })
     .unwrap()
 }
@@ -174,7 +175,7 @@ fn the_manifest_parses_as_a_built_in_one_with_its_types_and_capabilities() {
     let names: Vec<&str> = (manifest.capabilities.iter())
         .map(|capability| capability.name.as_str())
         .collect();
-    assert_eq!(names, ["latest", "trend"]);
+    assert_eq!(names, ["latest", "trend", "migrate"]);
 }
 
 #[test]
@@ -189,7 +190,9 @@ fn every_input_property_carries_a_sentence_and_a_suite_is_a_board_path() {
             assert!(sentence.ends_with('.'), "{name}: {sentence}");
             described.push(format!("{}.{name}", capability["name"].as_str().unwrap()));
         }
-        let suite = &input["properties"]["suite"];
+        let Some(suite) = input["properties"].get("suite") else {
+            continue;
+        };
         assert_eq!(
             (&suite["type"], &suite["pattern"], &suite["format"]),
             (&json!("string"), &json!("^/"), &json!("board-path"))
@@ -200,6 +203,7 @@ fn every_input_property_carries_a_sentence_and_a_suite_is_a_board_path() {
         described,
         [
             "latest.suite",
+            "migrate.apply",
             "trend.case",
             "trend.limit",
             "trend.measure",
@@ -305,6 +309,42 @@ fn the_shipped_schemas_refuse_a_misshapen_record_and_admit_its_twin() {
 }
 
 #[test]
+fn a_suites_kind_is_one_of_four_values_or_left_out() {
+    let schema = board_validate::Schema::compile(Runs.schemas()[0].1.clone()).unwrap();
+    let a_suite = |kind: Option<Value>| {
+        let mut record = json!({"$type": "runs/suite/v1", "method": "Run it."});
+        if let Some(kind) = kind {
+            record["kind"] = kind;
+        }
+        record
+    };
+    for (refused, admitted) in [
+        ("audit", "compliance"),
+        ("Benchmark", "benchmark"),
+        ("evals", "eval"),
+        ("tests", "test"),
+    ] {
+        assert_eq!(
+            schema
+                .validate(&a_suite(Some(json!(refused))))
+                .unwrap_err()
+                .code(),
+            Code::RecordInvalid,
+            "{refused}"
+        );
+        schema.validate(&a_suite(Some(json!(admitted)))).unwrap();
+    }
+    assert_eq!(
+        schema
+            .validate(&a_suite(Some(json!(null))))
+            .unwrap_err()
+            .code(),
+        Code::RecordInvalid
+    );
+    schema.validate(&a_suite(None)).unwrap();
+}
+
+#[test]
 fn subjects_and_by_take_the_shared_subject_and_actor_shapes() {
     let schemas = Runs.schemas();
     let compiled = |n: usize| board_validate::Schema::compile(schemas[n].1.clone()).unwrap();
@@ -357,7 +397,7 @@ fn a_capability_the_plugin_does_not_offer_is_refused_and_latest_is_answered() {
     assert_eq!(refused.code, "runs::call::unknown_capability");
     assert_eq!(
         refused.message,
-        "runs offers no capability open; it offers latest and trend"
+        "runs offers no capability open; it offers latest, trend and migrate"
     );
     let latest: CapabilityName = "latest".parse().unwrap();
     let answered = Runs

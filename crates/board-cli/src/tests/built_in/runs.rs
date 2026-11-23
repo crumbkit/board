@@ -680,3 +680,144 @@ fn a_run_a_hook_wrote_names_the_plugin_and_hook_and_nothing_else() {
         ])
     );
 }
+
+/// A board that enables runs, evals and rules, holding suites the migration
+/// classifies by each of its rules, one it cannot classify and one that has
+/// a kind.
+fn suites_to_migrate() -> Fixture {
+    let board = Fixture::enabling(&["runs", "evals", "rules"]);
+    let rule = json!({
+        "$type": "rules/rule/v1",
+        "requirement": "Nothing uses the old path.",
+        "purpose": "A test.",
+        "paths": ["src/*"],
+        "checker": {"check": "zero", "suite": "/suites/old-path-users", "measures": ["remaining"]},
+    });
+    let eval = |fields: &Value| {
+        record(
+            json!({"$type": "evals/eval/v1", "question": "Q?", "subjects": ["o/gix"], "status": "planned"}),
+            fields,
+        )
+    };
+    let standard = json!({"method": "Audited by the apply-standard skill against STANDARDS.md."});
+    board
+        .write("rules/old-path.json", &rule.to_string())
+        .write("evals/registry-review.json", &eval(&json!({})))
+        .write(
+            "evals/other.json",
+            &eval(&json!({"suites": ["/suites/listed"]})),
+        )
+        .write("suites/old-path-users.json", &suite(&json!({})))
+        .write("suites/app-standard.json", &suite(&standard))
+        .write("suites/registry-review.json", &suite(&json!({})))
+        .write("suites/listed.json", &suite(&json!({})))
+        .write("suites/app-review.json", &suite(&json!({})))
+        .write(
+            "suites/board-gates.json",
+            &suite(
+                &json!({"command": "bin/test", "measures": [{"name": "tests", "unit": "count"}]}),
+            ),
+        )
+        .write("suites/bench-get.json", &suite(&json!({})))
+        .write("suites/claude-code.json", &suite(&json!({})))
+        .write("suites/typed.json", &suite(&json!({"kind": "eval"})));
+    board.committing();
+    board
+}
+
+#[test]
+fn migrate_lists_each_suites_kind_and_rule_and_writes_nothing_without_apply() {
+    let board = suites_to_migrate();
+    let before = board.head();
+    let dry = board.call("runs.migrate", &[]);
+    assert_eq!(
+        dry,
+        json!({
+            "applied": false,
+            "counts": {"compliance": 3, "benchmark": 1, "eval": 2, "test": 1, "unclassified": 1, "kept": 1},
+            "unclassified": ["/suites/claude-code"],
+            "suites": [
+                {"path": "/suites/app-review", "kind": "compliance", "by": "review-name"},
+                {"path": "/suites/app-standard", "kind": "compliance", "by": "apply-standard"},
+                {"path": "/suites/bench-get", "kind": "benchmark", "by": "benchmark-name"},
+                {"path": "/suites/board-gates", "kind": "test", "by": "test-name"},
+                {"path": "/suites/listed", "kind": "eval", "by": "eval-suites"},
+                {"path": "/suites/old-path-users", "kind": "compliance", "by": "zero-rule"},
+                {"path": "/suites/registry-review", "kind": "eval", "by": "eval-name"},
+            ],
+            "total": 7,
+            "truncated": false,
+            "unreadable": [],
+        })
+    );
+    assert_eq!(board.head(), before);
+    assert_eq!(
+        serde_json::from_str::<Value>(&board.read("suites/board-gates.json"))
+            .unwrap()
+            .get("kind"),
+        None
+    );
+}
+
+#[test]
+fn migrate_with_apply_writes_one_bulk_commit_keeping_each_field_and_a_second_apply_writes_nothing()
+{
+    let board = suites_to_migrate();
+    let before = board.head();
+    let applied = board.call("runs.migrate", &["--apply", "true"]);
+    assert_eq!(
+        (&applied["applied"], &applied["total"]),
+        (&json!(true), &json!(7))
+    );
+    assert_eq!(board.board.head().unwrap().parents, [before]);
+    assert!(
+        board.message().ends_with("\n\nBoard-Bulk: migrate suites"),
+        "{}",
+        board.message()
+    );
+    let stored = |name: &str| -> Value {
+        serde_json::from_str(&board.read(&format!("suites/{name}.json"))).unwrap()
+    };
+    let expected: Value = serde_json::from_str(&suite(&json!({
+        "command": "bin/test",
+        "measures": [{"name": "tests", "unit": "count"}],
+        "kind": "test",
+    })))
+    .unwrap();
+    assert_eq!(stored("board-gates"), expected);
+    assert_eq!(stored("registry-review")["kind"], "eval");
+    assert_eq!(stored("claude-code").get("kind"), None);
+    assert_eq!(stored("typed")["kind"], "eval");
+    for (path, code) in board.checked("/suites/") {
+        assert_eq!(code, None, "{path}");
+    }
+    let head = board.head();
+    let again = board.call("runs.migrate", &["--apply", "true"]);
+    assert_eq!(
+        (&again["total"], &again["counts"]["kept"]),
+        (&json!(0), &json!(8))
+    );
+    assert_eq!(board.head(), head);
+}
+
+#[test]
+fn migrate_is_refused_before_writing_when_the_stored_schema_has_no_kind_and_admitted_once_enabled()
+{
+    let board = suites_to_migrate();
+    let held = ".board/types/runs/suite/v1.schema.json";
+    let mut old: Value = serde_json::from_str(&board.read(held)).unwrap();
+    old["properties"].as_object_mut().unwrap().remove("kind");
+    board.write(held, &old.to_string());
+    board.committing();
+    let before = board.head();
+    let refused = board.refusal("runs.migrate", &["--apply", "true"]);
+    assert_eq!(
+        refused["code"], "board::plugin::schema_differs",
+        "{refused}"
+    );
+    assert_eq!(board.head(), before);
+    let enabled = board.run(&["plugin", "enable", "runs"]);
+    assert_eq!(enabled.code, 0, "{}", text(&enabled.stderr));
+    let applied = board.call("runs.migrate", &["--apply", "true"]);
+    assert_eq!(applied["total"], 7);
+}
