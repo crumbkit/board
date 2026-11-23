@@ -7,11 +7,13 @@ import type { Checked, Kind, Rule, StateBadge } from '../types'
  * The speed check, which session start runs detached: the shell returns at
  * once, so the start never waits on it, and the check records at most one
  * run an hour (docs/architecture/performance/timing.md, The speed check).
- * `set -m` starts it in a process group of its own, so a signal to the
- * hook's group does not reach it, and nohup has it ignore SIGHUP, which
- * `board timing` leaves ignored.
+ * It runs in a session or process group of its own, so a signal to the
+ * hook's group does not reach it: through `setsid -f` where the system has
+ * it, as Linux does, and else through the shell's job control, as macOS's
+ * sh gives. nohup has it ignore SIGHUP, which `board timing` leaves ignored.
  */
-export const SPEED_CHECK = 'set -m; nohup board timing check --record < /dev/null > /dev/null 2>&1 &'
+export const SPEED_CHECK =
+  'run="nohup board timing check --record"; if command -v setsid >/dev/null 2>&1; then setsid -f $run </dev/null >/dev/null 2>&1; else set -m; $run </dev/null >/dev/null 2>&1 & fi'
 
 /** The name of the context block the session's first message carries. */
 export const BLOCK = 'boardRules'

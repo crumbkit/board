@@ -218,7 +218,7 @@ test('session start starts the speed check detached at the repository root, once
   expect(detached).toHaveLength(1)
   expect(detached[0]).toContain(`${SPEED_CHECK} in ${ROOT}`)
   expect(detached[0]).toContain('$HOME/.local/bin')
-  expect(SPEED_CHECK).toMatch(/^set -m; nohup board timing check --record .*&$/)
+  expect(SPEED_CHECK).toMatch(/nohup board timing check --record.*setsid -f.*set -m/)
 })
 
 test('a speed check that cannot start is logged and the session starts with its rules', async ($, on) => {

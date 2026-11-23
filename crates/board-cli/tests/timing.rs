@@ -455,7 +455,8 @@ fn a_recorded_check_writes_the_suite_and_a_run_once_an_hour_and_a_check_without_
 /// `SPEED_CHECK` in plugins/rules/claude-code/hooks/rules.ts.
 fn speed_check_line() -> String {
     let source = include_str!("../../../plugins/rules/claude-code/hooks/rules.ts");
-    let start = source.find("SPEED_CHECK = '").unwrap() + "SPEED_CHECK = '".len();
+    let declared = source.find("SPEED_CHECK =").unwrap();
+    let start = declared + source[declared..].find('\'').unwrap() + 1;
     let length = source[start..].find('\'').unwrap();
     source[start..start + length].to_owned()
 }

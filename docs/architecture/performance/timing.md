@@ -141,7 +141,7 @@ result per command and the measures `over_budget` and `killed`, and stamps
 `timing-check.stamp` in the cache. Within an hour of the stamp it writes
 nothing. The run's `setup` names the machine's host name. The rules mod
 starts `board timing check --record` detached at each session's start,
-with `set -m` so it runs in a process group of its own and nohup so it
+in a session or process group of its own (`setsid -f` where present, else `set -m`) and under nohup so it
 ignores SIGHUP; `board timing` keeps that ignore. A SIGTERM or SIGKILL sent
 to the check's own process ends it with no run written; the next session's
 check writes one, as the stamp is not yet set.
