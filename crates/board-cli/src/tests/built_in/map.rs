@@ -64,3 +64,20 @@ fn map_check_lists_the_overlap_and_its_apart_twin_has_none() {
     let refused = board.refusal("map.check", &["--path", "/maps/none"]);
     assert_eq!(refused["code"], "map::layout::not_found", "{refused}");
 }
+
+/// A map that breaks its schema, such as an item with an empty label, is
+/// refused as unreadable instead of being checked; its twin with a label is
+/// checked.
+#[test]
+fn map_check_refuses_an_item_with_an_empty_label_and_checks_its_twin() {
+    let board = Fixture::enabling(&["map"]);
+    let mut empty = map();
+    empty["items"][0]["label"] = json!([]);
+    board
+        .write("maps/empty.json", &empty.to_string())
+        .write("maps/close.json", &map().to_string());
+    let refused = board.refusal("map.check", &["--path", "/maps/empty"]);
+    assert_eq!(refused["code"], "map::layout::unreadable", "{refused}");
+    let checked = board.call("map.check", &["--path", "/maps/close"]);
+    assert_eq!(checked["problems"], 2, "{checked}");
+}

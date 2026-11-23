@@ -73,7 +73,10 @@ with x to the right and y down from the sheet's top left corner.
 ## Codes
 
 - `map::layout::not_found`: no record is at the path.
-- `map::layout::unreadable`: the record is not a `map/layout/v1`.
+- `map::layout::unreadable`: the record is not a `map/layout/v1`, or it
+  breaks the schema; the message names the field.
 - `map::layout::unknown_id`: an item, line or note names what the map does
   not hold.
 - `map::layout::duplicate_id`: two items or two regions share an id.
+- `map::board::refused`: Board refused to read the path; the refusal
+  names Board's own code in `code`. Run `board get` on the path to see it.

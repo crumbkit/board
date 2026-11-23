@@ -99,7 +99,7 @@ pub(crate) fn label_box(mark: &Mark, side: Side, lines: &[String]) -> Box2 {
             let each = if index == 0 { NAME_WIDTH } else { DETAIL_WIDTH };
             count(line.chars().count()) * each
         })
-        .fold(f64::NEG_INFINITY, f64::max);
+        .fold(0.0, f64::max);
     let more = count(lines.len().saturating_sub(1));
     let height = count(lines.len()) * LINE_HEIGHT;
     let (x0, y) = match side {

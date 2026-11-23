@@ -1,12 +1,15 @@
 //! `check`: what a reader would see as broken in a map, from its stored
 //! positions and label sides. It ports the prototype checker's tests and
-//! thresholds unchanged (docs/plugins/built-in/map.md).
+//! thresholds, except that where a label or note is nearer another mark or
+//! line, it names the nearest, where the prototype named the first
+//! (docs/plugins/built-in/map.md).
 
 use std::collections::{BTreeMap, BTreeSet};
 
 use board_model::{Code, Fields, LogicalPath, PathError, Refusal};
 use board_ops::{Host, PluginError};
 use board_plugin::shape::{Prose, Ref};
+use board_validate::Schema;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
@@ -15,6 +18,7 @@ use crate::geom::{
     Align, Box2, Mark, NotePoint, OFFSET, RADIUS, Segment, label_box, line_ends, line_note,
     note_box, title_box,
 };
+use crate::layout_schema;
 use crate::records::{Anchor, LayoutRecord, Region};
 
 /// The map to check.
@@ -208,14 +212,22 @@ fn read(host: &dyn Host, path: &str) -> Result<LayoutRecord, PluginError> {
             ));
         }
     };
-    serde_json::from_value(record).map_err(|error| {
+    let unreadable = |error: String| {
         refusal(
             "map::layout::unreadable",
             format!("{path} is not a map/layout/v1 record: {error}"),
             "name a map/layout/v1 record, or run `board check` on the path and fix what it names",
             [("path", path)],
         )
-    })
+    };
+    // Board's get returns a record that breaks its schema, which `board
+    // check` marks degraded, so the map is checked against the schema here.
+    let schema = Schema::compile(layout_schema())
+        .expect("the map's schema is generated from its struct; a test compiles it");
+    schema
+        .validate(&record)
+        .map_err(|error| unreadable(error.to_string()))?;
+    serde_json::from_value(record).map_err(|error| unreadable(error.to_string()))
 }
 
 fn refusal<const N: usize>(

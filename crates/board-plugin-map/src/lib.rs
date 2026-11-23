@@ -83,7 +83,7 @@ fn manifest() -> Value {
 }
 
 /// The schema `LayoutRecord` generates.
-fn layout_schema() -> Value {
+pub(crate) fn layout_schema() -> Value {
     schema_of::<LayoutRecord>(SchemaSettings::draft2020_12())
 }
 

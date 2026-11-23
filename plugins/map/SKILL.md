@@ -39,7 +39,11 @@ the page and a finding disagree, compare the drawn text with the finding's
 
 - `map::layout::not_found`: no record is at the path. `board ls /maps`
   lists the maps.
-- `map::layout::unreadable`: the record is not a `map/layout/v1`.
+- `map::layout::unreadable`: the record is not a `map/layout/v1`, or it
+  breaks the schema, such as an item with an empty label. The message
+  names the field.
 - `map::layout::unknown_id`: an item, line or note names a region, item or
   line the map does not hold.
 - `map::layout::duplicate_id`: two items or two regions share a name.
+- `map::board::refused`: Board refused to read the path; the refusal
+  names Board's own code in `code`. Run `board get` on the path to see it.
