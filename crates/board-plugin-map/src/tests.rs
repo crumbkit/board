@@ -23,9 +23,21 @@ pub(crate) fn fixture(name: &str) -> Value {
     map
 }
 
+/// The `description` of SKILL.md's frontmatter, a single-quoted YAML
+/// scalar on one line.
+fn skill_description() -> String {
+    let skill = include_str!("../../../plugins/map/SKILL.md");
+    let line = (skill.lines())
+        .find_map(|line| line.strip_prefix("description: "))
+        .unwrap();
+    let quoted = line.strip_prefix('\'').unwrap().strip_suffix('\'').unwrap();
+    quoted.replace("''", "'")
+}
+
 #[test]
 fn the_manifest_parses_and_names_its_type_and_capability() {
     let manifest = MapPlugin.manifest();
+    assert_eq!(manifest.description, skill_description());
     assert_eq!(manifest.name.as_str(), "map");
     let capabilities: Vec<&str> = (manifest.capabilities.iter())
         .map(|capability| capability.name.as_str())
@@ -72,11 +84,16 @@ fn a_map_with_a_malformed_field_is_refused_and_its_twin_is_admitted() {
     let schema = board_validate::Schema::compile(layout_schema()).unwrap();
     for name in ["services", "work", "queue"] {
         for variant in ["placed", "final"] {
-            schema.validate(&fixture(&format!("{name}-{variant}"))).unwrap();
+            schema
+                .validate(&fixture(&format!("{name}-{variant}")))
+                .unwrap();
         }
     }
     let map = fixture("services-final");
-    let refused: [(&str, Value); 12] = [
+    let mut map = map;
+    map["accepts"] = json!([{"kind": "label-overlap", "message": "m", "reason": "r"}]);
+    schema.validate(&map).unwrap();
+    let refused: [(&str, Value); 15] = [
         ("/title", json!("")),
         ("/sheet/width", json!(0)),
         ("/regions", json!([])),
@@ -89,6 +106,9 @@ fn a_map_with_a_malformed_field_is_refused_and_its_twin_is_admitted() {
         ("/lines/0/kind", json!("")),
         ("/notes/0/anchor/line/along", json!(1.5)),
         ("/notes/0/anchor", json!({"point": {"x": 1, "y": 2}})),
+        ("/accepts", json!([])),
+        ("/accepts/0/kind", json!("label-clash")),
+        ("/accepts/0/reason", json!("")),
     ];
     for (pointer, value) in refused {
         let mut twin = map.clone();
@@ -105,8 +125,8 @@ fn a_map_with_a_malformed_field_is_refused_and_its_twin_is_admitted() {
     schema.validate(&unplaced).unwrap();
 }
 
-/// A board that enables map and holds `map` at /maps/m.json and a note at
-/// /maps/other.json.
+/// A board that enables map and holds `map` at /maps/m.json, beside its
+/// config at /.board/board.json, a record that is not a map.
 fn board_with(map: &Value) -> (Scenario, Board) {
     let scenario = Scenario::new();
     scenario.write(
@@ -114,7 +134,6 @@ fn board_with(map: &Value) -> (Scenario, Board) {
         Item::File(r#"{"$type": "board/config/v1", "commit_on_put": false}"#),
     );
     scenario.write("maps/m.json", Item::File(&map.to_string()));
-    scenario.write("maps/note.md", Item::File("# Not a map\n"));
     let mut board = Board::open(scenario.workdir(), None).unwrap();
     board.build_in(&[&MapPlugin]);
     board
@@ -146,7 +165,10 @@ fn check_reads_the_map_from_the_board_and_bounds_its_findings() {
     assert_eq!(all["left_out"], 0);
     let some = called(&mut board, &json!({"path": "/maps/m", "limit": 5})).unwrap();
     assert_eq!(some["problems"], 12);
-    assert_eq!(some["findings"], json!(all["findings"].as_array().unwrap()[..5]));
+    assert_eq!(
+        some["findings"],
+        json!(all["findings"].as_array().unwrap()[..5])
+    );
     assert_eq!(some["left_out"], 7);
 }
 
@@ -157,7 +179,7 @@ fn check_refuses_a_path_with_no_map_and_admits_one_with_a_map() {
     assert_eq!(admitted["problems"], 0);
     for (path, code) in [
         ("/maps/none", "map::layout::not_found"),
-        ("/maps/note", "map::layout::unreadable"),
+        ("/.board/board", "map::layout::unreadable"),
     ] {
         assert_eq!(
             called(&mut board, &json!({"path": path})),
@@ -165,6 +187,41 @@ fn check_refuses_a_path_with_no_map_and_admits_one_with_a_map() {
             "{path}"
         );
     }
+}
+
+/// A finding the map accepts is counted apart and not listed; an accept
+/// whose message no longer matches leaves the finding listed and is itself
+/// listed as unused.
+#[test]
+fn check_counts_an_accepted_finding_apart_and_lists_an_unused_accept() {
+    let message = "the label of alder overlaps the label of cedar";
+    let mut accepting = fixture("services-placed");
+    accepting["accepts"] = json!([
+        {"kind": "label-overlap", "message": message, "reason": "the two read as one pair"}
+    ]);
+    let mut stale = accepting.clone();
+    stale["accepts"][0]["message"] = json!("the label of alder overlaps the label of elm");
+    let (_scenario, mut board) = board_with(&accepting);
+    let accepted = called(&mut board, &json!({"path": "/maps/m"})).unwrap();
+    assert_eq!(
+        (accepted["problems"].clone(), accepted["accepted"].clone()),
+        (json!(54), json!(1))
+    );
+    let listed = |output: &Value, text: &str| {
+        (output["findings"].as_array().unwrap().iter())
+            .any(|finding| finding["message"].as_str().unwrap().contains(text))
+    };
+    assert!(!listed(&accepted, message));
+    let (_scenario, mut board) = board_with(&stale);
+    let unused = called(&mut board, &json!({"path": "/maps/m"})).unwrap();
+    assert_eq!(
+        (unused["problems"].clone(), unused["accepted"].clone()),
+        (json!(56), json!(0))
+    );
+    assert!(listed(&unused, message));
+    let accept = &unused["findings"][0];
+    assert_eq!(accept["kind"], "accept-unused");
+    assert!(accept["message"].as_str().unwrap().contains("label of elm"));
 }
 
 #[test]

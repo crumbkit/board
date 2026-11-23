@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- The new `map` plugin keeps a map as one `map/layout/v1` record at
+  `/maps/<name>`: a sheet, titled regions, items with a stored position
+  and label side, typed lines, and notes anchored to an item or a line.
+  `board map check --path /maps/<name>` lists what a reader would see as
+  broken, with the box it estimated for each text, and counts the findings
+  the map accepts apart.
+
 - The new `priorities` plugin keeps the owner's priorities in one
   `priorities/list/v1` record at `/priorities`, ranked in a short and a
   long horizon. `board priorities list` gives each entry with what it

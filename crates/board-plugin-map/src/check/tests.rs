@@ -79,7 +79,11 @@ fn the_order_of_a_maps_parts_changes_no_finding() {
             rows.sort();
             rows
         };
-        assert_eq!(message(found(&forward)), message(found(&reversed)), "{name}");
+        assert_eq!(
+            message(found(&forward)),
+            message(found(&reversed)),
+            "{name}"
+        );
     }
 }
 
@@ -91,7 +95,11 @@ fn a_map_naming_what_it_does_not_hold_is_refused_and_its_twin_is_admitted() {
     check(&map(&good)).unwrap();
     let first = good["items"][0]["id"].as_str().unwrap().to_owned();
     let cases: [(&str, Value, &str); 5] = [
-        ("/items/0/region", json!("nowhere"), "map::layout::unknown_id"),
+        (
+            "/items/0/region",
+            json!("nowhere"),
+            "map::layout::unknown_id",
+        ),
         ("/lines/0/to", json!("nothing"), "map::layout::unknown_id"),
         (
             "/notes/0/anchor",
@@ -99,7 +107,11 @@ fn a_map_naming_what_it_does_not_hold_is_refused_and_its_twin_is_admitted() {
             "map::layout::unknown_id",
         ),
         ("/items/1/id", json!(first), "map::layout::duplicate_id"),
-        ("/regions/1/id", good["regions"][0]["id"].clone(), "map::layout::duplicate_id"),
+        (
+            "/regions/1/id",
+            good["regions"][0]["id"].clone(),
+            "map::layout::duplicate_id",
+        ),
     ];
     for (pointer, value, code) in cases {
         let mut twin = good.clone();
@@ -132,7 +144,11 @@ fn an_item_with_no_position_is_reported_and_its_lines_are_not_drawn() {
 fn a_note_stays_with_its_item_when_the_item_moves() {
     let mut value = fixture("work-final");
     let notes = value["notes"].as_array().unwrap().clone();
-    assert!(notes.iter().any(|note| note["anchor"].get("item").is_some()));
+    assert!(
+        notes
+            .iter()
+            .any(|note| note["anchor"].get("item").is_some())
+    );
     for item in value["items"].as_array_mut().unwrap() {
         for axis in ["x", "y"] {
             let at = item["at"][axis].as_f64().unwrap();
@@ -150,4 +166,24 @@ fn a_note_stays_with_its_item_when_the_item_moves() {
         .filter(|(kind, _)| kind.starts_with("note-"))
         .collect();
     assert_eq!(notes, Vec::<(String, String)>::new());
+}
+
+/// A finding names the box the checker estimated for each label it names,
+/// so a reader can compare the estimate with the drawn text.
+#[test]
+fn a_finding_gives_the_estimated_box_of_each_label_it_names() {
+    let findings = check(&map(&fixture("services-placed"))).unwrap();
+    let overlap = (findings.iter())
+        .find(|finding| finding.message == "the label of alder overlaps the label of cedar")
+        .unwrap();
+    let named: Vec<&str> = (overlap.estimated.iter())
+        .map(|area| area.of.as_str())
+        .collect();
+    assert_eq!(named, ["the label of alder", "the label of cedar"]);
+    let [a, b] = [&overlap.estimated[0], &overlap.estimated[1]];
+    assert!(a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1);
+    let crossing = (findings.iter())
+        .find(|finding| finding.kind == Kind::LinesShareAngle)
+        .unwrap();
+    assert!(crossing.estimated.is_empty());
 }

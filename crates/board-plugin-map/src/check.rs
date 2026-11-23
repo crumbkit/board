@@ -39,30 +39,83 @@ pub(crate) struct Output {
     /// The map that was checked.
     #[schemars(with = "Ref<LayoutRecord>")]
     path: String,
-    /// How many findings the map has, listed or not.
+    /// How many findings the map has, listed or not, apart from those it
+    /// accepts.
     problems: usize,
     /// The findings, by kind and then message.
     findings: Vec<Finding>,
     /// How many findings the limit left out.
     left_out: usize,
+    /// How many findings the map accepts, which are not listed.
+    accepted: usize,
 }
 
 /// One thing a reader would see as broken.
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, JsonSchema)]
+#[derive(Clone, Debug, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Finding {
     pub kind: Kind,
     /// What is wrong, naming the items, lines, notes and regions involved.
     #[schemars(with = "Prose")]
     pub message: String,
+    /// The box the checker estimated for each label, note or region title
+    /// the finding names, since it estimates text width from character
+    /// counts and the page's font may differ; empty when it names none.
+    pub estimated: Vec<Estimate>,
+}
+
+/// The box the checker estimated for one text on the sheet, rounded to a
+/// tenth of a unit.
+#[derive(Clone, Debug, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Estimate {
+    /// The text, such as `the label of alder` or `the title of region north`.
+    #[schemars(with = "Prose")]
+    pub of: String,
+    /// The left edge.
+    pub x0: f64,
+    /// The top edge.
+    pub y0: f64,
+    /// The right edge.
+    pub x1: f64,
+    /// The bottom edge.
+    pub y1: f64,
+}
+
+/// The findings `check` collects.
+struct Found(Vec<Finding>);
+
+impl Found {
+    /// Adds a finding of `kind`, with the estimated box of each text it
+    /// names.
+    fn add(&mut self, kind: Kind, message: String, texts: &[(String, Box2)]) {
+        let tenth = |value: f64| (value * 10.0).round() / 10.0;
+        let estimated = (texts.iter())
+            .map(|(of, area)| Estimate {
+                of: of.clone(),
+                x0: tenth(area.x0),
+                y0: tenth(area.y0),
+                x1: tenth(area.x1),
+                y1: tenth(area.y1),
+            })
+            .collect();
+        self.0.push(Finding {
+            kind,
+            message,
+            estimated,
+        });
+    }
 }
 
 // What kind of problem a finding is. No doc comment, which would describe
 // the inlined enum.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, JsonSchema)]
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize, JsonSchema,
+)]
 #[serde(rename_all = "kebab-case")]
 #[schemars(inline)]
 pub enum Kind {
+    AcceptUnused,
     ItemUnplaced,
     ItemsOverlap,
     LabelNearerOther,
@@ -85,8 +138,8 @@ const REACH: f64 = 70.0;
 pub(crate) fn call(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
     let Input { path, limit } = PluginError::read_input("map", "check", input)?;
     let map = read(host, &path)?;
-    let mut findings = check(&map)?;
-    findings.sort();
+    let (mut findings, accepted) = accept(&map, check(&map)?);
+    findings.sort_by(|a, b| (a.kind, &a.message).cmp(&(b.kind, &b.message)));
     let problems = findings.len();
     let limit = limit.unwrap_or(100);
     let left_out = problems.saturating_sub(limit);
@@ -96,8 +149,35 @@ pub(crate) fn call(host: &dyn Host, input: &Value) -> Result<Value, PluginError>
         problems,
         findings,
         left_out,
+        accepted,
     };
     Ok(serde_json::to_value(output).expect("the output is strings and counts"))
+}
+
+/// `findings` without those `map` accepts, with how many it accepted. An
+/// accept that matches no finding is itself a finding, so a stale one is
+/// seen.
+fn accept(map: &LayoutRecord, findings: Vec<Finding>) -> (Vec<Finding>, usize) {
+    let accepts = |finding: &Finding| {
+        (map.accepts.iter())
+            .any(|accept| accept.kind == finding.kind && accept.message == finding.message)
+    };
+    let (accepted, mut kept): (Vec<Finding>, Vec<Finding>) =
+        findings.into_iter().partition(accepts);
+    let mut found = Found(Vec::new());
+    for accept in &map.accepts {
+        let used = (accepted.iter())
+            .any(|finding| finding.kind == accept.kind && finding.message == accept.message);
+        if !used {
+            let message = format!(
+                "the map accepts \"{}\", which the map no longer has",
+                accept.message
+            );
+            found.add(Kind::AcceptUnused, message, &[]);
+        }
+    }
+    kept.extend(found.0);
+    (kept, accepted.len())
 }
 
 /// The map at `path`.
@@ -160,6 +240,13 @@ struct Placed<'a> {
     region: Option<&'a Region>,
 }
 
+impl Placed<'_> {
+    /// The label's name and estimated box.
+    fn label(&self) -> (String, Box2) {
+        (format!("the label of {}", self.id), self.label)
+    }
+}
+
 /// A drawn line.
 struct Drawn<'a> {
     from: &'a str,
@@ -180,6 +267,13 @@ struct Written<'a> {
     on: On<'a>,
 }
 
+impl Written<'_> {
+    /// The note's name and estimated box.
+    fn estimate(&self) -> (String, Box2) {
+        (format!("the note \"{}\"", self.text), self.area)
+    }
+}
+
 /// What a drawn note belongs to.
 enum On<'a> {
     Item(usize),
@@ -191,16 +285,20 @@ enum On<'a> {
 /// refused.
 pub fn check(map: &LayoutRecord) -> Result<Vec<Finding>, PluginError> {
     known(map)?;
-    let mut found = Vec::new();
-    let mut add = |kind, message: String| found.push(Finding { kind, message });
-    let regions: BTreeMap<&str, &Region> =
-        (map.regions.iter()).map(|region| (region.id.as_str(), region)).collect();
+    let mut found = Found(Vec::new());
+    let regions: BTreeMap<&str, &Region> = (map.regions.iter())
+        .map(|region| (region.id.as_str(), region))
+        .collect();
     let mut placed = Vec::new();
     for item in &map.items {
         let Some(at) = item.at else {
-            add(
+            found.add(
                 Kind::ItemUnplaced,
-                format!("{} has no stored position, so the map does not draw it", item.id),
+                format!(
+                    "{} has no stored position, so the map does not draw it",
+                    item.id
+                ),
+                &[],
             );
             continue;
         };
@@ -213,11 +311,15 @@ pub fn check(map: &LayoutRecord) -> Result<Vec<Finding>, PluginError> {
             id: &item.id,
             mark,
             label: label_box(&mark, item.side.unwrap_or_default(), &item.label),
-            region: item.region.as_deref().and_then(|id| regions.get(id).copied()),
+            region: item
+                .region
+                .as_deref()
+                .and_then(|id| regions.get(id).copied()),
         });
     }
-    let index: BTreeMap<&str, usize> =
-        (placed.iter().enumerate()).map(|(at, item)| (item.id, at)).collect();
+    let index: BTreeMap<&str, usize> = (placed.iter().enumerate())
+        .map(|(at, item)| (item.id, at))
+        .collect();
     let lines: Vec<Drawn> = (map.lines.iter())
         .filter_map(|line| {
             let (a, b) = (index.get(line.from.as_str())?, index.get(line.to.as_str())?);
@@ -229,12 +331,12 @@ pub fn check(map: &LayoutRecord) -> Result<Vec<Finding>, PluginError> {
         })
         .collect();
     let notes = written(map, &placed, &index);
-    labels(&placed, &mut add);
-    crossings(&placed, &lines, &index, &mut add);
-    nearness(&placed, &lines, &notes, &mut add);
-    sheet(map, &placed, &lines, &mut add);
-    note_clashes(&placed, &lines, &notes, &mut add);
-    Ok(found)
+    labels(&placed, &mut found);
+    crossings(&placed, &lines, &index, &mut found);
+    nearness(&placed, &lines, &notes, &mut found);
+    sheet(map, &placed, &lines, &mut found);
+    note_clashes(&placed, &lines, &notes, &mut found);
+    Ok(found.0)
 }
 
 /// Refuses a map whose items or regions repeat a name, or whose items,
@@ -277,7 +379,11 @@ fn known(map: &LayoutRecord) -> Result<(), PluginError> {
     for line in &map.lines {
         for end in [&line.from, &line.to] {
             if !items.contains(end.as_str()) {
-                return Err(unknown("item", end, format!("the line {}→{}", line.from, line.to)));
+                return Err(unknown(
+                    "item",
+                    end,
+                    format!("the line {}→{}", line.from, line.to),
+                ));
             }
         }
         lines.insert((line.from.as_str(), line.to.as_str()));
@@ -335,15 +441,12 @@ fn written<'a>(
 }
 
 /// Labels over labels or marks, and marks over marks.
-fn labels(placed: &[Placed], add: &mut impl FnMut(Kind, String)) {
+fn labels(placed: &[Placed], found: &mut Found) {
     for (at, one) in placed.iter().enumerate() {
         for other in &placed[at + 1..] {
             if one.label.hits(&other.label) {
-                let message = format!(
-                    "the label of {} overlaps the label of {}",
-                    one.id, other.id
-                );
-                add(Kind::LabelOverlap, message);
+                let message = format!("the label of {} overlaps the label of {}", one.id, other.id);
+                found.add(Kind::LabelOverlap, message, &[one.label(), other.label()]);
             }
         }
     }
@@ -351,7 +454,7 @@ fn labels(placed: &[Placed], add: &mut impl FnMut(Kind, String)) {
         for other in placed.iter().filter(|other| other.id != one.id) {
             if one.label.hits(&other.mark.square()) {
                 let message = format!("the label of {} overlaps the mark of {}", one.id, other.id);
-                add(Kind::LabelOverlap, message);
+                found.add(Kind::LabelOverlap, message, &[one.label()]);
             }
         }
     }
@@ -359,9 +462,10 @@ fn labels(placed: &[Placed], add: &mut impl FnMut(Kind, String)) {
         for b in &placed[at + 1..] {
             let apart = (a.mark.x - b.mark.x).hypot(a.mark.y - b.mark.y);
             if apart < a.mark.r + b.mark.r + 8.0 {
-                add(
+                found.add(
                     Kind::ItemsOverlap,
                     format!("the marks of {} and {} overlap", a.id, b.id),
+                    &[],
                 );
             }
         }
@@ -374,30 +478,41 @@ fn crossings<'a>(
     placed: &[Placed],
     lines: &[Drawn<'a>],
     index: &BTreeMap<&str, usize>,
-    add: &mut impl FnMut(Kind, String),
+    found: &mut Found,
 ) {
     for line in lines {
         for item in placed {
             if line.segment.crosses(&item.label) {
                 let message = format!("{} crosses the label of {}", line.name(), item.id);
-                add(Kind::LineThroughLabel, message);
+                found.add(Kind::LineThroughLabel, message, &[item.label()]);
             }
         }
-        for item in placed.iter().filter(|item| item.id != line.from && item.id != line.to) {
+        for item in placed
+            .iter()
+            .filter(|item| item.id != line.from && item.id != line.to)
+        {
             if line.segment.distance(item.mark.x, item.mark.y) < item.mark.r + 4.0 {
                 let message = format!("{} passes over the mark of {}", line.name(), item.id);
-                add(Kind::LineThroughItem, message);
+                found.add(Kind::LineThroughItem, message, &[]);
             }
         }
     }
     let mark = |id: &str| index.get(id).map(|at| placed[*at].mark);
     for (at, a) in lines.iter().enumerate() {
         for b in &lines[at + 1..] {
-            let Some(shared) = [a.from, a.to].into_iter().find(|id| *id == b.from || *id == b.to)
+            let Some(shared) = [a.from, a.to]
+                .into_iter()
+                .find(|id| *id == b.from || *id == b.to)
             else {
                 continue;
             };
-            let far = |line: &Drawn<'a>| if line.from == shared { line.to } else { line.from };
+            let far = |line: &Drawn<'a>| {
+                if line.from == shared {
+                    line.to
+                } else {
+                    line.from
+                }
+            };
             let (Some(s), Some(p), Some(q)) = (mark(shared), mark(far(a)), mark(far(b))) else {
                 continue;
             };
@@ -412,7 +527,7 @@ fn crossings<'a>(
                     "the lines {}→{} and {}→{} leave one item at nearly one angle",
                     a.from, a.to, b.from, b.to
                 );
-                add(Kind::LinesShareAngle, message);
+                found.add(Kind::LinesShareAngle, message, &[]);
             }
         }
     }
@@ -435,12 +550,7 @@ fn nearest<T>(candidates: impl Iterator<Item = (f64, String, T)>, own: f64) -> O
 
 /// Labels outside their region, and labels and notes nearer another mark
 /// or line than their own.
-fn nearness(
-    placed: &[Placed],
-    lines: &[Drawn],
-    notes: &[Written],
-    add: &mut impl FnMut(Kind, String),
-) {
+fn nearness(placed: &[Placed], lines: &[Drawn], notes: &[Written], found: &mut Found) {
     for item in placed {
         if let Some(region) = item.region {
             let area = Box2 {
@@ -451,7 +561,7 @@ fn nearness(
             };
             if !item.label.within(&area) {
                 let message = format!("the label of {} leaves its region", item.id);
-                add(Kind::LabelOutsideRegion, message);
+                found.add(Kind::LabelOutsideRegion, message, &[item.label()]);
             }
         }
         let own = reach(&item.label, &item.mark);
@@ -463,7 +573,7 @@ fn nearness(
                 "the label of {} is nearer the mark of {} than its own",
                 item.id, other.id
             );
-            add(Kind::LabelNearerOther, message);
+            found.add(Kind::LabelNearerOther, message, &[item.label()]);
         }
     }
     for note in notes {
@@ -483,7 +593,7 @@ fn nearness(
                 note.text,
                 line.name()
             );
-            add(Kind::NoteNearerOther, message);
+            found.add(Kind::NoteNearerOther, message, &[note.estimate()]);
         }
     }
     for note in notes {
@@ -499,18 +609,13 @@ fn nearness(
                 "the note \"{}\" is nearer the mark of {} than its own item",
                 note.text, other.id
             );
-            add(Kind::NoteNearerOther, message);
+            found.add(Kind::NoteNearerOther, message, &[note.estimate()]);
         }
     }
 }
 
 /// Labels off the sheet, and labels and lines over region titles.
-fn sheet(
-    map: &LayoutRecord,
-    placed: &[Placed],
-    lines: &[Drawn],
-    add: &mut impl FnMut(Kind, String),
-) {
+fn sheet(map: &LayoutRecord, placed: &[Placed], lines: &[Drawn], found: &mut Found) {
     let page = Box2 {
         x0: 0.0,
         y0: 0.0,
@@ -518,9 +623,10 @@ fn sheet(
         y1: map.sheet.height,
     };
     for item in placed.iter().filter(|item| !item.label.within(&page)) {
-        add(
+        found.add(
             Kind::LabelOffSheet,
             format!("the label of {} leaves the sheet", item.id),
+            &[item.label()],
         );
     }
     for region in &map.regions {
@@ -530,27 +636,32 @@ fn sheet(
                 "the label of {} overlaps the title of region {}",
                 item.id, region.id
             );
-            add(Kind::LabelOverlap, message);
+            let named = (format!("the title of region {}", region.id), title);
+            found.add(Kind::LabelOverlap, message, &[item.label(), named]);
         }
         for line in lines.iter().filter(|line| line.segment.crosses(&title)) {
             let message = format!("{} crosses the title of region {}", line.name(), region.id);
-            add(Kind::LineThroughLabel, message);
+            let named = (format!("the title of region {}", region.id), title);
+            found.add(Kind::LineThroughLabel, message, &[named]);
         }
     }
 }
 
 /// Notes far from what they describe, and notes over labels, marks or
 /// other lines.
-fn note_clashes(
-    placed: &[Placed],
-    lines: &[Drawn],
-    notes: &[Written],
-    add: &mut impl FnMut(Kind, String),
-) {
-    let mark = |id: &str| placed.iter().find(|item| item.id == id).map(|item| item.mark);
+fn note_clashes(placed: &[Placed], lines: &[Drawn], notes: &[Written], found: &mut Found) {
+    let mark = |id: &str| {
+        placed
+            .iter()
+            .find(|item| item.id == id)
+            .map(|item| item.mark)
+    };
     for note in notes {
         let target = match note.on {
-            On::Item(at) => Some(((placed[at].mark.x, placed[at].mark.y), placed[at].id.to_owned())),
+            On::Item(at) => Some((
+                (placed[at].mark.x, placed[at].mark.y),
+                placed[at].id.to_owned(),
+            )),
             On::Line(from, to) => mark(from).zip(mark(to)).map(|(a, b)| {
                 let middle = (f64::midpoint(a.x, b.x), f64::midpoint(a.y, b.y));
                 (middle, format!("the line {from}→{to}"))
@@ -561,16 +672,25 @@ fn note_clashes(
             if distance > REACH {
                 let units = (distance + 0.5).floor();
                 let message = format!("the note \"{}\" is {units} units from {name}", note.text);
-                add(Kind::NoteAdrift, message);
+                found.add(Kind::NoteAdrift, message, &[note.estimate()]);
             }
         }
         for item in placed.iter().filter(|item| note.area.hits(&item.label)) {
-            let message = format!("the note \"{}\" overlaps the label of {}", note.text, item.id);
-            add(Kind::NoteOverlap, message);
+            let message = format!(
+                "the note \"{}\" overlaps the label of {}",
+                note.text, item.id
+            );
+            found.add(Kind::NoteOverlap, message, &[note.estimate(), item.label()]);
         }
-        for item in placed.iter().filter(|item| note.area.hits(&item.mark.square())) {
-            let message = format!("the note \"{}\" overlaps the mark of {}", note.text, item.id);
-            add(Kind::NoteOverlap, message);
+        for item in placed
+            .iter()
+            .filter(|item| note.area.hits(&item.mark.square()))
+        {
+            let message = format!(
+                "the note \"{}\" overlaps the mark of {}",
+                note.text, item.id
+            );
+            found.add(Kind::NoteOverlap, message, &[note.estimate()]);
         }
         for line in lines {
             if let On::Line(from, to) = note.on
@@ -581,7 +701,7 @@ fn note_clashes(
             }
             if line.segment.crosses(&note.area) {
                 let message = format!("the note \"{}\" overlaps {}", note.text, line.name());
-                add(Kind::NoteOverlap, message);
+                found.add(Kind::NoteOverlap, message, &[note.estimate()]);
             }
         }
     }

@@ -55,10 +55,11 @@ fn manifest() -> Value {
         "$type": "board/plugin-manifest/v1",
         "name": "map",
         "version": "0.1.0",
-        "description": "A map draws items as marks with labels, in titled regions, joined by typed \
-            lines, with notes anchored to an item or a line, from one map/layout/v1 record at \
-            /maps/<name>. `board call map.check --path /maps/<name>` lists what a reader would see \
-            as broken. docs/plugins/built-in/map.md in Board's repository says more.",
+        "description": "Maps of items, regions, typed lines and notes, each one map/layout/v1 \
+            record at /maps/<name>. Use it when you build or change a map, before you publish it. \
+            Run `board map check --path /maps/<name>`, which lists what a reader would see as \
+            broken, such as overlapping labels and lines through labels, with the box it \
+            estimated for each text. SKILL.md and README.md in the plugin's directory say more.",
         "metadata": {"area": "planning"},
         "types": [LayoutRecord::TYPE],
         "capabilities": [{
@@ -66,7 +67,8 @@ fn manifest() -> Value {
             "description": "What a reader would see as broken in a map: labels over labels, marks \
                 or region titles, labels off the sheet or outside their region, lines through \
                 labels or marks, lines leaving an item at nearly one angle, overlapping marks, and \
-                labels or notes nearer another mark or line than their own.",
+                labels or notes nearer another mark or line than their own. Each finding gives the \
+                box estimated for each text it names; findings the map accepts are counted apart.",
             "inputSchema": schema_of::<check::Input>(settings()),
             "outputSchema": schema_of::<check::Output>(settings().for_serialize()),
             "annotations": {

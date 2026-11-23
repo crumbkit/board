@@ -2,6 +2,8 @@
 //! struct; the file under `types/` is that schema, committed.
 
 use board_plugin::shape::{Prose, Record, Slug, Tag};
+
+use crate::check::Kind;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -41,6 +43,12 @@ pub struct LayoutRecord {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[schemars(length(min = 1))]
     pub notes: Vec<Note>,
+    /// Findings the map's maker accepts, each with why, such as two lines
+    /// that must leave an item in one direction. `map.check` counts them
+    /// apart from its findings. Left out when the map accepts none.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[schemars(length(min = 1))]
+    pub accepts: Vec<Accept>,
 }
 
 impl Record for LayoutRecord {
@@ -184,8 +192,14 @@ pub struct Note {
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum Anchor {
-    Item(ItemAnchor),
-    Line(LineAnchor),
+    Item(
+        /// The item, and the note's start offset from its centre.
+        ItemAnchor,
+    ),
+    Line(
+        /// The line, and the note's point along it and offset across it.
+        LineAnchor,
+    ),
 }
 
 /// A note's start, offset from an item's centre.
@@ -219,4 +233,19 @@ pub struct LineAnchor {
     /// How far across the line; 9 when left out.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub offset: Option<f64>,
+}
+
+/// A finding the map's maker accepts: its kind and message as `map.check`
+/// gives them, and why the map keeps it.
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Accept {
+    /// The finding's kind.
+    pub kind: Kind,
+    /// The finding's message, word for word.
+    #[schemars(with = "Prose", length(min = 1))]
+    pub message: String,
+    /// Why the map keeps what the finding names.
+    #[schemars(with = "Prose", length(min = 1))]
+    pub reason: String,
 }

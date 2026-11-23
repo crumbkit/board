@@ -54,7 +54,10 @@ impl Box2 {
 
     /// The box's centre.
     pub(crate) fn centre(&self) -> (f64, f64) {
-        (f64::midpoint(self.x0, self.x1), f64::midpoint(self.y0, self.y1))
+        (
+            f64::midpoint(self.x0, self.x1),
+            f64::midpoint(self.y0, self.y1),
+        )
     }
 }
 
