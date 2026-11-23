@@ -807,3 +807,405 @@ export const work: MapData = {
     }
   ]
 };
+
+/** The queue fixture of board-plugin-map, with every name replaced: items in five lanes, each with its column, shaded by what it waits on. */
+export const queue: MapData = {
+  "$type": "map/layout/v1",
+  "title": "Yarrow zephyr a",
+  "sheet": {
+    "width": 720,
+    "height": 770
+  },
+  "regions": [
+    {
+      "id": "north",
+      "title": "Prairie quarry ridg",
+      "x": 20,
+      "y": 20,
+      "width": 680,
+      "height": 130
+    },
+    {
+      "id": "south",
+      "title": "Summit tundra upl",
+      "x": 20,
+      "y": 160,
+      "width": 680,
+      "height": 140
+    },
+    {
+      "id": "east",
+      "title": "Valley wil",
+      "x": 20,
+      "y": 410,
+      "width": 680,
+      "height": 100
+    },
+    {
+      "id": "west",
+      "title": "Yarro",
+      "x": 20,
+      "y": 520,
+      "width": 680,
+      "height": 230
+    },
+    {
+      "id": "centre",
+      "title": "Zephyr amb",
+      "x": 20,
+      "y": 310,
+      "width": 680,
+      "height": 90
+    }
+  ],
+  "items": [
+    {
+      "id": "alder",
+      "region": "north",
+      "label": [
+        "Amber basinx",
+        "delta ember fjor"
+      ],
+      "radius": 8,
+      "at": {
+        "x": 190,
+        "y": 85,
+        "set": "pinned"
+      },
+      "side": "left",
+      "lane": "north",
+      "column": 0,
+      "bin": 0
+    },
+    {
+      "id": "birch",
+      "region": "north",
+      "label": [
+        "Grove ha",
+        "inlet juniper ke"
+      ],
+      "radius": 8,
+      "at": {
+        "x": 400,
+        "y": 60,
+        "set": "pinned"
+      },
+      "side": "right",
+      "lane": "north",
+      "column": 1,
+      "bin": 1
+    },
+    {
+      "id": "cedar",
+      "region": "north",
+      "label": [
+        "Lagoon mea",
+        "nectar orchard p"
+      ],
+      "radius": 8,
+      "at": {
+        "x": 400,
+        "y": 110,
+        "set": "pinned"
+      },
+      "side": "right",
+      "lane": "north",
+      "column": 1,
+      "bin": 2
+    },
+    {
+      "id": "dogwood",
+      "region": "south",
+      "label": [
+        "Quarry rid",
+        "summit tundra upla"
+      ],
+      "radius": 8,
+      "at": {
+        "x": 190,
+        "y": 200,
+        "set": "pinned"
+      },
+      "side": "left",
+      "lane": "south",
+      "column": 0,
+      "bin": 0
+    },
+    {
+      "id": "elm",
+      "region": "south",
+      "label": [
+        "Valley w",
+        "yarrow zephyr ambe"
+      ],
+      "radius": 8,
+      "at": {
+        "x": 190,
+        "y": 255,
+        "set": "pinned"
+      },
+      "side": "left",
+      "lane": "south",
+      "column": 0,
+      "bin": 1
+    },
+    {
+      "id": "fir",
+      "region": "south",
+      "label": [
+        "Basin coral delta",
+        "ember fjord grove harbor i"
+      ],
+      "radius": 8,
+      "at": {
+        "x": 400,
+        "y": 200,
+        "set": "pinned"
+      },
+      "side": "right",
+      "lane": "south",
+      "column": 1,
+      "bin": 2
+    },
+    {
+      "id": "ginkgo",
+      "region": "east",
+      "label": [
+        "Juniper kestrel lago",
+        "meadow nectar orch"
+      ],
+      "radius": 8,
+      "at": {
+        "x": 190,
+        "y": 450,
+        "set": "pinned"
+      },
+      "side": "left",
+      "lane": "east",
+      "column": 0,
+      "bin": 0
+    },
+    {
+      "id": "hazel",
+      "region": "east",
+      "label": [
+        "Prairie quarry r",
+        "summit tundra upla"
+      ],
+      "radius": 8,
+      "at": {
+        "x": 190,
+        "y": 488,
+        "set": "pinned"
+      },
+      "side": "left",
+      "lane": "east",
+      "column": 0,
+      "bin": 1
+    },
+    {
+      "id": "ivy",
+      "region": "west",
+      "label": [
+        "Valley willo",
+        "yarrow zephyr amber bas"
+      ],
+      "radius": 8,
+      "at": {
+        "x": 190,
+        "y": 640,
+        "set": "pinned"
+      },
+      "side": "left",
+      "lane": "west",
+      "column": 0,
+      "bin": 2
+    },
+    {
+      "id": "jasmine",
+      "region": "west",
+      "label": [
+        "Coral delta embe",
+        "fjord grove harbor inlet j",
+        "kestrel lagoon meadow"
+      ],
+      "radius": 8,
+      "at": {
+        "x": 400,
+        "y": 585,
+        "set": "pinned"
+      },
+      "side": "above",
+      "lane": "west",
+      "column": 1,
+      "bin": 0
+    },
+    {
+      "id": "kapok",
+      "region": "west",
+      "label": [
+        "Nectar orchard pr",
+        "quarry ridge summit tundr"
+      ],
+      "radius": 8,
+      "at": {
+        "x": 400,
+        "y": 645,
+        "set": "pinned"
+      },
+      "side": "below",
+      "lane": "west",
+      "column": 1,
+      "bin": 1
+    },
+    {
+      "id": "larch",
+      "region": "west",
+      "label": [
+        "Upland valle",
+        "willow yarrow zephyr amber"
+      ],
+      "radius": 8,
+      "at": {
+        "x": 400,
+        "y": 722,
+        "set": "pinned"
+      },
+      "side": "right",
+      "lane": "west",
+      "column": 1,
+      "bin": 2
+    },
+    {
+      "id": "maple",
+      "region": "west",
+      "label": [
+        "Basin coral delta e",
+        "fjord grove harbor inle"
+      ],
+      "radius": 8,
+      "at": {
+        "x": 530,
+        "y": 610,
+        "set": "pinned"
+      },
+      "side": "right",
+      "lane": "west",
+      "column": 2,
+      "bin": 0
+    },
+    {
+      "id": "nutmeg",
+      "region": "centre",
+      "label": [
+        "Juniper kest",
+        "lagoon meadow nectar or"
+      ],
+      "radius": 8,
+      "at": {
+        "x": 400,
+        "y": 355,
+        "set": "pinned"
+      },
+      "side": "right",
+      "lane": "centre",
+      "column": 0,
+      "bin": 1
+    }
+  ],
+  "lines": [
+    {
+      "from": "birch",
+      "to": "alder",
+      "kind": "after"
+    },
+    {
+      "from": "cedar",
+      "to": "alder",
+      "kind": "after"
+    },
+    {
+      "from": "fir",
+      "to": "dogwood",
+      "kind": "after"
+    },
+    {
+      "from": "jasmine",
+      "to": "ivy",
+      "kind": "after"
+    },
+    {
+      "from": "kapok",
+      "to": "ivy",
+      "kind": "after"
+    },
+    {
+      "from": "larch",
+      "to": "ivy",
+      "kind": "after"
+    },
+    {
+      "from": "maple",
+      "to": "jasmine",
+      "kind": "after"
+    },
+    {
+      "from": "maple",
+      "to": "kapok",
+      "kind": "after"
+    },
+    {
+      "from": "nutmeg",
+      "to": "dogwood",
+      "kind": "after"
+    }
+  ],
+  "notes": [
+    {
+      "text": "basin coral delta ember fjord grove harbo",
+      "anchor": {
+        "item": {
+          "id": "ivy",
+          "dx": -176,
+          "dy": 62
+        }
+      }
+    },
+    {
+      "text": "inlet juniper kestrel lagoon meadow nectar",
+      "anchor": {
+        "item": {
+          "id": "cedar",
+          "dx": 14,
+          "dy": 34
+        }
+      }
+    },
+    {
+      "text": "orchard prairie quarry ridge summit t",
+      "anchor": {
+        "item": {
+          "id": "nutmeg",
+          "dx": 14,
+          "dy": 36
+        }
+      }
+    }
+  ],
+  "ramp": {
+    "label": "Waits on",
+    "bins": [
+      "nothing",
+      "1",
+      "2+"
+    ]
+  },
+  "line_kinds": [
+    {
+      "kind": "after",
+      "label": "builds after",
+      "style": "solid",
+      "arrow": true
+    }
+  ]
+};

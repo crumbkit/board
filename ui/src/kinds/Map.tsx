@@ -9,6 +9,8 @@ type Item = {
   at?: { x: number; y: number; set: "engine" | "pinned" };
   side?: Side;
   bin?: number;
+  lane?: string;
+  column?: number;
 };
 type Anchor = { item: { id: string; dx: number; dy: number } } | { line: { from: string; to: string; along: number; offset?: number } };
 type Table = {
@@ -44,15 +46,15 @@ function Key({ map }: { map: MapData }) {
         <span className="inline-flex items-center gap-2">
           <span>{map.ramp.label}</span>
           <span className="inline-grid gap-0.5 text-center" style={{ gridTemplateColumns: `repeat(${map.ramp.bins.length}, auto)` }}>
-            {map.ramp.bins.map((bin, i) => (
+            {map.ramp.bins.map((_, i) => (
               <span
-                key={`s${bin}`}
+                key={`s${i}`}
                 className="block h-3 w-10 rounded-sm"
                 style={{ background: `var(--map-cx-${shade(i, map.ramp!.bins.length)})`, boxShadow: "inset 0 0 0 1px var(--map-edge)" }}
               />
             ))}
-            {map.ramp.bins.map((bin) => (
-              <span key={`l${bin}`}>{bin}</span>
+            {map.ramp.bins.map((bin, i) => (
+              <span key={`l${i}`}>{bin}</span>
             ))}
           </span>
         </span>
@@ -81,8 +83,8 @@ function TableView({ table, hot, setHot }: { table: Table; hot: string | null; s
         <table className="w-full border-collapse text-[0.8125rem] tabular-nums">
           <thead>
             <tr>
-              {table.columns.map((column) => (
-                <th key={column.label} className={`border-b border-rule px-2 pt-1 pb-1.5 text-xs font-medium text-muted ${column.numeric ? "text-right" : "text-left"}`}>
+              {table.columns.map((column, c) => (
+                <th key={c} className={`border-b border-rule px-2 pt-1 pb-1.5 text-xs font-medium text-muted ${column.numeric ? "text-right" : "text-left"}`}>
                   {column.label}
                 </th>
               ))}
@@ -98,7 +100,7 @@ function TableView({ table, hot, setHot }: { table: Table; hot: string | null; s
                 onPointerLeave={() => setHot(null)}
               >
                 {row.cells.map((cell, c) => (
-                  <td key={table.columns[c]?.label ?? c} className={`border-b border-rule px-2 py-1.5 align-top ${table.columns[c]?.numeric ? "text-right" : ""}`}>
+                  <td key={c} className={`border-b border-rule px-2 py-1.5 align-top ${table.columns[c]?.numeric ? "text-right" : ""}`}>
                     {cell}
                   </td>
                 ))}
@@ -147,7 +149,7 @@ export function MapView({ data: map }: { data: MapData }) {
             const cold = hot !== null && line.from !== hot && line.to !== hot;
             return (
               <path
-                key={`${line.from}>${line.to}`}
+                key={`${line.from}>${line.to}:${line.kind}`}
                 d={`M${x1.toFixed(1)},${y1.toFixed(1)} L${x2.toFixed(1)},${y2.toFixed(1)}`}
                 stroke="var(--ink-muted)"
                 strokeWidth="1.6"
@@ -195,7 +197,7 @@ export function MapView({ data: map }: { data: MapData }) {
               </g>
             );
           })}
-          {(map.notes ?? []).map((note) => {
+          {(map.notes ?? []).map((note, n) => {
             let point: { x: number; y: number; anchor: "start" | "middle" | "end" } | undefined;
             if ("item" in note.anchor) {
               const mark = marks.get(note.anchor.item.id);
@@ -206,7 +208,7 @@ export function MapView({ data: map }: { data: MapData }) {
             }
             if (!point) return null;
             return (
-              <text key={note.text} x={point.x} y={point.y} textAnchor={point.anchor} fontSize="12.5" fill="var(--ink-muted)">
+              <text key={n} x={point.x} y={point.y} textAnchor={point.anchor} fontSize="12.5" fill="var(--ink-muted)">
                 {note.text}
               </text>
             );

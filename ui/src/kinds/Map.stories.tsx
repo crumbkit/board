@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect } from "storybook/test";
-import { services, work } from "../fixtures/map";
+import { queue, services, work } from "../fixtures/map";
 import { MapView } from "./Map";
 
 const meta = {
@@ -34,5 +34,17 @@ export const WithATable: Story = {
   play: async ({ canvasElement }) => {
     await expect(canvasElement.querySelectorAll("tbody tr").length).toBe(4);
     await expect(canvasElement.textContent).toContain("Every area");
+  },
+};
+
+// The queue in five lanes: each lane is a region, each item sits in its
+// lane, and the arrows run from an item to the item it builds after.
+export const Queue: Story = {
+  args: { data: queue },
+  play: async ({ canvasElement }) => {
+    await expect(canvasElement.querySelectorAll("g[data-id]").length).toBe(queue.items.length);
+    await expect(canvasElement.querySelectorAll("svg[role='img'] rect").length).toBe(queue.regions!.length);
+    await expect(canvasElement.textContent).toContain("builds after");
+    await expect(canvasElement.textContent).toContain("Waits on");
   },
 };
