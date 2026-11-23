@@ -92,7 +92,7 @@ fn a_run_keeps_pinned_and_engine_items_and_places_only_what_has_no_position() {
     value["items"][1]["at"]["set"] = json!("engine");
     let mut map = read(&value);
     let run = placed(&mut map, false);
-    assert_eq!(run.placed(), std::slice::from_ref(&id));
+    assert_eq!(run.placed(&map), std::slice::from_ref(&id));
     let now = spots_of(&map);
     for (one, two) in held.iter().zip(&now).filter(|(one, _)| one.0 != id) {
         assert_eq!((&one.1, one.2), (&two.1, two.2), "{}", one.0);
@@ -361,4 +361,53 @@ fn a_pinned_item_bounds_the_columns_beside_it() {
             assert!(at.x > x, "{} stays right", item.id);
         }
     }
+}
+
+/// A lane with pinned items in columns 0 and 3 ten units apart leaves the
+/// items of columns 1 and 2 no grid position between them. The run lists
+/// neither as placed, and its refusal says they could not be placed at all.
+#[test]
+fn an_item_with_no_room_is_not_listed_as_placed() {
+    let item = |id: &str, column: u32, at: Option<f64>| {
+        let mut item = json!({"id": id, "label": [id], "lane": "row", "column": column});
+        if let Some(x) = at {
+            item["at"] = json!({"x": x, "y": 60, "set": "pinned"});
+        }
+        item
+    };
+    let value = json!({
+        "$type": "map/layout/v1",
+        "title": "No room",
+        "sheet": {"width": 400, "height": 200},
+        "regions": [{"id": "row", "title": "Row", "x": 0, "y": 0, "width": 400, "height": 200}],
+        "items": [
+            item("a", 0, Some(40.0)),
+            item("b", 1, None),
+            item("c", 2, None),
+            item("d", 3, Some(50.0)),
+        ],
+    });
+    let mut map = read(&value);
+    let run = placed(&mut map, false);
+    assert!(map.items[1].at.is_none() && map.items[2].at.is_none());
+    assert_eq!(run.placed(&map), Vec::<String>::new());
+    let (_scenario, mut board) = board_with(&value);
+    let target: board_plugin::Target = "map.place".parse().unwrap();
+    let refused = board
+        .call(
+            &target,
+            json!({"path": "/maps/m"}).to_string().as_bytes(),
+            &board_ops::Plugins::default(),
+        )
+        .unwrap_err()
+        .refusal();
+    assert_eq!(refused.code.as_str(), "map::place::findings_left");
+    assert_eq!(refused.fields["result"]["placed"], json!([]));
+    assert_eq!(
+        refused.hint.as_deref(),
+        Some(
+            "b and c could not be placed at all: give them room in their region or lane, or \
+             pin them with `at.set` pinned, then run map.place again"
+        )
+    );
 }

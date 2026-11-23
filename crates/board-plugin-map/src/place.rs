@@ -39,7 +39,8 @@ pub(crate) struct Output {
     /// The map that was placed.
     #[schemars(with = "Ref<LayoutRecord>")]
     path: String,
-    /// The items that had no stored position and were given one.
+    /// The items that had no stored position and were given one; an item
+    /// the run found no room for is not listed.
     placed: Vec<String>,
     /// The items the engine had placed before whose position changed.
     moved: Vec<String>,
@@ -107,7 +108,7 @@ pub(crate) fn call(host: &dyn Host, input: &Value) -> Result<Value, PluginError>
     findings.truncate(limit);
     let output = Output {
         path: path.clone(),
-        placed: run.placed(),
+        placed: run.placed(&map),
         moved: run.moved(&map),
         sides_changed: run.sides_changed(&map),
         notes_placed: run.notes_placed,
@@ -119,18 +120,41 @@ pub(crate) fn call(host: &dyn Host, input: &Value) -> Result<Value, PluginError>
     if problems == 0 {
         return Ok(output);
     }
+    let stranded = run.stranded(&map);
+    let hint = if stranded.is_empty() {
+        "pin the item a finding names where it should go with `at.set` pinned, then run map.place \
+         again; or accept a finding by name with a reason"
+            .to_owned()
+    } else {
+        format!(
+            "{} could not be placed at all: give {} room in {} region or lane, or pin {} with \
+             `at.set` pinned, then run map.place again",
+            names(&stranded),
+            if stranded.len() == 1 { "it" } else { "them" },
+            if stranded.len() == 1 { "its" } else { "their" },
+            if stranded.len() == 1 { "it" } else { "them" },
+        )
+    };
     let mut error = refusal(
         "map::place::findings_left",
         format!(
             "{path} was placed as well as the engine could, and {problems} findings are left; \
              the best spots are stored"
         ),
-        "pin the item a finding names where it should go with `at.set` pinned, then run map.place \
-         again; or accept a finding by name with a reason",
+        &hint,
         [("path", path.as_str())],
     );
     error.fields.insert("result".to_owned(), output);
     Err(error)
+}
+
+/// `ids` joined for a sentence: `a`, `a and b`, or `a, b and c`.
+fn names(ids: &[String]) -> String {
+    match ids {
+        [] => String::new(),
+        [one] => one.clone(),
+        [rest @ .., last] => format!("{} and {last}", rest.join(", ")),
+    }
 }
 
 /// How a run's progress is measured: findings, then the distance from the
@@ -187,8 +211,21 @@ impl Run {
         }
     }
 
-    fn placed(&self) -> Vec<String> {
-        self.unplaced.clone()
+    /// The items that had no stored position and now have one.
+    fn placed(&self, map: &LayoutRecord) -> Vec<String> {
+        (self.unplaced.iter())
+            .filter(|id| map.items.iter().any(|item| item.id == **id && item.at.is_some()))
+            .cloned()
+            .collect()
+    }
+
+    /// The items that had no stored position and still have none, because
+    /// no spot their region, lane and columns allow was left.
+    fn stranded(&self, map: &LayoutRecord) -> Vec<String> {
+        (self.unplaced.iter())
+            .filter(|id| map.items.iter().any(|item| item.id == **id && item.at.is_none()))
+            .cloned()
+            .collect()
     }
 
     fn moved(&self, map: &LayoutRecord) -> Vec<String> {
