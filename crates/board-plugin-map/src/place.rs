@@ -271,16 +271,23 @@ impl Run {
         for id in &ids {
             Self::choose(map, id, Reach::Whole);
         }
+        // The engine does not store where a person moved a pinned item
+        // from, so a pinned item a finding touches counts as moved: the
+        // sides near it are chosen again, as they are near a placed item.
+        let mut moved = ids.clone();
+        moved.extend(touched(map));
+        moved.sort();
+        moved.dedup();
         for _ in 0..PASSES {
             for id in &ids {
                 Self::choose(map, id, Reach::Near);
             }
-            Self::sides(map, &ids);
+            Self::sides(map, &moved);
         }
         self.line_notes(map);
         self.notes_placed = self.notes.len();
         if problems(map) > 0 {
-            self.anneal(map, &ids);
+            self.anneal(map, &ids, &moved);
         }
     }
 
@@ -288,11 +295,12 @@ impl Run {
     /// that adds findings with a chance that falls as the search goes, and
     /// ends with the best map seen. The random numbers come from a fixed
     /// seed and the sorted ids, so the same map gives the same answer.
-    fn anneal(&self, map: &mut LayoutRecord, ids: &[String]) {
+    fn anneal(&self, map: &mut LayoutRecord, ids: &[String], moved: &[String]) {
         let notes = self.notes.clone();
-        let mut all: Vec<String> = map.items.iter().map(|item| item.id.clone()).collect();
-        all.sort();
-        if all.is_empty() {
+        // A held item's side is chosen again only within one label width
+        // of a moved item, as `sides` chooses them.
+        let all = neighbours(map, moved);
+        if all.is_empty() && notes.is_empty() {
             return;
         }
         let mut random = Random(SEED);
@@ -307,7 +315,7 @@ impl Run {
             let heat = 1.0 - crate::geom::count(step % COOLING) / crate::geom::count(COOLING);
             let temperature = 0.05 + 0.7 * heat;
             let mut undo: Option<Undo> = None;
-            if !notes.is_empty() && random.below(10) == 0 {
+            if !notes.is_empty() && (all.is_empty() || random.below(10) == 0) {
                 let at = notes[random.below(notes.len())];
                 if let Anchor::Line(on) = &mut map.notes[at].anchor {
                     undo = Some(Undo::Note(at, on.along, on.offset));
@@ -338,7 +346,11 @@ impl Run {
             let Some(undo) = undo else { continue };
             let next = problems(map);
             let drop = crate::geom::count(next.saturating_sub(now));
-            let keep = next <= now || random.unit() < (-drop / temperature).exp();
+            // A held item keeps a new side only when it clears a finding.
+            let keep = match undo {
+                Undo::Item(from, ..) if !ids.contains(&map.items[from].id) => next < now,
+                _ => next <= now || random.unit() < (-drop / temperature).exp(),
+            };
             if keep {
                 now = next;
                 if now < best.0 {
@@ -608,6 +620,28 @@ fn column_limits(map: &LayoutRecord, item: &Item) -> (f64, f64) {
         }
     }
     limits
+}
+
+/// The pinned items a finding touches: those whose removal from the map
+/// clears at least one finding, in id order.
+fn touched(map: &mut LayoutRecord) -> Vec<String> {
+    let now = problems(map);
+    if now == 0 {
+        return Vec::new();
+    }
+    let mut touched = Vec::new();
+    for at in 0..map.items.len() {
+        let Some(held) = map.items[at].at.filter(|at| at.set == Set::Pinned) else {
+            continue;
+        };
+        map.items[at].at = None;
+        if problems(map) < now {
+            touched.push(map.items[at].id.clone());
+        }
+        map.items[at].at = Some(held);
+    }
+    touched.sort();
+    touched
 }
 
 /// `ids` and the items whose labels lie within one label width of one of

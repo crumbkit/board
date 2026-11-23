@@ -98,7 +98,10 @@ with x to the right and y down from the sheet's top left corner.
   scoring every candidate with `check`. It writes the whole map in one
   `put`. A pinned item never moves, though its label side may change; an
   item the engine placed before moves only with `--relayout`, which also
-  chooses every line note again. It gives `placed`, `moved`,
+  chooses every line note again. After a person moves and pins an item, a
+  run chooses the label sides within one label width of it again when a
+  finding touches it. It gives `placed` (only the items it gave a
+  position), `moved`,
   `sides_changed`, `notes_placed`, `problems` and `findings`. When
   findings are left it stores the best spots and is refused with
   `map::place::findings_left`, whose `result` field holds that output.

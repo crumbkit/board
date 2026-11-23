@@ -391,7 +391,7 @@ fn an_item_with_no_room_is_not_listed_as_placed() {
     let run = placed(&mut map, false);
     assert!(map.items[1].at.is_none() && map.items[2].at.is_none());
     assert_eq!(run.placed(&map), Vec::<String>::new());
-    let (_scenario, mut board) = board_with(&value);
+    let (_scenario, board) = board_with(&value);
     let target: board_plugin::Target = "map.place".parse().unwrap();
     let refused = board
         .call(
@@ -410,4 +410,69 @@ fn an_item_with_no_room_is_not_listed_as_placed() {
              pin them with `at.set` pinned, then run map.place again"
         )
     );
+}
+
+/// A map whose items are all pinned: one at each of `spots`, named by
+/// it, and `far` alone in the sheet's far corner with its label on the
+/// right.
+fn pinned_map(spots: &[(&str, f64, f64)]) -> Value {
+    let item = |id: &str, x: f64, y: f64| {
+        json!({"id": id, "label": [format!("item {id}")], "side": "right",
+               "at": {"x": x, "y": y, "set": "pinned"}})
+    };
+    let mut items: Vec<Value> = (spots.iter())
+        .map(|&(id, x, y)| item(id, x, y))
+        .collect();
+    items.push(item("far", 600.0, 400.0));
+    json!({
+        "$type": "map/layout/v1",
+        "title": "Pinned",
+        "sheet": {"width": 800, "height": 500},
+        "items": items,
+    })
+}
+
+/// The side of the item `id`.
+fn side_of(map: &LayoutRecord, id: &str) -> Option<Side> {
+    map.items.iter().find(|item| item.id == id).and_then(|item| item.side)
+}
+
+/// Two pinned items on one spot leave a finding no side clears, so the run
+/// anneals, and `c`'s label over `d`'s mark is cleared on the way. The run
+/// changes no side of an item more than a label width from those.
+#[test]
+fn annealing_leaves_the_side_of_a_far_item_alone() {
+    let mut map = read(&pinned_map(&[
+        ("a", 100.0, 100.0),
+        ("b", 100.0, 100.0),
+        ("c", 300.0, 200.0),
+        ("d", 340.0, 200.0),
+    ]));
+    let run = placed(&mut map, false);
+    let left: Vec<Kind> = (check(&map).unwrap().into_iter())
+        .map(|finding| finding.kind)
+        .collect();
+    assert_eq!(left, [Kind::ItemsOverlap]);
+    assert!(!run.sides_changed(&map).contains(&"far".to_owned()));
+    assert_eq!(side_of(&map, "far"), Some(Side::Right));
+}
+
+/// A person moves `a` and pins it just left of `b`, so its right-hand label
+/// runs over `b`'s mark. The next run moves nothing and clears the finding
+/// by choosing a side again near `a`, and leaves the far item's side alone.
+#[test]
+fn a_run_after_a_person_moves_a_pinned_item_chooses_sides_near_it_again() {
+    let mut map = read(&pinned_map(&[("a", 200.0, 200.0), ("b", 240.0, 200.0)]));
+    assert!(problems(&map) > 0, "the moved label overlaps");
+    let before = spots_of(&map);
+    let run = placed(&mut map, false);
+    assert_eq!(problems(&map), 0);
+    let after = spots_of(&map);
+    for (was, now) in before.iter().zip(&after) {
+        assert_eq!(was.1, now.1, "{} keeps its position", was.0);
+    }
+    let changed = run.sides_changed(&map);
+    assert!(!changed.is_empty(), "a side changed");
+    assert!(changed.iter().all(|id| id == "a" || id == "b"), "{changed:?}");
+    assert_eq!(side_of(&map, "far"), Some(Side::Right));
 }

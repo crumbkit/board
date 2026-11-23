@@ -51,9 +51,18 @@ with each of the four sides, scores each with `check`, and keeps the spot with
 the fewest findings, breaking ties by nearness to the item's line neighbours.
 It then moves each placed item within 60 units to cut findings, and chooses a
 side again for each item whose label lies within one label width of a placed
-one. If findings remain it searches by simulated annealing, from a fixed seed
-and in the order of the items' ids, so a map gives the same result whatever
-order it lists its parts in.
+one. The engine does not store where a person moved a pinned item from, so it
+treats each pinned item that a finding touches as moved, and chooses the sides
+within one label width of it again in the same way. A held item keeps a new
+side only when the side clears a finding. If findings remain it searches by
+simulated annealing, from a fixed seed and in the order of the items' ids, so
+a map gives the same result whatever order it lists its parts in. Annealing
+changes the side of a held item only within one label width of a placed or
+moved item, and only to clear a finding.
+
+`placed` lists only the items the run gave a position. When an item's region,
+lane and columns leave it no grid position, it stays unplaced, the run is
+refused with `map::place::findings_left`, and the hint names the item.
 
 An item with a `lane` is placed inside that region's band, and items with a
 `column` keep their lane's left to right order: an item's x must lie right of
