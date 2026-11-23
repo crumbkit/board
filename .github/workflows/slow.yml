@@ -235,9 +235,12 @@ jobs:
   # Gathers every first-pass shard's caught and unviable mutants into one
   # caught.txt. --iterate skips the mutants it names, so the second pass's
   # shards split only what the first pass missed or timed out: six mutants a
-  # shard, at most sixteen shards. Each mutant there can run the whole
-  # workspace's tests, about nine minutes, so six of them and a baseline fit
-  # in the 120-minute timeout. Past 96 misses a shard takes more than six.
+  # shard, at most forty shards. Each mutant there runs the whole workspace's
+  # tests until one fails. board-cli's tests run late and take most of the
+  # nine minutes a full run takes, so even a caught mutant averaged about
+  # eight minutes in run 45109838459. Six of them and a baseline fit in the
+  # 120-minute timeout; fourteen did not. Past 240 misses a shard takes more
+  # than six and may run past its timeout.
   mutants-misses:
     needs: [base, mutants-crate]
     runs-on: ubuntu-24.04
@@ -270,7 +273,7 @@ jobs:
             cargo mutants --list --iterate --in-diff changes.diff --exclude 'crates/board-scenario/**' > misses.txt
           fi
           count=$(wc -l < misses.txt)
-          total=$(( (count + 5) / 6 > 16 ? 16 : (count + 5) / 6 ))
+          total=$(( (count + 5) / 6 > 40 ? 40 : (count + 5) / 6 ))
           echo "The first pass left $count mutants for the whole workspace's tests, on $total shards." >> "$GITHUB_STEP_SUMMARY"
           echo "total=$total" >> "$GITHUB_OUTPUT"
           echo "shards=$(jq -cn --argjson n "$total" '[range($n)]')" >> "$GITHUB_OUTPUT"
