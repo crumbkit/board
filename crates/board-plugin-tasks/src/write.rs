@@ -22,7 +22,7 @@ use serde_json::{Map, Value, json};
 use crate::dates::horizon;
 use crate::lines::with_fields;
 use crate::listing::{grown, held_by, listing, read, resolve};
-use crate::records::{TaskRecord, TaskV2Record};
+use crate::records::{TaskRecord, V2_TYPE};
 use crate::refs::{local_refs, not_v3};
 use crate::repeat::completed;
 use crate::task::model;
@@ -115,11 +115,7 @@ pub(crate) fn add(host: &dyn Host, input: &Value) -> Result<Value, PluginError> 
     let day = day(host);
     // A project task stays v2 until `board projects migrate` moves it.
     let project = given.kind.as_deref() == Some("project");
-    let tag = if project {
-        TaskV2Record::TYPE
-    } else {
-        TaskRecord::TYPE
-    };
+    let tag = if project { V2_TYPE } else { TaskRecord::TYPE };
     let refs = match &given.refs {
         Some(_) if project => return Err(not_v3("a project task", "add")),
         Some(refs) => Some(local_refs(host, &repo, refs)?),
@@ -390,8 +386,7 @@ fn in_repo(
             fields.iter().cloned(),
         ));
     }
-    let prefix = repo.root.trim_end_matches('/');
-    Ok(path.strip_prefix(prefix).unwrap_or(path).to_owned())
+    Ok(repo.repo_path(path).to_owned())
 }
 
 /// The tree of `repo`, refused with `tasks::<call>::parent_not_found` when
@@ -453,8 +448,7 @@ pub(crate) fn edit(
     landing: Landing,
 ) -> Result<Edited, PluginError> {
     let host = writer.host;
-    let prefix = format!("{}/", repo.root.trim_end_matches('/'));
-    let path = logical.strip_prefix(&prefix).unwrap_or(logical).to_owned();
+    let path = repo.repo_path(logical).trim_start_matches('/').to_owned();
     let synced = synced(writer, repo, landing.push);
     let day = day(host);
     let (mut moved, mut sent) = (None, None::<String>);
@@ -565,9 +559,7 @@ fn checked(
         return Err(refusal("tasks::repo::not_found", why, at.clone()));
     }
     let hint = format!("run `board check {logical}` to see what it holds");
-    let within = logical
-        .strip_prefix(repo.root.trim_end_matches('/'))
-        .unwrap_or(logical);
+    let within = repo.repo_path(logical);
     if task.text.is_none() || !within.contains("/tasks/") {
         let why = format!("{logical} is not a task under a tasks/ directory; {hint}");
         return Err(refusal("tasks::task::not_task", why, at.clone()));

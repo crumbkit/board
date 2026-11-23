@@ -26,7 +26,7 @@ use board_repos::{Through, Writer};
 use schemars::generate::SchemaSettings;
 use serde_json::{Map, Value, json};
 
-use records::{TaskRecord, TaskV2Record};
+use records::{TaskRecord, V2_SCHEMA, V2_TYPE};
 
 /// The plugin's name, which its codes start with.
 const PLUGIN: &str = "tasks";
@@ -113,8 +113,8 @@ impl Plugin for Tasks {
         let settings = SchemaSettings::draft2020_12;
         vec![
             (
-                name(TaskV2Record::TYPE),
-                schema_of::<TaskV2Record>(settings()),
+                name(V2_TYPE),
+                serde_json::from_str(V2_SCHEMA).expect("a committed schema; a test reads it"),
             ),
             (name(TaskRecord::TYPE), schema_of::<TaskRecord>(settings())),
         ]

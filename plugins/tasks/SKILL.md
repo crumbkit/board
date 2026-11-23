@@ -112,7 +112,9 @@ it.
    `--remove <path>` to drop one. A ref names a file in the task's own
    repository only. For something in another board, send an exchange
    message (docs/guide/exchange.md) and name your copy of it. On
-   `tasks::ref::not_v3`, run `board tasks migrate`, then `--yes`.
+   `tasks::ref::not_v3`, the task is v2. Existing tasks gain refs once
+   projects move to their own records; until then, name the path in a new
+   task from `tasks.add`.
 
 ## Edit
 

@@ -309,9 +309,17 @@ listed task in one commit per repo, whose message ends `Board-Bulk: tasks
 migrate to tasks/task/v3`, and pushes it. The rewrite sets `$type` and
 removes `kind: task`, keeping every other byte. While any v2 project task
 remains, `--yes` refuses with `tasks::migrate::project_task`, naming the
-first 20, and writes nothing. A run that finds nothing returns
-`unchanged: true`. A run killed part way leaves each repo's commit whole
-or absent; run it again.
+first 20, and writes nothing, so existing tasks gain refs once projects
+move to their own records. A run that finds nothing returns
+`unchanged: true`.
+
+`naming` lists the questions whose `blocks`, and the artifacts whose
+`subject`, name a task the run rewrites, at most 100 with a
+`naming_total`. `plans/question/v1` and `artifacts/artifact/v1` accept only
+a v2 task, so `board check` reports each as `board::ref::wrong_type` once
+the task is v3. A repo whose rewrite is refused has its code and message in
+`refused`, and the other repos' rewrites still land. A run killed part way
+leaves each repo's commit whole or absent; run it again.
 
 ## The sweep skill
 

@@ -101,7 +101,7 @@ fn ref_add_appends_once_keeps_the_body_and_remove_drops_it() {
 }
 
 #[test]
-fn ref_refuses_a_missing_path_a_path_through_a_mount_a_101st_ref_and_a_v2_task_writing_nothing() {
+fn ref_refuses_a_missing_path_a_path_through_a_mount_and_a_v2_task_writing_nothing() {
     let tasks = committing(&["exchange/sent/a.md"]);
     tasks.notes_repo(
         "personal",
@@ -109,10 +109,7 @@ fn ref_refuses_a_missing_path_a_path_through_a_mount_a_101st_ref_and_a_v2_task_w
         &[],
         true,
     );
-    let full: Vec<String> = (0..100).map(|at| format!("\"/r/{at}.md\"")).collect();
-    let full = format!("refs: [{}]\n", full.join(", "));
     tasks.write("tasks/wait.md", &v3("Wait", "", ""));
-    tasks.write("tasks/full.md", &v3("Full", &full, ""));
     tasks.write("tasks/old.md", &open("Old", json!({})));
     git(tasks.board.workdir(), &["add", "."]);
     git(tasks.board.workdir(), &["commit", "-qm", "tasks"]);
@@ -127,11 +124,6 @@ fn ref_refuses_a_missing_path_a_path_through_a_mount_a_101st_ref_and_a_v2_task_w
             "/tasks/wait.md",
             "/repos/personal/repo.txt",
             "tasks::ref::through_mount",
-        ),
-        (
-            "/tasks/full.md",
-            "/exchange/sent/a.md",
-            "tasks::ref::too_many",
         ),
         ("/tasks/old.md", "/exchange/sent/a.md", "tasks::ref::not_v3"),
     ];

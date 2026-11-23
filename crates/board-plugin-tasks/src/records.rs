@@ -92,87 +92,13 @@ pub struct TaskRecord {
     pub pinned: Option<Pinned>,
 }
 
-// A task as it was before v3, with `kind`, which a project task still is
-// until projects move to their own records. The plugin reads it, and
-// `tasks.migrate` rewrites every other one as v3. Its schema is released,
-// so its doc comment, which is the schema's description, stays as shipped.
-/// `tasks/task/v2`: the frontmatter of a Markdown task under `tasks/`, whose
-/// body holds its prose.
-#[derive(Debug, JsonSchema)]
-#[serde(deny_unknown_fields)]
-#[schemars(
-    title = "Task",
-    extend("dependentRequired" = {"ephemeral": ["repeat"]})
-)]
-pub struct TaskV2Record {
-    /// The record's type.
-    #[serde(rename = "$type")]
-    pub tag: Tag<Self>,
-    /// What the task is, in a line.
-    #[schemars(with = "Prose")]
-    pub title: String,
-    /// Whether the task is open, done or dropped.
-    #[schemars(schema_with = "status")]
-    pub status: String,
-    /// The day the task is due.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(schema_with = "date")]
-    pub due: Option<String>,
-    /// What hides the task until it ends: a date, a date and time, or a
-    /// horizon counted from `reviewed`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(schema_with = "defer")]
-    pub defer: Option<String>,
-    /// The tasks in the same repo this task waits on, by path.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(schema_with = "after_v2")]
-    pub after: Option<Vec<String>>,
-    /// When a repeating task comes back.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(schema_with = "repeat")]
-    pub repeat: Option<String>,
-    /// Whether a repeating task's missed days roll forward to one instance
-    /// today, with no backlog.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(schema_with = "boolean")]
-    pub ephemeral: Option<bool>,
-    /// The hour of the person's day from which the task is available.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(schema_with = "hour")]
-    pub from_hour: Option<u8>,
-    /// Tags for where the task can be done, such as `errands`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(with = "Option<Vec<Slug>>")]
-    pub contexts: Option<Vec<String>>,
-    /// The day the task was last looked at.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(schema_with = "date")]
-    pub reviewed: Option<String>,
-    /// The agent or person who holds the task.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub owner: Option<Actor>,
-    /// The task in the same repo this one is part of, by path.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(schema_with = "parent_v2")]
-    pub parent: Option<String>,
-    /// Whether this is a `task`, as when it is left out, or a `project`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(schema_with = "kind")]
-    pub kind: Option<String>,
-    /// A project's brief, such as a README.md, by path.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(schema_with = "file_ref")]
-    pub brief: Option<String>,
-    /// The note's id, which Reflect writes; the plugin ignores it.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(with = "Option<Slug>")]
-    pub id: Option<String>,
-    /// Whether, or in what place, Reflect pins the note to its sidebar,
-    /// which Reflect writes; the plugin ignores it.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(schema_with = "pinned")]
-    pub pinned: Option<Pinned>,
-}
+/// `tasks/task/v2`: a task as it was before v3, with `kind`, which a
+/// project task still is until projects move to their own records. The
+/// plugin reads it, and `tasks.migrate` rewrites every other one as v3.
+pub const V2_TYPE: &str = "tasks/task/v2";
+
+/// The schema of [`V2_TYPE`], released, as the plugin shipped it.
+pub(crate) const V2_SCHEMA: &str = include_str!("../types/tasks/task/v2.schema.json");
 
 /// Reflect's `pinned`: whether the note is pinned, or its place in the
 /// sidebar.
@@ -186,12 +112,8 @@ impl Record for TaskRecord {
     const TYPE: &'static str = "tasks/task/v3";
 }
 
-impl Record for TaskV2Record {
-    const TYPE: &'static str = "tasks/task/v2";
-}
-
 /// Every task type the plugin reads, v2 then v3.
-pub const TASK_TYPES: [&str; 2] = [TaskV2Record::TYPE, TaskRecord::TYPE];
+pub const TASK_TYPES: [&str; 2] = [V2_TYPE, TaskRecord::TYPE];
 
 fn status(_: &mut SchemaGenerator) -> Schema {
     json_schema!({"type": "string", "enum": ["open", "done", "dropped"]})
@@ -231,22 +153,6 @@ fn parent(generator: &mut SchemaGenerator) -> Schema {
     schema
 }
 
-/// v2's task references, which name v2 tasks alone: its schema is
-/// released, so it stays as it shipped.
-fn task_ref_v2(_: &mut SchemaGenerator) -> Schema {
-    json_schema!({"type": "string", "format": "board-ref", "x-board-type": TaskV2Record::TYPE})
-}
-
-fn parent_v2(generator: &mut SchemaGenerator) -> Schema {
-    let mut schema = task_ref_v2(generator);
-    schema.insert("x-board-part-of".into(), true.into());
-    schema
-}
-
-fn after_v2(generator: &mut SchemaGenerator) -> Schema {
-    json_schema!({"type": "array", "items": task_ref_v2(generator)})
-}
-
 fn file_ref(_: &mut SchemaGenerator) -> Schema {
     json_schema!({"type": "string", "format": "board-ref"})
 }
@@ -269,8 +175,4 @@ fn hour(_: &mut SchemaGenerator) -> Schema {
 
 fn pinned(_: &mut SchemaGenerator) -> Schema {
     json_schema!({"anyOf": [{"type": "boolean"}, {"type": "integer", "minimum": 0}]})
-}
-
-fn kind(_: &mut SchemaGenerator) -> Schema {
-    json_schema!({"type": "string", "enum": ["task", "project"]})
 }

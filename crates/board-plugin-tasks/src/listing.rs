@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 use board_model::{LogicalPath, Source};
 use board_ops::{Absent, Host, Limit, PluginError, RefsReport};
 use board_plugin::shape::{Actor, TREE_CODES};
-use board_repos::{COLUMNS, Date, Listed, json_body, parsed, query, root, shown};
+use board_repos::{COLUMNS, Date, Listed, Repo, json_body, parsed, query, root, shown};
 use schemars::JsonSchema;
 use serde::Serialize;
 use serde_json::Value;
@@ -121,15 +121,12 @@ pub(crate) fn read(rows: &[Row], roots: &[String], offset: i32) -> (Vec<Task>, u
             degraded += 1;
             continue;
         };
-        let in_board = |path: String| {
-            if at == "/" {
-                path
-            } else {
-                format!("{at}{path}")
-            }
+        let repo = Repo {
+            root: at.clone(),
+            clone: None,
         };
-        let brief = task.brief.map(in_board);
-        let refs = task.refs.into_iter().map(in_board).collect();
+        let brief = task.brief.map(|path| repo.board_path(&path));
+        let refs = task.refs.iter().map(|path| repo.board_path(path)).collect();
         tasks.push(Task {
             path,
             title: task.title,

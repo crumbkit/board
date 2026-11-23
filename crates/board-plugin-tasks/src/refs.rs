@@ -49,20 +49,12 @@ pub(crate) fn ref_task(host: &dyn Host, input: &Value) -> Result<Value, PluginEr
             .flatten()
             .filter_map(|item| item.as_str().map(str::to_owned))
             .collect();
-        let mut refs = before.clone();
-        if let Some(add) = &given.add {
-            let written = local_ref(host, &repo, add)?;
-            if !refs.contains(&written) {
-                refs.push(written);
-            }
-        }
-        if let Some(remove) = &given.remove {
-            let written = within(&repo, remove);
-            refs.retain(|held| *held != written);
-        }
-        if refs.len() > MOST_REFS {
-            return Err(too_many(logical, refs.len()));
-        }
+        let add = (given.add.iter())
+            .map(|add| local_ref(host, &repo, add))
+            .collect::<Result<Vec<_>, _>>()?;
+        let remove = given.remove.as_deref().map(|path| repo.repo_path(path));
+        let refs =
+            edited(&before, &add, remove, MOST_REFS).map_err(|count| too_many(logical, count))?;
         if refs == before {
             return Ok(Vec::new());
         }
@@ -83,7 +75,7 @@ pub(crate) fn ref_task(host: &dyn Host, input: &Value) -> Result<Value, PluginEr
         .into_iter()
         .flatten()
         .filter_map(Value::as_str)
-        .map(|path| in_board(&repo, path))
+        .map(|path| repo.board_path(path))
         .collect();
     Ok(json!(Reffed {
         repo: repo.root.clone(),
@@ -104,17 +96,45 @@ pub(crate) fn local_refs(
     repo: &Repo,
     paths: &[String],
 ) -> Result<Vec<String>, PluginError> {
-    let mut refs: Vec<String> = Vec::new();
-    for path in paths {
-        let written = local_ref(host, repo, path)?;
-        if !refs.contains(&written) {
-            refs.push(written);
+    let add = (paths.iter())
+        .map(|path| local_ref(host, repo, path))
+        .collect::<Result<Vec<_>, _>>()?;
+    edited(&[], &add, None, MOST_REFS).map_err(|count| too_many("the new task", count))
+}
+
+/// `before` with each of `add` appended once, in order, and `remove`
+/// dropped, keeping the order of the rest; the count it would hold when
+/// that is more than `limit`.
+fn edited(
+    before: &[String],
+    add: &[String],
+    remove: Option<&str>,
+    limit: usize,
+) -> Result<Vec<String>, usize> {
+    let mut refs = before.to_vec();
+    for path in add {
+        if !refs.contains(path) {
+            refs.push(path.clone());
         }
     }
-    if refs.len() > MOST_REFS {
-        return Err(too_many("the new task", refs.len()));
+    refs.retain(|held| Some(held.as_str()) != remove);
+    if refs.len() > limit {
+        return Err(refs.len());
     }
     Ok(refs)
+}
+
+/// The board a target is in, when it is not the repo at `root`: `crossed`
+/// lists the mounts the target's path crosses, outermost first. The target
+/// is in the repo's own board when it crosses exactly the mounts that lead
+/// to `root`, the last of them `root` itself; `/` crosses none.
+fn foreign(root: &str, crossed: &[String]) -> Option<String> {
+    let leads = |mount: &String| root == mount || root.starts_with(&format!("{mount}/"));
+    if let Some(mount) = crossed.iter().find(|mount| !leads(mount)) {
+        return Some(mount.clone());
+    }
+    let last = crossed.last().map_or("/", String::as_str);
+    (last != root).then(|| last.to_owned())
 }
 
 /// The board path `path` as a ref a task in `repo` holds: its path in the
@@ -145,17 +165,8 @@ fn local_ref(host: &dyn Host, repo: &Repo, path: &str) -> Result<String, PluginE
         Some(Err(error)) => return Err(refused(&error)),
         None => return Err(missing()),
     };
-    // The repo's own mount, the one a path in a notes repo crosses.
-    let own: Vec<String> = (repo.root != "/")
-        .then(|| repo.root.clone())
-        .into_iter()
-        .collect();
     let crossed: Vec<String> = location.mounts().iter().map(ToString::to_string).collect();
-    if crossed != own {
-        let mount = (crossed.iter())
-            .find(|mount| !own.contains(mount))
-            .cloned()
-            .unwrap_or_else(|| "/".to_owned());
+    if let Some(mount) = foreign(&repo.root, &crossed) {
         let why = format!(
             "{path} is in the board at {mount}, outside the task's own repository {}, and a \
              record never names a path in another board",
@@ -169,25 +180,7 @@ fn local_ref(host: &dyn Host, repo: &Repo, path: &str) -> Result<String, PluginE
              the request, then name your copy of it under /exchange/sent/",
         ));
     }
-    Ok(within(repo, path))
-}
-
-/// The board path `path` as a path in `repo`.
-fn within(repo: &Repo, path: &str) -> String {
-    let prefix = repo.root.trim_end_matches('/');
-    match path.strip_prefix(prefix) {
-        Some(rest) if rest.starts_with('/') => rest.to_owned(),
-        _ => path.to_owned(),
-    }
-}
-
-/// The path `path` in `repo` as a path in the board.
-fn in_board(repo: &Repo, path: &str) -> String {
-    if repo.root == "/" {
-        path.to_owned()
-    } else {
-        repo.logical(path.trim_start_matches('/'))
-    }
+    Ok(repo.repo_path(path).to_owned())
 }
 
 /// The refusal of refs on a `tasks/task/v2` task, `what`.
@@ -199,8 +192,9 @@ pub(crate) fn not_v3(what: &str, call: &str) -> PluginError {
         "tasks::ref::not_v3",
         why,
         [("path", json!(what)), ("call", json!(call))],
-        "run `board tasks migrate` to list the v2 tasks, then `board tasks migrate --yes` to \
-         rewrite them as v3",
+        "a new task from `board tasks add` is v3 and takes refs; existing tasks gain refs once \
+         projects move to their own records, and `board tasks migrate` lists the v2 tasks it \
+         would rewrite",
     )
 }
 
@@ -217,3 +211,6 @@ fn too_many(what: &str, count: usize) -> PluginError {
          own refs",
     )
 }
+
+#[cfg(test)]
+mod tests;

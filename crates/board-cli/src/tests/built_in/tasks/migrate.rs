@@ -131,3 +131,112 @@ fn migrate_yes_rewrites_a_notes_repos_tasks_and_pushes_them() {
         git(&remote, &["rev-parse", "main"])
     );
 }
+
+#[test]
+fn migrate_lists_the_questions_and_artifacts_that_name_a_task_it_rewrites_and_not_another() {
+    let tasks = Tasks::new();
+    for plugin in ["plans", "artifacts"] {
+        let enabled = tasks.run(&["plugin", "enable", plugin], 0, None, "");
+        assert_eq!(enabled.code, 0, "{}", text(&enabled.stderr));
+    }
+    tasks.write("tasks/typed.md", &open("Typed", json!({})));
+    tasks.write(
+        "tasks/ship.md",
+        &task("Ship", "open", &json!({"kind": "project"}), ""),
+    );
+    let question = |blocks: &str| {
+        json!({"$type": "plans/question/v1", "question": "Which?", "blocks": blocks}).to_string()
+    };
+    tasks.write("questions/typed.json", &question("/tasks/typed.md"));
+    tasks.write("questions/ship.json", &question("/tasks/ship.md"));
+    let artifact = json!({"$type": "artifacts/artifact/v1", "subject": ["/tasks/typed.md"]});
+    tasks.write("artifacts/page.json", &artifact.to_string());
+    let listed = tasks.call("migrate", &[]).unwrap();
+    assert_eq!(
+        (&listed["naming"], &listed["naming_total"]),
+        (
+            &json!([
+                {"path": "/artifacts/page", "task": "/tasks/typed.md", "code": "board::ref::wrong_type"},
+                {"path": "/questions/typed", "task": "/tasks/typed.md", "code": "board::ref::wrong_type"},
+            ]),
+            &json!(2)
+        ),
+        "{listed}"
+    );
+}
+
+#[test]
+fn migrate_yes_reports_a_repo_whose_rewrite_is_refused_and_still_rewrites_the_others() {
+    let tasks = Tasks::new();
+    let clone = tasks.mounted();
+    let odd = task("Odd", "open", &json!({"colour": "red"}), "");
+    tasks.write("tasks/odd.md", &odd);
+    git(tasks.board.workdir(), &["add", "."]);
+    git(tasks.board.workdir(), &["commit", "-qm", "odd"]);
+    let wrote = tasks.call("migrate", &["--yes"]).unwrap();
+    let repo = |root: &str| {
+        (wrote["repos"].as_array().unwrap().iter())
+            .find(|repo| repo["repo"] == root)
+            .unwrap()
+            .clone()
+    };
+    let own = repo("/");
+    assert_eq!(own["refused"]["code"], "tasks::board::refused", "{wrote}");
+    assert_eq!(own["commit"], Value::Null, "{wrote}");
+    assert_eq!(tasks.read("tasks/odd.md"), odd);
+    let work = repo("/repos/work");
+    assert_eq!(
+        (&work["refused"], &wrote["wrote"]),
+        (&Value::Null, &json!(true)),
+        "{wrote}"
+    );
+    let remote = tasks.beside.path().join("work.git");
+    let shown = git(&remote, &["show", "main:tasks/report.md"]);
+    assert!(shown.contains("$type: \"tasks/task/v3\""), "{shown}");
+    assert_eq!(
+        git(&clone, &["rev-parse", "HEAD"]),
+        git(&remote, &["rev-parse", "main"])
+    );
+}
+
+#[test]
+fn migrate_yes_reports_a_notes_repo_one_mount_deeper_as_refused_and_rewrites_the_boards_own() {
+    let tasks = committed(&[("tasks/own.md", open("Own", json!({})))]);
+    let deeper = open("Deeper", json!({}));
+    tasks.notes_repo("x", None, &[("deeper", &deeper)], true);
+    let pointer = tasks.read("repos/x.json");
+    git(tasks.board.workdir(), &["add", "repos/x.json"]);
+    git(tasks.board.workdir(), &["rm", "-qf", "repos/x.json"]);
+    let team = Scenario::new();
+    git(team.workdir(), &["symbolic-ref", "HEAD", "refs/heads/main"]);
+    git(team.workdir(), &["config", "user.name", "t"]);
+    git(team.workdir(), &["config", "user.email", "t@t"]);
+    team.write(
+        ".board/board.json",
+        Item::Fresh(r#"{"$type": "board/config/v1", "commit_on_put": true}"#),
+    )
+    .write("repos/x.json", Item::Fresh(&pointer));
+    git(team.workdir(), &["add", "."]);
+    git(team.workdir(), &["commit", "-qm", "team"]);
+    tasks.mount("team", team.workdir());
+    git(tasks.board.workdir(), &["add", "."]);
+    git(tasks.board.workdir(), &["commit", "-qm", "mounts"]);
+    let listed = tasks.call("migrate", &[]).unwrap();
+    let roots: Vec<&Value> = (listed["repos"].as_array().unwrap().iter())
+        .map(|repo| &repo["repo"])
+        .collect();
+    assert_eq!(roots, [&json!("/"), &json!("/repos/team/repos/x")]);
+    let wrote = tasks.call("migrate", &["--yes"]).unwrap();
+    assert_eq!(
+        (&wrote["repos"][0]["refused"], &wrote["wrote"]),
+        (&Value::Null, &json!(true)),
+        "{wrote}"
+    );
+    let deeper_repo = &wrote["repos"][1];
+    assert_eq!(
+        deeper_repo["refused"]["code"], "tasks::board::refused",
+        "{wrote}"
+    );
+    assert_eq!(deeper_repo["commit"], Value::Null, "{wrote}");
+    assert!(tasks.read("tasks/own.md").contains("tasks/task/v3"));
+}
