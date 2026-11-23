@@ -534,6 +534,41 @@ fn a_commit_of_a_file_git_lfs_stores_is_refused_and_the_same_file_outside_lfs_is
     }
 }
 
+/// The check reads the commit's .gitattributes through an index of its own,
+/// so an uncommitted change to the file, staged or not, does not hide a path
+/// Git LFS stores, and the checkout's index is left as it was.
+#[test]
+fn the_lfs_check_reads_the_commits_attributes_and_not_the_index_or_working_tree() {
+    for committed in [false, true] {
+        let desk = Desk::new();
+        let checkout = desk.checkout();
+        put_file(
+            &checkout.join(".gitattributes"),
+            "*.csv filter=lfs diff=lfs merge=lfs -text\n",
+        );
+        desk.git(&checkout, &["add", ".gitattributes"]);
+        desk.commit_to("Add data", "data.csv", Some("a,b\n"));
+        put_file(&checkout.join(".gitattributes"), "*.csv text\n");
+        desk.git(&checkout, &["add", ".gitattributes"]);
+        if committed {
+            desk.git(&checkout, &["commit", "-q", "--amend", "--no-edit"]);
+        }
+        let index = std::fs::read(checkout.join(".git/index")).unwrap();
+        let before = desk.remote_head("main");
+        let (ran, result) = desk.call("push", &[]);
+        if committed {
+            assert_eq!(ran.code, 0, "{result}");
+            let head = desk.git(&checkout, &["rev-parse", "HEAD"]);
+            assert_eq!(desk.remote_head("main"), Some(head));
+        } else {
+            assert_eq!(refused(&ran, &result), (1, "github::push::lfs".to_owned()));
+            assert_eq!(result["fields"]["paths"], json!(["data.csv"]));
+            assert_eq!(desk.remote_head("main"), before);
+        }
+        assert_eq!(std::fs::read(checkout.join(".git/index")).unwrap(), index);
+    }
+}
+
 #[test]
 fn a_private_name_with_a_non_ascii_letter_in_a_file_name_is_refused_and_its_ascii_twin_is_pushed() {
     let desk = Desk::new();

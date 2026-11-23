@@ -136,7 +136,18 @@ pub(crate) fn git(
     arguments: &[&str],
     stdin: &str,
 ) -> Result<String, PluginError> {
-    let (printed, utf8) = lossy(host, at, arguments, stdin)?;
+    git_adding(host, at, arguments, stdin, &[])
+}
+
+/// [`git`] with the variables `added` set for git and the hooks it runs.
+pub(crate) fn git_adding(
+    host: &dyn Host,
+    at: &Path,
+    arguments: &[&str],
+    stdin: &str,
+    added: &[(&str, &str)],
+) -> Result<String, PluginError> {
+    let (printed, utf8) = lossy_adding(host, at, arguments, stdin, added)?;
     if utf8 {
         return Ok(printed);
     }
@@ -160,7 +171,18 @@ pub(crate) fn lossy(
     arguments: &[&str],
     stdin: &str,
 ) -> Result<(String, bool), PluginError> {
-    let ran = run(host, at, arguments, stdin);
+    lossy_adding(host, at, arguments, stdin, &[])
+}
+
+/// [`lossy`] with the variables `added` set for git and the hooks it runs.
+fn lossy_adding(
+    host: &dyn Host,
+    at: &Path,
+    arguments: &[&str],
+    stdin: &str,
+    added: &[(&str, &str)],
+) -> Result<(String, bool), PluginError> {
+    let ran = run_adding(host, at, arguments, stdin, added);
     if ran.code == 0 {
         return Ok((ran.stdout, ran.utf8));
     }
