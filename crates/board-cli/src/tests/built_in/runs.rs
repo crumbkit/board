@@ -718,6 +718,7 @@ fn suites_to_migrate() -> Fixture {
                 &json!({"command": "bin/test", "measures": [{"name": "tests", "unit": "count"}]}),
             ),
         )
+        .write("suites/core-tests.json", &suite(&json!({})))
         .write("suites/bench-get.json", &suite(&json!({})))
         .write("suites/claude-code.json", &suite(&json!({})))
         .write("suites/typed.json", &suite(&json!({"kind": "eval"})));
@@ -734,18 +735,19 @@ fn migrate_lists_each_suites_kind_and_rule_and_writes_nothing_without_apply() {
         dry,
         json!({
             "applied": false,
-            "counts": {"compliance": 3, "benchmark": 1, "eval": 2, "test": 1, "unclassified": 1, "kept": 1},
+            "counts": {"compliance": 3, "benchmark": 1, "eval": 2, "test": 2, "unclassified": 1, "kept": 1},
             "unclassified": ["/suites/claude-code"],
             "suites": [
                 {"path": "/suites/app-review", "kind": "compliance", "by": "review-name"},
                 {"path": "/suites/app-standard", "kind": "compliance", "by": "apply-standard"},
                 {"path": "/suites/bench-get", "kind": "benchmark", "by": "benchmark-name"},
                 {"path": "/suites/board-gates", "kind": "test", "by": "test-name"},
+                {"path": "/suites/core-tests", "kind": "test", "by": "test-name"},
                 {"path": "/suites/listed", "kind": "eval", "by": "eval-suites"},
                 {"path": "/suites/old-path-users", "kind": "compliance", "by": "zero-rule"},
                 {"path": "/suites/registry-review", "kind": "eval", "by": "eval-name"},
             ],
-            "total": 7,
+            "total": 8,
             "truncated": false,
             "unreadable": [],
         })
@@ -767,7 +769,7 @@ fn migrate_with_apply_writes_one_bulk_commit_keeping_each_field_and_a_second_app
     let applied = board.call("runs.migrate", &["--apply", "true"]);
     assert_eq!(
         (&applied["applied"], &applied["total"]),
-        (&json!(true), &json!(7))
+        (&json!(true), &json!(8))
     );
     assert_eq!(board.board.head().unwrap().parents, [before]);
     assert!(
@@ -785,6 +787,7 @@ fn migrate_with_apply_writes_one_bulk_commit_keeping_each_field_and_a_second_app
     })))
     .unwrap();
     assert_eq!(stored("board-gates"), expected);
+    assert_eq!(stored("core-tests")["kind"], "test");
     assert_eq!(stored("registry-review")["kind"], "eval");
     assert_eq!(stored("claude-code").get("kind"), None);
     assert_eq!(stored("typed")["kind"], "eval");
@@ -795,7 +798,7 @@ fn migrate_with_apply_writes_one_bulk_commit_keeping_each_field_and_a_second_app
     let again = board.call("runs.migrate", &["--apply", "true"]);
     assert_eq!(
         (&again["total"], &again["counts"]["kept"]),
-        (&json!(0), &json!(8))
+        (&json!(0), &json!(9))
     );
     assert_eq!(board.head(), head);
 }
@@ -819,5 +822,5 @@ fn migrate_is_refused_before_writing_when_the_stored_schema_has_no_kind_and_admi
     let enabled = board.run(&["plugin", "enable", "runs"]);
     assert_eq!(enabled.code, 0, "{}", text(&enabled.stderr));
     let applied = board.call("runs.migrate", &["--apply", "true"]);
-    assert_eq!(applied["total"], 7);
+    assert_eq!(applied["total"], 8);
 }
