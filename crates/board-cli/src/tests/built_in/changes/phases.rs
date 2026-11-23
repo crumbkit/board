@@ -20,6 +20,33 @@ fn planning(paths: &[&str]) -> Value {
     plan_input(CHANGE, paths)
 }
 
+/// Writes the owner's signed-off understanding check of /changes/t's data,
+/// and returns the records to attach for it.
+fn signed_data(board: &Changes) -> [&'static str; 2] {
+    let understood = "/changes/t/understanding/data";
+    board.write(
+        "changes/t/understanding/data.json",
+        &typed(
+            "changes/understanding/v1",
+            &json!({"change": CHANGE, "subject": "data",
+                    "questions": [{"question": "Q?", "answer": "A.", "design": "A."}]}),
+        ),
+    );
+    board.write(
+        "decisions/data.json",
+        &decision(&json!({"refs": [understood]})),
+    );
+    [understood, "/decisions/data"]
+}
+
+/// Makes the plan of /changes/t store data, so it needs the owner's
+/// approval.
+fn storing(board: &Changes) {
+    let mut plan = board.read("changes/t/plans/1.json");
+    plan["answers"] = json!({"ux": "none", "data": "stored", "lifecycle": "none"});
+    board.write("changes/t/plans/1.json", &plan.to_string());
+}
+
 /// What a refusal of `advance` says is missing.
 fn missing(board: &Changes) -> Value {
     board.refusal("advance", &path())["fields"]["missing"].clone()
@@ -80,11 +107,13 @@ fn next_reads_the_gate_from_the_plan_file_and_says_what_to_do() {
             ("considered", "pass"),
             ("task", "pass"),
             ("route", "pass"),
-            ("owner-approval", "pass"),
             ("lifecycle-declared", "pass"),
             ("obligations", "pass"),
         ])
     );
+    // The plan answers ux none and data none, so it needs no approval.
+    let skipped = output["not_required"].as_array().unwrap();
+    assert!(skipped.contains(&json!("owner-approval")), "{skipped:?}");
     assert_eq!(
         output["flow"],
         json!({"name": "development", "phases": ["plan", "build", "review", "land"]})
@@ -105,11 +134,13 @@ fn next_reads_the_gate_from_the_plan_file_and_says_what_to_do() {
 #[test]
 fn advance_refuses_an_unmet_gate_naming_what_is_missing_and_moves_on_once_it_is_met() {
     let board = Changes::new();
+    let data = signed_data(&board);
     board.change_at(
         "changes/t.json",
         "plan",
-        &json!({"plan": "/changes/t/plan.md", "route": "owner"}),
+        &json!({"plan": "/changes/t/plan.md", "route": "owner", "records": data}),
     );
+    storing(&board);
     board.write("changes/t/plan.md", "# T\n");
     let refused = board.refusal("advance", &path());
     assert_eq!(refused["code"], "changes::gate::unmet");
@@ -129,8 +160,10 @@ fn advance_refuses_an_unmet_gate_naming_what_is_missing_and_moves_on_once_it_is_
     board.change_at(
         "changes/t.json",
         "plan",
-        &json!({"plan": "/changes/t/plan.md", "route": "owner", "records": [board.approved()]}),
+        &json!({"plan": "/changes/t/plan.md", "route": "owner",
+                "records": [board.approved(), data[0], data[1]]}),
     );
+    storing(&board);
     assert_eq!(board.read("changes/t.json")["phase"], "plan");
     board.write("changes/t/plan.md", PLAN);
     assert_eq!(
@@ -145,11 +178,14 @@ fn advance_refuses_a_plan_only_an_agent_approved_and_moves_on_once_a_decision_na
     let board = Changes::new();
     let agent = json!({"refs": [CHANGE], "by": {"program": "claude-code", "session": "s"}});
     board.write("decisions/agent.json", &decision(&agent));
+    let [understood, signed] = signed_data(&board);
     board.change_at(
         "changes/t.json",
         "plan",
-        &json!({"plan": "/changes/t/plan.md", "route": "owner", "records": ["/decisions/agent"]}),
+        &json!({"plan": "/changes/t/plan.md", "route": "owner",
+                "records": ["/decisions/agent", understood, signed]}),
     );
+    storing(&board);
     board.write("changes/t/plan.md", PLAN);
     let refused = board.refusal("advance", &path());
     assert_eq!(
@@ -167,11 +203,13 @@ fn a_decision_the_plan_only_uses_approves_nothing_and_attaching_it_does() {
         "decisions/owner.json",
         &decision(&json!({"refs": [CHANGE]})),
     );
+    let data = signed_data(&board);
     board.change_at(
         "changes/t.json",
         "plan",
-        &json!({"plan": "/changes/t/plan.md", "route": "owner"}),
+        &json!({"plan": "/changes/t/plan.md", "route": "owner", "records": data}),
     );
+    storing(&board);
     board.write("changes/t/plan.md", PLAN);
     let mut plan = board.read("changes/t/plans/1.json");
     plan["uses"] = json!(["/decisions/owner"]);
@@ -1560,4 +1598,93 @@ fn an_open_task_beneath_a_mount_that_cannot_be_read_refuses_next_and_advance_nam
             assert!(message.contains("/repos/notes"), "{message}");
         }
     }
+}
+
+/// Writes the record-paths rule of /repos/x, listing its plan directory.
+fn record_paths(board: &Changes) {
+    board.write(
+        "rules/x/record-paths.json",
+        &typed(
+            "rules/rule/v1",
+            &json!({
+                "requirement": "These files are records, not code.",
+                "purpose": "p",
+                "paths": ["repos/x/plan/*"],
+            }),
+        ),
+    );
+}
+
+/// Decision 1318Z through the real index and git: a review of an earlier
+/// commit passes once each later commit edits only a path the record-paths
+/// rule lists, and a later code commit, or no rule, needs a new review.
+#[test]
+fn a_review_survives_a_later_commit_that_edits_only_a_record_path_and_not_one_that_edits_code() {
+    let board = Changes::new();
+    let (base, reviewed) = reviewing(&board, &["/r/1"]);
+    board.write("r/1.json", &approving(&reviewed, &base));
+    board.call_stdin("plan", &planning(&["/repos/x/src/**", "/repos/x/plan/**"]));
+    let noted = board.commit(&[("plan/notes.md", "noted\n")], None);
+    board.call("attach", &at(&json!({"head": noted})));
+    let review = |board: &Changes| {
+        let next = board.call("next", &path());
+        (next["gate"].as_array().unwrap().iter())
+            .find(|each| each["check"] == "review")
+            .unwrap()
+            .clone()
+    };
+    let without = review(&board);
+    assert_eq!(without["status"], "missing", "{without}");
+    assert!(
+        without["detail"]
+            .as_str()
+            .unwrap()
+            .contains("no rule /rules/x/record-paths exists"),
+        "{without}"
+    );
+    record_paths(&board);
+    let kept = review(&board);
+    assert_eq!(kept["status"], "pass", "{kept}");
+    assert!(kept["detail"].as_str().unwrap().contains(&noted), "{kept}");
+    let code = board.commit(&[("src/b.rs", "b\n")], None);
+    board.call("attach", &at(&json!({"head": code})));
+    let lost = review(&board);
+    assert_eq!(lost["status"], "missing", "{lost}");
+    assert!(
+        lost["detail"]
+            .as_str()
+            .unwrap()
+            .contains("/repos/x/src/b.rs"),
+        "{lost}"
+    );
+}
+
+/// The change's lifecycle doc is a record path, whatever file the
+/// lifecycle record names, so a later commit to it keeps the review.
+#[test]
+fn a_review_survives_a_later_commit_to_the_lifecycle_doc() {
+    let board = Changes::new();
+    let (base, reviewed) = reviewing(&board, &["/r/1"]);
+    board.write("r/1.json", &approving(&reviewed, &base));
+    record_paths(&board);
+    board.write(
+        "changes/t/lifecycle.json",
+        &typed(
+            "changes/lifecycle/v1",
+            &json!({"text": "/changes/t/lifecycle.md", "doc": "/repos/x/src/a.rs",
+                    "external": []}),
+        ),
+    );
+    board.write("changes/t/lifecycle.md", "| State | Event | Next |\n");
+    let doc = board.commit(&[("src/a.rs", "edited\n")], None);
+    board.call("attach", &at(&json!({"head": doc})));
+    let next = board.call("next", &path());
+    let review = (next["gate"].as_array().unwrap().iter())
+        .find(|each| each["check"] == "review")
+        .unwrap();
+    assert_eq!(review["status"], "pass", "{review}");
+    assert!(
+        review["detail"].as_str().unwrap().contains(&doc),
+        "{review}"
+    );
 }

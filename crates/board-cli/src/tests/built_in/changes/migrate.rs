@@ -478,7 +478,6 @@ fn a_migrated_change_in_each_phase_faces_the_blocking_checks_of_the_development_
                 "considered",
                 "task",
                 "route",
-                "owner-approval",
                 "lifecycle-declared",
             ],
         ),

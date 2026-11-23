@@ -87,10 +87,14 @@ fn report(rows: Vec<Vec<Value>>) -> QueryReport {
 }
 
 impl Host for Holding {
-    /// Answers the query for open changes, for prototypes, which there are
-    /// none of, and for the flow at one path.
+    /// Answers the query for open changes, for done changes and for
+    /// prototypes, which there are none of, and for the flow at one path.
     fn query(&self, sql: &str, _limit: Limit) -> Result<QueryReport, QueryError> {
         self.queries.set(self.queries.get() + 1);
+        // No change is done, so none owes a check.
+        if sql.contains("= 'done'") {
+            return Ok(report(Vec::new()));
+        }
         if sql.starts_with("SELECT logical, code, body FROM records") {
             let rows = (self.changes.iter())
                 .map(|(path, record)| vec![json!(path), Value::Null, json!(record.to_string())])

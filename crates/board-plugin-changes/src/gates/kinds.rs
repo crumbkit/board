@@ -56,6 +56,9 @@ fn bounded(paths: &[&str]) -> String {
 /// none exists, and otherwise nothing.
 pub(super) fn passed(observed: &Observed, each: &flow::Check, values: &Values) -> String {
     let kind = each.kind.known().copied();
+    if kind == Some(Kind::Records) {
+        return passed_after(observed, each).unwrap_or_default();
+    }
     let named = named_rules(each, values);
     let held = |rule: &String| match kind {
         Some(Kind::RulePaths) => (observed.controlled.get(rule)).is_some_and(Option::is_some),
@@ -276,6 +279,7 @@ fn meets(
 ) -> bool {
     if let Some(head) = head
         && !same_commit(reviewed_head(body).as_ref(), head)
+        && !accepted_after(observed, body, rules).is_some_and(Result::is_ok)
     {
         return false;
     }
@@ -300,6 +304,61 @@ fn meets(
             .all(|target| strings(body, "refs").any(|each| names(observed, target, each)))
     };
     values && clean && signed && refs
+}
+
+/// When `rules` name `unchanged_by`, what observe found of the commits
+/// after the one the record `body` covers: those commits, or why they do
+/// not leave it counting.
+fn accepted_after<'a>(
+    observed: &'a Observed,
+    body: &Map<String, Value>,
+    rules: &Where,
+) -> Option<&'a Result<Vec<String>, String>> {
+    rules.unchanged_by.as_ref()?;
+    let reviewed = reviewed_head(body)?;
+    observed.after_review.get(reviewed.as_str()?)
+}
+
+/// What a passing `records` check whose `where` names `unchanged_by` says
+/// when no counted record covers the head itself: the record and the
+/// commits after it that left it counting.
+fn passed_after(observed: &Observed, each: &flow::Check) -> Option<String> {
+    let rules = each.conditions.as_ref()?;
+    rules.unchanged_by.as_ref()?;
+    let head = observed.change.head.as_deref()?;
+    let kind = each.record_type.as_deref()?;
+    let records = || observed.records.of_type(kind);
+    if records().any(|(_, body)| {
+        meets(observed, body, rules, Some(head), false)
+            && same_commit(reviewed_head(body).as_ref(), head)
+    }) {
+        return None;
+    }
+    records()
+        .filter(|(_, body)| meets(observed, body, rules, Some(head), false))
+        .find_map(|(path, body)| {
+            let commits = accepted_after(observed, body, rules)?.as_ref().ok()?;
+            let shown: Vec<&str> = commits.iter().map(String::as_str).collect();
+            Some(format!(
+                "{path} covers an earlier commit; the commits after it, {}, edit only record \
+                 paths or the lifecycle doc, or cleanly merge main, so it still counts",
+                bounded(&shown)
+            ))
+        })
+}
+
+/// Why each record of the check's type that covers an earlier commit does
+/// not count at the head, as `; <path>: <why>` clauses.
+fn not_after(observed: &Observed, each: &flow::Check, rules: &Where) -> String {
+    let Some(kind) = each.record_type.as_deref() else {
+        return String::new();
+    };
+    (observed.records.of_type(kind))
+        .filter_map(|(path, body)| {
+            let why = accepted_after(observed, body, rules)?.as_ref().err()?;
+            Some(format!("; {path} covers an earlier commit, and {why}"))
+        })
+        .collect()
 }
 
 /// Whether the option `answer` chose names the change.
@@ -344,7 +403,7 @@ pub(super) fn owner_choices(observed: &Observed) -> impl Iterator<Item = (&str, 
 /// `#` after it joins it, as a fragment does, and so does a `?` or a `.`
 /// before a letter or digit, as a query or an extension does. A `.` that
 /// ends a sentence does not join.
-pub(super) fn names_whole(text: &str, path: &str) -> bool {
+pub(crate) fn names_whole(text: &str, path: &str) -> bool {
     let joined = |next: char| next.is_alphanumeric() || "-_/".contains(next);
     (text.match_indices(path)).any(|(at, _)| {
         let after = &text[at + path.len()..];
@@ -405,6 +464,7 @@ pub(super) fn records_missing(observed: &Observed, each: &flow::Check) -> Option
         no_findings: None,
         owner_signed: None,
         refs: None,
+        unchanged_by: None,
     };
     let rules = each.conditions.as_ref().unwrap_or(&none);
     let head = match (rules.at_head, &observed.change.head) {
@@ -431,7 +491,8 @@ pub(super) fn records_missing(observed: &Observed, each: &flow::Check) -> Option
     let count = count + usize::from(approved);
     let min = each.min.map_or(1, |min| min as usize);
     (count < min).then(|| {
-        let detail = records_detail(each, kind, rules, head, min);
+        let detail =
+            records_detail(each, kind, rules, head, min) + &not_after(observed, each, rules);
         if answers_count(each) {
             let path = &observed.path;
             let unread = match &observed.approval {
@@ -572,18 +633,47 @@ pub(super) fn understood_missing(observed: &Observed, each: &flow::Check) -> Opt
     let signed = (signed_decisions(observed)).any(|(_, body)| {
         strings(body, "refs").any(|named| understood.iter().any(|(path, _)| *path == named))
     });
-    if !signed {
+    let answered = || {
+        owner_choices(observed).any(|(_, text)| {
+            names_whole(text, &observed.path)
+                && (understood.iter()).any(|(path, _)| names_whole(text, path))
+        })
+    };
+    if !signed && !answered() {
         return Some(format!(
             "no attached plans/decision/v1 the owner signed with by.person references an \
-             attached {UNDERSTANDING_TYPE} of this change's {}; run the understanding-check \
-             skill, then have the owner sign a decision with by.person whose refs name its record",
-            subject_word(subject)
+             attached {UNDERSTANDING_TYPE} of this change's {}, nor does an attached answer \
+             from the owner choose an option naming the change and that record{}; run the \
+             understanding-check skill, then have the owner sign a decision with by.person whose \
+             refs name its record, or answer the question `board changes ask` files",
+            subject_word(subject),
+            unnamed_records(observed, &understood)
         ));
     }
     let wanted = each.rechecks? as usize;
     understood
         .into_iter()
         .find_map(|(path, body)| rechecks_missing(path, body, wanted))
+}
+
+/// What the detail of a missing sign-off adds when an attached answer from
+/// the owner chose an option that names the change but none of the
+/// understanding checks `understood`: the records it leaves out.
+fn unnamed_records(observed: &Observed, understood: &[(&str, &Map<String, Value>)]) -> String {
+    let Some((answer, _)) =
+        owner_choices(observed).find(|(_, text)| names_whole(text, &observed.path))
+    else {
+        return String::new();
+    };
+    let paths: Vec<&str> = understood.iter().map(|(path, _)| *path).collect();
+    if paths.is_empty() {
+        return String::new();
+    }
+    format!(
+        "; the owner's answer {answer} names {} but not {}",
+        observed.path,
+        bounded(&paths)
+    )
 }
 
 /// Why the understanding check at `path` fails the `rechecks` check, or
@@ -628,8 +718,8 @@ fn rechecks_missing(path: &str, body: &Map<String, Value>, wanted: usize) -> Opt
         let wanted = count_word(wanted);
         format!(
             "the understanding check at {path} holds rechecks of fewer than {wanted} points; \
-             before review, ask {wanted} of its predict or edge questions again, worded \
-             differently, and add each to its rechecks with its own point"
+             ask {wanted} of its predict or edge questions again, worded differently, and add \
+             each to its rechecks with its own point"
         )
     })
 }

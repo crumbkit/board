@@ -576,3 +576,138 @@ fn the_stored_flow_without_design_checks_keeps_its_version_path_and_the_shipped_
     assert!(has(&shipped, "design-conformance") && has(&shipped, "mockup-versions"));
     assert_eq!(problems(&shipped, false), []);
 }
+
+/// The stored version changes started before decisions 1306Z, 1308Z and
+/// 1318Z follow: rechecks block build, every plan needs approval and a
+/// review covers only the head. The shipped flow has a new version.
+#[test]
+fn the_stored_flow_before_the_retro_keeps_its_version_path_and_the_shipped_flow_moves_rechecks() {
+    let text = include_str!("flows-md/development-3029fae590f5a628.json");
+    let value: serde_json::Value = serde_json::from_str(text).unwrap();
+    schema().validate(&value).unwrap();
+    let flow: Flow = serde_json::from_str(text).unwrap();
+    assert_eq!(problems(&flow, false), []);
+    let stored = board_model::flow_version("development", &value);
+    assert_eq!(stored, "/flows/development/3029fae590f5a628");
+    assert_ne!(version_path(&development()), stored);
+    let phase_of = |flow: &Flow, id: &str| {
+        (flow.phases.iter())
+            .find(|phase| phase.checks.iter().any(|each| each.id == id))
+            .map(|phase| phase.name.clone())
+    };
+    assert_eq!(phase_of(&flow, "rechecks").as_deref(), Some("build"));
+    let shipped = development();
+    assert_eq!(phase_of(&shipped, "rechecks").as_deref(), Some("land"));
+    let rechecks = (shipped.phases.iter().flat_map(|phase| &phase.checks))
+        .find(|each| each.id == "rechecks")
+        .unwrap();
+    assert_eq!(rechecks.blocks, Some(false));
+    assert_eq!(
+        serde_json::to_value(named(&shipped, "owner-approval")).unwrap(),
+        json!({"answers_not": {"ux": "none", "data": "none"}})
+    );
+}
+
+/// An `answers_not` takes each answer's two words; the schema and the
+/// reader both refuse an answer that does not exist and a word that is
+/// not one of its two.
+#[test]
+fn an_answers_not_naming_an_unknown_answer_or_word_is_refused_and_its_twin_is_admitted() {
+    let with = |answers: serde_json::Value| {
+        json!({
+            "$type": "changes/flow/v1", "name": "one", "summary": "One phase.",
+            "stop": {"until": "build"},
+            "phases": [{"name": "build", "agent": "lead", "instruction": "Build.",
+                        "checks": [{"id": "x", "kind": "tasks", "when": {"answers_not": answers}}]}]
+        })
+    };
+    let good = with(json!({"ux": "none", "data": "none"}));
+    schema().validate(&good).unwrap();
+    let flow: Flow = serde_json::from_value(good.clone()).unwrap();
+    assert_eq!(serde_json::to_value(&flow).unwrap(), good);
+    for bad in [json!({"ui": "none"}), json!({"data": "nothing"})] {
+        let bad = with(bad);
+        assert!(schema().validate(&bad).is_err(), "{bad}");
+        assert!(serde_json::from_value::<Flow>(bad).is_err());
+    }
+}
+
+/// A check's `unchanged_by` names its rules with known placeholders only.
+#[test]
+fn an_unchanged_by_rule_with_an_unknown_placeholder_is_a_problem_and_a_known_one_is_not() {
+    let check = |rule: &str| {
+        json!({"id": "x", "kind": "records", "type": "review/report/v1",
+               "where": {"at_head": "range", "unchanged_by": [rule]}})
+    };
+    assert_eq!(
+        said(
+            &one(&check("/rules/{who}/record-paths"), "build", "B."),
+            false
+        ),
+        [
+            "phase build, check x: it names the unknown placeholder {who} (changes::flow::unknown_placeholder)"
+        ]
+    );
+    assert_eq!(
+        said(
+            &one(&check("/rules/{repo}/record-paths"), "build", "B."),
+            false
+        ),
+        Vec::<String>::new()
+    );
+}
+
+/// Decision 1308Z in the small flow: a diff that edits a lifecycle path
+/// passes once the change has its lifecycle record, and is refused
+/// without one; a UI or data path still needs the development flow.
+#[test]
+fn the_small_flow_passes_a_lifecycle_diff_with_a_record_and_refuses_one_without() {
+    use crate::change::Referenced;
+    use crate::gates::{Observed, Status, gate};
+    let rule = "/rules/x/lifecycle-paths";
+    let small = |phase: &str, recorded: bool| {
+        let change = crate::change::from_value(json!({
+            "$type": "changes/change/v1", "title": "T", "mount": "/repos/x",
+            "phase": phase, "head": "a3f9c0de1234567890abcdef1234567890abcdef",
+        }))
+        .unwrap();
+        let mut observed = Observed::new(
+            "/changes/t",
+            change,
+            crate::records::Kind::Build,
+            Referenced::default(),
+        );
+        observed.flow = shipped("small");
+        observed.controlled.insert(
+            rule.to_owned(),
+            Some(vec!["/repos/x/src/sync.rs".to_owned()]),
+        );
+        if recorded {
+            observed
+                .records_held
+                .insert("/changes/t/lifecycle".to_owned());
+        }
+        gate(&observed)
+    };
+    for (phase, id) in [
+        ("build", "lifecycle-recorded"),
+        ("review", "lifecycle-paths"),
+        ("land", "lifecycle-paths-at-land"),
+    ] {
+        let without = small(phase, false);
+        let check = without.iter().find(|each| each.check == id).unwrap();
+        assert_eq!(check.status, Status::Missing, "{phase}");
+        assert!(
+            check
+                .remedy
+                .as_deref()
+                .unwrap()
+                .contains("board changes lifecycle")
+        );
+        let with = small(phase, true);
+        assert!(!with.iter().any(|each| each.check == id), "{phase}");
+    }
+    let built = small("build", true);
+    let not_small = built.iter().find(|each| each.check == "not-small").unwrap();
+    assert_eq!(not_small.status, Status::Pass);
+}

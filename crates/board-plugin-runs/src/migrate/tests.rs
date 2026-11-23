@@ -78,6 +78,11 @@ fn each_rule_gives_its_kind_and_a_name_no_rule_matches_gives_none() {
             Some((SuiteKind::Test, ChosenBy::TestName)),
         ),
         (
+            "/suites/core-tests",
+            "Run it.",
+            Some((SuiteKind::Test, ChosenBy::TestName)),
+        ),
+        (
             "/suites/bench-get",
             "Run it.",
             Some((SuiteKind::Benchmark, ChosenBy::BenchmarkName)),
@@ -110,6 +115,8 @@ fn each_rule_gives_its_kind_and_a_name_no_rule_matches_gives_none() {
         ("/suites/claude-code", "Run it.", None),
         ("/suites/benchmark", "Run it.", None),
         ("/suites/gates", "Run it.", None),
+        ("/suites/tests", "Run it.", None),
+        ("/suites/phase-stop-test-flakes", "Run it.", None),
         ("/suites/app", "Audited by hand.", None),
     ] {
         assert_eq!(neighbours.classify(path, method), expected, "{path}");
@@ -124,7 +131,7 @@ fn the_first_rule_that_matches_wins() {
             "/evals/x-gates".to_owned(),
         ],
         listed: vec!["/suites/bench-listed".to_owned()],
-        zeroed: vec!["/suites/x-gates".to_owned()],
+        zeroed: vec!["/suites/x-gates".to_owned(), "/suites/x-tests".to_owned()],
     };
     for (path, expected) in [
         // An eval's suite named like an audit's is the eval's.
@@ -134,6 +141,10 @@ fn the_first_rule_that_matches_wins() {
         ),
         (
             "/suites/x-gates",
+            (SuiteKind::Compliance, ChosenBy::ZeroRule),
+        ),
+        (
+            "/suites/x-tests",
             (SuiteKind::Compliance, ChosenBy::ZeroRule),
         ),
         (

@@ -68,6 +68,15 @@ struct Given {
 /// answers, which a change started under it still follows.
 const PROSE_FLOW: &str = include_str!("../flow/flows-md/development-60bd988ebac76d79.json");
 
+/// The typed answers of a plan that stores data, so its plan needs the
+/// owner's approval.
+const STORES: &str = r#"{"ux": "none", "data": "stored", "lifecycle": "none"}"#;
+
+/// A change in `phase` whose plan stores data, so owner-approval applies.
+fn approving(phase: &'static str) -> Given {
+    given(phase).answers(serde_json::from_str(STORES).unwrap())
+}
+
 fn given(phase: &'static str) -> Given {
     Given {
         phase,
@@ -443,7 +452,7 @@ fn the_plan_gate_misses_a_change_with_no_route_and_passes_each_route() {
 #[test]
 fn on_every_route_the_plan_gate_needs_a_persons_decision_whose_refs_name_the_plan_or_the_change() {
     for route in ["owner", "ask-first", "unowned"] {
-        let asking = || given("plan").with(json!({"route": route}));
+        let asking = || approving("plan").with(json!({"route": route}));
         let unrelated = vec![(
             "/d",
             (
@@ -486,7 +495,7 @@ fn answer(named: &str, choice: &str, fields: &Value) -> Records {
 #[test]
 fn the_owners_answer_whose_chosen_option_names_the_change_meets_owner_approval() {
     let approval = |records| {
-        (given("plan").with(json!({"route": "owner"})))
+        (approving("plan").with(json!({"route": "owner"})))
             .records(records)
             .check("owner-approval")
     };
@@ -923,8 +932,10 @@ fn data_that_is_not_none_needs_a_decision_referencing_this_changes_understanding
     assert_eq!(
         detail(&plan, "data-signed", Vec::new()),
         "no attached plans/decision/v1 the owner signed with by.person references an attached \
-         changes/understanding/v1 of this change's data; run the understanding-check skill, then \
-         have the owner sign a decision with by.person whose refs name its record"
+         changes/understanding/v1 of this change's data, nor does an attached answer from the \
+         owner choose an option naming the change and that record; run the understanding-check \
+         skill, then have the owner sign a decision with by.person whose refs name its record, or \
+         answer the question `board changes ask` files"
     );
     let routed = (given("plan").prose().plan(Some(&plan))).with(json!({"route": "owner"}));
     assert_eq!(routed.code("data-signed"), "changes::data::not_signed");
@@ -1021,8 +1032,8 @@ fn the_build_gate_needs_two_matching_rechecks_on_each_attached_understanding_che
     assert_eq!(
         built(understanding(&json!({}))).check("rechecks").1,
         "the understanding check at /changes/t/understanding/data holds rechecks of fewer than two \
-         points; before review, ask two of its predict or edge questions again, worded \
-         differently, and add each to its rechecks with its own point"
+         points; ask two of its predict or edge questions again, worded differently, and add \
+         each to its rechecks with its own point"
     );
     let passed = built(understanding(
         &json!({"rechecks": rechecked(&[true, true])}),
@@ -1431,3 +1442,4 @@ mod answers;
 mod design;
 mod owner_answers;
 mod rechecks;
+mod review_head;

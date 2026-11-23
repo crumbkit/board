@@ -1,5 +1,5 @@
-# A release: the pull-request lane and the slow lane without mutants (the
-# gates on macOS, fuzzing and the timing job), then `board` built with
+# A release: the pull-request lane and the slow lane's git-floor job (the
+# tests that spawn git against git 2.39), then `board` built with
 # `cargo auditable` for each target, bin/install-check run from the archives
 # on each platform, and the archives attached to a GitHub release with
 # SHA256SUMS and a build provenance attestation for each archive. The tag is
@@ -31,7 +31,9 @@ jobs:
 
   # A called workflow may not ask for more than its caller grants. The slow
   # lane's base job reads earlier runs, and its report job may open an issue
-  # on a nightly failure; it opens none here. A release skips mutants.
+  # on a nightly failure; it opens none here. A release runs only the slow
+  # lane's base and git-floor jobs, and skips macOS, fuzzing, timing and
+  # mutants, which the nightly runs cover.
   slow:
     if: github.event_name != 'pull_request'
     uses: $/.github/workflows/slow.yml
@@ -163,8 +165,8 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       VERSION: ${{ needs.version.outputs.version }}
     steps:
-      # Only the build archives: the slow lane's artifacts are in
-      # this run too.
+      # Only the build archives: other jobs in this run may upload
+      # artifacts too.
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           pattern: board-*

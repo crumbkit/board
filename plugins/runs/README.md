@@ -127,7 +127,7 @@ the kind of the first rule that matches it:
 2. `eval` when `/evals/<name>` exists or an eval lists the suite in `suites`;
 3. `compliance` when the name ends `-review`;
 4. `test` when the name ends `-gates`, `-ci`, `-checks`, `-pr-lane`,
-   `-ready` or `-lane`;
+   `-ready`, `-lane` or `-tests`;
 5. `benchmark` when the name starts `bench-` or ends `-latency`, `-timing`,
    `-benchmark`, `-overhead` or `-cost`.
 

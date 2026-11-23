@@ -162,3 +162,62 @@ fn the_second_attached_understanding_check_can_refuse() {
         found.1
     );
 }
+
+/// A change on the shipped flow whose plan stores data, in `phase`, with
+/// its signed-off understanding check holding `pairs` as rechecks.
+fn shipped(phase: &'static str, pairs: &[Pair]) -> Given {
+    let records = vec![
+        (RUN, run(&json!({}))),
+        (
+            UNDERSTOOD,
+            understanding(&json!({"rechecks": from_pairs(pairs)})),
+        ),
+        ("/d/s", signed(&[UNDERSTOOD])),
+    ];
+    (given(phase).answers(json!({"ux": "none", "data": "stored", "lifecycle": "none"})))
+        .records(records)
+        .with(json!({"head": HEAD, "route": "owner"}))
+}
+
+/// Decision 1306Z: rechecks move to land and do not block, so a built
+/// change with stored data leaves build without them and merges with them
+/// missing.
+#[test]
+fn a_data_change_leaves_build_without_rechecks_and_land_shows_them_missing_and_not_blocking() {
+    let built = shipped("build", &[]);
+    assert!(!built.statuses().contains_key("rechecks"));
+    let observed = shipped("land", &[]).observed();
+    let found = crate::gates::gate(&observed);
+    let rechecks = found.iter().find(|each| each.check == "rechecks").unwrap();
+    assert_eq!(rechecks.status, crate::gates::Status::Missing);
+    assert!(!rechecks.blocks && !rechecks.blocking());
+    // Its twin with two matching points passes.
+    let rechecked = shipped("land", &[of("a", true), of("b", true)]);
+    assert_eq!(rechecked.statuses()["rechecks"], "pass");
+}
+
+/// `changes.owed` lists a done change while its rechecks are missing, with
+/// the predict and edge questions to ask again, and drops it once two
+/// points match.
+#[test]
+fn owed_lists_a_done_change_until_two_rechecks_match() {
+    let mut owing = shipped("done", &[of("a", true)]);
+    owing.records[1].1.1["questions"] = json!([
+        {"question": "Where is it kept?", "answer": "A.", "design": "A.", "kind": "predict"},
+        {"question": "Why?", "answer": "A.", "design": "A.", "kind": "explain"},
+        {"question": "What if it is gone?", "answer": "A.", "design": "A.", "kind": "edge"},
+    ]);
+    let owed = crate::owed::owed_of(&owing.observed()).unwrap();
+    let shown = serde_json::to_value(&owed).unwrap();
+    assert_eq!(shown["path"], "/changes/t");
+    let checks: Vec<&str> = (shown["checks"].as_array().unwrap().iter())
+        .map(|each| each["check"].as_str().unwrap())
+        .collect();
+    assert_eq!(checks, ["rechecks"]);
+    let questions: Vec<&str> = (shown["questions"].as_array().unwrap().iter())
+        .map(|each| each["question"].as_str().unwrap())
+        .collect();
+    assert_eq!(questions, ["Where is it kept?", "What if it is gone?"]);
+    let settled = shipped("done", &[of("a", true), of("b", true)]);
+    assert!(crate::owed::owed_of(&settled.observed()).is_none());
+}

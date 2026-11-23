@@ -10,7 +10,8 @@
 //!    suite in `suites`;
 //! 3. compliance, when the name ends `-review`, as the audit skill names
 //!    its suites;
-//! 4. test, when the name ends as a check suite's does, such as `-gates`;
+//! 4. test, when the name ends as a check suite's does, such as `-gates`
+//!    or `-tests`;
 //! 5. benchmark, when the name starts `bench-` or ends as a timing's does,
 //!    such as `-latency`.
 //!
@@ -37,7 +38,9 @@ const RULE: &str = "rules/rule/v1";
 /// The words the apply-standard skill starts a suite's method with.
 const APPLY_STANDARD: &str = "Audited by the apply-standard skill";
 /// The endings of a name rule 4 reads as a test suite's.
-const TEST_ENDINGS: [&str; 6] = ["-gates", "-ci", "-checks", "-pr-lane", "-ready", "-lane"];
+const TEST_ENDINGS: [&str; 7] = [
+    "-gates", "-ci", "-checks", "-pr-lane", "-ready", "-lane", "-tests",
+];
 /// The endings of a name rule 5 reads as a benchmark's.
 const BENCHMARK_ENDINGS: [&str; 5] = ["-latency", "-timing", "-benchmark", "-overhead", "-cost"];
 

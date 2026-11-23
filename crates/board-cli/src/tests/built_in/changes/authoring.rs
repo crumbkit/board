@@ -85,6 +85,7 @@ fn the_board_itself_is_refused_for_a_flow_that_reads_a_repository_and_admitted_f
         json!([
             "suite-run",
             "not-small",
+            "lifecycle-recorded",
             "lifecycle-paths",
             "lifecycle-paths-at-land"
         ])
