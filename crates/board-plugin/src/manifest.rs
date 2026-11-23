@@ -244,7 +244,8 @@ struct RawCapability {
     env: Vec<VariableName>,
 }
 
-/// MCP's `ToolAnnotations`: hints Board stores and acts on none of.
+/// MCP's `ToolAnnotations`: hints Board stores. Board acts on `read_only_hint`
+/// alone, by keeping a built-in plugin's snapshots through a call to it.
 /// `board commands list` reports all but `title` as a capability's effects.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]

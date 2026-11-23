@@ -1600,6 +1600,22 @@ fn an_open_task_beneath_a_mount_that_cannot_be_read_refuses_next_and_advance_nam
     }
 }
 
+#[test]
+fn next_and_advance_from_plan_to_build_read_through_one_view_and_one_report_snapshot() {
+    let board = Changes::new();
+    board.change_at(
+        "changes/t.json",
+        "plan",
+        &json!({"plan": "/changes/t/plan.md", "route": "owner", "records": [board.approved()]}),
+    );
+    board.write("changes/t/plan.md", PLAN);
+    board.call_stdin("plan", &planning(&["/repos/x/src/**"]));
+    let next = board.snapshots("next", &path());
+    let advance = board.snapshots("advance", &path());
+    assert_eq!(board.read("changes/t.json")["phase"], "build");
+    assert_eq!((next, advance), (2, 2));
+}
+
 /// Writes the record-paths rule of /repos/x, listing its plan directory.
 fn record_paths(board: &Changes) {
     board.write(

@@ -66,6 +66,25 @@ impl Trace {
         }
     }
 
+    /// Adds the processes `nested`, a nested call's trace, started, and the
+    /// snapshots it took, to this trace.
+    pub(crate) fn fold(&mut self, nested: Self) {
+        self.count("started", nested.work.get("started").copied().unwrap_or(0));
+        for phase in nested
+            .phases
+            .into_iter()
+            .filter(|phase| phase.name == "snapshot")
+        {
+            match self.phases.iter_mut().find(|mine| mine.name == phase.name) {
+                Some(mine) => {
+                    mine.took += phase.took;
+                    mine.entered += phase.entered;
+                }
+                None => self.phases.push(phase),
+            }
+        }
+    }
+
     /// Appends the phases and counts of `other`, which names none of this
     /// trace's, and its capability when this trace has none.
     pub fn extend(&mut self, other: Self) {

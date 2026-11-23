@@ -467,6 +467,16 @@ impl Changes {
         stdin: &str,
         inherited: &[(&str, &str)],
     ) -> Output {
+        self.run_traced(arguments, stdin, inherited).0
+    }
+
+    /// [`Changes::run_inheriting`], with what the run traced.
+    fn run_traced(
+        &self,
+        arguments: &[&str],
+        stdin: &str,
+        inherited: &[(&str, &str)],
+    ) -> (Output, Ran) {
         let root = self.root().to_path_buf();
         let context = Context {
             start: root.clone(),
@@ -499,12 +509,23 @@ impl Changes {
         let arguments = std::iter::once(BINARY_NAME)
             .chain(arguments.iter().copied())
             .map(OsString::from);
-        run(
-            arguments,
-            &context,
-            &mut stdin.as_bytes(),
-            &mut Ran::default(),
-        )
+        let mut ran = Ran::default();
+        let output = run(arguments, &context, &mut stdin.as_bytes(), &mut ran);
+        (output, ran)
+    }
+
+    /// The `snapshot` count of `board --json call changes.<capability>`
+    /// with `given` as flags, which must succeed.
+    fn snapshots(&self, capability: &str, given: &Value) -> usize {
+        let target = format!("changes.{capability}");
+        let given_flags = flags(given);
+        let mut arguments = vec!["--json", "call", target.as_str()];
+        arguments.extend(given_flags.iter().map(String::as_str));
+        let (output, ran) = self.run_traced(&arguments, "", &[]);
+        assert_eq!(output.code, 0, "{}", text(&output.stdout));
+        (ran.trace.phases.iter())
+            .find(|phase| phase.name == "snapshot")
+            .map_or(0, |phase| phase.entered)
     }
 
     /// Runs `board --json` with `stdin` and reads its one document.

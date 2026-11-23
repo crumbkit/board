@@ -76,7 +76,8 @@ The plugin's `metadata` is any JSON object, which `board plugin find` can
 match. Each capability is an MCP Tool object (MCP 2025-11-25): `description`,
 `inputSchema` and `outputSchema` are required, and `title`, `annotations`,
 `_meta`, `timeout` and `env` are optional. Each schema's root is `"type": "object"`. `annotations`
-holds only MCP's five hint keys. Board acts on none of them, and
+holds only MCP's five hint keys. Board acts only on `readOnlyHint`
+(architecture/performance/budgets.md), and
 `board commands list` reports four of them as the capability's effects. `_meta`
 is any JSON object. `icons` and `execution` are refused. `types` lists the
 types whose schemas the plugin ships, at `types/<namespace>/<kind>/v<n>.schema.json`

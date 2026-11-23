@@ -1,6 +1,8 @@
 //! One built-in plugin call takes at most one View snapshot and one Report
 //! snapshot, and drops them when HEAD moves, when it writes, runs a process
-//! or calls another plugin, and when another process prunes the index.
+//! in the board's own tree or calls a plugin that may write, and when
+//! another process prunes the index. A read-only capability it calls shares
+//! them.
 
 use std::path::PathBuf;
 
@@ -22,22 +24,42 @@ enum Between {
     Run,
     /// The call calls `writer.due`, which puts the note.
     Call,
+    /// The call runs a process in a temporary directory outside the board.
+    RunOutside,
+    /// The call calls `reader.due`, read-only, which queries the note.
+    ReadOnlyCall,
+    /// The call calls `reader.due`, which queries the note but does not
+    /// say it is read-only.
+    UnmarkedCall,
+    /// The call calls `liar.due`, which says it is read-only and puts the
+    /// note.
+    LyingCall,
+    /// The call opens a second board with `-C` and calls `reader.due`
+    /// there.
+    Elsewhere,
     /// A second board commits the note.
     Commit,
     /// A second handle on the index prunes it.
     Prune,
 }
 
-/// A board with `fixture` and `writer` enabled, committing as an identity
-/// of its own, and its index directory.
+/// A board with `fixture`, `writer`, `reader` and `liar` enabled,
+/// committing as an identity of its own, and its index directory.
 fn twin_board() -> (Scenario, tempfile::TempDir) {
-    let scenario = board(OTHER_WRITER, &["fixture", "writer"], Holds::Same);
+    let scenario = board(OTHER_WRITER, ENABLED, Holds::Same);
     scenario.identified();
     scenario.commit(&[("README.md", "a board\n")]);
     (scenario, tempfile::tempdir().unwrap())
 }
 
-const OTHER_WRITER: &[(&str, bool)] = &[("fixture", true), ("writer", true)];
+const OTHER_WRITER: &[(&str, bool)] = &[
+    ("fixture", true),
+    ("writer", true),
+    ("reader", true),
+    ("liar", true),
+];
+
+const ENABLED: &[&str] = &["fixture", "writer", "reader", "liar"];
 
 /// The put line that writes the note as `plugin`'s item.
 fn note_line(plugin: &str) -> Value {
@@ -54,7 +76,8 @@ fn notes(host: &dyn Host) -> usize {
 }
 
 /// `fixture`, answering with the notes it finds before and after `between`.
-fn querying(between: Between, root: PathBuf, cache: PathBuf) -> Fixture {
+/// `elsewhere` is the second board [`Between::Elsewhere`] opens.
+fn querying(between: Between, root: PathBuf, cache: PathBuf, elsewhere: PathBuf) -> Fixture {
     answering(
         "fixture",
         Box::new(move |host| {
@@ -78,6 +101,22 @@ fn querying(between: Between, root: PathBuf, cache: PathBuf) -> Fixture {
                 }
                 Between::Call => {
                     host.call(&target("writer.due"), &json!({"n": 1})).unwrap();
+                }
+                Between::RunOutside => {
+                    let arguments = ["-c".to_owned(), "printf x > outside".to_owned()];
+                    assert_eq!(host.run(&shell(&arguments)).unwrap().code, Some(0));
+                }
+                Between::ReadOnlyCall | Between::UnmarkedCall => {
+                    host.call(&target("reader.due"), &json!({"n": 1})).unwrap();
+                }
+                Between::LyingCall => {
+                    host.call(&target("liar.due"), &json!({"n": 1})).unwrap();
+                }
+                Between::Elsewhere => {
+                    let other = host
+                        .board(&Elsewhere::Directory(elsewhere.clone()))
+                        .unwrap();
+                    other.call(&target("reader.due"), &json!({"n": 1})).unwrap();
                 }
                 Between::Commit => {
                     let mut other = Board::open(&root, None).unwrap();
@@ -109,6 +148,23 @@ fn writer() -> Fixture {
     )
 }
 
+/// `reader`, answering with the notes it finds.
+fn reader() -> Fixture {
+    answering("reader", Box::new(|host| Ok(json!({"count": notes(host)}))))
+}
+
+/// `liar`, which says `due` is read-only and puts the note as its own item.
+fn liar() -> Fixture {
+    answering(
+        "liar",
+        Box::new(|host| {
+            host.put(&[note_line("liar")]).unwrap();
+            Ok(json!({"count": 1}))
+        }),
+    )
+    .read_only()
+}
+
 /// The `snapshot` phase's count in `board`'s trace.
 fn snapshots(board: &Board) -> usize {
     (board.take_trace().phases.iter())
@@ -134,11 +190,33 @@ fn called(scenario: &Scenario, cache: &Path, fixtures: Vec<Fixture>) -> (Value, 
 /// What a call answers, and how many snapshots it took, with `between`
 /// between its two queries.
 fn around(between: Between) -> (Value, usize) {
+    around_in(between, true)
+}
+
+/// [`around`] in a board whose `commit_on_put` is `commits`.
+fn around_in(between: Between, commits: bool) -> (Value, usize) {
     let (scenario, cache) = twin_board();
+    if !commits {
+        let config =
+            json!({"$type": "board/config/v1", "plugins": ENABLED, "commit_on_put": false});
+        scenario.write(".board/board.json", Item::File(&config.to_string()));
+    }
+    let (other, _) = twin_board();
     let root = scenario.workdir().to_path_buf();
+    let reading = match between {
+        Between::UnmarkedCall => reader(),
+        _ => reader().read_only(),
+    };
     let fixtures = vec![
-        querying(between, root, cache.path().to_path_buf()),
+        querying(
+            between,
+            root,
+            cache.path().to_path_buf(),
+            other.workdir().to_path_buf(),
+        ),
         writer(),
+        reading,
+        liar(),
     ];
     called(&scenario, cache.path(), fixtures)
 }
@@ -204,7 +282,13 @@ fn a_second_query_with_nothing_between_reuses_the_first_snapshot() {
 
 #[test]
 fn a_put_a_process_a_nested_call_or_a_commit_between_queries_shows_the_note() {
-    for between in [Between::Put, Between::Run, Between::Call, Between::Commit] {
+    for between in [
+        Between::Put,
+        Between::Run,
+        Between::Call,
+        Between::Commit,
+        Between::LyingCall,
+    ] {
         let (output, taken) = around(between);
         assert_eq!(output["first"], 0, "{between:?}");
         assert_eq!(output["second"], 1, "{between:?}");
@@ -220,4 +304,47 @@ fn a_prune_between_queries_makes_the_second_take_a_fresh_snapshot() {
         (json!(0), json!(0))
     );
     assert_eq!(taken, 2);
+}
+
+#[test]
+fn a_read_only_nested_call_shares_the_callers_snapshot_and_its_unmarked_twin_takes_its_own() {
+    let (output, taken) = around(Between::ReadOnlyCall);
+    assert_eq!(
+        (&output["first"], &output["second"]),
+        (&json!(0), &json!(0))
+    );
+    assert_eq!(taken, 1);
+    let (output, taken) = around(Between::UnmarkedCall);
+    assert_eq!(
+        (&output["first"], &output["second"]),
+        (&json!(0), &json!(0))
+    );
+    assert_eq!(taken, 3);
+}
+
+#[test]
+fn a_process_outside_the_board_keeps_the_snapshot_and_its_twin_in_a_board_that_does_not_commit_on_put_drops_it()
+ {
+    let (output, taken) = around(Between::RunOutside);
+    assert_eq!(
+        (&output["first"], &output["second"]),
+        (&json!(0), &json!(0))
+    );
+    assert_eq!(taken, 1);
+    let (output, taken) = around_in(Between::RunOutside, false);
+    assert_eq!(
+        (&output["first"], &output["second"]),
+        (&json!(0), &json!(0))
+    );
+    assert_eq!(taken, 2);
+}
+
+#[test]
+fn a_call_in_another_board_takes_its_own_snapshots_and_leaves_the_callers_count_alone() {
+    let (output, taken) = around(Between::Elsewhere);
+    assert_eq!(
+        (&output["first"], &output["second"]),
+        (&json!(0), &json!(0))
+    );
+    assert_eq!(taken, 1);
 }

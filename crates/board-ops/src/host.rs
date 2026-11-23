@@ -6,6 +6,7 @@ use std::ffi::OsString;
 use std::fmt;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 use std::time::Duration;
 
 use board_model::{
@@ -390,8 +391,9 @@ pub(crate) struct Hosted<'a> {
     /// What [`Host::warn`] was told, one line each, without repeats. A host
     /// [`Host::board`] opens adds to the same list.
     pub(crate) warnings: &'a RefCell<Vec<String>>,
-    /// The snapshots this call's reads share.
-    pub(crate) memo: Memo,
+    /// The snapshots this call's reads share, with the call that called it
+    /// when this call's capability is read-only.
+    pub(crate) memo: Rc<Memo>,
 }
 
 impl Hosted<'_> {
@@ -567,15 +569,21 @@ impl Host for Hosted<'_> {
         board.check_batch(&mut text.as_bytes())
     }
 
+    /// Shares this call's snapshots with a read-only capability, and
+    /// drops them before any other.
     fn call(&self, target: &Target, input: &Value) -> Result<CallReport, Box<Refusal>> {
-        self.memo.forget();
         let board = self.again().map_err(|error| Box::new(opened(&error)))?;
         // As bytes, so the input passes the size limit and parse a process
         // plugin's `board call` reads it through.
-        let called = board.call(target, input.to_string().as_bytes(), &self.plugins);
-        // The processes it started count in this call's trace.
-        let started = board.take_trace().work.get("started").copied();
-        (self.board.trace.borrow_mut()).count("started", started.unwrap_or(0));
+        let called = board.call_sharing(
+            target,
+            input.to_string().as_bytes(),
+            &self.plugins,
+            &self.memo,
+        );
+        // The processes it started, and the snapshots it took, count in
+        // this call's trace.
+        self.board.trace.borrow_mut().fold(board.take_trace());
         let report = called.map_err(|error| Box::new(error.refusal()))?;
         report
             .warnings
@@ -623,7 +631,7 @@ impl Host for Hosted<'_> {
             plugins: self.plugins.clone(),
             root: self.root,
             warnings: self.warnings,
-            memo: Memo::default(),
+            memo: Rc::default(),
         }))
     }
 
@@ -691,7 +699,7 @@ impl Host for Hosted<'_> {
     }
 
     fn run_hiding(&self, run: &Run<'_>, hidden: &[&str]) -> Result<Exited, ProcessError> {
-        self.memo.forget();
+        (self.memo).forget_running(&self.board, run.directory);
         self.settings.run_hidden(run, hidden)
     }
 

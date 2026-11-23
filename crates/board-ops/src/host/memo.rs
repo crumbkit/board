@@ -1,8 +1,13 @@
 //! The snapshots one built-in plugin call keeps, so its reads share them
 //! (docs/architecture/index.md). A call keeps at most one View snapshot,
-//! for queries, and one Report snapshot, for `refs`. Both are dropped when
-//! the board's HEAD moves, and before anything the call does that may
-//! change files HEAD does not show yet.
+//! for queries, and one Report snapshot, for `refs`, and a read-only
+//! capability it calls in the same board keeps the same ones. Both are
+//! dropped when the board's HEAD moves, and before anything the call does
+//! that may change files HEAD does not show yet: a write, a nested call to a
+//! capability that does not say it is read-only, and a process that runs in
+//! the board's own tree. A process elsewhere, such as `git diff` in a
+//! mounted clone, changes nothing a snapshot reads, because a snapshot
+//! reads each mount at the commit its mount record names.
 
 use std::cell::RefCell;
 use std::path::Path;
@@ -45,6 +50,22 @@ impl Memo {
     /// Drops both snapshots.
     pub(crate) fn forget(&self) {
         *self.0.borrow_mut() = Kept::default();
+    }
+
+    /// Drops both snapshots before a process runs in `directory`, unless
+    /// it runs outside `board`'s canonical working tree, in a new temporary
+    /// directory when `directory` is none, and `board` commits on put. A
+    /// process can put through its own `board`, which leaves HEAD where it
+    /// was when the board does not commit on put. A directory that does
+    /// not canonicalize drops them.
+    pub(crate) fn forget_running(&self, board: &Board, directory: Option<&Path>) {
+        let root = board.repository().path();
+        let outside = directory.is_none_or(|directory| {
+            (directory.canonicalize()).is_ok_and(|directory| !directory.starts_with(root))
+        });
+        if !(outside && board.config().commit_on_put) {
+            self.forget();
+        }
     }
 
     /// Runs `sql` as [`Board::query`] does, through the kept View snapshot,
