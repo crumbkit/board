@@ -6,6 +6,13 @@ use super::*;
 /// A `recheck_after` no value in these tests reaches, about 2,700 years.
 const NEVER: u64 = 1_000_000;
 
+/// The heuristics the params plugin ships.
+const SHIPPED: [&str; 3] = [
+    "overflow-agent-grace",
+    "overflow-owner-grace",
+    "priorities-reconfirm",
+];
+
 /// A board that enables runs and params, holding the heuristic `half-life`
 /// with default 14, bounds 3 to 28 and a check that fails above 0.2.
 fn board() -> Fixture {
@@ -65,11 +72,11 @@ fn check(name: &str, started: &str, check: f64) -> String {
     .to_string()
 }
 
-/// What `params.due` lists, without the two heuristics every board has.
+/// What `params.due` lists, without the heuristics every board has.
 fn due(board: &Fixture) -> Value {
     let mut report = board.call("params.due", &[]);
     (report["due"].as_array_mut().unwrap())
-        .retain(|entry| !entry["name"].as_str().unwrap().starts_with("overflow-"));
+        .retain(|entry| !SHIPPED.contains(&entry["name"].as_str().unwrap()));
     report["due"].clone()
 }
 
@@ -200,11 +207,12 @@ fn put_writes_a_value_outside_its_bounds_and_readers_fall_back() {
 }
 
 #[test]
-fn a_board_with_no_heuristic_records_resolves_both_overflow_values_from_the_shipped_defaults() {
+fn a_board_with_no_heuristic_records_resolves_each_shipped_value_from_its_default() {
     let board = Fixture::enabling(&["runs", "params"]);
     for (name, default) in [
         ("overflow-agent-grace", 200.0),
         ("overflow-owner-grace", 800.0),
+        ("priorities-reconfirm", 300.0),
     ] {
         let got = board.call("params.get", &["--name", name]);
         assert_eq!(
@@ -219,8 +227,9 @@ fn a_board_with_no_heuristic_records_resolves_both_overflow_values_from_the_ship
             "due": [
                 {"name": "overflow-agent-grace", "reason": "on-default"},
                 {"name": "overflow-owner-grace", "reason": "on-default"},
+                {"name": "priorities-reconfirm", "reason": "on-default"},
             ],
-            "checked": 2,
+            "checked": 3,
         })
     );
 }
@@ -238,7 +247,7 @@ fn a_record_overrides_the_shipped_heuristic_of_its_name_and_leaves_the_other_shi
     let answer = |name| board.call("params.get", &["--name", name])["value"].clone();
     assert_eq!(answer("overflow-agent-grace"), json!(300.0));
     assert_eq!(answer("overflow-owner-grace"), json!(800.0));
-    assert_eq!(board.call("params.due", &[])["checked"], 2);
+    assert_eq!(board.call("params.due", &[])["checked"], 3);
 }
 
 #[test]
@@ -401,8 +410,8 @@ fn due_lists_a_failed_check_a_stale_value_and_one_on_the_default_oldest_first_an
             {"name": "too-little", "reason": "on-default"},
         ])
     );
-    // The six heuristics written here and the two the plugin ships.
-    assert_eq!(board.call("params.due", &[])["checked"], 8);
+    // The six heuristics written here and the three the plugin ships.
+    assert_eq!(board.call("params.due", &[])["checked"], 9);
 }
 
 #[test]
@@ -441,8 +450,8 @@ fn due_leaves_out_a_heuristic_whose_path_is_not_a_name_and_lists_its_twin() {
             {"name": "my-value", "reason": "on-default"},
         ])
     );
-    // The two written with names, and the two the plugin ships.
-    assert_eq!(board.call("params.due", &[])["checked"], 4);
+    // The two written with names, and the three the plugin ships.
+    assert_eq!(board.call("params.due", &[])["checked"], 5);
 }
 
 #[test]

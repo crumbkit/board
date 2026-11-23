@@ -843,6 +843,7 @@ mod notes;
 mod params;
 mod places;
 mod plans;
+mod priorities;
 mod prompts;
 mod review;
 mod rules;

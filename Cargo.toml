@@ -17,6 +17,7 @@ members = [
     "crates/board-plugin-params",
     "crates/board-plugin-places",
     "crates/board-plugin-plans",
+    "crates/board-plugin-priorities",
     "crates/board-plugin-prompts",
     "crates/board-plugin-requests",
     "crates/board-plugin-review",
@@ -65,6 +66,7 @@ board-plugin-notes = { path = "crates/board-plugin-notes", version = "0.0.0" }
 board-plugin-params = { path = "crates/board-plugin-params", version = "0.0.0" }
 board-plugin-places = { path = "crates/board-plugin-places", version = "0.0.0" }
 board-plugin-plans = { path = "crates/board-plugin-plans", version = "0.0.0" }
+board-plugin-priorities = { path = "crates/board-plugin-priorities", version = "0.0.0" }
 board-plugin-prompts = { path = "crates/board-plugin-prompts", version = "0.0.0" }
 board-plugin-requests = { path = "crates/board-plugin-requests", version = "0.0.0" }
 board-plugin-review = { path = "crates/board-plugin-review", version = "0.0.0" }

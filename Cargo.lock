@@ -386,6 +386,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "board-plugin-priorities"
+version = "0.0.0"
+dependencies = [
+ "board-model",
+ "board-ops",
+ "board-plugin",
+ "board-plugin-params",
+ "board-repos",
+ "board-validate",
+ "schemars",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "board-plugin-prompts"
 version = "0.0.0"
 dependencies = [
@@ -520,6 +535,7 @@ dependencies = [
  "board-plugin-params",
  "board-plugin-places",
  "board-plugin-plans",
+ "board-plugin-priorities",
  "board-plugin-prompts",
  "board-plugin-requests",
  "board-plugin-review",

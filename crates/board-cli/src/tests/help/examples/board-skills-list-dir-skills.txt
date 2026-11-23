@@ -13,6 +13,7 @@ missing  notes                skills/notes
 missing  params               skills/params
 missing  places               skills/places
 missing  plans                skills/plans
+missing  priorities           skills/priorities
 missing  prompts              skills/prompts
 missing  review               skills/review
 missing  rules                skills/rules

@@ -21,11 +21,12 @@ use serde_json::{Map, Value, json};
 pub use get::{Got, Reason, Source, Warning, WarningCode, get};
 use records::{HeuristicRecord, ValueRecord};
 
-/// The heuristics the plugin ships, by name: the two overflow graces. A
+/// The heuristics the plugin ships, by name: the two overflow graces and
+/// the commits a confirmed priority may see. A
 /// record at `/params/heuristics/<name>` overrides the one of that name.
 /// The files hold no `$type`, so `board check` in Board's own repository does
 /// not read them as records of a type it has no schema for.
-pub const SHIPPED: [(&str, &str); 2] = [
+pub const SHIPPED: [(&str, &str); 3] = [
     (
         "overflow-agent-grace",
         include_str!("../heuristics/overflow-agent-grace.json"),
@@ -33,6 +34,10 @@ pub const SHIPPED: [(&str, &str); 2] = [
     (
         "overflow-owner-grace",
         include_str!("../heuristics/overflow-owner-grace.json"),
+    ),
+    (
+        "priorities-reconfirm",
+        include_str!("../heuristics/priorities-reconfirm.json"),
     ),
 ];
 

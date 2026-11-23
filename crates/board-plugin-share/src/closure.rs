@@ -9,7 +9,9 @@
 //!   reaches the entries under it;
 //! - a Markdown link reaches the record or file it names;
 //! - a record whose typed reference names a shared entry is a back-ref, and
-//!   is reached. Only the shared entries collect back-refs.
+//!   is reached. Only the shared entries collect back-refs. A back-ref
+//!   whose type's schema carries `"x-board-goes-with-share": false`, such
+//!   as the owner's priorities, is listed as not copied instead.
 //!
 //! A whole is a record that a shared entry, or another whole, names through
 //! a part-of field, one whose schema in this board's `.board/types/`
@@ -79,8 +81,9 @@ pub(crate) struct Whole {
 }
 
 /// Why a target is not copied: it is a directory, whose entries a link does
-/// not reach; it resolves through a mount or a link; it names nothing; or a
-/// whole's back-ref names it, whose references the share does not follow.
+/// not reach; it resolves through a mount or a link; it names nothing; a
+/// whole's back-ref names it, whose references the share does not follow;
+/// or it is a back-ref whose type keeps it out of shares.
 #[derive(Clone, Copy, Serialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub(crate) enum Reason {
@@ -89,6 +92,7 @@ pub(crate) enum Reason {
     Link,
     Missing,
     Beyond,
+    Withheld,
 }
 
 impl Reason {
@@ -99,6 +103,7 @@ impl Reason {
             Self::Link => "link",
             Self::Missing => "missing",
             Self::Beyond => "beyond",
+            Self::Withheld => "withheld",
         }
     }
 }
@@ -552,6 +557,7 @@ impl Walk {
         candidates: BTreeMap<String, Vec<(String, Location)>>,
         reached: &mut Reached,
     ) -> Result<(), PluginError> {
+        let kinds = typed(host, &candidates.keys().cloned().collect::<Vec<_>>())?;
         let (paths, named): (Vec<String>, Vec<_>) = candidates.into_iter().unzip();
         let logicals: Vec<LogicalPath> = (paths.iter())
             .map(|target| logical(target, "refs"))
@@ -570,8 +576,15 @@ impl Walk {
             let Some((entry, _)) = named.iter().find(|(_, location)| typed(location)) else {
                 continue;
             };
+            let record_type = (kinds.get(&candidate)).and_then(|held| held.record_type.clone());
+            let withheld = match record_type {
+                Some(record_type) => (self.schema(host, &record_type)?)
+                    .is_some_and(|schema| schema["x-board-goes-with-share"] == false),
+                None => false,
+            };
             match reason(&report.location) {
                 Some(reason) => self.leave(candidate, reason, entry),
+                None if withheld => self.leave(candidate, Reason::Withheld, entry),
                 None => {
                     (reached.entry(candidate)).or_insert_with(|| (Via::BackRef, entry.clone()));
                 }

@@ -41,7 +41,9 @@ followed until nothing new is reached:
   or absolute;
 - each record in this board's own tree whose typed reference names the entry
   at `path` or an entry under it. This is a back-ref, such as a decision
-  whose `refs` names the shared project.
+  whose `refs` names the shared project. A back-ref whose type's schema
+  carries `"x-board-goes-with-share": false` at its top level, such as
+  `priorities/list/v1`, is listed in `not_copied` instead.
 
 Only the entry at `path` and the entries under it collect back-refs, so
 sharing an eval does not bring every record that names the eval's suite. A
@@ -87,6 +89,7 @@ A target the share does not copy is listed in `not_copied` with a reason:
   names nothing.
 - `beyond`: a whole's decision or question names an entry in this board
   that the set does not hold.
+- `withheld`: a back-ref whose type keeps its records out of shares.
 
 A typed reference through a mount or link that only back-refs make, and
 that the destination does not resolve into the same repository, is listed

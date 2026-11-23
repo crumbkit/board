@@ -1429,3 +1429,36 @@ fn a_shared_record_brings_the_repository_record_it_names_and_one_the_team_holds_
     );
     assert_eq!(boards.changed(&before), ["pulls/b.json"]);
 }
+
+#[test]
+fn a_shared_task_leaves_out_the_priorities_record_that_covers_it_and_brings_a_decision_naming_it() {
+    let boards = tasks_boards();
+    boards.reading_list();
+    let enabled = boards.personal.run(&["plugin", "enable", "priorities"]);
+    assert_eq!(enabled.code, 0, "{}", text(&enabled.stderr));
+    let entry =
+        json!({"id": "tidy", "title": "Tidy the reading list", "covers": ["/tasks/remove.md"]});
+    boards
+        .personal
+        .write(
+            "priorities.json",
+            &json!({"$type": "priorities/list/v1", "short": [entry], "long": []}).to_string(),
+        )
+        .write(
+            "projects/tidy/decisions/e.json",
+            &plan_decision(&["/tasks/remove.md"]),
+        );
+    let call = ["--path", "/tasks/remove.md", "--allow-uncopied"];
+    let preview = boards.preview(&call);
+    let mut copied = READING.to_vec();
+    copied.insert(1, "/projects/tidy/decisions/e");
+    assert_eq!(
+        (&preview["copied"], &preview["not_copied"]),
+        (
+            &json!(copied),
+            &json!([{"path": "/priorities", "reason": "withheld", "from": "/tasks/remove.md"}])
+        )
+    );
+    assert_eq!(boards.share(&call)["copied"], json!(copied));
+    assert!(!boards.exists("priorities.json"));
+}
